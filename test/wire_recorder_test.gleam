@@ -19,6 +19,7 @@
 ////   step's effects.
 
 import ask_support
+import driven_time
 import genesis_prime/connection/script.{Issued, Script}
 import genesis_prime/seed
 import genesis_prime/step.{type Now, Effects, Now}
@@ -200,12 +201,10 @@ fn scripted(
 fn start(
   folder folder: String,
   scripts scripts: script.Scripts,
-  shutdown_ms shutdown_ms: Int,
 ) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: script_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms:,
     wire_recorder: Some(recording_support.wire_recorder(folder)),
     scripts:,
     registry: None,
@@ -218,7 +217,7 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()
-  let server = start(folder:, scripts: scripted(5, given), shutdown_ms: 1000)
+  let server = start(folder:, scripts: scripted(5, given))
   let client = ask_support.connect(server)
   let accepted_record = ask_support.read_bytes(client, 49)
   assert mug.send(client, <<1, 2, 3, 4>>) == Ok(Nil) as "bytes"
@@ -308,7 +307,7 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()
-  let server = start(folder:, scripts: scripted(1, given), shutdown_ms: 2000)
+  let server = start(folder:, scripts: scripted(1, given))
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
   ask_support.stop(server)
@@ -322,6 +321,8 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   assert closing.by == Server as "the server's stop ended the connection"
 }
 
+/// The deadline is the supervisor's own kill timer, 300 ms, which no driven
+/// clock reaches: the test passes when the connection takes `Stopping` within it.
 pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
@@ -344,6 +345,7 @@ pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test
       shutdown_ms: 300,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
       scripts: scripted(1, given),
+      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
@@ -364,8 +366,7 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
   let assert Ok(Nil) = simplifile.write(blocked, "")
     as "a file stands where the folder should be"
   let given = process.new_subject()
-  let server =
-    start(folder: blocked, scripts: scripted(1, given), shutdown_ms: 1000)
+  let server = start(folder: blocked, scripts: scripted(1, given))
   let client = ask_support.connect(server)
   assert socket_read.receive(
       limit: socket_read.Open,
@@ -377,41 +378,44 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
   ask_support.stop(server)
 }
 
-pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests_own_test() -> Nil {
+pub fn an_input_is_recorded_with_the_reading_its_scripts_clock_gave_at_its_cause_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
+  let time = driven_time.new()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 1000,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
-      scripts: script.operating_system,
+      scripts: ask_support.driven_scripts(time),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
     )
-  // Each input is bounded by the test's own readings around the action that
-  // caused it, so a reading reused from an earlier input falls outside.
-  let before_accept = ask_support.monotonic_ms()
+  // Each input is bounded by the test's own readings of the driven clock around
+  // the action that caused it, and the test moves the clock between inputs, so a
+  // reading reused from an earlier input falls outside.
+  let before_accept = clock_ms(time)
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
-  let after_accept = ask_support.monotonic_ms()
-  let before_read = ask_support.monotonic_ms()
+  let after_accept = clock_ms(time)
+  driven_time.advance(time:, ms: 1)
+  let before_read = clock_ms(time)
   assert mug.send(client, <<1>>) == Ok(Nil) as "bytes"
   let _read = ask_support.read_bytes(client, 17)
-  let after_read = ask_support.monotonic_ms()
+  let after_read = clock_ms(time)
+  driven_time.advance(time:, ms: 1)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let watched = process.monitor(connection)
-  let before_close = ask_support.monotonic_ms()
+  let before_close = clock_ms(time)
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
   let _reason =
     ask_support.ended(
       watched: watched,
       what: "the connection to end after the client closed",
     )
-  let after_close = ask_support.monotonic_ms()
+  let after_close = clock_ms(time)
   let assert Ok(Recording(header:, lines:, ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"
@@ -432,7 +436,15 @@ pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests
     && closed.monotonic_ms >= before_close
     && closed.monotonic_ms <= after_close
     as "an input's reading lies between the test's readings around its cause"
+  assert accepted.monotonic_ms < read.monotonic_ms
+    && read.monotonic_ms < closed.monotonic_ms
+    as "each input took a reading of its own: the clock moved between them"
   ask_support.stop(server)
+}
+
+/// The driven clock's reading, in milliseconds.
+fn clock_ms(time: driven_time.Time) -> Int {
+  driven_time.now(time:).monotonic_ms
 }
 
 /// The source files that hold `needle`, other than the recorder's own.

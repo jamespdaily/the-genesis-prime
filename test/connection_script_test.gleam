@@ -20,6 +20,7 @@
 //// never reaches.
 
 import ask_support
+import driven_time
 import event_wait
 import genesis_prime/connection/registry
 import genesis_prime/connection/script.{
@@ -94,6 +95,67 @@ pub fn the_servers_scheduler_sends_the_timer_to_the_subject_after_its_time_test(
     as "the timer's message names the timer and the reference of its start"
 }
 
+/// The server's own script (`script.operating_system`) feeds the recorder: each
+/// input is recorded with the node's monotonic reading taken at its cause.
+pub fn the_servers_script_gives_the_recorder_readings_between_the_tests_own_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let server =
+    ask_support.start_scripted(
+      rule: script_rule.rule(),
+      directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+      shutdown_ms: ask_support.beyond_the_test_ms,
+      wire_recorder: Some(recording_support.wire_recorder(folder)),
+      scripts: script.operating_system,
+      send_deadline_ms: ask_support.beyond_the_test_ms,
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
+      with: fn(builder) { builder },
+    )
+  // Each input is bounded by the test's own readings around the action that
+  // caused it, so a reading reused from an earlier input falls outside.
+  let before_accept = ask_support.monotonic_ms()
+  let client = ask_support.connect(server)
+  let _accepted = ask_support.read_bytes(client, 49)
+  let after_accept = ask_support.monotonic_ms()
+  let before_read = ask_support.monotonic_ms()
+  assert mug.send(client, <<1>>) == Ok(Nil) as "bytes"
+  let _read = ask_support.read_bytes(client, 17)
+  let after_read = ask_support.monotonic_ms()
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let watched = process.monitor(connection)
+  let before_close = ask_support.monotonic_ms()
+  assert mug.shutdown(client) == Ok(Nil) as "the client closed"
+  let _reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client closed",
+    )
+  let after_close = ask_support.monotonic_ms()
+  let assert Ok(Recording(header:, lines:, ..)) =
+    wire_recording.read(recording_support.wire_text_in(folder))
+    as "the recording is whole"
+  assert bit_array.byte_size(seed.bytes(header.seed)) == 32
+    as "the server's script draws 32 bytes"
+  let assert [
+    Took(at: accepted, ..),
+    Wrote(..),
+    Took(at: read, ..),
+    Wrote(..),
+    Took(at: closed, ..),
+  ] = lines
+    as "an accept, a read and a close, each with its writes"
+  assert accepted.monotonic_ms >= before_accept
+    && accepted.monotonic_ms <= after_accept
+    && read.monotonic_ms >= before_read
+    && read.monotonic_ms <= after_read
+    && closed.monotonic_ms >= before_close
+    && closed.monotonic_ms <= after_close
+    as "an input's reading lies between the test's readings around its cause"
+  ask_support.stop(server)
+}
+
 // ---- a given script ----
 
 /// A script with the seed `0..31`, the same time for every input and no timer.
@@ -120,10 +182,9 @@ fn counting_seed() -> seed.Seed {
 }
 
 fn start_script_rule(scripts: Scripts) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: script_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
     wire_recorder: None,
     scripts:,
     registry: None,
@@ -221,8 +282,9 @@ pub fn a_connection_with_no_script_to_take_is_closed_and_takes_no_input_test() -
 pub fn a_timer_starts_through_the_scripts_scheduler_and_fires_when_the_script_says_test() -> Nil {
   use <- owned_test.run(30_000)
   let started = process.new_subject()
+  let time = driven_time.new()
   let scripts = fn() {
-    let assert Ok(issued) = script.operating_system()
+    let assert Ok(issued) = ask_support.driven_scripts(time)()
     Ok(
       Issued(
         ..issued,
@@ -238,10 +300,9 @@ pub fn a_timer_starts_through_the_scripts_scheduler_and_fires_when_the_script_sa
     )
   }
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: signalling_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 1000,
       wire_recorder: None,
       scripts:,
       registry: None,
@@ -267,11 +328,15 @@ pub fn a_timer_starts_through_the_scripts_scheduler_and_fires_when_the_script_sa
 
 // ---- a read in parts, under a script that fixes its size ----
 
-/// The operating system's script with `next_read` fixed at `wanted` bytes, which
-/// tells `looked` each time the shell asks.
-fn reading(wanted: Int, looked: Subject(Nil)) -> Scripts {
+/// The script of the driven clock `time` with `next_read` fixed at `wanted`
+/// bytes, which tells `looked` each time the shell asks.
+fn reading(
+  time time: driven_time.Time,
+  wanted wanted: Int,
+  looked looked: Subject(Nil),
+) -> Scripts {
   fn() {
-    let assert Ok(issued) = script.operating_system()
+    let assert Ok(issued) = ask_support.driven_scripts(time)()
     Ok(
       Issued(
         ..issued,
@@ -297,20 +362,31 @@ type BoundEvent {
 
 /// Like `reading`, with a scheduler that reports the held read's bound to
 /// `bounds` and never fires it: the test fires it, so no clock decides when the
-/// shell gives up. Any other timer is the operating system's.
+/// shell gives up. Any other timer is the driven clock's.
 fn reading_bounded(
+  time time: driven_time.Time,
   wanted wanted: Int,
   looked looked: Subject(Nil),
   bounds bounds: Subject(BoundEvent),
 ) -> Scripts {
   fn() {
-    let assert Ok(Issued(ordinal:, script: held)) = reading(wanted, looked)()
-    Ok(Issued(ordinal:, script: Script(..held, schedule: reporting(bounds))))
+    let assert Ok(Issued(ordinal:, script: held)) =
+      reading(time:, wanted:, looked:)()
+    Ok(Issued(
+      ordinal:,
+      script: Script(
+        ..held,
+        schedule: reporting(bounds, otherwise: held.schedule),
+      ),
+    ))
   }
 }
 
 /// The scheduler of `reading_bounded`.
-fn reporting(bounds: Subject(BoundEvent)) -> script.Scheduler {
+fn reporting(
+  bounds: Subject(BoundEvent),
+  otherwise otherwise: script.Scheduler,
+) -> script.Scheduler {
   fn(subject, timer, reference, after_ms) {
     case timer == script.held_read_timer {
       True -> {
@@ -320,8 +396,7 @@ fn reporting(bounds: Subject(BoundEvent)) -> script.Scheduler {
         )
         fn() { process.send(bounds, BoundCancelled(reference:)) }
       }
-      False ->
-        script.operating_system_timer(subject:, timer:, reference:, after_ms:)
+      False -> otherwise(subject, timer, reference, after_ms)
     }
   }
 }
@@ -352,10 +427,9 @@ fn start_signalling(
   scope: registry.Registry(Int),
   scripts: Scripts,
 ) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: signalling_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
     wire_recorder: None,
     scripts:,
     registry: Some(scope),
@@ -386,9 +460,10 @@ fn accepted_id(client: mug.Socket) -> Int {
 
 pub fn a_message_delivered_between_the_parts_of_a_recorded_read_is_taken_after_the_read_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
   let looked = process.new_subject()
-  let server = start_signalling(scope, reading(8, looked))
+  let server = start_signalling(scope, reading(time:, wanted: 8, looked:))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   // The read is two commands of four bytes, delivered in two parts: the first
@@ -424,15 +499,15 @@ pub fn a_message_delivered_between_the_parts_of_a_recorded_read_is_taken_after_t
 
 pub fn a_recorded_read_the_socket_delivers_in_parts_reaches_the_rule_as_one_input_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   use folder <- recording_support.in_folder
   let looked = process.new_subject()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 1000,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
-      scripts: reading(3, looked),
+      scripts: reading(time:, wanted: 3, looked:),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
@@ -470,15 +545,15 @@ pub fn a_recorded_read_the_socket_delivers_in_parts_reaches_the_rule_as_one_inpu
 
 pub fn a_stop_while_the_shell_holds_part_of_a_read_reaches_the_rule_as_stopping_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   use folder <- recording_support.in_folder
   let looked = process.new_subject()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 2000,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
-      scripts: reading(3, looked),
+      scripts: reading(time:, wanted: 3, looked:),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
@@ -506,11 +581,15 @@ pub fn a_stop_while_the_shell_holds_part_of_a_read_reaches_the_rule_as_stopping_
 
 pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_first_part_started_fires_however_many_parts_come_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
   let looked = process.new_subject()
   let bounds = process.new_subject()
   let server =
-    start_signalling(scope, reading_bounded(wanted: 100, looked:, bounds:))
+    start_signalling(
+      scope,
+      reading_bounded(time:, wanted: 100, looked:, bounds:),
+    )
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [shell] = ask_support.connections(server) as "one connection"
@@ -573,11 +652,12 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_when_the_bound_its_fir
 
 pub fn a_read_that_comes_whole_in_parts_starts_one_bound_and_cancels_it_when_the_read_is_complete_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
   let looked = process.new_subject()
   let bounds = process.new_subject()
   let server =
-    start_signalling(scope, reading_bounded(wanted: 8, looked:, bounds:))
+    start_signalling(scope, reading_bounded(time:, wanted: 8, looked:, bounds:))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   ask_support.command(

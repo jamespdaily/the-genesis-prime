@@ -7,6 +7,7 @@
 
 import ask_support
 import asking_rule
+import driven_time
 import event_wait
 import genesis_prime/connection/closer
 import gleam/erlang/process
@@ -27,10 +28,10 @@ pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason
   let lines = process.new_subject()
   let capture = log_capture.start_all(into: lines)
   let server =
-    ask_support.start(
+    ask_support.start_on(
+      time: driven_time.new(),
       rule: asking_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 1000,
       with: fn(builder) { supervisor.add(builder, closer.supervised([nobody])) },
     )
   ask_support.stop(server)
@@ -54,8 +55,9 @@ pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason
 pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_closer_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.tag("serial")
-  let first = ask_support.started_listener()
-  let second = ask_support.started_listener()
+  let time = driven_time.new()
+  let first = ask_support.started_listener(time:)
+  let second = ask_support.started_listener(time:)
   let assert [embedded] = supervisor_children.in_start_order(first.supervisor)
     as "the first listener's tree holds Ranch's embedded supervisor"
   let assert [_proxy, first_supervisor] =
@@ -64,10 +66,10 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
   let lines = process.new_subject()
   let capture = log_capture.start_all(into: lines)
   let closing =
-    ask_support.start(
+    ask_support.start_on(
+      time:,
       rule: asking_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 1000,
       with: fn(builder) {
         supervisor.add(builder, closer.supervised([first.name, second.name]))
       },

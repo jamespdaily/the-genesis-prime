@@ -81,12 +81,11 @@ fn start_asking(
   sessions sessions: Result(Pid, Nil),
   directory directory: fn(Nil, Int, fn(Nil) -> Nil) -> Result(service.Sent, Nil),
 ) -> ask_support.Server {
-  ask_support.start_joined(
+  ask_support.start_driven(
     rule: signalling_rule.rule(),
     directory:,
-    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
+    wire_recorder: None,
     scripts: ask_support.driven_scripts(time),
-    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry:,
     locate: fn(address: Address) {
       case address {
@@ -778,17 +777,12 @@ fn start_telling(
   locate locate: fn(Address) -> Result(watch.Found(fn(Nil) -> Nil), Nil),
   deliver deliver: fn(Address, Nil) -> Result(Nil, Nil),
 ) -> ask_support.Server {
-  ask_support.start_telling(
+  ask_support.start_driven_telling(
     rule: signalling_rule.rule(),
-    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
-    wire_recorder: None,
     scripts: ask_support.driven_scripts(time),
-    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate:,
     deliver:,
-    with: fn(builder) { builder },
   )
 }
 

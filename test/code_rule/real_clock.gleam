@@ -59,11 +59,16 @@
 ////   named. `ask_support.await_new_pid` (a poll that sleeps 1 ms), and the
 ////   waits of `event_wait`, `readiness_support` and `owned_test`, are not
 ////   named: each ends by its own condition or by the test's deadline.
+//// - A shutdown deadline is read only through a call of `ask_support`'s
+////   `start_joined`, `start_scripted` or `start_telling`, which take it as
+////   given; Part B reads no `shutdown_ms` literal. `wire_recorder_test`'s kill
+////   test passes 300 ms to `start_scripted`, so the file is on
+////   `still_on_the_real_clock` for it alone, and a short shutdown given any
+////   other way is not read.
 //// - A file on `genuine_real_time` is exempt as a whole. `ask_test`,
-////   `connection_script_test`, `world_map_registry_test`, `application_test`
-////   and `readiness_test` also hold tests on the real clock that the reason
-////   does not name, and a new real-clock test added to one of them is not
-////   caught.
+////   `world_map_registry_test`, `application_test` and `readiness_test` also
+////   hold tests on the real clock that the reason does not name, and a new
+////   real-clock test added to one of them is not caught.
 //// - Part B reads a literal. A short deadline given through a variable, a
 ////   module constant or a punned label is not read, and neither is a time given
 ////   to `process.call` or `actor.call`.
@@ -103,6 +108,8 @@ pub fn entry_points() -> List(EntryPoint) {
   let gate = "runs the gate service on real service time"
   let send_deadline =
     "gives its connections' settings a send deadline of 300 ms"
+  let limits =
+    "takes its connections' send deadline and shutdown as given, so a test can pass a short real one"
   [
     EntryPoint("login_support", "start_real", tree),
     EntryPoint("login_support", "start_real_with", tree),
@@ -114,9 +121,10 @@ pub fn entry_points() -> List(EntryPoint) {
     EntryPoint("login_support", "world", settings),
     EntryPoint("login_support", "game", settings),
     EntryPoint("ask_support", "start", the_operating_system_script),
-    EntryPoint("ask_support", "start_scripted", send_deadline),
     EntryPoint("ask_support", "real_send_deadline_ms", send_deadline),
-    EntryPoint("ask_support", "started_listener", the_operating_system_script),
+    EntryPoint("ask_support", "start_joined", limits),
+    EntryPoint("ask_support", "start_scripted", limits),
+    EntryPoint("ask_support", "start_telling", limits),
     EntryPoint("ask_support", "gate", gate),
     EntryPoint("ask_support", "reaching", gate),
     EntryPoint("ask_support", "observed_gate", gate),
@@ -639,7 +647,7 @@ pub fn genuine_real_time() -> List(Exception) {
     ),
     Exception(
       "test/connection_script_test.gleam",
-      "its three tests of the server's own script check the system seed, the node's monotonic reading and the operating system's timer",
+      "its four tests of the server's own script check the system seed, the node's monotonic reading, the operating system's timer and the readings the script gives the wire recorder",
     ),
     Exception(
       "test/ask_test.gleam",
@@ -679,7 +687,7 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     ),
     Exception(
       "test/wire_replay_support.gleam",
-      "calls ask_support.start_scripted, login_support.start_real_with and servers_settings, which start a listener and the tree on the real clock",
+      "gives ask_support.start_scripted the real send deadline (real_send_deadline_ms) and calls login_support.start_real_with and servers_settings, which start the tree on the real clock",
     ),
     Exception(
       "test/wire_replay_test.gleam",
@@ -706,36 +714,12 @@ pub fn still_on_the_real_clock() -> List(Exception) {
       "asks through the operating system's script, real service time and a sleep, with a send deadline of 300 ms",
     ),
     Exception(
-      "test/connection_actor_test.gleam",
-      "runs connections on the operating system's script (ask_support.start_scripted)",
-    ),
-    Exception(
-      "test/connection_closing_test.gleam",
-      "runs connections on the operating system's script (ask_support.start_scripted)",
-    ),
-    Exception(
-      "test/connection_shell_test.gleam",
-      "runs a connection on the operating system's script (ask_support.start, start_scripted)",
-    ),
-    Exception(
-      "test/closer_test.gleam",
-      "starts listeners on the operating system's script (ask_support.start, started_listener)",
-    ),
-    Exception(
-      "test/listener_test.gleam",
-      "starts listeners on the operating system's script (ask_support.started_listener)",
+      "test/wire_recorder_test.gleam",
+      "its kill test (a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test) gives ask_support.start_scripted a shutdown of 300 ms, the supervisor's own kill timer, which no driven clock reaches",
     ),
     Exception(
       "test/account_store_test.gleam",
       "its ask tests start a listener on the operating system's script (ask_support.start)",
-    ),
-    Exception(
-      "test/owned_test_test.gleam",
-      "its listener-seed tests serve connections on the operating system's script",
-    ),
-    Exception(
-      "test/wire_recorder_test.gleam",
-      "records a connection run on the operating system's script (ask_support.start_scripted)",
     ),
     Exception(
       "test/service_shell_test.gleam",
