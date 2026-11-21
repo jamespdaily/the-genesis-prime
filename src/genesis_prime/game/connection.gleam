@@ -436,15 +436,27 @@ fn settled(
   now now: Now,
 ) -> #(State, ConnectionStep(Request)) {
   client_connection.settle(
-    handled: connection_quest_turn_in.completing(
-      handled: visibility_check.rechecked(handled: connection_casting.persisted(
-        handled:,
-        now:,
-      )),
-      now:,
-    ),
+    handled: input_settled(handled:, now:),
     flow: flow(now),
     carried: [],
+  )
+}
+
+/// What every input of a player decided, finished in one order: the casts whose
+/// persistence stopped holding ended, each creature told what the player's casts now hold
+/// on it, the sight rechecked and the turn-in completed. The two that follow read no cast
+/// state, so nothing after the tell changes a node.
+fn input_settled(
+  handled handled: client_connection.Handled(Session),
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  connection_quest_turn_in.completing(
+    handled: visibility_check.rechecked(
+      handled: connection_casting.creatures_told(
+        handled: connection_casting.persisted(handled:, now:),
+      ),
+    ),
+    now:,
   )
 }
 
@@ -475,16 +487,11 @@ fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
     pending: fn(session: Session) { session.pending },
     take: frame.take,
     taking: fn(session, whole, rest) {
-      connection_quest_turn_in.completing(
-        handled: visibility_check.rechecked(
-          handled: connection_casting.persisted(
-            handled: handle(
-              session: Session(..session, pending: rest),
-              now:,
-              frame: whole,
-            ),
-            now:,
-          ),
+      input_settled(
+        handled: handle(
+          session: Session(..session, pending: rest),
+          now:,
+          frame: whole,
         ),
         now:,
       )

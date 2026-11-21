@@ -250,6 +250,7 @@ fn hold(
       effects: [],
       armed_ms: 0,
       held_until_ms: None,
+      struck: None,
     ),
   )
 }

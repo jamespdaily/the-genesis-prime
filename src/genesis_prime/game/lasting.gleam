@@ -94,7 +94,9 @@ pub type Life {
 /// the cast gave there, the life of its effects, the effects it holds and the time
 /// they were last armed from (the cast's latest go on the unit), and the latest time
 /// a crowd-control state of the cast lasts to there. A state's end is the creature's
-/// own time, so it is kept apart from the effects a later go arms again.
+/// own time, so it is kept apart from the effects a later go arms again. `struck` is
+/// the round that last struck the unit as a creature, which the creature is told the
+/// node for; a node on the caster or on a unit no round hit as a creature holds `None`.
 pub type Node {
   Node(
     unit_id: Int,
@@ -103,7 +105,14 @@ pub type Node {
     effects: List(NodeEffect),
     armed_ms: Int,
     held_until_ms: Option(Int),
+    struck: Option(StruckCreature),
   )
+}
+
+/// The life of a creature a go struck and the monotonic time it struck it, which tells
+/// the creature's lives apart (a creature keeps its address across a stand-again).
+pub type StruckCreature {
+  StruckCreature(life: Int, struck_at_ms: Int)
 }
 
 /// One effect a node holds. A `Listed` effect is one a unit create tells a viewer that
@@ -193,7 +202,8 @@ pub fn lifetime_of(
 /// holds no node (`opcode.0x7f4.instance_count`, `Spell4Effects.effectType.17`). The
 /// crowd-control states the go landed (`held_until_ms`, absolute times) are not armed
 /// again by a later go: the node lasts at least until the latest of them that is still
-/// to come, and at least as long as the effects do.
+/// to come, and at least as long as the effects do. The node keeps the round that struck
+/// the unit before (`struck`); the caller stamps the go's own.
 pub fn given(
   held held: Option(Node),
   unit_id unit_id: Int,
@@ -241,14 +251,20 @@ pub fn given(
   }
   case life {
     Ok(life) ->
-      Ok(Node(
-        unit_id:,
-        count:,
-        life:,
-        effects: all,
-        armed_ms: go_ms,
-        held_until_ms: held_until,
-      ))
+      Ok(
+        Node(
+          unit_id:,
+          count:,
+          life:,
+          effects: all,
+          armed_ms: go_ms,
+          held_until_ms: held_until,
+          struck: case held {
+            Some(Node(struck:, ..)) -> struck
+            None -> None
+          },
+        ),
+      )
     Error(Nil) -> Error(Nil)
   }
 }

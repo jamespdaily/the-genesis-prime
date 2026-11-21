@@ -4206,7 +4206,7 @@ fn go(
           now_ms:,
         )
       let #(cast, given) =
-        cast_proc.nodes_given(cast:, cast_id:, aimed:, now_ms:)
+        cast_proc.nodes_given(cast:, cast_id:, aimed:, struck:, now_ms:)
       let #(cast, ticks) =
         cast_tick.ticks_armed(
           cast:,

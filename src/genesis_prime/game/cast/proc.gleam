@@ -158,6 +158,7 @@
 //// | a unit holding a node of a cast leaves the caster's sight | the node is dropped with no frame; a lingering cast left with no node ends with its 0x7fe |
 
 import genesis_prime/game/cast/control as cast_control
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Aside, type Caster, type Due, type Effect,
   type Holder, type Live, type State, type Struck, Absorb, Activated, Aside,
@@ -955,11 +956,14 @@ fn procs_dropped(cast cast: State, cast_id cast_id: Int) -> State {
 /// the unit already holds (`lasting.given`: a later go keeps and re-arms them, as on the
 /// client, `opcode.0x7f4.instance_count`), and at least until the time the creature
 /// holds each state, which no later go moves; a unit left with no effect that has a life
-/// and no state holds no node of the cast.
+/// and no state holds no node of the cast. A node on a creature the go's round struck
+/// carries that round's life and time (`lasting.StruckCreature`); a node on a unit the
+/// round did not hit as a creature keeps the stamp of the one it replaces.
 pub fn nodes_given(
   cast cast: State,
   cast_id cast_id: Int,
   aimed aimed: Aimed,
+  struck struck: List(Struck),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case dict.get(cast.casts, cast_id), cast_tick.nodes_aimed(aimed:) {
@@ -976,7 +980,8 @@ pub fn nodes_given(
               aimed:,
               unit_id:,
               now_ms:,
-            ),
+            )
+              |> result.map(struck_by(node: _, struck:)),
           )
         })
       let #(cast, pushed) =
@@ -999,6 +1004,22 @@ pub fn nodes_given(
         })
       #(cast_tick.with_nodes(cast:, cast_id:, nodes:), pushed)
     }
+  }
+}
+
+/// The node with the round that struck its unit as a creature, when the go's round struck
+/// it as one; a node the round did not hit as a creature keeps the stamp it has.
+fn struck_by(
+  node node: lasting.Node,
+  struck struck: List(Struck),
+) -> lasting.Node {
+  case cast_gate.creature_hit(struck:, unit_id: node.unit_id) {
+    Ok(#(life, struck_at_ms)) ->
+      lasting.Node(
+        ..node,
+        struck: Some(lasting.StruckCreature(life:, struck_at_ms:)),
+      )
+    Error(Nil) -> node
   }
 }
 
