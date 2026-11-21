@@ -2,6 +2,7 @@
 """Lists each test a step's test list names that the step's diff does not define.
 
     python3 -I dev/test_list_check.py ISSUE BASE HEAD
+    python3 -I dev/test_list_check.py --existing BASE LIST
 
 The test list is the newest comment on ISSUE headed "test list" (any case) that
 names a test, else the issue's body when it is headed so and names one; a headed
@@ -18,12 +19,18 @@ Exit 0 when every listed test is defined in the diff, 1 when one is not,
 2 when no test list on the issue names a test. It replaces the reviewers' by-hand test
 list check; it gates no merge, so it has no tests of its own and is checked by
 use.
+
+`--existing BASE LIST` runs before the build: LIST is an issue number (its test list as above)
+or the path of a draft file (the whole file), and each backticked listed test already defined at BASE
+is printed as `NAME: already at FILE, write it plainly` (a list backticks only the tests its step adds).
+Exit 1 when one is printed, 0 when none is, 2 when the list names no test.
 """
 
 import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 LISTED = re.compile(r"`(?:[a-z0-9_]+\.)*([a-z0-9_]+_test|test_[a-z0-9_]+)`")
 DEFINED = re.compile(r"^\+\s*(?:pub fn|def)\s+([a-z0-9_]+)\s*\(", re.MULTILINE)
@@ -31,6 +38,12 @@ DEFINED = re.compile(r"^\+\s*(?:pub fn|def)\s+([a-z0-9_]+)\s*\(", re.MULTILINE)
 
 def run(*args: str) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout
+
+
+def defined_at(ref: str, name: str) -> list[str]:
+    """The files of ref's tree that define a function called name."""
+    grep = subprocess.run(["git", "grep", "-lE", rf"(pub fn|def) {name}\(", ref], capture_output=True, text=True)
+    return [line.split(":", 1)[1] for line in grep.stdout.split()]
 
 
 def is_headed_test_list(text: str) -> bool:
@@ -50,28 +63,47 @@ def test_list_text(issue: str) -> str | None:
     return None
 
 
+def listed_names(text: str, ref: str) -> list[str]:
+    """The tests the text lists in backticks, once each, leaving out the names of test modules at ref."""
+    files = run("git", "ls-tree", "-r", "--name-only", ref).split()
+    modules = {f.rsplit("/", 1)[-1].rsplit(".", 1)[0] for f in files}
+    # A backticked test module's name (`hit_test`) ends in _test too; it is not a test.
+    return [n for n in dict.fromkeys(LISTED.findall(text)) if n not in modules]
+
+
+def existing(base: str, source: str) -> int:
+    """Prints each listed test already defined at base; the source is an issue number or a draft's path."""
+    path = Path(source)
+    text = path.read_text() if path.is_file() else test_list_text(source)
+    if text is None or not LISTED.search(text):
+        print(f"{source} holds no test list naming a test")
+        return 2
+    found = 0
+    for name in listed_names(text, base):
+        where = defined_at(base, name)
+        if where:
+            print(f"{name}: already at {where[0]}, write it plainly")
+            found += 1
+    print(f"{found} listed tests already exist at {base}")
+    return 1 if found else 0
+
+
 def main() -> int:
+    if len(sys.argv) == 4 and sys.argv[1] == "--existing":
+        return existing(sys.argv[2], sys.argv[3])
     if len(sys.argv) != 4:
-        print(__doc__.splitlines()[2].strip(), file=sys.stderr)
+        print("\n".join(line.strip() for line in __doc__.splitlines()[2:4]), file=sys.stderr)
         return 2
     issue, base, head = sys.argv[1:]
     text = test_list_text(issue)
     if text is None:
         print(f"issue {issue} holds no test list naming a test")
         return 2
-    files = run("git", "ls-tree", "-r", "--name-only", head).split()
-    modules = {f.rsplit("/", 1)[-1].rsplit(".", 1)[0] for f in files}
-    # A backticked test module's name (`hit_test`) ends in _test too; it is not a test.
-    listed = [n for n in dict.fromkeys(LISTED.findall(text)) if n not in modules]
+    listed = listed_names(text, head)
     defined = set(DEFINED.findall(run("git", "diff", base, head)))
     missing = [name for name in listed if name not in defined]
     for name in missing:
-        grep = subprocess.run(
-            ["git", "grep", "-lE", rf"(pub fn|def) {name}\(", head],
-            capture_output=True,
-            text=True,
-        )
-        where = grep.stdout.split()
+        where = defined_at(head, name)
         print(f"{name}: not in the diff" + (f", already at {where[0]}" if where else ", missing"))
     print(f"{len(listed) - len(missing)} of {len(listed)} listed tests defined in the diff")
     return 1 if missing else 0
