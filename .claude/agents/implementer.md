@@ -29,7 +29,9 @@ Hand back once, as a comment on the step's issue, then return under 150 words: t
 
 ```
 **Hand-back** <branch> @ <commit>
-- Tests seen failing first: <name> for each listed test
+- Failing first: for each listed test, the pasted failure lines of its first run against its stub
+- Passing last: for each test file you touched, the pasted last pass line of its last run
+- Test fixes: <test> - the cause and its evidence (the failing lines and the code that makes them), or none
 - Functions added: <name> - closest existing function or library call, and why it is not used
 - Failure-table rows: <row> - <test>
 - Deviations from the brief: <what and why>
