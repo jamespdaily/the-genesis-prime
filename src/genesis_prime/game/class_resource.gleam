@@ -13,8 +13,9 @@
 ////                                                 a Medic out of combat: StartTimer(refill_timer, 3000)
 //// a Focus cost (slot -1) ─▶ pay ─▶ Changed(-1, value) ─▶ 0x935 of stat 1;  below the pool: StartTimer(focus_timer, 500)
 //// focus_timer ─▶ + the pool x the share x 0.5, clamped to the pool ─▶ Changed; below the pool again ─▶ StartTimer(focus_timer)
-//// a go's gains (genesis_prime/game/cast Gain) ─▶ gain ─▶ Changed, clamped to the max
-////                                                 a Warrior: CancelTimer(drain_timer), StartTimer(drain_timer, 1500)
+//// a go's gains (genesis_prime/game/cast Gain) ─▶ gain ─▶ Changed, clamped to the max (slot -1: Focus)
+////                                                 a Warrior's slot gain: CancelTimer(drain_timer), StartTimer(drain_timer, 1500)
+////                                                 Focus at its pool: CancelTimer(focus_timer)
 //// regen_timer ─▶ + per tick, clamped to the max ─▶ Changed; below the max again ─▶ StartTimer(regen_timer)
 //// drain_timer ─▶ - per tick, clamped to 0 ─▶ Changed; above 0 still ─▶ StartTimer(drain_timer, tick)
 //// the combat flag clears (player_life) ─▶ a Medic below its max: StartTimer(refill_timer)
@@ -47,7 +48,10 @@
 ////   the cast has reserved, so each timer below sees them as held.
 //// - **Gaining** is at a go, by the VitalModifiers the cast rule gives
 ////   (`Spell4Effects.effectType.1`): the client applies none itself, so each is the
-////   server's to apply and send, clamped to [0, max].
+////   server's to apply and send, clamped to [0, max]. A gain is points of the class slot,
+////   points of the slot that names a class vital (a class whose slot names another drops
+////   it), or Focus as points or as a share of its maximum (property 5); one call applies
+////   them in the order given, the class slot's changes sent before Focus's.
 //// - **The Warrior's drain** takes `drain_amount` each `drain_period_ms`, ticked
 ////   each `drain_tick_ms`, from `drain_after_ms` after the last gain, in and out of
 ////   combat, down to 0 (Jim's choice, migration 0012; 500714 gives no rate).
@@ -749,52 +753,120 @@ pub fn pay(
   #(resources, list.flatten([list.reverse(changes), timers, focus_timers]))
 }
 
-/// The gains of a go: a change for each one of the class's slot that moves it,
-/// clamped to [0, max], then the drain's wait restarted for a class that drains,
-/// then the timers a living slot starts (`refills`). A dead player gains nothing.
+/// The gains of a go, each applied in the order given and clamped to [0, max] where it
+/// lands: the class slot's (a `Gain` of its slot, or a `ClassVitalGain` of the vital the
+/// class's slot names) and Focus's (a `Gain` of `focus_slot`, or a `FocusShare` of the
+/// maximum). The effects are a change for each slot gain that moved it, then one for each
+/// Focus gain that moved it, then the drain's wait restarted for a class that drains and
+/// whose slot a gain landed in, then the timers a living slot and the Focus pool need. A
+/// gain the class does not hold, and every gain of a dead player, changes nothing.
 pub fn gain(
   resources resources: Resources,
   gains gains: List(Gain),
 ) -> #(Resources, List(Effect)) {
-  let own =
+  let named_here = fn(vital) {
+    list.contains(slots_of(resources:, vital:), resources.resource.slot)
+  }
+  let slot_amounts =
     list.filter_map(gains, fn(gain) {
       case gain {
-        Gain(slot:, amount:) if slot == resources.resource.slot ->
-          Ok(#(slot, amount))
-        Gain(..) | ClassVitalGain(..) | FocusShare(..) -> Error(Nil)
+        Gain(slot:, amount:) if slot == resources.resource.slot -> Ok(amount)
+        ClassVitalGain(vital:, amount:) -> {
+          case named_here(vital) {
+            True -> Ok(amount)
+            False -> Error(Nil)
+          }
+        }
+        Gain(..) | FocusShare(..) -> Error(Nil)
       }
     })
+  let focus_gains = case resources.focus {
+    None -> []
+    Some(_) ->
+      list.filter(gains, fn(gain) {
+        case gain {
+          Gain(slot:, ..) -> slot == focus_slot
+          FocusShare(..) -> True
+          ClassVitalGain(..) -> False
+        }
+      })
+  }
   use <- bool.guard(
-    when: !resources.alive || own == [],
+    when: !resources.alive || { slot_amounts == [] && focus_gains == [] },
     return: #(resources, []),
   )
-  let #(resources, changes) =
-    list.fold(own, #(resources, []), fn(so_far, gain) {
+  let #(resources, slot_changes) =
+    list.fold(slot_amounts, #(resources, []), fn(so_far, amount) {
       let #(resources, changes) = so_far
-      let #(slot, amount) = gain
       let next =
         clamped(resources:, value: resources.value +. int.to_float(amount))
       let changes = case next == resources.value {
         True -> changes
-        False -> [Changed(slot:, value: next), ..changes]
+        False -> [
+          Changed(slot: resources.resource.slot, value: next),
+          ..changes
+        ]
       }
       #(Resources(..resources, value: next), changes)
     })
-  let #(resources, drain) = case resources.resource.drain {
-    Some(Drain(after_ms:, ..)) -> #(
-      running_with(resources:, timer: drain_timer),
-      list.append(
-        case is_running(resources:, timer: drain_timer) {
-          True -> [CancelTimer(timer: drain_timer)]
-          False -> []
-        },
-        [StartTimer(timer: drain_timer, after_ms:)],
-      ),
-    )
-    None -> #(resources, [])
+  let #(resources, focus_changes) =
+    list.fold(focus_gains, #(resources, []), fn(so_far, gain) {
+      let #(resources, changes) = so_far
+      case resources.focus {
+        None -> so_far
+        Some(pool) -> {
+          let points = case gain {
+            FocusShare(share:) ->
+              float32.product(left: share, right: pool.numbers.maximum)
+            Gain(amount:, ..) | ClassVitalGain(amount:, ..) ->
+              int.to_float(amount)
+          }
+          let next = focus_clamped(pool:, value: pool.value +. points)
+          let changes = case next == pool.value {
+            True -> changes
+            False -> [Changed(slot: focus_slot, value: next), ..changes]
+          }
+          #(
+            Resources(..resources, focus: Some(Pool(..pool, value: next))),
+            changes,
+          )
+        }
+      }
+    })
+  let #(resources, drain, timers) = case slot_amounts {
+    [] -> #(resources, [], [])
+    [_, ..] -> {
+      let #(resources, drain) = case resources.resource.drain {
+        Some(Drain(after_ms:, ..)) -> #(
+          running_with(resources:, timer: drain_timer),
+          list.append(
+            case is_running(resources:, timer: drain_timer) {
+              True -> [CancelTimer(timer: drain_timer)]
+              False -> []
+            },
+            [StartTimer(timer: drain_timer, after_ms:)],
+          ),
+        )
+        None -> #(resources, [])
+      }
+      let #(resources, timers) = refills(resources:)
+      #(resources, drain, timers)
+    }
   }
-  let #(resources, timers) = refills(resources:)
-  #(resources, list.flatten([list.reverse(changes), drain, timers]))
+  let #(resources, focus_timers) = case focus_gains {
+    [] -> #(resources, [])
+    [_, ..] -> focus_refills(resources:)
+  }
+  #(
+    resources,
+    list.flatten([
+      list.reverse(slot_changes),
+      list.reverse(focus_changes),
+      drain,
+      timers,
+      focus_timers,
+    ]),
+  )
 }
 
 /// The timers a living slot starts when none of them runs: below its max, the

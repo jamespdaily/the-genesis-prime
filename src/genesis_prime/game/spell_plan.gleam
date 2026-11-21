@@ -55,9 +55,14 @@
 ////   32809 to 57030, 23344), 200542 (30900 to 41869, 35913), 212835 (80382 to
 ////   42569, 33154) and 212838 (80382 to 80383, 32921).
 //// - **The gains.** A VitalModifier (`Spell4Effects.effectType.1`) of a tree gives
-////   the caster dataBits02 points of the resource slot of its vital (6 is slot 1, 8
-////   slot 3), behind its caster apply prerequisite, which the cast rule checks
-////   (genesis_prime/game/prerequisite). A child started at each struck unit gives
+////   the caster a `Gift` by its vital, behind its caster apply prerequisite, which the
+////   cast rule checks (genesis_prime/game/prerequisite): dataBits02 points of the resource
+////   slot of vital 6 (slot 1) or 8 (slot 3); of Focus (vital 15) dataBits02 points, or,
+////   when it is 0, the share of the maximum Focus in dataBits05, a float from above 0 to
+////   1.0 (`Spell4Effects.dataBits05`); dataBits02 points of the class slot that names the
+////   vital for 4, 12, 13, 14, 18 and 19 (`Class.vitalEnumResource00` to `07`). Any other
+////   vital, a larger share and a share of a class vital fail the load or leave a later
+////   ability out. A child started at each struck unit gives
 ////   its first phase's gains once per go of its parent, not once per unit (client texts
 ////   240824 and 314851; retail records: the Tenton Hammer Esper guide and the WildStar
 ////   fandom Esper Assault list), so the plan moves them onto the `Proxy`. A gain with a
@@ -256,8 +261,9 @@
 ////   (`0x1403b1780`): types 5 to 11 read the same slots with the same results,
 ////   compared with the value by the eval code (`0x1407a1750`: 0 to 4
 ////   on the amount, 5 to 9 the same on the percentage of the slot's maximum, any
-////   other never passes); type 0 is none; any other type is an
-////   `UnreadRequirement`. A failed requirement is waived when the spell's
+////   other never passes); type 15 reads the caster's Focus and fails with 167
+////   (`Spell4.casterInnateRequirement.15`); type 0 is none; any other type, the
+////   Fusion Probe's 18 among them, is an `UnreadRequirement`. A failed requirement is waived when the spell's
 ////   `RequirementWaiver` passes (below).
 //// - **No target.** None of the 18 level-1 abilities nor the six innate actives needs a
 ////   target the client picks (`Spell4TargetMechanics.targetType`), so the plan holds
@@ -305,6 +311,7 @@
 ////   the caster, or behind an apply prerequisite.
 
 import genesis_prime/game/cast_bar_kind
+import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -2296,12 +2303,7 @@ pub type PlanError {
   /// A VitalModifier of a tree holds a share of the maximum (dataBits05, with a dataBits02 of
   /// 0) that is not read: a share of Focus above 1.0 or not a positive number, or any share of
   /// a class vital. `data_bits05` is the column's 32 bits.
-  GainShareNotRead(
-    spell4_id: Int,
-    effect_id: Int,
-    vital: Int,
-    data_bits05: Int,
-  )
+  GainShareNotRead(spell4_id: Int, effect_id: Int, vital: Int, data_bits05: Int)
   /// An effect of a tree is behind a target apply prerequisite, or, for a lasting, remove,
   /// modifier or heal row, a caster apply prerequisite, with a condition of a type the
   /// server has not decoded (`prerequisite.unread_types`).
@@ -6250,17 +6252,45 @@ pub fn tag_of(effect effect: spell4_effects.Spell4Effects) -> spend.Tag {
   spend.tag_of(comparison: effect.emm_comparison, value: effect.emm_value)
 }
 
-/// What a gain gives: the resource slot of a gain's vital: 6 (Resource1) is slot 1 and 8
-/// (Resource3) slot 3, the innate cost types' numbering (`Spell4Effects.effectType.1`); the
-/// kit holds no other.
+/// What a gain gives, by the vital its dataBits00 names (`Spell4Effects.effectType.1`):
+/// 6 (Resource1) is the points of slot 1 and 8 (Resource3) of slot 3, the innate cost
+/// types' numbering; 15 is Focus; 4, 12, 13, 14, 18 and 19 are the vitals the class
+/// mechanic takes for a cost (`0x1405e7980`), which land in the slot of the player's class
+/// that names them. The amount is the points of dataBits02, or, when that is 0 and
+/// dataBits05 is not, a share of the maximum Focus (`Spell4Effects.dataBits05`); any other
+/// vital, a share above 1.0 of Focus and a share of a class vital are not read.
 fn gift_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Gift, PlanError) {
-  case effect.data_bits00 {
-    6 | 8 ->
-      Ok(SlotPoints(slot: effect.data_bits00 - 5, points: effect.data_bits02))
-    vital -> Error(GainVitalNotRead(spell4_id:, effect_id: effect.id, vital:))
+  let vital = effect.data_bits00
+  let points = effect.data_bits02
+  let share_not_read =
+    GainShareNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      vital:,
+      data_bits05: effect.data_bits05,
+    )
+  case vital, points, effect.data_bits05 {
+    6, _, _ | 8, _, _ -> Ok(SlotPoints(slot: vital - 5, points:))
+    15, 0, bits if bits != 0 ->
+      case float32.of_column(number: bits) {
+        Ok(share) if share >. 0.0 && share <=. 1.0 -> Ok(FocusShare(share:))
+        Ok(_) | Error(Nil) -> Error(share_not_read)
+      }
+    15, _, _ -> Ok(FocusPoints(points:))
+    4, 0, bits
+    | 12, 0, bits
+    | 13, 0, bits
+    | 14, 0, bits
+    | 18, 0, bits
+    | 19, 0, bits
+      if bits != 0
+    -> Error(share_not_read)
+    4, _, _ | 12, _, _ | 13, _, _ | 14, _, _ | 18, _, _ | 19, _, _ ->
+      Ok(ClassVitalPoints(vital:, points:))
+    _, _, _ -> Error(GainVitalNotRead(spell4_id:, effect_id: effect.id, vital:))
   }
 }
 
@@ -7074,6 +7104,16 @@ fn slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
   }
 }
 
+/// The slot a caster requirement type reads and the result its failure gives: the slots of
+/// `slot_of`, and type 15, Focus, which fails with 167 (`0x1403b1780`,
+/// `Spell4.casterInnateRequirement.15`).
+fn requirement_slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
+  case vital_type {
+    15 -> Ok(#(class_resource.focus_slot, focus_refusal))
+    _ -> slot_of(vital_type:)
+  }
+}
+
 /// The spell's caster vital requirements, as (type, eval, value): type 0 is none
 /// (`0x1403b1780`).
 fn requirements_of(
@@ -7082,7 +7122,7 @@ fn requirements_of(
 ) -> Result(List(Requirement), PlanError) {
   list.try_map(requirements, fn(requirement) {
     let #(requirement_type, eval, value) = requirement
-    case requirement_type, slot_of(vital_type: requirement_type) {
+    case requirement_type, requirement_slot_of(vital_type: requirement_type) {
       0, _ -> Ok(None)
       _, Ok(#(slot, result)) ->
         Ok(

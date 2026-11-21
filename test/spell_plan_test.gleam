@@ -1209,7 +1209,7 @@ pub fn a_requirement_of_type_15_plans_as_a_focus_requirement_with_result_167_and
   use <- owned_test.run(60_000)
   // Spell4.casterInnateRequirement.15: type 15 tests the caster's Focus (slot -1) and its
   // failure gives 167 (Spell4CastResult.167). Rows: 26636 holds eval 8 (a percentage, less
-  // than) of 100; 39136 holds eval 2 (the amount, at least) of 55.
+  // than) of 100; 45420 holds eval 2 (the amount, at least) of 5.
   assert spell_tables.client_spell(26_636).requirements
     == [
       spell_plan.Requirement(
@@ -1221,17 +1221,17 @@ pub fn a_requirement_of_type_15_plans_as_a_focus_requirement_with_result_167_and
       ),
     ]
     as "26636: type 15, eval 8, value 100"
-  assert spell_tables.client_spell(39_136).requirements
+  assert spell_tables.client_spell(45_420).requirements
     == [
       spell_plan.Requirement(
         slot: -1,
         measure: spell_plan.Amount,
         comparison: spell_plan.AtLeast,
-        value: 55,
+        value: 5,
         result: 167,
       ),
     ]
-    as "39136: type 15, eval 2, value 55"
+    as "45420: type 15, eval 2, value 5"
   // 88568 (the Fusion Probe) holds type 18 in requirement0 and type 15 in requirement1:
   // type 18 is read through the class mechanic's default case with registers the client
   // never sets (the fact's open question), so it is not read and the whole spell is left out.

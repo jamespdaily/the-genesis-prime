@@ -1529,11 +1529,9 @@ Spell4	59886	Recharge tier of 42596: Actuator shares of a per-Actuator Focus sha
 Spell4	59887	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
 Spell4	59888	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
 Spell4	59889	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
-Spell4	40008	A gain of 1.0 of the Focus maximum (effect 88544)	spell_plan_gain_test
-Spell4	34473	A gain of 100.0 of the Focus maximum (effect 86177)	spell_plan_gain_test
 Spell4	64945	A Focus gain with no amount (effect 161906)	spell_plan_gain_test
 Spell4	26636	A caster requirement of type 15, a percentage (eval 8, value 100)	spell_plan_test, cast_focus_test
-Spell4	39136	A caster requirement of type 15 of at least 55 (eval 2)	spell_plan_test, cast_focus_test
+Spell4	45420	A caster requirement of type 15 of at least 5 (eval 2)	spell_plan_test, cast_focus_test
 Spell4	88568	A Fusion Probe: requirement0 of type 18 and requirement1 of type 15	spell_plan_test
 Spell4	81977	Life Force, whose persistence holds Prerequisite 38318 (type 71 of vital 15)	cast_persistence_test, cast_prerequisite_test
 Spell4	83563	Desperate Hope, whose eight caster apply prerequisites 39896 to 39903 hold type 71 or 73 of vital 15	cast_prerequisite_test

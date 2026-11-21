@@ -14,9 +14,9 @@
 ////   maximum Focus"; Recharge's four rows 228352, 228357, 228361 and 228363: 0.05 to 0.20
 ////   per Actuator held, text 383170 "restore ... of your maximum Focus per Actuator", each
 ////   behind the Prerequisite that picks the Actuator count: 43658, 43659, 43660 and
-////   29891); a dataBits02 holds points (Rations' row 88371: 80, text 270070 "80 Focus
-////   every second while channeling"); 88544 holds 1.0, 86177 100.0 ("Full Heal") and
-////   161906 holds no amount.
+////   29891); a dataBits02 holds points (Rations' row 88371: 80 in dataBits01 and dataBits02,
+////   which text 270070 prints as "... Focus every second while channeling"); 88544 holds
+////   1.0, 86177 100.0 ("Full Heal") and 161906 holds no amount.
 //// - `Spell4Effects.effectType.26.dataBits06`: five level-1 Proxies name a
 ////   Prerequisite in dataBits06, which gates them against the caster.
 //// - The design of issue 418: a gain of a child started at each struck unit is
@@ -434,14 +434,18 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
   // dataBits05 in (0, 1.0] a share of the maximum, neither no points.
   list.each(
     [
-      #(34_776, 88_371, FocusPoints(80), "Rations: dataBits02 80, text 270070"),
+      #(
+        34_776,
+        88_371,
+        FocusPoints(80),
+        "Rations: dataBits02 80, as text 270070 prints it",
+      ),
       #(
         32_818,
         65_493,
         FocusShare(0.04),
         "Meditate: dataBits05 0.04 of the maximum, text 243889",
       ),
-      #(40_008, 88_544, FocusShare(1.0), "dataBits05 1.0 is the whole maximum"),
       #(
         64_945,
         161_906,
@@ -458,15 +462,35 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
       assert is_gift(gift, expected) as why
     },
   )
-  // A share above 1.0 is not read: Spell4Effects 86177 of 34473 holds 100.0 ("Full Heal"),
-  // and clamping it would read a name that says 100 times as the whole.
-  let assert Error(refused) =
-    planned_on(tables: fixture_tables.shared(), spell4_id: 34_473)
-    as "a share of 100.0 is refused"
-  let text = spell_plan.describe(error: refused)
-  assert string.contains(text, "34473") && string.contains(text, "86177")
+  // The rows of 1.0 (88544 and 101844, "Refill Resources") are in spells that also hold a
+  // vital 9 row, which the plan refuses, so Rations' 88371 is edited to hold 1.0: the whole
+  // maximum.
+  let assert Ok(whole) =
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 88_371,
+      with: [#("dataBits02", cell(0)), #("dataBits05", cell(1_065_353_216))],
+      body: fn(edited) { planned_on(tables: edited, spell4_id: 34_776) },
+    )
+    as "Rations with a share of 1.0 plans"
+  assert list.key_find(gifts_of(whole), 88_371) == Ok(FocusShare(1.0))
+    as "dataBits05 1.0 is the whole maximum"
+  // A share above 1.0 is not read: rows 86177, 105624, 175652, 175666 and 175671 hold 100.0
+  // or 10.0 ("Full Heal", "10% Heal"), and clamping them would read a name that says 100
+  // times as the whole. Their spells hold other rows the plan refuses, so Rations' 88371 is
+  // edited to 100.0.
+  let refused =
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 88_371,
+      with: [#("dataBits02", cell(0)), #("dataBits05", cell(1_120_403_456))],
+      body: fn(edited) { planned_on(tables: edited, spell4_id: 34_776) },
+    )
+  let assert Error(error) = refused as "a share of 100.0 is refused"
+  let text = spell_plan.describe(error:)
+  assert string.contains(text, "34776") && string.contains(text, "88371")
     as "the refusal names the spell and the row"
-  assert spell_plan.is_unbuilt(error: refused)
+  assert spell_plan.is_unbuilt(error:)
     as "a later ability with such a row is left out of the plans, not a failed load"
   // No client row holds a share on a class vital, so Recharge's -4 of vital 18 is edited to
   // dataBits02 0 and dataBits05 0.05.

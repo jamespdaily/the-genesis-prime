@@ -1403,7 +1403,8 @@ pub fn finished_effects(
 /// What a prerequisite may read about the caster, with no roll: the live casts it is
 /// the primary target of and what the live and lingering casts hold on it, whether it
 /// is in combat, and its vitals: its health and
-/// shield, and the one class resource slot it holds as Vital 5 to 11 (slots 0 to 6,
+/// shield, its Focus as vital 15 (0 of 0 for a class with none), and the one class
+/// resource slot it holds as Vital 5 to 11 (slots 0 to 6,
 /// `0x1403b3320`: the cost check reads Vitals 5 to 11 as the caster's resource slots
 /// 0 to 6; the getter type 71 and 73 call is not read case by case, so the same
 /// mapping is taken for it). A slot the class does not hold is no vital, so a
@@ -1445,7 +1446,10 @@ pub fn subject_of(
       |> list.append(nodes_held(cast:, caster:)),
     second_unit: Some(caster.unit_id),
     in_combat: caster.in_combat,
-    vitals: dict.merge(dict.from_list(held), caster.life_vitals),
+    vitals: dict.merge(
+      dict.from_list([focus_vital(caster:), ..held]),
+      caster.life_vitals,
+    ),
     difficulty: None,
     stealthed: Some(cast_state.stealthed(cast:)),
     resource_slots: Some(case slot >= 0 {
@@ -1464,6 +1468,25 @@ pub fn subject_of(
     seen: prerequisite.WholeUnit,
     checker: Some(caster.checker),
     first_unit: prerequisite.TheChecker,
+  )
+}
+
+/// The caster's Focus as vital 15 ( 0x140466520): the Focus held and its
+/// maximum, 0 of 0 for a class that holds none, as the client's unit holds it
+/// (`ConstructUnit` zeroes the word, property 5 defaults to 0).
+fn focus_vital(caster caster: Caster) -> #(Int, prerequisite.Vital) {
+  #(
+    15,
+    prerequisite.Vital(
+      current: class_resource.value(
+        resources: caster.resources,
+        slot: class_resource.focus_slot,
+      ),
+      maximum: class_resource.max(
+        resources: caster.resources,
+        slot: class_resource.focus_slot,
+      ),
+    ),
   )
 }
 

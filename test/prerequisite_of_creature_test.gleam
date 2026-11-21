@@ -247,7 +247,7 @@ pub fn creature_subject_is_a_creature_of_its_row_that_is_no_player_test() -> Nil
 
 pub fn a_creature_subject_holds_vital_15_as_0_of_0_test() -> Nil {
   use <- owned_test.run(5000)
-  // `Vital.15.unit`: a creature's 0x262 sends no stat 1, so its Focus word is the 0
+  // `UnitStat.1.Focus`: a creature's 0x262 sends no stat 1, so its Focus word is the 0
   // ConstructUnit leaves and property 5 defaults to 0. Type 71 of 0 over 0 is no number,
   // which only the equal comparison passes; type 73 reads the 0 points.
   assert comparisons(type_id: 71, object_id: 15, value: 30, facts: facts())

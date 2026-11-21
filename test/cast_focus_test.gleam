@@ -433,9 +433,9 @@ pub fn the_unread_focus_uses_are_listed_as_gaps_test() -> Nil {
   })
 }
 
-/// Friendly Fire, a Spellslinger's: a caster requirement of Focus at least 55 (eval 2).
-fn friendly_fire() -> Spell {
-  spell_tables.client_spell(39_136)
+/// Ignite S1 Test, a Spellslinger's: a caster requirement of Focus at least 5 (eval 2).
+fn ignite() -> Spell {
+  spell_tables.client_spell(45_420)
 }
 
 /// The Stimpack, a deprecated potion: a caster requirement of Focus below 100 percent
@@ -468,15 +468,15 @@ pub fn a_caster_requirement_of_focus_refuses_167_below_it_and_passes_at_it_a_per
   [
     #(
       "7.1",
-      scene(spell: friendly_fire(), class_id: spellslinger, focus: 54.9),
+      scene(spell: ignite(), class_id: spellslinger, focus: 4.9),
       Refused(167),
-      "39136 needs at least 55 of the Focus held (eval 2): 54.9 fails",
+      "45420 needs at least 5 of the Focus held (eval 2): 4.9 fails",
     ),
     #(
       "7.2",
-      scene(spell: friendly_fire(), class_id: spellslinger, focus: 55.0),
+      scene(spell: ignite(), class_id: spellslinger, focus: 5.0),
       Pays([]),
-      "55.0 meets it, and the requirement pays nothing",
+      "5.0 meets it, and the requirement pays nothing",
     ),
     #(
       "7.3",
@@ -498,9 +498,9 @@ pub fn a_caster_requirement_of_focus_refuses_167_below_it_and_passes_at_it_a_per
     ),
     #(
       "7.6",
-      scene(spell: friendly_fire(), class_id: warrior, focus: 1000.0),
+      scene(spell: ignite(), class_id: warrior, focus: 1000.0),
       Refused(167),
-      "a Warrior holds no Focus (0 held): the amount 0 is below 55",
+      "a Warrior holds no Focus (0 held): the amount 0 is below 5",
     ),
     #(
       "7.7",

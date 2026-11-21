@@ -1856,7 +1856,8 @@ pub fn using_rations_gives_80_focus_at_a_go_of_their_channel_to_a_healer_test() 
   use <- owned_test.run(20_000)
   // Item2 6914 (Rations) -> ItemSpecial 7476 -> Spell4 34776 (Basic Food): a channel (delay
   // 1000, maximum 10000, pulse 1000) whose row 88371 gives 80 points of Focus, vital 15 (text
-  // 270070 "80 Focus every second while channeling"). A Medic holding 500 Focus uses it.
+  // 270070 prints its 80 as "... Focus every second while channeling"). A Medic uses it, and
+  // the gains of its first go, applied to 500 of its Focus, hold 580.
   let rations = Drink("Rations", 6914, 1, 0, NothingEarlier, 1000, Buffs)
   let healer =
     cast_state.Caster(
