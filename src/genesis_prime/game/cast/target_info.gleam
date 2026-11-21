@@ -51,6 +51,21 @@ pub fn effect(
   )
 }
 
+/// The delay an effect info tells for an effect whose delay still to run is `delay_ms`, on
+/// a node that holds an effect lasting until removed or not. The client builds no buff for a
+/// node whose earliest start plus longest lifetime is 0 in 32 bits, and an effect that lasts
+/// until removed has all bits as its lifetime, so a delay of 1 on such a node is told as 2
+/// (`opcode.0x7f4.first_start`). Every other delay is told as it is.
+pub fn told_delay_ms(
+  delay_ms delay_ms: Int,
+  holds_until_removed holds_until_removed: Bool,
+) -> Int {
+  case delay_ms, holds_until_removed {
+    1, True -> 2
+    _, _ -> delay_ms
+  }
+}
+
 /// The result of an effect that tells no value: the bit whose meaning the client's
 /// reader does not use.
 pub fn bit() -> SpellEffectResult {

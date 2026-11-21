@@ -4808,6 +4808,7 @@ pub fn aimed_at(
           Listed(
             effect_id: row.effect_id,
             delay_ms: row.schedule.delay_ms,
+            until_removed: False,
             instance_id: None,
             damage: None,
           ),
@@ -4819,6 +4820,7 @@ pub fn aimed_at(
           Listed(
             effect_id: Spell4EffectsId(entry.0.tell.effect_id),
             delay_ms: entry.0.tell.row.delay_ms,
+            until_removed: entry.0.tell.row.until_removed,
             instance_id: Some(entry.0.tell.instance_id),
             damage: None,
           ),
@@ -4830,6 +4832,7 @@ pub fn aimed_at(
           Listed(
             effect_id: entry.0.row.effect_id,
             delay_ms: entry.0.row.row.delay_ms,
+            until_removed: entry.0.row.row.until_removed,
             instance_id: Some(entry.0.instance_id),
             damage: None,
           ),
@@ -4845,6 +4848,7 @@ pub fn aimed_at(
               Listed(
                 effect_id: effect.effect_id,
                 delay_ms: effect.delay_ms,
+                until_removed: False,
                 instance_id: None,
                 damage: None,
               ),
@@ -4882,35 +4886,44 @@ pub fn aimed_at(
 fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
   reached
   |> list.filter_map(fn(entry) {
-    let listed = fn(place: Int, delay_ms: Int, damage: Option(_)) {
-      Ok(#(
+    let listed = fn(place: Int, effect: Listed) {
+      Ok(#(place, entry.unit_id, effect))
+    }
+    let by_row = fn(place: Int, row: lasting.LastingRow) {
+      listed(
         place,
-        entry.unit_id,
+        cast_state.listed_by_row(effect_id: entry.effect.effect_id, row:),
+      )
+    }
+    let without_row = fn(place: Int, delay_ms: Int, damage: Option(_)) {
+      listed(
+        place,
         Listed(
           effect_id: entry.effect.effect_id,
           delay_ms:,
+          until_removed: False,
           instance_id: None,
           damage:,
         ),
-      ))
+      )
     }
     case entry.effect.kind, entry.product {
-      spell_plan.StealthEffect(stealth: row), _ ->
-        listed(0, row.row.delay_ms, None)
-      spell_plan.ProcEffect(proc: row), _ -> listed(1, row.row.delay_ms, None)
-      spell_plan.LastingEffect(lasting: row), _ ->
-        listed(2, row.row.delay_ms, None)
-      spell_plan.ModifierEffect(modifier: row), _ ->
-        listed(3, row.row.delay_ms, None)
+      spell_plan.StealthEffect(stealth: row), _ -> by_row(0, row.row)
+      spell_plan.ProcEffect(proc: row), _ -> by_row(1, row.row)
+      spell_plan.LastingEffect(lasting: row), _ -> by_row(2, row.row)
+      spell_plan.ModifierEffect(modifier: row), _ -> by_row(3, row.row)
       spell_plan.ForcedMoveEffect(forced_move: row), _ ->
-        listed(4, row.delay_ms, None)
+        without_row(4, row.delay_ms, None)
       spell_plan.StruckMoveEffect(struck_move: row), _ ->
-        listed(5, row.delay_ms, None)
-      spell_plan.CooldownEffect(modifier: row), _ ->
-        listed(6, row.row.delay_ms, None)
-      spell_plan.RemoveEffect(..), _ -> listed(7, 0, None)
+        without_row(5, row.delay_ms, None)
+      spell_plan.CooldownEffect(modifier: row), _ -> by_row(6, row.row)
+      spell_plan.RemoveEffect(..), _ -> without_row(7, 0, None)
       spell_plan.HealEffect(..), Healing(healed:) ->
-        listed(8, healed.delay_ms, Some(cast_heal.heal_description(healed:)))
+        without_row(
+          8,
+          healed.delay_ms,
+          Some(cast_heal.heal_description(healed:)),
+        )
       spell_plan.HealEffect(..), Plain
       | spell_plan.HealEffect(..), CooldownKept(..)
       | spell_plan.ProxyEffect(..), _

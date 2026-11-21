@@ -191,9 +191,8 @@ pub fn entries_of(
 
 /// The target info of one target: each held effect with the delay still to run and the
 /// time left from `now_ms`, numbered from 1, a Hit with the node's count. A node that
-/// holds an effect lasting until removed is told 2 for a delay of 1, as the client
-/// builds no buff for a node whose earliest start plus longest lifetime is 0
-/// (`opcode.0x7f4.first_start`).
+/// holds an effect lasting until removed is told 2 for a delay of 1
+/// (`target_info.told_delay_ms`).
 fn target_of_view(
   target target: ViewTarget,
   index index: Int,
@@ -210,10 +209,10 @@ fn target_of_view(
       target_info.effect(
         effect_id: held.effect_id.value,
         instance_id: effect_index + 1,
-        delay_ms: case int.max(0, held.starts_ms - now_ms) {
-          1 if holds_until_removed -> 2
-          delay_ms -> delay_ms
-        },
+        delay_ms: target_info.told_delay_ms(
+          delay_ms: int.max(0, held.starts_ms - now_ms),
+          holds_until_removed:,
+        ),
         lifetime_ms: case held.ends {
           EndsAt(ms:) -> lasting.time_left_ms(end_ms: ms, now_ms:)
           UntilRemoved -> 0
