@@ -618,7 +618,7 @@ pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_a
   let time = driven_time.new()
   let world = crowded_world(time:)
   let run = world_watch_support.started(world)
-  let _received = world_support.connection(world:, id: 1)
+  world_support.connection_that_keeps_nothing(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   let _last =
     world_watch_support.creature_pid(
@@ -640,7 +640,7 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   let time = driven_time.new()
   let world = crowded_world(time:)
   let run = world_watch_support.started(world)
-  let _received = world_support.connection(world:, id: 1)
+  world_support.connection_that_keeps_nothing(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   event_wait.until("the first creature of the burst runs", fn() {
     world_support.creature_pids(world) != []
