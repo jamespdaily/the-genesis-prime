@@ -1333,14 +1333,19 @@ fn holding_focus(
 pub fn a_focus_gain_raises_the_pool_by_points_or_a_share_of_the_maximum_clamps_keeps_the_timer_and_changes_nothing_for_the_dead_or_a_class_with_none_test() -> Nil {
   use <- owned_test.run(5000)
   let focus_timer = class_resource.focus_timer
-  let dead = class_resource.died(resources: holding_focus(4, 1000.0, 500)).0
+  let dead =
+    class_resource.died(resources: holding_focus(
+      class_id: 4,
+      pool: 1000.0,
+      held: 500,
+    )).0
   // Name, the resources, the gains, the changes (slot, value) and the timers started and
   // cancelled. Points are dataBits02; a share is the fraction of the maximum, 0.04 for
   // Meditate (text 243889 "Restore 4% of your maximum Focus"): 40 of 1000, 50 of 1250.
   [
     #(
       "points",
-      holding_focus(4, 1000.0, 500),
+      holding_focus(class_id: 4, pool: 1000.0, held: 500),
       [Gain(slot: -1, amount: 80)],
       [#(-1, 580.0)],
       [],
@@ -1349,7 +1354,7 @@ pub fn a_focus_gain_raises_the_pool_by_points_or_a_share_of_the_maximum_clamps_k
     ),
     #(
       "a share of 1000",
-      holding_focus(4, 1000.0, 500),
+      holding_focus(class_id: 4, pool: 1000.0, held: 500),
       [class_resource.FocusShare(share: 0.04)],
       [#(-1, 540.0)],
       [],
@@ -1358,7 +1363,7 @@ pub fn a_focus_gain_raises_the_pool_by_points_or_a_share_of_the_maximum_clamps_k
     ),
     #(
       "a share of 1250",
-      holding_focus(4, 1250.0, 500),
+      holding_focus(class_id: 4, pool: 1250.0, held: 500),
       [class_resource.FocusShare(share: 0.04)],
       [#(-1, 550.0)],
       [],
@@ -1367,7 +1372,7 @@ pub fn a_focus_gain_raises_the_pool_by_points_or_a_share_of_the_maximum_clamps_k
     ),
     #(
       "a gain that fills the pool",
-      holding_focus(4, 1000.0, 990),
+      holding_focus(class_id: 4, pool: 1000.0, held: 990),
       [Gain(slot: -1, amount: 50)],
       [#(-1, 1000.0)],
       [],
@@ -1376,7 +1381,7 @@ pub fn a_focus_gain_raises_the_pool_by_points_or_a_share_of_the_maximum_clamps_k
     ),
     #(
       "a share that fills the pool",
-      holding_focus(4, 1000.0, 900),
+      holding_focus(class_id: 4, pool: 1000.0, held: 900),
       [class_resource.FocusShare(share: 1.0)],
       [#(-1, 1000.0)],
       [],
@@ -1385,7 +1390,7 @@ pub fn a_focus_gain_raises_the_pool_by_points_or_a_share_of_the_maximum_clamps_k
     ),
     #(
       "a share of 0",
-      holding_focus(4, 1000.0, 500),
+      holding_focus(class_id: 4, pool: 1000.0, held: 500),
       [class_resource.FocusShare(share: 0.0)],
       [],
       [],
