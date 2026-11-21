@@ -6,9 +6,10 @@ per subagent, `PROJECT/SESSION/subagents/agent-ID.meta.json` (`agentType`, `desc
 `finished: true` once the agent ends) and `agent-ID.jsonl` (its transcript, appended each turn). A builder
 runs when its meta has `agentType == "implementer"`, no `finished`, and a transcript written within
 LIVE_SECONDS; a builder that died stops counting then. A meta with no transcript yet is a builder
-starting, and counts for PENDING_SECONDS from the meta's own last write. PROJECT is the folder of the hook input's
-`transcript_path`, so builders of earlier sessions still count. Reviewers, investigators and other
-agents are neither counted nor refused.
+starting, and counts for PENDING_SECONDS from the meta's own last write. After a `/clear` Claude Code
+keeps an agent's files under several session folders: an agent id counts once, by the copy written last. PROJECT is
+the folder of the hook input's `transcript_path`, so builders of earlier sessions still count. Reviewers,
+investigators and other agents are neither counted nor refused.
 
 Two spawns in one message reach the hook before either agent's meta exists. Each allowed start is
 written to a ledger (`EPOCH TOOL_USE_ID` lines, under `fcntl.flock`) and counts as a running builder for
@@ -39,16 +40,17 @@ LEDGER = Path.home() / ".genesis-prime" / "builder-starts"
 
 
 def running_builders(project: Path, now: float) -> tuple[list[tuple[str, str, float]], set[str]]:
-    """The live builders as (agent id, description, seconds since its last write), and every `toolUseId` with a meta."""
-    live = []
+    """The live builders as (agent id, description, seconds since its last write), and every `toolUseId` with a meta.
+
+    An agent kept under several session folders is one builder: the copy written last decides.
+    """
+    newest = {}
     shown = set()
     for meta_path in sorted(project.glob("*/subagents/agent-*.meta.json")):
         agent_id = meta_path.name.removeprefix("agent-").removesuffix(".meta.json")
         try:
             meta = json.loads(meta_path.read_text())
             shown.add(meta.get("toolUseId"))
-            if meta.get("agentType") != "implementer" or meta.get("finished"):
-                continue
             transcript = meta_path.with_name(f"agent-{agent_id}.jsonl")
             if transcript.exists():
                 quiet, limit = now - transcript.stat().st_mtime, LIVE_SECONDS
@@ -56,7 +58,11 @@ def running_builders(project: Path, now: float) -> tuple[list[tuple[str, str, fl
                 quiet, limit = now - meta_path.stat().st_mtime, PENDING_SECONDS
         except (OSError, ValueError):
             continue
-        if quiet <= limit:
+        if agent_id not in newest or quiet < newest[agent_id][0]:
+            newest[agent_id] = (quiet, limit, meta)
+    live = []
+    for agent_id, (quiet, limit, meta) in newest.items():
+        if meta.get("agentType") == "implementer" and not meta.get("finished") and quiet <= limit:
             live.append((agent_id, meta.get("description", ""), quiet))
     return live, shown
 
