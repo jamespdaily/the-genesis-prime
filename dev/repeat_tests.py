@@ -33,8 +33,9 @@ it is reported as "not repeated", never as passed, and its later runs do not sta
 
 Each failing run is printed as soon as it ends: its file, seed, why it failed (failing
 tests, killed by a signal, a non-zero exit, no result line, still going at the run limit), the command that repeats it
-(`GENESIS_TEST_SEED_SALT=SEED gleam test -- FILE --seed SEED`) and the part of its output that says why. The output of every run is kept in the folder
-the failure names. The script exits 1 when a run's tests failed, a run crashed or a run was killed at the limit, 2 for a setting or a
+(`GENESIS_TEST_SEED_SALT=SEED gleam test -- FILE --seed SEED`), the text of the warnings the run logged before its
+"Failures:" section (a refusal the server logged is among them, and the section hides it) and the part of its output that
+says why. The output of every run is kept in the folder the failure names. The script exits 1 when a run's tests failed, a run crashed or a run was killed at the limit, 2 for a setting or a
 git answer it cannot use, and 0 otherwise, warnings included. It starts `erl` from PATH, so run it with the patched OTP first on PATH,
 as ./check does.
 """
@@ -77,6 +78,9 @@ PASSED_COUNT = re.compile(r"^(\d+) passed, ", re.MULTILINE)
 FAILING_TEST = re.compile(r"^\s*\d+\) (\S+) \(", re.MULTILINE)
 FAILURES_MARK = "Failures:"
 EXCERPT_LINES = 60
+# The header of an Erlang logger report; a warning's text follows it, up to the next header.
+WARNING_REPORT_MARK = "=WARNING REPORT===="
+ANY_REPORT = re.compile(r"^=[A-Z ]+ REPORT====")
 TAIL_LINES = 20
 
 
@@ -185,7 +189,23 @@ def report_failure(outcome: Outcome) -> None:
     print("  output: %s" % outcome.log)
     lines = text.splitlines()
     start = lines.index(FAILURES_MARK) if FAILURES_MARK in lines else max(len(lines) - TAIL_LINES, 0)
+    warnings = warning_lines(lines[:start])
+    if warnings:
+        print("  warnings the server logged before the failures (the last %d lines):" % EXCERPT_LINES)
+        print_excerpt(warnings[-EXCERPT_LINES:])
     print_excerpt(lines[start:start + EXCERPT_LINES])
+
+
+def warning_lines(lines: list[str]) -> list[str]:
+    """The text of each warning report among the lines, which the failures section comes after and so hides."""
+    kept: list[str] = []
+    inside = False
+    for line in lines:
+        if ANY_REPORT.match(line):
+            inside = line.startswith(WARNING_REPORT_MARK)
+        elif inside and line.strip():
+            kept.append(line)
+    return kept
 
 
 def print_excerpt(lines: list[str]) -> None:

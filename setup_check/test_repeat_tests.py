@@ -7,7 +7,8 @@ that `./check` starts on the built code (run_built). The stub takes the argument
 the real VM takes (`-extra FILE --seed N --no-color`), keeps one line per start in
 PLANT_REPEAT/starts.log (its ticket number, seed, file, how many stubs were alive
 beside it, and the skip variables it was given), and prints what unitest prints:
-the status line, the seed, and for a failing run the "Failures:" section. The log line
+the status line, the seed, and for a failing run a warning report and a crash report
+before its status line, then the "Failures:" section. The log line
 ends with the GENESIS_TEST_SEED_SALT the stub was given (test/fixed_seed.gleam reads it).
 
 - PLANT_AT_ONCE=N: each of the first N stubs to start waits until all N have started
@@ -83,6 +84,11 @@ if [ -n "$PLANT_AT_ONCE" ] && [ "$ticket" -le "$PLANT_AT_ONCE" ]; then
 fi
 rm -f "$dir/alive.$$"
 if [ "$ticket" = "$PLANT_FAILS_ON_START" ]; then
+  echo "=WARNING REPORT==== 21-Nov-2026::05:30:02.454814 ==="
+  echo "0x035B names quest 10525, which no giver in reach starts: the client would not have sent it"
+  echo "=CRASH REPORT==== 21-Nov-2026::05:30:02.454912 ==="
+  echo "  crasher:"
+  echo "    initial call: planted:run/0"
   echo "1 passed, 1 failures"
   echo "Finished in 3 milliseconds"
   echo "Seed: $seed"
@@ -322,6 +328,16 @@ class RepeatTestsTest(PlantedRepeatCase):
             if row not in failing.values():
                 self.assertNotIn(row["seed"], output, "a passing run's seed is not named")
         self.assertIn("3 of 40 runs failed", output, "a killed run counts as failed")
+
+    def test_a_failing_run_prints_the_warnings_logged_before_its_failures_section(self):
+        self.commit("change a test file", change=["test/changed_test.gleam"])
+        done = self.run_script(GENESIS_REPEAT_RUNS="6", GENESIS_REPEAT_AT_ONCE="3", PLANT_FAILS_ON_START="4")
+        output = done.stdout + done.stderr
+        self.assertEqual(done.returncode, 1, output)
+        refusal = "    0x035B names quest 10525, which no giver in reach starts: the client would not have sent it"
+        self.assertEqual(output.count(refusal), 1, "the failing run's refusal line is printed, once")
+        self.assertLess(output.index(refusal), output.index("Failures:"), "the warnings come before the section")
+        self.assertNotIn("initial call: planted:run/0", output, "a crash report's lines are not warnings")
 
     def test_a_run_the_tool_killed_fails_the_repeat(self):
         self.commit("change a test file", change=["test/changed_test.gleam"])

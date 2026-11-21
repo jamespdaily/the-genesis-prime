@@ -89,6 +89,7 @@ import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/static_object
+import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
@@ -342,6 +343,34 @@ pub fn send_world(
   body body: BitArray,
 ) -> Nil {
   send(game:, message_id: 0x038C, body: world_message_body(message_id:, body:))
+}
+
+/// Sends a world message and then the ping with `number` in one socket write, so
+/// the connection takes both from one read and writes its pong right after its
+/// own answer to the message, before any message another process writes in
+/// answer to it. `read_through_pong` reads the answer.
+pub fn send_world_then_ping(
+  game game: Game,
+  message_id message_id: Int,
+  body body: BitArray,
+  number number: Int,
+) -> Nil {
+  let assert Ok(ping) = frame.encode(0x0000, <<number:size(8)>>)
+    as "a ping frames"
+  let assert Ok(Nil) =
+    mug.send(
+      game.socket,
+      bit_array.concat([
+        client_bytes(
+          message_id: 0x038C,
+          body: world_message_body(message_id:, body:),
+          cipher: game.cipher,
+        ),
+        ping,
+      ]),
+    )
+    as "the server closed the connection before the message and the ping"
+  Nil
 }
 
 /// Presses the ability held at `bag_index`, as the client's action bar does
@@ -1619,6 +1648,16 @@ pub fn read_until_pong(
   number number: Int,
 ) -> #(List(Frame), BitArray) {
   send_ping(game:, number:)
+  read_through_pong(game:, have:, number:)
+}
+
+/// Reads every message the connection wrote up to its pong with `number`, as
+/// `read_until_pong` does, for a ping already sent.
+pub fn read_through_pong(
+  game game: Game,
+  have have: BitArray,
+  number number: Int,
+) -> #(List(Frame), BitArray) {
   open_wait.named("the game server's pong " <> int.to_string(number), fn() {
     collect_until_pong(game:, have:, number:, found: [])
   })

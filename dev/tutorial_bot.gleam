@@ -247,6 +247,82 @@ pub fn play_opening(
   Ok(Played(frames: list.flatten(list.reverse(bot.chunks))))
 }
 
+/// Where `play_to_the_dorians` leaves the bot: the connection, the bytes read beyond
+/// the last pong, what it knows of the units, where it stands and its movement clock.
+pub type Standing {
+  Standing(
+    game: Game,
+    have: BitArray,
+    units: Units,
+    at: Point,
+    clock: Int,
+    own: Int,
+  )
+}
+
+/// Plays the first steps of `play` and stops with 10529 accepted and a Dorian
+/// (Creature2 73491) in sight: the entry, 10513, 10527 and 10518.
+pub fn play_to_the_dorians(
+  game game: Game,
+  have have: BitArray,
+  entry entry: List(Frame),
+  env env: Env,
+) -> Result(Standing, Stuck) {
+  let bot = at_the_entry(game:, have:, entry:, env:)
+  use bot <- step(bot, "enter the simulation", entered)
+  use bot <- step(bot, "10513: visit the three places", the_first_visits)
+  use bot <- step(
+    bot,
+    "10527: hoverboard, finish line, projector",
+    hoverboard_run,
+  )
+  use bot <- step(
+    bot,
+    "10518: beasts, mines, turrets, ring",
+    the_training_fights,
+  )
+  use bot <- step(bot, "a Dorian in sight", fn(bot) {
+    let #(bot, _, _) = find(bot, [dorian])
+    Ok(bot)
+  })
+  Ok(Standing(
+    game: bot.game,
+    have: bot.have,
+    units: bot.units,
+    at: bot.at,
+    clock: bot.clock,
+    own: bot.own,
+  ))
+}
+
+/// The standing after the bot moves to where a unit at `at` is within reach of use,
+/// and reads all the connection wrote in answer.
+pub fn approach_unit(standing standing: Standing, at at: Point) -> Standing {
+  let bot =
+    approach(
+      bot: Bot(
+        game: standing.game,
+        env: Env(advance: fn(_) { Nil }, recharge_ms: 0, settled: fn(_) { Nil }),
+        have: standing.have,
+        chunks: [],
+        units: standing.units,
+        at: standing.at,
+        zone: entry_zone,
+        clock: standing.clock,
+        cast_id: 1,
+        own: standing.own,
+      ),
+      at:,
+    )
+  Standing(
+    ..standing,
+    have: bot.have,
+    units: bot.units,
+    at: bot.at,
+    clock: bot.clock,
+  )
+}
+
 /// The bot standing where the entry placed it, holding the entry's frames.
 fn at_the_entry(
   game game: Game,
@@ -283,8 +359,8 @@ fn step(
   bot bot: Bot,
   name name: String,
   run run: fn(Bot) -> Result(Bot, Blocked),
-  then then: fn(Bot) -> Result(Played, Stuck),
-) -> Result(Played, Stuck) {
+  then then: fn(Bot) -> Result(played, Stuck),
+) -> Result(played, Stuck) {
   case open_wait.named(name, fn() { run(bot) }) {
     Ok(bot) -> then(bot)
     Error(Blocked(reason:)) -> Error(Stuck(step: name, reason:))
@@ -366,6 +442,7 @@ fn the_talks(bot: Bot) -> Result(Bot, Blocked) {
     quest_bot.use_unit(game: bot.game, have: bot.have, unit_id: dorian_unit)
   let bot = took(bot:, frames: answer.frames, have:)
   let bot = await_state(bot:, quest_id: 10_529, state: 3)
+  let bot = spend(await_gone(bot:, unit_id: dorian_unit), dorian_unit)
   use bot <- result.try(accept_from(
     bot:,
     givers: [dorian],
@@ -597,6 +674,22 @@ fn await_state(bot bot: Bot, quest_id quest_id: Int, state state: Int) -> Bot {
         found: told,
       )
   }
+}
+
+/// Returns once the server has removed the unit from the bot's picture (0x355): at
+/// once when an earlier read held it, else when it comes. A unit the objective's
+/// release rule removes is removed by the map, so its 0x355 is not ordered against
+/// the pong that ended the use, and a unit chosen before it came would be gone by the
+/// next talk.
+fn await_gone(bot bot: Bot, unit_id unit_id: Int) -> Bot {
+  use <- bool.guard(when: !dict.has_key(bot.units.others, unit_id), return: bot)
+  read_until(
+    bot,
+    what: "0x355 of unit " <> int.to_string(unit_id),
+    found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), unit_id)
+    },
+  )
 }
 
 // Moving
