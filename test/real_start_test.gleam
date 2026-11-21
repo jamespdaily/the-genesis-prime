@@ -139,6 +139,7 @@ fn unreached_report(node node: Node, wanted wanted: String) -> String {
   let waits =
     list.filter(lines, fn(line) { string.starts_with(line, "step: ") })
   let quest_steps = list.filter(waits, is_a_quest_step)
+  let seeds = list.filter(lines, string.starts_with(_, "seed "))
   "the node ended with status "
   <> int.to_string(status)
   <> " before it printed \""
@@ -147,6 +148,8 @@ fn unreached_report(node node: Node, wanted wanted: String) -> String {
   <> string.join(list.drop(quest_steps, list.length(quest_steps) - 1), "\n")
   <> "\nthe last waits the bot named:\n"
   <> string.join(list.drop(waits, list.length(waits) - 3), "\n")
+  <> "\nthe seeds the node's listeners issued (they repeat under the test's name and GENESIS_TEST_SEED_SALT):\n"
+  <> string.join(seeds, "\n")
   <> "\nits last lines:\n"
   <> string.join(list.drop(lines, list.length(lines) - 25), "\n")
 }
@@ -255,4 +258,12 @@ pub fn a_bot_that_cannot_go_on_names_its_last_step_test() -> Nil {
     as report
   assert string.contains(report, "step: 0x262 of a unit of Creature2 73419")
     as report
+  let assert Ok(#(_before, after_label)) =
+    string.split_once(report, "\nseed connection 1 of the game listener: ")
+    as report
+  let digits = string.slice(after_label, 0, 64)
+  let hex = string.to_graphemes("0123456789ABCDEF")
+  assert string.length(digits) == 64
+    && list.all(string.to_graphemes(digits), list.contains(hex, _))
+    as "the report holds the node's seed for its game connection, 64 hex digits"
 }

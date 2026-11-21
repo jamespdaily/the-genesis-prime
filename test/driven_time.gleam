@@ -274,11 +274,11 @@ fn now_of(state: State) -> Now {
   )
 }
 
-/// The scripts of the connections of a server: the server's own script with this
-/// clock and these timers.
-pub fn scripts(time: Time) -> Scripts {
+/// The scripts of the connections of a server: the scripts `over` hands out, with
+/// this clock and these timers in place of theirs (the seed stays).
+pub fn scripts(time time: Time, over over: Scripts) -> Scripts {
   fn() {
-    let assert Ok(issued) = script.operating_system()
+    let assert Ok(issued) = over()
     Ok(
       Issued(
         ..issued,

@@ -123,7 +123,7 @@ fn flood(sending bytes: BitArray) -> Flooded {
     login_support.start_recording_auth(
       rate: login_support.servers_auth_rate(),
       recorder: recording_support.wire_recorder(folder),
-      scripts: driven_time.scripts(driven_time.new()),
+      time: driven_time.new(),
     )
   let client = login_client.connect(login_support.ports(started).auth_port)
   let assert [_hello] =

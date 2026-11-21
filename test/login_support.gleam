@@ -12,6 +12,7 @@ import database_support
 import driven_time
 import envoy
 import event_wait
+import fixed_seed
 import game_connection_support
 import genesis_prime
 import genesis_prime/add_account/sql
@@ -167,7 +168,7 @@ pub type Started {
 /// The server's settings for a test: the pool given, names made now, the
 /// listeners on ports the system picks, nothing recorded.
 pub fn settings(pool pool: pog.Config) -> server.Settings {
-  server.Settings(
+  fixed_seed.seeded(server.Settings(
     pool:,
     store: process.new_name("store"),
     hand_off: process.new_name("hand_off"),
@@ -181,7 +182,7 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     connection_shutdown_ms: 1000,
     login: login(),
     game: game(),
-  )
+  ))
 }
 
 /// The settings with the game connections and the World taking their time and
@@ -194,7 +195,10 @@ pub fn driven_by(
 ) -> server.Settings {
   server.Settings(
     ..settings,
-    game: server.Served(..settings.game, scripts: driven_time.scripts(time)),
+    game: server.Served(
+      ..settings.game,
+      scripts: driven_time.scripts(time:, over: settings.game.scripts),
+    ),
     world: server.World(
       ..settings.world,
       service_time: driven_time.service_time(time),
@@ -214,7 +218,10 @@ pub fn servers_settings() -> server.Settings {
 pub fn servers_settings_over(spawns spawns: Key) -> server.Settings {
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  genesis_prime.settings(tables: character_tables.shared(), spawns:)
+  fixed_seed.seeded(genesis_prime.settings(
+    tables: character_tables.shared(),
+    spawns:,
+  ))
 }
 
 /// The rate bucket the server's own settings give the auth rule.
@@ -224,11 +231,11 @@ pub fn servers_auth_rate() -> Bucket {
 
 /// Starts the server's tree as `start` does, with the auth listener's rate as
 /// `rate` and its connections recorded on the wire by `recorder`, each taking
-/// the time of its inputs and starting its timers from `scripts`.
+/// the time of its inputs and starting its timers from `time`.
 pub fn start_recording_auth(
   rate rate: Bucket,
   recorder recorder: WireRecorder,
-  scripts scripts: script.Scripts,
+  time time: driven_time.Time,
 ) -> Started {
   start_with(change: fn(settings) {
     let auth = settings.login.auth
@@ -240,7 +247,7 @@ pub fn start_recording_auth(
           ..auth,
           settings: auth_connection.Settings(..auth.settings, rate:),
           wire_recorder: Some(recorder),
-          scripts:,
+          scripts: driven_time.scripts(time:, over: auth.scripts),
         ),
       ),
     )
