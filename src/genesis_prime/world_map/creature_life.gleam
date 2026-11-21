@@ -200,12 +200,16 @@ pub fn interrupt_armor_of(maximum maximum: Float) -> InterruptArmor {
 /// (genesis_prime/world_map/spawn): the hit radius of its display
 /// (Creature2DisplayInfo.hitRadius), whom it may be attacked by, whom it fights on
 /// sight, its defence, its own attack, the auto-attacks it strikes with after it in turn,
-/// its specials and its Interrupt Armor.
+/// its specials and its Interrupt Armor. `fights` is False for a creature the client draws as
+/// a lying body (`Creature2.uiFlags.bit8`) that no kill objective counts: it takes no part in
+/// combat, so it aggroes no one, no strike starts a fight with it and no area picks it;
+/// `attackable` and `hostile_to` stay the faction's, which a click and a quest offer read.
 pub type Combat {
   Combat(
     hit_radius: Float,
     attackable: Attackable,
     hostile_to: Hostile,
+    fights: Bool,
     defence: Defence,
     attack: Attack,
     alternates: List(Attack),

@@ -28,6 +28,7 @@
 //// Every test loads the client's committed rows, so it runs in CI.
 
 import character_tables
+import client_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/area
@@ -47,6 +48,7 @@ import genesis_prime/world_map/creature_faction.{type Factions}
 import genesis_prime/world_map/creature_kind.{Kinds}
 import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
 import genesis_prime/world_map/creature_unit_type.{Turret}
+import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth,
 }
@@ -66,6 +68,7 @@ import place_support
 import planted_table.{Float, Integer}
 import rating_support
 import spawn_support
+import unitest
 import vendor_support
 
 /// The selection of the rows against the client's rows.
@@ -2539,4 +2542,122 @@ pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_targ
       as "SpellPhase 11613 at 3000 and the damage row 133289 (phaseFlags 1, go 0)"
     assert !aims_at_target as "propertyFlags 12582912 has no bit 0x2"
   })
+}
+
+/// Whether the creature of Creature2 `creature_id`, standing as a started spawn over the client's
+/// committed rows with these cells of its row changed, takes part in combat.
+fn fights_with(
+  creature_id creature_id: Int,
+  changes changes: List(#(String, planted_table.Cell)),
+) -> Bool {
+  let fights_over = fn(tables) {
+    let tables = character_tables.content_over(tables:)
+    let assert [started] =
+      spawn_support.started_over(tables:, rows: [
+        spawn_support.creature_row_of(tables:, number: 1, creature_id:),
+      ])
+      as "the creature starts"
+    started.combat.fights
+  }
+  case changes {
+    [] -> fights_over(character_tables.shared())
+    _ -> {
+      use tables <- fixture_tables.changed(
+        table: "Creature2",
+        id: creature_id,
+        with: changes,
+      )
+      fights_over(tables)
+    }
+  }
+}
+
+pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_names_it_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // The cells of uiFlags are the client's: 0x1AF holds bit 8 and 0xAF does not.
+  let cases = [
+    #(
+      13_277,
+      [],
+      False,
+      "uiFlags 0x1AF has bit 8: InitUnitFromCreate 0x140456960 draws it lying dead at health 0",
+    ),
+    #(50_716, [], False, "uiFlags 0x1AF, as 13277"),
+    #(50_717, [], False, "uiFlags 0x1AF, as 13277"),
+    #(
+      13_277,
+      [#("uiFlags", Integer(0xAF))],
+      True,
+      "bit 8 cleared with flags bit 0 kept: bit 0 alone keeps a creature in its fights",
+    ),
+    #(
+      40_115,
+      [],
+      False,
+      "Road Warrior: flags 0x6093 and activate spell 41294, uiFlags 0x12F with bit 8: the bit decides whatever the activate spell",
+    ),
+    #(
+      8047,
+      [],
+      True,
+      "Vault Data Crystal: flags bit 0 and uiFlags 47 without bit 8 fights as it did",
+    ),
+    #(73_464, [], True, "the Virtual Battle Beast, an ordinary enemy"),
+    #(73_465, [], True, "the Virtual Defense Dagun, an ordinary enemy"),
+    #(
+      37_723,
+      [],
+      True,
+      "a kill target (QuestObjective 13958, type 2) with uiFlags 0",
+    ),
+    #(
+      37_723,
+      [#("uiFlags", Integer(0x100))],
+      True,
+      "no client row holds a kill target with bit 8, so the row is edited to: the objective's kill rule keeps it in its fights",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(creature_id, changes, fights, reason) = row
+    assert fights_with(creature_id:, changes:) == fights as reason
+  })
+}
+
+pub fn only_a_creature_the_client_draws_dead_and_no_kill_objective_names_stays_out_of_fights_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let rows = creature2.all(tables)
+  let #(bodies, others) =
+    list.partition(rows, fn(row) { int.bitwise_and(row.ui_flags, 0x100) != 0 })
+  assert list.length(bodies) == 969
+    as "Creature2.tbl: 969 of its 56,369 rows have uiFlags bit 8 (the bit the client draws a lying body by)"
+  let kill_named = lying_body.kill_named(tables)
+  let fights = fn(row: creature2.Creature2) {
+    lying_body.fights(kill_named:, creature: row)
+  }
+  assert list.map(list.filter(bodies, fights), fn(row) { row.id })
+    == [37_640, 37_641, 37_642]
+    as "of the 969, only the three Augmented XAS Scientists (Dead) are named by a kill objective of the client's tables (QuestObjective 16224 and 16231, types 8 and 16 over TargetGroups that list them); the world database spawns none of the three"
+  assert list.all(others, fights)
+    as "no row with bit 8 clear is kept out of fights"
+}
+
+pub fn a_creature_that_never_fights_keeps_its_factions_hostility_and_who_may_attack_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spawn 18388, Dead Crash Survivor 13277, faction 171: level 0 to the Dominion 166
+  // (Faction2Relationship 685, Hostile) and 10 to Exile 167 (771, Friendly), and a player
+  // attacks a Hostile unit and not a Friendly one (`0x1403ad540`). A click, a quest offer and
+  // the refusal codes read these two (CheckInteractionTarget `0x1403add00`), so a body that
+  // fights no one still answers them as its faction does.
+  let assert [body, ..] =
+    spawn_support.started_of(spawn_support.crash_site_bodies())
+    as "the bodies start"
+  assert body.creature_id == Creature2Id(13_277)
+  assert !body.combat.fights
+  assert body.combat.hostile_to == Hostile(exile: False, dominion: True)
+    as "the faction's disposition is not blanked"
+  assert body.combat.attackable == Attackable(exile: False, dominion: True)
+    as "who may attack it is the faction's"
 }

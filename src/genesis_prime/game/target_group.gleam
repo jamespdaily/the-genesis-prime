@@ -1,6 +1,7 @@
 //// Whether a unit is in a TargetGroup row (`0x1403b4a20`, which a quest objective's kill
 //// test calls for its data and its reward pane).
 
+import genesis_prime/game/objective_kind.{type PlacedTarget}
 import genesis_prime/game/target_group_kind
 import genesis_prime/gap
 import genesis_prime/table/id.{
@@ -51,6 +52,20 @@ pub fn listed_creatures(
   group group: Int,
 ) -> List(Int) {
   listed(tables:, group:, path: []) |> list.unique
+}
+
+/// The Creature2 ids a kill objective's placed target names: the one creature of a type 2
+/// objective, or the creatures a type 8 or 16 objective's TargetGroup lists
+/// (`listed_creatures`). A group that holds a unit by its faction or race lists none.
+pub fn placed_creatures(
+  tables tables: table_store.Tables,
+  placed placed: PlacedTarget,
+) -> List(Int) {
+  case placed {
+    objective_kind.OneCreature(creature2_id:) -> [creature2_id.value]
+    objective_kind.GroupOf(target_group_id:) ->
+      listed_creatures(tables:, group: target_group_id.value)
+  }
 }
 
 fn listed(

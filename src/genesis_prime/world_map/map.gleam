@@ -2611,9 +2611,11 @@ fn in_ring(
   <=. range *. range
 }
 
-/// Whether the spawn's creature fights a player of the faction on sight.
+/// Whether the spawn's creature fights a player of the faction on sight: it takes part in
+/// combat (`Combat.fights`) and its faction is Hostile to the player's.
 fn hostile(spawn spawn: spawn.Spawn, faction_id faction_id: Int) -> Bool {
-  case shown.faction_of(faction_id:) {
+  spawn.combat.fights
+  && case shown.faction_of(faction_id:) {
     Ok(shown.Exile) -> spawn.combat.hostile_to.exile
     Ok(shown.Dominion) -> spawn.combat.hostile_to.dominion
     Error(Nil) -> False

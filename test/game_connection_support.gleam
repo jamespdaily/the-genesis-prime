@@ -2167,6 +2167,29 @@ pub fn creature_of_beast_appears_facing(
   creature_id creature_id: Int,
   yaw yaw: Float,
 ) -> Event(ConnectionEvent(Message, Answer)) {
+  beast_appearing(unit_id:, yaw:, as_spawn: fn(beast) {
+    spawn.Spawn(..beast, creature_id: Creature2Id(creature_id))
+  })
+}
+
+/// The news `beast_appears` gives, of a Beast that takes no part in combat
+/// (`creature_life.Combat.fights`), as the process of a creature drawn lying dead sends it.
+pub fn beast_appears_not_fighting(
+  unit_id unit_id: Int,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  beast_appearing(unit_id:, yaw: 0.0, as_spawn: fn(beast) {
+    spawn.Spawn(
+      ..beast,
+      combat: creature_life.Combat(..beast.combat, fights: False),
+    )
+  })
+}
+
+fn beast_appearing(
+  unit_id unit_id: Int,
+  yaw yaw: Float,
+  as_spawn as_spawn: fn(spawn.Spawn) -> spawn.Spawn,
+) -> Event(ConnectionEvent(Message, Answer)) {
   let place =
     start_place.turned(
       place: place_support.at(
@@ -2178,11 +2201,7 @@ pub fn creature_of_beast_appears_facing(
       ),
       facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
     )
-  let beast =
-    spawn.Spawn(
-      ..spawn_support.beast_at(number: 1, place:),
-      creature_id: Creature2Id(creature_id),
-    )
+  let beast = as_spawn(spawn_support.beast_at(number: 1, place:))
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
@@ -2199,6 +2218,7 @@ pub fn creature_of_beast_appears_facing(
       hit_radius: beast.combat.hit_radius,
       attackable: beast.combat.attackable,
       hostile_to: beast.combat.hostile_to,
+      fights: beast.combat.fights,
     ),
   ))
 }
@@ -2247,6 +2267,7 @@ pub fn creature_appears(
       hit_radius:,
       attackable: target.combat.attackable,
       hostile_to: target.combat.hostile_to,
+      fights: target.combat.fights,
     ),
   ))
 }

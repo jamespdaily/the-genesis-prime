@@ -454,6 +454,7 @@ fn picture_of(shown shown: Shown) -> shown.Picture {
         }),
         face: option.None,
         faced_yaw: option.None,
+        fights: True,
       ),
     ),
   ])

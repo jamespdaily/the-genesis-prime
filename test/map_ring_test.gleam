@@ -25,6 +25,7 @@ import gleam/list
 import map_spawn_support
 import map_support
 import owned_test
+import place_support
 import spawn_support
 
 /// The Virtual Defense Dagun's Creature2 id (`Creature2.73465`).
@@ -867,4 +868,59 @@ pub fn a_second_join_of_a_player_in_a_ring_names_no_life_and_the_map_keeps_the_o
   let #(_, died) = life(state:, at_ms: 6300, alive: False)
   assert map_spawn_support.death_sends(died) == [#(2, "PlayerDied by 1")]
     as "the connection's own tell of the death is a change, and the creature is told"
+}
+
+/// The place Jim stood at among the Crash Site bodies, inside the 10-unit ring of each
+/// (9.23, 1.01 and 9.24 units, in three dimensions, from spawns 18388, 18605 and 18619).
+fn beside_the_crash_site_bodies() -> start_place.Place {
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: spawn_support.warfare_woods,
+    x: 3954.5,
+    y: -709.7,
+    z: -5397.2,
+  )
+}
+
+pub fn a_dominion_player_beside_the_crash_site_bodies_sends_them_no_approached_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Faction2Relationship 685 (faction 171 to Dominion 166, level 0) makes the bodies
+  // Hostile to the Dominion, so only their uiFlags bit 8 (`Creature2.uiFlags.bit8`: the
+  // client draws them lying dead) keeps them out of a fight. The control is a Virtual
+  // Defense Dagun (Faction2Relationship 2946, level 0 to Dominion 166) 4.5 units from the
+  // player, which the same move does send an `Approached`, so the harness can fail.
+  let bodies = spawn_support.started_of(spawn_support.crash_site_bodies())
+  assert list.map(bodies, fn(body) { body.creature_id.value })
+    == [13_277, 50_716, 50_717]
+    as "the three bodies start"
+  let dagun =
+    Spawn(
+      ..spawn_support.dagun(number: 18_620, x: 0.0),
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: spawn_support.warfare_woods,
+        x: 3956.0,
+        y: -709.0,
+        z: -5393.0,
+      ),
+    )
+  let state =
+    map_spawn_support.started_with_spawns(spawns: list.append(bodies, [dagun]))
+  let #(state, _) =
+    map_spawn_support.join(
+      state:,
+      at_ms: map_spawn_support.started_at_ms + 1,
+      connection: 1,
+      x: map_spawn_support.far,
+    )
+  let #(state, _) = ready(state:, connection: 1)
+  let #(_, moved) =
+    map_spawn_support.move_to(
+      state:,
+      at_ms: 6000,
+      connection: 1,
+      place: beside_the_crash_site_bodies(),
+    )
+  assert map_spawn_support.ring_sends(moved) == [#(5, "Approached by 1")]
+    as "only unit 5, the Dagun after the player's 1 and the three bodies' 2 to 4, is approached"
 }

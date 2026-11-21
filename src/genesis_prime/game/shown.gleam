@@ -111,6 +111,9 @@ pub type Shown {
     /// Which player factions the creature is Hostile to (the client's own
     /// disposition of the creature toward the player, `0x14045a950`).
     hostile_to: Hostile,
+    /// Whether the creature takes part in combat (`creature_life.Combat.fights`): an area
+    /// picks no creature that does not.
+    fights: Bool,
     /// True from the creature's CombatState news that it entered combat until the one
     /// that it left it; the client gives a creature in combat no click
     /// (`PickInteractionKind`, `0x14047a060`).
@@ -276,7 +279,7 @@ pub fn faction_of(faction_id faction_id: Int) -> Result(PlayerFaction, Nil) {
 
 /// The alive foes of a player of `faction` in the picture, as candidates for an
 /// area at monotonic time `now_ms`, in unit id order, never the caster
-/// `caster_unit_id`.
+/// `caster_unit_id` and never a creature that takes no part in combat.
 pub fn candidates(
   picture picture: Picture,
   faction faction: PlayerFaction,
@@ -289,9 +292,10 @@ pub fn candidates(
     let #(unit_id, shown) = entry
     case shown {
       ShownPlayer(..) | ShownObject(..) -> Error(Nil)
-      ShownCreature(path:, alive:, hit_radius:, attackable:, ..) ->
+      ShownCreature(path:, alive:, hit_radius:, attackable:, fights:, ..) ->
         case
           alive
+          && fights
           && unit_id != caster_unit_id
           && may_attack(faction:, attackable:)
         {

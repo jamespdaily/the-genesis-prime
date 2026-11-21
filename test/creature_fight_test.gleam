@@ -583,6 +583,61 @@ pub fn damage_adds_damage_times_each_effects_threat_multiplier_and_the_top_entry
     as "25 + 2 = 27 stays below 31: another entry's threat, 0x90a"
 }
 
+/// The lines of the step that are a fight's start: the target (0x908), the combat flag (0x89a), the
+/// threat told to the player and the turn to the target.
+fn fight_lines(taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.filter(said(taken), fn(line) {
+    string.starts_with(line, "0x908")
+    || string.starts_with(line, "0x89a")
+    || string.starts_with(line, "Threatened")
+    || string.starts_with(line, "turn(")
+  })
+}
+
+pub fn a_creature_that_never_fights_struck_by_a_player_starts_no_fight_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A creature the client draws lying dead (`Creature2.uiFlags.bit8`) has `Combat.fights` False.
+  // The same creature with `fights` True is the control: an `Approached` aggroes it and a strike
+  // starts its fight, so the harness can fail. The fight's one start is `aggro` for the first and
+  // `threatened_by` for the second.
+  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
+  let cases = [
+    #(
+      True,
+      "a creature that fights is aggroed by an approach and by a strike, and starts its attack tick",
+    ),
+    #(
+      False,
+      "a creature that does not fight sends nothing of a fight and starts no timer",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(fights, reason) = row
+    let state =
+      beast_from(
+        source: spawn_source.Stored(id: SpawnId(1)),
+        spawn: Spawn(
+          ..beast,
+          combat: creature_life.Combat(..beast.combat, fights:),
+        ),
+        viewers: [2],
+        armor: creature_life.NoArmor,
+      )
+    let #(_, approach) =
+      tell(state:, at_ms: 0, message: approached(number: 2, x: 5.0, seq: 1))
+    assert { fight_lines(approach) != [] && timers(approach) != [] } == fights
+      as reason
+    let #(_, strike) =
+      tell(
+        state:,
+        at_ms: 0,
+        message: strike_of(number: 2, cast_id: 1, blows: [#(1, 5, 1.0)]),
+      )
+    assert { fight_lines(strike) != [] && timers(strike) != [] } == fights
+      as reason
+  })
+}
+
 // Test 10: the chase.
 
 pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planned_while_it_stays_in_reach_of_the_paths_end_test() -> Nil {
