@@ -118,6 +118,33 @@ pub fn location_of(reference: Reference) -> glance.Span {
   }
 }
 
+/// Where the expression is written.
+pub fn span_of(expression: Expression) -> glance.Span {
+  case expression {
+    glance.FieldAccess(location:, ..) -> location
+    glance.Int(location:, ..)
+    | glance.Float(location:, ..)
+    | glance.String(location:, ..)
+    | glance.Variable(location:, ..)
+    | glance.NegateInt(location:, ..)
+    | glance.NegateBool(location:, ..)
+    | glance.Block(location:, ..)
+    | glance.Panic(location:, ..)
+    | glance.Todo(location:, ..)
+    | glance.Tuple(location:, ..)
+    | glance.List(location:, ..)
+    | glance.Fn(location:, ..)
+    | glance.RecordUpdate(location:, ..)
+    | glance.Call(location:, ..)
+    | glance.TupleIndex(location:, ..)
+    | glance.FnCapture(location:, ..)
+    | glance.BitString(location:, ..)
+    | glance.Case(location:, ..)
+    | glance.BinaryOperator(location:, ..)
+    | glance.Echo(location:, ..) -> location
+  }
+}
+
 /// The name a module's qualified references go by in the file that imports
 /// it: its alias, or the last segment of its path. A module imported `as _`
 /// goes by no name, since nothing can refer to it.
