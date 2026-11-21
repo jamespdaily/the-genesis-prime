@@ -5,6 +5,7 @@
 //// and a read that held more than one message keeps the bytes beyond them
 //// (`game_client.read_kept`), which a later read must use.
 
+import driven_time
 import game_client
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{Frame}
@@ -17,7 +18,8 @@ import socket_read
 
 pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_server_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   // A socket the server writes nothing to: the STS listener answers only what
   // a client sends it.
   let socket = login_client.connect(login_support.ports(started).sts_port)

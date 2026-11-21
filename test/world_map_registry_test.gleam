@@ -21,11 +21,12 @@
 import ask_support
 import character_support
 import character_tables
+import driven_time
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/server
 import genesis_prime/service
-import genesis_prime/service/shell as service_shell
+import genesis_prime/service/shell.{type ServiceTime} as service_shell
 import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/store.{type Character}
 import genesis_prime/world_map/creature_registry
@@ -55,7 +56,25 @@ type World {
   )
 }
 
+/// The world on the node's own time, with a call to Maps that ends after 1 s: for
+/// the tests that check a deadline passing.
 fn start_world() -> World {
+  start_world_on(time: service_shell.real_time(), maps_call_ms: 1000)
+}
+
+/// The world on the driven clock `time`, with a call to Maps far beyond the
+/// test's deadline.
+fn start_driven_world(time time: driven_time.Time) -> World {
+  start_world_on(
+    time: driven_time.service_time(time),
+    maps_call_ms: ask_support.beyond_the_test_ms,
+  )
+}
+
+fn start_world_on(
+  time time: ServiceTime,
+  maps_call_ms maps_call_ms: Int,
+) -> World {
   let maps_name = process.new_name("maps")
   let map_supervisor_name = process.new_name("map_supervisor")
   let scope = registry.new()
@@ -63,7 +82,7 @@ fn start_world() -> World {
     server.World(
       maps: maps_name,
       map_supervisor: map_supervisor_name,
-      maps_call_ms: 1000,
+      maps_call_ms:,
       map_shutdown_ms: 1000,
       creatures: creature_registry.new(),
       creature_supervisor: process.new_name("creature_supervisor"),
@@ -80,7 +99,7 @@ fn start_world() -> World {
     server.add_world(
       tree:,
       world:,
-      time: service_shell.real_time(),
+      time:,
       realm_id: 1,
       tables: character_tables.shared(),
       reach: service.watch_only(locate: locate(scope, _)),
@@ -200,7 +219,8 @@ fn joined(found: MapProcess, id: Int) -> #(Int, Int) {
 
 pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   assert found_run(world:, map: ship, incarnation: 1)
     == Error(world_map_registry.NotFound)
     as "find never starts a map: no map is running"
@@ -223,7 +243,8 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
 
 pub fn concurrent_finds_for_one_map_start_it_once_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   let results = process.new_subject()
   list.each([1, 2, 3, 4, 5, 6, 7, 8], fn(_) {
     process.spawn_unlinked(fn() {
@@ -250,7 +271,8 @@ pub fn concurrent_finds_for_one_map_start_it_once_test() -> Nil {
 
 pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_is_not_found_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   let first = started(world, ship)
   let ended = process.monitor(first.pid)
   process.kill(first.pid)
@@ -274,7 +296,8 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
 
 pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run_as_unit_1_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   let first = started(world, ship)
   let _connection = connection(world, 1)
   let assert map.Joined(unit: before, ..) =
@@ -365,7 +388,8 @@ pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
 
 pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   let found = started(world, ship)
   let first_connection = connection(world, 1)
   assert joined(found, 1) == #(1, found.incarnation)
@@ -390,7 +414,8 @@ pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave
 
 pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   let first = started(world, ship)
   let assert Ok(maps_pid) = process.named(world.maps) as "Maps is registered"
   let assert Ok(supervisor_pid) = process.named(world.map_supervisor)

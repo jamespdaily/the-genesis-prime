@@ -15,6 +15,7 @@
 ////   local port to connect from.
 
 import ask_support
+import driven_time
 import genesis_prime/load_player.{
   AuthLogin, CharacterList, Create, EnterWorld, FirstPong, GameHello, Ping,
   Position, StsLogin,
@@ -44,7 +45,8 @@ const stage_order = [
 /// Starts the server's tree, seeds the first `seeded` of three accounts and
 /// plays a step of the three, and stops the tree.
 fn step_of_three(seeded seeded: Int) -> load_run.Outcome {
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let accounts = load_player.accounts(first: 0, count: 3)
   load_player.seed(
     pool: pog.named_connection(started.settings.pool.pool_name),
@@ -77,7 +79,8 @@ pub fn three_clients_each_reach_the_world_and_report_their_seven_stage_times_in_
 pub fn a_player_that_moves_drops_and_logs_in_again_reads_back_the_position_it_sent_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.tag("dev_tool")
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let accounts = load_player.accounts(first: 0, count: 1)
   load_player.seed(
     pool: pog.named_connection(started.settings.pool.pool_name),
