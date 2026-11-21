@@ -31,6 +31,7 @@ import gleam/bit_array
 import gleam/erlang/process
 import gleam/list
 import login_client
+import login_settings_support
 import login_support
 import login_vectors as vector
 import open_wait
@@ -195,7 +196,7 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
     == Ok(LoginAccepted(disconnected_for_lag: 0))
   let assert Ok(handed) = game_server_handoff.decode(handoff.body)
     as "0x3db decodes"
-  assert handed.game_server == login_support.realm().game_server
+  assert handed.game_server == login_settings_support.realm().game_server
   assert handed.account_id == account_id as "opcode.0x3db: the account's id"
   assert handed.realm_name == "Nexus"
   assert handed.realm_flags == 0

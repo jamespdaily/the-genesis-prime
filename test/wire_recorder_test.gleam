@@ -13,12 +13,12 @@
 ////   the bytes the client reads are a second record of them.
 //// - The shell's own words (genesis_prime/connection/shell): a client's close
 ////   is the input `PeerClosed` and ends the connection from the client's side,
-////   the server's stop is `Stopping` and ends it from the server's; a rule
-////   that has not stopped by the deadline is killed and leaves no closing
-////   line; a recording that cannot be written ends the connection before the
-////   step's effects.
+////   the server's stop is `Stopping` and ends it from the server's; a
+////   connection that is killed leaves no closing line; a recording that cannot
+////   be written ends the connection before the step's effects.
 
 import ask_support
+import driven_time
 import genesis_prime/connection/script.{Issued, Script}
 import genesis_prime/seed
 import genesis_prime/step.{type Now, Effects, Now}
@@ -34,6 +34,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import mug
+import open_wait
 import owned_test
 import recording_support
 import script_rule
@@ -200,12 +201,19 @@ fn scripted(
 fn start(
   folder folder: String,
   scripts scripts: script.Scripts,
-  shutdown_ms shutdown_ms: Int,
 ) -> ask_support.Server {
-  ask_support.start_scripted(
-    rule: script_rule.rule(),
+  start_ruled(rule: script_rule.rule(), folder:, scripts:)
+}
+
+/// As `start`, for connections that run `rule`.
+fn start_ruled(
+  rule rule: step.ConnectionRule(Nil, Nil, Nil, Nil, Nil),
+  folder folder: String,
+  scripts scripts: script.Scripts,
+) -> ask_support.Server {
+  ask_support.start_driven(
+    rule:,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms:,
     wire_recorder: Some(recording_support.wire_recorder(folder)),
     scripts:,
     registry: None,
@@ -218,7 +226,7 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()
-  let server = start(folder:, scripts: scripted(5, given), shutdown_ms: 1000)
+  let server = start(folder:, scripts: scripted(5, given))
   let client = ask_support.connect(server)
   let accepted_record = ask_support.read_bytes(client, 49)
   assert mug.send(client, <<1, 2, 3, 4>>) == Ok(Nil) as "bytes"
@@ -308,7 +316,7 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()
-  let server = start(folder:, scripts: scripted(1, given), shutdown_ms: 2000)
+  let server = start(folder:, scripts: scripted(1, given))
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
   ask_support.stop(server)
@@ -322,38 +330,58 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   assert closing.by == Server as "the server's stop ended the connection"
 }
 
-pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test() -> Nil {
+/// A connection that is killed after it took `Stopping` leaves a recording cut
+/// after the stop's line: the line is written before the rule's step, so the
+/// kill, whenever it comes, finds it on disk, and no closing line follows. The
+/// test sends the kill itself, whatever the rule does; that the listener's
+/// connections are given `shutdown_ms` before they are killed is checked in
+/// `listener_test`.
+pub fn a_connection_killed_after_it_took_stopping_leaves_a_recording_cut_after_the_stops_line_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()
+  let took_stopping = process.new_subject()
   let ignoring =
     step.Rule(
       ..script_rule.rule(),
       step: fn(state, input: step.ConnectionInput(Nil, Nil)) {
         case input.event {
-          step.Stopping(..) -> #(state, Effects([]))
+          step.Stopping(..) -> {
+            process.send(took_stopping, Nil)
+            #(state, Effects([]))
+          }
           step.OwnEvent(..) | step.WatchEnded(..) ->
             script_rule.step(state, input)
         }
       },
     )
-  let server =
-    ask_support.start_scripted(
-      rule: ignoring,
-      directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 300,
-      wire_recorder: Some(recording_support.wire_recorder(folder)),
-      scripts: scripted(1, given),
-      registry: None,
-      locate: fn(_address) { Error(Nil) },
-      with: fn(builder) { builder },
-    )
+  let server = start_ruled(rule: ignoring, folder:, scripts: scripted(1, given))
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
-  ask_support.stop(server)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let ended = process.monitor(connection)
+  let stopped = ask_support.begin_stop_tree(server.supervisor)
+  let Nil =
+    open_wait.received(
+      from: took_stopping,
+      what: "the connection to take Stopping and not stop",
+    )
+  process.kill(connection)
+  assert ask_support.ended(
+      watched: ended,
+      what: "the connection to end by the kill",
+    )
+    == process.Killed
+    as "the connection ended by the kill, not by its own stop"
+  let _reason =
+    ask_support.ended(
+      watched: stopped,
+      what: "the tree to end after its connection was killed",
+    )
   assert wire_recording.read(recording_support.wire_text_in(folder))
     == Error(Cut(lines: 4))
-    as "the header, the accept, its write and the stop, then nothing: killed at the deadline"
+    as "the header, the accept, its write and the stop, then nothing: killed before it closed"
 }
 
 pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_effects_test() -> Nil {
@@ -364,8 +392,7 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
   let assert Ok(Nil) = simplifile.write(blocked, "")
     as "a file stands where the folder should be"
   let given = process.new_subject()
-  let server =
-    start(folder: blocked, scripts: scripted(1, given), shutdown_ms: 1000)
+  let server = start(folder: blocked, scripts: scripted(1, given))
   let client = ask_support.connect(server)
   assert socket_read.receive(
       limit: socket_read.Open,
@@ -377,41 +404,44 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
   ask_support.stop(server)
 }
 
-pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests_own_test() -> Nil {
+pub fn an_input_is_recorded_with_the_reading_its_scripts_clock_gave_at_its_cause_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
+  let time = driven_time.new()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 1000,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
-      scripts: script.operating_system,
+      scripts: ask_support.driven_scripts(time),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
     )
-  // Each input is bounded by the test's own readings around the action that
-  // caused it, so a reading reused from an earlier input falls outside.
-  let before_accept = ask_support.monotonic_ms()
+  // Each input is bounded by the test's own readings of the driven clock around
+  // the action that caused it, and the test moves the clock between inputs, so a
+  // reading reused from an earlier input falls outside.
+  let before_accept = clock_ms(time)
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
-  let after_accept = ask_support.monotonic_ms()
-  let before_read = ask_support.monotonic_ms()
+  let after_accept = clock_ms(time)
+  driven_time.advance(time:, ms: 1)
+  let before_read = clock_ms(time)
   assert mug.send(client, <<1>>) == Ok(Nil) as "bytes"
   let _read = ask_support.read_bytes(client, 17)
-  let after_read = ask_support.monotonic_ms()
+  let after_read = clock_ms(time)
+  driven_time.advance(time:, ms: 1)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let watched = process.monitor(connection)
-  let before_close = ask_support.monotonic_ms()
+  let before_close = clock_ms(time)
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
   let _reason =
     ask_support.ended(
       watched: watched,
       what: "the connection to end after the client closed",
     )
-  let after_close = ask_support.monotonic_ms()
+  let after_close = clock_ms(time)
   let assert Ok(Recording(header:, lines:, ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"
@@ -432,7 +462,15 @@ pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests
     && closed.monotonic_ms >= before_close
     && closed.monotonic_ms <= after_close
     as "an input's reading lies between the test's readings around its cause"
+  assert accepted.monotonic_ms < read.monotonic_ms
+    && read.monotonic_ms < closed.monotonic_ms
+    as "each input took a reading of its own: the clock moved between them"
   ask_support.stop(server)
+}
+
+/// The driven clock's reading, in milliseconds.
+fn clock_ms(time: driven_time.Time) -> Int {
+  driven_time.now(time:).monotonic_ms
 }
 
 /// The source files that hold `needle`, other than the recorder's own.

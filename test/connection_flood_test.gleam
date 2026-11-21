@@ -30,6 +30,7 @@ import gleam/list
 import gleam/string
 import log_capture
 import login_client
+import login_settings_support
 import login_support
 import mailbox_support
 import owned_test
@@ -151,7 +152,7 @@ fn flood(sending bytes: BitArray) -> Flooded {
   let rate = login_support.servers_auth_rate()
   let rule =
     auth_connection.rule(
-      auth_connection.Settings(..login_support.auth_settings(), rate:),
+      auth_connection.Settings(..login_settings_support.auth_settings(), rate:),
     )
   Flooded(
     heard:,

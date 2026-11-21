@@ -20,9 +20,9 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import driven_time
 import event_wait
 import genesis_prime/connection/frame
-import genesis_prime/connection/script
 import genesis_prime/connection/shell
 import genesis_prime/step.{
   type ConnectionInput, type ConnectionRule, type ConnectionStep, Accepted,
@@ -132,13 +132,12 @@ fn step(
 fn settings(
   wire_recorder: Option(WireRecorder),
 ) -> shell.Settings(Nil, Nil, Nil, Nil, Nil) {
-  shell.Settings(
+  ask_support.driven_settings(
     rule: quiet_rule(),
-    send_deadline_ms: 300,
-    shutdown_ms: 1000,
-    wire_recorder:,
-    scripts: script.operating_system,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    wire_recorder:,
+    scripts: ask_support.driven_scripts(driven_time.new()),
+    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     deliver: fn(_address, _request) { Error(Nil) },
@@ -146,12 +145,11 @@ fn settings(
 }
 
 fn start(wire_recorder: Option(WireRecorder)) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: quiet_rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
     wire_recorder:,
-    scripts: script.operating_system,
+    scripts: ask_support.driven_scripts(driven_time.new()),
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },

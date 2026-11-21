@@ -68,7 +68,7 @@ pub fn start(
     server.World(
       maps:,
       map_supervisor: process.new_name("map_supervisor"),
-      maps_call_ms: 1000,
+      maps_call_ms: ask_support.beyond_the_test_ms,
       map_shutdown_ms: 1000,
       creatures:,
       creature_supervisor:,

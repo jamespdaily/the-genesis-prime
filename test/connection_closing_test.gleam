@@ -11,7 +11,7 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
-import genesis_prime/connection/script
+import driven_time
 import genesis_prime/wire_recording.{Client, Recording, Server}
 import gleam/erlang/process
 import gleam/option.{None, Some}
@@ -23,12 +23,11 @@ import recording_support
 /// A listener whose connections run the leaving rule, recorded in `folder`,
 /// with a directory that answers every ask as a process not running.
 fn started(folder: String) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: leaving_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 2000,
     wire_recorder: Some(recording_support.wire_recorder(folder)),
-    scripts: script.operating_system,
+    scripts: ask_support.driven_scripts(driven_time.new()),
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },

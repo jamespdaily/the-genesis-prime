@@ -6,6 +6,8 @@
 import asking_rule.{
   type Answer, type Request, FromGate, FromStore, OfGate, OfStore,
 }
+import driven_time
+import event_wait
 import gate_rule
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
@@ -32,9 +34,17 @@ import mug
 import open_wait
 import socket_read
 
-/// The wait, in milliseconds, of an ask whose answer is expected: a deadline
-/// a passing test never reaches.
-pub const patient = 20_000
+/// The wait, in milliseconds, of an ask whose answer is expected: the most a
+/// command's 16-bit wait field holds, past the 60 seconds of the longest test
+/// deadline, so no passing test reaches it.
+pub const patient = 65_535
+
+/// The scripts of connections on a driven clock (`driven_time.connection_scripts`).
+/// A listener given them reads its time from `time` and starts its timers there;
+/// they fire when the test advances the clock.
+pub fn driven_scripts(time time: driven_time.Time) -> Scripts {
+  driven_time.connection_scripts(time)
+}
 
 /// A running listener and the tree it started under.
 pub type Server {
@@ -46,104 +56,151 @@ pub type Record {
   Record(letter: Int, ask: Int, code: Int, extra: Int, milliseconds: Int)
 }
 
-/// Starts a listener whose connections run `rule` with this directory, beside
-/// what `with` adds to the same supervisor.
-pub fn start(
+/// Starts a listener whose connections run `rule` with this directory, beside what
+/// `with` adds to the same supervisor, on the driven clock `time`: its connections
+/// read their time from it and start their timers there, and no write or
+/// shutdown of the tree has a limit a test can reach (`beyond_the_test_ms`).
+pub fn start_on(
+  time time: driven_time.Time,
   rule rule: ConnectionRule(settings, state, request, Nil, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
-  shutdown_ms shutdown_ms: Int,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  start_joined(
+  start_driven(
     rule:,
     directory:,
-    shutdown_ms:,
+    wire_recorder: None,
+    scripts: driven_scripts(time:),
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with:,
   )
 }
 
-/// Starts a listener as `start` does, whose connections also join `registry`
-/// when there is one, and find what their rule watches with `locate`.
-pub fn start_joined(
+/// The settings of a connection that runs on a driven clock, which every
+/// driven listener and connection of the tests takes: its `scripts` (a driven
+/// clock's, `driven_scripts`), and a send deadline and a shutdown that no test
+/// reaches (`beyond_the_test_ms`), so a write or a stop ends by the test's own
+/// condition. `send_deadline_ms` is the one limit a test may pass, as 0, to
+/// fail a write.
+pub fn driven_settings(
   rule rule: ConnectionRule(settings, state, request, message, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
-  shutdown_ms shutdown_ms: Int,
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
+  send_deadline_ms send_deadline_ms: Int,
+  registry registry: Option(Registry(message)),
+  locate locate: fn(Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
+  deliver deliver: fn(Address, request) -> Result(Nil, Nil),
+) -> shell.Settings(settings, state, message, answer, request) {
+  shell.Settings(
+    rule:,
+    send_deadline_ms:,
+    shutdown_ms: 2 * beyond_the_test_ms,
+    wire_recorder:,
+    scripts:,
+    directory:,
+    registry:,
+    locate:,
+    deliver:,
+  )
+}
+
+/// Starts a listener whose connections run on a driven clock, with the limits
+/// of `driven_settings` and a send deadline of `beyond_the_test_ms`: they run
+/// `rule`, take their `scripts`, are recorded on the wire by `wire_recorder`,
+/// join `registry` when there is one, and find what their rule watches with
+/// `locate`.
+pub fn start_driven(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
   registry registry: Option(Registry(message)),
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  start_scripted(
+  start_driven_sending(
     rule:,
     directory:,
-    shutdown_ms:,
-    wire_recorder: None,
-    scripts: script.operating_system,
+    wire_recorder:,
+    scripts:,
+    send_deadline_ms: beyond_the_test_ms,
     registry:,
     locate:,
     with:,
   )
 }
 
-/// Starts a listener as `start_joined` does, whose connections are recorded on
-/// the wire by `wire_recorder` and are given their scripts (seed, clock, timers)
-/// by `scripts`.
-pub fn start_scripted(
+/// Starts a listener as `start_driven` does, whose writes wait at most
+/// `send_deadline_ms`.
+pub fn start_driven_sending(
   rule rule: ConnectionRule(settings, state, request, message, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
-  shutdown_ms shutdown_ms: Int,
   wire_recorder wire_recorder: Option(WireRecorder),
   scripts scripts: Scripts,
+  send_deadline_ms send_deadline_ms: Int,
   registry registry: Option(Registry(message)),
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  start_telling(
-    rule:,
-    directory:,
-    shutdown_ms:,
-    wire_recorder:,
-    scripts:,
-    registry:,
-    locate: fn(address) { result.map(locate(address), watch.Watched) },
-    deliver: fn(_address, _request) { Error(Nil) },
+  start_with(
+    connection: driven_settings(
+      rule:,
+      directory:,
+      wire_recorder:,
+      scripts:,
+      send_deadline_ms:,
+      registry:,
+      locate: fn(address) { result.map(locate(address), watch.Watched) },
+      deliver: fn(_address, _request) { Error(Nil) },
+    ),
     with:,
   )
 }
 
-/// Starts a listener as `start_scripted` does, whose connections find what
-/// their rule watches with `locate`, which also gives the way to tell a
-/// process the rule tells (`Tellable`), and send the connections their rule
-/// tells with `deliver`.
-pub fn start_telling(
+/// Starts a listener as `start_driven` does, whose connections also find the
+/// process a rule tells with `locate` (`Tellable`) and send the connections a
+/// rule tells with `deliver`.
+pub fn start_driven_telling(
   rule rule: ConnectionRule(settings, state, request, message, answer),
-  directory directory: fn(request, Int, fn(answer) -> Nil) ->
-    Result(service.Sent, Nil),
-  shutdown_ms shutdown_ms: Int,
-  wire_recorder wire_recorder: Option(WireRecorder),
   scripts scripts: Scripts,
   registry registry: Option(Registry(message)),
   locate locate: fn(Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
   deliver deliver: fn(Address, request) -> Result(Nil, Nil),
-  with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  let name = process.new_name("test_listener")
-  let connection =
-    shell.Settings(
+  start_with(
+    connection: driven_settings(
       rule:,
-      send_deadline_ms: 300,
-      shutdown_ms:,
-      wire_recorder:,
+      directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+      wire_recorder: None,
       scripts:,
-      directory:,
+      send_deadline_ms: beyond_the_test_ms,
       registry:,
       locate:,
       deliver:,
-    )
+    ),
+    with: fn(builder) { builder },
+  )
+}
+
+/// Starts a listener whose connections start with `connection`, beside what
+/// `with` adds to the same supervisor.
+fn start_with(
+  connection connection: shell.Settings(
+    settings,
+    state,
+    message,
+    answer,
+    request,
+  ),
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
+  let name = process.new_name("test_listener")
   let assert Ok(started) =
     supervisor.new(supervisor.OneForOne)
     |> with
@@ -203,24 +260,21 @@ pub fn guard_with(tree: Pid, stop: fn() -> Nil) -> Nil {
 }
 
 /// Waits until a process other than `old` holds the name, and returns it. A
-/// supervisor that restarts a service does so within milliseconds; the name has
-/// no event to wait for, so it is read every millisecond. The wait has no limit
-/// of its own: a service that is never restarted keeps the test waiting past its
-/// deadline, which warns and names this wait (`open_wait`).
+/// supervisor that restarts a service does so within milliseconds, and the name
+/// has no event to wait for, so it is read again every millisecond
+/// (`event_wait`). The wait has no limit of its own: a service that is never
+/// restarted keeps the test waiting past its deadline, which warns and names this
+/// wait.
 pub fn await_new_pid(name name: Name(message), not old: Pid) -> Pid {
-  open_wait.named("a process other than the old one to take its name", fn() {
-    poll_for_new_pid(name:, not: old)
-  })
-}
-
-fn poll_for_new_pid(name name: Name(message), not old: Pid) -> Pid {
-  case process.named(name) {
-    Ok(pid) if pid != old -> pid
-    Ok(_) | Error(Nil) -> {
-      process.sleep(1)
-      poll_for_new_pid(name:, not: old)
+  event_wait.until("a process other than the old one to take its name", fn() {
+    case process.named(name) {
+      Ok(pid) -> pid != old
+      Error(Nil) -> False
     }
-  }
+  })
+  let assert Ok(pid) = process.named(name)
+    as "the process that took the name still holds it"
+  pid
 }
 
 /// Runs `body` with the process suspended, so what `body` sends it queues in
@@ -401,30 +455,55 @@ pub fn acceptors_of(listener: Name(Nil)) -> List(Pid) {
 @external(erlang, "ranch", "get_max_connections")
 pub fn max_connections_of(listener: Name(Nil)) -> Int
 
+/// How long, in milliseconds, the listener Ranch knows by `listener` gives a
+/// connection to stop when told to, before it kills it (Ranch's `shutdown`
+/// transport option).
+pub fn shutdown_ms_of(listener: Name(Nil)) -> Int {
+  let assert Ok(shutdown_ms) =
+    decode.run(
+      transport_options(listener),
+      decode.field(atom.create("shutdown"), decode.int, fn(shutdown_ms) {
+        decode.success(shutdown_ms)
+      }),
+    )
+    as "the listener's transport options hold an integer shutdown time"
+  shutdown_ms
+}
+
+@external(erlang, "ranch", "get_transport_options")
+fn transport_options(ref: Name(Nil)) -> Dynamic
+
 /// The gate as a child of a supervisor, registered as `name`, that reaches
-/// no process.
+/// no process and reads its time from the driven clock `time`.
 pub fn gate(
   name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
+  time time: driven_time.Time,
 ) -> ChildSpecification(Nil) {
-  reaching(name:, shutdown_ms:, reach: reaching_nothing())
+  reaching(name:, shutdown_ms:, reach: reaching_nothing(), time:)
 }
 
 /// The gate as a child of a supervisor, registered as `name`, that finds and
-/// sends to the processes `reach` gives.
+/// sends to the processes `reach` gives and reads its time from the driven clock
+/// `time`.
 pub fn reaching(
   name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
   reach reach: service.Reach(gate_rule.Answer),
+  time time: driven_time.Time,
 ) -> ChildSpecification(Nil) {
-  service_shell.supervised(name:, settings: gate_settings(shutdown_ms:, reach:))
+  service_shell.supervised(
+    name:,
+    settings: gate_settings(shutdown_ms:, reach:, time:),
+  )
 }
 
 /// What the gate's shell is started with: the gate's rule, the processes it
-/// reaches and how long it has to stop.
+/// reaches, how long it has to stop and the driven clock it reads.
 fn gate_settings(
   shutdown_ms shutdown_ms: Int,
   reach reach: service.Reach(gate_rule.Answer),
+  time time: driven_time.Time,
 ) -> service_shell.Settings(
   Nil,
   gate_rule.State,
@@ -436,7 +515,7 @@ fn gate_settings(
     reach:,
     shutdown_ms:,
     found_at: None,
-    time: service_shell.real_time(),
+    time: driven_time.service_time(time),
   )
 }
 
@@ -467,8 +546,9 @@ pub fn observed_gate(
   name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
   into into: Subject(step.Event(step.ServiceEvent(gate_rule.Message))),
+  time time: driven_time.Time,
 ) -> ChildSpecification(Nil) {
-  let settings = gate_settings(shutdown_ms:, reach: reaching_nothing())
+  let settings = gate_settings(shutdown_ms:, reach: reaching_nothing(), time:)
   service_shell.supervised(
     name:,
     settings: service_shell.Settings(
@@ -586,12 +666,12 @@ pub fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
   started.pid
 }
 
-/// A listener whose rule asks nothing of a directory and shuts down in a second.
-pub fn started_listener() -> Server {
-  start(
+/// A listener on the driven clock `time` whose rule asks nothing of a directory.
+pub fn started_listener(time time: driven_time.Time) -> Server {
+  start_on(
+    time:,
     rule: asking_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
     with: fn(builder) { builder },
   )
 }

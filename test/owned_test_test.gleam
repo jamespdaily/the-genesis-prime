@@ -3,6 +3,7 @@
 //// 0 ms is passed by any body, so each result is the same on any machine.
 
 import ask_support
+import driven_time
 import fixed_seed
 import genesis_prime/connection/script
 import gleam/erlang/process
@@ -122,9 +123,9 @@ pub fn a_test_whose_body_crashed_is_listed_as_ended_test() -> Nil {
   assert id == ended
 }
 
-/// A script from the operating system, which a listener's seeded scripts wrap.
+/// The scripts of a driven clock, which a listener's seeded scripts wrap.
 fn system_scripts() -> script.Scripts {
-  script.operating_system
+  ask_support.driven_scripts(driven_time.new())
 }
 
 /// Takes two scripts from the sts listener's seeded scripts and one from the game's,

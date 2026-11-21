@@ -51,8 +51,9 @@
 ////   it, and the wait goes on (`open_wait`, `owned_test.run`).
 
 import genesis_prime/connection/script.{
-  type Elapsed, type Scripts, Elapsed, Issued, Script,
+  type Elapsed, type Script, type Scripts, Elapsed, Issued, Script,
 }
+import genesis_prime/seed.{type Seed}
 import genesis_prime/service/shell.{type ServiceTime, ServiceTime}
 import genesis_prime/step.{type Now, type TimerId, Now}
 import genesis_prime/step/runtime
@@ -66,6 +67,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/otp/actor
 import gleam/result
+import gleam/string
 import mailbox_support
 import open_wait
 
@@ -81,6 +83,10 @@ const initialisation_ms = 1000
 /// them again: the VM has aborted in that move (`Overrun stack and heap`).
 @external(erlang, "driven_time_ffi", "keep_mailbox_off_heap")
 fn keep_mailbox_off_heap() -> Nil
+
+/// A process's id as text, as the messages that name a participant print it.
+@external(erlang, "driven_time_ffi", "pid_text")
+pub fn pid_text(pid: Pid) -> String
 
 /// A driven clock and its timers.
 pub opaque type Time {
@@ -301,16 +307,47 @@ pub fn scripts(time time: Time, over over: Scripts) -> Scripts {
     use issued <- result.map(over())
     Issued(
       ..issued,
-      script: Script(
-        ..issued.script,
-        clock: fn(_taking) { read(time) },
-        node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
-        schedule: fn(subject, timer, reference, after_ms) {
-          started(time:, subject:, timer:, reference:, after_ms:)
-        },
+      script: script_of(
+        time:,
+        seed: issued.script.seed,
+        next_read: issued.script.next_read,
       ),
     )
   }
+}
+
+/// The scripts of the connections of a listener that runs on this clock alone:
+/// each connection draws a seed of its own from the operating system's random
+/// source, reads this clock for each input and starts its timers here, and has
+/// no read size of its own.
+pub fn connection_scripts(time: Time) -> Scripts {
+  fn() {
+    Ok(Issued(
+      ordinal: runtime.unique_id(),
+      script: script_of(time:, seed: seed.from_system(), next_read: fn() {
+        None
+      }),
+    ))
+  }
+}
+
+/// A connection's script on this clock: its clock and timers are this clock's,
+/// and the node's time for an input, from which an ask's deadline counts, is the
+/// node's own.
+fn script_of(
+  time time: Time,
+  seed seed: Seed,
+  next_read next_read: script.NextRead,
+) -> Script {
+  Script(
+    seed:,
+    clock: fn(_taking) { read(time) },
+    node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
+    schedule: fn(subject, timer, reference, after_ms) {
+      started(time:, subject:, timer:, reference:, after_ms:)
+    },
+    next_read:,
+  )
 }
 
 /// The clock and scheduler a tree or a world is started with
@@ -393,18 +430,56 @@ pub fn now(time time: Time) -> Now {
 pub fn advance(time time: Time, ms ms: Int) -> Nil {
   wait_until_quiet(time)
   let Now(monotonic_ms: from_ms, ..) = asked(time:, make: Peek)
-  fire_until(time:, limit_ms: from_ms + ms)
+  fire_until(time:, limit_ms: from_ms + ms, after_each: fn() {
+    wait_until_quiet(time)
+  })
 }
 
-fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
+fn fire_until(
+  time time: Time,
+  limit_ms limit_ms: Int,
+  after_each after_each: fn() -> Nil,
+) -> Nil {
   case asked(time:, make: TakeDue(limit_ms, _)) {
     None -> Nil
     Some(Pending(subject:, timer:, reference:, ..)) -> {
       process.send(subject, Elapsed(timer:, reference:))
-      wait_until_quiet(time)
-      fire_until(time:, limit_ms:)
+      after_each()
+      fire_until(time:, limit_ms:, after_each:)
     }
   }
+}
+
+/// Moves the clock on by `ms` as `advance` does, with no barrier, for a clock whose
+/// only participant is `held`, a connection held in an ask: it takes no system
+/// message until the ask's outcome, so a barrier over it would wait for an outcome
+/// the test gives only after the timer has fired. Each timer due within `ms` is
+/// sent to `held` by the calling process, in the order of their due times, and the
+/// call returns at once. The timeouts are sent by the calling process, so they
+/// reach the connection before any message the test sends it next (Erlang orders
+/// signals per sender). The timers the held step started are in the queue, since a
+/// connection starts its timers before it asks.
+///
+/// The barriers are dropped only because no other participant can start or cancel
+/// a timer meanwhile, so the call fails, naming them, when the clock has another
+/// running participant. `ms` must stay within the ask's remaining time: the driven
+/// clock never ends an ask, whose deadline counts the node's own clock.
+pub fn advance_while_a_participant_waits(
+  time time: Time,
+  held held: Pid,
+  ms ms: Int,
+) -> Nil {
+  let others = list.filter(participants(time:), fn(pid) { pid != held })
+  case others {
+    [] -> Nil
+    [_, ..] ->
+      panic as {
+        "the barriers are dropped only for a clock whose only participant is the held connection, and these also run: "
+        <> string.join(list.map(others, pid_text), ", ")
+      }
+  }
+  let Now(monotonic_ms: from_ms, ..) = asked(time:, make: Peek)
+  fire_until(time:, limit_ms: from_ms + ms, after_each: fn() { Nil })
 }
 
 /// Returns after two passes in a row that saw no change. A pass reads the counter,
