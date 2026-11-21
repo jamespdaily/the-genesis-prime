@@ -144,7 +144,9 @@ import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/start_movement
-import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_creature.{
+  type UnitCreateCreature, UnitCreateCreature,
+}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -1188,9 +1190,17 @@ fn casts_listed(
 /// is not changed.
 fn creature_casts_kept(
   unit unit: UnitCreateCreature,
-  written _written: Dict(Int, Int),
+  written written: Dict(Int, Int),
 ) -> UnitCreateCreature {
-  unit
+  UnitCreateCreature(
+    ..unit,
+    tail: UnitCreateTail(
+      ..unit.tail,
+      casts: list.filter(unit.tail.casts, fn(cast) {
+        dict.has_key(written, cast.cast_id)
+      }),
+    ),
+  )
 }
 
 /// The unit of the player's own record as another player is created with it: at

@@ -108,7 +108,7 @@ import genesis_prime/client_connection.{
   TellChat, TellDespawn, TellLifeChanged, TellMoved, TellPeer, TellReady,
   TellReleased, TellStealthChanged, TellStrike, TellStrikeAnswered,
   TellTargetChange, TellTargetMoved, TellThrown, TellUnitStates,
-  TellVisibilityChanged,
+  TellVisibilityChanged, ViewEnds, ViewSet,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -601,8 +601,8 @@ pub fn tell_creature(
   }
 }
 
-/// The message a creature takes a connection's request as, for the eight requests a
-/// creature is told, and an error for any other. A cast's view (`TellCastView`) is
+/// The message a creature takes a connection's request as, for each request a creature
+/// is told, and an error for any other. A cast's view (`TellCastView`) is
 /// `CastViewSet` with the connection as its `by`, or `CastViewEnds`.
 pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
   case request {
@@ -627,7 +627,10 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
       Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
     TellUnitStates(rows:, struck_at_ms:, went_at_ms:) ->
       Ok(creature.UnitStates(rows:, struck_at_ms:, went_at_ms:))
-    TellCastView(..) -> Error(Nil)
+    TellCastView(connection:, change: ViewSet(view:, struck_at_ms:)) ->
+      Ok(creature.CastViewSet(by: connection, view:, struck_at_ms:))
+    TellCastView(connection:, change: ViewEnds(cast_id:)) ->
+      Ok(creature.CastViewEnds(by: connection, cast_id:))
     TellPeer(..)
     | TellChat(..)
     | TellMoved(..)

@@ -868,13 +868,28 @@ pub fn step(
     OwnEvent(Told(message: UnitStates(rows:, struck_at_ms:, went_at_ms:))) ->
       unit_states_told(state:, rows:, struck_at_ms:, went_at_ms:, now_ms:)
     OwnEvent(Told(message: CastViewSet(by:, view:, struck_at_ms:))) ->
-      view_set(state:, by:, view:, struck_at_ms:, now_ms:)
+      view_set(state:, by:, view:, struck_at_ms:)
     OwnEvent(Told(message: CastViewEnds(by:, cast_id:))) ->
       view_ended(state:, by:, cast_id:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no creature"
+  }
+}
+
+/// Whether a tell struck at `struck_at_ms` struck the creature's life before the one it
+/// is in: the creature stood again after it, at a later time. The registry address is
+/// the same across lives, so the time of the round tells them apart. A creature that
+/// has not stood again is in its first life, and a tell struck at the very time it
+/// stood again struck the new one.
+fn struck_before_this_life(
+  state state: State,
+  struck_at_ms struck_at_ms: Int,
+) -> Bool {
+  case state.stood_again_ms {
+    Some(stood_ms) -> struck_at_ms < stood_ms
+    None -> False
   }
 }
 
@@ -889,18 +904,13 @@ fn thrown(
   struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
-  case
-    creature_life.is_dead(life: state.life)
-    || struck_before_this_life
-    || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:)
-  {
-    True -> #(state, Effects([]))
-    False -> fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
-  }
+  use <- bool.guard(
+    when: creature_life.is_dead(life: state.life)
+      || struck_before_this_life(state:, struck_at_ms:)
+      || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:),
+    return: #(state, Effects([])),
+  )
+  fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
 }
 
 /// A DespawnUnit effect reaches the creature (`Despawn`): dropped when the creature lies dead
@@ -917,14 +927,10 @@ fn despawn_told(
   went_at_ms went_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
   let due_ms = went_at_ms + delay_ms
   case
     creature_life.despawned(life: state.life, body: state.body),
-    struck_before_this_life,
+    struck_before_this_life(state:, struck_at_ms:),
     state.despawn_due_ms,
     due_ms <= now_ms
   {
@@ -973,24 +979,20 @@ fn unit_states_told(
   went_at_ms went_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
-  case creature_life.is_dead(life: state.life) || struck_before_this_life {
-    True -> #(state, Effects([]))
-    False -> {
-      let #(unit_state, effects) =
-        creature_unit_state.set(
-          state: state.unit_state,
-          rows:,
-          went_at_ms:,
-          now_ms:,
-        )
-      let state = State(..state, unit_state:)
-      #(state, Effects(unit_state_carried(state:, effects:)))
-    }
-  }
+  use <- bool.guard(
+    when: creature_life.is_dead(life: state.life)
+      || struck_before_this_life(state:, struck_at_ms:),
+    return: #(state, Effects([])),
+  )
+  let #(unit_state, effects) =
+    creature_unit_state.set(
+      state: state.unit_state,
+      rows:,
+      went_at_ms:,
+      now_ms:,
+    )
+  let state = State(..state, unit_state:)
+  #(state, Effects(unit_state_carried(state:, effects:)))
 }
 
 /// The unit-state timer fired: the holds whose start has come are told and the ones whose end
@@ -1131,28 +1133,21 @@ fn modifier_started(
   struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
-  case
-    creature_life.is_dead(life: state.life)
-    || struck_before_this_life
-    || result.is_ok(list.key_find(state.held_by, source))
-    || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:)
-  {
-    True -> #(state, Effects([]))
-    False -> {
-      let #(properties, changed) =
-        unit_properties.apply(properties: state.properties, source:, modifier:)
-      let state =
-        State(..state, held_by: list.append(state.held_by, [#(source, by)]))
-      let #(state, watching) = watching(state:, by:)
-      let news = changed_news(state:, changed:)
-      let #(state, revalued) = revalued(state:, properties:, now_ms:)
-      #(state, Effects(list.flatten([watching, news, revalued])))
-    }
-  }
+  use <- bool.guard(
+    when: creature_life.is_dead(life: state.life)
+      || struck_before_this_life(state:, struck_at_ms:)
+      || result.is_ok(list.key_find(state.held_by, source))
+      || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:),
+    return: #(state, Effects([])),
+  )
+  let #(properties, changed) =
+    unit_properties.apply(properties: state.properties, source:, modifier:)
+  let state =
+    State(..state, held_by: list.append(state.held_by, [#(source, by)]))
+  let #(state, watching) = watching(state:, by:)
+  let news = changed_news(state:, changed:)
+  let #(state, revalued) = revalued(state:, properties:, now_ms:)
+  #(state, Effects(list.flatten([watching, news, revalued])))
 }
 
 /// The caster of connection `by` tells the creature that its cast holds `view` on it:
@@ -1162,12 +1157,23 @@ fn modifier_started(
 /// belonged to is unwatched when it holds nothing else. No news goes to the viewers.
 fn view_set(
   state state: State,
-  by _by: ConnectionId,
-  view _view: unit_casts.CastView,
-  struck_at_ms _struck_at_ms: Int,
-  now_ms _now_ms: Int,
+  by by: ConnectionId,
+  view view: unit_casts.CastView,
+  struck_at_ms struck_at_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  #(state, Effects([]))
+  use <- bool.guard(
+    when: struck_before_this_life(state:, struck_at_ms:),
+    return: #(state, Effects([])),
+  )
+  let replaced = dict.get(state.views, view.cast_id)
+  let state =
+    State(..state, views: dict.insert(state.views, view.cast_id, #(by, view)))
+  let #(state, watching) = watching(state:, by:)
+  let #(state, unwatched) = case replaced {
+    Ok(#(earlier, _)) if earlier != by -> unwatching_last(state:, by: earlier)
+    Ok(_) | Error(Nil) -> #(state, [])
+  }
+  #(state, Effects(list.append(watching, unwatched)))
 }
 
 /// The caster of connection `by` tells the creature that its cast `cast_id` holds
@@ -1175,10 +1181,17 @@ fn view_set(
 /// that was its last holding. Any other end changes nothing.
 fn view_ended(
   state state: State,
-  by _by: ConnectionId,
-  cast_id _cast_id: Int,
+  by by: ConnectionId,
+  cast_id cast_id: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  #(state, Effects([]))
+  case dict.get(state.views, cast_id) {
+    Ok(#(holder, _)) if holder == by -> {
+      let state = State(..state, views: dict.delete(state.views, cast_id))
+      let #(state, unwatched) = unwatching_last(state:, by:)
+      #(state, Effects(unwatched))
+    }
+    Ok(_) | Error(Nil) -> #(state, Effects([]))
+  }
 }
 
 /// What a viewer is sent when the corpse timer stands the creature again: the creature as
@@ -1220,6 +1233,7 @@ fn stood_again(
       properties: base_properties(settings: state.settings),
       casters: dict.new(),
       held_by: [],
+      views: dict.new(),
       stood_again_ms: Some(now_ms),
     ),
     unwatched,
@@ -1331,16 +1345,22 @@ fn caster_gone(
   }
 }
 
-/// What the connection `by` holds on the creature has gone: every source of it is
-/// removed in the order they started, each as `modifier_ended` removes it. The one
-/// place that knows each kind of holding a connection has on the creature, with
-/// `holds_from` and `holding_connections`. The caller has forgotten the watch on `by`,
-/// when it is `by`'s watch that ended.
+/// What the connection `by` holds on the creature has gone: every view it told is
+/// dropped, and every source of it is removed in the order they started, each as
+/// `modifier_ended` removes it. The views are dropped by their holder, not by cast id: a
+/// later holder of a cast id keeps its view. The one place that knows each kind of holding
+/// a connection has on the creature, with `holds_from` and `holding_connections`. The
+/// caller has forgotten the watch on `by`, when it is `by`'s watch that ended.
 fn dropped_from(
   state state: State,
   by by: ConnectionId,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let state =
+    State(
+      ..state,
+      views: dict.filter(state.views, fn(_, held) { held.0 != by }),
+    )
   let sources =
     list.filter_map(state.held_by, fn(held) {
       case held.1 == by {
@@ -1359,12 +1379,18 @@ fn dropped_from(
 /// modifier or a view of a cast.
 fn holds_from(state state: State, by by: ConnectionId) -> Bool {
   list.any(state.held_by, fn(held) { held.1 == by })
+  || list.any(dict.values(state.views), fn(held) { held.0 == by })
 }
 
-/// The connections that hold anything on the creature, each once, in the order they
-/// first held it.
+/// The connections that hold anything on the creature, each once: those that hold a
+/// modifier source in the order their sources started, then those that hold only views,
+/// by the lowest cast id each holds.
 fn holding_connections(state state: State) -> List(ConnectionId) {
-  list.unique(list.map(state.held_by, fn(held) { held.1 }))
+  let by_view =
+    dict.to_list(state.views)
+    |> list.sort(fn(left, right) { int.compare(left.0, right.0) })
+    |> list.map(fn(entry) { entry.1.0 })
+  list.unique(list.append(list.map(state.held_by, fn(held) { held.1 }), by_view))
 }
 
 /// The watch on the caster's connection `by`, started with its first modifier: none

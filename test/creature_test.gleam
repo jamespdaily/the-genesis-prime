@@ -29,13 +29,21 @@ import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
   Removed,
 }
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
+import genesis_prime/game/unit_casts.{
+  type CastView, CastView, EndsAt, HeldEffect, ViewTarget,
+}
 import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
 import genesis_prime/game/unit_state
 import genesis_prime/message/float32
+import genesis_prime/message/unit_create_cast.{
+  type UnitCreateCast, UnitCreateCast,
+}
+import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/step.{
   type ConnectionId, type Event, type ServiceEvent, type ServiceStep, Connection,
@@ -43,7 +51,7 @@ import genesis_prime/step.{
   StartServiceTimer, Started, Stop, TimerId, Told, WatchEnded, WatchId,
 }
 import genesis_prime/table/id.{
-  Creature2Id, Faction2Id, Spell4Id, UnitProperty2Id,
+  Creature2Id, Faction2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/creature.{
   type State, Retire, Settings, Unwatched, Watched,
@@ -3168,4 +3176,482 @@ pub fn a_kill_clears_the_held_unit_states_and_cancels_the_timer_test() -> Nil {
   let #(_, stale) = fired(state: dead, at_ms: 14_500, timer: unit_state_timer)
   assert support.effects_of(stale) == []
     as "a fire already queued at the kill ends nothing"
+}
+
+// ---- the views players' casts tell the creature ----
+//
+// A cast's view is a node of its go on the creature (`creature.CastViewSet`). Expected
+// values come from `cast.target_node_end` (a corpse keeps its nodes until they end),
+// `creature.modifier_started`'s `struck_at_ms < stood_again_ms` rule, `cast_state.caster_of`
+// (a cast id names its caster) and `opcode.0x262.casts`, `opcode.0x7f4.effect_time` and
+// `opcode.0x7f4.effect_delay` (the entry's delay is the delay still to run and its
+// lifetime the time left, at the arrival's time).
+
+/// The effect row a view holds: Fissure's Spell4Effects 94370, a type 11 row.
+const view_effect_id = 94_370
+
+/// The cast number `number` of the caster unit `unit`, which holds `count` stacks on the
+/// Beast, unit 7, from `starts_ms` to `ends_ms`; gone, and not the caster's current cast.
+fn view_with(
+  unit unit: Int,
+  number number: Int,
+  count count: Int,
+  starts_ms starts_ms: Int,
+  ends_ms ends_ms: Int,
+) -> CastView {
+  CastView(
+    caster_unit_id: unit,
+    cast_id: cast_state.cast_id(unit_id: unit, number:),
+    spell4_id: Spell4Id(41_886),
+    primary_target: 7,
+    gone: True,
+    current: False,
+    targets: [
+      ViewTarget(unit_id: 7, count:, effects: [
+        HeldEffect(
+          effect_id: Spell4EffectsId(view_effect_id),
+          starts_ms:,
+          ends: EndsAt(ms: ends_ms),
+        ),
+      ]),
+    ],
+  )
+}
+
+/// The view of cast number 1 of unit 21 with one stack, held from 6000 to 14 000.
+fn view_a() -> CastView {
+  view_with(unit: 21, number: 1, count: 1, starts_ms: 6000, ends_ms: 14_000)
+}
+
+/// The view of cast number 2 of unit 21 with one stack, held from 6000 to 14 000.
+fn view_b() -> CastView {
+  view_with(unit: 21, number: 2, count: 1, starts_ms: 6000, ends_ms: 14_000)
+}
+
+/// One input at a time on the monotonic clock.
+type At =
+  #(Int, Event(ServiceEvent(creature.Message)))
+
+fn view_set(
+  by by: Int,
+  view view: CastView,
+  struck_at_ms struck_at_ms: Int,
+  at_ms at_ms: Int,
+) -> At {
+  #(
+    at_ms,
+    OwnEvent(
+      Told(creature.CastViewSet(by: ConnectionId(by), view:, struck_at_ms:)),
+    ),
+  )
+}
+
+fn view_ends(by by: Int, view view: CastView, at_ms at_ms: Int) -> At {
+  #(
+    at_ms,
+    OwnEvent(
+      Told(creature.CastViewEnds(by: ConnectionId(by), cast_id: view.cast_id)),
+    ),
+  )
+}
+
+/// The sprint modifier's start by the connection `by`, struck as it arrives.
+fn sprint_set(by by: Int, at_ms at_ms: Int) -> At {
+  #(
+    at_ms,
+    OwnEvent(
+      Told(creature.ModifierStarts(
+        by: ConnectionId(by),
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: at_ms,
+      )),
+    ),
+  )
+}
+
+fn sprint_end(at_ms at_ms: Int) -> At {
+  #(at_ms, OwnEvent(Told(creature.ModifierEnds(source: sprint_source()))))
+}
+
+/// A strike that kills the Beast.
+fn killed_at(at_ms at_ms: Int) -> At {
+  #(at_ms, OwnEvent(Told(strike_of(damage: 60, cast_id: 1))))
+}
+
+/// The corpse timer, which stands the Beast again.
+fn stands_again_at(at_ms at_ms: Int) -> At {
+  #(at_ms, OwnEvent(step.ServiceTimerFired(corpse_timer)))
+}
+
+/// The Beast watched by the viewers 2 and 5 after these inputs, and the step of the last.
+fn after(inputs inputs: List(At)) -> #(State, ServiceStep(creature.Outgoing)) {
+  list.fold(inputs, #(watched_by_two(), step.Effects([])), fn(held, input) {
+    feed(state: held.0, at_ms: input.0, event: input.1)
+  })
+}
+
+/// The 0x262 a viewer arriving at `at_ms` is sent.
+fn arrival_create(
+  state state: State,
+  at_ms at_ms: Int,
+) -> unit_create_creature.UnitCreateCreature {
+  let #(_, taken) =
+    told(
+      state:,
+      at_ms:,
+      message: Watched(by: ConnectionId(20), stay: map_support.stay(count: 20)),
+    )
+  let assert [
+    #(
+      20,
+      creature.News(news: PeerNews(news: CreatureAppeared(unit:, ..), ..), ..),
+    ),
+    ..
+  ] = outgoing(taken)
+  unit
+}
+
+/// The cast ids and the stacks on the Beast of each cast a viewer arriving at 20 000 is
+/// told.
+fn arrival_holds(state state: State) -> List(#(Int, Int)) {
+  list.map(arrival_create(state:, at_ms: 20_000).tail.casts, fn(cast) {
+    let assert [target] = cast.targets
+    #(cast.cast_id, target.instance_count)
+  })
+}
+
+/// The watches the step starts and ends, in order.
+fn watch_changes(taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      step.Watch(watch: WatchId(number), target: Connection(ConnectionId(by))) ->
+        Ok("watch " <> int.to_string(number) <> " of " <> int.to_string(by))
+      step.Unwatch(watch: WatchId(number)) ->
+        Ok("unwatch " <> int.to_string(number))
+      step.Watch(..) | OwnEffect(..) | step.Log(..) | Stop -> Error(Nil)
+    }
+  })
+}
+
+pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
+  use <- owned_test.run(5000)
+  let id_a = view_a().cast_id
+  let two_stacks =
+    view_with(unit: 21, number: 1, count: 2, starts_ms: 6000, ends_ms: 14_000)
+  list.each(
+    [
+      #(
+        "a CastViewSet is kept (a creature in its first life keeps a set whatever its time)",
+        [view_set(by: 9, view: view_a(), struck_at_ms: 0, at_ms: 6000)],
+        [#(id_a, 1)],
+        ["watch 2 of 9"],
+      ),
+      #(
+        "a second set for the same cast replaces the first: the later count",
+        [
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 9, view: two_stacks, struck_at_ms: 6500, at_ms: 6500),
+        ],
+        [#(id_a, 2)],
+        [],
+      ),
+      #(
+        "CastViewEnds removes it, and the connection's watch with its last holding",
+        [
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_ends(by: 9, view: view_a(), at_ms: 7000),
+        ],
+        [],
+        ["unwatch 2"],
+      ),
+      #(
+        "an end for a cast it does not hold changes nothing",
+        [
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_ends(by: 9, view: view_b(), at_ms: 7000),
+        ],
+        [#(id_a, 1)],
+        [],
+      ),
+      #(
+        "an end from another connection than the holder's changes nothing",
+        [
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_ends(by: 10, view: view_a(), at_ms: 7000),
+        ],
+        [#(id_a, 1)],
+        [],
+      ),
+      #(
+        "a set struck before the creature last stood again is ignored",
+        [
+          killed_at(at_ms: 6000),
+          stands_again_at(at_ms: 66_000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 65_999, at_ms: 66_500),
+        ],
+        [],
+        [],
+      ),
+      #(
+        "a set struck at the very time the creature stood again is kept (the compare is strict)",
+        [
+          killed_at(at_ms: 6000),
+          stands_again_at(at_ms: 66_000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 66_000, at_ms: 66_500),
+        ],
+        [#(id_a, 1)],
+        ["watch 2 of 9"],
+      ),
+      #(
+        "a set reaching a dead creature is kept, and the corpse's 0x262 lists it",
+        [
+          killed_at(at_ms: 6000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 7000, at_ms: 7000),
+        ],
+        [#(id_a, 1)],
+        ["watch 2 of 9"],
+      ),
+      #(
+        "a set that replaces another connection's entry for the cast id unwatches that connection when it holds nothing else",
+        [
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 10, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+        ],
+        [#(id_a, 1)],
+        ["watch 3 of 10", "unwatch 2"],
+      ),
+    ],
+    fn(row) {
+      let #(state, last) = after(inputs: row.1)
+      assert arrival_holds(state:) == row.2 as row.0
+      assert watch_changes(last) == row.3 as row.0
+    },
+  )
+}
+
+pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let id_a = view_a().cast_id
+  let id_b = view_b().cast_id
+  let high =
+    view_with(unit: 21, number: 5, count: 1, starts_ms: 6000, ends_ms: 14_000)
+  list.each(
+    [
+      #(
+        "the first view of a connection starts its watch",
+        [view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000)],
+        [#(id_a, 1)],
+        ["watch 2 of 9"],
+      ),
+      #(
+        "a second view of it starts none",
+        [
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 9, view: view_b(), struck_at_ms: 6100, at_ms: 6100),
+        ],
+        [#(id_a, 1), #(id_b, 1)],
+        [],
+      ),
+      #(
+        "a view's end keeps the watch while a modifier source of the connection is held",
+        [
+          sprint_set(by: 9, at_ms: 6000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_ends(by: 9, view: view_a(), at_ms: 6200),
+        ],
+        [],
+        [],
+      ),
+      #(
+        "and the modifier's end then unwatches, as no view is held",
+        [
+          sprint_set(by: 9, at_ms: 6000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_ends(by: 9, view: view_a(), at_ms: 6200),
+          sprint_end(at_ms: 6300),
+        ],
+        [],
+        ["unwatch 2"],
+      ),
+      #(
+        "a modifier's last end keeps the watch while a view of that connection is held",
+        [
+          sprint_set(by: 9, at_ms: 6000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          sprint_end(at_ms: 6200),
+        ],
+        [#(id_a, 1)],
+        [],
+      ),
+      #(
+        "the watch ending drops that connection's views and sources, keeps another connection's view, and is followed by no Unwatch",
+        [
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 10, view: view_b(), struck_at_ms: 6100, at_ms: 6100),
+          sprint_set(by: 9, at_ms: 6200),
+          #(7000, WatchEnded(WatchId(2))),
+        ],
+        [#(id_b, 1)],
+        [],
+      ),
+      #(
+        "standing again clears every view and unwatches each connection once, one that held both a modifier and a view included: the connections of sources first, then those holding only views by their lowest cast id",
+        [
+          view_set(by: 9, view: high, struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 10, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 11, view: view_b(), struck_at_ms: 6200, at_ms: 6200),
+          sprint_set(by: 11, at_ms: 6300),
+          killed_at(at_ms: 7000),
+          stands_again_at(at_ms: 66_000),
+        ],
+        [],
+        ["unwatch 4", "unwatch 3", "unwatch 2"],
+      ),
+    ],
+    fn(row) {
+      let #(state, last) = after(inputs: row.1)
+      assert arrival_holds(state:) == row.2 as row.0
+      assert watch_changes(last) == row.3 as row.0
+    },
+  )
+}
+
+/// The listing of one target of the Beast, as a unit create lists it: the Spell4 41 886
+/// cast of unit `unit` that has gone, with the one effect row.
+fn listed_cast(
+  unit unit: Int,
+  number number: Int,
+  count count: Int,
+  delay_ms delay_ms: Int,
+  lifetime_ms lifetime_ms: Int,
+) -> UnitCreateCast {
+  UnitCreateCast(
+    caster_unit_id: unit,
+    primary_target_unit_id: 7,
+    cast_id: cast_state.cast_id(unit_id: unit, number:),
+    spell4_id: 41_886,
+    started: 0,
+    targets: [
+      cast_support.listed_target_info(unit_id: 7, index: 0, count:, effects: [
+        cast_support.listed_effect_info(
+          effect_id: view_effect_id,
+          instance_id: 1,
+          delay_ms:,
+          lifetime_ms:,
+        ),
+      ]),
+    ],
+    initial_positions: [],
+    telegraph_positions: [],
+  )
+}
+
+pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
+  use <- owned_test.run(5000)
+  let second_caster =
+    view_with(unit: 22, number: 1, count: 3, starts_ms: 6000, ends_ms: 14_000)
+  let delayed =
+    view_with(unit: 21, number: 1, count: 1, starts_ms: 9000, ends_ms: 14_000)
+  list.each(
+    [
+      #("a creature holding no view lists none", [], 10_000, []),
+      #(
+        "two casters' views are both listed, in cast id order",
+        [
+          view_set(by: 10, view: second_caster, struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+        ],
+        10_000,
+        [
+          listed_cast(
+            unit: 21,
+            number: 1,
+            count: 1,
+            delay_ms: 0,
+            lifetime_ms: 4000,
+          ),
+          listed_cast(
+            unit: 22,
+            number: 1,
+            count: 3,
+            delay_ms: 0,
+            lifetime_ms: 4000,
+          ),
+        ],
+      ),
+      #(
+        "an effect's lifetime is its end less the arrival's time, not the tell's",
+        [view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000)],
+        12_000,
+        [
+          listed_cast(
+            unit: 21,
+            number: 1,
+            count: 1,
+            delay_ms: 0,
+            lifetime_ms: 2000,
+          ),
+        ],
+      ),
+      #(
+        "its delay is the delay still to run at the arrival",
+        [view_set(by: 9, view: delayed, struck_at_ms: 6000, at_ms: 6000)],
+        7000,
+        [
+          listed_cast(
+            unit: 21,
+            number: 1,
+            count: 1,
+            delay_ms: 2000,
+            lifetime_ms: 7000,
+          ),
+        ],
+      ),
+      #(
+        "a corpse lists its views",
+        [
+          killed_at(at_ms: 6000),
+          view_set(by: 9, view: view_a(), struck_at_ms: 7000, at_ms: 7000),
+        ],
+        10_000,
+        [
+          listed_cast(
+            unit: 21,
+            number: 1,
+            count: 1,
+            delay_ms: 0,
+            lifetime_ms: 4000,
+          ),
+        ],
+      ),
+      #(
+        "the tail's cast id stays 0 though the view's cast is its caster's current cast",
+        [
+          view_set(
+            by: 9,
+            view: CastView(..view_a(), current: True),
+            struck_at_ms: 6000,
+            at_ms: 6000,
+          ),
+        ],
+        10_000,
+        [
+          listed_cast(
+            unit: 21,
+            number: 1,
+            count: 1,
+            delay_ms: 0,
+            lifetime_ms: 4000,
+          ),
+        ],
+      ),
+    ],
+    fn(row) {
+      let #(state, _) = after(inputs: row.1)
+      let unit = arrival_create(state:, at_ms: row.2)
+      assert unit.tail.casts == row.3 as row.0
+      assert unit.tail.cast_id == 0 as row.0
+    },
+  )
 }

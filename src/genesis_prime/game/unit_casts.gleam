@@ -44,6 +44,15 @@
 ////   is right: the client arms it from the later go).
 //// - The item-use spells' telegraph rows that carry an end replay from the
 ////   viewer's arrival, not from where the cast stood.
+//// - A creature's list holds the casts its viewers' casters told it of (`CastViewSet`),
+////   not a cast of its own spells. A `CastViewSet` that reaches the creature after its
+////   create was written leaves the node missing for that viewer until the cast's next
+////   change on it, and a 0x811 for the creature that reaches a viewer before the
+////   creature's create leaves the node the entry makes until the cast's 0x7fe.
+//// - A creature that leaves its caster's sight loses the view for arrivals, while a viewer
+////   already seeing both keeps the node until the cast's 0x7fe (the caster's client
+////   destroys its nodes on the creature at its own 0x355, `0x1404550d0`).
+//// - A crowd-control state a player holds on a creature is not listed, as for players.
 
 import genesis_prime/game/cast/target_info
 import genesis_prime/game/lasting

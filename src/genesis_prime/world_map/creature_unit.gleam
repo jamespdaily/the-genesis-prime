@@ -143,9 +143,9 @@ pub fn overlaid(
 /// in progress that the list holds.
 pub fn with_casts(
   unit unit: UnitCreateCreature,
-  casts _casts: List(UnitCreateCast),
+  casts casts: List(UnitCreateCast),
 ) -> UnitCreateCreature {
-  unit
+  UnitCreateCreature(..unit, tail: UnitCreateTail(..unit.tail, casts:))
 }
 
 /// The health stat of a creature's 0x262: 0 for a creature that lies dead.
