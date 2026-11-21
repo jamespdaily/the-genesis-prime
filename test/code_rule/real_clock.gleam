@@ -107,7 +107,6 @@ pub fn entry_points() -> List(EntryPoint) {
     EntryPoint("login_support", "start_real", tree),
     EntryPoint("login_support", "start_real_with", tree),
     EntryPoint("login_support", "start_real_on", tree),
-    EntryPoint("login_support", "start_real_with_jim", tree),
     EntryPoint("login_support", "real_settings", settings),
     EntryPoint("login_support", "servers_settings", settings),
     EntryPoint("login_support", "servers_settings_over", settings),
@@ -648,12 +647,16 @@ pub fn genuine_real_time() -> List(Exception) {
       "checks an ask's deadline passing on the node's time against a target that never answers",
     ),
     Exception(
-      "test/game_client_poll_test.gleam",
-      "its test of the client's bound on a poll starts the tree on the real clock beside a socket that stays silent, since the client's bound is a real time on a socket no driven clock reaches",
-    ),
-    Exception(
       "test/world_map_registry_test.gleam",
       "checks Maps' deadlines passing on the node's time against a Maps that never answers",
+    ),
+    Exception(
+      "test/server_test.gleam",
+      "its settings tests read the server's own settings (login_support.servers_settings), which carry the operating system's script, real service time and production deadlines by design; they start no process",
+    ),
+    Exception(
+      "test/sitting_test.gleam",
+      "its settings tests read the server's own settings (login_support.servers_settings) to check what a sitting changes in them; they start no process",
     ),
     Exception(
       "test/literal_area_ffi.erl",
@@ -674,14 +677,6 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     Exception(
       "test/login_support.gleam",
       "starts the tree on the operating system's script and real service time (real_settings), with a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s",
-    ),
-    Exception(
-      "test/server_test.gleam",
-      "calls login_support.servers_settings, which makes the server's own settings: the operating system's script, real service time and a send deadline of 300 ms",
-    ),
-    Exception(
-      "test/sitting_test.gleam",
-      "calls login_support.servers_settings, which makes the server's own settings: the operating system's script, real service time and a send deadline of 300 ms",
     ),
     Exception(
       "test/wire_replay_support.gleam",

@@ -297,11 +297,6 @@ pub fn a_call_of_a_support_function_that_runs_the_real_clock_is_a_breach_test() 
       "the real tree's start with a change",
     ),
     #(
-      ["  login_support.start_real_with_jim()"],
-      [7],
-      "the real tree's start with Jim",
-    ),
-    #(
       ["  login_support.real_settings(pool:)"],
       [7],
       "the settings of a real tree",

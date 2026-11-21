@@ -329,7 +329,11 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
 }
 
 /// Waits until Maps no longer finds the run with the incarnation, which it
-/// does once it has taken the map's end from its monitor.
+/// does once it has taken the map's end from its monitor. It stays a poll, not
+/// a `driven_time.wait_for`: the map's exit signals Maps and the test's own
+/// monitor as two receivers with no order between them, so when the test's
+/// answer returns, Maps may not have the end in its mailbox yet, and the
+/// barrier would look too early and fail a run that was on its way.
 fn await_not_found(
   world world: World,
   map map: MapId,

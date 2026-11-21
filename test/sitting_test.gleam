@@ -20,12 +20,12 @@ import character_tables
 import content_support
 import database_support
 import driven_time
-import event_wait
 import game_client
 import genesis_prime
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
+import genesis_prime/login/sts_xml
 import genesis_prime/message/game_server_handoff
 import genesis_prime/server
 import genesis_prime/sitting
@@ -286,14 +286,30 @@ pub fn the_servers_start_records_a_connection_when_the_record_directory_is_set_t
         ),
       )
     })
-  let client = login_client.connect(login_support.ports(started).sts_port)
-  // The connection is recorded once the listener has accepted it.
-  event_wait.until("the connection's recording is made", fn() {
-    simplifile.read_directory(sitting_folder)
-    |> result.map(list.any(_, string.ends_with(_, ".jsonl")))
-    |> result.unwrap(False)
-  })
-  let _closed = mug.shutdown(client)
+  let client = login_client.sts_connect(login_support.ports(started))
+  // The connection opens its recording when the listener accepts it, before it
+  // reads the clock; an answer to its first request shows it was accepted, and
+  // so a participant the wait covers.
+  let answered =
+    login_client.ask(
+      client:,
+      protocol: "Auth",
+      command: "LoginStart",
+      body: sts_xml.Parent("Request", [
+        sts_xml.Text("LoginName", "genesis"),
+        sts_xml.Text("NetAddress", "192.168.1.5"),
+      ]),
+    )
+  driven_time.wait_for(
+    time:,
+    what: "the connection's recording is made",
+    condition: fn() {
+      simplifile.read_directory(sitting_folder)
+      |> result.map(list.any(_, string.ends_with(_, ".jsonl")))
+      |> result.unwrap(False)
+    },
+  )
+  let _closed = mug.shutdown(answered.client.socket)
   // The tree's stop ends the connection, so its file has its closing line.
   login_support.stop(started)
   let assert Ok(names) = simplifile.read_directory(sitting_folder)
