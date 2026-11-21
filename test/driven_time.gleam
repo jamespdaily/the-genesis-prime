@@ -51,8 +51,9 @@
 ////   it, and the wait goes on (`open_wait`, `owned_test.run`).
 
 import genesis_prime/connection/script.{
-  type Elapsed, type Scripts, Elapsed, Issued, Script,
+  type Elapsed, type Script, type Scripts, Elapsed, Issued, Script,
 }
+import genesis_prime/seed.{type Seed}
 import genesis_prime/service/shell.{type ServiceTime, ServiceTime}
 import genesis_prime/step.{type Now, type TimerId, Now}
 import genesis_prime/step/runtime
@@ -306,16 +307,47 @@ pub fn scripts(time time: Time, over over: Scripts) -> Scripts {
     use issued <- result.map(over())
     Issued(
       ..issued,
-      script: Script(
-        ..issued.script,
-        clock: fn(_taking) { read(time) },
-        node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
-        schedule: fn(subject, timer, reference, after_ms) {
-          started(time:, subject:, timer:, reference:, after_ms:)
-        },
+      script: script_of(
+        time:,
+        seed: issued.script.seed,
+        next_read: issued.script.next_read,
       ),
     )
   }
+}
+
+/// The scripts of the connections of a listener that runs on this clock alone:
+/// each connection draws a seed of its own from the operating system's random
+/// source, reads this clock for each input and starts its timers here, and has
+/// no read size of its own.
+pub fn connection_scripts(time: Time) -> Scripts {
+  fn() {
+    Ok(Issued(
+      ordinal: runtime.unique_id(),
+      script: script_of(time:, seed: seed.from_system(), next_read: fn() {
+        None
+      }),
+    ))
+  }
+}
+
+/// A connection's script on this clock: its clock and timers are this clock's,
+/// and the node's time for an input, from which an ask's deadline counts, is the
+/// node's own.
+fn script_of(
+  time time: Time,
+  seed seed: Seed,
+  next_read next_read: script.NextRead,
+) -> Script {
+  Script(
+    seed:,
+    clock: fn(_taking) { read(time) },
+    node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
+    schedule: fn(subject, timer, reference, after_ms) {
+      started(time:, subject:, timer:, reference:, after_ms:)
+    },
+    next_read:,
+  )
 }
 
 /// The clock and scheduler a tree or a world is started with

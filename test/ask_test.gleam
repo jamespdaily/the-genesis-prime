@@ -6,15 +6,25 @@
 //// - The asking rule's records in the doc comment of `asking_rule`.
 //// Every wait is for an event, with a deadline a passing test never reaches,
 //// except where the test is about a deadline passing: those asks wait 300
-//// milliseconds.
+//// milliseconds of the node's own time, which the driven clock does not move (the
+//// shell counts an ask's wait from the node's time), and assert only that at
+//// least that much of it has passed, against a target that never answers. The
+//// asking rule writes its script's clock reading. An outcome that came at once
+//// and one that came at the deadline give the same code in one case (a lookup
+//// that got no reply in time), so that test's script reads the node's time
+//// (`on_the_nodes_time`), and a shell that waited for the deadline first shows in
+//// the outcome's reading. The other at-once outcomes have codes a deadline
+//// cannot give.
 
 import ask_support
 import asking_rule
+import driven_time
 import event_wait
 import gate_rule
-import genesis_prime/connection/script
+import genesis_prime/connection/script.{type Scripts, Issued, Script}
 import genesis_prime/service
-import genesis_prime/step.{ConnectionId, Now}
+import genesis_prime/step.{type Now, ConnectionId, Now}
+import genesis_prime/step/runtime
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -23,6 +33,7 @@ import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
+import gleam/result
 import log_capture
 import mailbox_support
 import mug
@@ -38,6 +49,7 @@ const short = 300
 pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_bytes_sent_during_the_ask_come_after_it_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
+  let time = driven_time.new()
   // The directory, which runs in the connection's process, reports that it was
   // called and waits for the test to say it has read the step's write. A shell
   // that made the ask before carrying out the step's effects would block here
@@ -45,8 +57,10 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
   let calls = process.new_subject()
   let reaching_the_gate =
     ask_support.directory(gate:, store: None, sent: ask_support.unreported)
+  // The script's clock and the node's time are one number here, so the deadline
+  // the directory is given is the one the ask's record writes.
   let server =
-    ask_support.start(
+    ask_support.start_driven(
       rule: asking_rule.rule(),
       directory: fn(request, deadline_ms, reply) {
         let acknowledged = process.new_subject()
@@ -58,9 +72,15 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
           )
         reaching_the_gate(request, deadline_ms, reply)
       },
-      shutdown_ms: 1000,
+      wire_recorder: None,
+      scripts: on_one_time(ask_support.driven_scripts(time)),
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
       with: fn(builder) {
-        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+        supervisor.add(
+          builder,
+          ask_support.gate(name: gate, shutdown_ms: 1000, time:),
+        )
       },
     )
   let client = ask_support.connect(server)
@@ -88,8 +108,6 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
     && outcome.code == asking_rule.code_opened
     && outcome.extra == 1
     as "the gate's answer comes back as the outcome of ask 1"
-  assert outcome.milliseconds < asked.milliseconds
-    as "the answer came before the ask's deadline"
   assert ask_support.read_pong(client) == <<0x70, 7>>
     as "the byte sent during the ask is read after the outcome"
   ask_support.stop(server)
@@ -103,12 +121,13 @@ pub fn the_directory_is_given_the_ask_counted_from_the_nodes_time_the_script_gav
   // after the node's time, whatever the `Now` says, and the one value is what
   // the directory is given: a shell that read the node's clock once more
   // would give a deadline of its own reading.
-  let assert Ok(issued) = script.operating_system() as "the server's script"
+  let assert Ok(issued) = ask_support.driven_scripts(driven_time.new())()
+    as "a connection's script"
   let scripts = fn() {
     Ok(
-      script.Issued(
+      Issued(
         ..issued,
-        script: script.Script(
+        script: Script(
           ..issued.script,
           clock: fn(_taking) { Now(monotonic_ms: -1000, filetime: 5) },
           node_monotonic_ms: fn(_now) { 50_000 },
@@ -118,16 +137,14 @@ pub fn the_directory_is_given_the_ask_counted_from_the_nodes_time_the_script_gav
   }
   let given = process.new_subject()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: asking_rule.rule(),
       directory: fn(_request, deadline_ms, _reply) {
         process.send(given, deadline_ms)
         Error(Nil)
       },
-      shutdown_ms: 1000,
       wire_recorder: None,
       scripts:,
-      send_deadline_ms: ask_support.real_send_deadline_ms(),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
@@ -148,12 +165,12 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
   let gate = process.new_name("gate")
   let sent = process.new_subject()
   let server =
-    ask_support.start(
+    ask_support.start_on(
+      time: driven_time.new(),
       rule: asking_rule.rule(),
       directory: ask_support.directory(gate:, store: None, sent: fn(reached) {
         process.send(sent, reached)
       }),
-      shutdown_ms: 1000,
       with: fn(builder) { builder },
     )
   let client = ask_support.connect(server)
@@ -163,12 +180,10 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
     1,
     wait_ms: ask_support.patient,
   )
-  let asked = ask_support.read_record(client)
+  let _asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_not_running
-    as "no process holds the gate's name"
-  assert outcome.milliseconds < asked.milliseconds
-    as "at once, not at the ask's deadline"
+    as "no process holds the gate's name, so the outcome is not a deadline's"
   assert process.named(gate) == Error(Nil) as "nothing runs at the address"
   // Absence check: the limit is how long this watches for a message that must
   // not come, here a look at the mailbox now.
@@ -180,23 +195,24 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
 pub fn a_target_that_never_answers_gives_no_answer_in_time_and_not_before_the_deadline_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000)
+  let server = start_with(gate:)
   let client = ask_support.connect(server)
+  let before = ask_support.monotonic_ms()
   ask_support.command(client, asking_rule.ignore_command, 0, wait_ms: short)
-  let asked = ask_support.read_record(client)
+  let _asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
+  let after = ask_support.monotonic_ms()
   assert outcome.letter == asking_rule.outcome
     && outcome.code == asking_rule.code_no_answer_in_time
     as "the gate took the ask and never answered"
-  assert outcome.milliseconds >= asked.milliseconds
-    as "not before the ask's deadline"
+  assert after - before >= short as "not before the ask's deadline"
   ask_support.stop(server)
 }
 
 pub fn a_target_that_ends_before_answering_gives_ended_before_answer_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000)
+  let server = start_with(gate:)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -204,12 +220,10 @@ pub fn a_target_that_ends_before_answering_gives_ended_before_answer_test() -> N
     0,
     wait_ms: ask_support.patient,
   )
-  let asked = ask_support.read_record(client)
+  let _asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_ended_before_answer
-    as "the gate crashed on the ask"
-  assert outcome.milliseconds < asked.milliseconds
-    as "when the target ended, not at the ask's deadline"
+    as "the gate crashed on the ask, so the outcome is not a deadline's"
   ask_support.stop(server)
 }
 
@@ -218,7 +232,7 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   // Connection shell only: the service shell makes no ask (its request type
   // has no values), so no answer can come late to it.
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000)
+  let server = start_with(gate:)
   let client = ask_support.connect(server)
   ask_support.command(client, asking_rule.await_command, 1, wait_ms: short)
   let _asked_first = ask_support.read_record(client)
@@ -278,7 +292,7 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
 pub fn a_replied_ask_monitors_its_target_while_it_waits_and_leaves_no_monitor_after_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000)
+  let server = start_with(gate:)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -310,8 +324,9 @@ pub fn a_replied_ask_monitors_its_target_while_it_waits_and_leaves_no_monitor_af
 pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_stops_arrival_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let shutdown_ms = 2000
-  let server = start_with(gate:, shutdown_ms:)
+  let time = driven_time.new()
+  let server =
+    start_over(gate:, time:, scripts: ticking(ask_support.driven_scripts(time)))
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -320,21 +335,23 @@ pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_s
     wait_ms: ask_support.patient,
   )
   let asked = ask_support.read_record(client)
-  let before_stop = ask_support.monotonic_ms()
   let stopped = ask_support.begin_stop_tree(server.supervisor)
   let outcome = ask_support.read_record(client)
   let stopping = ask_support.read_record(client)
-  let after_stopping = ask_support.monotonic_ms()
   assert outcome.ask == 1 && outcome.code == asking_rule.code_stopped_waiting
-    as "the stop ended the wait"
-  assert outcome.milliseconds < asked.milliseconds
-    as "at once, not at the ask's deadline"
+    as "the stop ended the wait, so the outcome is not a deadline's"
   assert stopping.letter == asking_rule.stopping
     as "Stopping is the input after the outcome"
-  // The connection settings' send deadline is 300 ms (ask_support.start).
-  assert stopping.milliseconds >= before_stop + shutdown_ms - 300
-    && stopping.milliseconds <= after_stopping + shutdown_ms - 300
-    as "the deadline is the stop's arrival plus the shutdown time less the send deadline"
+  // The connection counts the stop from its script's clock, and a stop's
+  // deadline is that reading plus the shutdown time less the send deadline: a
+  // listener's connections have a shutdown time of twice, and a send deadline of
+  // once, `beyond_the_test_ms` (`ask_support.driven_settings`). The ask's own
+  // record holds its reading, which the ask's deadline is counted from.
+  let after_stopping = recording_support.unique_number()
+  let ask_started_at = asked.milliseconds - ask_support.patient
+  let stopped_at = stopping.milliseconds - ask_support.beyond_the_test_ms
+  assert stopped_at > ask_started_at && stopped_at < after_stopping
+    as "the deadline counts from the stop's arrival, a reading after the ask's start and before the test saw the stop"
   assert ask_support.ended(
       watched: stopped,
       what: "the server's tree to end after its stop",
@@ -350,7 +367,6 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_bytes_with_no_other_proc
   let server =
     start_recorded(
       gate:,
-      shutdown_ms: 1000,
       wire_recorder: recording_support.wire_recorder(folder),
     )
   let client = ask_support.connect(server)
@@ -398,7 +414,11 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_bytes_with_no_other_proc
       with: fn(builder) {
         supervisor.add(
           builder,
-          ask_support.gate(name: replayed_gate, shutdown_ms: 1000),
+          ask_support.gate(
+            name: replayed_gate,
+            shutdown_ms: 1000,
+            time: driven_time.new(),
+          ),
         )
       },
     )
@@ -409,7 +429,7 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_bytes_with_no_other_proc
 pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_socket_closes_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000)
+  let server = start_with(gate:)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -432,7 +452,7 @@ pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_so
 pub fn the_writes_of_a_step_before_its_stop_leave_in_the_order_the_rule_gave_and_then_the_socket_closes_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000)
+  let server = start_with(gate:)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -456,7 +476,7 @@ pub fn the_writes_of_a_step_before_its_stop_leave_in_the_order_the_rule_gave_and
 pub fn the_write_of_a_step_before_its_ask_leaves_before_the_ask_is_made_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000)
+  let server = start_with(gate:)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -476,45 +496,121 @@ pub fn the_write_of_a_step_before_its_ask_leaves_before_the_ask_is_made_test() -
 
 fn start_with(
   gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
-  shutdown_ms shutdown_ms: Int,
 ) -> ask_support.Server {
-  ask_support.start(
+  start_timed(gate:, time: driven_time.new())
+}
+
+/// As `start_with`, on the driven clock `time`.
+fn start_timed(
+  gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
+  time time: driven_time.Time,
+) -> ask_support.Server {
+  start_over(gate:, time:, scripts: ask_support.driven_scripts(time))
+}
+
+/// As `start_with`, whose connections take `scripts`, and whose gate runs on the
+/// driven clock `time`.
+fn start_over(
+  gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
+  time time: driven_time.Time,
+  scripts scripts: Scripts,
+) -> ask_support.Server {
+  ask_support.start_driven(
     rule: asking_rule.rule(),
     directory: ask_support.directory(
       gate:,
       store: None,
       sent: ask_support.unreported,
     ),
-    shutdown_ms:,
+    wire_recorder: None,
+    scripts:,
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
     with: fn(builder) {
-      supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+      supervisor.add(
+        builder,
+        ask_support.gate(name: gate, shutdown_ms: 1000, time:),
+      )
     },
   )
+}
+
+/// The scripts as they are, with a clock that gives each input a reading of its
+/// own, later than the last: an ask's start and a stop's arrival are two
+/// readings, which the driven clock, standing still, would make one.
+fn ticking(scripts: Scripts) -> Scripts {
+  fn() {
+    use issued <- result.map(scripts())
+    Issued(
+      ..issued,
+      script: Script(..issued.script, clock: fn(_taking) {
+        let reading = recording_support.unique_number()
+        Now(monotonic_ms: reading, filetime: reading)
+      }),
+    )
+  }
 }
 
 /// As `start_with`, with the connections recorded on the wire.
 fn start_recorded(
   gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
-  shutdown_ms shutdown_ms: Int,
   wire_recorder wire_recorder: WireRecorder,
 ) -> ask_support.Server {
-  ask_support.start_scripted(
+  let time = driven_time.new()
+  ask_support.start_driven(
     rule: asking_rule.rule(),
     directory: ask_support.directory(
       gate:,
       store: None,
       sent: ask_support.unreported,
     ),
-    shutdown_ms:,
     wire_recorder: Some(wire_recorder),
-    scripts: script.operating_system,
-    send_deadline_ms: ask_support.real_send_deadline_ms(),
+    scripts: ask_support.driven_scripts(time),
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) {
-      supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+      supervisor.add(
+        builder,
+        ask_support.gate(name: gate, shutdown_ms: 1000, time:),
+      )
     },
   )
+}
+
+/// The scripts as they are, with the node's time for an input the input's own
+/// reading of the script's clock: the two are one number, as in the operating
+/// system's script.
+fn on_one_time(scripts: Scripts) -> Scripts {
+  fn() {
+    use issued <- result.map(scripts())
+    Issued(
+      ..issued,
+      script: Script(..issued.script, node_monotonic_ms: fn(now: Now) {
+        now.monotonic_ms
+      }),
+    )
+  }
+}
+
+/// The scripts as they are, whose clock reads the node's time for each input,
+/// so what the rule writes is the node's time and a wait the shell makes shows
+/// in it. The clock is still the driven one's call, so the driven clock counts
+/// the connection as a participant.
+fn on_the_nodes_time(scripts: Scripts) -> Scripts {
+  fn() {
+    use issued <- result.map(scripts())
+    let driven = issued.script.clock
+    Issued(
+      ..issued,
+      script: Script(
+        ..issued.script,
+        clock: fn(taking) {
+          Now(..driven(taking), monotonic_ms: runtime.monotonic_ms())
+        },
+        node_monotonic_ms: fn(now: Now) { now.monotonic_ms },
+      ),
+    )
+  }
 }
 
 // ---- a leave's ask of a map's run ----
@@ -522,12 +618,15 @@ fn start_recorded(
 pub fn a_directory_that_got_no_reply_in_time_gives_no_answer_in_time_at_once_and_sends_nothing_test() -> Nil {
   use <- owned_test.run(30_000)
   let server =
-    ask_support.start(
+    ask_support.start_driven(
       rule: asking_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) {
         Ok(service.NoReplyInTime)
       },
-      shutdown_ms: 1000,
+      wire_recorder: None,
+      scripts: on_the_nodes_time(ask_support.driven_scripts(driven_time.new())),
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
     )
   let client = ask_support.connect(server)
@@ -543,7 +642,7 @@ pub fn a_directory_that_got_no_reply_in_time_gives_no_answer_in_time_at_once_and
     && outcome.code == asking_rule.code_no_answer_in_time
     as "the directory's lookup got no reply by the deadline: the rule is told no answer came, never that the process is not running"
   assert outcome.milliseconds < asked.milliseconds
-    as "at once: the deadline has passed, so there is nothing to wait for"
+    as "at once: the deadline has passed, so there is nothing to wait for; the outcome's reading of the node's time is before the ask's deadline"
   ask_support.stop(server)
 }
 
@@ -552,7 +651,8 @@ pub fn a_directory_that_got_no_reply_in_time_gives_no_answer_in_time_at_once_and
 fn start_asking_a_run(
   maps maps: process.Name(world_map_registry.Message),
 ) -> ask_support.Server {
-  ask_support.start(
+  ask_support.start_on(
+    time: driven_time.new(),
     rule: asking_rule.rule(),
     directory: fn(_request, deadline_ms, _reply) {
       world_map_registry.ask_run(
@@ -564,7 +664,6 @@ fn start_asking_a_run(
         reply: fn(_answer) { Nil },
       )
     },
-    shutdown_ms: 1000,
     with: fn(builder) { builder },
   )
 }
@@ -589,13 +688,14 @@ pub fn a_leave_whose_find_maps_never_answers_because_it_exited_after_the_find_gi
     open_wait.received(from: registered, what: "the stand-in to register")
   let server = start_asking_a_run(maps:)
   let client = ask_support.connect(server)
+  let before = ask_support.monotonic_ms()
   ask_support.command(client, asking_rule.echo_command, 1, wait_ms: short)
-  let asked = ask_support.read_record(client)
+  let _asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
+  let after = ask_support.monotonic_ms()
   assert outcome.code == asking_rule.code_no_answer_in_time
     as "no reply from Maps: a live map may still hold the player, so the rule is told no answer came"
-  assert outcome.milliseconds >= asked.milliseconds
-    as "not before the ask's deadline"
+  assert after - before >= short as "not before the ask's deadline"
   ask_support.stop(server)
 }
 
@@ -609,10 +709,9 @@ pub fn a_leave_when_maps_is_not_running_gives_not_running_at_once_test() -> Nil 
     1,
     wait_ms: ask_support.patient,
   )
-  let asked = ask_support.read_record(client)
+  let _asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_not_running
     as "no process holds Maps' name, so no map runs and no player is held"
-  assert outcome.milliseconds < asked.milliseconds
   ask_support.stop(server)
 }

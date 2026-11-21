@@ -52,7 +52,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import login_client
-import login_support
+import login_settings_support
 import login_vectors as vector
 import owned_test
 import scripted_client.{type Exchange, type Reply}
@@ -146,7 +146,7 @@ fn connect(session: Session) -> #(Session, ConnectionStep(Request)) {
 /// The connection after the client's Connect.
 fn connected(seed seed: BitArray) -> Session {
   let #(session, taken) =
-    connect(accepted(seed:, settings: login_support.sts_settings()))
+    connect(accepted(seed:, settings: login_settings_support.sts_settings()))
   assert support.effects_of(taken) == []
     as "Connect is one-way and gets no answer"
   session
@@ -619,7 +619,7 @@ fn ping_request() -> BitArray {
 
 /// The settings of the STS rule with this bucket.
 fn rated(rate rate: client_connection.Bucket) -> sts_connection.Settings {
-  sts_connection.Settings(..login_support.sts_settings(), rate:)
+  sts_connection.Settings(..login_settings_support.sts_settings(), rate:)
 }
 
 pub fn a_full_burst_of_requests_is_taken_and_one_more_in_the_same_millisecond_ends_the_connection_with_a_warning_test() -> Nil {
@@ -970,7 +970,7 @@ pub fn the_clients_reconnect_read_of_login_start_then_connect_is_answered_with_k
   let #(session, taken) =
     send_bytes(
       Session(
-        ..accepted(seed:, settings: login_support.sts_settings()),
+        ..accepted(seed:, settings: login_settings_support.sts_settings()),
         sequence: scripted_client.reconnect_sequence + 1,
       ),
       scripted_client.reconnect_read(name: vector.name),

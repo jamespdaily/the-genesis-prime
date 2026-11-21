@@ -27,6 +27,7 @@ import ask_support
 import asking_rule
 import character_support
 import database_support
+import driven_time
 import event_wait
 import genesis_prime/add_character/sql as add_character_sql
 import genesis_prime/game/character_name
@@ -263,14 +264,14 @@ pub fn with_the_stores_supervisor_not_running_an_ask_to_the_store_gives_not_runn
   // No process is started under this name.
   let absent = process.new_name("store")
   let server =
-    ask_support.start(
+    ask_support.start_on(
+      time: driven_time.new(),
       rule: asking_rule.rule(),
       directory: ask_support.directory(
         gate: process.new_name("gate"),
         store: Some(absent),
         sent: ask_support.unreported,
       ),
-      shutdown_ms: 1000,
       with: fn(builder) { builder },
     )
   let client = ask_support.connect(server)
@@ -2135,14 +2136,14 @@ fn start_asker(
   store: Store,
   sent: fn(service.Sent) -> Nil,
 ) -> ask_support.Server {
-  ask_support.start(
+  ask_support.start_on(
+    time: driven_time.new(),
     rule: asking_rule.rule(),
     directory: ask_support.directory(
       gate: process.new_name("gate"),
       store: Some(store.name),
       sent:,
     ),
-    shutdown_ms: 1000,
     with: fn(builder) { builder },
   )
 }

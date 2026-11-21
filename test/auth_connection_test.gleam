@@ -49,13 +49,13 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import login_client
-import login_support
+import login_settings_support
 import owned_test
 import scripted_client.{StsLogin}
 import unitest
 
 fn settings(planted planted: Option(Frame)) -> auth_connection.Settings {
-  Settings(..login_support.auth_settings(), planted:)
+  Settings(..login_settings_support.auth_settings(), planted:)
 }
 
 fn holder() -> hand_off.Holder {

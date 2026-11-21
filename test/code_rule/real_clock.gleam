@@ -25,12 +25,11 @@
 ////   literal 0, and a `socket_read.Within`, which wait a real time;
 //// - an import of `serving_node`, `fresh_node` or `real_start_node`, which
 ////   start the release's own processes on the node's clock;
-//// - a call of a function in `entry_points`: the functions of `login_support`,
-////   `ask_support` and `world_support` that start the tree, a listener, a world
-////   or a gate on the real clock, or hand out the settings that do. A file
-////   that calls one is on the real clock though its own text names no source,
-////   so it is listed like a file that names one. A test that moves to the
-////   driven clock stops calling them.
+//// - a call of a function in `entry_points`: the functions of `login_support`
+////   that hand out the server's own settings, which carry the operating system's
+////   script, real service time and production deadlines. A file that calls one
+////   is on the real clock though its own text names no source, so it is listed
+////   like a file that names one.
 ////
 //// An Erlang file under `test/` that calls `erlang:send_after`,
 //// `erlang:start_timer`, `timer:sleep`, `timer:send_after`,
@@ -46,29 +45,44 @@
 //// number that a rule takes as data (an idle stop, a respawn time, the ask
 //// deadline in a pure rule test) is no deadline and is not read.
 ////
-//// The exception list has two parts. `genuine_real_time` holds the files that
-//// check real time itself, each with its reason. `still_on_the_real_clock` is
-//// the gap: the test files whose tests still run on the real clock, which the
-//// coverage measure lists; a file leaves it with its last real-clock test, and
-//// a listed file with nothing left is a breach, so the list cannot go stale.
+//// The exception list (`genuine_real_time`) holds the files that check real time
+//// itself, each with its reason. A listed file with nothing left is a breach, so
+//// the list cannot go stale.
 ////
 //// What the rule does not catch:
 //// - A support function that starts the real clock and is not in
 ////   `entry_points`. A support module that names a source itself is read (and
 ////   is listed), but a test that calls it is caught only for the functions
-////   named. `ask_support.await_new_pid` (a poll that sleeps 1 ms), and the
-////   waits of `event_wait`, `readiness_support` and `owned_test`, are not
-////   named: each ends by its own condition or by the test's deadline.
-//// - A shutdown deadline is read only through a call of `ask_support`'s
-////   `start_joined`, `start_scripted` or `start_telling`, which take it as
-////   given; Part B reads no `shutdown_ms` literal. `wire_recorder_test`'s kill
-////   test passes 300 ms to `start_scripted`, so the file is on
-////   `still_on_the_real_clock` for it alone, and a short shutdown given any
-////   other way is not read.
-//// - A file on `genuine_real_time` is exempt as a whole. `ask_test`,
-////   `world_map_registry_test`, `application_test` and `readiness_test` also
-////   hold tests on the real clock that the reason does not name, and a new
-////   real-clock test added to one of them is not caught.
+////   named. The waits of `event_wait`, `readiness_support` and `owned_test`
+////   are not named: each ends by its own condition or by the test's deadline.
+//// - An ask whose wait the node's own time counts. The shells count an ask's
+////   deadline from the node's time, which the driven clock leaves alone, so a
+////   test of an ask that passes its deadline waits that time in real
+////   milliseconds, given as the byte of a command, not as a source: the three
+////   deadline tests of `ask_test` and `world_map_registry_test`'s wait 300 ms
+////   and 1 s, `account_store_test`'s waits 300 ms and `wire_replay_test`'s
+////   ask of 200 ms ends at its deadline. Each asserts only that at least that
+////   long has passed, or the bytes the outcome gives, against a target that
+////   never answers.
+//// - The replay's wait. Every replay takes the bound of its waits as a setting
+////   (`wire_replay.replay`'s `wait_ms`, a labelled argument, not read here).
+////   The tests pass `ask_support.beyond_the_test_ms`, which no test reaches, and
+////   five tests of `wire_replay_test` pass `wire_replay_support.give_up_wait_ms`,
+////   5 s of real time, through `run_giving_up` and `run_giving_up_with`; each
+////   fails by that bound, against a target that never answers, and asserts no
+////   time. `wire_replay_test` is not listed, since it names no source, so a
+////   new test that calls those two functions is not caught.
+//// - The database client's own timers. `account_store_test`'s test with no
+////   database gives pog a queue target of 50 ms and a queue interval of 100 ms,
+////   which count the node's time and which no rule reads; its outcome
+////   (`unavailable`) is the same on a slow machine.
+//// - A shutdown deadline: Part B reads no `shutdown_ms` literal. The driven
+////   listeners take their shutdown from `ask_support.driven_settings`, and a test
+////   that must end a child as a supervisor's timer does sends the exit itself.
+//// - A file on `genuine_real_time` is exempt as a whole. `application_test` and
+////   `readiness_test` also hold tests on the real clock that the reason does
+////   not name, and a new real-clock test added to one of them, or to any listed
+////   file, is not caught.
 //// - Part B reads a literal. A short deadline given through a variable, a
 ////   module constant or a punned label is not read, and neither is a time given
 ////   to `process.call` or `actor.call`.
@@ -93,46 +107,15 @@ pub type EntryPoint {
   EntryPoint(module: String, function: String, because: String)
 }
 
-const the_operating_system_script =
-  "runs its connections on the operating system's script"
-
-/// The functions of the support modules that start the real tree, a listener, a
-/// world or a connection on the real clock, or hand out the settings that do,
-/// each with what makes it real time. A test file that calls one is on the real
-/// clock, whatever its own text names.
+/// The functions of the support modules that hand out the settings of the
+/// server's own start, with what makes them real time. A test file that calls
+/// one is on the real clock, whatever its own text names.
 pub fn entry_points() -> List(EntryPoint) {
-  let tree =
-    "starts the tree on the operating system's script and real service time, with a send deadline of 300 ms"
   let settings =
-    "its settings serve on the operating system's script with real service time, a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s"
-  let gate = "runs the gate service on real service time"
-  let send_deadline =
-    "gives its connections' settings a send deadline of 300 ms"
-  let limits =
-    "takes its connections' send deadline and shutdown as given, so a test can pass a short real one"
+    "its settings serve on the operating system's script with real service time and the server's own deadlines"
   [
-    EntryPoint("login_support", "start_real", tree),
-    EntryPoint("login_support", "start_real_with", tree),
-    EntryPoint("login_support", "start_real_on", tree),
-    EntryPoint("login_support", "real_settings", settings),
     EntryPoint("login_support", "servers_settings", settings),
     EntryPoint("login_support", "servers_settings_over", settings),
-    EntryPoint("login_support", "login", settings),
-    EntryPoint("login_support", "world", settings),
-    EntryPoint("login_support", "game", settings),
-    EntryPoint("ask_support", "start", the_operating_system_script),
-    EntryPoint("ask_support", "real_send_deadline_ms", send_deadline),
-    EntryPoint("ask_support", "start_joined", limits),
-    EntryPoint("ask_support", "start_scripted", limits),
-    EntryPoint("ask_support", "start_telling", limits),
-    EntryPoint("ask_support", "gate", gate),
-    EntryPoint("ask_support", "reaching", gate),
-    EntryPoint("ask_support", "observed_gate", gate),
-    EntryPoint(
-      "world_support",
-      "start",
-      "calls Maps within 1 s, on the driven clock otherwise",
-    ),
   ]
 }
 
@@ -615,7 +598,7 @@ pub fn genuine_real_time() -> List(Exception) {
     ),
     Exception(
       "test/serving_node.gleam",
-      "serves the tree on a node of its own, with the readiness settings the release's start gives",
+      "serves the tree on a node of its own, on the operating system's script and real service time with short deadlines (real_settings), and the readiness settings the release's start gives",
     ),
     Exception(
       "test/application_test.gleam",
@@ -650,10 +633,6 @@ pub fn genuine_real_time() -> List(Exception) {
       "its four tests of the server's own script check the system seed, the node's monotonic reading, the operating system's timer and the readings the script gives the wire recorder",
     ),
     Exception(
-      "test/ask_test.gleam",
-      "checks an ask's deadline passing on the node's time against a target that never answers",
-    ),
-    Exception(
       "test/world_map_registry_test.gleam",
       "checks Maps' deadlines passing on the node's time against a Maps that never answers",
     ),
@@ -672,67 +651,7 @@ pub fn genuine_real_time() -> List(Exception) {
   ]
 }
 
-/// The test files whose tests still run on the real clock: a connection on the
-/// operating system's script, a service on its real time, a setting that gives a
-/// process a deadline the test can pass, or a call of a support function that
-/// starts one of these (`entry_points`). The coverage measure lists each. A file
-/// listed here that names none is a breach, so its entry is deleted with its
-/// last real-clock test; the part is empty when every test runs on the driven
-/// clock.
-pub fn still_on_the_real_clock() -> List(Exception) {
-  [
-    Exception(
-      "test/login_support.gleam",
-      "starts the tree on the operating system's script and real service time (real_settings), with a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s",
-    ),
-    Exception(
-      "test/wire_replay_support.gleam",
-      "gives ask_support.start_scripted the real send deadline (real_send_deadline_ms) and calls login_support.start_real_with and servers_settings, which start the tree on the real clock",
-    ),
-    Exception(
-      "test/wire_replay_test.gleam",
-      "calls ask_support.gate, which runs the gate service on real service time",
-    ),
-    Exception(
-      "test/world_support.gleam",
-      "starts the world with a Maps call of 1 s",
-    ),
-    Exception(
-      "test/world_creature_test.gleam",
-      "calls world_support.start, whose Maps call is 1 s",
-    ),
-    Exception(
-      "test/world_unit_state_test.gleam",
-      "calls world_support.start, whose Maps call is 1 s",
-    ),
-    Exception(
-      "test/world_watch_support.gleam",
-      "calls world_support.start, whose Maps call is 1 s",
-    ),
-    Exception(
-      "test/ask_support.gleam",
-      "asks through the operating system's script, real service time and a sleep, with a send deadline of 300 ms",
-    ),
-    Exception(
-      "test/wire_recorder_test.gleam",
-      "its kill test (a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test) gives ask_support.start_scripted a shutdown of 300 ms, the supervisor's own kill timer, which no driven clock reaches",
-    ),
-    Exception(
-      "test/account_store_test.gleam",
-      "its ask tests start a listener on the operating system's script (ask_support.start)",
-    ),
-    Exception(
-      "test/service_shell_test.gleam",
-      "starts service shells on their real time (ask_support.gate, reaching, observed_gate, start)",
-    ),
-    Exception(
-      "test/service_shell_creature_test.gleam",
-      "starts service shells on their real time (ask_support.reaching)",
-    ),
-  ]
-}
-
-/// Every listed file, the genuine ones first.
+/// Every listed file.
 pub fn exceptions() -> List(Exception) {
-  list.append(genuine_real_time(), still_on_the_real_clock())
+  genuine_real_time()
 }

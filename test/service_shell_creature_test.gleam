@@ -13,6 +13,7 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import driven_time
 import gate_rule
 import genesis_prime/service
 import genesis_prime/step.{type Address, Creature, CreatureStart}
@@ -58,6 +59,7 @@ fn starting_creatures(
   started started: Subject(step.CreatureStart),
   located located: Subject(Address),
   at target: process.Pid,
+  time time: driven_time.Time,
 ) -> ChildSpecification(Nil) {
   ask_support.reaching(
     name: gate,
@@ -76,6 +78,7 @@ fn starting_creatures(
         starting
       },
     ),
+    time:,
   )
 }
 
@@ -95,6 +98,7 @@ fn awaiting(
 
 pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_opened_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let target = process.spawn_unlinked(process.sleep_forever)
   let gate = process.new_name("gate")
   let started = process.new_subject()
@@ -106,6 +110,7 @@ pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_
       started:,
       located:,
       at: target,
+      time:,
     ))
   let not_started = awaiting(gate:, key: -1)
   assert ask_support.call_gate(
@@ -137,6 +142,7 @@ pub fn a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_
 
 pub fn a_timer_of_the_step_that_started_a_creature_fires_after_the_creatures_failed_start_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   // The map answers a development summon by the timer it starts with the
   // creature: the failure of the start is the rule's next input after the step
   // (`genesis_prime/service/shell` `take`), so the timer, even one of 0 ms, is
@@ -152,6 +158,7 @@ pub fn a_timer_of_the_step_that_started_a_creature_fires_after_the_creatures_fai
       started:,
       located:,
       at: target,
+      time:,
     ))
   let arrivals = process.new_subject()
   list.each([-4, gate_rule.timer_key_base + 9], fn(key) {
@@ -171,6 +178,7 @@ pub fn a_timer_of_the_step_that_started_a_creature_fires_after_the_creatures_fai
       ),
     )
     == gate_rule.Echoed(4)
+  driven_time.advance(time:, ms: 0)
   assert open_wait.received(
       from: arrivals,
       what: "the rule's input for the failed creature start",
@@ -190,6 +198,7 @@ pub fn a_timer_of_the_step_that_started_a_creature_fires_after_the_creatures_fai
 
 pub fn a_creature_that_starts_is_watched_at_its_address_and_its_end_comes_back_as_watch_ended_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let target = process.spawn_unlinked(process.sleep_forever)
   let gate = process.new_name("gate")
   let started = process.new_subject()
@@ -201,6 +210,7 @@ pub fn a_creature_that_starts_is_watched_at_its_address_and_its_end_comes_back_a
       started:,
       located:,
       at: target,
+      time:,
     ))
   let ended = awaiting(gate:, key: 2)
   assert ask_support.call_gate(
@@ -239,41 +249,86 @@ pub fn a_creature_that_starts_is_watched_at_its_address_and_its_end_comes_back_a
 
 pub fn a_timer_fires_once_and_a_cancelled_timer_never_fires_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let gate = process.new_name("gate")
   let tree =
     ask_support.start_tree(ask_support.reaching(
       name: gate,
       shutdown_ms: 1000,
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
+      time:,
     ))
   let cancelled = awaiting(gate:, key: gate_rule.timer_key_base + 2)
   let fires = awaiting(gate:, key: gate_rule.timer_key_base + 1)
   let last = awaiting(gate:, key: gate_rule.timer_key_base + 3)
   // The timer is due at once and cancelled in the step that starts it, so
-  // whether its firing is sent before or after the cancel, it must be dropped;
-  // no time has to pass for that, and the timers after it are only waited for,
-  // with an upper bound.
+  // whether its firing is sent before or after the cancel, it must be dropped.
   assert ask_support.call_gate(gate, gate_rule.StartThenCancelTimerAs(2, 0))
     == gate_rule.Echoed(2)
   assert ask_support.call_gate(gate, gate_rule.StartTimerAs(1, 20))
     == gate_rule.Echoed(1)
   assert ask_support.call_gate(gate, gate_rule.StartTimerAs(3, 400))
     == gate_rule.Echoed(3)
-  assert open_wait.received(
-      from: fires,
-      what: "the rule's input for the first timer's firing",
+  driven_time.advance(time:, ms: 19)
+  assert process.receive(fires, 0) == Error(Nil)
+    as "the timer started for 20 ms has not fired at 19 ms"
+  driven_time.advance(time:, ms: 1)
+  assert process.receive(fires, 0)
+    == Ok(gate_rule.Opened(gate_rule.timer_key_base + 1))
+    as "the timer's firing reached the rule as ServiceTimerFired with its id, at 20 ms"
+  assert process.receive(last, 0) == Error(Nil)
+    as "the timer started for 400 ms has not fired at 20 ms"
+  driven_time.advance(time:, ms: 380)
+  assert process.receive(last, 0)
+    == Ok(gate_rule.Opened(gate_rule.timer_key_base + 3))
+    as "the last timer fired at 400 ms"
+  assert process.receive(cancelled, 0) == Error(Nil)
+    as "the cancelled timer, due before every other, never fired"
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+pub fn a_creature_timer_started_in_the_step_that_started_it_fires_when_the_driven_clock_reaches_it_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let target = process.spawn_unlinked(process.sleep_forever)
+  let gate = process.new_name("gate")
+  let started = process.new_subject()
+  let located = process.new_subject()
+  let tree =
+    ask_support.start_tree(starting_creatures(
+      gate:,
+      starting: Ok(Nil),
+      started:,
+      located:,
+      at: target,
+      time:,
+    ))
+  let fires = awaiting(gate:, key: gate_rule.timer_key_base + 9)
+  assert ask_support.call_gate(
+      gate,
+      gate_rule.StartCreatureThenTimer(
+        watch: 4,
+        creature: a_creature(),
+        timer: 9,
+        after_ms: 60_000,
+      ),
     )
-    == gate_rule.Opened(gate_rule.timer_key_base + 1)
-    as "the timer's firing reached the rule as ServiceTimerFired with its id"
+    == gate_rule.Echoed(4)
   assert open_wait.received(
-      from: last,
-      what: "the rule's input for the last timer's firing",
+      from: started,
+      what: "the shell's ask to reach to start the creature",
     )
-    == gate_rule.Opened(gate_rule.timer_key_base + 3)
-  // Absence check: the limit is how long this watches for a message that must
-  // not come, here a look at the mailbox now.
-  assert process.receive(cancelled, within: 0) == Error(Nil)
-    as "the cancelled timer, due long before the last one, never fired"
+    == a_creature()
+    as "the creature the rule named was started"
+  driven_time.advance(time:, ms: 59_999)
+  assert process.receive(fires, 0) == Error(Nil)
+    as "the timer started for 60 000 ms has not fired at 59 999 ms"
+  driven_time.advance(time:, ms: 1)
+  assert process.receive(fires, 0)
+    == Ok(gate_rule.Opened(gate_rule.timer_key_base + 9))
+    as "the timer of the step that started a running creature fires when the clock reaches its time, not before"
+  process.kill(target)
   let _reason = ask_support.stop_tree(tree)
   Nil
 }

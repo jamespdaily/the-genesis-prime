@@ -32,15 +32,18 @@ import event_wait
 import genesis_prime
 import genesis_prime/application
 import genesis_prime/connection/listener
+import genesis_prime/connection/script
 import genesis_prime/migration.{Recorded}
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service.{type Sent, ToWorker}
+import genesis_prime/service/shell as service_shell
 import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached}
 import gleam/erlang/process
 import gleam/io
 import gleam/option.{None, Some}
+import login_settings_support
 import login_support
 import open_wait
 import pog
@@ -141,6 +144,38 @@ fn variable(name: String) -> String {
   value
 }
 
+/// The server's settings for a tree that runs as the release's does: the
+/// connections on the operating system's script, the services on real service
+/// time, a send deadline of 300 ms, a call to Maps of 2 s and an ask of 5 s.
+pub fn real_settings(pool pool: pog.Config) -> server.Settings {
+  let base =
+    login_support.settings_over(
+      pool:,
+      scripts: script.operating_system,
+      service_time: service_shell.real_time(),
+    )
+  server.Settings(
+    ..base,
+    send_deadline_ms: 300,
+    connection_shutdown_ms: 1000,
+    world: server.World(..base.world, maps_call_ms: 2000),
+    login: server.Login(
+      sts: server.Served(
+        ..base.login.sts,
+        settings: login_settings_support.sts_settings(),
+      ),
+      auth: server.Served(
+        ..base.login.auth,
+        settings: login_settings_support.auth_settings(),
+      ),
+    ),
+    game: server.Served(
+      ..base.game,
+      settings: login_settings_support.game_settings(),
+    ),
+  )
+}
+
 /// What the node runs.
 pub fn main() -> Nil {
   application.register_program()
@@ -156,7 +191,7 @@ pub fn main() -> Nil {
     UnreachableDatabase -> pog.port(pool, 1)
     Serving | LateDatabase | SlowStop | StoppedBeforeTree | GivesUp -> pool
   }
-  let base = login_support.real_settings(pool:)
+  let base = real_settings(pool:)
   let settings =
     server.Settings(
       ..base,
