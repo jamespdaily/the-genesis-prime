@@ -42,8 +42,10 @@
 ////   send straight to the connections, so no frame path of a map or a creature goes
 ////   through one.
 //// - **A wait** (`wait_for`) runs the barrier and looks at its condition once: with the
-////   participants quiet and the clock still, a condition that fails cannot come true,
-////   so the wait ends at once with a panic naming it.
+////   participants quiet and the clock still, a condition that fails cannot come true
+////   through the participants' own work, so the wait ends at once with a panic naming it.
+////   A condition that depends on a process that is not a participant is sound only
+////   when the participants' step reaches it synchronously (a call it makes).
 //// - **No wait here has a time limit.** A call to the clock and the barrier wait until
 ////   they are answered, and the test's deadline warns of one that never is, naming
 ////   it, and the wait goes on (`open_wait`, `owned_test.run`).
