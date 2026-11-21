@@ -25,7 +25,6 @@
 import ask_support
 import cast_support
 import driven_time
-import event_wait
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
@@ -656,6 +655,7 @@ type TwoBeasts {
 /// The life the creature is found under in the registry: the number of the watch its map
 /// opened on it, which the test does not choose.
 fn life_of(
+  time time: driven_time.Time,
   world world: World,
   run run: MapProcess,
   unit_id unit_id: Int,
@@ -672,9 +672,13 @@ fn life_of(
       != Error(Nil)
     })
   }
-  event_wait.until("the creature joined its address", fn() {
-    found() != Error(Nil)
-  })
+  driven_time.wait_for(
+    time:,
+    what: "the creature of unit "
+      <> int.to_string(unit_id)
+      <> " to join its address under a life of 2 to 6",
+    condition: fn() { found() != Error(Nil) },
+  )
   let assert Ok(life) = found()
   life
 }
@@ -682,8 +686,8 @@ fn life_of(
 fn two_beasts() -> TwoBeasts {
   let time = driven_time.new()
   let world =
-    world_support.start_timed(
-      time: driven_time.service_time(time),
+    world_support.start(
+      time:,
       spawns: [
         spawn_support.battle_beast(number: 1, x: 0.0),
         spawn_support.battle_beast(number: 2, x: 5.0),
@@ -714,8 +718,11 @@ fn two_beasts() -> TwoBeasts {
     time:,
     caster:,
     viewer:,
-    held: #(first.unit_id, life_of(world:, run:, unit_id: first.unit_id)),
-    other: #(second.unit_id, life_of(world:, run:, unit_id: second.unit_id)),
+    held: #(first.unit_id, life_of(time:, world:, run:, unit_id: first.unit_id)),
+    other: #(
+      second.unit_id,
+      life_of(time:, world:, run:, unit_id: second.unit_id),
+    ),
   )
 }
 
@@ -752,6 +759,7 @@ pub fn an_area_go_skips_the_invulnerable_creature_and_logs_type_18_for_it_test()
   let went_at_ms = struck_at_ms
   let held_pid =
     world_watch_support.creature_pid(
+      time: beasts.time,
       world: beasts.world,
       run: beasts.run,
       unit_id: held_id,
@@ -1004,6 +1012,7 @@ pub fn a_creature_that_crashes_holding_a_state_returns_without_it_test() -> Nil 
   assert returned.unit_id != unit_id as "the spawn returns as a new unit"
   let again =
     world_watch_support.creature_pid(
+      time: watched.time,
       world: watched.world,
       run: watched.run,
       unit_id: returned.unit_id,

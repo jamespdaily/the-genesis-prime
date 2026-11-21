@@ -41,6 +41,9 @@
 ////   participant (a registry, the store) is invisible to the counter; the creatures
 ////   send straight to the connections, so no frame path of a map or a creature goes
 ////   through one.
+//// - **A wait** (`wait_for`) runs the barrier and looks at its condition once: with the
+////   participants quiet and the clock still, a condition that fails cannot come true,
+////   so the wait ends at once with a panic naming it.
 //// - **No wait here has a time limit.** A call to the clock and the barrier wait until
 ////   they are answered, and the test's deadline warns of one that never is, naming
 ////   it, and the wait goes on (`open_wait`, `owned_test.run`).
@@ -424,6 +427,31 @@ fn pass(
     True, False -> pass(time:, opening: closing, after_a_quiet_pass: True)
     False, _ -> pass(time:, opening: closing, after_a_quiet_pass: False)
   }
+}
+
+/// Waits for `condition` on the driven clock: the barrier (`wait_until_quiet`) runs,
+/// and the condition is looked at once. A participant that was to take an input
+/// has taken it by then, so a condition such an input makes true holds, and the
+/// clock has not moved. A condition that still fails is one no participant can
+/// make true without the clock moving, so the wait ends at once with a panic that
+/// names `what`: it never polls and has no limit of time.
+///
+/// Its limit is the barrier's: a chain through a process that is not a participant
+/// (a registry, a supervisor) is invisible to it, so a condition on such a process's
+/// state is not a condition to wait on here; wait on the monitor of the process
+/// whose end is meant.
+pub fn wait_for(
+  time time: Time,
+  what what: String,
+  condition condition: fn() -> Bool,
+) -> Nil {
+  wait_until_quiet(time)
+  use <- bool.guard(when: condition(), return: Nil)
+  let message =
+    "the driven clock's participants are quiet and no input waits for them, so nothing more can happen before the clock moves: "
+    <> what
+    <> " never held"
+  panic as message
 }
 
 /// How many inputs the participants have taken so far, which the test's open
