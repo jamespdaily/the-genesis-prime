@@ -517,7 +517,8 @@ pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_
 
 pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_not_running_and_starts_no_map_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   assert open_wait.named("Maps to answer the ask", fn() {
       world_map_registry.ask_run(
         world.maps,
@@ -563,7 +564,8 @@ pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_no
 
 pub fn an_ask_of_the_running_run_reaches_it_and_its_answer_goes_to_the_reply_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world()
+  let time = driven_time.new()
+  let world = start_driven_world(time:)
   let first = started(world, ship)
   let #(sent, answer) =
     ask_support.ask_and_wait(send: fn(reply) {

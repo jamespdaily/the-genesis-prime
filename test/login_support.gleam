@@ -6,7 +6,6 @@
 
 import ask_support
 import character_tables
-import class_resource_support
 import connection_rule_support as support
 import database_support
 import driven_time
@@ -19,35 +18,26 @@ import genesis_prime/add_account/sql
 import genesis_prime/client_connection.{type Bucket, type Request}
 import genesis_prime/connection/listener
 import genesis_prime/connection/registry
-import genesis_prime/connection/script
+import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/objective
-import genesis_prime/game/vendor
-import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
-import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
-import genesis_prime/service/shell as service_shell
+import genesis_prime/service/shell.{type ServiceTime}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature_registry
-import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
-import gleam/set
 import login_client.{type Ports, Ports}
+import login_settings_support
 import login_vectors as vector
 import pog
-import projector_support
 import readiness_support
-import server_proxy_support
 import spawn_support
-import tutorial_support
-import zone_welcome_support
 
 /// The most connections each test listener holds, a different number for each
 /// so a listener given another's setting shows.
@@ -57,65 +47,35 @@ pub const auth_max_connections = 51
 
 pub const game_max_connections = 52
 
-/// The realm the auth rule hands clients to.
-pub fn realm() -> auth_connection.Realm {
-  auth_connection.Realm(
-    id: 1,
-    name: "Nexus",
-    game_server: Endpoint(address: 0x7F000001, port: 24_000),
-  )
-}
-
-/// The settings of the STS rule.
-pub fn sts_settings() -> sts_connection.Settings {
-  sts_connection.Settings(
-    ask_deadline_ms: 5000,
-    game_token_lifetime_ms: 60_000,
-    rate: support.roomy(),
-  )
-}
-
-/// The settings of the auth rule: nothing planted.
-pub fn auth_settings() -> auth_connection.Settings {
-  auth_connection.Settings(
-    realm: realm(),
-    ask_deadline_ms: 5000,
-    session_key_lifetime_ms: auth_connection.session_key_lifetime_ms,
-    planted: None,
-    rate: support.roomy(),
-  )
-}
-
 /// The login's listeners on ports the system picks, with names made now, no
-/// recording and nothing planted.
-pub fn login() -> server.Login {
+/// recording, nothing planted, and connections that take `scripts`.
+fn login(scripts: Scripts) -> server.Login {
   server.Login(
     sts: server.Served(
       listener: process.new_name("test_sts_listener"),
       port: 0,
       max_connections: sts_max_connections,
-      settings: sts_settings(),
+      settings: login_settings_support.sts_settings(),
       wire_recorder: None,
-      scripts: script.operating_system,
+      scripts:,
     ),
     auth: server.Served(
       listener: process.new_name("test_auth_listener"),
       port: 0,
       max_connections: auth_max_connections,
-      settings: auth_settings(),
+      settings: login_settings_support.auth_settings(),
       wire_recorder: None,
-      scripts: script.operating_system,
+      scripts:,
     ),
   )
 }
 
-/// The world subtree with names made now, no recording and a call to Maps that
-/// may take 2 s.
-pub fn world() -> server.World {
+/// The world subtree with names made now and no recording.
+fn world() -> server.World {
   server.World(
     maps: process.new_name("test_maps"),
     map_supervisor: process.new_name("test_map_supervisor"),
-    maps_call_ms: 2000,
+    maps_call_ms: ask_support.beyond_the_test_ms,
     map_shutdown_ms: 1000,
     creatures: creature_registry.new(),
     creature_supervisor: process.new_name("test_creature_supervisor"),
@@ -126,36 +86,16 @@ pub fn world() -> server.World {
   )
 }
 
-/// The game server's listener on a port the system picks, with a name made
-/// now and no recording.
-pub fn game() -> server.Served(game_connection.Settings) {
+/// The game server's listener on a port the system picks, with a name made now,
+/// no recording and connections that take `scripts`.
+fn game(scripts: Scripts) -> server.Served(game_connection.Settings) {
   server.Served(
     listener: process.new_name("test_game_listener"),
     port: 0,
     max_connections: game_max_connections,
-    settings: connection_state.Settings(
-      realm_id: 1,
-      max_characters: 12,
-      game: game_settings.defaults(),
-      realm_name: realm().name,
-      tables: character_tables.shared(),
-      ask_deadline_ms: 5000,
-      rate: support.roomy(),
-      class_resources: class_resource_support.classes(),
-      server_proxies: server_proxy_support.none(),
-      zone_welcomes: zone_welcome_support.none(),
-      vendors: vendor.none(),
-      numbers: spawn_support.numbers,
-      visibility: dict.new(),
-      tutorial_chain: tutorial_support.none(),
-      projector_landings: projector_support.none(),
-      reused_unit_objectives: set.new(),
-      arrival_objectives: set.new(),
-      held_objectives: set.new(),
-      script_rows: objective.no_rows(),
-    ),
+    settings: login_settings_support.game_settings(),
     wire_recorder: None,
-    scripts: script.operating_system,
+    scripts:,
   )
 }
 
@@ -166,80 +106,98 @@ pub type Started {
 
 /// The server's settings for a test on the driven clock `time`: the pool given,
 /// names made now, the listeners on ports the system picks, nothing recorded,
-/// and every clock of the tree read from `time` (`on_the_clock`). The deadlines
-/// the server counts on the node's own time, a write's, a call to Maps and each
-/// connection's ask, are far beyond the test's own deadline
-/// (`ask_support.beyond_the_test_ms`), so none passes while a test runs, and the
-/// test's deadline warns of a wait that is never answered. A stop leaves a
-/// connection's save the shutdown time less the send deadline
-/// (`connection/shell` `stop_deadline`), and a save with no time left is given
-/// up with a warning (`game/connection/state` `end_with`), so the shutdown time
-/// is twice that distance and a stop's save is bounded by the ask deadline only.
+/// and every clock of the tree read from `time`: the STS, auth and game
+/// connections, the hand-off, Sessions, the maps and the creatures take the time
+/// of each input and start their timers there, so a timer fires only when the
+/// test advances `time`. The deadlines the server counts on the node's own time
+/// are far beyond the test's own deadline (`with_deadlines_beyond_the_tests`).
 pub fn settings(
   pool pool: pog.Config,
   time time: driven_time.Time,
 ) -> server.Settings {
+  settings_over(
+    pool:,
+    scripts: driven_time.connection_scripts(time),
+    service_time: driven_time.service_time(time),
+  )
+}
+
+/// The server's settings as `settings` makes them over the connections' `scripts`
+/// and the services' `service_time`, which a test that runs a node of its own
+/// gives its own.
+pub fn settings_over(
+  pool pool: pog.Config,
+  scripts scripts: Scripts,
+  service_time service_time: ServiceTime,
+) -> server.Settings {
+  with_deadlines_beyond_the_tests(
+    fixed_seed.seeded(server.Settings(
+      pool:,
+      store: process.new_name("store"),
+      hand_off: process.new_name("hand_off"),
+      tree_restarts: server.Restarts(intensity: 3, period_s: 10),
+      hand_off_shutdown_ms: 1500,
+      sessions: process.new_name("sessions"),
+      sessions_shutdown_ms: 1500,
+      registry: registry.new(),
+      service_time:,
+      world: world(),
+      send_deadline_ms: ask_support.beyond_the_test_ms,
+      connection_shutdown_ms: 2 * ask_support.beyond_the_test_ms,
+      login: login(scripts),
+      game: game(scripts),
+    )),
+  )
+}
+
+/// The settings with every deadline the server counts on the node's own time far
+/// beyond the test's own deadline (`ask_support.beyond_the_test_ms`), so none
+/// passes while a test runs, and the test's deadline warns of a wait that is never
+/// answered: a write's, a call to Maps, each connection's ask and the connections'
+/// stop. A stop leaves a connection's save the shutdown time less the send
+/// deadline (`connection/shell` `stop_deadline`), and a save with no time left is
+/// given up with a warning (`game/connection/state` `end_with`), so the shutdown
+/// time is twice that distance and a stop's save is bounded by the ask deadline
+/// only.
+pub fn with_deadlines_beyond_the_tests(
+  settings: server.Settings,
+) -> server.Settings {
   let beyond = ask_support.beyond_the_test_ms
-  let driven = on_the_clock(settings: real_settings(pool:), time:)
   server.Settings(
-    ..driven,
+    ..settings,
     send_deadline_ms: beyond,
     connection_shutdown_ms: 2 * beyond,
-    world: server.World(..driven.world, maps_call_ms: beyond),
+    world: server.World(..settings.world, maps_call_ms: beyond),
     login: server.Login(
       sts: server.Served(
-        ..driven.login.sts,
+        ..settings.login.sts,
         settings: sts_connection.Settings(
-          ..driven.login.sts.settings,
+          ..settings.login.sts.settings,
           ask_deadline_ms: beyond,
         ),
       ),
       auth: server.Served(
-        ..driven.login.auth,
+        ..settings.login.auth,
         settings: auth_connection.Settings(
-          ..driven.login.auth.settings,
+          ..settings.login.auth.settings,
           ask_deadline_ms: beyond,
         ),
       ),
     ),
     game: server.Served(
-      ..driven.game,
+      ..settings.game,
       settings: connection_state.Settings(
-        ..driven.game.settings,
+        ..settings.game.settings,
         ask_deadline_ms: beyond,
       ),
     ),
   )
 }
 
-/// The server's settings for a test that runs on the real clock: the
-/// connections on the operating system's script, the services on real time, a
-/// send deadline of 300 ms, a call to Maps of 2 s and an ask of 5 s. Only a test
-/// not yet moved to the driven clock calls it.
-pub fn real_settings(pool pool: pog.Config) -> server.Settings {
-  fixed_seed.seeded(server.Settings(
-    pool:,
-    store: process.new_name("store"),
-    hand_off: process.new_name("hand_off"),
-    tree_restarts: server.Restarts(intensity: 3, period_s: 10),
-    hand_off_shutdown_ms: 1500,
-    sessions: process.new_name("sessions"),
-    sessions_shutdown_ms: 1500,
-    registry: registry.new(),
-    service_time: service_shell.real_time(),
-    world: world(),
-    send_deadline_ms: 300,
-    connection_shutdown_ms: 1000,
-    login: login(),
-    game: game(),
-  ))
-}
-
 /// The settings with every clock of the tree read from `time`
-/// (`driven_time.scripts`, `driven_time.service_time`): the STS, auth and game
-/// connections, the hand-off, Sessions, the maps and the creatures take the time
-/// of each input and start their timers there, so a timer fires only when the
-/// test advances `time`.
+/// (`driven_time.scripts`, `driven_time.service_time`): the connections' scripts
+/// are the settings' own with the driven clock and timers in place of theirs (their
+/// seeds stay), and the services take `time`.
 pub fn on_the_clock(
   settings settings: server.Settings,
   time time: driven_time.Time,
@@ -263,6 +221,16 @@ pub fn on_the_clock(
       scripts: driven_time.scripts(time:, over: settings.game.scripts),
     ),
   )
+}
+
+/// The settings the server's own start makes, on the driven clock `time`, with
+/// every deadline beyond the test (`on_the_clock`, `with_deadlines_beyond_the_tests`): for a test
+/// that replays a recording against the server's own rules.
+pub fn servers_settings_on(time time: driven_time.Time) -> server.Settings {
+  with_deadlines_beyond_the_tests(on_the_clock(
+    settings: servers_settings(),
+    time:,
+  ))
 }
 
 /// The settings the server's own start makes, over the content terms the test
@@ -342,38 +310,6 @@ pub fn start_on(
 ) -> Started {
   started_from(shared:, database:, settings: fn(pool) {
     change(settings(pool:, time:))
-  })
-}
-
-/// Starts the server's tree on the real clock (`real_settings`), on a database
-/// of its own.
-pub fn start_real() -> Started {
-  start_real_with(change: fn(settings) { settings })
-}
-
-/// Starts the server's tree on the real clock as `start_real` does, with the
-/// settings as `change` makes them.
-pub fn start_real_with(
-  change change: fn(server.Settings) -> server.Settings,
-) -> Started {
-  let shared = database_support.shared()
-  start_real_on(
-    shared:,
-    database: database_support.new_database(on: shared),
-    change:,
-  )
-}
-
-/// Starts the server's tree on the real clock as `start_real_with` does, on the
-/// database `database` of the test's own, which the test has made and may have
-/// filled first.
-pub fn start_real_on(
-  shared shared: database_support.Shared,
-  database database: String,
-  change change: fn(server.Settings) -> server.Settings,
-) -> Started {
-  started_from(shared:, database:, settings: fn(pool) {
-    change(real_settings(pool:))
   })
 }
 

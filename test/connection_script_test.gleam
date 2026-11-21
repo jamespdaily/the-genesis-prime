@@ -101,13 +101,11 @@ pub fn the_servers_script_gives_the_recorder_readings_between_the_tests_own_test
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: ask_support.beyond_the_test_ms,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
       scripts: script.operating_system,
-      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },

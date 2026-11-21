@@ -287,37 +287,19 @@ pub fn a_call_of_a_support_function_that_runs_the_real_clock_is_a_breach_test() 
   // Each row: the body's lines (the first is line 7), the breach lines, and why.
   let rows = [
     #(
-      ["  let started = login_support.start_real()"],
+      ["  let settings = login_support.servers_settings()"],
       [7],
-      "the tree's real start",
+      "the server's own settings",
     ),
     #(
-      ["  login_support.start_real_with(change: fn(settings) { settings })"],
+      ["  login_support.servers_settings_over(spawns:)"],
       [7],
-      "the real tree's start with a change",
-    ),
-    #(
-      ["  login_support.real_settings(pool:)"],
-      [7],
-      "the settings of a real tree",
-    ),
-    #(
-      ["  ask_support.start(rule:, directory:, shutdown_ms: 1000, with:)"],
-      [7],
-      "a listener whose connections run on the operating system's script",
-    ),
-    #(["  ask_support.gate(name:, shutdown_ms: 1000)"], [7], "a real gate"),
-    #(
-      [
-        "  world_support.start(time:, spawns:, respawn_ms: 1, idle_stop_ms: 1, sweep_ms: 1)",
-      ],
-      [7],
-      "a world that calls Maps within 1 s",
+      "the server's own settings over a content load",
     ),
     #(
       [
-        "  login_support.start_real()",
-        "  ask_support.gate(name:, shutdown_ms: 1)",
+        "  login_support.servers_settings()",
+        "  login_support.servers_settings_over(spawns:)",
       ],
       [7, 8],
       "each call, at its own line",
@@ -333,6 +315,28 @@ pub fn a_call_of_a_support_function_that_runs_the_real_clock_is_a_breach_test() 
       ["  login_support.settings(pool:, time:)"],
       [],
       "the settings of a tree on the driven clock",
+    ),
+    #(
+      ["  login_support.servers_settings_on(time:)"],
+      [],
+      "the server's own settings on the driven clock",
+    ),
+    #(
+      ["  ask_support.gate(name:, shutdown_ms: 1000, time:)"],
+      [],
+      "a gate on the driven clock",
+    ),
+    #(
+      ["  ask_support.start_on(time:, rule:, directory:, with:)"],
+      [],
+      "a listener on the driven clock",
+    ),
+    #(
+      [
+        "  world_support.start(time:, spawns:, respawn_ms: 1, idle_stop_ms: 1, sweep_ms: 1)",
+      ],
+      [],
+      "a world on the driven clock",
     ),
     #(
       ["  ask_support.start_tree(child)"],
@@ -363,7 +367,7 @@ pub fn a_call_of_a_support_function_that_runs_the_real_clock_is_a_breach_test() 
         "import login_support as logins",
         "",
         "pub fn planted() {",
-        "  logins.start_real()",
+        "  logins.servers_settings()",
         "}",
       ],
       [4],
@@ -371,10 +375,10 @@ pub fn a_call_of_a_support_function_that_runs_the_real_clock_is_a_breach_test() 
     ),
     #(
       [
-        "import login_support.{start_real}",
+        "import login_support.{servers_settings}",
         "",
         "pub fn planted() {",
-        "  start_real()",
+        "  servers_settings()",
         "}",
       ],
       [4],
@@ -387,7 +391,7 @@ pub fn a_call_of_a_support_function_that_runs_the_real_clock_is_a_breach_test() 
   })
 }
 
-pub fn a_new_test_that_reaches_real_time_through_login_support_start_real_is_a_breach_outside_the_list_test() -> Nil {
+pub fn a_new_test_that_reaches_real_time_through_login_support_servers_settings_is_a_breach_outside_the_list_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let planted_test =
@@ -397,7 +401,7 @@ pub fn a_new_test_that_reaches_real_time_through_login_support_start_real_is_a_b
       "",
       "pub fn a_new_test() {",
       "  use <- owned_test.run(5000)",
-      "  login_support.start_real()",
+      "  login_support.servers_settings()",
       "}",
     ])
   // The repository's own files are absent here, so each listed path is also
@@ -414,7 +418,7 @@ pub fn a_new_test_that_reaches_real_time_through_login_support_start_real_is_a_b
   let assert [breach] = found as "expected exactly one breach"
   assert breach.path == "test/planted_via_support_test.gleam"
   assert breach.line == 6
-  assert string.contains(breach.rule, "login_support.start_real")
+  assert string.contains(breach.rule, "login_support.servers_settings")
 }
 
 pub fn each_entry_point_is_a_public_function_of_its_support_module_and_a_breach_when_called_test() -> Nil {

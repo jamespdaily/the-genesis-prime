@@ -49,14 +49,14 @@
 //// that arrives earlier or later than recorded is named and never shows up as a
 //// difference in bytes.
 ////
-//// Every wait of the replay client is bounded by `wait_ms` of real time, and
-//// so is the shell's wait for an ask (genesis_prime/connection/shell): a replay
-//// ends, and says what it waited for. The wait for a write is one bound for all
-//// the pieces the server writes it in, not one for each. A refusal, a
-//// difference, a silence or a shell that never takes an input ends the replay
-//// with a `Failure` that names the connection and the recorded line. A replay
-//// whose table process ends or stops answering (genesis_prime/wire_replay/table)
-//// fails as `TableLost`.
+//// Every wait of the replay client, and every call a shell or the client makes
+//// to the table, is bounded by the replay's `wait_ms` of real time, which the
+//// caller of `replay` gives: a replay that waits that long ends, and says what
+//// it waited for. The wait for a write is one bound for all the pieces the
+//// server writes it in, not one for each. A refusal, a difference, a silence or
+//// a shell that never takes an input ends the replay with a `Failure` that names
+//// the connection and the recorded line. A replay whose table process ends or
+//// stops answering (genesis_prime/wire_replay/table) fails as `TableLost`.
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame
@@ -89,10 +89,6 @@ import log_capture.{type Capture}
 import mug
 import pog
 import simplifile
-
-/// How long every wait of the replay client, and every ask's wait in the
-/// shell, lasts in real milliseconds. A replay that waits this long fails.
-const wait_ms = 5000
 
 /// One recorded connection: the name of its file and what it holds.
 pub type Connection {
@@ -246,7 +242,11 @@ pub type Action {
 /// byte has been taken. The replay client reads it to know how far the shell is,
 /// and the shell never writes it any other way.
 pub opaque type Progress {
-  Progress(table: Subject(replay_table.Command), connection: String)
+  Progress(
+    table: Subject(replay_table.Command),
+    connection: String,
+    wait_ms: Int,
+  )
 }
 
 /// The replay's table, kept by one process (genesis_prime/wire_replay/table):
@@ -269,6 +269,9 @@ pub type Replay {
     /// How far each connection's shell is, by the name of its file.
     progress: Dict(String, Progress),
     table: Table,
+    /// How long, in real milliseconds, each wait of the replay client and each
+    /// call to the table lasts before the replay fails.
+    wait_ms: Int,
     /// The log lines of every process of the node since the replay was made,
     /// which `logged` and `finish` sort by connection.
     logs: Subject(#(String, String, List(#(String, String)))),
@@ -472,8 +475,13 @@ pub fn prepare(
 /// any other input by kind against the next recorded input) and gives that
 /// line's `Now`, and a scheduler that starts its timers in the table and fires
 /// them when the replay client asks. The capture of log lines starts here, owned
-/// by the calling process, which is the one that plays.
-pub fn replay(session session: Session, table table: Table) -> Replay {
+/// by the calling process, which is the one that plays. Each wait of the replay
+/// and each call to the table lasts at most `wait_ms` real milliseconds.
+pub fn replay(
+  session session: Session,
+  table table: Table,
+  wait_ms wait_ms: Int,
+) -> Replay {
   let subject = process.named_subject(table.name)
   replay_table.load(
     table: subject,
@@ -486,19 +494,21 @@ pub fn replay(session session: Session, table table: Table) -> Replay {
         closing_line: list.length(connection.recording.lines) + 1,
       )
     }),
+    within_ms: wait_ms,
   )
   let logs = process.new_subject()
   Replay(
-    scripts: scripts(subject),
+    scripts: scripts(subject, wait_ms),
     progress: dict.from_list(
       list.map(session.connections, fn(connection) {
         #(
           connection.name,
-          Progress(table: subject, connection: connection.name),
+          Progress(table: subject, connection: connection.name, wait_ms:),
         )
       }),
     ),
     table:,
+    wait_ms:,
     logs:,
     capture: log_capture.start_all(into: logs),
   )
@@ -506,18 +516,22 @@ pub fn replay(session session: Session, table table: Table) -> Replay {
 
 /// Hands out the script of the connection accepted next, which is the next of
 /// the recording's connections by accept ordinal.
-fn scripts(table: Subject(replay_table.Command)) -> Scripts {
+fn scripts(table: Subject(replay_table.Command), wait_ms: Int) -> Scripts {
   fn() {
-    use handed <- result.map(replay_table.handout(table))
+    use handed <- result.map(replay_table.handout(table, within_ms: wait_ms))
     Issued(
       ordinal: handed.ordinal,
       script: Script(
         seed: handed.seed,
-        clock: clock(table, handed.name),
+        clock: clock(table:, connection: handed.name, wait_ms:),
         node_monotonic_ms: fn(_recorded) { runtime.monotonic_ms() },
         schedule: scheduler(table, handed.name),
         next_read: fn() {
-          replay_table.next_read(table:, connection: handed.name)
+          replay_table.next_read(
+            table:,
+            connection: handed.name,
+            within_ms: wait_ms,
+          )
         },
       ),
     )
@@ -528,9 +542,13 @@ fn scripts(table: Subject(replay_table.Command)) -> Scripts {
 /// input that matches no recorded one has no `Now`: the mismatch is kept in the
 /// table for the replay client, and the shell ends, so the connection takes no
 /// more inputs.
-fn clock(table: Subject(replay_table.Command), connection: String) -> Clock {
+fn clock(
+  table table: Subject(replay_table.Command),
+  connection connection: String,
+  wait_ms wait_ms: Int,
+) -> Clock {
   fn(taking) {
-    case replay_table.take(table:, connection:, taking:) {
+    case replay_table.take(table:, connection:, taking:, within_ms: wait_ms) {
       Ok(now) -> now
       Error(mismatch) ->
         panic as {
@@ -583,7 +601,13 @@ fn logged(replay replay: Replay) -> List(Logged) {
   let subject = process.named_subject(replay.table.name)
   let shells =
     list.filter_map(dict.keys(replay.progress), fn(connection) {
-      case replay_table.shell_of(table: subject, connection:) {
+      case
+        replay_table.shell_of(
+          table: subject,
+          connection:,
+          within_ms: replay.wait_ms,
+        )
+      {
         Ok(Some(pid)) -> Ok(#(pid_text(pid), connection))
         Ok(None)
         | Error(replay_table.NotInTime)
@@ -632,7 +656,11 @@ pub fn serve_from(
 /// when the replay's table has ended, which no count can then be read from.
 pub fn taken(progress progress: Progress) -> Int {
   let assert Ok(taken) =
-    replay_table.taken(table: progress.table, connection: progress.connection)
+    replay_table.taken(
+      table: progress.table,
+      connection: progress.connection,
+      within_ms: progress.wait_ms,
+    )
     as "the replay's table answered"
   taken
 }
@@ -850,7 +878,13 @@ fn final_check(
 ) -> Result(Nil, Failure) {
   let table = process.named_subject(replay.table.name)
   list.try_each(session.connections, fn(connection) {
-    case replay_table.failure_of(table:, connection: connection.name) {
+    case
+      replay_table.failure_of(
+        table:,
+        connection: connection.name,
+        within_ms: replay.wait_ms,
+      )
+    {
       Ok(Some(mismatch)) -> Error(mismatch_failure(connection.name, mismatch))
       Ok(None) -> Ok(Nil)
       Error(replay_table.NotInTime) | Error(replay_table.TableEnded) ->
@@ -887,14 +921,21 @@ fn act(
   let table = process.named_subject(replay.table.name)
   case action {
     Connect(connection:) ->
-      connect(session:, table:, ports:, connection:, client:)
+      connect(
+        session:,
+        table:,
+        wait_ms: replay.wait_ms,
+        ports:,
+        connection:,
+        client:,
+      )
     AwaitTaken(connection:, line:, inputs:, input:) ->
       case
         replay_table.await_taken(
           table:,
           connection:,
           inputs:,
-          within_ms: wait_ms,
+          within_ms: replay.wait_ms,
         )
       {
         Ok(Nil) -> Ok(client)
@@ -927,7 +968,7 @@ fn act(
           table:,
           connection:,
           timer:,
-          within_ms: wait_ms,
+          within_ms: replay.wait_ms,
         )
       {
         Ok(replay_table.Started(subject:, reference:)) -> {
@@ -952,7 +993,7 @@ fn act(
         connection:,
         line:,
         expected: bytes,
-        deadline_ms: runtime.monotonic_ms() + wait_ms,
+        deadline_ms: runtime.monotonic_ms() + replay.wait_ms,
       )
     AwaitEnd(connection:, line:, by:) ->
       await_end(session:, replay:, client:, connection:, line:, by:)
@@ -970,6 +1011,7 @@ fn socket_of(client: Client, connection: String) -> mug.Socket {
 fn connect(
   session session: Session,
   table table: Subject(replay_table.Command),
+  wait_ms wait_ms: Int,
   ports ports: Dict(String, Int),
   connection connection: String,
   client client: Client,
@@ -1143,10 +1185,17 @@ fn await_end(
           table:,
           connection:,
           inputs:,
-          within_ms: wait_ms,
+          within_ms: replay.wait_ms,
         )
       {
-        Ok(Nil) -> await_shell_end(table:, client:, connection:, line:)
+        Ok(Nil) ->
+          await_shell_end(
+            table:,
+            wait_ms: replay.wait_ms,
+            client:,
+            connection:,
+            line:,
+          )
         Error(replay_table.Mismatched(mismatch:)) ->
           Error(mismatch_failure(connection, mismatch))
         Error(replay_table.TimedOut(taken:)) ->
@@ -1163,7 +1212,7 @@ fn await_end(
       case
         mug.receive(
           socket_of(client, connection),
-          timeout_milliseconds: wait_ms,
+          timeout_milliseconds: replay.wait_ms,
         )
       {
         Ok(written) ->
@@ -1173,7 +1222,13 @@ fn await_end(
         | Error(mug.Econnreset)
         | Error(mug.Econnaborted)
         | Error(mug.Epipe) ->
-          case replay_table.failure_of(table:, connection:) {
+          case
+            replay_table.failure_of(
+              table:,
+              connection:,
+              within_ms: replay.wait_ms,
+            )
+          {
             Ok(Some(mismatch)) -> Error(mismatch_failure(connection, mismatch))
             Ok(None) -> Ok(client)
             Error(replay_table.NotInTime) | Error(replay_table.TableEnded) ->
@@ -1196,11 +1251,12 @@ fn await_end(
 /// connection whose shell never asked for a `Now` has none to wait for.
 fn await_shell_end(
   table table: Subject(replay_table.Command),
+  wait_ms wait_ms: Int,
   client client: Client,
   connection connection: String,
   line line: Int,
 ) -> Result(Client, Failure) {
-  case replay_table.shell_of(table:, connection:) {
+  case replay_table.shell_of(table:, connection:, within_ms: wait_ms) {
     Ok(Some(shell)) -> {
       let monitor = process.monitor(shell)
       let ended =
@@ -1240,7 +1296,7 @@ fn ended(
   reason reason: String,
 ) -> Failure {
   let table = process.named_subject(replay.table.name)
-  case replay_table.failure_of(table:, connection:) {
+  case replay_table.failure_of(table:, connection:, within_ms: replay.wait_ms) {
     Ok(Some(mismatch)) -> mismatch_failure(connection, mismatch)
     Ok(None) ->
       EndedEarly(
@@ -1268,7 +1324,7 @@ fn ended_or(
   otherwise otherwise: Failure,
 ) -> Failure {
   let table = process.named_subject(replay.table.name)
-  case replay_table.failure_of(table:, connection:) {
+  case replay_table.failure_of(table:, connection:, within_ms: replay.wait_ms) {
     Ok(Some(mismatch)) -> mismatch_failure(connection, mismatch)
     Ok(None) ->
       case mug.receive(socket_of(client, connection), timeout_milliseconds: 0) {

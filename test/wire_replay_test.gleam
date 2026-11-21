@@ -9,16 +9,19 @@
 ////   recording's script in the order of the accept ordinals, the replay client
 ////   waits for the shell to have taken each input before the next it causes,
 ////   compares the stream of bytes the server writes (never how the socket cut
-////   them into writes), and every wait is bounded by 5 s of real time.
+////   them into writes), and every wait is bounded by the replay's `wait_ms`.
 //// - The test rules' own records (`replay_rule`, `script_rule`, `asking_rule`):
 ////   the bytes a session written by hand holds are the records those rules
 ////   write for the commands it sends.
 //// - Line numbers count from the header, which is line 0; the offset of a
 ////   difference counts the bytes the connection has written.
-//// The tests that end in a wait bound take 5 s, which is the bound they prove.
+//// The five tests that end in a wait bound give their replay a bound of 5 s of
+//// real time (`wire_replay_support.give_up_wait_ms`), which they prove; every
+//// other replay's waits cannot end within a test.
 
 import ask_support
 import asking_rule
+import driven_time
 import event_wait
 import genesis_prime/connection/frame
 import genesis_prime/connection/script
@@ -97,6 +100,17 @@ fn replayed(
 ) -> Result(Nil, wire_replay.Failure) {
   support.write(folder:, connections:, steps:)
   support.run(folder:, rule: replay_rule.rule())
+}
+
+/// As `replayed`, for a session the replay gives up on after
+/// `wire_replay_support.give_up_wait_ms`.
+fn giving_up(
+  folder folder: String,
+  connections connections: List(support.Planted),
+  steps steps: List(support.Step),
+) -> Result(Nil, wire_replay.Failure) {
+  support.write(folder:, connections:, steps:)
+  support.run_giving_up(folder:, rule: replay_rule.rule())
 }
 
 // ---- the bytes the server writes ----
@@ -386,7 +400,7 @@ pub fn a_timer_the_shell_never_started_fails_naming_it_after_5_s_test() -> Nil {
     support.In(0, support.now_at(1), Accepted),
     support.In(0, support.now_at(2), TimerFired(timer: 9)),
   ]
-  assert replayed(
+  assert giving_up(
       folder:,
       connections: one(),
       steps: list.append(never, [support.Closed(0, Client)]),
@@ -415,7 +429,7 @@ pub fn a_shell_that_never_takes_its_next_input_fails_within_5_s_naming_the_input
     support.In(0, support.now_at(3), Woken),
     support.Closed(0, Client),
   ]
-  assert replayed(folder:, connections: one(), steps: never)
+  assert giving_up(folder:, connections: one(), steps: never)
     == Error(NeverTaken(
       connection: support.rule_recording_file(),
       line: 4,
@@ -439,7 +453,7 @@ pub fn a_server_that_writes_nothing_fails_within_5_s_naming_the_message_it_waite
     support.Out(0, record(replay_rule.echoed, 9)),
     support.Closed(0, Client),
   ]
-  assert replayed(folder:, connections: one(), steps: silent)
+  assert giving_up(folder:, connections: one(), steps: silent)
     == Error(Silent(
       connection: support.rule_recording_file(),
       line: 4,
@@ -455,7 +469,7 @@ pub fn a_server_that_does_not_close_where_the_recording_says_it_did_fails_after_
     support.In(0, support.now_at(1), Accepted),
     support.Closed(0, Server),
   ]
-  assert replayed(folder:, connections: one(), steps: open)
+  assert giving_up(folder:, connections: one(), steps: open)
     == Error(StillOpen(connection: support.rule_recording_file(), line: 2))
     as "the rule never stops, and the recording says the server closed"
 }
@@ -914,7 +928,14 @@ pub fn an_ask_nobody_answers_ends_at_its_own_deadline_and_the_replay_fails_where
         sent: ask_support.unreported,
       ),
       with: fn(builder) {
-        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+        supervisor.add(
+          builder,
+          ask_support.gate(
+            name: gate,
+            shutdown_ms: 1000,
+            time: driven_time.new(),
+          ),
+        )
       },
     )
     as "the replay fails where the recording had an answer"
@@ -993,7 +1014,14 @@ pub fn a_service_that_crashes_is_restarted_as_live_and_the_replay_fails_only_if_
         process.send(reached, sent)
       }),
       with: fn(builder) {
-        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+        supervisor.add(
+          builder,
+          ask_support.gate(
+            name: gate,
+            shutdown_ms: 1000,
+            time: driven_time.new(),
+          ),
+        )
       },
       actions: held_back,
       scripts: fn(replay) { replay.scripts },
@@ -1166,7 +1194,7 @@ pub fn a_shell_that_takes_the_clients_close_and_stays_open_fails_the_replay_afte
   // The rule asks when the client closes, and the process asked never answers:
   // the shell has taken the close, and does not end.
   let silent = process.spawn_unlinked(process.sleep_forever)
-  assert support.run_with(
+  assert support.run_giving_up_with(
       folder:,
       rule: lingering_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) {

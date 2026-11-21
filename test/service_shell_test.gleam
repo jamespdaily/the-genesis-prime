@@ -14,12 +14,15 @@
 //// - OTP's supervisor: a permanent child is restarted when it crashes, and
 ////   `supervisor:which_children` answers after the supervisor has handled the
 ////   exit it already received.
-//// Every wait is for an event, with a deadline a passing test never reaches.
+//// Every wait is for an event, with a deadline a passing test never reaches. The
+//// services read the driven clock a test makes (`driven_time`), so a timer fires
+//// only when the test advances it.
 
 import ask_support
 import asking_rule
 import clock_rule
 import driven_time
+import event_wait
 import gate_rule
 import genesis_prime/group_registry
 import genesis_prime/hand_off.{Holder, Kept, Put, SessionKey, Take, Taken}
@@ -45,7 +48,6 @@ import gleam/otp/supervision.{type ChildSpecification}
 import gleam/string
 import log_capture
 import mailbox_support
-import mug
 import open_wait
 import owned_test
 import service_shell_creature_test
@@ -60,6 +62,7 @@ pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_
       name:,
       shutdown_ms: 1000,
       observed: Some(observed),
+      time: driven_time.new(),
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   assert supervisor_children.in_start_order(tree) == [pid]
@@ -80,6 +83,7 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
       name:,
       shutdown_ms: 1000,
       observed: Some(observed),
+      time: driven_time.new(),
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let key = SessionKey(a_guid())
@@ -131,35 +135,31 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
 pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_on_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server =
-    ask_support.start(
-      rule: asking_rule.rule(),
-      directory: ask_support.directory(
-        gate:,
-        store: None,
-        sent: ask_support.unreported,
-      ),
-      shutdown_ms: 1000,
-      with: fn(builder) {
-        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
-      },
-    )
+  let time = driven_time.new()
+  let server = start_asking(gate:, time:)
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let client = ask_support.connect(server)
-  ask_support.command(client, asking_rule.await_command, 1, wait_ms: 300)
+  ask_support.command(
+    client,
+    asking_rule.await_command,
+    1,
+    wait_ms: ask_support.patient,
+  )
   let _asked = ask_support.read_record(client)
-  let timed_out = ask_support.read_record(client)
-  assert timed_out.code == asking_rule.code_no_answer_in_time
-    as "the asker stopped waiting"
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
+  // The connection has sent its ask once it monitors the gate, so the gate holds
+  // the asker's wait when the asker is ended. The poll is not
+  // `driven_time.wait_for`: a connection in an ask is never quiet on the driven
+  // clock, since the ask's deadline counts the node's time, so that wait would
+  // end only at the ask's deadline.
+  event_wait.until("the shell monitors the gate while it waits", fn() {
+    list.contains(mailbox_support.monitored(connection), pid)
+  })
   let gone = process.monitor(connection)
-  let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
+  process.kill(connection)
   let _reason =
-    ask_support.ended(
-      watched: gone,
-      what: "the connection to end after the client closed",
-    )
+    ask_support.ended(watched: gone, what: "the killed connection to end")
   assert ask_support.open_key(gate, 1) == 1
     as "the gate answered the asker that had gone, and went on to answer us"
   assert process.named(gate) == Ok(pid) as "the same process goes on"
@@ -173,15 +173,16 @@ pub fn the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its
   let name = process.new_name("hand_off")
   let shutdown_ms = 1500
   let observed = process.new_subject()
+  let time = driven_time.new()
   let tree =
     ask_support.start_tree(hand_off_child(
       name:,
       shutdown_ms:,
       observed: Some(observed),
+      time:,
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let service = process.monitor(pid)
-  let before_stop = ask_support.monotonic_ms()
   let stopped = ask_support.begin_stop_tree(tree)
   assert ask_support.ended(
       watched: service,
@@ -191,32 +192,19 @@ pub fn the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its
     as "the service exits with the reason shutdown, never normal"
   let _reason =
     ask_support.ended(watched: stopped, what: "the stopped tree to end")
-  let after_stop = ask_support.monotonic_ms()
   let assert [#(OwnEvent(Started), _), #(Stopping(deadline_ms:), stop)] =
     mailbox_support.drain(observed)
     as "Stopping came as the second input and the rule stopped"
   assert stop == Effects([Stop])
-  assert deadline_ms >= before_stop + shutdown_ms
-    && deadline_ms <= after_stop + shutdown_ms
-    as "the deadline is the shutdown time from the stop's arrival"
+  assert deadline_ms == driven_time.now(time:).monotonic_ms + shutdown_ms
+    as "the deadline is the shutdown time from the stop's arrival, on the service's clock, which the stop did not move"
 }
 
 pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ended_before_answer_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server =
-    ask_support.start(
-      rule: asking_rule.rule(),
-      directory: ask_support.directory(
-        gate:,
-        store: None,
-        sent: ask_support.unreported,
-      ),
-      shutdown_ms: 1000,
-      with: fn(builder) {
-        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
-      },
-    )
+  let time = driven_time.new()
+  let server = start_asking(gate:, time:)
   let assert Ok(first) = process.named(gate) as "the gate runs"
   let client = ask_support.connect(server)
   ask_support.command(
@@ -239,12 +227,26 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
   let crashed = ask_support.read_record(client)
   assert crashed.code == asking_rule.code_ended_before_answer
     as "the ask the gate crashed on ends with its process"
-  let _restarted = ask_support.await_new_pid(name: gate, not: first)
-  ask_support.command(client, asking_rule.await_command, 5, wait_ms: 300)
+  let restarted = ask_support.await_new_pid(name: gate, not: first)
+  ask_support.command(
+    client,
+    asking_rule.await_command,
+    5,
+    wait_ms: ask_support.patient,
+  )
   let _asked = ask_support.read_record(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  // Not `driven_time.wait_for`, as in the test above: the connection is in an
+  // ask counted on the node's time.
+  event_wait.until("the shell monitors the restarted gate while it waits", fn() {
+    list.contains(mailbox_support.monitored(connection), restarted)
+  })
+  assert ask_support.open_key(gate, 5) == 1
+    as "the ask for key 5 waits in the restarted gate, so key 5 is not open in it: the restart began from the rule's `new`"
   let waited = ask_support.read_record(client)
-  assert waited.code == asking_rule.code_no_answer_in_time
-    as "key 5 is no longer open: the restart began from the rule's `new`"
+  assert waited.code == asking_rule.code_opened
+    as "and the waiting ask is answered when key 5 opens"
   ask_support.stop(server)
 }
 
@@ -270,6 +272,7 @@ pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_runni
       name: gate,
       shutdown_ms: 1000,
       reach:,
+      time: driven_time.new(),
     ))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   assert ask_support.call_gate(gate, gate_rule.SendTo(running, 3))
@@ -301,7 +304,12 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
   let target = process.spawn_unlinked(process.sleep_forever)
   let gate = process.new_name("gate")
   let tree =
-    ask_support.start_tree(watching(gate:, locating: Sessions, at: target))
+    ask_support.start_tree(watching(
+      gate:,
+      locating: Sessions,
+      at: target,
+      time: driven_time.new(),
+    ))
   let replies = process.new_subject()
   let assert Ok(service.ToService(_)) =
     service.call(gate, gate_rule.Await(key: 1), fn(answer) {
@@ -371,7 +379,11 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let tree =
-    ask_support.start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
+    ask_support.start_tree(ask_support.gate(
+      name: gate,
+      shutdown_ms: 1000,
+      time: driven_time.new(),
+    ))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let service = process.monitor(pid)
   let replies = process.new_subject()
@@ -400,7 +412,11 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_ser
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let tree =
-    ask_support.start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
+    ask_support.start_tree(ask_support.gate(
+      name: gate,
+      shutdown_ms: 1000,
+      time: driven_time.new(),
+    ))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let lines = process.new_subject()
   let capture = log_capture.start(from: pid, into: lines)
@@ -448,6 +464,7 @@ fn inputs_when_queued(
       name: gate,
       shutdown_ms: 1000,
       into: observed,
+      time: driven_time.new(),
     ))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let replies = process.new_subject()
@@ -477,6 +494,7 @@ fn watching(
   gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   locating locating: Address,
   at target: process.Pid,
+  time time: driven_time.Time,
 ) -> ChildSpecification(Nil) {
   ask_support.reaching(
     name: gate,
@@ -491,6 +509,30 @@ fn watching(
       send: fn(_to, _message) { Error(Nil) },
       start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
     ),
+    time:,
+  )
+}
+
+/// A listener whose connections run the asking rule against the gate `gate`,
+/// which runs beside them on the driven clock `time`.
+fn start_asking(
+  gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
+  time time: driven_time.Time,
+) -> ask_support.Server {
+  ask_support.start_on(
+    time:,
+    rule: asking_rule.rule(),
+    directory: ask_support.directory(
+      gate:,
+      store: None,
+      sent: ask_support.unreported,
+    ),
+    with: fn(builder) {
+      supervisor.add(
+        builder,
+        ask_support.gate(name: gate, shutdown_ms: 1000, time:),
+      )
+    },
   )
 }
 
@@ -505,6 +547,7 @@ fn hand_off_child(
       ),
     ),
   ),
+  time time: driven_time.Time,
 ) -> ChildSpecification(Nil) {
   let rule = hand_off.rule()
   service_shell.supervised(
@@ -522,7 +565,7 @@ fn hand_off_child(
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
       shutdown_ms:,
       found_at: None,
-      time: service_shell.real_time(),
+      time: driven_time.service_time(time),
     ),
   )
 }
@@ -536,8 +579,11 @@ fn a_guid() -> guid.Guid {
 
 // ---- a service with no name ----
 
-/// The hand-off's settings with no name, for a service found by its subject.
-fn unnamed_hand_off() -> service_shell.Settings(
+/// The hand-off's settings with no name, for a service found by its subject, on
+/// the driven clock `time`.
+fn unnamed_hand_off(
+  time time: driven_time.Time,
+) -> service_shell.Settings(
   Nil,
   hand_off.State,
   hand_off.Message,
@@ -548,13 +594,14 @@ fn unnamed_hand_off() -> service_shell.Settings(
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
     found_at: None,
-    time: service_shell.real_time(),
+    time: driven_time.service_time(time),
   )
 }
 
 pub fn an_unnamed_service_is_asked_through_the_subject_its_start_returns_and_says_where_it_went_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert Ok(started) = service_shell.start_unnamed(unnamed_hand_off())
+  let assert Ok(started) =
+    service_shell.start_unnamed(unnamed_hand_off(time: driven_time.new()))
     as "an unnamed service starts as a child of the process that runs the start"
   let key = SessionKey(a_guid())
   let holder =
@@ -584,7 +631,8 @@ pub fn an_unnamed_service_is_asked_through_the_subject_its_start_returns_and_say
 
 pub fn a_message_to_an_unnamed_service_that_ended_is_dropped_and_its_pid_is_still_reported_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert Ok(started) = service_shell.start_unnamed(unnamed_hand_off())
+  let assert Ok(started) =
+    service_shell.start_unnamed(unnamed_hand_off(time: driven_time.new()))
     as "an unnamed service starts"
   process.unlink(started.pid)
   let ended = process.monitor(started.pid)
@@ -650,7 +698,7 @@ pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_te
       ),
       shutdown_ms: 1000,
       found_at: Some(service_shell.FoundAt(scope:, address:)),
-      time: service_shell.real_time(),
+      time: driven_time.service_time(driven_time.new()),
     )
   let _starter =
     process.spawn(fn() {
@@ -738,12 +786,13 @@ pub fn a_service_given_a_time_takes_each_inputs_now_from_it_test() -> Nil {
   use <- owned_test.run(30_000)
   let sink = process.new_subject()
   let target = process.spawn_unlinked(process.sleep_forever)
-  // Its timers are the operating system's, so a timer of 0 ms fires at once and
-  // the test waits for the firing as an event.
+  // Its timers are a driven clock's, which the test advances to fire a timer of
+  // 0 ms.
+  let driven = driven_time.new()
   let time =
     service_shell.ServiceTime(
       clock: fn() { the_clocks_now },
-      schedule: service_shell.real_time().schedule,
+      schedule: driven_time.service_time(driven).schedule,
     )
   let service = clocked(time:, sink:, target:)
   let assert Ok(pid) = process.subject_owner(service)
@@ -766,6 +815,7 @@ pub fn a_service_given_a_time_takes_each_inputs_now_from_it_test() -> Nil {
     as "a tell's Now is the given clock's"
   let _answer =
     asked(service, command: clock_rule.StartTimer(timer: 1, after_ms: 0))
+  driven_time.advance(time: driven, ms: 0)
   assert took(sink, what: "the timer's firing")
     == Input(
       now: the_clocks_now,
