@@ -72,6 +72,16 @@ import open_wait
 /// How far ahead of the node's own time the clock starts.
 const ahead_ms = 3_600_000
 
+/// How long the clock's start may take, which is the start that `actor.new` allows.
+const initialisation_ms = 1000
+
+/// Makes the calling process keep its mailbox outside its heap. The clock holds one
+/// read for each creature of a crowd at once, and a collection of a process whose
+/// mailbox is on its heap copies every message waiting and, after a full sweep, moves
+/// them again: the VM has aborted in that move (`Overrun stack and heap`).
+@external(erlang, "driven_time_ffi", "keep_mailbox_off_heap")
+fn keep_mailbox_off_heap() -> Nil
+
 /// A driven clock and its timers.
 pub opaque type Time {
   Time(driver: Subject(Message))
@@ -135,18 +145,21 @@ pub fn new() -> Time {
   let Now(monotonic_ms:, filetime:) = runtime.now()
   let monotonic_ms = monotonic_ms + ahead_ms
   let filetime = filetime + ahead_ms * 10_000
-  let assert Ok(started) =
-    actor.new(
-      State(
-        now_ms: monotonic_ms,
-        start_ms: monotonic_ms,
-        start_filetime: filetime,
-        next_number: 0,
-        pending: [],
-        changes: 0,
-        participants: [],
-      ),
+  let state =
+    State(
+      now_ms: monotonic_ms,
+      start_ms: monotonic_ms,
+      start_filetime: filetime,
+      next_number: 0,
+      pending: [],
+      changes: 0,
+      participants: [],
     )
+  let assert Ok(started) =
+    actor.new_with_initialiser(initialisation_ms, fn(driver) {
+      keep_mailbox_off_heap()
+      actor.initialised(state) |> actor.returning(driver) |> Ok
+    })
     |> actor.on_message(handle)
     |> actor.start
     as "the driven clock started"
@@ -338,6 +351,13 @@ fn asked(time time: Time, make make: fn(Subject(reply)) -> Message) -> reply {
   open_wait.named("the driven clock to answer", fn() {
     process.call_forever(time.driver, make)
   })
+}
+
+/// The process that is the clock.
+pub fn driver(time: Time) -> Pid {
+  let assert Ok(pid) = process.subject_owner(time.driver)
+    as "the clock's subject belongs to its process"
+  pid
 }
 
 /// The timers the process `owner` started on this clock that have neither fired nor

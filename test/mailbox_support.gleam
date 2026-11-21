@@ -32,6 +32,11 @@ fn taken_or_ended(pid: Pid) -> Nil
 @external(erlang, "mailbox_support_ffi", "queued")
 pub fn queued(pid: Pid) -> Int
 
+/// Whether the process keeps its mailbox outside its heap, so that a collection of
+/// the process does not copy the messages waiting for it.
+@external(erlang, "mailbox_support_ffi", "kept_off_heap")
+pub fn kept_off_heap(pid: Pid) -> Bool
+
 /// Every message waiting in the subject, in the order they came, taken out of
 /// it. A message a process sent before a signal it sent afterwards, such as
 /// its end, is waiting once that signal has come: Erlang orders signals per

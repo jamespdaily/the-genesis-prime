@@ -483,3 +483,13 @@ pub fn a_wait_whose_condition_a_participants_pending_input_makes_true_returns_wi
   assert process.receive(fires, 0) == Error(Nil)
     as "the participant's timer is not fired by the wait"
 }
+
+pub fn the_clock_keeps_its_mailbox_off_its_heap_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Every creature of a crowd reads the clock for its input, so the clock's mailbox
+  // holds one read for each of 2,400 creatures at once; on the heap, each collection
+  // of the clock copies them all and moves them again after a full sweep.
+  let time = driven_time.new()
+  assert mailbox_support.kept_off_heap(driven_time.driver(time))
+    as "the clock's mailbox is outside its heap"
+}
