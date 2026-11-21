@@ -63,7 +63,7 @@ pub fn main() -> Nil {
   genesis_prime.run(
     change: fn(settings) {
       let settings =
-        login_support.driven_by(settings: fixed_seed.seeded(settings), time:)
+        login_support.on_the_clock(settings: fixed_seed.seeded(settings), time:)
       let settings = on_ports_the_system_picks(settings)
       process.send(held, settings)
       settings

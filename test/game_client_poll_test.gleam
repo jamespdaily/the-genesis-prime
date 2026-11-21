@@ -17,7 +17,7 @@ import socket_read
 
 pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_server_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start()
+  let started = login_support.start_real()
   // A socket the server writes nothing to: the STS listener answers only what
   // a client sends it.
   let socket = login_client.connect(login_support.ports(started).sts_port)
@@ -46,7 +46,7 @@ pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_
 
 pub fn a_poll_with_a_bound_still_returns_empty_after_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start()
+  let started = login_support.start_real()
   // The bots keep sitting by their own bound on `poll` (`sitting_bot`): a socket
   // that stays silent gives no messages and the bytes held, not a wait without end.
   let socket = login_client.connect(login_support.ports(started).sts_port)

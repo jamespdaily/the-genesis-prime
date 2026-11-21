@@ -80,7 +80,7 @@ pub fn auth_settings() -> auth_connection.Settings {
   auth_connection.Settings(
     realm: realm(),
     ask_deadline_ms: 5000,
-    session_key_lifetime_ms: 60_000,
+    session_key_lifetime_ms: auth_connection.session_key_lifetime_ms,
     planted: None,
     rate: support.roomy(),
   )
@@ -123,7 +123,6 @@ pub fn world() -> server.World {
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
     spawns: spawn_support.key_without_spawns(),
-    service_time: service_shell.real_time(),
   )
 }
 
@@ -165,9 +164,54 @@ pub type Started {
   Started(tree: Pid, settings: server.Settings)
 }
 
-/// The server's settings for a test: the pool given, names made now, the
-/// listeners on ports the system picks, nothing recorded.
-pub fn settings(pool pool: pog.Config) -> server.Settings {
+/// The server's settings for a test on the driven clock `time`: the pool given,
+/// names made now, the listeners on ports the system picks, nothing recorded,
+/// and every clock of the tree read from `time` (`on_the_clock`). The deadlines
+/// the server counts on the node's own time, a write's, a call to Maps and each
+/// connection's ask, are far beyond the test's own deadline
+/// (`ask_support.beyond_the_test_ms`), so none passes while a test runs, and the
+/// test's deadline warns of a wait that is never answered.
+pub fn settings(
+  pool pool: pog.Config,
+  time time: driven_time.Time,
+) -> server.Settings {
+  let beyond = ask_support.beyond_the_test_ms
+  let driven = on_the_clock(settings: real_settings(pool:), time:)
+  server.Settings(
+    ..driven,
+    send_deadline_ms: beyond,
+    world: server.World(..driven.world, maps_call_ms: beyond),
+    login: server.Login(
+      sts: server.Served(
+        ..driven.login.sts,
+        settings: sts_connection.Settings(
+          ..driven.login.sts.settings,
+          ask_deadline_ms: beyond,
+        ),
+      ),
+      auth: server.Served(
+        ..driven.login.auth,
+        settings: auth_connection.Settings(
+          ..driven.login.auth.settings,
+          ask_deadline_ms: beyond,
+        ),
+      ),
+    ),
+    game: server.Served(
+      ..driven.game,
+      settings: connection_state.Settings(
+        ..driven.game.settings,
+        ask_deadline_ms: beyond,
+      ),
+    ),
+  )
+}
+
+/// The server's settings for a test that runs on the real clock: the
+/// connections on the operating system's script, the services on real time, a
+/// send deadline of 300 ms, a call to Maps of 2 s and an ask of 5 s. Only a test
+/// not yet moved to the driven clock calls it.
+pub fn real_settings(pool pool: pog.Config) -> server.Settings {
   fixed_seed.seeded(server.Settings(
     pool:,
     store: process.new_name("store"),
@@ -177,6 +221,7 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 1500,
     registry: registry.new(),
+    service_time: service_shell.real_time(),
     world: world(),
     send_deadline_ms: 300,
     connection_shutdown_ms: 1000,
@@ -185,23 +230,32 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
   ))
 }
 
-/// The settings with the game connections and the World taking their time and
-/// their timers from `time` (`driven_time.scripts`, `driven_time.service_time`), so
-/// one clock moves every timer of the listener and of the maps and creatures, and a
-/// timer fires only when the test advances it.
-pub fn driven_by(
+/// The settings with every clock of the tree read from `time`
+/// (`driven_time.scripts`, `driven_time.service_time`): the STS, auth and game
+/// connections, the hand-off, Sessions, the maps and the creatures take the time
+/// of each input and start their timers there, so a timer fires only when the
+/// test advances `time`.
+pub fn on_the_clock(
   settings settings: server.Settings,
   time time: driven_time.Time,
 ) -> server.Settings {
+  let login = settings.login
   server.Settings(
     ..settings,
+    service_time: driven_time.service_time(time),
+    login: server.Login(
+      sts: server.Served(
+        ..login.sts,
+        scripts: driven_time.scripts(time:, over: login.sts.scripts),
+      ),
+      auth: server.Served(
+        ..login.auth,
+        scripts: driven_time.scripts(time:, over: login.auth.scripts),
+      ),
+    ),
     game: server.Served(
       ..settings.game,
       scripts: driven_time.scripts(time:, over: settings.game.scripts),
-    ),
-    world: server.World(
-      ..settings.world,
-      service_time: driven_time.service_time(time),
     ),
   )
 }
@@ -230,14 +284,13 @@ pub fn servers_auth_rate() -> Bucket {
 }
 
 /// Starts the server's tree as `start` does, with the auth listener's rate as
-/// `rate` and its connections recorded on the wire by `recorder`, each taking
-/// the time of its inputs and starting its timers from `time`.
+/// `rate` and its connections recorded on the wire by `recorder`.
 pub fn start_recording_auth(
   rate rate: Bucket,
   recorder recorder: WireRecorder,
   time time: driven_time.Time,
 ) -> Started {
-  start_with(change: fn(settings) {
+  start_with(time:, change: fn(settings) {
     let auth = settings.login.auth
     server.Settings(
       ..settings,
@@ -247,25 +300,27 @@ pub fn start_recording_auth(
           ..auth,
           settings: auth_connection.Settings(..auth.settings, rate:),
           wire_recorder: Some(recorder),
-          scripts: driven_time.scripts(time:, over: auth.scripts),
         ),
       ),
     )
   })
 }
 
-/// Starts the server's tree on a database of its own and waits for its pool.
-pub fn start() -> Started {
-  start_with(change: fn(settings) { settings })
+/// Starts the server's tree on the driven clock `time`, on a database of its
+/// own, and waits for its pool.
+pub fn start(time time: driven_time.Time) -> Started {
+  start_with(time:, change: fn(settings) { settings })
 }
 
 /// Starts the server's tree as `start` does, with the settings as `change`
 /// makes them.
 pub fn start_with(
+  time time: driven_time.Time,
   change change: fn(server.Settings) -> server.Settings,
 ) -> Started {
   let shared = database_support.shared()
   start_on(
+    time:,
     shared:,
     database: database_support.new_database(on: shared),
     change:,
@@ -275,19 +330,62 @@ pub fn start_with(
 /// Starts the server's tree as `start_with` does, on the database `database`
 /// of the test's own, which the test has made and may have filled first.
 pub fn start_on(
+  time time: driven_time.Time,
   shared shared: database_support.Shared,
   database database: String,
   change change: fn(server.Settings) -> server.Settings,
 ) -> Started {
+  started_from(shared:, database:, settings: fn(pool) {
+    change(settings(pool:, time:))
+  })
+}
+
+/// Starts the server's tree on the real clock (`real_settings`), on a database
+/// of its own.
+pub fn start_real() -> Started {
+  start_real_with(change: fn(settings) { settings })
+}
+
+/// Starts the server's tree on the real clock as `start_real` does, with the
+/// settings as `change` makes them.
+pub fn start_real_with(
+  change change: fn(server.Settings) -> server.Settings,
+) -> Started {
+  let shared = database_support.shared()
+  start_real_on(
+    shared:,
+    database: database_support.new_database(on: shared),
+    change:,
+  )
+}
+
+/// Starts the server's tree on the real clock as `start_real_with` does, on the
+/// database `database` of the test's own, which the test has made and may have
+/// filled first.
+pub fn start_real_on(
+  shared shared: database_support.Shared,
+  database database: String,
+  change change: fn(server.Settings) -> server.Settings,
+) -> Started {
+  started_from(shared:, database:, settings: fn(pool) {
+    change(real_settings(pool:))
+  })
+}
+
+/// Starts the tree with the settings `make` gives over the pool of `database`,
+/// and waits until its database answers.
+fn started_from(
+  shared shared: database_support.Shared,
+  database database: String,
+  settings make: fn(pog.Config) -> server.Settings,
+) -> Started {
   let settings =
-    change(
-      settings(pool: database_support.config(
-        for: shared.settings,
-        database:,
-        pool_name: process.new_name("pool"),
-        pool_size: 2,
-      )),
-    )
+    make(database_support.config(
+      for: shared.settings,
+      database:,
+      pool_name: process.new_name("pool"),
+      pool_size: 2,
+    ))
   let assert Ok(started) = server.start(settings) as "the tree started"
   process.unlink(started.pid)
   ask_support.guard(started.pid)
@@ -309,8 +407,16 @@ pub fn ports(started: Started) -> Ports {
 
 /// Starts the tree and inserts the account of the library's vector: the tree,
 /// its ports and the account's id.
-pub fn start_with_jim() -> #(Started, Ports, Int) {
-  let started = start()
+pub fn start_with_jim(time time: driven_time.Time) -> #(Started, Ports, Int) {
+  let started = start(time:)
+  let account_id = insert_jim(started)
+  #(started, ports(started), account_id)
+}
+
+/// Starts the tree on the real clock and inserts the account of the library's
+/// vector, as `start_with_jim` does.
+pub fn start_real_with_jim() -> #(Started, Ports, Int) {
+  let started = start_real()
   let account_id = insert_jim(started)
   #(started, ports(started), account_id)
 }

@@ -90,10 +90,16 @@ pub fn count(database database: String, sql sql: String) -> Int {
   number
 }
 
-/// How the load asks in these tests: attempts of 500 ms, 50 ms between them, and
-/// the warning after a second.
+/// How the load asks in these tests: the database is up, so an attempt is
+/// answered, and none ends by a time of its own (`ask_support.beyond_the_test_ms`),
+/// so the test's own deadline warns of an attempt never answered. 50 ms between
+/// attempts.
 pub fn asking() -> readiness.Settings {
-  readiness.Settings(within_ms: 1000, attempt_ms: 500, pause_ms: 50)
+  readiness.Settings(
+    within_ms: ask_support.beyond_the_test_ms,
+    attempt_ms: ask_support.beyond_the_test_ms,
+    pause_ms: 50,
+  )
 }
 
 /// The load of the committed content tables and the repository's migrations from the
