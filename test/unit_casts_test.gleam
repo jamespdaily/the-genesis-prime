@@ -314,6 +314,26 @@ pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Ni
         ],
       ),
       #(
+        "a node whose smallest delay is 0 keeps the 1 of an effect that lasts until removed: the client's sum is all bits already (row 105548 with 1 ms to run beside Gate's row 67777, which has run, at 1499)",
+        [client_row(id: 105_548), gate_row()],
+        False,
+        1499,
+        [
+          support.listed_effect_info(
+            effect_id: 105_548,
+            instance_id: 1,
+            delay_ms: 1,
+            lifetime_ms: 0,
+          ),
+          support.listed_effect_info(
+            effect_id: 67_777,
+            instance_id: 2,
+            delay_ms: 0,
+            lifetime_ms: 81,
+          ),
+        ],
+      ),
+      #(
         "with 1 ms of delay to run, a node whose effects all end keeps the 1: the lifetime is not all bits, so the sum is not 0",
         [gate_row()],
         False,

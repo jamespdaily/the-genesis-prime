@@ -657,8 +657,9 @@ pub fn describe(refusal refusal: Refusal) -> String {
 /// info for each landed blow with its damage description and delay. The instance
 /// count and the effects' instance ids number from 1 (kept by the client, no reader
 /// traced), except a crowd-control state's, which is the id its tell gave
-/// (genesis_prime/game/crowd_control `instance_id`). A unit that holds an effect lasting
-/// until removed is told 2 for each delay of 1 (`target_info.told_delay_ms`).
+/// (genesis_prime/game/crowd_control `instance_id`). A unit whose smallest delay is 1 and
+/// that holds an effect lasting until removed is told 2 for each delay of 1
+/// (`target_info.told_delay_ms`).
 fn struck_target(
   index index: Int,
   unit_id unit_id: Int,
@@ -667,6 +668,11 @@ fn struck_target(
 ) -> SpellTargetInfo {
   let holds_until_removed =
     list.any(listed, fn(effect) { effect.until_removed })
+  let delays_ms =
+    list.append(
+      list.map(descriptions, fn(description) { description.delay_ms }),
+      list.map(listed, fn(effect) { effect.delay_ms }),
+    )
   target_info.target(
     index:,
     unit_id:,
@@ -682,6 +688,7 @@ fn struck_target(
           instance_id: effect_index + 1,
           delay_ms: target_info.told_delay_ms(
             delay_ms: description.delay_ms,
+            node_delays_ms: delays_ms,
             holds_until_removed:,
           ),
           lifetime_ms: 0,
@@ -699,6 +706,7 @@ fn struck_target(
           ),
           delay_ms: target_info.told_delay_ms(
             delay_ms: effect.delay_ms,
+            node_delays_ms: delays_ms,
             holds_until_removed:,
           ),
           lifetime_ms: 0,

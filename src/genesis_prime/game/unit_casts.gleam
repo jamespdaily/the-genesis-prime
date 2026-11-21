@@ -26,10 +26,10 @@
 ////   lifetime the time left from now, counted with that delay, never 0 for an
 ////   effect that still ends and 0 only for one that lasts until removed
 ////   (`opcode.0x7f4.effect_delay`, `opcode.0x7f4.effect_time`).
-//// - A node that holds an effect lasting until removed is told no delay of 1: the
-////   client's node sums its earliest start and its longest lifetime (all bits for
-////   such an effect) and builds no buff when that is 0, so a delay of 1 is told as 2
-////   (`opcode.0x7f4.first_start`).
+//// - A node whose smallest delay is 1 and that holds an effect lasting until removed is
+////   told no delay of 1: the client's node sums its earliest start (that smallest delay)
+////   and its longest lifetime (all bits for such an effect) and builds no buff when that
+////   is 0, so a delay of 1 is told as 2 (`opcode.0x7f4.first_start`).
 //// - An entry lists no position, so the client draws no server-placed
 ////   telegraph row.
 ////
@@ -190,9 +190,9 @@ pub fn entries_of(
 }
 
 /// The target info of one target: each held effect with the delay still to run and the
-/// time left from `now_ms`, numbered from 1, a Hit with the node's count. A node that
-/// holds an effect lasting until removed is told 2 for a delay of 1
-/// (`target_info.told_delay_ms`).
+/// time left from `now_ms`, numbered from 1, a Hit with the node's count. A node whose
+/// smallest delay is 1 and that holds an effect lasting until removed is told 2 for a
+/// delay of 1 (`target_info.told_delay_ms`).
 fn target_of_view(
   target target: ViewTarget,
   index index: Int,
@@ -200,6 +200,8 @@ fn target_of_view(
 ) -> SpellTargetInfo {
   let holds_until_removed =
     list.any(target.effects, fn(held) { held.ends == UntilRemoved })
+  let delays_ms =
+    list.map(target.effects, fn(held) { int.max(0, held.starts_ms - now_ms) })
   target_info.target(
     index:,
     unit_id: target.unit_id,
@@ -211,6 +213,7 @@ fn target_of_view(
         instance_id: effect_index + 1,
         delay_ms: target_info.told_delay_ms(
           delay_ms: int.max(0, held.starts_ms - now_ms),
+          node_delays_ms: delays_ms,
           holds_until_removed:,
         ),
         lifetime_ms: case held.ends {
