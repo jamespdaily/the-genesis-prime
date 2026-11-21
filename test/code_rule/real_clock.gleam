@@ -102,7 +102,7 @@ pub fn entry_points() -> List(EntryPoint) {
     "its settings serve on the operating system's script with real service time, a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s"
   let gate = "runs the gate service on real service time"
   let send_deadline =
-    "builds its connections' settings with a send deadline of 300 ms the caller cannot change"
+    "gives its connections' settings a send deadline of 300 ms"
   [
     EntryPoint("login_support", "start_real", tree),
     EntryPoint("login_support", "start_real_with", tree),
@@ -114,9 +114,8 @@ pub fn entry_points() -> List(EntryPoint) {
     EntryPoint("login_support", "world", settings),
     EntryPoint("login_support", "game", settings),
     EntryPoint("ask_support", "start", the_operating_system_script),
-    EntryPoint("ask_support", "start_joined", the_operating_system_script),
     EntryPoint("ask_support", "start_scripted", send_deadline),
-    EntryPoint("ask_support", "start_telling", send_deadline),
+    EntryPoint("ask_support", "real_send_deadline_ms", send_deadline),
     EntryPoint("ask_support", "started_listener", the_operating_system_script),
     EntryPoint("ask_support", "gate", gate),
     EntryPoint("ask_support", "reaching", gate),
@@ -717,10 +716,6 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     Exception(
       "test/connection_shell_test.gleam",
       "runs a connection on the operating system's script (ask_support.start, start_scripted)",
-    ),
-    Exception(
-      "test/connection_signal_test.gleam",
-      "runs connections on the operating system's script, so its timers fire on the operating system's scheduler (ask_support.start_joined, start_telling)",
     ),
     Exception(
       "test/closer_test.gleam",

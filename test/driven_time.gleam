@@ -393,18 +393,38 @@ pub fn now(time time: Time) -> Now {
 pub fn advance(time time: Time, ms ms: Int) -> Nil {
   wait_until_quiet(time)
   let Now(monotonic_ms: from_ms, ..) = asked(time:, make: Peek)
-  fire_until(time:, limit_ms: from_ms + ms)
+  fire_until(time:, limit_ms: from_ms + ms, after_each: fn() {
+    wait_until_quiet(time)
+  })
 }
 
-fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
+fn fire_until(
+  time time: Time,
+  limit_ms limit_ms: Int,
+  after_each after_each: fn() -> Nil,
+) -> Nil {
   case asked(time:, make: TakeDue(limit_ms, _)) {
     None -> Nil
     Some(Pending(subject:, timer:, reference:, ..)) -> {
       process.send(subject, Elapsed(timer:, reference:))
-      wait_until_quiet(time)
-      fire_until(time:, limit_ms:)
+      after_each()
+      fire_until(time:, limit_ms:, after_each:)
     }
   }
+}
+
+/// Moves the clock on by `ms` as `advance` does, with no barrier: each timer due
+/// within it is sent to its owner by the calling process, in the order of their
+/// due times, and the call returns at once. For a connection held in an ask,
+/// which takes no system message until the ask's outcome, so a barrier over it
+/// would wait for an outcome the test gives only after the timer has fired.
+/// The timeouts are sent by the calling process, so they reach the connection
+/// before any message the test sends it next (Erlang orders signals per
+/// sender). The timers the held step started are in the queue, since a
+/// connection starts its timers before it asks.
+pub fn advance_while_a_participant_waits(time time: Time, ms ms: Int) -> Nil {
+  let Now(monotonic_ms: from_ms, ..) = asked(time:, make: Peek)
+  fire_until(time:, limit_ms: from_ms + ms, after_each: fn() { Nil })
 }
 
 /// Returns after two passes in a row that saw no change. A pass reads the counter,
