@@ -156,7 +156,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/system
-import gleam/pair
 import gleam/result
 import gleam_community/maths
 import item_bot
@@ -9558,21 +9557,19 @@ fn fissure_child_gone_on(
   }
 }
 
-/// The viewer's arrival, read until its client has the Medic's 0x262, the Beast's and its own,
-/// in the order that shows the Beast's own tell: the Medic's 0x262 before the Beast's. The
-/// Medic and the Beast are two senders, so the Beast's can come first, and then the viewer
-/// drops the Beast's cast entry whether or not the Beast was told anything (the viewer holds
-/// no cast yet); the viewer then camps and plays again, each entry a new arrival at the same
-/// clock, up to `attempts_left` times. Gives the frames of that arrival and the bytes beyond
-/// them.
-fn arrival_with_the_medic_first(
+/// The viewer's arrival in the order that shows the Beast's own tell, which the test makes
+/// certain: the viewer reads the Medic's 0x262 and the Beast's, walks 1026.5 units along z,
+/// where the Medic (1023 away) is in sight and the Beast (1026 away) is not (`sight.range`,
+/// 1024), reads the Beast's removal, and walks back into the Beast's sight. The Medic's
+/// create is then read before the Beast's by the viewer's own steps, not by which of two
+/// senders wrote first. Gives the frames of the first arrival (the Medic's entry among
+/// them), the frames of the Beast coming into sight again, and the bytes beyond them.
+fn beast_comes_into_sight_after_the_medic(
   game game: game_client.Game,
-  character_id character_id: Int,
   burst burst: List(Frame),
   have have: BitArray,
   beast beast: Int,
-  attempts_left attempts_left: Int,
-) -> #(List(Frame), BitArray) {
+) -> #(List(Frame), List(Frame), BitArray) {
   let #(arrived, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.count(list.append(burst, frames), fn(frame) {
@@ -9580,33 +9577,21 @@ fn arrival_with_the_medic_first(
       })
       >= 3
     })
-  let frames = list.append(burst, arrived)
-  let position_of = fn(unit_id) {
-    let assert Ok(#(_, position)) =
-      list.index_map(frames, fn(frame, position) { #(frame, position) })
-      |> list.find(fn(entry) {
-        result.map(created_unit_of(frame: entry.0), pair.first) == Ok(unit_id)
+  let entry = list.append(burst, arrived)
+  walk_to(game:, z: 1026.5, clock: 1)
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), beast)
+    })
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 1)
+  walk_to(game:, z: 3.5, clock: 2)
+  let #(returned, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(game_client.creatures_created_in(frames:), fn(creature) {
+        creature.unit_id == beast
       })
-      as "the viewer was sent the unit's 0x262"
-    position
-  }
-  case position_of(1) < position_of(beast) {
-    True -> #(frames, have)
-    False -> {
-      assert attempts_left > 1
-        as "the viewer's client was written the Beast's 0x262 before the Medic's in every arrival tried, so the order that shows the Beast's own entry never occurred"
-      let #(entry, have) =
-        game_client.camp_and_play(game:, have:, character_id:)
-      arrival_with_the_medic_first(
-        game:,
-        character_id:,
-        burst: entry,
-        have:,
-        beast:,
-        attempts_left: attempts_left - 1,
-      )
-    }
-  }
+    })
+  #(entry, returned, have)
 }
 
 /// The entries of property `property_id` that the 0x93a frames among `frames` give the unit
@@ -9640,9 +9625,9 @@ fn finished_casts_in(frames frames: List(Frame)) -> List(Int) {
 /// `opcode.0x262.casts`: a viewer that comes into sight after a Medic's Fissure (Spell4Base
 /// 26038) has left its debuff on a Beast is shown the debuff, with the time it has left, and
 /// is told it ends at the end of the last phase's child. The child 41886's row 94370 holds
-/// 8000 ms and property 160. The viewer is read in the order that shows the Beast's own
-/// entry (the Medic's 0x262 before the Beast's), where the debuff shows once, from both
-/// entries. The clock is the test's.
+/// 8000 ms and property 160. The viewer sees the Medic first and the Beast comes into its
+/// sight after (`beast_comes_into_sight_after_the_medic`), where the debuff shows once, from
+/// both entries. The clock is the test's.
 pub fn a_viewer_arriving_after_a_medic_fissures_a_beast_shows_the_debuff_on_the_beast_and_its_end_test() -> Nil {
   use <- owned_test.run(120_000)
   let time = driven_time.new()
@@ -9667,15 +9652,7 @@ pub fn a_viewer_arriving_after_a_medic_fissures_a_beast_shows_the_debuff_on_the_
     )
   let facing_the_beast =
     game_client.yaw_toward(from: #(1.5, 3.5), target: #(1.5, 0.5))
-  let TwoEntered(
-    first:,
-    second:,
-    second_character:,
-    first_acted:,
-    second_burst:,
-    second_have:,
-    ..,
-  ) =
+  let TwoEntered(first:, second:, first_acted:, second_burst:, second_have:, ..) =
     two_players_enter_after(
       started:,
       first_class: 4,
@@ -9710,24 +9687,23 @@ pub fn a_viewer_arriving_after_a_medic_fissures_a_beast_shows_the_debuff_on_the_
   let assert [beast, ..] = game_client.creatures_created_in(frames: first_acted)
   let assert Ok(child) =
     fissure_child_gone_on(frames: first_acted, beast: beast.unit_id)
-  let #(frames, have) =
-    arrival_with_the_medic_first(
+  let #(frames, returned, have) =
+    beast_comes_into_sight_after_the_medic(
       game: second,
-      character_id: second_character,
       burst: second_burst,
       have: second_have,
       beast: beast.unit_id,
-      attempts_left: 40,
     )
   let node = #(child, [#(beast.unit_id, [#(94_370, 7800)])])
   assert cast_entries_of(frames:, unit_id: 1) == [node]
     as "opcode.0x262.casts: the Medic's own entry lists its child cast with the Beast as a target, 8000 ms of row 94370 less the 200 ms since the go"
-  assert cast_entries_of(frames:, unit_id: beast.unit_id) == [node]
+  assert cast_entries_of(frames: returned, unit_id: beast.unit_id) == [node]
     as "opcode.0x262.casts: the Beast's own entry lists the same node with the time left it was told, once: the viewer holds the Medic's cast by then"
   let assert [shown, ..] =
-    list.filter(game_client.creatures_created_in(frames:), fn(creature) {
-      creature.unit_id == beast.unit_id
-    })
+    list.filter(
+      game_client.creatures_created_in(frames: returned),
+      fn(creature) { creature.unit_id == beast.unit_id },
+    )
   assert list.contains(
     shown.tail.properties,
     UnitProperty(
@@ -9786,7 +9762,7 @@ pub fn a_viewer_arriving_after_a_medic_fissures_a_beast_shows_the_debuff_on_the_
       value: float32.to_bits(1.0),
     ))
     as "opcode.0x93a: the Beast is given property 160 back as the debuff ends"
-  let seen = list.flatten([frames, settled, phased, holding, ended])
+  let seen = list.flatten([frames, returned, settled, phased, holding, ended])
   assert game_client.dead_in(frames: seen) == []
     as "the Beast stays alive through the phases: its 5000 health"
   assert list.all(game_client.health_in(frames: seen), fn(health) {
