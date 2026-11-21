@@ -197,10 +197,12 @@ fn account_number(account: AccountId) -> Int {
   number
 }
 
-/// The tree with the account of the library's vector inserted, the game
-/// listener's port and the account.
-fn start() -> #(login_support.Started, Int, AccountId) {
-  let #(started, ports, account_id) = login_support.start_real_with_jim()
+/// The tree on the driven clock `time` with the account of the library's vector
+/// inserted, the game listener's port and the account.
+fn start(
+  time time: driven_time.Time,
+) -> #(login_support.Started, Int, AccountId) {
+  let #(started, ports, account_id) = login_support.start_with_jim(time:)
   #(started, ports.game_port, AccountId(account_id))
 }
 
@@ -302,7 +304,8 @@ fn offer_session_key(
 
 pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_characters_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let id =
     character_support.insert(
@@ -340,7 +343,8 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
 
 pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19_and_gets_its_list_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let _id =
     character_support.insert(
@@ -376,7 +380,8 @@ pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19
 
 pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_19_and_is_disconnected_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let game =
     game_client.connect(
       port:,
@@ -453,7 +458,8 @@ pub fn a_session_key_the_auth_server_gave_expires_only_when_the_driven_clock_pas
 
 pub fn an_open_game_connection_gets_0x036a_reason_8_when_the_server_stops_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, account_id) = login_support.start_real_with_jim()
+  let time = driven_time.new()
+  let #(started, ports, account_id) = login_support.start_with_jim(time:)
   let game =
     in_select(started:, port: ports.game_port, account: AccountId(account_id))
   let stopping = ask_support.begin_stop_tree(started.tree)
@@ -474,6 +480,14 @@ pub fn an_open_game_connection_gets_0x036a_reason_8_when_the_server_stops_test()
   Nil
 }
 
+/// The shutdown time a stopped connection is given so that its save of the
+/// place has no bound but the test's own deadline: the stop leaves a save the
+/// shutdown time less the send deadline, which is itself beyond the test's
+/// deadline (`login_support.settings`).
+fn held_through_the_stop_ms() -> Int {
+  2 * ask_support.beyond_the_test_ms
+}
+
 /// The stop closes the STS, auth and game listeners to new sockets before it
 /// stops any connection (`genesis_prime/connection/closer`). The game
 /// connection is held, so it takes no exit until the test lets it. The held
@@ -485,11 +499,12 @@ pub fn an_open_game_connection_gets_0x036a_reason_8_when_the_server_stops_test()
 /// is seen before any connection drained.
 pub fn the_stop_closes_every_listener_before_any_connection_drains_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let started =
-    login_support.start_real_with(change: fn(settings) {
+    login_support.start_with(time:, change: fn(settings) {
       server.Settings(
         ..settings,
-        connection_shutdown_ms: ask_support.beyond_the_test_ms,
+        connection_shutdown_ms: held_through_the_stop_ms(),
       )
     })
   let account = AccountId(login_support.insert_jim(started))
@@ -574,7 +589,8 @@ fn names_of(pool: pog.Connection) -> List(String) {
 
 pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_listed_and_played_into_the_world_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let game = in_select(started:, port:, account:)
   game_client.send_create(game:, body: create_request("Ab Cd"))
@@ -643,7 +659,8 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
 
 pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_on_the_bar_and_the_sheets_gear_figures_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let game = in_select(started:, port:, account:)
   game_client.send_create(game:, body: create_request("Ab Cd"))
   let created = created_result(game)
@@ -689,7 +706,8 @@ fn worn_in(
 
 pub fn a_created_warriors_entry_holds_its_six_armor_pieces_draws_its_set_and_leaves_the_sheet_as_it_was_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let game = in_select(started:, port:, account:)
   game_client.send_create(game:, body: create_request("Ab Cd"))
   let created = created_result(game)
@@ -726,7 +744,8 @@ pub fn a_created_warriors_entry_holds_its_six_armor_pieces_draws_its_set_and_lea
 
 pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_facing_the_clients_yaw_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let game = in_select(started:, port:, account:)
   let assert Ok(body) =
     create_character.encode(
@@ -775,7 +794,8 @@ pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_
 
 pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_the_list_again_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let other =
     login_support.insert_account(
@@ -810,7 +830,8 @@ pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_th
 
 pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connection_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let character =
     character_support.insert_at_level(
@@ -861,7 +882,8 @@ fn send_play(
 
 pub fn a_name_taken_in_another_case_is_name_unavailable_and_nothing_more_is_stored_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let _character =
     character_support.insert(
@@ -882,7 +904,8 @@ pub fn a_name_taken_in_another_case_is_name_unavailable_and_nothing_more_is_stor
 
 pub fn an_account_at_its_two_slots_is_account_full_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let _character =
     character_support.insert(
@@ -942,7 +965,8 @@ fn listed_entries(
 
 pub fn a_delete_of_the_accounts_character_is_0x00e6_result_0_and_the_next_list_omits_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
     character_support.insert(
@@ -974,7 +998,8 @@ pub fn a_delete_of_the_accounts_character_is_0x00e6_result_0_and_the_next_list_o
 
 pub fn a_delete_of_a_character_another_account_has_is_0x00e6_result_1_and_deletes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let other =
     AccountId(login_support.insert_account(
@@ -1004,7 +1029,8 @@ pub fn a_delete_of_a_character_another_account_has_is_0x00e6_result_1_and_delete
 
 pub fn a_rename_of_a_marked_character_is_0x014b_result_18_and_the_next_list_shows_the_name_with_the_bit_clear_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
     character_support.insert(
@@ -1036,7 +1062,8 @@ pub fn a_rename_of_a_marked_character_is_0x014b_result_18_and_the_next_list_show
 
 pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
     character_support.insert(
@@ -1069,7 +1096,8 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_tes
 
 pub fn a_rename_with_a_name_failing_rule_0_is_0x014b_15_and_an_unmarked_character_is_13_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
     character_support.insert(
@@ -1129,7 +1157,8 @@ fn health_in(frames frames: List(Frame)) -> Int {
 
 pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_next_login_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let character =
     character_support.insert(
@@ -1210,7 +1239,8 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
 
 pub fn a_character_saved_with_less_health_enters_with_it_in_its_own_0x262_and_a_drop_saves_it_again_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let character =
     character_support.insert(
@@ -1242,21 +1272,15 @@ pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before
   use <- owned_test.run(60_000)
   // A stop gives the place's save the connection's shutdown time less the send
   // deadline, and an end whose store has not answered by then gives the save up
-  // with a warning (genesis_prime/game/connection/state `end_with`). The test's
-  // settings leave that 700 ms, which a loaded machine passes; the test is about
-  // what the stop saves, so the save has no bound but the test's own deadline.
+  // with a warning (genesis_prime/game/connection/state `end_with`). The test is
+  // about what the stop saves, so the save has no bound but the test's own
+  // deadline.
+  let time = driven_time.new()
   let started =
-    login_support.start_real_with(change: fn(settings) {
+    login_support.start_with(time:, change: fn(settings) {
       server.Settings(
         ..settings,
-        connection_shutdown_ms: ask_support.beyond_the_test_ms,
-        game: server.Served(
-          ..settings.game,
-          settings: connection_state.Settings(
-            ..settings.game.settings,
-            ask_deadline_ms: ask_support.beyond_the_test_ms,
-          ),
-        ),
+        connection_shutdown_ms: held_through_the_stop_ms(),
       )
     })
   let account = AccountId(login_support.insert_jim(started))
@@ -1313,7 +1337,8 @@ pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before
 
 pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_saved_before_stands_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let character =
     character_support.insert(
@@ -1368,8 +1393,9 @@ const bot_countdown_ms = 1500
 
 pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_again_at_the_place_it_camped_at_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let started =
-    login_support.start_real_with(change: fn(settings) {
+    login_support.start_with(time:, change: fn(settings) {
       let game = settings.game
       server.Settings(
         ..settings,
@@ -3617,7 +3643,8 @@ fn created_warrior_enters(
 
 pub fn a_second_player_sees_the_first_take_off_its_chest_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
   let first = in_select(started:, port:, account:)
   let second_guid = support.guid_of(0x22)
   let second_account =
