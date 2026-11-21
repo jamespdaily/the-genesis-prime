@@ -8661,18 +8661,17 @@ fn quest_rows(
   returned.rows
 }
 
-pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landing_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use tables <- on_rows_with_turrets_that_never_deflect()
-  let time = driven_time.new()
-  let started =
-    world_on(
-      folder: "test/fixture/world_data_tutorial_path",
-      tables:,
-      time:,
-      tutorial: True,
-    )
-  let pool = pog.named_connection(started.settings.pool.pool_name)
+/// Creates the medic "Zed Qu" on the account of `insert_jim` and plays it into the
+/// tutorial world: the connection, the created result, and the entry's frames up to its
+/// 0x01BC and its 0x035C, with the bytes beyond them.
+fn enter_the_tutorial(
+  started: login_support.Started,
+) -> #(
+  game_client.Game,
+  create_character_result.CreateCharacterResult,
+  List(Frame),
+  BitArray,
+) {
   let account = AccountId(login_support.insert_jim(started))
   let game =
     in_select(started:, port: login_support.ports(started).game_port, account:)
@@ -8689,6 +8688,22 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
       list.any(frames, fn(frame) { frame.message_id == 0x01BC })
       && list.any(frames, fn(frame) { frame.message_id == 0x035C })
     })
+  #(game, created, entry, have)
+}
+
+pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- on_rows_with_turrets_that_never_deflect()
+  let time = driven_time.new()
+  let started =
+    world_on(
+      folder: "test/fixture/world_data_tutorial_path",
+      tables:,
+      time:,
+      tutorial: True,
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, created, entry, have) = enter_the_tutorial(started)
   let entry_ids = list.map(entry, fn(frame) { frame.message_id })
   assert list.filter(entry_ids, fn(id) { id == 0x035F || id == 0x035C })
     == [0x035F, 0x035C]
@@ -8774,6 +8789,93 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
       #(10_540, 3),
     ]
   })
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_released_quest_giver_is_out_of_reach_once_gone_and_the_other_giver_gives_the_quest_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- on_rows_with_turrets_that_never_deflect()
+  let time = driven_time.new()
+  let started =
+    world_on(
+      folder: "test/fixture/world_data_tutorial_path",
+      tables:,
+      time:,
+      tutorial: True,
+    )
+  let #(game, _, entry, have) = enter_the_tutorial(started)
+  let assert Ok(bot) =
+    tutorial_bot.play_to_the_dorians(
+      game:,
+      have:,
+      entry:,
+      env: tutorial_bot.Env(
+        advance: fn(ms) { driven_time.advance(time:, ms:) },
+        recharge_ms: 0,
+        settled: fn(unit_id) {
+          character_support.marker_creature_settled(
+            settings: started.settings,
+            unit_id:,
+          )
+        },
+      ),
+    )
+    as "the bot plays the tutorial to the Dorians"
+  let dorian_creature = 73_491
+  let assert Ok(#(giver_a, at_a)) =
+    tutorial_bot.nearest(
+      units: tutorial_bot.units(bot:),
+      from: tutorial_bot.at(bot:),
+      creatures: [dorian_creature],
+    )
+    as "a Dorian is in sight"
+  let bot = tutorial_bot.approach_unit(bot:, at: at_a)
+  // The use and the ping go in one write, so the pong comes before the map's 0x355
+  // that the objective's release rule sends for the used giver.
+  let #(used, have) =
+    quest_bot.use_unit(game:, have: tutorial_bot.have(bot:), unit_id: giver_a)
+  assert list.contains(
+    used.states,
+    QuestState(quest_id: 10_529, state: 3, objective_id: 0),
+  )
+    as "objective.release: the use of the giver completes 10529"
+  assert game_client.removals_in(frames: used.frames) == []
+    as "the removal is the map's, not ordered against the pong, so the answer to the use holds none"
+  let #(gone, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), giver_a)
+    })
+  assert list.contains(game_client.removals_in(frames: gone), giver_a)
+    as "objective.release: the map removes the used giver from the picture"
+  let bot = tutorial_bot.took_in(bot:, have:, frames: gone)
+  let #(talked_at_a, have) = quest_bot.talk(game:, have:, unit_id: giver_a)
+  assert talked_at_a.dialogs == []
+    as "quest.in_reach: a removed giver opens no dialog"
+  let #(accepted_at_a, have) = quest_bot.accept(game:, have:, quest_id: 10_525)
+  assert accepted_at_a.states == []
+    as "quest.in_reach: no giver of 10525 is in reach of a player beside the removed one, so the accept gives no 0x035C"
+  let assert Ok(#(giver_b, at_b)) =
+    tutorial_bot.nearest(
+      units: tutorial_bot.units(bot:),
+      from: tutorial_bot.at(bot:),
+      creatures: [dorian_creature],
+    )
+    as "the other Dorian is in sight"
+  let bot =
+    tutorial_bot.approach_unit(
+      bot: tutorial_bot.took_in(bot:, have:, frames: []),
+      at: at_b,
+    )
+  let #(talked_at_b, have) =
+    quest_bot.talk(game:, have: tutorial_bot.have(bot:), unit_id: giver_b)
+  assert talked_at_b.dialogs != [] as "the other Dorian opens its dialog"
+  let #(accepted_at_b, _) = quest_bot.accept(game:, have:, quest_id: 10_525)
+  assert list.map(accepted_at_b.states, fn(told) {
+      #(told.quest_id, told.state)
+    })
+    == [#(10_525, 1)]
+    as "quest.in_reach: the other giver gives 10525 in state 1"
   game_client.close(game:)
   login_support.stop(started)
 }

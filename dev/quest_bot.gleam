@@ -150,7 +150,10 @@ pub fn activate(
 }
 
 /// Uses the unit by the client's own use of a unit whose creature has no activate
-/// spell (0xb3): the answer is all the server wrote up to its pong.
+/// spell (0xb3): the answer is all the server wrote up to its pong. The ping goes
+/// in the same write as the use, so the pong comes before anything the use sets
+/// going in another process (a used-up quest giver's removal), and the bot must
+/// wait for what it needs of the unit.
 pub fn use_unit(
   game game: Game,
   have have: BitArray,
@@ -159,7 +162,14 @@ pub fn use_unit(
   let assert Ok(body) =
     client_activate_unit.encode(ClientActivateUnit(unit_id:))
     as "0xB3 encodes"
-  acted(game:, have:, message_id: client_activate_unit.message_id, body:)
+  game_client.send_world_then_ping(
+    game:,
+    message_id: client_activate_unit.message_id,
+    body:,
+    number: 1,
+  )
+  let #(frames, have) = game_client.read_through_pong(game:, have:, number: 1)
+  #(answer_in(frames:), have)
 }
 
 /// Answers the server's cast of `cast_id`, whose interaction window the client shows
