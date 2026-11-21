@@ -6,6 +6,7 @@
 import asking_rule.{
   type Answer, type Request, FromGate, FromStore, OfGate, OfStore,
 }
+import driven_time
 import gate_rule
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
@@ -36,6 +37,20 @@ import socket_read
 /// a passing test never reaches.
 pub const patient = 20_000
 
+/// The longest, in milliseconds, a write of a real-clock listener waits: the
+/// send deadline of `start`'s connections.
+pub fn real_send_deadline_ms() -> Int {
+  300
+}
+
+/// The scripts of connections on a driven clock: the operating system's seed,
+/// with the clock and the timers of `time` (`driven_time.scripts`). A listener
+/// given them reads its time from `time` and starts its timers there; they
+/// fire when the test advances the clock.
+pub fn driven_scripts(time time: driven_time.Time) -> Scripts {
+  driven_time.scripts(time:, over: script.operating_system)
+}
+
 /// A running listener and the tree it started under.
 pub type Server {
   Server(supervisor: Pid, name: Name(Nil), port: Int)
@@ -59,38 +74,45 @@ pub fn start(
     rule:,
     directory:,
     shutdown_ms:,
+    scripts: script.operating_system,
+    send_deadline_ms: real_send_deadline_ms(),
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with:,
   )
 }
 
-/// Starts a listener as `start` does, whose connections also join `registry`
-/// when there is one, and find what their rule watches with `locate`.
+/// Starts a listener as `start` does, whose connections take their scripts
+/// from `scripts`, wait at most `send_deadline_ms` for a write, also join
+/// `registry` when there is one, and find what their rule watches with
+/// `locate`.
 pub fn start_joined(
   rule rule: ConnectionRule(settings, state, request, message, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
+  scripts scripts: Scripts,
+  send_deadline_ms send_deadline_ms: Int,
   registry registry: Option(Registry(message)),
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  start_scripted(
+  start_telling(
     rule:,
     directory:,
     shutdown_ms:,
     wire_recorder: None,
-    scripts: script.operating_system,
+    scripts:,
+    send_deadline_ms:,
     registry:,
-    locate:,
+    locate: fn(address) { result.map(locate(address), watch.Watched) },
+    deliver: fn(_address, _request) { Error(Nil) },
     with:,
   )
 }
 
 /// Starts a listener as `start_joined` does, whose connections are recorded on
-/// the wire by `wire_recorder` and are given their scripts (seed, clock, timers)
-/// by `scripts`.
+/// the wire by `wire_recorder`, with the send deadline of `start`.
 pub fn start_scripted(
   rule rule: ConnectionRule(settings, state, request, message, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
@@ -108,6 +130,7 @@ pub fn start_scripted(
     shutdown_ms:,
     wire_recorder:,
     scripts:,
+    send_deadline_ms: real_send_deadline_ms(),
     registry:,
     locate: fn(address) { result.map(locate(address), watch.Watched) },
     deliver: fn(_address, _request) { Error(Nil) },
@@ -115,10 +138,10 @@ pub fn start_scripted(
   )
 }
 
-/// Starts a listener as `start_scripted` does, whose connections find what
-/// their rule watches with `locate`, which also gives the way to tell a
-/// process the rule tells (`Tellable`), and send the connections their rule
-/// tells with `deliver`.
+/// Starts a listener as `start_joined` does, whose connections are recorded on
+/// the wire by `wire_recorder` and find what their rule watches with `locate`,
+/// which also gives the way to tell a process the rule tells (`Tellable`),
+/// and send the connections their rule tells with `deliver`.
 pub fn start_telling(
   rule rule: ConnectionRule(settings, state, request, message, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
@@ -126,6 +149,7 @@ pub fn start_telling(
   shutdown_ms shutdown_ms: Int,
   wire_recorder wire_recorder: Option(WireRecorder),
   scripts scripts: Scripts,
+  send_deadline_ms send_deadline_ms: Int,
   registry registry: Option(Registry(message)),
   locate locate: fn(Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
   deliver deliver: fn(Address, request) -> Result(Nil, Nil),
@@ -135,7 +159,7 @@ pub fn start_telling(
   let connection =
     shell.Settings(
       rule:,
-      send_deadline_ms: 300,
+      send_deadline_ms:,
       shutdown_ms:,
       wire_recorder:,
       scripts:,

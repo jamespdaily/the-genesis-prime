@@ -20,9 +20,9 @@
 //// never reaches.
 
 import ask_support
+import driven_time
 import event_wait
 import genesis_prime/connection/registry
-import genesis_prime/connection/script
 import genesis_prime/service
 import genesis_prime/step.{type Address, ConnectionId, Sessions}
 import genesis_prime/step/runtime
@@ -44,16 +44,30 @@ import signalling_rule
 import socket_read
 import unitest
 
+/// The time the tests give a timer they advance the clock past.
+const timer_ms = 20
+
+/// The time the witness timer of the cancel test is given, due after the
+/// timer that step cancels.
+const witness_ms = 100
+
+/// The time of the timer that fires while an ask waits: inside the ask's own time
+/// (`ask_support.patient`), so a production connection can meet it. The clock
+/// reaches it only when the test advances it.
+const due_within_the_ask_ms = 10_000
+
 /// One record the signalling rule wrote.
 type Record {
   Record(letter: Int, number: Int)
 }
 
 fn start(
+  time time: driven_time.Time,
   registry registry: option.Option(registry.Registry(Int)),
   sessions sessions: Result(Pid, Nil),
 ) -> ask_support.Server {
   start_asking(
+    time:,
     registry:,
     sessions:,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
@@ -62,6 +76,7 @@ fn start(
 
 /// As `start`, with the directory the rule's asks go through.
 fn start_asking(
+  time time: driven_time.Time,
   registry registry: option.Option(registry.Registry(Int)),
   sessions sessions: Result(Pid, Nil),
   directory directory: fn(Nil, Int, fn(Nil) -> Nil) -> Result(service.Sent, Nil),
@@ -69,7 +84,9 @@ fn start_asking(
   ask_support.start_joined(
     rule: signalling_rule.rule(),
     directory:,
-    shutdown_ms: 1000,
+    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
+    scripts: ask_support.driven_scripts(time),
+    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry:,
     locate: fn(address: Address) {
       case address {
@@ -114,9 +131,14 @@ fn accepted_id(client: mug.Socket) -> Int {
 
 pub fn a_connection_joins_the_registry_as_it_is_accepted_and_a_delivered_message_reaches_the_rule_as_woken_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
   let server =
-    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
+    start(
+      time:,
+      registry: Some(scope),
+      sessions: Ok(ask_support.idle_process()),
+    )
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -136,9 +158,14 @@ pub fn a_connection_joins_the_registry_as_it_is_accepted_and_a_delivered_message
 
 pub fn a_connection_that_ended_leaves_its_group_and_a_message_to_it_is_dropped_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
   let server =
-    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
+    start(
+      time:,
+      registry: Some(scope),
+      sessions: Ok(ask_support.idle_process()),
+    )
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -160,8 +187,9 @@ pub fn a_connection_that_ended_leaves_its_group_and_a_message_to_it_is_dropped_t
 
 pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watchs_id_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let sessions = ask_support.idle_process()
-  let server = start(registry: None, sessions: Ok(sessions))
+  let server = start(time:, registry: None, sessions: Ok(sessions))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   ask_support.command(
@@ -200,8 +228,9 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
 
 pub fn a_watch_of_a_target_no_process_holds_ends_as_the_next_input_before_a_message_already_queued_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: Error(Nil))
+  let server = start(time:, registry: Some(scope), sessions: Error(Nil))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -224,8 +253,9 @@ pub fn a_watch_of_a_target_no_process_holds_ends_as_the_next_input_before_a_mess
 
 pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_the_next_mailbox_input_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: Error(Nil))
+  let server = start(time:, registry: Some(scope), sessions: Error(Nil))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -249,47 +279,56 @@ pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_th
 
 pub fn a_timer_fires_once_as_timer_fired_with_its_id_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
+  let time = driven_time.new()
+  let server =
+    start(time:, registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
-  ask_support.command(
+  command_with_wait_then_pong(
     client:,
     letter: signalling_rule.timer_command,
     n: 1,
-    wait_ms: 20,
+    wait_ms: timer_ms,
+    pong: 1,
   )
+  driven_time.advance(time, timer_ms)
   assert read_record(client) == Record(signalling_rule.timer_fired, 1)
     as "the timer fired as TimerFired(TimerId(1))"
-  ask_support.command(
+  driven_time.advance(time, timer_ms)
+  command_then_pong(
     client:,
     letter: signalling_rule.pong_command,
     n: 2,
-    wait_ms: 0,
+    pong: 2,
   )
-  assert read_record(client) == Record(signalling_rule.pong, 2)
-    as "the timer fired once"
   ask_support.stop(server)
 }
 
 pub fn a_timer_started_again_with_the_same_id_after_it_fired_fires_again_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
+  let time = driven_time.new()
+  let server =
+    start(time:, registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
-  ask_support.command(
+  command_with_wait_then_pong(
     client:,
     letter: signalling_rule.timer_command,
     n: 1,
-    wait_ms: 20,
+    wait_ms: timer_ms,
+    pong: 1,
   )
+  driven_time.advance(time, timer_ms)
   assert read_record(client) == Record(signalling_rule.timer_fired, 1)
     as "the first start of timer 1 fired as TimerFired(TimerId(1))"
-  ask_support.command(
+  command_with_wait_then_pong(
     client:,
     letter: signalling_rule.timer_command,
     n: 1,
-    wait_ms: 20,
+    wait_ms: timer_ms,
+    pong: 2,
   )
+  driven_time.advance(time, timer_ms)
   assert read_record(client) == Record(signalling_rule.timer_fired, 1)
     as "the shell's contract: a timer that fired is forgotten, so the rule may start its id again and it fires again"
   ask_support.stop(server)
@@ -297,7 +336,9 @@ pub fn a_timer_started_again_with_the_same_id_after_it_fired_fires_again_test() 
 
 pub fn a_rule_that_starts_a_timer_with_a_negative_id_ends_its_connection_since_the_shell_keeps_those_ids_for_its_own_timers_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
+  let time = driven_time.new()
+  let server =
+    start(time:, registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   ask_support.command(
@@ -321,7 +362,9 @@ pub fn a_rule_that_starts_a_timer_with_a_negative_id_ends_its_connection_since_t
 
 pub fn a_cancelled_timer_never_fires_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
+  let time = driven_time.new()
+  let server =
+    start(time:, registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   // One step starts timer 1 for no time, then timer 2, the witness, then cancels
@@ -330,12 +373,14 @@ pub fn a_cancelled_timer_never_fires_test() -> Nil {
   // after the cancel. A cancel that fails to stop timer 1 or its timeout lets
   // timer 1 fire before the witness, and a cancel that ignores its timer's id
   // takes the witness down with timer 1.
-  ask_support.command(
+  command_with_wait_then_pong(
     client:,
     letter: signalling_rule.start_witness_then_cancel_command,
     n: 1,
-    wait_ms: 100,
+    wait_ms: witness_ms,
+    pong: 1,
   )
+  driven_time.advance(time, witness_ms)
   assert read_record(client) == Record(signalling_rule.timer_fired, 2)
     as "timer 2 fired and timer 1, due earlier, never reached the rule"
   ask_support.stop(server)
@@ -343,9 +388,11 @@ pub fn a_cancelled_timer_never_fires_test() -> Nil {
 
 pub fn a_timer_that_fired_during_an_ask_and_is_started_again_by_its_outcome_is_not_fired_by_the_old_timeout_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let replies = process.new_subject()
   let server =
     start_asking(
+      time:,
       registry: None,
       sessions: Ok(ask_support.idle_process()),
       directory: asked_through(replies, ask_support.idle_process()),
@@ -354,8 +401,8 @@ pub fn a_timer_that_fired_during_an_ask_and_is_started_again_by_its_outcome_is_n
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
-  // Timer 2 fires at once, during the ask's wait, so its timeout is in the
-  // mailbox when the outcome comes. The outcome's step cancels timer 2 and
+  // Timer 2 is due at once and fires during the ask's wait, so its timeout is
+  // in the mailbox when the outcome comes. The outcome's step cancels timer 2 and
   // starts it again with a minute to run: the old timeout names a timer id
   // that is running, with another reference, and must not fire it.
   let assert Ok(Nil) =
@@ -365,9 +412,7 @@ pub fn a_timer_that_fired_during_an_ask_and_is_started_again_by_its_outcome_is_n
     >>)
     as "the step was sent"
   let reply = open_wait.received(from: replies, what: "the shell's ask")
-  event_wait.until("the timer's timeout waits in the mailbox", fn() {
-    mailbox_support.tagged_by_reference(connection) == 1
-  })
+  fire_during_the_ask(time:, connection:, advance_ms: 0)
   reply(Nil)
   assert read_record(client)
     == Record(signalling_rule.answered, signalling_rule.restarting_ask)
@@ -385,9 +430,11 @@ pub fn a_timer_that_fired_during_an_ask_and_is_started_again_by_its_outcome_is_n
 
 pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_reaches_the_rule_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let replies = process.new_subject()
   let server =
     start_asking(
+      time:,
       registry: None,
       sessions: Ok(ask_support.idle_process()),
       directory: asked_through(replies, ask_support.idle_process()),
@@ -396,8 +443,8 @@ pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_re
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
-  // Timer 1 fires at once, during the ask's wait, so its timeout is in the
-  // mailbox when the outcome comes; the outcome's step cancels timer 1.
+  // Timer 1 is due at once and fires during the ask's wait, so its timeout is
+  // in the mailbox when the outcome comes; the outcome's step cancels timer 1.
   let assert Ok(Nil) =
     mug.send(client, <<
       signalling_rule.timer_command, 1, 0:16, signalling_rule.ask_command, 1,
@@ -405,9 +452,7 @@ pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_re
     >>)
     as "the step was sent"
   let reply = open_wait.received(from: replies, what: "the shell's ask")
-  event_wait.until("the timer's timeout waits in the mailbox", fn() {
-    mailbox_support.tagged_by_reference(connection) == 1
-  })
+  fire_during_the_ask(time:, connection:, advance_ms: 0)
   reply(Nil)
   assert read_record(client) == Record(signalling_rule.answered, 1)
     as "the ask's outcome is the first input after the step"
@@ -424,11 +469,13 @@ pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_re
 
 pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_after_its_outcome_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
   let sessions = ask_support.idle_process()
   let replies = process.new_subject()
   let server =
     start_asking(
+      time:,
       registry: Some(scope),
       sessions: Ok(sessions),
       directory: asked_through(replies, ask_support.idle_process()),
@@ -458,11 +505,12 @@ pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_a
     >>)
     as "the step was sent"
   let reply = open_wait.received(from: replies, what: "the shell's ask")
+  driven_time.advance_while_a_participant_waits(time:, held: connection, ms: 0)
   assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
   assert registry.deliver(scope, ConnectionId(id), 8) == Ok(Nil)
   process.kill(sessions)
   event_wait.until(
-    "a message, a timeout and a watch's end all wait in the mailbox",
+    "the watch's end, which the sessions process's exit sends, waits in the mailbox with the messages and the timeout",
     fn() {
       mailbox_support.tagged(connection, atom.create("woken")) == 2
       && mailbox_support.tagged(connection, atom.create("DOWN")) == 1
@@ -488,6 +536,59 @@ pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_a
   ask_support.stop(server)
 }
 
+pub fn a_timer_that_fires_while_an_ask_waits_is_taken_after_the_asks_outcome_on_the_driven_clock_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let replies = process.new_subject()
+  let server =
+    start_asking(
+      time:,
+      registry: None,
+      sessions: Ok(ask_support.idle_process()),
+      directory: asked_through(replies, ask_support.idle_process()),
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  // Timer 2 is due within the ask's time and the ask waits for its answer, which the
+  // rule's outcome step leaves alone (an ask of 1 cancels timer 1). The clock
+  // reaches the timer's time during the wait, and the test sends the outcome
+  // after: both signals come from the test, so the order is the test's.
+  let assert Ok(Nil) =
+    mug.send(client, <<
+      signalling_rule.timer_command, 2, due_within_the_ask_ms:16,
+      signalling_rule.ask_command, 1, ask_support.patient:16,
+    >>)
+    as "the step was sent"
+  let reply = open_wait.received(from: replies, what: "the shell's ask")
+  fire_during_the_ask(time:, connection:, advance_ms: due_within_the_ask_ms)
+  reply(Nil)
+  assert read_record(client) == Record(signalling_rule.answered, 1)
+    as "the ask's outcome is the first input after the step, though the timer fired before it"
+  assert read_record(client) == Record(signalling_rule.timer_fired, 2)
+    as "the timeout is taken after the outcome, as TimerFired(TimerId(2))"
+  ask_support.stop(server)
+}
+
+/// Fires the timers due within `advance_ms` while the connection waits in an
+/// ask, and waits until its timeout is in its mailbox, which no process
+/// settles while the connection is held in the ask.
+fn fire_during_the_ask(
+  time time: driven_time.Time,
+  connection connection: Pid,
+  advance_ms advance_ms: Int,
+) -> Nil {
+  driven_time.advance_while_a_participant_waits(
+    time:,
+    held: connection,
+    ms: advance_ms,
+  )
+  event_wait.until("the timer's timeout waits in the mailbox", fn() {
+    mailbox_support.tagged_by_reference(connection) == 1
+  })
+}
+
 /// A directory that hands each ask's reply to `replies` and says it went to
 /// `target`.
 fn asked_through(
@@ -502,7 +603,9 @@ fn asked_through(
 
 pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_with_the_connection_named_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(ask_support.idle_process()))
+  let time = driven_time.new()
+  let server =
+    start(time:, registry: None, sessions: Ok(ask_support.idle_process()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -553,10 +656,12 @@ fn kept_asks(connection: Pid) -> Int
 
 pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_ask_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let replies = process.new_subject()
   let target = ask_support.idle_process()
   let server =
     start_asking(
+      time:,
       registry: None,
       sessions: Ok(ask_support.idle_process()),
       directory: asked_through(replies, target),
@@ -565,13 +670,15 @@ pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_as
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
-  // Ask 1 has 100 ms and nobody answers: its outcome is NoAnswerInTime, and
-  // the shell keeps its tag and its monitor of the target.
+  // Ask 1 has no time and nobody answers: its outcome is NoAnswerInTime, and
+  // the shell keeps its tag and its monitor of the target. The ask's deadline
+  // counts the node's own clock, which no driven clock reaches, so an ask that
+  // is to run out has none to wait.
   ask_support.command(
     client:,
     letter: signalling_rule.ask_command,
     n: 1,
-    wait_ms: 100,
+    wait_ms: 0,
   )
   let reply = open_wait.received(from: replies, what: "the shell's ask")
   assert read_record(client) == Record(signalling_rule.answered, 1)
@@ -605,10 +712,12 @@ pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_as
 
 pub fn the_end_of_a_kept_asks_target_gives_the_rule_no_input_and_drops_the_kept_ask_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let replies = process.new_subject()
   let target = ask_support.idle_process()
   let server =
     start_asking(
+      time:,
       registry: None,
       sessions: Ok(ask_support.idle_process()),
       directory: asked_through(replies, target),
@@ -621,7 +730,7 @@ pub fn the_end_of_a_kept_asks_target_gives_the_rule_no_input_and_drops_the_kept_
     client:,
     letter: signalling_rule.ask_command,
     n: 1,
-    wait_ms: 100,
+    wait_ms: 0,
   )
   let _reply = open_wait.received(from: replies, what: "the shell's ask")
   assert read_record(client) == Record(signalling_rule.answered, 1)
@@ -665,15 +774,17 @@ fn counting_lookup(
 }
 
 fn start_telling(
+  time time: driven_time.Time,
   locate locate: fn(Address) -> Result(watch.Found(fn(Nil) -> Nil), Nil),
   deliver deliver: fn(Address, Nil) -> Result(Nil, Nil),
 ) -> ask_support.Server {
   ask_support.start_telling(
     rule: signalling_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
+    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
     wire_recorder: None,
-    scripts: script.operating_system,
+    scripts: ask_support.driven_scripts(time),
+    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate:,
     deliver:,
@@ -689,7 +800,20 @@ fn command_then_pong(
   n n: Int,
   pong pong: Int,
 ) -> Nil {
-  ask_support.command(client:, letter:, n:, wait_ms: 0)
+  command_with_wait_then_pong(client:, letter:, n:, wait_ms: 0, pong:)
+}
+
+/// As `command_then_pong`, for a command that carries a time. The pong read
+/// shows the connection took the command and began its timers, which the clock
+/// then holds until the test advances it.
+fn command_with_wait_then_pong(
+  client client: mug.Socket,
+  letter letter: Int,
+  n n: Int,
+  wait_ms wait_ms: Int,
+  pong pong: Int,
+) -> Nil {
+  ask_support.command(client:, letter:, n:, wait_ms:)
   ask_support.command(
     client:,
     letter: signalling_rule.pong_command,
@@ -697,15 +821,18 @@ fn command_then_pong(
     wait_ms: 0,
   )
   assert read_record(client) == Record(signalling_rule.pong, pong)
+    as "the connection took the command and answered the pong"
   Nil
 }
 
 pub fn a_tell_goes_through_the_target_resolved_when_the_watch_opened_and_looks_nothing_up_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let lookups = process.new_subject()
   let told = process.new_subject()
   let server =
     start_telling(
+      time:,
       locate: counting_lookup(
         sessions: ask_support.idle_process(),
         lookups:,
@@ -739,10 +866,12 @@ pub fn a_tell_goes_through_the_target_resolved_when_the_watch_opened_and_looks_n
 
 pub fn a_tell_after_the_watch_is_dropped_goes_nowhere_and_one_after_a_watch_opened_again_goes_through_the_new_resolve_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let lookups = process.new_subject()
   let told = process.new_subject()
   let server =
     start_telling(
+      time:,
       locate: counting_lookup(
         sessions: ask_support.idle_process(),
         lookups:,
@@ -794,11 +923,13 @@ pub fn a_tell_after_the_watch_is_dropped_goes_nowhere_and_one_after_a_watch_open
 
 pub fn a_tell_after_the_watched_process_ended_goes_nowhere_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let lookups = process.new_subject()
   let told = process.new_subject()
   let sessions = ask_support.idle_process()
   let server =
     start_telling(
+      time:,
       locate: counting_lookup(sessions:, lookups:, told:),
       deliver: fn(_address, _request) { Error(Nil) },
     )
@@ -833,11 +964,16 @@ pub fn a_tell_after_the_watched_process_ended_goes_nowhere_test() -> Nil {
 
 pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a_closed_socket_with_no_warning_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   use <- unitest.tag("serial")
   let lines = process.new_subject()
   let scope = registry.new()
   let server =
-    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
+    start(
+      time:,
+      registry: Some(scope),
+      sessions: Ok(ask_support.idle_process()),
+    )
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -871,11 +1007,13 @@ pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a
 
 pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is_dropped_with_no_warning_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   use <- unitest.tag("serial")
   let lines = process.new_subject()
   let delivered = process.new_subject()
   let server =
     start_telling(
+      time:,
       locate: fn(_address) { Error(Nil) },
       deliver: fn(address, _request) {
         process.send(delivered, address)
@@ -926,9 +1064,14 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
 
 pub fn a_join_makes_the_connection_a_member_of_the_group_and_a_leave_or_its_end_removes_it_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let scope = registry.new()
   let server =
-    start(registry: Some(scope), sessions: Ok(ask_support.idle_process()))
+    start(
+      time:,
+      registry: Some(scope),
+      sessions: Ok(ask_support.idle_process()),
+    )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -983,11 +1126,13 @@ pub fn a_join_makes_the_connection_a_member_of_the_group_and_a_leave_or_its_end_
 
 pub fn a_tell_to_a_zone_channel_is_delivered_with_no_watch_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   use <- unitest.tag("serial")
   let lines = process.new_subject()
   let delivered = process.new_subject()
   let server =
     start_telling(
+      time:,
       locate: fn(_address) { Error(Nil) },
       deliver: fn(address, _request) {
         process.send(delivered, address)
@@ -1027,6 +1172,7 @@ pub fn a_tell_to_a_zone_channel_is_delivered_with_no_watch_test() -> Nil {
 
 pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_through_a_watch_that_found_none_logs_nothing_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   use <- unitest.tag("serial")
   let lines = process.new_subject()
   let lookups = process.new_subject()
@@ -1035,6 +1181,7 @@ pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_throu
     counting_lookup(sessions: ask_support.idle_process(), lookups:, told:)
   let server =
     start_telling(
+      time:,
       locate: fn(address) {
         case address {
           step.CharacterNamed("held") -> found(address)
@@ -1087,10 +1234,12 @@ pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_throu
 
 pub fn a_tell_through_a_watch_reaches_the_process_its_own_watch_found_and_not_another_watchs_test() -> Nil {
   use <- owned_test.run(30_000)
+  let time = driven_time.new()
   let lookups = process.new_subject()
   let told = process.new_subject()
   let server =
     start_telling(
+      time:,
       locate: counting_lookup(
         sessions: ask_support.idle_process(),
         lookups:,

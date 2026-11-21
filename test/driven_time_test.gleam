@@ -24,6 +24,7 @@ import gleam/erlang/reference
 import gleam/list
 import gleam/option.{Some}
 import gleam/otp/actor
+import gleam/result
 import gleam/string
 import mailbox_support
 import open_wait
@@ -492,4 +493,55 @@ pub fn the_clock_keeps_its_mailbox_off_its_heap_test() -> Nil {
   let time = driven_time.new()
   assert mailbox_support.kept_off_heap(driven_time.driver(time))
     as "the clock's mailbox is outside its heap"
+}
+
+pub fn an_advance_with_no_barrier_fires_the_timers_of_the_one_participant_that_is_held_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let held = start_orderly_participant(time: driven_time.service_time(time))
+  let fires = process.new_subject()
+  let started = process.new_subject()
+  process.send(held, StartTimer(after_ms: 10, fires:, answer: started))
+  open_wait.received(from: started, what: "the participant to start its timer")
+  driven_time.advance_while_a_participant_waits(
+    time:,
+    held: owner_of(held),
+    ms: 10,
+  )
+  assert result.is_ok(process.receive(fires, 0))
+    as "the held participant's timer, due within the advance, was fired"
+}
+
+pub fn an_advance_with_no_barrier_fails_naming_a_second_participant_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let service_time = driven_time.service_time(time)
+  let held = start_orderly_participant(time: service_time)
+  let second = start_orderly_participant(time: service_time)
+  let fires = process.new_subject()
+  let started = process.new_subject()
+  process.send(held, StartTimer(after_ms: 10, fires:, answer: started))
+  open_wait.received(from: started, what: "the participant to start its timer")
+  let before = driven_time.now(time:)
+  let ended =
+    ask_support.ended_running(fn() {
+      driven_time.advance_while_a_participant_waits(
+        time:,
+        held: owner_of(held),
+        ms: 10,
+      )
+    })
+  let message = ask_support.panic_message(ask_support.raised(ended))
+  assert string.contains(message, driven_time.pid_text(owner_of(second)))
+    as "the panic names the second participant"
+  assert string.contains(message, "only participant")
+    as "the panic says why: the barriers are dropped only for a clock with one participant"
+  assert driven_time.now(time:) == before as "a refused advance moves nothing"
+  assert process.receive(fires, 0) == Error(Nil) as "and fires no timer"
+}
+
+fn owner_of(participant: Subject(Order)) -> Pid {
+  let assert Ok(pid) = process.subject_owner(participant)
+    as "an actor's subject belongs to its process"
+  pid
 }
