@@ -373,6 +373,7 @@ pub fn settings(
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 5000,
     registry: registry.new(),
+    service_time: service_shell.real_time(),
     world: world(spawns),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
@@ -400,7 +401,6 @@ fn world(spawns: store.Key) -> server.World {
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
     spawns:,
-    service_time: service_shell.real_time(),
   )
 }
 

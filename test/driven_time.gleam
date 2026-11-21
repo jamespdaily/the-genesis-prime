@@ -313,9 +313,10 @@ pub fn scripts(time time: Time, over over: Scripts) -> Scripts {
   }
 }
 
-/// The clock and scheduler a world is started with (`server.World.service_time`):
-/// every map and creature of it reads this clock for each input and starts its
-/// timers here, so one `Time` drives a listener's connections and its world.
+/// The clock and scheduler a tree or a world is started with
+/// (`server.Settings.service_time`, `server.add_world`'s `time`): every service
+/// shell given it reads this clock for each input and starts its timers here, so
+/// one `Time` drives a listener's connections and its services.
 pub fn service_time(time: Time) -> ServiceTime {
   ServiceTime(
     clock: fn() { read(time) },

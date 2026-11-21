@@ -172,6 +172,10 @@ pub type Settings {
     /// Where the game connections are found, made once with
     /// `registry.new`.
     registry: Registry(Message),
+    /// The clock the hand-off, Sessions, Maps, the maps and the creatures take
+    /// each input's time from, and the scheduler their timers start on:
+    /// `service_shell.real_time()` on a server, a driven clock's in a test.
+    service_time: service_shell.ServiceTime,
     /// The world subtree: Maps and the map supervisor.
     world: World,
     /// How long a write may wait for a client's socket, on every listener.
@@ -218,10 +222,6 @@ pub type World {
     /// (genesis_prime/content/spawn): a map reads its world's term when it
     /// starts, and a creature reads its spawn from it, with no query during play.
     spawns: table_store.Key,
-    /// The clock the maps and creatures take each input's time from and the
-    /// scheduler their timers start on: `service_shell.real_time()` on a
-    /// server, the driven clock's in a whole-server test.
-    service_time: service_shell.ServiceTime,
   )
 }
 
@@ -290,7 +290,7 @@ pub fn start(
       reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
       found_at: None,
-      time: service_shell.real_time(),
+      time: settings.service_time,
     ),
   ))
   |> supervisor.add(service_shell.supervised(
@@ -302,7 +302,7 @@ pub fn start(
       }),
       shutdown_ms: settings.sessions_shutdown_ms,
       found_at: None,
-      time: service_shell.real_time(),
+      time: settings.service_time,
     ),
   ))
   |> supervisor.add(world(settings))
@@ -785,6 +785,7 @@ fn world(
   add_world(
     tree:,
     world: settings.world,
+    time: settings.service_time,
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
     reach: connection_reach(settings, fn(outgoing) { map_message(outgoing:) }),
@@ -798,7 +799,7 @@ fn world(
 /// supervisor to a `rest_for_one` supervisor, in that order: the registry's
 /// restart ends everything after it, Maps' ends the creatures and the maps, and
 /// the creature supervisor's ends the maps, so no map outlives the registry that
-/// knew its creatures. A map is started by the map supervisor with the rule of its id and
+/// knew its creatures. The maps and the creatures take their time from `time`. A map is started by the map supervisor with the rule of its id and
 /// incarnation, the realm and game tables its players' units are built from, the
 /// spawns of its world, no name, and a reach that finds what it watches and
 /// sends to its players' connections (`reach`) and to its creatures, and starts
@@ -810,6 +811,7 @@ fn world(
 pub fn add_world(
   tree tree: supervisor.Builder,
   world world: World,
+  time time: service_shell.ServiceTime,
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
   reach reach: Reach(map.Outgoing),
@@ -827,7 +829,7 @@ pub fn add_world(
       name: world.creature_supervisor,
       shutdown_ms: world.creature_shutdown_ms,
       start: fn(start: creature_supervisor.CreatureProcessStart) {
-        start_creature_process(world:, reach:, to_connection:, start:)
+        start_creature_process(world:, time:, reach:, to_connection:, start:)
       },
     ),
   )
@@ -852,7 +854,7 @@ pub fn add_world(
           reach: map_reach(world:, reach:),
           shutdown_ms: world.map_shutdown_ms,
           found_at: None,
-          time: world.service_time,
+          time:,
         ))
       },
     ),
@@ -924,6 +926,7 @@ fn map_reach(
 /// which joins the creature's address in the registry as it starts.
 fn start_creature_process(
   world world: World,
+  time time: service_shell.ServiceTime,
   reach reach: Reach(map.Outgoing),
   to_connection to_connection: fn(step.ConnectionId, creature.Outgoing) ->
     Result(Nil, Nil),
@@ -957,7 +960,7 @@ fn start_creature_process(
             life: wanted.life,
           ),
         )),
-        time: world.service_time,
+        time:,
       ))
   }
 }

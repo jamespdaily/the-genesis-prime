@@ -123,7 +123,6 @@ pub fn world() -> server.World {
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
     spawns: spawn_support.key_without_spawns(),
-    service_time: service_shell.real_time(),
   )
 }
 
@@ -177,6 +176,7 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 1500,
     registry: registry.new(),
+    service_time: service_shell.real_time(),
     world: world(),
     send_deadline_ms: 300,
     connection_shutdown_ms: 1000,
@@ -199,10 +199,7 @@ pub fn driven_by(
       ..settings.game,
       scripts: driven_time.scripts(time:, over: settings.game.scripts),
     ),
-    world: server.World(
-      ..settings.world,
-      service_time: driven_time.service_time(time),
-    ),
+    service_time: driven_time.service_time(time),
   )
 }
 

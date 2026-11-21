@@ -76,7 +76,6 @@ pub fn start(
       idle_stop_ms:,
       sweep_ms:,
       spawns: key,
-      service_time: driven_time.service_time(time),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)
@@ -86,6 +85,7 @@ pub fn start(
     server.add_world(
       tree:,
       world:,
+      time: driven_time.service_time(time),
       realm_id: 1,
       tables: character_tables.shared(),
       reach: service.Reach(
