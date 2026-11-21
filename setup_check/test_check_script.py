@@ -533,7 +533,7 @@ class BudgetTest(unittest.TestCase):
     # each other and 2 test workers, was 125 s; the fast check's median of 3 runs is
     # 23 s; each times 1.25, rounded up.
     FULL_BUDGET = 157
-    FAST_BUDGET = 29
+    FAST_BUDGET = 75
 
     def test_the_budgets_the_check_has_when_none_is_set_are_the_measured_ones(self):
         for name, args, budget in (("full", (), self.FULL_BUDGET), ("fast", ("fast",), self.FAST_BUDGET)):

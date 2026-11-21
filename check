@@ -204,10 +204,11 @@ record_passed_commit() {
 # 125 s (119, 123 and 125 s), times 1.25, rounded up.
 budget=${GENESIS_CHECK_BUDGET_SECONDS:-157}
 
-# The same for ./check fast, with a warm build: glinter beside the code-rule tests
-# took 23 s as the median of 3 runs on the development Mac; that times 1.25,
-# rounded up.
-fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-29}
+# The same for ./check fast, with a warm build: glinter (55 to 61 s alone) beside the
+# code-rule and registry tests took 60 s as the median of 3 warm runs on the
+# development Mac, 2026-11-20 (60, 65, 60 s; a first run took 79 s); that times
+# 1.25, rounded up.
+fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-75}
 if [ "$mode" = fast ]; then
   budget=$fast_budget
 fi
