@@ -30,11 +30,17 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+from plant_support import NEXT_LINE  # noqa: E402
+
 SCRIPT = HERE.parent / "dev" / "merge_when_green.sh"
 
 RUNNABLE = shutil.which("bash") is not None and shutil.which("git") is not None
@@ -47,14 +53,7 @@ echo "git $*" >> "$PLANT_DIR/calls"
 if [ "$1" = -C ]; then shift 2; fi
 command=$1
 shift
-next_line() {  # next_line FILE COUNTER: the counter's next line of FILE, the last when it runs out
-  n=$(cat "$PLANT_DIR/$2" 2>/dev/null || echo 0)
-  n=$((n + 1)); echo "$n" > "$PLANT_DIR/$2"
-  line=$(sed -n "${n}p" "$PLANT_DIR/$1")
-  [ -n "$line" ] || line=$(tail -n 1 "$PLANT_DIR/$1")
-  echo "$line"
-}
-case "$command" in
+""" + NEXT_LINE + """case "$command" in
   fetch|reset|clean) ;;
   worktree)
     case "$1" in
