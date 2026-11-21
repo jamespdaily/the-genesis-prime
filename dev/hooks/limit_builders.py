@@ -7,7 +7,7 @@ per subagent, `PROJECT/SESSION/subagents/agent-ID.meta.json` (`agentType`, `desc
 runs when its meta has `agentType == "implementer"`, no `finished`, and a transcript written within
 LIVE_SECONDS; a builder that died stops counting then. A meta with no transcript yet is a builder
 starting, and counts for PENDING_SECONDS from the meta's own last write. After a `/clear` Claude Code
-keeps an agent's files under two session folders: an agent id counts once, by the copy written last. PROJECT is
+keeps an agent's files under several session folders: an agent id counts once, by the copy written last. PROJECT is
 the folder of the hook input's `transcript_path`, so builders of earlier sessions still count. Reviewers,
 investigators and other agents are neither counted nor refused.
 
