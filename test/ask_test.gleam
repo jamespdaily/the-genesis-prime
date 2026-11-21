@@ -127,6 +127,7 @@ pub fn the_directory_is_given_the_ask_counted_from_the_nodes_time_the_script_gav
       shutdown_ms: 1000,
       wire_recorder: None,
       scripts:,
+      send_deadline_ms: ask_support.real_send_deadline_ms(),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
@@ -507,6 +508,7 @@ fn start_recorded(
     shutdown_ms:,
     wire_recorder: Some(wire_recorder),
     scripts: script.operating_system,
+    send_deadline_ms: ask_support.real_send_deadline_ms(),
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) {

@@ -62,7 +62,8 @@ pub type Record {
 }
 
 /// Starts a listener whose connections run `rule` with this directory, beside
-/// what `with` adds to the same supervisor.
+/// what `with` adds to the same supervisor, on the operating system's script
+/// and a send deadline of `real_send_deadline_ms`.
 pub fn start(
   rule rule: ConnectionRule(settings, state, request, Nil, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
@@ -76,6 +77,28 @@ pub fn start(
     shutdown_ms:,
     scripts: script.operating_system,
     send_deadline_ms: real_send_deadline_ms(),
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
+    with:,
+  )
+}
+
+/// Starts a listener as `start` does, on the driven clock `time`: its connections
+/// read their time from it and start their timers there, and no write or
+/// shutdown of the tree has a limit a test can reach (`beyond_the_test_ms`).
+pub fn start_on(
+  time time: driven_time.Time,
+  rule rule: ConnectionRule(settings, state, request, Nil, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
+  start_joined(
+    rule:,
+    directory:,
+    shutdown_ms: 2 * beyond_the_test_ms,
+    scripts: driven_scripts(time:),
+    send_deadline_ms: beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with:,
@@ -97,7 +120,7 @@ pub fn start_joined(
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  start_telling(
+  start_scripted(
     rule:,
     directory:,
     shutdown_ms:,
@@ -105,14 +128,13 @@ pub fn start_joined(
     scripts:,
     send_deadline_ms:,
     registry:,
-    locate: fn(address) { result.map(locate(address), watch.Watched) },
-    deliver: fn(_address, _request) { Error(Nil) },
+    locate:,
     with:,
   )
 }
 
 /// Starts a listener as `start_joined` does, whose connections are recorded on
-/// the wire by `wire_recorder`, with the send deadline of `start`.
+/// the wire by `wire_recorder`.
 pub fn start_scripted(
   rule rule: ConnectionRule(settings, state, request, message, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
@@ -120,6 +142,7 @@ pub fn start_scripted(
   shutdown_ms shutdown_ms: Int,
   wire_recorder wire_recorder: Option(WireRecorder),
   scripts scripts: Scripts,
+  send_deadline_ms send_deadline_ms: Int,
   registry registry: Option(Registry(message)),
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
@@ -130,7 +153,7 @@ pub fn start_scripted(
     shutdown_ms:,
     wire_recorder:,
     scripts:,
-    send_deadline_ms: real_send_deadline_ms(),
+    send_deadline_ms:,
     registry:,
     locate: fn(address) { result.map(locate(address), watch.Watched) },
     deliver: fn(_address, _request) { Error(Nil) },
@@ -610,12 +633,12 @@ pub fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
   started.pid
 }
 
-/// A listener whose rule asks nothing of a directory and shuts down in a second.
-pub fn started_listener() -> Server {
-  start(
+/// A listener on the driven clock `time` whose rule asks nothing of a directory.
+pub fn started_listener(time time: driven_time.Time) -> Server {
+  start_on(
+    time:,
     rule: asking_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 1000,
     with: fn(builder) { builder },
   )
 }

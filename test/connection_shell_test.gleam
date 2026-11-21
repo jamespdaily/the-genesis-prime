@@ -12,6 +12,7 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import driven_time
 import event_wait
 import genesis_prime/connection/script.{Elapsed, Issued, Script}
 import genesis_prime/message/server_hello.{ServerHello}
@@ -92,7 +93,7 @@ pub fn a_frame_over_the_size_limit_logs_and_stops_test() -> Nil {
 
 pub fn a_client_gets_the_hello_and_a_pong_for_its_ping_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(hello_rule_as_rule(), 1000)
+  use server <- serving(hello_rule_as_rule(), ask_support.beyond_the_test_ms)
   let client = ask_support.connect(server)
   assert ask_support.read_bytes(client, 53) == hello_frame()
     as "the hello comes first"
@@ -105,7 +106,7 @@ pub fn a_client_gets_the_hello_and_a_pong_for_its_ping_test() -> Nil {
 pub fn a_clients_close_ends_the_process_normally_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(rule, taken) = recording(hello_rule_as_rule())
-  use server <- serving(rule, 1000)
+  use server <- serving(rule, ask_support.beyond_the_test_ms)
   let client = ask_support.connect(server)
   let connection = accepted_shell(taken)
   let watched = process.monitor(connection)
@@ -129,11 +130,11 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
   use <- owned_test.run(60_000)
   // The rule writes 64 MiB to a client that never reads, then 1 KiB, then
   // stops. The BEAM queues the first write whole; the second waits for the
-  // queue and cannot finish within the 300 ms send deadline. Had the shell
-  // carried out the Stop after the failed write, no WriteFailed input would
-  // follow it.
+  // queue and cannot finish within a send deadline of 0, which fails a write
+  // that cannot complete at once, with no time passing. Had the shell carried
+  // out the Stop after the failed write, no WriteFailed input would follow it.
   let #(rule, taken) = recording(big_write_rule())
-  use server <- serving(rule, 1000)
+  use server <- serving(rule, 0)
   let client = ask_support.connect(server)
   let connection = accepted_shell(taken)
   let watched = process.monitor(connection)
@@ -156,7 +157,7 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
 pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(rule, taken) = recording(crash_on_0xee_rule())
-  use server <- serving(rule, 1000)
+  use server <- serving(rule, ask_support.beyond_the_test_ms)
   let first = ask_support.connect(server)
   let connection = accepted_shell(taken)
   let watched = process.monitor(connection)
@@ -173,7 +174,7 @@ pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
 pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchanged_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(rule, taken) = recording(crash_on_0xee_rule())
-  use server <- serving(rule, 1000)
+  use server <- serving(rule, ask_support.beyond_the_test_ms)
   let crashing = ask_support.connect(server)
   let crashing_process = accepted_shell(taken)
   let watched = process.monitor(crashing_process)
@@ -357,22 +358,26 @@ fn take(
 /// Starts a listener whose connections run `rule` and ask no one.
 fn start(
   rule rule: ConnectionRule(settings, state, Nil, Nil, Nil),
-  shutdown_ms shutdown_ms: Int,
+  send_deadline_ms send_deadline_ms: Int,
 ) -> ask_support.Server {
-  ask_support.start(
+  ask_support.start_joined(
     rule:,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms:,
+    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
+    scripts: ask_support.driven_scripts(driven_time.new()),
+    send_deadline_ms:,
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },
   )
 }
 
 fn serving(
   rule: ConnectionRule(settings, state, Nil, Nil, Nil),
-  shutdown_ms: Int,
+  send_deadline_ms: Int,
   body: fn(ask_support.Server) -> a,
 ) -> a {
-  let server = start(rule:, shutdown_ms:)
+  let server = start(rule:, send_deadline_ms:)
   let result = body(server)
   ask_support.stop(server)
   result
@@ -407,8 +412,9 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
       }
       #(state, Effects(effects))
     })
+  let time = driven_time.new()
   let scripts = fn() {
-    let assert Ok(issued) = script.operating_system()
+    let assert Ok(issued) = ask_support.driven_scripts(time)()
     Ok(
       Issued(
         ..issued,
@@ -438,9 +444,10 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
     ask_support.start_scripted(
       rule:,
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 1000,
+      shutdown_ms: 2 * ask_support.beyond_the_test_ms,
       wire_recorder: None,
       scripts:,
+      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },

@@ -260,6 +260,7 @@ pub fn run_scripted(
       shutdown_ms: 1000,
       wire_recorder: None,
       scripts: scripts(replay),
+      send_deadline_ms: ask_support.real_send_deadline_ms(),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with:,

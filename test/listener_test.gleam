@@ -10,6 +10,7 @@
 ////   connect.
 
 import ask_support
+import driven_time
 import genesis_prime/connection/listener.{
   ListenerNotListening, ListenerNotRunning,
 }
@@ -28,7 +29,7 @@ pub fn a_name_no_listener_holds_has_no_port_and_cannot_be_closed_test() -> Nil {
 
 pub fn a_listener_that_stopped_accepting_has_no_port_and_closing_it_again_is_ok_test() -> Nil {
   use <- owned_test.run(10_000)
-  let server = ask_support.started_listener()
+  let server = ask_support.started_listener(time: driven_time.new())
   assert listener.port(server.name) == Ok(server.port)
     as "a running listener gives the port it listens on"
   assert listener.stop_accepting(server.name) == Ok(Nil)
@@ -42,7 +43,7 @@ pub fn a_listener_that_stopped_accepting_has_no_port_and_closing_it_again_is_ok_
 
 pub fn a_listener_that_stopped_accepting_refuses_a_new_connect_test() -> Nil {
   use <- owned_test.run(10_000)
-  let server = ask_support.started_listener()
+  let server = ask_support.started_listener(time: driven_time.new())
   assert listener.stop_accepting(server.name) == Ok(Nil)
   let refused = ask_support.connecting(port: server.port)
   assert refused == Error(mug.ConnectFailedIpv4(mug.Econnrefused))

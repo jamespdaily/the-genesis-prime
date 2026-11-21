@@ -11,7 +11,7 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
-import genesis_prime/connection/script
+import driven_time
 import genesis_prime/wire_recording.{Client, Recording, Server}
 import gleam/erlang/process
 import gleam/option.{None, Some}
@@ -26,9 +26,10 @@ fn started(folder: String) -> ask_support.Server {
   ask_support.start_scripted(
     rule: leaving_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 2000,
+    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
     wire_recorder: Some(recording_support.wire_recorder(folder)),
-    scripts: script.operating_system,
+    scripts: ask_support.driven_scripts(driven_time.new()),
+    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },

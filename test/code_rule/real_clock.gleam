@@ -60,10 +60,9 @@
 ////   waits of `event_wait`, `readiness_support` and `owned_test`, are not
 ////   named: each ends by its own condition or by the test's deadline.
 //// - A file on `genuine_real_time` is exempt as a whole. `ask_test`,
-////   `connection_script_test`, `world_map_registry_test`, `application_test`
-////   and `readiness_test` also hold tests on the real clock that the reason
-////   does not name, and a new real-clock test added to one of them is not
-////   caught.
+////   `world_map_registry_test`, `application_test` and `readiness_test` also
+////   hold tests on the real clock that the reason does not name, and a new
+////   real-clock test added to one of them is not caught.
 //// - Part B reads a literal. A short deadline given through a variable, a
 ////   module constant or a punned label is not read, and neither is a time given
 ////   to `process.call` or `actor.call`.
@@ -114,9 +113,7 @@ pub fn entry_points() -> List(EntryPoint) {
     EntryPoint("login_support", "world", settings),
     EntryPoint("login_support", "game", settings),
     EntryPoint("ask_support", "start", the_operating_system_script),
-    EntryPoint("ask_support", "start_scripted", send_deadline),
     EntryPoint("ask_support", "real_send_deadline_ms", send_deadline),
-    EntryPoint("ask_support", "started_listener", the_operating_system_script),
     EntryPoint("ask_support", "gate", gate),
     EntryPoint("ask_support", "reaching", gate),
     EntryPoint("ask_support", "observed_gate", gate),
@@ -679,7 +676,7 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     ),
     Exception(
       "test/wire_replay_support.gleam",
-      "calls ask_support.start_scripted, login_support.start_real_with and servers_settings, which start a listener and the tree on the real clock",
+      "gives ask_support.start_scripted the real send deadline (real_send_deadline_ms) and calls login_support.start_real_with and servers_settings, which start the tree on the real clock",
     ),
     Exception(
       "test/wire_replay_test.gleam",
@@ -706,36 +703,8 @@ pub fn still_on_the_real_clock() -> List(Exception) {
       "asks through the operating system's script, real service time and a sleep, with a send deadline of 300 ms",
     ),
     Exception(
-      "test/connection_actor_test.gleam",
-      "runs connections on the operating system's script (ask_support.start_scripted)",
-    ),
-    Exception(
-      "test/connection_closing_test.gleam",
-      "runs connections on the operating system's script (ask_support.start_scripted)",
-    ),
-    Exception(
-      "test/connection_shell_test.gleam",
-      "runs a connection on the operating system's script (ask_support.start, start_scripted)",
-    ),
-    Exception(
-      "test/closer_test.gleam",
-      "starts listeners on the operating system's script (ask_support.start, started_listener)",
-    ),
-    Exception(
-      "test/listener_test.gleam",
-      "starts listeners on the operating system's script (ask_support.started_listener)",
-    ),
-    Exception(
       "test/account_store_test.gleam",
       "its ask tests start a listener on the operating system's script (ask_support.start)",
-    ),
-    Exception(
-      "test/owned_test_test.gleam",
-      "its listener-seed tests serve connections on the operating system's script",
-    ),
-    Exception(
-      "test/wire_recorder_test.gleam",
-      "records a connection run on the operating system's script (ask_support.start_scripted)",
     ),
     Exception(
       "test/service_shell_test.gleam",
