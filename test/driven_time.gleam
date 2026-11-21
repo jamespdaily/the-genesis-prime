@@ -1,6 +1,6 @@
 //// The clock and the timers of a whole-server test whose timers must not depend on
-//// real time: the connections of the listener it gives its scripts to, and the
-//// service shells (maps, creatures) of the world it gives its service time to, take
+//// real time: the connections of the listeners it gives its scripts to, and the
+//// service shells (hand-off, Sessions, maps, creatures) it gives its service time to, take
 //// their time from this clock and start their timers on this scheduler, and a
 //// timer fires only when the test advances the clock past its time.
 ////
@@ -26,9 +26,9 @@
 //// - **Order:** timers fire in the order of their due times, equal times in the order
 ////   they were started.
 //// - **Participants** are the processes that read this clock or start a timer on it:
-////   the connections of the listeners given these scripts and the shells of a world
-////   given this service time. The hand-off and Sessions take the real time and are
-////   not participants. A participant that has ended is dropped at the next pass.
+////   the connections of the listeners given these scripts and the service shells given
+////   this service time (the hand-off, Sessions, the maps and the creatures of a tree).
+////   A participant that has ended is dropped at the next pass.
 //// - **The change counter** counts the clock reads of participants and the
 ////   participants found ended. Each input of a driven shell reads the clock at
 ////   least once (a connection input that asks reads it again when the answer comes
@@ -365,6 +365,12 @@ pub fn driver(time: Time) -> Pid {
 /// been cancelled, in the order they were started.
 pub fn pending_of(time time: Time, owner owner: Pid) -> List(TimerId) {
   asked(time:, make: PendingOf(owner, _))
+}
+
+/// The processes that have read this clock or started a timer on it and are still
+/// running: the participants.
+pub fn participants(time time: Time) -> List(Pid) {
+  asked(time:, make: Observe).running
 }
 
 /// The clock's time now, which the participants read for each input.

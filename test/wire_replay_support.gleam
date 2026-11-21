@@ -402,7 +402,7 @@ pub fn replay_tree(
     Ok(Nil) -> {
       let replay = start_replay(session)
       let started =
-        login_support.start_with(change: session_settings(
+        login_support.start_real_with(change: session_settings(
           _,
           replay,
           recorded_auth_realm(session),

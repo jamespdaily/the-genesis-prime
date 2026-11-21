@@ -156,7 +156,7 @@ pub fn main() -> Nil {
     UnreachableDatabase -> pog.port(pool, 1)
     Serving | LateDatabase | SlowStop | StoppedBeforeTree | GivesUp -> pool
   }
-  let base = login_support.settings(pool:)
+  let base = login_support.real_settings(pool:)
   let settings =
     server.Settings(
       ..base,

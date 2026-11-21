@@ -335,13 +335,15 @@ pub fn a_test_that_names_its_seed_gets_other_seeds_than_its_name_gives_test() ->
 // ---- the tree's settings ----
 
 fn tree_settings() -> Settings {
-  login_support.settings(pool: pog.default_config(process.new_name("pool")))
+  login_support.real_settings(
+    pool: pog.default_config(process.new_name("pool")),
+  )
 }
 
 pub fn the_trees_settings_seed_the_sts_auth_and_game_listeners_each_on_its_own_test() -> Nil {
   use <- owned_test.run(60_000)
   let makers = [
-    #("login_support.settings", tree_settings),
+    #("login_support.real_settings", tree_settings),
     #("login_support.servers_settings", login_support.servers_settings),
   ]
   let first_seeds =

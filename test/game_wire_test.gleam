@@ -198,9 +198,13 @@ fn account_number(account: AccountId) -> Int {
 /// The tree with the account of the library's vector inserted, the game
 /// listener's port and the account.
 fn start() -> #(login_support.Started, Int, AccountId) {
-  let #(started, ports, account_id) = login_support.start_with_jim()
+  let #(started, ports, account_id) = login_support.start_real_with_jim()
   #(started, ports.game_port, AccountId(account_id))
 }
+
+/// How long the hand-off holds a session key the auth server gave: the server's
+/// setting, `session_key_lifetime_ms` of the auth settings (genesis_prime.gleam).
+const session_key_lifetime_ms = 60_000
 
 /// Puts the session key in the tree's hand-off, held for the account.
 fn put_session_key(started: login_support.Started, account: AccountId) -> Nil {
@@ -221,6 +225,27 @@ fn hold_session_key(
   game_account_id game_account_id: guid.Guid,
   key key: guid.Guid,
 ) -> Nil {
+  assert offer_session_key(
+      started:,
+      account:,
+      login_name:,
+      game_account_id:,
+      key:,
+    )
+    == hand_off.Kept
+    as "the hand-off kept the session key"
+  Nil
+}
+
+/// What the hand-off answers a put of `key` for the account: `Kept` when it holds
+/// no such key, `AlreadyHeld` when it does.
+fn offer_session_key(
+  started started: login_support.Started,
+  account account: AccountId,
+  login_name login_name: String,
+  game_account_id game_account_id: guid.Guid,
+  key key: guid.Guid,
+) -> hand_off.Answer {
   let #(_sent, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
       service.call(
@@ -228,13 +253,12 @@ fn hold_session_key(
         Put(
           key: SessionKey(key),
           holder: Holder(account_id: account, login_name:, game_account_id:),
-          lifetime_ms: 60_000,
+          lifetime_ms: session_key_lifetime_ms,
         ),
         reply,
       )
     })
-  assert answer == hand_off.Kept as "the hand-off kept the session key"
-  Nil
+  answer
 }
 
 pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_characters_test() -> Nil {
@@ -335,9 +359,64 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   login_support.stop(started)
 }
 
+pub fn a_session_key_the_hand_off_holds_expires_only_when_the_driven_clock_passes_its_lifetime_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let #(started, ports, account_id) = login_support.start_with_jim(time:)
+  let account = AccountId(account_id)
+  let early = support.guid_of(1)
+  let late = support.guid_of(2)
+  let probe = support.guid_of(3)
+  let offered = fn(key) {
+    offer_session_key(
+      started:,
+      account:,
+      login_name: "jim",
+      game_account_id: support.jim().game_account_id,
+      key:,
+    )
+  }
+  list.each([early, late, probe], fn(key) {
+    assert offered(key) == hand_off.Kept as "the hand-off kept the session key"
+  })
+  driven_time.advance(time:, ms: session_key_lifetime_ms - 1)
+  assert offered(probe) == hand_off.AlreadyHeld
+    as "1 ms before its lifetime has passed on the driven clock a key is still held"
+  let held =
+    game_client.connect(
+      port: ports.game_port,
+      account_id: account_number(account),
+      session_key: guid.to_wire(early),
+      account_name: "jim",
+      limit: socket_read.Open,
+    )
+  game_client.send(game: held, message_id: 0x07E0, body: <<>>)
+  let assert [_tier, _entitlements, _level, listed] =
+    game_client.read(game: held, count: 4)
+  assert listed.message_id == 0x0117
+    as "a claim of a key still held is answered with the character list"
+  driven_time.advance(time:, ms: 1)
+  assert offered(probe) == hand_off.Kept
+    as "a key is gone at its expiry time (hand_off.drop_expired): the put finds none held"
+  let expired =
+    game_client.connect(
+      port: ports.game_port,
+      account_id: account_number(account),
+      session_key: guid.to_wire(late),
+      account_name: "jim",
+      limit: socket_read.Open,
+    )
+  let assert [notice] = game_client.read(game: expired, count: 1)
+  assert disconnect_notice.decode(notice.body)
+    == Ok(DisconnectNotice(reason: AccountDisconnected))
+    as "a claim of an expired key gets 0x1400168a0's reason 19, as for a key never held"
+  game_client.close(game: held)
+  login_support.stop(started)
+}
+
 pub fn an_open_game_connection_gets_0x036a_reason_8_when_the_server_stops_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, account_id) = login_support.start_with_jim()
+  let #(started, ports, account_id) = login_support.start_real_with_jim()
   let game =
     in_select(started:, port: ports.game_port, account: AccountId(account_id))
   let stopping = ask_support.begin_stop_tree(started.tree)
@@ -370,7 +449,7 @@ pub fn an_open_game_connection_gets_0x036a_reason_8_when_the_server_stops_test()
 pub fn the_stop_closes_every_listener_before_any_connection_drains_test() -> Nil {
   use <- owned_test.run(60_000)
   let started =
-    login_support.start_with(change: fn(settings) {
+    login_support.start_real_with(change: fn(settings) {
       server.Settings(
         ..settings,
         connection_shutdown_ms: ask_support.beyond_the_test_ms,
@@ -1130,7 +1209,7 @@ pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before
   // settings leave that 700 ms, which a loaded machine passes; the test is about
   // what the stop saves, so the save has no bound but the test's own deadline.
   let started =
-    login_support.start_with(change: fn(settings) {
+    login_support.start_real_with(change: fn(settings) {
       server.Settings(
         ..settings,
         connection_shutdown_ms: ask_support.beyond_the_test_ms,
@@ -1253,7 +1332,7 @@ const bot_countdown_ms = 1500
 pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_again_at_the_place_it_camped_at_test() -> Nil {
   use <- owned_test.run(60_000)
   let started =
-    login_support.start_with(change: fn(settings) {
+    login_support.start_real_with(change: fn(settings) {
       let game = settings.game
       server.Settings(
         ..settings,
@@ -1401,7 +1480,7 @@ pub fn credits_survive_a_relog_test() -> Nil {
       ),
     )
   let started =
-    login_support.start_with(change: fn(settings) {
+    login_support.start_real_with(change: fn(settings) {
       let game = settings.game
       server.Settings(
         ..settings,
@@ -1522,7 +1601,7 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
       ),
     )
   let started =
-    login_support.start_with(change: fn(settings) {
+    login_support.start_real_with(change: fn(settings) {
       let game = settings.game
       server.Settings(
         ..settings,
@@ -1692,9 +1771,10 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
   // later entry carries the mask as the objective's progress (opcode.0x35f).
   let time = driven_time.new()
   let started =
-    start_with_world_data_by(
+    start_with_world_data_on(
       folder: "test/fixture/world_data_checklist",
-      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
+      time:,
+      adjusted: fn(settings) { settings },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
@@ -1877,9 +1957,10 @@ pub fn a_crate_of_scattered_supplies_counts_once_and_vanishes_for_everyone_test(
   // everyone is Jim's decision of 2026-11-16).
   let time = driven_time.new()
   let started =
-    start_with_world_data_by(
+    start_with_world_data_on(
       folder: "test/fixture/world_data_crates",
-      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
+      time:,
+      adjusted: fn(settings) { settings },
     )
   let #(game, have, entry) =
     near_the_crates(
@@ -2013,9 +2094,10 @@ fn player_whose_mine_cast_went(
 ) -> MineCast {
   let time = driven_time.new()
   let started =
-    start_with_world_data_by(
+    start_with_world_data_on(
       folder: "test/fixture/world_data_mine",
-      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
+      time:,
+      adjusted: fn(settings) { settings },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
@@ -2438,13 +2520,17 @@ fn new_player_at_level(
 }
 
 fn two_players_enter_one_map() -> TwoEntered {
-  two_players_enter(started: login_support.start(), first_class: 4, level: 1)
+  two_players_enter(
+    started: login_support.start_real(),
+    first_class: 4,
+    level: 1,
+  )
 }
 
 /// As `two_players_enter_one_map`, the first player being of the class given, the
 /// server holding the fixture's rows (the starting abilities' own trees) and its game
 /// connections and its World taking their time and their timers from `time`, which a
-/// test whose casts run on timers moves by hand (`login_support.driven_by`).
+/// test whose casts run on timers moves by hand.
 fn two_players_of_class_enter_one_map_with(
   first_class first_class: Int,
   time time: driven_time.Time,
@@ -2467,8 +2553,7 @@ fn started_on(
   tables tables: table_store.Tables,
   time time: driven_time.Time,
 ) -> login_support.Started {
-  login_support.start_with(change: fn(settings) {
-    let settings = login_support.driven_by(settings:, time:)
+  login_support.start_with(time:, change: fn(settings) {
     server.Settings(
       ..settings,
       game: server.Served(
@@ -3588,7 +3673,7 @@ type Seat {
 /// seat has read the other three players' units, so no player's entry is still
 /// on its way to another seat.
 fn four_players() -> #(login_support.Started, List(Seat)) {
-  let started = login_support.start()
+  let started = login_support.start_real()
   let seats =
     list.map(
       [#(1, "Zed Qu"), #(2, "Ann Qu"), #(3, "Bob Qu"), #(4, "Cat Qu")],
@@ -4107,7 +4192,7 @@ fn events_until(
 
 pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lines_and_the_player_sees_the_bot_leave_test() -> Nil {
   use <- owned_test.run(120_000)
-  let started = login_support.start()
+  let started = login_support.start_real()
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
@@ -4199,7 +4284,7 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
 
 pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_test() -> Nil {
   use <- owned_test.run(120_000)
-  let started = login_support.start()
+  let started = login_support.start_real()
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
@@ -4300,7 +4385,7 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
   // The VM's signal handling is the node's: the bot's handler replaces OTP's
   // while it sits, so no other test may be running.
   use <- unitest.tag("serial")
-  let started = login_support.start()
+  let started = login_support.start_real()
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
@@ -4357,16 +4442,30 @@ fn start_with_creatures() -> login_support.Started {
 /// prerequisites and the reused unit objectives the load found (as the server's own
 /// start passes them).
 fn start_with_world_data(folder folder: String) -> login_support.Started {
-  start_with_world_data_by(folder:, adjusted: fn(settings) { settings })
+  login_support.start_real_with(
+    change: with_world_data(folder:, adjusted: fn(settings) { settings }),
+  )
 }
 
-/// As `start_with_world_data`, the server's settings then passed through `adjusted`:
-/// a test whose casts run on timers passes `login_support.driven_by`.
-fn start_with_world_data_by(
+/// As `start_with_world_data`, on the driven clock `time`, the server's settings
+/// then passed through `adjusted`: a test whose casts run on timers moves `time` by
+/// hand.
+fn start_with_world_data_on(
   folder folder: String,
+  time time: driven_time.Time,
   adjusted adjusted: fn(server.Settings) -> server.Settings,
 ) -> login_support.Started {
-  login_support.start_with(change: fn(settings) {
+  login_support.start_with(time:, change: with_world_data(folder:, adjusted:))
+}
+
+/// The change of the server's settings that imports the planted world-database file
+/// in `folder`, loads the content into a key of the test's own and passes the settings
+/// through `adjusted`.
+fn with_world_data(
+  folder folder: String,
+  adjusted adjusted: fn(server.Settings) -> server.Settings,
+) -> fn(server.Settings) -> server.Settings {
+  fn(settings: server.Settings) {
     let pool =
       pog.Config(
         ..settings.pool,
@@ -4385,7 +4484,11 @@ fn start_with_world_data_by(
         tables: character_tables.content_tables(),
         migrations: genesis_prime.load_migrations(),
         pool: pog.Config(..pool, pool_name: process.new_name("load_pool")),
-        ask: readiness.Settings(within_ms: 5000, attempt_ms: 2000, pause_ms: 50),
+        ask: readiness.Settings(
+          within_ms: ask_support.beyond_the_test_ms,
+          attempt_ms: ask_support.beyond_the_test_ms,
+          pause_ms: 50,
+        ),
         probe: content.pool_probe,
         terrain: terrain_support.flat_reader(),
         key:,
@@ -4404,7 +4507,7 @@ fn start_with_world_data_by(
       world: server.World(..settings.world, spawns: key),
     )
     |> adjusted
-  })
+  }
 }
 
 pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_and_a_second_bot_sees_the_same_unit_ids_test() -> Nil {
@@ -4569,8 +4672,7 @@ fn world_with_numbers(
   tutorial tutorial: Bool,
   numbers numbers: fn(GameNumbers) -> GameNumbers,
 ) -> login_support.Started {
-  start_with_world_data_by(folder:, adjusted: fn(settings) {
-    let settings = login_support.driven_by(settings:, time:)
+  start_with_world_data_on(folder:, time:, adjusted: fn(settings) {
     let held =
       connection_state.Settings(
         ..settings.game.settings,
@@ -5588,7 +5690,7 @@ fn beast_place(x x: Float, z z: Float) -> Place {
 /// A world with a Virtual Battle Beast at each of these places, none of which
 /// deflects, and which respawn after 1000 ms (the least a creature kind may hold, the
 /// strike deadline), on the tables given. The game connections and the World take
-/// their time and timers from `time` (`login_support.driven_by`): a Beast's swing, strike deadline,
+/// their time and timers from `time`: a Beast's swing, strike deadline,
 /// respawn and leash fire only when the test advances it.
 fn world_with_beasts(
   places places: List(Place),
@@ -5611,8 +5713,7 @@ fn world_with_spawns(
   tables tables: table_store.Tables,
   time time: driven_time.Time,
 ) -> login_support.Started {
-  login_support.start_with(change: fn(settings) {
-    let settings = login_support.driven_by(settings:, time:)
+  login_support.start_with(time:, change: fn(settings) {
     server.Settings(
       ..settings,
       game: server.Served(
@@ -6415,10 +6516,9 @@ fn dagun_attack_interval_ms() -> Int {
 
 /// A world with one Dagun at x 1.5, z -20, its map's and creature's timers and the
 /// connections' on the clock `time`, so the Dagun's attack tick and home timer fire
-/// only when the test advances it (`login_support.driven_by`).
+/// only when the test advances it.
 fn world_with_a_dagun(time time: driven_time.Time) -> login_support.Started {
-  login_support.start_with(change: fn(settings) {
-    let settings = login_support.driven_by(settings:, time:)
+  login_support.start_with(time:, change: fn(settings) {
     server.Settings(
       ..settings,
       world: server.World(
@@ -6877,8 +6977,7 @@ fn world_with_a_lethal_dagun(
       spawn: spawn_support.dagun(number: 1, x: 0.0),
       damage: 100_000,
     )
-  login_support.start_with(change: fn(settings) {
-    let settings = login_support.driven_by(settings:, time:)
+  login_support.start_with(time:, change: fn(settings) {
     server.Settings(
       ..settings,
       world: server.World(
@@ -7221,8 +7320,7 @@ pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
   use tables <- quest_support.with_time_limits(limits: [#(1872, 60_000)])
   let time = driven_time.new()
   let started =
-    login_support.start_with(change: fn(settings) {
-      let settings = login_support.driven_by(settings:, time:)
+    login_support.start_with(time:, change: fn(settings) {
       server.Settings(
         ..settings,
         game: server.Served(
@@ -7349,8 +7447,7 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       ),
     )
   let started =
-    login_support.start_with(change: fn(settings) {
-      let settings = login_support.driven_by(settings:, time:)
+    login_support.start_with(time:, change: fn(settings) {
       server.Settings(
         ..settings,
         game: server.Served(
@@ -7816,8 +7913,7 @@ pub fn a_bot_accepts_uses_and_turns_in_a_northern_wilds_quest_takes_up_another_a
     && dict.size(northern_wilds.objects) == 4
     as "the three creatures (11066, 11061 and 11070) start and the four objects (13630 and the three 13623) are sent"
   let started =
-    login_support.start_with(change: fn(settings) {
-      let settings = login_support.driven_by(settings:, time:)
+    login_support.start_with(time:, change: fn(settings) {
       let game = settings.game
       server.Settings(
         ..settings,
@@ -8781,10 +8877,7 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
 pub fn a_spellslinger_over_a_socket_casts_surged_quick_draw_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
-  let started =
-    login_support.start_with(change: fn(settings) {
-      login_support.driven_by(settings:, time:)
-    })
+  let started = login_support.start(time:)
   let #(game, character) =
     new_player_at_level(
       started:,
@@ -8868,9 +8961,10 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
   // for both and 0x262 for both again.
   let time = driven_time.new()
   let started =
-    start_with_world_data_by(
+    start_with_world_data_on(
       folder: "test/fixture/world_data_nature",
-      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
+      time:,
+      adjusted: fn(settings) { settings },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(first, first_character) =
@@ -9083,10 +9177,7 @@ fn rows_of_item(
 pub fn a_timed_item_is_removed_at_its_moment_and_one_that_ran_out_while_away_is_gone_at_entry_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
-  let started =
-    login_support.start_with(change: fn(settings) {
-      login_support.driven_by(settings:, time:)
-    })
+  let started = login_support.start(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
     new_player_at_level(
@@ -9359,7 +9450,7 @@ pub fn a_level_ups_0x07a5_is_answered_with_the_level_up_cast_and_a_player_in_sig
 
 /// The tree started with the development commands on.
 fn started_with_dev_commands() -> login_support.Started {
-  login_support.start_with(change: fn(settings) {
+  login_support.start_real_with(change: fn(settings) {
     let game = settings.game
     server.Settings(
       ..settings,
@@ -9436,7 +9527,7 @@ fn bar_shortcuts(frames frames: List(Frame)) -> List(#(Int, Int)) {
 /// answer is 0x019D then 0x00B2 (`opcode.0xb2`).
 pub fn a_bar_saved_with_the_clients_0xb1_is_back_after_a_relog_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start()
+  let started = login_support.start_real()
   let #(game, character) =
     new_player_at_level(
       started:,

@@ -79,7 +79,9 @@ pub fn a_tree_serves_while_it_runs_and_the_node_is_not_stopping_test() -> Nil {
 /// The settings of a tree whose pool waits for no database: nothing here
 /// connects, and the listeners take ports the system picks.
 fn settings() -> server.Settings {
-  login_support.settings(pool: pog.default_config(process.new_name("pool")))
+  login_support.real_settings(
+    pool: pog.default_config(process.new_name("pool")),
+  )
 }
 
 pub fn a_tree_started_under_the_root_gives_its_pid_and_a_monitor_on_it_test() -> Nil {

@@ -172,7 +172,7 @@ pub type Settings {
     /// Where the game connections are found, made once with
     /// `registry.new`.
     registry: Registry(Message),
-    /// The clock the hand-off, Sessions, Maps, the maps and the creatures take
+    /// The clock the hand-off, Sessions, the maps and the creatures take
     /// each input's time from, and the scheduler their timers start on:
     /// `service_shell.real_time()` on a server, a driven clock's in a test.
     service_time: service_shell.ServiceTime,
@@ -799,7 +799,8 @@ fn world(
 /// supervisor to a `rest_for_one` supervisor, in that order: the registry's
 /// restart ends everything after it, Maps' ends the creatures and the maps, and
 /// the creature supervisor's ends the maps, so no map outlives the registry that
-/// knew its creatures. The maps and the creatures take their time from `time`. A map is started by the map supervisor with the rule of its id and
+/// knew its creatures. The maps and the creatures take their time from `time`.
+/// A map is started by the map supervisor with the rule of its id and
 /// incarnation, the realm and game tables its players' units are built from, the
 /// spawns of its world, no name, and a reach that finds what it watches and
 /// sends to its players' connections (`reach`) and to its creatures, and starts
