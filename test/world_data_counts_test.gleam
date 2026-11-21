@@ -78,6 +78,7 @@
 //// so it is skipped where either is missing (a fork's CI run without the client's
 //// data); it imports the whole file into a database of its own.
 
+import ask_support
 import client_tables
 import content_support
 import database_support
@@ -120,9 +121,14 @@ import spawn_support
 import terrain_support
 import unitest
 
-/// How the load asks: the database is up, so one attempt answers.
+/// How the load asks: the database is up, so one attempt answers, and none ends by
+/// a time of its own (`ask_support.beyond_the_test_ms`).
 fn asking() -> readiness.Settings {
-  readiness.Settings(within_ms: 5000, attempt_ms: 2000, pause_ms: 100)
+  readiness.Settings(
+    within_ms: ask_support.beyond_the_test_ms,
+    attempt_ms: ask_support.beyond_the_test_ms,
+    pause_ms: 100,
+  )
 }
 
 pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_world_test() -> Nil {

@@ -19,6 +19,7 @@
 ////   the running supervisor holds.
 
 import ask_support
+import driven_time
 import genesis_prime/client_connection.{
   AskMap, PeerNews, Removed, TellMoved, TellPeer,
 }
@@ -27,6 +28,7 @@ import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/registry as world_map_registry
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
@@ -52,7 +54,7 @@ pub fn the_servers_own_settings_let_the_tree_restart_3_times_in_10_seconds_test(
 
 pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start()
+  let started = login_support.start_real()
   let settings = started.settings
   let pool_name = settings.pool.pool_name
   let assert Ok(pool) = process.named(pool_name) as "the pool is registered"
@@ -133,7 +135,7 @@ fn listener_limits(listener: process.Name(Nil)) -> #(Int, Int) {
 
 pub fn each_listener_holds_the_connections_its_setting_gives_with_one_acceptor_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start()
+  let started = login_support.start_real()
   let settings = started.settings
   assert listener_limits(settings.login.sts.listener)
     == #(login_support.sts_max_connections, 1)
@@ -144,6 +146,34 @@ pub fn each_listener_holds_the_connections_its_setting_gives_with_one_acceptor_t
   assert listener_limits(settings.game.listener)
     == #(login_support.game_max_connections, 1)
     as "the game listener: its own setting"
+  login_support.stop(started)
+}
+
+pub fn the_hand_off_sessions_and_the_world_take_each_inputs_time_from_the_trees_service_time_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let started = login_support.start(time:)
+  let settings = started.settings
+  let assert Ok(hand_off) = process.named(settings.hand_off)
+    as "the hand-off is registered"
+  let assert Ok(sessions) = process.named(settings.sessions)
+    as "Sessions is registered"
+  let assert Ok(map) =
+    open_wait.named("Maps to answer the find", fn() {
+      world_map_registry.find_or_start(
+        settings.world.maps,
+        MapId(world_id: 426, instance: 0),
+        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
+      )
+    })
+    as "Maps started the map"
+  let readers = driven_time.participants(time)
+  assert list.contains(readers, hand_off)
+    as "the hand-off reads the tree's clock for each input: it was started with the setting's service time, not its own"
+  assert list.contains(readers, sessions)
+    as "Sessions reads the tree's clock for each input"
+  assert list.contains(readers, map.pid)
+    as "a map the world started reads the tree's clock for each input"
   login_support.stop(started)
 }
 

@@ -323,7 +323,7 @@ pub fn an_ask_leaves_no_answer_behind_in_its_mailbox_test() -> Nil {
 /// no Postgres, and its connection waits are short.
 fn unreachable_settings() -> server.Settings {
   let shared = database_support.shared()
-  login_support.settings(
+  login_support.real_settings(
     pool: database_support.config(
       for: shared.settings,
       database: "unreachable",
@@ -422,7 +422,7 @@ pub fn a_database_that_answers_gets_the_ready_line_once_the_probe_returns_test()
   use <- owned_test.run(60_000)
   let shared = database_support.shared()
   let settings =
-    login_support.settings(pool: database_support.config(
+    login_support.real_settings(pool: database_support.config(
       for: shared.settings,
       database: database_support.new_database(on: shared),
       pool_name: process.new_name("pool"),

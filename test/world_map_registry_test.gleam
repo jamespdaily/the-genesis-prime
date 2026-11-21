@@ -71,7 +71,6 @@ fn start_world() -> World {
       idle_stop_ms: 60_000,
       sweep_ms: 10_000,
       spawns: spawn_support.key_without_spawns(),
-      service_time: service_shell.real_time(),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)
@@ -81,6 +80,7 @@ fn start_world() -> World {
     server.add_world(
       tree:,
       world:,
+      time: service_shell.real_time(),
       realm_id: 1,
       tables: character_tables.shared(),
       reach: service.watch_only(locate: locate(scope, _)),
