@@ -473,7 +473,8 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
   use <- owned_test.run(60_000)
   // `strike.select` centres a spell started on another unit on that unit's shown place at yaw
   // 0.0 (a Proxy on each struck unit, a proc aimed at another unit), and a press, a Proxy on
-  // the caster or a proc aimed at its holder on the caster (`cast.proc_started`). `area.in_shape` reads a circle only through its origin, which an offset moves along
+  // the caster or a proc aimed at its holder on the caster (`cast.proc_started`).
+  // `area.in_shape` reads a circle only through its origin, which an offset moves along
   // the unit's yaw, so a circle with no offset is the same at any yaw and under any
   // `turn_degrees`; any other shape reads the yaw (`0x14054b1b0.follows_caster`).
   let placed = fn(shape, ahead, aside, turn_degrees) {

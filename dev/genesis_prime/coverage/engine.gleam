@@ -368,7 +368,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 26,
-        reason: "rows whose dataBits00 names no spell (the plan holds no Proxy for them) or that are aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes",
+        reason: "rows whose dataBits00 is 0, which name their spell in dataBits01 and cast it every tickTime (the plan does not start it), or that are aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes",
         fact_key: "Spell4Effects.effectType.26",
       ),
       Missing(

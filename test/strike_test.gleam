@@ -1244,8 +1244,9 @@ pub fn a_row_placed_on_the_cast_target_strikes_around_the_unit_a_spell_is_starte
   let areas = spell_area.areas(tables: client_tables.shared())
   // The start pose faces -z from the origin; the moved caster (unit 7) stands at (40, 0). A
   // creature's hit radius is 3 (`foe_at`). Field Probes' children (41404 and 55046) are started
-  // on the caster, and their area-aimed row is a Proxy that names no spell, so no case here is
-  // one of them.
+  // on the caster, and their area-aimed row is a Proxy that casts its dataBits01 spell every
+  // tick, which the plan does not start (`Spell4Effects.effectType.26.periodic`), so no case
+  // here is one of them.
   list.each(
     [
       #(

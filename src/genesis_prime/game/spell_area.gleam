@@ -48,10 +48,12 @@
 ////   is left out by the load (`TickingUntilRemoved`), and `checker` refuses a spell that holds
 ////   one, so no planned ability's press waits on a damage row that is never played.
 //// - **A Proxy with its spell in dataBits01** (dataBits00 0 and a Spell4 id in dataBits01,
-////   `ProxyNamesSpellInDataBits01`) starts nothing, since the Proxy reader reads dataBits00
-////   only (`Spell4Effects.effectType.26`), so `checker` refuses a spell that holds one beside
-////   a hit row placed on the cast's target: the ability that row would free casts and
-////   applies nothing.
+////   `ProxyNamesSpellInDataBits01`) casts that spell every tickTime
+////   (`Spell4Effects.effectType.26.periodic`), which the plan does not start, so `checker`
+////   refuses a spell that holds one beside a hit row placed on the cast's target: the
+////   ability that row would free is planned and casts only its other rows. A spell that
+////   holds such a Proxy with no such hit row is not refused, and its ability is planned
+////   without that cast.
 //// - **Order.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`). A creature's special may also select Furthest (2)
@@ -66,7 +68,8 @@
 ////   the cast's 0x7ff puts it and stays there (TelegraphDamage flag 0x4000 or 0x1000:
 ////   `FixedAtCaster`, `FixedAtTarget`) or follows its unit (`FollowsCaster`, `FollowsTarget`).
 ////   A creature special whose rows, or whose hit twin and drawn row, are not placed alike is
-////   refused (`PlacedApart`), so the hit is always where the picture is (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`,
+////   refused (`PlacedApart`), so the hit is always where the picture is
+////   (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`,
 ////   `0x14054b1b0.follows_caster`). A player's row placed at the position the cast holds
 ////   (`targetTypeFlags` 8) is `FixedAtCaster` whatever its flags: the client stores that
 ////   position and yaw once, when the cast starts (`0x14053a210.held_position`). A player's hit
@@ -291,10 +294,10 @@ pub type AreaError {
   /// A drawn hit row is timed from a phase's go instead of the cast's start (flag 0x2000), a
   /// window the creature reading does not build.
   TelegraphTimedFromAGo(spell4_id: Int, telegraph_id: Int)
-  /// A Proxy row names no spell in dataBits00 but holds the id of a Spell4 row in dataBits01
-  /// (`Spell4Effects.effectType.26` reads only dataBits00), in a spell whose hit row is placed
-  /// on the cast's target: `checker` refuses the spell, since the ability that row frees would
-  /// be planned and apply nothing.
+  /// A Proxy row names no spell in dataBits00 but holds the id of a Spell4 row in dataBits01,
+  /// which it casts every tickTime (`Spell4Effects.effectType.26.periodic`) and the plan does
+  /// not start, in a spell whose hit row is placed on the cast's target: `checker` refuses the
+  /// spell, since the ability that row frees would be planned without that cast.
   ProxyNamesSpellInDataBits01(
     spell4_id: Int,
     effect_id: Int,
@@ -423,7 +426,7 @@ pub fn describe(error error: AreaError) -> String {
       <> int.to_string(effect_id)
       <> " with no spell in dataBits00 and the Spell4 row "
       <> int.to_string(named_spell4_id)
-      <> " in dataBits01, which the load does not read, so the ability would apply nothing"
+      <> " in dataBits01, which it casts every tickTime and the plan does not start"
     AimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1600,7 +1603,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Proxy rows that name their spell in dataBits01",
-      missing: "a later ability with a spell that holds a Proxy with dataBits00 0 and a Spell4 id in dataBits01 beside a hit row placed on the cast's target is refused when its plan is built (Field Probes, whose Proxies 92875 and 131252 hold Spell4 77068 and 77085), since the Proxy reader reads dataBits00 only and the ability would be planned and apply nothing",
+      missing: "a Proxy with dataBits00 0 casts the Spell4 of its dataBits01 every tickTime (a guess from its rows), which the plan does not start; a later ability with a spell that holds one beside a hit row placed on the cast's target is refused when its plan is built (Field Probes would otherwise be planned and cast only its other rows), but a planned ability whose spells hold such a Proxy with no such hit row loses that timed cast, and the coverage measure lists those Proxy rows under effect type 26",
     ),
     gap.Entry(
       area: "Creature target and ground rows",
