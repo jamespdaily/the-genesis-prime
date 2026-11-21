@@ -115,7 +115,8 @@
 ////   every hit row otherwise (`SpellArea.inside_by_go`). This is a server guess: the client
 ////   compares a row's phase with a go only to launch client missiles from a telegraph position
 ////   (`opcode.0x7f4.phase`) and ties no row to the damage of a go; the row's time window is not
-////   read, since it would strike nobody at the gos of 38 planned spells that are not phased.
+////   read, since it would strike nobody at the later gos of a spell that is not phased, such as
+////   Discharge 58832 at its second and third pulse.
 
 import genesis_prime/game/area.{
   type Anchor, type Inside, type Placement, type Row, Box, Circle, Cone,
@@ -800,7 +801,8 @@ fn area_of(
   ))
   let phased = spell_plan.compares_telegraph_phase(row:, base:)
   let inside_by_go =
-    list.map(gos_of(spell:), fn(go) {
+    spell_plan.go_numbers(go_count: phase_count_of(spell:))
+    |> list.map(fn(go) {
       shapes_at_go(placed:, go:, phased:, drawn: fn(_) { True })
     })
   use anchor <- result.try(anchor_of(
@@ -823,7 +825,7 @@ fn area_of(
   // A phase that selects units at some n, every effect chosen being the widest, must
   // have an area row.
   let selects =
-    gos_of(spell:)
+    spell_plan.go_numbers(go_count: phase_count_of(spell:))
     |> list.any(fn(phase) {
       phase_of(spell: area, phase:, spent: None).selects_area
     })
@@ -969,7 +971,7 @@ pub fn hit_rows_of(
 
 /// Whether the row is a never-drawn twin (flag 0x40) that says who is hit in place of a
 /// drawn row.
-fn is_twin(row row: telegraph_damage.TelegraphDamage) -> Bool {
+pub fn is_twin(row row: telegraph_damage.TelegraphDamage) -> Bool {
   spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
 }
 
@@ -1620,14 +1622,6 @@ fn phase_count_of(spell spell: Spell) -> Int {
   int.max(1, spell_plan.go_count(spell:))
 }
 
-/// The numbers of the spell's gos, in order, from 0.
-fn gos_of(spell spell: Spell) -> List(Int) {
-  int.range(from: 0, to: phase_count_of(spell:), with: [], run: fn(found, go) {
-    [go, ..found]
-  })
-  |> list.reverse
-}
-
 /// What the spell's go of `phase` strikes when the cast spent `spent` points above
 /// the base cost, or `Error(Nil)` for a phase the spell has none of: only the damage
 /// effects and Proxies whose tag holds for n are kept, and the area flags follow from
@@ -1669,7 +1663,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player hit rows by go",
-      missing: "a player's cast strikes at a go with the hit rows its phase names for a cast whose phase the client compares (a Multiphase cast, or a channel whose spellChannelFlags has bit 1), and with every hit row for any other cast; the row's time window is not read (a creature's cast reads both), and a go whose phase no hit row names strikes nobody from the area, a guess the client's code does not settle: it compares a row's phase with a go only to launch client missiles, the window would strike nobody at the gos of 38 planned spells that are not phased, and the two rules strike the same units for every planned phased spell",
+      missing: "a player's cast strikes at a go with the hit rows its phase names for a cast whose phase the client compares (a Multiphase cast, or a channel whose spellChannelFlags has bit 1), and with every hit row for any other cast; the row's time window is not read (a creature's cast reads both), and a go whose phase no hit row names strikes nobody from the area, a guess the client's code does not settle: it compares a row's phase with a go only to launch client missiles, the window would strike nobody at the later gos of a spell that is not phased, such as Discharge 58832 at its second and third pulse, and the two rules strike the same units for every planned phased spell",
     ),
     gap.Entry(
       area: "Player held position",

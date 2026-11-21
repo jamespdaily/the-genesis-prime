@@ -378,12 +378,7 @@ pub fn every_phase_of_every_planned_spell_that_selects_the_area_has_hit_shapes_w
   let silent =
     dict.values(areas)
     |> list.flat_map(fn(found) {
-      int.range(
-        from: 0,
-        to: spell_area.phase_count(spell: found),
-        with: [],
-        run: fn(phases, phase) { [phase, ..phases] },
-      )
+      spell_plan.go_numbers(go_count: spell_area.phase_count(spell: found))
       |> list.filter_map(fn(phase) {
         let assert Ok(strike) =
           spell_area.phase(spell: found, phase:, spent: None)
@@ -432,10 +427,7 @@ pub fn the_window_the_client_draws_a_row_in_holds_the_go_its_phase_names_for_eve
                   phase_flags: hit.phase_flags,
                   phase: go,
                 )
-                && !spell_effect.has_flag(
-                  flags: hit.telegraph_damage_flags,
-                  bit: 0x40,
-                )
+                && !spell_area.is_twin(row: hit)
                 && !telegraph_window.drawn_at(row: hit, go_times_ms:, go:)
               })
               |> list.map(fn(go) { #(spell.spell4_id.value, hit.id, go) })

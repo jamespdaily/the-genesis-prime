@@ -4980,13 +4980,11 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
 /// are the level-1 three and the innate, then SpellLevel 614's base 26038 (Fissure) at bag
 /// index 4, written after the level and before the properties, on the whole server and again
 /// at the entry of the relog. Fissure is planned (its second spell's hit telegraphs 2996 to 2998
-/// are placed by flag 8, the position the cast holds), so the press of slot 4 is accepted. The
-/// Medic stands 8 m from the ring's other creature and faces it, so the creature is inside the
-/// first rectangle of the press pose; before the second and third go the Medic moves 40 m aside
-/// and turns half a turn, and the strike still lands where the press drew its rectangles. The
-/// creature chases the Medic, so it drifts aside: it is still inside the 6 wide rectangle of the
-/// second go and outside the 2 wide one of the third, which each go reads by its phase. The clock
-/// is driven and nothing waits on real time.
+/// are placed by flag 8, the position the cast holds), so the press of slot 4 is accepted: it is
+/// confirmed, not refused, and the child's start carries the press pose. The Medic stands 8 m
+/// from the ring's other creature and faces it. Which creatures each go strikes is the job of
+/// the strike tests and of the whole-server test of Fissure among still Beasts. The clock is
+/// driven and nothing waits on real time.
 pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_holds_it_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -5106,56 +5104,6 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
   assert confirmed.yaw == float32.to_bits(facing_the_creature)
     && child_started.yaw == float32.to_bits(facing_the_creature)
     as "opcode.0x7fd, opcode.0x7ff: the yaw the client turns the picture by is the facing the Medic had at the press (the client's own yaw is the caster's facing, a marked guess)"
-  let #(first_goes, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      fissure_goes(frames: first_go, in: list.append(first_go, frames)) != []
-    })
-  // The go leaves a unit whose hit the roll deflected out of its targets and a 0x7fb names it
-  // (`strike`'s deflect), so each go is read up to a pong, which follows the go and its 0x7fb.
-  let #(first_flushed, have) =
-    game_client.read_until_pong(game:, have:, number: 11)
-  assert fissure_struck(
-      frames: first_go,
-      in: list.flatten([first_go, first_goes, first_flushed]),
-    )
-    == [[other.unit_id]]
-    as "opcode.0x7f4, opcode.0x7fb: the child's first go strikes the creature 8 m ahead of the press pose, inside Fissure's first rectangle, by a hit or a deflect"
-  // The Medic turns its back and walks 40 m aside before the later gos (SpellPhase 5061 and
-  // 5062, 250 ms after the one before): the rectangles stay where the press drew them, and the
-  // creature that chases the Medic drifts aside by each go.
-  game_client.move_to(
-    game:,
-    clock: 300,
-    x: press_at.0,
-    y: press_at.1,
-    z: press_at.2 +. 40.0,
-  )
-  game_client.face(game:, yaw: facing_the_creature +. 3.1415927, clock: 310)
-  let #(_, have) = game_client.read_until_pong(game:, have:, number: 9)
-  // One step for each go, so each go is struck at its own time on the driven clock: the ring's
-  // creature chases the Medic once hit, and a strike round that ran after both steps would find
-  // it somewhere else.
-  driven_time.advance(time:, ms: 250)
-  let #(second, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      fissure_goes(frames: first_go, in: frames) != []
-    })
-  let #(second_flushed, have) =
-    game_client.read_until_pong(game:, have:, number: 12)
-  driven_time.advance(time:, ms: 250)
-  let #(third, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      fissure_goes(frames: first_go, in: frames) != []
-    })
-  let #(third_flushed, have) =
-    game_client.read_until_pong(game:, have:, number: 13)
-  let later_goes =
-    list.append(
-      fissure_struck(frames: first_go, in: list.append(second, second_flushed)),
-      fissure_struck(frames: first_go, in: list.append(third, third_flushed)),
-    )
-  assert later_goes == [[other.unit_id], []]
-    as "Spell4Effects 94283 and 94284: the second and third phase, one go each: the second go strikes the creature, by a hit or a deflect, inside the 6 wide rectangle (TelegraphDamage 2997) where the press drew it and not where the Medic stands; the third strikes nobody: the creature has drifted out of the 2 wide rectangle (TelegraphDamage 2996, 1 m either side of the line, plus its hit radius 3)"
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
@@ -5187,36 +5135,6 @@ fn fissure_goes(
           False -> Error(Nil)
         }
       })
-    [] -> []
-  }
-}
-
-/// The units each go of the child 41844 of Fissure strikes, in order, read in `in`: the targets
-/// the go names, and for a go that names none the units of the next 0x7fb of the cast, which
-/// are the ones whose hit the roll deflected (`hit`: the deflect roll is drawn from the
-/// caster's seed, which `fixed_seed` derives from the test's name, so a go that the roll
-/// deflects under one seed lands under another and each go may be deflected).
-fn fissure_struck(
-  frames frames: List(Frame),
-  in read: List(Frame),
-) -> List(List(Int)) {
-  let events = game_client.casts_in(frames:)
-  case game_client.starts_of(events:, spell4_id: 41_844) {
-    [#(cast_id, _), ..] -> {
-      let misses =
-        list.filter_map(game_client.missed_in(frames: read), fn(missed) {
-          case missed.0 == cast_id {
-            True -> Ok(missed.1)
-            False -> Error(Nil)
-          }
-        })
-      list.map_fold(fissure_goes(frames:, in: read), misses, fn(left, go) {
-        case go, left {
-          [], [missed, ..rest] -> #(rest, missed)
-          _, _ -> #(left, go)
-        }
-      }).1
-    }
     [] -> []
   }
 }

@@ -7143,6 +7143,13 @@ pub fn go_count(spell spell: Spell) -> Int {
   list.length(go_times_ms(spell:))
 }
 
+/// The numbers of a cast's gos, in order from 0, for a spell of `go_count` gos (`go_count`);
+/// none for a count of 0.
+pub fn go_numbers(go_count go_count: Int) -> List(Int) {
+  list.repeat(Nil, go_count)
+  |> list.index_map(fn(_, go) { go })
+}
+
 /// The times of a channel's pulses: (channelMaxTime - channelInitialDelay +
 /// channelPulseTime) / channelPulseTime of them, in whole numbers
 /// (`0x14053d1f0`), at the initial delay plus each pulse time (the times are the

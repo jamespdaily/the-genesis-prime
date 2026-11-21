@@ -1194,3 +1194,13 @@ pub fn the_spells_a_proc_casts_are_started_from_the_proc_test() -> Nil {
   assert list.contains(started, #(passive.spell4_id.value, spell_plan.Pressed))
     as "the passive's own spell is the root, which nothing started but the plan"
 }
+
+pub fn the_gos_of_a_cast_are_numbered_from_0_in_order_and_a_count_of_0_has_none_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert [0, 1, 2, 3, 4] == spell_plan.go_numbers(go_count: 5)
+    as "a cast of five gos numbers them 0 to 4, the bit each phaseFlags names (Spell4Effects.phaseFlags: bit n is go n)"
+  assert [0] == spell_plan.go_numbers(go_count: 1)
+    as "a cast of one go has go 0"
+  assert [] == spell_plan.go_numbers(go_count: 0)
+    as "a ChargeRelease ability held until its release has no go (spell_plan.go_times_ms)"
+}
