@@ -8,10 +8,15 @@
 # when it ends. (Two runs at once stay correct, because each rechecks main after its CI,
 # but each merge of one makes the other's CI stale and wastes a run.)
 #
-# It works in a temporary worktree of its own, made from origin/<the pull request's branch>
-# and removed when the script ends, however it ends: the caller's checkout, its branch and
-# its files are never touched, and a local copy of the branch is left behind the pushed
-# one. Then, until it merges or stops:
+# It works in one merge worktree, $HOME/.genesis-prime/merge-worktree (or
+# MERGE_WHEN_GREEN_WORKTREE): made on first use, reused by every later run, and reset to
+# origin/<the pull request's branch> at the start of each run, so it never holds uncommitted
+# work (untracked files are removed; ignored ones stay) and its build/ stays warm. A fresh
+# worktree builds cold, and ./check fast (budget 29 s) is stopped as hung at 3 times that.
+# One run at a time uses it: a second run stops at once, naming the first's pid. A run
+# changes no branch, file or worktree of the caller's, except that the fetch updates
+# origin/main and origin/<branch> in the caller's repository and the merge worktree is
+# registered in its .git. Then, until it merges or stops:
 #
 #   1. origin/main is fetched. A branch that holds origin/main has had CI on exactly that
 #      combination (CI tests the head merged with main), so nothing is merged in; otherwise
@@ -20,16 +25,29 @@
 #   2. dev/pr_wait.sh P waits for the head's checks.
 #   3. origin/main is fetched again. If the branch holds it, `gh pr merge P --merge
 #      --match-head-commit <head>` merges the pull request; if main moved while CI ran,
-#      back to 1.
+#      back to 1, at most 3 merges of main in one run.
 #
-# It stops, with a line on stderr and exit 1, and leaves the branch as it was when:
+# It stops, with a line on stderr and exit 1, in one of two states.
+#
+# Nothing of this run is pushed (the branch is as it was) when:
+#   - the pull request is not open on main, or origin/<branch> is not its head;
 #   - the merge of origin/main conflicts (the files are named; the merge is aborted);
-#   - `./check fast` fails after the merge of main (nothing is pushed);
-#   - a check fails (the failing jobs are named) or none appears;
-#   - a GitHub or git call fails, the pull request is not open on main, origin/<branch>
-#     is not the pull request's head, or the push is refused (the branch moved).
-# A pull request merged by this script is read by the progress hook
-# (dev/hooks/progress_lines.py) as the merge of P, so its CI and merge lines are posted.
+#   - `./check fast` fails after the merge of main;
+#   - the push is refused (the branch moved);
+#   - another run holds the merge worktree, the worktree path holds another repository's
+#     worktree, or a git call fails before the push.
+#
+# The merge of origin/main is already pushed, and stays on the branch, when, after a push:
+#   - a check fails (the failing jobs are named) or none appears, so a failure of CI on the
+#     merge leaves the pull request's branch ahead of the caller's local copy;
+#   - a GitHub call fails, `gh pr merge` is refused, or main moved 3 times in a row.
+# After such a stop the caller pulls the branch before working on it. A stop at the first
+# wait, with nothing merged in, has pushed nothing.
+#
+# The merge itself is pinned to the head that CI passed on; main is not pinned, so a push to
+# main between the last fetch and `gh pr merge` can still land first. A pull request merged
+# by this script is read by the progress hook (dev/hooks/progress_lines.py) as the merge of
+# P, so its CI and merge lines are posted.
 #
 # MERGE_WHEN_GREEN_POLL_SECONDS (default 5): the pause between asks while GitHub catches up
 # with a push.
@@ -45,6 +63,10 @@ number=$1
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repository=$(cd "$here/.." && pwd)
 poll_seconds=${MERGE_WHEN_GREEN_POLL_SECONDS:-5}
+work=${MERGE_WHEN_GREEN_WORKTREE:-$HOME/.genesis-prime/merge-worktree}
+lock="$work.lock"
+max_merges=3
+errors=
 
 view=$(gh pr view "$number" --json state,baseRefName,headRefName,headRefOid \
   --jq '[.state, .baseRefName, .headRefName, .headRefOid] | join(" ")') \
@@ -53,12 +75,24 @@ read -r state base branch head <<<"$view"
 [[ $state == OPEN && $base == main ]] \
   || die "pull request $number is $state on $base, not open on main"
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/merge-when-green.XXXXXX")
-cleanup() {
-  git -C "$repository" worktree remove --force "$work" >/dev/null 2>&1 || true
-  rm -rf "$work" "$work.errors"
+# take_lock: makes the lock (a symlink to this run's pid, so its content appears with it); a
+# lock whose run is gone is taken over.
+take_lock() {
+  local holder
+  mkdir -p "$(dirname "$work")"
+  until ln -s "$$" "$lock" 2>/dev/null; do
+    holder=$(readlink "$lock" || true)
+    if [[ -n $holder ]] && kill -0 "$holder" 2>/dev/null; then
+      die "another run (pid $holder) is using $work; run one at a time"
+    fi
+    rm -f "$lock"
+  done
 }
-trap cleanup EXIT
+
+cleanup() {
+  pkill -P $$ 2>/dev/null || true
+  rm -f "$lock" ${errors:+"$errors"}
+}
 
 fetch() {
   git -C "$repository" fetch -q origin main "$branch" || die "fetch of origin main and $branch failed"
@@ -100,11 +134,13 @@ merge_main_in() {
 
 # wait_for_ci: waits for the head's checks; stops unless they all passed.
 wait_for_ci() {
-  local status=0 errors="$work.errors" failing
+  local status=0 failing
+  errors=$(mktemp "${TMPDIR:-/tmp}/merge-when-green.XXXXXX")
   "$here/pr_wait.sh" "$number" 2>"$errors" || status=$?
   cat "$errors" >&2
   failing=$(sed -n 's/^pr_wait: failing jobs: //p' "$errors")
   rm -f "$errors"
+  errors=
   case $status in
     0) ;;
     1) die "CI failed on pull request $number: ${failing:-no check passed}" ;;
@@ -112,15 +148,41 @@ wait_for_ci() {
   esac
 }
 
+# prepare_worktree: makes the merge worktree when it is absent, then resets it to
+# origin/<branch>. An existing folder must be a worktree of this repository.
+prepare_worktree() {
+  local mine theirs=
+  if [[ -e $work/.git ]]; then
+    mine=$(git -C "$repository" rev-parse --path-format=absolute --git-common-dir) \
+      || die "git rev-parse failed in $repository"
+    theirs=$(git -C "$work" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || theirs=
+    [[ $mine == "$theirs" ]] \
+      || die "$work is not a worktree of $repository; remove it and rerun"
+  else
+    git -C "$repository" worktree prune
+    git -C "$repository" worktree add --detach "$work" "origin/$branch" \
+      || die "no worktree of origin/$branch at $work"
+  fi
+  git -C "$work" reset -q --hard "origin/$branch" || die "reset of $work to origin/$branch failed"
+  git -C "$work" clean -fdq || die "clean of $work failed"
+}
+
+take_lock
+trap cleanup EXIT
 fetch
-git -C "$repository" worktree add --detach "$work" "origin/$branch" \
-  || die "no worktree of origin/$branch"
+prepare_worktree
 [[ $(git -C "$work" rev-parse HEAD) == "$head" ]] \
   || die "origin/$branch is not the head of pull request $number; fetch again and rerun"
 
 if holds_main; then up_to_date=true; else up_to_date=false; fi
+merges=0
 while true; do
-  $up_to_date || merge_main_in
+  if ! $up_to_date; then
+    ((merges < max_merges)) \
+      || die "origin/main moved again after $max_merges rounds of merge and CI; the merge of main is pushed to $branch, so pull it; rerun to go on"
+    merges=$((merges + 1))
+    merge_main_in
+  fi
   wait_for_ci
   fetch
   holds_main && break
