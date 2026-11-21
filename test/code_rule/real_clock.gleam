@@ -672,10 +672,6 @@ pub fn still_on_the_real_clock() -> List(Exception) {
       "starts the tree on the operating system's script and real service time (real_settings), with a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s",
     ),
     Exception(
-      "test/game_wire_test.gleam",
-      "calls login_support.start_real and start_real_with, which start the tree on the real clock",
-    ),
-    Exception(
       "test/login_wire_test.gleam",
       "calls login_support.start_real_with_jim, which starts the tree on the real clock",
     ),

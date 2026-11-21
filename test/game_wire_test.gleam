@@ -1523,8 +1523,9 @@ pub fn credits_survive_a_relog_test() -> Nil {
         z: 3.5 -. { 3.0 +. 1.2 +. selected.combat.hit_radius },
       ),
     )
+  let time = driven_time.new()
   let started =
-    login_support.start_real_with(change: fn(settings) {
+    login_support.start_with(time:, change: fn(settings) {
       let game = settings.game
       server.Settings(
         ..settings,
@@ -1644,8 +1645,9 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
         z: 3.5 -. { 3.0 +. 1.2 +. selected.combat.hit_radius },
       ),
     )
+  let time = driven_time.new()
   let started =
-    login_support.start_real_with(change: fn(settings) {
+    login_support.start_with(time:, change: fn(settings) {
       let game = settings.game
       server.Settings(
         ..settings,
@@ -1747,7 +1749,8 @@ pub fn a_move_into_a_marker_sends_its_objective_progress_test() -> Nil {
   // vertical limit. The client sends nothing for a place; its movement update (0x637) is
   // all the server sees of the arrival (opcode.0x637), and the server tells the client the
   // objective's progress (opcode.0x361: the quest, the objective, the value).
-  let started = start_with_creatures()
+  let time = driven_time.new()
+  let started = start_with_creatures(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
@@ -2563,9 +2566,11 @@ fn new_player_at_level(
   #(game, character)
 }
 
-fn two_players_enter_one_map() -> TwoEntered {
+/// Two players enter one map on a server of the driven clock `time`: the first a
+/// Medic, the second a Medic, both of level 1.
+fn two_players_enter_one_map(time time: driven_time.Time) -> TwoEntered {
   two_players_enter(
-    started: login_support.start_real(),
+    started: login_support.start(time:),
     first_class: 4,
     level: 1,
   )
@@ -2678,8 +2683,9 @@ fn two_players_enter_after(
 
 pub fn a_player_entering_is_written_its_whole_burst_before_the_0x262_of_a_player_in_sight_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_burst:, second_burst:, ..) as entered =
-    two_players_enter_one_map()
+    two_players_enter_one_map(time:)
   assert list.map(first_burst, fn(frame) { frame.message_id })
     == game_client.world_entry_ids
     as "the first player enters an empty map: its burst only"
@@ -2702,8 +2708,9 @@ pub fn a_player_entering_is_written_its_whole_burst_before_the_0x262_of_a_player
 
 pub fn a_players_press_is_answered_0x7fd_go_and_finish_and_a_player_in_sight_reads_the_same_cast_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
-    two_players_enter_one_map()
+    two_players_enter_one_map(time:)
   game_client.press_ability(
     game: first,
     client_cast_id: 1,
@@ -3527,6 +3534,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
 
 pub fn a_player_in_sight_is_sent_the_worn_visuals_the_player_wears_itself_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(
     started:,
     first:,
@@ -3535,7 +3543,7 @@ pub fn a_player_in_sight_is_sent_the_worn_visuals_the_player_wears_itself_test()
     second_burst:,
     seen_second:,
     ..,
-  ) = two_players_enter_one_map()
+  ) = two_players_enter_one_map(time:)
   let worn = novice_tables.worn_visuals(class_id: 4, faction_id: 166)
   let decoded = fn(frame: Frame) {
     let assert Ok(player) = unit_create_player.decode(frame.body)
@@ -3579,6 +3587,7 @@ fn moved_to(frame: Frame, unit_id: Int) -> #(Float, Float, Float) {
 // the first's connection writes a move that lands after it as nothing.
 pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let TwoEntered(
     started:,
     first:,
@@ -3588,7 +3597,7 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
     first_have:,
     second_have:,
     ..,
-  ) = two_players_enter_one_map()
+  ) = two_players_enter_one_map(time:)
   assert unit_of(seen_second) == 2
     as "the second player's unit is created for the first, by the second's own connection"
   // The second player moves five times at once; only the first sees it, each
@@ -3775,9 +3784,11 @@ type Seat {
 /// loads): the first three stand in zone 6009, the fourth in zone 648. The
 /// zones are the planted WorldZone rows, whose top zones are 4961 and 35. Every
 /// seat has read the other three players' units, so no player's entry is still
-/// on its way to another seat.
-fn four_players() -> #(login_support.Started, List(Seat)) {
-  let started = login_support.start_real()
+/// on its way to another seat. The server runs on the driven clock `time`.
+fn four_players(
+  time time: driven_time.Time,
+) -> #(login_support.Started, List(Seat)) {
+  let started = login_support.start(time:)
   let seats =
     list.map(
       [#(1, "Zed Qu"), #(2, "Ann Qu"), #(3, "Bob Qu"), #(4, "Cat Qu")],
@@ -3833,7 +3844,8 @@ fn chat_lines(frames: List(Frame)) -> List(game_client.HeardLine) {
 
 pub fn say_yell_emote_whisper_and_zone_reach_the_right_players_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(started, seats) = four_players()
+  let time = driven_time.new()
+  let #(started, seats) = four_players(time:)
   let speaker = seat_at(seats, 0)
   let neighbour = seat_at(seats, 1)
   let far = seat_at(seats, 2)
@@ -3996,7 +4008,8 @@ fn all_ids(frames: List(Frame)) -> List(Int) {
 
 pub fn no_chat_flow_writes_player_info_and_0x597_stays_unhandled_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(started, seats) = four_players()
+  let time = driven_time.new()
+  let #(started, seats) = four_players(time:)
   let speaker = reported(seat: seat_at(seats, 0), zone: 6009, number: 1)
   let neighbour = reported(seat: seat_at(seats, 1), zone: 6009, number: 1)
   let speaker = written_to(seat: speaker, number: 2).1
@@ -4030,7 +4043,8 @@ pub fn no_chat_flow_writes_player_info_and_0x597_stays_unhandled_test() -> Nil {
 
 pub fn two_players_whispering_each_other_at_once_both_get_their_answer_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(started, seats) = four_players()
+  let time = driven_time.new()
+  let #(started, seats) = four_players(time:)
   let first = written_to(seat: seat_at(seats, 0), number: 1).1
   let second = written_to(seat: seat_at(seats, 1), number: 1).1
   game_client.whisper(
@@ -4066,7 +4080,8 @@ pub fn two_players_whispering_each_other_at_once_both_get_their_answer_test() ->
 
 pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_again_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(started, seats) = four_players()
+  let time = driven_time.new()
+  let #(started, seats) = four_players(time:)
   let speaker = written_to(seat: seat_at(seats, 0), number: 1).1
   let target = written_to(seat: seat_at(seats, 1), number: 1).1
   game_client.send_world(game: target.game, message_id: 0x00BF, body: <<1>>)
@@ -4129,7 +4144,8 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
 pub fn a_speaker_that_ends_before_the_reply_leaves_the_target_with_its_line_and_no_error_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("serial")
-  let #(started, seats) = four_players()
+  let time = driven_time.new()
+  let #(started, seats) = four_players(time:)
   let speaker = written_to(seat: seat_at(seats, 0), number: 1).1
   let target = written_to(seat: seat_at(seats, 1), number: 1).1
   let lines = process.new_subject()
@@ -4167,7 +4183,8 @@ pub fn a_speaker_that_ends_before_the_reply_leaves_the_target_with_its_line_and_
 
 pub fn a_member_whose_connection_crashes_leaves_its_groups_and_later_lines_reach_the_others_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(started, seats) = four_players()
+  let time = driven_time.new()
+  let #(started, seats) = four_players(time:)
   let speaker = reported(seat: seat_at(seats, 0), zone: 6009, number: 1)
   let doomed = reported(seat: seat_at(seats, 1), zone: 6009, number: 1)
   assert doomed.zone_channel == speaker.zone_channel
@@ -4246,7 +4263,8 @@ fn collect_frames(
 
 pub fn the_bot_numbers_its_chat_message_ids_from_1_and_each_is_answered_test() -> Nil {
   use <- owned_test.run(120_000)
-  let #(started, seats) = four_players()
+  let time = driven_time.new()
+  let #(started, seats) = four_players(time:)
   let speaker = written_to(seat: seat_at(seats, 0), number: 1).1
   let chatter = game_client.chatter(game: speaker.game)
   let #(chatter, first) = game_client.say_next(chatter:, text: "one")
@@ -4296,7 +4314,8 @@ fn events_until(
 
 pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lines_and_the_player_sees_the_bot_leave_test() -> Nil {
   use <- owned_test.run(120_000)
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
@@ -4388,7 +4407,8 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
 
 pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_test() -> Nil {
   use <- owned_test.run(120_000)
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
@@ -4489,7 +4509,8 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
   // The VM's signal handling is the node's: the bot's handler replaces OTP's
   // while it sits, so no other test may be running.
   use <- unitest.tag("serial")
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let #(zed, zed_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
   send_play(game: zed, character_id: zed_character)
@@ -4535,25 +4556,26 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
 /// The server's tree with the world standing the creatures of the spawn table
 /// the test's database holds: the 27 Virtual Defense Daguns the migrations seed
 /// and the 27 Virtual Battle Beasts of the planted world-database file, loaded
-/// through the content load into a key of the test's own.
-fn start_with_creatures() -> login_support.Started {
-  start_with_world_data(folder: content_support.fixture_folder)
+/// through the content load into a key of the test's own, on the driven clock
+/// `time`.
+fn start_with_creatures(time time: driven_time.Time) -> login_support.Started {
+  start_with_world_data(folder: content_support.fixture_folder, time:)
 }
 
 /// The server's tree with the world standing the spawns of the planted world-database
 /// file in the folder and the migrations' seeded ones, loaded through the content load
 /// into a key of the test's own, and the game connections holding the visibility
 /// prerequisites and the reused unit objectives the load found (as the server's own
-/// start passes them).
-fn start_with_world_data(folder folder: String) -> login_support.Started {
-  login_support.start_real_with(
-    change: with_world_data(folder:, adjusted: fn(settings) { settings }),
-  )
+/// start passes them), on the driven clock `time`.
+fn start_with_world_data(
+  folder folder: String,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  start_with_world_data_on(folder:, time:, adjusted: fn(settings) { settings })
 }
 
-/// As `start_with_world_data`, on the driven clock `time`, the server's settings
-/// then passed through `adjusted`: a test whose casts run on timers moves `time` by
-/// hand.
+/// As `start_with_world_data`, the server's settings then passed through
+/// `adjusted`: a test whose casts run on timers moves `time` by hand.
 fn start_with_world_data_on(
   folder folder: String,
   time time: driven_time.Time,
@@ -4616,7 +4638,8 @@ fn with_world_data(
 
 pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_and_a_second_bot_sees_the_same_unit_ids_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = start_with_creatures()
+  let time = driven_time.new()
+  let started = start_with_creatures(time:)
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(first, first_character) =
     new_player(started:, number: 1, character_name: "Zed Qu")
@@ -5740,8 +5763,9 @@ fn with_the_sim_turrets_and_mines(ids ids: List(Int)) -> List(Int) {
 
 pub fn entering_world_3460_writes_no_start_arrow_and_mount_displays_only_to_an_exile_test() -> Nil {
   use <- owned_test.run(60_000)
+  let time = driven_time.new()
   let started =
-    start_with_world_data(folder: "test/fixture/world_data_tutorial")
+    start_with_world_data(folder: "test/fixture/world_data_tutorial", time:)
   let at_the_arrows = #(71.4148, -855.3006, -479.419)
   let at_the_mounts = #(1381.03, -495.32764, 213.793)
   let at_the_arrows_ids = with_the_sim_turrets_and_mines(ids: [73_619])
@@ -9625,9 +9649,11 @@ pub fn a_level_ups_0x07a5_is_answered_with_the_level_up_cast_and_a_player_in_sig
 
 // ---- a development command's items ----
 
-/// The tree started with the development commands on.
-fn started_with_dev_commands() -> login_support.Started {
-  login_support.start_real_with(change: fn(settings) {
+/// The tree started with the development commands on, on the driven clock `time`.
+fn started_with_dev_commands(
+  time time: driven_time.Time,
+) -> login_support.Started {
+  login_support.start_with(time:, change: fn(settings) {
     let game = settings.game
     server.Settings(
       ..settings,
@@ -9647,7 +9673,8 @@ pub fn an_item_command_puts_the_item_in_the_bag_the_client_reads_test() -> Nil {
   // The line `!item 90021` on Say is a purchase of cost 0 on the whole server. Item2 90021
   // has maxCharges 5. The client reads the 0x111 of the stack with the reason 4 (Cheat),
   // which raises its loot-channel notice (`opcode.0x111.reason_cheat`), in the first bag slot.
-  let started = started_with_dev_commands()
+  let time = driven_time.new()
+  let started = started_with_dev_commands(time:)
   let #(game, character) =
     new_player_at_level(
       started:,
@@ -9704,7 +9731,8 @@ fn bar_shortcuts(frames frames: List(Frame)) -> List(#(Int, Int)) {
 /// answer is 0x019D then 0x00B2 (`opcode.0xb2`).
 pub fn a_bar_saved_with_the_clients_0xb1_is_back_after_a_relog_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let #(game, character) =
     new_player_at_level(
       started:,
