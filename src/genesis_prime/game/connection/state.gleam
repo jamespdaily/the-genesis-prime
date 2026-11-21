@@ -750,14 +750,9 @@ pub fn with_entered(
   session session: Session,
   change change: fn(world_entry.Entered) -> world_entry.Entered,
 ) -> Session {
-  let status = case session.status {
-    InWorld(holder:, entered:) -> InWorld(holder:, entered: change(entered))
-    WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
-      WaitingToClaim(
-        holder:,
-        resume: ResumeWorld(entered: change(entered)),
-        retries:,
-      )
+  case session.status {
+    InWorld(..) | WaitingToClaim(resume: ResumeWorld(..), ..) ->
+      with_entered_in_any_status(session:, change:)
     WaitingToClaim(resume: ResumeSelect, ..)
     | ClaimingSession(..)
     | InCharacterSelect(..)
@@ -772,9 +767,8 @@ pub fn with_entered(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey(..) -> session.status
+    | TakingSessionKey(..) -> session
   }
-  Session(..session, status:)
 }
 
 /// The session with the player it holds in any status that holds one, an ask's included,
