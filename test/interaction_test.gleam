@@ -127,6 +127,7 @@ fn walker_appears(
       hit_radius: walker.combat.hit_radius,
       attackable: walker.combat.attackable,
       hostile_to:,
+      fights: True,
     ),
   ))
 }

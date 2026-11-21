@@ -2149,6 +2149,7 @@ fn fighter_of(state state: State) -> Fighter {
     hit_radius: state.body.combat.hit_radius,
     specials: state.body.combat.specials,
     turn_held: turn_held(state:),
+    fights: state.body.combat.fights,
   )
 }
 
@@ -2371,6 +2372,7 @@ fn appeared(
       hit_radius: state.body.combat.hit_radius,
       attackable: state.body.combat.attackable,
       hostile_to: state.body.combat.hostile_to,
+      fights: state.body.combat.fights,
     ),
   )
 }

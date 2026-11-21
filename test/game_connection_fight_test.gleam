@@ -461,6 +461,26 @@ pub fn the_clients_picture_of_a_creature_follows_its_news_and_only_a_creature_it
     as "a 0x88c marks the creature dead in the picture: a dead creature is never selected (Spell4ValidTargets.targetBitmask)"
 }
 
+pub fn an_area_press_strikes_a_shown_creature_that_fights_and_passes_over_one_that_never_fights_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The same Beast 3 m ahead, shown as unit 40 that fights and unit 41 that does not
+  // (`creature_life.Combat.fights`, False for a creature drawn lying dead): Paralytic Surge's
+  // area holds both, and only the first is struck, damaged, killed and credited.
+  let #(state, _) =
+    game_connection_support.feed(
+      game_connection_support.medic_in_world(),
+      game_connection_support.beast_appears(unit_id: 40),
+    )
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.beast_appears_not_fighting(unit_id: 41),
+    )
+  let #(_, struck) = press_and_close(state:, client_cast_id: 1)
+  assert struck == [40]
+    as "the creature that never fights is no candidate of the area"
+}
+
 pub fn a_creatures_health_or_death_is_not_written_for_a_unit_the_client_does_not_show_test() -> Nil {
   use <- owned_test.run(10_000)
   let state = game_connection_support.medic_in_world()
@@ -1549,6 +1569,67 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
   assert end == spawn_bits as "the path home ends at the Beast's spawn"
   assert defaults == path_defaults()
     as "kinds 10, 13, 21 and 26 with bit 1: the walk home is animated, grounded and faced by the client's own defaults"
+}
+
+pub fn a_player_beside_the_crash_site_bodies_is_sent_no_target_combat_state_or_cast_from_them_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The three Dead Crash Survivors of Crash Site (spawns 18388, 18605 and 18619, Creature2
+  // 13277, 50716 and 50717: uiFlags 0x1AF, bit 8 of `Creature2.uiFlags.bit8`) are Hostile to a
+  // Dominion player and, in the recorded sitting, aimed 0x908, 0x89a and 0x7ff at it from where
+  // they lay. Each is started as a creature's process starts it, shown to the Medic's connection
+  // and then told what the map would tell a creature whose ring a player entered. The control is
+  // the Beast, which the same `Approached` aggroes.
+  let opcodes = fn(frames: List(Frame)) {
+    list.map(frames, fn(frame) { frame.message_id })
+  }
+  let fight_opcodes = [0x0908, 0x089A, 0x07FF]
+  let bodies = spawn_support.started_of(spawn_support.crash_site_bodies())
+  let control = spawn_support.beast_at(number: 1, place: beast_spawn_place())
+  let scene =
+    list.append(list.map(bodies, fn(body) { #(body, False) }), [
+      #(control, True),
+    ])
+  list.each(scene, fn(entry) {
+    let #(spawn, fights) = entry
+    let #(beast, started) = a_beast_of(spawn)
+    let #(medic, shown, _) =
+      medic_takes(
+        game_connection_support.medic_in_world(),
+        to_the_medic(started),
+      )
+    assert game_connection_support.decoded(
+        shown,
+        0x0262,
+        unit_create_creature.decode,
+      )
+      |> list.map(fn(created) { created.creature_id })
+      == [spawn.creature_id.value]
+      as "the creature is shown to the player whether it fights or not"
+    let #(_, aggro) =
+      creature.step(
+        beast,
+        support.input_at_ms(
+          ms: 1000,
+          event: OwnEvent(
+            step.Told(creature.Approached(
+              by: ConnectionId(1),
+              unit_id: medic_unit,
+              place: medic_place(0.0),
+              seq: 1,
+              stay: game_connection_support.own_stay(),
+              hit_radius: place_support.player_hit_radius,
+            )),
+          ),
+        ),
+      )
+    let #(_, frames, _) = medic_takes(medic, to_the_medic(aggro))
+    let sent_fight_frames =
+      list.filter(opcodes(frames), fn(id) { list.contains(fight_opcodes, id) })
+    assert { sent_fight_frames != [] } == fights
+      as "the player is sent the target and the combat flag of a creature that fights, and none of a body"
+    assert { support.service_timers_started(aggro) != [] } == fights
+      as "no attack tick of a body is left to run, so no later step of the clock sends a cast"
+  })
 }
 
 /// The Medic's 0x638 commands for the Beast (unit 7), one list per frame, in order.

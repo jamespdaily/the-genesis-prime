@@ -73,6 +73,7 @@ fn creature(
     unit_states: [],
     face: option.None,
     faced_yaw: option.None,
+    fights: True,
   )
 }
 
@@ -132,6 +133,28 @@ pub fn a_creature_no_player_faction_may_attack_is_never_a_strike_candidate_test(
     assert shown.candidates(picture:, faction:, caster_unit_id: 7, now_ms: 0)
       == []
       as "the Friendly creature is no candidate for either faction"
+  })
+}
+
+pub fn a_creature_that_never_fights_is_no_candidate_of_an_area_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A creature drawn as a lying body (`Creature2.uiFlags.bit8`) takes no part in combat, so an
+  // area passes over it though its faction is Hostile and attackable; unit 1, the same creature
+  // that fights, is the control.
+  let assert ShownCreature(..) as standing =
+    creature(x: 3.0, attackable: both, alive: True)
+  let picture =
+    dict.from_list([
+      #(1, standing),
+      #(6, ShownCreature(..standing, fights: False)),
+    ])
+  list.each([Exile, Dominion], fn(faction) {
+    assert list.map(
+        shown.candidates(picture:, faction:, caster_unit_id: 7, now_ms: 0),
+        fn(candidate) { candidate.unit_id },
+      )
+      == [1]
+      as "only the creature that fights is a candidate, for either faction"
   })
 }
 
@@ -244,6 +267,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     unit_states: [],
     face: option.None,
     faced_yaw: option.None,
+    fights: True,
   )
 }
 

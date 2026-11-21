@@ -44,6 +44,7 @@ import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option
 import gleam/set
@@ -260,6 +261,7 @@ pub fn beast_combat() -> creature_life.Combat {
     alternates: [],
     specials: [],
     interrupt_armor: creature_life.NoArmor,
+    fights: True,
   )
 }
 
@@ -684,6 +686,87 @@ pub fn beast_row(number number: Int) -> Row {
     health: option.None,
     level: option.None,
   )
+}
+
+/// The three Dead Crash Survivor rows of Crash Site, as the world database holds them
+/// (spawns 18388, 18605 and 18619 of Creature2 13277, 50716 and 50717, faction 171, each
+/// with its own display and outfit, uiFlags 0x1AF), in World 3460 in place of their own
+/// world 426, whose rows no test of a map needs.
+pub fn crash_site_bodies() -> List(Row) {
+  let body = fn(number, creature_id, x, y, z, display_info_id, outfit_info_id) {
+    Row(
+      ..beast_row(number:),
+      creature_id:,
+      x:,
+      y:,
+      z:,
+      display_info_id:,
+      outfit_info_id:,
+      faction_id: 171,
+      base_faction_id: 171,
+    )
+  }
+  [
+    body(18_388, 13_277, 3945.564, -708.157, -5398.904, 27_523, 7800),
+    body(18_605, 50_716, 3953.547, -710.021, -5397.297, 25_808, 7804),
+    body(18_619, 50_717, 3963.479, -711.057, -5395.523, 25_767, 7805),
+  ]
+}
+
+/// The row of Creature2 `creature_id` standing at the origin of World 3460, with the first
+/// display and the first outfit of its groups, as a summon takes them.
+pub fn creature_row_of(
+  tables tables: table_store.Tables,
+  number number: Int,
+  creature_id creature_id: Int,
+) -> Row {
+  let assert Ok(creature) = creature2.get(tables, Creature2Id(creature_id))
+    as "the creature has a Creature2 row"
+  spawn.creature_row(
+    looks: spawn.looks(tables:),
+    factions: creature_faction.none(),
+    id: SpawnId(number),
+    creature:,
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: warfare_woods,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    ),
+    level: option.None,
+  )
+}
+
+/// The spawns `spawn.select` starts of the rows over the client's committed rows, in
+/// World 3460, by spawn number.
+pub fn started_of(rows rows: List(Row)) -> List(Spawn) {
+  started_over(tables: character_tables.content_tables(), rows:)
+}
+
+/// The same over these tables, which already hold the content tables
+/// (`character_tables.content_over`): a test's edit of the client's rows.
+pub fn started_over(
+  tables tables: table_store.Tables,
+  rows rows: List(Row),
+) -> List(Spawn) {
+  let selection =
+    spawn.select(
+      rows:,
+      tables:,
+      formulas: rating_support.formulas(),
+      kinds: kinds(),
+      vendors: vendor.none(),
+      factions: creature_faction.none(),
+    )
+  let assert Ok(world) = dict.get(selection.worlds, 3460)
+    as "the rows are in World 3460"
+  dict.values(world.by_id)
+  |> list.sort(fn(first, second) {
+    let SpawnId(first_number) = first.id
+    let SpawnId(second_number) = second.id
+    int.compare(first_number, second_number)
+  })
 }
 
 /// A key whose terms hold these spawns for World 3460 and no spawn for every
