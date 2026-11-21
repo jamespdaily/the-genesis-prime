@@ -2,6 +2,7 @@
 //// with it. A test's time limits only warn. Every test body runs inside `run`.
 
 import envoy
+import fixed_seed
 import gleam/bool
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
@@ -71,6 +72,10 @@ const build_limit_ms = 120_000
 /// pay for them. A body that crashes fails for that, and its terms are erased
 /// too.
 ///
+/// The body is the test body that `fixed_seed` names its connections' seeds for: a
+/// body that crashes fails with the seed of each connection its listeners accepted,
+/// the salt and the command that repeats the run, below the reason.
+///
 /// While `GENESIS_TEST_PROGRESS_FILE` names a file, the test is listed in it from
 /// before its body starts until its process is gone (`test_progress`), which
 /// `./check` reads when it stops a hung run, to name the tests still running.
@@ -101,13 +106,45 @@ pub fn run_warning_to(
   timeout_ms timeout_ms: Int,
   body body: fn() -> a,
 ) -> a {
+  run_salted(salt: fixed_seed.salt(), warn:, progress_file:, timeout_ms:, body:)
+}
+
+/// `run` with the salt of the connections' seeds given in place of the one the
+/// environment holds (`fixed_seed`), for a test of what a failed body prints under
+/// a salt, or of seeds that must not change with the run's salt.
+pub fn run_under_salt(
+  salt salt: String,
+  timeout_ms timeout_ms: Int,
+  body body: fn() -> a,
+) -> a {
+  run_salted(
+    salt:,
+    warn: io.println_error,
+    progress_file: None,
+    timeout_ms:,
+    body:,
+  )
+}
+
+/// The one runner: every other `run` fills in what it is not given. The body's
+/// connections' seeds are told to a log of this call, which a crash prints and the
+/// end of the body drops, so a seed issued after the body ended is told to nothing.
+fn run_salted(
+  salt salt: String,
+  warn warn: fn(String) -> Nil,
+  progress_file progress_file: Option(String),
+  timeout_ms timeout_ms: Int,
+  body body: fn() -> a,
+) -> a {
   let listed = case progress_file {
     Some(file) -> Some(#(file, test_progress.started(file, body_name(body))))
     None -> None
   }
   let reply = process.new_subject()
+  let seed_log = fixed_seed.new_log()
   let worker =
     process.spawn_unlinked(fn() {
+      fixed_seed.enter(name: body_name(body), salt:, log: seed_log)
       open_wait.reporting(
         slot: open_wait.Build,
         opened: fn(key) { process.send(reply, BuildOpened(key)) },
@@ -156,6 +193,12 @@ pub fn run_warning_to(
   wait_until_dead(worker)
   let left_behind = owned_key.left_behind(worker)
   owned_key.erase_left(worker)
+  let seeds = case outcome {
+    Crashed(..) ->
+      fixed_seed.report(log: seed_log, name: body_name(body), salt:)
+    Returned(_) | Skipped -> ""
+  }
+  fixed_seed.drop_log(seed_log)
   case listed {
     Some(#(file, id)) -> test_progress.ended(file, id)
     None -> Nil
@@ -176,7 +219,15 @@ pub fn run_warning_to(
       }
     Skipped ->
       unitest.guard(False, fn() { panic as "a skipped body does not run" })
-    Crashed(reason:) -> panic as { "the test body crashed: " <> reason }
+    Crashed(reason:) ->
+      panic as {
+        "the test body crashed: "
+        <> reason
+        <> case seeds {
+          "" -> ""
+          _ -> "\n" <> seeds
+        }
+      }
   }
 }
 

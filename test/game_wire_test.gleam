@@ -4960,8 +4960,8 @@ fn fissure_goes(
 /// The units each go of the child 41844 of Fissure strikes, in order, read in `in`: the targets
 /// the go names, and for a go that names none the units of the next 0x7fb of the cast, which
 /// are the ones whose hit the roll deflected (`hit`: the deflect roll is drawn from the
-/// caster's seed, which the driven clock's scripts draw from the operating system, so any go
-/// may be deflected).
+/// caster's seed, which `fixed_seed` derives from the test's name, so a go that the roll
+/// deflects under one seed lands under another and each go may be deflected).
 fn fissure_struck(
   frames frames: List(Frame),
   in read: List(Frame),

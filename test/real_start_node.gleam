@@ -19,6 +19,7 @@
 import bot_frames
 import character_support
 import driven_time
+import fixed_seed
 import game_client
 import genesis_prime
 import genesis_prime/connection/frame.{type Frame}
@@ -61,7 +62,8 @@ pub fn main() -> Nil {
   let held = process.new_subject()
   genesis_prime.run(
     change: fn(settings) {
-      let settings = login_support.driven_by(settings:, time:)
+      let settings =
+        login_support.driven_by(settings: fixed_seed.seeded(settings), time:)
       let settings = on_ports_the_system_picks(settings)
       process.send(held, settings)
       settings
