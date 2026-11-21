@@ -1,5 +1,5 @@
 -module(mailbox_support_ffi).
--export([taken_or_ended/1, queued/1, call_waiting_from/2, monitored/1, waiting/1, tagged/2, tagged_by_reference/1]).
+-export([taken_or_ended/1, queued/1, kept_off_heap/1, call_waiting_from/2, monitored/1, waiting/1, tagged/2, tagged_by_reference/1]).
 
 %% Waits until Pid answers sys:suspend, which a process does after taking every
 %% message that was in its mailbox before the request, and then lets it go on
@@ -47,6 +47,13 @@ waiting(Pid) ->
 queued(Pid) ->
     {message_queue_len, Length} = process_info(Pid, message_queue_len),
     Length.
+
+%% Whether the process keeps its mailbox outside its heap (message_queue_data
+%% off_heap), so that a collection of the process does not copy the messages
+%% waiting for it.
+kept_off_heap(Pid) ->
+    {message_queue_data, Where} = process_info(Pid, message_queue_data),
+    Where =:= off_heap.
 
 %% Whether a gen_server call made by Caller waits in Pid's mailbox: a supervisor
 %% that is stopping its children takes none, so a call made to it stays here

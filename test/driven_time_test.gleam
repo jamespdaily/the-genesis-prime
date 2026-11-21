@@ -23,6 +23,8 @@ import gleam/erlang/process.{type Pid, type Subject}
 import gleam/erlang/reference
 import gleam/list
 import gleam/option.{Some}
+import gleam/otp/actor
+import gleam/string
 import mailbox_support
 import open_wait
 import owned_test
@@ -397,4 +399,97 @@ pub fn scripts_over_scripts_that_have_run_out_pass_the_end_through_test() -> Nil
   let time = driven_time.new()
   assert driven_time.scripts(time:, over: fn() { Error(Nil) })() == Error(Nil)
     as "a replay's scripts that have no connection left end the connection, as they do unwrapped"
+}
+
+/// The order of a participant of the wait tests: read the clock for an input and
+/// answer, or start a timer of its own on the clock and answer.
+type Order {
+  Read(answer: Subject(Nil))
+  StartTimer(after_ms: Int, fires: Subject(Elapsed), answer: Subject(Nil))
+}
+
+/// A participant that takes `Order`s: each reads the clock first, as a shell does for
+/// each input. It is joined once it has answered its first order.
+fn start_orderly_participant(time time: ServiceTime) -> Subject(Order) {
+  let assert Ok(started) =
+    actor.new(Nil)
+    |> actor.on_message(fn(state, order: Order) {
+      let _now = time.clock()
+      case order {
+        Read(answer:) -> process.send(answer, Nil)
+        StartTimer(after_ms:, fires:, answer:) -> {
+          let _cancel =
+            time.schedule(fires, TimerId(1), reference.new(), after_ms)
+          process.send(answer, Nil)
+        }
+      }
+      actor.continue(state)
+    })
+    |> actor.start
+    as "the participant started"
+  let participant = started.data
+  let joined = process.new_subject()
+  process.send(participant, Read(answer: joined))
+  open_wait.received(from: joined, what: "the participant to join the clock")
+  participant
+}
+
+pub fn a_wait_whose_condition_still_fails_once_the_participants_are_quiet_fails_at_once_naming_the_wait_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let participant =
+    start_orderly_participant(time: driven_time.service_time(time))
+  let fires = process.new_subject()
+  let started = process.new_subject()
+  process.send(participant, StartTimer(after_ms: 10, fires:, answer: started))
+  open_wait.received(from: started, what: "the participant to start its timer")
+  let before = driven_time.now(time:)
+  let ended =
+    ask_support.ended_running(fn() {
+      driven_time.wait_for(time:, what: "the beast to appear", condition: fn() {
+        False
+      })
+    })
+  let message = ask_support.panic_message(ask_support.raised(ended))
+  assert string.contains(message, "the beast to appear")
+    as "the panic names the wait"
+  assert string.contains(message, "quiet")
+    as "the panic says why the wait cannot end: the participants are quiet"
+  assert driven_time.now(time:) == before
+    as "a wait never moves the clock, which only an advance moves"
+  assert process.receive(fires, 0) == Error(Nil)
+    as "the participant's timer, due 10 ms after the clock, is not fired by the wait"
+}
+
+pub fn a_wait_whose_condition_a_participants_pending_input_makes_true_returns_without_moving_the_clock_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let participant =
+    start_orderly_participant(time: driven_time.service_time(time))
+  let fires = process.new_subject()
+  let started = process.new_subject()
+  process.send(participant, StartTimer(after_ms: 10, fires:, answer: started))
+  open_wait.received(from: started, what: "the participant to start its timer")
+  let before = driven_time.now(time:)
+  let taken = process.new_subject()
+  process.send(participant, Read(answer: taken))
+  driven_time.wait_for(
+    time:,
+    what: "the participant to take its input",
+    condition: fn() { mailbox_support.drain(taken) == [Nil] },
+  )
+  assert driven_time.now(time:) == before
+    as "the input was taken with the clock where it was"
+  assert process.receive(fires, 0) == Error(Nil)
+    as "the participant's timer is not fired by the wait"
+}
+
+pub fn the_clock_keeps_its_mailbox_off_its_heap_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Every creature of a crowd reads the clock for its input, so the clock's mailbox
+  // holds one read for each of 2,400 creatures at once; on the heap, each collection
+  // of the clock copies them all and moves them again after a full sweep.
+  let time = driven_time.new()
+  assert mailbox_support.kept_off_heap(driven_time.driver(time))
+    as "the clock's mailbox is outside its heap"
 }

@@ -41,6 +41,11 @@
 ////   participant (a registry, the store) is invisible to the counter; the creatures
 ////   send straight to the connections, so no frame path of a map or a creature goes
 ////   through one.
+//// - **A wait** (`wait_for`) runs the barrier and looks at its condition once: with the
+////   participants quiet and the clock still, a condition that fails cannot come true
+////   through the participants' own work, so the wait ends at once with a panic naming it.
+////   A condition that depends on a process that is not a participant is sound only
+////   when the participants' step reaches it synchronously (a call it makes).
 //// - **No wait here has a time limit.** A call to the clock and the barrier wait until
 ////   they are answered, and the test's deadline warns of one that never is, naming
 ////   it, and the wait goes on (`open_wait`, `owned_test.run`).
@@ -66,6 +71,16 @@ import open_wait
 
 /// How far ahead of the node's own time the clock starts.
 const ahead_ms = 3_600_000
+
+/// How long the clock's start may take, which is the start that `actor.new` allows.
+const initialisation_ms = 1000
+
+/// Makes the calling process keep its mailbox outside its heap. The clock holds one
+/// read for each creature of a crowd at once, and a collection of a process whose
+/// mailbox is on its heap copies every message waiting and, after a full sweep, moves
+/// them again: the VM has aborted in that move (`Overrun stack and heap`).
+@external(erlang, "driven_time_ffi", "keep_mailbox_off_heap")
+fn keep_mailbox_off_heap() -> Nil
 
 /// A driven clock and its timers.
 pub opaque type Time {
@@ -130,18 +145,21 @@ pub fn new() -> Time {
   let Now(monotonic_ms:, filetime:) = runtime.now()
   let monotonic_ms = monotonic_ms + ahead_ms
   let filetime = filetime + ahead_ms * 10_000
-  let assert Ok(started) =
-    actor.new(
-      State(
-        now_ms: monotonic_ms,
-        start_ms: monotonic_ms,
-        start_filetime: filetime,
-        next_number: 0,
-        pending: [],
-        changes: 0,
-        participants: [],
-      ),
+  let state =
+    State(
+      now_ms: monotonic_ms,
+      start_ms: monotonic_ms,
+      start_filetime: filetime,
+      next_number: 0,
+      pending: [],
+      changes: 0,
+      participants: [],
     )
+  let assert Ok(started) =
+    actor.new_with_initialiser(initialisation_ms, fn(driver) {
+      keep_mailbox_off_heap()
+      actor.initialised(state) |> actor.returning(driver) |> Ok
+    })
     |> actor.on_message(handle)
     |> actor.start
     as "the driven clock started"
@@ -335,6 +353,13 @@ fn asked(time time: Time, make make: fn(Subject(reply)) -> Message) -> reply {
   })
 }
 
+/// The process that is the clock.
+pub fn driver(time: Time) -> Pid {
+  let assert Ok(pid) = process.subject_owner(time.driver)
+    as "the clock's subject belongs to its process"
+  pid
+}
+
 /// The timers the process `owner` started on this clock that have neither fired nor
 /// been cancelled, in the order they were started.
 pub fn pending_of(time time: Time, owner owner: Pid) -> List(TimerId) {
@@ -424,6 +449,31 @@ fn pass(
     True, False -> pass(time:, opening: closing, after_a_quiet_pass: True)
     False, _ -> pass(time:, opening: closing, after_a_quiet_pass: False)
   }
+}
+
+/// Waits for `condition` on the driven clock: the barrier (`wait_until_quiet`) runs,
+/// and the condition is looked at once. A participant that was to take an input
+/// has taken it by then, so a condition such an input makes true holds, and the
+/// clock has not moved. A condition that still fails is one no participant can
+/// make true without the clock moving, so the wait ends at once with a panic that
+/// names `what`: it never polls and has no limit of time.
+///
+/// Its limit is the barrier's: a chain through a process that is not a participant
+/// (a registry, a supervisor) is invisible to it, so a condition on such a process's
+/// state is not a condition to wait on here; wait on the monitor of the process
+/// whose end is meant.
+pub fn wait_for(
+  time time: Time,
+  what what: String,
+  condition condition: fn() -> Bool,
+) -> Nil {
+  wait_until_quiet(time)
+  use <- bool.guard(when: condition(), return: Nil)
+  let message =
+    "the driven clock's participants are quiet and no input waits for them, so nothing more can happen before the clock moves: "
+    <> what
+    <> " never held"
+  panic as message
 }
 
 /// How many inputs the participants have taken so far, which the test's open

@@ -4,7 +4,6 @@
 
 import ask_support
 import driven_time
-import event_wait
 import genesis_prime/client_connection.{
   type Message, type PeerNews, CreatureAppeared, ForStay, PeerNews, SentByMap,
   SentByPeer,
@@ -48,8 +47,12 @@ pub fn started(world: World) -> MapProcess {
 }
 
 /// The process of the creature that is unit `unit_id` in the run under `life`,
-/// once it runs.
+/// once it runs. A creature joins its address before its first step, inside the
+/// map's step that starts it, so it is found once the clock's participants are
+/// quiet; a creature the map never starts ends the wait at once, naming its address
+/// (`driven_time.wait_for`).
 pub fn creature_pid(
+  time time: driven_time.Time,
   world world: World,
   run run: MapProcess,
   unit_id unit_id: Int,
@@ -64,9 +67,21 @@ pub fn creature_pid(
       life:,
     )
   }
-  event_wait.until("the creature was started and joined its address", fn() {
-    find() != Error(Nil)
-  })
+  driven_time.wait_for(
+    time:,
+    what: "the creature of unit "
+      <> int.to_string(unit_id)
+      <> " and life "
+      <> int.to_string(life)
+      <> " in the run "
+      <> int.to_string(run.incarnation)
+      <> " of the map "
+      <> int.to_string(ship.world_id)
+      <> "/"
+      <> int.to_string(ship.instance)
+      <> " to be started and join its address",
+    condition: fn() { find() != Error(Nil) },
+  )
   let assert Ok(pid) = find() as "the creature is found by its address"
   pid
 }
@@ -175,8 +190,8 @@ pub fn one_beast_timed(
   respawn_ms respawn_ms: Int,
   idle_stop_ms idle_stop_ms: Int,
 ) -> World {
-  world_support.start_timed(
-    time: driven_time.service_time(time),
+  world_support.start(
+    time:,
     spawns: [spawn_support.battle_beast(number: 1, x: 0.0)],
     respawn_ms:,
     idle_stop_ms:,
@@ -418,6 +433,6 @@ pub fn watched_by_two(respawn_ms respawn_ms: Int) -> Watched {
     as "the news is a creature's appearance"
   let _shown =
     next(received: viewer, what: "the beast's 0x262", wanted: appearance)
-  let pid = creature_pid(world:, run:, unit_id: beast.unit_id, life: 2)
+  let pid = creature_pid(time:, world:, run:, unit_id: beast.unit_id, life: 2)
   Watched(world:, run:, time:, caster:, viewer:, beast:, appeared:, pid:)
 }
