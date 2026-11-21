@@ -34,9 +34,10 @@ import mug
 import open_wait
 import socket_read
 
-/// The wait, in milliseconds, of an ask whose answer is expected: a deadline
-/// a passing test never reaches.
-pub const patient = 20_000
+/// The wait, in milliseconds, of an ask whose answer is expected: the most a
+/// command's 16-bit wait field holds, past the 60 seconds of the longest test
+/// deadline, so no passing test reaches it.
+pub const patient = 65_535
 
 /// The scripts of connections on a driven clock (`driven_time.connection_scripts`).
 /// A listener given them reads its time from `time` and starts its timers there;
@@ -453,6 +454,24 @@ pub fn acceptors_of(listener: Name(Nil)) -> List(Pid) {
 /// The most connections the listener Ranch knows by `listener` holds.
 @external(erlang, "ranch", "get_max_connections")
 pub fn max_connections_of(listener: Name(Nil)) -> Int
+
+/// How long, in milliseconds, the listener Ranch knows by `listener` gives a
+/// connection to stop when told to, before it kills it (Ranch's `shutdown`
+/// transport option).
+pub fn shutdown_ms_of(listener: Name(Nil)) -> Int {
+  let assert Ok(shutdown_ms) =
+    decode.run(
+      transport_options(listener),
+      decode.field(atom.create("shutdown"), decode.int, fn(shutdown_ms) {
+        decode.success(shutdown_ms)
+      }),
+    )
+    as "the listener's transport options hold an integer shutdown time"
+  shutdown_ms
+}
+
+@external(erlang, "ranch", "get_transport_options")
+fn transport_options(ref: Name(Nil)) -> Dynamic
 
 /// The gate as a child of a supervisor, registered as `name`, that reaches
 /// no process and reads its time from the driven clock `time`.

@@ -13,10 +13,9 @@
 ////   the bytes the client reads are a second record of them.
 //// - The shell's own words (genesis_prime/connection/shell): a client's close
 ////   is the input `PeerClosed` and ends the connection from the client's side,
-////   the server's stop is `Stopping` and ends it from the server's; a rule
-////   that has not stopped by the deadline is killed and leaves no closing
-////   line; a recording that cannot be written ends the connection before the
-////   step's effects.
+////   the server's stop is `Stopping` and ends it from the server's; a
+////   connection that is killed leaves no closing line; a recording that cannot
+////   be written ends the connection before the step's effects.
 
 import ask_support
 import driven_time
@@ -331,10 +330,13 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   assert closing.by == Server as "the server's stop ended the connection"
 }
 
-/// A supervisor ends a child that has not stopped by its shutdown time with the
-/// exit `kill`. The listener's shutdown time is far beyond the test, so the test
-/// sends that exit itself, once the connection has taken `Stopping` and ignored it.
-pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test() -> Nil {
+/// A connection that is killed after it took `Stopping` leaves a recording cut
+/// after the stop's line: the line is written before the rule's step, so the
+/// kill, whenever it comes, finds it on disk, and no closing line follows. The
+/// test sends the kill itself, whatever the rule does; that the listener's
+/// connections are given `shutdown_ms` before they are killed is checked in
+/// `listener_test`.
+pub fn a_connection_killed_after_it_took_stopping_leaves_a_recording_cut_after_the_stops_line_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()

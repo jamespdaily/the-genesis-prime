@@ -149,7 +149,10 @@ pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   // The connection has sent its ask once it monitors the gate, so the gate holds
-  // the asker's wait when the asker is ended.
+  // the asker's wait when the asker is ended. The poll is not
+  // `driven_time.wait_for`: a connection in an ask is never quiet on the driven
+  // clock, since the ask's deadline counts the node's time, so that wait would
+  // end only at the ask's deadline.
   event_wait.until("the shell monitors the gate while it waits", fn() {
     list.contains(mailbox_support.monitored(connection), pid)
   })
@@ -234,6 +237,8 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
   let _asked = ask_support.read_record(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
+  // Not `driven_time.wait_for`, as in the test above: the connection is in an
+  // ask counted on the node's time.
   event_wait.until("the shell monitors the restarted gate while it waits", fn() {
     list.contains(mailbox_support.monitored(connection), restarted)
   })

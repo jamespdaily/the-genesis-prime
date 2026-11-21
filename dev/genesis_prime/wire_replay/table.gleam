@@ -202,11 +202,6 @@ type State {
   )
 }
 
-/// How long a call of a shell to the table may take, in milliseconds. The table
-/// answers at once, so only a table that has ended or is stuck is waited for this
-/// long.
-const call_ms = 5000
-
 /// The table, named, as a child of the replay's supervisor.
 pub fn supervised(name name: Name(Command)) -> ChildSpecification(Nil) {
   supervision.worker(fn() {
@@ -226,20 +221,26 @@ pub fn supervised(name name: Name(Command)) -> ChildSpecification(Nil) {
 }
 
 /// Loads the recorded connections, which the table then hands out in the order
-/// of their ordinals.
+/// of their ordinals. The call waits up to `within_ms`, as every call below that
+/// takes it does: the table answers at once, so only a table that has ended or
+/// is stuck is waited for that long.
 pub fn load(
   table table: Subject(Command),
   connections connections: List(Prepared),
+  within_ms within_ms: Int,
 ) -> Nil {
-  actor.call(table, waiting: call_ms, sending: fn(reply) {
+  actor.call(table, waiting: within_ms, sending: fn(reply) {
     Load(connections:, reply:)
   })
 }
 
 /// The next connection's script to hand out, or `Error(Nil)` when each has been.
 /// A shell calls it, and exits with the table.
-pub fn handout(table: Subject(Command)) -> Result(HandedOut, Nil) {
-  actor.call(table, waiting: call_ms, sending: Handout)
+pub fn handout(
+  table table: Subject(Command),
+  within_ms within_ms: Int,
+) -> Result(HandedOut, Nil) {
+  actor.call(table, waiting: within_ms, sending: Handout)
 }
 
 /// The `Now` of an input the calling shell took, which counts the input as
@@ -248,8 +249,9 @@ pub fn take(
   table table: Subject(Command),
   connection connection: String,
   taking taking: Input,
+  within_ms within_ms: Int,
 ) -> Result(Now, Mismatch) {
-  actor.call(table, waiting: call_ms, sending: fn(reply) {
+  actor.call(table, waiting: within_ms, sending: fn(reply) {
     Take(connection:, taking:, shell: process.self(), reply:)
   })
 }
@@ -258,8 +260,9 @@ pub fn take(
 pub fn next_read(
   table table: Subject(Command),
   connection connection: String,
+  within_ms within_ms: Int,
 ) -> Option(Int) {
-  actor.call(table, waiting: call_ms, sending: fn(reply) {
+  actor.call(table, waiting: within_ms, sending: fn(reply) {
     NextRead(connection:, reply:)
   })
 }
@@ -302,8 +305,9 @@ type Heard(answer) {
 pub fn taken(
   table table: Subject(Command),
   connection connection: String,
+  within_ms within_ms: Int,
 ) -> Result(Int, Unanswered) {
-  ask(table, call_ms, fn(reply) { Taken(connection:, reply:) })
+  ask(table, within_ms, fn(reply) { Taken(connection:, reply:) })
 }
 
 /// Waits up to `within_ms` until the connection's shell has taken `inputs`
@@ -321,7 +325,7 @@ pub fn await_taken(
     Ok(Error(mismatch)) -> Error(Mismatched(mismatch:))
     Error(TableEnded) -> Error(WaitedTableEnded)
     Error(NotInTime) ->
-      case taken(table:, connection:) {
+      case taken(table:, connection:, within_ms:) {
         Ok(taken) -> Error(TimedOut(taken:))
         Error(NotInTime) | Error(TableEnded) -> Error(WaitedTableEnded)
       }
@@ -371,16 +375,18 @@ pub fn await_timer(
 pub fn shell_of(
   table table: Subject(Command),
   connection connection: String,
+  within_ms within_ms: Int,
 ) -> Result(Option(Pid), Unanswered) {
-  ask(table, call_ms, fn(reply) { ShellOf(connection:, reply:) })
+  ask(table, within_ms, fn(reply) { ShellOf(connection:, reply:) })
 }
 
 /// The mismatch the connection's shell met, if it met one.
 pub fn failure_of(
   table table: Subject(Command),
   connection connection: String,
+  within_ms within_ms: Int,
 ) -> Result(Option(Mismatch), Unanswered) {
-  ask(table, call_ms, fn(reply) { FailureOf(connection:, reply:) })
+  ask(table, within_ms, fn(reply) { FailureOf(connection:, reply:) })
 }
 
 fn handle(state: State, command: Command) -> actor.Next(State, Command) {

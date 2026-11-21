@@ -130,9 +130,23 @@ pub fn load(folder: String) -> Session {
   session
 }
 
+/// How long the replays of the give-up tests wait, in real milliseconds, for
+/// what a target that never answers does not give. Every other replay waits
+/// `ask_support.beyond_the_test_ms`, so a slow machine fails none of them.
+pub const give_up_wait_ms = 5000
+
 /// Starts a replay's table under a supervisor of its own, which stops when the
-/// calling process ends, and gives the replay of `session`.
+/// calling process ends, and gives the replay of `session`, whose waits cannot
+/// end within a test (`ask_support.beyond_the_test_ms`).
 pub fn start_replay(session: Session) -> wire_replay.Replay {
+  start_replay_waiting(session:, wait_ms: ask_support.beyond_the_test_ms)
+}
+
+/// As `start_replay`, for a replay whose every wait ends after `wait_ms`.
+pub fn start_replay_waiting(
+  session session: Session,
+  wait_ms wait_ms: Int,
+) -> wire_replay.Replay {
   let table = wire_replay.new_table()
   let assert Ok(tables) =
     supervisor.new(supervisor.OneForOne)
@@ -141,7 +155,7 @@ pub fn start_replay(session: Session) -> wire_replay.Replay {
     as "the replay's table started"
   process.unlink(tables.pid)
   ask_support.guard(tables.pid)
-  wire_replay.replay(session, table)
+  wire_replay.replay(session:, table:, wait_ms:)
 }
 
 /// Writes the empty fixture a recording made by a listener of a test lacks: a
@@ -219,6 +233,42 @@ pub fn run_with(
   run_planned(folder:, rule:, directory:, with:, actions: wire_replay.plan).0
 }
 
+/// Replays the session in `folder` as `run` does, with every wait of the replay
+/// ending after `give_up_wait_ms` of real time: for a test that proves the
+/// replay gives up on a target that never answers, and fails by it.
+pub fn run_giving_up(
+  folder folder: String,
+  rule rule: step.ConnectionRule(settings, state, request, message, answer),
+) -> Result(Nil, Failure) {
+  run_giving_up_with(
+    folder:,
+    rule:,
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    with: fn(builder) { builder },
+  )
+}
+
+/// As `run_with`, with every wait of the replay ending after `give_up_wait_ms`
+/// of real time (`run_giving_up`).
+pub fn run_giving_up_with(
+  folder folder: String,
+  rule rule: step.ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Result(Nil, Failure) {
+  run_waiting(
+    folder:,
+    rule:,
+    directory:,
+    with:,
+    actions: wire_replay.plan,
+    scripts: fn(replay) { replay.scripts },
+    after_start: fn(_server, _replay) { Nil },
+    wait_ms: give_up_wait_ms,
+  ).0
+}
+
 fn run_planned(
   folder folder: String,
   rule rule: step.ConnectionRule(settings, state, request, message, answer),
@@ -252,8 +302,32 @@ pub fn run_scripted(
   scripts scripts: fn(wire_replay.Replay) -> Scripts,
   after_start after_start: fn(ask_support.Server, wire_replay.Replay) -> Nil,
 ) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
+  run_waiting(
+    folder:,
+    rule:,
+    directory:,
+    with:,
+    actions:,
+    scripts:,
+    after_start:,
+    wait_ms: ask_support.beyond_the_test_ms,
+  )
+}
+
+/// As `run_scripted`, for a replay whose every wait ends after `wait_ms`.
+fn run_waiting(
+  folder folder: String,
+  rule rule: step.ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+  actions actions: fn(Session) -> List(Action),
+  scripts scripts: fn(wire_replay.Replay) -> Scripts,
+  after_start after_start: fn(ask_support.Server, wire_replay.Replay) -> Nil,
+  wait_ms wait_ms: Int,
+) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
   let session = load(folder)
-  let replay = start_replay(session)
+  let replay = start_replay_waiting(session:, wait_ms:)
   let server =
     ask_support.start_driven(
       rule:,

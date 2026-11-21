@@ -9,9 +9,12 @@
 //// milliseconds of the node's own time, which the driven clock does not move (the
 //// shell counts an ask's wait from the node's time), and assert only that at
 //// least that much of it has passed, against a target that never answers. The
-//// asking rule writes the driven clock's reading, which stays where it is, so a
-//// test tells an outcome that came at once from one that came at the deadline by
-//// the outcome's code, never by its time.
+//// asking rule writes its script's clock reading. An outcome that came at once
+//// and one that came at the deadline give the same code in one case (a lookup
+//// that got no reply in time), so that test's script reads the node's time
+//// (`on_the_nodes_time`), and a shell that waited for the deadline first shows in
+//// the outcome's reading. The other at-once outcomes have codes a deadline
+//// cannot give.
 
 import ask_support
 import asking_rule
@@ -21,6 +24,7 @@ import gate_rule
 import genesis_prime/connection/script.{type Scripts, Issued, Script}
 import genesis_prime/service
 import genesis_prime/step.{type Now, ConnectionId, Now}
+import genesis_prime/step/runtime
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -588,17 +592,41 @@ fn on_one_time(scripts: Scripts) -> Scripts {
   }
 }
 
+/// The scripts as they are, whose clock reads the node's time for each input,
+/// so what the rule writes is the node's time and a wait the shell makes shows
+/// in it. The clock is still the driven one's call, so the driven clock counts
+/// the connection as a participant.
+fn on_the_nodes_time(scripts: Scripts) -> Scripts {
+  fn() {
+    use issued <- result.map(scripts())
+    let driven = issued.script.clock
+    Issued(
+      ..issued,
+      script: Script(
+        ..issued.script,
+        clock: fn(taking) {
+          Now(..driven(taking), monotonic_ms: runtime.monotonic_ms())
+        },
+        node_monotonic_ms: fn(now: Now) { now.monotonic_ms },
+      ),
+    )
+  }
+}
+
 // ---- a leave's ask of a map's run ----
 
 pub fn a_directory_that_got_no_reply_in_time_gives_no_answer_in_time_at_once_and_sends_nothing_test() -> Nil {
   use <- owned_test.run(30_000)
   let server =
-    ask_support.start_on(
-      time: driven_time.new(),
+    ask_support.start_driven(
       rule: asking_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) {
         Ok(service.NoReplyInTime)
       },
+      wire_recorder: None,
+      scripts: on_the_nodes_time(ask_support.driven_scripts(driven_time.new())),
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
     )
   let client = ask_support.connect(server)
@@ -608,11 +636,13 @@ pub fn a_directory_that_got_no_reply_in_time_gives_no_answer_in_time_at_once_and
     1,
     wait_ms: ask_support.patient,
   )
-  let _asked = ask_support.read_record(client)
+  let asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
   assert outcome.letter == asking_rule.outcome
     && outcome.code == asking_rule.code_no_answer_in_time
     as "the directory's lookup got no reply by the deadline: the rule is told no answer came, never that the process is not running"
+  assert outcome.milliseconds < asked.milliseconds
+    as "at once: the deadline has passed, so there is nothing to wait for; the outcome's reading of the node's time is before the ask's deadline"
   ask_support.stop(server)
 }
 

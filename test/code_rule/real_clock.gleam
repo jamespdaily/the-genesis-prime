@@ -60,16 +60,29 @@
 ////   test of an ask that passes its deadline waits that time in real
 ////   milliseconds, given as the byte of a command, not as a source: the three
 ////   deadline tests of `ask_test` and `world_map_registry_test`'s wait 300 ms
-////   and 1 s, `account_store_test`'s waits 300 ms, and the replay's own give-up
-////   tests in `wire_replay_test` wait its bound of 5 s. Each asserts only that
-////   at least that long has passed, against a target that never answers.
+////   and 1 s, `account_store_test`'s waits 300 ms and `wire_replay_test`'s
+////   ask of 200 ms ends at its deadline. Each asserts only that at least that
+////   long has passed, or the bytes the outcome gives, against a target that
+////   never answers.
+//// - The replay's wait. Every replay takes the bound of its waits as a setting
+////   (`wire_replay.replay`'s `wait_ms`, a labelled argument, not read here).
+////   The tests pass `ask_support.beyond_the_test_ms`, which no test reaches, and
+////   five tests of `wire_replay_test` pass `wire_replay_support.give_up_wait_ms`,
+////   5 s of real time, through `run_giving_up` and `run_giving_up_with`; each
+////   fails by that bound, against a target that never answers, and asserts no
+////   time. `wire_replay_test` is not listed, since it names no source, so a
+////   new test that calls those two functions is not caught.
+//// - The database client's own timers. `account_store_test`'s test with no
+////   database gives pog a queue target of 50 ms and a queue interval of 100 ms,
+////   which count the node's time and which no rule reads; its outcome
+////   (`unavailable`) is the same on a slow machine.
 //// - A shutdown deadline: Part B reads no `shutdown_ms` literal. The driven
 ////   listeners take their shutdown from `ask_support.driven_settings`, and a test
 ////   that must end a child as a supervisor's timer does sends the exit itself.
-//// - A file on `genuine_real_time` is exempt as a whole. `world_map_registry_test`,
-////   `application_test` and `readiness_test` also hold tests on the real clock
-////   that the reason does not name, and a new real-clock test added to one of
-////   them is not caught.
+//// - A file on `genuine_real_time` is exempt as a whole. `application_test` and
+////   `readiness_test` also hold tests on the real clock that the reason does
+////   not name, and a new real-clock test added to one of them, or to any listed
+////   file, is not caught.
 //// - Part B reads a literal. A short deadline given through a variable, a
 ////   module constant or a punned label is not read, and neither is a time given
 ////   to `process.call` or `actor.call`.
