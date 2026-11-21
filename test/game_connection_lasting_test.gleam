@@ -5,12 +5,14 @@
 //// `opcode.0x813`: the same). Expected values come from those records.
 
 import cast_support
+import connection_rule_support as support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{
   Appeared, CastFinished, CastStarted, CastWent, Removed,
 }
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/unit_casts
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
@@ -25,7 +27,9 @@ import genesis_prime/server
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/map
 import gleam/list
+import gleam/option.{Some}
 import owned_test
 import planted_table
 
@@ -490,12 +494,12 @@ fn beast_removed() -> step.Event(
 /// changed it, whatever the input was: the answer that lands a round, the creature's own news,
 /// a camp, a move to another world and the player's death.
 ///
-/// Gap: while an ask is in flight (`SavingPlace`, `LeavingMap`) the connection keeps no write
-/// to the player's cast state (`connection_state.with_entered` leaves an ask's status as it
-/// is), so the Beast's 0x355 there changes neither the state nor what the creature was told,
-/// whichever state the camp or the leave kept. The two rows that read the Beast's 0x355
-/// during an ask cannot fail while that holds; they stand to catch a later change that
-/// keeps a write during an ask.
+/// No row reads the Beast's 0x355 during the camp's save or the leave: the stay is over there,
+/// so the connection drops the message before any cast code runs (`stay_sent`) and no input
+/// reaches the cast state, so whatever record `effects.world_left` returns is never read
+/// again (a move to another world builds a new cast state at the join). The same news while
+/// a save that goes on is out is the test
+/// `a_change_told_on_a_step_that_ends_in_an_ask_is_not_told_again_test`.
 pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil {
   use <- owned_test.run(60_000)
   let fissure = fissure_pressed()
@@ -513,14 +517,12 @@ pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil
       fissure.state,
       game_connection_support.camp_request_message(True),
     )
-  let #(saving, camped) =
+  let #(_, camped) =
     game_connection_support.read(
       camping,
       game_connection_support.camp_finished_message(),
     )
-  let #(_, removed_while_saving) =
-    game_connection_support.feed(saving, beast_removed())
-  let #(leaving, left) =
+  let #(_, left) =
     game_connection_support.at(
       state: fissure.state,
       ms: 2500,
@@ -528,8 +530,6 @@ pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil
         step.Read(game_connection_support.chat_line_message(4, go_elsewhere)),
       ),
     )
-  let #(_, removed_while_leaving) =
-    game_connection_support.feed(leaving, beast_removed())
   let #(_, killed) = game_connection_support.killed(fissure.state)
   list.each(
     [
@@ -580,24 +580,85 @@ pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil
         [#(40, fissure.beast_life, ends)],
       ),
       #(
-        "UNABLE TO FAIL (an ask keeps no cast-state write): the Beast's 0x355 during the save tells nothing again",
-        views_told(taken: removed_while_saving),
-        [],
-      ),
-      #(
         "a move to another world tells the Beast the view ended, before the map is asked to leave",
         views_told(taken: left),
         [#(40, fissure.beast_life, ends)],
       ),
       #(
-        "UNABLE TO FAIL (an ask keeps no cast-state write): the Beast's 0x355 during the leave tells nothing again",
-        views_told(taken: removed_while_leaving),
-        [],
-      ),
-      #(
         "a killing blow from the Beast ends the casts and tells the Beast the view ended",
         views_told(taken: killed),
         [#(40, fissure.beast_life, ends)],
+      ),
+    ],
+    fn(row) {
+      assert row.1 == row.2 as row.0
+    },
+  )
+}
+
+/// The Beast is told once that the node ended, though the news that ended it came in a step
+/// that ends in an ask: the summon's answer takes the held news and then the held save
+/// timer, whose save asks, so the next input, taken while the save is out, finds the news
+/// untold. It is told then, and not again when the save is answered nor on a later step that
+/// changes no node (`creature_view.compared` compares against what the creature was told).
+pub fn a_change_told_on_a_step_that_ends_in_an_ask_is_not_told_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let fissure = fissure_pressed()
+  let ends =
+    creature.CastViewEnds(by: ConnectionId(1), cast_id: fissure.child_cast_id)
+  let #(summoning, summon) =
+    game_connection_support.at(
+      state: fissure.state,
+      ms: 2000,
+      event: OwnEvent(
+        step.Read(game_connection_support.chat_line_message(4, "!summon 75048")),
+      ),
+    )
+  let #(summoning, _) = game_connection_support.feed(summoning, beast_removed())
+  let #(summoning, _) =
+    game_connection_support.fired_at(
+      state: summoning,
+      timer: connection_state.save_timer,
+      ms: 2100,
+    )
+  let #(saving, summoned) =
+    game_connection_support.answer(
+      state: summoning,
+      taken: summon,
+      outcome: step.Answer(client_connection.FromMap(map.Summoned(unit_id: 9))),
+    )
+  let assert Some(_) = support.asked(summoned)
+    as "the held save timer is taken after the held news, and its save asks"
+  let #(saving, found) = game_connection_support.feed(saving, beast_removed())
+  let #(playing, answered) =
+    game_connection_support.answer(
+      state: saving,
+      taken: summoned,
+      outcome: game_connection_support.place_saved(),
+    )
+  let #(_, moved) =
+    game_connection_support.read(playing, game_connection_support.a_move(1.5))
+  list.each(
+    [
+      #(
+        "the step that applies the held news ends in an ask and tells nothing",
+        views_told(taken: summoned),
+        [],
+      ),
+      #(
+        "the input taken while the save is out finds the news and tells the Beast the view ended",
+        views_told(taken: found),
+        [#(40, fissure.beast_life, ends)],
+      ),
+      #(
+        "the save's answer tells nothing again",
+        views_told(taken: answered),
+        [],
+      ),
+      #(
+        "a later step that changes no node tells nothing",
+        views_told(taken: moved),
+        [],
       ),
     ],
     fn(row) {

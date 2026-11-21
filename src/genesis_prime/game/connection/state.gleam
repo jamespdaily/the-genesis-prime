@@ -750,14 +750,9 @@ pub fn with_entered(
   session session: Session,
   change change: fn(world_entry.Entered) -> world_entry.Entered,
 ) -> Session {
-  let status = case session.status {
-    InWorld(holder:, entered:) -> InWorld(holder:, entered: change(entered))
-    WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
-      WaitingToClaim(
-        holder:,
-        resume: ResumeWorld(entered: change(entered)),
-        retries:,
-      )
+  case session.status {
+    InWorld(..) | WaitingToClaim(resume: ResumeWorld(..), ..) ->
+      with_entered_in_any_status(session:, change:)
     WaitingToClaim(resume: ResumeSelect, ..)
     | ClaimingSession(..)
     | InCharacterSelect(..)
@@ -771,6 +766,55 @@ pub fn with_entered(
     | TurningIn(..)
     | SavingPlace(..)
     | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey(..) -> session
+  }
+}
+
+/// The session with the player it holds in any status that holds one, an ask's included,
+/// changed by `change`: for a record of what the connection has already done, which an
+/// answer's handler reads back from the status (`with_entered` leaves an ask's status as
+/// it is, because the rules that decide something wait for the answer). A status that holds
+/// no player is as it was.
+pub fn with_entered_in_any_status(
+  session session: Session,
+  change change: fn(world_entry.Entered) -> world_entry.Entered,
+) -> Session {
+  let status = case session.status {
+    InWorld(holder:, entered:) -> InWorld(holder:, entered: change(entered))
+    WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
+      WaitingToClaim(
+        holder:,
+        resume: ResumeWorld(entered: change(entered)),
+        retries:,
+      )
+    ClaimingSession(holder:, resume: ResumeWorld(entered:), retries:) ->
+      ClaimingSession(
+        holder:,
+        resume: ResumeWorld(entered: change(entered)),
+        retries:,
+      )
+    Summoning(holder:, entered:) -> Summoning(holder:, entered: change(entered))
+    MovingItem(holder:, entered:, moving:) ->
+      MovingItem(holder:, entered: change(entered), moving:)
+    SpendingCharge(holder:, entered:, spending:) ->
+      SpendingCharge(holder:, entered: change(entered), spending:)
+    Buying(holder:, entered:, purchase:) ->
+      Buying(holder:, entered: change(entered), purchase:)
+    Granting(holder:, entered:, grant:) ->
+      Granting(holder:, entered: change(entered), grant:)
+    Selling(holder:, entered:, sale:) ->
+      Selling(holder:, entered: change(entered), sale:)
+    TurningIn(holder:, entered:, turn_in:) ->
+      TurningIn(holder:, entered: change(entered), turn_in:)
+    SavingPlace(holder:, entered:, then:) ->
+      SavingPlace(holder:, entered: change(entered), then:)
+    LeavingMap(holder:, entered:, then:) ->
+      LeavingMap(holder:, entered: change(entered), then:)
+    WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(resume: ResumeSelect, ..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
     | AwaitingHelloReply
     | TakingSessionKey(..) -> session.status
   }
