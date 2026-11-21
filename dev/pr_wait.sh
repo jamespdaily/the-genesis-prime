@@ -5,8 +5,8 @@
 #
 # `gh pr checks N --watch` run right after `gh pr create` exits at once with "no checks
 # reported", because CI has not registered its checks yet. So this polls every 15 s, up to
-# 5 min, until the pull request has at least one check, then runs
-# `gh pr checks N --watch --interval 30`.
+# 20 polls (5 min, more when a poll's call is asked again), until the pull request has at
+# least one check, then runs `gh pr checks N --watch --interval 30`.
 #
 # A GitHub call that fails is asked again, up to 3 tries in all, waiting
 # ${PR_WAIT_RETRY_SECONDS:-15} s between tries, so a passing blip does not end the wait.
@@ -17,7 +17,7 @@
 # Exit status:
 #   0  every check passed
 #   1  a check failed (the line `pr_wait: failing jobs: A, B` on stderr names them), or no
-#      check appeared within 5 min
+#      check appeared within the 20 polls
 #   2  usage
 #   3  a GitHub call failed on all 3 tries, or its answer was not the one asked for; nothing
 #      is known of the checks. A failing `gh pr checks --watch` counts as a CI failure only
@@ -52,7 +52,7 @@ for _ in $(seq 20); do
   sleep 15
 done
 if [[ $checks -eq 0 ]]; then
-  echo "pr_wait: no check on pull request $number after 5 min" >&2
+  echo "pr_wait: no check on pull request $number after 20 polls" >&2
   exit 1
 fi
 
