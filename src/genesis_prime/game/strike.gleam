@@ -317,6 +317,7 @@ pub fn select(
             attacker:,
             picture:,
             area: spell_area_found,
+            phase: asked.phase,
             row:,
             centre:,
             now_ms:,
@@ -347,25 +348,32 @@ pub fn select(
   }
 }
 
+/// The units of the area at go `phase`, none for a go whose phase no hit row names
+/// (`spell_area.inside`).
 fn area_selection(
   attacker attacker: Attacker,
   picture picture: Picture,
   area area: spell_area.SpellArea,
+  phase phase: Int,
   row row: area.Row,
   centre centre: Pose,
   now_ms now_ms: Int,
 ) -> List(Int) {
-  area.select(
-    candidates: shown.candidates(
-      picture:,
-      faction: attacker.faction,
-      caster_unit_id: attacker.unit_id,
-      now_ms:,
-    ),
-    centre:,
-    row:,
-    inside: spell_area.inside(spell: area),
-  )
+  case spell_area.inside(spell: area, phase:) {
+    None -> []
+    Some(inside) ->
+      area.select(
+        candidates: shown.candidates(
+          picture:,
+          faction: attacker.faction,
+          caster_unit_id: attacker.unit_id,
+          now_ms:,
+        ),
+        centre:,
+        row:,
+        inside:,
+      )
+  }
 }
 
 /// The seed bytes the selection's strikes take: 12 for each unit, then 4 for each roll

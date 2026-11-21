@@ -681,7 +681,7 @@ fn only_effect_area(
   spell_area.SpellArea(
     spell4_id: Spell4Id(despawn_only_spell4_id),
     row: None,
-    shapes: [],
+    inside_by_go: [Some(area.InsideRow)],
     anchor: area.FollowsTarget,
     damage: [],
     ticking: [],

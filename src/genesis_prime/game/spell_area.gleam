@@ -109,8 +109,13 @@
 ////   selects units from a spell with no area row; a creature's drawn hit row timed from a go
 ////   (flag 0x2000: `TelegraphTimedFromAGo`).
 //// - **Each go of a creature's cast** is struck with the hit rows its phase names that the client
-////   is drawing at the go's time (`hit_shapes_by_go`, genesis_prime/game/telegraph_window); a
-////   player's strike takes the spell's shapes for every go (`SpellArea.shapes`).
+////   is drawing at the go's time (`hit_shapes_by_go`, genesis_prime/game/telegraph_window).
+//// - **Each go of a player's cast** is struck with the hit rows its phase names, for a cast whose
+////   phase the client compares with a row's (`spell_plan.compares_telegraph_phase`), and with
+////   every hit row otherwise (`SpellArea.inside_by_go`). This is a server guess: the client
+////   compares a row's phase with a go only to launch client missiles from a telegraph position
+////   (`opcode.0x7f4.phase`) and ties no row to the damage of a go; the row's time window is not
+////   read, since it would strike nobody at the gos of 38 planned spells that are not phased.
 
 import genesis_prime/game/area.{
   type Anchor, type Inside, type Placement, type Row, Box, Circle, Cone,
@@ -224,10 +229,12 @@ pub type SpellArea {
     spell4_id: Spell4Id,
     /// The area row, `None` for a spell with no `Spell4AoeTargetConstraints` row.
     row: Option(Row),
-    /// The hit shapes placed on the caster: the never-drawn twins, else the drawn
-    /// rows without bit 0x20 (all of them when each has it). Empty for a spell with no
-    /// telegraph row.
-    shapes: List(Placement),
+    /// How a unit counts as inside the area at each go, in go order (`inside`): the hit
+    /// rows placed on the caster that the go's phase names, from the never-drawn twins, else
+    /// the drawn rows without bit 0x20 (all of them when each has it). `Some(InsideRow)` at
+    /// every go for a spell with no hit row, and `None` at a go of a spell with hit rows that
+    /// none names, which strikes nobody from the area.
+    inside_by_go: List(Option(Inside)),
     /// Where the hit is centred, one for the spell, from its hit rows (`anchor_of`):
     /// `FollowsTarget` for a spell with none, which strikes around its primary target.
     anchor: Anchor,
@@ -625,7 +632,13 @@ fn start_checked(
   case area.row {
     None -> Ok(Nil)
     Some(_) ->
-      case start_placed(anchor: area.anchor, start:, shapes: area.shapes) {
+      case
+        start_placed(
+          anchor: area.anchor,
+          start:,
+          shapes: shapes_of_any_go(area:),
+        )
+      {
         False ->
           Error(HitRowOffTheStrikeCentre(
             spell4_id: area.spell4_id.value,
@@ -706,11 +719,22 @@ fn targeting_given(
 /// Whether the spell has a hit row and it is placed on the cast's target: a spell with no hit
 /// row has no shapes and is centred on its primary target only by default.
 fn placed_on_the_target(area area: SpellArea) -> Bool {
-  case area.shapes, area.anchor {
+  case shapes_of_any_go(area:), area.anchor {
     [], _ -> False
     [_, ..], FollowsTarget | [_, ..], FixedAtTarget -> True
     [_, ..], FollowsCaster | [_, ..], FixedAtCaster -> False
   }
+}
+
+/// The hit shapes the spell holds at any of its gos, each go's in order: where the spell is
+/// centred and started is one choice for all its gos, so it is checked against every shape.
+fn shapes_of_any_go(area area: SpellArea) -> List(Placement) {
+  list.flat_map(area.inside_by_go, fn(inside) {
+    case inside {
+      Some(InsideShapes(placements:)) -> placements
+      Some(InsideRow) | None -> []
+    }
+  })
 }
 
 /// The kind of the target mechanic the spell's Spell4Base names.
@@ -769,12 +793,16 @@ fn area_of(
     Some(..) -> valid_targets_checked(tables:, id:, base:)
     None -> Ok(Nil)
   })
-  use shapes <- result.try(hit_shapes_of(
-    tables:,
-    links:,
+  use placed <- result.try(placed_rows(
     id:,
+    rows: hit_rows_of(tables:, links:, id:),
     reading: PlayerReading,
   ))
+  let phased = spell_plan.compares_telegraph_phase(row:, base:)
+  let inside_by_go =
+    list.map(gos_of(spell:), fn(go) {
+      shapes_at_go(placed:, go:, phased:, drawn: fn(_) { True })
+    })
   use anchor <- result.try(anchor_of(
     tables:,
     links:,
@@ -786,7 +814,7 @@ fn area_of(
     SpellArea(
       spell4_id: spell.spell4_id,
       row: area_row,
-      shapes:,
+      inside_by_go:,
       anchor:,
       damage:,
       ticking:,
@@ -795,12 +823,7 @@ fn area_of(
   // A phase that selects units at some n, every effect chosen being the widest, must
   // have an area row.
   let selects =
-    int.range(
-      from: 0,
-      to: phase_count(spell: area),
-      with: [],
-      run: fn(found, phase) { [phase, ..found] },
-    )
+    gos_of(spell:)
     |> list.any(fn(phase) {
       phase_of(spell: area, phase:, spent: None).selects_area
     })
@@ -885,9 +908,9 @@ fn area_row_of(
 /// are pictures of another spell's hit shape (a spell's own copy of its child's beam),
 /// unless every drawn row has it: then they are all kept
 /// (`TelegraphDamage.telegraphDamageFlags.0x20.rows`). The phases a row fires in are
-/// not read here: `SpellArea.shapes` holds for each of a player's gos, and a creature's cast
-/// takes them go by go (`hit_shapes_by_go`). A Spell4Telegraph row whose
-/// TelegraphDamage row the table lacks gives no shape, as the client leaves it out of its
+/// not read here: `SpellArea.inside_by_go` and `hit_shapes_by_go` choose them go by go. A
+/// Spell4Telegraph row whose TelegraphDamage row the table lacks gives no shape, as the
+/// client leaves it out of its
 /// spell's telegraphs (`Spell4Telegraph.telegraphDamageId.no_row`). The shapes of the
 /// spell `id` that its Spell4Telegraph rows in `links` choose, or the refusal of one; a row
 /// of a shape that is two boxes gives two.
@@ -897,10 +920,24 @@ pub fn hit_shapes_of(
   id id: Int,
   reading reading: Reading,
 ) -> Result(List(Placement), AreaError) {
-  list.try_map(hit_rows_of(tables:, links:, id:), fn(row) {
-    placements_of(id:, row:, reading:)
+  placed_rows(id:, rows: hit_rows_of(tables:, links:, id:), reading:)
+  |> result.map(list.flat_map(_, fn(found) { found.1 }))
+}
+
+/// Each of the spell `id`'s hit rows with the placements the reading builds from it, or the
+/// refusal of the first row it does not build.
+fn placed_rows(
+  id id: Int,
+  rows rows: List(telegraph_damage.TelegraphDamage),
+  reading reading: Reading,
+) -> Result(
+  List(#(telegraph_damage.TelegraphDamage, List(Placement))),
+  AreaError,
+) {
+  list.try_map(rows, fn(row) {
+    use placements <- result.map(placements_of(id:, row:, reading:))
+    #(row, placements)
   })
-  |> result.map(list.flatten)
 }
 
 /// The TelegraphDamage rows the spell `id`'s Spell4Telegraph rows name, in the table's order;
@@ -922,7 +959,7 @@ fn linked_rows_of(
 
 /// The TelegraphDamage rows of the spell `id` that say who is hit, as `hit_shapes_of`
 /// chooses them.
-fn hit_rows_of(
+pub fn hit_rows_of(
   tables tables: table_store.Tables,
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
@@ -1427,10 +1464,16 @@ pub fn of_spell(
   dict.get(areas, spell4_id.value)
 }
 
-/// How a unit counts as inside the spell's area: the hit shapes when the spell has
-/// any, capped by the area row's range, else the area row's range and arc.
-pub fn inside(spell spell: SpellArea) -> Inside {
-  inside_of(shapes: spell.shapes)
+/// How a unit counts as inside the spell's area at go `phase`: the hit shapes of the rows
+/// that go names when the spell has any, capped by the area row's range, else the area row's
+/// range and arc. `None` when the spell has hit rows and none names the go, or has no such
+/// go: the go strikes nobody from the area.
+pub fn inside(spell spell: SpellArea, phase phase: Int) -> Option(Inside) {
+  use <- bool.guard(when: phase < 0, return: None)
+  case list.drop(spell.inside_by_go, phase) {
+    [inside, ..] -> inside
+    [] -> None
+  }
 }
 
 fn inside_of(shapes shapes: List(Placement)) -> Inside {
@@ -1524,31 +1567,29 @@ pub fn hit_shapes_by_go(
       }
     }),
   )
-  use placed <- result.try(
-    list.try_map(hit_rows, fn(row) {
-      use placements <- result.map(placements_of(
-        id:,
-        row:,
-        reading: CreatureReading,
-      ))
-      #(row, placements)
-    }),
-  )
+  use placed <- result.try(placed_rows(
+    id:,
+    rows: hit_rows,
+    reading: CreatureReading,
+  ))
   Ok(
     list.index_map(go_times_ms, fn(_, go) {
-      shapes_at_go(placed:, go_times_ms:, go:, phased:)
+      shapes_at_go(placed:, go:, phased:, drawn: fn(row) {
+        is_twin(row:) || telegraph_window.drawn_at(row:, go_times_ms:, go:)
+      })
     }),
   )
 }
 
 /// How a unit counts as inside at go `go` of a cast with the hit rows `placed` (each with its
-/// placements): `InsideRow` when the spell has no hit row, `None` when it has some and none is
-/// drawn then. A row's phase is read only when the client compares it (`phased`).
+/// placements): `InsideRow` when the spell has no hit row, `None` when it has some and none
+/// is kept. A row is kept when `drawn` holds for it and, when the client compares the cast's
+/// phase with a row's (`phased`), when its phaseFlags name the go.
 fn shapes_at_go(
   placed placed: List(#(telegraph_damage.TelegraphDamage, List(Placement))),
-  go_times_ms go_times_ms: List(Int),
   go go: Int,
   phased phased: Bool,
+  drawn drawn: fn(telegraph_damage.TelegraphDamage) -> Bool,
 ) -> Option(Inside) {
   use <- bool.guard(when: placed == [], return: Some(InsideRow))
   let struck =
@@ -1558,7 +1599,7 @@ fn shapes_at_go(
         !phased
         || spell_effect.names_phase(phase_flags: row.phase_flags, phase: go)
       }
-      && { is_twin(row:) || telegraph_window.drawn_at(row:, go_times_ms:, go:) }
+      && drawn(row)
     })
   case struck {
     [] -> None
@@ -1571,7 +1612,20 @@ fn shapes_at_go(
 /// phase of a Multiphase spell are each a go. The count is at least 1: a spell held
 /// until its release has no go of its own, and its phase 0 is one no go asks for.
 pub fn phase_count(spell spell: SpellArea) -> Int {
-  int.max(1, spell_plan.go_count(spell: spell.spell))
+  phase_count_of(spell: spell.spell)
+}
+
+/// `phase_count` of a spell no `SpellArea` holds yet.
+fn phase_count_of(spell spell: Spell) -> Int {
+  int.max(1, spell_plan.go_count(spell:))
+}
+
+/// The numbers of the spell's gos, in order, from 0.
+fn gos_of(spell spell: Spell) -> List(Int) {
+  int.range(from: 0, to: phase_count_of(spell:), with: [], run: fn(found, go) {
+    [go, ..found]
+  })
+  |> list.reverse
 }
 
 /// What the spell's go of `phase` strikes when the cast spent `spent` points above
@@ -1611,7 +1665,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player hit rows by anchor",
-      missing: "a player's drawn row placed otherwise than its hit rows is not compared with them, so the picture and the hit disagree when the caster has moved between the start and the go (three planned abilities); a player's strike takes every hit row of the spell at each go, so a cast whose rows differ by phase strikes their union at every go (six planned abilities)",
+      missing: "a player's drawn row placed otherwise than its hit rows is not compared with them, so the picture and the hit disagree when the caster has moved between the start and the go (three planned abilities)",
+    ),
+    gap.Entry(
+      area: "Player hit rows by go",
+      missing: "a player's cast strikes at a go with the hit rows its phase names for a cast whose phase the client compares (a Multiphase cast, or a channel whose spellChannelFlags has bit 1), and with every hit row for any other cast; the row's time window is not read (a creature's cast reads both), and a go whose phase no hit row names strikes nobody from the area, a guess the client's code does not settle: it compares a row's phase with a go only to launch client missiles, the window would strike nobody at the gos of 38 planned spells that are not phased, and the two rules strike the same units for every planned phased spell",
     ),
     gap.Entry(
       area: "Player held position",

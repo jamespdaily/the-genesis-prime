@@ -4982,9 +4982,11 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
 /// at the entry of the relog. Fissure is planned (its second spell's hit telegraphs 2996 to 2998
 /// are placed by flag 8, the position the cast holds), so the press of slot 4 is accepted. The
 /// Medic stands 8 m from the ring's other creature and faces it, so the creature is inside the
-/// first rectangle of the press pose; before the second and third go the Medic moves 40 m aside
-/// and turns half a turn, and the strike still lands where the press drew its rectangles. The
-/// clock is driven and nothing waits on real time.
+/// first rectangle of the press pose; before the second and third go the Medic moves 40 m back
+/// along the line of the rectangles and turns half a turn, and the strike still lands where the
+/// press drew its rectangles. The creature chases the Medic along that line, so it stays in the
+/// middle of each go's rectangle: each go strikes only the rectangle its phase names. The clock
+/// is driven and nothing waits on real time.
 pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_holds_it_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -5118,14 +5120,16 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     )
     == [[other.unit_id]]
     as "opcode.0x7f4, opcode.0x7fb: the child's first go strikes the creature 8 m ahead of the press pose, inside Fissure's first rectangle, by a hit or a deflect"
-  // The Medic turns its back and walks 40 m aside before the later gos (SpellPhase 5061 and
-  // 5062, 250 ms after the one before): the rectangles stay where the press drew them.
+  // The Medic turns its back and walks 40 m away along the line of the rectangles before the
+  // later gos (SpellPhase 5061 and 5062, 250 ms after the one before): the rectangles stay where
+  // the press drew them. A walk aside would draw the chasing creature out of the 2 wide
+  // rectangle of the third go, which is 1 m wide either side of the line.
   game_client.move_to(
     game:,
     clock: 300,
-    x: press_at.0,
+    x: press_at.0 +. 40.0,
     y: press_at.1,
-    z: press_at.2 +. 40.0,
+    z: press_at.2,
   )
   game_client.face(game:, yaw: facing_the_creature +. 3.1415927, clock: 310)
   let #(_, have) = game_client.read_until_pong(game:, have:, number: 9)
@@ -5152,7 +5156,7 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
       fissure_struck(frames: first_go, in: list.append(third, third_flushed)),
     )
   assert later_goes == [[other.unit_id], [other.unit_id]]
-    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each strikes the creature, by a hit or a deflect, which stands inside all three rectangles (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the strike is where the press drew them, not where the Medic stands"
+    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each strikes the creature, by a hit or a deflect, which chases the Medic along the line of the rectangles and so stays inside each (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the strike is where the press drew them, not where the Medic stands"
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
@@ -5220,7 +5224,9 @@ fn fissure_struck(
 
 /// A Beast of 5000 health that never deflects and stands where it is once struck: a client-default
 /// Beast has 52 health, which Fissure's first go alone kills, and a struck creature chases its
-/// attacker at its run speed, which 0 makes none.
+/// attacker at its run speed, which 0 makes none. The speed is worked out again from the
+/// creature's display's run speed (`CombatContext.run_land`) whenever its properties change, as
+/// Fissure's debuff changes them, so both are 0.
 fn still_beast_at(number number: Int, place place: Place) -> spawn.Spawn {
   let beast = spawn_support.beast_without_deflect_at(number:, place:)
   spawn.Spawn(
@@ -5231,6 +5237,7 @@ fn still_beast_at(number number: Int, place place: Place) -> spawn.Spawn {
       ..beast.combat,
       attack: Attack(..beast.combat.attack, run_speed: 0.0),
     ),
+    context: spawn.CombatContext(..beast.context, run_land: 0.0),
   )
 }
 

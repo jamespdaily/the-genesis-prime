@@ -1286,6 +1286,57 @@ pub fn a_fissure_go_strikes_the_foes_inside_its_own_rectangle_and_not_the_wider_
   )
 }
 
+pub fn a_go_whose_phase_names_no_hit_row_selects_nobody_from_the_area_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Fissure's child 41844 with its three gos' damage replaced by one row of phaseFlags -1
+  // that every go takes, so each go selects the area; its hit shapes are planted: none at go 0
+  // and the area row's own range at go 1 (the area row is 0 to 20 m over 360 degrees).
+  let fissure =
+    spell_area.of_spell(
+      areas: spell_tables.fixture_areas(),
+      spell4_id: Spell4Id(41_844),
+    )
+  let assert Ok(fissure) = fissure
+    as "Fissure's child is in the fixture's areas"
+  let assert [effect, ..] = fissure.damage as "the child holds damage rows"
+  let aimed = fn(aim) {
+    let planted =
+      spell_area.SpellArea(
+        ..fissure,
+        inside_by_go: [None, Some(area.InsideRow), Some(area.InsideRow)],
+        damage: [spell_area.DamageEffect(..effect, phase_flags: -1, aim:)],
+      )
+    dict.insert(spell_tables.fixture_areas(), 41_844, planted)
+  }
+  // A foe 6 m ahead of the start, in the caster's picture; unit 7 is the caster.
+  let selected = fn(areas, phase) {
+    strike.select(
+      asked: GoAsked(
+        cast_id: 5,
+        phase:,
+        spell4_id: Spell4Id(41_844),
+        primary_target: 21,
+        spent: None,
+        started_at: Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0),
+      ),
+      attacker: strike_support.attacker(),
+      picture: dict.from_list([#(21, foe_at(x: 0.0, z: -6.0))]),
+      areas:,
+      now_ms: 0,
+    )
+  }
+  let in_the_area = selected(aimed(spell_plan.AimsAtArea), 0)
+  assert in_the_area.area == [] && in_the_area.units == []
+    as "a go whose phase no hit row names selects nobody from the area, though its damage aims at the area"
+  let next_go = selected(aimed(spell_plan.AimsAtArea), 1)
+  assert next_go.area == [21]
+    as "the next go, whose hit shapes are the area row's range, selects the foe 6 m ahead"
+  let at_the_target = selected(aimed(spell_plan.AimsAtPrimaryTargetAndArea), 0)
+  assert at_the_target.area == []
+    && list.map(at_the_target.units, fn(unit) { unit.unit_id }) == [21]
+    as "a damage row aimed at the target as well still strikes the primary target at that go, and nobody from the area"
+}
+
 pub fn a_row_placed_on_the_cast_target_strikes_around_the_unit_a_spell_is_started_on_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
