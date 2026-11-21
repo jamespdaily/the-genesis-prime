@@ -20,8 +20,8 @@ import client_shape_rows
 import client_tables
 import fixture_tables
 import genesis_prime/game/area.{
-  type Placement, Box, Circle, Cone, InsideRow, InsideShapes, Placement,
-  Rectangle, Row,
+  type Inside, type Placement, Box, Circle, Cone, InsideRow, InsideShapes,
+  Placement, Rectangle, Row,
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -31,21 +31,25 @@ import genesis_prime/game/spell_area.{
   TelegraphNotOnCaster, TelegraphOnStruckUnits, TickingNoTick,
   TickingUntilRemoved, ValidTargetsNotAlive,
 }
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
 import genesis_prime/game/target_mechanic
+import genesis_prime/game/telegraph_window
 import genesis_prime/game/ticking
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{
   Spell4BaseId, Spell4EffectsId, Spell4Id, TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/telegraph_damage
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import owned_test
@@ -95,7 +99,7 @@ pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() ->
       order: area.Nearest,
     ))
     as "Spell4.58591.area: row 640"
-  assert kicked.shapes
+  assert shapes_at_go_0(spell: kicked)
     == [
       Placement(
         shape: Cone(inner: 1.0, outer: 7.0, degrees: 100.0),
@@ -111,6 +115,14 @@ pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() ->
   assert effect.aim == spell_plan.AimsAtArea
 }
 
+/// The hit shapes the spell strikes with at its first go: empty for a spell read by its area row.
+fn shapes_at_go_0(spell spell: spell_area.SpellArea) -> List(Placement) {
+  case spell_area.inside(spell:, phase: 0) {
+    Some(InsideShapes(placements:)) -> placements
+    Some(InsideRow) | None -> []
+  }
+}
+
 /// The shape, the offset ahead and the offset aside of each hit shape of a real
 /// spell, in the order the build keeps them.
 fn real_shapes(spell4_id spell4_id: Int) -> List(#(area.Shape, Float, Float)) {
@@ -118,7 +130,7 @@ fn real_shapes(spell4_id spell4_id: Int) -> List(#(area.Shape, Float, Float)) {
   let assert Ok(found) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
     as "the spell is in the areas of the level-1 abilities"
-  list.map(found.shapes, fn(placement) {
+  list.map(shapes_at_go_0(spell: found), fn(placement) {
     #(placement.shape, placement.ahead, placement.aside)
   })
 }
@@ -231,8 +243,201 @@ pub fn a_channel_of_the_level_1_abilities_has_a_phase_for_each_pulse_and_none_af
 pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
   use <- owned_test.run(60_000)
   let kicked = client_kick()
-  assert spell_area.inside(spell: kicked) == InsideShapes(kicked.shapes)
+  assert spell_area.inside(spell: kicked, phase: 0)
+    == Some(InsideShapes(shapes_at_go_0(spell: kicked)))
     as "Jim's choice: inside the telegraph, Kick is 7 m and 100 degrees (Spell4.58591.area), capped by the row's range"
+}
+
+/// A rectangle of a hit row whose shape is 7, placed 1 m ahead (`TelegraphDamage` 2996 to 2998).
+fn fissure_rectangle(width width: Float) -> Option(Inside) {
+  Some(
+    InsideShapes([
+      Placement(
+        shape: Rectangle(width:, length: 14.0),
+        ahead: 1.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ]),
+  )
+}
+
+/// A cone of a hit row whose shape is 8 with no box, as Pulse Blast's rows hold them
+/// (`TelegraphDamage` 213, 217, 218, 3299 to 3301).
+fn pulse_cone(
+  inner inner: Float,
+  outer outer: Float,
+  degrees degrees: Float,
+  ahead ahead: Float,
+) -> Placement {
+  Placement(
+    shape: Cone(inner:, outer:, degrees:),
+    ahead:,
+    aside: 0.0,
+    turn_degrees: 0.0,
+  )
+}
+
+pub fn a_players_phased_cast_holds_at_each_go_the_hit_rows_that_go_names_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `table_rows -- TelegraphDamage 2996 2997 2998 213 217 218 3299 3300 3301`: phaseFlags are
+  // bit masks (1 is go 0, 2 is go 1, 4 is go 2, 8 is go 3). The comparison of a row's phase
+  // with a go is a marked guess (`opcode.0x7f4.phase` is the client's only use of it).
+  list.each(
+    [
+      #(
+        41_844,
+        [
+          fissure_rectangle(width: 10.0),
+          fissure_rectangle(width: 6.0),
+          fissure_rectangle(width: 2.0),
+          None,
+        ],
+        "Fissure's child: rows 2998, 2997 and 2996 (phaseFlags 1, 2, 4) are 10, 6 and 2 wide at gos 0, 1 and 2, and a go past the last has no rows",
+      ),
+      #(
+        37_302,
+        [
+          None,
+          Some(
+            InsideShapes([
+              pulse_cone(inner: 5.0, outer: 29.0, degrees: 10.0, ahead: -4.0),
+            ]),
+          ),
+          Some(
+            InsideShapes([
+              pulse_cone(inner: 4.0, outer: 18.0, degrees: 30.0, ahead: -3.0),
+            ]),
+          ),
+          Some(
+            InsideShapes([
+              pulse_cone(inner: 3.0, outer: 13.0, degrees: 60.0, ahead: -2.0),
+            ]),
+          ),
+        ],
+        "Pulse Blast's child: rows 213, 217 and 218 (phaseFlags 2, 4, 8) are the cones of 10, 30 and 60 degrees at gos 1, 2 and 3, and no row names go 0",
+      ),
+      #(
+        42_276,
+        [
+          None,
+          Some(
+            InsideShapes([
+              pulse_cone(inner: 5.0, outer: 29.0, degrees: 10.0, ahead: -4.0),
+              pulse_cone(inner: 4.0, outer: 18.0, degrees: 30.0, ahead: -3.0),
+              pulse_cone(inner: 3.0, outer: 13.0, degrees: 60.0, ahead: -2.0),
+            ]),
+          ),
+        ],
+        "Pulse Blast's first spell: rows 3299, 3300 and 3301 all hold phaseFlags 2, so they are struck together at go 1 and none names go 0",
+      ),
+    ],
+    fn(row) {
+      let #(spell4_id, expected, reason) = row
+      let found = fixture_area(spell4_id:)
+      assert list.index_map(expected, fn(_, phase) {
+          spell_area.inside(spell: found, phase:)
+        })
+        == expected
+        as reason
+    },
+  )
+  assert spell_area.inside(spell: fixture_area(spell4_id: 41_844), phase: -1)
+    == None
+    as "a go below 0 is none: dropping from the list would hand back go 0's rows"
+}
+
+pub fn a_cast_whose_phase_the_client_does_not_compare_holds_every_hit_row_at_each_go_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Discharge's spell 58832 is a channel of three pulses whose spellChannelFlags is 0
+  // (`table_rows -- Spell4 58832`), so the client does not compare a row's phase with a pulse.
+  // Its one hit row, 2462 (a cone, phaseFlags -1), is drawn from 0 to 0 ms, a window that holds
+  // the first pulse only: dropping the row by its window would strike nobody at pulses 1 and 2.
+  let discharge = fixture_area(spell4_id: 58_832)
+  assert spell_area.phase_count(spell: discharge) == 3
+    as "Discharge has three pulses"
+  let cone =
+    Some(
+      InsideShapes([
+        pulse_cone(inner: 1.0, outer: 15.0, degrees: 50.0, ahead: 0.0),
+      ]),
+    )
+  assert list.map([0, 1, 2], fn(phase) {
+      spell_area.inside(spell: discharge, phase:)
+    })
+    == [cone, cone, cone]
+    as "TelegraphDamage 2462 is struck at every pulse: the window draws a picture and ties nothing to a strike"
+}
+
+pub fn every_phase_of_every_planned_spell_that_selects_the_area_has_hit_shapes_when_the_spell_has_hit_rows_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // A go that selects units from the area but whose hit rows name no phase would strike nobody
+  // without a word: a spell whose rows name none of its gos must not select the area at one.
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let silent =
+    dict.values(areas)
+    |> list.flat_map(fn(found) {
+      spell_plan.go_numbers(go_count: spell_area.phase_count(spell: found))
+      |> list.filter_map(fn(phase) {
+        let assert Ok(strike) =
+          spell_area.phase(spell: found, phase:, spent: None)
+          as "a go below the count is one the spell holds"
+        case
+          strike.selects_area && spell_area.inside(spell: found, phase:) == None
+        {
+          True -> Ok(#(found.spell4_id.value, phase))
+          False -> Error(Nil)
+        }
+      })
+    })
+  assert silent == []
+    as "a go that selects the area names no hit row, so it strikes nobody from the area"
+}
+
+pub fn the_window_the_client_draws_a_row_in_holds_the_go_its_phase_names_for_every_planned_phased_spell_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // A player's cast reads a hit row by its phase alone (a marked guess). It agrees with the
+  // rule a creature's cast uses, phase and the row's time window, while every row that names a
+  // go is drawn at that go's time: a row that does not is the case where the two rules strike
+  // different units, and then the choice of the phase alone is to be reopened.
+  let tables = client_tables.shared()
+  let links = spell_area.telegraph_links_by_spell(tables:)
+  let differs =
+    dict.values(spell_plan.plans_with_later(tables:))
+    |> list.flat_map(fn(plan) {
+      spell_plan.tree(spell: plan, started: fn(_) { True })
+    })
+    |> list.flat_map(fn(spell) {
+      let assert Ok(row) = spell4.get(tables:, id: spell.spell4_id)
+        as "the planned spell has its Spell4 row"
+      let assert Ok(base) = spell4_base.get(tables:, id: spell.spell4_base_id)
+        as "the planned spell has its Spell4Base row"
+      let go_times_ms = spell_plan.go_times_ms(spell)
+      case spell_plan.compares_telegraph_phase(row:, base:) {
+        False -> []
+        True ->
+          list.flat_map(
+            spell_area.hit_rows_of(tables:, links:, id: spell.spell4_id.value),
+            fn(hit) {
+              list.index_map(go_times_ms, fn(_, go) { go })
+              |> list.filter(fn(go) {
+                spell_effect.names_phase(
+                  phase_flags: hit.phase_flags,
+                  phase: go,
+                )
+                && !spell_area.is_twin(row: hit)
+                && !telegraph_window.drawn_at(row: hit, go_times_ms:, go:)
+              })
+              |> list.map(fn(go) { #(spell.spell4_id.value, hit.id, go) })
+            },
+          )
+      }
+    })
+    |> list.unique
+  assert differs == []
+    as "a hit row names a go its time window does not hold, so a player's phase-only rule and a creature's phase-and-window rule strike different units: reopen the choice to read a player's rows by phase alone"
 }
 
 pub fn a_client_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Nil {
@@ -247,15 +452,15 @@ pub fn a_client_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Ni
       order: area.Nearest,
     ))
     as "Spell4.42297.area: Spell4AoeTargetConstraints 704 (angle 360, 4 units, 0 to 4 m)"
-  assert found.shapes == []
+  assert shapes_at_go_0(spell: found) == []
     as "Spell4Telegraph holds no row of spell 42297, so it has no hit shape"
-  assert spell_area.inside(spell: found) == InsideRow
+  assert spell_area.inside(spell: found, phase: 0) == Some(InsideRow)
     as "Spell4.42297.area: a spell with an area row and no telegraph row is read by the row"
 }
 
 pub fn a_client_spell_leaves_out_a_drawn_row_with_bit_0x20_while_another_is_drawn_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert fixture_area(spell4_id: 29_874).shapes
+  assert shapes_at_go_0(spell: fixture_area(spell4_id: 29_874))
     == [
       Placement(
         shape: Rectangle(width: 0.8999999761581421, length: 19.0),
@@ -299,7 +504,7 @@ pub fn a_telegraph_link_to_a_row_the_table_lacks_is_left_out_as_the_client_leave
 
 pub fn a_client_spell_whose_drawn_rows_all_have_bit_0x20_keeps_them_all_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert fixture_area(spell4_id: 58_586).shapes
+  assert shapes_at_go_0(spell: fixture_area(spell4_id: 58_586))
     == [
       Placement(
         shape: Circle(radius: 1.25),
@@ -1478,7 +1683,7 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
     ))
     as "Spell4.58591.area: row 640"
   let assert [Placement(shape: Cone(inner:, outer:, degrees:), ..)] =
-    kicked.shapes
+    shapes_at_go_0(spell: kicked)
     as "Kick's 168 is its one hit shape: a cone"
   assert inner == 1.0 && outer == 7.0 && degrees == 100.0
     as "Spell4.58591.area: 1 to 7 m over 100 degrees"
@@ -1500,7 +1705,7 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
   let assert Ok(surge) =
     spell_area.of_spell(areas:, spell4_id: Spell4Id(42_352))
     as "Paralytic Surge is in the areas"
-  assert surge.shapes
+  assert shapes_at_go_0(spell: surge)
     == [
       Placement(
         shape: Box(width: 8.0, length: 8.0),
@@ -1797,7 +2002,7 @@ fn planned_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
   spell_area.SpellArea(
     spell4_id: Spell4Id(spell4_id),
     row: None,
-    shapes: [],
+    inside_by_go: [Some(InsideRow)],
     anchor: area.FollowsTarget,
     damage: [],
     ticking: [],
@@ -1990,7 +2195,7 @@ pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() 
     spell_area.SpellArea(
       spell4_id: Spell4Id(36_010),
       row: None,
-      shapes: [],
+      inside_by_go: [Some(InsideRow)],
       anchor: area.FollowsTarget,
       damage: [],
       ticking: [],

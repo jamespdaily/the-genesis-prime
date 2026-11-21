@@ -139,6 +139,7 @@ import genesis_prime/table/id.{XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/creature_faction
+import genesis_prime/world_map/creature_life.{Attack, Combat}
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/map_id.{MapId}
@@ -4979,11 +4980,11 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
 /// are the level-1 three and the innate, then SpellLevel 614's base 26038 (Fissure) at bag
 /// index 4, written after the level and before the properties, on the whole server and again
 /// at the entry of the relog. Fissure is planned (its second spell's hit telegraphs 2996 to 2998
-/// are placed by flag 8, the position the cast holds), so the press of slot 4 is accepted. The
-/// Medic stands 8 m from the ring's other creature and faces it, so the creature is inside the
-/// first rectangle of the press pose; before the second and third go the Medic moves 40 m aside
-/// and turns half a turn, and the strike still lands where the press drew its rectangles. The
-/// clock is driven and nothing waits on real time.
+/// are placed by flag 8, the position the cast holds), so the press of slot 4 is accepted: it is
+/// confirmed, not refused, and the child's start carries the press pose. The Medic stands 8 m
+/// from the ring's other creature and faces it. Which creatures each go strikes is the job of
+/// the strike tests and of the whole-server test of Fissure among still Beasts. The clock is
+/// driven and nothing waits on real time.
 pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_holds_it_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -5103,55 +5104,6 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
   assert confirmed.yaw == float32.to_bits(facing_the_creature)
     && child_started.yaw == float32.to_bits(facing_the_creature)
     as "opcode.0x7fd, opcode.0x7ff: the yaw the client turns the picture by is the facing the Medic had at the press (the client's own yaw is the caster's facing, a marked guess)"
-  let #(first_goes, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      fissure_goes(frames: first_go, in: list.append(first_go, frames)) != []
-    })
-  // The go leaves a unit whose hit the roll deflected out of its targets and a 0x7fb names it
-  // (`strike`'s deflect), so each go is read up to a pong, which follows the go and its 0x7fb.
-  let #(first_flushed, have) =
-    game_client.read_until_pong(game:, have:, number: 11)
-  assert fissure_struck(
-      frames: first_go,
-      in: list.flatten([first_go, first_goes, first_flushed]),
-    )
-    == [[other.unit_id]]
-    as "opcode.0x7f4, opcode.0x7fb: the child's first go strikes the creature 8 m ahead of the press pose, inside Fissure's first rectangle, by a hit or a deflect"
-  // The Medic turns its back and walks 40 m aside before the later gos (SpellPhase 5061 and
-  // 5062, 250 ms after the one before): the rectangles stay where the press drew them.
-  game_client.move_to(
-    game:,
-    clock: 300,
-    x: press_at.0,
-    y: press_at.1,
-    z: press_at.2 +. 40.0,
-  )
-  game_client.face(game:, yaw: facing_the_creature +. 3.1415927, clock: 310)
-  let #(_, have) = game_client.read_until_pong(game:, have:, number: 9)
-  // One step for each go, so each go is struck at its own time on the driven clock: the ring's
-  // creature chases the Medic once hit, and a strike round that ran after both steps would find
-  // it somewhere else.
-  driven_time.advance(time:, ms: 250)
-  let #(second, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      fissure_goes(frames: first_go, in: frames) != []
-    })
-  let #(second_flushed, have) =
-    game_client.read_until_pong(game:, have:, number: 12)
-  driven_time.advance(time:, ms: 250)
-  let #(third, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      fissure_goes(frames: first_go, in: frames) != []
-    })
-  let #(third_flushed, have) =
-    game_client.read_until_pong(game:, have:, number: 13)
-  let later_goes =
-    list.append(
-      fissure_struck(frames: first_go, in: list.append(second, second_flushed)),
-      fissure_struck(frames: first_go, in: list.append(third, third_flushed)),
-    )
-  assert later_goes == [[other.unit_id], [other.unit_id]]
-    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each strikes the creature, by a hit or a deflect, which stands inside all three rectangles (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the strike is where the press drew them, not where the Medic stands"
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
@@ -5187,34 +5139,146 @@ fn fissure_goes(
   }
 }
 
-/// The units each go of the child 41844 of Fissure strikes, in order, read in `in`: the targets
-/// the go names, and for a go that names none the units of the next 0x7fb of the cast, which
-/// are the ones whose hit the roll deflected (`hit`: the deflect roll is drawn from the
-/// caster's seed, which `fixed_seed` derives from the test's name, so a go that the roll
-/// deflects under one seed lands under another and each go may be deflected).
-fn fissure_struck(
-  frames frames: List(Frame),
-  in read: List(Frame),
-) -> List(List(Int)) {
-  let events = game_client.casts_in(frames:)
-  case game_client.starts_of(events:, spell4_id: 41_844) {
-    [#(cast_id, _), ..] -> {
-      let misses =
-        list.filter_map(game_client.missed_in(frames: read), fn(missed) {
-          case missed.0 == cast_id {
-            True -> Ok(missed.1)
-            False -> Error(Nil)
-          }
-        })
-      list.map_fold(fissure_goes(frames:, in: read), misses, fn(left, go) {
-        case go, left {
-          [], [missed, ..rest] -> #(rest, missed)
-          _, _ -> #(left, go)
-        }
-      }).1
-    }
-    [] -> []
+/// A Beast of 5000 health that never deflects and stands where it is once struck: a client-default
+/// Beast has 52 health, which Fissure's first go alone kills, and a struck creature chases its
+/// attacker at its run speed, which 0 makes none. The speed is worked out again from the
+/// creature's display's run speed (`CombatContext.run_land`) whenever its properties change, as
+/// Fissure's debuff changes them, so both are 0.
+fn still_beast_at(number number: Int, place place: Place) -> spawn.Spawn {
+  let beast = spawn_support.beast_without_deflect_at(number:, place:)
+  spawn.Spawn(
+    ..beast,
+    health: 5000,
+    health_source: unit_fields.Recorded,
+    combat: Combat(
+      ..beast.combat,
+      attack: Attack(..beast.combat.attack, run_speed: 0.0),
+    ),
+    context: spawn.CombatContext(..beast.context, run_land: 0.0),
+  )
+}
+
+/// A level-4 Medic stands 8 m behind a Beast and presses Fissure at it with three Beasts in
+/// view: A 8 m ahead, B 2 m past the hit radius aside of it and C 4 m past it. Fissure's child
+/// strikes the 10 wide rectangle of TelegraphDamage 2998 at its first go, the 6 wide one of
+/// 2997 at the second and the 2 wide one of 2996 at the third, so the units each go lists are
+/// those whose edge is inside the rectangle of that go: A at every go, B at the first two and C
+/// at the first alone. No Beast fights the Dominion Medic on sight, none dies and none moves,
+/// and nobody moves after the press. The clock is driven and nothing waits on real time.
+pub fn a_medic_presses_fissure_among_still_beasts_and_each_go_strikes_only_the_beasts_its_own_rectangle_holds_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  let radius = spawn_support.beast_combat().hit_radius
+  // The half widths of rows 2998, 2997 and 2996 are 5, 3 and 1. A Beast is struck when its
+  // centre is within the half width plus its hit radius of the middle line: B at `radius + 2`
+  // is inside the first two (5 + radius, 3 + radius) and outside the third (1 + radius), C at
+  // `radius + 4` is inside the first alone, each 1 m from the edge it is judged by.
+  let aside_b = radius +. 2.0
+  let aside_c = radius +. 4.0
+  let started =
+    world_with_spawns(
+      spawns: [
+        still_beast_at(number: 1, place: beast_place(x: 1.5, z: -4.5)),
+        still_beast_at(
+          number: 2,
+          place: beast_place(x: 1.5 +. aside_b, z: -4.5),
+        ),
+        still_beast_at(
+          number: 3,
+          place: beast_place(x: 1.5 +. aside_c, z: -4.5),
+        ),
+      ],
+      tables: character_tables.shared(),
+      time:,
+    )
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 4,
+    )
+  send_play(game:, character_id: character)
+  let #(seen, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.length(game_client.creatures_created_in(frames:)) >= 3
+    })
+  let beast_at_x = fn(x: Float) {
+    let assert Ok(beast) =
+      list.find(game_client.creatures_created_in(frames: seen), fn(creature) {
+        float.loosely_equals(
+          game_client.placed_by_tail(tail: creature.tail).0,
+          x,
+          0.01,
+        )
+      })
+      as "a Beast stands at this x"
+    beast.unit_id
   }
+  let beast_ahead = beast_at_x(1.5)
+  let beast_near = beast_at_x(1.5 +. aside_b)
+  let beast_far = beast_at_x(1.5 +. aside_c)
+  // The Medic is stored at (1.5, 2.5, 3.5): A is 8 m ahead of it when it faces -z.
+  game_client.face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(1.5, 3.5), target: #(1.5, -4.5)),
+    clock: 100,
+  )
+  game_client.press_ability(game:, client_cast_id: 1, bag_index: 4, target: 0)
+  let #(first, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames:, in: frames) != []
+    })
+  let #(first_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 14)
+  let pressed = list.append(first, first_flushed)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Fissure is planned and a level-4 Medic holds it, so the press is not refused"
+  let assert Ok(child_started) =
+    list.find(
+      list.filter(pressed, fn(frame) { frame.message_id == 0x07FF })
+        |> list.map(fn(frame) {
+          let assert Ok(started) = spell_started.decode(frame.body)
+            as "0x7ff decodes"
+          started
+        }),
+      fn(started) { started.spell4_id == 41_844 },
+    )
+    as "opcode.0x7ff: the child 41844 starts"
+  assert #(child_started.root_spell4_id, child_started.parent_spell4_id)
+    == #(41_843, 41_843)
+    as "Spell4Effects 94215 starts child 41844 of the pressed 41843"
+  driven_time.advance(time:, ms: 250)
+  let #(second, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: pressed, in: frames) != []
+    })
+  let #(second_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 15)
+  driven_time.advance(time:, ms: 250)
+  let #(third, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: pressed, in: frames) != []
+    })
+  let #(third_flushed, _) =
+    game_client.read_until_pong(game:, have:, number: 16)
+  let struck = fn(read: List(Frame)) {
+    case fissure_goes(frames: pressed, in: read) {
+      [targets] -> list.sort(targets, int.compare)
+      _ -> panic as "the go lists one set of targets"
+    }
+  }
+  assert struck(pressed)
+    == list.sort([beast_ahead, beast_near, beast_far], int.compare)
+    as "opcode.0x7f4: the first go strikes the 10 wide rectangle (TelegraphDamage 2998, phaseFlags 1), which holds all three Beasts"
+  assert struck(list.append(second, second_flushed))
+    == list.sort([beast_ahead, beast_near], int.compare)
+    as "opcode.0x7f4: the second go strikes the 6 wide rectangle (TelegraphDamage 2997, phaseFlags 2), which holds A and B and not C, which the first go struck"
+  assert struck(list.append(third, third_flushed)) == [beast_ahead]
+    as "opcode.0x7f4: the third go strikes the 2 wide rectangle (TelegraphDamage 2996, phaseFlags 4), which holds A alone"
+  game_client.close(game:)
+  login_support.stop(started)
 }
 
 /// The player at the marker ring faces the target at ring slot 0 and presses Paralytic Surge on

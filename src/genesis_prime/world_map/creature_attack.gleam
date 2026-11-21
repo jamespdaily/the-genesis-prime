@@ -346,8 +346,7 @@ fn gos_named(
   phase_flags phase_flags: Int,
   go_count go_count: Int,
 ) -> List(Int) {
-  int.range(from: 0, to: go_count, with: [], run: fn(gos, go) { [go, ..gos] })
-  |> list.reverse
+  spell_plan.go_numbers(go_count:)
   |> list.filter(fn(go) { spell_effect.names_phase(phase_flags:, phase: go) })
 }
 
