@@ -51,9 +51,10 @@ const timer_ms = 20
 /// timer that step cancels.
 const witness_ms = 100
 
-/// The time of the timer that fires while an ask waits, a minute: the clock
+/// The time of the timer that fires while an ask waits: inside the ask's own time
+/// (`ask_support.patient`), so a production connection can meet it. The clock
 /// reaches it only when the test advances it.
-const a_minute_ms = 60_000
+const due_within_the_ask_ms = 10_000
 
 /// One record the signalling rule wrote.
 type Record {
@@ -504,7 +505,7 @@ pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_a
     >>)
     as "the step was sent"
   let reply = open_wait.received(from: replies, what: "the shell's ask")
-  driven_time.advance_while_a_participant_waits(time, 0)
+  driven_time.advance_while_a_participant_waits(time:, held: connection, ms: 0)
   assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
   assert registry.deliver(scope, ConnectionId(id), 8) == Ok(Nil)
   process.kill(sessions)
@@ -550,18 +551,18 @@ pub fn a_timer_that_fires_while_an_ask_waits_is_taken_after_the_asks_outcome_on_
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
-  // Timer 2 is due in a minute and the ask waits for its answer, which the
+  // Timer 2 is due within the ask's time and the ask waits for its answer, which the
   // rule's outcome step leaves alone (an ask of 1 cancels timer 1). The clock
   // reaches the timer's time during the wait, and the test sends the outcome
   // after: both signals come from the test, so the order is the test's.
   let assert Ok(Nil) =
     mug.send(client, <<
-      signalling_rule.timer_command, 2, a_minute_ms:16,
-      signalling_rule.ask_command, 1, 20_000:16,
+      signalling_rule.timer_command, 2, due_within_the_ask_ms:16,
+      signalling_rule.ask_command, 1, ask_support.patient:16,
     >>)
     as "the step was sent"
   let reply = open_wait.received(from: replies, what: "the shell's ask")
-  fire_during_the_ask(time:, connection:, advance_ms: a_minute_ms)
+  fire_during_the_ask(time:, connection:, advance_ms: due_within_the_ask_ms)
   reply(Nil)
   assert read_record(client) == Record(signalling_rule.answered, 1)
     as "the ask's outcome is the first input after the step, though the timer fired before it"
@@ -578,7 +579,11 @@ fn fire_during_the_ask(
   connection connection: Pid,
   advance_ms advance_ms: Int,
 ) -> Nil {
-  driven_time.advance_while_a_participant_waits(time, advance_ms)
+  driven_time.advance_while_a_participant_waits(
+    time:,
+    held: connection,
+    ms: advance_ms,
+  )
   event_wait.until("the timer's timeout waits in the mailbox", fn() {
     mailbox_support.tagged_by_reference(connection) == 1
   })
@@ -816,6 +821,7 @@ fn command_with_wait_then_pong(
     wait_ms: 0,
   )
   assert read_record(client) == Record(signalling_rule.pong, pong)
+    as "the connection took the command and answered the pong"
   Nil
 }
 
