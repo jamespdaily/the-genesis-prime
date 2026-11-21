@@ -673,7 +673,7 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     ),
     Exception(
       "test/game_wire_test.gleam",
-      "calls login_support.start_real, start_real_with and start_real_with_jim, which start the tree on the real clock",
+      "calls login_support.start_real and start_real_with, which start the tree on the real clock",
     ),
     Exception(
       "test/login_wire_test.gleam",

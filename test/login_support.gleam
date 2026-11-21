@@ -170,7 +170,11 @@ pub type Started {
 /// the server counts on the node's own time, a write's, a call to Maps and each
 /// connection's ask, are far beyond the test's own deadline
 /// (`ask_support.beyond_the_test_ms`), so none passes while a test runs, and the
-/// test's deadline warns of a wait that is never answered.
+/// test's deadline warns of a wait that is never answered. A stop leaves a
+/// connection's save the shutdown time less the send deadline
+/// (`connection/shell` `stop_deadline`), and a save with no time left is given
+/// up with a warning (`game/connection/state` `end_with`), so the shutdown time
+/// is twice that distance and a stop's save is bounded by the ask deadline only.
 pub fn settings(
   pool pool: pog.Config,
   time time: driven_time.Time,
@@ -180,6 +184,7 @@ pub fn settings(
   server.Settings(
     ..driven,
     send_deadline_ms: beyond,
+    connection_shutdown_ms: 2 * beyond,
     world: server.World(..driven.world, maps_call_ms: beyond),
     login: server.Login(
       sts: server.Served(
