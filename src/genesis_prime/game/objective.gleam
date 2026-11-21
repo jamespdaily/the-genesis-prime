@@ -62,7 +62,8 @@
 //// (`ReleaseUnit`): a used quest object vanishes for everyone for the release time, once
 //// for the use however many objectives and quests counted it. A talk, a kill and a cast
 //// at a unit release nothing, and nor does a use of a departures terminal, which every
-//// player uses (`departures.is_terminal`). The used sets are not saved: a relog lets a
+//// player uses (`departures.is_terminal`), or of a creature that gives or receives a quest
+//// other than those that counted it (`stays_for_another_quest`). The used sets are not saved: a relog lets a
 //// unit count again, and an abandoned quest that is retaken starts them empty. Each
 //// player's log is its own, so two players who use a unit before it vanishes for them both
 //// each count it, and once it returns the player whose set holds it counts nothing while
@@ -105,6 +106,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/gap
 import genesis_prime/store.{type HeldItem}
+import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   type Creature2Id, type Item2Id, type PathSoldierActivateId, type Spell4Id,
   Creature2Id, Quest2Id,
@@ -115,6 +117,7 @@ import genesis_prime/table/quest2
 import genesis_prime/table/spell4
 import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/world_map/game_number.{type GameNumbers}
+import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -321,7 +324,8 @@ fn quest_of(
 /// cast a spell. `reused` is the objectives whose unit may count again
 /// (`objective_units.reused`). A use that counts a unit new to any objective of any quest
 /// ends the effects with one `ReleaseUnit`, after every quest's effects, unless the unit is
-/// a departures terminal.
+/// a departures terminal or a creature that gives or receives another quest
+/// (`stays_for_another_quest`).
 pub fn advance(
   log log: QuestLog,
   tables tables: table_store.Tables,
@@ -330,12 +334,12 @@ pub fn advance(
   scripts scripts: ScriptRows,
   now_ms now_ms: Int,
 ) -> Advanced {
-  let #(advanced, credited_a_new_unit) =
+  let #(advanced, crediting_quests) =
     list.fold(
       quest_log.active_ids(log:),
-      #(Advanced(log:, effects: []), False),
+      #(Advanced(log:, effects: []), []),
       fn(so_far, quest_id) {
-        let #(advanced, credited_before) = so_far
+        let #(advanced, crediting_before) = so_far
         let #(advanced, credited) =
           advance_quest(
             so_far: advanced,
@@ -363,12 +367,22 @@ pub fn advance(
               TalkedTo(..) | Killed(..) | Cast(target: None, ..) -> Error(Nil)
             },
           )
-        #(advanced, credited_before || credited)
+        #(advanced, case credited {
+          True -> [quest_id, ..crediting_before]
+          False -> crediting_before
+        })
       },
     )
-  case event, credited_a_new_unit {
-    Used(target:, unit:, ..), True ->
-      case departures.is_terminal(creature_id: target.creature_id) {
+  case event, crediting_quests {
+    Used(target:, unit:, ..), [_, ..] ->
+      case
+        departures.is_terminal(creature_id: target.creature_id)
+        || stays_for_another_quest(
+          tables:,
+          creature_id: target.creature_id,
+          crediting_quests:,
+        )
+      {
         True -> advanced
         False ->
           Advanced(
@@ -378,7 +392,34 @@ pub fn advance(
             ]),
           )
       }
-    Used(..), False | TalkedTo(..), _ | Killed(..), _ | Cast(..), _ -> advanced
+    Used(..), [] | TalkedTo(..), _ | Killed(..), _ | Cast(..), _ -> advanced
+  }
+}
+
+/// Whether the creature gives or receives a quest that is not one of the quests whose
+/// objective just counted it (Creature2 questIdGiven00 to 24 and questIdReceive00 to 24,
+/// `spawn.quest_ids`). Such a creature is a person or a place the player returns to, and
+/// stays. A creature that gives or receives only the quests that count it is the quest's own
+/// object, which a click starts and collects, and it is released. A creature without a row
+/// gives and receives nothing.
+///
+/// The client says nothing of a counted creature leaving; the split is the server's choice.
+/// Over the client's tables 21 objective cases count a use of a creature that gives or
+/// receives a quest: 14 are such objects (quests 3655, 3786, 4109 three times, 4711, 4948,
+/// 5021, 6052, 6404, 6429, 6485, 6707 and 8177, each a creature that gives the quest
+/// itself) and are released; 7 are people (10529 Dorian Walker, 10533 Artemis Zin, 4369
+/// three times, 6353, 4359) and stay.
+fn stays_for_another_quest(
+  tables tables: table_store.Tables,
+  creature_id creature_id: Creature2Id,
+  crediting_quests crediting_quests: List(Int),
+) -> Bool {
+  case creature2.get(tables, creature_id) {
+    Ok(row) ->
+      list.any(spawn.quest_ids(row), fn(quest_id) {
+        quest_id != 0 && !list.contains(crediting_quests, quest_id)
+      })
+    Error(Nil) -> False
   }
 }
 

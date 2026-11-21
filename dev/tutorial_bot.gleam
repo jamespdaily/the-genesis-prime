@@ -434,7 +434,6 @@ fn the_talks(bot: Bot) -> Result(Bot, Blocked) {
     quest_bot.use_unit(game: bot.game, have: bot.have, unit_id: dorian_unit)
   let bot = took(bot:, frames: answer.frames, have:)
   let bot = await_state(bot:, quest_id: 10_529, state: 3)
-  let bot = spend(await_gone(bot:, unit_id: dorian_unit), dorian_unit)
   use bot <- result.try(accept_from(
     bot:,
     givers: [dorian],
@@ -666,22 +665,6 @@ fn await_state(bot bot: Bot, quest_id quest_id: Int, state state: Int) -> Bot {
         found: told,
       )
   }
-}
-
-/// Returns once the server has removed the unit from the bot's picture (0x355): at
-/// once when an earlier read held it, else when it comes. A unit the objective's
-/// release rule removes is removed by the map, so its 0x355 is not ordered against
-/// the pong that ended the use, and a unit chosen before it came would be gone by the
-/// next talk.
-fn await_gone(bot bot: Bot, unit_id unit_id: Int) -> Bot {
-  use <- bool.guard(when: !dict.has_key(bot.units.others, unit_id), return: bot)
-  read_until(
-    bot,
-    what: "0x355 of unit " <> int.to_string(unit_id),
-    found: fn(frames) {
-      list.contains(game_client.removals_in(frames:), unit_id)
-    },
-  )
 }
 
 // Moving
