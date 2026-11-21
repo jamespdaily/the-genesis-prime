@@ -1477,6 +1477,7 @@ pub fn mapped_logging(
     | client_connection.TellThrown(..)
     | client_connection.TellDespawn(..)
     | client_connection.TellUnitStates(..)
+    | client_connection.TellCastView(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }

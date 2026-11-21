@@ -104,10 +104,11 @@ import genesis_prime/client_connection.{
   type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
   AskMapRun, AskSessions, AskStore, ChangeEnds, ChangeStarts, ForStay,
   FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
-  SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
-  TellDespawn, TellLifeChanged, TellMoved, TellPeer, TellReady, TellReleased,
-  TellStealthChanged, TellStrike, TellStrikeAnswered, TellTargetChange,
-  TellTargetMoved, TellThrown, TellUnitStates, TellVisibilityChanged,
+  SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellCastView,
+  TellChat, TellDespawn, TellLifeChanged, TellMoved, TellPeer, TellReady,
+  TellReleased, TellStealthChanged, TellStrike, TellStrikeAnswered,
+  TellTargetChange, TellTargetMoved, TellThrown, TellUnitStates,
+  TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -371,7 +372,8 @@ fn directory(settings: Settings) -> Directory {
       | TellTargetChange(..)
       | TellThrown(..)
       | TellDespawn(..)
-      | TellUnitStates(..) -> Error(Nil)
+      | TellUnitStates(..)
+      | TellCastView(..) -> Error(Nil)
     }
   }
 }
@@ -483,6 +485,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellThrown(..)
     | TellDespawn(..)
     | TellUnitStates(..)
+    | TellCastView(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -547,6 +550,7 @@ pub fn tell_the_run(
     | TellThrown(..)
     | TellDespawn(..)
     | TellUnitStates(..)
+    | TellCastView(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -565,8 +569,9 @@ pub fn tell_the_run(
 /// (`TellTargetMoved`) as `TargetMoved`, the answer to its strike
 /// (`TellStrikeAnswered`) as `StrikeAnswered`, and a modifier's start or end
 /// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds`, a throw (`TellThrown`) as
-/// `Thrown`, a removal (`TellDespawn`) as `Despawn` and held unit states (`TellUnitStates`)
-/// as `UnitStates`. Any other request,
+/// `Thrown`, a removal (`TellDespawn`) as `Despawn`, held unit states (`TellUnitStates`)
+/// as `UnitStates` and a cast's view (`TellCastView`) as `CastViewSet` or `CastViewEnds`.
+/// Any other request,
 /// or an address that is no creature, is an error and nothing is sent.
 pub fn tell_creature(
   creatures creatures: CreatureRegistry,
@@ -596,9 +601,10 @@ pub fn tell_creature(
   }
 }
 
-/// The message a creature takes a connection's request as, for the seven requests a
-/// creature is told.
-fn creature_told(request: Request) -> Result(creature.Message, Nil) {
+/// The message a creature takes a connection's request as, for the eight requests a
+/// creature is told, and an error for any other. A cast's view (`TellCastView`) is
+/// `CastViewSet` with the connection as its `by`, or `CastViewEnds`.
+pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
   case request {
     TellStrike(tell:) -> Ok(creature.Strike(tell:))
     TellTargetMoved(connection:, place:, seq:, stay:, hit_radius:) ->
@@ -621,6 +627,7 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
       Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
     TellUnitStates(rows:, struck_at_ms:, went_at_ms:) ->
       Ok(creature.UnitStates(rows:, struck_at_ms:, went_at_ms:))
+    TellCastView(..) -> Error(Nil)
     TellPeer(..)
     | TellChat(..)
     | TellMoved(..)
@@ -647,7 +654,8 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
 /// creature's strike (`TellStrikeAnswered`) and a modifier's start or end
 /// (`TellTargetChange`) and a throw (`TellThrown`) told to a `Creature` go through the
 /// creature registry with no watch, as the creature's `Strike`, `TargetMoved`,
-/// `StrikeAnswered`, `ModifierStarts`, `ModifierEnds` and `Thrown` messages. Any other request is no tell to a
+/// `StrikeAnswered`, `ModifierStarts`, `ModifierEnds` and `Thrown` messages (a cast's view
+/// as `CastViewSet` or `CastViewEnds`). Any other request is no tell to a
 /// connection or a creature: a rule that sends one has a bug, logged as an error,
 /// and nothing is sent.
 fn connection_deliver(
@@ -669,6 +677,7 @@ fn connection_deliver(
       | TellThrown(..) as request, step.Creature(..)
       | TellDespawn(..) as request, step.Creature(..)
       | TellUnitStates(..) as request, step.Creature(..)
+      | TellCastView(..) as request, step.Creature(..)
       -> tell_creature(creatures: settings.world.creatures, to:, request:)
       TellStrike(..), _
       | TellTargetMoved(..), _
@@ -677,6 +686,7 @@ fn connection_deliver(
       | TellThrown(..), _
       | TellDespawn(..), _
       | TellUnitStates(..), _
+      | TellCastView(..), _
       | TellMoved(..), _
       | TellReady(..), _
       | TellStealthChanged(..), _

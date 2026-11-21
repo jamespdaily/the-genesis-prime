@@ -144,6 +144,7 @@ import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -478,6 +479,7 @@ pub fn viewer_takes(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
+      let unit = creature_casts_kept(unit:, written: entered.casts_written)
       Continue(
         shown_changed(session:, change: dict.insert(
           _,
@@ -1177,6 +1179,18 @@ fn casts_listed(
     False -> 0
   }
   UnitCreatePlayer(..unit, tail: UnitCreateTail(..unit.tail, casts:, cast_id:))
+}
+
+/// The creature's record with the casts its client was given: an entry of the list
+/// stays only when its cast id is in `casts_written`, since only a cast's 0x7fe ends
+/// the node an entry makes (`cast.target_node_end`), and the client has no 0x7fe to
+/// come for a cast it was not told of. The tail's cast id stays 0 and `casts_written`
+/// is not changed.
+fn creature_casts_kept(
+  unit unit: UnitCreateCreature,
+  written _written: Dict(Int, Int),
+) -> UnitCreateCreature {
+  unit
 }
 
 /// The unit of the player's own record as another player is created with it: at
