@@ -219,6 +219,27 @@ fn client_row(id id: Int) -> lasting.NodeEffect {
   )
 }
 
+/// The effects of the node a later go of the cast at 1000 makes on unit 7, from the node an
+/// earlier go made there with `earlier` (`lasting.given` keeps its effects and appends the
+/// go's).
+fn after_a_later_go(
+  earlier earlier: List(lasting.NodeEffect),
+  later later: List(lasting.NodeEffect),
+) -> List(lasting.NodeEffect) {
+  let assert Ok(made) =
+    lasting.given(
+      held: Some(node(effects: earlier)),
+      unit_id: 7,
+      count: 1,
+      effects: later,
+      held_until_ms: [],
+      longer_of_delay_and_duration: False,
+      go_ms: 1000,
+    )
+    as "the later go's node has a life"
+  made.effects
+}
+
 pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(
@@ -310,6 +331,28 @@ pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Ni
             instance_id: 2,
             delay_ms: 2,
             lifetime_ms: 401,
+          ),
+        ],
+      ),
+      #(
+        "the effects a later go of the cast adds are the node's too: Power Charge's row 96819 at delay 0 added to a node holding row 105548 makes the smallest delay 0, so row 105548 keeps its 1 (alone, at 1499, it is told 2)",
+        after_a_later_go(earlier: [client_row(id: 105_548)], later: [
+          power_charge_row(),
+        ]),
+        False,
+        1499,
+        [
+          support.listed_effect_info(
+            effect_id: 105_548,
+            instance_id: 1,
+            delay_ms: 1,
+            lifetime_ms: 0,
+          ),
+          support.listed_effect_info(
+            effect_id: 96_819,
+            instance_id: 2,
+            delay_ms: 0,
+            lifetime_ms: 0,
           ),
         ],
       ),

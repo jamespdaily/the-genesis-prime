@@ -13,15 +13,16 @@
 
 import cast_support as support
 import client_tables
-import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/spell_plan
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/spell4_effects
-import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/result
+import gleam/string
 import owned_test
 import spell_tables
 import unitest
@@ -37,12 +38,7 @@ fn told_on_units(
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   list.map(decoded.targets, fn(target) {
-    #(
-      target.unit_id,
-      list.map(target.effects, fn(info) {
-        #(info.spell4_effects_id, info.delay_ms)
-      }),
-    )
+    #(target.unit_id, effect_infos_of(target))
   })
 }
 
@@ -84,68 +80,133 @@ pub fn a_go_tells_2_for_a_smallest_delay_of_1_on_a_node_with_an_until_removed_ef
 }
 
 pub fn a_node_whose_smallest_delay_is_1_is_told_2_only_when_it_holds_an_until_removed_row_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
-  // A node is the rows of types 17 (Fluff) and 11 (property modifier) that one spell aims
-  // at one kind of target, as one unit holds them: a go lists exactly those rows with
-  // their delay and flags. The nodes are those with a row of delay 1.
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let spell_ids =
+    spell4_effects.all(tables)
+    |> list.filter(fn(row) { row.delay_time == 1 })
+    |> list.map(fn(row) { row.spell_id })
+    |> list.unique
+  // Each node is one target's effect infos of a go the cast rule makes of the client's
+  // spell, with the table's row of each effect. A spell the server refuses to plan alone
+  // (a plan error) makes no go.
   let nodes =
-    spell4_effects.all(client_tables.shared())
-    |> list.filter(fn(row) { list.contains([17, 11], row.effect_type) })
-    |> list.group(fn(row) { #(row.spell_id, row.target_flags) })
-    |> dict.values
-    |> list.filter(fn(rows) { list.any(rows, fn(row) { row.delay_time == 1 }) })
-  let starts_at_1 = fn(rows) { smallest_delay_ms(rows:) == 1 }
-  let tells_2 = fn(rows) { starts_at_1(rows) && holds_until_removed(rows) }
-  assert list.any(nodes, fn(rows) {
-    tells_2(rows) && list.any(rows, fn(row) { row.id == 74_798 })
+    list.flat_map(spell_ids, fn(spell_id) {
+      let planned =
+        spell_plan.spell_alone(
+          tables:,
+          sources:,
+          spell4_id: spell_id,
+          chain: [],
+        )
+      let told =
+        result.map(planned, nodes_told(spell: _, spell_id:))
+        |> result.unwrap(or: [])
+      list.map(told, fn(node) {
+        list.map(node, fn(info) {
+          let assert Ok(row) =
+            spell4_effects.get(tables:, id: Spell4EffectsId(info.0))
+            as "a told effect is a row of the client's table"
+          Told(effect_id: info.0, told_ms: info.1, row:)
+        })
+      })
+    })
+  let delay_1_nodes =
+    list.filter(nodes, fn(node) {
+      list.any(node, fn(told) { own_delay_ms(told:) == 1 })
+    })
+  let tells_2 = fn(node) {
+    smallest_delay_ms(node:) == 1 && holds_until_removed(node:)
+  }
+  assert list.any(delay_1_nodes, tells_2)
+    as "the client's spells make nodes whose smallest delay is 1 and that hold an until-removed row"
+  assert list.any(delay_1_nodes, fn(node) {
+    smallest_delay_ms(node:) == 1 && !holds_until_removed(node:)
   })
-    as "Spell4Effects 74798's node has a smallest delay of 1 and holds an until-removed row"
-  assert list.any(nodes, fn(rows) {
-    starts_at_1(rows) && !holds_until_removed(rows)
+    as "the client's spells make nodes whose smallest delay is 1 and that hold no until-removed row"
+  assert list.any(delay_1_nodes, fn(node) {
+    smallest_delay_ms(node:) != 1 && holds_until_removed(node:)
   })
-    as "the client holds nodes whose smallest delay is 1 and that hold no until-removed row"
-  assert list.any(nodes, fn(rows) {
-    !starts_at_1(rows) && holds_until_removed(rows)
+    as "the client's spells make nodes with a row of delay 1 and an until-removed row whose smallest delay is not 1"
+  assert list.any(delay_1_nodes, fn(node) {
+    list.any(node, fn(told) { told.effect_id == 74_798 })
+    && list.map(node, fn(told) { told.told_ms }) == [1, 0]
   })
-    as "the client holds nodes with a row of delay 1 and an until-removed row whose smallest delay is not 1"
-  list.each(nodes, fn(rows) {
-    let go =
-      cast_frame.go_message(
-        cast_id: 1,
-        phase: 0,
-        place: support.caster().place,
-        struck: [],
-        listed: [
-          #(
-            7,
-            list.map(rows, fn(row) {
-              cast_state.listed_by_row(
-                effect_id: Spell4EffectsId(row.id),
-                row: spell_plan.lasting_row_of(effect: row),
-              )
-            }),
-          ),
-        ],
-      )
-    let assert [target] = go.targets
-    assert list.map(target.effects, fn(info) { info.delay_ms })
-      == list.map(rows, fn(row) {
-        case tells_2(rows), row.delay_time {
+    as "Spell4Effects 74798's real node holds the type 80 row 135368 at delay 0, so it is told 1 as in the test of Spell4 36201's go"
+  list.each(delay_1_nodes, fn(node) {
+    assert list.map(node, fn(told) { told.told_ms })
+      == list.map(node, fn(told) {
+        case tells_2(node), own_delay_ms(told:) {
           True, 1 -> 2
           _, delay_time -> delay_time
         }
       })
-      as "a node whose smallest delay is 1 tells 2 for each delay of 1 when it holds a row with flags bit 2 (a node told 1 builds no buff), else tells every delay as it is (opcode.0x7f4.first_start)"
+      as {
+        "a node whose smallest delay is 1 tells 2 for each delay of 1 when it holds a row with flags bit 2 (a node told 1 builds no buff), else tells every delay as the table has it (opcode.0x7f4.first_start); the node of Spell4Effects "
+        <> string.join(
+          list.map(node, fn(told) { int.to_string(told.effect_id) }),
+          ", ",
+        )
+      }
   })
 }
 
-fn smallest_delay_ms(rows rows: List(spell4_effects.Spell4Effects)) -> Int {
-  list.fold(rows, 1_000_000, fn(smallest, row) {
-    int.min(smallest, row.delay_time)
+/// One effect info of a node with the row of the client's table it names.
+type Told {
+  Told(effect_id: Int, told_ms: Int, row: spell4_effects.Spell4Effects)
+}
+
+/// The effect infos (Spell4Effects id and told delay) of each target of each go that a
+/// press makes of the client's Spell4 `spell_id`, planted as a spell without a cast time,
+/// a cost or a requirement that keeps the client's effect rows (`real`, the plan of the
+/// spell alone).
+fn nodes_told(
+  spell real: spell_plan.Spell,
+  spell_id spell_id: Int,
+) -> List(List(#(Int, Int))) {
+  let planted =
+    spell_plan.Spell(
+      ..support.child(spell4_id: spell_id, base: 3),
+      effects: real.effects,
+      longer_of_delay_and_duration: real.longer_of_delay_and_duration,
+    )
+  let #(_, effects) =
+    support.press(
+      plans: support.plans_of([planted]),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  support.frames_of(message_id: spell_go.message_id, effects:)
+  |> list.flat_map(fn(frame) {
+    let assert Ok(go) = spell_go.decode(frame.body)
+      as "a go the server wrote decodes"
+    list.map(go.targets, effect_infos_of)
   })
 }
 
-fn holds_until_removed(rows: List(spell4_effects.Spell4Effects)) -> Bool {
-  list.any(rows, fn(row) { int.bitwise_and(row.flags, 2) != 0 })
+fn effect_infos_of(target: SpellTargetInfo) -> List(#(Int, Int)) {
+  list.map(target.effects, fn(info) { #(info.spell4_effects_id, info.delay_ms) })
+}
+
+/// The delay the go tells an effect before the rule of a node's smallest delay: the row's
+/// delayTime, but 0 for a SpellForceRemove row (type 80), whose removal the server tells at
+/// the go (`cast.reached_listed`).
+fn own_delay_ms(told told: Told) -> Int {
+  case told.row.effect_type {
+    80 -> 0
+    _ -> told.row.delay_time
+  }
+}
+
+fn smallest_delay_ms(node node: List(Told)) -> Int {
+  list.fold(node, 1_000_000, fn(smallest, told) {
+    int.min(smallest, own_delay_ms(told:))
+  })
+}
+
+fn holds_until_removed(node node: List(Told)) -> Bool {
+  list.any(node, fn(told) { int.bitwise_and(told.row.flags, 2) != 0 })
 }
