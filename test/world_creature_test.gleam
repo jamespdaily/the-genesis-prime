@@ -503,19 +503,50 @@ pub fn a_map_sweeps_exactly_at_its_sweep_time_test() -> Nil {
   world_support.stop(world:)
 }
 
+/// A world of two Battle Beasts, at x 0 and x 100, whose maps and creatures take
+/// their time from `time`.
+fn two_beasts_timed(time time: driven_time.Time) -> World {
+  world_support.start_timed(
+    time: driven_time.service_time(time),
+    spawns: [
+      spawn_support.battle_beast(number: 1, x: 0.0),
+      spawn_support.battle_beast(number: 2, x: 100.0),
+    ],
+    respawn_ms: 60_000,
+    idle_stop_ms: world_watch_support.idle_stop_ms,
+    sweep_ms: world_watch_support.sweep_ms,
+  )
+}
+
+pub fn a_player_who_stays_keeps_the_creatures_in_sight_running_past_the_idle_stop_and_the_sweep_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A map holds a creature for as long as a player's connection sees it: the idle
+  // stop counts from the last sight. The connection is registered, so the map's
+  // watch on it stays open and the player stays.
+  let time = driven_time.new()
+  let world = two_beasts_timed(time:)
+  let run = world_watch_support.started(world)
+  let _received = world_support.connection(world:, id: 1)
+  let _player = world_watch_support.join(run:, connection: 1)
+  let first =
+    world_watch_support.creature_pid(world:, run:, unit_id: 2, life: 2)
+  let second =
+    world_watch_support.creature_pid(world:, run:, unit_id: 3, life: 3)
+  driven_time.advance(
+    time:,
+    ms: world_watch_support.idle_stop_ms + world_watch_support.sweep_ms,
+  )
+  assert process.is_alive(first) && process.is_alive(second)
+    as "the player stays in sight of both creatures, so no sweep retires either"
+  world_support.stop(world:)
+}
+
 pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world =
-    world_support.start(
-      spawns: [
-        spawn_support.battle_beast(number: 1, x: 0.0),
-        spawn_support.battle_beast(number: 2, x: 100.0),
-      ],
-      respawn_ms: 60_000,
-      idle_stop_ms: world_watch_support.idle_stop_ms,
-      sweep_ms: world_watch_support.sweep_ms,
-    )
+  let time = driven_time.new()
+  let world = two_beasts_timed(time:)
   let run = world_watch_support.started(world)
+  let _received = world_support.connection(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   let first =
     world_watch_support.creature_pid(world:, run:, unit_id: 2, life: 2)
@@ -553,6 +584,7 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
     )
     == Error(Nil)
   })
+  world_support.stop(world:)
 }
 
 /// How many spawns stand in sight of the joining player: the densest point of the
@@ -562,8 +594,8 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
 const spawns_in_sight = 2400
 
 /// A world whose one map has `spawns_in_sight` spawns around x 0 in sight of a
-/// player standing at x 100.
-fn crowded_world() -> World {
+/// player standing at x 100, on the driven clock `time`.
+fn crowded_world(time time: driven_time.Time) -> World {
   let spawns =
     list.repeat(Nil, spawns_in_sight)
     |> list.index_map(fn(_, index) {
@@ -572,7 +604,8 @@ fn crowded_world() -> World {
         x: int.to_float(index + 1) *. 0.4,
       )
     })
-  world_support.start(
+  world_support.start_timed(
+    time: driven_time.service_time(time),
     spawns:,
     respawn_ms: 60_000,
     idle_stop_ms: world_watch_support.idle_stop_ms,
@@ -582,8 +615,10 @@ fn crowded_world() -> World {
 
 pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_and_found_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = crowded_world()
+  let time = driven_time.new()
+  let world = crowded_world(time:)
   let run = world_watch_support.started(world)
+  world_support.connection_that_keeps_nothing(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   let _last =
     world_watch_support.creature_pid(
@@ -594,6 +629,7 @@ pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_a
     )
   assert list.length(world_support.creature_pids(world)) == spawns_in_sight
     as "a creature runs for each spawn in sight, each found at its address"
+  world_support.stop(world:)
 }
 
 pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_started_test() -> Nil {
@@ -601,8 +637,10 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   // Test 16: the Join is answered before its creatures start, so the map is killed
   // as soon as the first creature runs, with the burst of 2,400 starts under way;
   // every creature it did start watches the run and ends with it.
-  let world = crowded_world()
+  let time = driven_time.new()
+  let world = crowded_world(time:)
   let run = world_watch_support.started(world)
+  world_support.connection_that_keeps_nothing(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   event_wait.until("the first creature of the burst runs", fn() {
     world_support.creature_pids(world) != []
@@ -613,6 +651,7 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   event_wait.until("every creature the map started has ended", fn() {
     world_support.creature_pids(world) == []
   })
+  world_support.stop(world:)
 }
 
 /// The blow of Spell4Effects 44477 (spell 26967, `table_rows -- Spell4Effects 44477`) as
