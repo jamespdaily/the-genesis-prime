@@ -40,13 +40,16 @@ class Plant:
         self.ledger = Path(folder) / "builder-starts"
 
     def agent(self, agent_id: str, agent_type: str = "implementer", description: str = "a build",
-              finished: bool = False, quiet_seconds: float = 60, tool_use_id: str | None = None) -> None:
+              finished: bool = False, quiet_seconds: float = 60, tool_use_id: str | None = None,
+              session: str = "session-1") -> None:
+        subagents = self.project / session / "subagents"
+        subagents.mkdir(parents=True, exist_ok=True)
         meta = {"agentType": agent_type, "description": description,
                 "toolUseId": tool_use_id or f"toolu_{agent_id}"}
         if finished:
             meta["finished"] = True
-        (self.subagents / f"agent-{agent_id}.meta.json").write_text(json.dumps(meta))
-        transcript = self.subagents / f"agent-{agent_id}.jsonl"
+        (subagents / f"agent-{agent_id}.meta.json").write_text(json.dumps(meta))
+        transcript = subagents / f"agent-{agent_id}.jsonl"
         transcript.write_text("{}\n")
         os.utime(transcript, (NOW - quiet_seconds, NOW - quiet_seconds))
 
@@ -79,6 +82,23 @@ class LimitBuildersTest(unittest.TestCase):
         self.assertIn("Fix the socket", refused)
         self.assertIn("agent a1", refused)
         self.assertIn("1 min ago", refused)
+
+    def test_one_builder_kept_under_two_session_folders_counts_once(self):
+        self.plant.agent("dup", description="Fix round for telegraph", quiet_seconds=180, session="session-1")
+        self.plant.agent("dup", description="Fix round for telegraph", quiet_seconds=0, session="session-2")
+        self.plant.agent("other", description="Build the sight", quiet_seconds=60)
+        refused = self.plant.ask(self.plant.spawn())
+        self.assertIsNotNone(refused)
+        self.assertIn("2 builders already run", refused)
+        self.assertEqual(refused.count("agent dup"), 1, "the duplicated builder is named once")
+        self.assertIn("agent dup, last wrote 0 min ago", refused, "with the newer copy's minutes")
+        self.assertNotIn("3 min ago", refused)
+        self.assertIn("Build the sight (agent other", refused)
+        self.plant.ledger.write_text("")
+        for session in ("session-1", "session-2"):
+            (self.plant.project / session / "subagents" / "agent-other.meta.json").unlink(missing_ok=True)
+            (self.plant.project / session / "subagents" / "agent-other.jsonl").unlink(missing_ok=True)
+        self.assertIsNone(self.plant.ask(self.plant.spawn()), "the duplicated builder alone leaves a slot")
 
     def test_one_builder_running_leaves_room_for_a_second(self):
         self.plant.agent("a1")
