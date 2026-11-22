@@ -6,7 +6,7 @@
 //// follower (updater log)   ──Followed──►┐
 //// follower (launchd log)   ──Followed──►┤
 ////                                       ├─► runtime (one per tab) ──view──► tab
-//// follower (server)        ──Followed──►┤      subscribed in init, by server_component.select
+//// follower (server)        ──Followed──►┤      subscribed once its runtime hears them (`subscription`)
 //// follower (database)      ──Followed──►┘
 //// ```
 ////
@@ -40,6 +40,7 @@ import genesis_prime/dashboard/log_lines.{type Entry, type Level, type Source}
 import genesis_prime/dashboard/otp_report
 import genesis_prime/dashboard/page.{type Page, LogsKey, Page}
 import genesis_prime/dashboard/read_poll
+import genesis_prime/dashboard/subscription
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -51,7 +52,6 @@ import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import lustre/element/html
 import lustre/element/keyed
-import lustre/server_component
 
 /// The followers a tab's runtime subscribes to: the updater's log, launchd's, the
 /// play server's container and its database's.
@@ -74,9 +74,11 @@ pub type Model {
   )
 }
 
-/// What the Logs page is told: a follower sent its log.
+/// What the Logs page is told: a follower sent its log, or its runtime can hear
+/// the followers and the page is to subscribe (`join`).
 pub type Message {
   Received(followed: Followed)
+  Joining(join: fn() -> Nil)
 }
 
 /// The Logs page as an entry of the page list.
@@ -93,25 +95,32 @@ pub fn app() -> lustre.App(Followers, Model, Message) {
 fn init(followers: Followers) -> #(Model, Effect(Message)) {
   #(
     Model(updater: None, launchd: None, server: None, database: None),
-    server_component.select(fn(_dispatch, subject) {
-      follow.subscribe(follower: followers.updater, subscriber: subject)
-      follow.subscribe(follower: followers.launchd, subscriber: subject)
-      read_poll.subscribe(poll: followers.server, subscriber: subject)
-      read_poll.subscribe(poll: followers.database, subscriber: subject)
-      process.new_selector() |> process.select_map(subject, Received)
-    }),
+    subscription.open(
+      join: fn(subject) {
+        follow.subscribe(follower: followers.updater, subscriber: subject)
+        follow.subscribe(follower: followers.launchd, subscriber: subject)
+        read_poll.subscribe(poll: followers.server, subscriber: subject)
+        read_poll.subscribe(poll: followers.database, subscriber: subject)
+      },
+      received: Received,
+      joining: Joining,
+    ),
   )
 }
 
 fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
-  let Received(followed:) = message
-  let model = case followed.source {
-    log_lines.UpdaterLog -> Model(..model, updater: Some(followed))
-    log_lines.LaunchdLog -> Model(..model, launchd: Some(followed))
-    log_lines.ServerLog -> Model(..model, server: Some(followed))
-    log_lines.DatabaseLog -> Model(..model, database: Some(followed))
+  case message {
+    Received(followed:) -> {
+      let model = case followed.source {
+        log_lines.UpdaterLog -> Model(..model, updater: Some(followed))
+        log_lines.LaunchdLog -> Model(..model, launchd: Some(followed))
+        log_lines.ServerLog -> Model(..model, server: Some(followed))
+        log_lines.DatabaseLog -> Model(..model, database: Some(followed))
+      }
+      #(model, effect.none())
+    }
+    Joining(join:) -> #(model, subscription.joined(join))
   }
-  #(model, effect.none())
 }
 
 /// The Logs page's content.
