@@ -4,7 +4,7 @@
 ////
 //// ```text
 //// poller (host) ──Reading──► runtime (one per tab) ──view──► tab
-////                  subscribed in init, by server_component.select
+////                  subscribed once the runtime hears the poller (`subscription`)
 //// ```
 ////
 //// - A tab's runtime subscribes to the poller when it starts, and the poller
@@ -25,6 +25,7 @@ import genesis_prime/dashboard/host_reading.{
 }
 import genesis_prime/dashboard/page.{type Page, OverviewKey, Page}
 import genesis_prime/dashboard/read_poll
+import genesis_prime/dashboard/subscription
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -35,16 +36,17 @@ import lustre/attribute
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import lustre/element/html
-import lustre/server_component
 
 /// What the Overview holds: the latest reading, once there is one.
 pub type Model {
   Model(reading: Option(Reading))
 }
 
-/// What the Overview is told: the poller sent a reading.
+/// What the Overview is told: the poller sent a reading, or its runtime can hear
+/// the poller and the page is to subscribe (`join`).
 pub type Message {
   Received(reading: Reading)
+  Joining(join: fn() -> Nil)
 }
 
 /// How a state looks: the palette role its words are shown in.
@@ -76,16 +78,21 @@ pub fn app() -> lustre.App(Subject(host.Message), Model, Message) {
 fn init(poller: Subject(host.Message)) -> #(Model, Effect(Message)) {
   #(
     Model(reading: None),
-    server_component.select(fn(_dispatch, subject) {
-      read_poll.subscribe(poll: poller, subscriber: subject)
-      process.new_selector() |> process.select_map(subject, Received)
-    }),
+    subscription.open(
+      join: fn(subject) {
+        read_poll.subscribe(poll: poller, subscriber: subject)
+      },
+      received: Received,
+      joining: Joining,
+    ),
   )
 }
 
-fn update(_model: Model, message: Message) -> #(Model, Effect(Message)) {
-  let Received(reading:) = message
-  #(Model(reading: Some(reading)), effect.none())
+fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
+  case message {
+    Received(reading:) -> #(Model(reading: Some(reading)), effect.none())
+    Joining(join:) -> #(model, subscription.joined(join))
+  }
 }
 
 /// The Overview's content.
