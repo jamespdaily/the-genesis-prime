@@ -968,6 +968,7 @@ pub fn nodes_given(
               held: dict.get(live.nodes, unit_id) |> option.from_result,
               aimed:,
               unit_id:,
+              started_ms: live.started_ms,
               now_ms:,
             )
               |> result.map(struck_by(node: _, struck:)),

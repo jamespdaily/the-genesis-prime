@@ -27,6 +27,8 @@ import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
 import gleam/int
@@ -850,4 +852,77 @@ pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
     })
   assert gated == [#(226_585, 903)]
     as "the one that is gated is Spell4Effects 226585, behind the target apply prerequisite 903, which the plan keeps as its condition"
+}
+
+// ---- an aura cast's length ----
+
+/// Whether each Spell4 row of the client's tables that the plan reads alone carries its
+/// spellDuration as its aura: exactly when its Spell4Base has castMethod 10 and the column is
+/// above 0. A row the plan refuses is counted and named in the message, not skipped; the
+/// column's -1 reads as a buff that never runs out (`0x1407180c0`).
+pub fn every_spell_carries_its_spell_duration_as_its_aura_exactly_when_its_base_is_cast_method_10_and_it_is_above_0_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let rows = spell4.all(tables)
+  let planned =
+    list.filter_map(rows, fn(row) {
+      spell_plan.spell_alone(tables:, sources:, spell4_id: row.id, chain: [])
+      |> result.map(fn(spell) { #(row, spell) })
+      |> result.replace_error(Nil)
+    })
+  let refused = list.length(rows) - list.length(planned)
+  let wrong =
+    list.filter_map(planned, fn(entry) {
+      let #(row, spell) = entry
+      let assert Ok(base) =
+        spell4_base.get(
+          tables:,
+          id: Spell4BaseId(row.spell4_base_id_base_spell),
+        )
+        as "a Spell4 row names a Spell4Base row"
+      let expected = case base.cast_method == 10 && row.spell_duration > 0 {
+        True -> option.Some(row.spell_duration)
+        False -> option.None
+      }
+      case spell.aura_ms == expected {
+        True -> Error(Nil)
+        False -> Ok(#(row.id, spell.aura_ms, expected))
+      }
+    })
+  assert wrong == []
+    as {
+      "rows whose aura differs from their base's castMethod and spellDuration ("
+      <> int.to_string(refused)
+      <> " rows the plan refuses were left out)"
+    }
+  // The rows that name each case, with the reason it is read so (`table_rows -- Spell4 <id>`).
+  [
+    #(58_868, option.Some(6000), "Nullifier's field: castMethod 10, 6000 ms"),
+    #(28_006, option.Some(10_000), "castMethod 10, 10000 ms"),
+    #(
+      27_929,
+      option.None,
+      "castMethod 10 with spellDuration -1: a buff that never runs out",
+    ),
+    #(
+      34_687,
+      option.None,
+      "castMethod 0 with spellDuration 30000: the client reads the column for method 10 alone",
+    ),
+    #(
+      32_825,
+      option.None,
+      "castMethod 7 with spellDuration 5000: not a method-10 spell",
+    ),
+    #(45_405, option.None, "castMethod 0 with spellDuration -1"),
+  ]
+  |> list.each(fn(row) {
+    let #(spell4_id, expected, reason) = row
+    let assert Ok(spell) =
+      spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
+      as reason
+    assert spell.aura_ms == expected as reason
+  })
 }

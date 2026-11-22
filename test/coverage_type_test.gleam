@@ -371,7 +371,7 @@ pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_th
 
 pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let declared =
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
@@ -403,7 +403,7 @@ pub fn a_partial_type_is_handled_and_carries_the_gap_it_states_test() -> Nil {
 
 pub fn a_partial_type_no_rule_reads_is_a_conflict_and_an_unused_one_a_breach_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let declared =
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
@@ -635,7 +635,7 @@ pub fn the_effect_types_3_10_11_14_15_17_18_29_35_42_52_64_73_76_80_81_83_84_95_
 
 pub fn the_spell_effect_engine_reads_type_76_and_names_its_gap_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert Ok(facts) =
     simplifile.read(
       ".claude/skills/decoding-the-client/references/client-facts.toml",
@@ -659,7 +659,7 @@ pub fn the_spell_effect_engine_reads_type_76_and_names_its_gap_test() -> Nil {
 
 pub fn the_type_3_rows_aimed_at_other_units_behind_a_target_prerequisite_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Spell4Effects.targetFlags: bit 1 is the caster, 2 the cast's target, 4 the units the
   // area struck and 6 both. The plan reads a type 3 row aimed at the caster or at those
   // units (Spell4Effects.effectType.3.other_unit) and refuses one aimed at them behind a
@@ -709,7 +709,7 @@ pub fn the_type_3_rows_aimed_at_other_units_behind_a_target_prerequisite_are_cou
 
 pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Spell4Effects.targetFlags: bit 1 is the caster, 2 the cast's target, 4 the units the
   // area struck and 6 both. The plan reads a type 11 row aimed at the caster or at those
   // units and holds one behind a target apply prerequisite, which no go applies.
@@ -760,7 +760,7 @@ pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_
 
 pub fn the_type_73_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Spell4Effects.targetFlags: bit 1 is the caster; the plan reads a type 73 row that
   // includes it (flags 1, 3, 5 and 7) and leaves out one aimed only at others (2, 4 and
   // 6), whose cooldowns no server rule keeps. Planted: five type 73 rows, flags 1, 3, 2,
@@ -897,7 +897,7 @@ fn measured_shield_rows(
 
 pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Planted: five type 118 rows, two the plan leaves out and three it reads: flags 4
   // (aimed at the area); flags 1 with a tickTime of 1000 and a durationTime of 3000
   // (three ticks); flags 1 with a tickTime of 1000, no durationTime and flags bit 2
@@ -946,7 +946,7 @@ pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test
 
 pub fn the_measure_counts_a_periodic_damage_row_that_lasts_until_removed_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Planted: three type 8 rows aimed at the area, one with a tickTime of 1000 and a
   // durationTime of 3000, one with a tickTime of 1000 and flags bit 2 (until removed) and
   // one with no tickTime, and the type 8 row of the helper, aimed at the area with no
@@ -976,7 +976,7 @@ pub fn the_measure_counts_a_periodic_damage_row_that_lasts_until_removed_as_not_
 
 pub fn the_type_8_rows_naming_only_vital_kinds_are_counted_as_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Spell4Effects.targetFlags bit 1 is the caster, 2 the primary target and 4 the area;
   // parameterType00 7 is the target's max health, 23 the caster's health and 18 a
   // passed-in value (0x140566ad0). Planted: kind 7 aimed at the area, kind 23 aimed at the
@@ -1004,7 +1004,7 @@ pub fn the_type_8_rows_naming_only_vital_kinds_are_counted_as_handled_test() -> 
 
 pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Planted: four type 83 rows, flags 1, 2, 4 and 1 with a durationTime of 8000, and one
   // type 8 row.
   let assert Measured(types:, ..) =
@@ -1027,7 +1027,7 @@ pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled
 
 pub fn type_42_rows_are_counted_read_by_their_aim_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Seven type 42 rows (flags, amount, durationTime): the caster, the primary target alone and
   // the caster with the primary target are read; the area, the primary target with the area, an
   // amount of 0 and a duration the client does not read are not.
@@ -1072,7 +1072,7 @@ pub fn type_42_rows_are_counted_read_by_their_aim_test() -> Nil {
 
 pub fn the_type_84_rows_aimed_only_at_other_units_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Planted: two type 84 rows, flags 1 and 2, and one type 8 row. A RemoveStealth row's
   // durationTime is not a timed stealth and the plan does not refuse it.
   let assert Measured(types:, ..) =
@@ -1121,7 +1121,7 @@ pub fn the_clients_74_type_83_rows_count_49_not_read_and_its_9_type_84_rows_4_te
 
 pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missing_type_a_breach_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let declared =
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
@@ -1143,7 +1143,7 @@ pub fn a_type_both_handled_and_listed_missing_is_a_conflict_and_an_unused_missin
 
 pub fn the_checklist_marks_handled_missing_and_undecoded_types_with_the_starting_abilities_rows_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let declared =
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
@@ -1235,7 +1235,7 @@ fn with_trees_loaded(
 
 pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let lacking =
     MissingRow(
       table: "Prerequisite",
@@ -1267,7 +1267,7 @@ pub fn a_prerequisite_a_spell_column_names_that_the_table_lacks_is_a_missing_row
 
 pub fn a_spell_of_the_tree_the_spell4_table_lacks_is_a_missing_row_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert with_trees_loaded(rows: spell_tables.fixture_rows(), body: fn(tables) {
       let assert Ok([spell, ..]) = starting_ability.spells(tables:)
         as "the planted abilities hold spells"
@@ -1287,7 +1287,7 @@ pub fn a_spell_of_the_tree_the_spell4_table_lacks_is_a_missing_row_test() -> Nil
 
 pub fn a_missing_row_fails_the_measure_with_the_row_named_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let measured =
     with_trees_loaded(
       rows: rows_naming(
@@ -1384,7 +1384,7 @@ fn closed_by(
 
 pub fn a_condition_that_needs_the_cast_of_an_amp_spell_cannot_open_at_level_1_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert closed_by(flags: 0, conditions: [#(15, 1, 0, amp_spell)])
     == Ok(needs_amp())
     as "type 15, comparison 1: the unit is a target of a live cast of the AMP spell, which a level-1 character has not unlocked (LevelUpUnlock 26 offers AMPs at level 10)"
@@ -1395,7 +1395,7 @@ pub fn a_condition_that_needs_the_cast_of_an_amp_spell_cannot_open_at_level_1_te
 
 pub fn a_condition_that_needs_no_amp_cast_can_open_at_level_1_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert closed_by(flags: 0, conditions: [#(15, 2, 0, amp_spell)]) == Error(Nil)
     as "type 15, comparison 2: not under a cast of the AMP spell, which is true at level 1 (Prerequisite 24581 reads so)"
   assert closed_by(flags: 0, conditions: [#(15, 1, 0, other_spell)])
@@ -1407,7 +1407,7 @@ pub fn a_condition_that_needs_no_amp_cast_can_open_at_level_1_test() -> Nil {
 
 pub fn an_or_gate_is_closed_only_when_every_condition_is_and_an_and_gate_when_one_is_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert closed_by(flags: 1, conditions: [
       #(15, 1, 0, amp_spell),
       #(15, 1, 0, other_spell),
@@ -1434,7 +1434,7 @@ pub fn an_or_gate_is_closed_only_when_every_condition_is_and_an_and_gate_when_on
 
 pub fn an_amp_spell_condition_can_open_when_the_amp_unlock_is_offered_at_level_1_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert level_one_gate.row_closed(
       gates: level_one_gate.gates(amps: [#(amp_spell, 863)], amp_level: 1),
       row: gate_row(flags: 0, conditions: [#(15, 1, 0, amp_spell)]),
@@ -1445,7 +1445,7 @@ pub fn an_amp_spell_condition_can_open_when_the_amp_unlock_is_offered_at_level_1
 
 pub fn a_level_condition_a_level_1_character_fails_cannot_open_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert closed_by(flags: 0, conditions: [#(1, 4, 0, 2)])
     == Ok(level_one_gate.FailsAtLevelOne(comparison: 4, value: 2))
     as "type 1 compares the unit's level (0x1404a2100, GetUnitFormulaLevel 0x1403b5030) by comparison 4, at least: 1 is not at least 2"
@@ -1459,7 +1459,7 @@ pub fn a_level_condition_a_level_1_character_fails_cannot_open_test() -> Nil {
 
 pub fn a_level_condition_a_level_1_character_passes_can_open_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert closed_by(flags: 0, conditions: [#(1, 4, 0, 1)]) == Error(Nil)
     as "comparison 4: 1 is at least 1"
   assert closed_by(flags: 0, conditions: [#(1, 1, 0, 1)]) == Error(Nil)
@@ -1635,7 +1635,7 @@ fn rows_with_three_proxies() -> spell_tables.Rows {
 
 pub fn a_proxy_behind_a_gate_that_cannot_open_is_left_out_with_its_subtree_whichever_gate_column_holds_it_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert Ok(spells) =
     with_trees_loaded(
       rows: rows_with_three_proxies(),
@@ -1656,7 +1656,7 @@ pub fn a_proxy_behind_a_gate_that_cannot_open_is_left_out_with_its_subtree_which
 
 pub fn each_proxy_left_out_is_listed_with_its_gate_and_what_is_below_it_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert Ok(left) =
     with_trees_loaded(rows: rows_with_three_proxies(), body: fn(tables) {
       starting_ability.left_out(tables:)
@@ -1721,7 +1721,7 @@ pub fn each_proxy_left_out_is_listed_with_its_gate_and_what_is_below_it_test() -
 
 pub fn a_missing_amp_unlock_row_is_a_missing_row_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let rows = rows_with_three_proxies()
   assert with_trees_loaded(
       rows: spell_tables.Rows(..rows, level_up_unlocks: []),
@@ -1777,7 +1777,7 @@ fn client_type_count(number number: Int) -> Int {
 
 pub fn a_prerequisite_only_the_runner_columns_name_is_not_counted_and_is_listed_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert #(types, Ok(left), report) =
     with_trees_loaded(
       rows: rows_naming_quest_copy(column: "prerequisiteIdRunner01"),
@@ -1856,7 +1856,7 @@ fn rows_nesting(
 
 pub fn a_nested_prerequisite_is_followed_and_each_row_counts_once_however_many_nest_it_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // 990900 nests 990901 and 990902, which nests 990901 again; a second column names
   // 990901 directly. 990901 holds a type 243 and a type 129 (Prerequisite 12939's
   // type). The client's rows hold conditions of these types too, so each count is
@@ -1882,7 +1882,7 @@ pub fn a_nested_prerequisite_is_followed_and_each_row_counts_once_however_many_n
 
 pub fn a_nested_id_with_no_row_is_not_a_missing_row_and_a_cycle_ends_the_walk_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let rows =
     rows_nesting(named: [990_903, 990_910], prerequisites: [
       #(990_903, 0, [#(11, 1, 77_777, 0)]),
@@ -1900,7 +1900,7 @@ pub fn a_nested_id_with_no_row_is_not_a_missing_row_and_a_cycle_ends_the_walk_te
 
 pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let #(types, left) =
     with_trees_loaded(
       rows: rows_naming(
@@ -1925,7 +1925,7 @@ pub fn a_runner_column_naming_a_row_the_table_lacks_is_not_a_missing_row_test() 
 
 pub fn a_prerequisite_a_runner_column_and_another_column_name_is_counted_and_not_left_out_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let both =
     with_quest_copy(
       rows: rows_with_energize_naming(columns: [
@@ -2194,7 +2194,7 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
 
 pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   let assert Ok(spells) = starting_ability.spells(tables:)
@@ -2237,7 +2237,7 @@ pub fn the_starting_abilities_totals_hold_208_of_217_effect_rows_and_79_of_79_co
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert Ok(facts) =
     simplifile.read(
       ".claude/skills/decoding-the-client/references/client-facts.toml",
@@ -2355,7 +2355,7 @@ const proc_gap =
 
 pub fn a_proc_row_the_plan_skips_or_refuses_is_counted_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Planted: 217 aimed at the caster (read), 218 aimed at the caster and the target
   // (flags 3: left out), kind 12 (read), kind 0 with chance 0.5 (read), kind 44 with a
   // window of -1 (read) and kind 217 aimed only at another unit (flags 2: left out).
@@ -2493,7 +2493,7 @@ fn planted_files_naming(
 
 pub fn a_lasting_row_aimed_by_other_flags_or_behind_a_target_prerequisite_is_counted_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Planted per type: flags 1 (read), 6 (read), 3 (read: the caster and the primary target),
   // 7 (refused: its area bit in a spell that hits no foes, #834), 1 behind target apply
   // prerequisite 11311 (not applied) and 3 behind one (both).
@@ -2525,7 +2525,7 @@ pub fn a_lasting_row_aimed_by_other_flags_or_behind_a_target_prerequisite_is_cou
 
 pub fn a_type_80_row_with_differing_stack_counts_is_counted_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // The plan reads a type 80 row's count only where dataBits03 and dataBits04 agree
   // (Spell4Effects.effectType.80): planted rows with counts 1 and 1, 0 and 0, 1 and 2.
   let row = fn(id, count_03, count_04) {
@@ -2559,7 +2559,7 @@ pub fn a_type_80_row_with_differing_stack_counts_is_counted_as_not_read_test() -
 
 pub fn a_conversion_row_aimed_only_at_another_unit_is_counted_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert Measured(types:, ..) =
     measured_rows_of(effect_type: 145, rows: [#(1, 0), #(2, 0)])
     as "the engine's source is a table"
@@ -2610,7 +2610,7 @@ const disguise_gap =
 
 pub fn the_type_112_rows_the_plan_does_not_read_are_counted_as_not_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Spell4Effects.effectType.112: a row is read when its flags include the caster (bit 1),
   // it names no outfit (dataBits00 and dataBits08 are 0) and names a display (dataBits01 or
   // dataBits02), no target apply prerequisite stands before it, and it has a life (a
@@ -2726,7 +2726,7 @@ pub fn the_clients_358_disguise_rows_count_159_read_and_the_two_exosuit_rows_amo
 
 pub fn type_23_is_handled_with_no_gap_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert Ok(facts) =
     simplifile.read(
       ".claude/skills/decoding-the-client/references/client-facts.toml",
@@ -2843,7 +2843,7 @@ pub fn the_fixtures_type_35_rows_are_counted_by_the_plans_reading_test() -> Nil 
 
 pub fn the_planted_tables_hold_every_table_the_plan_and_the_activate_cast_read_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // One plain type 8 row aimed at the area is read by the plan, so the measure counts it
   // handled. The measure reads the plan's sources and the activate cast's spells over the
   // planted tables first, and a table of theirs that `planted_files` leaves out ends the

@@ -96,7 +96,7 @@ import pog
 
 /// What the tool is given: the name of the character to sit near, how long to
 /// sit and how to walk.
-pub type Options {
+type Options {
   Options(near: String, minutes: Int, walk: Walk)
 }
 
@@ -110,14 +110,14 @@ pub type Walk {
 }
 
 /// The follow walk's own delay: 2 s.
-pub const client_follow = Follow(delay_ms: 2000)
+const client_follow = Follow(delay_ms: 2000)
 
 /// The circle walk's own interval: the client's movement send interval, 125 ms
 /// (opcode.0xf1).
 pub const client_circle = Circle(move_every_ms: 125)
 
 /// Why the arguments are not a run.
-pub type Usage {
+type Usage {
   MissingNear
   NotMinutes(text: String)
   NotAWalk(text: String)
@@ -130,7 +130,7 @@ const default_minutes = 30
 /// The options the arguments make: `--near <name>` and, optionally, `--minutes
 /// <N>` for N of 1 or more and `--walk follow` or `--walk circle` (follow when
 /// not given).
-pub fn parse_arguments(arguments: List(String)) -> Result(Options, Usage) {
+fn parse_arguments(arguments: List(String)) -> Result(Options, Usage) {
   parse(arguments:, near: None, minutes: default_minutes, walk: client_follow)
 }
 
@@ -344,17 +344,17 @@ pub fn client_schedule(walk walk: Walk) -> Schedule {
 }
 
 /// How many of each duty the bot has done.
-pub type Done {
+type Done {
   Done(moves: Int, lines: Int, whispers: Int)
 }
 
 /// A chat line to send: its channel and its text.
-pub type Line {
+type Line {
   Line(channel: ChannelType, text: String)
 }
 
 /// One thing the bot does at its time.
-pub type Duty {
+type Duty {
   /// The bot's `number`th move, counting from 0.
   Move(number: Int)
   /// A chat line.
@@ -373,7 +373,7 @@ const chat_turns = [
 
 /// The `number`th chat line, counting from 1: the channels in turn, and a text
 /// that names the channel and counts the lines.
-pub fn chat_line(number: Int) -> Line {
+fn chat_line(number: Int) -> Line {
   let assert Ok(channel) =
     list.drop(chat_turns, { number - 1 } % list.length(chat_turns))
     |> list.first
@@ -388,7 +388,7 @@ pub fn chat_line(number: Int) -> Line {
 /// first move of a circle is due at 0, the first chat line and the first whisper
 /// after one of their own intervals. Duties due together go chat, whisper, move.
 /// A follow walk has no move duty: its moves are replays (`follow`).
-pub fn next_duty(schedule schedule: Schedule, done done: Done) -> #(Int, Duty) {
+fn next_duty(schedule schedule: Schedule, done done: Done) -> #(Int, Duty) {
   let line = done.lines + 1
   let whisper = done.whispers + 1
   let talks = [
@@ -412,7 +412,7 @@ pub fn next_duty(schedule schedule: Schedule, done done: Done) -> #(Int, Duty) {
 }
 
 /// What the bot has done after one more duty.
-pub fn after(done done: Done, duty duty: Duty) -> Done {
+fn after(done done: Done, duty duty: Duty) -> Done {
   case duty {
     Move(..) -> Done(..done, moves: done.moves + 1)
     Chat(..) -> Done(..done, lines: done.lines + 1)
@@ -421,15 +421,15 @@ pub fn after(done done: Done, duty duty: Duty) -> Done {
 }
 
 /// How many moves the circle has, so a turn takes 8 s at one move every 125 ms.
-pub const circle_steps = 64
+const circle_steps = 64
 
 /// The circle's radius in units.
-pub const circle_radius = 3.0
+const circle_radius = 3.0
 
 /// The bot's position at its `step`th move: a circle in the ground's plane (x
 /// and z; y is up) whose first step is `start` and whose centre is one radius
 /// along -x from it, `circle_steps` moves to a turn.
-pub fn circle_position(
+fn circle_position(
   start start: Place,
   step step: Int,
 ) -> #(Float, Float, Float) {
@@ -486,7 +486,7 @@ pub type Tally {
 }
 
 /// A tally of nothing yet.
-pub fn nothing_yet() -> Tally {
+fn nothing_yet() -> Tally {
   Tally(
     lines_sent: 0,
     answers_got: 0,
@@ -499,7 +499,7 @@ pub fn nothing_yet() -> Tally {
 /// The tally after the event, and whether the event gets a line. Every event
 /// does, but a unit's move: the first and every 20th are shown, so the log is
 /// readable.
-pub fn note(tally tally: Tally, event event: Event) -> #(Tally, Bool) {
+fn note(tally tally: Tally, event event: Event) -> #(Tally, Bool) {
   case event {
     LineSent(..) -> #(Tally(..tally, lines_sent: tally.lines_sent + 1), True)
     LineAccepted(..) | LineRefused(..) | WhisperFailed(..) -> #(
@@ -517,7 +517,7 @@ pub fn note(tally tally: Tally, event event: Event) -> #(Tally, Bool) {
 }
 
 /// The line a person reads for the event.
-pub fn describe(event: Event) -> String {
+fn describe(event: Event) -> String {
   case event {
     LineSent(channel:, chat_message_id:, text:) ->
       "sent "
@@ -586,7 +586,7 @@ fn channel_name(channel: ChannelType) -> String {
 }
 
 /// The one line the bot ends with.
-pub fn summary(tally: Tally) -> String {
+fn summary(tally: Tally) -> String {
   "sitting bot left: lines sent "
   <> int.to_string(tally.lines_sent)
   <> ", answers got "
@@ -599,7 +599,7 @@ pub fn summary(tally: Tally) -> String {
 
 /// The events a message of the server is: none for a message the bot does not
 /// follow.
-pub fn events_of(frame: Frame) -> List(Event) {
+fn events_of(frame: Frame) -> List(Event) {
   case frame.message_id {
     0x0262 -> {
       let assert Ok(created) = game_client.created_unit(body: frame.body)

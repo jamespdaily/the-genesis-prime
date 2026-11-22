@@ -37,7 +37,7 @@ fn reached_ids() -> set.Set(Int) {
 
 pub fn the_starting_set_reaches_the_nine_innate_roots_and_what_a_level_1_gate_lets_through_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
   let reached = reached_ids()
   list.each(
@@ -65,7 +65,7 @@ pub fn the_starting_set_reaches_the_nine_innate_roots_and_what_a_level_1_gate_le
 
 pub fn the_spells_behind_a_gate_a_level_1_character_cannot_open_are_not_reached_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
   let reached = reached_ids()
   list.each(
@@ -170,7 +170,7 @@ pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_o
 
 pub fn the_starting_ability_report_names_the_unraised_event_not_an_issue_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert starting_ability.describe_left_out(
       left_out: starting_ability.ProcLeftOut(
         spell4_id: 38_784,

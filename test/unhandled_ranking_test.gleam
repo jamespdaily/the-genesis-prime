@@ -25,7 +25,6 @@ import gleam/list
 import gleam/string
 import owned_test
 import recording_support
-import unitest
 import wire_replay_support as support
 
 /// A message the client sends in its wrapper, under the base key.
@@ -107,7 +106,6 @@ fn columns(line: String) -> List(String) {
 
 pub fn the_ranking_counts_each_unhandled_message_across_the_connections_most_frequent_first_test() -> Nil {
   use <- owned_test.run(30_000)
-  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let #(lines, _) = planted_ranking(folder)
   assert list.map(lines, columns)
@@ -122,7 +120,6 @@ pub fn the_ranking_counts_each_unhandled_message_across_the_connections_most_fre
 
 pub fn a_connection_whose_bytes_stop_is_named_and_the_messages_before_it_are_counted_test() -> Nil {
   use <- owned_test.run(30_000)
-  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let #(lines, stopped) = planted_ranking(folder)
   let assert [sentence] = stopped
@@ -138,7 +135,6 @@ pub fn a_connection_whose_bytes_stop_is_named_and_the_messages_before_it_are_cou
 
 pub fn a_folder_with_no_unhandled_message_ranks_nothing_test() -> Nil {
   use <- owned_test.run(30_000)
-  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   let assert Ok(ping) = frame.encode(message_id: 0x0000, body: <<3>>)
     as "a ping is within the size limit"
@@ -167,7 +163,6 @@ pub fn a_folder_with_no_unhandled_message_ranks_nothing_test() -> Nil {
 
 pub fn a_recording_with_no_closing_line_is_counted_and_named_as_unfinished_test() -> Nil {
   use <- owned_test.run(30_000)
-  use <- unitest.tag("dev_tool")
   use folder <- recording_support.in_folder
   support.write(
     folder:,

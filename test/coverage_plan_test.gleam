@@ -309,7 +309,7 @@ fn by_type(rows: List(spell4_effects.Spell4Effects)) -> List(#(Int, Int)) {
 
 pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let assert Ok(facts) =
     simplifile.read(
       ".claude/skills/decoding-the-client/references/client-facts.toml",
@@ -561,7 +561,7 @@ pub fn type_15_rows_are_each_read_left_out_or_refused_by_name_test() -> Nil {
 
 pub fn no_type_15_row_past_the_caster_sits_in_an_activated_spell_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let sources = spell_plan.sources_of(tables:)
