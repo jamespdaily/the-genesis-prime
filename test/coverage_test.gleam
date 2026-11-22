@@ -345,9 +345,8 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
   use <- owned_test.run(600_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
-  let tables = client_tables.every_table()
   list.each(engine.all(), fn(declared) {
-    let measured = measurement.measure(declared, tables)
+    let measured = coverage_support.measured(declared.name)
     case declared.source {
       engine.TableColumns(table:, columns:, ..) -> {
         let assert Measured(
@@ -356,6 +355,7 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           zero_values:,
           breaches:,
           conflicts:,
+          missing_rows:,
           ..,
         ) = measured
           as { table <> " is a table the client has, so it is measured" }
@@ -385,6 +385,21 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           as { table <> ": every declared type is one some row uses" }
         assert conflicts == []
           as { table <> ": no type is both handled and listed as missing" }
+        assert list.all(types, fn(line) {
+          case line.status {
+            HandledWithUnstatedGap(..) -> False
+            _ -> True
+          }
+        })
+          as {
+            table
+            <> ": every handled type with rows no rule reads states its gap"
+          }
+        assert missing_rows == []
+          as {
+            table
+            <> ": the starting abilities' trees name only rows the table holds"
+          }
       }
       engine.Cases(ids:, ..) -> {
         let assert Measured(types:, rows:, ..) = measured
