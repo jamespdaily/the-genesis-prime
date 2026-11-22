@@ -162,6 +162,25 @@ pub fn of_class(
   dict.get(classes.by_class, id)
 }
 
+/// The classes with one class's slot starting at `points` where the client's text starts it
+/// empty or full, for a player who enters holding some. A class that is not playable is left
+/// as it is.
+pub fn starting_at(
+  classes classes: Classes,
+  class_id class_id: ClassId,
+  points points: Float,
+) -> Classes {
+  let ClassId(id) = class_id
+  Classes(
+    by_class: dict.map_values(classes.by_class, fn(class, resource) {
+      case class == id {
+        True -> Resource(..resource, start: points)
+        False -> resource
+      }
+    }),
+  )
+}
+
 /// One row of the class_resource table as the load reads it: a number of a class's
 /// resource, by its name, with its unit.
 pub type Row {

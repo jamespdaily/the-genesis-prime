@@ -2210,6 +2210,9 @@ pub type LeftOutReason {
   /// A Proxy with a tickTime and no durationTime (flags bit 2), aimed at the caster: no rule
   /// of the server ends its ticks but a removal, a stack cap or the caster's death.
   PeriodicProxyUntilRemovedNotRead
+  /// A Proxy with no tickTime that starts a spell holding Proxies to several tiers of one
+  /// ability with nothing that chooses the tier (`proxy_starts_tiers_with_no_choice`).
+  ProxyStartsTiersNoChoice
   /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
   InNoPhase
   /// A CCStateSet row aimed at another unit that holds its state until removed
@@ -2378,8 +2381,8 @@ pub type PlanError {
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// An effect of a spell that hits no foes (`spell_hits_foes`) is aimed by a flag value
   /// that holds the caster's bit and the area's bit (5 or 7), and the effect's kind keeps a
-  /// state or a child on the area's units: a friendly spell's area finds no allies of the
-  /// caster.
+  /// state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal): a
+  /// friendly spell's area finds no allies of the caster.
   FriendlyAreaNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
@@ -5521,7 +5524,8 @@ fn kind_reading(
       heal_reading(tables:, place:, spell4_id:, effect:, vital:)
     }
     effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
-    effect_kind.Proxy -> proxy_reading(tables:, place:, spell4_id:, effect:)
+    effect_kind.Proxy ->
+      proxy_reading(tables:, sources:, place:, spell4_id:, effect:)
     effect_kind.Damage -> Ok(ReadByArea)
     effect_kind.Activate -> Ok(ReadByActivation)
     effect_kind.Despawn -> despawn_reading(tables:, place:, effect:)
@@ -6661,8 +6665,8 @@ fn weapon_of(weapon_slot: Int) -> WeaponSlot {
 /// The units a Proxy starts its child on (`Spell4Effects.targetFlags`): each struck unit
 /// for an aim at the area (`aim_of`: 4 or 6), the caster for one at the caster or the
 /// primary target (1, 2, 3), and both for one that holds the caster's bit and the area's
-/// (5, 7), which a spell that hits no foes refuses (`FriendlyAreaNotRead`). Another value is
-/// refused.
+/// (5, 7). In a spell that hits no foes the area's bit is left out (`aim_in_place`), so 5 and
+/// 7 start the child on the caster alone. Another value is refused.
 fn target_of(
   place place: RowPlace,
   spell4_id spell4_id: Int,
@@ -6676,7 +6680,7 @@ fn target_of(
       target_flags: effect.target_flags,
     )),
   )
-  use aim <- result.map(friendly_area_read(place:, spell4_id:, effect:, aim:))
+  let aim = aim_in_place(place:, aim:)
   [
     #(OnCaster, reaches_caster(aim:)),
     #(OnCaster, !reaches_area(aim:) && !reaches_caster(aim:)),
@@ -6685,6 +6689,7 @@ fn target_of(
   |> list.filter(fn(target) { target.1 })
   |> list.map(fn(target) { target.0 })
   |> list.unique
+  |> Ok
 }
 
 /// Which units a row lands on, for what its target apply prerequisite may read.
@@ -6882,37 +6887,80 @@ fn target_gate_read(
 /// Proxy that casts once.
 fn proxy_reading(
   tables tables: table_store.Tables,
+  sources sources: Sources,
   place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  case proxy_named(tables:, effect:) {
-    0 -> Ok(LeftOut(why: ProxyNamesNoSpell))
-    _ -> {
-      use targets <- result.try(target_of(place:, spell4_id:, effect:))
-      use condition <- result.try(proxy_condition_of(tables:, effect:))
-      let read = fn(period) {
-        Ok(Applied(ReadProxy(targets:, condition:, period:)))
-      }
-      case effect.tick_time, list.contains(targets, OnEachStruck) {
-        0, _ -> read(None)
-        _, True -> Ok(LeftOut(why: PeriodicProxyOnAreaNotRead))
-        tick_ms, False ->
-          case ticking.schedule_of(row: lasting_row_of(effect:), tick_ms:) {
-            Ok(schedule) -> read(Some(schedule))
-            Error(ticking.UntilRemoved) ->
-              Ok(LeftOut(why: PeriodicProxyUntilRemovedNotRead))
-            Error(ticking.NoTick(tick_ms:, duration_ms:)) ->
-              Error(ProxyNoTick(
-                spell4_id:,
-                effect_id: effect.id,
-                tick_ms:,
-                duration_ms:,
-              ))
-          }
-      }
-    }
+  let named = proxy_named(tables:, effect:)
+  use <- bool.guard(named == 0, return: Ok(LeftOut(why: ProxyNamesNoSpell)))
+  use <- bool.guard(
+    when: effect.tick_time == 0
+      && proxy_starts_tiers_with_no_choice(tables:, sources:, spell4_id: named),
+    return: Ok(LeftOut(why: ProxyStartsTiersNoChoice)),
+  )
+  use targets <- result.try(target_of(place:, spell4_id:, effect:))
+  use condition <- result.try(proxy_condition_of(tables:, effect:))
+  let read = fn(period) {
+    Ok(Applied(ReadProxy(targets:, condition:, period:)))
   }
+  case effect.tick_time, list.contains(targets, OnEachStruck) {
+    0, _ -> read(None)
+    _, True -> Ok(LeftOut(why: PeriodicProxyOnAreaNotRead))
+    tick_ms, False ->
+      case ticking.schedule_of(row: lasting_row_of(effect:), tick_ms:) {
+        Ok(schedule) -> read(Some(schedule))
+        Error(ticking.UntilRemoved) ->
+          Ok(LeftOut(why: PeriodicProxyUntilRemovedNotRead))
+        Error(ticking.NoTick(tick_ms:, duration_ms:)) ->
+          Error(ProxyNoTick(
+            spell4_id:,
+            effect_id: effect.id,
+            tick_ms:,
+            duration_ms:,
+          ))
+      }
+  }
+}
+
+/// Whether the spell holds two Proxies with no tickTime that name different tiers
+/// (`Spell4.tierIndex`) of one Spell4Base and differ in nothing the plan reads to pick one:
+/// the same aim, phases, flags, gates and spend tag. Such a spell starts every tier at
+/// once, and the rows carry no choice among them (`spell_area`: a cast with no spend keeps
+/// every effect), so a Proxy that starts it is left out rather than ship every tier.
+fn proxy_starts_tiers_with_no_choice(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+) -> Bool {
+  let tier_of = fn(proxy: spell4_effects.Spell4Effects) {
+    spell4.get(tables:, id: Spell4Id(proxy_named(tables:, effect: proxy)))
+    |> result.map(fn(row) { #(row.spell4_base_id_base_spell, row.tier_index) })
+  }
+  let proxies =
+    list.filter(effects_of(sources:, spell4_id:), fn(row) {
+      effect_kind.kind_of(effect_type: row.effect_type) == effect_kind.Proxy
+      && row.tick_time == 0
+    })
+  list.combination_pairs(proxies)
+  |> list.any(fn(pair) {
+    let #(first, second) = pair
+    case tier_of(first), tier_of(second) {
+      Ok(#(first_base, first_tier)), Ok(#(second_base, second_tier)) ->
+        first_base == second_base
+        && first_tier != second_tier
+        && first.target_flags == second.target_flags
+        && first.phase_flags == second.phase_flags
+        && first.flags == second.flags
+        && first.prerequisite_id_caster_apply
+        == second.prerequisite_id_caster_apply
+        && first.prerequisite_id_target_apply
+        == second.prerequisite_id_target_apply
+        && first.data_bits06 == second.data_bits06
+        && tag_of(effect: first) == tag_of(effect: second)
+      _, _ -> False
+    }
+  })
 }
 
 /// A Proxy's condition: its caster gates as `condition_of` reads them and, behind a target
@@ -7655,7 +7703,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes: the area's bit is left out of an aim that holds the caster's bit too, and an effect that keeps a state or a child on the area's units is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes: the area's bit is left out of an aim that holds the caster's bit too, so a Proxy aimed by it starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\"; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+    ),
+    gap.Entry(
+      area: "Spell areas",
+      missing: "a Proxy that starts a spell holding Proxies to several tiers of one ability with nothing that chooses the tier is left out: Flash's detonation of Mending Probes, whose tier the target's Mending Probes would pick, is not given",
     ),
     gap.Entry(
       area: "Periodic Proxies",

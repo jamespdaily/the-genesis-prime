@@ -10,32 +10,46 @@
 ////   changes the shield, so the server sends the new shield as stat 20 of 0x938
 ////   (`opcode.0x938`): to the Medic's client and, as the `Shield` news, to each viewer.
 //// - `player.level1_gear_properties`: a level-1 Medic's ShieldCapacityMax is 450.
-//// Skipped where the client's tables are not on the machine.
+//// - Mental Boon (Spell4 33257, SpellLevel 1049, an Esper's at level 18; text 245408, "every
+////   0.5s"): its cost of 1 Psi Point of every point held picks the Proxies whose tag is the
+////   points spent above the cost. The client's text starts the Esper's Psi Points empty
+////   (`class_resource`), so the test enters it holding 3.
+//// The Medic's tests are skipped where the client's tables are not on the machine.
 
 import cast_support
+import class_resource_support
 import client_tables
 import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/casting
+import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/effect_kind
 import genesis_prime/game/strike_tell
 import genesis_prime/message/damage_type
+import genesis_prime/message/float32
 import genesis_prime/message/player_health
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/message/unit_float_stat_changed
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import genesis_prime/table/loader/store as store_tables
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import owned_test
 import planted_table
 import spawn_support
+import spell_tables
 import unitest
+import world_entry_support
 
 /// A creature's blow of `damage` on the player, before its armor and shield.
 fn a_strike_of(
@@ -344,4 +358,164 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
   let after_leaving = fired_after(state: gone, pressed:)
   assert list.flat_map(after_leaving, fn(taken) { healths(taken:) }) == []
     as "with no player in the world the change is dropped"
+}
+
+/// The 0x935s a step writes, decoded.
+fn resource_changes(
+  taken taken: ConnectionStep(Request),
+) -> List(unit_float_stat_changed.UnitFloatStatChanged) {
+  list.filter_map(connection_support.written(taken:), fn(frame) {
+    case frame.message_id == unit_float_stat_changed.message_id {
+      True -> {
+        let assert Ok(changed) = unit_float_stat_changed.decode(frame.body)
+          as "0x935 decodes"
+        Ok(changed)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_points_choose_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Text 245408: Mental Boon heals "every 0.5s". The Esper (Class 3) holds 3 Psi Points
+  // and the cast spends them all (Spell4 33257's innate cost of type 6, every point held),
+  // which picks the Proxies of tag 2: their heal is row 76784 of Spell4 36623.
+  let tables = fixture_tables.shared()
+  let character =
+    world_entry_support.character(class: 3, faction: 166, level: 18)
+  let #(_, entered) = world_entry_support.entry(tables:, character:)
+  let held = casting.caster_of(tables:, entered:)
+  let psi_points = 3.0
+  // The rule's own heal for this caster, at the cast layer: each tick's amount and the
+  // times, which the connection must deliver whole.
+  let esper_resource =
+    class_resource.Resource(
+      ..class_resource_support.resource_of(3),
+      start: psi_points,
+    )
+  let #(_, steps) =
+    cast_support.pressed_and_run(
+      spell: spell_tables.client_spell(spell4_id: 33_257),
+      caster: cast_state.Caster(
+        ..cast_support.hurt(caster: cast_support.caster()),
+        stats: held.stats,
+        heal_scaling: held.heal_scaling,
+        player: held.player,
+        resources: class_resource.new(
+          resource: esper_resource,
+          properties: class_resource_support.properties_of(
+            class_id: 3,
+            changes: [],
+            level: 18,
+          ),
+        ),
+      ),
+      press_ms: 1000,
+      until_ms: 8000,
+    )
+  let rises =
+    list.flat_map(steps, fn(step) {
+      list.filter_map(
+        cast_support.caster_change_starts(effects: step.1),
+        fn(start) {
+          case start.1 {
+            cast_state.Heal(vital: effect_kind.Health, amount:) ->
+              Ok(#(step.0, amount))
+            cast_state.Heal(vital: effect_kind.Shield, ..)
+            | cast_state.Property(..)
+            | cast_state.Absorb(..)
+            | cast_state.Look(..) -> Error(Nil)
+          }
+        },
+      )
+    })
+  let assert [#(_, heal), ..] = rises as "the rule heals the Esper at each tick"
+  assert list.length(rises) == 12
+    && list.all(rises, fn(rise) { rise.1 == heal })
+    as "twelve heals of the 3-point tier, 500 ms apart, each of the same amount"
+  assert heal > 0 && 1 + 12 * heal < held.vitals.max_health
+    as "the Esper's health, 1 at entry, stays below its maximum through all twelve heals, so every one raises it whole and the count of rises is exact"
+  // The connection, with the Esper entering holding the Psi Points.
+  let settings =
+    Settings(
+      ..connection_support.settings(),
+      tables:,
+      class_resources: class_resource_support.esper_holding(points: psi_points),
+    )
+  let #(state, _) =
+    connection_support.entered_at_level(
+      settings:,
+      class_id: 3,
+      level: 18,
+      saved_health: Some(1),
+    )
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 18,
+      ability: 19_258,
+    )
+  let #(state, pressed) =
+    connection_support.at(
+      state:,
+      ms: 1000,
+      event: OwnEvent(
+        step.Read(connection_support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: 1,
+            bag_index:,
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  let ids = connection_support.written_ids(pressed)
+  assert list.contains(ids, 0x07FD) && list.contains(ids, 0x07F4)
+    as "opcode.0x7fd, opcode.0x7f4: the client hears the press confirmed and the go of the cast"
+  assert connection_support.refusal_results(taken: pressed) == []
+    as "the press is accepted: the Esper holds the Psi Points and the Focus"
+  let changes = resource_changes(taken: pressed)
+  assert list.any(changes, fn(change) {
+    change.stat_id == 3 && change.value == float32.to_bits(0.0)
+  })
+    as "opcode.0x935: the Psi Points (slot 1, stat 3) are spent to 0"
+  assert list.any(changes, fn(change) { change.stat_id == 1 })
+    as "opcode.0x935: the Focus the cost asks is paid (stat 1)"
+  assert healths(taken: pressed) == []
+    as "no health rises at the press: the first tick is 500 ms on"
+  // The heals land at each tick of the clock, driven in steps of one tick.
+  let #(_, _, risen) =
+    list.fold(
+      rises,
+      #(state, connection_support.cast_timers(steps: [pressed], ms: 1000), 1),
+      fn(so_far, rise) {
+        let #(state, pending, health) = so_far
+        let #(state, pending, before) =
+          connection_support.casts_left(
+            state:,
+            pending:,
+            until_ms: rise.0 - 1,
+            steps: [],
+          )
+        assert list.flat_map(before, fn(taken) { healths(taken:) }) == []
+          as "no health rises before the tick, 500 ms after the one before"
+        let #(state, pending, at) =
+          connection_support.casts_left(
+            state:,
+            pending:,
+            until_ms: rise.0,
+            steps: [],
+          )
+        assert list.flat_map(at, fn(taken) { healths(taken:) })
+          == [health + rise.1]
+          as "opcode.0x92f: the tick raises the health by the heal of the 3-point tier"
+        #(state, pending, health + rise.1)
+      },
+    )
+  assert risen == 1 + 12 * heal
+    as "twelve rises in all, from the 1 health the Esper entered with"
 }

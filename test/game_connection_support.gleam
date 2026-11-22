@@ -2813,10 +2813,24 @@ pub fn entered_with(
   class_id class_id: Int,
   saved_health saved_health: Option(Int),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_at_level(settings:, class_id:, level: 1, saved_health:)
+}
+
+/// The same for a character of this level.
+pub fn entered_at_level(
+  settings settings: game_connection.Settings,
+  class_id class_id: Int,
+  level level: Int,
+  saved_health saved_health: Option(Int),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_saved(
       in_character_select: in_select_from(accepted(settings).0),
-      character: Character(..world_character(), class_id: ClassId(class_id)),
+      character: Character(
+        ..world_character(),
+        class_id: ClassId(class_id),
+        level:,
+      ),
       saved_health:,
     )
   answer(

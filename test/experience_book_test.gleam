@@ -12,8 +12,9 @@
 //// - `XpPerLevel.minXpForLevel`: level 4 from 2860, level 5 from 4320 and level 6 from 6280;
 ////   a quest of the tests' tables gives 1055 experience (`game_connection_quest_turn_in_test`).
 //// - `SpellLevel.spell4Id.no_prerequisite`: the rows and bases of `ability_book_test`; the
-////   Medic's 1191 (25530) and 1194 (25579) have no plan (`spell_plan.unplanned`), the others
-////   named here do, Fissure (614, Spell4Base 26038) and Leap (921, 18359) among them.
+////   Medic's Triage (1021, Spell4Base 16336, Spell4 29888) has no plan
+////   (`spell_plan.unplanned`), the others named here do, Fissure (614, Spell4Base 26038) and
+////   Leap (921, 18359) among them.
 //// - `opcode.0x7fc`: a press of a bag slot whose base has no plan is refused with result 4,
 ////   the unknown spell (`0x14039a040`).
 
@@ -33,6 +34,7 @@ import genesis_prime/table/id.{ClassId, Spell4BaseId}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import owned_test
 import quest_turn_in_support
 import quest_walker_support
@@ -259,31 +261,27 @@ pub fn the_new_ability_is_in_the_casters_bag_and_the_ability_known_prerequisite_
 
 pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191), which has no plan, 25579 at
-  // slot 7 (1194, Crisis Wave: its area row is ordered by health, read as no area, and its
-  // heal reaches the caster), which has one, and 38210 at slot 8 (1221, Emission), which has one.
+  // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191, Mending Probes), 25579 at slot
+  // 7 (1194, Crisis Wave: its area row is ordered by health, read as no area, and its heal
+  // reaches the caster) and 38210 at slot 8 (1221, Emission), each with a plan: Mending
+  // Probes' Proxy 92693 reads as the caster alone. The 8 to 9 gives 16336 (SpellLevel 1021,
+  // Triage, Spell4 29888), which has none: its valid targets are bitmask 256.
   let assert Ok(unplanned) =
     spell_plan.unplanned(
       tables: character_tables.shared(),
       area_checked: spell_area.checker,
     )
     as "the plans build"
-  // The base, the Spell4 row the plan refuses, and its own refusal.
-  let no_plan = [
-    #(
-      25_530,
-      41_333,
-      spell_plan.FriendlyAreaNotRead(41_333, 92_693, 5),
-      "Mending Probes hits no foes and has an effect aimed by flags 5, the caster and the area, a friendly spell's area that finds allies, which the server does not read",
-    ),
-  ]
-  list.each(no_plan, fn(row) {
-    let #(_, spell4_id, error, why) = row
-    assert list.contains(unplanned, spell_plan.Unplanned(spell4_id:, error:))
-      as {
-        "the plan refuses Spell4 " <> int.to_string(spell4_id) <> ": " <> why
-      }
-  })
+  let assert Ok(triage) =
+    list.find(unplanned, fn(one) { one.spell4_id == 29_888 })
+    as "Triage 29888 has no plan"
+  assert !list.any(unplanned, fn(one) { one.spell4_id == 41_333 })
+    as "Mending Probes 41333 is planned: its Proxy 92693 reads as the caster alone"
+  assert string.contains(
+    spell_plan.describe(error: triage.error),
+    "valid targets of bitmask 256",
+  )
+    as "the plan refuses Spell4 29888 for its valid targets"
   assert !list.any(unplanned, fn(one) { one.spell4_id == 41_382 })
     as "Crisis Wave 41382 is planned: its area row is ordered by health, which is read as no area, and its heal reaches the caster"
   let #(state, taken) = support.level_up(class_id: 4, from: 5, to: 6)
@@ -291,28 +289,32 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
       added.bag_index
     })
     == [6, 7, 8]
-    as "all three are granted, the unplanned one too: the table says the player holds it"
+    as "all three are granted"
   assert support.tiers_in(frames: support.written(taken:))
     == support.tiers_of(bases: [25_530, 25_579, 38_210])
     as "and their book entry is sent"
-  assert connection_support.refusal_results(taken: support.pressed(
-      state:,
-      bag_index: 6,
-      ms: 1000,
-    ))
-    == [SpellUnknown]
-    as "opcode.0x7fc: the press of slot 6 has no plan, so it is refused unknown"
-  list.each([7, 8], fn(bag_index) {
-    assert connection_support.refusal_results(taken: support.pressed(
-        state:,
-        bag_index:,
-        ms: 1000,
-      ))
-      == []
+  list.each([6, 7, 8], fn(bag_index) {
+    let pressed = support.pressed(state:, bag_index:, ms: 1000)
+    assert connection_support.refusal_results(taken: pressed) == []
       as {
         "opcode.0x7fc: the press of slot "
         <> int.to_string(bag_index)
-        <> " has a plan, so it is not refused unknown (Crisis Wave and Emission cost Focus the Medic holds at its pool of 1000, class_resource, a guess)"
+        <> " has a plan, so it is not refused unknown (the abilities cost Focus the Medic holds at its pool of 1000, class_resource, a guess)"
       }
+    assert list.contains(connection_support.written_ids(pressed), 0x07FD)
+      as "opcode.0x7fd: the press starts its cast"
   })
+  let #(state, taken) = support.level_up(class_id: 4, from: 8, to: 9)
+  let assert [triage_added] =
+    list.filter(support.added_in(frames: support.written(taken:)), fn(added) {
+      added.base == 16_336
+    })
+    as "the 8 to 9 rise grants Triage, Spell4Base 16336"
+  assert connection_support.refusal_results(taken: support.pressed(
+      state:,
+      bag_index: triage_added.bag_index,
+      ms: 1000,
+    ))
+    == [SpellUnknown]
+    as "opcode.0x7fc: Triage is granted, since the table says the player holds it, and its press has no plan, so it is refused unknown"
 }

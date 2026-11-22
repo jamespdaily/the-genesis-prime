@@ -14,6 +14,7 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
 import genesis_prime/game/innate
@@ -21,7 +22,8 @@ import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type PlanError}
 import genesis_prime/table/id.{
-  type Spell4BaseId, ClassId, Spell4BaseId, Spell4Id, TelegraphDamageId,
+  type Spell4BaseId, ClassId, Spell4BaseId, Spell4EffectsId, Spell4Id,
+  TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
@@ -647,33 +649,94 @@ pub fn every_row_of_the_abilities_with_a_timed_caster_proxy_is_read_but_the_rows
   Nil
 }
 
-pub fn mental_boon_is_listed_unplanned_for_its_friendly_area_proxy_once_the_rows_that_name_its_heal_are_read_test() -> Nil {
+pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and_the_three_with_another_gate_stay_refused_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let assert Ok(left_out) =
     spell_plan.unplanned(tables:, area_checked: spell_area.checker)
-  // Healing only the caster, which Mental Boon's text 245408 says it does beside the allies,
-  // is a separate question for Jim: a row aimed at the caster and the area in a spell that
-  // hits no foes is refused until allies are found (decision 2 of #794, `friendly_area_read`).
-  let assert Ok(boon) = list.find(left_out, fn(one) { one.spell4_id == 33_257 })
-    as "Mental Boon 33257 is listed unplanned: its tick-0 Proxy 76609 is read since the Proxies that name 33258 in dataBits01 are, and is aimed by flags 5"
-  assert string.contains(
-    spell_plan.describe(error: boon.error),
-    "Spell4 row 36562 hits no foes and has an effect 76609 aimed by flags 5",
-  )
-  list.each(
-    [41_333, 41_533, 41_926, 42_572, 35_870, 39_092, 78_081],
-    fn(spell4_id) {
-      let assert Ok(one) =
-        list.find(left_out, fn(one) { one.spell4_id == spell4_id })
-        as "the seven abilities the same rule refused before stay listed"
-      let sentence = spell_plan.describe(error: one.error)
-      assert string.contains(sentence, "hits no foes and has an effect")
-        && string.contains(sentence, "aimed by flags 5")
-        as { "the same sentence: " <> sentence }
-    },
-  )
+  // Mental Boon 33257, Mending Probes 41333, Astral Infusion 35870, Runes of Protection
+  // 39092 and Flash 41926 held a Proxy aimed by flags 5 in a spell that hits no foes and no
+  // other refusal; the tables name the Surge alternates 39327 and 54717
+  // (`Spell4.spell4IdMechanicAlternateSpell`). 41533 (valid targets of bitmask 16), 42572
+  // (bitmask 128) and 78081 (an area ordered by health) are refused for their own gates
+  // (`Spell4.validTargets`, `spell_area` order 5).
+  let freed = [33_257, 41_333, 35_870, 39_092, 41_926]
+  let still_refused = [
+    #(41_533, "bitmask 16"),
+    #(42_572, "bitmask 128"),
+    #(78_081, "selects in order 5"),
+  ]
+  list.each(freed, fn(spell4_id) {
+    assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
+      as {
+        int.to_string(spell4_id)
+        <> " is built, so it is not listed unplanned ("
+        <> int.to_string(list.length(left_out))
+        <> " abilities remain listed)"
+      }
+    let assert Ok(ability) =
+      spell_plan.in_plans(
+        plans: spell_plan.plans_with_later(tables:),
+        base: base_of(tables:, spell4_id:),
+      )
+      as "the plans hold the ability"
+    let assert Ok(row) = spell4.get(tables:, id: Spell4Id(spell4_id))
+      as "a class ability is a Spell4 row"
+    case row.spell4_id_mechanic_alternate_spell {
+      0 -> {
+        assert ability.alternate == None as "an ability with no alternate"
+      }
+      named -> {
+        let assert Some(alternate) = ability.alternate
+          as "the ability's Surge alternate is planned with it"
+        assert alternate.spell4_id == Spell4Id(named)
+          as "the alternate is the one the Spell4 row names"
+      }
+    }
+  })
+  list.each(still_refused, fn(refused) {
+    let #(spell4_id, words) = refused
+    let assert Ok(one) =
+      list.find(left_out, fn(one) { one.spell4_id == spell4_id })
+      as "the ability is refused for a gate of its own"
+    assert string.contains(spell_plan.describe(error: one.error), words)
+      as { "the sentence names its own gate: " <> words }
+  })
+  assert list.all(left_out, fn(one) {
+    case one.error {
+      spell_plan.FriendlyAreaNotRead(effect_id:, ..) -> {
+        let assert Ok(effect) =
+          spell4_effects.get(tables:, id: Spell4EffectsId(effect_id))
+          as "a refusal names a row of the table"
+        effect_kind.kind_of(effect_type: effect.effect_type)
+        != effect_kind.Proxy
+      }
+      _ -> True
+    }
+  })
+    as "no refusal for the friendly area names a Proxy row: a Proxy reads as the caster"
+  // Every row of the freed trees is read, but three: 228666 (type 55, in 87375 behind a
+  // gate), 92704 (a heal the place map marks as started on each struck unit, though the plan
+  // builds its child on the caster) and 180600 (Flash's detonation Proxy).
+  let unread =
+    unread_rows_of(tables:, spell4_ids: freed)
+    |> list.unique
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  assert list.map(unread, fn(row) { row.0 }) == [92_704, 180_600, 228_666]
+    as "table_rows -- Spell4Effects spellId=<each spell of the trees>"
+  let assert [heal, detonation, type_55] = unread
+  assert detonation.1
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
+  assert type_55.1 == Ok(spell_plan.LeftOut(why: spell_plan.TypeNotRead))
+  assert heal.1
+    == Error(spell_plan.HealOnStruckUnit(
+      spell4_id: 82_553,
+      proxy_effect_id: 217_358,
+      effect_id: 92_704,
+    ))
+    as "the measure's place map marks 41334 as started on each struck unit by Proxy 217358 of 82553, so it counts 92704 unread; the plan builds the child on the caster and the cast heals it (`cast_union_aim_test`)"
+  Nil
 }
 
 pub fn every_row_of_nullifiers_tree_is_read_but_the_area_proxy_and_its_ability_is_planned_test() -> Nil {

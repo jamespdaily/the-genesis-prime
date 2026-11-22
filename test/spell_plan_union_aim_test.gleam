@@ -9,7 +9,11 @@
 ////   flags 7), 111951 (47658, type 18, flags 3), 90024 (40529, type 26, flags 3), 123870
 ////   (52400, type 10, flags 7), 55294 (30356, type 118, flags 5), 3639 (2252, type 11,
 ////   flags 5), 9717 (5425, type 11, flags 3), 182108 (71091, type 4, flags 3, flags bit 2
-////   until removed).
+////   until removed), 76609 (36562, type 26, flags 5), 180600 (41926, type 26, flags 5)
+////   and 180595 to 180599 (70756, type 26, flags 2).
+//// - Texts 245408 and 295987 (Mental Boon heals "yourself and ... allies") and 389501
+////   (Flash restores health "to yourself and N allies"): the caster is part of each
+////   spell, the allies are the area's.
 //// - `Spell4Effects.targetFlags.load`: the client refuses only 0.
 //// - `Spell4Effects.targetFlags.combined` (a guess): 3, 5 and 7 hold the union of their
 ////   bits. `Spell4Effects.targetFlags.bit8` (a guess): bit 8 is not read.
@@ -25,7 +29,7 @@ import genesis_prime/game/spell_plan.{
   AimsAtCasterPrimaryTargetAndArea, AimsAtPrimaryTarget,
   AimsAtPrimaryTargetAndArea, Applied,
 }
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
 import gleam/int
@@ -33,6 +37,7 @@ import gleam/list
 import gleam/set
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 import spell_tables
 import unitest
 
@@ -243,38 +248,50 @@ pub fn union_lasting_rows_without_a_friendly_area_are_read_test() -> Nil {
 
 pub fn union_row_with_the_area_bit_in_a_spell_that_hits_no_foes_is_refused_naming_834_test() -> Nil {
   use <- owned_test.run(60_000)
-  list.each(
-    [#(64_390, 33_262, 5), #(43_635, 26_579, 5), #(47_702, 28_003, 7)],
-    fn(row) {
-      let #(id, spell4_id, flags) = row
-      let error = read_client_row(id:, place: spell_tables.pressed)
-      assert error
-        == Error(spell_plan.FriendlyAreaNotRead(
-          spell4_id:,
-          effect_id: id,
-          target_flags: flags,
-        ))
-        as "a union row with the caster's bit and the area's in a spell that hits no foes has an area the server cannot find the allies of"
-      let assert Error(why) = error
-      assert string.ends_with(
-        spell_plan.describe(error: why),
-        "a friendly spell's area finds the caster's allies, which the server does not read",
-      )
-        as "the refusal says what is not read and names no issue"
-    },
-  )
+  // The kinds that keep a state on the area's units (`lasting_aim_of`): Fluff 43635 and
+  // 47702, ForceRemove 121619, RavelSignal 112871 and Scale 111951 with its flags set to
+  // 7 (a synthetic cell: the client's row has flags 3).
+  let rows = [
+    #(43_635, 26_579, 5),
+    #(47_702, 28_003, 7),
+    #(121_619, 51_524, 5),
+    #(112_871, 47_982, 7),
+    #(111_951, 47_658, 7),
+  ]
+  let read_aimed_by = fn(id, flags, place) {
+    spell_tables.read_row(
+      effect: spell4_effects.Spell4Effects(
+        ..client_row(id:),
+        target_flags: flags,
+      ),
+      place:,
+    )
+  }
+  list.each(rows, fn(row) {
+    let #(id, spell4_id, flags) = row
+    let error = read_aimed_by(id, flags, spell_tables.pressed)
+    assert error
+      == Error(spell_plan.FriendlyAreaNotRead(
+        spell4_id:,
+        effect_id: id,
+        target_flags: flags,
+      ))
+      as "a state kept on the area's units with the caster's bit and the area's, in a spell that hits no foes, has an area the server cannot find the allies of"
+    let assert Error(why) = error
+    assert string.ends_with(
+      spell_plan.describe(error: why),
+      "a friendly spell's area finds the caster's allies, which the server does not read",
+    )
+      as "the refusal says what is not read and names no issue"
+    let assert Ok(Applied(_)) =
+      read_aimed_by(id, flags, spell_tables.pressed_hitting_foes)
+      as "the same row is read in a spell that hits foes"
+  })
   list.each([90_024, 121_485], fn(id) {
     let assert Ok(Applied(_)) =
       read_client_row(id:, place: spell_tables.pressed)
       as "a flag 3 row has no area bit, so it is read in a spell that hits no foes"
   })
-  assert case
-    read_client_row(id: 196_408, place: spell_tables.pressed_hitting_foes)
-  {
-    Ok(Applied(_)) -> True
-    _ -> False
-  }
-    as "a flag 5 Proxy in a spell that hits foes is read"
 }
 
 pub fn read_today_union_row_in_a_spell_that_hits_no_foes_keeps_its_caster_and_target_parts_test() -> Nil {
@@ -423,6 +440,155 @@ pub fn union_proxy_plans_one_child_on_the_caster_and_one_on_each_struck_unit_tes
   assert list.map(proxies, fn(proxy) { proxy.target })
     == [spell_plan.OnCaster, spell_plan.OnEachStruck]
     as "the spell holds one Proxy of the row for the caster and one for each struck unit"
+}
+
+/// The Proxy row `id` with its targetFlags set to `flags`, read in the place: the units it
+/// starts its child on, or what refuses it.
+fn proxy_targets_aimed_by(
+  id id: Int,
+  flags flags: Int,
+  place place: spell_plan.RowPlace,
+) -> Result(List(spell_plan.ProxyTarget), spell_plan.PlanError) {
+  let effect =
+    spell4_effects.Spell4Effects(..client_row(id:), target_flags: flags)
+  case spell_tables.read_row(effect:, place:) {
+    Ok(Applied(spell_plan.ReadProxy(targets:, ..))) -> Ok(targets)
+    Ok(_) -> panic as "the Proxy row was not read as a Proxy"
+    Error(error) -> Error(error)
+  }
+}
+
+pub fn a_proxy_aimed_by_5_or_7_in_a_spell_that_hits_no_foes_starts_its_child_on_the_caster_alone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.targetFlags: 1 the caster, 2 the primary target, 4 the area. Proxies
+  // 64390 (Spell4 33262, flags 5), 196408 (75957, flags 5) and 90024 (40529, flags 3)
+  // are the client's rows; the flags 7 and 13 cases are synthetic cells of them.
+  [
+    #(
+      "64390 as read: flags 5, the spell hits no foes",
+      proxy_targets_aimed_by(id: 64_390, flags: 5, place: spell_tables.pressed),
+      Ok([spell_plan.OnCaster]),
+    ),
+    #(
+      "64390 with flags 7 (synthetic), the spell hits no foes",
+      proxy_targets_aimed_by(id: 64_390, flags: 7, place: spell_tables.pressed),
+      Ok([spell_plan.OnCaster]),
+    ),
+    #(
+      "196408 as read: flags 5, the spell hits foes",
+      proxy_targets_aimed_by(
+        id: 196_408,
+        flags: 5,
+        place: spell_tables.pressed_hitting_foes,
+      ),
+      Ok([spell_plan.OnCaster, spell_plan.OnEachStruck]),
+    ),
+    #(
+      "196408 with flags 7 (synthetic), the spell hits foes",
+      proxy_targets_aimed_by(
+        id: 196_408,
+        flags: 7,
+        place: spell_tables.pressed_hitting_foes,
+      ),
+      Ok([spell_plan.OnCaster, spell_plan.OnEachStruck]),
+    ),
+    #(
+      "90024 as read: flags 3, the spell hits no foes",
+      proxy_targets_aimed_by(id: 90_024, flags: 3, place: spell_tables.pressed),
+      Ok([spell_plan.OnCaster]),
+    ),
+    #(
+      "64390 with flags 13 (synthetic, bit 8), the spell hits no foes",
+      proxy_targets_aimed_by(id: 64_390, flags: 13, place: spell_tables.pressed),
+      Error(spell_plan.ProxyAimNotRead(
+        spell4_id: 33_262,
+        effect_id: 64_390,
+        target_flags: 13,
+      )),
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, read, expected) = row
+    assert read == expected as name
+  })
+  // Mental Boon's one-point tier (Spell4 36562) holds Proxy 76609, which names 33258.
+  let proxies =
+    spell_plan.payloads(
+      spell: spell_tables.client_spell(spell4_id: 36_562),
+      as_kind: spell_plan.as_proxy,
+    )
+  let assert [proxy] =
+    list.filter(proxies, fn(proxy) {
+      proxy.effect_id == Spell4EffectsId(76_609)
+    })
+    as "the spell holds Proxy 76609 once"
+  assert proxy.target == spell_plan.OnCaster
+    as "texts 245408 and 295987 heal the caster; the allies are the area's, which the server does not find"
+  assert proxy.spell.spell4_id == Spell4Id(33_258)
+    as "the Proxy names 33258, the heal"
+}
+
+/// The Proxy `id` read in the place on the fixture's tables with these cells of other rows
+/// changed (`fixture_tables.changes`): what it starts, or why it is left out.
+fn proxy_read_with(
+  id id: Int,
+  place place: spell_plan.RowPlace,
+  edits edits: List(#(String, Int, List(#(String, planted_table.Cell)))),
+) -> Result(RowReading, spell_plan.PlanError) {
+  use tables <- fixture_tables.changes(edits:)
+  spell_plan.read_row(
+    tables:,
+    sources: spell_plan.sources_of(tables:),
+    place:,
+    effect: effect_row_in(tables:, id:),
+  )
+}
+
+pub fn a_proxy_that_starts_a_spell_holding_tier_proxies_with_no_choice_is_left_out_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 70756 holds Proxies 180595 to 180599, each naming one tier (Spell4.tierIndex 1
+  // to 5) of Spell4Base 26252 with the same aim, phases and gates and the same tag
+  // (emmComparison 0, emmValue 0), so nothing picks a tier; Proxy 180600 (Spell4 41926,
+  // Flash, flags 5) starts it. Text 389501 promises Flash's own heal only.
+  let left_out =
+    Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
+  [
+    #("no foes", spell_tables.pressed),
+    #("hits foes", spell_tables.pressed_hitting_foes),
+  ]
+  |> list.each(fn(place) {
+    assert proxy_read_with(id: 180_600, place: place.1, edits: []) == left_out
+      as {
+        "Flash's Proxy 180600 is left out, the spell "
+        <> place.0
+        <> ": the shape, not the place, is what is wrong"
+      }
+  })
+  let assert Ok(Applied(spell_plan.ReadProxy(targets: single, ..))) =
+    proxy_read_with(id: 76_609, place: spell_tables.pressed, edits: [])
+    as "Mental Boon's Proxy 76609 names one spell and holds no siblings: read"
+  assert single == [spell_plan.OnCaster]
+  // Synthetic cells of the real rows.
+  let tiers_by_tag =
+    list.index_map([180_595, 180_596, 180_597, 180_598, 180_599], fn(id, tag) {
+      #("Spell4Effects", id, [#("emmValue", Integer(tag))])
+    })
+  let assert Ok(Applied(spell_plan.ReadProxy(targets: chosen, ..))) =
+    proxy_read_with(
+      id: 180_600,
+      place: spell_tables.pressed,
+      edits: tiers_by_tag,
+    )
+    as "each tier Proxy given its own spend tag (as Mental Boon's rows 76772 to 76776 carry theirs): the spend chooses the tier, so the Proxy is read"
+  assert chosen == [spell_plan.OnCaster]
+  let one_tier =
+    list.map([180_596, 180_597, 180_598, 180_599], fn(id) {
+      #("Spell4Effects", id, [#("spellId", Integer(33_262))])
+    })
+  let assert Ok(Applied(spell_plan.ReadProxy(targets: alone, ..))) =
+    proxy_read_with(id: 180_600, place: spell_tables.pressed, edits: one_tier)
+    as "one tier Proxy left in the spell: one tier is no choice to make, so the Proxy is read"
+  assert alone == [spell_plan.OnCaster]
 }
 
 pub fn union_gain_row_is_still_refused_test() -> Nil {

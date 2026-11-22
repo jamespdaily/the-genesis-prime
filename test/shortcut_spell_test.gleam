@@ -13,14 +13,18 @@
 ////   which the plan reads); 5733 -> 5640 (a Ground kind); 6017 -> 7103 (which a quest
 ////   objective also names).
 
+import cast_support as support
 import client_tables
 import fixture_tables
 import genesis_prime/game/activate
+import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/effect_kind
 import genesis_prime/game/item_property
 import genesis_prime/game/shortcut_spell.{Aimed, CannotBePlanned, Planned}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/item_special
 import genesis_prime/table/spell4
 import gleam/dict
 import gleam/int
@@ -201,4 +205,81 @@ pub fn every_item_spell_of_the_client_has_one_outcome_test() -> Nil {
       }
     }
   })
+}
+
+pub fn the_six_healing_potions_and_brace_for_impact_are_played_on_the_user_and_give_it_a_heal_or_an_absorb_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let shortcuts = shortcut_spell.shortcuts(tables:)
+  // Spell4 35008 to 35013 are "Consumable - Potion - Healing - AoE Heal", tiers 1 to 6, and
+  // 83615 is "Gadget - Brace for Impact": each holds a Proxy aimed at the caster and the
+  // area of a spell that hits no foes, which starts a heal or an absorb of the user. The
+  // area's allies are not found, so the user takes the effect alone.
+  let spells = [
+    #(35_008, Heal),
+    #(35_009, Heal),
+    #(35_010, Heal),
+    #(35_011, Heal),
+    #(35_012, Heal),
+    #(35_013, Heal),
+    #(83_615, Absorb),
+  ]
+  let naming_rows =
+    list.count(item_special.all(tables), fn(row) {
+      list.any(spells, fn(spell) { spell.0 == row.spell4_id_on_activate })
+    })
+  list.each(spells, fn(spell) {
+    let #(spell4_id, gives) = spell
+    let assert shortcut_spell.PlayedOnUser(spell: planned) =
+      shortcut_spell.item_spell_of(shortcuts:, spell4_id:)
+      as {
+        "Spell4 "
+        <> int.to_string(spell4_id)
+        <> " is played on the user ("
+        <> int.to_string(naming_rows)
+        <> " ItemSpecial rows name these seven spells)"
+      }
+    let #(effects, steps) =
+      support.pressed_and_run(
+        spell: planned,
+        caster: support.hurt(caster: support.caster()),
+        press_ms: 1000,
+        until_ms: 16_000,
+      )
+    let starts =
+      list.flat_map([#(1000, effects), ..steps], fn(step) {
+        list.map(support.caster_change_starts(effects: step.1), fn(start) {
+          start.1
+        })
+      })
+    assert support.refusal_results(effects:) == [] as "the press is accepted"
+    assert support.target_changes(
+        effects: list.flat_map(steps, fn(step) { step.1 }),
+      )
+      == []
+      as "nothing lands on another unit"
+    case gives, starts {
+      Heal, [cast_state.Heal(vital: effect_kind.Health, amount:)] -> {
+        assert amount > 0 as "the potion heals the user"
+      }
+      Absorb, [cast_state.Absorb(amount:, ..)] -> {
+        assert amount > 0 as "the gadget gives the user an absorb pool"
+      }
+      _, _ ->
+        panic as {
+          "Spell4 "
+          <> int.to_string(spell4_id)
+          <> " gives the user one change of the kind its name says, not "
+          <> int.to_string(list.length(starts))
+          <> " changes"
+        }
+    }
+  })
+}
+
+/// What an item spell gives its user.
+type Gives {
+  Heal
+  Absorb
 }

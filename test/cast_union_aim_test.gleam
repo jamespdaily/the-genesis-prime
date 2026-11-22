@@ -23,9 +23,14 @@
 ////   row aimed at the primary target start the client's spell that way.
 
 import cast_support as support
-import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import class_resource_support
+import genesis_prime/coverage/gaps
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
+import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_plan.{type Spell, Spell}
+import genesis_prime/game/spend
+import genesis_prime/game/ticking
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
@@ -33,6 +38,7 @@ import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import spell_tables
@@ -315,4 +321,343 @@ pub fn union_forced_move_moves_the_caster_and_the_struck_creature_test() -> Nil 
   assert list.contains(caster_effects, 49_023)
     as "the caster takes the row too: its own part is listed on it"
   assert struck_effects == [49_023]
+}
+
+// ---- what a friendly area's Proxy gives the caster ----
+
+const press_ms = 1000
+
+const until_ms = 16_000
+
+/// A caster of the class holding `points` of its resource (`Resource.start`), a full Focus
+/// pool as entry gives it, and 1 health of a million, so every heal lands.
+fn hurt_caster(class_id class_id: Int, points points: Float) -> Caster {
+  let resource =
+    class_resource.Resource(
+      ..class_resource_support.resource_of(class_id),
+      start: points,
+    )
+  support.hurt(
+    caster: cast_state.Caster(
+      ..support.caster(),
+      resources: class_resource.new(
+        resource:,
+        properties: class_resource_support.properties_of(
+          class_id:,
+          changes: [],
+          level: 1,
+        ),
+      ),
+    ),
+  )
+}
+
+/// The press of the client's spell by a caster of the class holding `points`, driven to
+/// `until_ms`: the spell, the press's effects and each step, the press first.
+fn driven(
+  spell4_id spell4_id: Int,
+  class_id class_id: Int,
+  points points: Float,
+) -> #(Spell, List(Effect), List(#(Int, List(Effect)))) {
+  let spell = spell_tables.client_spell(spell4_id:)
+  let #(effects, steps) =
+    support.pressed_and_run(
+      spell:,
+      caster: hurt_caster(class_id:, points:),
+      press_ms:,
+      until_ms:,
+    )
+  #(spell, effects, [#(press_ms, effects), ..steps])
+}
+
+/// Every effect of the steps, in order.
+fn effects_of(steps steps: List(#(Int, List(Effect)))) -> List(Effect) {
+  list.flat_map(steps, fn(step) { step.1 })
+}
+
+/// What the steps start on the caster: the time of the step, the row and the change.
+fn caster_starts(
+  steps steps: List(#(Int, List(Effect))),
+) -> List(#(Int, Int, cast_state.CasterChange)) {
+  list.flat_map(steps, fn(step) {
+    list.map(support.caster_change_starts(effects: step.1), fn(start) {
+      #(step.0, { start.0 }.effect_id.value, start.1)
+    })
+  })
+}
+
+/// The spell and every spell below it that a press starts.
+fn whole_tree(spell spell: Spell) -> List(Spell) {
+  spell_plan.tree(spell:, started: fn(_) { True })
+}
+
+/// The first row of the heals the spells hold: the plan's own, in the order of its lists.
+fn first_heal_row(spells spells: List(Spell)) -> Int {
+  let assert [heal, ..] =
+    list.flat_map(spells, fn(spell) {
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_heal)
+    })
+    as "the plan holds a heal"
+  case heal {
+    spell_plan.Heal(effect_id:, ..) | spell_plan.TickingHeal(effect_id:, ..) ->
+      effect_id.value
+  }
+}
+
+/// The first row of the absorbs the spells hold: a property modifier whose change is an
+/// absorb.
+fn first_absorb_row(spells spells: List(Spell)) -> Int {
+  let assert [row, ..] =
+    list.flat_map(spells, fn(spell) {
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
+      |> list.filter_map(fn(modifier) {
+        case modifier.change {
+          spell_plan.AbsorbChange(..) -> Ok(modifier.effect_id.value)
+          spell_plan.PropertyChange(..)
+          | spell_plan.StruckChange(..)
+          | spell_plan.LookChange(..) -> Error(Nil)
+        }
+      })
+    })
+    as "the plan holds an absorb"
+  row
+}
+
+/// The schedule of the first ticking heal the spells hold, cut to the ticks within its
+/// node's life as the cast cuts it (`ticking.within_life`, by the life rule of the spell
+/// that holds the row).
+fn heal_schedule(spells spells: List(Spell)) -> ticking.Schedule {
+  let assert [#(spell, schedule), ..] =
+    list.flat_map(spells, fn(spell) {
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_heal)
+      |> list.filter_map(fn(heal) {
+        case heal {
+          spell_plan.TickingHeal(schedule:, ..) -> Ok(#(spell, schedule))
+          spell_plan.Heal(..) -> Error(Nil)
+        }
+      })
+    })
+    as "the spells hold a ticking heal"
+  within_life(spell:, schedule:)
+}
+
+/// The schedule cut to the ticks within its node's life by the spell's life rule.
+fn within_life(
+  spell spell: Spell,
+  schedule schedule: ticking.Schedule,
+) -> ticking.Schedule {
+  ticking.within_life(
+    schedule:,
+    longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+  )
+}
+
+/// The time of each tick of the schedule for a press at `press_ms`.
+fn tick_times(schedule schedule: ticking.Schedule) -> List(Int) {
+  list.repeat(Nil, schedule.count)
+  |> list.index_map(fn(_, index) {
+    ticking.tick_at_ms(schedule:, from_ms: press_ms, tick: index + 1)
+  })
+}
+
+/// The heals of health among the starts, as the time and the row; each heals at least a
+/// point.
+fn heals_of(
+  starts starts: List(#(Int, Int, cast_state.CasterChange)),
+) -> List(#(Int, Int)) {
+  list.filter_map(starts, fn(start) {
+    case start.2 {
+      cast_state.Heal(vital: effect_kind.Health, amount:) -> {
+        assert amount > 0 as "a heal gives at least a point"
+        Ok(#(start.0, start.1))
+      }
+      cast_state.Heal(vital: effect_kind.Shield, ..)
+      | cast_state.Property(..)
+      | cast_state.Absorb(..)
+      | cast_state.Look(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The absorbs among the starts, as the time, the row and the pool's size.
+fn absorbs_of(
+  starts starts: List(#(Int, Int, cast_state.CasterChange)),
+) -> List(#(Int, Int, Int)) {
+  list.filter_map(starts, fn(start) {
+    case start.2 {
+      cast_state.Absorb(amount:, ..) -> {
+        assert amount > 0 as "an absorb pool holds at least a point"
+        Ok(#(start.0, start.1, amount))
+      }
+      cast_state.Property(..) | cast_state.Heal(..) | cast_state.Look(..) ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The time and row of each absorb among the starts.
+fn absorb_times_and_rows(
+  starts starts: List(#(Int, Int, cast_state.CasterChange)),
+) -> List(#(Int, Int)) {
+  list.map(absorbs_of(starts:), fn(absorb) { #(absorb.0, absorb.1) })
+}
+
+/// The time and row of a heal at each tick of the schedule.
+fn heals_at_each_tick(
+  schedule schedule: ticking.Schedule,
+  row row: Int,
+) -> List(#(Int, Int)) {
+  list.map(tick_times(schedule:), fn(at) { #(at, row) })
+}
+
+pub fn each_ability_the_friendly_area_proxy_refused_gives_its_caster_what_its_text_says_and_nothing_more_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Texts: 245408 (Mental Boon heals "yourself and ... hurt allies every 0.5s"), 360845
+  // (Mending Probes), 315699 (Runes of Protection), 287485 (Astral Infusion), 389501
+  // (Flash restores health "to yourself and N allies"). The allies are the area's, which
+  // the server does not find; the caster is part of each spell and takes what it gives.
+  let esper = 3
+  let medic = 4
+  let spellslinger = 7
+  let accepted_and_alone = fn(name, effects, steps) {
+    assert support.refusal_results(effects:) == []
+      as { name <> ": the press is accepted" }
+    assert support.target_changes(effects: effects_of(steps:)) == []
+      as { name <> " lands nothing on a creature: the allies are not found" }
+  }
+
+  // Mental Boon: the Esper holds 3 Psi Points and the cast spends all of them, the base
+  // cost of 1 (Spell4 33257's innate cost) and 2 above it, which picks the Proxy whose tag
+  // is 2 (`spend`: EqualTo).
+  let #(boon, boon_effects, boon_steps) =
+    driven(spell4_id: 33_257, class_id: esper, points: 3.0)
+  accepted_and_alone("Mental Boon", boon_effects, boon_steps)
+  let assert [tier] =
+    list.filter(
+      spell_plan.payloads(spell: boon, as_kind: spell_plan.as_proxy),
+      fn(proxy) {
+        proxy.tag == spend.EqualTo(value: 3 - 1) && proxy.period != None
+      },
+    )
+    as "one periodic Proxy of Mental Boon (the other of tag 2 is gated by a prerequisite and casts once) is chosen by the points the Esper spends"
+  let assert Some(period) = tier.period
+    as "the chosen Proxy casts its heal at each tick"
+  let boon_starts = caster_starts(steps: boon_steps)
+  assert heals_of(starts: boon_starts)
+    == heals_at_each_tick(
+      schedule: within_life(spell: boon, schedule: period),
+      row: first_heal_row(spells: whole_tree(spell: tier.spell)),
+    )
+    as "a heal of the chosen tier's row at each tick of the Proxy's 500 ms (text 245408), none of another tier's"
+  assert list.length(boon_starts) == period.count
+    as "Mental Boon gives the caster nothing else: its Nimble lands on no unit"
+
+  // Mending Probes: the ticking heal of its child.
+  let #(probes, probes_effects, probes_steps) =
+    driven(spell4_id: 41_333, class_id: medic, points: 4.0)
+  accepted_and_alone("Mending Probes", probes_effects, probes_steps)
+  let probe_tree = whole_tree(spell: probes)
+  let probe_starts = caster_starts(steps: probes_steps)
+  assert heals_of(starts: probe_starts)
+    == heals_at_each_tick(
+      schedule: heal_schedule(spells: probe_tree),
+      row: first_heal_row(spells: probe_tree),
+    )
+    as "Mending Probes heals the caster at each tick of the row's schedule (text 360845)"
+  assert list.length(probe_starts)
+    == list.length(heals_of(starts: probe_starts))
+    as "and gives it nothing else"
+
+  // Runes of Protection and its Surge alternate: one absorb at the go, the alternate's
+  // larger.
+  let absorbed = fn(spell4_id) {
+    let #(spell, effects, steps) =
+      driven(spell4_id:, class_id: spellslinger, points: 100.0)
+    accepted_and_alone("an absorb spell", effects, steps)
+    let starts = caster_starts(steps:)
+    assert list.length(starts) == list.length(absorbs_of(starts:))
+      as "the spell gives the caster an absorb and nothing else"
+    assert absorb_times_and_rows(starts:)
+      == [#(press_ms, first_absorb_row(spells: whole_tree(spell:)))]
+      as "one absorb at the go (text 315699)"
+    absorbs_of(starts:)
+  }
+  let assert [#(_, _, runes_amount)] = absorbed(39_092)
+  let assert [#(_, _, surge_amount)] = absorbed(39_327)
+  assert surge_amount > runes_amount
+    as "the Surge alternate's pool is the larger"
+
+  // Astral Infusion and its Surge alternate: an absorb at the go and a ticking heal.
+  list.each([35_870, 54_717], fn(spell4_id) {
+    let #(spell, effects, steps) =
+      driven(spell4_id:, class_id: spellslinger, points: 100.0)
+    accepted_and_alone("Astral Infusion", effects, steps)
+    let tree = whole_tree(spell:)
+    let starts = caster_starts(steps:)
+    assert absorb_times_and_rows(starts:)
+      == [#(press_ms, first_absorb_row(spells: tree))]
+      as "one absorb at the go (text 287485)"
+    assert heals_of(starts:)
+      == heals_at_each_tick(
+        schedule: heal_schedule(spells: tree),
+        row: first_heal_row(spells: tree),
+      )
+      as "and a heal at each tick of its schedule"
+    assert list.length(starts)
+      == list.length(absorbs_of(starts:)) + list.length(heals_of(starts:))
+      as "nothing else"
+  })
+
+  // Flash: its own heal once, and no detonation of Mending Probes.
+  let #(flash, flash_effects, flash_steps) =
+    driven(spell4_id: 41_926, class_id: medic, points: 4.0)
+  accepted_and_alone("Flash", flash_effects, flash_steps)
+  assert list.map(whole_tree(spell: flash), fn(spell) { spell.spell4_id.value })
+    == [41_926]
+    as "Flash's plan holds no child: Proxy 180600's detonation chain is left out"
+  assert list.map(caster_starts(steps: flash_steps), fn(start) {
+      #(start.0, start.1)
+    })
+    == [#(press_ms, first_heal_row(spells: [flash]))]
+    as "Flash heals the caster once, by its own row, at the go (text 389501)"
+  assert list.flat_map(flash_steps, fn(step) {
+      support.started_in(effects: step.1)
+    })
+    == []
+    as "no 0x7ff of another spell: none for 70756, 60221 to 60225 or 77637, whose Fluff would show a 120 s Recently Saved"
+}
+
+pub fn mental_boons_nimble_is_planned_and_lands_on_no_unit_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Rows 84796, 84798, 84800, 84802 and 84804 (type 11, flags 2, property 39, 550 ms) sit
+  // in 33258 and 36622 to 36625. Text 314819 names the Nimble. A flags 2 modifier lands on a
+  // creature the go struck (`cast/control`), and a child started on the caster strikes none.
+  let #(boon, _, steps) = driven(spell4_id: 33_257, class_id: 3, points: 3.0)
+  let rows =
+    whole_tree(spell: boon)
+    |> list.flat_map(fn(spell) {
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
+    })
+    |> list.filter_map(fn(modifier) {
+      case modifier.change {
+        spell_plan.StruckChange(..) -> Ok(modifier.effect_id.value)
+        spell_plan.PropertyChange(..)
+        | spell_plan.AbsorbChange(..)
+        | spell_plan.LookChange(..) -> Error(Nil)
+      }
+    })
+    |> list.unique
+    |> list.sort(int.compare)
+  assert rows == [84_796, 84_798, 84_800, 84_802, 84_804]
+    as "the plan reads the five Nimble rows as changes of a struck creature"
+  assert heals_of(starts: caster_starts(steps:)) != [] as "the heal starts"
+  assert support.property_starts(effects: effects_of(steps:)) == []
+    && support.target_changes(effects: effects_of(steps:)) == []
+    as "this pins the gap: Nimble changes no unit, the caster's heal is all Mental Boon gives"
+  assert list.any(gaps.registry(), fn(entry) {
+    entry.area == "Casting"
+    && string.contains(entry.missing, "Nimble")
+    && string.contains(entry.missing, "primary target")
+  })
+    as "the registry states the gap for the coverage measure"
 }
