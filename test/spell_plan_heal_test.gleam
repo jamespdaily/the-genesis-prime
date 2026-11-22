@@ -372,7 +372,11 @@ pub fn a_heal_in_a_struck_unit_child_is_refused_by_place_test() -> Nil {
     )
   let heal =
     Spell4Effects(..heal_aimed_at(flags: 2), id: 205_411, spell_id: 78_280)
-  let struck = spell_plan.struck_unit_children(effects: [proxy, heal])
+  let struck =
+    spell_plan.struck_unit_children(tables: fixture_tables.shared(), effects: [
+      proxy,
+      heal,
+    ])
   assert dict.to_list(struck)
     == [
       #(

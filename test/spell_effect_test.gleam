@@ -84,6 +84,7 @@ pub fn effects_follow_the_kind_rank_then_row_order_test() -> Nil {
   assert planted_ids(spell:)
     == [
       90_012,
+      90_019,
       90_001,
       90_021,
       90_002,

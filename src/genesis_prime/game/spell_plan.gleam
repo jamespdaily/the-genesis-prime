@@ -33,8 +33,10 @@
 ////   absorb aimed at its primary target, and a spell that spends every point held refuses
 ////   an effect with a tag the rule does not read.
 //// - **The tree.** A Proxy effect (`Spell4Effects.effectType.26`, dataBits00 the
-////   Spell4 id; a row with dataBits00 0 names its spell in dataBits01 and ticks, which
-////   the plan does not start: `Spell4Effects.effectType.26.periodic`) starts that spell
+////   Spell4 id, or dataBits01 when dataBits00 is 0 and dataBits01 is a Spell4 row,
+////   `proxy_named`; with a tickTime and a durationTime it casts the spell every tickTime
+////   from the caster, `Proxy.period`: `Spell4Effects.effectType.26.periodic`; one aimed at
+////   the area or lasting until removed is left out by name) starts that spell
 ////   as a cast of its own, so a `Spell` holds its `Proxy` children, each with the delay
 ////   the effect gives after its
 ////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
@@ -1428,6 +1430,9 @@ pub type Proxy {
     /// at the go of the parent whose units it struck; none for a child on the
     /// caster.
     gains: List(Gain),
+    /// The schedule of a Proxy with a tickTime, which casts its child at each tick instead of
+    /// at the go (`Spell4Effects.effectType.26.periodic`); none for a Proxy that casts once.
+    period: Option(ticking.Schedule),
   )
 }
 
@@ -2191,8 +2196,15 @@ pub type LeftOutReason {
   /// nothing. The client never reads a Proc row, so its table keeps such a name and the
   /// holder spell still casts: the row is left out, as a Proxy that names no spell is.
   ProcCastsNoSpell(spell4_id: Int)
-  /// A Proxy whose dataBits00 names no spell.
+  /// A Proxy that names no Spell4 row: dataBits00 is 0 and dataBits01 is 0 or an id no
+  /// Spell4 row has.
   ProxyNamesNoSpell
+  /// A Proxy with a tickTime that is aimed at the area: each of its ticks would start a child
+  /// on each unit the area holds then, which the plan does not select.
+  PeriodicProxyOnAreaNotRead
+  /// A Proxy with a tickTime and no durationTime (flags bit 2), aimed at the caster: no rule
+  /// of the server ends its ticks but a removal, a stack cap or the caster's death.
+  PeriodicProxyUntilRemovedNotRead
   /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
   InNoPhase
   /// A CCStateSet row aimed at another unit that holds its state until removed
@@ -2252,7 +2264,11 @@ pub type ReadRow {
   )
   /// A Proxy row: the units it starts its child on, the caster, each struck unit or both
   /// (`target_of`), with one `Proxy` of the spell for each.
-  ReadProxy(targets: List(ProxyTarget), condition: Condition)
+  ReadProxy(
+    targets: List(ProxyTarget),
+    condition: Condition,
+    period: Option(ticking.Schedule),
+  )
 }
 
 /// Why a DisguiseOutfit row cannot be drawn with 0x933 (`Spell4Effects.effectType.112`).
@@ -2410,6 +2426,9 @@ pub type PlanError {
   /// A periodic Heal or HealShields effect lives shorter than one tick
   /// (genesis_prime/game/ticking `NoTick`).
   HealNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
+  /// A Proxy with a tickTime lives shorter than one tick (genesis_prime/game/ticking
+  /// `NoTick`).
+  ProxyNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds
   /// a Heal or HealShields effect whose aim names its primary target, a struck unit:
   /// `spell4_id` is the spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
@@ -2747,6 +2766,16 @@ pub fn describe(error error: PlanError) -> String {
       <> " and a durationTime of "
       <> int.to_string(duration_ms)
       <> ", shorter than one tick"
+    ProxyNoTick(spell4_id:, effect_id:, tick_ms:, duration_ms:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proxy effect "
+      <> int.to_string(effect_id)
+      <> " with a tickTime of "
+      <> int.to_string(tick_ms)
+      <> " and a durationTime of "
+      <> int.to_string(duration_ms)
+      <> ", shorter than one tick"
     HealOnStruckUnit(spell4_id:, proxy_effect_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2907,7 +2936,7 @@ pub fn sources_of(tables tables: table_store.Tables) -> Sources {
     thresholds: thresholds_by_parent(tables:),
     group_lists:,
     known_groups: known_groups(group_lists:),
-    children: children_named(effects: spell4_effects.all(tables)),
+    children: children_named(tables:, effects: spell4_effects.all(tables)),
   )
 }
 
@@ -2918,12 +2947,13 @@ pub fn is_child(sources sources: Sources, spell4_id spell4_id: Int) -> Bool {
 }
 
 fn children_named(
+  tables tables: table_store.Tables,
   effects effects: List(spell4_effects.Spell4Effects),
 ) -> Set(Int) {
   list.filter_map(effects, fn(effect) {
     let kind = effect_kind.kind_of(effect_type: effect.effect_type)
     case kind == effect_kind.Proxy, kind == effect_kind.Proc {
-      True, _ -> Ok(effect.data_bits00)
+      True, _ -> Ok(proxy_named(tables:, effect:))
       False, True -> Ok(effect.data_bits01)
       False, False -> Error(Nil)
     }
@@ -3010,6 +3040,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | ParameterNotRead(..)
     | HealUntilRemovedNotRead(..)
     | HealNoTick(..)
+    | ProxyNoTick(..)
     | HealOnStruckUnit(..)
     | InterruptArmorTakeBackNotRead(..)
     | InterruptArmorOnStruckUnit(..)
@@ -3231,6 +3262,7 @@ pub fn server_proxy(child child: Spell, phase_flags phase_flags: Int) -> Proxy {
     target: OnCaster,
     spell: child,
     gains: [],
+    period: None,
   )
 }
 
@@ -3390,6 +3422,25 @@ pub fn chain_extended(
   }
 }
 
+/// The Spell4 id a Proxy row names as its child: dataBits00, else dataBits01 when
+/// dataBits00 is 0 and the Spell4 table has that row, else 0, which names nothing. The client
+/// gives a Proxy no behaviour of its own, so the rows are the only evidence of the name
+/// (`Spell4Effects.effectType.26.periodic`: 1,701 of the 1,808 rows with dataBits00 0 hold a
+/// Spell4 row in dataBits01). Every reader of a Proxy's child asks this.
+pub fn proxy_named(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Int {
+  case effect.data_bits00 {
+    0 ->
+      case spell4.get(tables:, id: Spell4Id(effect.data_bits01)) {
+        Ok(_) -> effect.data_bits01
+        Error(Nil) -> 0
+      }
+    named -> named
+  }
+}
+
 /// One Proxy row of the spell `spell4_id` as a `Proxy`: the child it names planned on the
 /// same chain, and the gains of a child started on each struck unit lifted onto it.
 fn proxy_of(
@@ -3400,11 +3451,12 @@ fn proxy_of(
   effect effect: spell4_effects.Spell4Effects,
   target target: ProxyTarget,
   condition condition: Condition,
+  period period: Option(ticking.Schedule),
 ) -> Result(Proxy, PlanError) {
   use child <- result.map(spell_of(
     tables:,
     sources:,
-    spell4_id: effect.data_bits00,
+    spell4_id: proxy_named(tables:, effect:),
     chain:,
     threshold_costs: [],
     struck_by: case target {
@@ -3426,13 +3478,17 @@ fn proxy_of(
   }
   Proxy(
     effect_id: Spell4EffectsId(effect.id),
-    delay_ms: effect.delay_time,
+    delay_ms: case period {
+      Some(_) -> 0
+      None -> effect.delay_time
+    },
     phase_flags: effect.phase_flags,
     condition:,
     tag: tag_of(effect:),
     target:,
     spell: Spell(..child, effects: kept),
     gains: list.filter_map(lifted, fn(planned) { as_gain(kind: planned.kind) }),
+    period:,
   )
 }
 
@@ -3609,8 +3665,8 @@ fn spell_of(
         let #(effect, reading) = row
         use reading <- result.try(reading)
         case reading {
-          Applied(ReadProxy(targets:, condition:))
-          | Held(ReadProxy(targets:, condition:)) ->
+          Applied(ReadProxy(targets:, condition:, period:))
+          | Held(ReadProxy(targets:, condition:, period:)) ->
             list.try_map(targets, fn(target) {
               proxy_of(
                 tables:,
@@ -3620,6 +3676,7 @@ fn spell_of(
                 effect:,
                 target:,
                 condition:,
+                period:,
               )
             })
           Applied(ReadEffects(..))
@@ -3759,6 +3816,7 @@ fn press_proxies_of(
       effect:,
       target: OnCaster,
       condition: Always,
+      period: None,
     ))
     PressProxy(effect_id: proxy.effect_id, gate:, spell: proxy.spell)
   })
@@ -5021,13 +5079,19 @@ fn proc_filter_of(
 /// `effects` order. A Proxy of a spell that hits no foes (`spell_hits_foes`) does so only
 /// when its aim has no caster's bit, since the area bit of the others is not read there.
 pub fn struck_unit_children(
+  tables tables: table_store.Tables,
   effects effects: List(spell4_effects.Spell4Effects),
 ) -> Dict(Int, StruckBy) {
   let hitting = spells_that_hit_foes(effects:)
   list.fold(effects, dict.new(), fn(found, effect) {
-    let starts_on_struck_units = case
+    let named = case
       effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
-      && effect.data_bits00 != 0,
+    {
+      True -> proxy_named(tables:, effect:)
+      False -> 0
+    }
+    let starts_on_struck_units = case
+      named != 0,
       aim_of(target_flags: effect.target_flags)
     {
       True, Ok(aim) ->
@@ -5035,11 +5099,11 @@ pub fn struck_unit_children(
         && { !reaches_caster(aim:) || set.contains(hitting, effect.spell_id) }
       True, Error(Nil) | False, _ -> False
     }
-    case starts_on_struck_units, dict.has_key(found, effect.data_bits00) {
+    case starts_on_struck_units, dict.has_key(found, named) {
       True, False ->
         dict.insert(
           found,
-          effect.data_bits00,
+          named,
           StruckBy(spell4_id: effect.spell_id, proxy_effect_id: effect.id),
         )
       True, True | False, _ -> found
@@ -5418,15 +5482,7 @@ fn kind_reading(
       heal_reading(tables:, place:, spell4_id:, effect:, vital:)
     }
     effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
-    effect_kind.Proxy ->
-      case effect.data_bits00 {
-        0 -> Ok(LeftOut(why: ProxyNamesNoSpell))
-        _ -> {
-          use targets <- result.try(target_of(place:, spell4_id:, effect:))
-          use condition <- result.map(proxy_condition_of(tables:, effect:))
-          Applied(ReadProxy(targets:, condition:))
-        }
-      }
+    effect_kind.Proxy -> proxy_reading(tables:, place:, spell4_id:, effect:)
     effect_kind.Damage -> Ok(ReadByArea)
     effect_kind.Activate -> Ok(ReadByActivation)
     effect_kind.Despawn -> despawn_reading(tables:, place:, effect:)
@@ -6746,6 +6802,45 @@ fn target_gate_read(
   }
 }
 
+/// The reading of a Proxy row: left out when it names no Spell4 row; with a tickTime, left out
+/// when it is aimed at the area (the check comes first) or lasts until removed, and else read
+/// with the schedule of its row, so the cast starts its child at each tick; with none, read as a
+/// Proxy that casts once.
+fn proxy_reading(
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  case proxy_named(tables:, effect:) {
+    0 -> Ok(LeftOut(why: ProxyNamesNoSpell))
+    _ -> {
+      use targets <- result.try(target_of(place:, spell4_id:, effect:))
+      use condition <- result.try(proxy_condition_of(tables:, effect:))
+      let read = fn(period) {
+        Ok(Applied(ReadProxy(targets:, condition:, period:)))
+      }
+      case effect.tick_time, list.contains(targets, OnEachStruck) {
+        0, _ -> read(None)
+        _, True -> Ok(LeftOut(why: PeriodicProxyOnAreaNotRead))
+        tick_ms, False ->
+          case ticking.schedule_of(row: lasting_row_of(effect:), tick_ms:) {
+            Ok(schedule) -> read(Some(schedule))
+            Error(ticking.UntilRemoved) ->
+              Ok(LeftOut(why: PeriodicProxyUntilRemovedNotRead))
+            Error(ticking.NoTick(tick_ms:, duration_ms:)) ->
+              Error(ProxyNoTick(
+                spell4_id:,
+                effect_id: effect.id,
+                tick_ms:,
+                duration_ms:,
+              ))
+          }
+      }
+    }
+  }
+}
+
 /// A Proxy's condition: its caster gates as `condition_of` reads them and, behind a target
 /// apply prerequisite, that prerequisite decoded too, which the cast rule checks against
 /// each unit the child is made on (`GatedOnCasterAndTarget`).
@@ -7487,6 +7582,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Spell areas",
       missing: "the allies of the caster in the area of a spell that hits no foes: the area's bit is left out of an aim that holds the caster's bit too, and an effect that keeps a state or a child on the area's units is refused",
+    ),
+    gap.Entry(
+      area: "Periodic Proxies",
+      missing: "a Proxy with a tickTime aimed at the area casts nothing, and one that lasts until removed casts nothing: the first would start a child on each unit the area holds at each tick, and no rule of the server times the second; a periodic Proxy behind a caster gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none",
     ),
     gap.Entry(
       area: "Procs",

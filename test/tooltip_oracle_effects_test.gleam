@@ -1558,11 +1558,15 @@ pub fn every_sc_and_cost_token_matches_the_stack_count_after_cap_plus_one_casts_
   // One more again: Spell4.79229 (stack group 1866), the Stalker's "Proc Damage - Tier 1",
   // holds the one Proc row 208200 (kind 12), which the plan now reads, so its cast leaves a
   // hold of its group on the caster and the token is compared instead of left out.
-  assert oracle.compared_count(outcomes: stacks) == 24
-  // The spells the drive reads nothing for: eleven whose cast leaves no hold of their group on
+  // One more again: the Esper's Spectral Form 58586 (base 38012) names 70369, which holds the
+  // timed periodic Proxy 178429 that casts Spell4.32822 every second; 32822's Proxy 200548
+  // names 41869, whose Proxy 210256 names 77116 (stack group 1770, cap 2), so the tree of
+  // base 38012 now holds 77116, compared as under base 19102, and 41869, left out as under it.
+  assert oracle.compared_count(outcomes: stacks) == 25
+  // The spells the drive reads nothing for: twelve whose cast leaves no hold of their group on
   // the caster (some hold another spell's, such as 41869's, which holds 77116's casts of group
-  // 1770), and Spell Surge 47273, whose press the plain caster is refused 151 for (Prerequisite
-  // 29484 wants 25 Spell Power).
+  // 1770; 41869 is asked under two bases), and Spell Surge 47273, whose press the plain caster
+  // is refused 151 for (Prerequisite 29484 wants 25 Spell Power).
   assert list.filter_map(differences, left_out_of)
     == [
       #(
@@ -1604,6 +1608,10 @@ pub fn every_sc_and_cost_token_matches_the_stack_count_after_cap_plus_one_casts_
       #("spell=47273.sc", "the press is refused 151"),
       #(
         "spell=79697.sc",
+        "the spell's cast leaves no hold of its stack group on the caster",
+      ),
+      #(
+        "spell=41869.sc",
         "the spell's cast leaves no hold of its stack group on the caster",
       ),
       #(

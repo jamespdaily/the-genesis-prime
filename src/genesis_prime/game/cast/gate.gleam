@@ -38,7 +38,7 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{type Spell4EffectsId}
+import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -683,6 +683,38 @@ pub fn proxy_gates(
     subject:,
     rolls:,
   )
+}
+
+/// The debug line that says the spell a row of `kind` ("Proc", "periodic Proxy") names, held
+/// by the spell `holder_spell4_id`, is not cast because the spell's caster condition refuses a
+/// caster of the life the caster has, or none.
+pub fn life_refusal(
+  kind kind: String,
+  effect_id effect_id: Spell4EffectsId,
+  holder_spell4_id holder_spell4_id: Spell4Id,
+  spell spell: Spell,
+  caster caster: Caster,
+) -> Option(Effect) {
+  case spell_plan.refused_life(spell:, dead: caster.dead) {
+    None -> None
+    Some(_) ->
+      Some(Log(
+        level: LogDebug,
+        text: "the "
+          <> kind
+          <> " effect "
+          <> int.to_string(effect_id.value)
+          <> " of Spell4 "
+          <> int.to_string(holder_spell4_id.value)
+          <> " does not cast Spell4 "
+          <> int.to_string(spell.spell4_id.value)
+          <> ", whose caster condition refuses a caster that is "
+          <> case caster.dead {
+          True -> "dead"
+          False -> "alive"
+        },
+      ))
+  }
 }
 
 /// The rows whose gates let them apply, in order, with a debug line for each the

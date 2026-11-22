@@ -786,6 +786,7 @@ fn refusals_of_press(caster caster: Caster) -> List(Int) {
 fn struck_children(caster caster: Caster) -> List(#(Int, Int)) {
   let proxy =
     Proxy(
+      period: None,
       effect_id: Spell4EffectsId(83_818),
       delay_ms: 0,
       phase_flags: -1,

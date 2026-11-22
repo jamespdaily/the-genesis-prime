@@ -805,8 +805,8 @@ pub fn electrocute_goes_6_times_each_striking_with_the_damage_row_its_text_names
 /// targetFlags 1), the spell the Stalker passive's Proc casts on the caster, so no list of
 /// the ability's own plan holds it (#336). 187681 has no row in the
 /// committed tables because no plan reaches its spell 72652, and 178429 is a periodic
-/// Proxy the plan does not start (`Spell4Effects.effectType.26.periodic`), both ticking
-/// effects (#336).
+/// Proxy row, which gives its caster's node a life and is listed in no 0x7f4
+/// (`cast_tick.node_of`), so no unit shows its duration (#336).
 const buff_gaps = [
   Gap(ability: 30_075, token: "eff=210998.durationms", issue: "#336"),
   Gap(ability: 31_213, token: "eff=187681.durationms", issue: "#336"),
@@ -828,13 +828,11 @@ pub fn every_buff_time_token_on_a_row_a_planned_ability_holds_equals_that_rows_l
     as "three name a row no plan of the ability holds, each a gap above"
 }
 
-/// The tick tokens whose row the cast rule never ticks, each until the issue that plans
-/// ticking effects closes it: the periodic Proxy rows start no casts, and 187681 has no
-/// row in the committed tables.
+/// The tick tokens whose row the test cannot read: 187681 has no row in the committed tables.
+/// The periodic Proxy rows 121345 and 178429 are read: each cast of the ability starts their
+/// spell once for each tick their duration over their tickTime gives.
 const tick_gaps = [
-  Gap(ability: 31_779, token: "eff=121345.ticktimems", issue: "#336"),
   Gap(ability: 31_213, token: "eff=187681.ticktimems", issue: "#336"),
-  Gap(ability: 38_012, token: "eff=178429.ticktimems", issue: "#336"),
 ]
 
 pub fn every_tick_time_token_gives_its_duration_over_its_tick_time_ticks_test() -> Nil {
@@ -847,7 +845,7 @@ pub fn every_tick_time_token_gives_its_duration_over_its_tick_time_ticks_test() 
     )
     == Verdict(unlisted: [], stale: [])
   assert oracle.compared_count(outcomes:) == 3
-    as "the periodic Proxy rows 121345 (one text) and 178429 (two texts) print a tick time, each a gap above"
+    as "the periodic Proxy rows 121345 (one text) and 178429 (two texts) print a tick time, and each equals the casts of their spell a drive of the ability started: 10 for 121345 (duration 10000 over tickTime 1000) and 5 for 178429 (5000 over 1000)"
   assert oracle.left_out_count(outcomes:) == 1
     as "Spell4Effects 187681 has no row in the table, a gap above"
 }
@@ -965,10 +963,11 @@ pub fn a_listed_gap_that_now_passes_fails_the_test_naming_the_gap_test() -> Nil 
       gaps: [passing, ..buff_gaps],
     )
     == Verdict(unlisted: [], stale: [passing])
-  // The tick gaps still differ, so with none listed the test names each difference.
+  // The one tick gap left, 187681 (no row in the tables), still differs, so with none listed
+  // the test names it.
   let ticks = oracle.differences(outcomes: tick_outcomes(rows:, asked:))
   assert oracle.verdict(differences: ticks, gaps: []).unlisted == ticks
-  assert list.length(ticks) == 4
+  assert list.length(ticks) == 1
 }
 
 pub fn every_planned_ability_with_a_pulses_token_goes_the_pulses_its_channel_makes_test() -> Nil {

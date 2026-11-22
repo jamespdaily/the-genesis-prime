@@ -50,7 +50,7 @@ pub fn places(
   tables tables: store.Tables,
   effects effects: List(Spell4Effects),
 ) -> fn(Int) -> spell_plan.RowPlace {
-  let struck = spell_plan.struck_unit_children(effects:)
+  let struck = spell_plan.struck_unit_children(tables:, effects:)
   let spends = spends_all_by_spell(tables:, effects:)
   let hitting = spell_plan.spells_that_hit_foes(effects:)
   let throwing = spell_plan.spells_that_throw_target(effects:)

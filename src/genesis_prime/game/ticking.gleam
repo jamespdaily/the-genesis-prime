@@ -103,7 +103,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Periodic effects",
-      missing: "the time of each tick of a damage or heal over time, which the client does not time and the server schedules by a guess, dropping a tick that would land after its node ends without knowing whether the client shows one",
+      missing: "the time of each tick of a damage or heal over time and of each cast of a periodic Proxy, which the client does not time and the server schedules by a guess, dropping a tick that would land after its node ends without knowing whether the client shows one",
     ),
   ]
 }

@@ -10333,3 +10333,137 @@ pub fn a_warrior_of_level_14_presses_flash_bang_and_the_struck_beasts_child_stri
   game_client.close(game:)
   login_support.stop(started)
 }
+
+/// The 0x7ff of the spell `spell4_id` the frames hold, in order.
+fn starts_of_spell(
+  frames frames: List(Frame),
+  spell4_id spell4_id: Int,
+) -> List(game_client.CastEvent) {
+  list.filter(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastStarted(spell4_id: started, ..) -> started == spell4_id
+      game_client.CastRefused(..)
+      | game_client.CastConfirmed(..)
+      | game_client.CastWent(..)
+      | game_client.CastFinished(..)
+      | game_client.ThresholdOpened(..)
+      | game_client.ThresholdIndex(..)
+      | game_client.ThresholdClosed(..)
+      | game_client.ThresholdEnded(..) -> False
+    }
+  })
+}
+
+/// A Warrior of level 10 presses Plasma Wall (SpellLevel 938: Spell4 38787, base 23169) on the
+/// driven clock. Its Proxy 228473 (tickTime 500, durationTime 5000, `Spell4Effects.effectType.26.
+/// periodic`; text 311216 "every 0.5s") casts Spell4 87477 at the caster every half second, ten
+/// times, each a cast of its own with the wall as parent and root, and the wall's 0x7fe comes
+/// after the tenth. A Warrior enters with no Kinetic Energy (`class_resource`: its slot starts
+/// empty and is not saved) and holds no Onslaught, so the wall as the client has it cannot be
+/// pressed and held for its ticks. The test edits three columns of the Spell4 row to 0, each for its own reason:
+/// - `casterInnateRequirement0` (Kinetic Energy of 250): the press is refused 51.
+/// - `prerequisiteIdCasterCast` 19750: the Overdrive waiver of that requirement (propertyFlags
+///   bit 2 with a requirement block, `Spell4.prerequisiteIdCasterCast`; Overdrive is the cast
+///   of 42908). With the requirement gone the row has no block to waive, so the plan reads
+///   19750 as a cast gate (`spell_plan.caster_cast_of`) instead of a waiver.
+/// - `prerequisiteIdCasterPersistence` 43680 (text 311216, "Removed when you fall below 250
+///   Kinetic Energy"): it needs Kinetic Energy of 250 or a live 42908 (43679), so it would end
+///   the cast in the input of its own press.
+/// The test is about the Proxy's ticks; the end by a persistence is `cast_proxy_tick_test`'s.
+pub fn a_warrior_presses_plasma_wall_and_a_child_cast_starts_every_half_second_ten_times_and_the_wall_finishes_after_the_last_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- fixture_tables.changed(table: "Spell4", id: 38_787, with: [
+    #("casterInnateRequirement0", planted_table.Integer(0)),
+    #("prerequisiteIdCasterCast", planted_table.Integer(0)),
+    #("prerequisiteIdCasterPersistence", planted_table.Integer(0)),
+  ])
+  let time = driven_time.new()
+  let started = world_with_spawns(spawns: [], tables:, time:)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Gor Qu",
+      class_id: 1,
+      level: 10,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) = game_client.read_entry_kept(game:, have: <<>>)
+  let own = game_client.unit_create_player_in(frames: entry).unit_id
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames: entry), fn(item) { item.1 == 23_169 })
+    as "SpellLevel 938 grants Plasma Wall's base 23169 to a Warrior of level 10"
+  game_client.press_ability(game:, client_cast_id: 1, bag_index:, target: 0)
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Plasma Wall is planned, so the press is not refused"
+  let assert Ok(wall) =
+    game_client.confirmed_cast_of(frames: pressed, client_cast_id: 1)
+    as "opcode.0x7fd: the press is confirmed with the server's cast id"
+  assert starts_of_spell(frames: pressed, spell4_id: 87_477) == []
+    as "nothing is cast at the go: the first cast is one tick on"
+  let #(ticking, have) =
+    list.fold(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      #(pressed, have),
+      fn(so_far, number) {
+        let #(frames, have) = so_far
+        driven_time.advance(time:, ms: 500)
+        let #(more, have) =
+          game_client.read_until(game:, have:, found: fn(more) {
+            let seen = list.append(frames, more)
+            // The wall's 0x7fe also ends the wait, so a wall that ends before its tenth
+            // tick is a failed assertion below and not a wait with no end.
+            list.length(starts_of_spell(frames: seen, spell4_id: 87_477))
+            >= number
+            || finishes(frames: seen, cast_id: wall)
+          })
+        #(list.append(frames, more), have)
+      },
+    )
+  let #(finished, have) =
+    game_client.read_until(game:, have:, found: fn(more) {
+      finishes(frames: list.append(ticking, more), cast_id: wall)
+    })
+  let frames = list.append(ticking, finished)
+  let children = starts_of_spell(frames:, spell4_id: 87_477)
+  assert list.length(children) == 10
+    as "Spell4Effects 228473: durationTime 5000 over tickTime 500 is ten casts"
+  let child_ids =
+    list.map(children, fn(event) {
+      let assert game_client.CastStarted(
+        cast_id:,
+        root_spell4_id:,
+        parent_spell4_id:,
+        caster_unit_id:,
+        ..,
+      ) = event
+      assert #(root_spell4_id, parent_spell4_id, caster_unit_id)
+        == #(38_787, 38_787, own)
+        as "opcode.0x7ff.root_parent: a cast no press made names the wall as root and parent, and the Warrior casts it"
+      cast_id
+    })
+  assert list.unique(child_ids) == child_ids as "each tick is a cast of its own"
+  let events = game_client.casts_in(frames:)
+  list.each(child_ids, fn(child) {
+    assert list.contains(events, game_client.CastWent(cast_id: child, phase: 0))
+      && list.contains(events, game_client.CastFinished(cast_id: child))
+      as "each child goes and finishes as any child cast does"
+  })
+  let assert Ok(last_child) = list.last(child_ids)
+  let position = fn(wanted) {
+    let assert Ok(found) =
+      list.index_map(events, fn(event, index) { #(event, index) })
+      |> list.find(fn(entry) { entry.0 == wanted })
+    found.1
+  }
+  assert position(game_client.CastFinished(cast_id: wall))
+    > position(game_client.CastFinished(cast_id: last_child))
+    as "opcode.0x7fe: the wall finishes after the tenth child, the step that fires the tenth tick"
+  driven_time.advance(time:, ms: 1500)
+  let #(later, _) = game_client.read_until_pong(game:, have:, number: 2)
+  assert starts_of_spell(frames: later, spell4_id: 87_477) == []
+    as "no eleventh child follows the wall's end"
+  game_client.close(game:)
+  login_support.stop(started)
+}

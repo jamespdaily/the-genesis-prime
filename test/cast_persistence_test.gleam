@@ -341,6 +341,7 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
     support.with_effects(spell: support.child(spell4_id: 7006, base: 3), kinds: [
       spell_plan.ProxyEffect(
         spell_plan.Proxy(
+          period: None,
           effect_id: Spell4EffectsId(2),
           delay_ms: 0,
           phase_flags: -1,

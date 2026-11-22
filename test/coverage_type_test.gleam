@@ -266,7 +266,7 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
   use <- unitest.guard(client_tables.present())
   assert starting_counts(engine: coverage_support.engine_named("Spell effects"))
     == [
-      #(1, 11),
+      #(1, 13),
       #(3, 1),
       #(4, 6),
       #(8, 41),
@@ -275,7 +275,7 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
       #(17, 14),
       #(18, 1),
       #(24, 1),
-      #(26, 81),
+      #(26, 82),
       #(29, 1),
       #(52, 1),
       #(73, 11),
@@ -287,7 +287,7 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
       #(118, 2),
       #(145, 1),
     ]
-    as "the 114 rows of the 18 abilities' walk (26 Proxy 49, 8 damage 36, 17 8, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 1, 3 1, 90 1: Deja Vu 228968, whose gate 44174 names no AMP spell) and the 76 rows of the 20 spells the class innates reach under the same gates, counted from `table_rows -- Spell4Effects spellId=<id>` of 46867, 42908, 44926, 47866, 47860, 52371, 70599, 45000, 46297, 58586, 70369, 76766, 69450, 46073, 38784, 38783, 45057, 60724, 47273 and 47439: 1 7, 11 11, 14 7, 17 4, 18 1, 24 1, 26 23, 29 1, 52 1, 73 3, 80 6, 81 1, 83 2, 90 3, 112 2, 118 2, 145 1: 190 effect rows, and the 6 rows of the spells the Stalker's procs cast (`table_rows -- Spell4Effects spellId=60769 79932 63366`): 80 1 (147136), 11 4 (210998, 212528, 212529, 212530) and 73 1 (159134): 196 effect rows, and the 19 rows of the trees the two alternates reach: Spell Surge's alternates (Spell4.spell4IdMechanicAlternateSpell: 34718 names 34719 and 43468 names 76002) add the trees below them to the walk: 79679, 34766, 34767, 76003 and 76004 and 34719, 43500, 82409, 76002 (scratch count over `table_rows -- Spell4Effects spellId=<id>`: 17 1 each for 34719, 43500 and 82409, 8 1 each for 79679, 34766, 34767, 76003 and 76004, 73 1 each for 79679 and 34766, 26 9 and 80 1 for 76002); the walk reaches 8 more spells and 19 more rows, since one of the three type 17 rows is of a spell it reached already: 8 +5, 17 +2, 26 +9, 73 +2 and 80 +1. 215 effect rows, and the 2 rows of Spell4 72838, which the Proc 178239 (kind 16) of Spell4 38784 casts and the plan reads since issue 828 (`table_rows -- Spell4Effects spellId=72838`: 188358 and 188359, both type 80): 80 +2. 217 effect rows"
+    as "the periodic Proxies 121345 and 178429 start 71371 (one type 1 row) and 32822 (a type 1 row and the Proxy 200548), so 3 rows more than the 217 below: type 1 11 to 13 and type 26 81 to 82; the 114 rows of the 18 abilities' walk (26 Proxy 49, 8 damage 36, 17 8, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 1, 3 1, 90 1: Deja Vu 228968, whose gate 44174 names no AMP spell) and the 76 rows of the 20 spells the class innates reach under the same gates, counted from `table_rows -- Spell4Effects spellId=<id>` of 46867, 42908, 44926, 47866, 47860, 52371, 70599, 45000, 46297, 58586, 70369, 76766, 69450, 46073, 38784, 38783, 45057, 60724, 47273 and 47439: 1 7, 11 11, 14 7, 17 4, 18 1, 24 1, 26 23, 29 1, 52 1, 73 3, 80 6, 81 1, 83 2, 90 3, 112 2, 118 2, 145 1: 190 effect rows, and the 6 rows of the spells the Stalker's procs cast (`table_rows -- Spell4Effects spellId=60769 79932 63366`): 80 1 (147136), 11 4 (210998, 212528, 212529, 212530) and 73 1 (159134): 196 effect rows, and the 19 rows of the trees the two alternates reach: Spell Surge's alternates (Spell4.spell4IdMechanicAlternateSpell: 34718 names 34719 and 43468 names 76002) add the trees below them to the walk: 79679, 34766, 34767, 76003 and 76004 and 34719, 43500, 82409, 76002 (scratch count over `table_rows -- Spell4Effects spellId=<id>`: 17 1 each for 34719, 43500 and 82409, 8 1 each for 79679, 34766, 34767, 76003 and 76004, 73 1 each for 79679 and 34766, 26 9 and 80 1 for 76002); the walk reaches 8 more spells and 19 more rows, since one of the three type 17 rows is of a spell it reached already: 8 +5, 17 +2, 26 +9, 73 +2 and 80 +1. 215 effect rows, and the 2 rows of Spell4 72838, which the Proc 178239 (kind 16) of Spell4 38784 casts and the plan reads since issue 828 (`table_rows -- Spell4Effects spellId=72838`: 188358 and 188359, both type 80): 80 +2. 217 effect rows"
 }
 
 pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test() -> Nil {
@@ -321,8 +321,8 @@ pub fn the_starting_abilities_and_innates_reach_79_spells_with_the_gates_a_level
   let assert Ok(spells) =
     starting_ability.spells(tables: client_tables.every_table())
     as "the client's tables hold the rows the walk names"
-  assert list.length(spells) == 91
-    as "the three spells the Stalker passive's procs cast (60769, 79932 and 63366) are in its tree, and so is 72838, which the kind 16 Proc 178239 of Spell4 38784 casts since issue 828 (a 91st spell; the 90 below are the count before); the 18 level-1 abilities reach 65 spells with every gate open, less the six spells below the five Proxies behind AMP gates (79220, 79229, 57030, 41869 with 77116, and 60947); Deja Vu's 87353 behind a gate that names no AMP stays; the nine innate roots add 20 (Class.spell4IdInnateAbilityActive00.trees, less the ten behind closed gates); the two alternates (34718 names 34719 and 43468 names 76002, Spell4.spell4IdMechanicAlternateSpell) are plans of their own and add 8 (79679, 34766, 34767, 76002, 76003, 76004 and 34719, 43500 or 82409, one of which is reached already)"
+  assert list.length(spells) == 93
+    as "the periodic Proxies 121345 and 178429 add 71371 and 32822 to the 91 below: 93; the three spells the Stalker passive's procs cast (60769, 79932 and 63366) are in its tree, and so is 72838, which the kind 16 Proc 178239 of Spell4 38784 casts since issue 828 (a 91st spell; the 90 below are the count before); the 18 level-1 abilities reach 65 spells with every gate open, less the six spells below the five Proxies behind AMP gates (79220, 79229, 57030, 41869 with 77116, and 60947); Deja Vu's 87353 behind a gate that names no AMP stays; the nine innate roots add 20 (Class.spell4IdInnateAbilityActive00.trees, less the ten behind closed gates); the two alternates (34718 names 34719 and 43468 names 76002, Spell4.spell4IdMechanicAlternateSpell) are plans of their own and add 8 (79679, 34766, 34767, 76002, 76003, 76004 and 34719, 43500 or 82409, one of which is reached already)"
 }
 
 // ---- the decoded and missing types ----
@@ -501,7 +501,7 @@ pub fn the_effect_types_3_10_11_14_15_17_18_29_35_42_52_64_73_76_80_81_83_84_95_
       ),
       Missing(
         type_number: 26,
-        reason: "rows whose dataBits00 is 0, which name their spell in dataBits01 and cast it every tickTime (the plan does not start it), or that are aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes",
+        reason: "rows with a tickTime that cast their spell on the area or until removed (the plan does not start it), rows whose dataBits00 and dataBits01 name no Spell4 row, or that are aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes",
         fact_key: "Spell4Effects.effectType.26",
       ),
       Missing(
@@ -2071,6 +2071,16 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
         ),
       ),
       #(
+        200_548,
+        41_869,
+        35_913,
+        level_one_gate.NeedsAmp(
+          spell4_id: 41_594,
+          eldan_augmentation_id: 440,
+          level: 10,
+        ),
+      ),
+      #(
         204_548,
         78_078,
         36_531,
@@ -2151,7 +2161,7 @@ pub fn the_clients_starting_abilities_leave_out_the_runner_prerequisites_and_the
         ),
       ),
     ]
-    as "fifteen Proxies start a child behind a gate whose condition (type 50 or 15, comparison 1) names an AMP's spell, each AMP offered at level 10 by LevelUpUnlock 26: five of the 18 abilities and ten of the class innates (Spell4Effects 136726, 137177, 147848, 173872, 204548, 205537, 208380, 210822, 228915 and 228917, with the Prerequisite and EldanAugmentation rows of `table_rows`)"
+    as "sixteen Proxies start a child behind a gate whose condition (type 50 or 15, comparison 1) names an AMP's spell, each AMP offered at level 10 by LevelUpUnlock 26: five of the 18 abilities and eleven of the class innates (Spell4Effects 136726, 137177, 147848, 173872, 200548, 204548, 205537, 208380, 210822, 228915 and 228917, with the Prerequisite and EldanAugmentation rows of `table_rows`; 200548 is the Esper's, in 32822, which the periodic Proxy 178429 of 70369 casts)"
   assert list.contains(
     left,
     starting_ability.ProxyGateClosed(
@@ -2215,9 +2225,9 @@ pub fn the_starting_abilities_totals_hold_208_of_217_effect_rows_and_79_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects | 133 | 131200 | 18 | 28 | 208 of 217 |",
+    "| Spell effects | 133 | 131200 | 18 | 28 | 213 of 220 |",
   )
-    as "the walk reaches 217 effect rows: the 196 of before, the 19 that the alternates of Spell Surge add and the 2 of Spell4 72838 (the spell the Proc 178239 casts, read since issue 828), all 21 handled. 9 of the 196 are not handled: the Proc row the plan skips (123744), 90 x4, 24 once, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches). The other 187 of the 196 are handled, and so are the 21 added rows, which makes 208 of 217. Among the handled ones: the Stalker's 91018 of type 81, behind target apply prerequisite 11311, whose condition the plan reads; the five other Proc rows; the Medic's row 228914; 109482 of type 18; 229304 of type 145; the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime; the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display; and the Warrior's periodic row 210834 of type 118, aimed at the caster and ticking every 1000 ms for 8000 ms. The whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10. Type 76 (Spell4Effects.effectType.76) is read since: it is a type in use, so the types handled go from 22 to 23, and no starting ability holds a row of it; type 97 (Spell4Effects.effectType.97) is read after it, so they go to 24, and no starting ability holds a row of it either; type 15 (Spell4Effects.effectType.15) is read after that, so they go to 25, and no starting ability holds a row of it; type 35 (Spell4Effects.effectType.35) is read after that, so they go to 26, and no starting ability holds a row of it; type 95 (Spell4Effects.effectType.95) is read after that, so they go to 27, and no starting ability holds a row of it"
+    as "the periodic Proxies 121345 and 178429 are read now and start 71371 and 32822, whose 3 rows are handled: 220 rows, 213 handled (208 of 217 before); the walk reached 217 effect rows: the 196 of before, the 19 that the alternates of Spell Surge add and the 2 of Spell4 72838 (the spell the Proc 178239 casts, read since issue 828), all 21 handled. 9 of the 196 are not handled: the Proc row the plan skips (123744), 90 x4, 24 once, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches). The other 187 of the 196 are handled, and so are the 21 added rows, which makes 208 of 217. Among the handled ones: the Stalker's 91018 of type 81, behind target apply prerequisite 11311, whose condition the plan reads; the five other Proc rows; the Medic's row 228914; 109482 of type 18; 229304 of type 145; the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime; the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display; and the Warrior's periodic row 210834 of type 118, aimed at the caster and ticking every 1000 ms for 8000 ms. The whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10. Type 76 (Spell4Effects.effectType.76) is read since: it is a type in use, so the types handled go from 22 to 23, and no starting ability holds a row of it; type 97 (Spell4Effects.effectType.97) is read after it, so they go to 24, and no starting ability holds a row of it either; type 15 (Spell4Effects.effectType.15) is read after that, so they go to 25, and no starting ability holds a row of it; type 35 (Spell4Effects.effectType.35) is read after that, so they go to 26, and no starting ability holds a row of it; type 95 (Spell4Effects.effectType.95) is read after that, so they go to 27, and no starting ability holds a row of it"
   assert string.contains(
     totals,
     "| Prerequisites | 232 | 49184 | 47209 | 48 | 79 of 79 |",

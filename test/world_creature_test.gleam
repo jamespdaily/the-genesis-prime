@@ -1658,6 +1658,7 @@ fn knockback_plans() -> spell_plan.Plans {
       kinds: [
         spell_plan.ProxyEffect(
           spell_plan.Proxy(
+            period: None,
             effect_id: Spell4EffectsId(99_060),
             delay_ms: 0,
             phase_flags: -1,

@@ -402,7 +402,7 @@ pub fn union_property_modifier_plans_a_caster_change_and_a_struck_change_test() 
 
 pub fn union_proxy_plans_one_child_on_the_caster_and_one_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(Applied(spell_plan.ReadProxy(targets:, condition: _))) =
+  let assert Ok(Applied(spell_plan.ReadProxy(targets:, condition: _, ..))) =
     read_client_row(id: 196_408, place: spell_tables.pressed_hitting_foes)
     as "a Proxy with flags 5 in a spell that hits foes"
   assert targets == [spell_plan.OnCaster, spell_plan.OnEachStruck]

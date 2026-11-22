@@ -39,6 +39,7 @@ import genesis_prime/message/spell_effect_tick.{
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
 import genesis_prime/step.{type ConnectionId, type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/int
@@ -638,6 +639,43 @@ pub fn a_late_node_end_sends_no_tick_past_the_node_life_test() -> Nil {
     == [spell_effect_tick.message_id, spell_finished.message_id]
     as "tick 3's 0x7f8, then the 0x7fe, and no fourth tick"
   no_tick_after_finish(run: late)
+  // A periodic Proxy row of the same schedule in the same spell starts its child at each tick
+  // the node's life holds, the late firing included, and the 0x7fe follows the last child.
+  let proxy =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: atomic_proxy()),
+      longer_of_delay_and_duration: True,
+    )
+  let early = proxy_run(spell: proxy, until_ms: 4999)
+  let holder_id = support.pressed_id(effects: { first_step(run: early) }.1)
+  let assert [_, #(proxy_node_end, _)] =
+    support.started_timers(effects: { first_step(run: early) }.1)
+    as "the go starts the first tick's timer and the node's end"
+  let #(state, raw) =
+    support.fired_raw_as(
+      caster: support.caster(),
+      state: early.state,
+      timer: proxy_node_end,
+      at: 6000,
+    )
+  let #(state, proxy_late, _) =
+    settled(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 6000,
+      struck: [],
+      answer: held,
+    )
+  let late_proxy =
+    Run(..early, state:, steps: list.append(early.steps, [#(6000, proxy_late)]))
+  assert child_times(run: late_proxy) == [3000, 4000, 6000]
+    as "the node's end, handled 1000 ms late, fires tick 3, which was due within the node's life, and not tick 4, due after it"
+  assert children_started(effects: proxy_late) == [71_371]
+  let assert Ok(last_frame) = list.last(support.writes(effects: proxy_late))
+  assert last_frame.message_id == spell_finished.message_id
+    && support.finished_cast_id(last_frame) == holder_id
+    as "the holder's 0x7fe is the step's last frame, after the child"
 }
 
 pub fn a_node_kept_by_an_open_strike_round_sends_no_tick_past_its_life_test() -> Nil {
@@ -832,6 +870,67 @@ pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
     as "every later 0x7f8 is the second cast's"
   assert first_id != second_id
   no_tick_after_finish(run:)
+  // A periodic Proxy row on the caster's node ends the same way: the second cast pushes the
+  // first off the caster at the stack's cap and the first's tick timer is cancelled, so only
+  // the second cast's three children start.
+  let proxied =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: every_two_seconds()),
+      stack: lasting_stack_of_one(),
+    )
+  let proxy_plans = support.plans_of([proxied])
+  let proxy_first =
+    pressed(
+      plans: proxy_plans,
+      caster: support.caster(),
+      struck: [],
+      answer: held,
+    )
+  let assert [#(_, proxy_first_effects)] = proxy_first.steps
+  let assert [#(proxy_first_tick, 2000), ..] =
+    support.started_timers(effects: proxy_first_effects)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: proxy_plans,
+      state: proxy_first.state,
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1500,
+    )
+  let #(state, proxy_second_effects, _) =
+    settled(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 1500,
+      struck: [],
+      answer: held,
+    )
+  assert list.contains(
+    support.cancelled_timers(effects: proxy_second_effects),
+    proxy_first_tick,
+  )
+    as "the second cast pushes the first off the caster, and the first cast's tick timer is cancelled with its node"
+  let proxy_run =
+    ran(
+      caster: support.caster(),
+      run: Run(
+        state:,
+        steps: [#(1500, proxy_second_effects)],
+        pending: pending_after(
+          pending: proxy_first.pending,
+          effects: proxy_second_effects,
+          at: 1500,
+        ),
+        held: [],
+      ),
+      until_ms: 20_000,
+      struck: [],
+      answer: held,
+    )
+  assert child_times(run: proxy_run) == [3500, 5500, 7500]
+    as "every child is the second cast's: a tick every 2000 ms from its press at 1500"
 }
 
 pub fn a_dead_target_gets_no_more_ticks_test() -> Nil {
@@ -927,6 +1026,44 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
     as "every tick due at the node's end fires before it, each of the row's three overdue ticks, then the 0x7fe"
   assert support.started_timers(effects: late) == []
     as "and no tick is armed after the last"
+  // A heal row (62019) and a Proxy row of the same schedule on the caster: the first ticks
+  // due together fire in row id order, whichever kind the row is.
+  let first_tick_frames = fn(proxy_id) {
+    let spell =
+      support.with_effects(spell: surge(), kinds: [
+        spell_plan.HealEffect(health_heal(schedule: every_two_seconds())),
+        spell_plan.ProxyEffect(proxy_row_of(
+          effect_id: proxy_id,
+          schedule: every_two_seconds(),
+        )),
+      ])
+    let run =
+      pressed(
+        plans: support.plans_of([spell]),
+        caster: healing_caster(),
+        struck: [],
+        answer: held,
+      )
+      |> fn(run) {
+        ran(
+          caster: healing_caster(),
+          run:,
+          until_ms: 3000,
+          struck: [],
+          answer: held,
+        )
+      }
+    let assert Ok(#(3000, effects)) = list.last(run.steps)
+    list.filter(ids(effects:), fn(id) {
+      id == spell_effect_tick.message_id || id == spell_started.message_id
+    })
+  }
+  assert first_tick_frames(61_000)
+    == [spell_started.message_id, spell_effect_tick.message_id]
+    as "a Proxy row with an id below the heal's 62019 casts its child before the heal tick's 0x7f8"
+  assert first_tick_frames(63_000)
+    == [spell_effect_tick.message_id, spell_started.message_id]
+    as "one above it casts after"
 }
 
 pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
@@ -1135,6 +1272,21 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
     })
     == [1000]
     as "and the next tick is armed"
+  // A periodic Proxy's ticks end with the caster too.
+  let proxy_run =
+    proxy_run(spell: proxy_spell(schedule: every_two_seconds()), until_ms: 3000)
+  let #(_, proxy_dying) =
+    cast.died(
+      cast: proxy_run.state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 3500),
+    )
+  let proxy_cancelled = support.cancelled_timers(effects: proxy_dying)
+  assert proxy_run.pending != []
+  assert list.all(proxy_run.pending, fn(pending) {
+    list.contains(proxy_cancelled, pending.1)
+  })
+    as "the death cancels the Proxy's next tick and its node's end, so no child follows"
 }
 
 pub fn a_heal_tick_heals_the_caster_each_tick_test() -> Nil {
@@ -1269,6 +1421,75 @@ pub fn a_cancel_keeps_ticks_and_an_interrupt_ends_them_test() -> Nil {
     as "the persistence's end writes the cast's 0x7f9"
   assert ended.pending == []
     as "and cancels every tick timer of the cast, so no 0x7f8 follows"
+  // A periodic Proxy row: a 0x801 after the first go keeps its ticks, a persistence's end
+  // cancels them.
+  let proxy_twice =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: every_two_seconds()),
+      phase_delays_ms: [
+        0,
+        1000,
+      ],
+    )
+  let proxy_first =
+    pressed(
+      plans: support.plans_of([proxy_twice]),
+      caster: support.caster(),
+      struck: [],
+      answer: held,
+    )
+  let assert [#(_, proxy_press)] = proxy_first.steps
+  let assert Ok(proxy_taken) =
+    support.cancelled_in(
+      plans: support.plans_of([proxy_twice]),
+      state: proxy_first.state,
+      cast_id: support.pressed_id(effects: proxy_press),
+      reason: cast_result.from_value(11),
+      bit: 1,
+      at: 1500,
+    )
+  let proxy_kept =
+    stepped(run: proxy_first, at: 1500, taken: proxy_taken)
+    |> fn(run) {
+      ran(
+        caster: support.caster(),
+        run:,
+        until_ms: 20_000,
+        struck: [],
+        answer: held,
+      )
+    }
+  assert child_times(run: proxy_kept) == [3000, 5000, 7000]
+    as "a 0x801 after the first go keeps the Proxy's ticks to the node's end"
+  let proxy_persisting =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: every_two_seconds()),
+      caster_persistence: Some(
+        prerequisites.single(id: 903, condition: #(28, 1, 0, 0)),
+      ),
+    )
+  let proxy_in_combat =
+    pressed(
+      plans: support.plans_of([proxy_persisting]),
+      caster: in_combat,
+      struck: [],
+      answer: held,
+    )
+    |> fn(run) {
+      ran(caster: in_combat, run:, until_ms: 3000, struck: [], answer: held)
+    }
+  let proxy_ended =
+    stepped(
+      run: proxy_in_combat,
+      at: 3500,
+      taken: cast.persisted(
+        cast: proxy_in_combat.state,
+        caster: support.caster_in_combat(in_combat: False),
+        now: support.at(ms: 3500),
+      ),
+    )
+  assert proxy_ended.pending == []
+    as "the persistence's end cancels every tick timer of the Proxy, so no child follows"
 }
 
 // ---- heal rows ----
@@ -1423,6 +1644,79 @@ fn heal_description(
     damage_type: kind,
     hits: [],
   )
+}
+
+// ---- periodic Proxy rows ----
+
+/// Row 121345's child: Spell4 71371, which each tick of a Proxy row below casts.
+fn proxy_child() -> Spell {
+  support.child(spell4_id: 71_371, base: 71_371)
+}
+
+/// A Proxy row aimed at the caster in every phase, with no gate, that casts `proxy_child` at
+/// each tick of `schedule`, under the row id `effect_id`.
+fn proxy_row_of(
+  effect_id effect_id: Int,
+  schedule schedule: ticking.Schedule,
+) -> spell_plan.Proxy {
+  spell_plan.Proxy(
+    effect_id: Spell4EffectsId(effect_id),
+    delay_ms: 0,
+    phase_flags: -1,
+    condition: spell_plan.Always,
+    tag: spend.always,
+    target: spell_plan.OnCaster,
+    spell: proxy_child(),
+    gains: [],
+    period: Some(schedule),
+  )
+}
+
+/// The planted base 3 spell with a periodic Proxy row of this schedule.
+fn proxy_spell(schedule schedule: ticking.Schedule) -> Spell {
+  support.with_effects(spell: surge(), kinds: [
+    spell_plan.ProxyEffect(proxy_row_of(effect_id: 121_345, schedule:)),
+  ])
+}
+
+/// Row 82888's schedule (delay 1000, tickTime 1000, durationTime 4000), as a Proxy row's.
+fn atomic_proxy() -> ticking.Schedule {
+  Schedule(delay_ms: 1000, tick_ms: 1000, duration_ms: 4000, count: 4)
+}
+
+/// A cast of the spell, its go striking nothing, run to `until_ms`.
+fn proxy_run(spell spell: Spell, until_ms until_ms: Int) -> Run {
+  pressed(
+    plans: support.plans_of([spell]),
+    caster: support.caster(),
+    struck: [],
+    answer: held,
+  )
+  |> fn(run) {
+    ran(caster: support.caster(), run:, until_ms:, struck: [], answer: held)
+  }
+}
+
+fn first_step(run run: Run) -> #(Int, List(Effect)) {
+  let assert [first, ..] = run.steps as "a run has its press step"
+  first
+}
+
+/// The Spell4 id of each 0x7ff the effects write.
+fn children_started(effects effects: List(Effect)) -> List(Int) {
+  support.frames_of(message_id: spell_started.message_id, effects:)
+  |> list.map(fn(frame) {
+    let assert Ok(start) = spell_started.decode(frame.body)
+      as "a 0x7ff the rule wrote decodes"
+    start.spell4_id
+  })
+}
+
+/// The time of the step of each 0x7ff the run writes.
+fn child_times(run run: Run) -> List(Int) {
+  list.flat_map(run.steps, fn(step) {
+    list.map(children_started(effects: step.1), fn(_) { step.0 })
+  })
 }
 
 fn lasting_stack_of_one() -> lasting.Stack {

@@ -471,24 +471,13 @@ pub fn proc_refusal(
   row row: spell_plan.ProcRow,
   holder holder: Holder,
 ) -> Option(Effect) {
-  case spell_plan.refused_life(spell: row.spell, dead: caster.dead) {
-    None -> None
-    Some(_) ->
-      Some(Log(
-        level: LogDebug,
-        text: "the Proc effect "
-          <> int.to_string(row.effect_id.value)
-          <> " of Spell4 "
-          <> int.to_string(holder.spell.spell4_id.value)
-          <> " does not cast Spell4 "
-          <> int.to_string(row.spell.spell4_id.value)
-          <> ", whose caster condition refuses a caster that is "
-          <> case caster.dead {
-          True -> "dead"
-          False -> "alive"
-        },
-      ))
-  }
+  cast_gate.life_refusal(
+    kind: "Proc",
+    effect_id: row.effect_id,
+    holder_spell4_id: holder.spell.spell4_id,
+    spell: row.spell,
+    caster:,
+  )
 }
 
 /// The Proc rows of a go that applied, each held by the cast `cast_id` from this go on;

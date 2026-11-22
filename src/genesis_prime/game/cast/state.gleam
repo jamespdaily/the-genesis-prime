@@ -603,7 +603,8 @@ pub fn round_closed(row row: Ticking) -> Ticking {
 }
 
 /// What a tick does: a damage row strikes its unit with its blow; a heal row heals the
-/// caster's vital by its formula, read for the caster at the tick.
+/// caster's vital by its formula, read for the caster at the tick; a Proxy row starts its
+/// spell as a child cast of the holder.
 pub opaque type TickKind {
   DamageTick(blow: spell_area.DamageEffect)
   HealTick(
@@ -611,6 +612,7 @@ pub opaque type TickKind {
     formula: damage.Formula,
     passed_in: Option(Float),
   )
+  ProxyTick(proxy: Proxy)
 }
 
 /// A tick that strikes its unit with `blow`.
@@ -628,17 +630,24 @@ pub fn heal_tick(
   HealTick(vital:, formula:, passed_in:)
 }
 
-/// What a tick of `kind` does: `damage` gets the blow and `heal` the vital, formula and
-/// passed-in value. The one match over the kinds, so a new kind adds an argument here and
-/// names each fold.
+/// A tick that starts the child cast of `proxy` on the caster.
+pub fn proxy_tick(proxy proxy: Proxy) -> TickKind {
+  ProxyTick(proxy:)
+}
+
+/// What a tick of `kind` does: `damage` gets the blow, `heal` the vital, formula and
+/// passed-in value and `proxy` the Proxy. The one match over the kinds, so a new kind adds an
+/// argument here and names each fold.
 pub fn on_tick_kind(
   kind kind: TickKind,
   damage damage: fn(spell_area.DamageEffect) -> result,
   heal heal: fn(effect_kind.Vital, damage.Formula, Option(Float)) -> result,
+  proxy proxy: fn(Proxy) -> result,
 ) -> result {
   case kind {
     DamageTick(blow:) -> damage(blow)
     HealTick(vital:, formula:, passed_in:) -> heal(vital, formula, passed_in)
+    ProxyTick(proxy: row) -> proxy(row)
   }
 }
 
@@ -829,6 +838,9 @@ pub type Live {
 pub type Lingering {
   Lingering(
     spell: Spell,
+    /// The spell the player pressed, as on its `Live` cast: the root of the children its
+    /// periodic Proxies start.
+    root: Spell4Id,
     /// The connections that see the caster, as on its `Live` cast, which its 0x811 and
     /// 0x7fe go to.
     audience: Set(ConnectionId),
@@ -1285,6 +1297,9 @@ pub fn cancel_timers(
 pub type Holder {
   Holder(
     spell: Spell,
+    /// The spell the player pressed, which the children of a periodic Proxy take as their
+    /// root.
+    root: Spell4Id,
     audience: Set(ConnectionId),
     started_ms: Int,
     primary_target: Int,
@@ -1308,6 +1323,7 @@ pub fn holder_of(
     Ok(live), _ ->
       Ok(Holder(
         spell: live.spell,
+        root: live.root,
         audience: live.audience,
         started_ms: live.started_ms,
         primary_target: live.primary_target,
@@ -1319,6 +1335,7 @@ pub fn holder_of(
     Error(Nil), Ok(lingering) ->
       Ok(Holder(
         spell: lingering.spell,
+        root: lingering.root,
         audience: lingering.audience,
         started_ms: lingering.started_ms,
         primary_target: lingering.primary_target,
