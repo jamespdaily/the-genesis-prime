@@ -24,11 +24,13 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import log_capture
 import lustre/element
 import open_wait
 import owned_test
 import play_service_support.{Answer} as support
 import simplifile
+import unitest
 
 fn started(settings: dashboard.Settings) -> dashboard.Running {
   let assert Ok(running) = dashboard.start(settings)
@@ -252,12 +254,7 @@ pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrad
 
   // The key prefix and the right origin upgrade, and the runtime that serves
   // the page's first message is the one the count then holds.
-  let #(connection, reply) =
-    dashboard_support.handshake(port:, path: socket, headers: [
-      #("Origin", origin),
-      ..browser
-    ])
-  assert reply.status == 101
+  let connection = opened_socket_at(port:, key:, route: "ws")
   let first = dashboard_support.read_frame(connection)
   assert bit_array.byte_size(first) > 0
   assert dashboard.runtime_count(running) == 1
@@ -271,28 +268,25 @@ fn opened_socket(port: Int, key: String) -> dashboard_support.Connection {
 }
 
 /// Opens the websocket at `route` inside the key prefix as a browser does and
-/// returns the connection once the server has upgraded it. The runtimes'
-/// factory is rebuilt for a moment when what it follows was, and the server
-/// then answers 503; the next ask is made at once, since each ends with the
-/// server's answer.
+/// returns the connection once the server has upgraded it. A 503 means the
+/// runtime did not start, and the handshake is asked again
+/// (`dashboard_support.asked_until_started`).
 fn opened_socket_at(
   port port: Int,
   key key: String,
   route route: String,
 ) -> dashboard_support.Connection {
   let origin = "http://127.0.0.1:" <> int.to_string(port)
-  let #(connection, reply) =
+  let #(connection, reply) = {
+    use <- dashboard_support.asked_until_started
     dashboard_support.handshake(
       port:,
       path: "/k/" <> key <> "/" <> route,
       headers: [#("Origin", origin), ..dashboard_support.browser(port:)],
     )
+  }
   case reply.status {
     101 -> connection
-    503 -> {
-      dashboard_support.close(connection)
-      opened_socket_at(port:, key:, route:)
-    }
     status -> panic as { "the socket answered " <> int.to_string(status) }
   }
 }
@@ -800,7 +794,14 @@ pub fn a_logs_socket_is_upgraded_only_once_its_runtime_has_started_test() -> Nil
 
   // The factory let go: the runtime starts, the socket is upgraded and the
   // page's lines come.
-  assert dashboard_support.handshake_reply(connection).status == 101
+  let connection = case dashboard_support.handshake_reply(connection).status {
+    101 -> connection
+    503 -> {
+      dashboard_support.close(connection)
+      opened_socket_at(port: settings.port, key:, route: "logs-ws")
+    }
+    status -> panic as { "the socket answered " <> int.to_string(status) }
+  }
   let _first =
     frames_held(connection:, needles: ["one", "alpha"], waits: file_logs)
   assert dashboard.runtime_count(running) == 1
@@ -809,11 +810,14 @@ pub fn a_logs_socket_is_upgraded_only_once_its_runtime_has_started_test() -> Nil
 
 pub fn a_handshake_whose_factory_dies_before_it_answers_is_answered_503_and_the_next_is_served_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("serial")
   use home <- dashboard_support.with_home
   plant_logs(home:, updater: "one\n", launchd: "alpha\n")
   let settings = dashboard_support.settings(home)
   let running = started(settings)
   let key = dashboard_support.written_key(home:)
+  let lines = process.new_subject()
+  let capture = log_capture.start_all(into: lines)
 
   // The factory holds the start the handshake asks of it and then dies: the
   // ask ends with an exit, not an error, and the answer is the one of a start
@@ -824,6 +828,7 @@ pub fn a_handshake_whose_factory_dies_before_it_answers_is_answered_503_and_the_
     key:,
     route: "ws",
     runtimes: running.runtimes,
+    lines:,
   )
   answered_503_when_the_factory_dies(
     running:,
@@ -831,7 +836,29 @@ pub fn a_handshake_whose_factory_dies_before_it_answers_is_answered_503_and_the_
     key:,
     route: "logs-ws",
     runtimes: running.log_runtimes,
+    lines:,
   )
+  log_capture.stop(capture)
+}
+
+/// The lines the server logged that say the runtimes' factory ended while a
+/// start was asked of it, taken from those the capture holds now.
+fn lines_of_an_ended_factory(
+  lines: process.Subject(#(String, String, metadata)),
+) -> List(String) {
+  case process.receive(lines, 0) {
+    Error(Nil) -> []
+    Ok(#(_level, text, _metadata)) ->
+      case
+        string.contains(
+          text,
+          "the runtimes' factory ended while the start was asked: ",
+        )
+      {
+        True -> [text, ..lines_of_an_ended_factory(lines)]
+        False -> lines_of_an_ended_factory(lines)
+      }
+  }
 }
 
 fn answered_503_when_the_factory_dies(
@@ -840,6 +867,7 @@ fn answered_503_when_the_factory_dies(
   key key: String,
   route route: String,
   runtimes runtimes: socket.Runtimes(argument, message),
+  lines lines: process.Subject(#(String, String, metadata)),
 ) -> Nil {
   let connection =
     dashboard_support.with_factory_held(runtimes:, during: fn(start_asked) {
@@ -859,11 +887,53 @@ fn answered_503_when_the_factory_dies(
   assert dashboard_support.handshake_reply(connection).status == 503 as route
   dashboard_support.close(connection)
 
+  // The server logged why no runtime started before it answered. The test is
+  // serial, so every line of the node is this test's.
+  assert list.length(lines_of_an_ended_factory(lines)) == 1 as route
+
   // The tree starts the factory again, and the next tab is served by it.
   let socket = opened_socket_at(port:, key:, route:)
   assert dashboard.runtime_count(running) == 1 as route
   dashboard_support.close(socket)
   event_wait.until("the runtime of " <> route <> " to end", fn() {
+    dashboard.runtime_count(running) == 0
+  })
+}
+
+pub fn a_handshake_with_no_key_is_answered_400_when_its_first_ask_is_answered_503_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use home <- dashboard_support.with_home
+  plant_logs(home:, updater: "one\n", launchd: "alpha\n")
+  let settings = dashboard_support.settings(home)
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+  let answers = process.new_subject()
+
+  // The factory holds the first ask and dies with it waiting: that ask is
+  // answered 503, and the call under test asks again.
+  dashboard_support.with_factory_held(
+    runtimes: running.runtimes,
+    during: fn(start_asked) {
+      let _asking =
+        process.spawn(fn() {
+          let #(connection, reply) =
+            dashboard_support.handshake_without_key(
+              port: settings.port,
+              path: "/k/" <> key <> "/ws",
+              headers: [
+                #("Origin", "http://127.0.0.1:" <> int.to_string(settings.port)),
+                ..dashboard_support.browser(port: settings.port)
+              ],
+            )
+          dashboard_support.close(connection)
+          process.send(answers, reply.status)
+        })
+      start_asked()
+      dashboard_support.kill_factory(running.runtimes)
+    },
+  )
+  assert open_wait.received(from: answers, what: "the call's answer") == 400
+  event_wait.until("the runtime of the refused handshake to end", fn() {
     dashboard.runtime_count(running) == 0
   })
 }

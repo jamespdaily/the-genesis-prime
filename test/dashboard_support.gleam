@@ -361,7 +361,8 @@ pub fn kill_factory(runtimes runtimes: Runtimes(argument, message)) -> Nil {
 }
 
 /// A handshake as `handshake` makes it but with no `Sec-WebSocket-Key`, which
-/// the server's websocket upgrade refuses.
+/// the server's websocket upgrade refuses, asked again while the server answers
+/// 503 (`asked_until_started`).
 pub fn handshake_without_key(
   port port: Int,
   path path: String,
@@ -369,10 +370,50 @@ pub fn handshake_without_key(
 ) -> #(Connection, Reply) {
   let upgrade =
     list.filter(upgrade_headers, fn(header) { header.0 != "Sec-WebSocket-Key" })
+  use <- asked_until_started
   let #(connection, status, reply_headers, body) =
     open(port, request_bytes(path:, headers: list.append(headers, upgrade)))
   #(connection, Reply(status:, headers: reply_headers, body:))
 }
+
+/// How many times `asked_until_started` asks before it fails the test.
+const asks_allowed = 100
+
+/// Makes `ask` (a handshake) and asks again for as long as the server answers
+/// 503, closing the connection of each such answer. The dashboard answers 503
+/// when the runtime a handshake needed did not start (its factory was rebuilt, or
+/// the runtime missed its start time, as the first start of a cold machine can),
+/// and means the client to ask again; a 503 neither passes nor fails what a test
+/// checks. Each ask ends with the server's answer, so the next is made at once.
+pub fn asked_until_started(
+  ask ask: fn() -> #(Connection, Reply),
+) -> #(Connection, Reply) {
+  asked_again(ask:, asks_left: asks_allowed)
+}
+
+fn asked_again(
+  ask ask: fn() -> #(Connection, Reply),
+  asks_left asks_left: Int,
+) -> #(Connection, Reply) {
+  let #(connection, reply) = ask()
+  case reply.status {
+    503 if asks_left > 1 -> {
+      close(connection)
+      asked_again(ask:, asks_left: asks_left - 1)
+    }
+    503 ->
+      panic as {
+        "the server answered 503 to each of "
+        <> int.to_string(asks_allowed)
+        <> " asks"
+      }
+    _ -> #(connection, reply)
+  }
+}
+
+/// Whether this side has closed the connection.
+@external(erlang, "dashboard_support_ffi", "is_closed")
+pub fn is_closed(connection: Connection) -> Bool
 
 const upgrade_headers = [
   #("Upgrade", "websocket"),

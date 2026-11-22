@@ -25,7 +25,8 @@
 //// - A text frame that is not a runtime message ends the connection, as a
 ////   reader that refuses a frame does.
 
-import exception
+import exception.{type Exception}
+import genesis_prime/step/runtime
 import gleam/erlang/process.{type Subject}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
@@ -33,6 +34,7 @@ import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{Some}
+import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/result
 import lustre
@@ -64,17 +66,43 @@ type Socket(message) {
   )
 }
 
+/// Why a page's runtime did not start: the factory returned an error, or the
+/// ask of it ended with an exception because the factory was gone or ended
+/// while the ask waited.
+pub type NotStarted {
+  StartFailed(actor.StartError)
+  AskEnded(Exception)
+}
+
+/// The way a runtime did not start and its reason, as a line of the log says it.
+pub fn describe_not_started(not_started not_started: NotStarted) -> String {
+  case not_started {
+    StartFailed(error) ->
+      "the page's runtime " <> runtime.describe_start_error(error)
+    AskEnded(exception.Exited(reason)) ->
+      "the runtimes' factory ended while the start was asked: "
+      <> runtime.term_text(reason)
+    AskEnded(exception.Errored(reason)) ->
+      "the ask of the runtimes' factory raised an error: "
+      <> runtime.term_text(reason)
+    AskEnded(exception.Thrown(reason)) ->
+      "the ask of the runtimes' factory threw a value: "
+      <> runtime.term_text(reason)
+  }
+}
+
 /// Starts the page's runtime in `runtimes` with the `argument` the page
 /// subscribes by, then upgrades the request to a websocket on it. The runtime
 /// starts before the handshake is answered, so a start that is slow or fails is
 /// the handshake's answer and never a failure after the upgrade. The error is
 /// that the runtime did not start: the factory returned an error, or it was
-/// gone or ended while the ask waited, which makes the asking process exit.
+/// gone or ended while the ask waited, which makes the asking process exit. The
+/// error says which, for the log.
 pub fn upgrade(
   request request: Request(Connection),
   runtimes runtimes: Runtimes(argument, message),
   argument argument: argument,
-) -> Result(Response(ResponseData), Nil) {
+) -> Result(Response(ResponseData), NotStarted) {
   use started <- result.try(
     case
       exception.rescue(fn() {
@@ -82,7 +110,8 @@ pub fn upgrade(
       })
     {
       Ok(Ok(started)) -> Ok(started)
-      Ok(Error(_)) | Error(_) -> Error(Nil)
+      Ok(Error(error)) -> Error(StartFailed(error))
+      Error(exception) -> Error(AskEnded(exception))
     },
   )
   let response =
