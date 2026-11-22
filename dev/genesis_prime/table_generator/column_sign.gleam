@@ -15,9 +15,10 @@ pub type Sign {
   Unsigned
   /// The client's reader uses the column as a signed number.
   Signed
-  /// The client's readers are not read, so the column keeps the signed
-  /// reading, and the entry's evidence says why that is safe for the rows the
-  /// server's rules read.
+  /// The client's readers are not read, or are read and give the same result
+  /// under the signed reading, as the evidence shows, so the column keeps the
+  /// signed reading, and the entry's evidence says why that is safe for the
+  /// rows the server's rules read.
   Unread
 }
 
@@ -217,7 +218,7 @@ pub fn all() -> List(ColumnSign) {
       table: "Spell4",
       column: "spellDuration",
       sign: Unread,
-      evidence: "no rule of the server reads spellDuration (genesis_prime/game/spell_plan reads castTime, spellCoolDown, the global cooldown and cost columns, genesis_prime/game/loadout spell4BaseIdBaseSpell); it holds -1 in 858 rows",
+      evidence: "the server reads spellDuration only for a castMethod 10 spell, as an aura's length when above 0 (genesis_prime/game/spell_plan, aura_of); the client's reader 0x1407180c0 adds it to the cast's start as an unsigned number, so -1 (858 rows) is a buff that never runs out, which the signed reading above 0 also takes as no end",
     ),
     ColumnSign(
       table: "Spell4",

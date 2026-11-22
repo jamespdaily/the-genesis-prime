@@ -297,27 +297,91 @@ fn opened_socket_at(
   }
 }
 
+/// Why a wait for frames ended with no frame holding what it waited for: a
+/// frame held one of the words the wait refuses. The follower that sent it reads
+/// again only at its next tick, which these tests never let come, so no frame
+/// would follow. `text` is what the frames said.
+type Refused {
+  Refused(word: String, missing: List(String), text: String)
+}
+
+/// The text of the frames the server sends on the connection until every
+/// needle has been in one of them, or what refused the wait: a frame that holds
+/// one of the `refusing` words.
+fn frames_until(
+  connection connection: dashboard_support.Connection,
+  needles needles: List(String),
+  refusing refusing: List(String),
+) -> Result(String, Refused) {
+  frames_until_after(connection:, needles:, refusing:, seen: "")
+}
+
+fn frames_until_after(
+  connection connection: dashboard_support.Connection,
+  needles needles: List(String),
+  refusing refusing: List(String),
+  seen seen: String,
+) -> Result(String, Refused) {
+  let missing =
+    list.filter(needles, fn(needle) { !string.contains(seen, needle) })
+  use <- bool.guard(when: missing == [], return: Ok(seen))
+  let frame =
+    open_wait.named(
+      "a frame of the page holding " <> string.join(missing, " and "),
+      fn() { dashboard_support.read_frame(connection) },
+    )
+  let assert Ok(text) = bit_array.to_string(frame) as "a frame is not text"
+  case list.find(refusing, string.contains(text, _)) {
+    Ok(word) -> Error(Refused(word:, missing:, text:))
+    Error(Nil) ->
+      frames_until_after(
+        connection:,
+        needles:,
+        refusing:,
+        seen: seen <> "\n" <> text,
+      )
+  }
+}
+
 /// The text of the frames the server sends on the connection until every
 /// needle has been in one of them.
 fn frames_holding(
   connection: dashboard_support.Connection,
   needles: List(String),
 ) -> String {
-  frames_holding_after(connection:, needles:, seen: "")
+  frames_held(connection:, needles:, refusing: [])
 }
 
-fn frames_holding_after(
+/// The words a page shows for a read that failed for a reason no row names.
+const failed_read = "cannot read: "
+
+/// The text of the frames of a page whose containers are planted
+/// (`with_containers`) until every needle has been in one of them; a read that
+/// failed fails the test with the page's text.
+fn container_frames_holding(
+  connection: dashboard_support.Connection,
+  needles: List(String),
+) -> String {
+  frames_held(connection:, needles:, refusing: [failed_read])
+}
+
+fn frames_held(
   connection connection: dashboard_support.Connection,
   needles needles: List(String),
-  seen seen: String,
+  refusing refusing: List(String),
 ) -> String {
-  use <- bool.guard(
-    when: list.all(needles, string.contains(seen, _)),
-    return: seen,
-  )
-  let frame = dashboard_support.read_frame(connection)
-  let assert Ok(text) = bit_array.to_string(frame) as "a frame is not text"
-  frames_holding_after(connection:, needles:, seen: seen <> "\n" <> text)
+  case frames_until(connection:, needles:, refusing:) {
+    Ok(text) -> text
+    Error(Refused(word:, missing:, text:)) ->
+      panic as {
+        "a frame holds \""
+        <> word
+        <> "\", so no frame holding "
+        <> string.join(missing, " and ")
+        <> " will follow: "
+        <> text
+      }
+  }
 }
 
 pub fn a_dead_poller_takes_the_page_runtimes_with_it_and_a_new_tab_is_served_test() -> Nil {
@@ -904,7 +968,7 @@ pub fn the_logs_page_shows_the_two_containers_through_a_browsers_socket_test() -
   // The frames hold the four sources, the containers by the call that shows
   // them, and the lines of both containers.
   let first =
-    frames_holding(socket, [
+    container_frames_holding(socket, [
       "Updater log",
       "launchd log",
       "Server log",
@@ -953,7 +1017,7 @@ pub fn the_logs_page_shows_the_two_containers_through_a_browsers_socket_test() -
       <> "2026-11-20T09:10:30-05:00 a line logged later\n",
   )
   read_poll.read_now(running.server_log)
-  let later = frames_holding(socket, ["a line logged later"])
+  let later = container_frames_holding(socket, ["a line logged later"])
   assert string.split(later, "a line logged later") |> list.length == 2
     as "the line came once"
   assert !string.contains(later, planted_password)
@@ -966,20 +1030,21 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
   let running = started(settings)
   let key = dashboard_support.written_key(home: settings.genesis_home)
   let first = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let _lines = frames_holding(first, ["creature2_id", "=CRASH REPORT===="])
+  let _lines =
+    container_frames_holding(first, ["creature2_id", "=CRASH REPORT===="])
 
   // Podman is not reachable: a frame with the reason, and a page opened now
   // shows the lines the follower kept, dimmed.
   support.plant_unreachable(scene:, name: support.server_container)
   read_poll.read_now(running.server_log)
   let _reason =
-    frames_holding(first, [
+    container_frames_holding(first, [
       "Podman is not reachable",
       "unable to connect to Podman socket",
     ])
   let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   let kept =
-    frames_holding(second, [
+    container_frames_holding(second, [
       "Podman is not reachable",
       "=CRASH REPORT====",
       "stale",
@@ -1003,11 +1068,12 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
       <> "2026-11-20T09:10:31-05:00 logged meanwhile\n",
   )
   read_poll.read_now(running.server_log)
-  let back = frames_holding(first, ["logged meanwhile"])
+  let back = container_frames_holding(first, ["logged meanwhile"])
   assert string.split(back, "logged meanwhile") |> list.length == 2
     as "the line logged meanwhile came once"
   let third = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let fresh = frames_holding(third, ["logged meanwhile", "=CRASH REPORT===="])
+  let fresh =
+    container_frames_holding(third, ["logged meanwhile", "=CRASH REPORT===="])
   assert !string.contains(fresh, "Podman is not reachable")
   assert !string.contains(fresh, "stale")
   dashboard_support.close(third)
@@ -1021,12 +1087,38 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
   )
   read_poll.read_now(running.server_log)
   let replaced =
-    frames_holding(first, [
+    container_frames_holding(first, [
       "the container was replaced",
       "the new container's line",
     ])
   assert !string.contains(replaced, planted_password)
   dashboard_support.close(first)
+}
+
+pub fn a_read_that_fails_ends_a_wait_for_frames_with_its_reason_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use scene, settings <- with_containers
+  let _running = started(settings)
+  let key = dashboard_support.written_key(home: settings.genesis_home)
+
+  // The server's container cannot be inspected: the page shows the reason, and
+  // the follower reads again only at a tick, so the lines never come.
+  support.plant(
+    scene:,
+    key: support.identity(support.server_container),
+    answer: Answer(exits: [1], output: "", error: "the planted podman failed\n"),
+  )
+  let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let assert Error(Refused(word:, missing:, text:)) =
+    frames_until(connection: socket, needles: ["=CRASH REPORT===="], refusing: [
+      failed_read,
+    ])
+  assert word == failed_read as "the wait is refused by a failed read"
+  assert missing == ["=CRASH REPORT===="]
+    as "the error names the words that were waited for"
+  assert string.contains(text, "cannot read: the planted podman failed")
+    as "the error does not hold the page's reason"
+  dashboard_support.close(socket)
 }
 
 /// Waits until every follower of the four sources has told the watcher it
@@ -1052,7 +1144,7 @@ pub fn closing_the_logs_socket_stops_the_podman_calls_and_leaves_no_process_test
   let key = dashboard_support.written_key(home: settings.genesis_home)
   let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   let _first =
-    frames_holding(socket, [
+    container_frames_holding(socket, [
       "creature2_id",
       "=CRASH REPORT====",
     ])

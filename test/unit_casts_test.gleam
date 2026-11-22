@@ -234,6 +234,7 @@ fn after_a_later_go(
       effects: later,
       held_until_ms: [],
       longer_of_delay_and_duration: False,
+      aura_ends_ms: option.None,
       go_ms: 1000,
     )
     as "the later go's node has a life"
