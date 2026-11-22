@@ -340,6 +340,9 @@ pub fn a_timed_periodic_proxy_starts_duration_over_tick_time_children_and_the_ho
     as "a child outlives its holder: StartChild's parent need not be live"
 }
 
+/// The persistence is a planted one (Prerequisite type 28, id 903: the caster is in combat),
+/// not Plasma Wall's own 43680, so the test reaches `persistence_end` through the caster's
+/// combat flag; the ticks it drops are the same rows whatever the prerequisite.
 pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
   use <- owned_test.run(5000)
   let persisting =
@@ -450,6 +453,46 @@ pub fn a_caster_gate_is_read_again_at_each_tick_and_a_failing_tick_starts_no_chi
     && string.contains(line, "of type 37")
   })
     as "each tick says it cannot tell, naming the child, the prerequisite and its type"
+}
+
+pub fn a_periodic_proxy_whose_caster_gate_fails_at_the_go_still_arms_its_ticks_and_a_tick_whose_gate_passes_starts_its_child_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The gate is that the caster is in combat (Prerequisite type 28, id 903), failing at the go
+  // and holding from the second tick, as Plasma Wall's 43748 (not under Overdrive 42908) does
+  // when Overdrive ends while the wall stands.
+  let gate = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
+  let plans =
+    support.plans_of([
+      holder(proxies: [
+        periodic(
+          schedule: every_second(count: 3),
+          condition: spell_plan.GatedOnCaster(gates: [gate]),
+          named: child(),
+        ),
+      ]),
+    ])
+  let #(state, effects) = pressed(plans:, caster: support.caster())
+  assert tick_timers(state:) == 1
+    as "the go armed the first tick although the gate fails at the go"
+  let #(_, fired, _) =
+    support.run_timers_scripted(
+      caster: support.caster(),
+      state:,
+      effects:,
+      from_ms: press_ms,
+      struck: [],
+      until_ms: None,
+      before: fn(due, caster) {
+        cast_state.Caster(..caster, in_combat: due >= press_ms + 2000)
+      },
+      leaves_open: fn(_) { False },
+    )
+  let steps = list.map(fired, fn(step) { #(step.at_ms, step.effects) })
+  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+    == [press_ms + 2000, press_ms + 3000]
+    as "tick 1 reads the gate failing and starts no child; ticks 2 and 3 read it passing and start one each"
+  assert list.flat_map(steps, fn(step) { debug_lines(effects: step.1) }) == []
+    as "a gate that fails is the client's answer, not a gap"
 }
 
 pub fn the_children_of_a_tick_count_no_quest_objective_and_hold_no_item_value_test() -> Nil {
@@ -739,7 +782,8 @@ pub fn a_tick_whose_child_the_cast_rule_refuses_logs_and_the_ticks_go_on_test() 
   assert list.length(lines) == 3
     as "each of the three ticks, which go on, leaves one debug line"
   assert list.all(lines, fn(line) {
-    string.contains(line, "does not cast Spell4 71371")
+    string.contains(line, "the periodic Proxy effect 121345 of Spell4")
+    && string.contains(line, "does not cast Spell4 71371")
     && string.contains(line, "caster that is alive")
   })
 }

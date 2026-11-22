@@ -56,8 +56,9 @@
 ////   its 0x7ff goes to the caster too. Its go and finish follow as a pressed
 ////   cast's, and it starts no global cooldown (kind 3). A Proxy behind a caster
 ////   apply prerequisite or one its dataBits06 names starts only when each passes
-////   against the caster at the go (`cast_gate.proxy_gates`). One behind a target apply
-////   prerequisite as well starts a child on a unit only when that prerequisite passes
+////   against the caster at the go (`cast_gate.proxy_gates`); a periodic Proxy is armed
+////   at the go whatever its gates say and reads them at each tick. One behind a target
+////   apply prerequisite as well starts a child on a unit only when that prerequisite passes
 ////   too, for each unit separately (`children`, `cast_tick.target_gate`): the target first and
 ////   the caster second (`Spell4Effects.prerequisiteIdTargetApply`), the struck unit as
 ////   the caster's picture shows it when the round closes (`went`'s `poses`; a unit it no
@@ -2002,10 +2003,11 @@ fn proc_started(
 
 /// A cast of `spell` starts as a child: a Proxy's child, a proc's spell and a periodic Proxy's
 /// tick all start the same way. `parent` is the spell whose row started it, which need not be
-/// live, and `root` the spell the client's 0x7ff names as the root; no threshold is touched
-/// and no global cooldown starts. `counted_with` and `from` are what the child counts its
-/// quest rows with and the item whose value it reads, handed down from the cast that started
-/// it (`WithNothing` and none for a proc and a tick).
+/// live, and `root` the spell the client's 0x7ff names as the root; no threshold is touched,
+/// and a global cooldown starts only when the child's spell has one (`start`). `counted_with`
+/// and `from` are what the child counts its quest rows with and the item whose value it
+/// reads, handed down from the cast that started it (`WithNothing` and none for a proc and
+/// a tick).
 fn child_started(
   cast cast: State,
   caster caster: Caster,
@@ -4144,17 +4146,20 @@ fn go(
       // The subject is read once here, before the children start and before the
       // finish: every gate of this go decides on the state before the go's own effects.
       let subject = cast_tick.subject_of(cast:, caster:)
-      let #(starting, gate_logs, rolls) =
-        cast_gate.proxy_gates(
-          proxies: cast_gate.proxies_with_targets(
+      // A periodic Proxy is armed whether or not its caster gate passes here: each tick
+      // reads the gate again (`cast_tick.proxy_tick_child`).
+      let #(periodic, once) =
+        list.partition(
+          cast_gate.proxies_with_targets(
             spell:,
             phase:,
             struck:,
             spent: live.spent,
           ),
-          subject:,
-          rolls:,
+          fn(proxy) { option.is_some(proxy.period) },
         )
+      let #(starting, gate_logs, rolls) =
+        cast_gate.proxy_gates(proxies: once, subject:, rolls:)
       let #(gains, rolls) =
         cast_gate.gains_given(
           spell:,
@@ -4206,7 +4211,7 @@ fn go(
           ..aimed,
           ticking: list.append(
             aimed.ticking,
-            cast_tick.proxies_ticking(proxies: starting, caster:),
+            cast_tick.proxies_ticking(proxies: periodic, caster:),
           ),
         )
       let go_message =
@@ -4329,28 +4334,24 @@ fn go(
           now_ms:,
         )
       let #(cast, children, _) =
-        list.fold(
-          list.filter(starting, fn(proxy) { option.is_none(proxy.period) }),
-          #(cast, [], aimed.rolls_left),
-          fn(so_far, proxy) {
-            let #(cast, effects, rolls) = so_far
-            let #(cast, more, rolls) =
-              children(
-                cast:,
-                caster:,
-                now_ms:,
-                live:,
-                proxy:,
-                struck:,
-                subject:,
-                poses:,
-                indexes:,
-                units:,
-                rolls:,
-              )
-            #(cast, list.append(effects, more), rolls)
-          },
-        )
+        list.fold(starting, #(cast, [], aimed.rolls_left), fn(so_far, proxy) {
+          let #(cast, effects, rolls) = so_far
+          let #(cast, more, rolls) =
+            children(
+              cast:,
+              caster:,
+              now_ms:,
+              live:,
+              proxy:,
+              struck:,
+              subject:,
+              poses:,
+              indexes:,
+              units:,
+              rolls:,
+            )
+          #(cast, list.append(effects, more), rolls)
+        })
       let #(cast, stealth) =
         stealth_changed_by_go(
           cast:,

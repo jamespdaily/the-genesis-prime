@@ -1029,7 +1029,7 @@ pub fn a_lethal_blow_on_a_stealthed_stalker_casts_neither_218_proc_and_writes_a_
   assert list.any(support.logs(effects:), fn(line) {
     line.0 == LogDebug
     && string.contains(line.1, "60769")
-    && string.contains(line.1, "147132")
+    && string.contains(line.1, "the Proc effect 147132")
   })
     as "each refused fire writes a debug line naming the spell and the row"
   assert list.any(support.logs(effects:), fn(line) {

@@ -17,6 +17,7 @@ import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store
 import gleam/dict
 import gleam/list
+import gleam/option.{None}
 import gleam/result
 import gleam/string
 import owned_test
@@ -113,6 +114,48 @@ pub fn a_go_that_starts_no_spell_at_once_takes_the_proxy_itself_test() -> Nil {
     ))
     == 2
     as "the ability's own Proxy 62204 stays"
+}
+
+pub fn a_periodic_proxy_on_the_caster_is_never_the_host_of_a_server_proxy_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // No planned ability holds a periodic Proxy of its own that starts at a go with no gate, so
+  // the test adds one to Pulse Blast: a copy of its Proxy 95881 (go 1, to 37302) that names
+  // Telekinetic Strike's child 30900 in dataBits01, ticks every 1000 ms for 5000 ms, and
+  // sorts before 95881.
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 95_881,
+    id: 95_880,
+    with: [
+      #("dataBits00", Integer(0)),
+      #("dataBits01", Integer(30_900)),
+      #("tickTime", Integer(1000)),
+      #("durationTime", Integer(5000)),
+    ],
+  )
+  let assert Ok(plans) = planted_on(tables:, rows: [seed()])
+  let proxies =
+    spell_plan.payloads(spell: pulse_blast(plans), as_kind: spell_plan.as_proxy)
+  let assert [periodic, striking] = proxies
+    as "Pulse Blast holds the added periodic Proxy and its own 95881"
+  assert periodic.spell.spell4_id == id.Spell4Id(30_900)
+    && periodic.period != None
+    && periodic.delay_ms == 0
+    && periodic.condition == spell_plan.Always
+    && periodic.target == spell_plan.OnCaster
+    as "the added row reads as a periodic Proxy on the caster with no gate and no delay, which a once Proxy of that shape would host"
+  assert striking.spell.spell4_id == id.Spell4Id(37_302)
+  assert !list.any(
+    spell_plan.payloads(spell: periodic.spell, as_kind: spell_plan.as_proxy),
+    fn(proxy) { proxy.spell.spell4_id == id.Spell4Id(42_148) },
+  )
+    as "the periodic Proxy starts its spell at each tick, so the server's Proxy is not planted into it"
+  assert list.map(
+      spell_plan.payloads(spell: striking.spell, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell.spell4_id },
+    )
+    == [id.Spell4Id(42_148)]
+    as "the server's Proxy goes into 37302, the spell the go starts once"
 }
 
 pub fn a_base_with_no_row_keeps_its_tree_test() -> Nil {

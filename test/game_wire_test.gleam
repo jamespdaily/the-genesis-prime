@@ -10359,12 +10359,17 @@ fn starts_of_spell(
 /// periodic`; text 311216 "every 0.5s") casts Spell4 87477 at the caster every half second, ten
 /// times, each a cast of its own with the wall as parent and root, and the wall's 0x7fe comes
 /// after the tenth. A Warrior enters with no Kinetic Energy (`class_resource`: its slot starts
-/// empty and is not saved) and holds no Onslaught, and the wall asks for both: its caster
-/// requirement (`casterInnateRequirement0`, Kinetic Energy of 250: the press is refused 51),
-/// its caster cast 19750 (a live cast of 42908) and its persistence 43680 (text 311216,
-/// "Removed when you fall below 250 Kinetic Energy"), which would end the cast in the input of
-/// its own press. The test edits the Spell4 row to none of the three: it is about the Proxy's
-/// ticks, and the end by the persistence is `cast_proxy_tick_test`'s.
+/// empty and is not saved) and holds no Onslaught, so the wall as the client has it cannot be
+/// pressed and held for its ticks. The test edits three columns of the Spell4 row to 0, each for its own reason:
+/// - `casterInnateRequirement0` (Kinetic Energy of 250): the press is refused 51.
+/// - `prerequisiteIdCasterCast` 19750: the Overdrive waiver of that requirement (propertyFlags
+///   bit 2 with a requirement block, `Spell4.prerequisiteIdCasterCast`; Overdrive is the cast
+///   of 42908). With the requirement gone the row has no block to waive, so the plan reads
+///   19750 as a cast gate (`spell_plan.caster_cast_of`) instead of a waiver.
+/// - `prerequisiteIdCasterPersistence` 43680 (text 311216, "Removed when you fall below 250
+///   Kinetic Energy"): it needs Kinetic Energy of 250 or a live 42908 (43679), so it would end
+///   the cast in the input of its own press.
+/// The test is about the Proxy's ticks; the end by a persistence is `cast_proxy_tick_test`'s.
 pub fn a_warrior_presses_plasma_wall_and_a_child_cast_starts_every_half_second_ten_times_and_the_wall_finishes_after_the_last_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- fixture_tables.changed(table: "Spell4", id: 38_787, with: [

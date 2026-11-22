@@ -172,7 +172,8 @@ fn planned_of(
 }
 
 /// The Proxy of the ability that starts, at its go `phase`, a spell on the caster at once
-/// with no gate: the first of them is the spell that strikes.
+/// with no gate: the first of them is the spell that strikes. A periodic Proxy starts its
+/// spell at each tick, not at the go, so it is never chosen.
 fn host_of(ability ability: Spell, phase phase: Int) -> Result(Proxy, Nil) {
   spell_plan.in_phase(
     spell: ability,
@@ -182,6 +183,7 @@ fn host_of(ability ability: Spell, phase phase: Int) -> Result(Proxy, Nil) {
   )
   |> list.find(fn(proxy) {
     proxy.delay_ms == 0
+    && proxy.period == None
     && case proxy.target, proxy.condition {
       spell_plan.OnCaster, spell_plan.Always -> True
       spell_plan.OnCaster, spell_plan.GatedOnCaster(..)

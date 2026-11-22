@@ -26,11 +26,10 @@ import genesis_prime/game/cast/state.{
   type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
   Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit, Immune, Lingering,
-  Live, Log, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, ProcDue,
-  Property, QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send,
-  StartChild, StartHeld, Starts, State, StateEnd, TargetChangeEnds,
-  TargetModifierStart, Tell, Tick, TickAsked, TickStrike, TickingOn, UnitSide,
-  WindowEnd,
+  Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, ProcDue, Property,
+  QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send, StartChild,
+  StartHeld, Starts, State, StateEnd, TargetChangeEnds, TargetModifierStart,
+  Tell, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -48,7 +47,7 @@ import genesis_prime/message/spell_effect_tick.{
 }
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
-import genesis_prime/step.{type ConnectionId, type TimerId, LogDebug}
+import genesis_prime/step.{type ConnectionId, type TimerId}
 import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/map
 import gleam/bool
@@ -535,24 +534,18 @@ fn proxy_tick_child(
       subject: subject_of(cast:, caster:),
       rolls: [],
     )
-  case passing, spell_plan.refused_life(spell: proxy.spell, dead: caster.dead) {
+  case
+    passing,
+    cast_gate.life_refusal(
+      kind: "periodic Proxy",
+      effect_id: proxy.effect_id,
+      holder_spell4_id: holder.spell.spell4_id,
+      spell: proxy.spell,
+      caster:,
+    )
+  {
     [], _ -> #(cast, logs)
-    [_, ..], Some(_) -> #(cast, [
-      Log(
-        level: LogDebug,
-        text: "the periodic Proxy effect "
-          <> int.to_string(proxy.effect_id.value)
-          <> " of Spell4 "
-          <> int.to_string(holder.spell.spell4_id.value)
-          <> " does not cast Spell4 "
-          <> int.to_string(proxy.spell.spell4_id.value)
-          <> ", whose caster condition refuses a caster that is "
-          <> case caster.dead {
-          True -> "dead"
-          False -> "alive"
-        },
-      ),
-    ])
+    [_, ..], Some(refusal) -> #(cast, [refusal])
     [_, ..], None -> start_child(cast, caster, holder, proxy)
   }
 }
