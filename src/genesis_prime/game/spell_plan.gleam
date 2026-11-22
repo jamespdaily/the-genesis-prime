@@ -695,6 +695,11 @@ pub type Spell {
     /// rather than their sum: Spell4.propertyFlags 0x2000, the spell record's flag
     /// 0x10000000 (`opcode.0x7f4.effect_time`, `0x140568540`).
     longer_of_delay_and_duration: Bool,
+    /// How long an aura cast lasts from its start, in milliseconds: the spellDuration of a
+    /// castMethod 10 spell when above 0, `None` for a spell that is no aura and for an
+    /// aura that never runs out (spellDuration -1). A node of the cast that holds an
+    /// effect until removed ends at this time (`Spell4.spellDuration`, `0x1407180c0`).
+    aura_ms: Option(Int),
     weapon: WeaponSlot,
     /// Whether the caster must be alive or dead to cast it.
     caster_death: CasterDeath,
@@ -3777,6 +3782,7 @@ fn spell_of(
         flags: row.property_flags,
         bit: 0x2000,
       ),
+      aura_ms: aura_of(method:, spell_duration: row.spell_duration),
       weapon: weapon_of(base.weapon_slot),
       caster_death:,
       target_death:,
@@ -6593,6 +6599,30 @@ pub fn compares_telegraph_phase(
   }
 }
 
+/// The length of an aura cast from its start: the spellDuration of a castMethod 10 spell
+/// when above 0. The client times a method-10 buff from the cast's start by this column
+/// and reads -1 as a buff that never runs out; it reads the column for no other method
+/// (`Spell4.spellDuration`, `0x1407180c0`).
+fn aura_of(
+  method method: CastMethod,
+  spell_duration spell_duration: Int,
+) -> Option(Int) {
+  case method, spell_duration > 0 {
+    OtherMethod(10), True -> Some(spell_duration)
+    OtherMethod(..), _
+    | Normal, _
+    | Channeled, _
+    | PressHold, _
+    | ChanneledField, _
+    | ClientSideInteraction, _
+    | RapidTap, _
+    | ChargeRelease, _
+    | Multiphase, _
+    | Transactional, _
+    -> None
+  }
+}
+
 /// Whether a row of phaseFlags 1 in the spell names every pulse of its channel: a Channeled
 /// spell whose spellChannelFlags lacks bit 1, the complement of `compares_telegraph_phase` for
 /// a Channeled spell (`Spell4Effects.phaseFlags.channel`).
@@ -7630,6 +7660,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Periodic Proxies",
       missing: "a Proxy with a tickTime aimed at the area casts nothing, and one that lasts until removed casts nothing: the first would start a child on each unit the area holds at each tick, and no rule of the server times the second; a periodic Proxy behind a caster gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none",
+    ),
+    gap.Entry(
+      area: "Auras",
+      missing: "the frames at the end of an aura cast (a castMethod 10 spell with a spellDuration above 0): the 0x7fe alone, as at any timed cast's end, is the server's choice, since no client path times a node and the client's 0x819 is never sent; the timed effects of the node end with the aura; an aura that ends at or before the go leaves the node until removed, and a later go at or after the aura's end leaves the node until removed; a spell of another castMethod never ends by its spellDuration, as the client reads the column for method 10 alone; a viewer that comes into sight mid-aura is told the effect as until removed and counts the buff from its own start, so it shows the aura longer than it is, and gets the 0x7fe with everyone else; the cast bar's reader of the column (`0x14054b1b0`) is not read",
     ),
     gap.Entry(
       area: "Procs",

@@ -1308,13 +1308,15 @@ fn node_row_of(entry entry: Reached) -> Result(lasting.NodeEffect, Nil) {
 /// the go lists for it (`lasting.given`), a periodic row living its own delay and
 /// durationTime as the client's node does (`opcode.0x7f4.effect_time`), held past that
 /// only while a tick round on the unit is open (`ended_and_kept`); none when no effect has
-/// a life. A periodic row is listed with its Spell4Effects id; an ability restriction
+/// a life. An aura spell's node ends at `started_ms`, the cast's start, plus its length
+/// (`lasting.given`). A periodic row is listed with its Spell4Effects id; an ability restriction
 /// only gives the node its life.
 pub fn node_of(
   spell spell: Spell,
   held held: Option(lasting.Node),
   aimed aimed: Aimed,
   unit_id unit_id: Int,
+  started_ms started_ms: Int,
   now_ms now_ms: Int,
 ) -> Result(lasting.Node, Nil) {
   let rows =
@@ -1381,6 +1383,7 @@ pub fn node_of(
     effects: rows,
     held_until_ms:,
     longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+    aura_ends_ms: option.map(spell.aura_ms, fn(aura_ms) { started_ms + aura_ms }),
     go_ms: now_ms,
   )
 }

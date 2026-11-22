@@ -203,7 +203,8 @@ pub fn lifetime_of(
 /// crowd-control states the go landed (`held_until_ms`, absolute times) are not armed
 /// again by a later go: the node lasts at least until the latest of them that is still
 /// to come, and at least as long as the effects do. The node keeps the round that struck
-/// the unit before (`struck`); the caller stamps the go's own.
+/// the unit before (`struck`); the caller stamps the go's own. An aura cast's node that
+/// holds an effect until removed ends at `aura_ends_ms` (`life_under_aura`).
 pub fn given(
   held held: Option(Node),
   unit_id unit_id: Int,
@@ -211,6 +212,7 @@ pub fn given(
   effects effects: List(NodeEffect),
   held_until_ms held_until_ms: List(Int),
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  aura_ends_ms aura_ends_ms: Option(Int),
   go_ms go_ms: Int,
 ) -> Result(Node, Nil) {
   let earlier = case held {
@@ -235,10 +237,11 @@ pub fn given(
     |> list.filter(fn(ms) { ms > go_ms })
     |> list.reduce(int.max)
     |> option.from_result
+  let rows = list.map(all, fn(effect) { row_of(effect:) })
   let life = case
-    life_of(
-      effects: list.map(all, fn(effect) { row_of(effect:) }),
-      longer_of_delay_and_duration:,
+    life_under_aura(
+      life: life_of(effects: rows, longer_of_delay_and_duration:, go_ms:),
+      aura_ends_ms:,
       go_ms:,
     ),
     held_until
@@ -266,6 +269,25 @@ pub fn given(
         ),
       )
     Error(Nil) -> Error(Nil)
+  }
+}
+
+/// The life of a node whose cast is an aura: a node that holds an effect until removed
+/// ends at the aura's end, whatever its timed effects, as the client's buff runs out at
+/// the cast's start plus spellDuration: its timer branch (the node's longest timer when
+/// larger) never applies to a node holding an effect with flags bit 2, whose timer is all
+/// bits (`0x1407180c0`, `0x140718120`). An aura that ends at or before the go gives no
+/// end, since the client reads a sum that is not later than now as none. Any other node
+/// keeps its `life`.
+fn life_under_aura(
+  life life: Life,
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> Life {
+  case life, aura_ends_ms {
+    UntilRemoved, Some(aura_end_ms) if aura_end_ms > go_ms ->
+      EndsAt(ms: aura_end_ms)
+    UntilRemoved, _ | NoLife, _ | EndsAt(..), _ -> life
   }
 }
 
