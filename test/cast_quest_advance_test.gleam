@@ -604,6 +604,7 @@ fn effect_name(effect effect: Effect) -> String {
     | cast_state.ForcedMoveStarts(..)
     | cast_state.CreatureDespawns(..)
     | cast_state.CreatureHoldsUnitStates(..)
+    | cast_state.CreatureControlsEnd(..)
     | cast_state.StealthChanged(..)
     | cast_state.ShortcutCast(..) -> ""
   }

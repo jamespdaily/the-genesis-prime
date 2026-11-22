@@ -2060,6 +2060,78 @@ pub fn two_players_stuns_hold_the_creature_until_the_later_one_ends_test() -> Ni
     as "after the later state the creature acts"
 }
 
+pub fn a_caster_ending_its_cast_ends_its_states_at_once_and_the_creature_acts_unless_another_players_state_holds_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2 stands 5 units off, within reach 8. Player 2's cast 1 stuns the creature at 100
+  // (until 2600); in the second case player 5's cast 1, the same cast id of another caster,
+  // stuns it at 200.
+  let stunned_by = fn(others: List(Int)) {
+    let #(state, aggro) =
+      tell(
+        state: beast(viewers: [2, 5]),
+        at_ms: 0,
+        message: approached(number: 2, x: 5.0, seq: 1),
+      )
+    let #(state, first) =
+      tell(
+        state:,
+        at_ms: 100,
+        message: controlling(number: 2, cast_id: 1, controls: [
+          crowd_control_support.stagger_stun(instance_id: 28_673),
+        ]),
+      )
+    let state =
+      list.fold(others, state, fn(state, number) {
+        tell(
+          state:,
+          at_ms: 200,
+          message: controlling(number:, cast_id: 1, controls: [
+            crowd_control_support.stagger_stun(instance_id: 49_153),
+          ]),
+        ).0
+      })
+    #(state, timer_for(aggro, 1500), timer_for(first, 2500))
+  }
+  let #(state, first_tick, state_ends) = stunned_by([])
+  let #(state, ended) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature.ControlsEnd(by: ConnectionId(2), cast_id: 1),
+    )
+  let over =
+    client_connection.CrowdControlEnded(
+      state: crowd_control_state.Stun,
+      cast_id: 1,
+      instance_id: 28_673,
+    )
+  assert state_news(ended, 2) == [over] && state_news(ended, 5) == [over]
+    as "player 2's state ends at once with its 0x880 for each viewer, before its own 2500 ms"
+  assert !creature.controlled(state:) as "and the creature holds no state"
+  assert list.contains(timers_cancelled(ended), state_ends)
+    as "and its timer is cancelled"
+  let #(state, late) = fire(state:, at_ms: 2600, timer: state_ends)
+  assert support.effects_of(late) == []
+    as "a timer already waiting in the mailbox writes nothing"
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: first_tick)
+  assert list.contains(said(ticked), "0x7ff to 2")
+    as "the creature held by nothing else strikes at its next tick"
+  let #(state, first_tick, _) = stunned_by([5])
+  let #(state, ended) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature.ControlsEnd(by: ConnectionId(2), cast_id: 1),
+    )
+  assert state_news(ended, 2) == [over] && state_news(ended, 5) == [over]
+    as "only player 2's state ends, with its 0x880 for each viewer"
+  assert creature.controlled(state:)
+    as "player 5's cast 1 holds its own state, though its cast id is the same"
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: first_tick)
+  assert !list.contains(said(ticked), "0x7ff to 2")
+    as "the creature is still stunned and strikes nothing"
+}
+
 // ---- crowd-control states (`genesis_prime/world_map/creature_control`) ----
 //
 // Expected values come from these places: Kick's Knockdown, Spell4Effects 140382

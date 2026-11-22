@@ -264,6 +264,11 @@ pub type Effect {
   /// node's end, a removal of the cast, its push off or the caster's death. A creature
   /// that holds nothing for the source changes nothing.
   TargetChangeEnds(unit_id: Int, life: Int, source: unit_properties.Source)
+  /// The cast `cast_id` no longer holds a node on the creature `unit_id` of `life` that
+  /// holds the crowd-control states its strike landed: the node was pushed off by a later
+  /// cast of the same stack. The connection tells the creature, which ends each state of
+  /// that cast and caster with its 0x880 (`cc_state.end`: only a 0x880 ends a state).
+  CreatureControlsEnd(unit_id: Int, life: Int, cast_id: Int)
   /// The caster entered or left stealth, the last effect of the input that moved it:
   /// the connection writes 0x8f5 to the caster's client and tells each viewer
   /// (`opcode.0x8f5`, genesis_prime/client_connection `Stealth`).
@@ -1767,6 +1772,7 @@ pub fn without_cancels(
       | CreatureDespawns(..)
       | CreatureHoldsUnitStates(..)
       | TargetChangeEnds(..)
+      | CreatureControlsEnd(..)
       | StealthChanged(..)
       | Activated(..)
       | ShortcutCast(..)

@@ -102,8 +102,8 @@
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
-  AskMapRun, AskSessions, AskStore, ChangeEnds, ChangeStarts, ForStay,
-  FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
+  AskMapRun, AskSessions, AskStore, ChangeEnds, ChangeStarts, ControlsEnd,
+  ForStay, FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
   SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellCastView,
   TellChat, TellDespawn, TellLifeChanged, TellMoved, TellPeer, TellReady,
   TellReleased, TellStealthChanged, TellStrike, TellStrikeAnswered,
@@ -568,7 +568,8 @@ pub fn tell_the_run(
 /// watch: a strike (`TellStrike`) as the creature's `Strike`, a fighter's move
 /// (`TellTargetMoved`) as `TargetMoved`, the answer to its strike
 /// (`TellStrikeAnswered`) as `StrikeAnswered`, and a modifier's start or end
-/// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds`, a throw (`TellThrown`) as
+/// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds` (or `ControlsEnd` for the end
+/// of a cast's states), a throw (`TellThrown`) as
 /// `Thrown`, a removal (`TellDespawn`) as `Despawn`, held unit states (`TellUnitStates`)
 /// as `UnitStates` and a cast's view (`TellCastView`) as `CastViewSet` or `CastViewEnds`.
 /// Any other request,
@@ -620,6 +621,7 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
             struck_at_ms:,
           )
         ChangeEnds(source:) -> creature.ModifierEnds(source:)
+        ControlsEnd(cast_id:) -> creature.ControlsEnd(by: connection, cast_id:)
       })
     TellThrown(throw:, struck_at_ms:) ->
       Ok(creature.Thrown(throw:, struck_at_ms:))

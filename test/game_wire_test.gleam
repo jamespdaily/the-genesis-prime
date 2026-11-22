@@ -10622,14 +10622,15 @@ fn states_told_in(frames frames: List(Frame)) -> List(#(Int, Int, Int)) {
   })
 }
 
-/// The instance ids each 0x880 among the frames ends, as the unit and the id, in order.
-fn states_ended_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
+/// The states each 0x880 among the frames ends, as the unit, the cast id and the instance id,
+/// in order.
+fn states_ended_in(frames frames: List(Frame)) -> List(#(Int, Int, Int)) {
   list.filter_map(frames, fn(frame) {
     case frame.message_id {
       0x0880 -> {
         let assert Ok(ended) = unit_cc_state_ended.decode(frame.body)
           as "0x880 decodes"
-        Ok(#(ended.unit_id, ended.instance_id))
+        Ok(#(ended.unit_id, ended.cast_id, ended.instance_id))
       }
       _ -> Error(Nil)
     }
@@ -10798,10 +10799,6 @@ pub fn a_medic_presses_restrictor_and_a_beast_in_its_field_is_shown_a_snare_stat
     as "opcode.0x87f: the Beast is told Snare (state 21) under the id the go listed"
   let #(second_tick, have) =
     advanced_and_read(game:, time:, have:, number: 4, ms: 500)
-  let assert [#(_, 21, second_instance)] = states_told_in(frames: second_tick)
-    as "a second state is told at 1000"
-  assert second_instance != first_effect_instance
-    as "cc_state.instance_id: each child's state has an instance id of its own"
   let #(rounds, have) =
     list.fold([5, 6, 7, 8, 9, 10], #([], have), fn(so_far, number) {
       let #(rounds, have) = so_far
@@ -10809,27 +10806,46 @@ pub fn a_medic_presses_restrictor_and_a_beast_in_its_field_is_shown_a_snare_stat
         advanced_and_read(game:, time:, have:, number:, ms: 500)
       #(list.append(rounds, [round]), have)
     })
+  // The eight rounds end at 500, 1000, 1500, 2000, 2500, 3000, 3500 and 4000, the ticks.
+  let ticks = [first_tick, second_tick, ..rounds]
   let children =
-    list.length(starts_of_spell(frames: first_tick, spell4_id: 77_118))
-    + list.length(starts_of_spell(frames: second_tick, spell4_id: 77_118))
-    + list.fold(rounds, 0, fn(count, round) {
-      count + list.length(starts_of_spell(frames: round, spell4_id: 77_118))
+    list.map(ticks, fn(round) {
+      let assert [game_client.CastStarted(cast_id:, ..)] =
+        starts_of_spell(frames: round, spell4_id: 77_118)
+        as "a Snare child at each of the field's eight half seconds, 500 to 4000"
+      cast_id
     })
-  assert children == 8
-    as "a Snare child at each of the field's eight half seconds, 500 to 4000"
-  // The rounds end at 1500, 2000, 2500, 3000, 3500 and 4000; the first state began at 500.
-  let ended_by_round =
-    list.map([first_tick, second_tick, ..rounds], states_ended_in)
-  assert list.map(
-      ended_by_round,
-      list.contains(_, #(beast_unit, first_effect_instance)),
-    )
-    == [False, False, False, False, True, False, False, False]
-    as "opcode.0x880: the first state ends with its own 0x880 at 2500, 2000 ms after it began, and not before"
+  let instances =
+    list.map(ticks, fn(round) {
+      let assert [#(unit, 21, instance)] = states_told_in(frames: round)
+        as "opcode.0x87f: one Snare (state 21) is told at each tick"
+      assert unit == beast_unit as "and it is the Beast's"
+      instance
+    })
+  assert list.first(instances) == Ok(first_effect_instance)
+    as "the first tick's state is the id its go listed"
+  assert list.length(list.unique(instances)) == 8
+    && !list.contains(instances, 0)
+    as "cc_state.instance_id: each child's state has a non-zero instance id of its own"
+  // Stack group 1771 holds one snare of the caster on a unit (`Spell4StackGroup.stackCap` 1),
+  // so each child takes the last one's node off with a 0x811, and only a 0x880 ends a state
+  // (`cc_state.end`): the previous child's state ends at the next tick, long before its own
+  // 2000 ms, and the last child's is still held when the field finishes.
+  assert list.map(ticks, states_ended_in)
+    == [
+      [],
+      ..list.map(list.zip(children, instances), fn(previous) {
+        [#(beast_unit, previous.0, previous.1)]
+      })
+      |> list.take(7)
+    ]
+    as "opcode.0x880: at each tick after the first, the previous child's state ends under its cast and instance id, so the Beast holds one Snare at a time"
   let #(later, _) = advanced_and_read(game:, time:, have:, number: 11, ms: 500)
   assert starts_of_spell(frames: later, spell4_id: 77_118) == []
     && list.any(rounds, finishes(frames: _, cast_id: field))
     as "the field finishes at 4000 and no ninth Snare follows"
+  assert states_ended_in(frames: later) == []
+    as "the last child's state runs to its own 2000 ms, 6000"
   game_client.close(game:)
   login_support.stop(started)
 }

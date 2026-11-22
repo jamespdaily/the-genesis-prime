@@ -88,11 +88,11 @@
 import genesis_prime/game/cast/state.{
   type Caster, type CostRefusal, type Effect, type Paid, type State,
   type Verdict, Activated, CancelTimer, Caster, CasterChangeEnds,
-  CasterChangeStarts, CreatureDespawns, CreatureHoldsUnitStates,
-  FindProxyTickUnits, ForcedMoveStarts, Gain, Log, NotBuilt, Paid, Pay,
-  QuestAdvanced, Refuse, Send, ShortcutCast, StartTimer, StealthChanged, Strike,
-  TargetChangeEnds, TargetChangeStarts, Tell, TickStrike, Unheld, Unpaid,
-  UnreadSpend,
+  CasterChangeStarts, CreatureControlsEnd, CreatureDespawns,
+  CreatureHoldsUnitStates, FindProxyTickUnits, ForcedMoveStarts, Gain, Log,
+  NotBuilt, Paid, Pay, QuestAdvanced, Refuse, Send, ShortcutCast, StartTimer,
+  StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts, Tell, TickStrike,
+  Unheld, Unpaid, UnreadSpend,
 }
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
@@ -427,6 +427,7 @@ pub fn after_payments(
         | CasterChangeEnds(..)
         | TargetChangeStarts(..)
         | TargetChangeEnds(..)
+        | CreatureControlsEnd(..)
         | ForcedMoveStarts(..)
         | CreatureDespawns(..)
         | CreatureHoldsUnitStates(..)

@@ -332,6 +332,157 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
     as "and not at 2000 + 3000, which re-arming the state as an effect would give"
 }
 
+const bag_of_base_2 = 10
+
+/// What unit 20, a creature of life 1 struck at 0, answers a round that gave it these states.
+fn creature_20_took(
+  controls controls: List(strike_tell.ControlLanded),
+) -> List(cast_state.Struck) {
+  [
+    cast_state.Hit(
+      unit_id: 20,
+      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+      descriptions: [],
+      controls:,
+      armor_removed: 0,
+      ticking: [],
+    ),
+  ]
+}
+
+/// A planted spell of base 3 and Spell4 58591 whose go lists a Fluff effect of 5000 ms on
+/// each unit it struck: a node with a life and no crowd-control state.
+fn fluff_of_base_3() -> Spell {
+  support.with_effects(spell: support.child(spell4_id: 58_591, base: 3), kinds: [
+    spell_plan.LastingEffect(spell_plan.Lasting(
+      effect_id: Spell4EffectsId(9),
+      phase_flags: -1,
+      aim: spell_plan.AimsAtArea,
+      row: lasting.LastingRow(
+        delay_ms: 0,
+        duration_ms: 5000,
+        until_removed: False,
+      ),
+      condition: spell_plan.Always,
+      tag: spend.always,
+    )),
+  ])
+}
+
+/// The cast id of the first press, and the effects of the second, when `plans` are pressed
+/// at the bags and each press's round gives unit 20 the states of `took`, the first at 1000
+/// and the second at 2000.
+fn pressed_twice(
+  plans plans: spell_plan.Plans,
+  bags bags: #(Int, Int),
+  took took: #(List(strike_tell.ControlLanded), List(strike_tell.ControlLanded)),
+) -> #(Int, List(Effect)) {
+  let press = fn(state, bag_index, ms) {
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster: support.caster(),
+      bag_index:,
+      target: 0,
+      at: ms,
+    )
+  }
+  let #(state, pressed) = press(cast_state.new(), bags.0, 1000)
+  let first_id = support.pressed_id(effects: pressed)
+  let #(state, _) =
+    support.answered_by(
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck: creature_20_took(controls: took.0),
+    )
+  let #(state, pressed) = press(state, bags.1, 2000)
+  let #(_, second) =
+    support.answered_by(
+      state:,
+      effects: pressed,
+      at: 2000,
+      struck: creature_20_took(controls: took.1),
+    )
+  #(first_id, second)
+}
+
+pub fn a_push_off_of_a_node_that_holds_a_state_tells_the_creature_to_end_that_casts_states_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client ends a state only with a 0x880 (`cc_state.end`), and a 0x811 that destroys
+  // the node leaves it, so the cast rule tells the creature, which holds the state, when a
+  // later cast of the stack takes the node off. Kick's Knockdown row 140382 stands for any
+  // state; the stack rule is the server's (`lasting.pushed_off`; the group's cap is
+  // `Spell4StackGroup.stackCap`, row 1771 of Restrictor's snare is 1).
+  let kicked = [crowd_control_support.kick_landed(ends_at_ms: 4166)]
+  let stacking = lasting.Stack(group_id: 5, cap: 1)
+  let other_group = lasting.Stack(group_id: 6, cap: 1)
+  let stacked = fn(spell4_id, base, stack) {
+    spell_plan.Spell(..support.child(spell4_id:, base:), stack:)
+  }
+  list.each(
+    [
+      #(
+        "the same spell pressed again takes its first cast's node off, a cap of 0 keeping one cast per spell",
+        kick_plans(),
+        #(bag_of_base_3, bag_of_base_3),
+        #(kicked, kicked),
+        #(True, True),
+      ),
+      #(
+        "a second spell of a stack group with a cap of 1 takes the first spell's node off",
+        support.with_spells(plans: support.plans(), spells: [
+          stacked(58_591, 3, stacking),
+          stacked(58_592, 2, stacking),
+        ]),
+        #(bag_of_base_3, bag_of_base_2),
+        #(kicked, kicked),
+        #(True, True),
+      ),
+      #(
+        "a spell of another stack group takes nothing off",
+        support.with_spells(plans: support.plans(), spells: [
+          stacked(58_591, 3, stacking),
+          stacked(58_592, 2, other_group),
+        ]),
+        #(bag_of_base_3, bag_of_base_2),
+        #(kicked, kicked),
+        #(False, False),
+      ),
+      #(
+        "a node that holds a Fluff effect and no state leaves nothing to end",
+        support.with_spells(plans: support.plans(), spells: [fluff_of_base_3()]),
+        #(bag_of_base_3, bag_of_base_3),
+        #([], kicked),
+        #(True, False),
+      ),
+    ],
+    fn(row) {
+      let #(why, plans, bags, took, outcome) = row
+      let #(pushed, ends) = outcome
+      let #(first_id, second) = pressed_twice(plans:, bags:, took:)
+      assert list.contains(
+          support.removed_targets(support.writes(effects: second)),
+          #(first_id, [20]),
+        )
+        == pushed
+        as { "the first cast's node is taken off with a 0x811 or not: " <> why }
+      assert support.controls_ended(effects: second)
+        == case ends {
+          True -> [
+            cast_state.CreatureControlsEnd(
+              unit_id: 20,
+              life: 1,
+              cast_id: first_id,
+            ),
+          ]
+          False -> []
+        }
+        as why
+    },
+  )
+}
+
 // ---- Ability Restriction on the caster ----
 
 /// Kick, the real ability at bag index 3 (`cast_support.abilities`).

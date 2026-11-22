@@ -1184,6 +1184,7 @@ fn tell_change(
     cast_state.ForcedMoveStarts(..)
     | cast_state.CreatureDespawns(..)
     | cast_state.CreatureHoldsUnitStates(..)
+    | cast_state.CreatureControlsEnd(..)
     | cast_state.Send(..)
     | cast_state.Tell(..)
     | cast_state.StartTimer(..)
@@ -1230,6 +1231,8 @@ fn tech_taken(told told: client_connection.TargetChange) -> UnitProperty {
     value: case told {
       client_connection.ChangeStarts(..) -> fissure_bits
       client_connection.ChangeEnds(..) -> float32.to_bits(1.0)
+      client_connection.ControlsEnd(..) ->
+        panic as "the end of a cast's states changes no property"
     },
   )
 }
@@ -2138,6 +2141,7 @@ fn carried_out(
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)

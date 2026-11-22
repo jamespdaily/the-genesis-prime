@@ -42,7 +42,8 @@
 ////   `TargetChangeEnds` is told to the creature of the life the go struck, through the
 ////   creature registry with no watch, as `TellTargetChange`; the creature applies or
 ////   removes it and tells its viewers (genesis_prime/world_map/creature). With no player
-////   in the world it is dropped.
+////   in the world it is dropped. A `CreatureControlsEnd` is told the same way, as the
+////   creature's `ControlsEnd`.
 //// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
 ////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
 ////   the player's map, so the map keeps the player out of every creature's ring
@@ -1424,6 +1425,19 @@ fn carried_out(
         ),
       ])
       cast_state.CreatureHoldsUnitStates(..), None -> #(session, [])
+      cast_state.CreatureControlsEnd(unit_id:, life:, cast_id:), Some(entered)
+      -> #(session, [
+        tells_the_creature(
+          entered:,
+          unit_id:,
+          life:,
+          request: client_connection.TellTargetChange(
+            connection: client_connection.connection(session.link),
+            change: client_connection.ControlsEnd(cast_id:),
+          ),
+        ),
+      ])
+      cast_state.CreatureControlsEnd(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })

@@ -220,6 +220,7 @@ fn carried_out(
       | cast_state.CasterChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
