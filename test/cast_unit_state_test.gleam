@@ -18,7 +18,7 @@
 ////   comes first of its target checks (`0x1403b2240` line 44, result 96), before the crowd
 ////   control checks (122 and the others).
 //// - `Spell4TargetMechanics.flags` bit 0: the client's split of a spell into hostile and
-////   beneficial (`0x1403b43f0`). Spell4TargetMechanics 3 (flags 16) is the row of Spell4Base
+////   beneficial (`Unit.GetBuffs` keeps a beneficial spell's buffs apart). Spell4TargetMechanics 3 (flags 16) is the row of Spell4Base
 ////   42972, the base of Spell4 64944, an aimed shortcut spell.
 //// - `opcode.0x247.immunity` and `opcode.0x7f4`: a unit the creature answered `Immune` for is
 ////   named in the go and followed by a combat log entry of type 18 for the caster.

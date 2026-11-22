@@ -18,6 +18,7 @@ import genesis_prime/table/id.{type Spell4BaseId, Spell4TargetMechanicsId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_base.{type Spell4Base}
 import genesis_prime/table/spell4_target_mechanics.{type Spell4TargetMechanics}
+import gleam/int
 
 /// Whom a spell of a target mechanic is cast at.
 pub type Kind {
@@ -74,6 +75,14 @@ pub fn rows_of_base(
         Ok(mechanics) -> Ok(#(base, mechanics))
       }
   }
+}
+
+/// Whether a spell whose target mechanic holds these flags is beneficial: flags bit 0
+/// (`Spell4TargetMechanics.flags`) is the client's hostile-or-beneficial split of a spell,
+/// the bit its buff list keeps a beneficial one by (`Unit.GetBuffs`) and its faction test
+/// reads for a cast at another unit.
+pub fn is_beneficial(flags flags: Int) -> Bool {
+  int.bitwise_and(flags, 1) == 1
 }
 
 /// Whether a spell of the kind is cast at the caster, whatever the player has targeted.

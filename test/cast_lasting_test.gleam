@@ -20,6 +20,7 @@ import fixture_tables
 import genesis_prime/client_connection.{
   type News, CastFinished, CastTargetsRemoved,
 }
+import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/creature_view
 import genesis_prime/game/cast/proc as cast_proc
@@ -53,6 +54,7 @@ import genesis_prime/message/spell_targets_removed.{
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option
 import gleam/set
@@ -2571,14 +2573,19 @@ pub fn nullifiers_field_cast_finishes_at_its_spell_duration_with_the_0x7fe_alone
       ),
       after_ms: 2000,
     )
-  let #(_, steps) =
-    support.run_timers_until_as(
+  // The field's Proxy 141450 asks for the units inside the box each second, and the connection
+  // answers; nobody stands in it here.
+  let #(_, fired) =
+    support.run_timers_finding(
       caster:,
       state:,
       effects: list.append(effects, [start]),
       from_ms: 1000,
       until_ms: 20_000,
+      units: dict.new(),
+      found_by: fn(_) { [] },
     )
+  let steps = list.map(fired, fn(step) { #(step.at_ms, step.effects) })
   let assert [second] =
     list.filter_map(steps, fn(step) {
       case step.0 == 3000 {
@@ -2591,6 +2598,74 @@ pub fn nullifiers_field_cast_finishes_at_its_spell_duration_with_the_0x7fe_alone
     as "the second start takes the first field off (group 1519, cap 1): 0x811, then its 0x7fe at once, and its own end at 7000 never comes"
   assert ended_at(steps:, cast_id: second) == #([9000], [])
     as "the second field ends 6000 ms after its own start, with the 0x7fe alone (text 574032: lasting auraDuration)"
+}
+
+pub fn nullifiers_field_asks_each_second_for_six_ticks_and_each_answer_starts_an_affliction_on_each_unit_found_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Row 141450 (tickTime 1000, flags 2) in the field 58868 (spellDuration 6000) names the
+  // Affliction 77099, so the field, pressed at 1000, asks for its units at 2000 to 7000 and
+  // the sixth ask fires before the field's own 0x7fe at 7000 (text 574032;
+  // `table_rows -- Spell4Effects 141450 -- Spell4 58868`).
+  let plans = spell_plan.plans_with_later(tables: fixture_tables.shared())
+  let caster = nullifier_caster()
+  let #(state, effects) =
+    support.press_as(plans:, state: cast_state.new(), caster:, bag: 0, at: 1000)
+  let field = field_cast_id(effects:)
+  let #(_, fired) =
+    support.run_timers_finding(
+      caster:,
+      state:,
+      effects:,
+      from_ms: 1000,
+      until_ms: 20_000,
+      units: dict.new(),
+      found_by: fn(_) { [21, 22] },
+    )
+  let asks =
+    list.flat_map(fired, fn(step) {
+      list.map(step.found, fn(asked) { #(step.at_ms, asked) })
+    })
+  assert list.map(asks, fn(ask) { ask.0 })
+    == [2000, 3000, 4000, 5000, 6000, 7000]
+    as "one ask each second for the six seconds of the field, and no seventh"
+  assert list.map(asks, fn(ask) { { ask.1 }.tick }) == [1, 2, 3, 4, 5, 6]
+  let assert [#(_, first), ..] = asks
+  assert first.cast_id == field
+    && first.spell4_id == Spell4Id(58_868)
+    && first.effect_id == Spell4EffectsId(141_450)
+    && first.primary_target == caster.unit_id
+    && first.started_at == area.pose_of(place: caster.place)
+    as "the first ask names the field, the row, the caster as the unit the row ticks on and the pose the press began at"
+  let steps = list.map(fired, fn(step) { #(step.at_ms, step.effects) })
+  let afflictions = support.starts_of(steps:, spell4_id: 77_099)
+  assert support.times_of(starts: afflictions)
+    == [
+      2000,
+      2000,
+      3000,
+      3000,
+      4000,
+      4000,
+      5000,
+      5000,
+      6000,
+      6000,
+      7000,
+      7000,
+    ]
+    as "each answer starts the Affliction on each of the two units found: 12 children"
+  list.each(afflictions, fn(child) {
+    assert { child.1 }.parent_spell4_id == 58_868
+      && { child.1 }.root_spell4_id == 70_757
+      as "opcode.0x7ff.root_parent: the field is the parent and Nullifier the root"
+  })
+  assert list.map(afflictions, fn(child) { { child.1 }.primary_target_unit_id })
+    |> list.unique
+    |> list.sort(int.compare)
+    == [21, 22]
+    as "each child is made on a unit found"
+  assert ended_at(steps:, cast_id: field).0 == [7000]
+    as "the field's 0x7fe at 7000 follows the sixth tick's children (ticking.ending_with_node)"
 }
 
 /// A spell of base 3 with a cast time of 1500 ms and an aura of 6000 ms whose go holds an

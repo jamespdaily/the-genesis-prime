@@ -73,6 +73,7 @@ import genesis_prime/message/combat_result
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result
@@ -115,6 +116,8 @@ import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_cc_state_applied
+import genesis_prime/message/unit_cc_state_ended
 import genesis_prime/message/unit_create_cast
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
@@ -6041,6 +6044,24 @@ fn world_with_a_beast_ahead(
   world_with_beasts(places: [beast_place(x: 1.5, z: 0.5)], tables:, time:)
 }
 
+/// A world with one Beast 3 m ahead of the place a new test character stands at, which has
+/// 1,000,000 health, so a damage over time of a few seconds never kills it.
+fn world_with_a_tough_beast_ahead(
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  let beast =
+    spawn_support.beast_without_deflect_at(
+      number: 1,
+      place: beast_place(x: 1.5, z: 0.5),
+    )
+  world_with_spawns(
+    spawns: [spawn.Spawn(..beast, health: 1_000_000)],
+    tables:,
+    time:,
+  )
+}
+
 /// Plays a new player's character into the world and reads until the Beast's 0x262
 /// arrives: the burst and the creature, and the bytes beyond them.
 fn enters_and_sees_the_beast(
@@ -10509,6 +10530,291 @@ pub fn a_medic_presses_nullifier_and_its_field_cast_finishes_six_seconds_after_i
     as "opcode.0x7fe: the field finishes 6000 ms after its start (Spell4 58868 spellDuration)"
   assert game_client.targets_removed_in(frames: late) == []
     as "a lingering cast whose last node ends by time writes the 0x7fe alone"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// A Medic of `level` who has entered a world with one Beast 3 m ahead of the place a new
+/// character stands at, and turned to face it: the game, the bytes read, the bag index of the
+/// ability of base `base` and the Beast's unit.
+fn medic_facing_the_beast(
+  started started: login_support.Started,
+  character_name character_name: String,
+  level level: Int,
+  base base: Int,
+) -> #(game_client.Game, BitArray, Int, Int) {
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name:,
+      class_id: 4,
+      level:,
+    )
+  send_play(game:, character_id: character)
+  let #(frames, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.length(game_client.creatures_created_in(frames:)) >= 1
+    })
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames:), fn(item) { item.1 == base })
+    as "the Medic's level grants the ability's base"
+  let assert [beast] = game_client.creatures_created_in(frames:)
+  let own_place =
+    game_client.placed_at(unit: game_client.unit_create_player_in(frames:))
+  game_client.face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(own_place.0, own_place.2), target: #(
+      1.5,
+      0.5,
+    )),
+    clock: 100,
+  )
+  #(game, have, bag_index, beast.unit_id)
+}
+
+/// The effect ids each 0x7f4 among the frames lists for each unit it names, as the cast id, the
+/// unit and the ids, in order.
+fn go_effects_in(frames frames: List(Frame)) -> List(#(Int, Int, List(Int))) {
+  list.flat_map(frames, fn(frame) {
+    case frame.message_id {
+      0x07F4 -> {
+        let assert Ok(go) = spell_go.decode(frame.body) as "0x7f4 decodes"
+        list.map(go.targets, fn(target) {
+          #(
+            go.cast_id,
+            target.unit_id,
+            list.map(target.effects, fn(effect) { effect.spell4_effects_id }),
+          )
+        })
+      }
+      _ -> []
+    }
+  })
+}
+
+/// The crowd-control states each 0x87f among the frames tells, as the unit, the state's number
+/// and the instance id, in order.
+fn states_told_in(frames frames: List(Frame)) -> List(#(Int, Int, Int)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x087F -> {
+        let assert Ok(told) = unit_cc_state_applied.decode(frame.body)
+          as "0x87f decodes"
+        Ok(#(
+          told.unit_id,
+          crowd_control_state.to_value(told.state),
+          told.instance_id,
+        ))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The instance ids each 0x880 among the frames ends, as the unit and the id, in order.
+fn states_ended_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0880 -> {
+        let assert Ok(ended) = unit_cc_state_ended.decode(frame.body)
+          as "0x880 decodes"
+        Ok(#(ended.unit_id, ended.instance_id))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// A Medic of level 8 presses Nullifier (SpellLevel 632: Spell4 70757) on the driven clock with
+/// a Beast 3 m ahead, inside the box of its field (a box 14 by 14 starting 1 m ahead of where
+/// the Medic stood at the press, `table_rows -- TelegraphDamage 2789`). Row 141450 of the field
+/// 58868 (tickTime 1000, until the field ends; text 574032 "apply an Affliction to foes inside
+/// the field every 1s") starts the Affliction 77099 on each foe inside it at each second of the
+/// field's six: the child's 0x7f4 lists the Beast and its damage row 200387, and the Beast's
+/// health falls with the child's ticks. Each wait is bounded by a pong.
+pub fn a_medic_presses_nullifier_and_a_beast_in_its_box_is_given_an_affliction_each_second_for_six_seconds_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  let started =
+    world_with_a_tough_beast_ahead(tables: fixture_tables.shared(), time:)
+  let #(game, have, bag_index, beast_unit) =
+    medic_facing_the_beast(
+      started:,
+      character_name: "Med Ic",
+      level: 8,
+      base: 47_675,
+    )
+  game_client.press_ability(game:, client_cast_id: 1, bag_index:, target: 0)
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Nullifier is planned, so the press is not refused"
+  let assert [game_client.CastStarted(cast_id: field, caster_unit_id:, ..)] =
+    starts_of_spell(frames: pressed, spell4_id: 58_868)
+    as "opcode.0x7ff: Proxy 180619 starts the field at the press"
+  assert starts_of_spell(frames: pressed, spell4_id: 77_099) == []
+    as "the field's Proxy ticks: it casts nothing at the go"
+  let #(early, have) =
+    advanced_and_read(game:, time:, have:, number: 2, ms: 999)
+  assert starts_of_spell(frames: early, spell4_id: 77_099) == []
+    as "row 141450: tickTime 1000, so no Affliction 999 ms after the field's start"
+  let at_second = fn(have, number, ms) {
+    advanced_and_read(game:, time:, have:, number:, ms:)
+  }
+  let #(first_tick, have) = at_second(have, 3, 1)
+  let assert [
+    game_client.CastStarted(
+      cast_id: child,
+      root_spell4_id:,
+      parent_spell4_id:,
+      caster_unit_id: child_caster,
+      ..,
+    ),
+  ] = starts_of_spell(frames: first_tick, spell4_id: 77_099)
+    as "opcode.0x7ff: one Affliction starts at 1000, on the one foe inside the box"
+  assert #(root_spell4_id, parent_spell4_id, child_caster)
+    == #(70_757, 58_868, caster_unit_id)
+    as "opcode.0x7ff.root_parent: the field is the parent, Nullifier the root and the Medic the caster"
+  assert list.contains(
+    go_effects_in(frames: first_tick),
+    #(child, beast_unit, [200_387]),
+  )
+    as "opcode.0x7f4: the child's go names the Beast and lists the Affliction's damage row 200387"
+  let #(rounds, have) =
+    list.fold([4, 5, 6, 7, 8], #([], have), fn(so_far, number) {
+      let #(rounds, have) = so_far
+      let #(round, have) = at_second(have, number, 1000)
+      #(list.append(rounds, [round]), have)
+    })
+  list.each(rounds, fn(round) {
+    assert list.length(starts_of_spell(frames: round, spell4_id: 77_099)) == 1
+      as "an Affliction at each of the field's six seconds, the Beast still in the box the press made"
+  })
+  let health =
+    list.flat_map([first_tick, ..rounds], beast_health_in(
+      frames: _,
+      beast: beast_unit,
+    ))
+  assert health != []
+    as "opcode.0x937: the Beast's health falls with the Afflictions' ticks"
+  let assert Ok(last_round) = list.last(rounds)
+  let last_start =
+    index_where(frames: last_round, found: fn(frame) {
+      starts_of_spell(frames: [frame], spell4_id: 77_099) != []
+    })
+  let finish_at =
+    index_where(frames: last_round, found: fn(frame) {
+      finishes(frames: [frame], cast_id: field)
+    })
+  assert last_start >= 0 && finish_at > last_start
+    as "opcode.0x7fe: the field finishes after the sixth Affliction starts (the tick at 6000 fires before the node ends)"
+  let #(later, _) = at_second(have, 9, 1000)
+  assert starts_of_spell(frames: later, spell4_id: 77_099) == []
+    as "no seventh Affliction follows the field's end"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// A Medic of level 12 presses Restrictor (SpellLevel 1119: Spell4 38279, base 22861) on the
+/// driven clock with a Beast 3 m ahead, inside the box of its field (15 by 6, starting 1 m
+/// ahead, a Random area of up to 10 units, `table_rows -- Spell4AoeTargetConstraints 391`).
+/// Row 131274 of the field 38287 (tickTime 500, for the field's 4000 ms; text 306769 "apply a
+/// Snare to foes inside the field every 0.5s") starts Snare 77118 on the Beast each half
+/// second: the child's 0x7f4 lists the CCStateSet row 200476 with a non-zero instance id of its
+/// own and the 0x87f tells state 21 under that id (`opcode.0x87f`, `cc_state.instance_id`); the
+/// state ends with its own 0x880 after the state's 2000 ms (`cc_state.end`). The Beast stands at
+/// Interrupt Armor 0, as a state lands only then. The Beast is shown the state and is not slowed
+/// (no rule of the server reads a state's slow). Each wait is bounded by a pong.
+pub fn a_medic_presses_restrictor_and_a_beast_in_its_field_is_shown_a_snare_state_every_half_second_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  let started = world_with_a_beast_ahead(tables: fixture_tables.shared(), time:)
+  let #(game, have, bag_index, beast_unit) =
+    medic_facing_the_beast(
+      started:,
+      character_name: "Res Tr",
+      level: 12,
+      base: 22_861,
+    )
+  game_client.press_ability(game:, client_cast_id: 1, bag_index:, target: 0)
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Restrictor is planned, so the press is not refused"
+  let assert [game_client.CastStarted(cast_id: field, ..)] =
+    starts_of_spell(frames: pressed, spell4_id: 38_287)
+    as "opcode.0x7ff: Proxy 82064 starts the field at the press"
+  let #(early, have) =
+    advanced_and_read(game:, time:, have:, number: 2, ms: 499)
+  assert starts_of_spell(frames: early, spell4_id: 77_118) == []
+    as "row 131274: tickTime 500, so no Snare 499 ms after the field's start"
+  let #(first_tick, have) =
+    advanced_and_read(game:, time:, have:, number: 3, ms: 1)
+  let assert [game_client.CastStarted(cast_id: first_child, ..)] =
+    starts_of_spell(frames: first_tick, spell4_id: 77_118)
+    as "opcode.0x7ff: one Snare child starts at 500, on the Beast"
+  let assert [#(_, _, [200_476])] =
+    list.filter(go_effects_in(frames: first_tick), fn(entry) {
+      entry.0 == first_child && entry.1 == beast_unit
+    })
+    as "opcode.0x7f4: the child's go lists the CCStateSet row 200476 on the Beast"
+  let assert [#(_, first_effect_instance)] =
+    list.filter_map(
+      list.flat_map(first_tick, fn(frame) {
+        case frame.message_id {
+          0x07F4 -> {
+            let assert Ok(go) = spell_go.decode(frame.body)
+            [go]
+          }
+          _ -> []
+        }
+      }),
+      fn(go) {
+        case go.cast_id == first_child {
+          True ->
+            list.flat_map(go.targets, fn(target) { target.effects })
+            |> list.first
+            |> result.map(fn(effect) {
+              #(effect.spell4_effects_id, effect.instance_id)
+            })
+          False -> Error(Nil)
+        }
+      },
+    )
+    as "the go's effect carries an instance id"
+  assert first_effect_instance != 0
+    as "cc_state.instance_id: the id the 0x7f4 lists must be non-zero"
+  assert states_told_in(frames: first_tick)
+    == [#(beast_unit, 21, first_effect_instance)]
+    as "opcode.0x87f: the Beast is told Snare (state 21) under the id the go listed"
+  let #(second_tick, have) =
+    advanced_and_read(game:, time:, have:, number: 4, ms: 500)
+  let assert [#(_, 21, second_instance)] = states_told_in(frames: second_tick)
+    as "a second state is told at 1000"
+  assert second_instance != first_effect_instance
+    as "cc_state.instance_id: each child's state has an instance id of its own"
+  let #(rounds, have) =
+    list.fold([5, 6, 7, 8, 9, 10], #([], have), fn(so_far, number) {
+      let #(rounds, have) = so_far
+      let #(round, have) =
+        advanced_and_read(game:, time:, have:, number:, ms: 500)
+      #(list.append(rounds, [round]), have)
+    })
+  let children =
+    list.length(starts_of_spell(frames: first_tick, spell4_id: 77_118))
+    + list.length(starts_of_spell(frames: second_tick, spell4_id: 77_118))
+    + list.fold(rounds, 0, fn(count, round) {
+      count + list.length(starts_of_spell(frames: round, spell4_id: 77_118))
+    })
+  assert children == 8
+    as "a Snare child at each of the field's eight half seconds, 500 to 4000"
+  let ended =
+    list.flat_map([first_tick, second_tick, ..rounds], states_ended_in)
+  assert list.contains(ended, #(beast_unit, first_effect_instance))
+    as "opcode.0x880: the first state ends with its own 0x880 after its 2000 ms"
+  let #(later, _) = advanced_and_read(game:, time:, have:, number: 11, ms: 500)
+  assert starts_of_spell(frames: later, spell4_id: 77_118) == []
+    && list.any(rounds, finishes(frames: _, cast_id: field))
+    as "the field finishes at 4000 and no ninth Snare follows"
   game_client.close(game:)
   login_support.stop(started)
 }

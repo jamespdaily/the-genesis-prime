@@ -19,6 +19,7 @@
 //// planted spells with no rows of their own.
 
 import cast_support as support
+import client_tables
 import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
@@ -27,12 +28,16 @@ import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
+import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking.{type Schedule, Schedule, Ticks}
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/loader/store
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -43,6 +48,7 @@ import owned_test
 import place_support
 import prerequisite_support as prerequisites
 import spell_tables
+import unitest
 
 const press_ms = 1000
 
@@ -1819,4 +1825,144 @@ pub fn a_late_timer_asks_once_for_each_due_tick_of_an_area_proxy_with_its_own_ti
     })
     == [21, 22, 23]
     as "the children come in tick order, each tick's units in the order found"
+}
+
+/// Restrictor 38279 over the client's tables: the Medic whose only ability it is, a press at
+/// `press_ms`, and the snare child 77118 as the plan holds it.
+fn restrictor_over(
+  tables tables: store.Tables,
+) -> #(Caster, #(State, List(Effect)), spell_plan.CrowdControl) {
+  let plans = spell_plan.plans_with_later(tables:)
+  let base = Spell4BaseId(22_861)
+  let caster =
+    cast_state.Caster(..support.caster(), abilities: [base], book: [base])
+  let assert Ok(ability) = spell_plan.in_plans(plans:, base:)
+    as "the client's plans hold Restrictor"
+  let assert [snare] =
+    list.flat_map(
+      spell_plan.tree(spell: ability, started: fn(_) { True }),
+      fn(spell) {
+        case spell.spell4_id == id.Spell4Id(77_118) {
+          True -> spell_plan.payloads(spell:, as_kind: spell_plan.as_control)
+          False -> []
+        }
+      },
+    )
+    |> list.unique
+    as "Snare 77118 holds the one CCStateSet row"
+  #(
+    caster,
+    support.press_as(
+      plans:,
+      state: cast_state.new(),
+      caster:,
+      bag: 0,
+      at: press_ms,
+    ),
+    snare,
+  )
+}
+
+pub fn restrictors_field_over_the_clients_rows_asks_eight_times_and_each_child_carries_the_snare_row_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Restrictor 38279 blinks back and starts the field 38287 (aura 4000), whose Proxy 131274
+  // (tickTime 500) casts Snare 77118 on the units found; the Snare's one row is the
+  // CCStateSet 200476, state 21, 2000 ms (text 306769;
+  // `table_rows -- Spell4Effects 131274 200476 -- Spell4 38287 77118`).
+  let #(caster, pressed, snare) =
+    restrictor_over(tables: client_tables.shared())
+  assert snare.effect_id == Spell4EffectsId(200_476)
+    && snare.row.state == crowd_control_state.Snare
+    && snare.row.duration_ms == 2000
+    as "the plan's row is the client's: state 21, 2000 ms"
+  let told = fn(at_ms: Int, asked: cast_state.GoAsked) {
+    // The units the connection's strike gives each child: the one it was made on, told the
+    // row of the plan under an instance id of its cast.
+    [
+      cast_state.Hit(
+        unit_id: asked.primary_target,
+        unit: support.first_life,
+        descriptions: [],
+        controls: [
+          strike_tell.ControlLanded(
+            tell: strike_tell.ControlTell(
+              effect_id: snare.effect_id.value,
+              instance_id: asked.cast_id,
+              row: snare.row,
+              throw: None,
+            ),
+            ends_at_ms: at_ms + snare.row.delay_ms + snare.row.duration_ms,
+            interrupted: None,
+          ),
+        ],
+        armor_removed: 0,
+        ticking: [],
+      ),
+    ]
+  }
+  let #(_, fired) =
+    support.run_timers_finding_striking(
+      caster:,
+      state: pressed.0,
+      effects: pressed.1,
+      from_ms: press_ms,
+      until_ms: 20_000,
+      units: dict.new(),
+      found_by: fn(_) { [21, 22] },
+      struck_by: told,
+    )
+  let asks =
+    list.flat_map(fired, fn(step) {
+      list.map(step.found, fn(asked) { #(step.at_ms, asked.tick) })
+    })
+  assert asks
+    == [
+      #(1500, 1),
+      #(2000, 2),
+      #(2500, 3),
+      #(3000, 4),
+      #(3500, 5),
+      #(4000, 6),
+      #(4500, 7),
+      #(5000, 8),
+    ]
+    as "an ask every 500 ms for the field's 4000 ms, the eighth at 5000 before the field's 0x7fe, and no ninth"
+  let steps = as_steps(fired:)
+  let children = support.starts_of(steps:, spell4_id: 77_118)
+  assert list.length(children) == 16
+    as "a child on each of the two units at each of the eight ticks"
+  list.each(children, fn(child) {
+    assert { child.1 }.parent_spell4_id == 38_287
+      && { child.1 }.root_spell4_id == 38_279
+      as "the field is the parent and Restrictor the root"
+  })
+  let listed =
+    list.flat_map(steps, fn(step) {
+      list.flat_map(
+        support.frames_of(message_id: spell_go.message_id, effects: step.1),
+        fn(frame) {
+          let assert Ok(go) = spell_go.decode(frame.body)
+            as "a 0x7f4 the rule wrote decodes"
+          list.flat_map(go.targets, fn(target) {
+            list.map(target.effects, fn(effect) {
+              #(step.0, target.unit_id, effect.spell4_effects_id)
+            })
+          })
+        },
+      )
+    })
+  assert list.length(listed) == 16
+    && list.all(listed, fn(entry) { entry.2 == 200_476 })
+    as "each child's go lists the CCStateSet row 200476 on its unit"
+  let removed =
+    list.flat_map(steps, fn(step) {
+      support.removed_targets(support.writes(effects: step.1))
+    })
+  let cast_and_unit = fn(child: #(Int, spell_started.SpellStarted)) {
+    #({ child.1 }.cast_id, [{ child.1 }.primary_target_unit_id])
+  }
+  assert removed == list.map(list.take(children, 14), cast_and_unit)
+    as "stack group 1771 holds one snare of a caster on a unit: each child takes the snare the same caster's last child gave that unit off it (0x811), so the units found twice in a row lose the oldest each tick and the last tick's children keep theirs"
+  Nil
 }

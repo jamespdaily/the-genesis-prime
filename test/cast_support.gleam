@@ -2134,12 +2134,36 @@ pub fn run_timers_finding(
   units units: dict.Dict(Int, prerequisite.FirstUnit),
   found_by found_by: fn(cast_state.ProxyTickAsked) -> List(Int),
 ) -> #(State, List(Fired)) {
+  run_timers_finding_striking(
+    caster:,
+    state:,
+    effects:,
+    from_ms:,
+    until_ms:,
+    units:,
+    found_by:,
+    struck_by: fn(_, _) { [] },
+  )
+}
+
+/// The same with each go answered with the units `struck_by` gives for the time it is
+/// answered at and the go asked, so a tick's child casts strike the units its tick found.
+pub fn run_timers_finding_striking(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  until_ms until_ms: Int,
+  units units: dict.Dict(Int, prerequisite.FirstUnit),
+  found_by found_by: fn(cast_state.ProxyTickAsked) -> List(Int),
+  struck_by struck_by: fn(Int, cast_state.GoAsked) -> List(cast_state.Struck),
+) -> #(State, List(Fired)) {
   let #(state, fired, _, _) =
     run_pending(
       caster: cast_cost.after_payments(caster:, effects:),
       state:,
       pending: due_of(effects:, now_ms: from_ms),
-      struck_at: fn(_, _) { [] },
+      struck_at: struck_by,
       poses: dict.new(),
       until_ms: Some(until_ms),
       before: fn(_, caster) { caster },
