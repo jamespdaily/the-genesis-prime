@@ -16,8 +16,10 @@
 //// - **Who an effect aims at** is its `targetFlags`: 1 the caster, 2 the cast's own
 ////   target, 4 the area, 6 both (`Spell4Effects.targetFlags`, a reading of the rows).
 ////   A phase with a damage effect, a crowd-control state, a property change of struck
-////   units (a type 11 row aimed only at other units) or a Proxy aimed at the area
-////   selects units; one aimed at the cast's target strikes the primary target; with
+////   units (a type 11 row aimed only at other units) or a Proxy with no tickTime aimed at
+////   the area selects units; a Proxy with a tickTime aimed at the area selects none at the go
+////   and finds its units at each tick (`PhaseStrike.ticks_on_area`); one aimed at the cast's
+////   target strikes the primary target; with
 ////   neither it strikes nobody and its go is written at once. A stun with no damage
 ////   still selects and strikes (Gate's 30436, Stagger's 38780), and so does a spell
 ////   holding only a property row aimed at the target (Fissure's child 41886, row 94370)
@@ -39,21 +41,21 @@
 //// - **The points a cast spent.** A damage effect keeps its row's tag
 ////   (`Spell4Effects.emmComparison`, genesis_prime/game/spend), and `phase` keeps
 ////   only the effects and Proxies whose tag holds for the points the cast spent above
-////   its base cost, then works out `selects_area` and `strikes_primary_target` from
-////   what is left. A cast with no spend keeps every effect.
+////   its base cost, then works out `selects_area`, `strikes_primary_target` and
+////   `ticks_on_area` from what is left. A cast with no spend keeps every effect.
 //// - **A periodic damage row** (a tickTime) strikes the units of its go once for each
 ////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
 ////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
 ////   is left out by the load (`TickingUntilRemoved`), and `checker` refuses a spell that holds
 ////   one, so no planned ability's press waits on a damage row that is never played.
-//// - **A Proxy with its spell in dataBits01** (dataBits00 0 and a Spell4 id in dataBits01,
-////   `ProxyNamesSpellInDataBits01`) casts that spell every tickTime
-////   (`Spell4Effects.effectType.26.periodic`), which the plan does not start, so `checker`
-////   refuses a spell that holds one beside a hit row placed on the cast's target, or beside an
-////   area row ordered beyond Closest: the ability that row would free is planned and casts only
-////   its other rows. A spell that holds such a Proxy with neither is not refused, and its
-////   ability is planned without that cast.
+//// - **A periodic Proxy aimed at the area** (`Spell4Effects.effectType.26.periodic`: the texts
+////   574032 and 306769 say it casts "on foes inside the field every Ns") ticks on the units
+////   inside the spell's area at each tick: its phase has `ticks_on_area`, so the load asks the
+////   same of the area row as of a phase that selects (a row, in an order the server builds),
+////   and the go strikes nobody for it. A Proxy that names a beneficial spell is refused by the
+////   plan (`spell_plan.PeriodicProxyAtAlliesNotRead`), since the allies in the area are not
+////   found.
 //// - **Order.** An area row's `targetSelection` is read for a player and a creature alike:
 ////   Closest (1), Furthest (2) and Random (3) are the orders `area.select_ordered` takes, and
 ////   no strike selects a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
@@ -138,7 +140,7 @@ import genesis_prime/game/ticking
 import genesis_prime/gap
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
-  Spell4EffectsId, Spell4Id, Spell4ValidTargetsId, TelegraphDamageId,
+  Spell4EffectsId, Spell4ValidTargetsId, TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
@@ -221,6 +223,9 @@ pub type PhaseStrike {
     /// Whether the phase strikes the cast's own target: a damage effect (periodic or
     /// not), a crowd-control state or a property change of struck units aimed at it.
     strikes_primary_target: Bool,
+    /// Whether the phase arms a periodic Proxy aimed at the area, which finds the units
+    /// inside the area at each of its ticks and strikes nobody at the go.
+    ticks_on_area: Bool,
   )
 }
 
@@ -304,16 +309,6 @@ pub type AreaError {
   /// A drawn hit row is timed from a phase's go instead of the cast's start (flag 0x2000), a
   /// window the creature reading does not build.
   TelegraphTimedFromAGo(spell4_id: Int, telegraph_id: Int)
-  /// A Proxy row names no spell in dataBits00 but holds the id of a Spell4 row in dataBits01,
-  /// which it casts every tickTime (`Spell4Effects.effectType.26.periodic`) and the plan does
-  /// not start, in a spell whose hit row is placed on the cast's target or whose area row is
-  /// ordered beyond Closest: `checker` refuses the spell, since the ability that row frees
-  /// would be planned without that cast.
-  ProxyNamesSpellInDataBits01(
-    spell4_id: Int,
-    effect_id: Int,
-    named_spell4_id: Int,
-  )
   /// A damage effect is aimed by a flag value not read.
   AimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A damage effect's formula reads a parameter a player's value does not.
@@ -430,14 +425,6 @@ pub fn describe(error error: AreaError) -> String {
       <> " has a hit telegraph "
       <> int.to_string(telegraph_id)
       <> " timed from a go (flag 0x2000), a window the load does not read"
-    ProxyNamesSpellInDataBits01(spell4_id:, effect_id:, named_spell4_id:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has a Proxy effect "
-      <> int.to_string(effect_id)
-      <> " with no spell in dataBits00 and the Spell4 row "
-      <> int.to_string(named_spell4_id)
-      <> " in dataBits01, which it casts every tickTime and the plan does not start"
     AimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -524,11 +511,9 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
 }
 
 /// What a later ability's spells must pass to be planned (genesis_prime/game/spell_plan
-/// `Checker`): the area of each is built as `build` builds it, no damage row lasts until
-/// removed and no Proxy holds a spell in dataBits01 alone beside a hit row placed on the cast's
-/// target or an area row ordered beyond Closest, and an error of what the rule does
-/// not build leaves the ability out of the plans, so no ability holds a spell the load of the
-/// areas would refuse.
+/// `Checker`): the area of each is built as `build` builds it and no damage row lasts until
+/// removed, and an error of what the rule does not build leaves the ability out of the
+/// plans, so no ability holds a spell the load of the areas would refuse.
 pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)
@@ -538,52 +523,13 @@ pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
     |> result.try(fn(area) {
       start_checked(tables:, area:, start:) |> result.replace(area)
     })
-    |> result.try(fn(area) {
+    |> result.try(fn(_) {
       case until_removed_damage_row_of(tables:, effects:, id:) {
         Some(error) -> Error(error)
-        None ->
-          case placed_on_the_target(area:) || ordered_beyond_closest(area:) {
-            True -> proxy_naming_a_spell_in_data_of(tables:, effects:, id:)
-            False -> Ok(Nil)
-          }
+        None -> Ok(Nil)
       }
     })
     |> result.map_error(plan_error_of(error: _, spell4_id: id))
-  }
-}
-
-/// The refusal of the first Proxy row of the spell that has no spell in dataBits00 and the id
-/// of a Spell4 row in dataBits01 (`ProxyNamesSpellInDataBits01`). Only `checker` runs it, for a
-/// spell with a hit row on the cast's target or an area row ordered beyond Closest; a Proxy
-/// with dataBits01 0 names nothing and stays accepted.
-fn proxy_naming_a_spell_in_data_of(
-  tables tables: table_store.Tables,
-  effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
-  id id: Int,
-) -> Result(Nil, AreaError) {
-  let found =
-    dict.get(effects, id)
-    |> result.unwrap([])
-    |> list.find_map(fn(effect) {
-      let is_proxy_with_no_spell =
-        effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
-        && effect.data_bits00 == 0
-      case
-        is_proxy_with_no_spell,
-        spell4.get(tables:, id: Spell4Id(effect.data_bits01))
-      {
-        True, Ok(_) ->
-          Ok(ProxyNamesSpellInDataBits01(
-            spell4_id: id,
-            effect_id: effect.id,
-            named_spell4_id: effect.data_bits01,
-          ))
-        True, Error(Nil) | False, Ok(_) | False, Error(Nil) -> Error(Nil)
-      }
-    })
-  case found {
-    Ok(error) -> Error(error)
-    Error(Nil) -> Ok(Nil)
   }
 }
 
@@ -610,7 +556,6 @@ fn plan_error_of(
     | TelegraphTimedFromAGo(..)
     | AimNotRead(..)
     | FormulaNotRead(..)
-    | ProxyNamesSpellInDataBits01(..)
     | TickingUntilRemoved(..)
     | TickingNoTick(..) ->
       spell_plan.AreaNotBuilt(spell4_id:, reason: describe(error:))
@@ -720,15 +665,6 @@ fn targeting_given(
   }
 }
 
-/// Whether the spell's area row takes Furthest or Random. A row ordered by health is no area
-/// (`SpellArea.row`), so it is not beyond Closest here.
-fn ordered_beyond_closest(area area: SpellArea) -> Bool {
-  case area.row {
-    Some(Row(order: Furthest, ..)) | Some(Row(order: Random, ..)) -> True
-    Some(Row(order: Nearest, ..)) | None -> False
-  }
-}
-
 /// Whether the spell has a hit row and it is placed on the cast's target: a spell with no hit
 /// row has no shapes and is centred on its primary target only by default.
 fn placed_on_the_target(area area: SpellArea) -> Bool {
@@ -833,12 +769,14 @@ fn area_of(
       ticking:,
       spell:,
     )
-  // A phase that selects units at some n, every effect chosen being the widest, must
-  // have an area row, and one that selects units in an order the server builds.
+  // A phase that selects units at some n, every effect chosen being the widest, or ticks on
+  // the units of the area, must have an area row, and one that selects units in an order the
+  // server builds.
   let selects =
     spell_plan.go_numbers(go_count: phase_count_of(spell:))
     |> list.any(fn(phase) {
-      phase_of(spell: area, phase:, spent: None).selects_area
+      let chosen = phase_of(spell: area, phase:, spent: None)
+      chosen.selects_area || chosen.ticks_on_area
     })
   use Nil <- result.try(case read, selects {
     None, True -> Error(NoAreaRow(spell4_id: id))
@@ -1428,6 +1366,13 @@ fn phase_of(
     )
   let gates =
     spell_plan.struck_gates_in_phase(spell: spell.spell, phase:, spent:)
+  let proxies =
+    spell_plan.in_phase(
+      spell: spell.spell,
+      phase:,
+      spent:,
+      as_kind: spell_plan.as_proxy,
+    )
   let strikes = fn(reaches: fn(Aim) -> Bool) {
     list.any(firing, fn(effect) { reaches(effect.aim) })
     || list.any(gates, fn(gate) { reaches(gate.aim) })
@@ -1448,17 +1393,14 @@ fn phase_of(
     controls:,
     gates:,
     selects_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) })
-      || list.any(
-      spell_plan.in_phase(
-        spell: spell.spell,
-        phase:,
-        spent:,
-        as_kind: spell_plan.as_proxy,
-      ),
-      fn(proxy) { proxy.target == spell_plan.OnEachStruck },
-    ),
+      || list.any(proxies, fn(proxy) {
+      proxy.target == spell_plan.OnEachStruck && proxy.period == None
+    }),
     strikes_primary_target: strikes(fn(aim) {
       spell_plan.reaches_primary_target(aim:)
+    }),
+    ticks_on_area: list.any(proxies, fn(proxy) {
+      proxy.target == spell_plan.OnEachStruck && option.is_some(proxy.period)
     }),
   )
 }
@@ -1668,8 +1610,8 @@ pub fn gaps() -> List(gap.Entry) {
       missing: "a hit row on the target of a spell a proc casts at another unit (ProcAim AtOtherUnit) is built only as a circle with no offset, since the strike does not know that unit's yaw, and the load does not tell whether the event has another unit, which the spell is then cast at the holder for; a spell aimed at its holder is built as a press's is",
     ),
     gap.Entry(
-      area: "Proxy rows that name their spell in dataBits01",
-      missing: "a Proxy with dataBits00 0 casts the Spell4 of its dataBits01 every tickTime (a guess from its rows), which the plan does not start; a later ability with a spell that holds one beside a hit row placed on the cast's target, or beside an area row ordered beyond Closest, is refused when its plan is built (Field Probes and Restrictor 38279, whose field 38287 names Snare 77118, would otherwise be planned and cast only their other rows), but a planned ability whose spells hold such a Proxy with neither loses that timed cast (Nullifier 58868, whose Proxy 141450 names 77099 on a Closest row), and the coverage measure lists those Proxy rows under effect type 26",
+      area: "Periodic area Proxies",
+      missing: "a Proxy with a tickTime aimed at the area casts the Spell4 it names (in dataBits00, or dataBits01 when that is 0) on the units inside the area at each tick, as the texts say (\"foes inside the field every Ns\", 574032 and 306769): the units are found over the connection's picture by the spell's area row and hit shapes, around the pose the cast started at (or the pose the primary target stood in at the go, for an area fixed at its target), and the order a Random row takes at a tick is seeded by the cast and the tick, a guess since the client names the order and ranks nothing; a Proxy that names a beneficial spell (Spell4TargetMechanics flags bit 0) is refused with its ability until the allies in the area can be found (Field Probes 41398); the Snare of Restrictor's field is shown to each creature found and slows none, since no rule reads a state's slow",
     ),
     gap.Entry(
       area: "Creature target and ground rows",
@@ -1697,7 +1639,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player area orders",
-      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
     ),
     gap.Entry(
       area: "Creature area orders and shapes",

@@ -103,6 +103,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
       NamesAStruckRow(effect_id:, kind: "an absorb")
     spell_plan.ProxyAimNotRead(effect_id:, ..)
     | spell_plan.FriendlyAreaNotRead(effect_id:, ..)
+    | spell_plan.PeriodicProxyAtAlliesNotRead(effect_id:, ..)
     | spell_plan.GainAimNotRead(effect_id:, ..)
     | spell_plan.GainVitalNotRead(effect_id:, ..)
     | spell_plan.GainShareNotRead(effect_id:, ..)

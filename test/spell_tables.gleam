@@ -1032,6 +1032,6 @@ pub const flag_8_abilities = [
 /// (`table_rows -- TelegraphDamage` 1766, 15498, 204 and 137, each `targetTypeFlags` 2).
 /// Telekinetic Storm 32814 and Pyrokinetic Flame 36821 are not among them: each holds a damage
 /// row that lasts until removed, so they stay unplanned. Field Probes 41398 is not among them
-/// either: its Proxies 92875 and 131252 name the buff and debuff spells in dataBits01, which
-/// the plan does not read, so it stays unplanned.
+/// either: its Proxy 92875 casts a beneficial spell on the allies in its field, whom the
+/// server does not find, so it stays unplanned.
 pub const flag_0_or_2_abilities = [32_320, 41_341, 35_356]

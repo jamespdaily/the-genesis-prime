@@ -119,7 +119,7 @@
 ////   no order holds; the live sitting checks it.
 
 import genesis_prime/client_connection.{type News}
-import genesis_prime/game/area.{type Pose, Pose}
+import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type GoAsked, type ProxyTickAsked, type Struck, type TickAsked,
@@ -357,8 +357,9 @@ pub fn select(
 }
 
 /// Where a cast's area is centred (`area.centre_of`): on the pose the cast started at, the
-/// caster now, or the primary target, which is the caster or another unit the picture shows.
-/// An area fixed at its target stays at `primary_pose`, the pose the target stood in when the
+/// caster now, or the primary target, which is the caster or another unit the picture shows,
+/// at the place and facing the picture gives it (`shown.pose_of`). An area fixed at its
+/// target stays at `primary_pose`, the pose, facing included, the target stood in when the
 /// cast went, when there is one. A primary target the picture does not show gives no centre.
 fn centre_of_cast(
   anchor anchor: area.Anchor,
@@ -372,10 +373,13 @@ fn centre_of_cast(
   use primary <- result.map(case primary_target == attacker.unit_id {
     True -> Ok(area.TheCaster)
     False ->
-      shown.place_of(picture:, unit_id: primary_target, now_ms:)
-      |> result.map(fn(place) {
-        area.AnotherUnit(pose: Pose(at: area.point_of(place), yaw: 0.0))
-      })
+      shown.pose_of(
+        picture:,
+        unit_id: primary_target,
+        now_ms:,
+        viewer: shown.Viewer(unit_id: attacker.unit_id, place: attacker.place),
+      )
+      |> result.map(fn(pose) { area.AnotherUnit(pose:) })
   })
   let primary = case anchor, primary, primary_pose {
     area.FixedAtTarget, area.AnotherUnit(..), Some(pose) ->

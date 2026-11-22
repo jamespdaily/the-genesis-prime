@@ -457,6 +457,7 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
         | cast_state.ForcedMoveStarts(..)
         | cast_state.CreatureDespawns(..)
         | cast_state.CreatureHoldsUnitStates(..)
+        | cast_state.CreatureControlsEnd(..)
         | cast_state.Activated(..)
         | cast_state.ShortcutCast(..)
         | cast_state.QuestAdvanced(..)

@@ -9,9 +9,11 @@
 ////   on the same timer, 0x811 for the unit while the cast goes on, and a 0x801 stops a
 ////   cast the same way: its pending gos are cancelled and it lingers if a node has life
 ////   left, since a cancel ends no buff.
-//// - **A periodic Proxy** ticks on the caster as a damage or heal row does, from the go that
-////   armed it: each tick reads the Proxy's caster gates again and starts the named spell as a
-////   child cast of the holder (`proxy_tick_child`), `Spell4Effects.effectType.26.periodic`.
+//// - **A periodic Proxy** ticks as a damage or heal row does, from the go that armed it: each
+////   tick reads the Proxy's caster gates again and starts the named spell as a child cast of
+////   the holder, on the caster when the Proxy is aimed at it (`proxy_tick_child`), and on each
+////   unit inside the area when it is aimed at the area, which the connection finds at the
+////   tick (`FindProxyTickUnits`), `Spell4Effects.effectType.26.periodic`.
 
 import genesis_prime/client_connection
 import genesis_prime/game/area

@@ -3,8 +3,8 @@
 //// the rows of a type from the client alone, or takes each row of a type through the
 //// plan and checks the reading the row's own columns give it; how many rows the plan
 //// leaves out is the coverage run's number, not a test's.
-//// - `Spell4Effects.effectType.26.periodic`: a Proxy that names no Spell4 row, or ticks
-////   aimed at the area, is left out; one aimed by a flag with bit 8 is refused.
+//// - `Spell4Effects.effectType.26.periodic`: a Proxy that names no Spell4 row is left out;
+////   one that ticks on the area for allies, or is aimed by a flag with bit 8, is refused.
 //// - `Spell4Effects.effectType.15` and `.97`: the columns that decide each reason.
 
 import client_tables
@@ -18,7 +18,9 @@ import genesis_prime/game/spell_plan
 import genesis_prime/table/id
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
+import genesis_prime/table/spell4_target_mechanics
 import gleam/int
 import gleam/list
 import gleam/set
@@ -133,7 +135,7 @@ pub fn the_clients_4645_type_3_rows_count_with_a_stated_gap_test() -> Nil {
 
 // ---- each row of a type is read, left out or refused for the reason its columns give ----
 
-pub fn a_proxy_row_is_left_out_or_refused_for_the_reason_its_columns_give_test() -> Nil {
+pub fn the_measure_counts_a_proxy_that_names_no_spell_or_is_for_allies_as_not_read_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
@@ -141,6 +143,26 @@ pub fn a_proxy_row_is_left_out_or_refused_for_the_reason_its_columns_give_test()
   let line = coverage_support.partial_line("Spell effects", type_number: 26)
   assert line.rows == 16_929
     as "table_rows -- Spell4Effects effectType=26: 16,929 rows"
+  // A named spell is beneficial when its Spell4Base's target mechanic has flags bit 0
+  // (`Spell4TargetMechanics.flags`), read here through the tables' own rows.
+  let beneficial = fn(row: Spell4Effects) {
+    let assert Ok(named) =
+      spell4.get(
+        tables:,
+        id: id.Spell4Id(spell_plan.proxy_named(tables:, effect: row)),
+      )
+    let assert Ok(base) =
+      spell4_base.get(
+        tables:,
+        id: id.Spell4BaseId(named.spell4_base_id_base_spell),
+      )
+    let assert Ok(mechanic) =
+      spell4_target_mechanics.get(
+        tables:,
+        id: id.Spell4TargetMechanicsId(base.spell4_target_mechanic_id),
+      )
+    int.bitwise_and(mechanic.flags, 1) == 1
+  }
   let classes =
     list.map(readings(type_number: 26), fn(read) {
       let #(row, reading) = read
@@ -159,16 +181,32 @@ pub fn a_proxy_row_is_left_out_or_refused_for_the_reason_its_columns_give_test()
             }
           "names no spell"
         }
-        False, True, _ -> {
-          assert reading
-            == Ok(spell_plan.LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead))
-            as {
-              "row "
-              <> int.to_string(row.id)
-              <> " ticks aimed at the area (flags 4 or 6), so the plan leaves it out"
+        False, True, _ ->
+          case beneficial(row) {
+            True -> {
+              assert reading
+                == Error(spell_plan.PeriodicProxyAtAlliesNotRead(
+                  spell4_id: row.spell_id,
+                  effect_id: row.id,
+                  named_spell4_id: spell_plan.proxy_named(tables:, effect: row),
+                ))
+                as {
+                  "row "
+                  <> int.to_string(row.id)
+                  <> " ticks on the area for allies, whom the server does not find, so the plan refuses it"
+                }
+              "for allies"
             }
-          "periodic on the area"
-        }
+            False -> {
+              let assert Ok(spell_plan.Applied(..)) = reading
+                as {
+                  "row "
+                  <> int.to_string(row.id)
+                  <> " ticks on the foes in the area, so the plan reads it"
+                }
+              "for foes"
+            }
+          }
         False, False, True -> {
           let assert Error(spell_plan.ProxyAimNotRead(
             effect_id:,
@@ -187,12 +225,32 @@ pub fn a_proxy_row_is_left_out_or_refused_for_the_reason_its_columns_give_test()
       }
     })
   list.each(
-    ["names no spell", "periodic on the area", "aimed by bit 8"],
+    ["names no spell", "for allies", "for foes", "aimed by bit 8"],
     fn(class) {
       assert list.contains(classes, class)
         as { "the client holds a Proxy row of the class: " <> class }
     },
   )
+  let not_read =
+    list.count(readings(type_number: 26), fn(read) {
+      case read.1 {
+        Ok(spell_plan.Applied(..)) -> False
+        _ -> True
+      }
+    })
+  let assert HandledWithGap(unread_rows:, ..) = line.status
+    as "type 26 is handled with a stated gap"
+  assert unread_rows == not_read
+    as "the measure counts a Proxy row as not read exactly when the plan does not apply it (a row that names no spell, one for allies, one aimed by a flag with bit 8 or one that starts tiers with no choice)"
+  assert unread_rows
+    >= list.count(classes, fn(class) {
+      class == "names no spell"
+      || class == "for allies"
+      || class == "aimed by bit 8"
+    })
+    as "the rows of those classes are among the unread"
+  assert line.starting_unread == 0
+    as "no starting ability holds a Proxy row that is not read"
 }
 
 pub fn a_periodic_row_of_types_8_10_and_118_that_lasts_until_removed_is_not_read_test() -> Nil {
@@ -401,10 +459,11 @@ pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
     list.find(declared.partial, fn(gap) { gap.type_number == 26 })
     as "type 26 is partial"
   assert string.contains(
-    proxy.reason,
-    "cast their spell on the area (the plan does not start it)",
-  )
-    as "the gap names the periodic Proxies the plan leaves out by name, the area ones"
+      proxy.reason,
+      "cast a beneficial spell on the allies in the area",
+    )
+    && !string.contains(proxy.reason, "the plan does not start it")
+    as "the gap names the periodic Proxies the plan refuses by name, the ones for allies"
   assert !string.contains(proxy.reason, "until removed")
     as "a periodic Proxy aimed at the caster that lasts until removed is read as an open schedule, so it is no gap"
   assert !string.contains(

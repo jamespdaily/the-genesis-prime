@@ -10,7 +10,10 @@
 ////   longest effect, kept on the live cast; a type 80 effect takes the matching nodes of the caster's casts off the
 ////   unit, oldest cast first, each written 0x811 (`opcode.0x811`); and a cast that
 ////   gives a unit a node it holds none on takes off the caster's oldest casts of its
-////   stack at the stack's cap (Jim's decision, `Spell4StackGroup.stackCap`).
+////   stack at the stack's cap (Jim's decision, `Spell4StackGroup.stackCap`). A cast
+////   pushed off a creature while its node holds crowd-control states ends them there
+////   (`creature_controls_ended`), since the client ends a state only with a 0x880
+////   (`cc_state.end`).
 //// - **A go's property modifiers** (genesis_prime/game/unit_properties): each type 11
 ////   and type 145 effect of the phase that has a life (a durationTime, or flags bit 2) and
 ////   whose gate against the caster passes is listed on the caster like a Fluff effect, gives the
@@ -139,12 +142,13 @@ import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Caster, type CasterChange, type Due,
   type Effect, type HeldRestriction, type Live, type OnCreature, type Reached,
   type Restricting, type State, type Struck, Absorb, Applied, CasterChangeStarts,
-  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureDespawns,
-  CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart, ForcedMoveStarts,
-  Go, HeldRestriction, Hit, Immune, Look, ModifierEnd, ModifierStart, NodesEnd,
-  OnCreature, ProcDue, Property, QuestAdvanceDue, RepeatHeld, Restricting,
-  RestrictionEnd, Send, StartChild, StartHeld, State, StateEnd, TargetChangeEnds,
-  TargetChangeStarts, TargetModifierStart, Tell, Tick, WindowEnd,
+  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureControlsEnd,
+  CreatureDespawns, CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart,
+  ForcedMoveStarts, Go, HeldRestriction, Hit, Immune, Look, ModifierEnd,
+  ModifierStart, NodesEnd, OnCreature, ProcDue, Property, QuestAdvanceDue,
+  RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld, State,
+  StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
+  Tick, WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -220,6 +224,32 @@ pub fn creature_modifiers_ended(
   unit_ids unit_ids: List(Int),
 ) -> #(State, List(Effect)) {
   creatures_ended(cast:, cast_id:, ending: list.contains(unit_ids, _))
+}
+
+/// The casts of `holds` that `removals` take off a creature while their node holds the
+/// crowd-control states a strike landed there, each as the tell that ends the cast's
+/// states on that creature. The node's creature is the life its round struck
+/// (`lasting.Node.struck`); a node that holds no state, a unit that is no creature and a
+/// removal of one stack tell nothing. The client ends a state only with a 0x880, which
+/// the creature sends (`cc_state.end`).
+pub fn creature_controls_ended(
+  holds holds: List(lasting.Hold),
+  removals removals: List(lasting.Removal),
+) -> List(Effect) {
+  list.filter_map(removals, fn(removal) {
+    case removal {
+      lasting.NodeOff(cast_id:, unit_id:) ->
+        list.find(holds, fn(hold) { hold.cast_id == cast_id })
+        |> result.try(fn(hold) {
+          case hold.node.held_until_ms, hold.node.struck {
+            Some(_), Some(lasting.StruckCreature(life:, ..)) ->
+              Ok(CreatureControlsEnd(unit_id:, life:, cast_id:))
+            Some(_), None | None, _ -> Error(Nil)
+          }
+        })
+      lasting.StackOff(..) -> Error(Nil)
+    }
+  })
 }
 
 /// Every property modifier the cast `cast_id` holds on a creature ends, as a persistence
@@ -974,6 +1004,10 @@ pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
 /// What the lasting effects of a cast do not do.
 pub fn gaps() -> List(gap.Entry) {
   [
+    gap.Entry(
+      area: "Casting",
+      missing: "A crowd-control state a creature holds when its cast's node leaves it by a type 80 removal, the caster's death, the caster's leaving or the creature's leaving the caster's sight: the creature holds the state to its own end, as only a push off by the stack rule takes the states with it.",
+    ),
     gap.Entry(
       area: "Casting",
       missing: "The stacking of the property modifiers that different casters put on one creature is not built, so each caster's modifier on the creature is kept by its caster.",

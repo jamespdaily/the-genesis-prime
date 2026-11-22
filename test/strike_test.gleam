@@ -966,6 +966,18 @@ fn creature_at(
   alive alive: Bool,
   attackable attackable: Attackable,
 ) -> shown.Shown {
+  creature_facing(x:, z:, alive:, attackable:, faced_yaw: option.None)
+}
+
+/// The same creature held to the yaw `faced_yaw` by its owner's news, or facing as its place
+/// does with none.
+fn creature_facing(
+  x x: Float,
+  z z: Float,
+  alive alive: Bool,
+  attackable attackable: Attackable,
+  faced_yaw faced_yaw: Option(Float),
+) -> shown.Shown {
   ShownCreature(
     creature_id: Creature2Id(73_464),
     faction_id: 0,
@@ -986,7 +998,7 @@ fn creature_at(
     held: [],
     unit_states: [],
     face: option.None,
-    faced_yaw: option.None,
+    faced_yaw:,
     fights: True,
   )
 }
@@ -1692,6 +1704,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast_state.ForcedMoveStarts(..)
         | cast_state.CreatureDespawns(..)
         | cast_state.CreatureHoldsUnitStates(..)
+        | cast_state.CreatureControlsEnd(..)
         | cast_state.Activated(..)
         | cast_state.ShortcutCast(..)
         | cast_state.QuestAdvanced(..)
@@ -2739,6 +2752,99 @@ pub fn a_tick_of_a_fixed_at_target_area_on_another_unit_stays_where_the_unit_sto
         as reason
     },
   )
+  // Facing. Unit 21 stands at (0, -20) facing -x (a quarter turn, `area.origin_of`: ahead is
+  // (-sin yaw, -cos yaw)): a box 2 by 2 placed 6 m ahead of it is centred on (-6, -20), and one
+  // that read it facing -z would
+  // be centred on (0, -26), where foe 42 stands. A go and a tick read the unit's facing the
+  // same way, the picture's (`shown.pose_of`), and an area fixed at its target keeps the
+  // facing it carries in the row.
+  let quarter_turn = 1.5707964
+  let ahead =
+    area.InsideShapes(placements: [
+      area.Placement(
+        shape: area.Box(width: 2.0, length: 2.0),
+        ahead: 6.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ])
+  let facing_picture = fn(unit_21_at: #(Float, Float), faced_yaw: Option(Float)) {
+    dict.from_list([
+      #(
+        21,
+        creature_facing(
+          x: unit_21_at.0,
+          z: unit_21_at.1,
+          alive: True,
+          attackable: Attackable(exile: False, dominion: True),
+          faced_yaw:,
+        ),
+      ),
+      #(41, foe_at(x: -6.0, z: -20.0)),
+      #(42, foe_at(x: 0.0, z: -26.0)),
+    ])
+  }
+  let boxed = fn(anchor) {
+    field_areas(
+      anchor:,
+      row: Some(circle(max_range: 20.0, order: area.Nearest)),
+      inside_by_go: [Some(ahead)],
+    )
+  }
+  let ticked = fn(anchor, picture, primary_pose) {
+    strike.select_proxy_tick(
+      asked: cast_state.ProxyTickAsked(
+        ..field_tick(tick: 1),
+        primary_target: 21,
+        primary_pose:,
+      ),
+      attacker: strike_support.attacker(),
+      picture:,
+      areas: boxed(anchor),
+      now_ms: 0,
+    )
+  }
+  assert ticked(
+      area.FollowsTarget,
+      facing_picture(#(0.0, -20.0), Some(quarter_turn)),
+      None,
+    )
+    == [41]
+    as "a following area at a tick is centred on the unit's facing in the picture, not on yaw 0"
+  assert ticked(
+      area.FixedAtTarget,
+      facing_picture(#(20.0, -20.0), None),
+      Some(Pose(at: Point(x: 0.0, z: -20.0), yaw: quarter_turn)),
+    )
+    == [41]
+    as "a fixed area keeps the facing the unit had at the go, which the row carries with its pose, whichever way the unit faces now"
+  // The same at a go: Kick's area (58591) with the box as its hit shape, the anchor changed,
+  // struck at unit 21 as the cast's primary target.
+  let go_selected = fn(anchor) {
+    let kick_areas = spell_tables.fixture_areas()
+    let assert Ok(kick) = dict.get(kick_areas, 58_591)
+      as "Kick is in the fixture's areas"
+    strike.select(
+      asked: GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 21),
+      attacker: strike_support.attacker(),
+      picture: facing_picture(#(0.0, -20.0), Some(quarter_turn)),
+      areas: dict.insert(
+        kick_areas,
+        58_591,
+        spell_area.SpellArea(
+          ..kick,
+          anchor:,
+          row: Some(circle(max_range: 20.0, order: area.Nearest)),
+          inside_by_go: [Some(ahead)],
+        ),
+      ),
+      now_ms: 0,
+    ).area
+  }
+  assert go_selected(area.FollowsTarget) == [41]
+    as "a go on another unit is centred on that unit's facing in the picture, not on yaw 0"
+  assert go_selected(area.FixedAtTarget) == [41]
+    as "and so is a go of an area fixed at its target"
 }
 
 pub fn a_random_rows_tick_orders_by_the_cast_id_and_the_tick_so_ticks_differ_and_one_ask_repeats_test() -> Nil {

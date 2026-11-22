@@ -89,6 +89,12 @@
 //// CastViewEnds(c0, cast_id)
 ////                         held by c0 ─▶ dropped; c0 holding nothing else: Unwatch
 ////                         else nothing
+//// caster's connection c0, its cast no longer holds a node on the creature (a push off by the stack rule)
+//// ControlsEnd(c0, cast_id)
+////                         each state c0's cast landed ─▶ dropped, its timer cancelled,
+////                                    Send(each viewer, News(0x880)); the fight acts again when it
+////                                    was the last that kept the creature still
+////                         no state of c0's cast held ─▶ nothing
 //// c0's watch ends (WatchEnded) ─▶ every view and source of c0 dropped, no Unwatch
 //// the corpse timer ─────▶ every view dropped, each connection that held one or a source unwatched once
 //// a viewer's arrival (`Started`, `Watched`, `shown_again`) ─▶ the 0x262 lists each view
@@ -528,6 +534,9 @@ pub type Message {
   /// it, and unwatches `by` when that was its last holding; an end for a cast it does
   /// not hold, or one held by another connection, changes nothing.
   CastViewEnds(by: ConnectionId, cast_id: Int)
+  /// The caster's connection `by`: its cast `cast_id` no longer holds a node on the
+  /// creature that holds the states the cast landed, so each of those states ends.
+  ControlsEnd(by: ConnectionId, cast_id: Int)
 }
 
 /// What a creature sends a connection without waiting.
@@ -871,6 +880,8 @@ pub fn step(
       view_set(state:, by:, view:, struck_at_ms:)
     OwnEvent(Told(message: CastViewEnds(by:, cast_id:))) ->
       view_ended(state:, by:, cast_id:)
+    OwnEvent(Told(message: ControlsEnd(by:, cast_id:))) ->
+      controls_ended_by(state:, by:, cast_id:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -1982,10 +1993,38 @@ fn control_ended(
   number number: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
+  controls_ended(state:, now_ms:, ending: creature_control.ended(
+    state: _,
+    number:,
+  ))
+}
+
+/// The connection `by` took its cast `cast_id` off the creature: each state that cast
+/// landed ends with its own 0x880 and its timer is cancelled, as a timer's end ends it.
+fn controls_ended_by(
+  state state: State,
+  by by: ConnectionId,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  controls_ended(state:, now_ms:, ending: creature_control.ended_by(
+    state: _,
+    caster: step.Connection(connection: by),
+    cast_id:,
+  ))
+}
+
+/// The controls end as `ending` ends them, and the fight acts again when that was the last
+/// state that kept the creature still.
+fn controls_ended(
+  state state: State,
+  now_ms now_ms: Int,
+  ending ending: fn(creature_control.State) ->
+    #(creature_control.State, List(creature_control.Effect)),
+) -> #(State, ServiceStep(Outgoing)) {
   let was_still = still(state:)
   let was_held = turn_held(state:)
-  let #(control, effects) =
-    creature_control.ended(state: state.control, number:)
+  let #(control, effects) = ending(state.control)
   let state = State(..state, control:)
   let #(state, resumed) = case was_still && !still(state:) {
     True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)

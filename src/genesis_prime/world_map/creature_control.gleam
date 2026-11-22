@@ -51,6 +51,12 @@
 ////   fires, naming the state, the cast and the instance id the go gave (`cc_state.end`,
 ////   `cc_state.instance_id`). A creature that dies sends none: the client clears every
 ////   state at a death (`SetUnitDead`).
+//// - **A cast pushed off the creature takes its states with it**: the caster's connection
+////   tells the creature when a later cast of the same stack group takes the cast's node off
+////   it (`ended_by`), and each state of that caster's cast ends at once with its own 0x880 and
+////   its timer cancelled. The client's node destruction (0x811) ends no state
+////   (`cc_state.end`), and the server's stacking rule keeps one cast of a group of the
+////   caster's on a unit, so the older cast's state would otherwise overlap the new one's.
 //// - **Knockdown is a stun for a creature**: the same flags, and its only difference is
 ////   a player's dash (`GameFormula.614`, `CCStates.flags`).
 //// - **What a held state stops** is the fight's to carry out (genesis_prime/world_map/creature_fight
@@ -80,6 +86,7 @@
 //// | A strike with states reaches the creature | the creature restarts from its spawn with no state; the client keeps the visual until the unit is removed and made again (`0x355` and `0x262` clear states) | two players stun it: two controls, two 0x87f, each its own 0x880; it acts when both ended | a strike after its death is refused as always; no state |
 //// | A control is held, its timer armed | as above | one caster's two states of a kind are held separately | n/a |
 //// | A control's timer fires | as above | two ending in one millisecond: two 0x880 | fires after the death: no frame |
+//// | A caster's cast is pushed off | the tell finds no state: nothing is sent | the same cast told twice: the second finds none; two casters' casts of one id end separately | a timer that fires after the end finds no control: no frame |
 //// | The creature dies holding a state | no 0x880: death clears the client's states, and the timers are cancelled | | |
 //// | A viewer arrives while a state is held | not told: the 0x262 does not carry it | | |
 //// | The maximum is raised or lowered by a modifier | the creature restarts at full armor of its own maximum | n/a | the refill timer fires after the change: the armor is back at the maximum then in force |
@@ -389,6 +396,29 @@ pub fn ended(state state: State, number number: Int) -> #(State, List(Effect)) {
       ],
     )
   }
+}
+
+/// The caster at `caster` takes its cast `cast_id` off the creature: each state that cast
+/// landed ends at once, in the order they landed, as a timer's end ends it (the viewers'
+/// 0x880) with its timer cancelled. The client ends a state only by a 0x880
+/// (`cc_state.end`), so a cast that leaves the creature while its state is held needs this
+/// to take the state with it. A caster or cast that landed no state held changes nothing.
+pub fn ended_by(
+  state state: State,
+  caster caster: Address,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  list.filter(state.controls, fn(control) {
+    control.caster == caster && control.cast_id == cast_id
+  })
+  |> list.fold(#(state, []), fn(so_far, control) {
+    let #(state, effects) = so_far
+    let #(state, ending) = ended(state:, number: control.number)
+    #(
+      state,
+      list.append(effects, [CancelTimer(control: control.number), ..ending]),
+    )
+  })
 }
 
 /// The creature died: every control is dropped and its timer cancelled, no 0x880 is sent

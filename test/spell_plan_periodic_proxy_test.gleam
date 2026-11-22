@@ -12,10 +12,13 @@
 ////   210337 217944 76609`.
 //// - `Spell4Effects.effectType.26.periodic`: a row with flags bit 2 and a tickTime ticks
 ////   every tickTime until its cast's node ends, so the plan reads it with an open schedule
-////   when it is aimed at the caster (targetFlags 1 or 2) and leaves the area rows out. The
-////   counts are the client's rows read by `table_rows -- Spell4Effects`: 829 rows with flags
-////   bit 2, a tickTime and a named spell, of which 268 are aimed at the area and 561 at the
-////   caster, and 2 that name no spell.
+////   when it is aimed at the caster (targetFlags 1 or 2); aimed at the area (4 or 6) it
+////   ticks on the units inside the area, and is read for the hostile spells and refused for
+////   the spells `Spell4TargetMechanics.flags` bit 0 marks beneficial, whose allies the server
+////   does not find. The counts are the client's rows read by `table_rows -- Spell4Effects`:
+////   561 rows with flags bit 2, a tickTime and a named spell aimed at the caster, and 2 that
+////   name no spell.
+//// - Texts 574032 and 306769: "apply ... to foes inside the field every Ns".
 //// - `Spell4Effects.prerequisiteIdCasterApply`: the client reads no effect row's persistence
 ////   columns, so a periodic Proxy's caster persistence is the row's column as it stands
 ////   (Prerequisite 903, type 28: the caster in combat) and its target persistence is read by no
@@ -34,7 +37,9 @@ import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
+import genesis_prime/table/spell4_target_mechanics
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -276,7 +281,7 @@ fn reader_of(
   }
 }
 
-pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_schedule_and_the_area_ones_stay_left_out_test() -> Nil {
+pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_schedule_test() -> Nil {
   use <- owned_test.run(120_000)
   let tables = fixture_tables.shared()
   let reading_of = reader_of(tables:)
@@ -328,9 +333,6 @@ pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_s
       )
       as reason
   })
-  assert reading_of(client_row(tables:, id: 141_450))
-    == Ok(LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead))
-    as "the area row 141450 is left out by name"
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let reading_of = reader_of(tables:)
@@ -342,7 +344,8 @@ pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_s
     })
   let named = fn(row) { spell_plan.proxy_named(tables:, effect: row) != 0 }
   // The rows that name a spell and are aimed at the caster (targetFlags 1 or 2), the rows
-  // aimed at the area (4 or 6), and the rows that name none (`table_rows -- Spell4Effects`).
+  // aimed at the area (4 or 6, read by the area tests), and the rows that name none
+  // (`table_rows -- Spell4Effects`).
   let at_the_caster =
     list.filter(open_rows, fn(row) {
       named(row) && { row.target_flags == 1 || row.target_flags == 2 }
@@ -353,13 +356,12 @@ pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_s
     })
   let naming_none = list.filter(open_rows, fn(row) { !named(row) })
   assert list.length(at_the_caster) == 561
-    && list.length(at_the_area) == 268
     && list.length(naming_none) == 2
     && list.length(open_rows)
     == list.length(at_the_caster)
     + list.length(at_the_area)
     + list.length(naming_none)
-    as "the client's until-removed periodic Proxies: 561 aimed at the caster (465 by 1 and 96 by 2), 268 at the area, and 2 that name no spell, which together are every one"
+    as "the client's until-removed periodic Proxies: 561 aimed at the caster (465 by 1 and 96 by 2), some at the area, and 2 that name no spell, which together are every one"
   list.each(at_the_caster, fn(row) {
     let assert Ok(Applied(ReadProxy(period: Some(periodic), ..))) =
       reading_of(row)
@@ -377,11 +379,6 @@ pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_s
     })
     == 33
     as "33 of the 561 rows hold a caster persistence"
-  list.each(at_the_area, fn(row) {
-    assert reading_of(row)
-      == Ok(LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead))
-      as "an until-removed periodic Proxy aimed at the area is left out by name"
-  })
   list.each(naming_none, fn(row) {
     assert reading_of(row) == Ok(LeftOut(why: ProxyNamesNoSpell))
       as "one that names no spell is left out as any Proxy that names none"
@@ -477,4 +474,348 @@ pub fn a_periodic_proxys_caster_persistence_is_read_from_its_row_and_a_target_pe
       },
     )
   })
+}
+
+// ---- a periodic Proxy aimed at the area ----
+
+/// Nullifier's field holder (Spell4 58868) and the row 141450 in it, a periodic Proxy aimed at
+/// the area that names Spell4 77099 (`table_rows -- Spell4Effects 141450`).
+const nullifier_field = 58_868
+
+const nullifier_row = 141_450
+
+/// The Proxy the plan makes of row `row_id` in the plan of Spell4 `holder` alone.
+fn planned_proxy(
+  tables tables: store.Tables,
+  holder holder: Int,
+  row_id row_id: Int,
+) -> spell_plan.Proxy {
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id: holder,
+      chain: [],
+    )
+    as "the holder plans alone"
+  let assert [proxy] =
+    list.filter(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.effect_id.value == row_id },
+    )
+    as "the holder's plan holds the Proxy of the row once"
+  proxy
+}
+
+pub fn a_periodic_proxy_aimed_at_the_area_reads_as_a_proxy_on_each_struck_unit_with_its_schedule_and_persistence_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let open = fn(delay_ms) {
+    Schedule(
+      delay_ms:,
+      tick_ms: 1000,
+      duration_ms: 0,
+      count: ticking.UntilTheNodeEnds,
+    )
+  }
+  let persistence = prerequisite_support.fixture_row(row: 903)
+  // Each case plants twins of the fixture's row 141450 (tickTime 1000, flags 2): the cells
+  // it changes and the reading of the Proxy.
+  let cases = [
+    #(
+      "the row as it stands ticks every second until its node ends",
+      [],
+      spell_plan.Always,
+      spell_plan.Periodic(schedule: open(0), persistence: None),
+    ),
+    #(
+      "a durationTime and no flags bit 2 gives the timed schedule of its row",
+      [
+        #("flags", planted_table.Integer(0)),
+        #("durationTime", planted_table.Integer(3000)),
+      ],
+      spell_plan.Always,
+      spell_plan.Periodic(
+        schedule: Schedule(
+          delay_ms: 0,
+          tick_ms: 1000,
+          duration_ms: 3000,
+          count: Ticks(3),
+        ),
+        persistence: None,
+      ),
+    ),
+    #(
+      "a delayTime is the schedule's, and the Proxy's own delay stays 0",
+      [#("delayTime", planted_table.Integer(500))],
+      spell_plan.Always,
+      spell_plan.Periodic(schedule: open(500), persistence: None),
+    ),
+    #(
+      "a caster persistence is read as for a Proxy aimed at the caster",
+      [#("prerequisiteIdCasterPersistence", planted_table.Integer(903))],
+      spell_plan.Always,
+      spell_plan.Periodic(schedule: open(0), persistence: Some(persistence)),
+    ),
+    #(
+      "a target apply prerequisite gates each unit found",
+      [#("prerequisiteIdTargetApply", planted_table.Integer(903))],
+      spell_plan.GatedOnCasterAndTarget(caster: [], target: persistence),
+      spell_plan.Periodic(schedule: open(0), persistence: None),
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(reason, cells, condition, period) = case_
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: nullifier_row,
+      with: cells,
+      body: fn(tables) {
+        assert reader_of(tables:)(client_row(tables:, id: nullifier_row))
+          == Ok(
+            Applied(ReadProxy(
+              targets: [spell_plan.OnEachStruck],
+              condition:,
+              period: Some(period),
+            )),
+          )
+          as reason
+        let proxy =
+          planned_proxy(tables:, holder: nullifier_field, row_id: nullifier_row)
+        assert proxy.delay_ms == 0
+          && proxy.period == Some(period)
+          && proxy.target == spell_plan.OnEachStruck
+          as reason
+      },
+    )
+  })
+}
+
+pub fn every_named_periodic_area_row_of_the_client_reads_as_a_proxy_or_is_refused_as_for_allies_and_none_is_aimed_at_both_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let reading_of = reader_of(tables:)
+  let periodic_named =
+    list.filter(spell4_effects.all(tables), fn(row) {
+      row.effect_type == 26
+      && row.tick_time > 0
+      && spell_plan.proxy_named(tables:, effect: row) != 0
+    })
+  // A named spell is beneficial when its Spell4Base's target mechanic has flags bit 0
+  // (`Spell4TargetMechanics.flags`), read here through the tables' own rows.
+  let beneficial = fn(row: Spell4Effects) {
+    let assert Ok(spell) =
+      spell4.get(
+        tables:,
+        id: Spell4Id(spell_plan.proxy_named(tables:, effect: row)),
+      )
+    let assert Ok(base) =
+      spell4_base.get(
+        tables:,
+        id: Spell4BaseId(spell.spell4_base_id_base_spell),
+      )
+    let assert Ok(mechanic) =
+      spell4_target_mechanics.get(
+        tables:,
+        id: id.Spell4TargetMechanicsId(base.spell4_target_mechanic_id),
+      )
+    int.bitwise_and(mechanic.flags, 1) == 1
+  }
+  let at_the_area =
+    list.filter(periodic_named, fn(row) {
+      list.contains([4, 6], row.target_flags)
+    })
+  let #(allies, foes) = list.partition(at_the_area, beneficial)
+  assert allies != [] && foes != []
+    as "the client holds periodic area Proxies for allies and for foes"
+  list.each(allies, fn(row) {
+    assert reading_of(row)
+      == Error(spell_plan.PeriodicProxyAtAlliesNotRead(
+        spell4_id: row.spell_id,
+        effect_id: row.id,
+        named_spell4_id: spell_plan.proxy_named(tables:, effect: row),
+      ))
+      as {
+        "row "
+        <> int.to_string(row.id)
+        <> " casts a beneficial spell on the area, whose allies the server does not find"
+      }
+  })
+  let lifting =
+    list.filter(foes, fn(row) {
+      let assert Ok(Applied(ReadProxy(targets:, period: Some(_), ..))) =
+        reading_of(row)
+        as {
+          "row "
+          <> int.to_string(row.id)
+          <> " casts a hostile spell on the foes in the area"
+        }
+      assert targets == [spell_plan.OnEachStruck]
+      case
+        spell_plan.spell_alone(
+          tables:,
+          sources:,
+          spell4_id: row.spell_id,
+          chain: [],
+        )
+      {
+        Ok(spell) ->
+          list.any(
+            spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+            fn(proxy) { proxy.effect_id.value == row.id && proxy.gains != [] },
+          )
+        Error(..) -> False
+      }
+    })
+  assert lifting == []
+    as "a periodic Proxy lifts no gain: each tick child gives its own"
+  assert list.filter(periodic_named, fn(row) {
+      list.contains([5, 7], row.target_flags)
+    })
+    == []
+    as "no periodic named Proxy is aimed at the caster and the area both, which would key two rows of one field on one tick"
+}
+
+pub fn a_periodic_proxy_for_allies_is_refused_with_its_sentence_by_bit_0_of_the_named_spells_mechanic_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let reading_with_mechanic = fn(mechanic: Int) {
+    fixture_tables.changed(
+      table: "Spell4Base",
+      id: 53_136,
+      with: [#("spell4TargetMechanicId", planted_table.Integer(mechanic))],
+      body: fn(tables) {
+        reader_of(tables:)(client_row(tables:, id: nullifier_row))
+      },
+    )
+  }
+  assert reading_with_mechanic(3)
+    == Ok(
+      Applied(ReadProxy(
+        targets: [spell_plan.OnEachStruck],
+        condition: spell_plan.Always,
+        period: Some(spell_plan.Periodic(
+          schedule: Schedule(
+            delay_ms: 0,
+            tick_ms: 1000,
+            duration_ms: 0,
+            count: ticking.UntilTheNodeEnds,
+          ),
+          persistence: None,
+        )),
+      )),
+    )
+    as "mechanic 3 (flags 16, bit 0 clear) is hostile: the row reads"
+  let error =
+    spell_plan.PeriodicProxyAtAlliesNotRead(
+      spell4_id: nullifier_field,
+      effect_id: nullifier_row,
+      named_spell4_id: 77_099,
+    )
+  assert reading_with_mechanic(4) == Error(error)
+    as "mechanic 4 (flags 11, bit 0 set) is beneficial: the row is refused"
+  assert spell_plan.describe(error:)
+    == "the Spell4 row 58868 has a Proxy effect 141450 that casts the Spell4 row 77099 every tickTime on the allies in its area, whom the server does not find"
+  assert spell_plan.is_unbuilt(error:)
+    as "the refusal leaves its ability out of the plans, as a friendly area's does"
+  // A named spell whose base row, or whose base's mechanic row, is gone is a missing row,
+  // not a reading. The fixture's load reads every planned spell, so the child itself cannot
+  // lose them: a copy of the child (Spell4 999900) names a base that is missing, or a copy of
+  // the base (Spell4Base 999901) names a mechanic that is missing.
+  let copy_naming = fn(base: Int) {
+    let assert Ok(rows) =
+      fixture_tables.add(
+        rows: fixture_tables.rows(),
+        table: "Spell4Base",
+        copy_of: 53_136,
+        id: 999_901,
+        with: [#("spell4TargetMechanicId", planted_table.Integer(9999))],
+      )
+      as "the base copy is added"
+    let assert Ok(rows) =
+      fixture_tables.add(
+        rows:,
+        table: "Spell4",
+        copy_of: 77_099,
+        id: 999_900,
+        with: [#("spell4BaseIdBaseSpell", planted_table.Integer(base))],
+      )
+      as "the spell copy is added"
+    fixture_tables.on_rows(rows:, reaching: [], body: fn(tables) {
+      reader_of(tables:)(
+        Spell4Effects(
+          ..client_row(tables:, id: nullifier_row),
+          data_bits01: 999_900,
+        ),
+      )
+    })
+  }
+  assert copy_naming(4_000_000)
+    == Error(spell_plan.NoRow(table: "Spell4Base", id: 4_000_000))
+    as "a named spell with no base row is the missing row, not a read"
+  assert copy_naming(999_901)
+    == Error(spell_plan.NoRow(table: "Spell4TargetMechanics", id: 9999))
+    as "a named spell whose base names no mechanic row is the missing row, not a read"
+}
+
+pub fn a_periodic_proxy_aimed_at_the_area_keeps_its_childs_gains_in_the_child_and_a_once_one_lifts_them_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Rations' Focus gain (row 88371, a VitalModifier aimed at the caster) is moved into
+  // Nullifier's child 77099 in phase 0, under the field's Proxy as it stands (periodic) and
+  // with its tickTime cleared (once).
+  let moved = #("Spell4Effects", 88_371, [
+    #("spellId", planted_table.Integer(77_099)),
+    #("phaseFlags", planted_table.Integer(1)),
+  ])
+  let once = #("Spell4Effects", nullifier_row, [
+    #("tickTime", planted_table.Integer(0)),
+  ])
+  let gains_of = fn(gains: List(spell_plan.Gain)) {
+    list.map(gains, fn(gain) { gain.effect_id.value })
+  }
+  let child_gains = fn(spell: spell_plan.Spell) {
+    gains_of(spell_plan.payloads(spell:, as_kind: spell_plan.as_gain))
+  }
+  fixture_tables.changes(edits: [moved], body: fn(tables) {
+    let proxy =
+      planned_proxy(tables:, holder: nullifier_field, row_id: nullifier_row)
+    assert option.is_some(proxy.period)
+    assert gains_of(proxy.gains) == []
+      as "a periodic Proxy lifts nothing onto itself"
+    assert child_gains(proxy.spell) == [88_371]
+      as "the gain stays in the child, so each tick child's own go gives it"
+  })
+  fixture_tables.changes(edits: [moved, once], body: fn(tables) {
+    let proxy =
+      planned_proxy(tables:, holder: nullifier_field, row_id: nullifier_row)
+    assert proxy.period == None
+    assert gains_of(proxy.gains) == [88_371]
+      as "a once Proxy lifts the gain, given once at the go"
+    assert child_gains(proxy.spell) == [] as "and the child no longer holds it"
+  })
+}
+
+pub fn a_target_flags_6_proxy_is_read_on_the_units_of_the_area_alone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Targetflags 6 names the area and the primary target; the plan reads the units of the
+  // area alone, as for a once Proxy, a server choice (no client code runs a Proxy).
+  let reading_with = fn(target_flags: Int) {
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: nullifier_row,
+      with: [#("targetFlags", planted_table.Integer(target_flags))],
+      body: fn(tables) {
+        reader_of(tables:)(client_row(tables:, id: nullifier_row))
+      },
+    )
+  }
+  let assert Ok(Applied(ReadProxy(targets: area, period: Some(_), ..))) =
+    reading_with(4)
+    as "the flags-4 row reads"
+  assert area == [spell_plan.OnEachStruck]
+  let assert Ok(Applied(ReadProxy(targets:, period: Some(_), ..))) =
+    reading_with(6)
+    as "the flags-6 row reads"
+  assert targets == [spell_plan.OnEachStruck]
+    as "the units of the area alone, the primary-target bit not read"
 }

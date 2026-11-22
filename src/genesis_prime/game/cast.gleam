@@ -2768,9 +2768,11 @@ fn finish_fired(
   }
 }
 
-/// How a tick of a periodic Proxy starts its child, for `cast_tick.ticks_due`: the named spell
-/// on the caster as a child of the holder, the holder's root as its root, counting no quest
-/// objective and holding no item's value, as a proc's spell does.
+/// How a tick of a periodic Proxy aimed at the caster starts its child, for
+/// `cast_tick.ticks_due`: the named spell on the caster as a child of the holder, the holder's
+/// root as its root, counting no quest objective and holding no item's value, as a proc's
+/// spell does. A Proxy aimed at the area starts its children through `children` once the
+/// connection has found the units (`proxy_tick_units_found`).
 fn tick_child_started(
   now_ms now_ms: Int,
 ) -> fn(State, Caster, Holder, Proxy) -> #(State, List(Effect)) {
@@ -3283,8 +3285,7 @@ fn ticking_proxy_of(row row: cast_state.Ticking) -> Result(Proxy, Nil) {
 }
 
 /// The round of the tick `asked` closed with the units found: the child starts on each unit
-/// through `children` when the row is still the one the tick was asked for, then the node
-/// end that waited for the round goes on.
+/// through `children` when the row is still the one the tick was asked for.
 fn proxy_tick_closed(
   cast cast: State,
   caster caster: Caster,
@@ -3295,62 +3296,72 @@ fn proxy_tick_closed(
   indexes indexes: Dict(Int, Int),
   first_units first_units: Dict(Int, prerequisite.FirstUnit),
 ) -> #(State, List(Effect)) {
-  let cast_id = asked.cast_id
-  let key =
-    cast_state.tick_key(
+  round_closed_for(
+    cast:,
+    cast_id: asked.cast_id,
+    key: cast_state.tick_key(
       unit_id: asked.primary_target,
       effect_id: asked.effect_id,
-    )
-  case cast_state.holder_of(cast:, cast_id:) {
-    Error(Nil) -> #(cast, [])
-    Ok(holder) ->
-      case dict.get(holder.ticking, key) {
-        Error(Nil) -> #(cast, [])
-        Ok(row) -> {
-          let cast =
-            cast_tick.with_ticking(
-              cast:,
-              cast_id:,
-              ticking: dict.insert(
-                holder.ticking,
-                key,
-                cast_state.round_closed(row:),
-              ),
-            )
-          let #(cast, started) = case
-            cast_state.ticking_go(row:) == asked.go,
-            ticking_proxy_of(row:)
-          {
-            True, Ok(proxy) ->
-              proxy_children_found(
-                cast:,
-                caster:,
-                now_ms:,
-                holder:,
-                proxy:,
-                units:,
-                poses:,
-                indexes:,
-                first_units:,
-              )
-            _, _ -> #(cast, [])
-          }
-          let #(cast, ended) = nodes_ended(cast:, cast_id:, now_ms:)
-          #(cast, list.append(started, ended))
-        }
+    ),
+    now_ms:,
+    landing: fn(cast, holder, row) {
+      case cast_state.ticking_go(row:) == asked.go, ticking_proxy_of(row:) {
+        True, Ok(proxy) ->
+          proxy_children_found(
+            cast:,
+            caster:,
+            now_ms:,
+            holder:,
+            proxy:,
+            units:,
+            poses:,
+            indexes:,
+            first_units:,
+          )
+        _, _ -> #(cast, [])
       }
-  }
+    },
+  )
 }
 
+/// The round of a damage tick closed with the creature's answer: what the tick lands
+/// (`cast_tick.tick_outcome`).
 fn tick_closed(
   cast cast: State,
   now_ms now_ms: Int,
   asked asked: TickAsked,
   struck struck: Option(Struck),
 ) -> #(State, List(Effect)) {
-  let cast_id = asked.cast_id
-  let key =
-    cast_state.tick_key(unit_id: asked.unit_id, effect_id: asked.effect_id)
+  round_closed_for(
+    cast:,
+    cast_id: asked.cast_id,
+    key: cast_state.tick_key(unit_id: asked.unit_id, effect_id: asked.effect_id),
+    now_ms:,
+    landing: fn(cast, holder, row) {
+      cast_tick.tick_outcome(
+        cast:,
+        audience: holder.audience,
+        row:,
+        asked:,
+        struck:,
+        now_ms:,
+      )
+    },
+  )
+}
+
+/// The round a tick of the row `key` of the cast `cast_id` opened closed: the row's round is
+/// closed, `landing` gives what the tick lands from the cast, its holder and the row, and the
+/// node end that waited for the round goes on (`nodes_ended`). A cast or a row that is gone
+/// lands and writes nothing.
+fn round_closed_for(
+  cast cast: State,
+  cast_id cast_id: Int,
+  key key: cast_state.TickKey,
+  now_ms now_ms: Int,
+  landing landing: fn(State, Holder, cast_state.Ticking) ->
+    #(State, List(Effect)),
+) -> #(State, List(Effect)) {
   case cast_state.holder_of(cast:, cast_id:) {
     Error(Nil) -> #(cast, [])
     Ok(holder) ->
@@ -3367,15 +3378,7 @@ fn tick_closed(
                 cast_state.round_closed(row:),
               ),
             )
-          let #(cast, landed) =
-            cast_tick.tick_outcome(
-              cast:,
-              audience: holder.audience,
-              row:,
-              asked:,
-              struck:,
-              now_ms:,
-            )
+          let #(cast, landed) = landing(cast, holder, row)
           let #(cast, ended) = nodes_ended(cast:, cast_id:, now_ms:)
           #(cast, list.append(landed, ended))
         }
@@ -4345,8 +4348,9 @@ fn go(
           ),
           rolls:,
         )
-      // A periodic Proxy ticks on the caster from this go; it gives the caster's node its
-      // life but is listed in no 0x7f4 (`cast_tick.proxies_ticking`).
+      // A periodic Proxy ticks from this go, on the caster or, aimed at the area, on the
+      // units inside the area at each tick; it gives its unit's node its life but is listed in
+      // no 0x7f4 (`cast_tick.proxies_ticking`).
       let aimed =
         Aimed(
           ..aimed,

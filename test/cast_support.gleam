@@ -520,6 +520,7 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -550,6 +551,7 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
@@ -582,6 +584,7 @@ pub fn quest_advances(
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -610,6 +613,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -641,6 +645,7 @@ pub fn caster_change_ends(
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -672,6 +677,7 @@ pub fn caster_change_starts(
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -712,6 +718,7 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
       cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Send(..)
       | cast_state.Tell(..)
       | cast_state.StartTimer(..)
@@ -749,6 +756,7 @@ pub fn throws(effects effects: List(Effect)) -> List(Effect) {
       cast_state.ForcedMoveStarts(..) -> True
       cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.Send(..)
@@ -778,6 +786,7 @@ pub fn despawns(effects effects: List(Effect)) -> List(Effect) {
       cast_state.CreatureDespawns(..) -> True
       cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.Send(..)
@@ -807,6 +816,7 @@ pub fn unit_states_told(effects effects: List(Effect)) -> List(Effect) {
       cast_state.CreatureHoldsUnitStates(..) -> True
       cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.Send(..)
@@ -825,6 +835,16 @@ pub fn unit_states_told(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.TickStrike(..)
       | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
+    }
+  })
+}
+
+/// The crowd-control states the effects tell creatures to end, in order.
+pub fn controls_ended(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast_state.CreatureControlsEnd(..) -> True
+      _ -> False
     }
   })
 }
@@ -1249,6 +1269,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -1296,6 +1317,7 @@ pub fn activations(
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
       | cast_state.FindProxyTickUnits(..)
@@ -1389,6 +1411,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -1418,6 +1441,7 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -1447,6 +1471,7 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast_state.GoAsked) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -1476,6 +1501,7 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -1505,6 +1531,7 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -1802,6 +1829,7 @@ pub fn answered_finding(
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -2134,12 +2162,36 @@ pub fn run_timers_finding(
   units units: dict.Dict(Int, prerequisite.FirstUnit),
   found_by found_by: fn(cast_state.ProxyTickAsked) -> List(Int),
 ) -> #(State, List(Fired)) {
+  run_timers_finding_striking(
+    caster:,
+    state:,
+    effects:,
+    from_ms:,
+    until_ms:,
+    units:,
+    found_by:,
+    struck_by: fn(_, _) { [] },
+  )
+}
+
+/// The same with each go answered with the units `struck_by` gives for the time it is
+/// answered at and the go asked, so a tick's child casts strike the units its tick found.
+pub fn run_timers_finding_striking(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  until_ms until_ms: Int,
+  units units: dict.Dict(Int, prerequisite.FirstUnit),
+  found_by found_by: fn(cast_state.ProxyTickAsked) -> List(Int),
+  struck_by struck_by: fn(Int, cast_state.GoAsked) -> List(cast_state.Struck),
+) -> #(State, List(Fired)) {
   let #(state, fired, _, _) =
     run_pending(
       caster: cast_cost.after_payments(caster:, effects:),
       state:,
       pending: due_of(effects:, now_ms: from_ms),
-      struck_at: fn(_, _) { [] },
+      struck_at: struck_by,
       poses: dict.new(),
       until_ms: Some(until_ms),
       before: fn(_, caster) { caster },
@@ -2520,6 +2572,7 @@ pub fn tick_strikes(
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.CreatureControlsEnd(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)

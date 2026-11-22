@@ -422,7 +422,6 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     | spell_plan.AimedAtOtherUnits
     | spell_plan.ProcOfAnotherKind(_)
     | spell_plan.ProxyNamesNoSpell
-    | spell_plan.PeriodicProxyOnAreaNotRead
     | spell_plan.ProxyStartsTiersNoChoice
     | spell_plan.InNoPhase
     | spell_plan.StateUntilRemovedNotRead

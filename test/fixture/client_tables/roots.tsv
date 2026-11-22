@@ -1253,6 +1253,7 @@ SpellLevel	1155	Spellslinger ability after level 1	ability_book_test, experience
 SpellLevel	931	Warrior Flash Bang, level 14 (class 1)	game_wire_test
 SpellLevel	938	Warrior Plasma Wall, level 10 (class 1)	game_wire_test
 SpellLevel	632	Medic Nullifier, level 8 (class 4)	game_wire_test, cast_lasting_test
+SpellLevel	1119	Medic Restrictor, level 12 (class 4)	game_wire_test
 Spell4Base	53378	Level Up (castMethod 0)	level_up_test
 Spell4	77398	Level Up tier 1	level_up_test, spell_plan_full_screen_test
 Spell4	77407	Level Up tier 2	level_up_test, spell_plan_full_screen_test

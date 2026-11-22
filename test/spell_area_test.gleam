@@ -2496,56 +2496,129 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_heals_by_health_and_no
     as "Dual Fire's damage child selects its units from the area"
 }
 
-pub fn a_spell_ordered_beyond_closest_that_holds_a_proxy_naming_its_spell_in_data_bits01_is_refused_and_a_closest_one_is_not_test() -> Nil {
+pub fn a_periodic_proxy_aimed_at_the_area_ticks_its_phase_and_selects_nothing_at_the_go_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Nullifier's field 58868 holds the periodic Proxy 141450 aimed at the area (text 574032:
+  // it ticks on the foes inside the field, and its go strikes nobody for it). The twin with
+  // its tickTime cleared is a once Proxy aimed at the area, which strikes the units at the go.
+  let phase_with = fn(edits) {
+    fixture_tables.changes(edits:, body: fn(tables) {
+      let assert Ok(areas) = spell_area.build(tables:)
+        as "the planted rows build their areas"
+      let assert Ok(field) =
+        spell_area.of_spell(areas:, spell4_id: Spell4Id(58_868))
+        as "the field is in the areas"
+      let assert Ok(phase) =
+        spell_area.phase(spell: field, phase: 0, spent: None)
+        as "the field has a first phase"
+      phase
+    })
+  }
+  let periodic = phase_with([])
+  assert periodic.ticks_on_area
+    as "a periodic Proxy aimed at the area ticks on the area"
+  assert !periodic.selects_area as "and the go strikes nobody for it"
+  let once =
+    phase_with([
+      #("Spell4Effects", 141_450, [#("tickTime", Integer(0))]),
+    ])
+  assert once.selects_area
+    as "a once Proxy aimed at the area selects the units at the go"
+  assert !once.ticks_on_area as "and ticks nothing"
+}
+
+pub fn a_periodic_area_proxy_with_no_area_row_fails_the_load_and_one_ordered_by_health_leaves_its_ability_unplanned_and_closest_furthest_and_random_load_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Nullifier's field 58868 (area row 119, Closest) holds the periodic Proxy 141450. A
+  // periodic Proxy that selected nothing would be an accepted press that does nothing, so
+  // the load refuses what a phase that selects is refused: a spell with no area row is a
+  // fault of the data and stops the fixture's own load, naming the spell; an area ordered by
+  // health is an order the server does not build, so the checker leaves Nullifier's ability
+  // out of the plans with its sentence.
+  let order = fn(selection) {
+    #("Spell4AoeTargetConstraints", 119, [
+      #("targetSelection", Integer(selection)),
+    ])
+  }
+  let assert Ok(no_row) =
+    fixture_tables.change_all(rows: fixture_tables.rows(), edits: [
+      #("Spell4", 58_868, [#("spell4AoeTargetConstraintsId", Integer(0))]),
+    ])
+    as "the edit names a row and a column the fixture holds"
+  let assert Error(refusal) = fixture_tables.load(rows: no_row)
+    as "a periodic area Proxy with no area row has nobody to find"
+  assert string.contains(
+    table_store.describe(refusal),
+    spell_area.describe(error: spell_area.NoAreaRow(spell4_id: 58_868)),
+  )
+  list.each([4, 5], fn(selection) {
+    let error =
+      SelectionNeedsHealth(spell4_id: 58_868, target_selection: selection)
+    fixture_tables.changes(edits: [order(selection)], body: fn(tables) {
+      let assert Ok(left_out) =
+        spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+      let assert Ok(nullifier) =
+        list.find(left_out, fn(one) { one.spell4_id == 70_757 })
+        as "Nullifier is left out of the plans"
+      assert string.contains(
+        spell_plan.describe(error: nullifier.error),
+        spell_area.describe(error:),
+      )
+        as "a health order needs a unit's health, which a tick's units do not hold, and the sentence says so"
+    })
+  })
+  list.each(
+    [
+      #(1, area.Nearest, "Closest loads"),
+      #(2, area.Furthest, "Furthest loads"),
+      #(3, area.Random, "Random loads"),
+    ],
+    fn(case_) {
+      let #(selection, wanted, reason) = case_
+      fixture_tables.changes(edits: [order(selection)], body: fn(tables) {
+        let assert Ok(areas) = spell_area.build(tables:) as reason
+        let assert Ok(field) =
+          spell_area.of_spell(areas:, spell4_id: Spell4Id(58_868))
+          as "the field is in the areas"
+        assert option.map(field.row, fn(row) { row.order }) == Some(wanted)
+          as reason
+      })
+    },
+  )
+}
+
+pub fn a_spell_that_holds_a_proxy_naming_its_spell_in_data_bits01_beside_a_random_row_or_a_hit_on_the_target_is_planned_and_an_ally_one_is_refused_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
+  let plans = spell_plan.plans_with_later(tables:)
   let assert Ok(left_out) =
     spell_plan.unplanned(tables:, area_checked: spell_area.checker)
-  // Restrictor 38279's field 38287 has the Random area row 391 and the Proxy 131274 (dataBits00
-  // 0, Snare 77118 in dataBits01, tickTime 500), which the plan does not start: a press would
-  // blink and the field would never snare. Nullifier 58868 holds the same Proxy shape (row
-  // 141450 naming 77099) on a Closest area row and is planned; the rule widens to it only by
-  // a decision, since that would unplan an ability that casts today
-  // (`table_rows -- Spell4Effects 131274 141450 -- Spell4AoeTargetConstraints 391 -- Spell4
-  // 77118 77099`).
-  let assert Ok(restrictor) =
-    list.find(left_out, fn(one) { one.spell4_id == 38_279 })
-    as "Restrictor stays unplanned"
-  let sentence = spell_plan.describe(error: restrictor.error)
-  list.each(
-    [
-      "Proxy effect 131274",
-      "Spell4 row 77118 in dataBits01",
-      "with no spell in dataBits00",
-    ],
-    fn(part) {
-      assert string.contains(sentence, part)
-        as { "Restrictor's refusal names " <> part <> ": " <> sentence }
-    },
-  )
-  let nullifier_abilities =
-    dict.values(spell_plan.plans_with_later(tables:))
-    |> list.filter(fn(ability) {
-      list.any(
-        spell_plan.tree(spell: ability, started: fn(_) { True }),
-        fn(spell) { spell.spell4_id == Spell4Id(58_868) },
-      )
+  let planned = fn(spell4_id) {
+    list.any(dict.values(plans), fn(spell) {
+      list.any(spell_plan.tree(spell:, started: fn(_) { True }), fn(member) {
+        member.spell4_id == Spell4Id(spell4_id)
+      })
     })
-  assert list.length(nullifier_abilities) == 1
-    as "the plans hold one ability whose tree holds Nullifier's field 58868"
-  assert list.all(nullifier_abilities, fn(ability) {
-    !list.any(left_out, fn(one) { one.spell4_id == ability.spell4_id.value })
+  }
+  // Restrictor 38279's field 38287 has the Random area row 391 and the hostile Proxy 131274
+  // (dataBits00 0, Snare 77118 in dataBits01, tickTime 500): planned, the field ticking on the
+  // foes in it. Field Probes 41398's field 41404 holds a hit row on the cast's target (so
+  // FixedAtTarget) and the Proxy 92875 naming the beneficial 77068 (mechanic 4, flags 11):
+  // refused as for allies (`table_rows -- Spell4Effects 131274 92875 -- Spell4 77118 77068`).
+  assert planned(38_279) as "Restrictor is planned"
+  assert !list.any(left_out, fn(one) { one.spell4_id == 38_279 })
+    as "and is not listed unplanned"
+  assert planned(58_868) as "Nullifier stays planned"
+  let assert Ok(field_probes) =
+    list.find(left_out, fn(one) { one.spell4_id == 41_398 })
+    as "Field Probes stays unplanned"
+  let sentence = spell_plan.describe(error: field_probes.error)
+  list.each(["Proxy effect 92875", "Spell4 row 77068", "allies"], fn(part) {
+    assert string.contains(sentence, part)
+      as { "Field Probes' refusal names " <> part <> ": " <> sentence }
   })
-    as "Nullifier's ability is not listed unplanned"
-  let assert Ok(field) =
-    spell_area.of_spell(
-      areas: spell_area.areas(tables:),
-      spell4_id: Spell4Id(58_868),
-    )
-    as "Nullifier's field is in the areas"
-  assert option.map(field.row, fn(row) { row.order }) == Some(area.Nearest)
-    as "Nullifier's area row 119 is Closest, so the Proxy rule leaves it planned"
+  assert spell_plan.is_unbuilt(error: field_probes.error)
 }
 
 pub fn a_shape_8_with_a_box_is_refused_by_name_for_a_creature_test() -> Nil {

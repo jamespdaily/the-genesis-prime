@@ -14,6 +14,7 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/game/area
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
@@ -524,8 +525,8 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
       #(41_543, "of shape 1", "Mortar Strike: row 2867 is of shape 1"),
       #(
         41_398,
-        "with no spell in dataBits00 and the Spell4 row 77068 in dataBits01",
-        "Field Probes: its Proxy 92875 (effectType 26, dataBits00 0, dataBits01 77068, Spell4 \"Medic - Field Probes - Buff - Tier 1\") starts nothing the plan reads, so the ability would be planned and apply nothing",
+        "has a Proxy effect 92875 that casts the Spell4 row 77068 every tickTime on the allies in its area",
+        "Field Probes: its Proxy 92875 (effectType 26, dataBits01 77068, Spell4 \"Medic - Field Probes - Buff - Tier 1\", mechanic 4 flags 11: beneficial) would cast a buff on the allies in its field, whom the server does not find",
       ),
     ],
     fn(row) {
@@ -739,33 +740,20 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and
   Nil
 }
 
-pub fn every_row_of_nullifiers_tree_is_read_but_the_area_proxy_and_its_ability_is_planned_test() -> Nil {
+pub fn every_row_of_nullifiers_tree_is_read_and_its_ability_is_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   // Nullifier 70757: Proxy 180619 starts the field 58868, whose Fluff 175305 (flags 2) holds
-  // its node until removed; Proxy 141450 is periodic and aimed at the area, which the plan
-  // leaves out, so the Affliction on foes in the field is not cast
+  // its node until removed; Proxy 141450 is periodic and aimed at the area, so the field casts
+  // the Affliction 77099 on the foes inside it each second
   // (`table_rows -- Spell4Effects spellId=70757 spellId=58868`).
-  let assert Ok(left_out) =
-    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
-  assert !list.any(left_out, fn(one) { one.spell4_id == 70_757 })
-    as "Nullifier is built, so it is not listed unplanned"
-  let assert Ok(nullifier) =
-    spell_plan.in_plans(
-      plans: spell_plan.plans_with_later(tables:),
-      base: base_of(tables:, spell4_id: 70_757),
-    )
-    as "the plans hold Nullifier"
+  let assert [nullifier] =
+    freed_and_read(tables:, spell4_ids: [70_757], left_out_rows: [])
+    as "Nullifier is planned, is not listed unplanned and every row of its tree is read"
   assert nullifier.spell4_id == Spell4Id(70_757)
-  assert unread_rows_of(tables:, spell4_ids: [70_757])
-    == [
-      #(
-        141_450,
-        Ok(spell_plan.LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead)),
-      ),
-    ]
-    as "every row of the tree is read but 141450, a periodic Proxy aimed at the area"
+  assert unread_rows_of(tables:, spell4_ids: [70_757]) == []
+    as "every row of the tree is read, the area Proxy 141450 among them"
   let sources = spell_plan.sources_of(tables:)
   assert list.any(
     spell_plan.tree(spell: nullifier, started: fn(_) { True }),
@@ -777,6 +765,69 @@ pub fn every_row_of_nullifiers_tree_is_read_but_the_area_proxy_and_its_ability_i
     },
   )
     as "the tree holds the field's Fluff 175305, which the aura ends"
+}
+
+pub fn restrictors_field_over_the_clients_rows_reads_every_row_and_the_ability_is_planned_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  // Restrictor 38279: the ForcedMove 81851 (the blink back) and the once Proxy 82064 to the
+  // field 38287, whose Fluff 175028 holds its node and whose periodic Proxy 131274 casts
+  // Snare 77118, holding the CCStateSet 200476
+  // (`table_rows -- Spell4Effects spellId=38279 spellId=38287 spellId=77118`). The field's
+  // area row 391 is Random, 10 units within 15 m, and its telegraph a box 15 by 6 starting 1
+  // m ahead (`table_rows -- Spell4AoeTargetConstraints 391`).
+  let assert [restrictor] =
+    freed_and_read(tables:, spell4_ids: [38_279], left_out_rows: [])
+    as "Restrictor is planned, is not listed unplanned and every row of its tree is read"
+  assert unread_rows_of(tables:, spell4_ids: [38_279]) == []
+    as "no row of the tree is left out or held"
+  let tree = spell_plan.tree(spell: restrictor, started: fn(_) { True })
+  assert list.map(tree, fn(spell) { spell.spell4_id.value })
+    |> list.unique
+    |> list.sort(int.compare)
+    == [38_279, 38_287, 77_118]
+    as "the tree is the press, the field and the Snare child"
+  assert list.flat_map(tree, fn(spell) {
+      list.map(
+        spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value),
+        fn(effect) { effect.id },
+      )
+    })
+    |> list.unique
+    |> list.sort(int.compare)
+    == [81_851, 82_064, 131_274, 175_028, 200_476]
+    as "the rows read are exactly the five the tree holds"
+  let assert Ok(field) =
+    spell_area.of_spell(
+      areas: spell_area.areas(tables:),
+      spell4_id: Spell4Id(38_287),
+    )
+    as "the field is in the areas"
+  assert field.row
+    == Some(area.Row(
+      min_range: 0.0,
+      max_range: 15.0,
+      degrees: 360.0,
+      target_count: 10,
+      order: area.Random,
+    ))
+    as "Random 10 within 15 m"
+  assert spell_area.inside(spell: field, phase: 0)
+    == Some(
+      area.InsideShapes(placements: [
+        area.Placement(
+          shape: area.Box(width: 15.0, length: 6.0),
+          ahead: 1.0,
+          aside: 0.0,
+          turn_degrees: 0.0,
+        ),
+      ]),
+    )
+    as "the box 15 by 6, 1 m ahead"
+  assert field.anchor == area.FixedAtCaster
+    as "the field stays where the press began"
 }
 
 pub fn augmented_blades_tree_is_read_in_full_and_its_ability_is_planned_test() -> Nil {

@@ -157,9 +157,10 @@ pub type Request {
   /// through the creature registry with no watch, and never asked.
   TellStrikeAnswered(answered: Answered)
   /// What a `Tell` effect sends a creature a property modifier of this connection's
-  /// player's spell starts or ends on (genesis_prime/world_map/creature
-  /// `ModifierStarts`, `ModifierEnds`), for the life the go struck. Told through the
-  /// creature registry with no watch, and never asked.
+  /// player's spell starts or ends on, or the states a cast of the player landed on it
+  /// end with (genesis_prime/world_map/creature `ModifierStarts`, `ModifierEnds`,
+  /// `ControlsEnd`), for the life the go struck. Told through the creature registry with
+  /// no watch, and never asked.
   TellTargetChange(connection: ConnectionId, change: TargetChange)
   /// What a `Tell` effect sends a creature a ForcedMove effect of this connection's
   /// player's cast throws (genesis_prime/world_map/creature `Thrown`): the move, the two
@@ -201,13 +202,17 @@ pub type ViewChange {
   ViewEnds(cast_id: Int)
 }
 
-/// A property modifier of a cast on a creature, as `TellTargetChange` carries it.
+/// What a cast changes on a creature, as `TellTargetChange` carries it: a property modifier
+/// starting or ending, or the states the cast landed ending.
 pub type TargetChange {
   /// The modifier starts: the creature applies it to its properties, unless it has
   /// stood again since `struck_at_ms`, the monotonic time of the go that struck it.
   ChangeStarts(source: Source, modifier: Modifier, struck_at_ms: Int)
   /// The modifier of `source` ends: the creature removes it.
   ChangeEnds(source: Source)
+  /// The cast `cast_id` no longer holds a node on the creature: each crowd-control state it
+  /// landed there ends, with its own 0x880 (genesis_prime/world_map/creature `ControlsEnd`).
+  ControlsEnd(cast_id: Int)
 }
 
 /// News of one unit from its owner, a player's connection or a creature's

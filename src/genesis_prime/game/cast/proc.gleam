@@ -164,13 +164,14 @@ import genesis_prime/game/cast/state.{
   type Holder, type Live, type State, type Struck, Absorb, Activated, Aside,
   CancelTimer, CasterChangeEnding, CasterChangeEnds, CasterChangeStarts,
   ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
-  CreatureDespawns, CreatureHoldsUnitStates, Deflected, FindProxyTickUnits,
-  Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal, HeldProc, Hit,
-  HitCreature, HitPlayer, Immune, Log, Look, ModifierEnd, ModifierStart,
-  NodesEnd, Pay, ProcDue, Property, QuestAdvanceDue, QuestAdvanced, RepeatHeld,
-  RestrictionEnd, Send, ShortcutCast, StartChild, StartHeld, StartTimer, State,
-  StateEnd, StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
-  TargetModifierStart, Tell, Tick, TickStrike, WindowEnd,
+  CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
+  FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
+  HeldProc, Hit, HitCreature, HitPlayer, Immune, Log, Look, ModifierEnd,
+  ModifierStart, NodesEnd, Pay, ProcDue, Property, QuestAdvanceDue,
+  QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast, StartChild,
+  StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
+  TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell, Tick,
+  TickStrike, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown
@@ -241,6 +242,7 @@ pub fn heals_landed(
       | CasterChangeEnds(..)
       | TargetChangeStarts(..)
       | TargetChangeEnds(..)
+      | CreatureControlsEnd(..)
       | ForcedMoveStarts(..)
       | CreatureDespawns(..)
       | CreatureHoldsUnitStates(..)
@@ -278,6 +280,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
       | CasterChangeEnds(..)
       | TargetChangeStarts(..)
       | TargetChangeEnds(..)
+      | CreatureControlsEnd(..)
       | ForcedMoveStarts(..)
       | CreatureDespawns(..)
       | CreatureHoldsUnitStates(..)
@@ -1018,7 +1021,9 @@ fn struck_by(
 /// A node the go gives a unit its cast holds none on yet makes a new cast on that
 /// unit, which pushes the caster's oldest casts of its stack off the unit at the cap
 /// (Jim's decision, `lasting.pushed_off`); a unit the cast holds a node on already is a
-/// later go of the same cast, which pushes nothing.
+/// later go of the same cast, which pushes nothing. A pushed cast whose node holds
+/// crowd-control states on a creature takes them with it
+/// (`cast_control.creature_controls_ended`).
 fn pushed_by(
   so_far so_far: #(State, List(Effect)),
   cast_id cast_id: Int,
@@ -1031,18 +1036,26 @@ fn pushed_by(
     return: so_far,
   )
   let #(cast, effects) = so_far
+  let holds =
+    list.filter(cast_tick.holds_on(cast:, unit_id: node.unit_id), fn(hold) {
+      hold.cast_id != cast_id
+    })
   let removals =
     lasting.pushed_off(
-      holds: list.filter(
-        cast_tick.holds_on(cast:, unit_id: node.unit_id),
-        fn(hold) { hold.cast_id != cast_id },
-      ),
+      holds:,
       spell4_id: live.spell.spell4_id,
       stack: live.spell.stack,
       unit_id: node.unit_id,
     )
   let #(cast, more) = apply_removals(cast:, removals:, now_ms:)
-  #(cast, list.append(effects, more))
+  #(
+    cast,
+    list.flatten([
+      effects,
+      more,
+      cast_control.creature_controls_ended(holds:, removals:),
+    ]),
+  )
 }
 
 /// What a removal does to the casts, in order: a cast that loses its whole node on a
