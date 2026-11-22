@@ -103,7 +103,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Spell phases",
-      missing: "in a channel without spellChannelFlags bit 1 an effect with phaseFlags 1 and no tickTime fires at every pulse: the client's code reads no effect row's phase, and 134 of the 139 texts that cite such a row say every pulse (the other 5 say otherwise and the row still fires every pulse); a row with a tickTime (20 rows) and every row of a channel with bit 1 fire at the first pulse only; a mask of several bits names the pulse its bit numbers, which only the fit of the 39 such rows supports; a castMethod 3 channel (584 rows) is not planned; and the UnitState (508), CrowdControl (19) and ForcedMove (16) rows of the class follow the rule with no text checked, so a CrowdControl row is applied at every pulse",
+      missing: "in a channel without spellChannelFlags bit 1 an effect with phaseFlags 1 and no tickTime fires at every pulse: the client's code reads no effect row's phase, and 134 of the 139 texts that cite such a row say every pulse (the other 5 say otherwise and the row still fires every pulse); a row with a tickTime (20 rows) fires at the first pulse only, and a phaseFlags 1 row of a channel with spellChannelFlags bit 1 keeps pulse 0; a mask of several bits names the pulse its bit numbers, which only the fit of the 39 such rows supports; a castMethod 3 channel (584 rows) is not planned; and the UnitState (508), CrowdControl (19) and ForcedMove (16) rows of the class follow the rule with no text checked, so a CrowdControl row is applied at every pulse",
     ),
   ]
 }

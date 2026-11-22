@@ -515,6 +515,38 @@ pub fn a_row_added_under_an_id_the_table_holds_is_refused_test() -> Nil {
     == Error(fixture_tables.RowHeld(table: "Spell4", id:))
 }
 
+pub fn changes_apply_each_edit_in_order_and_stop_at_the_first_refused_edit_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let id = fixture_tables.root("Spell4", 41_276)
+  let other = fixture_tables.root("Spell4", 42_276)
+  let cast_time = fn(value) {
+    #("Spell4", id, [#("castTime", planted_table.Integer(value))])
+  }
+  // The values are the point of the test: none is a value the client's rows hold.
+  fixture_tables.changes(
+    edits: [
+      cast_time(7001),
+      #("Spell4", other, [#("castTime", planted_table.Integer(7003))]),
+      cast_time(7002),
+    ],
+    body: fn(tables) {
+      let assert Ok(first) = spell4.get(tables:, id: Spell4Id(id))
+      assert first.cast_time == 7002
+        as "of two edits of one row's cell, the later one stands"
+      let assert Ok(second) = spell4.get(tables:, id: Spell4Id(other))
+      assert second.cast_time == 7003
+        as "an edit of another row stands beside them"
+    },
+  )
+  assert fixture_tables.change_all(rows: fixture_tables.rows(), edits: [
+      cast_time(7001),
+      #("Spell4", id, [#("ID", planted_table.Integer(other))]),
+      #("Spell4", 2_000_000_004, [#("castTime", planted_table.Integer(7002))]),
+    ])
+    == Error(fixture_tables.RowHeld(table: "Spell4", id: other))
+    as "an edit of the ID column to a held id stops the edits, and the one after it is not reached"
+}
+
 pub fn a_row_changed_to_an_id_the_table_holds_is_refused_test() -> Nil {
   use <- owned_test.run(20_000)
   let id = fixture_tables.root("Spell4", 41_276)

@@ -934,13 +934,7 @@ pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -
 fn strike_gos_of_suppressing_fire(
   changes changes: List(#(String, Int, List(#(String, planted_table.Cell)))),
 ) -> List(Bool) {
-  let assert Ok(rows) =
-    list.try_fold(changes, fixture_tables.rows(), fn(rows, change) {
-      let #(table, id, cells) = change
-      fixture_tables.change(rows:, table:, id:, with: cells)
-    })
-    as "the changes are cells of rows the fixture holds"
-  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  use tables <- fixture_tables.changes(edits: changes)
   strikes_of(
     tables: character_tables.content_over(tables),
     creature_id: 17_079,

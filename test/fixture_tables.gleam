@@ -6,8 +6,8 @@
 ////   hold them whole or by their roots, `shared()` and `load` leave them out,
 ////   and `file` makes their file from the committed rows. Only the server's
 ////   tables can be edited: an edit of a content table is refused.
-//// - **`changed` and `added`** run a body on the shared tables with a row's
-////   cells changed, or one row added that starts as a copy of a real row. The
+//// - **`changed`, `changes` and `added`** run a body on the shared tables with a
+////   row's cells changed, several rows' cells changed in order, or one row added that starts as a copy of a real row. The
 ////   edit is built on the body's heap and gone with it.
 //// - **`root(table, id)`** names a row the rows are guaranteed to hold.
 
@@ -609,6 +609,30 @@ pub fn on_rows(
   }
 }
 
+/// The rows with each edit applied in order: a table, a row id and the cells to replace
+/// (`change`). Refuses at the first edit `change` refuses.
+pub fn change_all(
+  rows rows: Rows,
+  edits edits: List(#(String, Int, List(#(String, Cell)))),
+) -> Result(Rows, Refusal) {
+  list.try_fold(edits, rows, fn(rows, edit) {
+    change(rows:, table: edit.0, id: edit.1, with: edit.2)
+  })
+}
+
+/// Runs the body on the tables with several rows changed, each edit a table, a row id and
+/// the cells to replace, applied in order and built on the body's heap; the shared tables
+/// are not touched. Stops the test when an edit is refused (`change_all`).
+pub fn changes(
+  edits edits: List(#(String, Int, List(#(String, Cell)))),
+  body body: fn(store.Tables) -> a,
+) -> a {
+  case change_all(rows: rows(), edits:) {
+    Ok(rows) -> on_rows(rows:, reaching: [], body:)
+    Error(refusal) -> panic as describe(refusal)
+  }
+}
+
 /// Runs the body on the tables with the cells of one row changed, built on the
 /// body's heap; the shared tables are not touched.
 /// Stops the test when the table, id or column is not one, or when an edit of
@@ -616,13 +640,10 @@ pub fn on_rows(
 pub fn changed(
   table table: String,
   id id: Int,
-  with changes: List(#(String, Cell)),
+  with cells: List(#(String, Cell)),
   body body: fn(store.Tables) -> a,
 ) -> a {
-  case change(rows: rows(), table:, id:, with: changes) {
-    Ok(rows) -> on_rows(rows:, reaching: [], body:)
-    Error(refusal) -> panic as describe(refusal)
-  }
+  changes(edits: [#(table, id, cells)], body:)
 }
 
 /// Runs the body on the tables with one row added, a copy of a row with the

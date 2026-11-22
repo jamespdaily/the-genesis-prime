@@ -1365,8 +1365,10 @@ pub fn effects_by_spell_holds_the_client_rows_but_for_the_phase_flags_the_rule_n
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let grouped = spell_plan.effects_by_spell(tables:)
-  let rows_in_class =
-    list.count(spell4_effects.all(tables), fn(row) {
+  // Each row of the class with the go count of its channel, the count the client expects
+  // ((channelMaxTime - channelInitialDelay + channelPulseTime) / channelPulseTime).
+  let go_counts_of_class =
+    list.filter_map(spell4_effects.all(tables), fn(row) {
       let assert Ok(read) =
         dict.get(grouped, row.spell_id)
         |> result.try(list.find(_, fn(effect) { effect.id == row.id }))
@@ -1374,7 +1376,7 @@ pub fn effects_by_spell_holds_the_client_rows_but_for_the_phase_flags_the_rule_n
       assert spell4_effects.Spell4Effects(..read, phase_flags: row.phase_flags)
         == row
         as "a row differs from the table's in no column but phase_flags"
-      let in_class = case
+      let channel =
         spell4.get(tables:, id: Spell4Id(row.spell_id))
         |> result.try(fn(spell) {
           spell4_base.get(
@@ -1383,7 +1385,7 @@ pub fn effects_by_spell_holds_the_client_rows_but_for_the_phase_flags_the_rule_n
           )
           |> result.map(fn(base) { #(spell, base) })
         })
-      {
+      let in_class = case channel {
         Ok(#(spell, base)) ->
           base.cast_method == 1
           && int.bitwise_and(spell.spell_channel_flags, 1) == 0
@@ -1397,7 +1399,21 @@ pub fn effects_by_spell_holds_the_client_rows_but_for_the_phase_flags_the_rule_n
           False -> row.phase_flags
         }
         as "phase_flags is -1 exactly where phaseFlags 1, tickTime 0, castMethod 1 and bit 1 of spellChannelFlags is clear"
-      in_class
+      case in_class, channel {
+        True, Ok(#(spell, _)) ->
+          Ok(
+            {
+              spell.channel_max_time
+              - spell.channel_initial_delay
+              + spell.channel_pulse_time
+            }
+            / spell.channel_pulse_time,
+          )
+        _, _ -> Error(Nil)
+      }
     })
-  assert rows_in_class > 0 as "the class holds rows"
+  let in_one_pulse = list.count(go_counts_of_class, fn(gos) { gos == 1 })
+  assert #(list.length(go_counts_of_class) - in_one_pulse, in_one_pulse)
+    == #(3418, 87)
+    as "the class holds 3,418 rows in channels of several pulses and 87 in channels of one pulse (3,505), as the client's tables hold them"
 }
