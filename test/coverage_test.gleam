@@ -330,6 +330,15 @@ fn counted_by_the_file(
   #(list.length(values) - zeros, zeros)
 }
 
+/// Whether a type's line is anything but a handled type with rows no rule reads and no
+/// stated gap.
+fn states_its_gap(line: TypeLine) -> Bool {
+  case line.status {
+    HandledWithUnstatedGap(..) -> False
+    _ -> True
+  }
+}
+
 fn heaviest_first(types: List(TypeLine)) -> Bool {
   list.window_by_2(types)
   |> list.all(fn(pair) {
@@ -385,12 +394,7 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           as { table <> ": every declared type is one some row uses" }
         assert conflicts == []
           as { table <> ": no type is both handled and listed as missing" }
-        assert list.all(types, fn(line) {
-          case line.status {
-            HandledWithUnstatedGap(..) -> False
-            _ -> True
-          }
-        })
+        assert list.all(types, states_its_gap)
           as {
             table
             <> ": every handled type with rows no rule reads states its gap"
