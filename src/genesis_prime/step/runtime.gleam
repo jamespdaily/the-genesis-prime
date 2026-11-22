@@ -61,7 +61,7 @@ pub fn describe_start_error(error: actor.StartError) -> String {
 /// A term as Erlang writes it on one line (`io_lib:format("~0p")`), so an exit
 /// reason of any shape is in the log in full.
 @external(erlang, "genesis_prime_step_runtime_ffi", "term_text")
-fn term_text(term: Dynamic) -> String
+pub fn term_text(term: Dynamic) -> String
 
 /// The time as one input carries it: the monotonic clock in milliseconds and
 /// the system time as a FILETIME, both read now.

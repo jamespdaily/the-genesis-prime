@@ -1,7 +1,7 @@
 -module(dashboard_support_ffi).
 -export([free_port/0, bound_addresses/1, accepts/1, open/2, connect_and_send/2, read_reply/1, has_bytes/1,
          read_text_frame/1, close/1, process_alive/1, closes/1, os_pid/0, suspend/1, resume/1,
-         kill/1, queued_calls/1]).
+         kill/1, queued_calls/1, is_closed/1]).
 
 %% A loopback port the system chose: listens on port 0 and closes the socket
 %% again, so nothing listens on the port that is returned. The dashboard's
@@ -178,6 +178,11 @@ read_text_frame(Socket) ->
 close(Socket) ->
     _ = gen_tcp:close(Socket),
     nil.
+
+%% Whether this side has closed the socket: a closed port has no information.
+-spec is_closed(port()) -> boolean().
+is_closed(Socket) ->
+    erlang:port_info(Socket) =:= undefined.
 
 %% Whether the operating-system process is alive: `kill -0` finds it.
 -spec process_alive(integer()) -> boolean().
