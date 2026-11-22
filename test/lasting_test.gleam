@@ -611,9 +611,10 @@ pub fn a_node_with_an_until_removed_effect_outlasts_the_state_and_the_latest_sta
 
 // ---- an aura cast's node ----
 //
-// A castMethod 10 spell's buff lasts to the cast's start plus its spellDuration, or to its
-// node's longest timer when that is later; a sum that is not later than now is no end
-// (`0x1407180c0`, `Spell4.spellDuration`).
+// A castMethod 10 spell's buff lasts to the cast's start plus its spellDuration; its node's
+// longest timer extends it only for a node with no flags-2 effect, and a node that holds an
+// until-removed row has one (`0x1407180c0`, `0x140718120`, `Spell4.spellDuration`). A sum
+// that is not later than now is no end.
 
 /// The node of unit 7 at a go at `go_ms` from these rows, the first of them aimed at the
 /// caster, for a cast whose aura ends at `aura_ends_ms`.
@@ -637,7 +638,7 @@ fn under_aura(
   )
 }
 
-pub fn a_node_under_an_aura_never_ends_before_the_aura_or_its_longest_timed_row_and_never_after_the_later_of_the_two_test() -> Nil {
+pub fn a_node_that_holds_an_until_removed_row_ends_at_an_aura_after_the_go_whatever_its_timed_rows_test() -> Nil {
   use <- owned_test.run(30_000)
   qcheck.given(
     qcheck.tuple4(
@@ -683,12 +684,8 @@ pub fn a_node_under_an_aura_never_ends_before_the_aura_or_its_longest_timed_row_
         under_aura(rows:, larger:, aura_ends_ms: Some(aura_end_ms), go_ms:)
       let #(expected, reason) = case until_removed, aura_after_go_ms > 0 {
         True, True -> #(
-          Ok(first_aura_node(
-            rows:,
-            life: EndsAt(ms: int.max(aura_end_ms, go_ms + longest)),
-            go_ms:,
-          )),
-          "the node ends at the later of the aura's end and its longest timed row",
+          Ok(first_aura_node(rows:, life: EndsAt(ms: aura_end_ms), go_ms:)),
+          "a node with an until-removed row ends at the aura's end whatever its timed rows (node 0x48 is all bits, so the client's timer branch never applies)",
         )
         True, False -> #(
           Ok(first_aura_node(rows:, life: UntilRemoved, go_ms:)),
@@ -746,14 +743,14 @@ pub fn an_aura_gives_the_node_the_cases_the_client_reads_from_its_buff_timing_te
       Ok(EndsAt(ms: 7000)),
     ),
     #(
-      "a timed row that ends later than the aura keeps the node to its end (Spell4 34959: an aura of 10000 and a Fluff of 12000)",
+      "a timed row that ends later than the aura does not extend it: the flags-2 row 69832 makes node 0x48 all bits, so the client's buff of Spell4 34959 runs out at its start plus 10000 and not at its Fluff 69834's 12000",
       [flagged, timed_for(12_000)],
-      Some(11_000),
+      Some(10_000),
       1000,
-      Ok(EndsAt(ms: 13_000)),
+      Ok(EndsAt(ms: 10_000)),
     ),
     #(
-      "a timed row that ends before the aura leaves the aura's end",
+      "a timed row that ends before the aura leaves the aura's end too",
       [flagged, timed_for(2000)],
       Some(7000),
       1000,

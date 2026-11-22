@@ -161,10 +161,11 @@ pub fn a_raise_writes_the_frames_of_an_experience_gain_and_the_level_rise_then_o
           #(6, 25_530),
           #(7, 25_579),
           #(8, 38_210),
+          #(9, 47_675),
         ],
         line: "level 9, experience 17330",
         held: #(9, 17_330),
-        why: "level 9 starts at 17330: one 0x938 for the whole jump, and the five abilities the rows hold for levels 4 to 6",
+        why: "level 9 starts at 17330: one 0x938 for the whole jump, and the six abilities the fixture's Medic rows hold for levels 4 to 8 (SpellLevel 632, Nullifier's Spell4Base 47675, at level 8)",
       ),
     ],
     fn(row) {

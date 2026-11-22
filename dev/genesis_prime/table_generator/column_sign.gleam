@@ -15,9 +15,10 @@ pub type Sign {
   Unsigned
   /// The client's reader uses the column as a signed number.
   Signed
-  /// The client's readers are not read, so the column keeps the signed
-  /// reading, and the entry's evidence says why that is safe for the rows the
-  /// server's rules read.
+  /// The client's readers are not read, or are read and give the same result
+  /// under the signed reading, as the evidence shows, so the column keeps the
+  /// signed reading, and the entry's evidence says why that is safe for the
+  /// rows the server's rules read.
   Unread
 }
 
