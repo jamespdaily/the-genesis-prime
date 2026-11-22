@@ -104,6 +104,7 @@ fn asked_goes(effects effects: List(cast_state.Effect)) -> List(GoAsked) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })

@@ -97,26 +97,26 @@ import genesis_prime/game/cast/state.{
   type AimedPress, type Applied, type Caster, type Effect, type Fact,
   type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
   type Lingering, type Listed, type Live, type Message, type Paid,
-  type PressedFrom, type Reached, type Refusal, type Resolution,
-  type Restricting, type Role, type State, type Struck, type TargetVerdict,
-  type TickAsked, type Used, type UsedUnit, Accept, Activated, Activating,
-  Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered,
-  AwaitingAnswer, Base, Cancelled, CannotTell, CastClears, CasterChangeEnds,
-  CasterChangeStarts, ChargeLevel, Child, CooldownEnds, CooldownKept,
-  CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
-  ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
-  Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld,
-  Lingering, Listed, Live, Log, ModifierEnd, ModifierStart, NoClientCastId,
-  NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
-  NotSentByClient, Passive, Plain, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
-  QuestAdvanced, QuestButton, Reached, Refuse, RepeatHeld, Resolution,
-  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, StartChild,
-  StartHeld, Started, StartedMoving, Starts, State, StateEnd, StealthChanged,
-  Strike, TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell,
-  UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
-  WrongAnswerSpell,
+  type PressedFrom, type ProxyTickAsked, type Reached, type Refusal,
+  type Resolution, type Restricting, type Role, type State, type Struck,
+  type TargetVerdict, type TickAsked, type Used, type UsedUnit, Accept,
+  Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
+  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
+  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
+  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
+  Deflected, Finish, ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing,
+  Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace,
+  ItemPress, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
+  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
+  NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, Pressed, PressedAt,
+  ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton, Reached, Refuse,
+  RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
+  ShortcutCast, Stage, StartChild, StartHeld, Started, StartedMoving, Starts,
+  State, StateEnd, StealthChanged, Strike, TargetModifierStart, Tell, Threshold,
+  Tick, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer,
+  UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WithCast,
+  WithNothing, WithUse, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -3201,6 +3201,147 @@ pub fn ticked(
   |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
+/// The units inside the area of a periodic Proxy's tick are found (the connection's
+/// answer to `FindProxyTickUnits`, in the same input): the tick's round closes and the
+/// Proxy's child starts on each unit that passes the Proxy's target gate, in the order
+/// found, as a go's does (`children`), with the holder's root and spell as the child's root
+/// and parent, counting no quest row and holding no item's value. `poses`, `indexes` and
+/// `first_units` are what the gate reads of the units, as a go's (`went`). A row the cast
+/// no longer holds starts and writes nothing. A row a later go armed again starts nothing,
+/// but the round of the earlier schedule closes, so a node end that waited for it goes on
+/// (`nodes_ended`).
+pub fn proxy_tick_units_found(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  asked asked: ProxyTickAsked,
+  units units: List(Int),
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+  first_units first_units: Dict(Int, prerequisite.FirstUnit),
+) -> #(State, List(Effect)) {
+  use <- settled(cast:, own: [])
+  released(
+    taken: proxy_tick_closed(
+      cast:,
+      caster:,
+      now_ms: now.monotonic_ms,
+      asked:,
+      units:,
+      poses:,
+      indexes:,
+      first_units:,
+    ),
+    caster:,
+    now_ms: now.monotonic_ms,
+  )
+  |> continued(caster:, now_ms: now.monotonic_ms)
+}
+
+/// The children of a periodic Proxy's tick on the units found: the holder's root and spell
+/// are the child's root and parent, no quest row is counted and no item's value is held, and
+/// a tick draws no roll (`children`).
+fn proxy_children_found(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  holder holder: Holder,
+  proxy proxy: Proxy,
+  units units: List(Int),
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+  first_units first_units: Dict(Int, prerequisite.FirstUnit),
+) -> #(State, List(Effect)) {
+  let #(cast, started, _) =
+    children(
+      cast:,
+      caster:,
+      now_ms:,
+      proxy:,
+      targets: units,
+      root: holder.root,
+      parent: holder.spell.spell4_id,
+      counted_with: WithNothing,
+      from: None,
+      subject: cast_tick.subject_of(cast:, caster:),
+      poses:,
+      indexes:,
+      units: first_units,
+      rolls: [],
+    )
+  #(cast, started)
+}
+
+/// The Proxy a ticking row starts a child of, none for a row of another kind.
+fn ticking_proxy_of(row row: cast_state.Ticking) -> Result(Proxy, Nil) {
+  cast_state.on_tick_kind(
+    kind: cast_state.ticking_kind(row:),
+    damage: fn(_) { Error(Nil) },
+    heal: fn(_, _, _) { Error(Nil) },
+    proxy: fn(proxy, _, _, _) { Ok(proxy) },
+  )
+}
+
+/// The round of the tick `asked` closed with the units found: the child starts on each unit
+/// through `children` when the row is still the one the tick was asked for, then the node
+/// end that waited for the round goes on.
+fn proxy_tick_closed(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  asked asked: ProxyTickAsked,
+  units units: List(Int),
+  poses poses: Dict(Int, area.Pose),
+  indexes indexes: Dict(Int, Int),
+  first_units first_units: Dict(Int, prerequisite.FirstUnit),
+) -> #(State, List(Effect)) {
+  let cast_id = asked.cast_id
+  let key =
+    cast_state.tick_key(
+      unit_id: asked.primary_target,
+      effect_id: asked.effect_id,
+    )
+  case cast_state.holder_of(cast:, cast_id:) {
+    Error(Nil) -> #(cast, [])
+    Ok(holder) ->
+      case dict.get(holder.ticking, key) {
+        Error(Nil) -> #(cast, [])
+        Ok(row) -> {
+          let cast =
+            cast_tick.with_ticking(
+              cast:,
+              cast_id:,
+              ticking: dict.insert(
+                holder.ticking,
+                key,
+                cast_state.round_closed(row:),
+              ),
+            )
+          let #(cast, started) = case
+            cast_state.ticking_go(row:) == asked.go,
+            ticking_proxy_of(row:)
+          {
+            True, Ok(proxy) ->
+              proxy_children_found(
+                cast:,
+                caster:,
+                now_ms:,
+                holder:,
+                proxy:,
+                units:,
+                poses:,
+                indexes:,
+                first_units:,
+              )
+            _, _ -> #(cast, [])
+          }
+          let #(cast, ended) = nodes_ended(cast:, cast_id:, now_ms:)
+          #(cast, list.append(started, ended))
+        }
+      }
+  }
+}
+
 fn tick_closed(
   cast cast: State,
   now_ms now_ms: Int,
@@ -4211,7 +4352,18 @@ fn go(
           ..aimed,
           ticking: list.append(
             aimed.ticking,
-            cast_tick.proxies_ticking(proxies: periodic, caster:),
+            cast_tick.proxies_ticking(
+              proxies: periodic,
+              caster:,
+              primary_target: live.primary_target,
+              phase:,
+              started_at: live.started_at,
+              primary_pose: case live.primary_target == caster.unit_id {
+                True -> None
+                False ->
+                  option.from_result(dict.get(poses, live.primary_target))
+              },
+            ),
           ),
         )
       let go_message =
@@ -4341,9 +4493,15 @@ fn go(
               cast:,
               caster:,
               now_ms:,
-              live:,
               proxy:,
-              struck:,
+              targets: case proxy.target {
+                spell_plan.OnCaster -> [caster.unit_id]
+                spell_plan.OnEachStruck -> cast_gate.hit_units(struck:)
+              },
+              root: live.root,
+              parent: live.spell.spell4_id,
+              counted_with: live.counted_with,
+              from: cast_state.handed_down(live:),
               subject:,
               poses:,
               indexes:,
@@ -5384,28 +5542,30 @@ fn cooldown_row_started(
   }
 }
 
-/// A Proxy of a go: a Proxy aimed at the area starts one child for each Hit unit of
-/// the round and none for a deflect, any other starts one on the caster. A Proxy behind a
-/// target gate starts a child on a unit only when the gate passes against that unit, once
-/// for each unit, in the order of the units, each check taking the rolls its gate needs
+/// The children of a Proxy on the units `targets`, each the named spell as a child cast
+/// of `parent` with `root` as its root, counting its quest rows with `counted_with` and
+/// reading the item's value `from`: a go gives the caster for a Proxy aimed at the caster
+/// and each Hit unit of the round for one aimed at the area (none for a deflect), and a tick
+/// of a Proxy aimed at the area gives the units found inside it. A Proxy behind a target
+/// gate starts a child on a unit only when the gate passes against that unit, once for each
+/// unit, in the order of the units, each check taking the rolls its gate needs
 /// (`cast_tick.target_gate`); the rolls left follow the effects.
 fn children(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
-  live live: Live,
   proxy proxy: Proxy,
-  struck struck: List(Struck),
+  targets targets: List(Int),
+  root root: Spell4Id,
+  parent parent: Spell4Id,
+  counted_with counted_with: AdvanceWith,
+  from from: Option(PressedFrom),
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect), List(Int)) {
-  let targets = case proxy.target {
-    spell_plan.OnCaster -> [caster.unit_id]
-    spell_plan.OnEachStruck -> cast_gate.hit_units(struck:)
-  }
   list.fold(targets, #(cast, [], rolls), fn(so_far, primary_target) {
     let #(cast, effects, rolls) = so_far
     let #(gate, rolls) =
@@ -5423,7 +5583,17 @@ fn children(
     case gate {
       Starts -> {
         let #(cast, more) =
-          child(cast:, caster:, now_ms:, live:, proxy:, primary_target:)
+          child(
+            cast:,
+            caster:,
+            now_ms:,
+            proxy:,
+            root:,
+            parent:,
+            primary_target:,
+            counted_with:,
+            from:,
+          )
         #(cast, list.append(effects, more), rolls)
       }
       GateFails -> #(cast, effects, rolls)
@@ -5442,9 +5612,12 @@ fn child(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
-  live live: Live,
   proxy proxy: Proxy,
+  root root: Spell4Id,
+  parent parent: Spell4Id,
   primary_target primary_target: Int,
+  counted_with counted_with: AdvanceWith,
+  from from: Option(PressedFrom),
 ) -> #(State, List(Effect)) {
   case proxy.delay_ms > 0 {
     False ->
@@ -5453,23 +5626,23 @@ fn child(
         caster:,
         now_ms:,
         spell: proxy.spell,
-        root: live.root,
-        parent: live.spell.spell4_id,
+        root:,
+        parent:,
         primary_target:,
-        counted_with: live.counted_with,
-        from: cast_state.handed_down(live:),
+        counted_with:,
+        from:,
       )
     True -> {
       let #(cast, _, start) =
         cast_state.armed(
           cast:,
           due: StartChild(
-            root: live.root,
-            parent: live.spell.spell4_id,
+            root:,
+            parent:,
             primary_target:,
             proxy:,
-            counted_with: live.counted_with,
-            from: cast_state.handed_down(live:),
+            counted_with:,
+            from:,
           ),
           after_ms: proxy.delay_ms,
         )

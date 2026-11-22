@@ -108,6 +108,7 @@ fn changes_a_property(effect effect: cast_state.Effect) -> Bool {
     | cast_state.Log(..)
     | cast_state.Strike(..)
     | cast_state.TickStrike(..)
+    | cast_state.FindProxyTickUnits(..)
     | cast_state.Pay(..)
     | cast_state.TargetChangeStarts(..)
     | cast_state.TargetChangeEnds(..)
@@ -226,6 +227,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         | cast_state.ShortcutCast(..)
         | cast_state.QuestAdvanced(..)
         | cast_state.TickStrike(..)
+        | cast_state.FindProxyTickUnits(..)
         | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })

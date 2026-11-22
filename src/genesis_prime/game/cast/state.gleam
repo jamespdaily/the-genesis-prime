@@ -180,6 +180,12 @@ pub type Effect {
   /// (genesis_prime/game/strike `begin_tick`) and, when the round closes, answers with
   /// `cast.ticked`. The tick's 0x7f8 waits for that answer.
   TickStrike(asked: TickAsked)
+  /// A tick of a periodic Proxy aimed at the area is due: the connection selects the units
+  /// inside the area as the picture shows them now (genesis_prime/game/strike
+  /// `select_proxy_tick`) and answers in the same input with `cast.proxy_tick_units_found`,
+  /// which starts the child on each. Nothing waits for a creature, so the answer is the
+  /// effect's own result.
+  FindProxyTickUnits(asked: ProxyTickAsked)
   /// A cast's costs are taken from the caster's class resource, at its first go, or
   /// at the accept of a spell that goes at once (genesis_prime/game/class_resource
   /// `pay`).
@@ -337,6 +343,26 @@ pub type TickAsked {
     go: Int,
     tick: Int,
     blow: spell_area.DamageEffect,
+  )
+}
+
+/// A tick of a periodic Proxy aimed at the area that waits for the units inside the area:
+/// which cast, which holder spell and row, the phase of the go that armed the row, the unit
+/// the row ticks on (the primary target whose node ends it), the pose the cast started at
+/// and the pose that unit stood in at the go (none for the caster, or a unit the picture did
+/// not show), which go of the cast on the unit armed the row (counted from 1) and which tick of
+/// its schedule.
+pub type ProxyTickAsked {
+  ProxyTickAsked(
+    cast_id: Int,
+    spell4_id: Spell4Id,
+    effect_id: Spell4EffectsId,
+    phase: Int,
+    primary_target: Int,
+    started_at: area.Pose,
+    primary_pose: Option(area.Pose),
+    go: Int,
+    tick: Int,
   )
 }
 
@@ -524,9 +550,10 @@ pub fn key_effect(key key: TickKey) -> Spell4EffectsId {
 /// The ticks of a periodic row on one unit: what each tick does, the row's schedule,
 /// which go of the cast started it (counted from 1) and the monotonic time of that go,
 /// which the schedule counts from, the last tick that fired (0 before the first), how
-/// many damage tick rounds of the row on the unit are open, an earlier schedule's
-/// included, and the life of the unit the go struck. A node whose unit has an open
-/// round is held past its end, so the cast's 0x811 or 0x7fe follows the tick's 0x7f8.
+/// many tick rounds of the row on the unit are open (a damage tick's strike, or a Proxy
+/// tick's search for the units inside its area), an earlier schedule's included, and the life
+/// of the unit the go struck. A node whose unit has an open round is held past its end, so
+/// the cast's 0x811 or 0x7fe follows the tick's 0x7f8 or its children.
 pub opaque type Ticking {
   Ticking(
     kind: TickKind,
@@ -577,7 +604,7 @@ pub fn ticking_tick(row row: Ticking) -> Int {
   row.tick
 }
 
-/// How many damage tick rounds of the row on the unit are open.
+/// How many tick rounds of the row on the unit are open.
 pub fn ticking_open(row row: Ticking) -> Int {
   row.open
 }
@@ -592,19 +619,22 @@ pub fn with_tick(row row: Ticking, tick tick: Int) -> Ticking {
   Ticking(..row, tick:)
 }
 
-/// The row with tick `tick` fired and a damage tick round opened for it.
+/// The row with tick `tick` fired and a tick round opened for it.
 pub fn round_opened(row row: Ticking, tick tick: Int) -> Ticking {
   Ticking(..row, tick:, open: row.open + 1)
 }
 
-/// The row with a damage tick round closed; the count stays at 0 when none is open.
+/// The row with a tick round closed; the count stays at 0 when none is open.
 pub fn round_closed(row row: Ticking) -> Ticking {
   Ticking(..row, open: int.max(0, row.open - 1))
 }
 
 /// What a tick does: a damage row strikes its unit with its blow; a heal row heals the
-/// caster's vital by its formula, read for the caster at the tick; a Proxy row starts its
-/// spell as a child cast of the holder.
+/// caster's vital by its formula, read for the caster at the tick; a Proxy row aimed at the
+/// caster starts its spell as a child cast of the holder on the caster, and one aimed at the
+/// area starts it on each unit inside the area at the tick, found around the pose the cast
+/// started at (`started_at`) or, for an area fixed at its target, the pose the target stood
+/// in at the go (`primary_pose`), in the area of the go's `phase`.
 pub opaque type TickKind {
   DamageTick(blow: spell_area.DamageEffect)
   HealTick(
@@ -612,7 +642,12 @@ pub opaque type TickKind {
     formula: damage.Formula,
     passed_in: Option(Float),
   )
-  ProxyTick(proxy: Proxy)
+  ProxyTick(
+    proxy: Proxy,
+    phase: Int,
+    started_at: area.Pose,
+    primary_pose: Option(area.Pose),
+  )
 }
 
 /// A tick that strikes its unit with `blow`.
@@ -630,24 +665,32 @@ pub fn heal_tick(
   HealTick(vital:, formula:, passed_in:)
 }
 
-/// A tick that starts the child cast of `proxy` on the caster.
-pub fn proxy_tick(proxy proxy: Proxy) -> TickKind {
-  ProxyTick(proxy:)
+/// A tick that starts the child cast of `proxy`: on the caster, or on each unit inside the
+/// area, which is found around `started_at` or `primary_pose` in the area of `phase`.
+pub fn proxy_tick(
+  proxy proxy: Proxy,
+  phase phase: Int,
+  started_at started_at: area.Pose,
+  primary_pose primary_pose: Option(area.Pose),
+) -> TickKind {
+  ProxyTick(proxy:, phase:, started_at:, primary_pose:)
 }
 
 /// What a tick of `kind` does: `damage` gets the blow, `heal` the vital, formula and
-/// passed-in value and `proxy` the Proxy. The one match over the kinds, so a new kind adds an
+/// passed-in value and `proxy` the Proxy with the phase, start pose and primary target's
+/// pose of its go. The one match over the kinds, so a new kind adds an
 /// argument here and names each fold.
 pub fn on_tick_kind(
   kind kind: TickKind,
   damage damage: fn(spell_area.DamageEffect) -> result,
   heal heal: fn(effect_kind.Vital, damage.Formula, Option(Float)) -> result,
-  proxy proxy: fn(Proxy) -> result,
+  proxy proxy: fn(Proxy, Int, area.Pose, Option(area.Pose)) -> result,
 ) -> result {
   case kind {
     DamageTick(blow:) -> damage(blow)
     HealTick(vital:, formula:, passed_in:) -> heal(vital, formula, passed_in)
-    ProxyTick(proxy: row) -> proxy(row)
+    ProxyTick(proxy: row, phase:, started_at:, primary_pose:) ->
+      proxy(row, phase, started_at, primary_pose)
   }
 }
 
@@ -1714,6 +1757,7 @@ pub fn without_cancels(
       | Log(..)
       | Strike(..)
       | TickStrike(..)
+      | FindProxyTickUnits(..)
       | Pay(..)
       | Gain(..)
       | CasterChangeStarts(..)

@@ -32,6 +32,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
+import genesis_prime/game/ticking
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
@@ -319,6 +320,7 @@ fn live_go_of(spell spell: Spell) -> #(cast_state.State, cast_state.GoAsked) {
         | cast_state.ShortcutCast(..)
         | cast_state.QuestAdvanced(..)
         | cast_state.TickStrike(..)
+        | cast_state.FindProxyTickUnits(..)
         | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
@@ -882,4 +884,78 @@ pub fn rolls_needed_counts_no_roll_for_the_target_gate_of_a_modifier_with_no_lif
     as "`lasting.has_life`: the modifier with neither a durationTime nor flags bit 2 is applied by no go, so its target gate (4585, one type 37 condition) is checked for no unit; the lasting row's alone, on the caster it aims at, is counted"
   assert rolls_the_go_takes(spell:, rolls: [50, 51, 52]) == counted
     as "the go draws the one roll of the lasting row's target gate and none for the modifier, so the count is what the go takes"
+}
+
+pub fn a_periodic_proxy_aimed_at_the_area_is_armed_though_the_round_struck_nobody_and_a_once_one_starts_no_child_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A field's own go strikes nobody (Nullifier's field 58868 holds a Fluff on its primary
+  // target and a Proxy 141450 aimed at the area), yet text 574032 has that Proxy tick; a
+  // Proxy that casts once on each struck unit has no unit without a Hit
+  // (`cast_gate.starts_a_child`).
+  let at_the_area =
+    Proxy(..proxy(spell_plan.Always), target: spell_plan.OnEachStruck)
+  let periodic =
+    Proxy(
+      ..at_the_area,
+      period: option.Some(spell_plan.Periodic(
+        schedule: ticking.Schedule(
+          delay_ms: 0,
+          tick_ms: 1000,
+          duration_ms: 6000,
+          count: ticking.Ticks(6),
+        ),
+        persistence: None,
+      )),
+    )
+  let at_the_caster = Proxy(..periodic, target: spell_plan.OnCaster)
+  let hit = support.hits([21])
+  let deflected = [cast_state.Deflected(unit_id: 21)]
+  let armed = fn(proxy, struck) {
+    cast_gate.proxies_with_targets(
+      spell: support.with_effects(
+        spell: support.child(spell4_id: 7000, base: 3),
+        kinds: [spell_plan.ProxyEffect(proxy:)],
+      ),
+      phase: 0,
+      struck:,
+      spent: None,
+    )
+    != []
+  }
+  list.each(
+    [
+      #(
+        periodic,
+        [],
+        True,
+        "a periodic Proxy at the area is armed at a go that struck nobody",
+      ),
+      #(periodic, hit, True, "and at a go that hit a unit"),
+      #(periodic, deflected, True, "and at a go whose only unit deflected"),
+      #(
+        at_the_area,
+        [],
+        False,
+        "a once Proxy at the area starts no child at a go that struck nobody",
+      ),
+      #(at_the_area, deflected, False, "nor at a go whose only unit deflected"),
+      #(at_the_area, hit, True, "but starts one at a go that hit a unit"),
+      #(
+        at_the_caster,
+        [],
+        True,
+        "a periodic Proxy at the caster is armed as before",
+      ),
+      #(
+        Proxy(..at_the_caster, period: None),
+        [],
+        True,
+        "a once Proxy at the caster starts as before",
+      ),
+    ],
+    fn(row) {
+      let #(proxy, struck, expected, reason) = row
+      assert armed(proxy, struck) == expected as reason
+    },
+  )
 }

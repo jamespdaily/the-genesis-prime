@@ -164,12 +164,12 @@ import genesis_prime/game/cast/state.{
   type Holder, type Live, type State, type Struck, Absorb, Activated, Aside,
   CancelTimer, CasterChangeEnding, CasterChangeEnds, CasterChangeStarts,
   ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
-  CreatureDespawns, CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart,
-  ForcedMoveStarts, Gain, Go, Heal, HeldProc, Hit, HitCreature, HitPlayer,
-  Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, Pay, ProcDue,
-  Property, QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send,
-  ShortcutCast, StartChild, StartHeld, StartTimer, State, StateEnd,
-  StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
+  CreatureDespawns, CreatureHoldsUnitStates, Deflected, FindProxyTickUnits,
+  Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal, HeldProc, Hit,
+  HitCreature, HitPlayer, Immune, Log, Look, ModifierEnd, ModifierStart,
+  NodesEnd, Pay, ProcDue, Property, QuestAdvanceDue, QuestAdvanced, RepeatHeld,
+  RestrictionEnd, Send, ShortcutCast, StartChild, StartHeld, StartTimer, State,
+  StateEnd, StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
   TargetModifierStart, Tell, Tick, TickStrike, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -235,6 +235,7 @@ pub fn heals_landed(
       | Log(..)
       | Strike(..)
       | TickStrike(..)
+      | FindProxyTickUnits(..)
       | Pay(..)
       | Gain(..)
       | CasterChangeEnds(..)
@@ -271,6 +272,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
       | Log(..)
       | Strike(..)
       | TickStrike(..)
+      | FindProxyTickUnits(..)
       | Gain(..)
       | CasterChangeStarts(..)
       | CasterChangeEnds(..)
