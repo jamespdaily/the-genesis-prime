@@ -13,14 +13,15 @@
 //// - An element of `ignored_tags` that is not `skipped_when_set(variable, tag: "x")`
 ////   with a string literal is a breach, since the rule cannot read its tag and an
 ////   unread tag must not pass as run.
-//// - A part runs a tag only on a line of `check` that is not a comment, an `echo`
-////   or a `printf` and holds the words `run_built genesis_prime_test` and
-////   `--tag` with the tag; the header or a message that names the tag runs nothing.
+//// - A part runs a tag only where `check` runs it as a command: the words
+////   `run_built genesis_prime_test` and `--tag` with the tag, outside quotes, a
+////   trailing comment and the text of a heredoc, on a line that is not a comment,
+////   an `echo` or a `printf`; the header or a message that names the tag runs
+////   nothing.
 //// - One skipped tag with no part is allowed while it is in
 ////   `skipped_until_converted` with every test that carries it, each by file and
-////   the start of its name. A test with the tag that is not listed, and a listed
-////   test that is missing or has lost the tag, are breaches, so the list only
-////   shrinks.
+////   whole name. A test with the tag that is not listed, and a listed test that
+////   is missing or has lost the tag, are breaches, so the list only shrinks.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
@@ -33,10 +34,9 @@ import gleam/result
 import gleam/string
 
 /// A test the run skips: the test file's path from the repository root, and the
-/// start of the test function's name (the whole name for a test whose name does
-/// not change).
+/// test function's name without its `_test` ending.
 pub type ListedTest {
-  ListedTest(path: String, name_start: String)
+  ListedTest(path: String, name: String)
 }
 
 /// A skipped tag no part runs and the tests that carry it, which the rule
@@ -303,25 +303,7 @@ fn ignored_tag_entries(file: SourceFile) -> Result(List(Entry), Nil) {
     case expression {
       glance.Call(arguments:, ..) -> ignored_tags_of_call(arguments)
       glance.RecordUpdate(fields:, ..) -> ignored_tags_of_update(fields)
-      glance.Int(..)
-      | glance.Float(..)
-      | glance.String(..)
-      | glance.Variable(..)
-      | glance.NegateInt(..)
-      | glance.NegateBool(..)
-      | glance.Block(..)
-      | glance.Panic(..)
-      | glance.Todo(..)
-      | glance.Tuple(..)
-      | glance.List(..)
-      | glance.Fn(..)
-      | glance.FieldAccess(..)
-      | glance.TupleIndex(..)
-      | glance.FnCapture(..)
-      | glance.BitString(..)
-      | glance.Case(..)
-      | glance.BinaryOperator(..)
-      | glance.Echo(..) -> Error(Nil)
+      _ -> Error(Nil)
     }
   })
   |> result.map(entries_of)
@@ -380,26 +362,7 @@ fn entries_of(expression: glance.Expression) -> List(Entry) {
         Some(glance.String(value:, ..)) -> [Skipped(tag: value, location:)]
         Some(_) | None -> [Unreadable(location:)]
       }
-    glance.Int(..)
-    | glance.Float(..)
-    | glance.String(..)
-    | glance.Variable(..)
-    | glance.NegateInt(..)
-    | glance.NegateBool(..)
-    | glance.Block(..)
-    | glance.Panic(..)
-    | glance.Todo(..)
-    | glance.Tuple(..)
-    | glance.Fn(..)
-    | glance.RecordUpdate(..)
-    | glance.FieldAccess(..)
-    | glance.Call(..)
-    | glance.TupleIndex(..)
-    | glance.FnCapture(..)
-    | glance.BitString(..)
-    | glance.Case(..)
-    | glance.BinaryOperator(..)
-    | glance.Echo(..) -> [Unreadable(location: syntax.span_of(expression))]
+    _ -> [Unreadable(location: syntax.span_of(expression))]
   }
 }
 
@@ -450,25 +413,134 @@ pub fn skipped_tags(test_run: SourceFile) -> List(String) {
 
 /// The tags the parts of `check` run by themselves, in the order written: the
 /// word after `--tag` on a line that holds `run_built genesis_prime_test` as two
-/// words, and is not a comment, an `echo` or a `printf`.
+/// words of the shell's command, and is not a comment, an `echo`, a `printf` or
+/// the text of a heredoc.
 pub fn run_tags(check: SourceFile) -> List(String) {
-  string.split(check.text, "\n")
+  lines_outside_heredocs(
+    lines: string.split(check.text, "\n"),
+    ends_at: None,
+    kept: [],
+  )
   |> list.flat_map(fn(line) {
-    let words =
-      string.replace(line, "\t", " ")
-      |> string.split(" ")
-      |> list.filter(fn(word) { word != "" })
-    case words {
+    case shell_words(line) {
       [] -> []
-      [first, ..] ->
-        case
-          string.starts_with(first, "#") || first == "echo" || first == "printf"
-        {
+      [first, ..] as words ->
+        case first == "echo" || first == "printf" {
           True -> []
           False -> tags_after_run(words)
         }
     }
   })
+}
+
+/// The lines that are not the text of a heredoc: a line holding `<<WORD` (also
+/// `<<-WORD`, `<<'WORD'` and `<<"WORD"`, but not the here-string `<<<`) starts
+/// the text, which ends at the first line that is `WORD` alone. The starting
+/// line is kept, the text and its end are dropped.
+fn lines_outside_heredocs(
+  lines lines: List(String),
+  ends_at ends_at: Option(String),
+  kept kept: List(String),
+) -> List(String) {
+  case lines, ends_at {
+    [], _ -> list.reverse(kept)
+    [line, ..rest], Some(word) ->
+      case string.trim(line) == word {
+        True -> lines_outside_heredocs(lines: rest, ends_at: None, kept: kept)
+        False ->
+          lines_outside_heredocs(lines: rest, ends_at: ends_at, kept: kept)
+      }
+    [line, ..rest], None ->
+      lines_outside_heredocs(lines: rest, ends_at: heredoc_word(line), kept: [
+        line,
+        ..kept
+      ])
+  }
+}
+
+fn heredoc_word(line: String) -> Option(String) {
+  case string.split_once(line, "<<") {
+    Ok(#(_, "<" <> _)) | Error(Nil) -> None
+    Ok(#(_, after)) ->
+      string.drop_start(after, case string.starts_with(after, "-") {
+        True -> 1
+        False -> 0
+      })
+      |> string.trim
+      |> string.replace("'", "")
+      |> string.replace("\"", "")
+      |> string.split(" ")
+      |> list.first
+      |> option.from_result
+  }
+}
+
+/// The words of a shell line: split at spaces and tabs outside quotes, the text
+/// inside single and double quotes left out of its word, and a `#` that starts a
+/// word ending the line.
+fn shell_words(line: String) -> List(String) {
+  words_from(
+    characters: string.to_graphemes(line),
+    quote: None,
+    word: "",
+    words: [],
+  )
+}
+
+fn words_from(
+  characters characters: List(String),
+  quote quote: Option(String),
+  word word: String,
+  words words: List(String),
+) -> List(String) {
+  case characters, quote {
+    [], _ -> list.reverse(with_word(word, words))
+    ["\\", _, ..rest], Some("\"") ->
+      words_from(characters: rest, quote: quote, word: word, words: words)
+    [character, ..rest], Some(closing) ->
+      case character == closing {
+        True ->
+          words_from(characters: rest, quote: None, word: word, words: words)
+        False ->
+          words_from(characters: rest, quote: quote, word: word, words: words)
+      }
+    ["\\", escaped, ..rest], None ->
+      words_from(
+        characters: rest,
+        quote: None,
+        word: word <> escaped,
+        words: words,
+      )
+    ["\"" as opening, ..rest], None | ["'" as opening, ..rest], None ->
+      words_from(
+        characters: rest,
+        quote: Some(opening),
+        word: word,
+        words: words,
+      )
+    [" ", ..rest], None | ["\t", ..rest], None ->
+      words_from(
+        characters: rest,
+        quote: None,
+        word: "",
+        words: with_word(word, words),
+      )
+    ["#", ..], None if word == "" -> list.reverse(words)
+    [character, ..rest], None ->
+      words_from(
+        characters: rest,
+        quote: None,
+        word: word <> character,
+        words: words,
+      )
+  }
+}
+
+fn with_word(word: String, words: List(String)) -> List(String) {
+  case word {
+    "" -> words
+    _ -> [word, ..words]
+  }
 }
 
 fn tags_after_run(words: List(String)) -> List(String) {
@@ -519,17 +591,19 @@ fn carriers(files: List(SourceFile), tag: String) -> List(Carrier) {
 }
 
 /// Each test function (public, its name ending `_test`) that carries the tag,
-/// as its file's path and its whole name, sorted.
+/// as its file's path and its name without `_test`, sorted.
 pub fn carrying(
   files files: List(SourceFile),
   tag tag: String,
 ) -> List(ListedTest) {
   carriers(files, tag)
-  |> list.map(fn(carrier) { ListedTest(carrier.path, carrier.name) })
+  |> list.map(fn(carrier) {
+    ListedTest(carrier.path, string.drop_end(carrier.name, 5))
+  })
   |> list.sort(fn(first, second) {
     string.compare(
-      first.path <> " " <> first.name_start,
-      second.path <> " " <> second.name_start,
+      first.path <> " " <> first.name,
+      second.path <> " " <> second.name,
     )
   })
 }
@@ -564,7 +638,7 @@ fn unconverted_breaches(
             path: listed.path,
             line: 1,
             rule: "the listed test `"
-              <> listed.name_start
+              <> listed.name
               <> "` is missing or no longer carries the skipped tag `"
               <> conversion.tag
               <> "`",
@@ -575,6 +649,5 @@ fn unconverted_breaches(
 }
 
 fn names(listed: ListedTest, carrier: Carrier) -> Bool {
-  listed.path == carrier.path
-  && string.starts_with(carrier.name, listed.name_start)
+  listed.path == carrier.path && carrier.name == listed.name <> "_test"
 }

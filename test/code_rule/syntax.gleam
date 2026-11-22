@@ -327,67 +327,46 @@ pub fn strings(module: glance.Module) -> List(#(Int, String)) {
   })
 }
 
-/// The tag names a test body's statement gives its test: the string of a
-/// `use <- unitest.tag("x")`, and each string literal of a
-/// `use <- unitest.tags(["x", "y"])`. Any other statement, and a tag that is not
-/// a string literal, gives none.
+/// The tag names a test body's statement gives its test, as unitest reads them:
+/// the string of `unitest.tag("x")` and each string literal of
+/// `unitest.tags(["x", "y"])`, whether the call is the function of a `use <-` or
+/// a statement of its own. A call with another argument shape, any other
+/// statement, and a tag that is not a string literal give none.
 pub fn tags_of(statement: Statement) -> List(String) {
   case statement {
-    glance.Use(
-      patterns: [],
-      function: glance.Call(
-        function: glance.FieldAccess(
-          container: glance.Variable(name: "unitest", ..),
-          label: "tag",
-          ..,
-        ),
-        arguments: [glance.UnlabelledField(glance.String(value:, ..))],
+    glance.Use(function:, ..) -> tags_of_call(function)
+    glance.Expression(expression) -> tags_of_call(expression)
+    glance.Assignment(..) | glance.Assert(..) -> []
+  }
+}
+
+fn tags_of_call(expression: Expression) -> List(String) {
+  case expression {
+    glance.Call(
+      function: glance.FieldAccess(
+        container: glance.Variable(name: "unitest", ..),
+        label: "tag",
         ..,
       ),
+      arguments: [glance.UnlabelledField(glance.String(value:, ..))],
       ..,
     ) -> [value]
-    glance.Use(
-      patterns: [],
-      function: glance.Call(
-        function: glance.FieldAccess(
-          container: glance.Variable(name: "unitest", ..),
-          label: "tags",
-          ..,
-        ),
-        arguments: [glance.UnlabelledField(glance.List(elements:, ..))],
+    glance.Call(
+      function: glance.FieldAccess(
+        container: glance.Variable(name: "unitest", ..),
+        label: "tags",
         ..,
       ),
+      arguments: [glance.UnlabelledField(glance.List(elements:, ..))],
       ..,
     ) ->
       list.filter_map(elements, fn(element) {
         case element {
           glance.String(value:, ..) -> Ok(value)
-          glance.Variable(..)
-          | glance.FieldAccess(..)
-          | glance.Int(..)
-          | glance.Float(..)
-          | glance.NegateInt(..)
-          | glance.NegateBool(..)
-          | glance.Block(..)
-          | glance.Panic(..)
-          | glance.Todo(..)
-          | glance.Tuple(..)
-          | glance.List(..)
-          | glance.Fn(..)
-          | glance.RecordUpdate(..)
-          | glance.Call(..)
-          | glance.TupleIndex(..)
-          | glance.FnCapture(..)
-          | glance.BitString(..)
-          | glance.Case(..)
-          | glance.BinaryOperator(..)
-          | glance.Echo(..) -> Error(Nil)
+          _ -> Error(Nil)
         }
       })
-    glance.Use(..)
-    | glance.Assignment(..)
-    | glance.Assert(..)
-    | glance.Expression(_) -> []
+    _ -> []
   }
 }
 

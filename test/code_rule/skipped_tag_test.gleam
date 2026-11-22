@@ -132,6 +132,64 @@ pub fn a_skipped_tag_a_part_runs_is_no_breach_and_a_tag_named_in_a_comment_or_an
       [9],
       "the tag named only in a message string",
     ),
+    #(
+      [skip("x")],
+      [
+        "  skip x-part \"by hand: run_built genesis_prime_test --tag x later\"",
+      ],
+      [9],
+      "the tag named in a message string with words after it",
+    ),
+    #(
+      [skip("x")],
+      ["  skip x-part 'by hand: run_built genesis_prime_test --tag x later'"],
+      [9],
+      "the tag named in a single-quoted message with words after it",
+    ),
+    #(
+      [skip("x")],
+      ["  true # run_built genesis_prime_test --tag x"],
+      [9],
+      "the tag named in a trailing comment",
+    ),
+    #(
+      [skip("x")],
+      [
+        "cat <<EOF",
+        "run_built genesis_prime_test --tag x",
+        "EOF",
+      ],
+      [9],
+      "the tag named only in the text of a heredoc",
+    ),
+    #(
+      [skip("x")],
+      [
+        "cat <<'EOF'",
+        "run_built genesis_prime_test --tag x",
+        "EOF",
+      ],
+      [9],
+      "the tag named only in the text of a quoted-word heredoc",
+    ),
+    #(
+      [skip("x")],
+      ["cat <<EOF", "text", "EOF", part("x")],
+      [],
+      "a part after a heredoc is a part",
+    ),
+    #(
+      [skip("x")],
+      [part("x") <> " # the part of x"],
+      [],
+      "a part with a trailing comment is a part",
+    ),
+    #(
+      [skip("x")],
+      ["  step \"x part\" run_built genesis_prime_test --tag x &"],
+      [],
+      "a part started by a step with a quoted name is a part",
+    ),
     #([skip("x")], [part("y")], [9], "a part for another tag"),
     #(
       [skip("x")],
@@ -236,6 +294,12 @@ const tags_later_and_coverage =
 
 const tag_other = "  use <- unitest.tag(\"other\")"
 
+const tag_later_statement = "  unitest.tag(\"later\")"
+
+const tags_later_statement = "  unitest.tags([\"later\", \"coverage\"])"
+
+const tag_later_with_callback = "  unitest.tag(\"later\", fn() { Nil })"
+
 pub fn a_skipped_tag_whose_tests_are_all_listed_as_skipped_until_converted_is_no_breach_and_an_unlisted_or_missing_test_is_one_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
@@ -278,6 +342,37 @@ pub fn a_skipped_tag_whose_tests_are_all_listed_as_skipped_until_converted_is_no
       [],
       [#("test/a_test.gleam", 15, "third_one")],
       "a test with the tag that is not listed, at its function's line",
+    ),
+    #(
+      files(list.append(a_file, [#("first_extended", tag_later)]), b_file),
+      listed,
+      [],
+      [#("test/a_test.gleam", 15, "first_extended")],
+      "a test whose name only starts with a listed name is not that test",
+    ),
+    #(
+      files(list.append(a_file, [#("third_one", tag_later_statement)]), b_file),
+      listed,
+      [],
+      [#("test/a_test.gleam", 15, "third_one")],
+      "a tag written as a statement of its own, which unitest reads",
+    ),
+    #(
+      files(list.append(a_file, [#("third_one", tags_later_statement)]), b_file),
+      listed,
+      [],
+      [#("test/a_test.gleam", 15, "third_one")],
+      "a list of tags written as a statement of its own",
+    ),
+    #(
+      files(
+        list.append(a_file, [#("third_one", tag_later_with_callback)]),
+        b_file,
+      ),
+      listed,
+      [],
+      [],
+      "a call with a callback argument, which unitest does not read as a tag",
     ),
     #(
       files(a_file, b_file),
