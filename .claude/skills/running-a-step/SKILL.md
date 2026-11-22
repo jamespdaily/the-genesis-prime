@@ -62,7 +62,7 @@ Then one result review, on the fixed commit the builder pushed: Codex's bug revi
 
 ## The fix round
 
-Check each finding against the code first, then fix what holds in one round. Each fix round goes to a fresh implementer whose prompt names the findings comment; the first builder is not resumed, since its long context is re-read on every turn. A bug the step caused is fixed before it merges, in this round or another. A review's top finding caused by the last round's fix counts as a second failure with one cause (below). Anything else follows "Failures" below. Notes that change nothing the step promises go in the closing summary.
+Check each finding against the code first, then fix what holds in one round. Each fix round goes to a fresh implementer whose prompt names the findings comment; the first builder is not resumed, since its long context is re-read on every turn. A bug the step caused is fixed before it merges, in this round or another. A review's top finding caused by the last round's fix counts as a second failure with one cause (below). Anything else follows "Failures" below. Notes that change nothing the step promises go in the closing summary. Findings that change no game behaviour (test reuse, a helper, a comment, a citation, a message) do not hold a merge whose CI is green: they go as a comment on the next step in the same area, whose brief names it. A listed test that cannot fail for the reason its name gives still holds the merge. (A fix round and its second CI run took about 35 minutes per step, and most rounds of #1206 fixed only tests; Jim, 2026-11-22.)
 
 ## Failures, gaps and questions
 
