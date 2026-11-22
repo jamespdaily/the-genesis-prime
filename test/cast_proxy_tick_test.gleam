@@ -19,7 +19,6 @@
 //// planted spells with no rows of their own.
 
 import cast_support as support
-import fixture_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -38,7 +37,6 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import owned_test
-import planted_table.{Integer}
 import prerequisite_support as prerequisites
 import spell_tables
 
@@ -161,24 +159,13 @@ fn ran(
   )
 }
 
-fn started_in(
-  effects effects: List(Effect),
-) -> List(spell_started.SpellStarted) {
-  support.frames_of(message_id: spell_started.message_id, effects:)
-  |> list.map(fn(frame) {
-    let assert Ok(start) = spell_started.decode(frame.body)
-      as "a 0x7ff the rule wrote decodes"
-    start
-  })
-}
-
 /// Each 0x7ff of the spell `spell4_id` the steps write, with the time of its step.
 fn starts_of(
   steps steps: List(#(Int, List(Effect))),
   spell4_id spell4_id: Int,
 ) -> List(#(Int, spell_started.SpellStarted)) {
   list.flat_map(steps, fn(step) {
-    started_in(effects: step.1)
+    support.started_in(effects: step.1)
     |> list.filter(fn(start) { start.spell4_id == spell4_id })
     |> list.map(fn(start) { #(step.0, start) })
   })
@@ -226,7 +213,7 @@ pub fn a_go_arms_a_periodic_proxys_first_tick_one_tick_time_after_its_delay_and_
     |> list.sort(int.compare)
     == [1001, 10_001]
     as "row 121345: the first tick lands 1001 ms on (delay 1 plus one tick of 1000) and the holder's node ends at its delay plus durationTime, 10001 ms on"
-  assert started_in(effects:) == []
+  assert support.started_in(effects:) == []
     as "nothing is cast at the go: the first cast is one tick on (text 504979: 5 Psi Points in 5 s)"
 }
 
@@ -609,21 +596,9 @@ pub fn a_child_that_holds_its_own_periodic_proxy_ticks_on_its_own_cast_test() ->
 
 pub fn a_proxy_with_no_tick_time_that_names_its_spell_in_data_bits01_starts_its_child_once_at_the_go_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Mental Boon's row 76609 names 33258 in dataBits01 and has no tickTime. Its targetFlags
-  // are 5 in a spell that hits no foes, which the plan refuses, so the twin has 1.
-  use tables <- fixture_tables.changed(
-    table: "Spell4Effects",
-    id: 76_609,
-    with: [#("targetFlags", Integer(1))],
-  )
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id: 36_562,
-      chain: [],
-    )
-    as "the planted twin plans"
+  // Mental Boon's row 76609 names 33258 in dataBits01 and has no tickTime; its targetFlags
+  // 5 in a spell that hits no foes start the child on the caster.
+  let spell = spell_tables.client_spell(spell4_id: 36_562)
   let plans =
     support.plans_of([Spell(..spell, spell4_base_id: Spell4BaseId(3))])
   let #(state, effects) = pressed(plans:, caster: support.caster())

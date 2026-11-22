@@ -1540,3 +1540,7 @@ Spell4	83563	Desperate Hope, whose eight caster apply prerequisites 39896 to 399
 Spell4	34629	A gain of +100 of vital 19, the Spellslinger's slot 4 (effect 68677)	spell_plan_gain_test
 Prerequisite	24340	type 73 on vital 15 below 50 points	cast_prerequisite_test
 Prerequisite	22140	type 73 on vital 15 at least 200 points	cast_prerequisite_test
+Spell4	35870	Astral Infusion, a Spellslinger level 9 absorb and ticking heal on the caster	cast_union_aim_test
+Spell4	54717	Astral Infusion Surge alternate	cast_union_aim_test
+SpellLevel	1049	Mental Boon, an Esper level 18 ability	game_connection_heal_test
+SpellLevel	1021	Medic Triage, level 9, refused for valid targets of bitmask 256	experience_book_test, game_connection_dev_command_test

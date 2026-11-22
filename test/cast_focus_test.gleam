@@ -18,7 +18,6 @@
 import cast_support as support
 import channel_support.{type Scene}
 import class_resource_support
-import fixture_tables
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/class_resource.{type Payment, Payment}
 import genesis_prime/game/spell_plan.{type Spell, Spell}
@@ -27,7 +26,6 @@ import gleam/list
 import gleam/option.{None}
 import gleam/string
 import owned_test
-import planted_table.{Integer}
 import spell_tables
 
 const esper = 3
@@ -58,33 +56,9 @@ fn healing_salve() -> Spell {
   spell_tables.client_spell(39_121)
 }
 
-/// Mental Boon, an Esper's: 1 Psi Point (every point held) and 73 Focus. Its five tick-0
-/// Proxies (76609 and 76778 to 76781, in 36562 and 36618 to 36621) are aimed by flags 5 in
-/// spells that hit no foes, which the plan refuses (`FriendlyAreaNotRead`), so the spell is
-/// planned with those rows aimed at the caster alone (targetFlags 1): the cases here are
-/// about its costs, which the edit leaves as they are.
+/// Mental Boon, an Esper's: 1 Psi Point (every point held) and 73 Focus.
 fn mental_boon() -> Spell {
-  let assert Ok(rows) =
-    list.try_fold(
-      [76_609, 76_778, 76_779, 76_780, 76_781],
-      fixture_tables.rows(),
-      fn(rows, id) {
-        fixture_tables.change(rows:, table: "Spell4Effects", id:, with: [
-          #("targetFlags", Integer(1)),
-        ])
-      },
-    )
-    as "the fixture holds the tick-0 Proxies of Mental Boon"
-  use tables <- fixture_tables.on_rows(rows:, reaching: [])
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id: 33_257,
-      chain: [],
-    )
-    as "Mental Boon plans alone once its refused rows are aimed at the caster"
-  spell
+  spell_tables.client_spell(33_257)
 }
 
 /// Shield Surge, a Medic's: 2 Actuators and 86 Focus.

@@ -44,6 +44,7 @@ import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_stack_removed
+import genesis_prime/message/spell_started
 import genesis_prime/message/spell_target_info.{
   type SpellTargetInfo, SpellTargetInfo,
 }
@@ -1909,6 +1910,54 @@ pub fn run_timers_until_as(
       leaves_open: fn(_) { False },
     )
   #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }))
+}
+
+/// The caster with 1 health of a million and no shield: every heal of a press lands whole.
+pub fn hurt(caster caster: Caster) -> Caster {
+  cast_state.Caster(
+    ..caster,
+    vitals: damage.Vitals(
+      health: 1,
+      max_health: 1_000_000,
+      shield: 0,
+      max_shield: 0,
+    ),
+  )
+}
+
+/// Each 0x7ff the effects write, decoded.
+pub fn started_in(
+  effects effects: List(Effect),
+) -> List(spell_started.SpellStarted) {
+  frames_of(message_id: spell_started.message_id, effects:)
+  |> list.map(fn(frame) {
+    let assert Ok(start) = spell_started.decode(frame.body)
+      as "a 0x7ff the rule wrote decodes"
+    start
+  })
+}
+
+/// A press of the spell as the planted base 3 ability by `caster` at `press_ms`, its go
+/// answered by a round that struck nobody, and every timer it starts and each timer those
+/// start, fired on the driven clock up to `until_ms`: the press's effects and each later
+/// step's time and effects.
+pub fn pressed_and_run(
+  spell spell: Spell,
+  caster caster: Caster,
+  press_ms press_ms: Int,
+  until_ms until_ms: Int,
+) -> #(List(Effect), List(#(Int, List(Effect)))) {
+  let #(state, effects) =
+    press_as(
+      plans: plans_of([Spell(..spell, spell4_base_id: Spell4BaseId(3))]),
+      state: cast_state.new(),
+      caster:,
+      bag: started_bag_index,
+      at: press_ms,
+    )
+  let #(_, steps) =
+    run_timers_until_as(caster:, state:, effects:, from_ms: press_ms, until_ms:)
+  #(effects, steps)
 }
 
 /// The timers the effects start, each due its delay after the time.

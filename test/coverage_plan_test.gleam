@@ -12,6 +12,7 @@ import database_support
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/effect_row
 import genesis_prime/coverage/engine.{type EngineDeclaration}
+import genesis_prime/coverage/gaps
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
@@ -130,8 +131,38 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_r
     })
   assert names_no_spell == 107
     as "scratch count: 1,808 rows hold a dataBits00 of 0 and 1,701 of them name a Spell4 row in dataBits01 (`Spell4Effects.effectType.26.periodic`), 107 name none"
-  assert unread == names_no_spell + periodic_left_out + 213 + 9
-    as "the rows the plan leaves out or refuses, counted from the rows here: those that name no Spell4 row, the periodic ones aimed at the area (flags 4 and 6) or until removed (flags bit 2, aimed at the caster by 1, 2 or 3), 213 more refused for their aim (a flag with bit 8, or 3, 5 or 7 in a spell that hits no foes, `FriendlyAreaNotRead`; scratch count over `spell_plan.read_row`) and 9 held for a phaseFlags of 0, which no phase selects: 1,352 of 16,929"
+  let bit_8 =
+    list.count(rows_of_type, fn(row) {
+      let named =
+        row.data_bits00 != 0
+        || spell4.get(tables:, id: id.Spell4Id(row.data_bits01)) != Error(Nil)
+      named && int.bitwise_and(row.target_flags, 8) != 0
+    })
+  let sources = spell_plan.sources_of(tables:)
+  let place_of =
+    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  let tiers_not_chosen =
+    list.filter(rows_of_type, fn(row) {
+      spell_plan.read_row(
+        tables:,
+        sources:,
+        place: place_of(row.spell_id),
+        effect: row,
+      )
+      == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
+    })
+    |> list.length
+  assert unread
+    == names_no_spell + periodic_left_out + bit_8 + tiers_not_chosen + 9
+    as {
+      "the rows the plan leaves out or refuses, counted from the rows here: those that name no Spell4 row, the periodic ones aimed at the area (flags 4 and 6) or until removed (flags bit 2, aimed at the caster by 1, 2 or 3), the "
+      <> int.to_string(bit_8)
+      <> " aimed by a flag with bit 8 (Spell4Effects 187227, flags 10), the "
+      <> int.to_string(tiers_not_chosen)
+      <> " Proxies that start a spell holding Proxies to several tiers of one ability with nothing that chooses the tier (the 9 Flash Proxies 180600 to 180608 and 5 rows of spells no ability, item or creature special reaches: `spell_plan.read_row` leaves them out as `ProxyStartsTiersNoChoice`) and 9 held for a phaseFlags of 0, which no phase selects: "
+      <> int.to_string(unread)
+      <> " of 16,929"
+    }
   assert #(starting, starting_unread) == #(82, 0)
     as "scratch count over the starting rows: 72 of type 26 and the 9 Proxy rows of 76002, the alternate Spell Surge swaps 43468 for (Spell4.spell4IdMechanicAlternateSpell), 121345 and 178429 (read since their spell is named in dataBits01 and they tick) and the Proxy 200548 of 32822, which the periodic Proxy 178429 starts"
 }
@@ -202,8 +233,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "11574 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 816, 3 135, 4 555, 8 2,385, 10 1,050, 11 569, 26 1,352, 29 242, 73 34, 80 375 and 118 73 (the tests above), 17 221, 81 316, 14 1,490 and 18 6 (`coverage_type_test`), 76 122, 83 49, 97 588 (the despawn test above), 42 32 (the measure's count: rows aimed at the area or with no aim), 15 732 (`coverage_type_test`: 231 the plan leaves out or refuses and 501 it applies that refuse nothing), 35 134 (`coverage_type_test`: 24 aimed at another unit, 109 with no duration and 1 selected by no phase), and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values), and 95 58 (the 37 rows aimed at the primary target and the 21 at the area, targetFlags 2 and 4; `table_rows -- Spell4Effects effectType=95`)"
+  assert string.contains(text, "11376 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 816, 3 135, 4 555, 8 2,385, 10 1,050, 11 569, 26 1,154, 29 242, 73 34, 80 375 and 118 73 (the tests above), 17 221, 81 316, 14 1,490 and 18 6 (`coverage_type_test`), 76 122, 83 49, 97 588 (the despawn test above), 42 32 (the measure's count: rows aimed at the area or with no aim), 15 732 (`coverage_type_test`: 231 the plan leaves out or refuses and 501 it applies that refuse nothing), 35 134 (`coverage_type_test`: 24 aimed at another unit, 109 with no duration and 1 selected by no phase), and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values), and 95 58 (the 37 rows aimed at the primary target and the 21 at the area, targetFlags 2 and 4; `table_rows -- Spell4Effects effectType=95`)"
   assert string.contains(text, "starting abilities: 213 of 220 rows handled")
     as "the periodic Proxies 121345 and 178429 are read and start 71371 and 32822 (3 rows, 213 of 220 handled); scratch count over the 217 starting rows (the 196 of before, the 19 rows of the trees Spell Surge's alternates reach and the 2 rows of Spell4 72838, which the Proc 178239 casts since issue 828, all of handled types and read): 6 are not read for lack of a handled type or row (the Proc row 123744 the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }
@@ -267,11 +298,44 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
       ))
     })
   assert by_type(read)
-    == [#(4, 8), #(8, 19), #(17, 169), #(18, 2), #(26, 2), #(80, 21), #(81, 59)]
-    as "scratch count, a row-by-row comparison of the plan on main (every one of these rows refused, `aim_of` read 1 to 7 as 1, 2, 4, 6 only) with this one: 280 of the 294 rows the brief counted by their flags alone are read now (274 before the vital kinds were read, #791, which 6 damage rows aimed by 3, 5 or 7 name); of the other 14, 1 damage row (type 8) fails the area load on its other gates, 10 force removes (type 80) fail theirs (a selector that names no row, a missing Spell4, a target apply prerequisite) and 3 rows (type 81) sit behind an apply prerequisite the plan cannot check (25911, 26254, 26256)"
-  assert by_type(friendly_area)
-    == [#(17, 84), #(18, 3), #(26, 212), #(80, 26), #(81, 21)]
-    as "scratch count over the same rows, the 45 more of type 26 being the Proxies that name their spell in dataBits01, which were left out as naming no spell and are read now (`proxy_named`): 346 rows; before them 301 rows aimed by 3, 5 or 7 in a spell that hits no foes (a row of kind Damage or CrowdControl aimed by 2 to 7) are refused for their area bit (#834), the brief's 301 by type"
+    == [
+      #(4, 8),
+      #(8, 19),
+      #(17, 169),
+      #(18, 2),
+      #(26, 205),
+      #(80, 21),
+      #(81, 59),
+    ]
+    as "scratch count, a row-by-row comparison of the plan on main (every one of these rows refused, `aim_of` read 1 to 7 as 1, 2, 4, 6 only) with this one: 280 of the 294 rows the brief counted by their flags alone are read now (274 before the vital kinds were read, #791, which 6 damage rows aimed by 3, 5 or 7 name); of the other 14, 1 damage row (type 8) fails the area load on its other gates, 10 force removes (type 80) fail theirs (a selector that names no row, a missing Spell4, a target apply prerequisite) and 3 rows (type 81) sit behind an apply prerequisite the plan cannot check (25911, 26254, 26256); the type 26 rows are the 2 read then and the 212 Proxies of a friendly area, now read as the caster alone, less the 9 left out for the tiers they start with no choice"
+  assert by_type(friendly_area) == [#(17, 84), #(18, 3), #(80, 26), #(81, 21)]
+    as "scratch count over the same rows: the kinds that keep a state on the area's units (Fluff 17, Scale 18, ForceRemove 80 and RavelSignal 81) are refused for their area bit (`FriendlyAreaNotRead`) in a spell that hits no foes; a Proxy (type 26) is read as the caster alone there"
+  let proxies_left_out_for_tiers =
+    list.filter(union_rows, fn(row) {
+      row.effect_type == 26
+      && spell_plan.read_row(
+        tables:,
+        sources:,
+        place: place_of(row.spell_id),
+        effect: row,
+      )
+      == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
+    })
+    |> list.map(fn(row) { row.id })
+    |> list.sort(int.compare)
+  assert proxies_left_out_for_tiers
+    == [
+      180_600,
+      180_601,
+      180_602,
+      180_603,
+      180_604,
+      180_605,
+      180_606,
+      180_607,
+      180_608,
+    ]
+    as "the union Proxies left out are Flash's nine, one for each tier of the ability (`table_rows -- Spell4Effects 180600 180601 180602 180603 180604 180605 180606 180607 180608`: each starts a Mending Probes detonation holding five tier Proxies with the same aim, phases, gates and tag)"
   let unread = effect_row.unread_by_type(tables:, effects:)
   let unread_of = fn(type_number) {
     let assert Ok(count) = dict.get(unread, type_number)
@@ -293,7 +357,7 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
       == Ok(spell_plan.LeftOut(why: spell_plan.ProxyNamesNoSpell))
     })
   assert list.length(proxies_naming_no_spell) == 4
-    as "the Proxy rows aimed by 3, 5 or 7 whose dataBits00 names no spell were 49 (the brief's count); 45 of them name a Spell4 row in dataBits01, are read as a Proxy since then (`proxy_named`) and refused with the rows of the friendly area above (212 less 167), and 4 name none: the union reading changes which unit a row reaches, not which Proxy names a spell"
+    as "the Proxy rows aimed by 3, 5 or 7 whose dataBits00 names no spell were 49 (the brief's count); 45 of them name a Spell4 row in dataBits01 and are read as a Proxy (`proxy_named`), and 4 name none: the union reading changes which unit a row reaches, not which Proxy names a spell"
 }
 
 /// How many of the rows hold each effect type, as #(type, count) in type order.
@@ -353,6 +417,32 @@ pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
     "whose dataBits00 is 0, which name their spell",
   )
     as "a Proxy that names its spell in dataBits01 is no longer the gap: the plan starts it"
+  assert string.contains(proxy.reason, "bit 8")
+    && string.contains(proxy.reason, "several tiers of one ability")
+    as "the gap names the aim with bit 8 and the Proxies that start tiers with no choice"
+  assert !string.contains(proxy.reason, "3, 5 or 7")
+    as "a Proxy aimed by 3, 5 or 7 in a spell that hits no foes is read as the caster alone, so it is no gap"
+  let entries = gaps.registry()
+  [
+    #("a friendly area's Proxy starts its child on the caster alone", [
+      "yourself and N allies",
+      "Proxy",
+      "caster alone",
+    ]),
+    #("a Proxy that starts tiers with no choice is left out", [
+      "several tiers",
+      "tier",
+      "Flash",
+    ]),
+  ]
+  |> list.each(fn(row) {
+    let #(limit, words) = row
+    assert list.any(entries, fn(entry) {
+      entry.area == "Spell areas"
+      && list.all(words, fn(word) { string.contains(entry.missing, word) })
+    })
+      as { limit <> " is stated as a gap of the Spell areas" }
+  })
 }
 
 pub fn type_97_rows_are_each_read_left_out_or_refused_by_name_test() -> Nil {

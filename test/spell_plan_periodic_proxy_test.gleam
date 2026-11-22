@@ -208,8 +208,8 @@ pub fn a_timed_periodic_proxy_on_the_caster_reads_as_the_schedule_of_its_row_tes
 
 pub fn a_proxy_with_no_tick_time_reads_as_a_once_proxy_whatever_column_names_its_spell_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The real row 76609 has targetFlags 5 in 36562, a spell that hits no foes, which
-  // `friendly_area_read` refuses (`FriendlyAreaNotRead`), so the twins have targetFlags 1.
+  // The real row 76609 has targetFlags 5 in 36562, a spell that hits no foes, which start the
+  // child on the caster alone; the twins have targetFlags 1, the caster.
   let readings =
     spell_tables.read_rows(
       effects: [

@@ -11,6 +11,9 @@
 ////   which re-reads the points 2000 ms later, so 0x0169 follows that 0x0938.
 //// - `XpPerLevel.minXpForLevel`: the experience a level starts at, which the saved
 ////   experience of each case is one short of.
+//// - The abilities a rise grants (0x0111, 0x01A0) are the book's own frames
+////   (`experience_book_test`); the ids here leave them out, so a row the fixture's SpellLevel
+////   gains does not change what this test says about the points.
 
 import ability_book_support as book_support
 import ability_points_support as support
@@ -84,6 +87,11 @@ fn rises() -> List(Rise) {
   ]
 }
 
+/// The ids without the 0x0111 and 0x01A0 of the abilities a rise grants.
+fn without_the_book(ids ids: List(Int)) -> List(Int) {
+  list.filter(ids, fn(id) { id != 0x0111 && id != 0x01A0 })
+}
+
 pub fn a_level_rise_sends_the_new_total_after_the_level_only_when_the_rise_changes_it_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(rises(), fn(rise) {
@@ -94,7 +102,9 @@ pub fn a_level_rise_sends_the_new_total_after_the_level_only_when_the_rise_chang
         to: rise.to,
       )
     let frames = book_support.written(taken:)
-    assert connection_support.written_ids(taken) == rise.ids as rise.why
+    assert without_the_book(ids: connection_support.written_ids(taken))
+      == rise.ids
+      as rise.why
     assert support.points_in(frames:) == rise.points as rise.why
     assert list.map(experience_support.level_writes(taken:), fn(written) {
         written.1

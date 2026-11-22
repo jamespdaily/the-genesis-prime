@@ -9,11 +9,12 @@
 //// - The rise's frames are those of a gain of any source: `experience_book_test` (a Medic's
 ////   3 to 4 writes 0x1ac, 0x938, 0x111, 0x1a0, 0x93a, with the ability of Spell4Base 26038
 ////   in slot 4; 5 to 6 adds 25530, 25579 and 38210) and `experience_points_test`.
-//// - `SpellLevel.spell4Id.no_prerequisite`: the committed rows hold a Medic's abilities up to
-////   level 6 (`ability_book_test`): 614 (level 4, Spell4Base 26038), 1087 (5, 25692), 1191,
-////   1194 and 1221 (6, 25530, 25579, 38210). A rise to level 9 grants all five, in that
-////   order, in slots 4 to 8 after the bag of 4 items, and one 0x1a0 holds each at tier 1 in
-////   the four action sets (`opcode.0x1a0`).
+//// - `SpellLevel.spell4Id.no_prerequisite`: the committed rows hold the Medic's abilities
+////   of levels 4 to 9 (`ability_book_test`): 614 (level 4, Spell4Base 26038), 1087 (5,
+////   25692), 1191, 1194 and 1221 (6, 25530, 25579, 38210), 632 (8, 47675) and 1021 (9,
+////   16336). A rise to level 9 grants them in the order of level and row id, in the slots
+////   after the bag of 4 items, and one 0x1a0 holds each at tier 1 in the four action sets
+////   (`opcode.0x1a0`).
 //// - The line each command is answered with is the design's choice (a System line,
 ////   ChatChannel row 2).
 //// - `opcode.0x35c.complete_unheld`, `0x1405fbdc0.state_3`: the client takes 0x35c state 3
@@ -54,6 +55,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/departures
+import genesis_prime/game/loadout
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
@@ -83,13 +85,16 @@ import genesis_prime/step.{
   TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{ForItems, Items, Move, SavePlace}
-import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/id.{Item2Id, Spell4Id}
+import genesis_prime/table/spell4
+import genesis_prime/table/spell_level
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/string
 import item_expiry_support
 import map_support
@@ -121,6 +126,35 @@ type Raise {
     held: #(Int, Int),
     why: String,
   )
+}
+
+/// The abilities a Medic of level 3 gains by a rise to `level`, as the bag index and the
+/// Spell4Base, from the fixture's SpellLevel rows of class 4 with no prerequisite: each level's
+/// rows in the order of their ids, in the slots after the bag the level 3 Medic holds, which
+/// is its level 1 abilities, those of levels 2 and 3 and the innate
+/// (`ability_book_test`: "the three abilities and the innate").
+fn medic_abilities_gained_to(level level: Int) -> List(#(Int, Int)) {
+  let tables = fixture_tables.shared()
+  let medic_rows =
+    spell_level.all(tables)
+    |> list.filter(fn(row) {
+      row.class_id == 4 && loadout.is_class_ability(row:)
+    })
+  let held_at_3 =
+    list.count(medic_rows, fn(row) { row.character_level <= 3 }) + 1
+  medic_rows
+  |> list.filter(fn(row) {
+    row.character_level > 3 && row.character_level <= level
+  })
+  |> list.sort(fn(first, second) {
+    int.compare(first.character_level, second.character_level)
+    |> order.break_tie(int.compare(first.id, second.id))
+  })
+  |> list.index_map(fn(row, index) {
+    let assert Ok(spell) = spell4.get(tables:, id: Spell4Id(row.spell4_id))
+      as "a SpellLevel row names a Spell4 row"
+    #(held_at_3 + index, spell.spell4_base_id_base_spell)
+  })
 }
 
 pub fn a_raise_writes_the_frames_of_an_experience_gain_and_the_level_rise_then_one_line_test() -> Nil {
@@ -155,17 +189,10 @@ pub fn a_raise_writes_the_frames_of_an_experience_gain_and_the_level_rise_then_o
         ends: [0x01A0, 0x093A, 0x01C8],
         gain: 15_530,
         levels: [9],
-        added: [
-          #(4, 26_038),
-          #(5, 25_692),
-          #(6, 25_530),
-          #(7, 25_579),
-          #(8, 38_210),
-          #(9, 47_675),
-        ],
+        added: medic_abilities_gained_to(level: 9),
         line: "level 9, experience 17330",
         held: #(9, 17_330),
-        why: "level 9 starts at 17330: one 0x938 for the whole jump, and the six abilities the fixture's Medic rows hold for levels 4 to 8 (SpellLevel 632, Nullifier's Spell4Base 47675, at level 8)",
+        why: "level 9 starts at 17330: one 0x938 for the whole jump, and the abilities the fixture's Medic rows hold for levels 4 to 9, in the order of level and then row id (SpellLevel 632 is Nullifier at level 8, 1021 Triage at level 9)",
       ),
     ],
     fn(row) {

@@ -5603,5 +5603,9 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Casting",
       missing: "A cast whose persistence is that the caster holds a mount, the hoverboard's ride, ends in the input of its own go, because the server does not read a mount summon: the client is shown the ride's Ability Restriction and its end at once.",
     ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A property modifier aimed at the primary target (targetFlags 2) changes only a creature the go struck, so in a spell a Proxy starts on the caster it changes no unit: Mental Boon's Nimble (property 39, Dash Regeneration) is not given.",
+    ),
   ]
 }
