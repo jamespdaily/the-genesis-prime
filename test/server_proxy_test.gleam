@@ -86,8 +86,7 @@ pub fn the_seed_row_plants_42148_into_the_damage_spell_at_its_last_go_test() -> 
     spell_plan.payloads(spell: planted.spell, as_kind: spell_plan.as_gain)
     as "42148's one effect 95337 is a gain"
   let assert spell_plan.Gain(
-    slot: 1,
-    amount: 15,
+    gift: spell_plan.SlotPoints(slot: 1, points: 15),
     condition: spell_plan.GatedOnCaster(..),
     ..,
   ) = gain

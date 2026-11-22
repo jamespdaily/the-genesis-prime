@@ -29,9 +29,11 @@
 //// base 3 is bag index 11.
 
 import cast_support as support
+import class_resource_support
 import client_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -43,6 +45,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{type TimerId, LogWarning, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -1023,5 +1026,113 @@ pub fn a_cast_reads_the_casters_world_zone_and_gender_test() -> Nil {
       as "a condition the player's facts decide accepts or refuses the press by its own verdict, with the CasterCast result 151"
     assert support.logs(effects:) == []
       as "the type is read, so no warning about a condition the server cannot read is written"
+  })
+}
+
+// ---- types 71 and 73 on vital 15: the caster's Focus ----
+
+/// What the prerequisite makes of a caster of the class whose Focus maximum (property 5) is
+/// 1000 and who holds `held` of it, read as every spell check reads the caster
+/// (`cast/tick.subject_of`).
+fn verdict_for(
+  row row: Int,
+  class_id class_id: Int,
+  held held: Int,
+) -> prerequisite.Verdict {
+  let resources =
+    class_resource.paid(
+      resources: class_resource_support.resources_with(
+        class_id:,
+        changes: [#(5, 1000.0)],
+        level: 1,
+      ),
+      payments: [class_resource.Payment(slot: -1, amount: 1000 - held)],
+    )
+  let caster = cast_state.Caster(..support.caster(), resources:)
+  prerequisite.check(
+    prerequisite: prerequisites.fixture_row(row:),
+    subject: cast_tick.subject_of(cast: cast_state.new(), caster:),
+  )
+}
+
+pub fn a_type_71_and_73_condition_on_vital_15_reads_the_casters_focus_and_a_class_with_none_as_0_of_0_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let medic = 4
+  let warrior = 1
+  // Prerequisite.prerequisiteTypeId.71: the vital's percentage of its maximum against the
+  // value; .73: its current points against the value (comparisons 3 greater, 4 at least,
+  // 5 less, 6 at most). Rows: 38318 type 71 at least 30 (Life Force); 39896 to 39899 at most
+  // 20, 40, 60 and 80 and 39900 to 39903 greater than the same (Desperate Hope); 24340 type
+  // 73 less than 50 and 22140 type 73 at least 200.
+  [
+    #(38_318, medic, 299, prerequisite.Fails, "29.9 percent is under 30"),
+    #(38_318, medic, 300, prerequisite.Passes, "30 percent is at least 30"),
+    #(39_896, medic, 200, prerequisite.Passes, "20 percent is at most 20"),
+    #(39_896, medic, 201, prerequisite.Fails, "20.1 percent is over 20"),
+    #(39_899, medic, 800, prerequisite.Passes, "80 percent is at most 80"),
+    #(39_899, medic, 801, prerequisite.Fails, "80.1 percent is over 80"),
+    #(
+      39_900,
+      medic,
+      200,
+      prerequisite.Fails,
+      "20 percent is not greater than 20",
+    ),
+    #(
+      39_900,
+      medic,
+      201,
+      prerequisite.Passes,
+      "20.1 percent is greater than 20",
+    ),
+    #(
+      39_903,
+      medic,
+      801,
+      prerequisite.Passes,
+      "80.1 percent is greater than 80",
+    ),
+    #(24_340, medic, 49, prerequisite.Passes, "49 points are less than 50"),
+    #(24_340, medic, 50, prerequisite.Fails, "50 points are not less than 50"),
+    #(22_140, medic, 199, prerequisite.Fails, "199 points are under 200"),
+    #(22_140, medic, 200, prerequisite.Passes, "200 points are at least 200"),
+    // A Warrior holds no Focus: 0 of a maximum of 0 (ConstructUnit zeroes the word and
+    // property 5 defaults to 0). A percentage of that is no number, which fails every
+    // comparison; the points are 0.
+    #(
+      38_318,
+      warrior,
+      0,
+      prerequisite.Fails,
+      "0 of 0 percent is not at least 30",
+    ),
+    #(
+      39_896,
+      warrior,
+      0,
+      prerequisite.Fails,
+      "0 of 0 percent is not at most 20",
+    ),
+    #(
+      39_900,
+      warrior,
+      0,
+      prerequisite.Fails,
+      "0 of 0 percent is not greater than 20",
+    ),
+    #(24_340, warrior, 0, prerequisite.Passes, "0 points are less than 50"),
+    #(22_140, warrior, 0, prerequisite.Fails, "0 points are not at least 200"),
+  ]
+  |> list.each(fn(row) {
+    let #(prerequisite_id, class_id, held, expected, why) = row
+    assert verdict_for(row: prerequisite_id, class_id:, held:) == expected
+      as {
+        "Prerequisite "
+        <> int.to_string(prerequisite_id)
+        <> " with "
+        <> int.to_string(held)
+        <> " held: "
+        <> why
+      }
   })
 }

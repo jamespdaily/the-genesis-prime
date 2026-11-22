@@ -3097,8 +3097,7 @@ pub fn proc_resource_spent_fires_test() -> Nil {
       kinds: [
         spell_plan.GainEffect(spell_plan.Gain(
           effect_id: Spell4EffectsId(1),
-          slot: 1,
-          amount: 1,
+          gift: spell_plan.SlotPoints(slot: 1, points: 1),
           phase_flags: 1,
           condition: Always,
           tag: spend.always,

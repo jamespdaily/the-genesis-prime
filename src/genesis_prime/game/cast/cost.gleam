@@ -556,7 +556,15 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Focus",
-      missing: "A VitalModifier of the Focus vital gives nothing, a type 71 or 73 prerequisite on the Focus vital is not read, and a caster requirement on Focus (requirement type 15) is not planned, so the abilities that need them are not planned.",
+      missing: "A VitalModifier of Focus with a share above 1.0 of the maximum (Spell4Effects 86177, 105624, 175652, 175666 and 175671, named for a percentage) or not above 0, and a share of a class vital, are refused as not read; dataBits09 of a VitalModifier is not read.",
+    ),
+    gap.Entry(
+      area: "Focus",
+      missing: "Focus is not saved: a player enters with it at its pool, as every class resource enters at its start.",
+    ),
+    gap.Entry(
+      area: "Focus",
+      missing: "A caster requirement of type 18 (the Fusion Probe's first requirement) is not planned: the client reads it through the class mechanic's default case, comparing registers that case never sets, so which Focus requirement then applies is open, and the Fusion Probe spells are not planned.",
     ),
   ]
 }

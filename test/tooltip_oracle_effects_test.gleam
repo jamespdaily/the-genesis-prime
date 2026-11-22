@@ -358,9 +358,19 @@ fn gains_in(drive driven: Drive) -> List(class_resource.Gain) {
 
 /// What the drive gained into the slot, all its gains added, or nothing when it gained none.
 fn gained_into(slot slot: Int, drive driven: Drive) -> Result(Int, Nil) {
-  case list.filter(gains_in(drive: driven), fn(gain) { gain.slot == slot }) {
+  let made =
+    list.filter_map(gains_in(drive: driven), fn(gain) {
+      case gain {
+        class_resource.Gain(slot: gained, amount:) if gained == slot ->
+          Ok(amount)
+        class_resource.Gain(..)
+        | class_resource.ClassVitalGain(..)
+        | class_resource.FocusShare(..) -> Error(Nil)
+      }
+    })
+  case made {
     [] -> Error(Nil)
-    made -> Ok(int.sum(list.map(made, fn(gain) { gain.amount })))
+    _ -> Ok(int.sum(made))
   }
 }
 
@@ -377,7 +387,19 @@ fn gain_outcome(
     Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
     Ok(spell_plan.TickingGain(..)) ->
       Unobserved(asked: entry, why: HeldAs(list: "ticking gain"))
-    Ok(spell_plan.Gain(slot:, ..)) ->
+    // The abilities of `plans` are the starting ones, and every gain of Focus or of a class
+    // vital is reached from a later ability (Meditate, Recharge), an item's spell or an AMP,
+    // whose texts the oracle does not ask: no token of a planned ability names such a row, so
+    // none is compared here. The share reading is checked against the texts of Meditate and
+    // Recharge in `spell_plan_gain_test`, and the pool's arithmetic in `class_resource_test`.
+    Ok(spell_plan.Gain(gift: spell_plan.FocusPoints(..), ..))
+    | Ok(spell_plan.Gain(gift: spell_plan.FocusShare(..), ..))
+    | Ok(spell_plan.Gain(gift: spell_plan.ClassVitalPoints(..), ..)) ->
+      Unobserved(
+        asked: entry,
+        why: HeldAs(list: "gain of Focus or of a class vital by its name"),
+      )
+    Ok(spell_plan.Gain(gift: spell_plan.SlotPoints(slot:, ..), ..)) ->
       outcome(
         entry:,
         expected: printed_total(rows:, entry:, asked:, root:, slot:),
@@ -438,8 +460,13 @@ fn gaining_rows(root root: Spell, slot slot: Int) -> List(Int) {
   let into = fn(gains: List(spell_plan.Gain)) {
     list.filter_map(gains, fn(gain) {
       case gain {
-        spell_plan.Gain(slot: gained, effect_id:, ..) if gained == slot ->
-          Ok(effect_id.value)
+        spell_plan.Gain(
+          gift: spell_plan.SlotPoints(slot: gained, ..),
+          effect_id:,
+          ..,
+        )
+          if gained == slot
+        -> Ok(effect_id.value)
         spell_plan.Gain(..) | spell_plan.TickingGain(..) -> Error(Nil)
       }
     })

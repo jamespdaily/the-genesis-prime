@@ -451,7 +451,7 @@ pub fn the_effect_types_3_10_11_14_15_17_18_29_35_42_52_64_73_76_80_81_83_84_95_
     == [
       Missing(
         type_number: 1,
-        reason: "rows aimed at another unit, changing a vital other than 6 and 8, behind a target apply prerequisite or periodic (tickTime), which the plan refuses or holds and no go applies",
+        reason: "rows aimed at another unit, changing a vital other than 6, 8, 15 and a class's 4, 12, 13, 14, 18 and 19, holding a share of Focus above 1.0 or a share of a class vital, behind a target apply prerequisite or periodic (tickTime), which the plan refuses or holds and no go applies",
         fact_key: "Spell4Effects.effectType.1",
       ),
       Missing(

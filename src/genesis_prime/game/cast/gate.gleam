@@ -812,7 +812,7 @@ fn gain_verdict(
       ),
       rolls,
     )
-    spell_plan.Gain(condition:, slot:, amount:, ..) -> {
+    spell_plan.Gain(condition:, gift:, ..) -> {
       let #(gate, rolls) =
         gates_gate(
           gates: only_on_caster_gates(condition:),
@@ -823,13 +823,28 @@ fn gain_verdict(
         )
       #(
         case gate {
-          Starts -> Given(gain: class_resource.Gain(slot:, amount:))
+          Starts -> Given(gain: gift_of(gift:))
           GateFails -> Withheld
           CannotTell(why:) -> NotApplied(why:)
         },
         rolls,
       )
     }
+  }
+}
+
+/// What the class resource rule is asked to give for a gain's gift: the resource slot's
+/// points, a class vital's points, or Focus as points (`class_resource.focus_slot`) or as a
+/// share of its maximum.
+fn gift_of(gift gift: spell_plan.Gift) -> class_resource.Gain {
+  case gift {
+    spell_plan.SlotPoints(slot:, points:) ->
+      class_resource.Gain(slot:, amount: points)
+    spell_plan.ClassVitalPoints(vital:, points:) ->
+      class_resource.ClassVitalGain(vital:, amount: points)
+    spell_plan.FocusPoints(points:) ->
+      class_resource.Gain(slot: class_resource.focus_slot, amount: points)
+    spell_plan.FocusShare(share:) -> class_resource.FocusShare(share:)
   }
 }
 

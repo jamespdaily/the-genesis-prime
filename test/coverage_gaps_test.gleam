@@ -167,3 +167,34 @@ pub fn the_dev_command_gap_entry_is_printed_by_the_registry_test() -> Nil {
   )
     as "the gaps section prints the entry under its area"
 }
+
+pub fn the_registry_holds_the_channel_pulse_and_the_unread_gain_column_gaps_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  let entries = gaps.registry()
+  [
+    #(
+      "Spell phases",
+      ["spellChannelFlags", "phaseFlags 1", "first pulse only", "every pulse"],
+      "a channel without bit 1 fires a phaseFlags 1 row at its first pulse only, while most texts say every pulse",
+    ),
+    #(
+      "Resource gains",
+      ["vital 8", "dataBits05", "0 points"],
+      "a vital 8 gain of no points and a float in dataBits05 gives 0 points",
+    ),
+    #(
+      "Resource gains",
+      ["dataBits01", "dataBits02", "Focus"],
+      "a Focus gain's points are read from dataBits02 where dataBits01 differs",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(area, words, limit) = row
+    assert list.any(entries, fn(entry) {
+      entry.area == area
+      && list.all(words, fn(word) { string.contains(entry.missing, word) })
+    })
+      as { limit <> " is stated as a gap" }
+  })
+}

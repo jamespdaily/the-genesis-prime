@@ -388,8 +388,7 @@ fn gain_behind(
 ) -> spell_plan.Gain {
   spell_plan.Gain(
     effect_id: Spell4EffectsId(2),
-    slot: 1,
-    amount: 5,
+    gift: spell_plan.SlotPoints(slot: 1, points: 5),
     phase_flags: 1,
     condition: spell_plan.GatedOnCaster(gates: [prerequisite]),
     tag: spend.always,
@@ -399,8 +398,7 @@ fn gain_behind(
 fn gain_under(condition condition: spell_plan.Condition) -> spell_plan.Gain {
   spell_plan.Gain(
     effect_id: Spell4EffectsId(2),
-    slot: 1,
-    amount: 5,
+    gift: spell_plan.SlotPoints(slot: 1, points: 5),
     phase_flags: 1,
     condition:,
     tag: spend.always,
@@ -553,20 +551,20 @@ pub fn a_gain_behind_a_type_71_prerequisite_reads_the_casters_health_test() -> N
 
 pub fn a_gain_behind_a_vital_the_server_does_not_hold_is_not_given_and_leaves_a_line_test() -> Nil {
   use <- owned_test.run(5000)
-  let focus =
+  let unheld =
     spell_with(proxies: [], gains: [
       gain_behind(
         prerequisite: prerequisite_support.single(id: 1, condition: #(
           73,
           4,
-          15,
+          9,
           0,
         )),
       ),
     ])
-  let effects = pressed(spell: focus, caster: support.caster(), rolls: [])
+  let effects = pressed(spell: unheld, caster: support.caster(), rolls: [])
   assert support.gains(effects:) == []
-    as "Vital 15 (Focus) is held by no rule of the server: the prerequisite is not read, so no gain is given"
+    as "Vital 9 (Resource4) is a slot the caster's class does not hold, so no rule of the server holds it: the prerequisite is not read and no gain is given"
   assert list.length(debug_lines(effects)) == 1 as "and one debug line says so"
 }
 

@@ -9,19 +9,31 @@
 ////   177122); 56858 (+1, no prerequisite) in 30900, which Telekinetic Strike's
 ////   Proxy 62204 starts at the area; 228910 (+4 behind 43811) and 228918 (+1 every
 ////   2000 ms for 8000 ms, behind 43812) in Energize 69450, on the caster.
+//// - `Spell4Effects.dataBits05`: a Focus gain with a dataBits02 of 0 holds a share of the
+////   maximum Focus as a float (Meditate's row 65493: 0.04, text 243889 "Restore 4% of your
+////   maximum Focus"; Recharge's four rows 228352, 228357, 228361 and 228363: 0.05 to 0.20
+////   per Actuator held, text 383170 "restore ... of your maximum Focus per Actuator", each
+////   behind the Prerequisite that picks the Actuator count: 43658, 43659, 43660 and
+////   29891); a dataBits02 holds points (Rations' row 88371: 80 in dataBits01 and dataBits02,
+////   which text 270070 prints as "... Focus every second while channeling"); 88544 holds
+////   1.0, 86177 100.0 ("Full Heal") and 161906 holds no amount.
 //// - `Spell4Effects.effectType.26.dataBits06`: five level-1 Proxies name a
 ////   Prerequisite in dataBits06, which gates them against the caster.
 //// - The design of issue 418: a gain of a child started at each struck unit is
 ////   given once per go of its parent, so the plan moves it onto the Proxy.
 
 import client_tables
+import fixture_tables
 import genesis_prime/game/prerequisite
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
-  type Gain, type Proxy, type Spell, Gain, TickingGain,
+  type Gain, type Gift, type Proxy, type Spell, ClassVitalPoints, FocusPoints,
+  FocusShare, Gain, TickingGain,
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -46,10 +58,12 @@ fn read(gain: Gain) -> #(Int, Int, Int, Int, Option(Int), Option(#(Int, Int))) {
     Gain(..) -> None
     TickingGain(tick_ms:, duration_ms:, ..) -> Some(#(tick_ms, duration_ms))
   }
+  let assert spell_plan.SlotPoints(slot:, points:) = gain.gift
+    as "these rows give the points of vital 6, a resource slot"
   #(
     gain.effect_id.value,
-    gain.slot,
-    gain.amount,
+    slot,
+    points,
     gain.phase_flags,
     prerequisite_id,
     ticking,
@@ -363,4 +377,247 @@ pub fn every_gain_under_an_each_struck_proxy_is_in_phase_0_and_one_level_deep_te
     as "Relentless Strikes and Telekinetic Strike hold such gains"
   assert list.all(gains, fn(gain) { gain == #(False, 1) })
     as "Spell4Effects.phaseFlags of every VitalModifier under a Proxy aimed at each struck unit in the level-1 trees is 1 (phase 0), and none sits below a cast already started for each struck unit: lifting by phase 0 moves each whole, none is lost to a later phase, and none stays on a child that casts once per unit"
+}
+
+// ---- Focus and class vital gains ----
+
+/// The effect id and gift of each gain of the spell's own list, in the plan's order.
+fn gifts_of(spell: Spell) -> List(#(Int, Gift)) {
+  list.map(spell_plan.payloads(spell:, as_kind: spell_plan.as_gain), fn(gain) {
+    #(gain.effect_id.value, gain.gift)
+  })
+}
+
+/// The caster gate of each gain of the spell's own list, in the plan's order.
+fn gates_of(spell: Spell) -> List(Option(Int)) {
+  list.map(spell_plan.payloads(spell:, as_kind: spell_plan.as_gain), fn(gain) {
+    case gain.condition {
+      spell_plan.GatedOnCaster(gates: [gate, ..]) ->
+        Some(prerequisite.id(prerequisite: gate).value)
+      spell_plan.GatedOnCaster(gates: [])
+      | spell_plan.Always
+      | spell_plan.GatedOnTarget(..)
+      | spell_plan.GatedOnCasterAndTarget(..) -> None
+    }
+  })
+}
+
+/// Whether a gift is the expected one; a share is a 32-bit float of the column, so it is
+/// compared to the decimal the client's text prints, within 1e-6.
+fn is_gift(gift: Gift, expected: Gift) -> Bool {
+  case gift, expected {
+    FocusShare(share: got), FocusShare(share: wanted) ->
+      float.loosely_equals(got, wanted, tolerating: 1.0e-6)
+    _, _ -> gift == expected
+  }
+}
+
+fn planned_on(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(Spell, spell_plan.PlanError) {
+  spell_plan.spell_alone(
+    tables:,
+    sources: spell_plan.sources_of(tables:),
+    spell4_id:,
+    chain: [],
+  )
+}
+
+fn cell(number: Int) -> planted_table.Cell {
+  planted_table.Integer(number)
+}
+
+pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a_class_vital_share_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // (spell, row, gift, why): a dataBits02 other than 0 is points, a dataBits02 of 0 with a
+  // dataBits05 in (0, 1.0] a share of the maximum, neither no points.
+  list.each(
+    [
+      #(
+        34_776,
+        88_371,
+        FocusPoints(80),
+        "Rations: dataBits02 80, as text 270070 prints it",
+      ),
+      #(
+        32_818,
+        65_493,
+        FocusShare(0.04),
+        "Meditate: dataBits05 0.04 of the maximum, text 243889",
+      ),
+      #(
+        64_945,
+        161_906,
+        FocusPoints(0),
+        "no dataBits02 and no dataBits05: 0 points",
+      ),
+    ],
+    fn(row) {
+      let #(spell4_id, effect_id, expected, why) = row
+      let assert Ok(spell) =
+        planned_on(tables: fixture_tables.shared(), spell4_id:)
+        as why
+      let assert Ok(gift) = list.key_find(gifts_of(spell), effect_id) as why
+      assert is_gift(gift, expected) as why
+    },
+  )
+  // The rows of 1.0 (88544 and 101844, "Refill Resources") are in spells that also hold a
+  // vital 9 row, which the plan refuses, so Rations' 88371 is edited to hold 1.0: the whole
+  // maximum.
+  let assert Ok(whole) =
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 88_371,
+      with: [#("dataBits02", cell(0)), #("dataBits05", cell(1_065_353_216))],
+      body: fn(edited) { planned_on(tables: edited, spell4_id: 34_776) },
+    )
+    as "Rations with a share of 1.0 plans"
+  assert list.key_find(gifts_of(whole), 88_371) == Ok(FocusShare(1.0))
+    as "dataBits05 1.0 is the whole maximum"
+  // A share above 1.0 is not read: rows 86177, 105624, 175652, 175666 and 175671 hold 100.0
+  // or 10.0 ("Full Heal", "10% Heal"), and clamping them would read a name that says 100
+  // times as the whole. Their spells hold other rows the plan refuses, so Rations' 88371 is
+  // edited to 100.0.
+  let refused =
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 88_371,
+      with: [#("dataBits02", cell(0)), #("dataBits05", cell(1_120_403_456))],
+      body: fn(edited) { planned_on(tables: edited, spell4_id: 34_776) },
+    )
+  let assert Error(error) = refused as "a share of 100.0 is refused"
+  let text = spell_plan.describe(error:)
+  assert string.contains(text, "34776") && string.contains(text, "88371")
+    as "the refusal names the spell and the row"
+  assert spell_plan.is_unbuilt(error:)
+    as "a later ability with such a row is left out of the plans, not a failed load"
+  // No client row holds a share on a class vital, so Recharge's -4 of vital 18 is edited to
+  // dataBits02 0 and dataBits05 0.05.
+  use edited <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 228_362,
+    with: [
+      #("dataBits02", cell(0)),
+      #("dataBits05", cell(1_028_443_341)),
+    ],
+  )
+  assert planned_on(tables: edited, spell4_id: 42_596)
+    == Error(spell_plan.GainShareNotRead(
+      spell4_id: 42_596,
+      effect_id: 228_362,
+      vital: 18,
+      data_bits05: 1_028_443_341,
+    ))
+    as "a share of a class vital's maximum is refused by name"
+}
+
+pub fn recharge_plans_four_focus_shares_behind_the_actuator_counts_and_its_vital_18_rows_in_row_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let assert Ok(recharge) = planned_on(tables:, spell4_id: 42_596)
+    as "Recharge plans"
+  let first = gifts_of(recharge)
+  assert list.map(first, fn(gain) { gain.0 })
+    == [228_352, 228_357, 228_361, 228_363, 228_362]
+    as "orderIndex 1, 2, 3, 4 and 6: the four shares, then the cost of the Actuators"
+  assert list.zip(list.map(first, fn(gain) { gain.1 }), [
+      FocusShare(0.05),
+      FocusShare(0.1),
+      FocusShare(0.15),
+      FocusShare(0.2),
+      ClassVitalPoints(vital: 18, points: -4),
+    ])
+    |> list.all(fn(pair) { is_gift(pair.0, pair.1) })
+    as "dataBits05 0.05, 0.10, 0.15 and 0.20 per the text 383170, and dataBits02 -4 of vital 18"
+  assert gates_of(recharge)
+    == [Some(43_658), Some(43_659), Some(43_660), Some(29_891), None]
+    as "each share is behind the Prerequisite that counts the Actuators: 43658 to 43660 (type 73 of vital 6 equal to 1, 2, 3) and 29891 (at least 4)"
+  let assert Ok(tier) = planned_on(tables:, spell4_id: 59_885)
+    as "tier 59885 plans"
+  assert list.map(gifts_of(tier), fn(gain) { gain.0 })
+    == [228_368, 228_376, 228_384, 228_392, 228_400, 228_405]
+    as "the cost of 4 (228400, orderIndex 4) comes before the +2 (228405, orderIndex 5)"
+  assert list.drop(gifts_of(tier), 4)
+    == [
+      #(228_400, ClassVitalPoints(vital: 18, points: -4)),
+      #(228_405, ClassVitalPoints(vital: 18, points: 2)),
+    ]
+  let assert Ok(unplanned) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+    as "the fixture's plans build"
+  assert list.filter(unplanned, fn(left_out) {
+      left_out.spell4_id == 32_818 || left_out.spell4_id == 42_596
+    })
+    == []
+    as "Meditate (Esper level 24) and Recharge (Medic level 14) are planned, not left out"
+}
+
+pub fn each_recharge_tier_gives_the_actuator_count_times_its_per_actuator_share_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Texts 383170 and 513199: "restore X of your maximum Focus per Actuator", so the row for
+  // 2, 3 and 4 Actuators holds 2, 3 and 4 times the row for 1.
+  list.each(
+    [42_596, 59_882, 59_883, 59_884, 59_885, 59_886, 59_887, 59_888, 59_889],
+    fn(spell4_id) {
+      let assert Ok(spell) =
+        planned_on(tables: fixture_tables.shared(), spell4_id:)
+        as "the tier plans"
+      let shares =
+        list.filter_map(gifts_of(spell), fn(gain) {
+          case gain.1 {
+            FocusShare(share:) -> Ok(share)
+            FocusPoints(..)
+            | ClassVitalPoints(..)
+            | spell_plan.SlotPoints(..) -> Error(Nil)
+          }
+        })
+      let assert [one, two, three, four] = shares
+        as "four shares, for 1 to 4 Actuators"
+      let why = "tier " <> int.to_string(spell4_id)
+      assert float.loosely_equals(two, 2.0 *. one, tolerating: 1.0e-6) as why
+      assert float.loosely_equals(three, 3.0 *. one, tolerating: 1.0e-6) as why
+      assert float.loosely_equals(four, 4.0 *. one, tolerating: 1.0e-6) as why
+    },
+  )
+}
+
+pub fn a_gain_of_a_class_vital_plans_as_that_vital_for_4_12_13_14_18_and_19_and_one_of_vital_7_still_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x1405e7980 takes these vitals for a class cost; no client row holds a non-ticking
+  // caster gain of 4, 12, 13 or 14, so Recharge's -4 (row 228362, vital 18) is edited to each.
+  list.each([4, 12, 13, 14, 18, 19], fn(vital) {
+    use edited <- fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 228_362,
+      with: [#("dataBits00", cell(vital))],
+    )
+    let assert Ok(spell) = planned_on(tables: edited, spell4_id: 42_596)
+      as { "vital " <> int.to_string(vital) <> " plans" }
+    assert list.key_find(gifts_of(spell), 228_362)
+      == Ok(ClassVitalPoints(vital:, points: -4))
+      as { "vital " <> int.to_string(vital) <> " of -4 is that class vital's" }
+  })
+  // The Spellslinger's vital 19 (Class.vitalEnumResource04) as the client holds it: row 68677
+  // of 34629 gives +100.
+  let assert Ok(boost) =
+    planned_on(tables: fixture_tables.shared(), spell4_id: 34_629)
+    as "34629 plans"
+  assert list.key_find(gifts_of(boost), 68_677)
+    == Ok(ClassVitalPoints(vital: 19, points: 100))
+    as "Spell4Effects 68677 is +100 of vital 19"
+  use edited <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 228_362,
+    with: [#("dataBits00", cell(7))],
+  )
+  let assert Error(refused) = planned_on(tables: edited, spell4_id: 42_596)
+    as "vital 7 is not read"
+  assert refused
+    == spell_plan.GainVitalNotRead(
+      spell4_id: 42_596,
+      effect_id: 228_362,
+      vital: 7,
+    )
+    as "the refusal names the vital"
 }

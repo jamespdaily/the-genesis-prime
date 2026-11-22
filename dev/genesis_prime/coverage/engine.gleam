@@ -318,7 +318,7 @@ fn spell_effects() -> EngineDeclaration {
     partial: [
       Missing(
         type_number: 1,
-        reason: "rows aimed at another unit, changing a vital other than 6 and 8, behind a target apply prerequisite or periodic (tickTime), which the plan refuses or holds and no go applies",
+        reason: "rows aimed at another unit, changing a vital other than 6, 8, 15 and a class's 4, 12, 13, 14, 18 and 19, holding a share of Focus above 1.0 or a share of a class vital, behind a target apply prerequisite or periodic (tickTime), which the plan refuses or holds and no go applies",
         fact_key: "Spell4Effects.effectType.1",
       ),
       Missing(

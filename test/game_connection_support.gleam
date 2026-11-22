@@ -2917,12 +2917,21 @@ pub fn entered_burst_with_settings(
       ),
     )
   let unit_id = player_in(entered).unit_id
+  let bag_index =
+    bag_index_of(tables: settings.tables, class_id:, level:, ability:)
+  #(state, entered, unit_id, bag_index)
+}
+
+/// The bag index at which a player of the class at this level holds the ability (a
+/// Spell4Base id), by the class's Novice set in the tables.
+pub fn bag_index_of(
+  tables tables: store_tables.Tables,
+  class_id class_id: Int,
+  level level: Int,
+  ability ability: Int,
+) -> Int {
   let assert Ok(set) =
-    loadout.of(
-      tables: settings.tables,
-      class_id: ClassId(class_id),
-      faction_id: 166,
-    )
+    loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the tables hold the class's Novice set"
   let assert Ok(bag_index) =
     list.index_map(ability_book.bag(loadout: set, level:), fn(base, index) {
@@ -2930,7 +2939,7 @@ pub fn entered_burst_with_settings(
     })
     |> list.key_find(Spell4BaseId(ability))
     as "a player of the class at this level holds the ability"
-  #(state, entered, unit_id, bag_index)
+  bag_index
 }
 
 /// A step of the connection at the monotonic time `ms`.
