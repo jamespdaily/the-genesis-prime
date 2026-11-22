@@ -59,6 +59,7 @@ import genesis_prime/dashboard/socket
 import genesis_prime/dashboard/subscribers
 import genesis_prime/dashboard/web
 import genesis_prime/dev_exit
+import genesis_prime/step
 import genesis_prime/step/runtime
 import genesis_prime/table_folder
 import gleam/bytes_tree
@@ -469,8 +470,16 @@ fn upgraded(
       {
         Ok(upgraded) -> upgraded
         // A runtime that did not start, as a factory that ended does not start
-        // one: the client asks again.
-        Error(Nil) -> rebuilding()
+        // one: the client asks again, and the log says why it did not start.
+        Error(not_started) -> {
+          runtime.log(
+            step.LogWarning,
+            "the dashboard answered 503, "
+              <> socket.describe_not_started(not_started),
+            step.no_one,
+          )
+          rebuilding()
+        }
       }
     // The page runtimes are being rebuilt; the client asks again.
     Error(Nil) -> rebuilding()

@@ -2,11 +2,13 @@
 //// the handshake's head is read, and bytes that are not a text frame fail the
 //// read at once. The server is a planted peer (`frame_peer`) that writes
 //// the bytes of a row in one send, as a server whose first frame reaches the
-//// client with the head does.
+//// client with the head does. A handshake the server answers 503 is asked again
+//// until another answer comes.
 
 import dashboard_support
 import frame_peer
 import gleam/bit_array
+import gleam/erlang/process
 import gleam/list
 import owned_test
 
@@ -57,4 +59,68 @@ pub fn a_frame_that_is_not_text_fails_the_read_test() -> Nil {
     assert dashboard_support.try_read_frame(connection) == Error(row.2) as row.0
     dashboard_support.close(connection)
   })
+}
+
+/// A server that answers each connection it accepts with the next of `replies`
+/// and keeps the connections open until the test's process ends. Gives its
+/// port.
+fn answering_in_turn(replies: List(BitArray)) -> Int {
+  let #(listener, port) = frame_peer.listen()
+  let owner = process.self()
+  let _peer =
+    process.spawn(fn() {
+      list.each(replies, fn(reply) {
+        frame_peer.write(frame_peer.accept(listener), reply)
+      })
+      process.new_selector()
+      |> process.select_specific_monitor(process.monitor(owner), fn(_down) {
+        Nil
+      })
+      |> process.selector_receive_forever
+    })
+  port
+}
+
+fn http_answer(status_line: String) -> BitArray {
+  bit_array.from_string(
+    "HTTP/1.1 " <> status_line <> "\r\ncontent-length: 0\r\n\r\n",
+  )
+}
+
+/// The dashboard answers 503 to a handshake whose runtime did not start, and a
+/// client asks again. Each ask is a new connection; the connection of an answer
+/// that asks again is closed, and the connection of the answer that ends the
+/// asking is the caller's.
+pub fn a_handshake_answered_503_is_asked_again_until_another_answer_comes_test() -> Nil {
+  use <- owned_test.run(5000)
+  let port =
+    answering_in_turn([
+      http_answer("503 Service Unavailable"),
+      http_answer("503 Service Unavailable"),
+      http_answer("400 Bad Request"),
+    ])
+  let asked = process.new_subject()
+  let #(connection, reply) =
+    dashboard_support.asked_until_started(fn() {
+      let #(connection, reply) =
+        dashboard_support.handshake(port:, path: "/", headers: [])
+      process.send(asked, connection)
+      #(connection, reply)
+    })
+  assert reply.status == 400
+  // The asks ran in this process, so each connection is already in its mailbox.
+  let connections = sent_so_far(asked)
+  assert list.length(connections) == 3
+    as "the 400 came after three asks, not before"
+  assert list.map(connections, dashboard_support.is_closed)
+    == [True, True, False]
+    as "the connections of the two 503 answers are closed and the third is the caller's"
+  dashboard_support.close(connection)
+}
+
+fn sent_so_far(subject: process.Subject(a)) -> List(a) {
+  case process.receive(subject, 0) {
+    Ok(message) -> [message, ..sent_so_far(subject)]
+    Error(Nil) -> []
+  }
 }
