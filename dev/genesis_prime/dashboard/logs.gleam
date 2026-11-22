@@ -6,7 +6,7 @@
 //// follower (updater log)   ──Followed──►┐
 //// follower (launchd log)   ──Followed──►┤
 ////                                       ├─► runtime (one per tab) ──view──► tab
-//// follower (server)        ──Followed──►┤      subscribed once its runtime hears them (`subscription`)
+//// follower (server)        ──Followed──►┤      joined from its runtime's own process, behind the selector merge (`subscription`)
 //// follower (database)      ──Followed──►┘
 //// ```
 ////

@@ -4,7 +4,7 @@
 ////
 //// ```text
 //// poller (host) ──Reading──► runtime (one per tab) ──view──► tab
-////                  subscribed once the runtime hears the poller (`subscription`)
+////                  joined from the runtime's own process, behind the selector merge (`subscription`)
 //// ```
 ////
 //// - A tab's runtime subscribes to the poller when it starts, and the poller
