@@ -11,6 +11,10 @@
 ////   own in the order the conditions are tested, nested ones included.
 //// - `Prerequisite.prerequisiteTypeId.50`: a type 50 condition reads the check's
 ////   second unit.
+//// - `Prerequisite.prerequisiteTypeId.60` and the artifact "Facts 82838": the values of
+////   rows 38758 and 37378 (`gleam run -m genesis_prime/table_rows -- Prerequisite
+////   38758 37378`), which end Augmented Blade's stack removal 82838 (tooltip 679906:
+////   "Removes a stack every ... when 46935 is off").
 //// - The server's choice (the design of the step): the load follows the nested ids
 ////   and a cycle fails it, naming the ids on the way; the client has no guard and
 ////   the whole table has no cycle.
@@ -259,4 +263,50 @@ pub fn the_clients_rows_39321_and_29484_load_with_their_nested_rows_test() -> Ni
     )
     == Passes
     as "39321 nests 12939 (type 129, comparison 2, group 313): a caster under none of the group passes"
+}
+
+/// Rows 38758 (type 11 comparison 1 over 37378, and type 60 comparison 3 over 79757 value
+/// 0) and 37378 (type 15 comparison 2, value 79753), as the client's tables hold them.
+fn rows_38758_and_37378() -> List(prerequisite_table.Prerequisite) {
+  [
+    support.row(id: 38_758, flags: 0, conditions: [
+      #(11, 1, 37_378, 0),
+      #(60, 3, 79_757, 0),
+    ]),
+    support.row(id: 37_378, flags: 0, conditions: [#(15, 2, 0, 79_753)]),
+  ]
+}
+
+pub fn row_38758_passes_while_the_caster_is_off_the_toggle_and_holds_a_stack_it_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(
+        "off the toggle with a Kinetic Rage stack the caster cast: the stack removal goes on",
+        [#(79_757, 7, 1)],
+        Passes,
+      ),
+      #(
+        "under the toggle's ON spell 79753 the same stack ends it",
+        [#(79_757, 7, 1), #(79_753, 7, 1)],
+        Fails,
+      ),
+      #("off the toggle with no stack: the last stack is gone", [], Fails),
+      #(
+        "off the toggle with a stack another unit cast: not the caster's own",
+        [#(79_757, 8, 3)],
+        Fails,
+      ),
+    ],
+    fn(case_) {
+      let #(reason, held, expected) = case_
+      assert verdict(
+          id: 38_758,
+          rows: rows_38758_and_37378(),
+          subject: support.holding(held:, second_unit: Some(7)),
+        )
+        == expected
+        as reason
+    },
+  )
 }

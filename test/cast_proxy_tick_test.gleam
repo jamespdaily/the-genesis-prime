@@ -77,7 +77,7 @@ fn periodic(
     ..once(named:),
     effect_id: Spell4EffectsId(121_345),
     condition:,
-    period: Some(schedule),
+    period: Some(spell_plan.Periodic(schedule:, persistence: None)),
   )
 }
 

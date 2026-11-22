@@ -35,7 +35,9 @@
 //// - **The tree.** A Proxy effect (`Spell4Effects.effectType.26`, dataBits00 the
 ////   Spell4 id, or dataBits01 when dataBits00 is 0 and dataBits01 is a Spell4 row,
 ////   `proxy_named`; with a tickTime and a durationTime it casts the spell every tickTime
-////   from the caster, `Proxy.period`: `Spell4Effects.effectType.26.periodic`; one aimed at
+////   from the caster, `Proxy.period`: `Spell4Effects.effectType.26.periodic`, and its row's
+////   prerequisiteIdCasterPersistence is read as the end of the whole cast
+////   (`proxy_persistences`, `cast_persist`); one aimed at
 ////   the area or lasting until removed is left out by name; a Proxy aimed at the area
 ////   (flags 5 or 7) in a spell that hits no foes starts its child on the caster alone,
 ////   since the area's allies are not found: the tooltips say "yourself and N allies",
@@ -1442,10 +1444,20 @@ pub type Proxy {
     /// at the go of the parent whose units it struck; none for a child on the
     /// caster.
     gains: List(Gain),
-    /// The schedule of a Proxy with a tickTime, which casts its child at each tick instead of
-    /// at the go (`Spell4Effects.effectType.26.periodic`); none for a Proxy that casts once.
-    period: Option(ticking.Schedule),
+    /// The schedule and persistence of a Proxy with a tickTime, which casts its child at each
+    /// tick instead of at the go (`Spell4Effects.effectType.26.periodic`); none for a Proxy
+    /// that casts once.
+    period: Option(Periodic),
   )
+}
+
+/// What a Proxy that casts its child at each tick holds beyond a Proxy that casts once: the
+/// schedule of its ticks, and the prerequisite its row's prerequisiteIdCasterPersistence
+/// names, which ends the whole cast when it fails (`cast_persist`); none when the row names
+/// none. A Proxy that casts once has no ticks for a persistence to end, so the type holds
+/// it here alone.
+pub type Periodic {
+  Periodic(schedule: ticking.Schedule, persistence: Option(Prerequisite))
 }
 
 /// The payload of one effect row of a planned spell, by what the row does. `planned` makes
@@ -2282,7 +2294,7 @@ pub type ReadRow {
   ReadProxy(
     targets: List(ProxyTarget),
     condition: Condition,
-    period: Option(ticking.Schedule),
+    period: Option(Periodic),
   )
 }
 
@@ -3498,7 +3510,7 @@ fn proxy_of(
   effect effect: spell4_effects.Spell4Effects,
   target target: ProxyTarget,
   condition condition: Condition,
-  period period: Option(ticking.Schedule),
+  period period: Option(Periodic),
 ) -> Result(Proxy, PlanError) {
   use child <- result.map(spell_of(
     tables:,
@@ -6415,6 +6427,17 @@ pub fn payloads(
   list.filter_map(spell.effects, fn(planned) { as_kind(planned.kind) })
 }
 
+/// The persistence prerequisites of the spell's periodic Proxies, in the order of its list.
+pub fn proxy_persistences(spell spell: Spell) -> List(Prerequisite) {
+  payloads(spell:, as_kind: as_proxy)
+  |> list.filter_map(fn(proxy) {
+    case proxy.period {
+      Some(Periodic(persistence: Some(persistence), ..)) -> Ok(persistence)
+      Some(Periodic(persistence: None, ..)) | None -> Error(Nil)
+    }
+  })
+}
+
 /// The spell with its Proxies replaced by these, which stay first in its list as their kind
 /// ranks.
 pub fn with_proxies(spell spell: Spell, proxies proxies: List(Proxy)) -> Spell {
@@ -6916,7 +6939,15 @@ fn proxy_reading(
     _, True -> Ok(LeftOut(why: PeriodicProxyOnAreaNotRead))
     tick_ms, False ->
       case ticking.schedule_of(row: lasting_row_of(effect:), tick_ms:) {
-        Ok(schedule) -> read(Some(schedule))
+        Ok(schedule) -> {
+          use persistence <- result.try(column_of(
+            id: effect.prerequisite_id_caster_persistence,
+            rows: prerequisite.table_rows(tables:),
+            arcs: prerequisite.table_arcs(tables:),
+            quests: prerequisite.table_quests(tables:),
+          ))
+          read(Some(Periodic(schedule:, persistence:)))
+        }
         Error(ticking.UntilRemoved) ->
           Ok(LeftOut(why: PeriodicProxyUntilRemovedNotRead))
         Error(ticking.NoTick(tick_ms:, duration_ms:)) ->
@@ -7718,7 +7749,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Periodic Proxies",
-      missing: "a Proxy with a tickTime aimed at the area casts nothing, and one that lasts until removed casts nothing: the first would start a child on each unit the area holds at each tick, and no rule of the server times the second; a periodic Proxy behind a caster gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none",
+      missing: "a Proxy with a tickTime aimed at the area casts nothing, and one that lasts until removed casts nothing: the first would start a child on each unit the area holds at each tick, and no rule of the server times the second; a periodic Proxy behind a caster gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none; a periodic Proxy's row persistence (prerequisiteIdCasterPersistence) ends its whole cast when it fails, with the spell column's 0x7f9 (282) and 0x7fe, a guess since the client reads no effect row's persistence and no retail recording shows which message ends it; the check runs from the cast's start, so a cast still in its cast time ends on it before the row applies; a persistence of a type the server does not read (12, 40 and 56) keeps the cast with one debug line for the spell: of the 9 rows that hold one, the plan reads the 5 timed rows 70009, 70293, 119557, 202752 and 209177 (Spell4Effects ids), and the 4 that last until removed (92627, 192138, 192615, 231002) cast nothing; the prerequisiteIdTargetPersistence of a periodic Proxy is read by no rule: of the 11 rows not aimed at the area the plan reads the timed row 119557, and the other 10 last until removed and cast nothing",
     ),
     gap.Entry(
       area: "Auras",

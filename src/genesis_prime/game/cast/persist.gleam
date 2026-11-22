@@ -19,6 +19,14 @@
 ////   only for a cast whose primary target is the caster, since the connection holds no
 ////   creature's state. A condition of a type not read, a roll and a creature target keep the
 ////   cast, with one debug line for the spell.
+//// - **A periodic Proxy's row persistence** is checked after the spell's own caster
+////   persistence, in row order, and ends the whole cast with 282 when it fails. Ending the
+////   whole cast is the server's guess: the client reads no effect row's persistence
+////   (`Spell4Effects.prerequisiteIdCasterApply`), and the tooltip of Augmented Blade's
+////   stack removal says it stops with the toggle (text 679906). Its
+////   units are the caster first and the caster second, as an effect row's are
+////   (`Spell4Effects.prerequisiteIdTargetApply`), not the primary target the spell
+////   column's check passes (`spell_plan.proxy_persistences`).
 
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
@@ -47,6 +55,7 @@ pub fn persists(cast cast: State) -> Bool {
 fn has_persistence(spell spell: Spell) -> Bool {
   option.is_some(spell.caster_persistence)
   || option.is_some(spell.target_persistence)
+  || spell_plan.proxy_persistences(spell:) != []
 }
 
 /// The first cast, in the order given, whose persistence fails, with its result and the
@@ -103,6 +112,14 @@ fn persistence_of(
     caster_logs,
     Some(cast_result.PrereqCasterPersistence),
   ))
+  let #(cast, row_logs, row_fails) =
+    proxy_persistences_checked(cast:, spell:, subject:)
+  use <- bool.guard(when: row_fails, return: #(
+    cast,
+    list.append(caster_logs, row_logs),
+    Some(cast_result.PrereqCasterPersistence),
+  ))
+  let caster_logs = list.append(caster_logs, row_logs)
   let #(cast, target_logs, target_fails) = case
     holder.primary_target == caster.unit_id
   {
@@ -133,6 +150,37 @@ fn persistence_of(
     True -> Some(cast_result.PrereqTargetPersistence)
     False -> None
   })
+}
+
+/// The persistences of the spell's periodic Proxies checked in row order, up to the first
+/// that fails, with the subject as it stands: the effect rows' second unit is the caster
+/// (`Spell4Effects.prerequisiteIdTargetApply`), not the cast's primary target the spell
+/// column's check passes.
+fn proxy_persistences_checked(
+  cast cast: State,
+  spell spell: Spell,
+  subject subject: prerequisite.Subject,
+) -> #(State, List(Effect), Bool) {
+  list.fold_until(
+    spell_plan.proxy_persistences(spell:),
+    #(cast, [], False),
+    fn(so_far, persistence) {
+      let #(cast, logs, _) = so_far
+      let #(cast, more, fails) =
+        persistence_column(
+          cast:,
+          spell:,
+          result: cast_result.PrereqCasterPersistence,
+          gate: Some(persistence),
+          subject:,
+        )
+      let so_far = #(cast, list.append(logs, more), fails)
+      case fails {
+        True -> list.Stop(so_far)
+        False -> list.Continue(so_far)
+      }
+    },
+  )
 }
 
 /// One persistence column checked: whether it fails, and the debug line when it cannot

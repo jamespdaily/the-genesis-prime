@@ -33,6 +33,9 @@
 //// - **Type 59** compares the stack count on the unit of the Spell4 in its objectId
 ////   with the value: the sum of the instance counts of the casts that hold a node on
 ////   the unit, 0 when none does (`Prerequisite.prerequisiteTypeId.59`).
+//// - **Type 60** is type 59's count over the casts whose caster is the check's second unit
+////   alone; with no second unit comparison 2 passes and every other fails, and a second
+////   unit 0 counts 0 (`Prerequisite.prerequisiteTypeId.60`, `0x14046a110`).
 //// - **Type 28** passes, by comparison 1, when the unit is in combat and by
 ////   comparison 2 when it is not; any other comparison fails
 ////   (`Prerequisite.prerequisiteTypeId.28`).
@@ -331,6 +334,9 @@ type Condition {
   /// Type 59: the stack count of the Spell4 on the unit against the value
   /// (`Prerequisite.prerequisiteTypeId.59`).
   StackCount(relation: Relation, spell4_id: Spell4Id, value: Int)
+  /// Type 60: the stack count of the Spell4 on the unit, over the casts of the check's
+  /// second unit alone, against the value (`Prerequisite.prerequisiteTypeId.60`).
+  StackCountByCaster(relation: Relation, spell4_id: Spell4Id, value: Int)
   /// Type 28: whether the unit is in combat
   /// (`Prerequisite.prerequisiteTypeId.28`).
   InCombat(comparison: Comparison)
@@ -1208,6 +1214,12 @@ fn condition_of(
         spell4_id: Spell4Id(object_id),
         value:,
       )
+    60 ->
+      StackCountByCaster(
+        relation: relation_of(code: comparison),
+        spell4_id: Spell4Id(object_id),
+        value:,
+      )
     37 -> Roll(relation: relation_of(code: comparison), value:)
     71 ->
       VitalPercent(
@@ -1308,6 +1320,7 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     TargetOfLiveCast(..)
     | UnderCastBy(..)
     | StackCount(..)
+    | StackCountByCaster(..)
     | InCombat(..)
     | Roll(..)
     | VitalPercent(..)
@@ -1363,6 +1376,7 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | TargetOfLiveCast(..)
       | UnderCastBy(..)
       | StackCount(..)
+      | StackCountByCaster(..)
       | InCombat(..)
       | VitalPercent(..)
       | VitalCurrent(..)
@@ -1422,6 +1436,7 @@ pub fn objective_links(
       | TargetOfLiveCast(..)
       | UnderCastBy(..)
       | StackCount(..)
+      | StackCountByCaster(..)
       | InCombat(..)
       | Roll(..)
       | VitalPercent(..)
@@ -1475,6 +1490,7 @@ pub fn press_unread_types(
       Unread(prerequisite_type:) -> [prerequisite_type]
       Roll(..) -> [37]
       UnderCastBy(..) -> [50]
+      StackCountByCaster(..) -> [60]
       InArc(..) -> [108]
       CarriesCasterGroup(..) -> [130]
       Nested(row: None, ..)
@@ -1545,6 +1561,7 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
       | TargetOfLiveCast(..)
       | UnderCastBy(..)
       | StackCount(..)
+      | StackCountByCaster(..)
       | InCombat(..)
       | Roll(..)
       | VitalPercent(..)
@@ -1640,6 +1657,7 @@ fn reading_of(condition condition: Condition) -> Reading {
     IsCreature(..) | IsPlayer(..) -> WhoItIs
     Nested(row: None, ..)
     | UnderCastBy(..)
+    | StackCountByCaster(..)
     | Roll(..)
     | ResourceSlot(..)
     | Stealthed(..)
@@ -1776,8 +1794,9 @@ fn condition_check(
 
 /// The type of a condition that reads the casts, combat state or vitals of its unit,
 /// which a subject known by its place alone does not hold. A type 50 condition reads the
-/// casts of the second unit alone (`is_under_cast_by`), which the subject holds as a type
-/// 130 condition's do, so it is decided. A roll is no state of the unit
+/// casts of the second unit alone (`is_under_cast_by`), and a type 60 condition counts the
+/// stacks of the second unit's casts alone (`stack_count`); the subject holds both as a
+/// type 130 condition's do, so both are decided. A roll is no state of the unit
 /// (`Prerequisite.prerequisiteTypeId.37`: the units are not read), so a type 37 condition
 /// is given its roll for any subject. A nested row decides by
 /// its own conditions, and a resource slot, a stealth and a difficulty that the subject
@@ -1794,6 +1813,7 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     UnitClass(..) -> Some(3)
     Nested(..)
     | UnderCastBy(..)
+    | StackCountByCaster(..)
     | Roll(..)
     | IsPlayer(..)
     | ResourceSlot(..)
@@ -1848,16 +1868,26 @@ fn condition_decided(
       rolls,
       verdict_of(compare(
         relation:,
-        measured: int.sum(
-          list.filter_map(subject.under, fn(held) {
-            case held.spell4_id == spell4_id {
-              True -> Ok(held.count)
-              False -> Error(Nil)
-            }
-          }),
-        ),
+        measured: stack_count(subject:, spell4_id:, caster: None),
         value:,
       )),
+    )
+    StackCountByCaster(relation:, spell4_id:, value:) -> #(
+      rolls,
+      case subject.second_unit, relation {
+        None, NotEqual -> Passes
+        None, _ -> Fails
+        Some(second_unit), _ ->
+          verdict_of(compare(
+            relation:,
+            measured: stack_count(
+              subject:,
+              spell4_id:,
+              caster: Some(second_unit),
+            ),
+            value:,
+          ))
+      },
     )
     InCombat(comparison:) -> #(rolls, case comparison {
       Found -> verdict_of(subject.in_combat)
@@ -2401,6 +2431,29 @@ fn is_under_cast_by(
         held.spell4_id == spell4_id && held.caster == second_unit
       })
   }
+}
+
+/// The stack count of the Spell4 on the subject: the sum of the instance counts of the
+/// casts that hold a node on it, over every caster (`None`, type 59) or over one caster
+/// alone (`Some(unit_id)`, type 60), which counts 0 for unit id 0 (`0x14046a110`).
+fn stack_count(
+  subject subject: Subject,
+  spell4_id spell4_id: Spell4Id,
+  caster caster: Option(Int),
+) -> Int {
+  use <- bool.guard(when: caster == Some(0), return: 0)
+  int.sum(
+    list.filter_map(subject.under, fn(held) {
+      let by_caster = case caster {
+        None -> True
+        Some(unit_id) -> held.caster == unit_id
+      }
+      case held.spell4_id == spell4_id && by_caster {
+        True -> Ok(held.count)
+        False -> Error(Nil)
+      }
+    }),
+  )
 }
 
 fn verdict_of(holds: Bool) -> Verdict {
