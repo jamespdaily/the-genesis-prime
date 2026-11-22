@@ -1429,7 +1429,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
               delay_ms: 0,
               tick_ms: 2000,
               duration_ms: 6000,
-              count: 3,
+              count: ticking.Ticks(3),
             ),
             kind: cast_state.heal_tick(
               vital: effect_kind.Health,
@@ -1975,7 +1975,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         delay_ms: 0,
         tick_ms: 2000,
         duration_ms: 6000,
-        count: 3,
+        count: ticking.Ticks(3),
       ),
     )
   let #(ticking_state, ticking_effects) =
@@ -2659,4 +2659,95 @@ pub fn an_aura_counts_from_the_casts_start_and_not_from_its_go_test() -> Nil {
     })
     == [#(2500, []), #(7000, [id])]
     as "the go at 2500 gives the node; the cast's 0x7fe comes at 7000, 6000 ms after its press"
+}
+
+/// A Proxy aimed at the caster that casts a spell at each tick of `schedule`.
+fn periodic_proxy(schedule schedule: ticking.Schedule) -> spell_plan.Proxy {
+  spell_plan.Proxy(
+    effect_id: Spell4EffectsId(210_304),
+    delay_ms: 0,
+    phase_flags: -1,
+    condition: Always,
+    tag: spend.always,
+    target: spell_plan.OnCaster,
+    spell: support.child(spell4_id: 79_757, base: 79_757),
+    gains: [],
+    period: option.Some(spell_plan.Periodic(schedule:, persistence: option.None)),
+  )
+}
+
+pub fn the_node_of_a_holder_with_only_an_open_proxy_lasts_until_removed_or_until_its_aura_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  let timed =
+    ticking.Schedule(
+      delay_ms: 1000,
+      tick_ms: 1000,
+      duration_ms: 4000,
+      count: ticking.Ticks(4),
+    )
+  let caster = support.caster()
+  list.each(
+    [
+      #(
+        "a holder with only an open Proxy has a node that lasts until removed",
+        [support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
+        option.None,
+        lasting.UntilRemoved,
+      ),
+      #(
+        "as an aura of 6000 ms started at 1000 its node ends with the aura",
+        [support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
+        option.Some(6000),
+        lasting.EndsAt(ms: 7000),
+      ),
+      #(
+        "an aura that ends at or before the go gives no end (the client reads a sum not later than now as none)",
+        [support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
+        option.Some(1500),
+        lasting.UntilRemoved,
+      ),
+      #(
+        "a finite Proxy keeps the node its delay plus durationTime long",
+        [timed],
+        option.None,
+        lasting.EndsAt(ms: 2500 + 1000 + 4000),
+      ),
+      #(
+        "an open and a finite Proxy together: the open one decides",
+        [timed, support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
+        option.None,
+        lasting.UntilRemoved,
+      ),
+    ],
+    fn(row) {
+      let #(reason, schedules, aura_ms, expected) = row
+      let proxies =
+        list.map(schedules, fn(schedule) { periodic_proxy(schedule:) })
+      let spell =
+        spell_plan.Spell(
+          ..support.with_effects(
+            spell: support.child(spell4_id: 79_753, base: 3),
+            kinds: list.map(proxies, spell_plan.ProxyEffect),
+          ),
+          aura_ms:,
+        )
+      let aimed =
+        aimed_at_caster(
+          reached: [],
+          restrictions: [],
+          ticking: cast_tick.proxies_ticking(proxies:, caster:),
+        )
+      let assert Ok(node) =
+        cast_tick.node_of(
+          spell:,
+          held: option.None,
+          aimed:,
+          unit_id: caster.unit_id,
+          started_ms: 1000,
+          now_ms: 2500,
+        )
+        as reason
+      assert node.life == expected as reason
+    },
+  )
 }

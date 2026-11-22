@@ -37,7 +37,7 @@ import genesis_prime/game/spell_plan.{
   type Spell, Always, KeepsStealth, Spell, StealthRow,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/ticking.{Schedule}
+import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_started
@@ -921,7 +921,7 @@ fn periodic_holder(
           delay_ms: 0,
           tick_ms: 500,
           duration_ms: 5000,
-          count: 10,
+          count: Ticks(10),
         ),
         persistence:,
       )),

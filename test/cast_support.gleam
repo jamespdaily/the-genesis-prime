@@ -30,6 +30,7 @@ import genesis_prime/game/spell_plan.{
   NoWeaponNeeded, Normal, Spell, StealthRow,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
@@ -1958,6 +1959,59 @@ pub fn pressed_and_run(
   let #(_, steps) =
     run_timers_until_as(caster:, state:, effects:, from_ms: press_ms, until_ms:)
   #(effects, steps)
+}
+
+/// The ids of the state's timers whose due the predicate accepts; a count is its length.
+pub fn timers_matching(
+  state state: State,
+  matching matching: fn(cast_state.Due) -> Bool,
+) -> List(TimerId) {
+  dict.to_list(state.timers)
+  |> list.filter_map(fn(entry) {
+    case matching(entry.1) {
+      True -> Ok(entry.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The timers of the state that are a tick of a periodic row, on any unit.
+pub fn tick_timers(state state: State) -> Int {
+  list.length(
+    timers_matching(state:, matching: fn(due) {
+      case due {
+        cast_state.Tick(..) -> True
+        _ -> False
+      }
+    }),
+  )
+}
+
+/// The timers of the state that are a tick of a periodic row on the unit `unit_id`.
+pub fn tick_timers_on(state state: State, unit_id unit_id: Int) -> Int {
+  list.length(
+    timers_matching(state:, matching: fn(due) {
+      case due {
+        cast_state.Tick(unit_id: on, ..) -> on == unit_id
+        _ -> False
+      }
+    }),
+  )
+}
+
+/// The schedule of a periodic Proxy row with flags bit 2 and no durationTime (rows 210304,
+/// 217944 and 210337), read as open by `ticking.open_schedule_of`.
+pub fn open_schedule(
+  delay_ms delay_ms: Int,
+  tick_ms tick_ms: Int,
+) -> ticking.Schedule {
+  let assert Ok(schedule) =
+    ticking.open_schedule_of(
+      row: LastingRow(delay_ms:, duration_ms: 0, until_removed: True),
+      tick_ms:,
+    )
+    as "an open Proxy row of a tickTime above 0 has a schedule"
+  schedule
 }
 
 /// The timers the effects start, each due its delay after the time.

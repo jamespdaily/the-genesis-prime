@@ -764,7 +764,10 @@ pub fn proxies_ticking(
 }
 
 /// A go arms the first tick of each periodic row on each unit it reached (`TickingOn`),
-/// counted from the go's monotonic time `from_ms`; `go` is which go of the cast it is. A
+/// counted from the go's monotonic time `from_ms`; `go` is which go of the cast it is. An
+/// open row (no count) is cut to the end of the node the go gave its unit
+/// (`ticking.ending_with_node`; an aura's end is `lasting.life_under_aura`, `0x1407180c0`),
+/// so a node's end handled late finds no tick past it. A
 /// row already ticking on the unit for this cast is armed again from this go, as the
 /// client sets its node again, and its earlier schedule's tick timer is cancelled; a
 /// round of that schedule still open writes nothing when it closes (`cast.ticked`).
@@ -794,6 +797,10 @@ pub fn ticks_armed(
             schedule: on.schedule,
             longer_of_delay_and_duration: holder.spell.longer_of_delay_and_duration,
           )
+          |> ticking.ending_with_node(
+            from_ms:,
+            life: node_life_on(holder:, unit_id: on.unit_id),
+          )
         let row =
           cast_state.ticking_started(
             kind: on.kind,
@@ -814,6 +821,17 @@ pub fn ticks_armed(
       }
     }
   })
+}
+
+/// The life of the node the cast's go gave the unit, `NoLife` when it holds none.
+fn node_life_on(
+  holder holder: cast_state.Holder,
+  unit_id unit_id: Int,
+) -> lasting.Life {
+  case dict.get(holder.nodes, unit_id) {
+    Ok(node) -> node.life
+    Error(Nil) -> lasting.NoLife
+  }
 }
 
 /// The timer of the row `key`'s first tick, none when no tick lands within its life.
@@ -1306,7 +1324,9 @@ fn node_row_of(entry entry: Reached) -> Result(lasting.NodeEffect, Nil) {
 
 /// The node a go gives one unit from the node its cast holds there and the Fluff rows
 /// the go lists for it (`lasting.given`), a periodic row living its own delay and
-/// durationTime as the client's node does (`opcode.0x7f4.effect_time`), held past that
+/// durationTime as the client's node does (`opcode.0x7f4.effect_time`), and an open
+/// periodic Proxy (flags bit 2) until its holder spell is removed
+/// (`Spell4Effects.effectType.26.periodic`), held past that
 /// only while a tick round on the unit is open (`ended_and_kept`); none when no effect has
 /// a life. An aura spell's node ends at `started_ms`, the cast's start, plus its length
 /// (`lasting.given`). A periodic row is listed with its Spell4Effects id; an ability restriction
@@ -1349,7 +1369,7 @@ pub fn node_of(
           lasting.LastingRow(
             delay_ms: row.schedule.delay_ms,
             duration_ms: row.schedule.duration_ms,
-            until_removed: False,
+            until_removed: ticking.lasts_until_removed(schedule: row.schedule),
           )
         case row.unit_id == unit_id {
           True ->

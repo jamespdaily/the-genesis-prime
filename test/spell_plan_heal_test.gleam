@@ -245,7 +245,7 @@ pub fn a_periodic_heal_shields_row_is_held_as_ticking_and_not_applied_test() -> 
           delay_ms: 0,
           tick_ms: 1000,
           duration_ms: 8000,
-          count: 8,
+          count: ticking.Ticks(8),
         ),
       ),
     ]
@@ -660,7 +660,7 @@ pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdow
   let assert [
     TickingHeal(
       effect_id: Spell4EffectsId(210_834),
-      schedule: ticking.Schedule(tick_ms: 1000, count: 8, ..),
+      schedule: ticking.Schedule(tick_ms: 1000, count: ticking.Ticks(8), ..),
       ..,
     ),
   ] =

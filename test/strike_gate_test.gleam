@@ -475,7 +475,7 @@ pub fn ticking_damage_behind_target_gate_ticks_only_passing_units_test() -> Nil 
         delay_ms: 0,
         tick_ms: 1000,
         duration_ms: 3000,
-        count: 3,
+        count: ticking.Ticks(3),
       ),
     )
   let #(state, effects) =
