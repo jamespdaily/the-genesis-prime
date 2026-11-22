@@ -915,6 +915,7 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
     support.with_effects(spell: support.child(spell4_id: 5003, base: 3), kinds: [
       spell_plan.ProxyEffect(
         spell_plan.Proxy(
+          period: None,
           effect_id: Spell4EffectsId(2),
           delay_ms: 0,
           phase_flags: -1,

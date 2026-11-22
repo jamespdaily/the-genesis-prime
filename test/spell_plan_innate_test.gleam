@@ -53,11 +53,12 @@ pub fn each_innates_tree_holds_the_spells_the_trace_found_test() -> Nil {
     as "Warrior's Stance: Onslaught"
   assert tree_of(base: 29_035) == [44_926] as "its passive: 44926 alone"
   assert tree_of(base: 31_779)
-    == [47_860, 47_866, 52_371, 57_443, 70_599, 79_697]
-    as "Engineer's Mode: Eradicate"
+    == [47_860, 47_866, 52_371, 57_443, 70_599, 71_371, 79_697]
+    as "Engineer's Mode: Eradicate: 71371 is the spell the periodic Proxy 121345 of 47860 casts every second (`Spell4Effects.effectType.26.periodic`, the Proxy names it in dataBits01)"
   assert tree_of(base: 29_076) == [45_000, 46_297] as "its passive"
-  assert tree_of(base: 38_012) == [58_586, 70_369, 76_766, 78_078]
-    as "Esper's Spectral Form"
+  assert tree_of(base: 38_012)
+    == [32_822, 41_869, 58_586, 70_369, 76_766, 77_116, 78_078]
+    as "Esper's Spectral Form: 32822 is the spell the periodic Proxy 178429 of 70369 casts every second (text 504979), and its Proxy 200548 (behind gate 35913) starts 41869, which holds 77116 (`table_rows -- Spell4Effects spellId=32822`)"
   assert tree_of(base: 46_615) == [60_718, 60_796, 69_450] as "Medic's Energize"
   assert tree_of(base: 30_075) == [38_783, 38_784, 46_073, 72_838, 83_850]
     as "Stalker's Nano Skin: Lethal: the spell its Proc row 178239 (Spell4 38784, kind 16, a blow taken) casts, 72838, is in the tree"

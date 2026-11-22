@@ -573,3 +573,108 @@ pub fn the_five_abilities_the_orders_free_are_planned_and_every_row_of_their_tre
       as "Collapse's tree holds the row, which the loop above found read"
   })
 }
+
+/// Every row of the abilities' trees (and of their alternates') that `effect_row_read.is_read`
+/// refuses, as the row and what `read_row` makes of it, for the abilities with these Spell4 ids,
+/// which the plans hold (the innates among them).
+fn unread_rows_of(
+  tables tables: table_store.Tables,
+  spell4_ids spell4_ids: List(Int),
+) -> List(#(Int, Result(spell_plan.RowReading, PlanError))) {
+  let sources = spell_plan.sources_of(tables:)
+  let place_of =
+    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  list.flat_map(spell4_ids, fn(spell4_id) {
+    let assert Ok(ability) =
+      spell_plan.in_plans(
+        plans: spell_plan.plans_with_later(tables:),
+        base: base_of(tables:, spell4_id:),
+      )
+      as "the plans hold the ability"
+    let alternate_tree = case ability.alternate {
+      Some(alternate) ->
+        spell_plan.tree(spell: alternate, started: fn(_) { True })
+      None -> []
+    }
+    list.append(
+      spell_plan.tree(spell: ability, started: fn(_) { True }),
+      alternate_tree,
+    )
+    |> list.flat_map(fn(spell) {
+      spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
+      |> list.filter(fn(effect) {
+        !effect_row_read.is_read(
+          tables:,
+          sources:,
+          place: place_of(effect.spell_id),
+          effect:,
+        )
+      })
+      |> list.map(fn(effect) {
+        #(
+          effect.id,
+          spell_plan.read_row(
+            tables:,
+            sources:,
+            place: place_of(effect.spell_id),
+            effect:,
+          ),
+        )
+      })
+    })
+  })
+}
+
+pub fn every_row_of_the_abilities_with_a_timed_caster_proxy_is_read_but_the_rows_with_a_named_gap_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  // The Engineer's stance 47866 (Proxy 121345), the Esper's Spectral Form 58586 (178429),
+  // Plasma Wall 38787 (228473) and Nano Field 39180 (85298): a tree whose Proxy ticks and
+  // whose other rows are left out is a silent wrong result, so each row the trees leave is
+  // named (`table_rows -- Spell4Effects spellId=<id>` of every spell of the trees).
+  let unread =
+    unread_rows_of(tables:, spell4_ids: [47_866, 58_586, 38_787, 39_180])
+  let by_row = list.sort(unread, fn(a, b) { int.compare(a.0, b.0) })
+  assert list.map(by_row, fn(row) { row.0 })
+    == [85_311, 85_327, 123_744, 228_474]
+    as "47866's Proc 123744 sits behind a persistence prerequisite, 38787's Proc 228474 waits for an event the server does not raise and 39180's rows 85311 (Spell4 39185) and 85327 (Spell4 39189) are of effect type 5, which no rule reads"
+  let assert [first_type_5, second_type_5, persisted, waiting] = by_row
+  assert first_type_5.1 == Ok(spell_plan.LeftOut(why: spell_plan.TypeNotRead))
+  assert second_type_5.1 == Ok(spell_plan.LeftOut(why: spell_plan.TypeNotRead))
+  assert persisted.1
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProcBehindPersistence))
+  let assert Ok(spell_plan.LeftOut(why: spell_plan.ProcKindWaits(..))) =
+    waiting.1
+    as "the Proc row 228474 is left out as a kind that waits"
+  Nil
+}
+
+pub fn mental_boon_is_listed_unplanned_for_its_friendly_area_proxy_once_the_rows_that_name_its_heal_are_read_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  // Healing only the caster, which Mental Boon's text 245408 says it does beside the allies,
+  // is a separate question for Jim: a row aimed at the caster and the area in a spell that
+  // hits no foes is refused until allies are found (decision 2 of #794, `friendly_area_read`).
+  let assert Ok(boon) = list.find(left_out, fn(one) { one.spell4_id == 33_257 })
+    as "Mental Boon 33257 is listed unplanned: its tick-0 Proxy 76609 is read since the Proxies that name 33258 in dataBits01 are, and is aimed by flags 5"
+  assert string.contains(
+    spell_plan.describe(error: boon.error),
+    "Spell4 row 36562 hits no foes and has an effect 76609 aimed by flags 5",
+  )
+  list.each(
+    [41_333, 41_533, 41_926, 42_572, 35_870, 39_092, 78_081],
+    fn(spell4_id) {
+      let assert Ok(one) =
+        list.find(left_out, fn(one) { one.spell4_id == spell4_id })
+        as "the seven abilities the same rule refused before stay listed"
+      let sentence = spell_plan.describe(error: one.error)
+      assert string.contains(sentence, "hits no foes and has an effect")
+        && string.contains(sentence, "aimed by flags 5")
+        as { "the same sentence: " <> sentence }
+    },
+  )
+}

@@ -317,6 +317,7 @@ pub fn plans_starting_on_each_struck(started started: Spell) -> Plans {
       spell: child(spell4_id: parent_spell4_id, base: 3),
       proxies: [
         spell_plan.Proxy(
+          period: None,
           effect_id: Spell4EffectsId(90_002),
           delay_ms: 0,
           phase_flags: -1,

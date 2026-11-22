@@ -1987,16 +1987,46 @@ fn proc_started(
   holder holder: Holder,
   at at: Int,
 ) -> #(State, List(Effect)) {
-  start(
+  child_started(
     cast:,
     caster:,
     now_ms:,
     spell: row.spell,
     root: holder.spell.spell4_id,
-    parent: Some(holder.spell.spell4_id),
+    parent: holder.spell.spell4_id,
     primary_target: at,
+    counted_with: WithNothing,
+    from: None,
+  )
+}
+
+/// A cast of `spell` starts as a child: a Proxy's child, a proc's spell and a periodic Proxy's
+/// tick all start the same way. `parent` is the spell whose row started it, which need not be
+/// live, and `root` the spell the client's 0x7ff names as the root; no threshold is touched
+/// and no global cooldown starts. `counted_with` and `from` are what the child counts its
+/// quest rows with and the item whose value it reads, handed down from the cast that started
+/// it (`WithNothing` and none for a proc and a tick).
+fn child_started(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  spell spell: Spell,
+  root root: Spell4Id,
+  parent parent: Spell4Id,
+  primary_target primary_target: Int,
+  counted_with counted_with: AdvanceWith,
+  from from: Option(PressedFrom),
+) -> #(State, List(Effect)) {
+  start(
+    cast:,
+    caster:,
+    now_ms:,
+    spell:,
+    root:,
+    parent: Some(parent),
+    primary_target:,
     client_cast_id: None,
-    role: Child(counted_with: WithNothing, from: None),
+    role: Child(counted_with:, from:),
     spent: None,
     reserved: [],
   )
@@ -2736,6 +2766,27 @@ fn finish_fired(
   }
 }
 
+/// How a tick of a periodic Proxy starts its child, for `cast_tick.ticks_due`: the named spell
+/// on the caster as a child of the holder, the holder's root as its root, counting no quest
+/// objective and holding no item's value, as a proc's spell does.
+fn tick_child_started(
+  now_ms now_ms: Int,
+) -> fn(State, Caster, Holder, Proxy) -> #(State, List(Effect)) {
+  fn(cast: State, caster: Caster, holder: Holder, proxy: Proxy) {
+    child_started(
+      cast:,
+      caster:,
+      now_ms:,
+      spell: proxy.spell,
+      root: holder.root,
+      parent: holder.spell.spell4_id,
+      primary_target: caster.unit_id,
+      counted_with: WithNothing,
+      from: None,
+    )
+  }
+}
+
 fn fire(
   cast cast: State,
   timer timer: TimerId,
@@ -2750,7 +2801,13 @@ fn fire(
       case due {
         Go(cast_id:, phase:) -> asked(cast:, caster:, now_ms:, cast_id:, phase:)
         Tick(cast_id:, ..) ->
-          cast_tick.ticks_due(cast:, caster:, now_ms:, cast_id:)
+          cast_tick.ticks_due(
+            cast:,
+            caster:,
+            now_ms:,
+            cast_id:,
+            start_child: tick_child_started(now_ms:),
+          )
         Finish(cast_id:) -> finish_fired(cast:, cast_id:, now_ms:)
         StartChild(
           root:,
@@ -2760,22 +2817,26 @@ fn fire(
           counted_with:,
           from:,
         ) ->
-          start(
+          child_started(
             cast:,
             caster:,
             now_ms:,
             spell: proxy.spell,
             root:,
-            parent: Some(parent),
+            parent:,
             primary_target:,
-            client_cast_id: None,
-            role: Child(counted_with:, from:),
-            spent: None,
-            reserved: [],
+            counted_with:,
+            from:,
           )
         NodesEnd(cast_id:) -> {
           let #(cast, ticks) =
-            cast_tick.ticks_due(cast:, caster:, now_ms:, cast_id:)
+            cast_tick.ticks_due(
+              cast:,
+              caster:,
+              now_ms:,
+              cast_id:,
+              start_child: tick_child_started(now_ms:),
+            )
           let #(cast, ended) = nodes_ended(cast:, cast_id:, now_ms:)
           #(cast, list.append(ticks, ended))
         }
@@ -4138,6 +4199,16 @@ fn go(
           ),
           rolls:,
         )
+      // A periodic Proxy ticks on the caster from this go; it gives the caster's node its
+      // life but is listed in no 0x7f4 (`cast_tick.proxies_ticking`).
+      let aimed =
+        Aimed(
+          ..aimed,
+          ticking: list.append(
+            aimed.ticking,
+            cast_tick.proxies_ticking(proxies: starting, caster:),
+          ),
+        )
       let go_message =
         cast_frame.go_message(
           cast_id:,
@@ -4258,24 +4329,28 @@ fn go(
           now_ms:,
         )
       let #(cast, children, _) =
-        list.fold(starting, #(cast, [], aimed.rolls_left), fn(so_far, proxy) {
-          let #(cast, effects, rolls) = so_far
-          let #(cast, more, rolls) =
-            children(
-              cast:,
-              caster:,
-              now_ms:,
-              live:,
-              proxy:,
-              struck:,
-              subject:,
-              poses:,
-              indexes:,
-              units:,
-              rolls:,
-            )
-          #(cast, list.append(effects, more), rolls)
-        })
+        list.fold(
+          list.filter(starting, fn(proxy) { option.is_none(proxy.period) }),
+          #(cast, [], aimed.rolls_left),
+          fn(so_far, proxy) {
+            let #(cast, effects, rolls) = so_far
+            let #(cast, more, rolls) =
+              children(
+                cast:,
+                caster:,
+                now_ms:,
+                live:,
+                proxy:,
+                struck:,
+                subject:,
+                poses:,
+                indexes:,
+                units:,
+                rolls:,
+              )
+            #(cast, list.append(effects, more), rolls)
+          },
+        )
       let #(cast, stealth) =
         stealth_changed_by_go(
           cast:,
@@ -5370,21 +5445,16 @@ fn child(
 ) -> #(State, List(Effect)) {
   case proxy.delay_ms > 0 {
     False ->
-      start(
+      child_started(
         cast:,
         caster:,
         now_ms:,
         spell: proxy.spell,
         root: live.root,
-        parent: Some(live.spell.spell4_id),
+        parent: live.spell.spell4_id,
         primary_target:,
-        client_cast_id: None,
-        role: Child(
-          counted_with: live.counted_with,
-          from: cast_state.handed_down(live:),
-        ),
-        spent: None,
-        reserved: [],
+        counted_with: live.counted_with,
+        from: cast_state.handed_down(live:),
       )
     True -> {
       let #(cast, _, start) =
@@ -5492,6 +5562,7 @@ fn finish_or_linger(
             cast_id,
             Lingering(
               spell: live.spell,
+              root: live.root,
               audience: live.audience,
               started_ms: live.started_ms,
               primary_target: live.primary_target,

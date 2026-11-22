@@ -125,6 +125,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.HealNumberNotFinite(effect_id:, ..)
     | spell_plan.HealUntilRemovedNotRead(effect_id:, ..)
     | spell_plan.HealNoTick(effect_id:, ..)
+    | spell_plan.ProxyNoTick(effect_id:, ..)
     | spell_plan.InterruptArmorTakeBackNotRead(effect_id:, ..)
     | spell_plan.AbsorptionNumberNotFinite(effect_id:, ..)
     | spell_plan.AbsorptionAmountNotRead(effect_id:, ..)
@@ -384,7 +385,7 @@ fn children_of(
     |> dict.map_values(fn(_, rows) {
       list.filter_map(rows, fn(effect) {
         case effect_kind.kind_of(effect.effect_type) {
-          effect_kind.Proxy -> Ok(effect.data_bits00)
+          effect_kind.Proxy -> Ok(spell_plan.proxy_named(tables:, effect:))
           effect_kind.Proc -> Ok(effect.data_bits01)
           effect_kind.Damage
           | effect_kind.VitalModifier

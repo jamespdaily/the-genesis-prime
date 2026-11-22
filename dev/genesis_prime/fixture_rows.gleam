@@ -761,6 +761,14 @@ const untyped_references = [
   ),
   UntypedReference(
     "Spell4Effects",
+    [#("effectType", 26), #("dataBits00", 0)],
+    ["dataBits01"],
+    "dataBits01",
+    "Spell4",
+    "spell_plan.proxy_named (Proxy effect type 26 with dataBits00 0: dataBits01 names the spell)",
+  ),
+  UntypedReference(
+    "Spell4Effects",
     [#("effectType", 26)],
     [],
     "dataBits06",

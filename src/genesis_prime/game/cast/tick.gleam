@@ -9,6 +9,9 @@
 ////   on the same timer, 0x811 for the unit while the cast goes on, and a 0x801 stops a
 ////   cast the same way: its pending gos are cancelled and it lingers if a node has life
 ////   left, since a cancel ends no buff.
+//// - **A periodic Proxy** ticks on the caster as a damage or heal row does, from the go that
+////   armed it: each tick reads the Proxy's caster gates again and starts the named spell as a
+////   child cast of the holder (`proxy_tick_child`), `Spell4Effects.effectType.26.periodic`.
 
 import genesis_prime/client_connection
 import genesis_prime/game/area
@@ -23,10 +26,11 @@ import genesis_prime/game/cast/state.{
   type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
   Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit, Immune, Lingering,
-  Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, ProcDue, Property,
-  QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send, StartChild,
-  StartHeld, Starts, State, StateEnd, TargetChangeEnds, TargetModifierStart,
-  Tell, Tick, TickAsked, TickStrike, UnitSide, WindowEnd,
+  Live, Log, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, ProcDue,
+  Property, QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send,
+  StartChild, StartHeld, Starts, State, StateEnd, TargetChangeEnds,
+  TargetModifierStart, Tell, Tick, TickAsked, TickStrike, TickingOn, UnitSide,
+  WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -44,7 +48,7 @@ import genesis_prime/message/spell_effect_tick.{
 }
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
-import genesis_prime/step.{type ConnectionId, type TimerId}
+import genesis_prime/step.{type ConnectionId, type TimerId, LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/map
 import gleam/bool
@@ -318,7 +322,8 @@ fn tick_timers_cancelled(
 /// `cast.ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
 /// (genesis_prime/client_connection `CastTicked`) and heals the caster
 /// (`CasterChangeStarts`), reading the vitals the heal ticks before it in the step left,
-/// and heals nothing on a dead caster. Then each row that fired has its next tick armed,
+/// and heals nothing on a dead caster; a Proxy row starts its child with `start_child`
+/// (`proxy_tick_child`). Then each row that fired has its next tick armed,
 /// or none after its last (genesis_prime/game/ticking `next_tick`). Any tick timer of the
 /// cast fires every tick due with it, so ticks due together keep that order whichever
 /// timer fires first.
@@ -327,6 +332,8 @@ pub fn ticks_due(
   caster caster: Caster,
   now_ms now_ms: Int,
   cast_id cast_id: Int,
+  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+    #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
   let #(cast, landed, fired) =
     due_ticks_landed(
@@ -334,6 +341,7 @@ pub fn ticks_due(
       caster:,
       now_ms:,
       cast_id:,
+      start_child:,
       landed: [],
       fired: set.new(),
     )
@@ -355,6 +363,8 @@ fn due_ticks_landed(
   caster caster: Caster,
   now_ms now_ms: Int,
   cast_id cast_id: Int,
+  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+    #(State, List(Effect)),
   landed landed: List(Effect),
   fired fired: Set(TickKey),
 ) -> #(State, List(Effect), Set(TickKey)) {
@@ -368,12 +378,21 @@ fn due_ticks_landed(
     Error(Nil) -> #(cast, landed, fired)
     Ok(#(holder, #(key, tick))) -> {
       let #(cast, caster, more) =
-        tick_landed(cast:, caster:, cast_id:, holder:, key:, tick:)
+        tick_landed(
+          cast:,
+          caster:,
+          cast_id:,
+          holder:,
+          key:,
+          tick:,
+          start_child:,
+        )
       due_ticks_landed(
         cast:,
         caster:,
         now_ms:,
         cast_id:,
+        start_child:,
         landed: list.append(landed, more),
         fired: set.insert(fired, key),
       )
@@ -426,7 +445,8 @@ fn by_tick_key(first: TickKey, second: TickKey) -> order.Order {
 }
 
 /// Tick `tick` of the row `key` of the cast fires (`ticks_due`), with the caster as the
-/// heal ticks before it left it.
+/// heal ticks before it left it. The row is stored with the tick counted before a Proxy's
+/// child starts, so the child's own go finds the holder as the tick left it.
 fn tick_landed(
   cast cast: State,
   caster caster: Caster,
@@ -434,26 +454,33 @@ fn tick_landed(
   holder holder: Holder,
   key key: TickKey,
   tick tick: Int,
+  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+    #(State, List(Effect)),
 ) -> #(State, Caster, List(Effect)) {
   case dict.get(holder.ticking, key) {
     Error(Nil) -> #(cast, caster, [])
     Ok(row) -> {
-      let #(row, caster, landed) =
+      let #(row, caster, landed, proxy) =
         cast_state.on_tick_kind(
           kind: cast_state.ticking_kind(row:),
           damage: fn(blow) {
-            #(cast_state.round_opened(row:, tick:), caster, [
-              TickStrike(asked: TickAsked(
-                cast_id:,
-                spell4_id: holder.spell.spell4_id,
-                effect_id: cast_state.key_effect(key:),
-                unit_id: cast_state.key_unit(key:),
-                life: cast_state.ticking_life(row:),
-                go: cast_state.ticking_go(row:),
-                tick:,
-                blow:,
-              )),
-            ])
+            #(
+              cast_state.round_opened(row:, tick:),
+              caster,
+              [
+                TickStrike(asked: TickAsked(
+                  cast_id:,
+                  spell4_id: holder.spell.spell4_id,
+                  effect_id: cast_state.key_effect(key:),
+                  unit_id: cast_state.key_unit(key:),
+                  life: cast_state.ticking_life(row:),
+                  go: cast_state.ticking_go(row:),
+                  tick:,
+                  blow:,
+                )),
+              ],
+              None,
+            )
           },
           heal: fn(vital, formula, passed_in) {
             let #(caster, healed) =
@@ -466,19 +493,67 @@ fn tick_landed(
                 formula:,
                 passed_in:,
               )
-            #(cast_state.with_tick(row:, tick:), caster, healed)
+            #(cast_state.with_tick(row:, tick:), caster, healed, None)
+          },
+          proxy: fn(proxy) {
+            #(cast_state.with_tick(row:, tick:), caster, [], Some(proxy))
           },
         )
-      #(
+      let cast =
         with_ticking(
           cast:,
           cast_id:,
           ticking: dict.insert(holder.ticking, key, row),
-        ),
-        caster,
-        landed,
-      )
+        )
+      case proxy {
+        None -> #(cast, caster, landed)
+        Some(proxy) -> {
+          let #(cast, started) =
+            proxy_tick_child(cast:, caster:, holder:, proxy:, start_child:)
+          #(cast, caster, started)
+        }
+      }
     }
+  }
+}
+
+/// The child a tick of a periodic Proxy starts: none when the Proxy's caster gates, read again
+/// for the caster as it is at the tick, fail; a debug line and none when a gate cannot be
+/// decided (a type 37 gate needs a roll, and a tick draws none) or the named spell's caster
+/// condition refuses the caster's life (`spell_plan.refused_life`). The ticks go on in each case.
+fn proxy_tick_child(
+  cast cast: State,
+  caster caster: Caster,
+  holder holder: Holder,
+  proxy proxy: Proxy,
+  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+    #(State, List(Effect)),
+) -> #(State, List(Effect)) {
+  let #(passing, logs, _) =
+    cast_gate.proxy_gates(
+      proxies: [proxy],
+      subject: subject_of(cast:, caster:),
+      rolls: [],
+    )
+  case passing, spell_plan.refused_life(spell: proxy.spell, dead: caster.dead) {
+    [], _ -> #(cast, logs)
+    [_, ..], Some(_) -> #(cast, [
+      Log(
+        level: LogDebug,
+        text: "the periodic Proxy effect "
+          <> int.to_string(proxy.effect_id.value)
+          <> " of Spell4 "
+          <> int.to_string(holder.spell.spell4_id.value)
+          <> " does not cast Spell4 "
+          <> int.to_string(proxy.spell.spell4_id.value)
+          <> ", whose caster condition refuses a caster that is "
+          <> case caster.dead {
+          True -> "dead"
+          False -> "alive"
+        },
+      ),
+    ])
+    [_, ..], None -> start_child(cast, caster, holder, proxy)
   }
 }
 
@@ -672,6 +747,27 @@ fn node_ended_now(
           )
       }
   }
+}
+
+/// The Proxies of a go that start their child at each tick, each ticking on the caster
+/// (`Proxy.period`); the others start theirs at the go.
+pub fn proxies_ticking(
+  proxies proxies: List(Proxy),
+  caster caster: Caster,
+) -> List(TickingOn) {
+  list.filter_map(proxies, fn(proxy) {
+    case proxy.period {
+      Some(schedule) ->
+        Ok(TickingOn(
+          unit_id: caster.unit_id,
+          life: 0,
+          effect_id: proxy.effect_id,
+          schedule:,
+          kind: cast_state.proxy_tick(proxy:),
+        ))
+      None -> Error(Nil)
+    }
+  })
 }
 
 /// A go arms the first tick of each periodic row on each unit it reached (`TickingOn`),
@@ -1254,16 +1350,26 @@ pub fn node_of(
     )
     |> list.append(
       list.filter_map(aimed.ticking, fn(row) {
+        let life =
+          lasting.LastingRow(
+            delay_ms: row.schedule.delay_ms,
+            duration_ms: row.schedule.duration_ms,
+            until_removed: False,
+          )
         case row.unit_id == unit_id {
           True ->
-            Ok(lasting.Listed(
-              effect_id: row.effect_id,
-              row: lasting.LastingRow(
-                delay_ms: row.schedule.delay_ms,
-                duration_ms: row.schedule.duration_ms,
-                until_removed: False,
+            Ok(
+              cast_state.on_tick_kind(
+                kind: row.kind,
+                damage: fn(_) {
+                  lasting.Listed(effect_id: row.effect_id, row: life)
+                },
+                heal: fn(_, _, _) {
+                  lasting.Listed(effect_id: row.effect_id, row: life)
+                },
+                proxy: fn(_) { lasting.LifeOnly(row: life) },
               ),
-            ))
+            )
           False -> Error(Nil)
         }
       }),

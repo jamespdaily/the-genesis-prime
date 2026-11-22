@@ -49,6 +49,7 @@ const child_spell4_id = 99
 /// condition.
 fn proxy(condition: spell_plan.Condition) -> Proxy {
   Proxy(
+    period: None,
     effect_id: Spell4EffectsId(1),
     delay_ms: 0,
     phase_flags: 1,

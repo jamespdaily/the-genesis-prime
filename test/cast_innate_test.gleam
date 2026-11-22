@@ -269,8 +269,9 @@ pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
     innate_pressed(bag: [19_102, 19_019, 19_022, 38_012], in_combat: True)
   assert listed(effects: esper) == [178_144, 199_192]
     as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144, aimed at the caster, which its own go lists; its children list the type 52 row 199192 of 76766, aimed at the primary target of a child made on the caster (Spell4Effects spellId=76766)"
-  assert started_spells(effects: esper) == [70_369, 76_766]
-    as "Proxy 166935 starts 70369 and Proxy 178143 starts 76766; Proxy 204548 to 78078 is behind Prerequisite 36531 (type 15, comparison 1: a live cast of Spell4 41590 on the caster), which a caster with no such cast fails"
+  assert started_spells(effects: esper)
+    == [70_369, 76_766, 32_822, 32_822, 32_822, 32_822, 32_822]
+    as "Proxy 166935 starts 70369 and Proxy 178143 starts 76766; Proxy 204548 to 78078 is behind Prerequisite 36531 (type 15, comparison 1: a live cast of Spell4 41590 on the caster), which a caster with no such cast fails; the periodic Proxy 178429 of 70369 (tickTime 1000, durationTime 5000) casts 32822 five times (text 504979: \"generate 1 Psi Point every 1s for 5s\")"
   // A Medic with 250 of its 450 shield, struck.
   let medic =
     innate_pressed_by(

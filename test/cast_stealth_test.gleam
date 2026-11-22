@@ -45,6 +45,7 @@ import genesis_prime/message/spell_target_info
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/list
+import gleam/option
 import owned_test
 import prerequisite_support
 import spell_tables
@@ -446,6 +447,7 @@ fn gated_proxy(
   gate gate: prerequisite.Prerequisite,
 ) -> spell_plan.Proxy {
   Proxy(
+    period: option.None,
     effect_id: Spell4EffectsId(effect),
     delay_ms: 0,
     phase_flags: -1,

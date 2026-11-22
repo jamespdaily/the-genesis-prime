@@ -3171,6 +3171,7 @@ fn healed_through_a_child(
       kinds: [
         spell_plan.ProxyEffect(
           spell_plan.Proxy(
+            period: None,
             effect_id: Spell4EffectsId(90_002),
             delay_ms: 0,
             phase_flags: -1,

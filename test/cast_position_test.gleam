@@ -36,6 +36,7 @@ import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/order
 import gleam/string
 import owned_test
@@ -94,6 +95,7 @@ fn proxy(
   target_gate target_gate: prerequisite.Prerequisite,
 ) -> spell_plan.Proxy {
   Proxy(
+    period: option.None,
     effect_id: Spell4EffectsId(effect),
     delay_ms: 0,
     phase_flags: -1,

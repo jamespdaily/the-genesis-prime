@@ -1063,6 +1063,7 @@ pub fn a_heal_aimed_at_another_unit_lands_nothing_test() -> Nil {
     support.with_effects(spell: healer(heals: []), kinds: [
       spell_plan.ProxyEffect(
         spell_plan.Proxy(
+          period: None,
           effect_id: Spell4EffectsId(90_002),
           delay_ms: 0,
           phase_flags: -1,

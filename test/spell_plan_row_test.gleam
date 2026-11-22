@@ -59,9 +59,9 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
     |> list.sort(int.compare)
     == [
       90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_009, 90_010,
-      90_011, 90_012, 90_013, 90_014, 90_018,
+      90_011, 90_012, 90_013, 90_014, 90_018, 90_019,
     ]
-    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, which a go applies to the units that pass it) and the periodic heal (90014, a `TickingHeal` that ticks every 1000 ms for 8000 ms); the Proc of kind 27 (`proc_read`, a kind not read) and the Proxy that names no spell are in no list"
+    as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, which a go applies to the units that pass it), the periodic heal (90014, a `TickingHeal` that ticks every 1000 ms for 8000 ms) and the Proxy that names its spell in dataBits01 (90019, `proxy_named`); the Proc of kind 27 (`proc_read`, a kind not read) and the Proxy that names no spell, in dataBits00 or dataBits01, are in no list"
   spell_tables.with_loaded(
     reaching: [#("SpellLevel", 647)],
     rows:,
@@ -106,9 +106,10 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
             #(90_015, "left out"),
             #(90_016, "left out"),
             #(90_018, "applied"),
+            #(90_019, "applied"),
           ],
         )
-        as "the rule each row checks: a row behind a target apply prerequisite is applied, a periodic heal with a tickTime is applied, a Proc of a kind not read and a Proxy that names no spell"
+        as "the rule each row checks: a row behind a target apply prerequisite is applied, a periodic heal with a tickTime is applied, a Proc of a kind not read and a Proxy that names no spell are left out, and a Proxy that names its spell in dataBits01 is applied"
       let assert Ok(Applied(ReadProc(..))) =
         read(first_of(effects:, id: 90_011))
         as "the Proc of kind 217 is read and its spell is planned from the reading"
@@ -119,9 +120,12 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
       let assert Ok(Applied(ReadProxy(..))) =
         read(first_of(effects:, id: 90_012))
         as "the Proxy that names a spell is read"
+      let assert Ok(Applied(ReadProxy(..))) =
+        read(first_of(effects:, id: 90_019))
+        as "the Proxy that names its spell in dataBits01 is read"
       assert effect_row.unread_by_type(tables:, effects:)
         == dict.from_list([#(14, 1), #(26, 1)])
-        as "the measure counts only the rows a go applies as read: the Proc of kind 27 and the Proxy with dataBits00 0 are not, and the Fluff behind a target prerequisite and the periodic heal are read"
+        as "the measure counts only the rows a go applies as read: the Proc of kind 27 and the Proxy that names no spell are not, and the Fluff behind a target prerequisite, the periodic heal and the Proxy that names its spell in dataBits01 are read"
     },
   )
 }
