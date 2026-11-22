@@ -305,49 +305,12 @@ type Refused {
   Refused(word: String, missing: List(String), text: String)
 }
 
-/// The text of the frames the server sends on the connection until every
-/// needle has been in one of them, or what refused the wait: a frame that holds
-/// one of the `refusing` words once the `tolerating` words are cut from it.
-fn frames_until(
-  connection connection: dashboard_support.Connection,
-  needles needles: List(String),
-  refusing refusing: List(String),
-  tolerating tolerating: List(String),
-) -> Result(String, Refused) {
-  frames_until_after(connection:, needles:, refusing:, tolerating:, seen: "")
-}
-
-fn frames_until_after(
-  connection connection: dashboard_support.Connection,
-  needles needles: List(String),
-  refusing refusing: List(String),
-  tolerating tolerating: List(String),
-  seen seen: String,
-) -> Result(String, Refused) {
-  let missing =
-    list.filter(needles, fn(needle) { !string.contains(seen, needle) })
-  use <- bool.guard(when: missing == [], return: Ok(seen))
-  let frame =
-    open_wait.named(
-      "a frame of the page holding " <> string.join(missing, " and "),
-      fn() { dashboard_support.read_frame(connection) },
-    )
-  let assert Ok(text) = bit_array.to_string(frame) as "a frame is not text"
-  let judged =
-    list.fold(tolerating, text, fn(judged, word) {
-      string.replace(judged, word, "")
-    })
-  case list.find(refusing, string.contains(judged, _)) {
-    Ok(word) -> Error(Refused(word:, missing:, text:))
-    Error(Nil) ->
-      frames_until_after(
-        connection:,
-        needles:,
-        refusing:,
-        tolerating:,
-        seen: seen <> "\n" <> text,
-      )
-  }
+/// How a wait for frames refuses: the words whose presence in a frame, once the
+/// `tolerating` words are cut from it, ends the wait because the follower that
+/// sent them reads again only at its next tick, which these tests never let
+/// come.
+type Waits {
+  Waits(refusing: List(String), tolerating: List(String))
 }
 
 /// The words a page shows for a read that failed for a reason no row names.
@@ -363,90 +326,71 @@ const never_read = "No reading: "
 /// The words the Overview adds to a fact whose last read failed.
 const stale_fact = "stale "
 
-/// The text of the frames of a Logs page of planted files until every needle
-/// has been in one of them, or what refused the wait: a file that cannot be
-/// read. Its follower reads again only at its next tick, which these tests
-/// never let come. The containers read through a `podman` that is not there,
-/// so every frame says that for them.
-fn logs_frames_until(
+/// A Logs page of planted files: a file that cannot be read refuses. The
+/// containers read through a `podman` that is not there, so every frame says
+/// that for them.
+const file_logs = Waits(refusing: [failed_read], tolerating: [no_podman])
+
+/// A Logs page whose containers are planted (`with_containers`): a source that
+/// cannot be read refuses.
+const container_logs = Waits(refusing: [failed_read], tolerating: [])
+
+/// An Overview page: a fact no read has given refuses.
+const overview = Waits(refusing: [never_read], tolerating: [])
+
+/// An Overview page whose facts are all fresh: a fact no read has given, or
+/// whose last read failed, refuses.
+const fresh_overview = Waits(refusing: [never_read, stale_fact], tolerating: [])
+
+/// The text of the frames the server sends on the connection until every
+/// needle has been in one of them, or what refused the wait.
+fn frames_until(
   connection connection: dashboard_support.Connection,
   needles needles: List(String),
+  waits waits: Waits,
 ) -> Result(String, Refused) {
-  frames_until(connection:, needles:, refusing: [failed_read], tolerating: [
-    no_podman,
-  ])
+  frames_until_after(connection:, needles:, waits:, seen: "")
 }
 
-/// The text of the frames of a Logs page whose containers are planted
-/// (`with_containers`) until every needle has been in one of them, or what
-/// refused the wait: a source that cannot be read.
-fn container_frames_until(
+fn frames_until_after(
   connection connection: dashboard_support.Connection,
   needles needles: List(String),
+  waits waits: Waits,
+  seen seen: String,
 ) -> Result(String, Refused) {
-  frames_until(connection:, needles:, refusing: [failed_read], tolerating: [])
+  let missing =
+    list.filter(needles, fn(needle) { !string.contains(seen, needle) })
+  use <- bool.guard(when: missing == [], return: Ok(seen))
+  let frame =
+    open_wait.named(
+      "a frame of the page holding " <> string.join(missing, " and "),
+      fn() { dashboard_support.read_frame(connection) },
+    )
+  let assert Ok(text) = bit_array.to_string(frame) as "a frame is not text"
+  let judged =
+    list.fold(waits.tolerating, text, fn(judged, word) {
+      string.replace(judged, word, "")
+    })
+  case list.find(waits.refusing, string.contains(judged, _)) {
+    Ok(word) -> Error(Refused(word:, missing:, text:))
+    Error(Nil) ->
+      frames_until_after(
+        connection:,
+        needles:,
+        waits:,
+        seen: seen <> "\n" <> text,
+      )
+  }
 }
 
-/// The text of the frames of an Overview page until every needle has been in
-/// one of them, or what refused the wait: a fact no read has given, or one of
-/// the `refusing` words. The poller reads again only at its next tick, which
-/// these tests never let come.
-fn overview_frames_until(
+/// The text of the frames of a page until every needle has been in one of
+/// them; a frame that refuses the wait fails the test with the page's text.
+fn frames_held(
   connection connection: dashboard_support.Connection,
   needles needles: List(String),
-  refusing refusing: List(String),
-) -> Result(String, Refused) {
-  frames_until(
-    connection:,
-    needles:,
-    refusing: [never_read, ..refusing],
-    tolerating: [],
-  )
-}
-
-/// The text of the frames of a Logs page of planted files until every needle
-/// has been in one of them; a file that cannot be read fails the test with the
-/// page's text.
-fn frames_holding(
-  connection: dashboard_support.Connection,
-  needles: List(String),
+  waits waits: Waits,
 ) -> String {
-  frames_held(logs_frames_until(connection:, needles:))
-}
-
-/// The text of the frames of a Logs page whose containers are planted until
-/// every needle has been in one of them; a source that cannot be read fails the
-/// test with the page's text.
-fn container_frames_holding(
-  connection: dashboard_support.Connection,
-  needles: List(String),
-) -> String {
-  frames_held(container_frames_until(connection:, needles:))
-}
-
-/// The text of the frames of an Overview page until every needle has been in
-/// one of them; a fact that has no reading fails the test with the page's text.
-fn overview_frames_holding(
-  connection: dashboard_support.Connection,
-  needles: List(String),
-) -> String {
-  frames_held(overview_frames_until(connection:, needles:, refusing: []))
-}
-
-/// The text of the frames of an Overview page whose facts are all fresh, until
-/// every needle has been in one of them; a fact that has no reading, or whose
-/// last read failed, fails the test with the page's text.
-fn fresh_overview_frames_holding(
-  connection: dashboard_support.Connection,
-  needles: List(String),
-) -> String {
-  frames_held(
-    overview_frames_until(connection:, needles:, refusing: [stale_fact]),
-  )
-}
-
-fn frames_held(until: Result(String, Refused)) -> String {
-  case until {
+  case frames_until(connection:, needles:, waits:) {
     Ok(text) -> text
     Error(Refused(word:, missing:, text:)) ->
       panic as {
@@ -469,7 +413,8 @@ pub fn a_dead_poller_takes_the_page_runtimes_with_it_and_a_new_tab_is_served_tes
 
   // A page is open: one runtime, and the reading the poller made.
   let first = opened_socket(settings.port, key)
-  let _first = overview_frames_holding(first, ["9d2015a0"])
+  let _first =
+    frames_held(connection: first, needles: ["9d2015a0"], waits: overview)
   assert dashboard.runtime_count(running) == 1
 
   // The poller dies: the supervisor rebuilds it with the factory of the
@@ -481,7 +426,8 @@ pub fn a_dead_poller_takes_the_page_runtimes_with_it_and_a_new_tab_is_served_tes
   // A new tab is served: one runtime, the old one gone with its factory, and
   // a reading from the rebuilt poller.
   let second = opened_socket(settings.port, key)
-  let _second = overview_frames_holding(second, ["9d2015a0"])
+  let _second =
+    frames_held(connection: second, needles: ["9d2015a0"], waits: overview)
   assert dashboard.runtime_count(running) == 1
   dashboard_support.close(second)
 }
@@ -601,7 +547,11 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
   assert !string.contains(first, "stale") as "a healthy read is not stale"
   let socket = opened_socket(settings.port, key)
   let shown =
-    fresh_overview_frames_holding(socket, [healthy, ["\"2\""]] |> list.flatten)
+    frames_held(
+      connection: socket,
+      needles: [healthy, ["\"2\""]] |> list.flatten,
+      waits: fresh_overview,
+    )
   assert !string.contains(shown, "stale") as "a healthy read is not stale"
 
   // Podman fails: the same values are shown stale, with the reason and an age.
@@ -623,7 +573,8 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
   let failing =
     overview_html(open_wait.received(probe, "the reading with Podman failing"))
   assert_shows(html: failing, words: stale_words, stage: "Podman failing")
-  let _stale = overview_frames_holding(socket, stale_words)
+  let _stale =
+    frames_held(connection: socket, needles: stale_words, waits: overview)
 
   // Podman works again: a page opened now shows no stale word.
   support.plant(scene:, key: support.info, answer: support.quiet)
@@ -637,7 +588,11 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
   assert !string.contains(recovered, "stale") as "the stale words are gone"
   let later = opened_socket(settings.port, key)
   let again =
-    fresh_overview_frames_holding(later, ["9d2015a0", "running, ready"])
+    frames_held(
+      connection: later,
+      needles: ["9d2015a0", "running, ready"],
+      waits: fresh_overview,
+    )
   assert !string.contains(again, "stale") as "the stale words are gone"
   dashboard_support.close(later)
 
@@ -648,7 +603,8 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
     overview_html(open_wait.received(probe, "the reading without the script"))
   let not_found = "the state script is not found: " <> wrapper
   assert_shows(html: without, words: [not_found], stage: "the script removed")
-  let _gone = overview_frames_holding(socket, [not_found])
+  let _gone =
+    frames_held(connection: socket, needles: [not_found], waits: overview)
   dashboard_support.close(socket)
 }
 
@@ -694,13 +650,17 @@ pub fn the_logs_page_follows_the_updater_log_and_launchds_log_through_a_browsers
   // The first frames hold the lines of both sources, the ANSI line as text and
   // the failures in the role of a failure.
   let first =
-    frames_holding(socket, [
-      "first line",
-      "third line",
-      "load_content src/genesis_prime.gleam:137",
-      "Error: building at STEP",
-      "role-bad",
-    ])
+    frames_held(
+      connection: socket,
+      needles: [
+        "first line",
+        "third line",
+        "load_content src/genesis_prime.gleam:137",
+        "Error: building at STEP",
+        "role-bad",
+      ],
+      waits: file_logs,
+    )
   assert !string.contains(first, "[90m") as "the colour code is not shown"
   assert !string.contains(first, "u001b") as "no escape reaches the page"
 
@@ -708,17 +668,24 @@ pub fn the_logs_page_follows_the_updater_log_and_launchds_log_through_a_browsers
   let assert Ok(Nil) =
     simplifile.append(updater_path, stamp <> "4 play-service: fourth line\n")
   follow.read_now(running.updater_log)
-  let _appended = frames_holding(socket, ["fourth line"])
+  let _appended =
+    frames_held(connection: socket, needles: ["fourth line"], waits: file_logs)
 
   // The file cut shorter: a frame with the mark.
   let assert Ok(Nil) = simplifile.write(updater_path, "short\n")
   follow.read_now(running.updater_log)
-  let _cut = frames_holding(socket, ["the log was cut shorter", "short"])
+  let _cut =
+    frames_held(
+      connection: socket,
+      needles: ["the log was cut shorter", "short"],
+      waits: file_logs,
+    )
 
   // The file removed: a frame that says there is no log yet.
   let assert Ok(Nil) = simplifile.delete(updater_path)
   follow.read_now(running.updater_log)
-  let _removed = frames_holding(socket, ["no log yet"])
+  let _removed =
+    frames_held(connection: socket, needles: ["no log yet"], waits: file_logs)
   dashboard_support.close(socket)
 
   // A dashboard started with neither file serves the page and says so for
@@ -738,11 +705,15 @@ pub fn the_logs_page_follows_the_updater_log_and_launchds_log_through_a_browsers
   let bare_socket =
     opened_socket_at(port: bare_settings.port, key: bare_key, route: "logs-ws")
   let empty =
-    frames_holding(bare_socket, [
-      bare <> "/play-service.log",
-      bare <> "/play-service.launchd.log",
-      "no log yet",
-    ])
+    frames_held(
+      connection: bare_socket,
+      needles: [
+        bare <> "/play-service.log",
+        bare <> "/play-service.launchd.log",
+        "no log yet",
+      ],
+      waits: file_logs,
+    )
   assert list.length(string.split(empty, "no log yet")) >= 3
     as "both sources say there is no log yet"
   dashboard_support.close(bare_socket)
@@ -763,7 +734,8 @@ pub fn closing_the_logs_socket_ends_its_runtime_and_the_followers_reads_test() -
 
   // Open: one runtime, both sources' lines.
   let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let _first = frames_holding(socket, ["one", "alpha"])
+  let _first =
+    frames_held(connection: socket, needles: ["one", "alpha"], waits: file_logs)
   assert dashboard.runtime_count(running) == 1
 
   // Closed: the runtime ends and every follower, the containers' included, drops
@@ -785,7 +757,12 @@ pub fn closing_the_logs_socket_ends_its_runtime_and_the_followers_reads_test() -
 
   // A second socket gets the newest lines again.
   let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let _again = frames_holding(second, ["one", "two", "alpha"])
+  let _again =
+    frames_held(
+      connection: second,
+      needles: ["one", "two", "alpha"],
+      waits: file_logs,
+    )
   dashboard_support.close(second)
 }
 
@@ -824,7 +801,8 @@ pub fn a_logs_socket_is_upgraded_only_once_its_runtime_has_started_test() -> Nil
   // The factory let go: the runtime starts, the socket is upgraded and the
   // page's lines come.
   assert dashboard_support.handshake_reply(connection).status == 101
-  let _first = frames_holding(connection, ["one", "alpha"])
+  let _first =
+    frames_held(connection:, needles: ["one", "alpha"], waits: file_logs)
   assert dashboard.runtime_count(running) == 1
   dashboard_support.close(connection)
 }
@@ -929,7 +907,8 @@ pub fn a_dead_follower_takes_the_log_runtimes_with_it_and_a_new_tab_is_served_te
   let key = dashboard_support.written_key(home:)
 
   let first = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let _first = frames_holding(first, ["one", "alpha"])
+  let _first =
+    frames_held(connection: first, needles: ["one", "alpha"], waits: file_logs)
   assert dashboard.runtime_count(running) == 1
 
   // A follower dies: the supervisor rebuilds the followers with the factory of
@@ -940,7 +919,8 @@ pub fn a_dead_follower_takes_the_log_runtimes_with_it_and_a_new_tab_is_served_te
 
   // A new tab is served: one runtime, and the lines.
   let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let _second = frames_holding(second, ["one", "alpha"])
+  let _second =
+    frames_held(connection: second, needles: ["one", "alpha"], waits: file_logs)
   assert dashboard.runtime_count(running) == 1
 
   // A container's follower dies: the same, and the tab after it is served.
@@ -948,7 +928,8 @@ pub fn a_dead_follower_takes_the_log_runtimes_with_it_and_a_new_tab_is_served_te
   process.kill(container_pid)
   assert dashboard_support.closes(second) as "the page's socket stayed open"
   let third = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let _third = frames_holding(third, ["one", "alpha"])
+  let _third =
+    frames_held(connection: third, needles: ["one", "alpha"], waits: file_logs)
   assert dashboard.runtime_count(running) == 1
   dashboard_support.close(third)
 }
@@ -1046,17 +1027,21 @@ pub fn the_logs_page_shows_the_two_containers_through_a_browsers_socket_test() -
   // The frames hold the four sources, the containers by the call that shows
   // them, and the lines of both containers.
   let first =
-    container_frames_holding(socket, [
-      "Updater log",
-      "launchd log",
-      "Server log",
-      "Database log",
-      "podman logs genesis-play",
-      "podman logs genesis-play-postgres",
-      "=CRASH REPORT====",
-      "creature2_id",
-      "[hidden]",
-    ])
+    frames_held(
+      connection: socket,
+      needles: [
+        "Updater log",
+        "launchd log",
+        "Server log",
+        "Database log",
+        "podman logs genesis-play",
+        "podman logs genesis-play-postgres",
+        "=CRASH REPORT====",
+        "creature2_id",
+        "[hidden]",
+      ],
+      waits: container_logs,
+    )
 
   // The server's crash reports are each one entry, in the role of a failure.
   let crashes = items_holding(first, "=CRASH REPORT====")
@@ -1095,7 +1080,12 @@ pub fn the_logs_page_shows_the_two_containers_through_a_browsers_socket_test() -
       <> "2026-11-20T09:10:30-05:00 a line logged later\n",
   )
   read_poll.read_now(running.server_log)
-  let later = container_frames_holding(socket, ["a line logged later"])
+  let later =
+    frames_held(
+      connection: socket,
+      needles: ["a line logged later"],
+      waits: container_logs,
+    )
   assert string.split(later, "a line logged later") |> list.length == 2
     as "the line came once"
   assert !string.contains(later, planted_password)
@@ -1109,24 +1099,36 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
   let key = dashboard_support.written_key(home: settings.genesis_home)
   let first = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   let _lines =
-    container_frames_holding(first, ["creature2_id", "=CRASH REPORT===="])
+    frames_held(
+      connection: first,
+      needles: ["creature2_id", "=CRASH REPORT===="],
+      waits: container_logs,
+    )
 
   // Podman is not reachable: a frame with the reason, and a page opened now
   // shows the lines the follower kept, dimmed.
   support.plant_unreachable(scene:, name: support.server_container)
   read_poll.read_now(running.server_log)
   let _reason =
-    container_frames_holding(first, [
-      "Podman is not reachable",
-      "unable to connect to Podman socket",
-    ])
+    frames_held(
+      connection: first,
+      needles: [
+        "Podman is not reachable",
+        "unable to connect to Podman socket",
+      ],
+      waits: container_logs,
+    )
   let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   let kept =
-    container_frames_holding(second, [
-      "Podman is not reachable",
-      "=CRASH REPORT====",
-      "stale",
-    ])
+    frames_held(
+      connection: second,
+      needles: [
+        "Podman is not reachable",
+        "=CRASH REPORT====",
+        "stale",
+      ],
+      waits: container_logs,
+    )
   assert string.contains(kept, "role-warn")
   dashboard_support.close(second)
 
@@ -1146,12 +1148,21 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
       <> "2026-11-20T09:10:31-05:00 logged meanwhile\n",
   )
   read_poll.read_now(running.server_log)
-  let back = container_frames_holding(first, ["logged meanwhile"])
+  let back =
+    frames_held(
+      connection: first,
+      needles: ["logged meanwhile"],
+      waits: container_logs,
+    )
   assert string.split(back, "logged meanwhile") |> list.length == 2
     as "the line logged meanwhile came once"
   let third = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   let fresh =
-    container_frames_holding(third, ["logged meanwhile", "=CRASH REPORT===="])
+    frames_held(
+      connection: third,
+      needles: ["logged meanwhile", "=CRASH REPORT===="],
+      waits: container_logs,
+    )
   assert !string.contains(fresh, "Podman is not reachable")
   assert !string.contains(fresh, "stale")
   dashboard_support.close(third)
@@ -1165,84 +1176,109 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
   )
   read_poll.read_now(running.server_log)
   let replaced =
-    container_frames_holding(first, [
-      "the container was replaced",
-      "the new container's line",
-    ])
+    frames_held(
+      connection: first,
+      needles: [
+        "the container was replaced",
+        "the new container's line",
+      ],
+      waits: container_logs,
+    )
   assert !string.contains(replaced, planted_password)
   dashboard_support.close(first)
 }
 
-pub fn a_read_that_fails_ends_a_wait_for_frames_with_its_reason_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use scene, settings <- with_containers
-  let _running = started(settings)
-  let key = dashboard_support.written_key(home: settings.genesis_home)
-
-  // The server's container cannot be inspected: the page shows the reason, and
-  // the follower reads again only at a tick, so the lines never come.
-  support.plant(
-    scene:,
-    key: support.identity(support.server_container),
-    answer: Answer(exits: [1], output: "", error: "the planted podman failed\n"),
+/// A page whose follower cannot read what it follows, and what the wait for
+/// frames of that page ends with: `plant` makes the failure, `route` is the
+/// page's socket, `word` the one the wait refused on, and `reason(home)` the
+/// text the page gives for the failure.
+type Unreadable {
+  Unreadable(
+    why: String,
+    plant: fn(support.Scene, dashboard.Settings) -> dashboard.Settings,
+    route: String,
+    waits: Waits,
+    needles: List(String),
+    word: String,
+    reason: fn(String) -> String,
   )
-  let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let assert Error(Refused(word:, missing:, text:)) =
-    container_frames_until(connection: socket, needles: ["=CRASH REPORT===="])
-  assert word == failed_read as "the wait is refused by a failed read"
-  assert missing == ["=CRASH REPORT===="]
-    as "the error names the words that were waited for"
-  assert string.contains(text, "cannot read: the planted podman failed")
-    as "the error does not hold the page's reason"
-  dashboard_support.close(socket)
 }
 
-pub fn a_file_log_that_cannot_be_read_ends_a_wait_for_frames_with_its_reason_test() -> Nil {
+pub fn a_failed_read_ends_a_wait_for_frames_with_its_reason_on_each_page_test() -> Nil {
   use <- owned_test.run(30_000)
-  use home <- dashboard_support.with_home
-  // A folder where the updater's log should be: reading it fails, and the
-  // follower reads again only at a tick, so the lines never come.
-  let assert Ok(Nil) = simplifile.create_directory(home <> "/play-service.log")
-  let settings = dashboard_support.settings(home)
-  let _running = started(settings)
-  let key = dashboard_support.written_key(home:)
-  let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
-  let assert Error(Refused(word:, missing:, text:)) =
-    logs_frames_until(connection: socket, needles: ["a line that never comes"])
-  assert word == failed_read as "the wait is refused by a failed read"
-  assert missing == ["a line that never comes"]
-    as "the error names the words that were waited for"
-  assert string.contains(text, failed_read <> "eisdir")
-    as "the error does not hold the page's reason"
-  dashboard_support.close(socket)
-}
-
-pub fn an_overview_fact_no_read_has_given_ends_a_wait_for_frames_with_its_reason_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use home <- dashboard_support.with_home
-  // A state script that is not there: no fact is ever read, and the poller
-  // reads again only at a tick, so the readings never come.
-  let absent = home <> "/no-state-script.sh"
-  let settings =
-    dashboard.Settings(..dashboard_support.settings(home), state_script: absent)
-  let _running = started(settings)
-  let key = dashboard_support.written_key(home:)
-  let socket = opened_socket(settings.port, key)
-  let assert Error(Refused(word:, missing:, text:)) =
-    overview_frames_until(
-      connection: socket,
+  // In each row the follower reads again only at a tick, which the test never
+  // lets come, so the needles never arrive and only the refusal ends the wait.
+  let rows = [
+    Unreadable(
+      why: "a container that podman cannot inspect",
+      plant: fn(scene, settings) {
+        support.plant(
+          scene:,
+          key: support.identity(support.server_container),
+          answer: Answer(
+            exits: [1],
+            output: "",
+            error: "the planted podman failed\n",
+          ),
+        )
+        settings
+      },
+      route: "logs-ws",
+      waits: container_logs,
+      needles: ["=CRASH REPORT===="],
+      word: failed_read,
+      reason: fn(_home) { failed_read <> "the planted podman failed" },
+    ),
+    Unreadable(
+      why: "a folder where the updater's log should be",
+      plant: fn(scene, settings) {
+        let assert Ok(Nil) =
+          simplifile.create_directory(scene.home <> "/play-service.log")
+        settings
+      },
+      route: "logs-ws",
+      waits: file_logs,
+      needles: ["a line that never comes"],
+      word: failed_read,
+      reason: fn(_home) { failed_read <> "eisdir" },
+    ),
+    Unreadable(
+      why: "a state script that is not there",
+      plant: fn(scene, settings) {
+        dashboard.Settings(
+          ..settings,
+          state_script: scene.home <> "/no-state-script.sh",
+        )
+      },
+      route: "ws",
+      waits: overview,
       needles: ["9d2015a0"],
-      refusing: [],
-    )
-  assert word == never_read as "the wait is refused by a fact never read"
-  assert missing == ["9d2015a0"]
-    as "the error names the words that were waited for"
-  assert string.contains(
-    text,
-    never_read <> "the state script is not found: " <> absent,
-  )
-    as "the error does not hold the page's reason"
-  dashboard_support.close(socket)
+      word: never_read,
+      reason: fn(home) {
+        never_read
+        <> "the state script is not found: "
+        <> home
+        <> "/no-state-script.sh"
+      },
+    ),
+  ]
+  list.each(rows, fn(row) {
+    use scene, settings <- with_containers
+    let settings = row.plant(scene, settings)
+    let _running = started(settings)
+    let key = dashboard_support.written_key(home: settings.genesis_home)
+    let socket = opened_socket_at(port: settings.port, key:, route: row.route)
+    let assert Error(Refused(word:, missing:, text:)) =
+      frames_until(connection: socket, needles: row.needles, waits: row.waits)
+      as { row.why <> ": the wait was not refused" }
+    assert word == row.word
+      as { row.why <> ": the wait is refused by another word" }
+    assert missing == row.needles
+      as { row.why <> ": the error names other words than were waited for" }
+    assert string.contains(text, row.reason(scene.home))
+      as { row.why <> ": the error does not hold the page's reason" }
+    dashboard_support.close(socket)
+  })
 }
 
 /// Waits until every follower of the four sources has told the watcher it
@@ -1268,10 +1304,14 @@ pub fn closing_the_logs_socket_stops_the_podman_calls_and_leaves_no_process_test
   let key = dashboard_support.written_key(home: settings.genesis_home)
   let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   let _first =
-    container_frames_holding(socket, [
-      "creature2_id",
-      "=CRASH REPORT====",
-    ])
+    frames_held(
+      connection: socket,
+      needles: [
+        "creature2_id",
+        "=CRASH REPORT====",
+      ],
+      waits: container_logs,
+    )
 
   // Closed: every follower drops its subscriber, and a read asked for after
   // that starts no read. A follower tells the watcher before it starts a read,

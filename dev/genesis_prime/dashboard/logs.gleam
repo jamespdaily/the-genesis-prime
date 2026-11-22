@@ -6,7 +6,7 @@
 //// follower (updater log)   ──Followed──►┐
 //// follower (launchd log)   ──Followed──►┤
 ////                                       ├─► runtime (one per tab) ──view──► tab
-//// follower (server)        ──Followed──►┤      joined from its runtime's own process, behind the selector merge (`subscription`)
+//// follower (server)        ──Followed──►┤      joined from its runtime's own process, so its answer queues behind the selector merge (`subscription`)
 //// follower (database)      ──Followed──►┘
 //// ```
 ////
@@ -74,8 +74,8 @@ pub type Model {
   )
 }
 
-/// What the Logs page is told: a follower sent its log, or its runtime can hear
-/// the followers and the page is to subscribe (`join`).
+/// What the Logs page is told: a follower sent its log, or the page is to join
+/// the followers from its runtime's own process (`join`, see `subscription`).
 pub type Message {
   Received(followed: Followed)
   Joining(join: fn() -> Nil)

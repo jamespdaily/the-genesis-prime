@@ -4,7 +4,7 @@
 ////
 //// ```text
 //// poller (host) ──Reading──► runtime (one per tab) ──view──► tab
-////                  joined from the runtime's own process, behind the selector merge (`subscription`)
+////                  joined from the runtime's own process, so its answer queues behind the selector merge (`subscription`)
 //// ```
 ////
 //// - A tab's runtime subscribes to the poller when it starts, and the poller
@@ -42,8 +42,8 @@ pub type Model {
   Model(reading: Option(Reading))
 }
 
-/// What the Overview is told: the poller sent a reading, or its runtime can hear
-/// the poller and the page is to subscribe (`join`).
+/// What the Overview is told: the poller sent a reading, or the page is to join
+/// the poller from its runtime's own process (`join`, see `subscription`).
 pub type Message {
   Received(reading: Reading)
   Joining(join: fn() -> Nil)
