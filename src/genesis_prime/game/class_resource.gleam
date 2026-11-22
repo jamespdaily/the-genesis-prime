@@ -462,6 +462,12 @@ pub type Gain {
   FocusShare(share: Float)
 }
 
+/// A gain of the Focus pool, as `gain` applies it: points, or a share of the maximum.
+type FocusChange {
+  FocusByPoints(amount: Int)
+  FocusByShare(share: Float)
+}
+
 /// What the rule asks the connection to do, in order.
 pub type Effect {
   /// The slot now holds `value`: 0x935 of the player's own unit, stat slot + 2.
@@ -783,11 +789,12 @@ pub fn gain(
   let focus_gains = case resources.focus {
     None -> []
     Some(_) ->
-      list.filter(gains, fn(gain) {
+      list.filter_map(gains, fn(gain) {
         case gain {
-          Gain(slot:, ..) -> slot == focus_slot
-          FocusShare(..) -> True
-          ClassVitalGain(..) -> False
+          Gain(slot:, amount:) if slot == focus_slot ->
+            Ok(FocusByPoints(amount:))
+          FocusShare(share:) -> Ok(FocusByShare(share:))
+          Gain(..) | ClassVitalGain(..) -> Error(Nil)
         }
       })
   }
@@ -816,10 +823,9 @@ pub fn gain(
         None -> so_far
         Some(pool) -> {
           let points = case gain {
-            FocusShare(share:) ->
+            FocusByShare(share:) ->
               float32.product(left: share, right: pool.numbers.maximum)
-            Gain(amount:, ..) | ClassVitalGain(amount:, ..) ->
-              int.to_float(amount)
+            FocusByPoints(amount:) -> int.to_float(amount)
           }
           let next = focus_clamped(pool:, value: pool.value +. points)
           let changes = case next == pool.value {

@@ -6265,6 +6265,7 @@ fn gift_of(
 ) -> Result(Gift, PlanError) {
   let vital = effect.data_bits00
   let points = effect.data_bits02
+  let class_vital = is_class_vital(vital:)
   let share_not_read =
     GainShareNotRead(
       spell4_id:,
@@ -6280,16 +6281,8 @@ fn gift_of(
         Ok(_) | Error(Nil) -> Error(share_not_read)
       }
     15, _, _ -> Ok(FocusPoints(points:))
-    4, 0, bits
-    | 12, 0, bits
-    | 13, 0, bits
-    | 14, 0, bits
-    | 18, 0, bits
-    | 19, 0, bits
-      if bits != 0
-    -> Error(share_not_read)
-    4, _, _ | 12, _, _ | 13, _, _ | 14, _, _ | 18, _, _ | 19, _, _ ->
-      Ok(ClassVitalPoints(vital:, points:))
+    _, 0, bits if class_vital && bits != 0 -> Error(share_not_read)
+    _, _, _ if class_vital -> Ok(ClassVitalPoints(vital:, points:))
     _, _, _ -> Error(GainVitalNotRead(spell4_id:, effect_id: effect.id, vital:))
   }
 }
@@ -7069,6 +7062,7 @@ fn cost_of(
   on_row on_row: Bool,
 ) -> Result(Option(Cost), PlanError) {
   use <- bool.guard(when: !has_cost(cost_type:, amount:), return: Ok(None))
+  let class_vital = is_class_vital(vital: cost_type)
   case cost_type, slot_of(vital_type: cost_type) {
     1, _ -> Ok(Some(UnheldCost(result: 44)))
     3, _ -> Ok(Some(UnheldCost(result: 176)))
@@ -7081,7 +7075,7 @@ fn cost_of(
       )
     16, _ -> Ok(Some(UnheldCost(result: 177)))
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
-    4, _ | 12, _ | 13, _ | 14, _ | 18, _ | 19, _ ->
+    _, Error(Nil) if class_vital ->
       Ok(
         Some(case on_row {
           True -> RowClassCost(vital: cost_type, amount:)
@@ -7089,6 +7083,16 @@ fn cost_of(
         }),
       )
     _, Error(Nil) -> Error(UnreadCost(spell4_id: row.id, cost_type:))
+  }
+}
+
+/// Whether a vital is one the class mechanic takes for a cost and gives a gain to
+/// (`0x1405e7980`): 4, 12, 13, 14, 18 and 19, each held by the slot of the player's class
+/// that names it (`Class.vitalEnumResource01`, `04`).
+fn is_class_vital(vital vital: Int) -> Bool {
+  case vital {
+    4 | 12 | 13 | 14 | 18 | 19 -> True
+    _ -> False
   }
 }
 
@@ -7472,6 +7476,14 @@ fn group_ids_of(row row: spell4_group_list.Spell4GroupList) -> List(Int) {
 /// reasons and plan errors the coverage measure prints for each row.
 pub fn gaps() -> List(gap.Entry) {
   [
+    gap.Entry(
+      area: "Resource gains",
+      missing: "a gain of vital 8 with no points and a float in dataBits05 (the Stalker's Nano Skin passives and one more spell) gives 0 points: nothing in the client's code or texts says what that float is for the resource",
+    ),
+    gap.Entry(
+      area: "Resource gains",
+      missing: "a gain of Focus is read from dataBits02 alone, though dataBits01 differs from it on eleven rows (a Warrior's Harvest tiers, which a class with no Focus never gives, and one gift to another unit); the client's code reads neither column",
+    ),
     gap.Entry(
       area: "Spell areas",
       missing: "the allies of the caster in the area of a spell that hits no foes: the area's bit is left out of an aim that holds the caster's bit too, and an effect that keeps a state or a child on the area's units is refused",

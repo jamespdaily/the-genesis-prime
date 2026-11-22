@@ -1471,7 +1471,7 @@ pub fn subject_of(
   )
 }
 
-/// The caster's Focus as vital 15 ( 0x140466520): the Focus held and its
+/// The caster's Focus as vital 15 (0x140466520): the Focus held and its
 /// maximum, 0 of 0 for a class that holds none, as the client's unit holds it
 /// (`ConstructUnit` zeroes the word, property 5 defaults to 0).
 fn focus_vital(caster caster: Caster) -> #(Int, prerequisite.Vital) {

@@ -318,7 +318,7 @@ fn gains_are(
   })
 }
 
-pub fn recharge_gives_the_share_the_actuators_held_name_and_takes_up_to_4_and_meditate_gives_its_share_at_each_go_test() -> Nil {
+pub fn recharge_gives_the_share_the_actuators_held_name_and_takes_up_to_4_and_meditate_gives_its_share_at_its_first_pulse_test() -> Nil {
   use <- owned_test.run(5000)
   // Recharge 42596 (Spell4Effects 228352, 228357, 228361, 228363 behind 43658, 43659, 43660
   // and 29891, and 228362 of -4 of vital 18): the share row for the Actuators held, 0.05 each
@@ -350,14 +350,23 @@ pub fn recharge_gives_the_share_the_actuators_held_name_and_takes_up_to_4_and_me
     && support.gains(effects: refused) == []
     as "with no Actuator Recharge is refused 151 by its CasterCast 24152 and gives nothing"
   // Meditate 32818 (channel delay 1000, maximum 5000, pulse 1000): row 65493's share of 0.04
-  // (text 243889) is in the phases of its phaseFlags 1, which a channel's pulse k fires as
-  // bit k (the plan's rule for every channel), so the share is given at the first go and
-  // the Heal row 228412 (phaseFlags all) at each.
+  // is in the phases of its phaseFlags 1, and a channel's pulse k is phase k (the plan's rule
+  // for every channel), so the share is given at the first pulse only, though text 243889 says
+  // "every 1 s for 5 s" (a gap of `spell_effect.gaps`).
   let meditate = run_of(spell4_id: 32_818, class_id: 3, holding: 0.0)
   assert list.length(channel_support.goes(run: meditate)) > 1
     as "the channel has several gos"
   let assert [meditate_gains] = gains_of(run: meditate)
-    as "the share is given at one go"
+    as "the share is given at the first pulse only"
   assert gains_are(got: meditate_gains, shares: [0.04], vital_gains: [])
     as "the share of 65493 is 0.04"
+  let gain_times =
+    list.filter_map(meditate.steps, fn(step) {
+      case support.gains(effects: step.effects) {
+        [] -> Error(Nil)
+        [_, ..] -> Ok(step.after_ms)
+      }
+    })
+  assert gain_times == list.take(channel_support.goes(run: meditate), 1)
+    as "the share is given at the first pulse"
 }

@@ -387,6 +387,11 @@ fn gain_outcome(
     Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
     Ok(spell_plan.TickingGain(..)) ->
       Unobserved(asked: entry, why: HeldAs(list: "ticking gain"))
+    // The abilities of `plans` are the starting ones, and every gain of Focus or of a class
+    // vital is reached from a later ability (Meditate, Recharge), an item's spell or an AMP,
+    // whose texts the oracle does not ask: no token of a planned ability names such a row, so
+    // none is compared here. The share reading is checked against the texts of Meditate and
+    // Recharge in `spell_plan_gain_test`, and the pool's arithmetic in `class_resource_test`.
     Ok(spell_plan.Gain(gift: spell_plan.FocusPoints(..), ..))
     | Ok(spell_plan.Gain(gift: spell_plan.FocusShare(..), ..))
     | Ok(spell_plan.Gain(gift: spell_plan.ClassVitalPoints(..), ..)) ->
