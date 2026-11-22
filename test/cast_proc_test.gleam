@@ -2023,7 +2023,7 @@ fn periodic() -> List(spell_area.TickingDamage) {
         delay_ms: 0,
         tick_ms: 2000,
         duration_ms: 6000,
-        count: 3,
+        count: ticking.Ticks(3),
       ),
     ),
   ]
@@ -2242,7 +2242,7 @@ fn ticking_heal(id id: Int) -> spell_plan.Heal {
       delay_ms: 0,
       tick_ms: 2000,
       duration_ms: 6000,
-      count: 3,
+      count: ticking.Ticks(3),
     ),
   )
 }

@@ -24,7 +24,7 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
   Applied, LeftOut, ProxyNamesNoSpell, ReadProxy,
 }
-import genesis_prime/game/ticking.{Schedule}
+import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
@@ -165,22 +165,27 @@ pub fn a_timed_periodic_proxy_on_the_caster_reads_as_the_schedule_of_its_row_tes
     #(
       121_345,
       47_860,
-      Schedule(delay_ms: 1, tick_ms: 1000, duration_ms: 10_000, count: 10),
+      Schedule(
+        delay_ms: 1,
+        tick_ms: 1000,
+        duration_ms: 10_000,
+        count: Ticks(10),
+      ),
     ),
     #(
       178_429,
       70_369,
-      Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 5000, count: 5),
+      Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 5000, count: Ticks(5)),
     ),
     #(
       85_298,
       39_180,
-      Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 5050, count: 5),
+      Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 5050, count: Ticks(5)),
     ),
     #(
       228_473,
       38_787,
-      Schedule(delay_ms: 0, tick_ms: 500, duration_ms: 5000, count: 10),
+      Schedule(delay_ms: 0, tick_ms: 500, duration_ms: 5000, count: Ticks(10)),
     ),
   ]
   list.each(cases, fn(case_) {
@@ -357,7 +362,7 @@ pub fn a_periodic_proxys_caster_persistence_is_read_from_its_row_and_a_target_pe
             delay_ms: 1,
             tick_ms: 1000,
             duration_ms: 10_000,
-            count: 10,
+            count: Ticks(10),
           )
           as "the schedule is the row's whatever its persistence"
       },

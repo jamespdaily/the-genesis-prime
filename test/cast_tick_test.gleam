@@ -22,7 +22,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/spell_area.{DamageEffect, TickingDamage}
 import genesis_prime/game/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
 import genesis_prime/game/spend
-import genesis_prime/game/ticking.{Schedule}
+import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_result
@@ -77,7 +77,7 @@ fn surge_blow() -> spell_area.DamageEffect {
 /// The row ticking with no delay, every 2000 ms for 6000 ms: three ticks, at 2000, 4000
 /// and 6000 after the go.
 fn every_two_seconds() -> ticking.Schedule {
-  Schedule(delay_ms: 0, tick_ms: 2000, duration_ms: 6000, count: 3)
+  Schedule(delay_ms: 0, tick_ms: 2000, duration_ms: 6000, count: Ticks(3))
 }
 
 fn surge_ticking() -> List(spell_area.TickingDamage) {
@@ -442,7 +442,7 @@ pub fn the_go_arms_its_ticks_in_its_own_step_test() -> Nil {
               delay_ms: 0,
               tick_ms: 2000,
               duration_ms: 7000,
-              count: 3,
+              count: Ticks(3),
             ),
           ),
         ]),
@@ -544,7 +544,7 @@ fn atomic_surge_ticking() -> List(spell_area.TickingDamage) {
         delay_ms: 1000,
         tick_ms: 1000,
         duration_ms: 4000,
-        count: 4,
+        count: Ticks(4),
       ),
     ),
   ]
@@ -1224,7 +1224,7 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
             delay_ms: 0,
             tick_ms: 1000,
             duration_ms: 3000,
-            count: 3,
+            count: Ticks(3),
           )),
         ),
       ],
@@ -1292,7 +1292,7 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
 pub fn a_heal_tick_heals_the_caster_each_tick_test() -> Nil {
   use <- owned_test.run(5000)
   let schedule =
-    Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 3000, count: 3)
+    Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 3000, count: Ticks(3))
   let run = heal_run(rows: [health_heal(schedule:)])
   let assert [#(_, go), ..ticks] = run.steps
   assert heals(effects: go) == [] as "the go heals nothing itself"
@@ -1681,7 +1681,7 @@ fn proxy_spell(schedule schedule: ticking.Schedule) -> Spell {
 
 /// Row 82888's schedule (delay 1000, tickTime 1000, durationTime 4000), as a Proxy row's.
 fn atomic_proxy() -> ticking.Schedule {
-  Schedule(delay_ms: 1000, tick_ms: 1000, duration_ms: 4000, count: 4)
+  Schedule(delay_ms: 1000, tick_ms: 1000, duration_ms: 4000, count: Ticks(4))
 }
 
 /// A cast of the spell, its go striking nothing, run to `until_ms`.

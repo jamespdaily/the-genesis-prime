@@ -1429,7 +1429,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
               delay_ms: 0,
               tick_ms: 2000,
               duration_ms: 6000,
-              count: 3,
+              count: ticking.Ticks(3),
             ),
             kind: cast_state.heal_tick(
               vital: effect_kind.Health,
@@ -1975,7 +1975,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         delay_ms: 0,
         tick_ms: 2000,
         duration_ms: 6000,
-        count: 3,
+        count: ticking.Ticks(3),
       ),
     )
   let #(ticking_state, ticking_effects) =

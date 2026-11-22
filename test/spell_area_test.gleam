@@ -1393,7 +1393,7 @@ pub fn a_damage_row_with_a_tick_time_ticks_on_its_schedule_test() -> Nil {
         delay_ms: 1500,
         tick_ms: 1500,
         duration_ms: 6000,
-        count: 4,
+        count: ticking.Ticks(4),
       ),
     )
     as "delayTime 1500, tickTime 1500 and durationTime 6000: four ticks, the first a tick after the delay"
@@ -2139,7 +2139,7 @@ pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
         delay_ms: 1000,
         tick_ms: 1000,
         duration_ms: 4000,
-        count: 4,
+        count: ticking.Ticks(4),
       ),
     )
     as "Spell4Effects 82888 (table_rows -- Spell4Effects spellId=38514): effectType 8, targetFlags 2, delayTime 1000, tickTime 1000, durationTime 4000; tick k lands 1000 + k * 1000 ms after the go (spell.tick_timing, a guess)"
@@ -2167,7 +2167,7 @@ pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
           delay_ms: 1000,
           tick_ms: 1000,
           duration_ms: 4000,
-          count: 4,
+          count: ticking.Ticks(4),
         ),
       ),
     ]

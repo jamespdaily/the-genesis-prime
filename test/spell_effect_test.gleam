@@ -24,6 +24,7 @@ import genesis_prime/game/spell_plan.{
   ReadByArea, ReadEffects, ReadProc, ReadProxy, RemoveEffect,
   RemoveStealthEffect, StealthEffect, StruckMoveEffect, UnitStateEffect,
 }
+import genesis_prime/game/ticking
 import genesis_prime/table/spell4_effects
 import gleam/bool
 import gleam/list
@@ -258,7 +259,7 @@ pub fn a_ticking_heal_and_a_ticking_gain_keep_their_tick_and_duration_test() -> 
     as "the heals view holds the ticking heal"
   assert schedule.tick_ms == 1000
     && schedule.duration_ms == 8000
-    && schedule.count == 8
+    && schedule.count == ticking.Ticks(8)
     as "the heal's tick 1000 and life 8000 give 8 ticks"
   let assert [spell_plan.TickingGain(tick_ms:, duration_ms:, ..)] =
     spell_plan.in_phase(

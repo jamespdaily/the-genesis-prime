@@ -23,7 +23,15 @@ import gleam/option.{type Option, None, Some}
 /// life of the row's node on the unit, as the client's own end timer for the effect counts
 /// it (`opcode.0x7f4.effect_time`).
 pub type Schedule {
-  Schedule(delay_ms: Int, tick_ms: Int, duration_ms: Int, count: Int)
+  Schedule(delay_ms: Int, tick_ms: Int, duration_ms: Int, count: Count)
+}
+
+/// How many ticks a schedule has.
+pub type Count {
+  /// This many ticks, the last landing within the row's durationTime.
+  Ticks(Int)
+  /// No count: the row has flags bit 2 and ticks until its node ends.
+  UntilTheNodeEnds
 }
 
 /// Why a periodic row has no schedule.
@@ -52,7 +60,7 @@ pub fn schedule_of(
     delay_ms: row.delay_ms,
     tick_ms:,
     duration_ms: row.duration_ms,
-    count:,
+    count: Ticks(count),
   ))
 }
 
@@ -78,7 +86,11 @@ pub fn within_life(
     True -> { life_ms - schedule.delay_ms } / schedule.tick_ms
     False -> 0
   }
-  Schedule(..schedule, count: int.clamp(within, min: 0, max: schedule.count))
+  case schedule.count {
+    Ticks(count) ->
+      Schedule(..schedule, count: Ticks(int.clamp(within, min: 0, max: count)))
+    UntilTheNodeEnds -> Schedule(..schedule, count: Ticks(0))
+  }
 }
 
 /// The monotonic time tick `tick` lands at, for a go at `from_ms`.
@@ -92,8 +104,10 @@ pub fn tick_at_ms(
 
 /// The tick after `tick` (0 before the first), or `None` after the last.
 pub fn next_tick(schedule schedule: Schedule, tick tick: Int) -> Option(Int) {
-  use <- bool.guard(when: tick >= schedule.count, return: None)
-  Some(tick + 1)
+  case schedule.count {
+    Ticks(count) if tick < count -> Some(tick + 1)
+    Ticks(_) | UntilTheNodeEnds -> None
+  }
 }
 
 /// The periodic rows' timing the client's code does not show: the client has no tick timer,

@@ -25,7 +25,7 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
-import genesis_prime/game/ticking.{type Schedule, Schedule}
+import genesis_prime/game/ticking.{type Schedule, Schedule, Ticks}
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
@@ -50,17 +50,22 @@ const child_spell4_id = 71_371
 
 /// Row 121345's schedule: delay 1, tickTime 1000, durationTime 10000, ten ticks.
 fn engineer_stance() -> Schedule {
-  Schedule(delay_ms: 1, tick_ms: 1000, duration_ms: 10_000, count: 10)
+  Schedule(delay_ms: 1, tick_ms: 1000, duration_ms: 10_000, count: Ticks(10))
 }
 
 /// Row 228473's schedule: tickTime 500, durationTime 5000, ten ticks.
 fn plasma_wall() -> Schedule {
-  Schedule(delay_ms: 0, tick_ms: 500, duration_ms: 5000, count: 10)
+  Schedule(delay_ms: 0, tick_ms: 500, duration_ms: 5000, count: Ticks(10))
 }
 
 /// A schedule of no delay, a tickTime of 1000 and `count` ticks.
 fn every_second(count count: Int) -> Schedule {
-  Schedule(delay_ms: 0, tick_ms: 1000, duration_ms: 1000 * count, count:)
+  Schedule(
+    delay_ms: 0,
+    tick_ms: 1000,
+    duration_ms: 1000 * count,
+    count: Ticks(count),
+  )
 }
 
 fn child() -> Spell {
@@ -551,7 +556,7 @@ pub fn a_child_that_holds_its_own_periodic_proxy_ticks_on_its_own_cast_test() ->
   // Each child ticks 1500 ms after its start (delay 500 plus one tick), between the holder's
   // own ticks, three times.
   let child_schedule =
-    Schedule(delay_ms: 500, tick_ms: 1000, duration_ms: 3500, count: 3)
+    Schedule(delay_ms: 500, tick_ms: 1000, duration_ms: 3500, count: Ticks(3))
   let first_ticks = fn(stack) {
     let middle =
       Spell(
