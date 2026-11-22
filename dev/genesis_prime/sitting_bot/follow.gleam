@@ -157,7 +157,7 @@ pub fn take_due(
 /// server refuses a 0x0637 that holds a kind, or a value of a kind, the client's
 /// own code never sends (opcode.0x637.sent_kinds), and a 0x0638 holds kinds the
 /// client's own batch of a player never does.
-pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
+fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
   list.filter_map(commands, fn(command) {
     case command {
       relayed_movement.Platform(data) -> Ok(movement_command.Platform(data))

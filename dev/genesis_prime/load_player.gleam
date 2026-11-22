@@ -27,11 +27,6 @@
 //// is the one after it modulo 20, and goes at most once every 500 ms after the
 //// last was sent. It is the game connection that is pinged here; the other two
 //// are idle.
-////
-//// A player can also walk and return (`moves_and_returns`): it enters the world,
-//// sends one movement message (0x0637, opcode.0x637) that puts it at a position,
-//// drops its game connection, logs in again as the same account and reads the
-//// position 0x262 places the player at, which is where the server saved it.
 
 import game_client
 import genesis_prime/add_account
@@ -88,7 +83,7 @@ pub type Report {
 }
 
 /// The next ping: its number and how long to wait before sending it.
-pub type Ping {
+type Ping {
   Ping(number: Int, wait_ms: Int)
 }
 
@@ -163,7 +158,7 @@ pub fn seed(
 /// The ping that follows the last one answered, with its number the one after
 /// the answered number modulo 20 and its wait the rest of the 500 ms since the
 /// last was sent (SendNetworkPings).
-pub fn next_ping(
+fn next_ping(
   answered answered: Int,
   sent_at_ms sent_at_ms: Int,
   now_ms now_ms: Int,
@@ -248,39 +243,6 @@ pub fn play(
   Nil
 }
 
-/// Where a player stands: the world position x, y, z, each a 32-bit float.
-pub type Position {
-  Position(x: Float, y: Float, z: Float)
-}
-
-/// Plays the path as the account's player to the world, sends one movement
-/// message that puts the player at `to`, drops the game connection, calls
-/// `after_the_drop` (which returns once the server has taken the drop), logs in
-/// again as the same account, plays the same character and reads the position
-/// of the unit the server creates (0x262's kind 2). A step of the server that is
-/// not what the client expects stops the process.
-pub fn moves_and_returns(
-  account account: Account,
-  ports ports: Ports,
-  to to: Position,
-  after_the_drop after_the_drop: fn() -> Nil,
-) -> Position {
-  let #(game, auth) = log_in(account:, ports:)
-  list_characters(game)
-  let character_id = create_character(game:, name: account.character_name)
-  let _burst = enter_world(game:, character_id:).0
-  game_client.send_world(game:, message_id: 0x0637, body: move_to(to))
-  game_client.close(game:)
-  let _closed = mug.shutdown(auth)
-  after_the_drop()
-  let #(game, auth) = log_in(account:, ports:)
-  list_characters(game)
-  let burst = enter_world(game:, character_id:).0
-  game_client.close(game:)
-  let _closed = mug.shutdown(auth)
-  placed_at(burst)
-}
-
 /// The STS login, the auth login and the game hello of the account's player: its
 /// game connection and its auth connection.
 pub fn log_in(
@@ -362,22 +324,6 @@ pub fn enter_world(
     == game_client.world_entry_ids
     as "the player enters the world with 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
   #(burst, have)
-}
-
-/// The body of 0x0637 that moves the player to the position: one kind 2 command
-/// with its bit clear (opcode.0x637, 0x1400ad350).
-fn move_to(position: Position) -> BitArray {
-  game_client.moves_body(client_clock: 0, commands: [
-    game_client.position_command(x: position.x, y: position.y, z: position.z),
-  ])
-}
-
-/// The position the burst of an entry places the player at: the kind 2 command
-/// of 0x262, which the server writes first (0x1404586e0).
-fn placed_at(burst: List(Frame)) -> Position {
-  let #(x, y, z) =
-    game_client.placed_at(unit: game_client.unit_create_player_in(frames: burst))
-  Position(x:, y:, z:)
 }
 
 /// Where a walking player is: when it sent its last 0x0637, and how many it has
