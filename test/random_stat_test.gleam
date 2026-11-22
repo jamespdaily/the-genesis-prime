@@ -339,14 +339,11 @@ pub fn a_random_row_of_another_kind_than_1_is_no_candidate_test() -> Nil {
     as "the rows left are positions 2 to 5: the entries at fraction 0 take 2, 3 and 4"
   assert random_stat.roll_bytes(tables: without_first, item2_id:) == 12
     as "the item still rolls three entries"
-  let assert Ok(all_rows) =
-    list.try_fold([34, 35, 36, 37, 38], fixture_tables.rows(), fn(rows, id) {
-      fixture_tables.change(rows:, table: "ItemRandomStat", id:, with: [
-        #("itemStatTypeEnum", Integer(3)),
-      ])
-    })
-    as "rows 34 to 38 are in the fixture"
-  use none <- fixture_tables.on_rows(rows: all_rows, reaching: [])
+  use none <- fixture_tables.changes(
+    edits: list.map([34, 35, 36, 37, 38], fn(id) {
+      #("ItemRandomStat", id, [#("itemStatTypeEnum", Integer(3))])
+    }),
+  )
   assert random_stat.roll_bytes(tables: none, item2_id:) == 0
     as "no row of group 11 is a candidate: no bytes are drawn"
   assert random_stat.roll(tables: none, item2_id:, entropy: <<>>) == 0

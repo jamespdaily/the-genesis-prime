@@ -3310,18 +3310,50 @@ pub fn lacks_threshold_time(
 
 /// The effects of each spell, of every type, in the order they take effect
 /// (`Spell4Effects.orderIndex`, then the row id): the plans read the Proxies among
-/// them and the areas the damage, so the table is grouped once.
+/// them and the areas and the creatures' specials the damage, so the table is grouped once.
+/// A row of a channel's spell holds the phase_flags its pulses read (`pulse_phased`), which
+/// the table's column does not for the rows that function changes.
 pub fn effects_by_spell(
   tables tables: table_store.Tables,
 ) -> Dict(Int, List(spell4_effects.Spell4Effects)) {
   spell4_effects.all(tables)
   |> list.group(fn(effect) { effect.spell_id })
-  |> dict.map_values(fn(_, effects) {
+  |> dict.map_values(fn(spell4_id, effects) {
     list.sort(effects, fn(first, second) {
       int.compare(first.order_index, second.order_index)
       |> order.break_tie(int.compare(first.id, second.id))
     })
+    |> pulse_phased(tables:, spell4_id:)
   })
+}
+
+/// The rows of the spell with the phase_flags its pulses read: in a Channeled spell whose
+/// spellChannelFlags lacks bit 1 (`fires_every_pulse`), a row of phaseFlags 1 and no tickTime
+/// names every pulse (-1), where the client's column says 1. The client reads no effect row's
+/// phase (`opcode.0x7f4.phase`), and the texts of the rows say every pulse
+/// (`Spell4Effects.phaseFlags.channel`). Any other row, and every row of a spell with no
+/// Spell4 or Spell4Base row, is left as the table holds it.
+fn pulse_phased(
+  rows rows: List(spell4_effects.Spell4Effects),
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> List(spell4_effects.Spell4Effects) {
+  let channel_without_bit_1 =
+    result.try(spell4.get(tables:, id: Spell4Id(spell4_id)), fn(row) {
+      spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
+      |> result.map(fn(base) { fires_every_pulse(row:, base:) })
+    })
+    |> result.unwrap(False)
+  case channel_without_bit_1 {
+    True ->
+      list.map(rows, fn(effect) {
+        case effect.phase_flags == 1 && effect.tick_time == 0 {
+          True -> spell4_effects.Spell4Effects(..effect, phase_flags: -1)
+          False -> effect
+        }
+      })
+    False -> rows
+  }
 }
 
 fn phases_by_owner(
@@ -3472,7 +3504,8 @@ fn proxy_of(
   ))
   // Every gain under a Proxy aimed at each struck unit in the client's level-1 trees fires
   // in phase 0 only (`spell_plan_gain_test` reads them all), so lifting by phase 0 loses
-  // none to a later phase.
+  // none to a later phase. A gain of a channel child under such a Proxy would fire at every
+  // pulse (`pulse_phased`) and be lifted to the first; no planned tree holds one.
   let #(lifted, kept) = case target {
     OnEachStruck ->
       list.partition(child.effects, fn(planned) {
@@ -6588,6 +6621,17 @@ fn aura_of(
     | Transactional, _
     -> None
   }
+}
+
+/// Whether a row of phaseFlags 1 in the spell names every pulse of its channel: a Channeled
+/// spell whose spellChannelFlags lacks bit 1, the complement of `compares_telegraph_phase` for
+/// a Channeled spell (`Spell4Effects.phaseFlags.channel`).
+fn fires_every_pulse(
+  row row: spell4.Spell4,
+  base base: spell4_base.Spell4Base,
+) -> Bool {
+  method_of(base.cast_method) == Channeled
+  && !spell_effect.has_flag(flags: row.spell_channel_flags, bit: 1)
 }
 
 fn method_of(cast_method: Int) -> CastMethod {

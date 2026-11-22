@@ -39,6 +39,7 @@ import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
+import genesis_prime/message/spell_started
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_death_state.{UnitDeathState}
@@ -2190,46 +2191,63 @@ fn answered_by_the_beast(
   }
 }
 
-/// What the Engineer's client hears from its Electrocute at a Beast in the camp, after four Pulse
-/// Blasts, the first of which opens the fight, with `tables` as the server's rows: the Beast and the Engineer
-/// are run by their own rules and answer each other (`answered_by_the_beast`).
-fn electrocute_frames(tables tables: table_store.Tables) -> List(Frame) {
-  let #(engineer, _) =
+/// A player of the class entered over `tables` and the Beast `beast_spawn` the client is
+/// shown, run by its own rule, with the bag index of each base in `bases` (the level-1
+/// loadout's order, `loadout.of`).
+fn fight_scene(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+  bases bases: List(Int),
+  beast_spawn beast_spawn: spawn.Spawn,
+) -> #(game_connection.State, creature.State, List(Int)) {
+  let #(player, _) =
     game_connection_support.entered_with(
       settings: Settings(
         ..game_connection_support.settings(),
         tables:,
         server_proxies: spell_tables.server_proxies(),
       ),
-      class_id: 2,
+      class_id:,
       saved_health: None,
     )
   let assert Ok(set) =
-    loadout.of(tables:, class_id: ClassId(2), faction_id: 166)
-    as "the fixture holds the Engineer's Novice set"
-  let bag_index = fn(base) {
-    let assert Ok(index) =
-      list.index_map(set.abilities, fn(held, index) { #(held, index) })
-      |> list.key_find(Spell4BaseId(base))
-      as "a level-1 Engineer holds the ability"
-    index
-  }
-  let pulse_blast = bag_index(26_468)
-  let electrocute = bag_index(25_473)
+    loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
+    as "the fixture holds the class's Novice set"
+  let bag_indexes =
+    list.map(bases, fn(base) {
+      let assert Ok(index) =
+        list.index_map(set.abilities, fn(held, index) { #(held, index) })
+        |> list.key_find(Spell4BaseId(base))
+        as "a level-1 player of the class holds the ability"
+      index
+    })
+  let #(beast, started) = a_beast_of(beast_spawn)
+  let #(player, shown, _) = medic_takes(player, to_the_medic(started))
+  assert shown != [] as "the client is shown the Beast"
+  #(player, beast, bag_indexes)
+}
+
+/// What the Engineer's client hears from its Electrocute at a Beast in the camp, after four Pulse
+/// Blasts, the first of which opens the fight, with `tables` as the server's rows: the Beast and the Engineer
+/// are run by their own rules and answer each other (`answered_by_the_beast`).
+fn electrocute_frames(tables tables: table_store.Tables) -> List(Frame) {
   let assert Ok(strike) =
     spell4_effects.get(tables:, id: Spell4EffectsId(92_587))
     as "the client's Spell4Effects holds the row 92587"
   assert strike.spell_id == 41_276
     as "Spell4Effects 92587 is Electrocute's damage row (spellId 41276)"
-  let #(beast, started) =
-    a_beast_of(
-      spawn.Spawn(
+  let #(engineer, beast, bag_indexes) =
+    fight_scene(
+      tables:,
+      class_id: 2,
+      bases: [26_468, 25_473],
+      beast_spawn: spawn.Spawn(
         ..spawn_support.beast_at(number: 1, place: beast_spawn_place()),
         health: 5000,
       ),
     )
-  let #(engineer, shown, _) = medic_takes(engineer, to_the_medic(started))
-  assert shown != [] as "the client is shown the Beast"
+  let assert [pulse_blast, electrocute] = bag_indexes
+    as "one bag index for each base asked"
   // Electrocute costs 8 of the Volatility at each of its six pulses (Spell4 41276
   // innateCostType0 6, a cost per tick), 48 in all, and each Pulse Blast gives 15 (Spell4.42148),
   // the first of a fight included: four give 60.
@@ -2299,6 +2317,87 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
     == healths
     && list.unique(healths) == healths
     as "each pulse's damage lowers the Beast's health: six strictly falling values"
+}
+
+/// What a Medic's client hears from its Discharge pressed at a Beast that never deflects, over
+/// `tables` as the server's rows.
+fn discharge_frames(tables tables: table_store.Tables) -> List(Frame) {
+  let #(medic, beast, bag_indexes) =
+    fight_scene(
+      tables:,
+      class_id: 4,
+      bases: [38_201],
+      beast_spawn: spawn.Spawn(
+        ..spawn_support.beast_without_deflect_at(
+          number: 1,
+          place: beast_spawn_place(),
+        ),
+        health: 5000,
+      ),
+    )
+  let assert [discharge] = bag_indexes as "one bag index for the base asked"
+  let #(_, _, steps) =
+    game_connection_support.pressed_until_answered(
+      state: medic,
+      world: beast,
+      bag_index: discharge,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 5000,
+      answer: answered_by_the_beast,
+    )
+  list.flat_map(steps, game_connection_support.heard(
+    _,
+    game_connection_support.keyed(),
+  ))
+}
+
+pub fn a_medics_discharge_strikes_the_beast_at_each_of_its_three_pulses_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 58832 (castMethod 1, channelInitialDelay 410, channelMaxTime 1250, channelPulseTime
+  // 410, spellChannelFlags 0; text 508497 "every 0.41s") has three pulses and Damage row
+  // 141368 (targetFlags 4, phaseFlags 1, no tickTime), which a channel without
+  // spellChannelFlags bit 1 fires at every pulse (`Spell4Effects.phaseFlags.channel`). The
+  // Beast never deflects (`spawn_support.beast_without_deflect_at`), so no seed turns a hit
+  // aside and every pulse that lists the row lowers its health (`opcode.0x7f4.target_info`:
+  // the client hits the units a go lists with the effects it lists).
+  let frames = discharge_frames(tables: fixture_tables.shared())
+  // The casts Discharge's Proxies start each have a 0x7ff, whose root is Spell4 58832; the
+  // pressed cast has none, so its goes are those of no announced cast.
+  let started =
+    game_connection_support.decoded(
+      frames,
+      spell_started.message_id,
+      spell_started.decode,
+    )
+  assert started != []
+    && list.all(started, fn(cast) { cast.root_spell4_id == 58_832 })
+    as "the casts the client hears start are Discharge's"
+  let goes =
+    game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
+    |> list.filter(fn(go) {
+      !list.any(started, fn(cast) { cast.cast_id == go.cast_id })
+    })
+  assert list.map(goes, fn(go) { go.phase }) == [0, 1, 2]
+    as "Spell4.58832: three pulses, the goes' phases 0 to 2"
+  assert list.map(goes, fn(go) {
+      list.flat_map(go.targets, fn(target) {
+        case target.unit_id == 7 {
+          True ->
+            list.map(target.effects, fn(effect) { effect.spell4_effects_id })
+            |> list.filter(fn(effect_id) { effect_id == 141_368 })
+          False -> []
+        }
+      })
+    })
+    == [[141_368], [141_368], [141_368]]
+    as "Spell4Effects 141368 strikes the Beast at each of the three pulses"
+  let #(_, healths, _) = heard_of_the_beast(frames:)
+  assert list.length(healths) == 3
+    && list.sort(healths, fn(first, second) { int.compare(second, first) })
+    == healths
+    && list.unique(healths) == healths
+    as "each pulse's damage lowers the Beast's health: three strictly falling values"
 }
 
 // ---- A gate the creature fails: the client is shown no hit ----

@@ -79,9 +79,25 @@ pub fn the_derived_damage_effects_of_every_spell_are_its_type_8_rows_in_order_te
         |> order.break_tie(int.compare(first.id, second.id))
       })
     })
+  // The phase of a row is the plan's (`spell_plan.effects_by_spell`: a channel's phaseFlags 1
+  // row names every pulse), so each derived row equals the table's but for its phase_flags.
   list.each(set.to_list(spells), fn(spell4_id) {
-    assert creature_attack.damage_effects(tables:, spell4_id:)
-      == result.unwrap(dict.get(damage_rows, spell4_id), [])
-      as "the derived damage effects of every spell are what filtering the whole table gives"
+    let derived = creature_attack.damage_effects(tables:, spell4_id:)
+    let raw = result.unwrap(dict.get(damage_rows, spell4_id), [])
+    assert list.map(derived, fn(row) {
+        spell4_effects.Spell4Effects(..row, phase_flags: 0)
+      })
+      == list.map(raw, fn(row) {
+        spell4_effects.Spell4Effects(..row, phase_flags: 0)
+      })
+      as "the derived damage effects of every spell are what filtering the whole table gives, in every column but phase_flags"
   })
+  // Discharge 58832 (a channel without spellChannelFlags bit 1) holds damage row 141368 of
+  // phaseFlags 1 in the table, which the derived row reads as every pulse.
+  assert list.map(
+      creature_attack.damage_effects(tables:, spell4_id: 58_832),
+      fn(row) { #(row.id, row.phase_flags) },
+    )
+    == [#(141_368, -1)]
+    as "Spell4Effects 141368 (phaseFlags 1 in the table) is read as every pulse"
 }

@@ -4385,7 +4385,8 @@ fn go(
       }
       // The activation is applied by the cast's last go: a channel's Activate row is
       // delayed to it (Spell4Effects 10256, delayTime 2999 of a 3000 ms channel), though
-      // the first go lists the row (phaseFlags 1). A cast stopped before its last go
+      // every go lists the row (phaseFlags 1 names every pulse of a channel without
+      // spellChannelFlags bit 1). A cast stopped before its last go
       // activates nothing: the server's choice, since the client's own handling of the
       // Activate effect (`Spell4Effects.effectType.7`) is not read here for a stopped
       // channel. An item's cast of a spell with no Activate row is no use of its target:
@@ -4523,10 +4524,11 @@ fn stealth_changed_by_go(
 }
 
 /// Whether a go of phase `phase` lists the activation's Activate effect. A channel lists
-/// it only at the go its phaseFlags name: Spell4Effects 10256 has phaseFlags 1, the first
-/// go (`cast.channel_sequence`). A spell cast as a Normal one goes once, so it lists every
-/// row, whatever phase the row names (an activate cast drops the phases,
-/// `cast_press.activation_spell`).
+/// it at the gos its phaseFlags name: Spell4Effects 10256 names every pulse (phaseFlags 1 in a
+/// channel without spellChannelFlags bit 1, `spell_plan.effects_by_spell`), and a masked row
+/// would name only its pulses (`cast.channel_sequence`). A spell cast as a Normal one goes
+/// once, so it lists every row, whatever phase the row names (an activate cast drops the
+/// phases, `cast_press.activation_spell`).
 fn activation_listed_at(
   live live: Live,
   phase phase: Int,

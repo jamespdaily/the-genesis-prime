@@ -175,8 +175,15 @@ pub fn the_registry_holds_the_channel_pulse_and_the_unread_gain_column_gaps_test
   [
     #(
       "Spell phases",
-      ["spellChannelFlags", "phaseFlags 1", "first pulse only", "every pulse"],
-      "a channel without bit 1 fires a phaseFlags 1 row at its first pulse only, while most texts say every pulse",
+      [
+        "spellChannelFlags",
+        "phaseFlags 1",
+        "tickTime",
+        "mask",
+        "castMethod 3",
+        "CrowdControl",
+      ],
+      "a channel without bit 1 fires a phaseFlags 1 row at every pulse, which leaves the masks, the tickTime rows, castMethod 3 and the unchecked crowd-control rows unread",
     ),
     #(
       "Resource gains",

@@ -50,7 +50,6 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/order
 import gleam/result
 import gleam/string
 
@@ -149,20 +148,18 @@ const damage_effects_key: table_store.DerivedKey(Dict(Int, List(Spell4Effects)))
 /// (`Spell4Effects.orderIndex`, then the row id), as a value the tables' load builds once
 /// (genesis_prime/table/loader/store `derived`): the content load asks for them once for
 /// every spell of every creature, and the table holds one row per effect of every spell.
+/// The rows are the plan's (`spell_plan.effects_by_spell`), so a special's strike names the
+/// pulses the plan's rows name.
 pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: damage_effects_key, build: fn(tables) {
     Ok(
-      spell4_effects.all(tables)
-      |> list.filter(fn(effect) {
-        effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
-      })
-      |> list.group(fn(effect) { effect.spell_id })
+      spell_plan.effects_by_spell(tables:)
       |> dict.map_values(fn(_, effects) {
-        list.sort(effects, fn(first, second) {
-          int.compare(first.order_index, second.order_index)
-          |> order.break_tie(int.compare(first.id, second.id))
+        list.filter(effects, fn(effect) {
+          effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
         })
-      }),
+      })
+      |> dict.filter(fn(_, effects) { effects != [] }),
     )
   })
 }
