@@ -128,7 +128,6 @@ big = 0"
 
 pub fn the_row_of_an_id_prints_each_column_and_its_value_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "5"], folder:) == Ok(row_five)
     as "the planted row of id 5: a negative integer, a float, a boolean, a string with quotes and a 64-bit integer, each under its column's name"
@@ -138,7 +137,6 @@ pub fn the_row_of_an_id_prints_each_column_and_its_value_test() -> Nil {
 
 pub fn without_a_selection_every_row_prints_in_id_order_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted"], folder:)
     == Ok(string.join([row_three, row_five, row_nine, row_eleven], "\n\n"))
@@ -147,7 +145,6 @@ pub fn without_a_selection_every_row_prints_in_id_order_test() -> Nil {
 
 pub fn a_filter_on_a_column_prints_only_the_rows_that_hold_the_value_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "level=2"], folder:)
     == Ok(string.join([row_three, row_nine], "\n\n"))
@@ -165,7 +162,6 @@ pub fn a_filter_on_a_column_prints_only_the_rows_that_hold_the_value_test() -> N
 
 pub fn a_filter_matches_a_32_bit_integer_by_its_signed_unsigned_or_hex_form_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "level=-1294967296"], folder:)
     == Ok(row_eleven)
@@ -183,7 +179,6 @@ pub fn a_filter_matches_a_32_bit_integer_by_its_signed_unsigned_or_hex_form_test
 
 pub fn a_filter_matches_a_32_bit_float_by_its_value_its_bits_or_a_decimal_that_rounds_to_it_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(
       arguments: ["Planted", "ratio=0.10000000149011612"],
@@ -204,7 +199,6 @@ pub fn a_filter_matches_a_32_bit_float_by_its_value_its_bits_or_a_decimal_that_r
 
 pub fn a_filter_that_matches_no_row_fails_naming_the_column_and_value_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   let error = table_rows.run(arguments: ["Planted", "level=99"], folder:)
   assert error
@@ -223,7 +217,6 @@ pub fn a_filter_that_matches_no_row_fails_naming_the_column_and_value_test() -> 
 
 pub fn an_id_with_no_row_fails_naming_the_id_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   let error = table_rows.run(arguments: ["Planted", "4"], folder:)
   assert error == Error(table_rows.NoRowOfId(table: "Planted", id: 4))
@@ -235,7 +228,6 @@ pub fn an_id_with_no_row_fails_naming_the_id_test() -> Nil {
 
 pub fn several_ids_print_each_row_in_the_order_given_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "11", "3", "9"], folder:)
     == Ok(string.join([row_eleven, row_three, row_nine], "\n\n"))
@@ -244,7 +236,6 @@ pub fn several_ids_print_each_row_in_the_order_given_test() -> Nil {
 
 pub fn a_repeated_id_prints_its_row_each_time_it_is_named_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "5", "3", "5"], folder:)
     == Ok(string.join([row_five, row_three, row_five], "\n\n"))
@@ -253,7 +244,6 @@ pub fn a_repeated_id_prints_its_row_each_time_it_is_named_test() -> Nil {
 
 pub fn an_id_with_no_row_among_good_ones_fails_naming_it_and_prints_no_row_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   let error = table_rows.run(arguments: ["Planted", "3", "4", "5"], folder:)
   assert error == Error(table_rows.NoRowOfId(table: "Planted", id: 4))
@@ -268,7 +258,6 @@ pub fn an_id_with_no_row_among_good_ones_fails_naming_it_and_prints_no_row_test(
 
 pub fn a_selection_among_several_that_is_not_an_id_fails_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "3", "five", "5"], folder:)
     == Error(table_rows.NotAnId("five"))
@@ -290,7 +279,6 @@ pub fn a_selection_among_several_that_is_not_an_id_fails_naming_it_test() -> Nil
 
 pub fn an_unknown_table_fails_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   let error = table_rows.run(arguments: ["Nowhere"], folder:)
   assert error
@@ -306,7 +294,6 @@ pub fn an_unknown_table_fails_naming_it_test() -> Nil {
 
 pub fn an_unknown_column_fails_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   let error = table_rows.run(arguments: ["Planted", "colour=2"], folder:)
   assert error
@@ -321,7 +308,6 @@ pub fn an_unknown_column_fails_naming_it_test() -> Nil {
 
 pub fn a_selection_that_is_neither_an_id_nor_a_column_and_value_fails_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "five"], folder:)
     == Error(table_rows.BadSelection("five"))
@@ -338,7 +324,6 @@ column big = type 20, 64-bit integer, offset 24"
 
 pub fn the_columns_option_prints_the_header_the_columns_and_their_offsets_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- with_planted
   assert table_rows.run(arguments: ["Planted", "--columns"], folder:)
     == Ok(
@@ -349,7 +334,6 @@ pub fn the_columns_option_prints_the_header_the_columns_and_their_offsets_test()
 
 pub fn a_table_with_no_rows_prints_no_rows_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tag("dev_tool")
   use folder <- planted_table.in_folder([planted_table.file(planted_schema, [])])
   assert table_rows.run(arguments: ["Planted"], folder:) == Ok("no rows")
     as "the planted table has no record (the client has such tables: game_tables.ClientData names seven)"
@@ -368,7 +352,6 @@ pub fn a_table_with_no_rows_prints_no_rows_test() -> Nil {
 
 pub fn a_real_table_row_prints_the_values_the_generated_module_reads_test() -> Nil {
   use <- owned_test.run(30_000)
-  use <- unitest.tag("dev_tool")
   use <- unitest.guard(client_tables.present())
   let assert Ok(row) =
     list.find(path_level.all(client_tables.every_table()), fn(row) {
@@ -485,7 +468,6 @@ fn assert_read_the_same(
 
 pub fn the_command_and_the_generated_decoder_read_32_bit_integers_text_and_booleans_alike_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tag("dev_tool")
   assert_read_the_same(read_both_ways(
     schema: emotes.schema,
     entry: emotes.entry(),
@@ -495,8 +477,7 @@ pub fn the_command_and_the_generated_decoder_read_32_bit_integers_text_and_boole
 
 pub fn the_command_and_the_generated_decoder_read_64_bit_integers_alike_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Not tagged dev_tool: no other test reads a negative 64-bit value through the
-  // generated decoders, so the merge check keeps this one.
+  // No other test reads a negative 64-bit value through the generated decoders.
   assert_read_the_same(read_both_ways(
     schema: account_item.schema,
     entry: account_item.entry(),
@@ -506,7 +487,6 @@ pub fn the_command_and_the_generated_decoder_read_64_bit_integers_alike_test() -
 
 pub fn the_command_and_the_generated_decoder_read_32_bit_floats_alike_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tag("dev_tool")
   assert_read_the_same(read_both_ways(
     schema: item_slot.schema,
     entry: item_slot.entry(),

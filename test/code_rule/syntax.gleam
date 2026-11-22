@@ -327,6 +327,49 @@ pub fn strings(module: glance.Module) -> List(#(Int, String)) {
   })
 }
 
+/// The tag names a test body's statement gives its test, as unitest reads them:
+/// the string of `unitest.tag("x")` and each string literal of
+/// `unitest.tags(["x", "y"])`, whether the call is the function of a `use <-` or
+/// a statement of its own. A call with another argument shape, any other
+/// statement, and a tag that is not a string literal give none.
+pub fn tags_of(statement: Statement) -> List(String) {
+  case statement {
+    glance.Use(function:, ..) -> tags_of_call(function)
+    glance.Expression(expression) -> tags_of_call(expression)
+    glance.Assignment(..) | glance.Assert(..) -> []
+  }
+}
+
+fn tags_of_call(expression: Expression) -> List(String) {
+  case expression {
+    glance.Call(
+      function: glance.FieldAccess(
+        container: glance.Variable(name: "unitest", ..),
+        label: "tag",
+        ..,
+      ),
+      arguments: [glance.UnlabelledField(glance.String(value:, ..))],
+      ..,
+    ) -> [value]
+    glance.Call(
+      function: glance.FieldAccess(
+        container: glance.Variable(name: "unitest", ..),
+        label: "tags",
+        ..,
+      ),
+      arguments: [glance.UnlabelledField(glance.List(elements:, ..))],
+      ..,
+    ) ->
+      list.filter_map(elements, fn(element) {
+        case element {
+          glance.String(value:, ..) -> Ok(value)
+          _ -> Error(Nil)
+        }
+      })
+    _ -> []
+  }
+}
+
 /// The line, counted from 1, that holds the byte at the offset.
 pub fn line_of(text text: String, byte_offset byte_offset: Int) -> Int {
   let assert Ok(before) = bit_array.slice(<<text:utf8>>, 0, byte_offset)

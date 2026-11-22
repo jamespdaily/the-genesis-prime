@@ -150,7 +150,7 @@ const client_schedulers = 4
 /// read here. The samples go on after the players leave, until the server holds
 /// no connection or a minute has passed. Gives what the players and the samples
 /// showed.
-pub fn run_step(
+fn run_step(
   ports ports: Ports,
   accounts accounts: List(Account),
   arrival_ms arrival_ms: Int,
@@ -350,7 +350,7 @@ fn outcome(collecting: Collecting) -> Outcome {
 /// The ramp's next step, from the steps so far in order: the first doubles from
 /// 50 players to 12,800; the first that is not kept is followed by one halfway
 /// back to the last that was, rounded to 50, and then none.
-pub fn next_players(history: List(#(Int, Verdict))) -> Option(Int) {
+fn next_players(history: List(#(Int, Verdict))) -> Option(Int) {
   case list.reverse(history) {
     [] -> Some(first_players)
     [#(players, verdict), ..earlier] ->
@@ -369,7 +369,7 @@ pub fn next_players(history: List(#(Int, Verdict))) -> Option(Int) {
 }
 
 /// The most players of any step that was kept, 0 when none was.
-pub fn maximum(history: List(#(Int, Verdict))) -> Int {
+fn maximum(history: List(#(Int, Verdict))) -> Int {
   history
   |> list.filter(fn(step) { step.1 == Kept })
   |> list.fold(0, fn(most, step) { int.max(most, step.0) })
@@ -465,7 +465,7 @@ fn describe_exit(reason: process.ExitReason) -> String
 /// Whether the exit reason holds `eaddrnotavail` anywhere: the machine had no
 /// local port for the player's connect.
 @external(erlang, "load_run_ffi", "no_local_port")
-pub fn no_local_port(reason: process.ExitReason) -> Bool
+fn no_local_port(reason: process.ExitReason) -> Bool
 
 /// Makes this node the load clients' node: limited to `client_schedulers`
 /// schedulers, since macOS cannot pin cores and the clients share the machine

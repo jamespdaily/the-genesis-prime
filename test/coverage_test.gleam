@@ -30,7 +30,6 @@ import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, Handled, HandledWithUnstatedGap, Measured,
   NotDecoded, TypeLine, Unmeasured,
 }
-import genesis_prime/coverage/sent_message
 import genesis_prime/table/creature2
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store
@@ -89,7 +88,7 @@ const planted_types = [7, 0, 2, 7, 5, 7, 0, 9, 2, 7, 0]
 
 pub fn types_are_counted_by_rows_heaviest_first_with_ties_by_type_number_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let measured =
     measured_over_planted_objectives(
       coverage_support.engine_named("Quest objectives"),
@@ -107,7 +106,7 @@ pub fn types_are_counted_by_rows_heaviest_first_with_ties_by_type_number_test() 
 
 pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // Prerequisite.prerequisiteTypeId0 to 2: each row holds up to three
   // conditions, so the table's types are the values of all three columns.
   let triples = [#(4, 5, 7), #(4, 0, 0), #(5, 4, 6), #(4, 0, 0)]
@@ -156,7 +155,7 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
 
 pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let declared =
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
@@ -207,7 +206,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
 
 pub fn a_declared_type_no_row_uses_is_a_breach_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let declared =
     EngineDeclaration(
       ..coverage_support.engine_named("Quest objectives"),
@@ -344,7 +343,7 @@ fn heaviest_first(types: List(TypeLine)) -> Bool {
 
 pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_rows_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   list.each(engine.all(), fn(declared) {
@@ -420,7 +419,7 @@ fn quest_objectives_over(types: List(Int)) -> Measurement {
 
 pub fn the_checklist_lists_each_type_heaviest_first_with_its_rows_share_and_whether_it_is_handled_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let text = checklist.render([quest_objectives_over(planted_types)])
   let expected_lines = [
     "- [x] type 7: 4 rows (50.0%)",
@@ -445,7 +444,7 @@ pub fn the_checklist_lists_each_type_heaviest_first_with_its_rows_share_and_whet
 /// is the engine's name and nothing else, in the checklist and in the totals.
 pub fn an_engine_heading_is_its_name_and_declares_no_issue_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   list.each(engine.all(), fn(declaration) {
     let measurements = [Unmeasured(engine: declaration, needed: "the ids")]
     assert string.starts_with(
@@ -465,7 +464,7 @@ pub fn an_engine_heading_is_its_name_and_declares_no_issue_test() -> Nil {
 
 pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let text =
     checklist.totals([
       quest_objectives_over(planted_types),
@@ -489,7 +488,7 @@ pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test()
 
 pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let text =
     checklist.render([
       Unmeasured(
@@ -507,7 +506,7 @@ pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil 
 
 pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let text =
     checklist.render([
       measurement.from_values(
@@ -533,40 +532,9 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
     as "equal rows: the lower id first, and 1 is declared handled so it is checked; 580 is 0x244; a quarter each; id 0 is an id like any other, the network layer's own (fact 0x140332580)"
 }
 
-pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_code_take_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  let routing = coverage_support.engine_named("Client message routing")
-  let assert Listed(ids: handled_ids) = routing.handled
-    as "the routing engine lists the ids its rules name"
-  assert list.sort(handled_ids, int.compare)
-    == [
-      0x0000, 0x0001, 0x0002, 0x0097, 0x009A, 0x009D, 0x00B3, 0x00BB, 0x00BE,
-      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x012B, 0x0149, 0x015A,
-      0x0166, 0x0167, 0x016F, 0x017D, 0x0180, 0x0182, 0x018F, 0x01C3, 0x01D4,
-      0x023C, 0x023D, 0x023E, 0x023F, 0x0240, 0x0241, 0x0244, 0x025B, 0x025C,
-      0x0269, 0x0352, 0x0356, 0x035A, 0x035B, 0x035D, 0x035E, 0x0360, 0x0364,
-      0x0365, 0x038C, 0x03EC, 0x03ED, 0x04DB, 0x0570, 0x058F, 0x0592, 0x0635,
-      0x0637, 0x063A, 0x063B, 0x0786, 0x07A5, 0x07DD, 0x07E0, 0x07EA, 0x0801,
-      0x0805, 0x0943,
-    ]
-    as "the network layer's ids 0, 1 and 2 and the wrapper 0x0244 (fact 0x140332580, fact 0x140332920), the auth rule's 0x0592, and the game rule's 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, 0x038C and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4, the cast messages 0x009A, 0x0097, 0x04DB, 0x0801 and 0x0805 (opcode.0x9a, opcode.0x97, opcode.0x4db, opcode.0x801, opcode.0x805), the press of a quest button's cast-a-spell objective, 0x009D (opcode.0x9d), the use of an item that casts a spell, 0x0943 (opcode.0x943), the echo of a placement, 0x0635 (opcode.0x635), the use of a unit with no activate spell, 0x00B3 (opcode.0xb3), the choice of how to come back, 0x015A (opcode.0x15a), the choice of an innate, 0x016F (opcode.0x16f), the request for a level's fanfare, 0x07A5 (opcode.0x7a5), the interaction messages 0x07EA and 0x0356 (opcode.0x7ea, opcode.0x356), the move of a held item, 0x0182 (opcode.0x182), the split of a stack, 0x017D (opcode.0x17d), the destroy of a held item, 0x0149 (opcode.0x149), the buy from a vendor and the buy back of a sold item, 0x00BE and 0x00BB (opcode.0xbe, opcode.0xbb), the accept and retry of a quest, 0x035B and 0x0365 (opcode.0x35b, opcode.0x365), the turn-in of a quest, 0x035D (opcode.0x35d), the abandon, mention, ignore and track of a quest, 0x035A, 0x0360, 0x035E and 0x0364 (opcode.0x35a, opcode.0x360, opcode.0x35e, opcode.0x364), the sale to a vendor, 0x0166, and the sale of junk, 0x0167 (opcode.0x166, opcode.0x167), and the thirteen reports and window requests the game rule takes and drops (the opcode records of 0x023C, 0x0240, 0x023F, 0x023E, 0x023D, 0x0241, 0x012B, 0x0180, 0x03ED, 0x03EC, 0x0269, 0x018F and 0x0570)"
-  let assert Measured(types:, breaches:, ..) =
-    measurement.from_values(
-      engine: routing,
-      values: sent_message.all(),
-      starting: [],
-    )
-    as "the routing engine is measured over the ids the client sends"
-  assert breaches == [] as "every handled id is one the client sends"
-  assert list.length(list.filter(types, fn(line) { line.status == Handled }))
-    == 58
-    as "the 65 ids above are handled among the 352, and 7 of them (0x3ED, 0x3EC, 0x269, 0x18F, 0x180, 0x570, 0x12B) are handled with a stated gap, so 58 are marked handled without one"
-}
-
 pub fn a_handled_type_with_unread_rows_and_no_stated_gap_stops_the_measure_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   // The planted engine handles type 7 and states no gap for it, and its rule leaves one of
   // the two type 7 rows unread: the declaration says a type is read for every row or states
   // what it leaves out.

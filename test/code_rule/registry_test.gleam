@@ -92,6 +92,34 @@ const registry_tests = [
     "test/sitting_test.gleam",
     "the_servers_own_settings_record_nothing_and_a_sitting_turns_it_on_test",
   ),
+  RegistryTest(
+    "test/cast_gaps_test.gleam",
+    "the_cast_gaps_list_the_five_cases_the_issue_type_named_test",
+  ),
+  RegistryTest(
+    "test/cast_gaps_test.gleam",
+    "each_limit_the_cast_modules_state_is_one_entry_of_its_module_test",
+  ),
+  RegistryTest(
+    "test/cast_gaps_test.gleam",
+    "the_press_entry_names_only_the_creature_states_a_press_does_not_test_test",
+  ),
+  RegistryTest(
+    "test/coverage_gaps_test.gleam",
+    "the_registry_holds_the_spell_plans_and_the_creatures_entries_test",
+  ),
+  RegistryTest(
+    "test/coverage_gaps_test.gleam",
+    "the_registry_holds_the_item_refund_and_the_kind_4_point_count_entries_test",
+  ),
+  RegistryTest(
+    "test/coverage_gaps_test.gleam",
+    "the_dev_command_gap_entry_is_printed_by_the_registry_test",
+  ),
+  RegistryTest(
+    "test/coverage_gaps_test.gleam",
+    "the_registry_holds_the_channel_pulse_and_the_unread_gain_column_gaps_test",
+  ),
 ]
 
 fn module_with(body: List(String)) -> SourceFile {
