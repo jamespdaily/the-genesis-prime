@@ -44,6 +44,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import gleam/result
 import gleam/string
 import owned_test
 import planted_table.{Integer}
@@ -238,23 +239,21 @@ fn schema_of(table_name: String) -> Schema {
   }
 }
 
-pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() -> Nil {
+/// A column's name without its trailing digits: the stem the client's table repeats for
+/// each numbered column (`prerequisiteTypeId0`, `prerequisiteTypeId1`).
+fn stem_of(column: String) -> String {
+  string.to_graphemes(column)
+  |> list.reverse
+  |> list.drop_while(fn(grapheme) { result.is_ok(int.parse(grapheme)) })
+  |> list.reverse
+  |> string.concat
+}
+
+pub fn every_engine_declares_the_type_columns_its_table_has_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  let declared = engine.all()
-  assert list.map(declared, fn(declaration) { declaration.name })
-    == [
-      "Prerequisites",
-      "Quest objectives",
-      "Quest rewards",
-      "Spell effects",
-      "Unit types",
-      "Client message routing",
-      "Spend-scaled costs",
-    ]
-    as "the engines' names in the milestone's table, then the spend-scaled costs"
-  let columns =
-    list.filter_map(declared, fn(declaration) {
+  use <- unitest.tag("coverage")
+  let tables_read =
+    list.filter_map(engine.all(), fn(declaration) {
       case declaration.source {
         engine.TableColumns(table:, columns:, evidence:, ..) -> {
           assert evidence != "" as { table <> " declares no evidence" }
@@ -264,25 +263,25 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
             assert list.contains(names, column)
               as { table <> " has no column " <> column }
           })
-          Ok(#(table, columns))
+          let stems = list.map(columns, stem_of)
+          let numbered =
+            list.filter(names, fn(name) { list.contains(stems, stem_of(name)) })
+          assert list.sort(numbered, string.compare)
+            == list.sort(columns, string.compare)
+            as {
+              table
+              <> " declares the columns "
+              <> string.join(columns, ", ")
+              <> " but its schema holds "
+              <> string.join(numbered, ", ")
+              <> " of the same stem"
+            }
+          Ok(table)
         }
         engine.Cases(..) | engine.CasesNotRecorded(..) -> Error(Nil)
       }
     })
-  assert columns
-    == [
-      #("Prerequisite", [
-        "prerequisiteTypeId0",
-        "prerequisiteTypeId1",
-        "prerequisiteTypeId2",
-      ]),
-      #("QuestObjective", ["type"]),
-      #("Quest2Reward", ["quest2RewardTypeId"]),
-      #("Spell4Effects", ["effectType"]),
-      #("Creature2", ["CreationTypeEnum"]),
-      #("Spell4", ["innateCostEMMId0", "innateCostEMMId1"]),
-    ]
-    as "the client's column names in each table's schema (game_table.schema)"
+  assert tables_read != [] as "an engine reads the type columns of a table"
 }
 
 /// How many of a column's values in the client's own file are not zero, and

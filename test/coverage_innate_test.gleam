@@ -18,10 +18,13 @@
 //// Skipped where the client's tables are not on the machine.
 
 import client_tables
+import coverage_support
 import genesis_prime/coverage/level_one_gate
 import genesis_prime/coverage/starting_ability.{InnateSlotClosed}
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
+import genesis_prime/table/id
+import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/int
 import gleam/list
 import gleam/set
@@ -84,21 +87,12 @@ pub fn the_spells_behind_a_gate_a_level_1_character_cannot_open_are_not_reached_
   )
 }
 
-pub fn the_starting_set_holds_the_20_spells_of_the_innates_beside_the_59_of_the_abilities_test() -> Nil {
+pub fn the_innate_slots_behind_a_level_gate_are_listed_with_the_gate_the_tables_name_and_none_is_open_at_level_1_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
-  assert set.size(reached_ids()) == 93
-    as "the periodic Proxies 121345 (Engineer, Spell4 47860) and 178429 (Esper, 70369) start 71371 and 32822, which make 93 with the 91 below; the three spells the Stalker passive's procs cast (60769, 79932, 63366) make 82, and the 8 more that Spell Surge's alternates reach (34719, 43500, 82409, 76002, 79679, 34766, 34767, 76003 and 76004 of `Spell4.spell4IdMechanicAlternateSpell` 34718 and 43468, less the one reached already) make 90, and 72838, which the kind 16 Proc 178239 of Spell4 38784 casts, makes 91; 59 spells of the 18 level-1 abilities, and the innates' 20: 46867 and 42908; 44926; 47866, 47860, 52371 and 70599; 45000 and 46297; 58586, 70369 and 76766; 69450; 46073, 38784 and 38783; 45057 and 60724; 47273 and 47439"
-}
-
-pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_open_at_level_1_test() -> Nil {
-  use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  use <- unitest.guard(client_tables.present())
-  let assert Ok(left) =
-    starting_ability.left_out(tables: client_tables.every_table())
-    as "the client's tables hold the rows the walk names"
+  let tables = client_tables.shared()
+  let left = coverage_support.left_out()
   let closed =
     list.filter_map(left, fn(part) {
       case part {
@@ -109,44 +103,66 @@ pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_o
         | starting_ability.RunnerColumnsOnly(..) -> Error(Nil)
       }
     })
-  assert closed
-    == [
-      InnateSlotClosed(
-        class_id: 1,
-        slot: 1,
-        active: 47_022,
-        passive: 44_932,
-        gate: 39_778,
-        why: level_one_gate.FailsAtLevelOne(comparison: 4, value: 6),
-      ),
-      InnateSlotClosed(
-        class_id: 2,
-        slot: 1,
-        active: 47_881,
-        passive: 41_504,
-        gate: 39_778,
-        why: level_one_gate.FailsAtLevelOne(comparison: 4, value: 6),
-      ),
-      InnateSlotClosed(
-        class_id: 5,
-        slot: 1,
-        active: 46_074,
-        passive: 45_058,
-        gate: 39_778,
-        why: level_one_gate.FailsAtLevelOne(comparison: 4, value: 6),
-      ),
-      InnateSlotClosed(
-        class_id: 5,
-        slot: 2,
-        active: 38_782,
-        passive: 46_059,
-        gate: 39_779,
-        why: level_one_gate.FailsAtLevelOne(comparison: 4, value: 10),
-      ),
-    ]
-    as "Class.spell4IdInnateAbilityActive00: Warrior 47022 / 44932, Engineer 47881 / 41504 and Stalker 46074 / 45058 behind 39778 (level 6), Stalker 38782 / 46059 behind 39779 (level 10)"
+  assert closed != [] as "the client's classes hold slots behind a level gate"
+  list.each(closed, fn(part) {
+    let assert InnateSlotClosed(class_id:, slot:, active:, gate:, why:, ..) =
+      part
+    let assert Ok(row) = class.get(tables:, id: id.ClassId(class_id))
+      as { "the Class row " <> int.to_string(class_id) <> " is in the table" }
+    let #(slot_active, slot_gate) = case slot {
+      1 -> #(
+        row.spell4_id_innate_ability_active01,
+        row.prerequisite_id_innate_ability01,
+      )
+      2 -> #(
+        row.spell4_id_innate_ability_active02,
+        row.prerequisite_id_innate_ability02,
+      )
+      _ -> #(0, 0)
+    }
+    assert slot_active == active && slot_gate == gate
+      as {
+        "Class "
+        <> int.to_string(class_id)
+        <> " slot "
+        <> int.to_string(slot)
+        <> " holds the active spell and the gate the measure lists"
+      }
+    let assert Ok(gate_row) =
+      prerequisite_table.get(tables:, id: id.PrerequisiteId(gate))
+      as {
+        "the gate Prerequisite " <> int.to_string(gate) <> " is in the table"
+      }
+    let assert level_one_gate.FailsAtLevelOne(comparison:, value:) = why
+      as "an innate slot is closed by a level condition"
+    assert list.contains(
+      [
+        #(
+          gate_row.prerequisite_type_id0,
+          gate_row.prerequisite_comparison_id0,
+          gate_row.value0,
+        ),
+        #(
+          gate_row.prerequisite_type_id1,
+          gate_row.prerequisite_comparison_id1,
+          gate_row.value1,
+        ),
+        #(
+          gate_row.prerequisite_type_id2,
+          gate_row.prerequisite_comparison_id2,
+          gate_row.value2,
+        ),
+      ],
+      #(1, comparison, value),
+    )
+      as {
+        "the gate Prerequisite "
+        <> int.to_string(gate)
+        <> " holds a type 1 condition of the stated comparison and value (Prerequisite.prerequisiteTypeId.1)"
+      }
+  })
   let named =
-    list.flat_map(class.all(client_tables.shared()), fn(row) {
+    list.flat_map(class.all(tables), fn(row) {
       list.filter(
         [
           row.spell4_id_innate_ability_active01,

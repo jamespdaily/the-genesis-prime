@@ -66,7 +66,6 @@ import gleam/result
 import gleam/string
 import owned_test
 import planted_table
-import simplifile
 import spell_tables
 import unitest
 
@@ -182,21 +181,13 @@ fn handled_over(
 pub fn each_decoded_type_not_handled_is_listed_with_its_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("coverage")
-  let assert Ok(facts) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file is in the repository"
   list.each(["Spell effects", "Spend-scaled costs", "Prerequisites"], fn(name) {
     let declared = coverage_support.engine_named(name)
-    list.each(declared.missing, fn(missing) {
-      let label = name <> " type " <> int.to_string(missing.type_number)
-      assert missing.reason != "" as { label <> ": a reason" }
-      assert coverage_support.has_record(facts:, key: missing.fact_key)
-        as { label <> ": the fact file holds no record " <> missing.fact_key }
-      assert !engine.handles(engine: declared, type_number: missing.type_number)
-        as { label <> " is listed missing and handled" }
-    })
+    coverage_support.assert_gaps_stated(
+      declared:,
+      gaps: declared.missing,
+      handled: False,
+    )
   })
 }
 
@@ -269,20 +260,13 @@ const conversion_gap =
 pub fn each_effect_type_listed_partial_is_handled_with_a_reason_and_a_fact_key_the_file_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("coverage")
-  let assert Ok(facts) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file is in the repository"
+  let facts = coverage_support.fact_file()
   let declared = coverage_support.engine_named("Spell effects")
-  list.each(declared.partial, fn(gap) {
-    let label = "Spell effects type " <> int.to_string(gap.type_number)
-    assert gap.reason != "" as { label <> ": a reason" }
-    assert coverage_support.has_record(facts:, key: gap.fact_key)
-      as { label <> ": the fact file holds no record " <> gap.fact_key }
-    assert engine.handles(engine: declared, type_number: gap.type_number)
-      as { label <> " is listed partial, so it is handled with the gap" }
-  })
+  coverage_support.assert_gaps_stated(
+    declared:,
+    gaps: declared.partial,
+    handled: True,
+  )
   assert coverage_support.has_record(facts:, key: "spell.heal_result_log")
   assert coverage_support.has_record(facts:, key: "0x1405d6880.delayed_apply")
 }
@@ -290,11 +274,7 @@ pub fn each_effect_type_listed_partial_is_handled_with_a_reason_and_a_fact_key_t
 pub fn the_spell_effect_engine_reads_type_76_and_names_its_gap_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("coverage")
-  let assert Ok(facts) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file is in the repository"
+  let facts = coverage_support.fact_file()
   let declared = coverage_support.engine_named("Spell effects")
   assert handled_over(engine: declared, types: [76]) == [76]
     as "Spell.CodeEnumSpellEffectType value 76 'ItemVisualSwap' (Spell4Effects.effectType.76): the decode names it, so the measure counts it handled"
@@ -1690,6 +1670,8 @@ pub fn the_clients_starting_abilities_list_each_left_out_part_by_the_rows_that_n
         | starting_ability.InnateSlotClosed(..) -> Error(Nil)
       }
     })
+  assert closed_proxies != []
+    as "the client's level-1 trees hold Proxies behind a gate that needs an AMP's cast"
   list.each(closed_proxies, fn(part) {
     let assert starting_ability.ProxyGateClosed(
       proxy_effect_id:,
@@ -1706,8 +1688,17 @@ pub fn the_clients_starting_abilities_list_each_left_out_part_by_the_rows_that_n
       as { label <> " is a Spell4Effects row" }
     assert proxy.effect_type == 26 && proxy.spell_id == parent
       as { label <> " is a type 26 row of Spell4 " <> int.to_string(parent) }
-    assert proxy.data_bits01 == child || proxy.data_bits00 == child
-      as { label <> " starts Spell4 " <> int.to_string(child) }
+    assert child
+      == case proxy.data_bits00 {
+        0 -> proxy.data_bits01
+        named -> named
+      }
+      as {
+        label
+        <> " starts Spell4 "
+        <> int.to_string(child)
+        <> ": its dataBits00, or its dataBits01 when dataBits00 is 0"
+      }
     assert proxy.prerequisite_id_caster_apply == gate
       || proxy.data_bits06 == gate
       as { label <> ": the gate is a caster apply or dataBits06 column" }
@@ -1778,6 +1769,8 @@ pub fn the_clients_starting_abilities_list_each_left_out_part_by_the_rows_that_n
     })
     |> list.map(fn(effect) { effect.id })
     |> list.sort(int.compare)
+  assert gated_proxies != []
+    as "the Proxy rows of reached spells include some whose gate needs an AMP's cast"
   assert gated_proxies
     == list.map(closed_proxies, fn(part) {
       let assert starting_ability.ProxyGateClosed(proxy_effect_id:, ..) = part
@@ -1801,12 +1794,11 @@ pub fn the_clients_starting_abilities_list_each_left_out_part_by_the_rows_that_n
         id: PrerequisiteId(prerequisite_id),
       ))
     })
+  let counted_columns =
+    counted_prerequisite_columns(tables:, reached: reached_rows)
   let runner_only =
     list.filter(runner_ids, fn(prerequisite_id) {
-      !list.contains(
-        counted_prerequisite_columns(tables:, reached: reached_rows),
-        prerequisite_id,
-      )
+      !list.contains(counted_columns, prerequisite_id)
     })
     |> list.unique
     |> list.sort(int.compare)
@@ -1821,6 +1813,8 @@ pub fn the_clients_starting_abilities_list_each_left_out_part_by_the_rows_that_n
         | starting_ability.InnateSlotClosed(..) -> Error(Nil)
       }
     })
+  assert listed_runner_pairs != []
+    as "the client's level-1 trees name Prerequisites only a runner column holds"
   list.each(listed_runner_pairs, fn(pair) {
     let assert Ok(row) =
       prerequisite_table.get(tables:, id: PrerequisiteId(pair.0))
@@ -1882,11 +1876,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("coverage")
-  let assert Ok(facts) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file is in the repository"
+  let facts = coverage_support.fact_file()
   assert coverage_support.has_record(
     facts:,
     key: "Spell4.prerequisiteIdRunner00",
@@ -1907,25 +1897,6 @@ pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> N
 }
 
 // ---- the spend-scaled costs ----
-
-pub fn the_other_emm_ids_are_decoded_and_missing_with_the_reason_and_the_fact_key_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use <- unitest.tag("coverage")
-  let assert Ok(facts) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file is in the repository"
-  let declared = coverage_support.engine_named("Spend-scaled costs")
-  list.each(declared.missing, fn(missing) {
-    let label = "innate cost EMM id " <> int.to_string(missing.type_number)
-    assert missing.reason != "" as { label <> ": a reason" }
-    assert coverage_support.has_record(facts:, key: missing.fact_key)
-      as { label <> ": the fact file holds no record " <> missing.fact_key }
-    assert !engine.handles(engine: declared, type_number: missing.type_number)
-      as { label <> " is listed missing and handled" }
-  })
-}
 
 /// The rows of each innate cost EMM id in both columns of Spell4, as the measure
 /// gives them, heaviest first.
@@ -2008,7 +1979,7 @@ pub fn a_proc_row_the_plan_skips_or_refuses_is_counted_as_not_read_test() -> Nil
     as "Spell4Effects.effectType.14: the first, third, fourth and fifth rows are read (kinds 217, 12, 0 with chance 0.5 and 44 with a window of -1); the second aims at the caster and the target and the last only at another unit, which the plan leaves out"
 }
 
-pub fn coverage_proc_rows_read_test() -> Nil {
+pub fn the_clients_3498_proc_rows_count_with_a_stated_gap_and_each_left_out_proc_part_names_its_row_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
@@ -2026,6 +1997,16 @@ pub fn coverage_proc_rows_read_test() -> Nil {
       as "Spell4Effects.effectType.14: the spell a Proc casts is its dataBits01"
     row
   }
+  assert list.any(coverage_support.left_out(), fn(part) {
+    case part {
+      starting_ability.ProcLeftOut(..) | starting_ability.ProcKindNotRead(..) ->
+        True
+      starting_ability.RunnerColumnsOnly(..)
+      | starting_ability.ProxyGateClosed(..)
+      | starting_ability.InnateSlotClosed(..) -> False
+    }
+  })
+    as "the client's level-1 trees hold Proc rows the plan leaves out"
   list.each(coverage_support.left_out(), fn(part) {
     case part {
       starting_ability.ProcLeftOut(spell4_id:, effect_id:, casts:, ..) -> {
@@ -2320,11 +2301,7 @@ pub fn the_clients_358_disguise_rows_count_with_a_stated_gap_test() -> Nil {
 pub fn type_23_is_handled_with_no_gap_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("coverage")
-  let assert Ok(facts) =
-    simplifile.read(
-      ".claude/skills/decoding-the-client/references/client-facts.toml",
-    )
-    as "the fact file is in the repository"
+  let facts = coverage_support.fact_file()
   let declared = coverage_support.engine_named("Quest objectives")
   assert engine.handles(engine: declared, type_number: 23)
     as "type 23 is handled: a use of a unit of the objective's group counts it, once for each unit (QuestObjective.type.23)"
@@ -2396,6 +2373,52 @@ pub fn the_fixtures_type_35_rows_are_counted_by_the_plans_reading_test() -> Nil 
   assert effect_row.unread_by_type(tables:, effects: planted)
     == dict.from_list([#(35, 6)])
     as "the same rows aimed at the target are left out by name, so not read"
+}
+
+pub fn the_fixtures_unit_state_rows_are_read_only_with_a_reading_and_a_duration_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // The fixture holds no type 15 row, so each is a fixture delay row (a Spell4 row the
+  // tables hold, with a phase) turned into a timed state aimed at the target with no
+  // other column set.
+  let unit_states = fn(state, duration_time) {
+    list.filter(spell4_effects.all(tables), fn(row) { row.effect_type == 35 })
+    |> list.map(fn(row) {
+      spell4_effects.Spell4Effects(
+        ..row,
+        effect_type: 15,
+        target_flags: 2,
+        flags: 0,
+        tick_time: 0,
+        duration_time:,
+        data_bits00: state,
+        data_bits01: 0,
+        data_bits02: 0,
+        data_bits03: 0,
+        data_bits04: 0,
+        data_bits05: 0,
+        data_bits06: 0,
+        data_bits07: 0,
+        data_bits08: 0,
+        data_bits09: 0,
+        prerequisite_id_caster_apply: 0,
+        prerequisite_id_target_apply: 0,
+        prerequisite_id_caster_persistence: 0,
+        prerequisite_id_target_persistence: 0,
+        prerequisite_id_target_suspend: 0,
+      )
+    })
+  }
+  let rows = unit_states(6, 1000)
+  assert rows != [] as "the fixture holds rows to plant"
+  assert effect_row.unread_by_type(tables:, effects: rows) == dict.new()
+    as "state 6 (Invulnerable) held for a duration refuses casts, so the plan applies the row and the measure reads it"
+  assert effect_row.unread_by_type(tables:, effects: unit_states(0, 1000))
+    == dict.from_list([#(15, list.length(rows))])
+    as "state 0 has no reading, so the row refuses nothing and is not read"
+  assert effect_row.unread_by_type(tables:, effects: unit_states(6, 0))
+    == dict.from_list([#(15, list.length(rows))])
+    as "a row with no duration is never held, so it is not read"
 }
 
 pub fn the_planted_tables_hold_every_table_the_plan_and_the_activate_cast_read_test() -> Nil {

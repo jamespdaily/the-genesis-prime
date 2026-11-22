@@ -3,7 +3,7 @@
 
 import client_tables
 import database_support
-import genesis_prime/coverage/engine.{type EngineDeclaration}
+import genesis_prime/coverage/engine.{type EngineDeclaration, type Missing}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
@@ -11,10 +11,43 @@ import genesis_prime/coverage/starting_ability.{type LeftOut}
 import gleam/int
 import gleam/list
 import gleam/string
+import simplifile
 
 /// Whether the fact file's text holds a record under `key`.
 pub fn has_record(facts facts: String, key key: String) -> Bool {
   string.contains(facts, "[\"" <> key <> "\"]")
+}
+
+/// The text of the client's fact file, read once for the run.
+pub fn fact_file() -> String {
+  database_support.once("coverage_fact_file", fn() {
+    let assert Ok(text) =
+      simplifile.read(
+        ".claude/skills/decoding-the-client/references/client-facts.toml",
+      )
+      as "the fact file is in the repository"
+    text
+  })
+}
+
+/// Checks each gap in `gaps` (the partial or the missing list of `declared`): it states a
+/// reason, cites a record the fact file holds, and the engine handles its type exactly
+/// when `handled` is True.
+pub fn assert_gaps_stated(
+  declared declared: EngineDeclaration,
+  gaps gaps: List(Missing),
+  handled handled: Bool,
+) -> Nil {
+  let facts = fact_file()
+  list.each(gaps, fn(gap) {
+    let label = declared.name <> " type " <> int.to_string(gap.type_number)
+    assert gap.reason != "" as { label <> ": a reason" }
+    assert has_record(facts:, key: gap.fact_key)
+      as { label <> ": the fact file holds no record " <> gap.fact_key }
+    assert engine.handles(engine: declared, type_number: gap.type_number)
+      == handled
+      as { label <> ": the engine's handling disagrees with the list it is in" }
+  })
 }
 
 /// The engine declaration named `name`.

@@ -52,70 +52,6 @@ pub const skipped_until_converted =
     tag: "dev_tool",
     tests: [
       ListedTest(
-        "test/coverage_innate_test.gleam",
-        "the_starting_set_holds_the_20_spells_of_the_innates_beside_the_59_of_the_abilities",
-      ),
-      ListedTest(
-        "test/coverage_innate_test.gleam",
-        "the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_open_at_level_1",
-      ),
-      ListedTest(
-        "test/coverage_item_use_test.gleam",
-        "every_item_row_with_a_spell_is_counted_once_and_more_are_played_than_before",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "coverage_counts_the_crowd_control_rows",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "the_measure_counts_the_gains_the_plan_refuses_as_not_read",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "the_measure_counts_the_damage_rows_the_area_load_refuses_as_not_read",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_read",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "the_measure_reads_a_row_behind_a_target_prerequisite_only_when_its_gate_is_read_for_every_kind",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "coverage_counts_the_periodic_rows",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "the_measure_counts_a_force_remove_whose_selector_names_no_row_as_not_read",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "the_measure_totals_match_the_plan",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "the_coverage_measure_counts_the_type_3_rows_the_plan_refuses",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "coverage_counts_the_union_rows_as_read",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "type_97_rows_are_each_read_left_out_or_refused_by_name",
-      ),
-      ListedTest(
-        "test/coverage_plan_test.gleam",
-        "type_15_rows_are_each_read_left_out_or_refused_by_name",
-      ),
-      ListedTest(
-        "test/coverage_test.gleam",
-        "every_engine_declares_its_area_and_the_type_columns_its_table_has",
-      ),
-      ListedTest(
         "test/named_unreached_test.gleam",
         "the_real_tables_count_42736_with_no_reason",
       ),
@@ -134,10 +70,6 @@ pub const skipped_until_converted =
       ListedTest(
         "test/named_unreached_test.gleam",
         "the_real_tables_hold_exactly_three_counted_and_no_missing_row_with_volatility_planted",
-      ),
-      ListedTest(
-        "test/objective_kind_test.gleam",
-        "coverage_quest_objective_handled_ids_agree_with_objective_kind",
       ),
     ],
   )
