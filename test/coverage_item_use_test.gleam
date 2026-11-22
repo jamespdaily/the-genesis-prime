@@ -3,8 +3,10 @@
 //// these places.
 //// - Item2 rows with an ItemSpecial whose spell4IdOnActivate is not 0: 4,725 of the client's
 ////   72,106 (`table_rows -- ItemSpecial`, counted over Item2.itemSpecialId00).
-//// - An item whose spell holds an Activate (7) or QuestAdvanceObjective (42) row is played
-////   by the activate cast, read from Spell4Effects.effectType alone.
+//// - The items whose spell holds an Activate (7) or QuestAdvanceObjective (42) row, read from
+////   Spell4Effects.effectType alone, are a floor for the played count: the server plays each
+////   such item (by the shortcut plan or the activate cast). The test checks the floor, not
+////   each item.
 
 import client_tables
 import genesis_prime/coverage/item_use
@@ -18,7 +20,7 @@ import gleam/set
 import owned_test
 import unitest
 
-pub fn every_item_row_with_a_spell_is_counted_once_and_the_activate_rows_are_played_test() -> Nil {
+pub fn every_item_row_with_a_spell_is_counted_once_and_no_fewer_are_played_than_hold_an_activate_row_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
@@ -49,5 +51,5 @@ pub fn every_item_row_with_a_spell_is_counted_once_and_the_activate_rows_are_pla
   assert activate_items > 0
     as "the client holds items whose spell has an Activate or QuestAdvance row"
   assert report.played >= activate_items
-    as "each item whose spell holds an Activate or QuestAdvance row is played by the activate cast"
+    as "the played count is at least the items whose spell holds an Activate or QuestAdvance row"
 }
