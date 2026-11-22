@@ -1,12 +1,12 @@
 //// The skipped-tag rule. Expected values are the rule of the check: a tag the
 //// test run skips (`skipped_when_set` in `test/genesis_prime_test.gleam`) has
-//// its tests run by a part of `./check` that runs the tag by itself, or sits
-//// in the one list of tests skipped until they are converted. The breaches are
-//// planted in made-up files; the last test runs the rule over the real files.
+//// its tests run by a part of `./check` that runs the tag by itself. The
+//// breaches are planted in made-up files; the last test runs the rule over the
+//// real files.
 
 import code_rule/planted
 import code_rule/repository
-import code_rule/skipped_tag.{Conversion, ListedTest}
+import code_rule/skipped_tag
 import code_rule/source.{type SourceFile, SourceFile}
 import gleam/list
 import gleam/string
@@ -54,18 +54,11 @@ fn check(lines: List(String)) -> SourceFile {
   planted.file("check", lines)
 }
 
-const nothing_listed = Conversion(tag: "later", tests: [])
-
 fn breach_lines(
   entries entries: List(String),
   check_lines check_lines: List(String),
 ) -> List(Int) {
-  skipped_tag.breaches(
-    test_run: test_run(entries),
-    check: check(check_lines),
-    files: [],
-    until_converted: nothing_listed,
-  )
+  skipped_tag.breaches(test_run: test_run(entries), check: check(check_lines))
   |> planted.lines
 }
 
@@ -76,8 +69,6 @@ pub fn a_skipped_tag_no_check_part_runs_is_a_breach_naming_the_tag_test() -> Nil
     skipped_tag.breaches(
       test_run: test_run([skip("serial"), skip("slow")]),
       check: check(["# the parts", part("serial")]),
-      files: [],
-      until_converted: nothing_listed,
     )
   let assert [breach] = breaches as "expected one breach, for `slow`"
   assert breach.path == "test/genesis_prime_test.gleam"
@@ -264,169 +255,10 @@ pub fn an_ignored_tag_that_is_not_a_skipped_when_set_with_a_literal_tag_is_a_bre
   assert skipped_tag.breaches(
       test_run: without_ignored_tags,
       check: check([part("a")]),
-      files: [],
-      until_converted: nothing_listed,
     )
     |> planted.lines
     == [1]
     as "a test run with no ignored_tags is a breach, so the rule cannot pass by finding nothing"
-}
-
-/// A planted test file whose functions carry the tags given, each at the line
-/// the first lists, so a case states only what differs.
-fn tagged_file(path: String, functions: List(#(String, String))) -> SourceFile {
-  planted.file(
-    path,
-    list.flatten([
-      ["import unitest", ""],
-      list.flat_map(functions, fn(function) {
-        let #(name, tag_line) = function
-        ["pub fn " <> name <> "_test() {", tag_line, "}", ""]
-      }),
-    ]),
-  )
-}
-
-const tag_later = "  use <- unitest.tag(\"later\")"
-
-const tags_later_and_coverage =
-  "  use <- unitest.tags([\"later\", \"coverage\"])"
-
-const tag_other = "  use <- unitest.tag(\"other\")"
-
-const tag_later_statement = "  unitest.tag(\"later\")"
-
-const tags_later_statement = "  unitest.tags([\"later\", \"coverage\"])"
-
-const tag_later_with_callback = "  unitest.tag(\"later\", fn() { Nil })"
-
-pub fn a_skipped_tag_whose_tests_are_all_listed_as_skipped_until_converted_is_no_breach_and_an_unlisted_or_missing_test_is_one_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let listed = [
-    ListedTest("test/a_test.gleam", "first"),
-    ListedTest("test/a_test.gleam", "second"),
-    ListedTest("test/b_test.gleam", "only"),
-  ]
-  let a_file = [
-    #("first", tag_later),
-    #("second", tags_later_and_coverage),
-    #("third", tag_other),
-  ]
-  let b_file = [#("only", tag_later)]
-  let files = fn(a, b) {
-    [tagged_file("test/a_test.gleam", a), tagged_file("test/b_test.gleam", b)]
-  }
-  let run = test_run([skip("later")])
-  let breaches = fn(files, listed, check_lines) {
-    skipped_tag.breaches(
-      test_run: run,
-      check: check(check_lines),
-      files:,
-      until_converted: Conversion(tag: "later", tests: listed),
-    )
-  }
-  // Each row: the files, the listed tests, the planted check, the breaches as
-  // (path, line, a word its rule names), and why.
-  let cases = [
-    #(
-      files(a_file, b_file),
-      listed,
-      [],
-      [],
-      "every test with the tag is listed",
-    ),
-    #(
-      files(list.append(a_file, [#("third_one", tag_later)]), b_file),
-      listed,
-      [],
-      [#("test/a_test.gleam", 15, "third_one")],
-      "a test with the tag that is not listed, at its function's line",
-    ),
-    #(
-      files(list.append(a_file, [#("first_extended", tag_later)]), b_file),
-      listed,
-      [],
-      [#("test/a_test.gleam", 15, "first_extended")],
-      "a test whose name only starts with a listed name is not that test",
-    ),
-    #(
-      files(list.append(a_file, [#("third_one", tag_later_statement)]), b_file),
-      listed,
-      [],
-      [#("test/a_test.gleam", 15, "third_one")],
-      "a tag written as a statement of its own, which unitest reads",
-    ),
-    #(
-      files(list.append(a_file, [#("third_one", tags_later_statement)]), b_file),
-      listed,
-      [],
-      [#("test/a_test.gleam", 15, "third_one")],
-      "a list of tags written as a statement of its own",
-    ),
-    #(
-      files(
-        list.append(a_file, [#("third_one", tag_later_with_callback)]),
-        b_file,
-      ),
-      listed,
-      [],
-      [],
-      "a call with a callback argument, which unitest does not read as a tag",
-    ),
-    #(
-      files(a_file, b_file),
-      list.append(listed, [ListedTest("test/b_test.gleam", "missing_one")]),
-      [],
-      [#("test/b_test.gleam", 1, "missing_one")],
-      "a listed test that is not in its file",
-    ),
-    #(
-      files(a_file, b_file),
-      list.append(listed, [ListedTest("test/a_test.gleam", "third")]),
-      [],
-      [#("test/a_test.gleam", 1, "third")],
-      "a listed test that carries another tag, not this one",
-    ),
-    #(
-      files(a_file, b_file),
-      list.append(listed, [ListedTest("test/c_test.gleam", "first")]),
-      [],
-      [#("test/c_test.gleam", 1, "first")],
-      "a listed test whose file is not among the files",
-    ),
-    #(
-      files(list.append(a_file, [#("third_one", tag_later)]), b_file),
-      [],
-      [part("later")],
-      [],
-      "the tag has a part, so its tests need no listing",
-    ),
-  ]
-  list.each(cases, fn(case_) {
-    let #(files, listed, check_lines, expected, reason) = case_
-    let found =
-      list.map(breaches(files, listed, check_lines), fn(breach) {
-        #(breach.path, breach.line, breach.rule)
-      })
-    assert list.length(found) == list.length(expected) as reason
-    list.each(list.zip(found, expected), fn(pair) {
-      let #(#(path, line, rule), #(expected_path, expected_line, word)) = pair
-      assert path == expected_path as reason
-      assert line == expected_line as reason
-      assert string.contains(rule, word) as reason
-    })
-  })
-  let other_tag_run = test_run([skip("other")])
-  assert skipped_tag.breaches(
-      test_run: other_tag_run,
-      check: check([]),
-      files: files(a_file, b_file),
-      until_converted: Conversion(tag: "later", tests: listed),
-    )
-    |> planted.lines
-    == [9]
-    as "the list excuses its own tag only"
 }
 
 /// The tags the check sets to skip in the test run, read from the variables
@@ -453,7 +285,7 @@ fn skip_variables_of(check: SourceFile) -> List(String) {
   |> list.sort(string.compare)
 }
 
-pub fn every_tag_the_test_run_skips_is_run_by_a_part_of_the_check_or_has_every_test_listed_test() -> Nil {
+pub fn every_tag_the_test_run_skips_is_run_by_a_part_of_the_check_test() -> Nil {
   // Deadline: the body took under 300 ms alone, so 5 s is more than 10 times that.
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
@@ -461,23 +293,9 @@ pub fn every_tag_the_test_run_skips_is_run_by_a_part_of_the_check_or_has_every_t
   let assert Ok(test_run) =
     list.find(files, fn(file) { file.path == "test/genesis_prime_test.gleam" })
   let check = SourceFile(path: "check", text: source.read("check"))
-  let conversion = skipped_tag.skipped_until_converted
-  assert skipped_tag.breaches(
-      test_run:,
-      check:,
-      files:,
-      until_converted: conversion,
-    )
-    == []
+  assert skipped_tag.breaches(test_run:, check:) == []
   let skipped = skipped_tag.skipped_tags(test_run)
   assert skipped != [] as "the rule finds the tags the run skips"
   assert list.sort(skipped, string.compare) == skip_variables_of(check)
     as "the tags the rule reads are the ones the check sets variables for"
-  assert list.contains(skipped, conversion.tag)
-    as "the listed tag is one the run skips"
-  assert !list.contains(skipped_tag.run_tags(check), conversion.tag)
-    as "no part runs the listed tag, which is why its tests are listed"
-  assert list.length(skipped_tag.carrying(files:, tag: conversion.tag))
-    == list.length(conversion.tests)
-    as "the tests carrying the listed tag are exactly the listed ones"
 }

@@ -30,12 +30,9 @@ import unitest
 /// The test tagged `client_rows` (the committed client rows against the client's
 /// own tables) is skipped the same way with `GENESIS_TEST_SKIP_CLIENT_ROWS=1`, and
 /// `./check` runs it in its client-suite part (`gleam test -- --tag client_rows`).
-/// The tests tagged `dev_tool` (the developer tools' own tests: the coverage
-/// measure, the load runs, the sitting bot, the recording and table readers) are
-/// skipped the same way with `GENESIS_TEST_SKIP_DEV_TOOL=1`, which `./check` sets:
-/// they guard no client outcome, so no merge waits for them. They run by hand
-/// with `gleam test -- --tag dev_tool`; the coverage measure's own are also
-/// tagged `coverage` (`gleam test -- --tag coverage`).
+/// The coverage measure's tests are tagged `coverage` (`gleam test -- --tag
+/// coverage`); no tag of theirs is skipped, so every test runs in some part of the
+/// check.
 ///
 /// A one-time build (`database_support.once`) never counts against a test's
 /// deadline: `owned_test.run` stops the clock while its body is inside one, so
@@ -98,7 +95,6 @@ pub fn main() -> Nil {
           skipped_when_set("GENESIS_TEST_SKIP_WORLD_DATA", tag: "world_data"),
           skipped_when_set("GENESIS_TEST_SKIP_REAL_START", tag: "real_start"),
           skipped_when_set("GENESIS_TEST_SKIP_CLIENT_ROWS", tag: "client_rows"),
-          skipped_when_set("GENESIS_TEST_SKIP_DEV_TOOL", tag: "dev_tool"),
         ]),
       ),
     ),

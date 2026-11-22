@@ -27,15 +27,21 @@
 //// The planted Spell4 rows are those of `test/spell_tables`; only their text columns differ.
 
 import client_tables
+import coverage_support
 import genesis_prime/coverage/named_unreached.{Entry, Naming, NoRow}
-import genesis_prime/coverage/starting_ability.{ProcKindNotRead, ProcLeftOut}
+import genesis_prime/coverage/starting_ability.{ProcKindNotRead}
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store
-import genesis_prime/tooltip_token.{Token}
+import genesis_prime/table/spell4
+import genesis_prime/table/spell4_effects
+import genesis_prime/tooltip_token.{type Token, Found, Token}
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Integer}
@@ -352,135 +358,171 @@ pub fn a_token_a_nested_tooltip_names_counts_for_the_spell_that_nests_it_test() 
 
 // ---- the real tables ----
 
-fn real_named() -> named_unreached.Named {
+/// What a token names, read from the client's rows by the rules of the module header
+/// and apart from `named_unreached.find`.
+type Reading {
+  ReadsValueOf(spell: Int)
+  LinksTo(spell: Int)
+  NamesNoSpell
+}
+
+fn reading_of(tables: store.Tables, token: Token) -> Reading {
+  case token.kind, token.field {
+    tooltip_token.Eff, "" | tooltip_token.Cc, "" -> NamesNoSpell
+    tooltip_token.Eff, _ ->
+      case spell4_effects.get(tables:, id: Spell4EffectsId(token.id)) {
+        Ok(row) -> ReadsValueOf(row.spell_id)
+        Error(Nil) ->
+          case spell4.get(tables:, id: Spell4Id(token.id)) {
+            Ok(_) -> LinksTo(token.id)
+            Error(Nil) -> NamesNoSpell
+          }
+      }
+    tooltip_token.Cc, _ ->
+      case spell4_effects.get(tables:, id: Spell4EffectsId(token.id)) {
+        Ok(row) -> ReadsValueOf(row.spell_id)
+        Error(Nil) -> NamesNoSpell
+      }
+    tooltip_token.Spell, "" -> LinksTo(token.id)
+    tooltip_token.Spell, _ -> ReadsValueOf(token.id)
+    tooltip_token.Smod, _
+    | tooltip_token.Emod, _
+    | tooltip_token.Thrsh, _
+    | tooltip_token.Gf, _
+    | tooltip_token.Creature, _
+    | tooltip_token.Item, _
+    | tooltip_token.Schematic, _
+    | tooltip_token.Vitem, _
+    | tooltip_token.Achievement, _
+    | tooltip_token.Keybinding, _
+    | tooltip_token.Bindpoint, _
+    -> NamesNoSpell
+  }
+}
+
+/// The spells the tokens of the reached spells' tooltips name and no reached spell is,
+/// sorted: those a value token reads and those a link prints.
+fn named_apart_from_reached(
+  tables tables: store.Tables,
+  tokens tokens: tooltip_token.Tokens,
+  reached reached: List(Int),
+) -> #(List(Int), List(Int)) {
+  let reached_set = set.from_list(reached)
+  let readings =
+    list.flat_map(list.unique(reached), fn(spell) {
+      tooltip_token.of_spell(tables:, tokens:, spell:)
+      |> list.map(fn(found) { reading_of(tables, found.token) })
+    })
+  let unreached = fn(spells) {
+    list.filter(spells, fn(spell) { !set.contains(reached_set, spell) })
+    |> list.unique
+    |> list.sort(int.compare)
+  }
+  #(
+    unreached(
+      list.filter_map(readings, fn(reading) {
+        case reading {
+          ReadsValueOf(spell:) -> Ok(spell)
+          LinksTo(..) | NamesNoSpell -> Error(Nil)
+        }
+      }),
+    ),
+    unreached(
+      list.filter_map(readings, fn(reading) {
+        case reading {
+          LinksTo(spell:) -> Ok(spell)
+          ReadsValueOf(..) | NamesNoSpell -> Error(Nil)
+        }
+      }),
+    ),
+  )
+}
+
+/// Each naming of each entry is a token that reads the entry's spell as `reading`, in a
+/// text a reached spell holds, and the entry's reason is the first part left out that
+/// holds its spell.
+fn assert_entries_named(
+  tables tables: store.Tables,
+  tokens tokens: tooltip_token.Tokens,
+  reached reached: List(Int),
+  left_out left_out: List(starting_ability.LeftOut),
+  entries entries: List(named_unreached.Entry),
+  reading reading: fn(Int) -> Reading,
+) -> Nil {
+  list.each(entries, fn(entry) {
+    let label = "Spell4 " <> int.to_string(entry.spell)
+    assert entry.namings != [] as { label <> " has a naming" }
+    list.each(entry.namings, fn(naming) {
+      assert reading_of(tables, naming.token) == reading(entry.spell)
+        as {
+          label
+          <> " is named by "
+          <> tooltip_token.describe(naming.token)
+          <> ", which does not read it so"
+        }
+      assert naming.named_by != [] as { label <> " names its namers" }
+      list.each(naming.named_by, fn(namer) {
+        assert list.contains(reached, namer)
+          as {
+            label <> " is named by an unreached Spell4 " <> int.to_string(namer)
+          }
+        assert list.contains(
+          tooltip_token.of_spell(tables:, tokens:, spell: namer),
+          Found(text_id: naming.text_id, token: naming.token),
+        )
+          as {
+            "Spell4 "
+            <> int.to_string(namer)
+            <> " does not hold "
+            <> tooltip_token.describe(naming.token)
+            <> " in text "
+            <> int.to_string(naming.text_id)
+          }
+      })
+    })
+    assert entry.reason
+      == option.from_result(
+        list.find(left_out, fn(part) {
+          list.contains(
+            starting_ability.left_out_spells(left_out: part),
+            entry.spell,
+          )
+        }),
+      )
+      as { label <> "'s reason is the first part left out that holds it" }
+  })
+}
+
+pub fn every_spell_the_real_tables_count_is_named_by_a_value_token_of_a_reached_spell_and_no_token_names_a_missing_row_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tags(["coverage"])
+  use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   let assert Ok(tokens) = tooltip_token.load()
     as "the committed list of tooltip tokens loads"
   let reached = reached_ids(tables:, proxies: [volatility])
-  let assert Ok(left_out) = starting_ability.left_out(tables:)
-    as "the real tables hold the rows the walk names"
-  named_unreached.find(tables:, tokens:, reached:, left_out:)
-}
-
-fn spells_of(entries: List(named_unreached.Entry)) -> List(Int) {
-  list.map(entries, fn(entry) { entry.spell })
-}
-
-fn entry_of(
-  entries: List(named_unreached.Entry),
-  spell: Int,
-) -> named_unreached.Entry {
-  let assert Ok(entry) = list.find(entries, fn(entry) { entry.spell == spell })
-    as { "the list holds spell " <> string.inspect(spell) }
-  entry
-}
-
-pub fn the_real_tables_count_42736_with_no_reason_test() -> Nil {
-  use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  use <- unitest.guard(client_tables.present())
-  let named = real_named()
-  assert entry_of(named.counted, 42_736)
-    == Entry(
-      spell: 42_736,
-      namings: [
-        Naming(
-          token: Token(tooltip_token.Cc, 97_462, "datafloat00pct"),
-          text_id: 519_096,
-          named_by: [60_769],
-        ),
-        Naming(
-          token: Token(tooltip_token.Eff, 97_462, "durationms"),
-          text_id: 519_096,
-          named_by: [60_769],
-        ),
-      ],
-      reason: None,
-    )
-}
-
-pub fn the_real_tables_give_52370_its_reason_test() -> Nil {
-  use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  use <- unitest.guard(client_tables.present())
-  assert entry_of(real_named().counted, 52_370)
-    == Entry(
-      spell: 52_370,
-      namings: [
-        Naming(
-          token: Token(tooltip_token.Eff, 123_743, "input0pct"),
-          text_id: 466_631,
-          named_by: [47_860, 47_866],
-        ),
-        Naming(
-          token: Token(tooltip_token.Spell, 52_370, "aoetc"),
-          text_id: 466_631,
-          named_by: [47_860, 47_866],
-        ),
-      ],
-      reason: Some(ProcLeftOut(
-        spell4_id: 52_371,
-        effect_id: 123_744,
-        why: spell_plan.ProcBehindPersistence,
-        casts: 52_370,
-      )),
-    )
-}
-
-pub fn the_real_tables_list_72652_and_48584_as_links_test() -> Nil {
-  use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  use <- unitest.guard(client_tables.present())
-  let named = real_named()
-  assert spells_of(named.links) == [48_584, 72_652]
-  assert entry_of(named.links, 72_652).namings
-    == [
-      Naming(
-        token: Token(tooltip_token.Spell, 72_652, ""),
-        text_id: 445_006,
-        named_by: [47_273],
-      ),
-    ]
-  assert entry_of(named.links, 48_584).namings
-    == [
-      Naming(
-        token: Token(tooltip_token.Spell, 48_584, ""),
-        text_id: 311_077,
-        named_by: [38_779],
-      ),
-    ]
-  assert !list.contains(spells_of(named.counted), 48_584)
-}
-
-pub fn the_real_tables_count_72652_by_the_effect_of_its_tooltip_and_list_it_as_a_link_test() -> Nil {
-  use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  use <- unitest.guard(client_tables.present())
-  assert entry_of(real_named().counted, 72_652)
-    == Entry(
-      spell: 72_652,
-      namings: [
-        Naming(
-          token: Token(tooltip_token.Eff, 187_681, "durationms"),
-          text_id: 445_006,
-          named_by: [47_273],
-        ),
-        Naming(
-          token: Token(tooltip_token.Eff, 187_681, "ticktimems"),
-          text_id: 445_006,
-          named_by: [47_273],
-        ),
-      ],
-      reason: None,
-    )
-}
-
-pub fn the_real_tables_hold_exactly_three_counted_and_no_missing_row_with_volatility_planted_test() -> Nil {
-  use <- owned_test.run(600_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
-  use <- unitest.guard(client_tables.present())
-  let named = real_named()
-  assert spells_of(named.counted) == [42_736, 52_370, 72_652]
-    as "42148 is absent: the Proxy row of migration 0018 casts it, and 76003 is absent: the walk reaches it through the alternate 76002 of Quick Draw 43468 (`Spell4.spell4IdMechanicAlternateSpell`), so no unreached spell is named for it"
-  assert named.no_row == []
+  let left_out = coverage_support.left_out()
+  let named = named_unreached.find(tables:, tokens:, reached:, left_out:)
+  assert named.no_row == [] as "no token names a row the tables lack"
+  let #(values, links) = named_apart_from_reached(tables:, tokens:, reached:)
+  assert list.map(named.counted, fn(entry) { entry.spell }) == values
+    as "the counted spells are the unreached spells a value token reads"
+  assert list.map(named.links, fn(entry) { entry.spell }) == links
+    as "the linked spells are the unreached spells a field-less token prints"
+  assert_entries_named(
+    tables:,
+    tokens:,
+    reached:,
+    left_out:,
+    entries: named.counted,
+    reading: ReadsValueOf,
+  )
+  assert_entries_named(
+    tables:,
+    tokens:,
+    reached:,
+    left_out:,
+    entries: named.links,
+    reading: LinksTo,
+  )
 }
