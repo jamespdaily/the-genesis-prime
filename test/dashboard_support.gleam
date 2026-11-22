@@ -23,6 +23,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import gleam/uri
+import open_wait
 import planted_table
 import simplifile
 
@@ -66,9 +67,19 @@ pub fn accepts(port: Int) -> Bool
 fn connect_and_send(port: Int, request: BitArray) -> Connection
 
 @external(erlang, "dashboard_support_ffi", "read_reply")
-fn read_reply(
+fn read_reply_unnamed(
   connection: Connection,
 ) -> #(Connection, Int, List(#(String, String)), BitArray)
+
+/// Reads the answer to a request already sent: a wait that the test's deadline
+/// names while the server has not answered.
+fn read_reply(
+  connection: Connection,
+) -> #(Connection, Int, List(#(String, String)), BitArray) {
+  open_wait.named("the server's answer to the request", fn() {
+    read_reply_unnamed(connection)
+  })
+}
 
 /// Whether the server has already written bytes on the connection. The bytes
 /// stay for the next read.
@@ -93,16 +104,34 @@ fn kill(runtimes: Runtimes(argument, message)) -> Nil
 fn queued_calls(runtimes: Runtimes(argument, message)) -> Int
 
 @external(erlang, "dashboard_support_ffi", "open")
-fn open(
+fn open_unnamed(
   port: Int,
   request: BitArray,
 ) -> #(Connection, Int, List(#(String, String)), BitArray)
 
+/// Connects, sends the request and reads the answer: a wait that the test's
+/// deadline names while the server has not answered.
+fn open(
+  port: Int,
+  request: BitArray,
+) -> #(Connection, Int, List(#(String, String)), BitArray) {
+  open_wait.named("the server's answer to the request", fn() {
+    open_unnamed(port, request)
+  })
+}
+
+@external(erlang, "dashboard_support_ffi", "read_text_frame")
+fn try_read_frame_unnamed(connection: Connection) -> Result(BitArray, Int)
+
 /// The payload of the next websocket text frame the server sends on the
 /// connection, or the first byte of what came instead (a close frame is 0x88, a
-/// binary frame 0x82, an HTTP answer starts with `H`, 0x48).
-@external(erlang, "dashboard_support_ffi", "read_text_frame")
-pub fn try_read_frame(connection: Connection) -> Result(BitArray, Int)
+/// binary frame 0x82, an HTTP answer starts with `H`, 0x48). The read is a wait
+/// that the test's deadline names while the server has sent nothing.
+pub fn try_read_frame(connection: Connection) -> Result(BitArray, Int) {
+  open_wait.named("the next websocket frame the server sends", fn() {
+    try_read_frame_unnamed(connection)
+  })
+}
 
 /// The payload of the next websocket text frame; anything else fails the test
 /// naming the byte that came.
@@ -121,9 +150,17 @@ pub fn read_frame(connection: Connection) -> BitArray {
 @external(erlang, "dashboard_support_ffi", "close")
 pub fn close(connection: Connection) -> Nil
 
-/// Reads from the connection until the server closes it; true when it did.
 @external(erlang, "dashboard_support_ffi", "closes")
-pub fn closes(connection: Connection) -> Bool
+fn closes_unnamed(connection: Connection) -> Bool
+
+/// Reads from the connection until the server closes it; true when it did. The
+/// read is a wait that the test's deadline names while the server keeps the
+/// connection open.
+pub fn closes(connection: Connection) -> Bool {
+  open_wait.named("the server to close the connection", fn() {
+    closes_unnamed(connection)
+  })
+}
 
 /// The operating-system process id of the test's own VM, a process that stays
 /// alive for as long as the test runs.
