@@ -11,6 +11,11 @@
 //// - The client's rows (`gleam run -m genesis_prime/table_rows -- Prerequisite 36425
 ////   29484 903`): the Spell Surge buff 47439 holds CasterPersistence 36425, slot 4 at least
 ////   25 (Spell Power), and Spell Surge 47273 holds CastGate 29484.
+//// - A periodic Proxy's own persistence (`Spell4Effects.prerequisiteIdCasterApply`: the
+////   client reads no effect row's persistence): the server ends the whole cast with the
+////   spell column's frames (a guess), and checks it with the caster as the second unit, as
+////   the effect rows' order has it (`Spell4Effects.prerequisiteIdTargetApply`) and not the
+////   cast's primary target, which only the spell column's order uses.
 //// - The server's choices (the cast module's doc): the check runs at the end of each input
 ////   in the world; CasterPersistence before TargetPersistence; a failing cast ends as a
 ////   death ends one cast, with the caster's first unit and the cast's primary target the
@@ -32,6 +37,7 @@ import genesis_prime/game/spell_plan.{
   type Spell, Always, KeepsStealth, Spell, StealthRow,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/ticking.{Schedule}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_started
@@ -41,6 +47,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import owned_test
 import prerequisite_support as prerequisites
 import unitest
@@ -888,4 +895,187 @@ pub fn life_force_persists_while_the_casters_focus_meets_prerequisite_38318_and_
     persisted(state:, caster: medic_holding_focus(held: 299), at: 1200)
   assert failed(effects:) == [#(focus_cast, 282, 7, 0)]
     as "29.9 percent fails 38318: 0x7f9 {the cast id, 282 Prereq_CasterPersistence, the caster, 0}"
+}
+
+// ---- a periodic Proxy's own persistence ----
+
+/// A planted spell of this id and base whose only effect is a Proxy on the caster that casts a
+/// child every 500 ms for 5 seconds, holding this persistence on its row.
+fn periodic_holder(
+  spell4_id spell4_id: Int,
+  base base: Int,
+  persistence persistence: option.Option(Prerequisite),
+) -> Spell {
+  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
+    spell_plan.ProxyEffect(spell_plan.Proxy(
+      effect_id: Spell4EffectsId(spell4_id),
+      delay_ms: 0,
+      phase_flags: -1,
+      condition: Always,
+      tag: spend.always,
+      target: spell_plan.OnCaster,
+      spell: support.child(spell4_id: 7030, base: 7030),
+      gains: [],
+      period: Some(spell_plan.Periodic(
+        schedule: Schedule(
+          delay_ms: 0,
+          tick_ms: 500,
+          duration_ms: 5000,
+          count: 10,
+        ),
+        persistence:,
+      )),
+    )),
+  ])
+}
+
+/// The press of the planted base 3 ability, its go answered with no unit struck.
+fn pressed_periodic(
+  plans plans: spell_plan.Plans,
+  caster caster: Caster,
+) -> #(State, List(Effect)) {
+  support.press_as(
+    plans:,
+    state: cast_state.new(),
+    caster:,
+    bag: bag_of_base_3,
+    at: 1000,
+  )
+}
+
+pub fn a_periodic_proxys_own_persistence_ends_its_cast_in_the_input_that_breaks_it_and_a_cast_with_none_goes_on_test() -> Nil {
+  use <- owned_test.run(5000)
+  let fighting = support.caster_in_combat(in_combat: True)
+  let idle = support.caster_in_combat(in_combat: False)
+  let persisting =
+    support.plans_of([
+      periodic_holder(spell4_id: 7021, base: 3, persistence: Some(in_combat())),
+    ])
+  let #(state, pressed) = pressed_periodic(plans: persisting, caster: fighting)
+  let cast_id = support.pressed_id(effects: pressed)
+  let armed = dict.keys(state.timers)
+  assert armed != [] as "the go armed the Proxy's tick and the node's end"
+  assert cast_persist.persists(cast: state)
+    as "a cast whose Proxy row holds a persistence has something to check"
+  let #(unchanged, nothing) = persisted(state:, caster: fighting, at: 1100)
+  assert nothing == [] && unchanged == state
+    as "the persistence holds: nothing happens"
+  let #(ended, effects) = persisted(state:, caster: idle, at: 1200)
+  assert failed(effects:) == [#(cast_id, 282, 7, 0)]
+    as "the persistence fails in this input: 0x7f9 {the cast id, 282, the caster, 0}, as the spell column's does"
+  assert support.ids(frames: support.writes(effects:)) == [0x07F9, 0x07FE]
+    && finished_ids(effects:) == [cast_id]
+    as "then the 0x7fe that takes the cast out of the client's table"
+  assert set.from_list(support.cancelled_timers(effects:))
+    == set.from_list(armed)
+    && dict.size(ended.timers) == 0
+    as "the tick timer and the node's end timer are cancelled and none is left"
+  assert support.tells(effects:)
+    == [
+      #(ConnectionId(2), CastFinished(cast_id:)),
+      #(ConnectionId(3), CastFinished(cast_id:)),
+    ]
+    as "each viewer is told the cast finished"
+  let plain =
+    support.plans_of([
+      periodic_holder(spell4_id: 7021, base: 3, persistence: None),
+    ])
+  let #(state, _) = pressed_periodic(plans: plain, caster: fighting)
+  assert !cast_persist.persists(cast: state)
+    as "a periodic Proxy with no persistence gives the connection nothing to check"
+  let both =
+    support.plans_of([
+      Spell(
+        ..periodic_holder(
+          spell4_id: 7021,
+          base: 3,
+          persistence: Some(in_combat()),
+        ),
+        caster_persistence: Some(in_combat()),
+      ),
+    ])
+  let #(state, pressed) = pressed_periodic(plans: both, caster: fighting)
+  let #(_, effects) = persisted(state:, caster: idle, at: 1200)
+  assert failed(effects:)
+    == [#(support.pressed_id(effects: pressed), 282, 7, 0)]
+    as "the spell column and the row both fail: the cast ends once"
+}
+
+pub fn a_periodic_proxys_persistence_checks_the_caster_as_second_unit_even_when_the_cast_has_another_primary_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The persistence is a type 60 condition (the stacks of Spell4 7022 the second unit cast,
+  // at least 1) on the Proxy of Spell4 7022 itself, whose cast holds one stack on the caster.
+  let own_stack = prerequisites.single(id: 41_835, condition: #(60, 4, 7022, 1))
+  let child =
+    periodic_holder(spell4_id: 7022, base: 3, persistence: Some(own_stack))
+  let plans = support.plans_starting_on_each_struck(started: child)
+  let fighting = support.caster_in_combat(in_combat: True)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast_state.new(),
+      caster: fighting,
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let #(state, effects) =
+    support.answered_as(
+      caster: fighting,
+      state:,
+      effects: raw,
+      at: 1000,
+      struck: support.hits([99]),
+      rolls: [],
+    )
+  let cast_id = cast_id_of(spell4_id: 7022, effects:)
+  let assert Ok(holder) = cast_state.holder_of(cast: state, cast_id:)
+    as "the struck unit's child is a cast of its own"
+  assert holder.primary_target == 99
+    as "the child's primary target is the struck creature, not the caster"
+  let #(unchanged, nothing) = persisted(state:, caster: fighting, at: 1100)
+  assert failed(effects: nothing) == [] && unchanged == state
+    as "the caster holds the stack it cast: type 60 reads the caster as second unit, so the cast holds (with the creature 99 as second unit the count would be 0 and it would end)"
+}
+
+pub fn a_periodic_proxys_persistence_of_a_type_the_server_does_not_read_keeps_the_cast_with_one_debug_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  let type_12 = prerequisites.single(id: 41_836, condition: #(12, 1, 0, 0))
+  let type_56 = prerequisites.single(id: 41_837, condition: #(56, 1, 0, 0))
+  assert prerequisite.unread_types(prerequisite: type_12) == [12]
+    && prerequisite.unread_types(prerequisite: type_56) == [56]
+    as "types 12 and 56 are ones the server does not read"
+  let plans =
+    support.plans_of([
+      periodic_holder(spell4_id: 7023, base: 3, persistence: Some(type_12)),
+      periodic_holder(spell4_id: 7024, base: 1, persistence: Some(type_56)),
+    ])
+  let fighting = support.caster_in_combat(in_combat: True)
+  let #(state, _) =
+    support.press_as(
+      plans:,
+      state: cast_state.new(),
+      caster: fighting,
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(state, _) =
+    support.press_as(
+      plans:,
+      state:,
+      caster: fighting,
+      bag: bag_of_base_1,
+      at: 1100,
+    )
+  assert list.length(cast_state.holders(cast: state)) == 2
+    as "both casts are held"
+  let #(state, first) = persisted(state:, caster: fighting, at: 1200)
+  assert failed(effects: first) == []
+    && list.map(support.logs(effects: first), fn(line) { line.0 })
+    == [LogDebug, LogDebug]
+    as "each unread persistence keeps its cast with one debug line for its spell"
+  let #(state, second) = persisted(state:, caster: fighting, at: 1300)
+  let #(_, third) = persisted(state:, caster: fighting, at: 1400)
+  assert second == [] && third == []
+    as "no more lines and no end on the inputs after"
 }

@@ -10,6 +10,10 @@
 ////   in 33258, which only the tick-0 Proxy 76609 names).
 //// - Rows read with `table_rows -- Spell4Effects 121345 178429 85298 228473 141450 210304
 ////   210337 217944 76609`.
+//// - `Spell4Effects.prerequisiteIdCasterApply`: the client reads no effect row's persistence
+////   columns, so a periodic Proxy's caster persistence is the row's column as it stands
+////   (Prerequisite 903, type 28: the caster in combat) and its target persistence is read by no
+////   rule.
 
 import client_tables
 import fixture_tables
@@ -27,6 +31,8 @@ import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import planted_table
+import prerequisite_support
 import spell_tables
 import unitest
 
@@ -274,5 +280,62 @@ pub fn a_periodic_proxy_aimed_at_the_area_or_left_until_removed_is_left_out_by_n
       as "Nullifier 70757 and Augmented Blade 46935 are planned on main and stay planned"
     assert !list.any(unplanned, fn(one) { one.spell4_id == ability })
       as "and are not listed unplanned"
+  })
+}
+
+pub fn a_periodic_proxys_caster_persistence_is_read_from_its_row_and_a_target_persistence_is_not_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Each case plants one row of the fixture, the timed periodic Proxy 121345: the cells it
+  // changes and the persistence the read Proxy holds.
+  let cases = [
+    #(
+      "a caster persistence of Prerequisite 903 is the row's persistence",
+      [#("prerequisiteIdCasterPersistence", planted_table.Integer(903))],
+      Some(prerequisite_support.fixture_row(row: 903)),
+    ),
+    #(
+      "no caster persistence is none",
+      [#("prerequisiteIdCasterPersistence", planted_table.Integer(0))],
+      None,
+    ),
+    #(
+      "a target persistence alone is read by no rule, so the Proxy holds none",
+      [
+        #("prerequisiteIdCasterPersistence", planted_table.Integer(0)),
+        #("prerequisiteIdTargetPersistence", planted_table.Integer(903)),
+      ],
+      None,
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(reason, cells, expected) = case_
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 121_345,
+      with: cells,
+      body: fn(tables) {
+        let sources = spell_plan.sources_of(tables:)
+        let row = client_row(tables:, id: 121_345)
+        let place_of =
+          effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+        let assert Ok(Applied(ReadProxy(period: Some(periodic), ..))) =
+          spell_plan.read_row(
+            tables:,
+            sources:,
+            place: place_of(row.spell_id),
+            effect: row,
+          )
+          as "the timed periodic Proxy aimed at the caster is read"
+        assert periodic.persistence == expected as reason
+        assert periodic.schedule
+          == Schedule(
+            delay_ms: 1,
+            tick_ms: 1000,
+            duration_ms: 10_000,
+            count: 10,
+          )
+          as "the schedule is the row's whatever its persistence"
+      },
+    )
   })
 }
