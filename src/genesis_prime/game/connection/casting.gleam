@@ -1200,6 +1200,9 @@ fn carried_out(
       cast_state.TickStrike(asked:), Some(entered) ->
         tick_strike_begins(session:, now:, entered:, asked:)
       cast_state.TickStrike(..), None -> #(session, [])
+      cast_state.FindProxyTickUnits(asked:), Some(entered) ->
+        proxy_tick_units_found(session:, now:, entered:, asked:)
+      cast_state.FindProxyTickUnits(..), None -> #(session, [])
       cast_state.Activated(unit_id:, alive_at_press:, by_item:, cast_id:, ..),
         Some(entered)
       ->
@@ -1693,6 +1696,49 @@ fn tick_strike_begins(
     now:,
     effects:,
   )
+}
+
+/// A tick of a periodic Proxy aimed at the area asked for its units: they are selected
+/// from the picture as it is now (`strike.select_proxy_tick`), the poses, checklist indexes
+/// and first units its target gate reads are gathered as a go's are, and the cast rule
+/// answers in the same input (`cast.proxy_tick_units_found`), its children carried out in
+/// place of the ask. No creature is asked and nothing waits.
+fn proxy_tick_units_found(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  asked asked: cast_state.ProxyTickAsked,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let tables = session.settings.tables
+  let unit_ids =
+    strike.select_proxy_tick(
+      asked:,
+      attacker: attacker_of(session:, entered:),
+      picture: entered.shown,
+      areas: spell_area.areas(tables:),
+      now_ms: now.monotonic_ms,
+    )
+  let #(updated, effects) =
+    cast.proxy_tick_units_found(
+      cast: entered.cast,
+      caster: caster_of(tables:, entered:),
+      now:,
+      asked:,
+      units: unit_ids,
+      poses: shown.poses_of(
+        picture: entered.shown,
+        unit_ids:,
+        now_ms: now.monotonic_ms,
+        viewer: world_entry.viewer(entered:),
+      ),
+      indexes: shown.checklist_indexes_of(picture: entered.shown, unit_ids:),
+      first_units: shown.first_units_of(
+        picture: entered.shown,
+        unit_ids:,
+        caster_unit: entered.unit_id,
+      ),
+    )
+  carried_out(session: with_cast(session:, cast: updated), now:, effects:)
 }
 
 /// The player as its strikes take it: who it is, where it stands and faces, which

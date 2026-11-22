@@ -25,11 +25,12 @@ import genesis_prime/game/cast/state.{
   type TargetVerdict, type TickAsked, type TickKey, type Ticking, type TickingOn,
   type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
-  Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit, Immune, Lingering,
-  Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, ProcDue, Property,
-  QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send, StartChild,
-  StartHeld, Starts, State, StateEnd, TargetChangeEnds, TargetModifierStart,
-  Tell, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
+  Deflected, FindProxyTickUnits, Finish, ForcedMoveStart, Go, Heal, Healed, Hit,
+  Immune, Lingering, Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt,
+  ProcDue, Property, ProxyTickAsked, QuestAdvanceDue, Refuse, RepeatHeld,
+  RestrictionEnd, Send, StartChild, StartHeld, Starts, State, StateEnd,
+  TargetChangeEnds, TargetModifierStart, Tell, Tick, TickAsked, TickStrike,
+  TickingOn, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -321,8 +322,10 @@ fn tick_timers_cancelled(
 /// `cast.ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
 /// (genesis_prime/client_connection `CastTicked`) and heals the caster
 /// (`CasterChangeStarts`), reading the vitals the heal ticks before it in the step left,
-/// and heals nothing on a dead caster; a Proxy row starts its child with `start_child`
-/// (`proxy_tick_child`). Then each row that fired has its next tick armed,
+/// and heals nothing on a dead caster; a Proxy row aimed at the caster starts its child with
+/// `start_child` (`proxy_tick_child`), and one aimed at the area asks the connection for
+/// the units inside its area (`FindProxyTickUnits`), whose answer starts a child on each
+/// (`cast.proxy_tick_units_found`). Then each row that fired has its next tick armed,
 /// or none after its last (genesis_prime/game/ticking `next_tick`). Any tick timer of the
 /// cast fires every tick due with it, so ticks due together keep that order whichever
 /// timer fires first.
@@ -494,8 +497,20 @@ fn tick_landed(
               )
             #(cast_state.with_tick(row:, tick:), caster, healed, None)
           },
-          proxy: fn(proxy) {
-            #(cast_state.with_tick(row:, tick:), caster, [], Some(proxy))
+          proxy: fn(proxy, phase, started_at, primary_pose) {
+            proxy_row_landed(
+              cast:,
+              caster:,
+              cast_id:,
+              holder:,
+              key:,
+              row:,
+              tick:,
+              proxy:,
+              phase:,
+              started_at:,
+              primary_pose:,
+            )
           },
         )
       let cast =
@@ -516,10 +531,59 @@ fn tick_landed(
   }
 }
 
-/// The child a tick of a periodic Proxy starts: none when the Proxy's caster gates, read again
-/// for the caster as it is at the tick, fail; a debug line and none when a gate cannot be
-/// decided (a type 37 gate needs a roll, and a tick draws none) or the named spell's caster
-/// condition refuses the caster's life (`spell_plan.refused_life`). The ticks go on in each case.
+/// Tick `tick` of a periodic Proxy row lands: one aimed at the caster is stored with its tick
+/// counted and its child started by `tick_landed`; one aimed at the area asks the connection
+/// for the units inside its area (`FindProxyTickUnits`) and holds a round open until the
+/// answer, unless the Proxy's gates or the named spell's caster condition stop it
+/// (`proxy_tick_refusal`), which leaves the debug lines and no round. The ask carries the
+/// row's go, phase and poses, which the units are found around.
+fn proxy_row_landed(
+  cast cast: State,
+  caster caster: Caster,
+  cast_id cast_id: Int,
+  holder holder: Holder,
+  key key: TickKey,
+  row row: Ticking,
+  tick tick: Int,
+  proxy proxy: Proxy,
+  phase phase: Int,
+  started_at started_at: area.Pose,
+  primary_pose primary_pose: Option(area.Pose),
+) -> #(Ticking, Caster, List(Effect), Option(Proxy)) {
+  case proxy.target {
+    spell_plan.OnCaster -> #(
+      cast_state.with_tick(row:, tick:),
+      caster,
+      [],
+      Some(proxy),
+    )
+    spell_plan.OnEachStruck ->
+      case proxy_tick_refusal(cast:, caster:, holder:, proxy:) {
+        Some(logs) -> #(cast_state.with_tick(row:, tick:), caster, logs, None)
+        None -> #(
+          cast_state.round_opened(row:, tick:),
+          caster,
+          [
+            FindProxyTickUnits(asked: ProxyTickAsked(
+              cast_id:,
+              spell4_id: holder.spell.spell4_id,
+              effect_id: cast_state.key_effect(key:),
+              phase:,
+              primary_target: cast_state.key_unit(key:),
+              started_at:,
+              primary_pose:,
+              go: cast_state.ticking_go(row:),
+              tick:,
+            )),
+          ],
+          None,
+        )
+      }
+  }
+}
+
+/// The child a tick of a periodic Proxy aimed at the caster starts (`proxy_tick_refusal`
+/// says when none starts).
 fn proxy_tick_child(
   cast cast: State,
   caster caster: Caster,
@@ -528,6 +592,23 @@ fn proxy_tick_child(
   start_child start_child: fn(State, Caster, Holder, Proxy) ->
     #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
+  case proxy_tick_refusal(cast:, caster:, holder:, proxy:) {
+    Some(logs) -> #(cast, logs)
+    None -> start_child(cast, caster, holder, proxy)
+  }
+}
+
+/// The debug lines that stop a tick of a periodic Proxy, none when the tick goes on: the
+/// Proxy's caster gates, read again for the caster as it is at the tick, fail (no line); a
+/// gate cannot be decided (a type 37 gate needs a roll, and a tick draws none), or the named
+/// spell's caster condition refuses the caster's life (`spell_plan.refused_life`). The ticks
+/// go on in each case.
+fn proxy_tick_refusal(
+  cast cast: State,
+  caster caster: Caster,
+  holder holder: Holder,
+  proxy proxy: Proxy,
+) -> Option(List(Effect)) {
   let #(passing, logs, _) =
     cast_gate.proxy_gates(
       proxies: [proxy],
@@ -544,9 +625,9 @@ fn proxy_tick_child(
       caster:,
     )
   {
-    [], _ -> #(cast, logs)
-    [_, ..], Some(refusal) -> #(cast, [refusal])
-    [_, ..], None -> start_child(cast, caster, holder, proxy)
+    [], _ -> Some(logs)
+    [_, ..], Some(refusal) -> Some([refusal])
+    [_, ..], None -> None
   }
 }
 
@@ -742,21 +823,37 @@ fn node_ended_now(
   }
 }
 
-/// The Proxies of a go that start their child at each tick, each ticking on the caster
-/// (`Proxy.period`); the others start theirs at the go.
+/// The Proxies of a go that start their child at each tick (`Proxy.period`); the others
+/// start theirs at the go. One aimed at the caster ticks on the caster; one aimed at the
+/// area ticks on the cast's primary target, the unit whose node ends it, and carries the
+/// go's `phase`, the pose the cast started at and the pose the primary target stood in at the
+/// go (`primary_pose`, none for the caster), which the units inside the area are found
+/// around at each tick.
 pub fn proxies_ticking(
   proxies proxies: List(Proxy),
   caster caster: Caster,
+  primary_target primary_target: Int,
+  phase phase: Int,
+  started_at started_at: area.Pose,
+  primary_pose primary_pose: Option(area.Pose),
 ) -> List(TickingOn) {
   list.filter_map(proxies, fn(proxy) {
     case proxy.period {
       Some(periodic) ->
         Ok(TickingOn(
-          unit_id: caster.unit_id,
+          unit_id: case proxy.target {
+            spell_plan.OnCaster -> caster.unit_id
+            spell_plan.OnEachStruck -> primary_target
+          },
           life: 0,
           effect_id: proxy.effect_id,
           schedule: periodic.schedule,
-          kind: cast_state.proxy_tick(proxy:),
+          kind: cast_state.proxy_tick(
+            proxy:,
+            phase:,
+            started_at:,
+            primary_pose:,
+          ),
         ))
       None -> Error(Nil)
     }
@@ -1382,7 +1479,7 @@ pub fn node_of(
                 heal: fn(_, _, _) {
                   lasting.Listed(effect_id: row.effect_id, row: life)
                 },
-                proxy: fn(_) { lasting.LifeOnly(row: life) },
+                proxy: fn(_, _, _, _) { lasting.LifeOnly(row: life) },
               ),
             )
           False -> Error(Nil)

@@ -210,6 +210,7 @@ fn healed(
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -332,6 +333,7 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
         | cast_state.ShortcutCast(..)
         | cast_state.QuestAdvanced(..)
         | cast_state.TickStrike(..)
+        | cast_state.FindProxyTickUnits(..)
         | cast_state.StealthChanged(..) -> False
       }
     })
@@ -432,6 +434,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
     }
   })

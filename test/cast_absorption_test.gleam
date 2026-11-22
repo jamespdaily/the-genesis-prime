@@ -392,6 +392,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
       | cast_state.Log(..)
       | cast_state.Strike(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.Pay(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)

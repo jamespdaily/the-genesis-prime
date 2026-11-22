@@ -31,6 +31,10 @@
 ////   the round closes as a go's does
 ////     Ticked(asked, struck) ─▶ the connection calls cast.ticked(asked, struck)
 ////     Released(unit, news) for the health news held for the unit
+//// cast rule tick timer ─▶ Effect FindProxyTickUnits(ProxyTickAsked k, row, phase, start pose)
+////   select_proxy_tick(asked, attacker, picture, areas) ─▶ the unit ids inside the area now
+////   the connection answers in the same input: cast.proxy_tick_units_found(asked, units)
+////   (no round, no creature asked, no timer: the cast rule starts a child cast on each unit)
 //// ```
 ////
 //// - **Selection** reads the picture of the units the client shows
@@ -42,6 +46,13 @@
 ////   A cast that spent points above its base cost (`GoAsked.spent`) strikes with the
 ////   damage effects its points choose and selects the units those effects aim at
 ////   (genesis_prime/game/spend).
+//// - **The units of a periodic Proxy aimed at the area** are found at each tick, over the
+////   picture as it is then, by the same area selection as a go's (`area_selection`): the hit
+////   shape and the area row around the pose the cast started at, or the pose the target
+////   stood in at the go for an area fixed at its target (`ProxyTickAsked`); an area that
+////   follows the caster or its target reads the pose now. The order of a Random row is a
+////   server choice seeded by the cast and the tick (`proxy_tick_seed`). A spell with no area
+////   row, no hit row naming the phase, or a primary target the picture lost finds nobody.
 //// - **Crowd-control states** of the phase (`Selection.controls`) are told to each unit
 ////   their aim names, with the damage or alone: a phase with a stun and no damage still
 ////   tells its units and waits for their answers. Each state gets an instance id from
@@ -110,7 +121,9 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
 import genesis_prime/game/cast/gate as cast_gate
-import genesis_prime/game/cast/state.{type GoAsked, type Struck, type TickAsked} as cast_state
+import genesis_prime/game/cast/state.{
+  type GoAsked, type ProxyTickAsked, type Struck, type TickAsked,
+} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/forced_move
@@ -295,23 +308,16 @@ pub fn select(
   {
     Error(Nil) -> empty
     Ok(#(spell_area_found, phase)) -> {
-      let primary = case asked.primary_target == attacker.unit_id {
-        True -> Ok(area.TheCaster)
-        False ->
-          shown.place_of(picture:, unit_id: asked.primary_target, now_ms:)
-          |> result.map(fn(place) {
-            area.AnotherUnit(pose: Pose(at: area.point_of(place), yaw: 0.0))
-          })
-      }
       let centre =
-        result.map(primary, fn(primary) {
-          area.centre_of(
-            anchor: spell_area_found.anchor,
-            caster: attacker.pose,
-            started_at: asked.started_at,
-            primary:,
-          )
-        })
+        centre_of_cast(
+          anchor: spell_area_found.anchor,
+          attacker:,
+          picture:,
+          primary_target: asked.primary_target,
+          started_at: asked.started_at,
+          primary_pose: None,
+          now_ms:,
+        )
       let from_area = case phase.selects_area, spell_area_found.row, centre {
         True, Some(row), Ok(centre) ->
           area_selection(
@@ -348,6 +354,90 @@ pub fn select(
       )
     }
   }
+}
+
+/// Where a cast's area is centred (`area.centre_of`): on the pose the cast started at, the
+/// caster now, or the primary target, which is the caster or another unit the picture shows.
+/// An area fixed at its target stays at `primary_pose`, the pose the target stood in when the
+/// cast went, when there is one. A primary target the picture does not show gives no centre.
+fn centre_of_cast(
+  anchor anchor: area.Anchor,
+  attacker attacker: Attacker,
+  picture picture: Picture,
+  primary_target primary_target: Int,
+  started_at started_at: Pose,
+  primary_pose primary_pose: Option(Pose),
+  now_ms now_ms: Int,
+) -> Result(Pose, Nil) {
+  use primary <- result.map(case primary_target == attacker.unit_id {
+    True -> Ok(area.TheCaster)
+    False ->
+      shown.place_of(picture:, unit_id: primary_target, now_ms:)
+      |> result.map(fn(place) {
+        area.AnotherUnit(pose: Pose(at: area.point_of(place), yaw: 0.0))
+      })
+  })
+  let primary = case anchor, primary, primary_pose {
+    area.FixedAtTarget, area.AnotherUnit(..), Some(pose) ->
+      area.AnotherUnit(pose:)
+    area.FixedAtTarget, area.AnotherUnit(..), None
+    | area.FixedAtTarget, area.TheCaster, _
+    | area.FollowsCaster, _, _
+    | area.FixedAtCaster, _, _
+    | area.FollowsTarget, _, _
+    -> primary
+  }
+  area.centre_of(anchor:, caster: attacker.pose, started_at:, primary:)
+}
+
+/// The units inside the area of a periodic Proxy's tick as the picture shows them now, in
+/// the area row's order: the spell's area around the pose the cast started at, or the pose
+/// the target stood in at the go for an area fixed at its target, in the area of the phase
+/// that armed the row. Nobody for a spell with no area row, a phase no hit row names or a
+/// primary target the picture lost. It strikes no blow and rolls nothing.
+pub fn select_proxy_tick(
+  asked asked: ProxyTickAsked,
+  attacker attacker: Attacker,
+  picture picture: Picture,
+  areas areas: Areas,
+  now_ms now_ms: Int,
+) -> List(Int) {
+  case spell_area.of_spell(areas:, spell4_id: asked.spell4_id) {
+    Error(Nil) -> []
+    Ok(found) ->
+      case
+        found.row,
+        centre_of_cast(
+          anchor: found.anchor,
+          attacker:,
+          picture:,
+          primary_target: asked.primary_target,
+          started_at: asked.started_at,
+          primary_pose: asked.primary_pose,
+          now_ms:,
+        )
+      {
+        Some(row), Ok(centre) ->
+          area_selection(
+            attacker:,
+            picture:,
+            area: found,
+            phase: asked.phase,
+            row:,
+            centre:,
+            seed: proxy_tick_seed(asked:),
+            now_ms:,
+          )
+        _, _ -> []
+      }
+  }
+}
+
+/// The seed of a tick's random order: the cast and the tick mixed, not added, so one cast's
+/// tick 2 and the next cast's tick 1 do not share it. A server choice: the client names the
+/// Random order and ranks nothing.
+fn proxy_tick_seed(asked asked: ProxyTickAsked) -> Int {
+  asked.cast_id * 0x10000 + asked.tick
 }
 
 /// The units of the area at go `phase`, none for a go whose phase no hit row names
@@ -1346,6 +1436,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Strikes",
       missing: "the order, at another watcher's connection, between a creature's health news and the cast's damage message: two senders tell them, and no order holds between them",
+    ),
+    gap.Entry(
+      area: "Strikes",
+      missing: "the order of the units a tick of a periodic Proxy aimed at the area finds when its area row picks at random: the client names the order and ranks nothing, so the server seeds it by the cast and the tick; the units of such a tick are those inside the area over the picture at the tick, since the client runs no Proxy",
     ),
   ]
 }

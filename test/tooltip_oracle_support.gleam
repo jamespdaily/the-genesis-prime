@@ -347,6 +347,7 @@ pub fn pressed_at(
           at_ms:,
           asked: support.goes_asked(effects: raw),
           spends:,
+          found: support.proxy_tick_asks(effects: raw),
           effects:,
         ),
       ))

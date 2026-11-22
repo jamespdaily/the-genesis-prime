@@ -305,6 +305,7 @@ fn trace(
       | cast_state.CancelTimer(..)
       | cast_state.Strike(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.Log(..)
       | cast_state.Pay(..)
       | cast_state.Gain(..)
@@ -382,6 +383,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast_state.ShortcutCast(..)
     | cast_state.QuestAdvanced(..)
     | cast_state.TickStrike(..)
+    | cast_state.FindProxyTickUnits(..)
     | cast_state.StealthChanged(..) -> False
   }
 }

@@ -49,6 +49,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/set
+import gleam/string
 import owned_test
 import prerequisite_support as prerequisites
 
@@ -993,6 +994,72 @@ pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
     )
   assert child_times(run: second_cast_run) == [3500, 5500, 7500]
     as "every child is the second cast's: a tick every 2000 ms from its press at 1500"
+  // A Proxy row aimed at the area ticks on the cast's primary target, the caster, and goes
+  // with that node: the second cast pushes the first off the caster at the stack's cap, the
+  // first cast's tick timer is cancelled, and only the second cast asks for units.
+  let area_plans =
+    support.plans_of([
+      spell_plan.Spell(
+        ..area_proxy_spell(schedule: every_two_seconds()),
+        stack: lasting_stack_of_one(),
+      ),
+    ])
+  let area_first =
+    pressed(
+      plans: area_plans,
+      caster: support.caster(),
+      struck: [],
+      answer: held,
+    )
+  let assert [#(_, area_first_effects)] = area_first.steps
+  let assert [#(area_first_tick, 2000), ..] =
+    support.started_timers(effects: area_first_effects)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: area_plans,
+      state: area_first.state,
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1500,
+    )
+  let #(state, area_second_effects, _) =
+    settled(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 1500,
+      struck: [],
+      answer: held,
+    )
+  assert list.contains(
+    support.cancelled_timers(effects: area_second_effects),
+    area_first_tick,
+  )
+    as "the area row's tick timer is cancelled with the node it rides on"
+  let area_second_run =
+    ran(
+      caster: support.caster(),
+      run: Run(
+        state:,
+        steps: [#(1500, area_second_effects)],
+        pending: pending_after(
+          pending: area_first.pending,
+          effects: area_second_effects,
+          at: 1500,
+        ),
+        held: [],
+      ),
+      until_ms: 20_000,
+      struck: [],
+      answer: held,
+    )
+  let area_second_id = support.pressed_id(effects: area_second_effects)
+  assert list.map(proxy_asks(run: area_second_run), fn(asked) {
+      #(asked.cast_id, asked.tick)
+    })
+    == [#(area_second_id, 1), #(area_second_id, 2), #(area_second_id, 3)]
+    as "every ask is the second cast's: a tick every 2000 ms from its press at 1500, three of them"
   // An open row on the caster ends the same way: the second cast pushes the first off at the
   // stack's cap, and only the second cast's open row ticks.
   let open_capped =
@@ -1236,6 +1303,44 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
   assert first_tick_frames(63_000, open_row)
     == [spell_effect_tick.message_id, spell_started.message_id]
     as "above the heal's, after"
+  // An area Proxy row beside a heal row on the caster and a damage row on creature 10: the
+  // area row ticks on the caster, the cast's primary target, so its ask comes in the caster's
+  // unit order and by row id among the caster's rows, before the creature's strike.
+  let marks_with_area_row = fn(proxy_id) {
+    let struck = [hit_ticking(unit_id: 10, ticking: surge_ticking())]
+    let spell =
+      support.with_effects(spell: surge(), kinds: [
+        spell_plan.HealEffect(health_heal(schedule: every_two_seconds())),
+        spell_plan.ProxyEffect(area_proxy_row_of(
+          effect_id: proxy_id,
+          schedule: every_two_seconds(),
+        )),
+      ])
+    let run =
+      pressed(
+        plans: support.plans_of([spell]),
+        caster: healing_caster(),
+        struck:,
+        answer: held,
+      )
+      |> fn(run) {
+        ran(
+          caster: healing_caster(),
+          run:,
+          until_ms: 3000,
+          struck:,
+          answer: held,
+        )
+      }
+    let assert Ok(#(3000, effects)) = list.last(run.steps)
+    tick_marks(effects:)
+  }
+  assert marks_with_area_row(61_000)
+    == ["find 7 61000", "heal tick", "strike 10 96125"]
+    as "the area row of an id below the heal's asks before the heal tick, and the caster's rows come before creature 10's"
+  assert marks_with_area_row(63_000)
+    == ["heal tick", "find 7 63000", "strike 10 96125"]
+    as "one above the heal's asks after it, still before the creature's strike"
 }
 
 pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
@@ -1370,6 +1475,52 @@ pub fn a_restarted_creature_refuses_the_old_lifes_tick_test() -> Nil {
 
 pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
   use <- owned_test.run(5000)
+  // A periodic Proxy aimed at the area: a tick that finds the caster dead asks for no units
+  // (the child's caster condition refuses a dead caster), the ticks go on, and the caster's
+  // death cancels the row's timers with the cast's.
+  let area_run =
+    proxy_run(
+      spell: area_proxy_spell(schedule: every_two_seconds()),
+      until_ms: 1500,
+    )
+  let assert [area_tick] =
+    support.timers_matching(state: area_run.state, matching: fn(due) {
+      case due {
+        cast_state.Tick(..) -> True
+        _ -> False
+      }
+    })
+    as "the go armed the area row's first tick"
+  let #(_, dead_tick) =
+    support.fired_raw_as(
+      caster: support.dead_caster(),
+      state: area_run.state,
+      timer: area_tick,
+      at: 3000,
+    )
+  assert support.proxy_tick_asks(effects: dead_tick) == []
+    as "a dead caster asks for no units"
+  assert list.length(
+      list.filter(support.logs(effects: dead_tick), fn(line) {
+        string.contains(line.1, "caster that is dead")
+      }),
+    )
+    == 1
+    as "and the tick leaves its debug line"
+  assert support.started_timers(effects: dead_tick) != []
+    as "the next tick is armed"
+  let #(_, area_dying) =
+    cast.died(
+      cast: area_run.state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 3500),
+    )
+  let area_cancelled = support.cancelled_timers(effects: area_dying)
+  assert area_run.pending != []
+  assert list.all(area_run.pending, fn(pending) {
+    list.contains(area_cancelled, pending.1)
+  })
+    as "the death cancels the area row's next tick and its node's end"
   let run = surge_run_until(until_ms: 3000)
   let #(_, effects) =
     cast.died(
@@ -1946,6 +2097,60 @@ fn proxy_spell(schedule schedule: ticking.Schedule) -> Spell {
   support.with_effects(spell: surge(), kinds: [
     spell_plan.ProxyEffect(proxy_row_of(effect_id: 121_345, schedule:)),
   ])
+}
+
+/// The Proxy row of `proxy_row_of` aimed at the area. A cast of it ticks on the cast's
+/// primary target, the caster in these scenes, and each tick asks for the units inside the
+/// area (`FindProxyTickUnits`); the scenes leave the asks unanswered.
+fn area_proxy_row_of(
+  effect_id effect_id: Int,
+  schedule schedule: ticking.Schedule,
+) -> spell_plan.Proxy {
+  spell_plan.Proxy(
+    ..proxy_row_of(effect_id:, schedule:),
+    target: spell_plan.OnEachStruck,
+  )
+}
+
+/// The planted base 3 spell with a periodic Proxy row aimed at the area of this schedule.
+fn area_proxy_spell(schedule schedule: ticking.Schedule) -> Spell {
+  support.with_effects(spell: surge(), kinds: [
+    spell_plan.ProxyEffect(area_proxy_row_of(effect_id: 121_345, schedule:)),
+  ])
+}
+
+/// The Proxy ticks of the run that asked for units, in order.
+fn proxy_asks(run run: Run) -> List(cast_state.ProxyTickAsked) {
+  list.flat_map(run.steps, fn(step) { support.proxy_tick_asks(effects: step.1) })
+}
+
+/// The ticks the effects land, in order: a damage tick as `strike unit row`, an area
+/// Proxy's ask as `find unit row` and a heal tick's 0x7f8 as `heal tick`.
+fn tick_marks(effects effects: List(Effect)) -> List(String) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast_state.TickStrike(asked:) ->
+        Ok(
+          "strike "
+          <> int.to_string(asked.unit_id)
+          <> " "
+          <> int.to_string(asked.effect_id.value),
+        )
+      cast_state.FindProxyTickUnits(asked:) ->
+        Ok(
+          "find "
+          <> int.to_string(asked.primary_target)
+          <> " "
+          <> int.to_string(asked.effect_id.value),
+        )
+      cast_state.Send(frame:) ->
+        case frame.message_id == spell_effect_tick.message_id {
+          True -> Ok("heal tick")
+          False -> Error(Nil)
+        }
+      _ -> Error(Nil)
+    }
+  })
 }
 
 /// Row 82888's schedule (delay 1000, tickTime 1000, durationTime 4000), as a Proxy row's.

@@ -2735,7 +2735,7 @@ pub fn the_node_of_a_holder_with_only_an_open_proxy_lasts_until_removed_or_until
         aimed_at_caster(
           reached: [],
           restrictions: [],
-          ticking: cast_tick.proxies_ticking(proxies:, caster:),
+          ticking: support.proxies_ticking_on_the_caster(proxies:, caster:),
         )
       let assert Ok(node) =
         cast_tick.node_of(
