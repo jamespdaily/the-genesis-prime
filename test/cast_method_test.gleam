@@ -1073,6 +1073,7 @@ fn count_logs(effects effects: List(cast_state.Effect)) -> Int {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
     }
   })

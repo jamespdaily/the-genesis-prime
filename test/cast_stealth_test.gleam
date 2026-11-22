@@ -141,6 +141,7 @@ fn trace(effects effects: List(Effect)) -> List(String) {
       | cast_state.CancelTimer(..)
       | cast_state.Strike(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.Log(..)
       | cast_state.Pay(..)
       | cast_state.Gain(..)
@@ -169,6 +170,7 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
       | cast_state.CancelTimer(..)
       | cast_state.Strike(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.Log(..)
       | cast_state.Pay(..)
       | cast_state.Gain(..)
@@ -326,6 +328,7 @@ fn goes_apart(
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> so_far
     }
   })

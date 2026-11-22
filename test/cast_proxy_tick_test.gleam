@@ -19,23 +19,28 @@
 //// planted spells with no rows of their own.
 
 import cast_support as support
+import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking.{type Schedule, Schedule, Ticks}
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import owned_test
+import place_support
 import prerequisite_support as prerequisites
 import spell_tables
 
@@ -662,7 +667,7 @@ pub fn a_periodic_proxy_gives_the_caster_node_its_life_and_lists_no_effect_in_th
       reach_logs: [],
       controls: [],
       restrictions: [],
-      ticking: cast_tick.proxies_ticking(proxies: [proxy], caster:),
+      ticking: support.proxies_ticking_on_the_caster(proxies: [proxy], caster:),
       rolls_left: [],
     )
   assert cast_tick.nodes_aimed(aimed:) == [caster.unit_id]
@@ -1053,4 +1058,765 @@ pub fn each_stack_of_a_child_that_holds_an_open_proxy_keeps_one_tick_timer_and_t
     as "each of the five live stacks starts four children in a second (tickTime 250)"
   assert list.length(support.starts_of(steps:, spell4_id: child_spell4_id)) == 5
     as "the holder cast one stack at each of its five ticks"
+}
+
+// ---- a periodic Proxy aimed at the area ----
+//
+// The scenes plant a field: a holder of no cast time that a once Proxy of the pressed
+// ability starts on the caster, holding a periodic Proxy aimed at each struck unit. The
+// connection's answer to each ask is a script of the units found at each tick
+// (`cast_support.run_timers_finding` splices the answer's effects in place of the ask, as
+// `connection/casting.carried_out` does). Expected values: texts 574032 and 306769 ("apply
+// ... to foes inside the field every Ns": the units are found at each tick), and the rule's
+// own doc comments.
+
+/// A Proxy aimed at each struck unit, in every phase, that casts `named` at each tick of
+/// `schedule`.
+fn area_periodic(
+  schedule schedule: Schedule,
+  condition condition: spell_plan.Condition,
+  named named: Spell,
+) -> Proxy {
+  Proxy(
+    ..periodic(schedule:, condition:, named:),
+    target: spell_plan.OnEachStruck,
+  )
+}
+
+/// Four ticks 500 ms apart: at 500, 1000, 1500 and 2000 after the go.
+fn four_ticks() -> Schedule {
+  Schedule(delay_ms: 0, tick_ms: 500, duration_ms: 2000, count: Ticks(4))
+}
+
+/// The pressed ability, whose once Proxy starts the holder of `proxies` on the caster.
+fn ability_over(proxies proxies: List(Proxy)) -> Spell {
+  holding(
+    proxies: [once(named: holder(proxies:))],
+    spell4_id: ability_spell4_id,
+    base: 3,
+  )
+}
+
+/// The answer of the connection to an ask: the units listed for its tick, none for a tick the
+/// script does not name.
+fn found_in(
+  script script: List(#(Int, List(Int))),
+) -> fn(cast_state.ProxyTickAsked) -> List(Int) {
+  fn(asked: cast_state.ProxyTickAsked) {
+    list.key_find(script, asked.tick)
+    |> result.unwrap([])
+  }
+}
+
+/// The step the effects belong to, as time and effects.
+fn as_steps(fired fired: List(support.Fired)) -> List(#(Int, List(Effect))) {
+  list.map(fired, fn(step) { #(step.at_ms, step.effects) })
+}
+
+/// The pose of a caster's place.
+fn pose_of(caster caster: Caster) -> area.Pose {
+  area.pose_of(place: caster.place)
+}
+
+/// The caster standing 50 m from where `support.caster()` stands.
+fn moved_caster() -> Caster {
+  cast_state.Caster(
+    ..support.caster(),
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 4655.65,
+      y: -7.571,
+      z: 494.996,
+    ),
+  )
+}
+
+pub fn a_periodic_proxy_aimed_at_the_area_asks_for_its_units_at_each_tick_and_starts_a_child_on_each_with_that_unit_as_primary_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([
+      ability_over(proxies: [
+        area_periodic(
+          schedule: four_ticks(),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+    ])
+  let #(state, effects) = pressed(plans:, caster: support.caster())
+  let assert [#(_, holder_start)] =
+    support.starts_of(
+      steps: [#(press_ms, effects)],
+      spell4_id: holder_spell4_id,
+    )
+    as "the ability's Proxy starts the holder at the press"
+  assert list.map(support.started_in(effects:), fn(start) { start.spell4_id })
+    == [holder_spell4_id]
+    as "nothing is cast at the go: the first units are found one tick on"
+  let run = fn(until_ms) {
+    support.run_timers_finding(
+      caster: support.caster(),
+      state:,
+      effects:,
+      from_ms: press_ms,
+      until_ms:,
+      units: dict.new(),
+      found_by: found_in(script: [#(1, [21, 22]), #(2, [23])]),
+    ).1
+  }
+  assert run(1499) == [] as "no ask before the first tick, 500 ms after the go"
+  let fired = run(2000)
+  let assert [first, second] = fired
+    as "ticks 1 and 2 land at 1500 and 2000 and ask once each"
+  assert first.at_ms == 1500 && second.at_ms == 2000
+  assert first.found
+    == [
+      cast_state.ProxyTickAsked(
+        cast_id: holder_start.cast_id,
+        spell4_id: id.Spell4Id(holder_spell4_id),
+        effect_id: Spell4EffectsId(121_345),
+        phase: 0,
+        primary_target: support.caster().unit_id,
+        started_at: pose_of(caster: support.caster()),
+        primary_pose: None,
+        go: 1,
+        tick: 1,
+      ),
+    ]
+    as "the ask names the cast, the holder, the row, the phase of the go that armed it, the caster as the unit the row ticks on, the pose the cast started at, tick 1 and go 1"
+  assert { second.found |> list.map(fn(asked) { asked.tick }) } == [2]
+    as "the second ask is tick 2 of the same go"
+  let children =
+    support.starts_of(steps: as_steps(fired:), spell4_id: child_spell4_id)
+  assert support.times_of(starts: children) == [1500, 1500, 2000]
+    as "a child for each unit found, at the tick that found it"
+  assert list.map(children, fn(child) { { child.1 }.primary_target_unit_id })
+    == [21, 22, 23]
+    as "each child is made on its unit as primary target, in the order the units were found"
+  list.each(children, fn(child) {
+    let start = child.1
+    assert start.parent_spell4_id == holder_spell4_id
+      && start.root_spell4_id == ability_spell4_id
+      as "opcode.0x7ff.root_parent: the holder is the parent and the pressed spell the root, carried by the holder"
+  })
+  let ids = list.map(children, fn(child) { { child.1 }.cast_id })
+  assert list.unique(ids) == ids && !list.contains(ids, holder_start.cast_id)
+    as "each child is a cast of its own"
+  assert support.cast_lines(frames: support.writes(effects: first.effects))
+    == [
+      "started k1 71371 root 90001 parent 90100",
+      "went k1 p0",
+      "finished k1",
+      "started k2 71371 root 90001 parent 90100",
+      "went k2 p0",
+      "finished k2",
+    ]
+    as "each child's own go and finish follow its start, as for any child"
+}
+
+pub fn a_tick_that_finds_nobody_starts_no_child_closes_its_round_and_the_next_tick_is_armed_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([
+      ability_over(proxies: [
+        area_periodic(
+          schedule: four_ticks(),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+    ])
+  let #(state, effects) = pressed(plans:, caster: support.caster())
+  let holder_id =
+    support.starts_of(
+      steps: [#(press_ms, effects)],
+      spell4_id: holder_spell4_id,
+    )
+    |> list.map(fn(start) { { start.1 }.cast_id })
+  let assert [holder_id] = holder_id as "the holder started once"
+  let run = fn(until_ms) {
+    support.run_timers_finding(
+      caster: support.caster(),
+      state:,
+      effects:,
+      from_ms: press_ms,
+      until_ms:,
+      units: dict.new(),
+      found_by: found_in(script: []),
+    )
+  }
+  let #(after_tick_2, fired) = run(2000)
+  assert support.starts_of(steps: as_steps(fired:), spell4_id: child_spell4_id)
+    == []
+    as "nobody inside: no child starts"
+  let assert Ok(holder) =
+    cast_state.holder_of(cast: after_tick_2, cast_id: holder_id)
+  let assert Ok(row) =
+    dict.get(
+      holder.ticking,
+      cast_state.tick_key(
+        unit_id: support.caster().unit_id,
+        effect_id: Spell4EffectsId(121_345),
+      ),
+    )
+    as "the row is still held"
+  assert cast_state.ticking_open(row:) == 0
+    && cast_state.ticking_tick(row:) == 2
+    as "the round the ask opened is closed, so a node end that follows is not held"
+  assert support.tick_timers(state: after_tick_2) == 1
+    as "the next tick is armed"
+  let #(after_tick_4, steps) = run(3000)
+  assert support.tick_timers(state: after_tick_4) == 0
+    as "the last tick arms none"
+  assert list.flat_map(steps, fn(step) {
+      support.finished_ids(support.writes(effects: step.effects))
+    })
+    == [holder_id]
+    as "the node end at the last tick's time finishes the holder: no round is left holding it"
+}
+
+pub fn the_ask_of_a_lingering_field_carries_the_pose_the_cast_started_at_and_the_phase_it_was_armed_in_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The first tick's ask after the go of a spell pressed by `press_caster` whose gos struck
+  // `struck_units`, answered with these poses at the go, and fired by `tick_caster`.
+  let first_ask = fn(
+    spell: Spell,
+    press_caster: Caster,
+    tick_caster: Caster,
+    struck_units: List(Int),
+    poses: dict.Dict(Int, area.Pose),
+  ) {
+    let #(state, raw) =
+      support.pressed_raw_in(
+        plans: support.plans_of([spell]),
+        state: cast_state.new(),
+        caster: press_caster,
+        bag_index: support.started_bag_index,
+        target: 0,
+        at: press_ms,
+      )
+    let #(state, _) =
+      support.answered_posed(
+        caster: press_caster,
+        state:,
+        effects: raw,
+        at: press_ms,
+        struck: support.hits(struck_units),
+        rolls: [],
+        poses:,
+      )
+    let assert [timer, ..] = tick_timer_ids(state:) as "the go armed a tick"
+    let #(_, ticked) =
+      support.fired_raw_as(
+        caster: tick_caster,
+        state:,
+        timer:,
+        at: press_ms + 500,
+      )
+    #(support.proxy_tick_asks(effects: ticked), state)
+  }
+  let field =
+    Spell(
+      ..holder(proxies: [
+        area_periodic(
+          schedule: support.open_schedule(delay_ms: 0, tick_ms: 500),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+      aura_ms: Some(5000),
+    )
+  // On the caster, which has walked 50 m away before the tick.
+  let #(asks, state) =
+    first_ask(field, support.caster(), moved_caster(), [], dict.new())
+  let assert [on_the_caster] = asks as "one ask for the one row"
+  assert on_the_caster.started_at == pose_of(caster: support.caster())
+    && on_the_caster.started_at != pose_of(caster: moved_caster())
+    as "the ask holds the pose the cast started at, not the caster's pose at the tick (`Live.started_at`, 0x14053a210.held_position)"
+  assert on_the_caster.primary_pose == None && on_the_caster.phase == 0
+    as "a field on the caster holds no primary pose and the phase of the go that armed it"
+  assert dict.size(state.lingering) == 1 && dict.size(state.casts) == 0
+    as "the field has finished its go and lingers: the row, not the holder, carries the pose"
+  // On a struck creature, whose pose at the go the round's answer gave.
+  let at_the_go = area.Pose(at: area.Point(x: 12.0, z: -4.0), yaw: 1.0)
+  let on_each_struck =
+    holding(
+      proxies: [Proxy(..once(named: field), target: spell_plan.OnEachStruck)],
+      spell4_id: ability_spell4_id,
+      base: 3,
+    )
+  let #(asks, _) =
+    first_ask(
+      on_each_struck,
+      support.caster(),
+      support.caster(),
+      [21],
+      dict.from_list([#(21, at_the_go)]),
+    )
+  let assert [on_the_creature] = asks as "one ask for the one row"
+  assert on_the_creature.primary_target == 21
+    && on_the_creature.primary_pose == Some(at_the_go)
+    as "a field on a struck creature ticks on it and holds the pose it stood in at the go"
+  // Two gos, 300 ms apart, both arming the row (phaseFlags -1): the second go arms it again.
+  let two_gos = Spell(..field, phase_delays_ms: [0, 300])
+  let #(state, effects) =
+    pressed(plans: support.plans_of([two_gos]), caster: support.caster())
+  let #(_, fired) =
+    support.run_timers_finding(
+      caster: support.caster(),
+      state:,
+      effects:,
+      from_ms: press_ms,
+      until_ms: press_ms + 800,
+      units: dict.new(),
+      found_by: found_in(script: []),
+    )
+  let asks = list.flat_map(fired, fn(step) { step.found })
+  let assert [latest] = asks
+    as "the second go cancelled the first go's tick and armed its own, which lands 500 ms after it"
+  assert latest.phase == 1 && latest.go == 2
+    as "the ask holds the phase of the latest go and which go armed the row"
+}
+
+pub fn the_last_tick_of_a_field_asks_while_its_node_end_is_due_and_the_node_waits_for_the_answer_then_ends_with_the_0x7fe_alone_test() -> Nil {
+  use <- owned_test.run(5000)
+  // An aura of 2000 ms holding an open Proxy of tickTime 500 aimed at the area: ticks at 500,
+  // 1000, 1500 and 2000, the last at the node's end (`ticking.ending_with_node`: a tick due at
+  // the end lands before the node ends). The tick timer and the `NodesEnd` timer are two
+  // timers at 2000, and the driven clock keeps list order for equal times, so the test fires
+  // the `NodesEnd` timer alone with the last tick overdue, as a connection fallen behind
+  // does (cast_tick_test.ticks_due_together_go_in_key_order_test): the rule fires the due
+  // tick, whose ask opens a round, and then ends the node, which the open round must hold.
+  let field =
+    Spell(
+      ..holder(proxies: [
+        area_periodic(
+          schedule: support.open_schedule(delay_ms: 0, tick_ms: 500),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+      aura_ms: Some(2000),
+    )
+  let #(state, effects) =
+    pressed(plans: support.plans_of([field]), caster: support.caster())
+  let holder_id = support.pressed_id(effects:)
+  let found = found_in(script: [#(4, [21])])
+  let #(before_the_end, _) =
+    support.run_timers_finding(
+      caster: support.caster(),
+      state:,
+      effects:,
+      from_ms: press_ms,
+      until_ms: press_ms + 1999,
+      units: dict.new(),
+      found_by: found,
+    )
+  let assert [node_end] =
+    support.timers_matching(state: before_the_end, matching: fn(due) {
+      case due {
+        cast_state.NodesEnd(..) -> True
+        _ -> False
+      }
+    })
+    as "the aura's node end is armed"
+  assert tick_timer_ids(state: before_the_end) != []
+    as "the last tick's timer is armed too"
+  let #(state, raw) =
+    support.fired_raw_as(
+      caster: support.caster(),
+      state: before_the_end,
+      timer: node_end,
+      at: press_ms + 2000,
+    )
+  assert list.map(support.proxy_tick_asks(effects: raw), fn(asked) {
+      asked.tick
+    })
+    == [4]
+    as "the node end's firing lands the overdue last tick, which asks"
+  assert support.finished_ids(support.writes(effects: raw)) == []
+    && dict.size(state.lingering) == 1
+    as "the open round holds the node: no 0x7fe is written before the answer, and the cast is still held"
+  let #(state, answered) =
+    support.answered_finding(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: press_ms + 2000,
+      struck_of: fn(_) { [] },
+      rolls: [],
+      poses: dict.new(),
+      units: dict.new(),
+      found_by: Some(found),
+    )
+  assert support.cast_lines(frames: support.writes(effects: answered))
+    == [
+      "started k1 71371 root 90100 parent 90100",
+      "went k1 p0",
+      "finished k1",
+      "finished k2",
+    ]
+    as "the child of the last tick comes before the field's 0x7fe, which is alone (fact opcode.0x7fe: the client's FinishCast destroys every node)"
+  assert list.map(support.writes(effects: answered), fn(frame) {
+      frame.message_id
+    })
+    |> list.contains(spell_targets_removed.message_id)
+    == False
+    as "no 0x811 comes with it: a lingering cast's last node ends by time with the 0x7fe alone"
+  assert dict.size(state.lingering) == 0
+    && dict.size(state.casts) == 0
+    && support.finished_ids(support.writes(effects: answered))
+    |> list.contains(holder_id)
+    as "the field is gone once the answer closed the round"
+}
+
+pub fn an_answer_for_a_row_that_was_dropped_or_armed_again_starts_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let field =
+    Spell(
+      ..holder(proxies: [
+        area_periodic(
+          schedule: support.open_schedule(delay_ms: 0, tick_ms: 500),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+      phase_delays_ms: [0, 1000],
+    )
+  let caster = support.caster()
+  let #(state, _) = pressed(plans: support.plans_of([field]), caster:)
+  // Tick 1 of go 1 is due at 1500; fired by itself it asks and leaves its round open.
+  let assert [tick_timer] = tick_timer_ids(state:)
+    as "go 1 armed the first tick"
+  let #(state, raw) =
+    support.fired_raw_as(caster:, state:, timer: tick_timer, at: press_ms + 500)
+  let assert [asked] = support.proxy_tick_asks(effects: raw) as "the tick asks"
+  let answered = fn(state: State) {
+    support.answered_finding(
+      caster:,
+      state:,
+      effects: [cast_state.FindProxyTickUnits(asked:)],
+      at: press_ms + 600,
+      struck_of: fn(_) { [] },
+      rolls: [],
+      poses: dict.new(),
+      units: dict.new(),
+      found_by: Some(fn(_) { [21, 22] }),
+    )
+  }
+  let row_of = fn(state: State) {
+    let assert Ok(holder) =
+      cast_state.holder_of(cast: state, cast_id: asked.cast_id)
+    dict.get(
+      holder.ticking,
+      cast_state.tick_key(
+        unit_id: asked.primary_target,
+        effect_id: asked.effect_id,
+      ),
+    )
+  }
+  let control = answered(state)
+  assert list.length(support.started_in(effects: control.1)) == 2
+    as "the control: an answer for the row as it was asked starts a child on each unit"
+  list.each(
+    [
+      #(
+        "the node was removed",
+        cast_tick.ticks_dropped(
+          cast: state,
+          cast_id: asked.cast_id,
+          unit_id: asked.primary_target,
+        ).0,
+        "every path that drops a node drops its ticks (ticks_dropped)",
+      ),
+      #(
+        "the cast finished or its persistence ended",
+        cast_tick.ticks_all_dropped(cast: state, cast_id: asked.cast_id).0,
+        "a finish, a persistence end and a death cancel every tick (ticks_all_dropped)",
+      ),
+    ],
+    fn(row) {
+      let #(what, dropped, reason) = row
+      let #(_, answer) = answered(dropped)
+      assert answer == []
+        as {
+          "the row was dropped between ask and answer ("
+          <> what
+          <> "): the answer starts nothing and writes nothing, as `cast.ticked` does for a damage tick; "
+          <> reason
+        }
+    },
+  )
+  // A later go arms the row again while the ask waits: the go of phase 1, due at 2000.
+  let assert Ok(open_row) = row_of(state)
+  assert cast_state.ticking_open(row: open_row) == 1
+    && cast_state.ticking_go(row: open_row) == 1
+    as "the ask holds the row's round open for go 1"
+  let assert [go_timer] =
+    support.timers_matching(state:, matching: fn(due) {
+      case due {
+        cast_state.Go(..) -> True
+        _ -> False
+      }
+    })
+    as "go 2 is waiting"
+  let #(state, go_raw) =
+    support.fired_raw_as(caster:, state:, timer: go_timer, at: press_ms + 1000)
+  let #(state, _) =
+    support.answered_with_no_targets(
+      state:,
+      effects: go_raw,
+      at: press_ms + 1000,
+    )
+  let assert Ok(armed_again) = row_of(state)
+  assert cast_state.ticking_go(row: armed_again) == 2
+    && cast_state.ticking_open(row: armed_again) == 1
+    as "go 2 armed the row again from its own time, keeping the open round of the earlier schedule"
+  let #(state, answer) = answered(state)
+  assert support.started_in(effects: answer) == []
+    as "the answer is for go 1 and the row is go 2's: no child starts"
+  let assert Ok(closed) = row_of(state)
+  assert cast_state.ticking_open(row: closed) == 0
+    as "the round of the earlier schedule closes, so the new schedule's node end is not held"
+}
+
+pub fn a_periodic_area_proxys_gates_are_read_at_the_tick_the_casters_before_the_ask_and_each_units_after_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let combat_gate = prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
+  // Prerequisite type 38 comparison 1: the first unit is the creature of this Creature2 row
+  // (`Prerequisite.prerequisiteTypeId.38`); a type 37 condition takes a roll a tick does not
+  // draw (`Prerequisite.prerequisiteTypeId.37`).
+  let creature_gate =
+    prerequisites.single(id: 3475, condition: #(38, 1, 0, 12_700))
+  let chance_gate = prerequisites.single(id: 4585, condition: #(37, 6, 0, 50))
+  let kinds =
+    dict.from_list([
+      #(21, prerequisite.NonPlayer(12_700)),
+      #(22, prerequisite.NonPlayer(1)),
+      #(23, prerequisite.NonPlayer(12_700)),
+    ])
+  let needs_the_dead = Spell(..child(), caster_death: spell_plan.MustBeDead)
+  list.each(
+    [
+      #(
+        "the caster passes its gate",
+        spell_plan.GatedOnCaster(gates: [combat_gate]),
+        child(),
+        in_combat(),
+        1,
+        [23, 22, 21],
+        0,
+        "control: the caster is in combat, so the tick asks and every unit found starts a child, in the order found",
+      ),
+      #(
+        "the caster's gate fails",
+        spell_plan.GatedOnCaster(gates: [combat_gate]),
+        child(),
+        support.caster(),
+        0,
+        [],
+        0,
+        "the caster is not in combat, so its gate fails at the tick: no ask and no line",
+      ),
+      #(
+        "the named spell refuses the caster's life",
+        spell_plan.Always,
+        needs_the_dead,
+        support.caster(),
+        0,
+        [],
+        1,
+        "the spell's caster condition needs a dead caster and the caster lives: no ask and the debug line",
+      ),
+      #(
+        "a target gate that one unit fails",
+        spell_plan.GatedOnCasterAndTarget(caster: [], target: creature_gate),
+        child(),
+        support.caster(),
+        1,
+        [23, 21],
+        0,
+        "the gate reads each unit found: 22 is a creature of another row, so a child starts on 23 and 21 in the order found",
+      ),
+      #(
+        "a target gate that needs a roll",
+        spell_plan.GatedOnCasterAndTarget(caster: [], target: chance_gate),
+        child(),
+        support.caster(),
+        1,
+        [],
+        3,
+        "a tick draws no roll, so a type 37 gate cannot be decided for any unit: no child and one debug line for each of the three",
+      ),
+    ],
+    fn(row) {
+      let #(what, condition, named, caster, asks, started, lines, reason) = row
+      let plans =
+        support.plans_of([
+          holder(proxies: [
+            area_periodic(schedule: four_ticks(), condition:, named:),
+          ]),
+        ])
+      let #(state, effects) = pressed(plans:, caster:)
+      let #(_, fired) =
+        support.run_timers_finding(
+          caster:,
+          state:,
+          effects:,
+          from_ms: press_ms,
+          until_ms: press_ms + 500,
+          units: kinds,
+          found_by: found_in(script: [#(1, [23, 22, 21])]),
+        )
+      let all = as_steps(fired:)
+      assert list.length(list.flat_map(fired, fn(step) { step.found })) == asks
+        as { what <> ": " <> reason }
+      assert list.map(
+          support.starts_of(steps: all, spell4_id: child_spell4_id),
+          fn(start) { { start.1 }.primary_target_unit_id },
+        )
+        == started
+        as { what <> ": " <> reason }
+      assert list.length(
+          list.flat_map(all, fn(step) { debug_lines(effects: step.1) }),
+        )
+        == lines
+        as { what <> ": " <> reason }
+    },
+  )
+}
+
+pub fn a_periodic_area_proxy_of_a_field_cast_on_another_unit_ticks_on_that_unit_and_stops_with_its_node_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The ability's Proxy starts the field on each unit its go struck (a Proxy aimed at the
+  // area), so the field's primary target is the creature 21, and the node of the field's
+  // ticking rows lives on it. A second periodic Proxy of the same field is aimed at the caster.
+  let at_the_caster =
+    Proxy(
+      ..periodic(
+        schedule: support.open_schedule(delay_ms: 0, tick_ms: 500),
+        condition: spell_plan.Always,
+        named: child(),
+      ),
+      effect_id: Spell4EffectsId(121_346),
+    )
+  let field =
+    holder(proxies: [
+      area_periodic(
+        schedule: support.open_schedule(delay_ms: 0, tick_ms: 500),
+        condition: spell_plan.Always,
+        named: child(),
+      ),
+      at_the_caster,
+    ])
+  let ability =
+    holding(
+      proxies: [Proxy(..once(named: field), target: spell_plan.OnEachStruck)],
+      spell4_id: ability_spell4_id,
+      base: 3,
+    )
+  let caster = support.caster()
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: support.plans_of([ability]),
+      state: cast_state.new(),
+      caster:,
+      bag_index: support.started_bag_index,
+      target: 0,
+      at: press_ms,
+    )
+  let #(state, effects) =
+    support.answered_as(
+      caster:,
+      state:,
+      effects: raw,
+      at: press_ms,
+      struck: support.hits([21]),
+      rolls: [],
+    )
+  let assert [#(_, field_start)] =
+    support.starts_of(
+      steps: [#(press_ms, effects)],
+      spell4_id: holder_spell4_id,
+    )
+    as "the field started once, on the creature"
+  assert field_start.primary_target_unit_id == 21
+  assert support.tick_timers_on(state:, unit_id: 21) == 1
+    && support.tick_timers_on(state:, unit_id: caster.unit_id) == 1
+    as "the area row ticks on the creature and the caster-aimed row on the caster"
+  let #(_, fired) =
+    support.run_timers_finding(
+      caster:,
+      state:,
+      effects:,
+      from_ms: press_ms,
+      until_ms: press_ms + 500,
+      units: dict.new(),
+      found_by: found_in(script: []),
+    )
+  assert list.flat_map(fired, fn(step) {
+      list.map(step.found, fn(asked) {
+        #(asked.primary_target, asked.effect_id)
+      })
+    })
+    == [#(21, Spell4EffectsId(121_345))]
+    as "the ask of the area row names the creature as the unit the row ticks on"
+  let #(dropped, _) =
+    cast_tick.ticks_dropped(
+      cast: state,
+      cast_id: field_start.cast_id,
+      unit_id: 21,
+    )
+  assert support.tick_timers_on(state: dropped, unit_id: 21) == 0
+    as "the creature's node is taken off, so the ticks that ride on it stop (cast_tick.ticks_dropped: every path that drops a node calls it)"
+  assert support.tick_timers_on(state: dropped, unit_id: caster.unit_id) == 1
+    as "the caster-aimed row of the same field keeps ticking on the caster"
+}
+
+pub fn a_late_timer_asks_once_for_each_due_tick_of_an_area_proxy_with_its_own_tick_number_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans =
+    support.plans_of([
+      holder(proxies: [
+        area_periodic(
+          schedule: four_ticks(),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+    ])
+  let caster = support.caster()
+  let #(state, _) = pressed(plans:, caster:)
+  let assert [timer] = tick_timer_ids(state:) as "tick 1's timer, due at 1500"
+  // Handled 900 ms late, at 2400: ticks 1 (1500) and 2 (2000) are due, tick 3 (2500) is not.
+  let #(state, raw) =
+    support.fired_raw_as(caster:, state:, timer:, at: press_ms + 1400)
+  assert list.map(support.proxy_tick_asks(effects: raw), fn(asked) {
+      #(asked.tick, asked.go)
+    })
+    == [#(1, 1), #(2, 1)]
+    as "each due tick asks once with its own tick number, none twice"
+  assert list.map(support.started_timers(effects: raw), fn(started) {
+      started.1
+    })
+    == [100]
+    as "the next tick is armed from the schedule, 100 ms on (tick 3 at 2500), not 500 ms from the late time"
+  let #(_, answered) =
+    support.answered_finding(
+      caster:,
+      state:,
+      effects: raw,
+      at: press_ms + 1400,
+      struck_of: fn(_) { [] },
+      rolls: [],
+      poses: dict.new(),
+      units: dict.new(),
+      found_by: Some(found_in(script: [#(1, [21]), #(2, [22, 23])])),
+    )
+  assert list.map(support.started_in(effects: answered), fn(start) {
+      start.primary_target_unit_id
+    })
+    == [21, 22, 23]
+    as "the children come in tick order, each tick's units in the order found"
 }

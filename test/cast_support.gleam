@@ -19,6 +19,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/heal_split
@@ -523,6 +524,7 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> []
     }
   })
@@ -551,6 +553,7 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.Activated(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
     }
   })
@@ -582,6 +585,7 @@ pub fn quest_advances(
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -610,6 +614,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -640,6 +645,7 @@ pub fn caster_change_ends(
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -670,6 +676,7 @@ pub fn caster_change_starts(
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -719,6 +726,7 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
     }
   })
@@ -757,6 +765,7 @@ pub fn throws(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
     }
   })
@@ -785,6 +794,7 @@ pub fn despawns(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
     }
   })
@@ -813,6 +823,7 @@ pub fn unit_states_told(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> False
     }
   })
@@ -1242,6 +1253,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1286,6 +1298,7 @@ pub fn activations(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..)
       | cast_state.QuestAdvanced(..) -> Error(Nil)
     }
@@ -1380,6 +1393,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1408,6 +1422,7 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1436,6 +1451,7 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast_state.GoAsked) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1464,6 +1480,7 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1492,6 +1509,7 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
@@ -1676,9 +1694,69 @@ pub fn answered_known(
   poses poses: dict.Dict(Int, Pose),
   units units: dict.Dict(Int, prerequisite.FirstUnit),
 ) -> #(State, List(Effect)) {
+  answered_finding(
+    caster:,
+    state:,
+    effects:,
+    at: ms,
+    struck_of:,
+    rolls:,
+    poses:,
+    units:,
+    found_by: None,
+  )
+}
+
+/// The same, with each `FindProxyTickUnits` answered as the connection answers it
+/// (`connection/casting.carried_out`) when a script `found_by` is given: the units it gives
+/// for the ask go to `cast.proxy_tick_units_found`, and the answer's effects are answered in
+/// the ask's place, so the order of the effects is the order the client gets. With none,
+/// the ask stays among the effects. The poses and kinds given are what the answer's target
+/// gate reads of the units.
+pub fn answered_finding(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+  struck_of struck_of: fn(cast_state.GoAsked) -> List(cast_state.Struck),
+  rolls rolls: List(Int),
+  poses poses: dict.Dict(Int, Pose),
+  units units: dict.Dict(Int, prerequisite.FirstUnit),
+  found_by found_by: Option(fn(cast_state.ProxyTickAsked) -> List(Int)),
+) -> #(State, List(Effect)) {
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, done) = so_far
     case effect {
+      cast_state.FindProxyTickUnits(asked:) ->
+        case found_by {
+          Some(found) -> {
+            let #(state, answer) =
+              cast.proxy_tick_units_found(
+                cast: state,
+                caster:,
+                now: at(ms:),
+                asked:,
+                units: found(asked),
+                poses:,
+                indexes: dict.new(),
+                first_units: units,
+              )
+            let #(state, more) =
+              answered_finding(
+                caster:,
+                state:,
+                effects: answer,
+                at: ms,
+                struck_of:,
+                rolls:,
+                poses:,
+                units:,
+                found_by:,
+              )
+            #(state, list.append(done, more))
+          }
+          None -> #(state, list.append(done, [effect]))
+        }
       cast_state.Strike(asked:) -> {
         let #(state, going) =
           cast.went(
@@ -1697,7 +1775,7 @@ pub fn answered_known(
           )
           |> then_procs_known(caster:, at: ms, poses:, units:, drawn: None)
         let #(state, more) =
-          answered_known(
+          answered_finding(
             caster:,
             state:,
             effects: going,
@@ -1706,6 +1784,7 @@ pub fn answered_known(
             rolls:,
             poses:,
             units:,
+            found_by:,
           )
         #(state, list.append(done, more))
       }
@@ -1744,12 +1823,14 @@ pub fn ids(frames frames: List(Frame)) -> List(Int) {
 
 /// One timer that fired: the time it fired at, the goes the rule asked for (before they
 /// were answered), the `SpendsResource` events its step raised for the held procs (before
-/// the connection matched them) and the effects of its answered step.
+/// the connection matched them), the Proxy ticks that asked for their units (before they
+/// were answered) and the effects of its answered step.
 pub type Fired {
   Fired(
     at_ms: Int,
     asked: List(cast_state.GoAsked),
     spends: Int,
+    found: List(cast_state.ProxyTickAsked),
     effects: List(Effect),
   )
 }
@@ -1843,6 +1924,8 @@ pub fn run_timers_posed(
       before: fn(_, caster) { caster },
       leaves_open: fn(_) { False },
       after: no_check,
+      units: dict.new(),
+      found_by: None,
     )
   #(state, fired)
 }
@@ -1876,6 +1959,8 @@ pub fn run_timers_scripted(
       before:,
       leaves_open:,
       after: no_check,
+      units: dict.new(),
+      found_by: None,
     )
   #(state, fired, caster)
 }
@@ -1911,6 +1996,8 @@ pub fn run_timers_until_as(
       before: fn(_, caster) { caster },
       leaves_open: fn(_) { False },
       after: no_check,
+      units: dict.new(),
+      found_by: None,
     )
   #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }))
 }
@@ -2035,6 +2122,35 @@ pub fn open_schedule(
   schedule
 }
 
+/// The timers the effects start, fired on the driven clock up to `until_ms` with each
+/// `FindProxyTickUnits` answered from `found_by` (`answered_finding`) and each go answered as
+/// a round that struck nobody: the state and each timer that fired.
+pub fn run_timers_finding(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  until_ms until_ms: Int,
+  units units: dict.Dict(Int, prerequisite.FirstUnit),
+  found_by found_by: fn(cast_state.ProxyTickAsked) -> List(Int),
+) -> #(State, List(Fired)) {
+  let #(state, fired, _, _) =
+    run_pending(
+      caster: cast_cost.after_payments(caster:, effects:),
+      state:,
+      pending: due_of(effects:, now_ms: from_ms),
+      struck_at: fn(_, _) { [] },
+      poses: dict.new(),
+      until_ms: Some(until_ms),
+      before: fn(_, caster) { caster },
+      leaves_open: fn(_) { False },
+      after: no_check,
+      units:,
+      found_by: Some(found_by),
+    )
+  #(state, fired)
+}
+
 /// The timers the effects start, each due its delay after the time.
 pub fn due_of(
   effects effects: List(Effect),
@@ -2133,6 +2249,8 @@ fn run_pending(
   before before: fn(Int, Caster) -> Caster,
   leaves_open leaves_open: fn(Int) -> Bool,
   after after: fn(State, Caster, Int) -> #(State, List(Effect)),
+  units units: dict.Dict(Int, prerequisite.FirstUnit),
+  found_by found_by: Option(fn(cast_state.ProxyTickAsked) -> List(Int)),
 ) -> #(State, List(Fired), Caster, List(#(Int, TimerId))) {
   let #(caster, state, fired, left) =
     fire_pending(
@@ -2149,7 +2267,7 @@ fn run_pending(
         let #(state, answered) = case leaves_open(due) {
           True -> #(state, raw)
           False ->
-            answered_each(
+            answered_finding(
               caster:,
               state:,
               effects: raw,
@@ -2157,6 +2275,8 @@ fn run_pending(
               struck_of: fn(asked) { struck_at(due, asked) },
               rolls: [],
               poses:,
+              units:,
+              found_by:,
             )
         }
         let #(state, checked) = after(state, caster, due)
@@ -2169,6 +2289,7 @@ fn run_pending(
             at_ms: due,
             asked: goes_asked(effects: raw),
             spends:,
+            found: proxy_tick_asks(effects: raw),
             effects:,
           ),
         )
@@ -2198,6 +2319,8 @@ pub fn run_timers_checked(
       before: fn(_, caster) { caster },
       leaves_open: fn(_) { False },
       after:,
+      units: dict.new(),
+      found_by: None,
     )
   #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }), left)
 }
@@ -2346,6 +2469,34 @@ pub fn raising_interrupt_armor_threshold(
   )
 }
 
+/// The Proxies of a go aimed at the caster, ticking on the caster as a go at its own start
+/// arms them.
+pub fn proxies_ticking_on_the_caster(
+  proxies proxies: List(spell_plan.Proxy),
+  caster caster: Caster,
+) -> List(cast_state.TickingOn) {
+  cast_tick.proxies_ticking(
+    proxies:,
+    caster:,
+    primary_target: caster.unit_id,
+    phase: 0,
+    started_at: area.pose_of(place: caster.place),
+    primary_pose: None,
+  )
+}
+
+/// The Proxy ticks that ask for their units among `effects`, in order.
+pub fn proxy_tick_asks(
+  effects effects: List(Effect),
+) -> List(cast_state.ProxyTickAsked) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast_state.FindProxyTickUnits(asked:) -> Ok(asked)
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// The tick strikes among `effects`, in order.
 pub fn tick_strikes(
   effects effects: List(Effect),
@@ -2353,7 +2504,8 @@ pub fn tick_strikes(
   list.filter_map(effects, fn(effect) {
     case effect {
       cast_state.TickStrike(asked:) -> Ok(asked)
-      cast_state.Send(..)
+      cast_state.FindProxyTickUnits(..)
+      | cast_state.Send(..)
       | cast_state.Tell(..)
       | cast_state.StartTimer(..)
       | cast_state.CancelTimer(..)

@@ -238,8 +238,8 @@ fn gain_rolls_needed(gain: spell_plan.Gain) -> Int {
 }
 
 /// The Proxies of the phase that the cast's n chooses and that have a unit to start a
-/// child on: one aimed at the caster always, one aimed at each struck unit when the
-/// round has a Hit.
+/// child on: one aimed at the caster always, a periodic one aimed at each struck unit
+/// always (`starts_a_child`), any other aimed at each struck unit when the round has a Hit.
 pub fn proxies_with_targets(
   spell spell: Spell,
   phase phase: Int,
@@ -254,11 +254,14 @@ pub fn proxies_with_targets(
 }
 
 /// Whether a Proxy has a unit to start a child on: one aimed at the caster always has, one
-/// aimed at each struck unit when the round has a Hit.
+/// aimed at each struck unit when the round has a Hit, and a periodic one is armed whether
+/// or not the round hit anything, since its units are found at each tick (a field's own go
+/// strikes nobody).
 fn starts_a_child(proxy proxy: Proxy, hit hit: Bool) -> Bool {
-  case proxy.target {
-    spell_plan.OnCaster -> True
-    spell_plan.OnEachStruck -> hit
+  case proxy.target, proxy.period {
+    spell_plan.OnCaster, _ -> True
+    spell_plan.OnEachStruck, Some(_) -> True
+    spell_plan.OnEachStruck, None -> hit
   }
 }
 

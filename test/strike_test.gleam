@@ -1696,6 +1696,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast_state.ShortcutCast(..)
         | cast_state.QuestAdvanced(..)
         | cast_state.TickStrike(..)
+        | cast_state.FindProxyTickUnits(..)
         | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
@@ -2565,4 +2566,284 @@ pub fn an_answer_after_the_deadline_that_broke_a_cast_logs_no_interrupt_test() -
     )
   assert went(effects: late) == [] && tells(effects: late) == []
     as "the late marked answer finds no round: nothing is written, so no line"
+}
+
+/// The ask of a tick of Nullifier's field Proxy (Spell4Effects 141450 in Spell4 58868) for
+/// cast 5: tick `tick`, the go that armed it the first, the phase 0, the caster (unit 7) the
+/// primary target and the cast started at the origin.
+fn field_tick(tick tick: Int) -> cast_state.ProxyTickAsked {
+  cast_state.ProxyTickAsked(
+    cast_id: 5,
+    spell4_id: Spell4Id(58_868),
+    effect_id: Spell4EffectsId(141_450),
+    phase: 0,
+    primary_target: 7,
+    started_at: strike_support.start_pose(),
+    primary_pose: None,
+    go: 1,
+    tick:,
+  )
+}
+
+/// Nullifier's field area from the fixture with `row` as its area row, `inside_by_go` as its
+/// hit shapes and `anchor` as its anchor.
+fn field_areas(
+  anchor anchor: area.Anchor,
+  row row: Option(area.Row),
+  inside_by_go inside_by_go: List(Option(area.Inside)),
+) -> spell_area.Areas {
+  let assert Ok(nullifier) =
+    spell_area.of_spell(
+      areas: spell_tables.fixture_areas(),
+      spell4_id: Spell4Id(58_868),
+    )
+    as "Nullifier's field is in the fixture's areas"
+  dict.insert(
+    spell_tables.fixture_areas(),
+    58_868,
+    spell_area.SpellArea(..nullifier, anchor:, row:, inside_by_go:),
+  )
+}
+
+/// A circle of `max_range` metres around the centre that takes the first 10 units in
+/// `order`.
+fn circle(max_range max_range: Float, order order: area.Order) -> area.Row {
+  area.Row(min_range: 0.0, max_range:, degrees: 360.0, target_count: 10, order:)
+}
+
+pub fn a_tick_of_a_field_selects_the_units_inside_its_box_and_range_around_the_pose_the_cast_started_at_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Nullifier's field 58868 (fixture): TelegraphDamage 2789 is a box 14 wide and 14 deep
+  // placed 8 m ahead of the start pose (flags 0x1000, FixedAtCaster), so it covers z -15 to -1
+  // and x -7 to 7, and Spell4AoeTargetConstraints 119 takes the nearest 10 within 20 m. The
+  // cast started at the origin facing -z; the caster has since walked to (30, 0) and faces +z,
+  // so a box that followed it would cover z 1 to 15 around x 30. A creature's hit radius is 3.
+  let areas = spell_tables.fixture_areas()
+  let attacker =
+    strike.Attacker(
+      ..strike_support.attacker(),
+      pose: Pose(at: Point(x: 30.0, z: 0.0), yaw: 3.1415927),
+    )
+  let friendly =
+    creature_at(
+      x: 0.0,
+      z: -6.0,
+      alive: True,
+      attackable: Attackable(exile: False, dominion: True),
+    )
+  let dead =
+    creature_at(
+      x: 0.0,
+      z: -7.0,
+      alive: False,
+      attackable: Attackable(exile: True, dominion: True),
+    )
+  let selected = fn(placed: List(#(Int, Float, Float))) {
+    strike.select_proxy_tick(
+      asked: field_tick(tick: 1),
+      attacker:,
+      picture: dict.merge(
+        dict.from_list(
+          list.map(placed, fn(entry) {
+            #(entry.0, foe_at(x: entry.1, z: entry.2))
+          }),
+        ),
+        dict.from_list([#(25, friendly), #(26, dead)]),
+      ),
+      areas:,
+      now_ms: 0,
+    )
+  }
+  assert selected([
+      #(21, 0.0, -8.0),
+      #(22, 0.0, 10.0),
+      #(23, 0.0, -30.0),
+      #(24, 30.0, 8.0),
+    ])
+    == [21]
+    as "only the foe inside the box 8 m ahead of the start is selected: 22 is within 20 m of the start but behind it, 23 is beyond 20 m, 24 stands where a box that followed the caster would be, 25 is friendly and 26 dead"
+  assert selected([
+      #(21, 0.0, 10.0),
+      #(22, 0.0, 10.0),
+      #(27, 3.0, -5.0),
+      #(24, 30.0, 8.0),
+    ])
+    == [27]
+    as "a later tick selects whoever is inside then: 21 walked out of the box and 27 walked in (texts 574032 and 306769, foes inside the field every second)"
+}
+
+pub fn a_tick_of_a_fixed_at_target_area_on_another_unit_stays_where_the_unit_stood_at_the_go_and_a_following_one_follows_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Nullifier's field planted with a circle of 5 m anchored on the target, fixed and
+  // following. The anchor's doc (`area.FixedAtTarget`): the hit stays where the target stood
+  // when the cast began, whatever it does. Unit 21 is the cast's primary target, an ally,
+  // which stood at (0, -20) at the go and now stands at (20, -20); foe 31 stands at its old
+  // place, foe 32 at its new one.
+  let areas_anchored = fn(anchor) {
+    field_areas(
+      anchor:,
+      row: Some(circle(max_range: 5.0, order: area.Nearest)),
+      inside_by_go: [Some(area.InsideRow)],
+    )
+  }
+  let picture =
+    dict.from_list([
+      #(
+        21,
+        creature_at(
+          x: 20.0,
+          z: -20.0,
+          alive: True,
+          attackable: Attackable(exile: False, dominion: True),
+        ),
+      ),
+      #(31, foe_at(x: 0.0, z: -20.0)),
+      #(32, foe_at(x: 20.0, z: -21.0)),
+    ])
+  let stood_at_the_go = Some(Pose(at: Point(x: 0.0, z: -20.0), yaw: 0.0))
+  list.each(
+    [
+      #(
+        area.FixedAtTarget,
+        stood_at_the_go,
+        [31],
+        "a fixed area stays at the pose the target stood in at the go, so it holds the foe at the old place and not the one at the new place",
+      ),
+      #(
+        area.FollowsTarget,
+        stood_at_the_go,
+        [32],
+        "a following area is centred on the target where the picture shows it now",
+      ),
+      #(
+        area.FixedAtTarget,
+        None,
+        [32],
+        "a target the picture did not show at the go has no carried pose, so a fixed area reads the picture now",
+      ),
+    ],
+    fn(row) {
+      let #(anchor, primary_pose, expected, reason) = row
+      assert strike.select_proxy_tick(
+          asked: cast_state.ProxyTickAsked(
+            ..field_tick(tick: 1),
+            primary_target: 21,
+            primary_pose:,
+          ),
+          attacker: strike_support.attacker(),
+          picture:,
+          areas: areas_anchored(anchor),
+          now_ms: 0,
+        )
+        == expected
+        as reason
+    },
+  )
+}
+
+pub fn a_random_rows_tick_orders_by_the_cast_id_and_the_tick_so_ticks_differ_and_one_ask_repeats_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Nullifier's field planted with a Random row of 10 within 30 m over a circle, and 20 foes
+  // inside it. Random is the server's order, seeded by the cast and the tick (`area.mix`, a
+  // guess: the client names Random, `Spell4AoeTargetConstraints.targetSelection` 3, and
+  // ranks nothing).
+  let areas =
+    field_areas(
+      anchor: area.FixedAtCaster,
+      row: Some(circle(max_range: 30.0, order: area.Random)),
+      inside_by_go: [Some(area.InsideRow)],
+    )
+  let picture =
+    dict.from_list(
+      list.map(numbers(from: 21, to: 40), fn(unit_id) {
+        #(unit_id, foe_at(x: 0.0, z: int.to_float(unit_id) *. -0.5))
+      }),
+    )
+  let selected = fn(cast_id, tick) {
+    strike.select_proxy_tick(
+      asked: cast_state.ProxyTickAsked(..field_tick(tick:), cast_id:),
+      attacker: strike_support.attacker(),
+      picture:,
+      areas:,
+      now_ms: 0,
+    )
+  }
+  assert list.length(selected(5, 1)) == 10
+    as "the row takes 10 of the 20 foes inside"
+  assert selected(5, 1) == selected(5, 1)
+    as "the same ask picks the same units in the same order"
+  assert list.length(
+      list.unique(
+        list.map(numbers(from: 1, to: 12), fn(tick) { selected(5, tick) }),
+      ),
+    )
+    >= 2
+    as "ticks 1 to 12 of one cast do not all pick the same units"
+  assert selected(5, 2) != selected(6, 1)
+    as "cast 5's tick 2 and cast 6's tick 1 do not share a seed (a plain sum of cast id and tick would give both 7)"
+  assert selected(5, 1) != selected(6, 1)
+    as "a second cast at the same tick picks differently"
+}
+
+pub fn a_tick_selects_nobody_without_an_area_row_a_hit_row_that_names_no_go_or_a_primary_target_the_picture_lost_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let picture = dict.from_list([#(21, foe_at(x: 0.0, z: -5.0))])
+  let near = circle(max_range: 20.0, order: area.Nearest)
+  list.each(
+    [
+      #(
+        field_areas(anchor: area.FixedAtCaster, row: Some(near), inside_by_go: [
+          Some(area.InsideRow),
+        ]),
+        field_tick(tick: 1),
+        [21],
+        "the control: a circle with an area row finds the foe 5 m away",
+      ),
+      #(
+        field_areas(anchor: area.FixedAtCaster, row: None, inside_by_go: [
+          Some(area.InsideRow),
+        ]),
+        field_tick(tick: 1),
+        [],
+        "a spell with no area row finds nobody (the order is by health, which a tick does not read)",
+      ),
+      #(
+        field_areas(anchor: area.FixedAtCaster, row: Some(near), inside_by_go: [
+          None,
+        ]),
+        field_tick(tick: 1),
+        [],
+        "hit rows exist and none names the ask's phase, so nobody is inside (spell_area.inside)",
+      ),
+      #(
+        field_areas(anchor: area.FixedAtCaster, row: Some(near), inside_by_go: [
+          Some(area.InsideRow),
+        ]),
+        cast_state.ProxyTickAsked(..field_tick(tick: 1), primary_target: 99),
+        [],
+        "a primary target that is not the caster and not in the picture gives no centre",
+      ),
+    ],
+    fn(row) {
+      let #(areas, asked, expected, reason) = row
+      assert strike.select_proxy_tick(
+          asked:,
+          attacker: strike_support.attacker(),
+          picture:,
+          areas:,
+          now_ms: 0,
+        )
+        == expected
+        as reason
+    },
+  )
+}
+
+/// The integers from `from` to `to`, both included.
+fn numbers(from from: Int, to to: Int) -> List(Int) {
+  list.reverse(
+    int.range(from:, to: to + 1, with: [], run: fn(all, number) {
+      [number, ..all]
+    }),
+  )
 }

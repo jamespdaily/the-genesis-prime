@@ -594,6 +594,7 @@ fn effect_name(effect effect: Effect) -> String {
     | cast_state.Log(..)
     | cast_state.Strike(..)
     | cast_state.TickStrike(..)
+    | cast_state.FindProxyTickUnits(..)
     | cast_state.Pay(..)
     | cast_state.Gain(..)
     | cast_state.CasterChangeStarts(..)
