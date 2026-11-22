@@ -18,7 +18,6 @@ import genesis_prime/dev_database.{Failed, NotAPool}
 import gleam/result
 import owned_test
 import pog
-import unitest
 
 /// A database of the test's own and a pool on it.
 fn pool() -> #(String, pog.Connection) {
@@ -28,7 +27,6 @@ fn pool() -> #(String, pog.Connection) {
 
 pub fn a_transaction_held_past_its_deadline_gives_a_query_timeout_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.tag("dev_tool")
   let #(_database, db) = pool()
   // This test is about a real deadline, so it passes the server its own 100 ms
   // and does not drive time. The pool's own timer (`pgo_pool` `disconnect_holder`)
@@ -49,7 +47,6 @@ pub fn a_transaction_held_past_its_deadline_gives_a_query_timeout_test() -> Nil 
 
 pub fn a_transaction_whose_commit_fails_gives_the_query_error_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.tag("dev_tool")
   let #(database, db) = pool()
   content_support.psql(
     database:,
@@ -75,7 +72,6 @@ pub fn a_transaction_whose_commit_fails_gives_the_query_error_test() -> Nil {
 
 pub fn a_transaction_on_a_single_connection_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.tag("dev_tool")
   let #(_database, db) = pool()
   // pog hands its callback a single connection, which has no checkout to name
   // a deadline for.

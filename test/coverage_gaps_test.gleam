@@ -13,7 +13,7 @@ import unitest
 
 pub fn the_gaps_section_groups_entries_by_area_in_declared_order_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let entries = [
     Entry(area: "Quest acceptance", missing: "first quest sentence"),
     Entry(area: "Vendors", missing: "first vendor sentence"),
@@ -41,7 +41,7 @@ pub fn the_gaps_section_groups_entries_by_area_in_declared_order_test() -> Nil {
 
 pub fn the_gaps_section_counts_entries_and_areas_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   assert gaps.render(entries: [
       Entry(area: "Items", missing: "one"),
       Entry(area: "Items", missing: "two"),
@@ -54,7 +54,7 @@ pub fn the_gaps_section_counts_entries_and_areas_test() -> Nil {
 
 pub fn the_registry_is_not_empty_and_each_entry_is_plain_and_unique_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let entries = gaps.registry()
   assert list.contains(
     entries,
@@ -91,7 +91,7 @@ pub fn the_registry_is_not_empty_and_each_entry_is_plain_and_unique_test() -> Ni
 
 pub fn the_registry_holds_the_spell_plans_and_the_creatures_entries_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tags(["registry", "coverage"])
   let entries = gaps.registry()
   let known = [
     Entry(
@@ -118,7 +118,7 @@ pub fn the_registry_holds_the_spell_plans_and_the_creatures_entries_test() -> Ni
 
 pub fn the_registry_holds_the_item_refund_and_the_kind_4_point_count_entries_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tags(["registry", "coverage"])
   let entries = gaps.registry()
   let known = [
     Entry(
@@ -137,7 +137,7 @@ pub fn the_registry_holds_the_item_refund_and_the_kind_4_point_count_entries_tes
 
 pub fn the_measure_prints_the_gaps_section_with_every_registered_entry_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let section = gaps.report()
   let entries = gaps.registry()
   assert entries != [] as "the registry is not empty"
@@ -153,7 +153,7 @@ pub fn the_measure_prints_the_gaps_section_with_every_registered_entry_test() ->
 
 pub fn the_dev_command_gap_entry_is_printed_by_the_registry_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tags(["registry", "coverage"])
   let proxy =
     Entry(
       area: "Development commands",
@@ -170,7 +170,7 @@ pub fn the_dev_command_gap_entry_is_printed_by_the_registry_test() -> Nil {
 
 pub fn the_registry_holds_the_channel_pulse_and_the_unread_gain_column_gaps_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tags(["registry", "coverage"])
   let entries = gaps.registry()
   [
     #(

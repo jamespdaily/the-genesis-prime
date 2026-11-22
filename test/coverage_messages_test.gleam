@@ -94,7 +94,7 @@ fn as_sent(recorded: Recorded) -> BitArray {
 
 pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil {
   use <- owned_test.run(30_000)
-  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.tag("coverage")
   let routing = coverage_support.engine_named("Client message routing")
   let handled = engine.handled_client_message_ids()
   list.each(dropped_ids, fn(id) {
