@@ -8,9 +8,12 @@
 ////   gives the go and each 0x7f8 with its time: tick k of `count` lands
 ////   `delay_ms + k * tick_ms` after the go, for k from 1 to durationTime / tickTime
 ////   rounded down, and only within the row's life (`within_life`).
-//// - **A row with flags bit 2 lasts until removed** (`Spell4Effects.effectType.8.periodic`),
-////   which no schedule ends; every periodic row with a durationTime of 0
-////   has the bit.
+//// - **A row with flags bit 2 lasts until removed** (`Spell4Effects.effectType.8.periodic`);
+////   every periodic row with a durationTime of 0 has the bit. A damage or heal row
+////   that lasts until removed has no schedule (`schedule_of`). A periodic Proxy's
+////   open schedule (`open_schedule_of`) has no count: it ticks every tickTime until its
+////   node ends (`ending_with_node` cuts it at the go to the node's end when the node has
+////   one, an aura's).
 
 import genesis_prime/game/lasting
 import genesis_prime/gap
@@ -43,6 +46,7 @@ pub type ScheduleError {
 }
 
 /// The schedule of a row whose tickTime is `tick_ms`, from its delay and durationTime.
+/// A row that lasts until removed has none (`open_schedule_of` reads a Proxy's).
 pub fn schedule_of(
   row row: lasting.LastingRow,
   tick_ms tick_ms: Int,
@@ -64,11 +68,37 @@ pub fn schedule_of(
   ))
 }
 
+/// The open schedule of a periodic Proxy row with flags bit 2 and a tickTime of `tick_ms`:
+/// its delay, tickTime and durationTime, with no count. The caller decides which rows
+/// are read as open; a damage or heal row that lasts until removed still has none
+/// (`schedule_of`).
+pub fn open_schedule_of(
+  row row: lasting.LastingRow,
+  tick_ms tick_ms: Int,
+) -> Schedule {
+  Schedule(
+    delay_ms: row.delay_ms,
+    tick_ms:,
+    duration_ms: row.duration_ms,
+    count: UntilTheNodeEnds,
+  )
+}
+
+/// Whether the schedule has no count, so its row's node lasts until removed
+/// (`lasting.LastingRow.until_removed`) and no durationTime bounds it.
+pub fn lasts_until_removed(schedule schedule: Schedule) -> Bool {
+  case schedule.count {
+    UntilTheNodeEnds -> True
+    Ticks(_) -> False
+  }
+}
+
 /// The schedule cut to the ticks that land within the row's own life from the go, the
 /// life its node on the unit takes from it (`lasting.lifetime_of`). For a spell whose
 /// life is the longer of delay and durationTime (`0x140568540`) that drops the ticks past
 /// it, so no tick is due after its node's life however late it is looked at; whether the
-/// client would show a 0x7f8 after its node ends is not read.
+/// client would show a 0x7f8 after its node ends is not read. An open schedule has no
+/// life a row bounds and is left as it is (`ending_with_node`).
 pub fn within_life(
   schedule schedule: Schedule,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
@@ -89,7 +119,30 @@ pub fn within_life(
   case schedule.count {
     Ticks(count) ->
       Schedule(..schedule, count: Ticks(int.clamp(within, min: 0, max: count)))
-    UntilTheNodeEnds -> Schedule(..schedule, count: Ticks(0))
+    UntilTheNodeEnds -> schedule
+  }
+}
+
+/// An open schedule cut to the life of the node it ticks on, for a go at `from_ms`: with
+/// `EndsAt` every tick at or before the end stays and none after (a tick due at the end
+/// millisecond lands before the node ends, since the cast rule fires its due ticks before
+/// its ended nodes), with `NoLife` none stays, and with `UntilRemoved` it stays open. A
+/// schedule with a count is left as it is.
+pub fn ending_with_node(
+  schedule schedule: Schedule,
+  from_ms from_ms: Int,
+  life life: lasting.Life,
+) -> Schedule {
+  case schedule.count, life {
+    Ticks(_), _ | UntilTheNodeEnds, lasting.UntilRemoved -> schedule
+    UntilTheNodeEnds, lasting.NoLife -> Schedule(..schedule, count: Ticks(0))
+    UntilTheNodeEnds, lasting.EndsAt(ms:) -> {
+      let ticks = case schedule.tick_ms > 0 {
+        True -> { ms - from_ms - schedule.delay_ms } / schedule.tick_ms
+        False -> 0
+      }
+      Schedule(..schedule, count: Ticks(int.max(0, ticks)))
+    }
   }
 }
 
@@ -102,22 +155,26 @@ pub fn tick_at_ms(
   from_ms + schedule.delay_ms + tick * schedule.tick_ms
 }
 
-/// The tick after `tick` (0 before the first), or `None` after the last.
+/// The tick after `tick` (0 before the first), or `None` after the last; an open schedule
+/// has no last.
 pub fn next_tick(schedule schedule: Schedule, tick tick: Int) -> Option(Int) {
   case schedule.count {
     Ticks(count) if tick < count -> Some(tick + 1)
-    Ticks(_) | UntilTheNodeEnds -> None
+    Ticks(_) -> None
+    UntilTheNodeEnds -> Some(tick + 1)
   }
 }
 
 /// The periodic rows' timing the client's code does not show: the client has no tick timer,
 /// so the schedule of a damage or heal tick is the server's guess, and the client's
-/// behaviour for a tick past its node's life is not known.
+/// behaviour for a tick past its node's life is not known. A periodic Proxy that lasts
+/// until removed ticks until its node ends, an aura's at the aura's end; the end of a damage
+/// or heal over time that lasts until removed stays left out.
 pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Periodic effects",
-      missing: "the time of each tick of a damage or heal over time and of each cast of a periodic Proxy, which the client does not time and the server schedules by a guess, dropping a tick that would land after its node ends without knowing whether the client shows one",
+      missing: "the time of each tick of a damage or heal over time and of each cast of a periodic Proxy, which the client does not time and the server schedules by a guess, dropping a tick that would land after its node ends without knowing whether the client shows one; a periodic Proxy that lasts until removed ticks every tickTime until its node ends, and the end of a heal or damage over time that lasts until removed is left out",
     ),
   ]
 }

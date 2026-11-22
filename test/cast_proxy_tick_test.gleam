@@ -25,11 +25,13 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
-import genesis_prime/game/ticking.{type Schedule, Schedule, Ticks}
+import genesis_prime/game/ticking.{
+  type Schedule, Schedule, Ticks, UntilTheNodeEnds,
+}
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
-import genesis_prime/step.{LogDebug}
+import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict
 import gleam/int
@@ -56,6 +58,15 @@ fn engineer_stance() -> Schedule {
 /// Row 228473's schedule: tickTime 500, durationTime 5000, ten ticks.
 fn plasma_wall() -> Schedule {
   Schedule(delay_ms: 0, tick_ms: 500, duration_ms: 5000, count: Ticks(10))
+}
+
+/// The schedule of a row with flags bit 2 (rows 210304, 217944 and 210337): a delay, a
+/// tickTime and no durationTime, which ticks until its node ends.
+fn until_the_node_ends(
+  delay_ms delay_ms: Int,
+  tick_ms tick_ms: Int,
+) -> Schedule {
+  Schedule(delay_ms:, tick_ms:, duration_ms: 0, count: UntilTheNodeEnds)
 }
 
 /// A schedule of no delay, a tickTime of 1000 and `count` ticks.
@@ -187,16 +198,6 @@ fn debug_lines(effects effects: List(Effect)) -> List(String) {
     case line.0 == LogDebug {
       True -> Ok(line.1)
       False -> Error(Nil)
-    }
-  })
-}
-
-/// The timers of the state that are a tick of a periodic row.
-fn tick_timers(state state: State) -> Int {
-  list.count(dict.values(state.timers), fn(due) {
-    case due {
-      cast_state.Tick(..) -> True
-      _ -> False
     }
   })
 }
@@ -357,7 +358,7 @@ pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
   assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
     == [1500, 2000, 2500, 3000]
     as "four ticks have landed by 3000"
-  assert tick_timers(state:) == 1
+  assert support.tick_timers(state:) == 1
     as "the fifth tick is armed while the persistence holds"
   let #(state, ended) =
     cast.persisted(
@@ -365,10 +366,52 @@ pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
       caster: support.caster_in_combat(in_combat: False),
       now: support.at(ms: 3100),
     )
-  assert tick_timers(state:) == 0
+  assert support.tick_timers(state:) == 0
     as "text 311216: the cast ends when the persistence fails, and its tick timer is cancelled, so no child follows"
   assert list.length(support.cancelled_timers(effects: ended)) >= 1
   assert starts_of(steps: [#(3100, ended)], spell4_id: child_spell4_id) == []
+  // An open row (no durationTime): its persistence ends the cast the same way, and no node's
+  // end would.
+  let open_persisting =
+    Spell(
+      ..holder(proxies: [
+        periodic(
+          schedule: until_the_node_ends(delay_ms: 0, tick_ms: 500),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+      caster_persistence: Some(
+        prerequisites.single(id: 903, condition: #(28, 1, 0, 0)),
+      ),
+    )
+  let #(open_state, open_effects) =
+    pressed(plans: support.plans_of([open_persisting]), caster: in_combat())
+  let #(open_state, open_steps) =
+    ran(
+      caster: in_combat(),
+      pressed: #(open_state, open_effects),
+      until_ms: 3000,
+    )
+  assert times_of(starts: starts_of(
+      steps: open_steps,
+      spell4_id: child_spell4_id,
+    ))
+    == [1500, 2000, 2500, 3000]
+    as "four ticks have landed by 3000"
+  assert support.tick_timers(state: open_state) == 1
+    as "the fifth is armed while the persistence holds"
+  let #(open_state, open_ended) =
+    cast.persisted(
+      cast: open_state,
+      caster: support.caster_in_combat(in_combat: False),
+      now: support.at(ms: 3100),
+    )
+  assert support.tick_timers(state: open_state) == 0
+    && dict.size(open_state.lingering) + dict.size(open_state.casts) == 0
+    as "the cast ends when the persistence fails: its tick timer is cancelled and nothing lingers"
+  assert starts_of(steps: [#(3100, open_ended)], spell4_id: child_spell4_id)
+    == []
 }
 
 pub fn a_caster_gate_is_read_again_at_each_tick_and_a_failing_tick_starts_no_child_test() -> Nil {
@@ -464,7 +507,7 @@ pub fn a_periodic_proxy_whose_caster_gate_fails_at_the_go_still_arms_its_ticks_a
       ]),
     ])
   let #(state, effects) = pressed(plans:, caster: support.caster())
-  assert tick_timers(state:) == 1
+  assert support.tick_timers(state:) == 1
     as "the go armed the first tick although the gate fails at the go"
   let #(_, fired, _) =
     support.run_timers_scripted(
@@ -733,7 +776,7 @@ pub fn a_proxy_under_a_phase_that_has_not_gone_or_whose_tag_does_not_hold_arms_n
         bag: 2,
         at: press_ms,
       )
-    tick_timers(state:)
+    support.tick_timers(state:)
   }
   assert list.map([1, 2, 3, 4, 5], armed) == [0, 0, 1, 1, 2]
     as "n is points - 1: the tag of 4 holds at 5 points, the tag of at least 2 at 3 points and more; a Proxy whose tag does not hold arms no tick"
@@ -767,4 +810,194 @@ pub fn a_tick_whose_child_the_cast_rule_refuses_logs_and_the_ticks_go_on_test() 
     && string.contains(line, "does not cast Spell4 71371")
     && string.contains(line, "caster that is alive")
   })
+}
+
+/// The Tick timers of the state, by the time they were started for.
+fn tick_timer_ids(state state: State) -> List(TimerId) {
+  dict.to_list(state.timers)
+  |> list.filter_map(fn(entry) {
+    case entry.1 {
+      cast_state.Tick(..) -> Ok(entry.0)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+fn node_end_timers(state state: State) -> Int {
+  list.count(dict.values(state.timers), fn(due) {
+    case due {
+      cast_state.NodesEnd(..) -> True
+      _ -> False
+    }
+  })
+}
+
+pub fn an_open_periodic_proxy_ticks_each_tick_time_with_one_timer_and_no_nodes_end_and_a_late_timer_fires_each_due_tick_in_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 210304's shape: delay 1000, tickTime 1000, flags bit 2.
+  let plans =
+    support.plans_of([
+      holder(proxies: [
+        periodic(
+          schedule: until_the_node_ends(delay_ms: 1000, tick_ms: 1000),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+    ])
+  let #(state, effects) = pressed(plans:, caster: support.caster())
+  assert list.map(support.started_timers(effects:), fn(started) { started.1 })
+    == [2000]
+    as "the go arms the first tick alone, delay plus one tick time on: no end is armed for a node that lasts until removed"
+  let #(state, steps) =
+    ran(
+      caster: support.caster(),
+      pressed: #(state, effects),
+      until_ms: press_ms + 60_000,
+    )
+  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+    == int.range(from: 60, to: 1, with: [], run: fn(times, second) {
+      [press_ms + second * 1000, ..times]
+    })
+    as "a child at the delay plus each tick time after the go, up to 60 s on"
+  assert support.tick_timers(state:) == 1
+    as "one timer for the holder's row, re-armed one tick at a time"
+  assert node_end_timers(state:) == 0
+    as "no NodesEnd timer: the node lasts until removed"
+  assert dict.size(state.lingering) + dict.size(state.casts) == 1
+    as "the cast lingers with its node"
+  // The timer for tick 3 (due press + 4000) is handled 2500 ms late, at press + 6500: ticks
+  // 3, 4 and 5 (due at press + 4000, 5000 and 6000) each start a child, then tick 6 is armed.
+  let #(early, _) =
+    ran(
+      caster: support.caster(),
+      pressed: pressed(plans:, caster: support.caster()),
+      until_ms: press_ms + 3000,
+    )
+  let assert [timer] = tick_timer_ids(state: early)
+    as "tick 3's timer is the one armed after tick 2 landed"
+  let #(_, late) =
+    support.fired_raw_as(
+      caster: support.caster(),
+      state: early,
+      timer:,
+      at: press_ms + 6500,
+    )
+  let late_starts = support.started_in(effects: late)
+  assert list.length(late_starts) == 3
+    as "ticks 3, 4 and 5 are due by the late firing: three children, and tick 6, due 7000 ms after the press, is not"
+  assert list.sort(
+      list.map(late_starts, fn(start) { start.cast_id }),
+      int.compare,
+    )
+    == list.map(late_starts, fn(start) { start.cast_id })
+    as "the due ticks fire in order"
+  assert list.map(support.started_timers(effects: late), fn(started) {
+      started.1
+    })
+    == [500]
+    as "the next tick is armed 500 ms on, never before now"
+}
+
+pub fn an_open_periodic_proxy_under_an_aura_stops_at_the_auras_end_and_the_node_end_writes_the_0x7fe_alone_test() -> Nil {
+  use <- owned_test.run(5000)
+  // An aura of 2500 ms started at the press (Spell4.spellDuration, `0x1407180c0`) holding a
+  // Proxy of tickTime 1000 that lasts until removed: its node ends at the press plus 2500.
+  let aura =
+    Spell(
+      ..holder(proxies: [
+        periodic(
+          schedule: until_the_node_ends(delay_ms: 0, tick_ms: 1000),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+      ]),
+      aura_ms: Some(2500),
+    )
+  let #(state, effects) =
+    pressed(plans: support.plans_of([aura]), caster: support.caster())
+  let holder_id = support.pressed_id(effects:)
+  let #(state, steps) =
+    ran(
+      caster: support.caster(),
+      pressed: #(state, effects),
+      until_ms: press_ms + 20_000,
+    )
+  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+    == [press_ms + 1000, press_ms + 2000]
+    as "the ticks at 1000 and 2000 after the go land within the aura and none at 3000"
+  let assert [#(node_end_at, node_end)] =
+    list.filter(steps, fn(step) {
+      list.contains(
+        support.finished_ids(support.writes(effects: step.1)),
+        holder_id,
+      )
+    })
+    as "the cast finishes once"
+  assert node_end_at == press_ms + 2500
+    as "the node ends with the aura, 2500 ms after the cast's start"
+  assert list.map(support.writes(effects: node_end), fn(frame) {
+      frame.message_id
+    })
+    == [spell_finished.message_id]
+    as "the node on the caster ends with the 0x7fe alone: no 0x811, the caster's own node is not told removed"
+  assert dict.size(state.casts) + dict.size(state.lingering) == 0
+    && dict.size(state.timers) == 0
+    as "nothing is left of the cast or its timers"
+}
+
+pub fn each_stack_of_a_child_that_holds_an_open_proxy_keeps_one_tick_timer_and_the_holders_own_is_counted_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Kinetic Rage's shape: a holder with a Proxy that casts a stack-capped child at each tick
+  // (Spell4StackGroup 1916, cap 100), the child holding a Proxy of tickTime 250 that lasts
+  // until removed (row 210337).
+  let grandchild = support.child(spell4_id: 71_373, base: 71_373)
+  let stack =
+    Spell(
+      ..holding(
+        proxies: [
+          periodic(
+            schedule: until_the_node_ends(delay_ms: 0, tick_ms: 250),
+            condition: spell_plan.Always,
+            named: grandchild,
+          ),
+        ],
+        spell4_id: child_spell4_id,
+        base: child_spell4_id,
+      ),
+      stack: lasting.Stack(group_id: 1916, cap: 100),
+    )
+  let plans =
+    support.plans_of([
+      holder(proxies: [
+        periodic(
+          schedule: every_second(count: 5),
+          condition: spell_plan.Always,
+          named: stack,
+        ),
+      ]),
+    ])
+  let #(state, effects) = pressed(plans:, caster: support.caster())
+  let ran_to = fn(until_ms) {
+    ran(
+      caster: support.caster(),
+      pressed: #(state, effects),
+      until_ms: press_ms + until_ms,
+    )
+  }
+  let #(at_2500, _) = ran_to(2500)
+  assert support.tick_timers(state: at_2500) == 3
+    as "the holder's own timer and the two stacks'"
+  let #(at_5001, steps) = ran_to(5001)
+  assert support.tick_timers(state: at_5001) == 5
+    as "the holder's fifth tick has landed and its timer is gone: five stacks hold five"
+  let #(_, to_6000) = ran_to(6000)
+  let in_the_last_second =
+    list.filter(starts_of(steps: to_6000, spell4_id: 71_373), fn(start) {
+      start.0 > press_ms + 5000
+    })
+  assert list.length(in_the_last_second) == 5 * 4
+    as "each of the five live stacks starts four children in a second (tickTime 250)"
+  assert list.length(starts_of(steps:, spell4_id: child_spell4_id)) == 5
+    as "the holder cast one stack at each of its five ticks"
 }

@@ -15,6 +15,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/hit
@@ -22,7 +23,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/spell_area.{DamageEffect, TickingDamage}
 import genesis_prime/game/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
 import genesis_prime/game/spend
-import genesis_prime/game/ticking.{Schedule, Ticks}
+import genesis_prime/game/ticking.{Schedule, Ticks, UntilTheNodeEnds}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_result
@@ -42,6 +43,7 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/step.{type ConnectionId, type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -676,6 +678,48 @@ pub fn a_late_node_end_sends_no_tick_past_the_node_life_test() -> Nil {
   assert last_frame.message_id == spell_finished.message_id
     && support.finished_cast_id(last_frame) == holder_id
     as "the holder's 0x7fe is the step's last frame, after the child"
+  // An open row under an aura of 2500 ms started at the press: the go cuts it to the two
+  // ticks the aura holds, so the node's end handled 3000 ms late starts no third child.
+  let aura =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 1000)),
+      aura_ms: Some(2500),
+    )
+  let open_early = proxy_run(spell: aura, until_ms: 3400)
+  let open_holder_id =
+    support.pressed_id(effects: { first_step(run: open_early) }.1)
+  let assert [#(_, 1000), #(open_node_end, 2500)] =
+    support.started_timers(effects: { first_step(run: open_early) }.1)
+    as "the go starts the first tick's timer and the node's end at the aura's end"
+  let #(state, raw) =
+    support.fired_raw_as(
+      caster: support.caster(),
+      state: open_early.state,
+      timer: open_node_end,
+      at: press_ms + 5500,
+    )
+  let #(state, open_late, _) =
+    settled(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: press_ms + 5500,
+      struck: [],
+      answer: held,
+    )
+  let late_open =
+    Run(
+      ..open_early,
+      state:,
+      steps: list.append(open_early.steps, [#(press_ms + 5500, open_late)]),
+    )
+  assert child_times(run: late_open) == [press_ms + 1000, press_ms + 2000]
+    as "the aura's end, handled 3000 ms late, starts no third child: the row was cut to two ticks at the go"
+  assert children_started(effects: open_late) == []
+  let assert Ok(open_last_frame) = list.last(support.writes(effects: open_late))
+  assert open_last_frame.message_id == spell_finished.message_id
+    && support.finished_cast_id(open_last_frame) == open_holder_id
+    as "the late step writes the holder's 0x7fe"
 }
 
 pub fn a_node_kept_by_an_open_strike_round_sends_no_tick_past_its_life_test() -> Nil {
@@ -811,6 +855,24 @@ pub fn a_later_go_restarts_the_schedule_test() -> Nil {
   assert list.length(ticks_of(effects: killing)) == 1
   assert list.contains(support.cancelled_timers(effects: killing), second_tick)
     as "and a killing one drops the unit's ticks, the second go's among them"
+  // An open row on the caster: the later go, 500 ms after the first, arms it again from its
+  // own time and cancels the first go's timer, so one timer is armed and no child comes at the
+  // first go's tick 1, due at 2000.
+  let open_twice =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 1000)),
+      phase_delays_ms: [0, 500],
+    )
+  assert support.tick_timers(
+      state: proxy_run(spell: open_twice, until_ms: 1600).state,
+    )
+    == 1
+    as "right after the second go the first go's timer is cancelled: one timer"
+  let open_run = proxy_run(spell: open_twice, until_ms: 5500)
+  assert child_times(run: open_run) == [2500, 3500, 4500, 5500]
+    as "the second go at 1500 counts the open schedule again from itself"
+  assert support.tick_timers(state: open_run.state) == 1
+    as "one timer for the open row, the first go's cancelled"
 }
 
 pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
@@ -912,7 +974,7 @@ pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
     proxy_first_tick,
   )
     as "the second cast pushes the first off the caster, and the first cast's tick timer is cancelled with its node"
-  let proxy_run =
+  let second_cast_run =
     ran(
       caster: support.caster(),
       run: Run(
@@ -929,8 +991,111 @@ pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
       struck: [],
       answer: held,
     )
-  assert child_times(run: proxy_run) == [3500, 5500, 7500]
+  assert child_times(run: second_cast_run) == [3500, 5500, 7500]
     as "every child is the second cast's: a tick every 2000 ms from its press at 1500"
+  // An open row on the caster ends the same way: the second cast pushes the first off at the
+  // stack's cap, and only the second cast's open row ticks.
+  let open_capped =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      stack: lasting_stack_of_one(),
+    )
+  let open_plans = support.plans_of([open_capped])
+  let open_first =
+    pressed(
+      plans: open_plans,
+      caster: support.caster(),
+      struck: [],
+      answer: held,
+    )
+  let assert [#(_, open_first_effects)] = open_first.steps
+  let assert [#(open_first_tick, 2000)] =
+    support.started_timers(effects: open_first_effects)
+    as "the open row has one timer and no node's end"
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: open_plans,
+      state: open_first.state,
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1500,
+    )
+  let #(state, open_second_effects, _) =
+    settled(
+      caster: support.caster(),
+      state:,
+      effects: raw,
+      at: 1500,
+      struck: [],
+      answer: held,
+    )
+  assert list.contains(
+    support.cancelled_timers(effects: open_second_effects),
+    open_first_tick,
+  )
+    as "the second cast pushes the first off the caster at the cap, and the open row's timer is cancelled with its node"
+  let open_run =
+    ran(
+      caster: support.caster(),
+      run: Run(
+        state:,
+        steps: [#(1500, open_second_effects)],
+        pending: pending_after(
+          pending: open_first.pending,
+          effects: open_second_effects,
+          at: 1500,
+        ),
+        held: [],
+      ),
+      until_ms: 8000,
+      struck: [],
+      answer: held,
+    )
+  assert child_times(run: open_run) == [3500, 5500, 7500]
+    as "every child is the second cast's: the first cast's open row is forgotten"
+  assert support.tick_timers(state: open_run.state) == 1
+    as "one timer, the second cast's"
+  // A node dropped on one unit drops the open row on that unit alone: the cast holds an open
+  // row on the caster and a damage row on the creature 10.
+  let mixed =
+    support.with_effects(spell: surge(), kinds: [
+      spell_plan.ProxyEffect(proxy_row_of(
+        effect_id: 121_345,
+        schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000),
+      )),
+    ])
+  let both =
+    pressed(
+      plans: support.plans_of([mixed]),
+      caster: support.caster(),
+      struck:,
+      answer:,
+    )
+  let both_id = support.pressed_id(effects: { first_step(run: both) }.1)
+  assert support.tick_timers_on(state: both.state, unit_id: 7) == 1
+    && support.tick_timers_on(state: both.state, unit_id: 10) == 1
+    as "the go armed the open row on the caster and the damage row on the creature"
+  let #(creature_dropped, creature_cancels) =
+    cast_tick.ticks_dropped(cast: both.state, cast_id: both_id, unit_id: 10)
+  assert list.length(creature_cancels) == 1
+    && support.tick_timers_on(state: creature_dropped, unit_id: 7) == 1
+    && support.tick_timers_on(state: creature_dropped, unit_id: 10) == 0
+    as "dropping the creature's node cancels its row's timer and leaves the caster's open row"
+  let #(caster_dropped, caster_cancels) =
+    cast_tick.ticks_dropped(cast: both.state, cast_id: both_id, unit_id: 7)
+  assert list.length(caster_cancels) == 1
+    && support.tick_timers_on(state: caster_dropped, unit_id: 7) == 0
+    && support.tick_timers_on(state: caster_dropped, unit_id: 10) == 1
+    as "dropping the caster's node cancels the open row's timer and leaves the creature's row"
+  let assert Ok(holder) =
+    cast_state.holder_of(cast: caster_dropped, cast_id: both_id)
+  assert dict.size(holder.ticking) == 1
+    && !dict.has_key(
+      holder.ticking,
+      cast_state.tick_key(unit_id: 7, effect_id: Spell4EffectsId(121_345)),
+    )
+    as "the open row is forgotten, not only its timer"
 }
 
 pub fn a_dead_target_gets_no_more_ticks_test() -> Nil {
@@ -1028,13 +1193,13 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
     as "and no tick is armed after the last"
   // A heal row (62019) and a Proxy row of the same schedule on the caster: the first ticks
   // due together fire in row id order, whichever kind the row is.
-  let first_tick_frames = fn(proxy_id) {
+  let first_tick_frames = fn(proxy_id, proxy_schedule) {
     let spell =
       support.with_effects(spell: surge(), kinds: [
         spell_plan.HealEffect(health_heal(schedule: every_two_seconds())),
         spell_plan.ProxyEffect(proxy_row_of(
           effect_id: proxy_id,
-          schedule: every_two_seconds(),
+          schedule: proxy_schedule,
         )),
       ])
     let run =
@@ -1058,12 +1223,19 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
       id == spell_effect_tick.message_id || id == spell_started.message_id
     })
   }
-  assert first_tick_frames(61_000)
+  assert first_tick_frames(61_000, every_two_seconds())
     == [spell_started.message_id, spell_effect_tick.message_id]
     as "a Proxy row with an id below the heal's 62019 casts its child before the heal tick's 0x7f8"
-  assert first_tick_frames(63_000)
+  assert first_tick_frames(63_000, every_two_seconds())
     == [spell_effect_tick.message_id, spell_started.message_id]
     as "one above it casts after"
+  let open_row = open_proxy_every(delay_ms: 0, tick_ms: 2000)
+  assert first_tick_frames(61_000, open_row)
+    == [spell_started.message_id, spell_effect_tick.message_id]
+    as "an open Proxy row orders by its id among the rows as a finite one does: below the heal's, first"
+  assert first_tick_frames(63_000, open_row)
+    == [spell_effect_tick.message_id, spell_started.message_id]
+    as "above the heal's, after"
 }
 
 pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
@@ -1273,20 +1445,43 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
     == [1000]
     as "and the next tick is armed"
   // A periodic Proxy's ticks end with the caster too.
-  let proxy_run =
+  let finite_run =
     proxy_run(spell: proxy_spell(schedule: every_two_seconds()), until_ms: 3000)
   let #(_, proxy_dying) =
     cast.died(
-      cast: proxy_run.state,
+      cast: finite_run.state,
       caster: support.dead_caster(),
       now: support.at(ms: 3500),
     )
   let proxy_cancelled = support.cancelled_timers(effects: proxy_dying)
-  assert proxy_run.pending != []
-  assert list.all(proxy_run.pending, fn(pending) {
+  assert finite_run.pending != []
+  assert list.all(finite_run.pending, fn(pending) {
     list.contains(proxy_cancelled, pending.1)
   })
     as "the death cancels the Proxy's next tick and its node's end, so no child follows"
+  // An open row has no node's end to cancel, and its cast ends with the caster all the same.
+  let open_run =
+    proxy_run(
+      spell: proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      until_ms: 3000,
+    )
+  assert support.tick_timers(state: open_run.state) == 1
+    as "the open row's next tick is armed"
+  let #(open_dead, open_dying) =
+    cast.died(
+      cast: open_run.state,
+      caster: support.dead_caster(),
+      now: support.at(ms: 3500),
+    )
+  assert list.contains(ids(effects: open_dying), spell_finished.message_id)
+    as "the death writes the open cast's 0x7fe: no node's end would"
+  assert list.all(open_run.pending, fn(pending) {
+    list.contains(support.cancelled_timers(effects: open_dying), pending.1)
+  })
+    as "and cancels the open row's next tick"
+  assert dict.size(open_dead.lingering) + dict.size(open_dead.casts) == 0
+    && dict.size(open_dead.timers) == 0
+    as "nothing of the cast or its timers is left"
 }
 
 pub fn a_heal_tick_heals_the_caster_each_tick_test() -> Nil {
@@ -1490,6 +1685,77 @@ pub fn a_cancel_keeps_ticks_and_an_interrupt_ends_them_test() -> Nil {
     )
   assert proxy_ended.pending == []
     as "the persistence's end cancels every tick timer of the Proxy, so no child follows"
+  // An open row: a 0x801 after the first go keeps its ticks for as long as the node lasts,
+  // and a persistence's end cancels them.
+  let open_twice =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      phase_delays_ms: [0, 1000],
+    )
+  let open_first =
+    pressed(
+      plans: support.plans_of([open_twice]),
+      caster: support.caster(),
+      struck: [],
+      answer: held,
+    )
+  let assert [#(_, open_press)] = open_first.steps
+  let assert Ok(open_taken) =
+    support.cancelled_in(
+      plans: support.plans_of([open_twice]),
+      state: open_first.state,
+      cast_id: support.pressed_id(effects: open_press),
+      reason: cast_result.from_value(11),
+      bit: 1,
+      at: 1500,
+    )
+  let open_kept =
+    stepped(run: open_first, at: 1500, taken: open_taken)
+    |> fn(run) {
+      ran(
+        caster: support.caster(),
+        run:,
+        until_ms: 11_000,
+        struck: [],
+        answer: held,
+      )
+    }
+  assert child_times(run: open_kept) == [3000, 5000, 7000, 9000, 11_000]
+    as "a 0x801 after the first go keeps the open row ticking: no node's end bounds it"
+  assert support.tick_timers(state: open_kept.state) == 1
+    as "one timer, re-armed one tick at a time"
+  let open_persisting =
+    spell_plan.Spell(
+      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      caster_persistence: Some(
+        prerequisites.single(id: 903, condition: #(28, 1, 0, 0)),
+      ),
+    )
+  let open_in_combat =
+    pressed(
+      plans: support.plans_of([open_persisting]),
+      caster: in_combat,
+      struck: [],
+      answer: held,
+    )
+    |> fn(run) {
+      ran(caster: in_combat, run:, until_ms: 3000, struck: [], answer: held)
+    }
+  assert support.tick_timers(state: open_in_combat.state) == 1
+    as "the open row's next tick is armed while the persistence holds"
+  let open_ended =
+    stepped(
+      run: open_in_combat,
+      at: 3500,
+      taken: cast.persisted(
+        cast: open_in_combat.state,
+        caster: support.caster_in_combat(in_combat: False),
+        now: support.at(ms: 3500),
+      ),
+    )
+  assert open_ended.pending == []
+    && support.tick_timers(state: open_ended.state) == 0
+    as "the persistence's end cancels the open row's tick, so no child follows"
 }
 
 // ---- heal rows ----
@@ -1679,6 +1945,15 @@ fn proxy_spell(schedule schedule: ticking.Schedule) -> Spell {
   ])
 }
 
+/// A Proxy row with flags bit 2 (rows 210304, 217944 and 210337): this delay and tickTime and
+/// no durationTime, ticking until its node ends.
+fn open_proxy_every(
+  delay_ms delay_ms: Int,
+  tick_ms tick_ms: Int,
+) -> ticking.Schedule {
+  Schedule(delay_ms:, tick_ms:, duration_ms: 0, count: UntilTheNodeEnds)
+}
+
 /// Row 82888's schedule (delay 1000, tickTime 1000, durationTime 4000), as a Proxy row's.
 fn atomic_proxy() -> ticking.Schedule {
   Schedule(delay_ms: 1000, tick_ms: 1000, duration_ms: 4000, count: Ticks(4))
@@ -1725,4 +2000,34 @@ fn lasting_stack_of_one() -> lasting.Stack {
 
 fn cast_result_failed_id() -> Int {
   spell_failed.message_id
+}
+
+/// Row 210304's schedule: delay 1000, tickTime 1000, flags bit 2 and no durationTime.
+fn open_proxy() -> ticking.Schedule {
+  Schedule(
+    delay_ms: 1000,
+    tick_ms: 1000,
+    duration_ms: 0,
+    count: UntilTheNodeEnds,
+  )
+}
+
+pub fn leaving_the_world_drops_an_open_proxys_ticks_and_its_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  let run =
+    proxy_run(spell: proxy_spell(schedule: open_proxy()), until_ms: 3000)
+  assert dict.size(run.state.lingering) == 1 && dict.size(run.state.casts) == 0
+    as "the go has gone: the cast lingers on its node, which lasts until removed"
+  let timers = dict.keys(run.state.timers)
+  assert list.length(timers) == 1
+    as "the open row's next tick is armed, and nothing else"
+  let #(state, effects) = cast_tick.left(cast: run.state)
+  assert dict.size(state.casts) == 0
+    && dict.size(state.lingering) == 0
+    && dict.size(state.timers) == 0
+    as "the cast, its lingering cast and every timer are gone"
+  assert support.cancelled_timers(effects:) == timers
+    as "the armed tick's timer is cancelled"
+  assert support.writes(effects:) == []
+    as "leaving writes nothing: the client ends its own casts"
 }

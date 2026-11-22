@@ -1960,6 +1960,26 @@ pub fn pressed_and_run(
   #(effects, steps)
 }
 
+/// The timers of the state that are a tick of a periodic row, on any unit.
+pub fn tick_timers(state state: State) -> Int {
+  list.count(dict.values(state.timers), fn(due) {
+    case due {
+      cast_state.Tick(..) -> True
+      _ -> False
+    }
+  })
+}
+
+/// The timers of the state that are a tick of a periodic row on the unit `unit_id`.
+pub fn tick_timers_on(state state: State, unit_id unit_id: Int) -> Int {
+  list.count(dict.values(state.timers), fn(due) {
+    case due {
+      cast_state.Tick(unit_id: on, ..) -> on == unit_id
+      _ -> False
+    }
+  })
+}
+
 /// The timers the effects start, each due its delay after the time.
 pub fn due_of(
   effects effects: List(Effect),
