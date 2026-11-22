@@ -71,10 +71,7 @@ fn loaded(
       )
   }
     as "the committed rows hold SpellLevel 929"
-  let assert Ok(rows) =
-    list.try_fold(changed, rows, fn(rows, edit) {
-      fixture_tables.change(rows:, table: edit.0, id: edit.1, with: edit.2)
-    })
+  let assert Ok(rows) = fixture_tables.change_all(rows:, edits: changed)
     as "the committed rows hold the rows the case edits"
   fixture_tables.load(rows: fixture_tables.closure(rows:, roots: []))
 }

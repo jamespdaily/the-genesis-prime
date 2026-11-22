@@ -23,13 +23,16 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
+import genesis_prime/table/spell4_effects
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import owned_test
-import planted_table
+import planted_table.{Integer}
 import prerequisite_support
 import qcheck
 import spell_tables
@@ -1247,4 +1250,170 @@ pub fn a_requirement_of_type_15_plans_as_a_focus_requirement_with_result_167_and
       requirement_type: 18,
     ))
     as "requirement type 18 is not read"
+}
+
+/// The phase_flags the plan reads for row `row_id` of spell `spell4_id` in `tables`.
+fn phase_flags_read(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  row_id row_id: Int,
+) -> Int {
+  let assert Ok(row) =
+    spell_plan.effects_of(spell_plan.sources_of(tables:), spell4_id:)
+    |> list.find(fn(effect) { effect.id == row_id })
+    as "the spell's rows hold the row"
+  row.phase_flags
+}
+
+pub fn a_channel_without_spellchannelflags_bit_1_reads_a_phaseflags_1_row_with_no_ticktime_as_naming_every_pulse_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Discharge 58832 (Spell4Base 38201, castMethod 1, spellChannelFlags 0, 3 pulses) holds
+  // Damage row 141368 (phaseFlags 1, tickTime 0). Each case edits one cell of a real row
+  // (synthetic) and reads the row through the plan's grouping; -1 names every pulse
+  // (`spell_effect.names_phase`). `Spell4Effects.phaseFlags.channel`, `opcode.0x7f4.phase`.
+  let every_pulse = -1
+  let cases = [
+    #(
+      "the row as the client holds it",
+      "Spell4Effects",
+      141_368,
+      [],
+      every_pulse,
+    ),
+    #(
+      "a row with a tickTime (and a durationTime of one tick, which the area load needs) keeps the first pulse",
+      "Spell4Effects",
+      141_368,
+      [#("tickTime", Integer(2000)), #("durationTime", Integer(2000))],
+      1,
+    ),
+    #(
+      "a channel with bit 1 keeps the first pulse",
+      "Spell4",
+      58_832,
+      [#("spellChannelFlags", Integer(1))],
+      1,
+    ),
+    #(
+      "a mask of pulses keeps its bits",
+      "Spell4Effects",
+      141_368,
+      [#("phaseFlags", Integer(6))],
+      6,
+    ),
+    #(
+      "a row of no phase stays out",
+      "Spell4Effects",
+      141_368,
+      [#("phaseFlags", Integer(0))],
+      0,
+    ),
+    #(
+      "a row of every phase stays",
+      "Spell4Effects",
+      141_368,
+      [#("phaseFlags", Integer(-1))],
+      -1,
+    ),
+    #(
+      "a one-go cast keeps the row",
+      "Spell4Base",
+      38_201,
+      [#("castMethod", Integer(0))],
+      1,
+    ),
+    #(
+      "a castMethod 3 spell is not a plan channel and keeps the row",
+      "Spell4Base",
+      38_201,
+      [#("castMethod", Integer(3))],
+      1,
+    ),
+  ]
+  list.each(cases, fn(found) {
+    let #(reason, table, id, changes, expected) = found
+    use tables <- fixture_tables.changed(table:, id:, with: changes)
+    assert phase_flags_read(tables:, spell4_id: 58_832, row_id: 141_368)
+      == expected
+      as reason
+  })
+  // The client's table holds 1,129 rows of a spellId with no Spell4 row; the row stays as it
+  // is and the load does not refuse it.
+  fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 141_368,
+    with: [#("spellId", Integer(3))],
+    body: fn(tables) {
+      assert phase_flags_read(tables:, spell4_id: 3, row_id: 141_368) == 1
+        as "a row whose spellId has no Spell4 row is left as the client holds it"
+    },
+  )
+  let tables = fixture_tables.shared()
+  assert phase_flags_read(tables:, spell4_id: 32_818, row_id: 65_493)
+    == every_pulse
+    as "Meditate's Focus row 65493 (Spell4 32818, text 243889: every 1 s for 5 s)"
+  assert phase_flags_read(tables:, spell4_id: 58_841, row_id: 141_384)
+    == every_pulse
+    as "Emission's Heal row 141384 (Spell4 58841, text 508644: every 0.41s)"
+  assert phase_flags_read(tables:, spell4_id: 5725, row_id: 10_256)
+    == every_pulse
+    as "the Activate row 10256 (Spell4 5725; a type 7 row has no apply on the client)"
+}
+
+pub fn effects_by_spell_holds_the_client_rows_but_for_the_phase_flags_the_rule_names_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let grouped = spell_plan.effects_by_spell(tables:)
+  // Each row of the class with the go count of its channel, the count the client expects
+  // ((channelMaxTime - channelInitialDelay + channelPulseTime) / channelPulseTime).
+  let go_counts_of_class =
+    list.filter_map(spell4_effects.all(tables), fn(row) {
+      let assert Ok(read) =
+        dict.get(grouped, row.spell_id)
+        |> result.try(list.find(_, fn(effect) { effect.id == row.id }))
+        as "the grouping holds every row of the table"
+      assert spell4_effects.Spell4Effects(..read, phase_flags: row.phase_flags)
+        == row
+        as "a row differs from the table's in no column but phase_flags"
+      let channel =
+        spell4.get(tables:, id: Spell4Id(row.spell_id))
+        |> result.try(fn(spell) {
+          spell4_base.get(
+            tables:,
+            id: Spell4BaseId(spell.spell4_base_id_base_spell),
+          )
+          |> result.map(fn(base) { #(spell, base) })
+        })
+      let in_class = case channel {
+        Ok(#(spell, base)) ->
+          base.cast_method == 1
+          && int.bitwise_and(spell.spell_channel_flags, 1) == 0
+          && row.phase_flags == 1
+          && row.tick_time == 0
+        Error(Nil) -> False
+      }
+      assert read.phase_flags
+        == case in_class {
+          True -> -1
+          False -> row.phase_flags
+        }
+        as "phase_flags is -1 exactly where phaseFlags 1, tickTime 0, castMethod 1 and bit 1 of spellChannelFlags is clear"
+      case in_class, channel {
+        True, Ok(#(spell, _)) ->
+          Ok(
+            {
+              spell.channel_max_time
+              - spell.channel_initial_delay
+              + spell.channel_pulse_time
+            }
+            / spell.channel_pulse_time,
+          )
+        _, _ -> Error(Nil)
+      }
+    })
+  let in_one_pulse = list.count(go_counts_of_class, fn(gos) { gos == 1 })
+  assert #(list.length(go_counts_of_class) - in_one_pulse, in_one_pulse)
+    == #(3418, 87)
+    as "the class holds 3,418 rows in channels of several pulses and 87 in channels of one pulse (3,505), as the client's tables hold them"
 }

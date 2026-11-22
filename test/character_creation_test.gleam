@@ -191,14 +191,12 @@ pub fn a_path_above_3_or_the_wrong_bone_count_is_refused_test() -> Nil {
 fn rows_with_a_look_of_every_label() -> fixture_tables.Rows {
   let labels = character_support.numbers(27)
   let assert Ok(rows) =
-    list.try_fold(labels, fixture_tables.rows(), fn(rows, label) {
-      fixture_tables.change(
-        rows:,
-        table: "CharacterCustomizationLabel",
-        id: label,
-        with: [#("faction2Id", Integer(0))],
-      )
-    })
+    fixture_tables.change_all(
+      rows: fixture_tables.rows(),
+      edits: list.map(labels, fn(label) {
+        #("CharacterCustomizationLabel", label, [#("faction2Id", Integer(0))])
+      }),
+    )
     as "the client's CharacterCustomizationLabel holds labels 1 to 27"
   let assert Ok(rows) =
     list.try_fold(labels, rows, fn(rows, label) {

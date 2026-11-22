@@ -58,8 +58,8 @@ while True:
             line = re.sub(r"cast_id: (\d+)", lambda x: f"cast_id: {k.group(1) if k else 0}_{x.group(1)}", line)
             if m := started.search(line):
                 cast_id, spell, root, _parent, _caster = m.groups()
-                # 5649: the creatures' auto attack. 58832 Discharge: damage at its first pulse only.
-                if spell not in ("5649", "58832"):
+                # 5649: the creatures' auto attack.
+                if spell != "5649":
                     casts[cast_id] = {"spell": spell, "root": root, "goes": [], "ms": ms, "kill": False}
                     open_casts.add(cast_id)
             elif m := go.search(line):

@@ -23,6 +23,7 @@
 
 import attacker_support
 import cast_support as support
+import channel_support
 import genesis_prime/client_connection.{CastWent}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
@@ -52,6 +53,7 @@ import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import prerequisite_support as prerequisites
+import spell_tables
 
 /// The planted base 3 is bag index 11 and base 1 is bag index 8
 /// (`cast_support.abilities`).
@@ -1162,4 +1164,42 @@ pub fn a_delayed_heal_holds_the_finish_and_drops_on_death_test() -> Nil {
   let #(_, later) = support.run_timers(state: dead, effects:, from_ms: 1000)
   assert timeline(fired: later) == []
     as "the caster's death before 1300 cancels the heal's timer: nothing lands"
+}
+
+pub fn emissions_heal_141384_heals_the_caster_at_each_of_its_three_pulses_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Emission 58841 (a Medic's channel of delay 410, maximum 1250, pulse 410, spellChannelFlags 0)
+  // holds Heal row 141384 (phaseFlags 1): a channel without spellChannelFlags bit 1 fires it at
+  // every pulse (`Spell4Effects.phaseFlags.channel`; texts 508644, 575045, 641203 and 641207
+  // "every 0.41s"). Its formula is parameter 13 x 0.0784 and parameter 10 x 3.41, which the
+  // caster of level 5 and Support Rating 400 turns into round(0.0784 x 100) + 3.41 x 5 =
+  // 8 + 17.05 = 25 (the same reading as Mind Over Body's 121 above).
+  let scene =
+    channel_support.focus_scene(
+      spell: spell_tables.client_spell(58_841),
+      class_id: 4,
+      focus: 1000.0,
+    )
+  let healing = healing_caster(health: 500)
+  let run =
+    channel_support.run_channel(
+      scene: channel_support.Scene(
+        ..scene,
+        caster: cast_state.Caster(
+          ..scene.caster,
+          stats: healing.stats,
+          vitals: healing.vitals,
+        ),
+      ),
+    )
+  let gos = channel_support.goes(run:)
+  assert gos == [410, 820, 1230] as "Emission has a go at each of its 3 pulses"
+  let healed_at =
+    list.flat_map(run.steps, fn(step) {
+      list.map(healed(effects: step.effects), fn(heal) {
+        #(step.after_ms, heal.1, heal.2)
+      })
+    })
+  assert healed_at == list.map(gos, fn(go) { #(go, effect_kind.Health, 25) })
+    as "the caster is healed 25 Health at each go"
 }
