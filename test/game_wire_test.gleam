@@ -10817,10 +10817,15 @@ pub fn a_medic_presses_restrictor_and_a_beast_in_its_field_is_shown_a_snare_stat
     })
   assert children == 8
     as "a Snare child at each of the field's eight half seconds, 500 to 4000"
-  let ended =
-    list.flat_map([first_tick, second_tick, ..rounds], states_ended_in)
-  assert list.contains(ended, #(beast_unit, first_effect_instance))
-    as "opcode.0x880: the first state ends with its own 0x880 after its 2000 ms"
+  // The rounds end at 1500, 2000, 2500, 3000, 3500 and 4000; the first state began at 500.
+  let ended_by_round =
+    list.map([first_tick, second_tick, ..rounds], states_ended_in)
+  assert list.map(
+      ended_by_round,
+      list.contains(_, #(beast_unit, first_effect_instance)),
+    )
+    == [False, False, False, False, True, False, False, False]
+    as "opcode.0x880: the first state ends with its own 0x880 at 2500, 2000 ms after it began, and not before"
   let #(later, _) = advanced_and_read(game:, time:, have:, number: 11, ms: 500)
   assert starts_of_spell(frames: later, spell4_id: 77_118) == []
     && list.any(rounds, finishes(frames: _, cast_id: field))
