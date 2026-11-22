@@ -1,23 +1,25 @@
 //// How a page's runtime subscribes to the process it shows (the Overview's
 //// poller, a log follower) so that what that process answers at once is never
 //// lost. A process hands a joining page what it already has the moment it
-//// joins, and the runtime hears a subject only once its selector is merged.
+//// joins, and a runtime discards a message from a subject whose selector it has
+//// not merged yet.
 ////
 //// ```text
-//// init ──► select effect ──► Joining(join) to the runtime ──► (selector merged)
-////                                   │
-////                                   └──► update ──► joined effect ──► join(subject)
-////                                                                       │
-//// the process ──── what it has, at once ──► subject ◄───────────────────┘
+//// the runtime's mailbox, in order:
+////   Joining(join)  ──►  merge of the subject's selector  ──►  the process's answer
+////        │                                                          ▲
+////        └── handled: join(subject) asks the process ───────────────┘
 //// ```
 ////
-//// - The select effect only dispatches the join to the runtime; the runtime
-////   queues the merge of the subject's selector after that message and before
-////   any answer to the join can be queued (lustre's server runtime,
-////   `handle_effect`).
+//// - The select effect only dispatches the join to the runtime. The runtime
+////   queues that message before the merge of the subject's selector (lustre's
+////   server runtime, `handle_effect`), so the join runs while the merge is
+////   already queued, and an answer the join causes is queued behind the merge.
 //// - A message that reaches an actor before its selector knows the subject is
 ////   discarded with a warning (gleam_otp `actor`, `Unexpected`), so a join made
-////   inside the select effect loses an answer that comes back at once.
+////   inside the select effect loses an answer that comes back at once. The join
+////   must therefore run in the runtime's own process, as `Joining` is handled,
+////   never from another process or after a hop through another actor.
 
 import gleam/erlang/process.{type Subject}
 import lustre/effect.{type Effect}
@@ -38,7 +40,8 @@ pub fn open(
 }
 
 /// The effect a page's `update` returns for its `joining` message: the join,
-/// made once the runtime hears the subject.
+/// made in the runtime's own process, after the merge of the subject's selector
+/// is queued, so any answer to it is queued behind that merge.
 pub fn joined(join join: fn() -> Nil) -> Effect(message) {
   effect.from(fn(_dispatch) { join() })
 }
