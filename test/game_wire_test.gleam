@@ -113,6 +113,7 @@ import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_target_info
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
@@ -10580,16 +10581,25 @@ fn go_effects_in(frames frames: List(Frame)) -> List(#(Int, Int, List(Int))) {
     case frame.message_id {
       0x07F4 -> {
         let assert Ok(go) = spell_go.decode(frame.body) as "0x7f4 decodes"
-        list.map(go.targets, fn(target) {
-          #(
-            go.cast_id,
-            target.unit_id,
-            list.map(target.effects, fn(effect) { effect.spell4_effects_id }),
-          )
-        })
+        effects_of_go(go:)
       }
       _ -> []
     }
+  })
+}
+
+/// The effect ids a go lists for each unit it names, with the go's cast id.
+fn effects_of_go(go go: spell_go.SpellGo) -> List(#(Int, Int, List(Int))) {
+  list.map(go.targets, fn(target) {
+    #(go.cast_id, target.unit_id, effect_ids_of(target:))
+  })
+}
+
+fn effect_ids_of(
+  target target: spell_target_info.SpellTargetInfo,
+) -> List(Int) {
+  list.map(target.effects, fn(effect: spell_effect_info.SpellEffectInfo) {
+    effect.spell4_effects_id
   })
 }
 
