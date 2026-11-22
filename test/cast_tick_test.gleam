@@ -1668,7 +1668,7 @@ fn proxy_row_of(
     target: spell_plan.OnCaster,
     spell: proxy_child(),
     gains: [],
-    period: Some(schedule),
+    period: Some(spell_plan.Periodic(schedule:, persistence: None)),
   )
 }
 

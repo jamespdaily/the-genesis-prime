@@ -190,7 +190,7 @@ pub fn a_timed_periodic_proxy_on_the_caster_reads_as_the_schedule_of_its_row_tes
       as "a timed Proxy aimed at the caster is read"
     assert targets == [spell_plan.OnCaster]
       as "targetFlags 1 casts on the caster"
-    assert period == Some(schedule)
+    assert period == Some(spell_plan.Periodic(schedule:, persistence: None))
       as "the schedule of the row: tick k lands delay plus k times tickTime, for durationTime over tickTime ticks (texts 504979 and 311216)"
     let assert Ok(spell) =
       spell_plan.spell_alone(tables:, sources:, spell4_id: holder, chain: [])
@@ -201,7 +201,8 @@ pub fn a_timed_periodic_proxy_on_the_caster_reads_as_the_schedule_of_its_row_tes
         fn(proxy) { proxy.effect_id.value == row_id },
       )
       as "the holder's plan holds the Proxy of the row once"
-    assert proxy.delay_ms == 0 && proxy.period == Some(schedule)
+    assert proxy.delay_ms == 0
+      && proxy.period == Some(spell_plan.Periodic(schedule:, persistence: None))
       as "the row's delay is the schedule's, not a wait before the cast"
   })
 }

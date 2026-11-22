@@ -750,12 +750,12 @@ pub fn proxies_ticking(
 ) -> List(TickingOn) {
   list.filter_map(proxies, fn(proxy) {
     case proxy.period {
-      Some(schedule) ->
+      Some(periodic) ->
         Ok(TickingOn(
           unit_id: caster.unit_id,
           life: 0,
           effect_id: proxy.effect_id,
-          schedule:,
+          schedule: periodic.schedule,
           kind: cast_state.proxy_tick(proxy:),
         ))
       None -> Error(Nil)

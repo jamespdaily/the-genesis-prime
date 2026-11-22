@@ -1442,10 +1442,20 @@ pub type Proxy {
     /// at the go of the parent whose units it struck; none for a child on the
     /// caster.
     gains: List(Gain),
-    /// The schedule of a Proxy with a tickTime, which casts its child at each tick instead of
-    /// at the go (`Spell4Effects.effectType.26.periodic`); none for a Proxy that casts once.
-    period: Option(ticking.Schedule),
+    /// The schedule and persistence of a Proxy with a tickTime, which casts its child at each
+    /// tick instead of at the go (`Spell4Effects.effectType.26.periodic`); none for a Proxy
+    /// that casts once.
+    period: Option(Periodic),
   )
+}
+
+/// What a Proxy that casts its child at each tick holds beyond a Proxy that casts once: the
+/// schedule of its ticks, and the prerequisite its row's prerequisiteIdCasterPersistence
+/// names, which ends the whole cast when it fails (`cast_persist`); none when the row names
+/// none. A Proxy that casts once has no ticks for a persistence to end, so the type holds
+/// it here alone.
+pub type Periodic {
+  Periodic(schedule: ticking.Schedule, persistence: Option(Prerequisite))
 }
 
 /// The payload of one effect row of a planned spell, by what the row does. `planned` makes
@@ -2282,7 +2292,7 @@ pub type ReadRow {
   ReadProxy(
     targets: List(ProxyTarget),
     condition: Condition,
-    period: Option(ticking.Schedule),
+    period: Option(Periodic),
   )
 }
 
@@ -3498,7 +3508,7 @@ fn proxy_of(
   effect effect: spell4_effects.Spell4Effects,
   target target: ProxyTarget,
   condition condition: Condition,
-  period period: Option(ticking.Schedule),
+  period period: Option(Periodic),
 ) -> Result(Proxy, PlanError) {
   use child <- result.map(spell_of(
     tables:,
@@ -6916,7 +6926,7 @@ fn proxy_reading(
     _, True -> Ok(LeftOut(why: PeriodicProxyOnAreaNotRead))
     tick_ms, False ->
       case ticking.schedule_of(row: lasting_row_of(effect:), tick_ms:) {
-        Ok(schedule) -> read(Some(schedule))
+        Ok(schedule) -> read(Some(Periodic(schedule:, persistence: None)))
         Error(ticking.UntilRemoved) ->
           Ok(LeftOut(why: PeriodicProxyUntilRemovedNotRead))
         Error(ticking.NoTick(tick_ms:, duration_ms:)) ->
