@@ -1003,39 +1003,64 @@ pub fn a_periodic_proxys_own_persistence_ends_its_cast_in_the_input_that_breaks_
 
 pub fn a_periodic_proxys_persistence_checks_the_caster_as_second_unit_even_when_the_cast_has_another_primary_target_test() -> Nil {
   use <- owned_test.run(5000)
-  // The persistence is a type 60 condition (the stacks of Spell4 7022 the second unit cast,
-  // at least 1) on the Proxy of Spell4 7022 itself, whose cast holds one stack on the caster.
-  let own_stack = prerequisites.single(id: 41_835, condition: #(60, 4, 7022, 1))
-  let child =
-    periodic_holder(spell4_id: 7022, base: 3, persistence: Some(own_stack))
-  let plans = support.plans_starting_on_each_struck(started: child)
-  let fighting = support.caster_in_combat(in_combat: True)
-  let #(state, raw) =
-    support.pressed_raw_in(
-      plans:,
-      state: cast_state.new(),
-      caster: fighting,
-      bag_index: bag_of_base_3,
-      target: 0,
-      at: 1000,
-    )
-  let #(state, effects) =
-    support.answered_as(
-      caster: fighting,
-      state:,
-      effects: raw,
-      at: 1000,
-      struck: support.hits([99]),
-      rolls: [],
-    )
-  let cast_id = cast_id_of(spell4_id: 7022, effects:)
-  let assert Ok(holder) = cast_state.holder_of(cast: state, cast_id:)
-    as "the struck unit's child is a cast of its own"
-  assert holder.primary_target == 99
-    as "the child's primary target is the struck creature, not the caster"
-  let #(unchanged, nothing) = persisted(state:, caster: fighting, at: 1100)
-  assert failed(effects: nothing) == [] && unchanged == state
-    as "the caster holds the stack it cast: type 60 reads the caster as second unit, so the cast holds (with the creature 99 as second unit the count would be 0 and it would end)"
+  // Each persistence is a type 60 condition on the Proxy of Spell4 7022 itself (the stacks of
+  // 7022 the second unit cast against the value), whose cast holds one stack on the caster
+  // and none on the struck creature 99. Second unit the caster: the count is 1; second unit
+  // the creature 99, the cast's primary target: the count is 0.
+  let cases = [
+    #(
+      "at least 1 stack: the count 1 holds it, and with the creature 99 as second unit the count would be 0 and the cast would end",
+      #(60, 4, 7022, 1),
+      False,
+    ),
+    #(
+      "no stack at all (comparison 1, value 0): the count 1 fails it, and with the creature 99 as second unit the count would be 0 and the cast would hold",
+      #(60, 1, 7022, 0),
+      True,
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(reason, condition, ends) = case_
+    let persistence = prerequisites.single(id: 41_835, condition:)
+    let child =
+      periodic_holder(spell4_id: 7022, base: 3, persistence: Some(persistence))
+    let plans = support.plans_starting_on_each_struck(started: child)
+    let fighting = support.caster_in_combat(in_combat: True)
+    let #(state, raw) =
+      support.pressed_raw_in(
+        plans:,
+        state: cast_state.new(),
+        caster: fighting,
+        bag_index: bag_of_base_3,
+        target: 0,
+        at: 1000,
+      )
+    let #(state, effects) =
+      support.answered_as(
+        caster: fighting,
+        state:,
+        effects: raw,
+        at: 1000,
+        struck: support.hits([99]),
+        rolls: [],
+      )
+    let cast_id = cast_id_of(spell4_id: 7022, effects:)
+    let assert Ok(holder) = cast_state.holder_of(cast: state, cast_id:)
+      as "the struck unit's child is a cast of its own"
+    assert holder.primary_target == 99
+      as "the child's primary target is the struck creature, not the caster"
+    let #(after, effects) = persisted(state:, caster: fighting, at: 1100)
+    case ends {
+      False -> {
+        assert failed(effects:) == [] && after == state as reason
+      }
+      True -> {
+        assert failed(effects:) == [#(cast_id, 282, 7, 0)]
+          && support.ids(frames: support.writes(effects:)) == [0x07F9, 0x07FE]
+          as reason
+      }
+    }
+  })
 }
 
 pub fn a_periodic_proxys_persistence_of_a_type_the_server_does_not_read_keeps_the_cast_with_one_debug_line_test() -> Nil {

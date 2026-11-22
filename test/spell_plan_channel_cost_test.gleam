@@ -215,18 +215,10 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
           effect_id: 94_586,
         ),
       ),
-      #(
-        70_922,
-        spell_plan.ApplyPrerequisiteNotRead(
-          spell4_id: 70_922,
-          effect_id: 193_697,
-          prerequisite_type: 60,
-        ),
-      ),
     ]
-    as "7.3: the 17 rows that do not plan, each by its error: a vital requirement of type 3, a vital modifier of vital 9, the Spell4 row 0 a tree names, heals on a struck unit, a Proxy cycle and a prerequisite type not read; any other row that stops planning is a coverage loss"
-  assert list.length(planned) == 122
-    as "7.3: the other 122 rows plan, and each holds its costs as the next check reads them"
+    as "7.3: the 16 rows that do not plan, each by its error: a vital requirement of type 3, a vital modifier of vital 9, the Spell4 row 0 a tree names, heals on a struck unit and a Proxy cycle; any other row that stops planning is a coverage loss"
+  assert list.length(planned) == 123
+    as "7.3: the other 123 rows plan, and each holds its costs as the next check reads them"
   list.each(planned, fn(entry) {
     assert list.map({ entry.1 }.costs, kind_of)
       == list.map(costs(entry.0), expected_kind)

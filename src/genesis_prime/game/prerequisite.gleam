@@ -1794,8 +1794,9 @@ fn condition_check(
 
 /// The type of a condition that reads the casts, combat state or vitals of its unit,
 /// which a subject known by its place alone does not hold. A type 50 condition reads the
-/// casts of the second unit alone (`is_under_cast_by`), which the subject holds as a type
-/// 130 condition's do, so it is decided. A roll is no state of the unit
+/// casts of the second unit alone (`is_under_cast_by`), and a type 60 condition counts the
+/// stacks of the second unit's casts alone (`stack_count`); the subject holds both as a
+/// type 130 condition's do, so both are decided. A roll is no state of the unit
 /// (`Prerequisite.prerequisiteTypeId.37`: the units are not read), so a type 37 condition
 /// is given its roll for any subject. A nested row decides by
 /// its own conditions, and a resource slot, a stealth and a difficulty that the subject
@@ -1867,14 +1868,7 @@ fn condition_decided(
       rolls,
       verdict_of(compare(
         relation:,
-        measured: int.sum(
-          list.filter_map(subject.under, fn(held) {
-            case held.spell4_id == spell4_id {
-              True -> Ok(held.count)
-              False -> Error(Nil)
-            }
-          }),
-        ),
+        measured: stack_count(subject:, spell4_id:, caster: None),
         value:,
       )),
     )
@@ -1886,7 +1880,11 @@ fn condition_decided(
         Some(second_unit), _ ->
           verdict_of(compare(
             relation:,
-            measured: stacks_cast_by(subject:, spell4_id:, caster: second_unit),
+            measured: stack_count(
+              subject:,
+              spell4_id:,
+              caster: Some(second_unit),
+            ),
             value:,
           ))
       },
@@ -2435,17 +2433,22 @@ fn is_under_cast_by(
   }
 }
 
-/// The stack count of the Spell4 on the subject over the casts of one caster, 0 for caster
-/// id 0 (`0x14046a110`).
-fn stacks_cast_by(
+/// The stack count of the Spell4 on the subject: the sum of the instance counts of the
+/// casts that hold a node on it, over every caster (`None`, type 59) or over one caster
+/// alone (`Some(unit_id)`, type 60), which counts 0 for unit id 0 (`0x14046a110`).
+fn stack_count(
   subject subject: Subject,
   spell4_id spell4_id: Spell4Id,
-  caster caster: Int,
+  caster caster: Option(Int),
 ) -> Int {
-  use <- bool.guard(when: caster == 0, return: 0)
+  use <- bool.guard(when: caster == Some(0), return: 0)
   int.sum(
     list.filter_map(subject.under, fn(held) {
-      case held.spell4_id == spell4_id && held.caster == caster {
+      let by_caster = case caster {
+        None -> True
+        Some(unit_id) -> held.caster == unit_id
+      }
+      case held.spell4_id == spell4_id && by_caster {
         True -> Ok(held.count)
         False -> Error(Nil)
       }

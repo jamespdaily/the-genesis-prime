@@ -13,11 +13,13 @@
 //// - `Spell4Effects.prerequisiteIdCasterApply`: the client reads no effect row's persistence
 ////   columns, so a periodic Proxy's caster persistence is the row's column as it stands
 ////   (Prerequisite 903, type 28: the caster in combat) and its target persistence is read by no
-////   rule.
+////   rule. Row 903 is `table_rows -- Prerequisite 903`: type 28, comparison 1, objectId 0 and
+////   value 0, which `Prerequisite.prerequisiteTypeId.28` passes for a unit in combat.
 
 import client_tables
 import fixture_tables
 import genesis_prime/game/effect_row_read
+import genesis_prime/game/prerequisite.{Fails, Passes, Subject}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
   Applied, LeftOut, ProxyNamesNoSpell, ReadProxy,
@@ -283,6 +285,22 @@ pub fn a_periodic_proxy_aimed_at_the_area_or_left_until_removed_is_left_out_by_n
   })
 }
 
+/// The verdicts of the persistence for a caster in combat and one out of it.
+fn in_and_out_of_combat(
+  persistence persistence: prerequisite.Prerequisite,
+) -> #(prerequisite.Verdict, prerequisite.Verdict) {
+  let verdict = fn(in_combat) {
+    prerequisite.check(
+      prerequisite: persistence,
+      subject: Subject(
+        ..prerequisite_support.holding(held: [], second_unit: Some(7)),
+        in_combat:,
+      ),
+    )
+  }
+  #(verdict(True), verdict(False))
+}
+
 pub fn a_periodic_proxys_caster_persistence_is_read_from_its_row_and_a_target_persistence_is_not_test() -> Nil {
   use <- owned_test.run(60_000)
   // Each case plants one row of the fixture, the timed periodic Proxy 121345: the cells it
@@ -327,6 +345,13 @@ pub fn a_periodic_proxys_caster_persistence_is_read_from_its_row_and_a_target_pe
           )
           as "the timed periodic Proxy aimed at the caster is read"
         assert periodic.persistence == expected as reason
+        case periodic.persistence {
+          Some(persistence) -> {
+            assert in_and_out_of_combat(persistence:) == #(Passes, Fails)
+              as "the persistence the plan holds is row 903 as the client has it: a caster in combat passes it and one out of combat fails it"
+          }
+          None -> Nil
+        }
         assert periodic.schedule
           == Schedule(
             delay_ms: 1,

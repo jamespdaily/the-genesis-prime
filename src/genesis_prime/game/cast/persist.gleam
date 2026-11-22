@@ -20,8 +20,11 @@
 ////   creature's state. A condition of a type not read, a roll and a creature target keep the
 ////   cast, with one debug line for the spell.
 //// - **A periodic Proxy's row persistence** is checked after the spell's own caster
-////   persistence, in row order, and ends the whole cast with 282 when it fails. Its units
-////   are the caster first and the caster second, as an effect row's are
+////   persistence, in row order, and ends the whole cast with 282 when it fails. Ending the
+////   whole cast is the server's guess: the client reads no effect row's persistence
+////   (`Spell4Effects.prerequisiteIdCasterApply`), and the tooltip of Augmented Blade's
+////   stack removal says it stops with the toggle (text 679906). Its
+////   units are the caster first and the caster second, as an effect row's are
 ////   (`Spell4Effects.prerequisiteIdTargetApply`), not the primary target the spell
 ////   column's check passes (`spell_plan.proxy_persistences`).
 
