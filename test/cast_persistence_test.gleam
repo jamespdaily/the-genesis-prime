@@ -15,7 +15,9 @@
 ////   client reads no effect row's persistence): the server ends the whole cast with the
 ////   spell column's frames (a guess), and checks it with the caster as the second unit, as
 ////   the effect rows' order has it (`Spell4Effects.prerequisiteIdTargetApply`) and not the
-////   cast's primary target, which only the spell column's order uses.
+////   cast's primary target, which only the spell column's order uses. Augmented Blade's
+////   stack removal 82838 ends with its last Kinetic Rage stack or when the toggle turns back
+////   on (Prerequisite 38758, `Spell4.82838`, a guess: the client checks no persistence).
 //// - The server's choices (the cast module's doc): the check runs at the end of each input
 ////   in the world; CasterPersistence before TargetPersistence; a failing cast ends as a
 ////   death ends one cast, with the caster's first unit and the cast's primary target the
@@ -25,6 +27,7 @@
 import cast_support as support
 import class_resource_support
 import client_tables
+import fixture_tables
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/persist as cast_persist
@@ -41,8 +44,10 @@ import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_started
-import genesis_prime/step.{ConnectionId, LogDebug}
-import genesis_prime/table/id.{PrerequisiteId, Spell4BaseId, Spell4EffectsId}
+import genesis_prime/step.{type TimerId, ConnectionId, LogDebug}
+import genesis_prime/table/id.{
+  PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
+}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -54,6 +59,8 @@ import unitest
 
 /// The bag indices of the planted bases 1 and 3 (`cast_support.abilities`).
 const bag_of_base_1 = 8
+
+const bag_of_base_2 = 10
 
 const bag_of_base_3 = 11
 
@@ -1103,4 +1110,235 @@ pub fn a_periodic_proxys_persistence_of_a_type_the_server_does_not_read_keeps_th
   let #(_, third) = persisted(state:, caster: fighting, at: 1400)
   assert second == [] && third == []
     as "no more lines and no end on the inputs after"
+}
+
+// ---- Augmented Blade's stack removal ----
+
+/// The timers due at `until_ms` or before fire, earliest first, each answered as a go that
+/// struck nobody and followed by the check of every cast's persistence for the same caster,
+/// as the connection runs it after each input: the state, each step's time and effects, and
+/// the timers left.
+fn driven(
+  state state: State,
+  caster caster: Caster,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+) -> #(State, List(#(Int, List(Effect))), List(#(Int, TimerId))) {
+  support.run_timers_checked(
+    caster:,
+    state:,
+    pending:,
+    until_ms:,
+    after: fn(state, caster, at) { persisted(state:, caster:, at:) },
+  )
+}
+
+/// A press, answered as a go that struck nobody and followed by the persistence check at
+/// the same time: the state, the press's effects and the timers it started.
+fn pressed_and_checked(
+  plans plans: spell_plan.Plans,
+  state state: State,
+  caster caster: Caster,
+  bag bag: Int,
+  at ms: Int,
+) -> #(State, List(Effect), List(#(Int, TimerId))) {
+  let #(state, pressed) =
+    support.press_as(plans:, state:, caster:, bag:, at: ms)
+  let #(state, checked) = persisted(state:, caster:, at: ms)
+  let effects = list.append(pressed, checked)
+  #(state, effects, support.due_of(effects:, now_ms: ms))
+}
+
+/// The time of each step that starts a cast of the spell.
+fn starts_in(
+  steps steps: List(#(Int, List(Effect))),
+  spell4_id spell4_id: Int,
+) -> List(Int) {
+  support.times_of(starts: support.starts_of(steps:, spell4_id:))
+}
+
+pub fn augmented_blades_stack_removal_buff_ends_with_its_last_kinetic_rage_stack_or_when_the_toggle_turns_back_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let planned = fn(spell4_id) {
+    let assert Ok(spell) =
+      spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
+      as "the spell plans on its own"
+    spell
+  }
+  let rage = planned(79_757)
+  let toggle_on = planned(79_753)
+  let toggle_off = planned(57_357)
+  let removal_buff = planned(82_838)
+  let removal = planned(82_839)
+  let proxies_of = fn(spell) {
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
+  }
+  // The wiring of the real rows: Proxy 217944 of 82838 casts 82839 every 500 ms until its
+  // node ends, holding Prerequisite 38758; 82839's type 80 row 217947 takes one stack of
+  // 79757; 57357's Proxy 217946 starts 82838 one ms on; Kinetic Rage's own Proxy 210337
+  // ticks every 250 ms and 79757 stacks to the cap of Spell4StackGroup 1916.
+  let assert [removing] = proxies_of(removal_buff) as "82838 holds one Proxy"
+  assert removing.effect_id == Spell4EffectsId(217_944)
+    && removing.spell.spell4_id.value == 82_839
+    && removing.period
+    == Some(spell_plan.Periodic(
+      schedule: support.open_schedule(delay_ms: 0, tick_ms: 500),
+      persistence: Some(prerequisites.fixture_row(row: 38_758)),
+    ))
+    as "Proxy 217944 casts 82839 every 500 ms with persistence 38758"
+  let assert [taking] =
+    list.filter_map(removal.effects, fn(planned) {
+      spell_plan.as_remove(kind: planned.kind)
+    })
+    as "82839 holds one removal"
+  assert taking.effect_id == Spell4EffectsId(217_947)
+    && taking.selector == lasting.Spell(spell4_id: Spell4Id(79_757))
+    && taking.count == 1
+    as "row 217947 takes one stack of 79757"
+  assert list.any(proxies_of(toggle_off), fn(proxy) {
+    proxy.effect_id == Spell4EffectsId(217_946)
+    && proxy.delay_ms == 1
+    && proxy.spell.spell4_id.value == 82_838
+  })
+    as "57357 starts 82838 one millisecond after its go (row 217946)"
+  assert rage.stack == lasting.Stack(group_id: 1916, cap: 100)
+    && list.map(proxies_of(rage), fn(proxy) { proxy.effect_id })
+    == [Spell4EffectsId(210_337)]
+    as "Kinetic Rage stacks to 100 and holds the drain Proxy 210337"
+  // Two stacks of 79757 cast by the rule: a planted ability starts one at each of two ticks
+  // after its press at 1000.
+  let stacker =
+    support.with_effects(spell: support.child(spell4_id: 7041, base: 3), kinds: [
+      spell_plan.ProxyEffect(spell_plan.Proxy(
+        effect_id: Spell4EffectsId(7041),
+        delay_ms: 0,
+        phase_flags: -1,
+        condition: Always,
+        tag: spend.always,
+        target: spell_plan.OnCaster,
+        spell: rage,
+        gains: [],
+        period: Some(spell_plan.Periodic(
+          schedule: Schedule(
+            delay_ms: 0,
+            tick_ms: 1000,
+            duration_ms: 2000,
+            count: Ticks(2),
+          ),
+          persistence: None,
+        )),
+      )),
+    ])
+  let plans =
+    support.plans_of([
+      stacker,
+      Spell(..toggle_off, spell4_base_id: Spell4BaseId(1)),
+      Spell(..toggle_on, spell4_base_id: Spell4BaseId(2)),
+    ])
+  let caster = support.caster()
+  let #(state, _, pending) =
+    pressed_and_checked(
+      plans:,
+      state: cast_state.new(),
+      caster:,
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(stacked, stacking, pending) =
+    driven(state:, caster:, pending:, until_ms: 3000)
+  assert starts_in(steps: stacking, spell4_id: 79_757) == [2000, 3000]
+    as "two stacks of Kinetic Rage start, one at each tick of the stacker"
+  // Scenario 1: the toggle is turned off at 3500; 82838 starts at 3501 and ticks at 4001 and
+  // 4501, each tick starting 82839, which takes one stack, and it ends with the last stack.
+  let #(off, pressed, off_pending) =
+    pressed_and_checked(
+      plans:,
+      state: stacked,
+      caster:,
+      bag: bag_of_base_1,
+      at: 3500,
+    )
+  assert failed(effects: pressed) == [] as "the press does not fail a cast"
+  let pending = list.append(pending, off_pending)
+  let #(ended, removing_steps, _) =
+    driven(state: off, caster:, pending:, until_ms: 6501)
+  assert starts_in(steps: removing_steps, spell4_id: 82_838) == [3501]
+    as "82838 starts one ms after the press"
+  assert starts_in(steps: removing_steps, spell4_id: 82_839) == [4001, 4501]
+    as "82838 ticks at 500 and 1000 after its go, and there is no third tick"
+  let assert [cast_id] =
+    list.flat_map(removing_steps, fn(step) { started(effects: step.1) })
+    |> list.filter_map(fn(start) {
+      case start.0 == 82_838 {
+        True -> Ok(start.1)
+        False -> Error(Nil)
+      }
+    })
+    as "82838 started once"
+  let failures =
+    list.flat_map(removing_steps, fn(step) {
+      list.map(failed(effects: step.1), fn(failure) { #(step.0, failure) })
+    })
+  assert failures == [#(4501, #(cast_id, 282, 7, 0))]
+    as "82838 fails 282 in the input that takes the last stack, at 4501, and not before"
+  assert list.any(removing_steps, fn(step) {
+    step.0 == 4501 && list.contains(finished_ids(effects: step.1), cast_id)
+  })
+    as "its 0x7fe ends it for the client"
+  assert !list.any(cast_state.holders(cast: ended), fn(holder) {
+    holder.0 == cast_id
+  })
+    as "82838 is no longer held"
+  // Scenario 2: the toggle turned back on at 4100, while 82838 is live, ends it in the input
+  // of that start.
+  let #(live, _, _) = driven(state: off, caster:, pending:, until_ms: 4100)
+  assert list.any(cast_state.holders(cast: live), fn(holder) {
+    holder.0 == cast_id
+  })
+    as "82838 is live at 4100"
+  let #(on, on_pressed, _) =
+    pressed_and_checked(
+      plans:,
+      state: live,
+      caster:,
+      bag: bag_of_base_2,
+      at: 4100,
+    )
+  assert failed(effects: on_pressed) == [#(cast_id, 282, 7, 0)]
+    as "79753 started: 37378 fails and 82838 ends in the input of that start"
+  assert !list.any(cast_state.holders(cast: on), fn(holder) {
+    holder.0 == cast_id
+  })
+    as "82838 is no longer held"
+  // Scenario 3: with no stack at all, 82838 ends in the input of its own start.
+  let #(bare, _, bare_pending) =
+    pressed_and_checked(
+      plans:,
+      state: cast_state.new(),
+      caster:,
+      bag: bag_of_base_1,
+      at: 1000,
+    )
+  let #(_, bare_steps, _) =
+    driven(state: bare, caster:, pending: bare_pending, until_ms: 3000)
+  assert starts_in(steps: bare_steps, spell4_id: 82_838) == [1001]
+    as "82838 starts one ms after the press"
+  let assert [bare_cast_id] =
+    list.flat_map(bare_steps, fn(step) { started(effects: step.1) })
+    |> list.filter_map(fn(start) {
+      case start.0 == 82_838 {
+        True -> Ok(start.1)
+        False -> Error(Nil)
+      }
+    })
+    as "82838 started once"
+  assert list.flat_map(bare_steps, fn(step) {
+      list.map(failed(effects: step.1), fn(failure) { #(step.0, failure) })
+    })
+    == [#(1001, #(bare_cast_id, 282, 7, 0))]
+    as "82838 fails 282 in the input of its own start"
+  assert starts_in(steps: bare_steps, spell4_id: 82_839) == []
+    as "with no stack it never ticks"
 }

@@ -1832,17 +1832,17 @@ pub fn run_timers_posed(
   poses poses: dict.Dict(Int, Pose),
   until_ms until_ms: Option(Int),
 ) -> #(State, List(Fired)) {
-  let #(state, fired, _) =
+  let #(state, fired, _, _) =
     run_pending(
       caster: cast_cost.after_payments(caster:, effects:),
       state:,
       pending: due_of(effects:, now_ms: from_ms),
-      fired_so_far: [],
       struck_at:,
       poses:,
       until_ms:,
       before: fn(_, caster) { caster },
       leaves_open: fn(_) { False },
+      after: no_check,
     )
   #(state, fired)
 }
@@ -1865,17 +1865,19 @@ pub fn run_timers_scripted(
   before before: fn(Int, Caster) -> Caster,
   leaves_open leaves_open: fn(Int) -> Bool,
 ) -> #(State, List(Fired), Caster) {
-  run_pending(
-    caster: cast_cost.after_payments(caster:, effects:),
-    state:,
-    pending: due_of(effects:, now_ms: from_ms),
-    fired_so_far: [],
-    struck_at: fn(_, _) { struck },
-    poses: dict.new(),
-    until_ms:,
-    before:,
-    leaves_open:,
-  )
+  let #(state, fired, caster, _) =
+    run_pending(
+      caster: cast_cost.after_payments(caster:, effects:),
+      state:,
+      pending: due_of(effects:, now_ms: from_ms),
+      struck_at: fn(_, _) { struck },
+      poses: dict.new(),
+      until_ms:,
+      before:,
+      leaves_open:,
+      after: no_check,
+    )
+  #(state, fired, caster)
 }
 
 /// The same for a state that repeats, which never runs out of timers: only the
@@ -1898,17 +1900,17 @@ pub fn run_timers_until_as(
   from_ms from_ms: Int,
   until_ms until_ms: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
-  let #(state, fired, _) =
+  let #(state, fired, _, _) =
     run_pending(
       caster: cast_cost.after_payments(caster:, effects:),
       state:,
       pending: due_of(effects:, now_ms: from_ms),
-      fired_so_far: [],
       struck_at: fn(_, _) { [] },
       poses: dict.new(),
       until_ms: Some(until_ms),
       before: fn(_, caster) { caster },
       leaves_open: fn(_) { False },
+      after: no_check,
     )
   #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }))
 }
@@ -1924,6 +1926,25 @@ pub fn hurt(caster caster: Caster) -> Caster {
       max_shield: 0,
     ),
   )
+}
+
+/// Each 0x7ff of the spell `spell4_id` the steps write, with the time of its step.
+pub fn starts_of(
+  steps steps: List(#(Int, List(Effect))),
+  spell4_id spell4_id: Int,
+) -> List(#(Int, spell_started.SpellStarted)) {
+  list.flat_map(steps, fn(step) {
+    started_in(effects: step.1)
+    |> list.filter(fn(start) { start.spell4_id == spell4_id })
+    |> list.map(fn(start) { #(step.0, start) })
+  })
+}
+
+/// The time of each start.
+pub fn times_of(
+  starts starts: List(#(Int, spell_started.SpellStarted)),
+) -> List(Int) {
+  list.map(starts, fn(start) { start.0 })
 }
 
 /// Each 0x7ff the effects write, decoded.
@@ -2031,66 +2052,154 @@ pub fn spends_pending(state state: State) -> Int {
   })
 }
 
+fn no_check(
+  state: State,
+  _caster: Caster,
+  _due: Int,
+) -> #(State, List(Effect)) {
+  #(state, [])
+}
+
+/// What one fired timer leaves: the context the next timer fires with, the state, the
+/// effects (which start and cancel the timers still to fire) and the record the caller
+/// keeps for the step.
+pub type Step(context, record) {
+  Step(context: context, state: State, effects: List(Effect), record: record)
+}
+
+/// Fires the pending timers due at `until_ms` or before, earliest first, each through
+/// `step`, which gets the context, the state, the time and the timer. The effects a step
+/// returns cancel their timers and start theirs, due their delay after the step's time.
+/// Returns the last context and state, each step's record and the timers left.
+pub fn fire_pending(
+  context context: context,
+  state state: State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  step step: fn(context, State, Int, TimerId) -> Step(context, record),
+) -> #(context, State, List(record), List(#(Int, TimerId))) {
+  fire_pending_loop(
+    context:,
+    state:,
+    pending:,
+    until_ms:,
+    step:,
+    records_so_far: [],
+  )
+}
+
+fn fire_pending_loop(
+  context context: context,
+  state state: State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  step step: fn(context, State, Int, TimerId) -> Step(context, record),
+  records_so_far records_so_far: List(record),
+) -> #(context, State, List(record), List(#(Int, TimerId))) {
+  case
+    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
+  {
+    [#(due, timer), ..rest] if due <= until_ms -> {
+      let fired = step(context, state, due, timer)
+      let cancelled = cancelled_timers(effects: fired.effects)
+      fire_pending_loop(
+        context: fired.context,
+        state: fired.state,
+        pending: list.append(
+          list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
+          due_of(effects: fired.effects, now_ms: due),
+        ),
+        until_ms:,
+        step:,
+        records_so_far: [fired.record, ..records_so_far],
+      )
+    }
+    sorted -> #(context, state, list.reverse(records_so_far), sorted)
+  }
+}
+
+/// The timers fire as in `fire_pending` with the caster as the context: each is answered
+/// as the rule's go, then `after` runs for the state, the caster and the time (the check
+/// of every cast's persistence, as the connection runs it after each input) and its
+/// effects join the step's. Returns the state, the steps, the caster after the last step
+/// and the timers left.
 fn run_pending(
   caster caster: Caster,
   state state: State,
   pending pending: List(#(Int, TimerId)),
-  fired_so_far fired_so_far: List(Fired),
   struck_at struck_at: fn(Int, cast_state.GoAsked) -> List(cast_state.Struck),
   poses poses: dict.Dict(Int, Pose),
   until_ms until_ms: Option(Int),
   before before: fn(Int, Caster) -> Caster,
   leaves_open leaves_open: fn(Int) -> Bool,
-) -> #(State, List(Fired), Caster) {
-  let limit = option.unwrap(until_ms, 9_007_199_254_740_991)
-  case
-    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
-  {
-    [] -> #(state, list.reverse(fired_so_far), caster)
-    [#(due, _), ..] if due > limit -> #(
-      state,
-      list.reverse(fired_so_far),
-      caster,
+  after after: fn(State, Caster, Int) -> #(State, List(Effect)),
+) -> #(State, List(Fired), Caster, List(#(Int, TimerId))) {
+  let #(caster, state, fired, left) =
+    fire_pending(
+      context: caster,
+      state:,
+      pending:,
+      until_ms: option.unwrap(until_ms, 9_007_199_254_740_991),
+      step: fn(caster, state, due, timer) {
+        let caster = before(due, caster)
+        let #(state, raw) =
+          cast.timer_fired(cast: state, timer:, caster:, now: at(ms: due))
+        let spends = spends_pending(state:)
+        let #(state, raw) = then_procs(step: #(state, raw), caster:, at: due)
+        let #(state, answered) = case leaves_open(due) {
+          True -> #(state, raw)
+          False ->
+            answered_each(
+              caster:,
+              state:,
+              effects: raw,
+              at: due,
+              struck_of: fn(asked) { struck_at(due, asked) },
+              rolls: [],
+              poses:,
+            )
+        }
+        let #(state, checked) = after(state, caster, due)
+        let effects = list.append(answered, checked)
+        Step(
+          context: cast_cost.after_payments(caster:, effects:),
+          state:,
+          effects:,
+          record: Fired(
+            at_ms: due,
+            asked: goes_asked(effects: raw),
+            spends:,
+            effects:,
+          ),
+        )
+      },
     )
-    [#(due, timer), ..rest] -> {
-      let caster = before(due, caster)
-      let #(state, raw) =
-        cast.timer_fired(cast: state, timer:, caster:, now: at(ms: due))
-      let spends = spends_pending(state:)
-      let #(state, raw) = then_procs(step: #(state, raw), caster:, at: due)
-      let #(state, effects) = case leaves_open(due) {
-        True -> #(state, raw)
-        False ->
-          answered_each(
-            caster:,
-            state:,
-            effects: raw,
-            at: due,
-            struck_of: fn(asked) { struck_at(due, asked) },
-            rolls: [],
-            poses:,
-          )
-      }
-      let cancelled = cancelled_timers(effects:)
-      run_pending(
-        caster: cast_cost.after_payments(caster:, effects:),
-        state:,
-        pending: list.append(
-          list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
-          due_of(effects:, now_ms: due),
-        ),
-        fired_so_far: [
-          Fired(at_ms: due, asked: goes_asked(effects: raw), spends:, effects:),
-          ..fired_so_far
-        ],
-        struck_at:,
-        poses:,
-        until_ms:,
-        before:,
-        leaves_open:,
-      )
-    }
-  }
+  #(state, fired, caster, left)
+}
+
+/// The timers a step started fire until `until_ms` as `run_pending` fires them, each
+/// answered as a go that struck nobody and followed by `after` (the check of every
+/// cast's persistence): the state, each step's time and effects, and the timers left.
+pub fn run_timers_checked(
+  caster caster: Caster,
+  state state: State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+  after after: fn(State, Caster, Int) -> #(State, List(Effect)),
+) -> #(State, List(#(Int, List(Effect))), List(#(Int, TimerId))) {
+  let #(state, fired, _, left) =
+    run_pending(
+      caster:,
+      state:,
+      pending:,
+      struck_at: fn(_, _) { [] },
+      poses: dict.new(),
+      until_ms: Some(until_ms),
+      before: fn(_, caster) { caster },
+      leaves_open: fn(_) { False },
+      after:,
+    )
+  #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }), left)
 }
 
 /// A spell and the stages and Proxies under it with no cooldown modifier: the plan as

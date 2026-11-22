@@ -28,7 +28,6 @@ import genesis_prime/game/spend
 import genesis_prime/game/ticking.{type Schedule, Schedule, Ticks}
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
-import genesis_prime/message/spell_started
 import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict
@@ -164,24 +163,6 @@ fn ran(
   )
 }
 
-/// Each 0x7ff of the spell `spell4_id` the steps write, with the time of its step.
-fn starts_of(
-  steps steps: List(#(Int, List(Effect))),
-  spell4_id spell4_id: Int,
-) -> List(#(Int, spell_started.SpellStarted)) {
-  list.flat_map(steps, fn(step) {
-    support.started_in(effects: step.1)
-    |> list.filter(fn(start) { start.spell4_id == spell4_id })
-    |> list.map(fn(start) { #(step.0, start) })
-  })
-}
-
-fn times_of(
-  starts starts: List(#(Int, spell_started.SpellStarted)),
-) -> List(Int) {
-  list.map(starts, fn(start) { start.0 })
-}
-
 fn debug_lines(effects effects: List(Effect)) -> List(String) {
   list.filter_map(support.logs(effects:), fn(line) {
     case line.0 == LogDebug {
@@ -235,14 +216,17 @@ pub fn each_tick_starts_the_named_spell_as_a_child_cast_of_its_own_with_the_hold
   let #(_, steps) =
     ran(caster: support.caster(), pressed: #(state, effects), until_ms: 3000)
   let held =
-    starts_of(steps: [#(press_ms, effects)], spell4_id: holder_spell4_id)
+    support.starts_of(
+      steps: [#(press_ms, effects)],
+      spell4_id: holder_spell4_id,
+    )
   let assert [#(_, holder_start)] = held
     as "the ability's own Proxy starts the holder at the press"
   assert holder_start.root_spell4_id == ability_spell4_id
     && holder_start.parent_spell4_id == ability_spell4_id
     as "opcode.0x7ff.root_parent: a Proxy's child names the pressed spell as root and the spell whose Proxy fired as parent"
-  let ticks = starts_of(steps:, spell4_id: child_spell4_id)
-  assert times_of(starts: ticks) == [2000, 3000]
+  let ticks = support.starts_of(steps:, spell4_id: child_spell4_id)
+  assert support.times_of(starts: ticks) == [2000, 3000]
     as "ticks 1 and 2 of a schedule of one tick a second, counted from the holder's go at the press"
   list.each(ticks, fn(tick) {
     let start = tick.1
@@ -295,8 +279,8 @@ pub fn a_timed_periodic_proxy_starts_duration_over_tick_time_children_and_the_ho
   let holder_id = support.pressed_id(effects:)
   let #(_, steps) =
     ran(caster: in_combat(), pressed: #(state, effects), until_ms: 20_000)
-  let children = starts_of(steps:, spell4_id: 87_477)
-  assert times_of(starts: children)
+  let children = support.starts_of(steps:, spell4_id: 87_477)
+  assert support.times_of(starts: children)
     == [1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000]
     as "row 228473: durationTime 5000 over tickTime 500 is ten children, the tenth 5000 ms after the first possible tick and no eleventh"
   let finishes =
@@ -344,7 +328,10 @@ pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
     pressed(plans: support.plans_of([persisting]), caster: in_combat())
   let #(state, steps) =
     ran(caster: in_combat(), pressed: #(state, effects), until_ms: 3000)
-  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+  assert support.times_of(starts: support.starts_of(
+      steps:,
+      spell4_id: child_spell4_id,
+    ))
     == [1500, 2000, 2500, 3000]
     as "four ticks have landed by 3000"
   assert support.tick_timers(state:) == 1
@@ -358,7 +345,8 @@ pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
   assert support.tick_timers(state:) == 0
     as "text 311216: the cast ends when the persistence fails, and its tick timer is cancelled, so no child follows"
   assert list.length(support.cancelled_timers(effects: ended)) >= 1
-  assert starts_of(steps: [#(3100, ended)], spell4_id: child_spell4_id) == []
+  assert support.starts_of(steps: [#(3100, ended)], spell4_id: child_spell4_id)
+    == []
   // An open row (no durationTime): its persistence ends the cast the same way, and no node's
   // end would.
   let open_persisting =
@@ -382,7 +370,7 @@ pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
       pressed: #(open_state, open_effects),
       until_ms: 3000,
     )
-  assert times_of(starts: starts_of(
+  assert support.times_of(starts: support.starts_of(
       steps: open_steps,
       spell4_id: child_spell4_id,
     ))
@@ -399,7 +387,10 @@ pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
   assert support.tick_timers(state: open_state) == 0
     && dict.size(open_state.lingering) + dict.size(open_state.casts) == 0
     as "the cast ends when the persistence fails: its tick timer is cancelled and nothing lingers"
-  assert starts_of(steps: [#(3100, open_ended)], spell4_id: child_spell4_id)
+  assert support.starts_of(
+      steps: [#(3100, open_ended)],
+      spell4_id: child_spell4_id,
+    )
     == []
 }
 
@@ -431,7 +422,10 @@ pub fn a_caster_gate_is_read_again_at_each_tick_and_a_failing_tick_starts_no_chi
       leaves_open: fn(_) { False },
     )
   let steps = list.map(fired, fn(step) { #(step.at_ms, step.effects) })
-  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+  assert support.times_of(starts: support.starts_of(
+      steps:,
+      spell4_id: child_spell4_id,
+    ))
     == [2000, 4000]
     as "the gate (in combat) passes at ticks 1 and 3 and fails at tick 2, which starts no child; the ticks go on"
   assert list.flat_map(steps, fn(step) { debug_lines(effects: step.1) }) == []
@@ -467,7 +461,7 @@ pub fn a_caster_gate_is_read_again_at_each_tick_and_a_failing_tick_starts_no_chi
     )
   let #(_, steps) =
     ran(caster: support.caster(), pressed: #(state, go), until_ms: 3000)
-  assert starts_of(steps:, spell4_id: child_spell4_id) == []
+  assert support.starts_of(steps:, spell4_id: child_spell4_id) == []
     as "a type 37 gate needs a roll and a tick draws none: no child"
   let lines = list.flat_map(steps, fn(step) { debug_lines(effects: step.1) })
   assert list.length(lines) == 2
@@ -512,7 +506,10 @@ pub fn a_periodic_proxy_whose_caster_gate_fails_at_the_go_still_arms_its_ticks_a
       leaves_open: fn(_) { False },
     )
   let steps = list.map(fired, fn(step) { #(step.at_ms, step.effects) })
-  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+  assert support.times_of(starts: support.starts_of(
+      steps:,
+      spell4_id: child_spell4_id,
+    ))
     == [press_ms + 2000, press_ms + 3000]
     as "tick 1 reads the gate failing and starts no child; ticks 2 and 3 read it passing and start one each"
   assert list.flat_map(steps, fn(step) { debug_lines(effects: step.1) }) == []
@@ -622,7 +619,7 @@ pub fn a_child_that_holds_its_own_periodic_proxy_ticks_on_its_own_cast_test() ->
         pressed: #(state, effects),
         until_ms: 20_000,
       )
-    times_of(starts: starts_of(steps:, spell4_id: 71_373))
+    support.times_of(starts: support.starts_of(steps:, spell4_id: 71_373))
   }
   assert first_ticks(lasting.Stack(group_id: 1, cap: 10))
     == [3500, 4500, 4500, 5500, 5500, 5500, 6500, 6500, 7500]
@@ -642,8 +639,8 @@ pub fn a_proxy_with_no_tick_time_that_names_its_spell_in_data_bits01_starts_its_
   let #(_, steps) =
     ran(caster: support.caster(), pressed: #(state, effects), until_ms: 20_000)
   let starts =
-    starts_of(steps: [#(press_ms, effects), ..steps], spell4_id: 33_258)
-  assert times_of(starts:) == [press_ms]
+    support.starts_of(steps: [#(press_ms, effects), ..steps], spell4_id: 33_258)
+  assert support.times_of(starts:) == [press_ms]
     as "text 245408: the heal sits only in 33258, which only the tick-0 Proxy names, so it is cast once, at the go and not at a tick"
   let assert [#(_, start)] = starts
   assert start.parent_spell4_id == 36_562
@@ -727,7 +724,10 @@ pub fn a_proxy_under_a_phase_that_has_not_gone_or_whose_tag_does_not_hold_arms_n
     pressed(plans: support.plans_of([twice]), caster: support.caster())
   let #(_, steps) =
     ran(caster: support.caster(), pressed: #(state, effects), until_ms: 20_000)
-  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+  assert support.times_of(starts: support.starts_of(
+      steps:,
+      spell4_id: child_spell4_id,
+    ))
     == [2000, 3000, 4000]
     as "armed at the go of phase 0, counted from it; the go of phase 1, at 2000, arms nothing (`cast_gate.proxies_with_targets` is the filter)"
   // Mind Burst spends every point held: n is the points spent above the base cost of 1. A
@@ -789,7 +789,7 @@ pub fn a_tick_whose_child_the_cast_rule_refuses_logs_and_the_ticks_go_on_test() 
   let #(state, effects) = pressed(plans:, caster: support.caster())
   let #(_, steps) =
     ran(caster: support.caster(), pressed: #(state, effects), until_ms: 20_000)
-  assert starts_of(steps:, spell4_id: child_spell4_id) == []
+  assert support.starts_of(steps:, spell4_id: child_spell4_id) == []
     as "no child is cast for a caster the spell refuses"
   let lines = list.flat_map(steps, fn(step) { debug_lines(effects: step.1) })
   assert list.length(lines) == 3
@@ -846,7 +846,10 @@ pub fn an_open_periodic_proxy_ticks_each_tick_time_with_one_timer_and_no_nodes_e
       pressed: #(state, effects),
       until_ms: press_ms + 60_000,
     )
-  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+  assert support.times_of(starts: support.starts_of(
+      steps:,
+      spell4_id: child_spell4_id,
+    ))
     == int.range(from: 60, to: 1, with: [], run: fn(times, second) {
       [press_ms + second * 1000, ..times]
     })
@@ -970,7 +973,10 @@ pub fn an_open_periodic_proxy_under_an_aura_stops_at_the_auras_end_and_the_node_
       pressed: #(state, effects),
       until_ms: press_ms + 20_000,
     )
-  assert times_of(starts: starts_of(steps:, spell4_id: child_spell4_id))
+  assert support.times_of(starts: support.starts_of(
+      steps:,
+      spell4_id: child_spell4_id,
+    ))
     == [press_ms + 1000, press_ms + 2000]
     as "the ticks at 1000 and 2000 after the go land within the aura and none at 3000"
   let assert [#(node_end_at, node_end)] =
@@ -1040,11 +1046,11 @@ pub fn each_stack_of_a_child_that_holds_an_open_proxy_keeps_one_tick_timer_and_t
     as "the holder's fifth tick has landed and its timer is gone: five stacks hold five"
   let #(_, to_6000) = ran_to(6000)
   let in_the_last_second =
-    list.filter(starts_of(steps: to_6000, spell4_id: 71_373), fn(start) {
+    list.filter(support.starts_of(steps: to_6000, spell4_id: 71_373), fn(start) {
       start.0 > press_ms + 5000
     })
   assert list.length(in_the_last_second) == 5 * 4
     as "each of the five live stacks starts four children in a second (tickTime 250)"
-  assert list.length(starts_of(steps:, spell4_id: child_spell4_id)) == 5
+  assert list.length(support.starts_of(steps:, spell4_id: child_spell4_id)) == 5
     as "the holder cast one stack at each of its five ticks"
 }

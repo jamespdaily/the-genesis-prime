@@ -2114,27 +2114,28 @@ fn tick_loop(
   kills_at kills_at: Int,
   until until: Int,
 ) -> List(#(Int, List(Effect))) {
-  case list.sort(pending, fn(a, b) { int.compare(a.0, b.0) }) {
-    [#(due, timer), ..rest] if due <= until -> {
-      let #(state, raw) = support.fired_raw_as(caster:, state:, timer:, at: due)
-      let #(state, effects) =
-        tick_settled(caster:, state:, effects: raw, at: due, struck:, kills_at:)
-      let cancelled = support.cancelled_timers(effects:)
-      tick_loop(
-        caster:,
-        state:,
-        pending: list.append(
-          list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
-          support.due_of(effects:, now_ms: due),
-        ),
-        steps: list.append(steps, [#(due, effects)]),
-        struck:,
-        kills_at:,
-        until:,
-      )
-    }
-    _ -> steps
-  }
+  let #(_, _, fired, _) =
+    support.fire_pending(
+      context: Nil,
+      state:,
+      pending:,
+      until_ms: until,
+      step: fn(_, state, due, timer) {
+        let #(state, raw) =
+          support.fired_raw_as(caster:, state:, timer:, at: due)
+        let #(state, effects) =
+          tick_settled(
+            caster:,
+            state:,
+            effects: raw,
+            at: due,
+            struck:,
+            kills_at:,
+          )
+        support.Step(context: Nil, state:, effects:, record: #(due, effects))
+      },
+    )
+  list.append(steps, fired)
 }
 
 pub fn a_periodic_tick_raises_a_hit_and_a_kill_by_a_tick_raises_a_kill_test() -> Nil {

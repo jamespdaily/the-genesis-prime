@@ -508,8 +508,8 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
       ),
       #(
         36_821,
-        "periodic damage effect 100978 that lasts until removed",
-        "Pyrokinetic Flame: row 10864 is built, its spell 43973's damage row 100978 (tickTime 1000, flags 514) lasts until removed",
+        "Proxy effect 77845 that starts a child on each struck unit, which holds the Heal or HealShields effect 181759",
+        "Pyrokinetic Flame: the area Proxy 77845 of its spell 36822 starts 71014 on each struck unit, whose heal row 181759 (targetFlags 2) names that unit and is not built",
       ),
       #(
         33_181,
@@ -777,4 +777,28 @@ pub fn every_row_of_nullifiers_tree_is_read_but_the_area_proxy_and_its_ability_i
     },
   )
     as "the tree holds the field's Fluff 175305, which the aura ends"
+}
+
+pub fn augmented_blades_tree_is_read_in_full_and_its_ability_is_planned_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  // Augmented Blade 46935 (ability 30896): its Proxies start 79753 (whose open Proxy 210304
+  // casts a Kinetic Rage stack, 79757, each second, whose own Proxy 210337 casts 79758 each
+  // 250 ms) and, when it is turned off, 57357 (which starts the removal 82838, whose open
+  // Proxy 217944 casts 82839) (`table_rows -- Spell4Effects spellId=46935 spellId=57357
+  // spellId=79753 spellId=79757 spellId=82838 spellId=82839`).
+  let assert [ability] =
+    freed_and_read(tables:, spell4_ids: [46_935], left_out_rows: [])
+    as "Augmented Blade is planned, is not listed unplanned and every row of its tree is read"
+  assert unread_rows_of(tables:, spell4_ids: [46_935]) == []
+    as "no row of the tree is left out or held"
+  assert list.map(
+      spell_plan.tree(spell: ability, started: fn(_) { True }),
+      fn(spell) { spell.spell4_id.value },
+    )
+    |> list.unique
+    |> list.sort(int.compare)
+    == [46_935, 57_357, 79_753, 79_757, 79_758, 82_838, 82_839]
+    as "the tree is the seven spells the Proxies reach"
 }
