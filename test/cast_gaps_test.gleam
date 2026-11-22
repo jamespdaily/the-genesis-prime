@@ -150,7 +150,10 @@ pub fn the_cast_gaps_list_the_five_cases_the_issue_type_named_test() -> Nil {
       ),
       #("cannot plan", "a spell the server cannot plan"),
       #("strikes no unit", "the activate cast's checks and effects"),
-      #("until removed", "a state that lasts until removed"),
+      #(
+        "crowd-control state on another unit that lasts until removed",
+        "a state that lasts until removed",
+      ),
     ],
     fn(named) {
       let #(words, name) = named
