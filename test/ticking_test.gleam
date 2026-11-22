@@ -3,7 +3,7 @@
 //// issue 336: tick k lands delay + k * tickTime after the go, for k from 1 to
 //// durationTime / tickTime rounded down.
 
-import client_tables
+import fixture_tables
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/ticking.{
@@ -227,17 +227,14 @@ pub fn an_open_schedule_is_cut_by_a_node_that_ends_alone_and_a_finite_one_and_wi
     )
     == Error(NoTick(tick_ms: 0, duration_ms: 0))
     as "an open row of a tickTime of 0 has no schedule, as schedule_of has none: a tick due at every moment would never end"
-  case client_tables.present() {
-    True -> rows_that_last_until_removed_read_as_open_schedules()
-    False -> Nil
-  }
+  rows_that_last_until_removed_read_as_open_schedules()
 }
 
 /// Spell4Effects 210304 (delay 1000, tickTime 1000), 217944 (0, 500) and 210337 (0, 250):
 /// each has flags bit 2 and no durationTime (`table_rows -- Spell4Effects 210304 217944
-/// 210337`), read from the client's tables, which the committed fixture does not hold.
+/// 210337`), read from the committed fixture (the SpellLevel 922 root holds them).
 fn rows_that_last_until_removed_read_as_open_schedules() -> Nil {
-  let tables = client_tables.shared()
+  let tables = fixture_tables.shared()
   list.each(
     [#(210_304, 1000, 1000), #(217_944, 0, 500), #(210_337, 0, 250)],
     fn(expected) {

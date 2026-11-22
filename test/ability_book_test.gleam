@@ -100,9 +100,9 @@ pub fn a_row_with_a_prerequisite_or_above_the_level_is_never_in_the_bag_test() -
   assert values(bases: ability_book.bag(loadout: set, level: 50))
     == [
       18_309, 37_968, 38_017, 30_828, 18_359, 19_778, 37_245, 39_339, 18_578,
-      23_169, 18_547,
+      23_169, 18_547, 30_896,
     ]
-    as "the Warrior's bag at level 50 holds 37245 once, from SpellLevel 929, and nothing from the row with a prerequisite; the fixture's SpellLevel 938 (level 10, Spell4 38787, base 23169, no prerequisite) and 931 (level 14, Spell4 32320, base 18547, no prerequisite) are the last rows the Warrior's bag holds"
+    as "the Warrior's bag at level 50 holds 37245 once, from SpellLevel 929, and nothing from the row with a prerequisite; the fixture's SpellLevel 938 (level 10, Spell4 38787, base 23169, no prerequisite), 931 (level 14, Spell4 32320, base 18547, no prerequisite) and 922 (level 24, Spell4 46935, base 30896, no prerequisite) are the last rows the Warrior's bag holds"
   assert values(bases: ability_book.granted(
       loadout: set,
       from_level: 1,

@@ -501,7 +501,7 @@ pub fn the_effect_types_3_10_11_14_15_17_18_29_35_42_52_64_73_76_80_81_83_84_95_
       ),
       Missing(
         type_number: 26,
-        reason: "rows with a tickTime that cast their spell on the area or until removed (the plan does not start it), rows whose dataBits00 and dataBits01 name no Spell4 row, rows aimed by a flag with bit 8, or that start a spell holding Proxies to several tiers of one ability with nothing that chooses the tier",
+        reason: "rows with a tickTime that cast their spell on the area (the plan does not start it), rows whose dataBits00 and dataBits01 name no Spell4 row, rows aimed by a flag with bit 8, or that start a spell holding Proxies to several tiers of one ability with nothing that chooses the tier",
         fact_key: "Spell4Effects.effectType.26",
       ),
       Missing(
