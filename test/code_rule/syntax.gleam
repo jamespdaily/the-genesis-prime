@@ -327,6 +327,70 @@ pub fn strings(module: glance.Module) -> List(#(Int, String)) {
   })
 }
 
+/// The tag names a test body's statement gives its test: the string of a
+/// `use <- unitest.tag("x")`, and each string literal of a
+/// `use <- unitest.tags(["x", "y"])`. Any other statement, and a tag that is not
+/// a string literal, gives none.
+pub fn tags_of(statement: Statement) -> List(String) {
+  case statement {
+    glance.Use(
+      patterns: [],
+      function: glance.Call(
+        function: glance.FieldAccess(
+          container: glance.Variable(name: "unitest", ..),
+          label: "tag",
+          ..,
+        ),
+        arguments: [glance.UnlabelledField(glance.String(value:, ..))],
+        ..,
+      ),
+      ..,
+    ) -> [value]
+    glance.Use(
+      patterns: [],
+      function: glance.Call(
+        function: glance.FieldAccess(
+          container: glance.Variable(name: "unitest", ..),
+          label: "tags",
+          ..,
+        ),
+        arguments: [glance.UnlabelledField(glance.List(elements:, ..))],
+        ..,
+      ),
+      ..,
+    ) ->
+      list.filter_map(elements, fn(element) {
+        case element {
+          glance.String(value:, ..) -> Ok(value)
+          glance.Variable(..)
+          | glance.FieldAccess(..)
+          | glance.Int(..)
+          | glance.Float(..)
+          | glance.NegateInt(..)
+          | glance.NegateBool(..)
+          | glance.Block(..)
+          | glance.Panic(..)
+          | glance.Todo(..)
+          | glance.Tuple(..)
+          | glance.List(..)
+          | glance.Fn(..)
+          | glance.RecordUpdate(..)
+          | glance.Call(..)
+          | glance.TupleIndex(..)
+          | glance.FnCapture(..)
+          | glance.BitString(..)
+          | glance.Case(..)
+          | glance.BinaryOperator(..)
+          | glance.Echo(..) -> Error(Nil)
+        }
+      })
+    glance.Use(..)
+    | glance.Assignment(..)
+    | glance.Assert(..)
+    | glance.Expression(_) -> []
+  }
+}
+
 /// The line, counted from 1, that holds the byte at the offset.
 pub fn line_of(text text: String, byte_offset byte_offset: Int) -> Int {
   let assert Ok(before) = bit_array.slice(<<text:utf8>>, 0, byte_offset)
