@@ -230,7 +230,7 @@ pub fn breaches(
   files files: List(SourceFile),
   until_converted until_converted: Conversion,
 ) -> List(Breach) {
-  let breaches = case ignored_tag_entries(test_run) {
+  let found = case ignored_tag_entries(test_run) {
     Error(Nil) -> [
       Breach(
         path: test_run.path,
@@ -240,41 +240,51 @@ pub fn breaches(
     ]
     Ok(entries) -> {
       let runs = run_tags(check)
-      list.flat_map(entries, fn(entry) {
-        case entry {
-          Unreadable(location:) -> [
-            Breach(
-              path: test_run.path,
-              line: syntax.line_of(test_run.text, location.start),
-              rule: "an `ignored_tags` element that is not `skipped_when_set(variable, tag: \"x\")` with a string literal",
-            ),
-          ]
-          Skipped(tag:, ..) if tag == until_converted.tag ->
-            case list.contains(runs, tag) {
-              True -> []
-              False -> unconverted_breaches(files, until_converted)
-            }
-          Skipped(tag:, location:) ->
-            case list.contains(runs, tag) {
-              True -> []
-              False -> [
-                Breach(
-                  path: test_run.path,
-                  line: syntax.line_of(test_run.text, location.start),
-                  rule: "the test run skips `"
-                    <> tag
-                    <> "` and no part of the check runs it",
-                ),
-              ]
-            }
-        }
-      })
+      list.flat_map(entries, entry_breaches(
+        entry: _,
+        test_run:,
+        runs:,
+        files:,
+        conversion: until_converted,
+      ))
     }
   }
-  list.sort(breaches, fn(first, second) {
+  list.sort(found, fn(first, second) {
     string.compare(first.path, second.path)
     |> order.break_tie(int.compare(first.line, second.line))
   })
+}
+
+fn entry_breaches(
+  entry entry: Entry,
+  test_run test_run: SourceFile,
+  runs runs: List(String),
+  files files: List(SourceFile),
+  conversion conversion: Conversion,
+) -> List(Breach) {
+  case entry {
+    Unreadable(location:) -> [
+      Breach(
+        path: test_run.path,
+        line: syntax.line_of(test_run.text, location.start),
+        rule: "an `ignored_tags` element that is not `skipped_when_set(variable, tag: \"x\")` with a string literal",
+      ),
+    ]
+    Skipped(tag:, location:) ->
+      case list.contains(runs, tag), tag == conversion.tag {
+        True, _ -> []
+        False, True -> unconverted_breaches(files, conversion)
+        False, False -> [
+          Breach(
+            path: test_run.path,
+            line: syntax.line_of(test_run.text, location.start),
+            rule: "the test run skips `"
+              <> tag
+              <> "` and no part of the check runs it",
+          ),
+        ]
+      }
+  }
 }
 
 /// An element of `ignored_tags`: a tag the run skips and where its call is
@@ -291,23 +301,8 @@ fn ignored_tag_entries(file: SourceFile) -> Result(List(Entry), Nil) {
   |> syntax.expressions
   |> list.find_map(fn(expression) {
     case expression {
-      glance.Call(arguments:, ..) ->
-        list.find_map(arguments, fn(argument) {
-          case argument {
-            glance.LabelledField(label: "ignored_tags", item:, ..) -> Ok(item)
-            glance.LabelledField(..)
-            | glance.ShorthandField(..)
-            | glance.UnlabelledField(..) -> Error(Nil)
-          }
-        })
-      glance.RecordUpdate(fields:, ..) ->
-        list.find_map(fields, fn(field) {
-          case field {
-            glance.RecordUpdateField(label: "ignored_tags", item: Some(item)) ->
-              Ok(item)
-            glance.RecordUpdateField(..) -> Error(Nil)
-          }
-        })
+      glance.Call(arguments:, ..) -> ignored_tags_of_call(arguments)
+      glance.RecordUpdate(fields:, ..) -> ignored_tags_of_update(fields)
       glance.Int(..)
       | glance.Float(..)
       | glance.String(..)
@@ -330,6 +325,31 @@ fn ignored_tag_entries(file: SourceFile) -> Result(List(Entry), Nil) {
     }
   })
   |> result.map(entries_of)
+}
+
+fn ignored_tags_of_call(
+  arguments: List(glance.Field(glance.Expression)),
+) -> Result(glance.Expression, Nil) {
+  list.find_map(arguments, fn(argument) {
+    case argument {
+      glance.LabelledField(label: "ignored_tags", item:, ..) -> Ok(item)
+      glance.LabelledField(..)
+      | glance.ShorthandField(..)
+      | glance.UnlabelledField(..) -> Error(Nil)
+    }
+  })
+}
+
+fn ignored_tags_of_update(
+  fields: List(glance.RecordUpdateField(glance.Expression)),
+) -> Result(glance.Expression, Nil) {
+  list.find_map(fields, fn(field) {
+    case field {
+      glance.RecordUpdateField(label: "ignored_tags", item: Some(item)) ->
+        Ok(item)
+      glance.RecordUpdateField(..) -> Error(Nil)
+    }
+  })
 }
 
 /// The skipped tags an expression gives: the elements of a list, the arguments
