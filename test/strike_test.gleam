@@ -1151,12 +1151,8 @@ pub fn a_player_area_that_picks_at_random_follows_the_cast_id_and_every_go_of_on
   let assert [first, ..rest] = by_go
   assert list.all(rest, fn(later) { later == first })
     as "every go of one cast ranks the units alike"
-  assert list.length(first) == 3 && list.unique(first) == first
-    as "the count is 3 and no unit repeats"
-  assert list.all(first, fn(unit_id) { unit_id >= 21 && unit_id <= 27 })
-    as "only units of the picture inside the cone"
-  assert list.take(first, 2) == [22, 21]
-    as "cast id 5 puts 22 and 21 first among the units 21 to 27 (the same key rule as above)"
+  assert first == [22, 21, 23]
+    as "cast id 5 ranks the units 21 to 27 as 22, 21, 27, 23, 25, 26, 24 (the same key rule as above); unit 27 stands at 9 m, outside Stagger's 8 m row, so the three taken are the first three inside it: 22, 21 and 23"
 }
 
 pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test() -> Nil {

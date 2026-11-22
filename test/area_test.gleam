@@ -796,13 +796,14 @@ pub fn every_order_selects_only_units_inside_and_at_most_the_target_count_test()
         )
       assert list.all(found, fn(unit_id) { unit_id <= 30 })
         as "a unit past the row's 30 m is never taken"
-      assert list.length(found) <= target_count
-        as "no more than the target count"
       // Unit n stands n m out, so the nearest first are the lowest ids and the furthest first
       // the highest.
       let inside_ids =
         list.filter(list.unique(unit_ids), fn(id) { id <= 30 })
         |> list.sort(int.compare)
+      assert list.length(found)
+        == int.min(target_count, list.length(inside_ids))
+        as "every order takes the target count of the units inside the row, or all of them when fewer"
       case order {
         area.Nearest -> {
           assert found == list.take(inside_ids, target_count)

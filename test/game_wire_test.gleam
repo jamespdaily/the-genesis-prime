@@ -5329,12 +5329,7 @@ pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_c
   driven_time.advance(time:, ms: 1250)
   let #(went, _) =
     game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(game_client.go_targets_in(frames:), fn(go) { go.0 == cast_id })
-      && game_client.own_health_of(
-        events: game_client.fight_in(frames:),
-        unit: own,
-      )
-      != []
+      finishes(frames:, cast_id:)
     })
   assert game_client.go_targets_in(frames: went)
     |> list.filter(fn(go) { go.0 == cast_id })
@@ -5365,14 +5360,19 @@ pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_c
   let healed = description.health_damage_with_overkill - description.overkill
   assert healed > 0 as "the heal changes the Medic's health"
   // The 1250 ms the clock ran also fire the Medic's health regeneration (`player_life`), each
-  // tick its own 0x92f, so the heal is the last of them.
-  let assert [after, before, ..] =
-    game_client.own_health_of(
-      events: game_client.fight_in(frames: went),
-      unit: own,
-    )
-    |> list.reverse
-    as "the heal's 0x92f follows at least one regeneration tick"
+  // tick its own 0x92f, before the go; the heal's 0x92f is the first after it, and the read
+  // ends at the cast's 0x7fe, which follows it.
+  let go_index =
+    index_where(frames: went, found: fn(frame) { frame.message_id == 0x07F4 })
+  let health_in_frames = fn(frames) {
+    game_client.own_health_of(events: game_client.fight_in(frames:), unit: own)
+  }
+  let before =
+    health_in_frames(list.take(went, go_index))
+    |> list.last
+    |> result.unwrap(100)
+  let assert [after, ..] = health_in_frames(list.drop(went, go_index + 1))
+    as "the heal's 0x92f follows the go before the cast ends"
   assert after - before == healed
     as "opcode.0x92f: the heal raises the Medic's health by the amount the heal's description gives"
   game_client.close(game:)

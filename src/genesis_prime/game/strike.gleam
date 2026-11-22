@@ -175,8 +175,9 @@ pub type Aimed {
 }
 
 /// What a go strikes: the units, in the area row's order (Closest, Furthest or Random by the
-/// cast id) with the primary target after the area's, which of them the area selected, the damage each is struck with, the
-/// periodic damage rows each is reached by and the crowd-control states each is told,
+/// cast id) with the primary target after the area's, which of them the area selected, the
+/// damage each is struck with, the periodic damage rows each is reached by and the
+/// crowd-control states each is told,
 /// both by the aim of their row, and the gates of its rows that the struck creature
 /// checks (`gates`: damage, state and go rows alike, each told to the units its aim
 /// names). A spell with no damage effect, no state and no gate in the phase selects units

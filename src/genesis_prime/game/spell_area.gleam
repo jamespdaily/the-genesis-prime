@@ -93,8 +93,9 @@
 ////   with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1 to 5 (4 and 5 are refused by `SelectionNeedsHealth` for a
-////   creature and for a player's phase that selects units from the area); a valid-targets bitmask other than 0 on a spell
-////   with an area row; a hit row placed on anything but the caster, the cast's target and the
+////   creature and for a player's phase that selects units from the area); a valid-targets
+////   bitmask other than 0 on a spell with an area row; a hit row placed on anything but the
+////   caster, the cast's target and the
 ////   held position (`targetTypeFlags` other than 0, 1, 2 and 8; for a creature other than 0 to
 ////   2: `TelegraphOnStruckUnits` for bit 4, else `TelegraphNotOnCaster`); a spell's hit rows
 ////   placed apart (`PlacedApart`); a pressed spell whose hit row is on the target and whose
@@ -1696,7 +1697,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player area orders",
-      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876), the allies not being found; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
     ),
     gap.Entry(
       area: "Creature area orders and shapes",
