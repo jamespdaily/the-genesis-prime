@@ -18,6 +18,7 @@
 ////   54675 (Wallop) has damage row 159798 with phaseFlags 4, go 2 of 4, and 66285 and 55317
 ////   strike at their last go.
 
+import character_tables
 import client_tables
 import content_support
 import database_support
@@ -926,4 +927,57 @@ pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -
   assert list.length(pairs) == 50 as "50 spells"
   assert list.length(list.filter(pairs, fn(pair) { pair.2 == 1 })) == 5
     as "5 of them have one go"
+}
+
+/// Whether each go of Spell4 52150 (Creature2 17079) strikes, over the fixture's rows with
+/// these cells changed, each change as a table, an id and the cells.
+fn strike_gos_of_suppressing_fire(
+  changes changes: List(#(String, Int, List(#(String, planted_table.Cell)))),
+) -> List(Bool) {
+  let assert Ok(rows) =
+    list.try_fold(changes, fixture_tables.rows(), fn(rows, change) {
+      let #(table, id, cells) = change
+      fixture_tables.change(rows:, table:, id:, with: cells)
+    })
+    as "the changes are cells of rows the fixture holds"
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  strikes_of(
+    tables: character_tables.content_over(tables),
+    creature_id: 17_079,
+    spell4_id: 52_150,
+  )
+  |> list.map(option.is_some)
+}
+
+pub fn a_channel_special_strikes_at_the_gos_its_phaseflags_1_damage_row_names_in_a_channel_without_bit_1_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 52150 (Creature2 17079, 8 pulses 250 ms apart, spellChannelFlags 0) holds damage
+  // row 123152 (phaseFlags -1, no tickTime) and the hit row 7108, drawn from 0 to 1,500 ms, so
+  // the pulses at 1,750 and 2,000 strike nobody (`spawn_test`: six strike gos of eight). The
+  // phaseFlags 1 cases edit the real row (synthetic).
+  let first_six = [True, True, True, True, True, True, False, False]
+  let first_only = [True, False, False, False, False, False, False, False]
+  let damage_row_to_1 = #("Spell4Effects", 123_152, [
+    #("phaseFlags", Integer(1)),
+  ])
+  let cases = [
+    #("the row names every pulse as the client holds it", [], first_six),
+    #(
+      "a phaseFlags 1 row of a channel without bit 1 names every pulse",
+      [damage_row_to_1],
+      first_six,
+    ),
+    #(
+      "with spellChannelFlags bit 1 a phaseFlags 1 row names the first pulse alone; the hit row 7108 (phaseFlags -1) still has its shape at every go, so only the row's phase decides",
+      [
+        damage_row_to_1,
+        #("Spell4", 52_150, [#("spellChannelFlags", Integer(1))]),
+      ],
+      first_only,
+    ),
+  ]
+  list.each(cases, fn(found) {
+    let #(reason, changes, expected) = found
+    assert strike_gos_of_suppressing_fire(changes:) == expected as reason
+  })
 }

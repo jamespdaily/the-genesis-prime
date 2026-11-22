@@ -10,8 +10,10 @@
 ////   `phase_flags` is set (every bit for -1) and its tag holds for the points the cast spent
 ////   (`genesis_prime/game/spend.applies`).
 //// - **A channel's pulse k is phase k** (`opcode.0x7f4.phase`). The client compares a row's
-////   phase only for a channel whose spellChannelFlags has bit 1, so which pulse a phase
-////   is for any other channel is left open (`gaps`).
+////   phase only for a channel whose spellChannelFlags has bit 1; in any other channel a
+////   row of phaseFlags 1 and no tickTime names every pulse, which
+////   `genesis_prime/game/spell_plan` `effects_by_spell` writes as -1
+////   (`Spell4Effects.phaseFlags.channel`), and a mask keeps bit k for pulse k (`gaps`).
 
 import genesis_prime/game/spend
 import genesis_prime/gap
@@ -62,8 +64,8 @@ pub fn applies_in_phase(
 }
 
 /// The effects that apply in phase `phase`, in the order of the list (`applies_in_phase`). A
-/// channel's pulse k is phase k, so a row of phaseFlags 1 applies at the first pulse only
-/// (`gaps`).
+/// channel's pulse k is phase k; a row that names every pulse holds -1 by then
+/// (`spell_plan.effects_by_spell`).
 pub fn in_phase(
   effects effects: List(PlannedEffect(kind)),
   phase phase: Int,
@@ -101,7 +103,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Spell phases",
-      missing: "a channel without spellChannelFlags bit 1 fires an effect with phaseFlags 1 at its first pulse only, while most of the client's texts for such effects say every pulse; the client's code does not settle which pulse a phase is",
+      missing: "in a channel without spellChannelFlags bit 1 an effect with phaseFlags 1 and no tickTime fires at every pulse: the client's code reads no effect row's phase, and 134 of the 139 texts that cite such a row say every pulse (the other 5 say otherwise and the row still fires every pulse); a row with a tickTime (20 rows) and every row of a channel with bit 1 fire at the first pulse only; a mask of several bits names the pulse its bit numbers, which only the fit of the 39 such rows supports; a castMethod 3 channel (584 rows) is not planned; and the UnitState (508), CrowdControl (19) and ForcedMove (16) rows of the class follow the rule with no text checked, so a CrowdControl row is applied at every pulse",
     ),
   ]
 }

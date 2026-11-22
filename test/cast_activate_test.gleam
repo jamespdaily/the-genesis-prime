@@ -517,11 +517,11 @@ pub fn an_activate_cast_of_a_channel_stays_a_channel_test() -> Nil {
     [#(10_256, 2999)],
   )
     as "opcode.0x7f4.target_info: the first go lists the unit with the Activate row 10256 at its delay of 2999 ms"
-  assert list.flat_map(go_targets(effects: flattened(steps:)), fn(target) {
-      list.map(target.1, fn(info) { info.spell4_effects_id })
+  assert list.map(go_targets(effects: flattened(steps:)), fn(target) {
+      list.map(target.1, fn(info) { #(info.spell4_effects_id, info.delay_ms) })
     })
-    == []
-    as "cast.channel_sequence: the Activate row 10256 has phaseFlags 1, so it belongs to the first go alone: the second go lists no effect"
+    == [[#(10_256, 2999)]]
+    as "Spell4Effects.phaseFlags.channel: the Activate row 10256 has phaseFlags 1 in a channel without spellChannelFlags bit 1, so it names every pulse and the second go lists it at its delay of 2999 ms as the first does (a type 7 effect has no apply on the client, so the listing shows nothing)"
 }
 
 pub fn an_activate_cast_time_of_0_takes_the_spells_cast_time_test() -> Nil {

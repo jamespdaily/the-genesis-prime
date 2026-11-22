@@ -2578,3 +2578,61 @@ pub fn a_shape_8_with_a_box_is_refused_by_name_for_a_creature_test() -> Nil {
       as "a box width or length refuses the row"
   })
 }
+
+/// The effect ids of the damage rows of go `phase` of `spell4_id` in the areas, in order.
+fn damage_ids_at(
+  areas areas: spell_area.Areas,
+  spell4_id spell4_id: Int,
+  phase phase: Int,
+) -> List(Int) {
+  let assert Ok(found) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+    as "the spell is in the areas of the level-1 abilities"
+  let assert Ok(strike) = spell_area.phase(spell: found, phase:, spent: None)
+    as "the channel has a go at the pulse"
+  list.map(strike.damage, fn(effect) { effect.effect_id.value })
+}
+
+pub fn discharge_strikes_its_damage_row_141368_at_each_of_its_three_pulses_and_at_its_first_only_with_spellchannelflags_bit_1_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 58832 (castMethod 1, spellChannelFlags 0, 3 pulses of 410 ms) holds Damage row
+  // 141368 (phaseFlags 1, no tickTime); the texts 508497, 575012, 641194 and 641197 say
+  // "every 0.41s".
+  list.each([0, 1, 2], fn(pulse) {
+    assert damage_ids_at(
+        areas: spell_tables.fixture_areas(),
+        spell4_id: 58_832,
+        phase: pulse,
+      )
+      == [141_368]
+      as "Discharge's damage row strikes at every pulse"
+  })
+  // Synthetic: spellChannelFlags 1 on the real row makes a phaseFlags 1 row name its first
+  // pulse alone (`Spell4Effects.phaseFlags.channel`, the pattern of
+  // `spell_area_go_test`).
+  use tables <- fixture_tables.changed(table: "Spell4", id: 58_832, with: [
+    #("spellChannelFlags", Integer(1)),
+  ])
+  let assert Ok(areas) = spell_area.build(tables:)
+    as "the edited fixture builds its areas"
+  assert list.map([0, 1, 2], fn(pulse) {
+      damage_ids_at(areas:, spell4_id: 58_832, phase: pulse)
+    })
+    == [[141_368], [], []]
+    as "with bit 1 the row strikes at its first pulse only"
+}
+
+pub fn blade_dance_strikes_its_five_damage_rows_together_at_each_of_its_five_pulses_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4 33009 (castMethod 1, spellChannelFlags 0, 5 pulses of 500 ms; text 244913 "every
+  // 0.5s") holds the damage row 79030 and the tier rows 219327 to 219330, all phaseFlags 1
+  // with no tickTime. A cast with no points spent keeps every row (`spend`); the tier a cast
+  // takes is chosen by each row's caster prerequisite, which the area does not read.
+  let areas = spell_area.areas(tables: client_tables.shared())
+  list.each([0, 1, 2, 3, 4], fn(pulse) {
+    assert damage_ids_at(areas:, spell4_id: 33_009, phase: pulse)
+      == [79_030, 219_327, 219_328, 219_329, 219_330]
+      as "every damage row strikes at every pulse"
+  })
+}
