@@ -34,11 +34,12 @@
 ////   an effect with a tag the rule does not read.
 //// - **The tree.** A Proxy effect (`Spell4Effects.effectType.26`, dataBits00 the
 ////   Spell4 id, or dataBits01 when dataBits00 is 0 and dataBits01 is a Spell4 row,
-////   `proxy_named`; with a tickTime and a durationTime it casts the spell every tickTime
-////   from the caster, `Proxy.period`: `Spell4Effects.effectType.26.periodic`, and its row's
+////   `proxy_named`; with a tickTime it casts the spell every tickTime from the caster, for
+////   its durationTime or, with flags bit 2, until the node of its cast ends, `Proxy.period`:
+////   `Spell4Effects.effectType.26.periodic`, and its row's
 ////   prerequisiteIdCasterPersistence is read as the end of the whole cast
 ////   (`proxy_persistences`, `cast_persist`); one aimed at
-////   the area or lasting until removed is left out by name; a Proxy aimed at the area
+////   the area is left out by name; a Proxy aimed at the area
 ////   (flags 5 or 7) in a spell that hits no foes starts its child on the caster alone,
 ////   since the area's allies are not found: the tooltips say "yourself and N allies",
 ////   texts 245408, 360845, 315699, 287485 and 389501, and `Spell4Effects.targetFlags`
@@ -2226,9 +2227,6 @@ pub type LeftOutReason {
   /// A Proxy with a tickTime that is aimed at the area: each of its ticks would start a child
   /// on each unit the area holds then, which the plan does not select.
   PeriodicProxyOnAreaNotRead
-  /// A Proxy with a tickTime and no durationTime (flags bit 2), aimed at the caster: no rule
-  /// of the server ends its ticks but a removal, a stack cap or the caster's death.
-  PeriodicProxyUntilRemovedNotRead
   /// A Proxy with no tickTime that starts a spell holding Proxies to several tiers of one
   /// ability with nothing that chooses the tier (`proxy_starts_tiers_with_no_choice`).
   ProxyStartsTiersNoChoice
@@ -6912,9 +6910,9 @@ fn target_gate_read(
 }
 
 /// The reading of a Proxy row: left out when it names no Spell4 row; with a tickTime, left out
-/// when it is aimed at the area (the check comes first) or lasts until removed, and else read
-/// with the schedule of its row, so the cast starts its child at each tick; with none, read as a
-/// Proxy that casts once.
+/// when it is aimed at the area (the check comes first), and else read with the schedule of
+/// its row, open when the row lasts until removed, so the cast starts its child at each tick;
+/// with none, read as a Proxy that casts once.
 fn proxy_reading(
   tables tables: table_store.Tables,
   sources sources: Sources,
@@ -6937,8 +6935,13 @@ fn proxy_reading(
   case effect.tick_time, list.contains(targets, OnEachStruck) {
     0, _ -> read(None)
     _, True -> Ok(LeftOut(why: PeriodicProxyOnAreaNotRead))
-    tick_ms, False ->
-      case ticking.schedule_of(row: lasting_row_of(effect:), tick_ms:) {
+    tick_ms, False -> {
+      let row = lasting_row_of(effect:)
+      let schedule = case ticking.schedule_of(row:, tick_ms:) {
+        Error(ticking.UntilRemoved) -> ticking.open_schedule_of(row:, tick_ms:)
+        timed -> timed
+      }
+      case schedule {
         Ok(schedule) -> {
           use persistence <- result.try(column_of(
             id: effect.prerequisite_id_caster_persistence,
@@ -6948,8 +6951,6 @@ fn proxy_reading(
           ))
           read(Some(Periodic(schedule:, persistence:)))
         }
-        Error(ticking.UntilRemoved) ->
-          Ok(LeftOut(why: PeriodicProxyUntilRemovedNotRead))
         Error(ticking.NoTick(tick_ms:, duration_ms:)) ->
           Error(ProxyNoTick(
             spell4_id:,
@@ -6957,7 +6958,10 @@ fn proxy_reading(
             tick_ms:,
             duration_ms:,
           ))
+        Error(ticking.UntilRemoved) ->
+          panic as "open_schedule_of never reports a row that lasts until removed"
       }
+    }
   }
 }
 
@@ -7749,7 +7753,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Periodic Proxies",
-      missing: "a Proxy with a tickTime aimed at the area casts nothing, and one that lasts until removed casts nothing: the first would start a child on each unit the area holds at each tick, and no rule of the server times the second; a periodic Proxy behind a caster gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none; a periodic Proxy's row persistence (prerequisiteIdCasterPersistence) ends its whole cast when it fails, with the spell column's 0x7f9 (282) and 0x7fe, a guess since the client reads no effect row's persistence and no retail recording shows which message ends it; the check runs from the cast's start, so a cast still in its cast time ends on it before the row applies; a persistence of a type the server does not read (12, 40 and 56) keeps the cast with one debug line for the spell: of the 9 rows that hold one, the plan reads the 5 timed rows 70009, 70293, 119557, 202752 and 209177 (Spell4Effects ids), and the 4 that last until removed (92627, 192138, 192615, 231002) cast nothing; the prerequisiteIdTargetPersistence of a periodic Proxy is read by no rule: of the 11 rows not aimed at the area the plan reads the timed row 119557, and the other 10 last until removed and cast nothing",
+      missing: "a Proxy with a tickTime aimed at the area casts nothing, since it would start a child on each unit the area holds at each tick; a periodic Proxy behind a caster gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none; a periodic Proxy's row persistence (prerequisiteIdCasterPersistence) ends its whole cast when it fails, with the spell column's 0x7f9 (282) and 0x7fe, a guess since the client reads no effect row's persistence and no retail recording shows which message ends it; the check runs from the cast's start, so a cast still in its cast time ends on it before the row applies; a persistence of a type the server does not read (12, 40 and 56) keeps the cast with one debug line for the spell: of the 9 rows that hold one, the plan reads the 5 timed rows 70009, 70293, 119557, 202752 and 209177 (Spell4Effects ids) and the 4 that last until removed (92627, 192138, 192615, 231002); the prerequisiteIdTargetPersistence of a periodic Proxy is read by no rule, and the plan reads the 11 rows that hold one and are not aimed at the area, the timed row 119557 and 10 that last until removed",
     ),
     gap.Entry(
       area: "Auras",

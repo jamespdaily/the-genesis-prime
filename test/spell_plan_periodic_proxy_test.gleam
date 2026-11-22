@@ -10,6 +10,12 @@
 ////   in 33258, which only the tick-0 Proxy 76609 names).
 //// - Rows read with `table_rows -- Spell4Effects 121345 178429 85298 228473 141450 210304
 ////   210337 217944 76609`.
+//// - `Spell4Effects.effectType.26.periodic`: a row with flags bit 2 and a tickTime ticks
+////   every tickTime until its cast's node ends, so the plan reads it with an open schedule
+////   when it is aimed at the caster (targetFlags 1 or 2) and leaves the area rows out. The
+////   counts are the client's rows read by `table_rows -- Spell4Effects`: 829 rows with flags
+////   bit 2, a tickTime and a named spell, of which 268 are aimed at the area and 561 at the
+////   caster, and 2 that name no spell.
 //// - `Spell4Effects.prerequisiteIdCasterApply`: the client reads no effect row's persistence
 ////   columns, so a periodic Proxy's caster persistence is the row's column as it stands
 ////   (Prerequisite 903, type 28: the caster in combat) and its target persistence is read by no
@@ -30,6 +36,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -252,30 +259,132 @@ pub fn a_proxy_with_no_tick_time_reads_as_a_once_proxy_whatever_column_names_its
     as "text 245408: Mental Boon heals every 0.5 s and the heal sits only in 33258, which only a Proxy with no tickTime names, so such a row casts once, whichever column names its spell"
 }
 
-pub fn a_periodic_proxy_aimed_at_the_area_or_left_until_removed_is_left_out_by_name_and_its_ability_stays_planned_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  let sources = spell_plan.sources_of(tables:)
+/// The plan's reading of a row of the tables, with the places of every row built once.
+fn reader_of(
+  tables tables: store.Tables,
+) -> fn(Spell4Effects) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
   let place_of =
     effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  let sources = spell_plan.sources_of(tables:)
+  fn(row: Spell4Effects) {
+    spell_plan.read_row(
+      tables:,
+      sources:,
+      place: place_of(row.spell_id),
+      effect: row,
+    )
+  }
+}
+
+pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_schedule_and_the_area_ones_stay_left_out_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let tables = fixture_tables.shared()
+  let reading_of = reader_of(tables:)
+  // The named rows: Augmented Blade's stack maker 210304 (tickTime 1000 after a delay of
+  // 1000), the stack's own drain 210337 (tickTime 250, gated by Prerequisite 43748, not
+  // under Overdrive) and the removal 217944 (tickTime 500, persistence Prerequisite 38758).
+  let open = fn(delay_ms, tick_ms) {
+    Schedule(
+      delay_ms:,
+      tick_ms:,
+      duration_ms: 0,
+      count: ticking.UntilTheNodeEnds,
+    )
+  }
   let cases = [
-    #(141_450, spell_plan.PeriodicProxyOnAreaNotRead),
-    #(210_304, spell_plan.PeriodicProxyUntilRemovedNotRead),
-    #(210_337, spell_plan.PeriodicProxyUntilRemovedNotRead),
-    #(217_944, spell_plan.PeriodicProxyUntilRemovedNotRead),
+    #(
+      210_304,
+      open(1000, 1000),
+      spell_plan.Always,
+      None,
+      "the stack maker has no gate and no persistence",
+    ),
+    #(
+      210_337,
+      open(0, 250),
+      spell_plan.GatedOnCaster(gates: [
+        prerequisite_support.fixture_row(row: 43_748),
+      ]),
+      None,
+      "the drain is gated by the prerequisite its dataBits06 names",
+    ),
+    #(
+      217_944,
+      open(0, 500),
+      spell_plan.Always,
+      Some(prerequisite_support.fixture_row(row: 38_758)),
+      "the removal holds the persistence its row names",
+    ),
   ]
   list.each(cases, fn(case_) {
-    let #(row_id, why) = case_
-    let row = client_row(tables:, id: row_id)
-    assert spell_plan.read_row(
-        tables:,
-        sources:,
-        place: place_of(row.spell_id),
-        effect: row,
+    let #(row_id, schedule, condition, persistence, reason) = case_
+    assert reading_of(client_row(tables:, id: row_id))
+      == Ok(
+        Applied(ReadProxy(
+          targets: [spell_plan.OnCaster],
+          condition:,
+          period: Some(spell_plan.Periodic(schedule:, persistence:)),
+        )),
       )
-      == Ok(LeftOut(why:))
-      as "a periodic Proxy aimed at the area is left out first (the area check comes before the life), one left until removed (flags bit 2) by its own name, and none reads as a once Proxy nor fails the load"
+      as reason
+  })
+  assert reading_of(client_row(tables:, id: 141_450))
+    == Ok(LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead))
+    as "the area row 141450 is left out by name"
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let reading_of = reader_of(tables:)
+  let open_rows =
+    list.filter(spell4_effects.all(tables), fn(row) {
+      row.effect_type == 26
+      && int.bitwise_and(row.flags, 2) != 0
+      && row.tick_time > 0
+    })
+  let named = fn(row) { spell_plan.proxy_named(tables:, effect: row) != 0 }
+  // The rows that name a spell and are aimed at the caster (targetFlags 1 or 2), the rows
+  // aimed at the area (4 or 6), and the rows that name none (`table_rows -- Spell4Effects`).
+  let at_the_caster =
+    list.filter(open_rows, fn(row) {
+      named(row) && { row.target_flags == 1 || row.target_flags == 2 }
+    })
+  let at_the_area =
+    list.filter(open_rows, fn(row) {
+      named(row) && { row.target_flags == 4 || row.target_flags == 6 }
+    })
+  let naming_none = list.filter(open_rows, fn(row) { !named(row) })
+  assert list.length(at_the_caster) == 561
+    && list.length(at_the_area) == 268
+    && list.length(naming_none) == 2
+    && list.length(open_rows)
+    == list.length(at_the_caster)
+    + list.length(at_the_area)
+    + list.length(naming_none)
+    as "the client's until-removed periodic Proxies: 561 aimed at the caster (465 by 1 and 96 by 2), 268 at the area, and 2 that name no spell, which together are every one"
+  list.each(at_the_caster, fn(row) {
+    let assert Ok(Applied(ReadProxy(period: Some(periodic), ..))) =
+      reading_of(row)
+      as "an until-removed periodic Proxy aimed at the caster is applied as a periodic Proxy, never held and never an error"
+    assert periodic.schedule.count == ticking.UntilTheNodeEnds
+      && periodic.schedule.tick_ms == row.tick_time
+      && periodic.schedule.delay_ms == row.delay_time
+      as "its schedule is open, with the row's delay and tickTime"
+    assert option.is_some(periodic.persistence)
+      == { row.prerequisite_id_caster_persistence != 0 }
+      as "its persistence is held exactly where the row's caster persistence column is set"
+  })
+  assert list.count(at_the_caster, fn(row) {
+      row.prerequisite_id_caster_persistence != 0
+    })
+    == 33
+    as "33 of the 561 rows hold a caster persistence"
+  list.each(at_the_area, fn(row) {
+    assert reading_of(row)
+      == Ok(LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead))
+      as "an until-removed periodic Proxy aimed at the area is left out by name"
+  })
+  list.each(naming_none, fn(row) {
+    assert reading_of(row) == Ok(LeftOut(why: ProxyNamesNoSpell))
+      as "one that names no spell is left out as any Proxy that names none"
   })
   let plans = spell_plan.plans_with_later(tables:)
   let assert Ok(unplanned) =
@@ -284,7 +393,7 @@ pub fn a_periodic_proxy_aimed_at_the_area_or_left_until_removed_is_left_out_by_n
     assert list.any(dict.values(plans), fn(spell) {
       spell.spell4_id == Spell4Id(ability)
     })
-      as "Nullifier 70757 and Augmented Blade 46935 are planned on main and stay planned"
+      as "Nullifier 70757 and Augmented Blade 46935 are planned"
     assert !list.any(unplanned, fn(one) { one.spell4_id == ability })
       as "and are not listed unplanned"
   })

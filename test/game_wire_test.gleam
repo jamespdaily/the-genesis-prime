@@ -10512,3 +10512,115 @@ pub fn a_medic_presses_nullifier_and_its_field_cast_finishes_six_seconds_after_i
   game_client.close(game:)
   login_support.stop(started)
 }
+
+/// Advances the driven clock by `ms` and reads what the connection wrote up to its pong with
+/// `number`.
+fn advanced_and_read(
+  game game: game_client.Game,
+  time time: driven_time.Time,
+  have have: BitArray,
+  number number: Int,
+  ms ms: Int,
+) -> #(List(Frame), BitArray) {
+  driven_time.advance(time:, ms:)
+  game_client.read_until_pong(game:, have:, number:)
+}
+
+/// A Warrior of level 24 presses Augmented Blade (SpellLevel 922: Spell4 46935, base 30896) on
+/// the driven clock, and presses it again 3.5 s later. On, its Proxy 210305 casts 79753, whose
+/// Proxy 210304 (delay 1000, tickTime 1000, `Spell4Effects.effectType.26.periodic`; text 442084
+/// "Gain a stack of Kinetic Rage every 1s") casts a Kinetic Rage stack, 79757, at 2000 and
+/// 3000. Off, 57357 takes the toggle's cast and 79753 off and starts 82838 one ms later (row
+/// 217946, delayTime 1), whose Proxy 217944 (tickTime 500, persistence 38758; text 679906
+/// "Removes a stack every 0.5 s when Augmented Blade is off") casts 82839 at 4001 and 4501,
+/// each taking a stack, and 82838 ends with the last. The client sees the two stack removals
+/// half a second apart and no third. Each wait is bounded by a pong. Kinetic Energy stays 0
+/// throughout, so the proc 210339 (it fires 57357 on a change of the resource) never fires.
+/// The test edits two cells of the Spell4 row to 0, each for its own reason:
+/// - `casterInnateRequirement0` (Kinetic Energy of 250): the press is refused 51, and a Warrior
+///   enters with none.
+/// - `prerequisiteIdCasterCast` 37392 ("under Overdrive or under 79753"): the waiver of that
+///   requirement (`Spell4.prerequisiteIdCasterCast`). With the requirement gone the plan reads
+///   it as a gate, which a Warrior under neither cannot pass.
+pub fn a_warrior_turns_augmented_blade_on_for_two_stacks_and_off_and_the_client_sees_two_stacks_removed_half_a_second_apart_and_no_third_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- fixture_tables.changed(table: "Spell4", id: 46_935, with: [
+    #("casterInnateRequirement0", planted_table.Integer(0)),
+    #("prerequisiteIdCasterCast", planted_table.Integer(0)),
+  ])
+  let time = driven_time.new()
+  let started = world_with_spawns(spawns: [], tables:, time:)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Aug Bl",
+      class_id: 1,
+      level: 24,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) = game_client.read_entry_kept(game:, have: <<>>)
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames: entry), fn(item) { item.1 == 30_896 })
+    as "SpellLevel 922 grants Augmented Blade's base 30896 to a Warrior of level 24"
+  game_client.press_ability(game:, client_cast_id: 1, bag_index:, target: 0)
+  let #(first_press, have) =
+    game_client.read_until_pong(game:, have:, number: 1)
+  assert refusals(frames: first_press) == []
+    && game_client.confirmed_cast_of(frames: first_press, client_cast_id: 1)
+    != Error(Nil)
+    as "opcode.0x7fd: Augmented Blade is planned and the press is confirmed, not refused"
+  // At 1999 no stack has started; the first starts at 2000 and the second at 3000.
+  let #(at_1999, have) =
+    advanced_and_read(game:, time:, have:, number: 2, ms: 1999)
+  assert starts_of_spell(frames: at_1999, spell4_id: 79_757) == []
+    as "row 210304: delayTime 1000 and tickTime 1000, so no stack before 2000"
+  let #(at_2000, have) =
+    advanced_and_read(game:, time:, have:, number: 3, ms: 1)
+  assert list.length(starts_of_spell(frames: at_2000, spell4_id: 79_757)) == 1
+    as "the first Kinetic Rage stack starts at 2000"
+  let #(at_3000, have) =
+    advanced_and_read(game:, time:, have:, number: 4, ms: 1000)
+  assert list.length(starts_of_spell(frames: at_3000, spell4_id: 79_757)) == 1
+    as "the second starts at 3000"
+  // The second press at 3500 turns it off: 57357 starts, and 82838 one ms later.
+  driven_time.advance(time:, ms: 500)
+  game_client.press_ability(game:, client_cast_id: 2, bag_index:, target: 0)
+  let #(second_press, have) =
+    game_client.read_until_pong(game:, have:, number: 5)
+  assert refusals(frames: second_press) == []
+    as "the second press is not refused"
+  assert list.length(starts_of_spell(frames: second_press, spell4_id: 57_357))
+    == 1
+    as "rows 136943 and 210350 take the toggle's cast and 79753 off, and Proxy 210340 starts 57357"
+  assert starts_of_spell(frames: second_press, spell4_id: 82_838) == []
+    as "82838 starts one ms after 57357's go, not at the press"
+  let #(at_3501, have) =
+    advanced_and_read(game:, time:, have:, number: 6, ms: 1)
+  let assert [game_client.CastStarted(cast_id: removal_buff, ..)] =
+    starts_of_spell(frames: at_3501, spell4_id: 82_838)
+    as "row 217946: 82838 starts at 3501"
+  let #(at_4000, have) =
+    advanced_and_read(game:, time:, have:, number: 7, ms: 499)
+  assert starts_of_spell(frames: at_4000, spell4_id: 79_757) == []
+    && starts_of_spell(frames: at_4000, spell4_id: 82_839) == []
+    as "79753's Proxy is gone, so no third stack, and 82838's first tick is not due before 4001"
+  let #(at_4001, have) =
+    advanced_and_read(game:, time:, have:, number: 8, ms: 1)
+  assert list.length(starts_of_spell(frames: at_4001, spell4_id: 82_839)) == 1
+    && !finishes(frames: at_4001, cast_id: removal_buff)
+    as "Proxy 217944's first tick, 500 ms after 82838's go, starts 82839 and a stack is left"
+  let #(at_4501, have) =
+    advanced_and_read(game:, time:, have:, number: 9, ms: 500)
+  assert list.length(starts_of_spell(frames: at_4501, spell4_id: 82_839)) == 1
+    as "the second tick starts the second 82839"
+  assert finishes(frames: at_4501, cast_id: removal_buff)
+    as "opcode.0x7fe: 82838 ends in the input that takes the last stack"
+  let #(at_6501, _) =
+    advanced_and_read(game:, time:, have:, number: 10, ms: 2000)
+  assert starts_of_spell(frames: at_6501, spell4_id: 82_839) == []
+    && starts_of_spell(frames: at_6501, spell4_id: 79_757) == []
+    as "no third removal and no stack follows"
+  game_client.close(game:)
+  login_support.stop(started)
+}

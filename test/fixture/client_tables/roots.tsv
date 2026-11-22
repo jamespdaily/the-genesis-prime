@@ -1544,3 +1544,4 @@ Spell4	35870	Astral Infusion, a Spellslinger level 9 absorb and ticking heal on 
 Spell4	54717	Astral Infusion Surge alternate	cast_union_aim_test
 SpellLevel	1049	Mental Boon, an Esper level 18 ability	game_connection_heal_test
 SpellLevel	1021	Medic Triage, level 9, refused for valid targets of bitmask 256	experience_book_test, game_connection_dev_command_test
+SpellLevel	922	Warrior Augmented Blade, level 24 (class 1)	game_wire_test, spell_plan_later_test, cast_persistence_test, spell_plan_periodic_proxy_test, ticking_test
