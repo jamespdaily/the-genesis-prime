@@ -188,7 +188,9 @@
 ////   comparison 1 passes and comparison 2 fails; a quest not in the log counts nothing.
 ////   Only a struck unit carries a creature (`counting`).
 //// - **A vital the server does not hold** is `NotRead`, as is a type the client
-////   decides and the server does not read.
+////   decides and the server does not read. A player's subject holds its Focus as vital 15,
+////   0 of 0 for a class with none, and a creature's holds it as 0 of 0, since its 0x262
+////   sends no stat 1 (`UnitStat.1.Focus`).
 //// - **Type 108** passes, by comparison 1, when the check's second unit stands in the arc
 ////   of the PositionalRequirement row in its objectId around the first unit's facing, and
 ////   by comparison 2 when it does not; any other comparison fails, and its value is not
@@ -803,6 +805,7 @@ pub fn of_creature(facts facts: CreatureFacts) -> Subject {
       #(1, facts.health),
       #(2, Vital(current: breath_maximum, maximum: breath_maximum)),
       #(3, Vital(current: 0.0, maximum: facts.shield_maximum)),
+      #(15, Vital(current: 0.0, maximum: 0.0)),
       #(20, facts.armor),
     ]),
     difficulty: Some(facts.difficulty),

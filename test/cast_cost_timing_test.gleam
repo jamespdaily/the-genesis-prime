@@ -740,8 +740,7 @@ pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
     support.with_effects(spell: support.ability(base: 16_322), kinds: [
       spell_plan.GainEffect(spell_plan.Gain(
         effect_id: Spell4EffectsId(1),
-        slot: 1,
-        amount: 1,
+        gift: spell_plan.SlotPoints(slot: 1, points: 1),
         phase_flags: 1,
         condition: spell_plan.Always,
         tag: spend.always,

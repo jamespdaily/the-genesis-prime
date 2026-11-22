@@ -18,12 +18,14 @@
 ////   keep the cast with one debug line for the spell.
 
 import cast_support as support
+import class_resource_support
 import client_tables
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
+import genesis_prime/game/class_resource
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{
@@ -833,4 +835,56 @@ pub fn a_held_key_whose_cast_the_persistence_ended_casts_again_at_once_test() ->
   assert support.ids(frames: support.writes(effects:))
     == [0x07F9, 0x07FE, 0x07FF, 0x07F9, 0x07FE]
     as "the cast the persistence ended is the held key's last, so the key repeats in the same input (a cast of its own, 0x7ff), and the check runs on that cast too, which fails the same condition"
+}
+
+// ---- Life Force: a persistence on the caster's Focus ----
+
+/// A Medic whose Focus maximum is 1000 and who holds `held` of it, with the planted base 3
+/// among its abilities.
+fn medic_holding_focus(held held: Int) -> Caster {
+  let resources =
+    class_resource.paid(
+      resources: class_resource_support.resources_with(
+        class_id: 4,
+        changes: [#(5, 1000.0)],
+        level: 1,
+      ),
+      payments: [class_resource.Payment(slot: -1, amount: 1000 - held)],
+    )
+  support.caster_holding(resources:)
+}
+
+pub fn life_force_persists_while_the_casters_focus_meets_prerequisite_38318_and_ends_when_it_falls_below_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4 81977 (Life Force) holds prerequisiteIdCasterPersistence 38318: one type 71
+  // condition on vital 15, comparison 4 (at least) of 30, so the cast lasts while the
+  // caster's Focus is at least 30 percent of its maximum. 81977 itself cannot be planned
+  // outside an item (its Modifier row 215678 holds a type 18 parameter), so the planted
+  // spell holds the client's row as its CasterPersistence.
+  let plans =
+    support.plans_of([
+      casting_for_a_second(
+        caster_persistence: Some(prerequisites.fixture_row(row: 38_318)),
+        target_persistence: None,
+      ),
+    ])
+  let #(state, pressed) =
+    support.press_by(
+      plans:,
+      state: cast_state.new(),
+      caster: medic_holding_focus(held: 1000),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  assert support.refusal_results(effects: pressed) == []
+    as "the press is accepted"
+  let focus_cast = support.pressed_id(effects: pressed)
+  let #(unchanged, nothing) =
+    persisted(state:, caster: medic_holding_focus(held: 300), at: 1100)
+  assert nothing == [] && unchanged == state
+    as "300 of 1000 is 30 percent: 38318 holds and nothing happens"
+  let #(_, effects) =
+    persisted(state:, caster: medic_holding_focus(held: 299), at: 1200)
+  assert failed(effects:) == [#(focus_cast, 282, 7, 0)]
+    as "29.9 percent fails 38318: 0x7f9 {the cast id, 282 Prereq_CasterPersistence, the caster, 0}"
 }

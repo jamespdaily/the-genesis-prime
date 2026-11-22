@@ -228,6 +228,7 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.UnreadRequirement(1, 2), True),
     #(spell_plan.GainAimNotRead(1, 2, 3), True),
     #(spell_plan.GainVitalNotRead(1, 2, 3), True),
+    #(spell_plan.GainShareNotRead(1, 2, 3, 4), True),
     #(spell_plan.ApplyPrerequisiteNotRead(1, 2, 3), True),
     #(spell_plan.TargetPrerequisiteReadsStruckUnit(1, 2, 3), True),
     #(spell_plan.ControlHelperNotRead(1, 2, 3), True),

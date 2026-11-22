@@ -9,8 +9,12 @@
 //// - **Phases and tags are read here once**: a row applies in phase n when bit n of its
 ////   `phase_flags` is set (every bit for -1) and its tag holds for the points the cast spent
 ////   (`genesis_prime/game/spend.applies`).
+//// - **A channel's pulse k is phase k** (`opcode.0x7f4.phase`). The client compares a row's
+////   phase only for a channel whose spellChannelFlags has bit 1, so which pulse a phase
+////   is for any other channel is left open (`gaps`).
 
 import genesis_prime/game/spend
+import genesis_prime/gap
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/int
 import gleam/list
@@ -57,7 +61,9 @@ pub fn applies_in_phase(
   names_phase(phase_flags:, phase:) && spend.applies(tag:, spent:)
 }
 
-/// The effects that apply in phase `phase`, in the order of the list (`applies_in_phase`).
+/// The effects that apply in phase `phase`, in the order of the list (`applies_in_phase`). A
+/// channel's pulse k is phase k, so a row of phaseFlags 1 applies at the first pulse only
+/// (`gaps`).
 pub fn in_phase(
   effects effects: List(PlannedEffect(kind)),
   phase phase: Int,
@@ -88,4 +94,14 @@ pub fn ranked(
     |> order.break_tie(int.compare(one.1, other.1))
   })
   |> list.map(fn(entry) { entry.2 })
+}
+
+/// What the phase reading leaves open, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Spell phases",
+      missing: "a channel without spellChannelFlags bit 1 fires an effect with phaseFlags 1 at its first pulse only, while most of the client's texts for such effects say every pulse; the client's code does not settle which pulse a phase is",
+    ),
+  ]
 }

@@ -1519,3 +1519,22 @@ Creature2	40115	Road Warrior, flags 0x6093 with an activate spell, uiFlags 0x12F
 Creature2	37723	a kill objective names it (QuestObjective 13958), uiFlags without bit 8	spawn_test
 QuestObjective	13958	type 2, kills Creature2 37723	spawn_test
 Spell4	36201	Malgrave Adventure - Explorer Route Music: one type 17 row 74798 aimed at the primary target with a delay of 1 and flags 2 (held until removed)	cast_frame_test, game_wire_test
+SpellLevel	1224	Recharge, a Medic's level 14 ability: four Focus shares by the Actuators held and a gain of vital 18	spell_plan_gain_test, cast_gain_test, game_connection_focus_test
+SpellLevel	1267	Meditate, an Esper's level 24 channel of a Focus share	spell_plan_gain_test, cast_gain_test
+Spell4	59882	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	59883	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	59884	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	59885	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	59886	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	59887	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	59888	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	59889	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
+Spell4	64945	A Focus gain with no amount (effect 161906)	spell_plan_gain_test
+Spell4	26636	A caster requirement of type 15, a percentage (eval 8, value 100)	spell_plan_test, cast_focus_test
+Spell4	45420	A caster requirement of type 15 of at least 5 (eval 2)	spell_plan_test, cast_focus_test
+Spell4	88568	A Fusion Probe: requirement0 of type 18 and requirement1 of type 15	spell_plan_test
+Spell4	81977	Life Force, whose persistence holds Prerequisite 38318 (type 71 of vital 15)	cast_persistence_test, cast_prerequisite_test
+Spell4	83563	Desperate Hope, whose eight caster apply prerequisites 39896 to 39903 hold type 71 or 73 of vital 15	cast_prerequisite_test
+Spell4	34629	A gain of +100 of vital 19, the Spellslinger's slot 4 (effect 68677)	spell_plan_gain_test
+Prerequisite	24340	type 73 on vital 15 below 50 points	cast_prerequisite_test
+Prerequisite	22140	type 73 on vital 15 at least 200 points	cast_prerequisite_test
