@@ -30,7 +30,7 @@ NOW = 1_800_000_000.0
 
 
 class Plant:
-    """A project folder with one session, and a ledger path beside it."""
+    """A project folder with a first session folder, and a ledger path beside it."""
 
     def __init__(self, folder: str):
         self.project = Path(folder) / "project"
@@ -40,13 +40,16 @@ class Plant:
         self.ledger = Path(folder) / "builder-starts"
 
     def agent(self, agent_id: str, agent_type: str = "implementer", description: str = "a build",
-              finished: bool = False, quiet_seconds: float = 60, tool_use_id: str | None = None) -> None:
+              finished: bool = False, quiet_seconds: float = 60, tool_use_id: str | None = None,
+              session: str = "session-1") -> None:
+        subagents = self.project / session / "subagents"
+        subagents.mkdir(parents=True, exist_ok=True)
         meta = {"agentType": agent_type, "description": description,
                 "toolUseId": tool_use_id or f"toolu_{agent_id}"}
         if finished:
             meta["finished"] = True
-        (self.subagents / f"agent-{agent_id}.meta.json").write_text(json.dumps(meta))
-        transcript = self.subagents / f"agent-{agent_id}.jsonl"
+        (subagents / f"agent-{agent_id}.meta.json").write_text(json.dumps(meta))
+        transcript = subagents / f"agent-{agent_id}.jsonl"
         transcript.write_text("{}\n")
         os.utime(transcript, (NOW - quiet_seconds, NOW - quiet_seconds))
 
@@ -79,6 +82,34 @@ class LimitBuildersTest(unittest.TestCase):
         self.assertIn("Fix the socket", refused)
         self.assertIn("agent a1", refused)
         self.assertIn("1 min ago", refused)
+
+    def test_one_builder_kept_under_two_session_folders_counts_once(self):
+        # (older copy finished, newer copy finished, another builder runs, refused, reason)
+        rows = [
+            (False, False, True, True, "both copies unfinished: the duplicated builder is one, beside the other"),
+            (False, False, False, False, "both copies unfinished: the duplicated builder alone leaves a slot"),
+            (False, True, True, False, "the newer copy is finished: the older copy's unfinished flag does not count it"),
+            (True, False, True, True, "the newer copy is unfinished: it counts, the older finished copy does not hide it"),
+        ]
+        for older_finished, newer_finished, other_runs, refuses, reason in rows:
+            with self.subTest(reason), tempfile.TemporaryDirectory() as folder:
+                plant = Plant(folder)
+                plant.agent("dup", description="Fix round for telegraph", quiet_seconds=180,
+                            finished=older_finished, session="session-1")
+                plant.agent("dup", description="Fix round for telegraph", quiet_seconds=0,
+                            finished=newer_finished, session="session-2")
+                if other_runs:
+                    plant.agent("other", description="Build the sight", quiet_seconds=60)
+                refused = plant.ask(plant.spawn())
+                if not refuses:
+                    self.assertIsNone(refused, reason)
+                    continue
+                self.assertIsNotNone(refused, reason)
+                self.assertIn("2 builders already run", refused, reason)
+                self.assertEqual(refused.count("agent dup"), 1, reason)
+                self.assertIn("agent dup, last wrote 0 min ago", refused, "with the newer copy's minutes")
+                self.assertNotIn("3 min ago", refused, reason)
+                self.assertIn("Build the sight (agent other", refused, reason)
 
     def test_one_builder_running_leaves_room_for_a_second(self):
         self.plant.agent("a1")
