@@ -36,8 +36,15 @@
 ////   Spell4 id, or dataBits01 when dataBits00 is 0 and dataBits01 is a Spell4 row,
 ////   `proxy_named`; with a tickTime and a durationTime it casts the spell every tickTime
 ////   from the caster, `Proxy.period`: `Spell4Effects.effectType.26.periodic`; one aimed at
-////   the area or lasting until removed is left out by name) starts that spell
-////   as a cast of its own, so a `Spell` holds its `Proxy` children, each with the delay
+////   the area or lasting until removed is left out by name; a Proxy aimed at the area
+////   (flags 5 or 7) in a spell that hits no foes starts its child on the caster alone,
+////   since the area's allies are not found: the tooltips say "yourself and N allies",
+////   texts 245408, 360845, 315699, 287485 and 389501, and `Spell4Effects.targetFlags`
+////   gives the area no other unit; a Proxy with no tickTime whose spell holds two or more
+////   such Proxies naming different tiers of one Spell4Base with every compared field
+////   alike is left out, `ProxyStartsTiersNoChoice`, since no row picks a tier: Flash,
+////   Proxy 180600 to Spell4 70756, whose text 389501 promises its own heal only) starts
+////   that spell as a cast of its own, so a `Spell` holds its `Proxy` children, each with the delay
 ////   the effect gives after its
 ////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
 ////   phase n, every bit for -1, the reading `Spell4.38791` gives). A Proxy with a

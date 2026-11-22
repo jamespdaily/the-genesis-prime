@@ -52,13 +52,6 @@ pub fn classes() -> Classes {
   classes
 }
 
-/// The rows selected with the Esper entering holding `points` of its resource (Psi
-/// Points), which the client's text starts empty: test data, so that a cast that spends
-/// Psi Points runs without first earning them.
-pub fn esper_holding(points points: Float) -> Classes {
-  class_resource.starting_at(classes: classes(), class_id: ClassId(3), points:)
-}
-
 /// The rows selected with the Spellslinger's slot emptied `empty_after_combat_ms`
 /// after combat ends (10 000 ms, as the Esper's): test data, since the Spellslinger
 /// has no such wait, that gives a test a way to empty Spell Power through its timer.

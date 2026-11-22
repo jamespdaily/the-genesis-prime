@@ -568,19 +568,40 @@ pub fn a_proxy_that_starts_a_spell_holding_tier_proxies_with_no_choice_is_left_o
     proxy_read_with(id: 76_609, place: spell_tables.pressed, edits: [])
     as "Mental Boon's Proxy 76609 names one spell and holds no siblings: read"
   assert single == [spell_plan.OnCaster]
-  // Synthetic cells of the real rows.
-  let tiers_by_tag =
-    list.index_map([180_595, 180_596, 180_597, 180_598, 180_599], fn(id, tag) {
-      #("Spell4Effects", id, [#("emmValue", Integer(tag))])
-    })
-  let assert Ok(Applied(spell_plan.ReadProxy(targets: chosen, ..))) =
-    proxy_read_with(
-      id: 180_600,
-      place: spell_tables.pressed,
-      edits: tiers_by_tag,
-    )
-    as "each tier Proxy given its own spend tag (as Mental Boon's rows 76772 to 76776 carry theirs): the spend chooses the tier, so the Proxy is read"
-  assert chosen == [spell_plan.OnCaster]
+  // Synthetic cells of the real rows: each field the rule compares, given a different
+  // value in each of the five tier Proxies (one edited Proxy would leave the other four
+  // alike), so no two siblings are alike and the Proxy that starts the spell is read.
+  let tier_proxies = [180_595, 180_596, 180_597, 180_598, 180_599]
+  [
+    #(
+      "emmValue",
+      "spend tag (as Mental Boon's rows 76772 to 76776 carry theirs)",
+    ),
+    #("targetFlags", "aim"),
+    #("phaseFlags", "phases"),
+    #("flags", "flags"),
+    #("prerequisiteIdCasterApply", "caster apply gate"),
+    #("prerequisiteIdTargetApply", "target apply gate"),
+    #("dataBits06", "dataBits06"),
+  ]
+  |> list.each(fn(field) {
+    let differing =
+      list.index_map(tier_proxies, fn(id, index) {
+        #("Spell4Effects", id, [#(field.0, Integer(index + 1))])
+      })
+    let assert Ok(Applied(spell_plan.ReadProxy(targets: chosen, ..))) =
+      proxy_read_with(
+        id: 180_600,
+        place: spell_tables.pressed,
+        edits: differing,
+      )
+      as {
+        "tier Proxies that differ in their "
+        <> field.1
+        <> ": something picks the tier, so the Proxy is read"
+      }
+    assert chosen == [spell_plan.OnCaster]
+  })
   let one_tier =
     list.map([180_596, 180_597, 180_598, 180_599], fn(id) {
       #("Spell4Effects", id, [#("spellId", Integer(33_262))])

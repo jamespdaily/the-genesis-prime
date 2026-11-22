@@ -41,13 +41,14 @@ pub const filetime = 133_900_000_000_000_000
 /// the ability book holds them (GetAbilityBookSpell `0x1403bad30`), after the bag. Spell4.43468
 /// (Quick Draw) names 76002 of base 52215 and Spell4.34718 (Charged Shot) names 34719 of base
 /// 20685 in `spell4IdMechanicAlternateSpell`; no other class's level-1 spell names one. The
-/// Spellslinger's SpellLevel 1012 (Spell4 34756, level 4) names 79171 of base 54909, and its
-/// level-6 Vitality Burst (Spell4 39132, base 23479) names 39133 of base 23480
-/// (`table_rows -- Spell4 39132 39133`); the Spellslinger's other rows through level 6 name
-/// none that is planned.
+/// Spellslinger's SpellLevel 1012 (Spell4 34756, level 4) names 79171 of base 54909; its
+/// level-6 Runes of Protection (SpellLevel 1144, Spell4 39092, base 23441) names 39327 of base
+/// 23661 and its level-6 Vitality Burst (Spell4 39132, base 23479) names 39133 of base 23480
+/// (`table_rows -- Spell4 39092 39327 39132 39133`), in bag order; the Spellslinger's other
+/// rows through level 6 name none that is planned.
 pub fn alternate_bases(class_id class_id: Int, level level: Int) -> List(Int) {
   case class_id, level >= 6, level >= 4 {
-    7, True, _ -> [52_215, 20_685, 54_909, 23_480]
+    7, True, _ -> [52_215, 20_685, 54_909, 23_661, 23_480]
     7, False, True -> [52_215, 20_685, 54_909]
     7, False, False -> [52_215, 20_685]
     _, _, _ -> []

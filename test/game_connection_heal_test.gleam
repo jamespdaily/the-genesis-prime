@@ -13,11 +13,10 @@
 //// - Mental Boon (Spell4 33257, SpellLevel 1049, an Esper's at level 18; text 245408, "every
 ////   0.5s"): its cost of 1 Psi Point of every point held picks the Proxies whose tag is the
 ////   points spent above the cost. The client's text starts the Esper's Psi Points empty
-////   (`class_resource`), so the test enters it holding 3.
+////   (`class_resource`), so the test earns 3 with three Telekinetic Strikes first.
 //// The Medic's tests are skipped where the client's tables are not on the machine.
 
 import cast_support
-import class_resource_support
 import client_tables
 import connection_rule_support as support
 import fixture_tables
@@ -25,7 +24,6 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
@@ -378,71 +376,63 @@ fn resource_changes(
 
 pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_points_choose_test() -> Nil {
   use <- owned_test.run(120_000)
-  // Text 245408: Mental Boon heals "every 0.5s". The Esper (Class 3) holds 3 Psi Points
-  // and the cast spends them all (Spell4 33257's innate cost of type 6, every point held),
-  // which picks the Proxies of tag 2: their heal is row 76784 of Spell4 36623.
+  // Text 245408: Mental Boon heals "every 0.5s". The Esper (Class 3) earns 3 Psi Points
+  // from three Telekinetic Strikes that each hit the Beast (Spell4 32893 gives +1 on a go
+  // that struck a foe), and Mental Boon's cost (Spell4 33257's innate cost of type 6)
+  // spends every point held, which picks the Proxy of Spell4Effects 76774 (emmValue 2,
+  // tickTime 500, durationTime 6000): twelve ticks, each a heal of row 76784.
   let tables = fixture_tables.shared()
   let character =
     world_entry_support.character(class: 3, faction: 166, level: 18)
   let #(_, entered) = world_entry_support.entry(tables:, character:)
   let held = casting.caster_of(tables:, entered:)
-  let psi_points = 3.0
-  // The rule's own heal for this caster, at the cast layer: each tick's amount and the
-  // times, which the connection must deliver whole.
-  let esper_resource =
-    class_resource.Resource(
-      ..class_resource_support.resource_of(3),
-      start: psi_points,
-    )
+  let ticks = 12
+  let tick_ms = 500
+  // The amount of each heal, which the cast rule works out from the Esper's stats, at the
+  // cast layer; the times of the ticks are the client's (500 ms from the go).
   let #(_, steps) =
     cast_support.pressed_and_run(
       spell: spell_tables.client_spell(spell4_id: 33_257),
       caster: cast_state.Caster(
-        ..cast_support.hurt(caster: cast_support.caster()),
+        ..cast_support.hurt(
+          caster: cast_support.caster_holding(resources: cast_support.holding(
+            class_id: 3,
+            value: 3.0,
+          )),
+        ),
         stats: held.stats,
         heal_scaling: held.heal_scaling,
         player: held.player,
-        resources: class_resource.new(
-          resource: esper_resource,
-          properties: class_resource_support.properties_of(
-            class_id: 3,
-            changes: [],
-            level: 18,
-          ),
-        ),
       ),
       press_ms: 1000,
       until_ms: 8000,
     )
-  let rises =
+  let heals =
     list.flat_map(steps, fn(step) {
       list.filter_map(
         cast_support.caster_change_starts(effects: step.1),
         fn(start) {
-          case start.1 {
-            cast_state.Heal(vital: effect_kind.Health, amount:) ->
-              Ok(#(step.0, amount))
-            cast_state.Heal(vital: effect_kind.Shield, ..)
-            | cast_state.Property(..)
-            | cast_state.Absorb(..)
-            | cast_state.Look(..) -> Error(Nil)
+          case { start.0 }.effect_id.value, start.1 {
+            76_784, cast_state.Heal(vital: effect_kind.Health, amount:) ->
+              Ok(amount)
+            _, cast_state.Heal(..)
+            | _, cast_state.Property(..)
+            | _, cast_state.Absorb(..)
+            | _, cast_state.Look(..)
+            -> Error(Nil)
           }
         },
       )
     })
-  let assert [#(_, heal), ..] = rises as "the rule heals the Esper at each tick"
-  assert list.length(rises) == 12
-    && list.all(rises, fn(rise) { rise.1 == heal })
-    as "twelve heals of the 3-point tier, 500 ms apart, each of the same amount"
-  assert heal > 0 && 1 + 12 * heal < held.vitals.max_health
+  let assert [heal, ..] = heals
+    as "the rule heals the Esper by row 76784 at each tick"
+  assert list.length(heals) == ticks
+    && list.all(heals, fn(amount) { amount == heal })
+    as "twelve heals of row 76784, each of the same amount"
+  assert heal > 0 && 1 + ticks * heal < held.vitals.max_health
     as "the Esper's health, 1 at entry, stays below its maximum through all twelve heals, so every one raises it whole and the count of rises is exact"
-  // The connection, with the Esper entering holding the Psi Points.
-  let settings =
-    Settings(
-      ..connection_support.settings(),
-      tables:,
-      class_resources: class_resource_support.esper_holding(points: psi_points),
-    )
+  // The connection: the Esper enters empty of Psi Points with the Beast before it.
+  let settings = Settings(..connection_support.settings(), tables:)
   let #(state, _) =
     connection_support.entered_at_level(
       settings:,
@@ -450,23 +440,45 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
       level: 18,
       saved_health: Some(1),
     )
-  let bag_index =
-    connection_support.bag_index_of(
-      tables:,
-      class_id: 3,
-      level: 18,
-      ability: 19_258,
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.beast_appears(unit_id: 40),
     )
+  let bag_index_of = fn(ability) {
+    connection_support.bag_index_of(tables:, class_id: 3, level: 18, ability:)
+  }
+  // Telekinetic Strike is Spell4Base 19102: a bar of 1250 ms (castTime) and the go strikes
+  // the Beast. Each is pressed after the one before has gone.
+  let #(state, strikes) =
+    list.fold([1000, 3000, 5000], #(state, []), fn(so_far, ms) {
+      let #(state, done) = so_far
+      let #(state, steps) =
+        connection_support.pressed_until(
+          state:,
+          bag_index: bag_index_of(19_102),
+          client_cast_id: ms,
+          ms:,
+          until_ms: ms + 1900,
+        )
+      #(state, list.append(done, steps))
+    })
+  assert list.any(
+    list.flat_map(strikes, fn(taken) { resource_changes(taken:) }),
+    fn(change) { change.stat_id == 3 && change.value == float32.to_bits(3.0) },
+  )
+    as "opcode.0x935: the third strike raises the Psi Points (slot 1, stat 3) to 3"
+  let press_ms = 6500
   let #(state, pressed) =
     connection_support.at(
       state:,
-      ms: 1000,
+      ms: press_ms,
       event: OwnEvent(
         step.Read(connection_support.world_message(
           message_id: 0x009A,
           body: cast_support.press_body(
             client_cast_id: 1,
-            bag_index:,
+            bag_index: bag_index_of(19_258),
             target: 0,
             press: 1,
           ),
@@ -487,18 +499,24 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
     as "opcode.0x935: the Focus the cost asks is paid (stat 1)"
   assert healths(taken: pressed) == []
     as "no health rises at the press: the first tick is 500 ms on"
-  // The heals land at each tick of the clock, driven in steps of one tick.
+  // The heals land at each tick of the clock, driven in steps of one tick: tick k at
+  // 500 ms times k after the go.
   let #(_, _, risen) =
     list.fold(
-      rises,
-      #(state, connection_support.cast_timers(steps: [pressed], ms: 1000), 1),
-      fn(so_far, rise) {
+      list.repeat(Nil, ticks) |> list.index_map(fn(_, index) { index + 1 }),
+      #(
+        state,
+        connection_support.cast_timers(steps: [pressed], ms: press_ms),
+        1,
+      ),
+      fn(so_far, tick) {
         let #(state, pending, health) = so_far
+        let at_ms = press_ms + tick * tick_ms
         let #(state, pending, before) =
           connection_support.casts_left(
             state:,
             pending:,
-            until_ms: rise.0 - 1,
+            until_ms: at_ms - 1,
             steps: [],
           )
         assert list.flat_map(before, fn(taken) { healths(taken:) }) == []
@@ -507,15 +525,15 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
           connection_support.casts_left(
             state:,
             pending:,
-            until_ms: rise.0,
+            until_ms: at_ms,
             steps: [],
           )
         assert list.flat_map(at, fn(taken) { healths(taken:) })
-          == [health + rise.1]
+          == [health + heal]
           as "opcode.0x92f: the tick raises the health by the heal of the 3-point tier"
-        #(state, pending, health + rise.1)
+        #(state, pending, health + heal)
       },
     )
-  assert risen == 1 + 12 * heal
+  assert risen == 1 + ticks * heal
     as "twelve rises in all, from the 1 health the Esper entered with"
 }

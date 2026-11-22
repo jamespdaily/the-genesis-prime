@@ -247,15 +247,16 @@ pub fn the_six_healing_potions_and_brace_for_impact_are_played_on_the_user_and_g
         press_ms: 1000,
         until_ms: 16_000,
       )
+    let press_and_steps = [#(1000, effects), ..steps]
     let starts =
-      list.flat_map([#(1000, effects), ..steps], fn(step) {
+      list.flat_map(press_and_steps, fn(step) {
         list.map(support.caster_change_starts(effects: step.1), fn(start) {
           start.1
         })
       })
     assert support.refusal_results(effects:) == [] as "the press is accepted"
     assert support.target_changes(
-        effects: list.flat_map(steps, fn(step) { step.1 }),
+        effects: list.flat_map(press_and_steps, fn(step) { step.1 }),
       )
       == []
       as "nothing lands on another unit"
