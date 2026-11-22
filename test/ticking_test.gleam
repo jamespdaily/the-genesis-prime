@@ -241,7 +241,7 @@ fn rows_that_last_until_removed_read_as_open_schedules() -> Nil {
       let #(row_id, delay_ms, tick_ms) = expected
       let assert Ok(row) =
         spell4_effects.get(tables:, id: Spell4EffectsId(row_id))
-        as "the client's table holds the row"
+        as "the fixture holds the row"
       assert row.tick_time == tick_ms
         && row.delay_time == delay_ms
         && row.duration_time == 0

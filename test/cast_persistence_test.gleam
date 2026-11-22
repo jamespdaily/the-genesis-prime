@@ -27,6 +27,7 @@
 import cast_support as support
 import class_resource_support
 import client_tables
+import fixture_tables
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/persist as cast_persist
@@ -58,6 +59,8 @@ import unitest
 
 /// The bag indices of the planted bases 1 and 3 (`cast_support.abilities`).
 const bag_of_base_1 = 8
+
+const bag_of_base_2 = 10
 
 const bag_of_base_3 = 11
 
@@ -1112,36 +1115,22 @@ pub fn a_periodic_proxys_persistence_of_a_type_the_server_does_not_read_keeps_th
 // ---- Augmented Blade's stack removal ----
 
 /// The timers due at `until_ms` or before fire, earliest first, each answered as a go that
-/// struck nobody and followed by the check of every cast's persistence, as the connection
-/// runs it after each input: the state, each step's time and effects, and the timers left.
+/// struck nobody and followed by the check of every cast's persistence for the same caster,
+/// as the connection runs it after each input: the state, each step's time and effects, and
+/// the timers left.
 fn driven(
   state state: State,
   caster caster: Caster,
   pending pending: List(#(Int, TimerId)),
   until_ms until_ms: Int,
 ) -> #(State, List(#(Int, List(Effect))), List(#(Int, TimerId))) {
-  case
-    list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
-  {
-    [#(due, timer), ..rest] if due <= until_ms -> {
-      let #(state, fired) = support.fired(state:, timer:, at: due)
-      let #(state, checked) = persisted(state:, caster:, at: due)
-      let effects = list.append(fired, checked)
-      let cancelled = support.cancelled_timers(effects:)
-      let #(state, steps, left) =
-        driven(
-          state:,
-          caster:,
-          pending: list.append(
-            list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
-            support.due_of(effects:, now_ms: due),
-          ),
-          until_ms:,
-        )
-      #(state, [#(due, effects), ..steps], left)
-    }
-    _ -> #(state, [], pending)
-  }
+  support.run_timers_checked(
+    caster:,
+    state:,
+    pending:,
+    until_ms:,
+    after: fn(state, caster, at) { persisted(state:, caster:, at:) },
+  )
 }
 
 /// A press, answered as a go that struck nobody and followed by the persistence check at
@@ -1165,20 +1154,12 @@ fn starts_in(
   steps steps: List(#(Int, List(Effect))),
   spell4_id spell4_id: Int,
 ) -> List(Int) {
-  list.flat_map(steps, fn(step) {
-    list.filter_map(started(effects: step.1), fn(start) {
-      case start.0 == spell4_id {
-        True -> Ok(step.0)
-        False -> Error(Nil)
-      }
-    })
-  })
+  support.times_of(starts: support.starts_of(steps:, spell4_id:))
 }
 
 pub fn augmented_blades_stack_removal_buff_ends_with_its_last_kinetic_rage_stack_or_when_the_toggle_turns_back_on_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
+  let tables = fixture_tables.shared()
   let sources = spell_plan.sources_of(tables:)
   let planned = fn(spell4_id) {
     let assert Ok(spell) =
@@ -1318,7 +1299,13 @@ pub fn augmented_blades_stack_removal_buff_ends_with_its_last_kinetic_rage_stack
   })
     as "82838 is live at 4100"
   let #(on, on_pressed, _) =
-    pressed_and_checked(plans:, state: live, caster:, bag: 10, at: 4100)
+    pressed_and_checked(
+      plans:,
+      state: live,
+      caster:,
+      bag: bag_of_base_2,
+      at: 4100,
+    )
   assert failed(effects: on_pressed) == [#(cast_id, 282, 7, 0)]
     as "79753 started: 37378 fails and 82838 ends in the input of that start"
   assert !list.any(cast_state.holders(cast: on), fn(holder) {
@@ -1336,12 +1323,22 @@ pub fn augmented_blades_stack_removal_buff_ends_with_its_last_kinetic_rage_stack
     )
   let #(_, bare_steps, _) =
     driven(state: bare, caster:, pending: bare_pending, until_ms: 3000)
-  assert list.map(bare_steps, fn(step) {
-      #(step.0, list.map(failed(effects: step.1), fn(failure) { failure.1 }))
+  assert starts_in(steps: bare_steps, spell4_id: 82_838) == [1001]
+    as "82838 starts one ms after the press"
+  let assert [bare_cast_id] =
+    list.flat_map(bare_steps, fn(step) { started(effects: step.1) })
+    |> list.filter_map(fn(start) {
+      case start.0 == 82_838 {
+        True -> Ok(start.1)
+        False -> Error(Nil)
+      }
     })
-    |> list.filter(fn(step) { step.1 != [] })
-    == [#(1001, [282])]
-    as "82838 starts at 1001 and fails 282 in the input of its own start"
+    as "82838 started once"
+  assert list.flat_map(bare_steps, fn(step) {
+      list.map(failed(effects: step.1), fn(failure) { #(step.0, failure) })
+    })
+    == [#(1001, #(bare_cast_id, 282, 7, 0))]
+    as "82838 fails 282 in the input of its own start"
   assert starts_in(steps: bare_steps, spell4_id: 82_839) == []
     as "with no stack it never ticks"
 }

@@ -259,36 +259,14 @@ pub fn a_proxy_with_no_tick_time_reads_as_a_once_proxy_whatever_column_names_its
     as "text 245408: Mental Boon heals every 0.5 s and the heal sits only in 33258, which only a Proxy with no tickTime names, so such a row casts once, whichever column names its spell"
 }
 
-/// The reading of the client's row `row_id` as the plan reads it.
-fn reading_of_client_row(
+/// The plan's reading of a row of the tables, with the places of every row built once.
+fn reader_of(
   tables tables: store.Tables,
-  row_id row_id: Int,
-) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
-  let row = client_row(tables:, id: row_id)
-  let place_of =
-    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
-  spell_plan.read_row(
-    tables:,
-    sources: spell_plan.sources_of(tables:),
-    place: place_of(row.spell_id),
-    effect: row,
-  )
-}
-
-pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_schedule_and_the_area_ones_stay_left_out_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
+) -> fn(Spell4Effects) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
   let place_of =
     effect_row_read.places(tables:, effects: spell4_effects.all(tables))
   let sources = spell_plan.sources_of(tables:)
-  let open_rows =
-    list.filter(spell4_effects.all(tables), fn(row) {
-      row.effect_type == 26
-      && int.bitwise_and(row.flags, 2) != 0
-      && row.tick_time > 0
-    })
-  let reading_of = fn(row: Spell4Effects) {
+  fn(row: Spell4Effects) {
     spell_plan.read_row(
       tables:,
       sources:,
@@ -296,6 +274,72 @@ pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_s
       effect: row,
     )
   }
+}
+
+pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_schedule_and_the_area_ones_stay_left_out_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let tables = fixture_tables.shared()
+  let reading_of = reader_of(tables:)
+  // The named rows: Augmented Blade's stack maker 210304 (tickTime 1000 after a delay of
+  // 1000), the stack's own drain 210337 (tickTime 250, gated by Prerequisite 43748, not
+  // under Overdrive) and the removal 217944 (tickTime 500, persistence Prerequisite 38758).
+  let open = fn(delay_ms, tick_ms) {
+    Schedule(
+      delay_ms:,
+      tick_ms:,
+      duration_ms: 0,
+      count: ticking.UntilTheNodeEnds,
+    )
+  }
+  let cases = [
+    #(
+      210_304,
+      open(1000, 1000),
+      spell_plan.Always,
+      None,
+      "the stack maker has no gate and no persistence",
+    ),
+    #(
+      210_337,
+      open(0, 250),
+      spell_plan.GatedOnCaster(gates: [
+        prerequisite_support.fixture_row(row: 43_748),
+      ]),
+      None,
+      "the drain is gated by the prerequisite its dataBits06 names",
+    ),
+    #(
+      217_944,
+      open(0, 500),
+      spell_plan.Always,
+      Some(prerequisite_support.fixture_row(row: 38_758)),
+      "the removal holds the persistence its row names",
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(row_id, schedule, condition, persistence, reason) = case_
+    assert reading_of(client_row(tables:, id: row_id))
+      == Ok(
+        Applied(ReadProxy(
+          targets: [spell_plan.OnCaster],
+          condition:,
+          period: Some(spell_plan.Periodic(schedule:, persistence:)),
+        )),
+      )
+      as reason
+  })
+  assert reading_of(client_row(tables:, id: 141_450))
+    == Ok(LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead))
+    as "the area row 141450 is left out by name"
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let reading_of = reader_of(tables:)
+  let open_rows =
+    list.filter(spell4_effects.all(tables), fn(row) {
+      row.effect_type == 26
+      && int.bitwise_and(row.flags, 2) != 0
+      && row.tick_time > 0
+    })
   let named = fn(row) { spell_plan.proxy_named(tables:, effect: row) != 0 }
   // The rows that name a spell and are aimed at the caster (targetFlags 1 or 2), the rows
   // aimed at the area (4 or 6), and the rows that name none (`table_rows -- Spell4Effects`).
@@ -342,57 +386,6 @@ pub fn every_until_removed_periodic_proxy_aimed_at_the_caster_reads_as_an_open_s
     assert reading_of(row) == Ok(LeftOut(why: ProxyNamesNoSpell))
       as "one that names no spell is left out as any Proxy that names none"
   })
-  // The named rows: Augmented Blade's stack maker 210304 (tickTime 1000 after a delay of
-  // 1000), the stack's own drain 210337 (tickTime 250, gated by Prerequisite 43748, not
-  // under Overdrive) and the removal 217944 (tickTime 500, persistence Prerequisite 38758).
-  let open = fn(delay_ms, tick_ms) {
-    Schedule(
-      delay_ms:,
-      tick_ms:,
-      duration_ms: 0,
-      count: ticking.UntilTheNodeEnds,
-    )
-  }
-  let cases = [
-    #(
-      210_304,
-      open(1000, 1000),
-      spell_plan.Always,
-      None,
-      "the stack maker has no gate and no persistence",
-    ),
-    #(
-      210_337,
-      open(0, 250),
-      spell_plan.GatedOnCaster(gates: [
-        prerequisite_support.fixture_row(row: 43_748),
-      ]),
-      None,
-      "the drain is gated by the prerequisite its dataBits06 names",
-    ),
-    #(
-      217_944,
-      open(0, 500),
-      spell_plan.Always,
-      Some(prerequisite_support.fixture_row(row: 38_758)),
-      "the removal holds the persistence its row names",
-    ),
-  ]
-  list.each(cases, fn(case_) {
-    let #(row_id, schedule, condition, persistence, reason) = case_
-    assert reading_of_client_row(tables:, row_id:)
-      == Ok(
-        Applied(ReadProxy(
-          targets: [spell_plan.OnCaster],
-          condition:,
-          period: Some(spell_plan.Periodic(schedule:, persistence:)),
-        )),
-      )
-      as reason
-  })
-  assert reading_of_client_row(tables:, row_id: 141_450)
-    == Ok(LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead))
-    as "the area row 141450 is left out by name"
   let plans = spell_plan.plans_with_later(tables:)
   let assert Ok(unplanned) =
     spell_plan.unplanned(tables:, area_checked: spell_area.checker)
