@@ -27,6 +27,7 @@ ends with the GENESIS_TEST_SEED_SALT the stub was given (test/fixed_seed.gleam r
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
 
+import ast
 import re
 import shutil
 import stat
@@ -282,6 +283,16 @@ class RepeatTestsTest(PlantedRepeatCase):
         checked_variables = re.findall(r"(GENESIS_TEST_SKIP_\w+)=1", checked.group(0))
         printed = re.findall(r"\$(GENESIS_TEST_SKIP_\w+)", ERL_STUB)
         self.assertEqual(printed, checked_variables)
+        # The script's own list is the one check sets, in its order: the stub only prints
+        # what it is given, so a variable the script adds or reorders would pass above.
+        script = ast.parse((REPOSITORY / "dev" / "repeat_tests.py").read_text())
+        listed = next(
+            ast.literal_eval(node.value)
+            for node in script.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SKIP_VARIABLES" for target in node.targets)
+        )
+        self.assertEqual(list(listed), checked_variables)
         self.assertEqual({row["skip"] for row in rows}, {"1111"})
 
     def test_each_run_gets_its_own_salt_and_a_failing_run_prints_the_command_that_repeats_it(self):
