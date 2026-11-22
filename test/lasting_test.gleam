@@ -20,9 +20,12 @@ import genesis_prime/game/lasting.{
   Stack, StackOff, UntilRemoved,
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import owned_test
+import qcheck
 
 // ---- the life of a node ----
 
@@ -141,6 +144,7 @@ fn first_node(effects effects: List(lasting.NodeEffect)) -> lasting.Node {
       effects:,
       held_until_ms: [],
       longer_of_delay_and_duration: False,
+      aura_ends_ms: None,
       go_ms: 1000,
     )
     as "the effects give the node a life"
@@ -159,6 +163,7 @@ fn later_go(
     effects:,
     held_until_ms: [],
     longer_of_delay_and_duration: False,
+    aura_ends_ms: None,
     go_ms: 2000,
   )
 }
@@ -174,6 +179,7 @@ pub fn a_first_go_gives_a_node_the_life_of_its_longest_effect_and_none_without_a
       effects: [timed(duration_ms: 0)],
       held_until_ms: [],
       longer_of_delay_and_duration: False,
+      aura_ends_ms: None,
       go_ms: 1000,
     )
     == Error(Nil)
@@ -543,6 +549,7 @@ fn with_states(
     effects:,
     held_until_ms: until,
     longer_of_delay_and_duration: False,
+    aura_ends_ms: None,
     go_ms:,
   )
 }
@@ -600,4 +607,216 @@ pub fn a_node_with_an_until_removed_effect_outlasts_the_state_and_the_latest_sta
     with_states(held: None, effects: [], until: [3000, 4500], go_ms: 1000)
     as "two states"
   assert two.life == EndsAt(ms: 4500) as "the latest of the states held decides"
+}
+
+// ---- an aura cast's node ----
+//
+// A castMethod 10 spell's buff lasts to the cast's start plus its spellDuration, or to its
+// node's longest timer when that is later; a sum that is not later than now is no end
+// (`0x1407180c0`, `Spell4.spellDuration`).
+
+/// The node of unit 7 at a go at `go_ms` from these rows, the first of them aimed at the
+/// caster, for a cast whose aura ends at `aura_ends_ms`.
+fn under_aura(
+  rows rows: List(lasting.LastingRow),
+  larger larger: Bool,
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> Result(lasting.Node, Nil) {
+  lasting.given(
+    held: None,
+    unit_id: 7,
+    count: 1,
+    effects: list.map(rows, fn(row) {
+      lasting.Listed(effect_id: Spell4EffectsId(67_777), row:)
+    }),
+    held_until_ms: [],
+    longer_of_delay_and_duration: larger,
+    aura_ends_ms:,
+    go_ms:,
+  )
+}
+
+pub fn a_node_under_an_aura_never_ends_before_the_aura_or_its_longest_timed_row_and_never_after_the_later_of_the_two_test() -> Nil {
+  use <- owned_test.run(30_000)
+  qcheck.given(
+    qcheck.tuple4(
+      qcheck.list_from(qcheck.tuple2(
+        qcheck.bounded_int(from: 0, to: 5000),
+        qcheck.bounded_int(from: 0, to: 5000),
+      )),
+      qcheck.tuple3(qcheck.bool(), qcheck.bool(), qcheck.bool()),
+      qcheck.bounded_int(from: 0, to: 10_000),
+      qcheck.bounded_int(from: -5000, to: 20_000),
+    ),
+    fn(drawn) {
+      let #(
+        timed,
+        #(larger, until_removed, at_the_go),
+        go_ms,
+        drawn_after_go_ms,
+      ) = drawn
+      let aura_after_go_ms = case at_the_go {
+        True -> 0
+        False -> drawn_after_go_ms
+      }
+      let aura_end_ms = go_ms + aura_after_go_ms
+      let timed_rows =
+        list.map(timed, fn(row) {
+          LastingRow(delay_ms: row.0, duration_ms: row.1, until_removed: False)
+        })
+      let rows = case until_removed {
+        True ->
+          list.append(timed_rows, [
+            LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+          ])
+        False -> timed_rows
+      }
+      let longest =
+        list.fold(timed, 0, fn(longest, row) {
+          int.max(longest, case larger {
+            True -> int.max(row.0, row.1)
+            False -> row.0 + row.1
+          })
+        })
+      let node =
+        under_aura(rows:, larger:, aura_ends_ms: Some(aura_end_ms), go_ms:)
+      let #(expected, reason) = case until_removed, aura_after_go_ms > 0 {
+        True, True -> #(
+          Ok(first_aura_node(
+            rows:,
+            life: EndsAt(ms: int.max(aura_end_ms, go_ms + longest)),
+            go_ms:,
+          )),
+          "the node ends at the later of the aura's end and its longest timed row",
+        )
+        True, False -> #(
+          Ok(first_aura_node(rows:, life: UntilRemoved, go_ms:)),
+          "an aura that ends at or before the go is no end",
+        )
+        False, _ -> #(
+          case longest > 0 {
+            True ->
+              Ok(first_aura_node(
+                rows:,
+                life: EndsAt(ms: go_ms + longest),
+                go_ms:,
+              ))
+            False -> Error(Nil)
+          },
+          "a node with no until-removed row ignores the aura",
+        )
+      }
+      assert node == expected as reason
+    },
+  )
+}
+
+/// The node `under_aura` gives: unit 7, one count, each row listed, armed at the go.
+fn first_aura_node(
+  rows rows: List(lasting.LastingRow),
+  life life: lasting.Life,
+  go_ms go_ms: Int,
+) -> lasting.Node {
+  Node(
+    unit_id: 7,
+    count: 1,
+    life:,
+    effects: list.map(rows, fn(row) {
+      lasting.Listed(effect_id: Spell4EffectsId(67_777), row:)
+    }),
+    armed_ms: go_ms,
+    held_until_ms: None,
+    struck: None,
+  )
+}
+
+pub fn an_aura_gives_the_node_the_cases_the_client_reads_from_its_buff_timing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let flagged = LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  let timed_for = fn(duration_ms) {
+    LastingRow(delay_ms: 0, duration_ms:, until_removed: False)
+  }
+  [
+    #(
+      "an until-removed row and an aura after the go: the node ends with the aura (Nullifier's field 58868, started at 1000 with 6000)",
+      [flagged],
+      Some(7000),
+      1000,
+      Ok(EndsAt(ms: 7000)),
+    ),
+    #(
+      "a timed row that ends later than the aura keeps the node to its end (Spell4 34959: an aura of 10000 and a Fluff of 12000)",
+      [flagged, timed_for(12_000)],
+      Some(11_000),
+      1000,
+      Ok(EndsAt(ms: 13_000)),
+    ),
+    #(
+      "a timed row that ends before the aura leaves the aura's end",
+      [flagged, timed_for(2000)],
+      Some(7000),
+      1000,
+      Ok(EndsAt(ms: 7000)),
+    ),
+    #(
+      "no aura (castMethod 0, or spellDuration -1): until removed",
+      [flagged],
+      None,
+      1000,
+      Ok(UntilRemoved),
+    ),
+    #(
+      "an aura that ends before the go (Spell4 71983: castTime 10000 over spellDuration 2000, started at 1000, goes at 11000): until removed",
+      [flagged],
+      Some(3000),
+      11_000,
+      Ok(UntilRemoved),
+    ),
+    #(
+      "an aura that ends at the go (Spell4 66923: castTime 3000 and spellDuration 3000, started at 1000, goes at 4000): until removed",
+      [flagged],
+      Some(4000),
+      4000,
+      Ok(UntilRemoved),
+    ),
+    #(
+      "an aura with no effect that has a life holds no node",
+      [timed_for(0)],
+      Some(7000),
+      1000,
+      Error(Nil),
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(reason, rows, aura_ends_ms, go_ms, expected) = row
+    assert result.map(
+        under_aura(rows:, larger: False, aura_ends_ms:, go_ms:),
+        fn(node) { node.life },
+      )
+      == expected
+      as reason
+  })
+  // A second go of the same cast on the unit counts the aura from the cast's start, so its end
+  // is the same time.
+  let assert Ok(first) =
+    under_aura(
+      rows: [flagged],
+      larger: False,
+      aura_ends_ms: Some(7000),
+      go_ms: 1000,
+    )
+  let assert Ok(later) =
+    lasting.given(
+      held: Some(first),
+      unit_id: 7,
+      count: 1,
+      effects: [],
+      held_until_ms: [],
+      longer_of_delay_and_duration: False,
+      aura_ends_ms: Some(7000),
+      go_ms: 3000,
+    )
+  assert later.life == EndsAt(ms: 7000)
+    as "a second go of the same cast keeps the aura's end"
 }

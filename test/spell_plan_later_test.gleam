@@ -678,3 +678,43 @@ pub fn mental_boon_is_listed_unplanned_for_its_friendly_area_proxy_once_the_rows
     },
   )
 }
+
+pub fn every_row_of_nullifiers_tree_is_read_but_the_area_proxy_and_its_ability_is_planned_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  // Nullifier 70757: Proxy 180619 starts the field 58868, whose Fluff 175305 (flags 2) holds
+  // its node until removed; Proxy 141450 is periodic and aimed at the area, which the plan
+  // leaves out, so the Affliction on foes in the field is not cast
+  // (`table_rows -- Spell4Effects spellId=70757 spellId=58868`).
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  assert !list.any(left_out, fn(one) { one.spell4_id == 70_757 })
+    as "Nullifier is built, so it is not listed unplanned"
+  let assert Ok(nullifier) =
+    spell_plan.in_plans(
+      plans: spell_plan.plans_with_later(tables:),
+      base: base_of(tables:, spell4_id: 70_757),
+    )
+    as "the plans hold Nullifier"
+  assert nullifier.spell4_id == Spell4Id(70_757)
+  assert unread_rows_of(tables:, spell4_ids: [70_757])
+    == [
+      #(
+        141_450,
+        Ok(spell_plan.LeftOut(why: spell_plan.PeriodicProxyOnAreaNotRead)),
+      ),
+    ]
+    as "every row of the tree is read but 141450, a periodic Proxy aimed at the area"
+  let sources = spell_plan.sources_of(tables:)
+  assert list.any(
+    spell_plan.tree(spell: nullifier, started: fn(_) { True }),
+    fn(spell) {
+      list.any(
+        spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value),
+        fn(effect) { effect.id == 175_305 },
+      )
+    },
+  )
+    as "the tree holds the field's Fluff 175305, which the aura ends"
+}

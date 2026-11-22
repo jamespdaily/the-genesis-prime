@@ -1528,6 +1528,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
           held: option.None,
           aimed:,
           unit_id: 7,
+          started_ms: 1000,
           now_ms: 1000,
         )
         as reason
@@ -2478,4 +2479,184 @@ pub fn the_views_told_equal_what_the_caster_holds_test() -> Nil {
         as "a second compare with no step between gives none"
     },
   )
+}
+
+// ---- an aura cast's end ----
+//
+// A castMethod 10 spell's buff runs from the cast's start to its spellDuration
+// (`Spell4.spellDuration`, `0x1407180c0`); the client ends no node on time, so the server
+// sends the 0x7fe then (`cast.target_node_end`).
+
+/// Nullifier (Spell4Base 47675, Spell4 70757) as the Medic's only ability: its Proxy 180619
+/// starts the field 58868 (castMethod 10, spellDuration 6000) on the caster.
+fn nullifier_caster() -> cast_state.Caster {
+  cast_state.Caster(
+    ..support.caster(),
+    abilities: [Spell4BaseId(47_675)],
+    book: [Spell4BaseId(47_675)],
+  )
+}
+
+/// The cast id the 0x7ff of the field 58868 names in the effects.
+fn field_cast_id(effects effects: List(Effect)) -> Int {
+  let assert [id, ..] =
+    support.frames_of(message_id: spell_started.message_id, effects:)
+    |> list.filter_map(fn(frame) {
+      let assert Ok(started) = spell_started.decode(frame.body)
+        as "a 0x7ff the rule wrote decodes"
+      case started.spell4_id {
+        58_868 -> Ok(started.cast_id)
+        _ -> Error(Nil)
+      }
+    })
+    as "the effects start the field 58868"
+  id
+}
+
+/// The times at which the steps write a 0x7fe naming the cast, and a 0x811 naming it.
+fn ended_at(
+  steps steps: List(#(Int, List(Effect))),
+  cast_id cast_id: Int,
+) -> #(List(Int), List(Int)) {
+  let times_of = fn(named: fn(List(cast_state.Effect)) -> Bool) {
+    list.filter_map(steps, fn(step) {
+      case named(step.1) {
+        True -> Ok(step.0)
+        False -> Error(Nil)
+      }
+    })
+  }
+  #(
+    times_of(fn(effects) {
+      list.contains(support.finished_ids(support.writes(effects:)), cast_id)
+    }),
+    times_of(fn(effects) {
+      list.any(support.removed_targets(support.writes(effects:)), fn(removal) {
+        removal.0 == cast_id
+      })
+    }),
+  )
+}
+
+pub fn nullifiers_field_cast_finishes_at_its_spell_duration_with_the_0x7fe_alone_and_a_second_start_replaces_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let plans = spell_plan.plans_with_later(tables: fixture_tables.shared())
+  let caster = nullifier_caster()
+  let #(state, effects) =
+    support.press_as(plans:, state: cast_state.new(), caster:, bag: 0, at: 1000)
+  let first = field_cast_id(effects:)
+  // A second press of 70757 is refused by its cooldown of 8000, so the second start of the
+  // field is Proxy 180619 fired again, 2000 ms after the press.
+  let assert Ok(nullifier) =
+    spell_plan.in_plans(plans:, base: Spell4BaseId(47_675))
+    as "the plans hold Nullifier"
+  let assert Ok(proxy) =
+    list.find_map(nullifier.effects, fn(planned) {
+      case planned.kind {
+        spell_plan.ProxyEffect(proxy:) -> Ok(proxy)
+        _ -> Error(Nil)
+      }
+    })
+    as "Nullifier holds the Proxy that starts its field"
+  let #(state, _, start) =
+    cast_state.armed(
+      cast: state,
+      due: cast_state.StartChild(
+        root: Spell4Id(70_757),
+        parent: Spell4Id(70_757),
+        primary_target: caster.unit_id,
+        proxy:,
+        counted_with: cast_state.WithNothing,
+        from: option.None,
+      ),
+      after_ms: 2000,
+    )
+  let #(_, steps) =
+    support.run_timers_until_as(
+      caster:,
+      state:,
+      effects: list.append(effects, [start]),
+      from_ms: 1000,
+      until_ms: 20_000,
+    )
+  let assert [second] =
+    list.filter_map(steps, fn(step) {
+      case step.0 == 3000 {
+        True -> Ok(field_cast_id(effects: step.1))
+        False -> Error(Nil)
+      }
+    })
+    as "the second start of the field is at 3000"
+  assert ended_at(steps:, cast_id: first) == #([3000], [3000])
+    as "the second start takes the first field off (group 1519, cap 1): 0x811, then its 0x7fe at once, and its own end at 7000 never comes"
+  assert ended_at(steps:, cast_id: second) == #([9000], [])
+    as "the second field ends 6000 ms after its own start, with the 0x7fe alone (text 574032: lasting auraDuration)"
+}
+
+/// A spell of base 3 with a cast time of 1500 ms and an aura of 6000 ms whose go holds an
+/// until-removed Fluff on the caster. The committed fixture holds no method-10 spell with a
+/// cast time (120 of the 681 method-10 spells that have an aura and an until-removed row do,
+/// `table_rows -- Spell4`), so the spell is planted; it is pressed as a Normal spell because
+/// the rule builds no ability of method 10, and the rule reads the aura from `aura_ms` alone.
+fn aura_with_a_cast_time() -> Spell {
+  spell_plan.Spell(
+    ..buff(spell4_id: 77_117, base: 3, lasting: [
+      fluff(
+        id: 200_469,
+        aim: spell_plan.AimsAtCaster,
+        duration_ms: 0,
+        until_removed: True,
+      ),
+    ]),
+    cast_time_ms: 1500,
+    aura_ms: option.Some(6000),
+  )
+}
+
+pub fn an_aura_counts_from_the_casts_start_and_not_from_its_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A node given at the go at 2500 of a cast started at 1000 ends at 7000, the start plus the
+  // aura; a count from the go would end it at 8500 (`0x1407180c0`: the buff's length runs from
+  // the client's clock at the 0x7ff, `0x14053d1f0`).
+  let aimed =
+    aimed_at_caster(
+      reached: [
+        reached_on_caster(
+          id: 200_469,
+          kind: spell_plan.LastingEffect(Lasting(
+            effect_id: Spell4EffectsId(200_469),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtCaster,
+            row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+            condition: Always,
+            tag: spend.always,
+          )),
+          product: cast_state.Plain,
+        ),
+      ],
+      restrictions: [],
+      ticking: [],
+    )
+  let assert Ok(node) =
+    cast_tick.node_of(
+      spell: aura_with_a_cast_time(),
+      held: option.None,
+      aimed:,
+      unit_id: 7,
+      started_ms: 1000,
+      now_ms: 2500,
+    )
+  assert node.life == lasting.EndsAt(ms: 7000)
+    as "the aura ends 6000 ms after the cast's start, not after its go"
+  let plans = support.plans_of([aura_with_a_cast_time()])
+  let #(state, effects) =
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
+  assert support.refusals(effects:) == [] as "the press is taken"
+  let id = support.pressed_id(effects:)
+  let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
+  assert list.map(steps, fn(step) {
+      #(step.0, support.finished_ids(support.writes(effects: step.1)))
+    })
+    == [#(2500, []), #(7000, [id])]
+    as "the go at 2500 gives the node; the cast's 0x7fe comes at 7000, 6000 ms after its press"
 }

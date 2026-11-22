@@ -217,7 +217,7 @@ pub fn all() -> List(ColumnSign) {
       table: "Spell4",
       column: "spellDuration",
       sign: Unread,
-      evidence: "no rule of the server reads spellDuration (genesis_prime/game/spell_plan reads castTime, spellCoolDown, the global cooldown and cost columns, genesis_prime/game/loadout spell4BaseIdBaseSpell); it holds -1 in 858 rows",
+      evidence: "the server reads spellDuration only for a castMethod 10 spell, as an aura's length when above 0 (genesis_prime/game/spell_plan, aura_of); the client's reader 0x1407180c0 adds it to the cast's start as an unsigned number, so -1 (858 rows) is a buff that never runs out, which the signed reading above 0 also takes as no end",
     ),
     ColumnSign(
       table: "Spell4",

@@ -664,6 +664,7 @@ pub fn a_periodic_proxy_gives_the_caster_node_its_life_and_lists_no_effect_in_th
       held: None,
       aimed:,
       unit_id: caster.unit_id,
+      started_ms: press_ms,
       now_ms: press_ms,
     )
   assert node.life == lasting.EndsAt(ms: press_ms + 1 + 10_000)

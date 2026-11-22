@@ -203,7 +203,8 @@ pub fn lifetime_of(
 /// crowd-control states the go landed (`held_until_ms`, absolute times) are not armed
 /// again by a later go: the node lasts at least until the latest of them that is still
 /// to come, and at least as long as the effects do. The node keeps the round that struck
-/// the unit before (`struck`); the caller stamps the go's own.
+/// the unit before (`struck`); the caller stamps the go's own. An aura cast's node that
+/// holds an effect until removed ends at `aura_ends_ms` (`life_under_aura`).
 pub fn given(
   held held: Option(Node),
   unit_id unit_id: Int,
@@ -211,6 +212,7 @@ pub fn given(
   effects effects: List(NodeEffect),
   held_until_ms held_until_ms: List(Int),
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  aura_ends_ms aura_ends_ms: Option(Int),
   go_ms go_ms: Int,
 ) -> Result(Node, Nil) {
   let earlier = case held {
@@ -235,10 +237,13 @@ pub fn given(
     |> list.filter(fn(ms) { ms > go_ms })
     |> list.reduce(int.max)
     |> option.from_result
+  let rows = list.map(all, fn(effect) { row_of(effect:) })
   let life = case
-    life_of(
-      effects: list.map(all, fn(effect) { row_of(effect:) }),
+    life_under_aura(
+      life: life_of(effects: rows, longer_of_delay_and_duration:, go_ms:),
+      effects: rows,
       longer_of_delay_and_duration:,
+      aura_ends_ms:,
       go_ms:,
     ),
     held_until
@@ -266,6 +271,35 @@ pub fn given(
         ),
       )
     Error(Nil) -> Error(Nil)
+  }
+}
+
+/// The life of a node whose cast is an aura: a node that holds an effect until removed
+/// ends at the later of the aura's end and the end of its longest timed effect, as the
+/// client's buff lasts to the cast's start plus spellDuration or its node's longest timer,
+/// whichever is larger (`0x1407180c0`). An aura that ends at or before the go gives no
+/// end, since the client reads a sum that is not later than now as none. Any other
+/// node keeps its `life`.
+fn life_under_aura(
+  life life: Life,
+  effects effects: List(LastingRow),
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> Life {
+  case life, aura_ends_ms {
+    UntilRemoved, Some(aura_end_ms) if aura_end_ms > go_ms -> {
+      let longest_timed =
+        list.fold(effects, 0, fn(longest, row) {
+          case row.until_removed {
+            True -> longest
+            False ->
+              int.max(longest, lifetime_of(row:, longer_of_delay_and_duration:))
+          }
+        })
+      EndsAt(ms: int.max(aura_end_ms, go_ms + longest_timed))
+    }
+    UntilRemoved, _ | NoLife, _ | EndsAt(..), _ -> life
   }
 }
 

@@ -138,6 +138,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     free_while_live: False,
     ignores_casting: False,
     longer_of_delay_and_duration: False,
+    aura_ms: None,
     weapon: NoWeaponNeeded,
     caster_death: spell_plan.CannotBeDead,
     target_death: spell_plan.AliveOrDead,

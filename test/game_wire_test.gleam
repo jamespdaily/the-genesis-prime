@@ -10467,3 +10467,48 @@ pub fn a_warrior_presses_plasma_wall_and_a_child_cast_starts_every_half_second_t
   game_client.close(game:)
   login_support.stop(started)
 }
+
+/// A Medic of level 8 presses Nullifier (SpellLevel 632: Spell4 70757, base 47675) on the driven
+/// clock. Its Proxy 180619 starts the field 58868 (castMethod 10, spellDuration 6000; text 574032
+/// "Create a field, lasting 6s"), whose Fluff 175305 holds its node until removed, so the field's
+/// 0x7fe comes 6000 ms after the field's start (`Spell4.spellDuration`, `0x1407180c0`) and not
+/// before; the node ends by time, so no 0x811 comes with it (`cast.target_node_end`). Each wait
+/// is bounded by a pong, since the 0x7fe never comes without the rule.
+pub fn a_medic_presses_nullifier_and_its_field_cast_finishes_six_seconds_after_its_start_with_the_0x7fe_alone_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  let started =
+    world_with_spawns(spawns: [], tables: fixture_tables.shared(), time:)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Med Ic",
+      class_id: 4,
+      level: 8,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) = game_client.read_entry_kept(game:, have: <<>>)
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames: entry), fn(item) { item.1 == 47_675 })
+    as "SpellLevel 632 grants Nullifier's base 47675 to a Medic of level 8"
+  game_client.press_ability(game:, client_cast_id: 1, bag_index:, target: 0)
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Nullifier is planned, so the press is not refused"
+  let assert [game_client.CastStarted(cast_id: field, ..)] =
+    starts_of_spell(frames: pressed, spell4_id: 58_868)
+    as "opcode.0x7ff: Proxy 180619 starts the field at the press"
+  driven_time.advance(time:, ms: 5999)
+  let #(early, have) = game_client.read_until_pong(game:, have:, number: 2)
+  assert !finishes(frames: early, cast_id: field)
+    as "the field is not finished 5999 ms after its start"
+  driven_time.advance(time:, ms: 1)
+  let #(late, _) = game_client.read_until_pong(game:, have:, number: 3)
+  assert finishes(frames: late, cast_id: field)
+    as "opcode.0x7fe: the field finishes 6000 ms after its start (Spell4 58868 spellDuration)"
+  assert game_client.targets_removed_in(frames: late) == []
+    as "a lingering cast whose last node ends by time writes the 0x7fe alone"
+  game_client.close(game:)
+  login_support.stop(started)
+}
