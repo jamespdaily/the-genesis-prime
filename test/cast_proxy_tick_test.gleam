@@ -25,9 +25,7 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
-import genesis_prime/game/ticking.{
-  type Schedule, Schedule, Ticks, UntilTheNodeEnds,
-}
+import genesis_prime/game/ticking.{type Schedule, Schedule, Ticks}
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
@@ -58,15 +56,6 @@ fn engineer_stance() -> Schedule {
 /// Row 228473's schedule: tickTime 500, durationTime 5000, ten ticks.
 fn plasma_wall() -> Schedule {
   Schedule(delay_ms: 0, tick_ms: 500, duration_ms: 5000, count: Ticks(10))
-}
-
-/// The schedule of a row with flags bit 2 (rows 210304, 217944 and 210337): a delay, a
-/// tickTime and no durationTime, which ticks until its node ends.
-fn until_the_node_ends(
-  delay_ms delay_ms: Int,
-  tick_ms tick_ms: Int,
-) -> Schedule {
-  Schedule(delay_ms:, tick_ms:, duration_ms: 0, count: UntilTheNodeEnds)
 }
 
 /// A schedule of no delay, a tickTime of 1000 and `count` ticks.
@@ -376,7 +365,7 @@ pub fn a_persistence_end_stops_a_periodic_proxys_ticks_test() -> Nil {
     Spell(
       ..holder(proxies: [
         periodic(
-          schedule: until_the_node_ends(delay_ms: 0, tick_ms: 500),
+          schedule: support.open_schedule(delay_ms: 0, tick_ms: 500),
           condition: spell_plan.Always,
           named: child(),
         ),
@@ -812,24 +801,26 @@ pub fn a_tick_whose_child_the_cast_rule_refuses_logs_and_the_ticks_go_on_test() 
   })
 }
 
-/// The Tick timers of the state, by the time they were started for.
+/// The ids of the state's timers that are a tick of a periodic row.
 fn tick_timer_ids(state state: State) -> List(TimerId) {
-  dict.to_list(state.timers)
-  |> list.filter_map(fn(entry) {
-    case entry.1 {
-      cast_state.Tick(..) -> Ok(entry.0)
-      _ -> Error(Nil)
+  support.timers_matching(state:, matching: fn(due) {
+    case due {
+      cast_state.Tick(..) -> True
+      _ -> False
     }
   })
 }
 
+/// How many of the state's timers end a node.
 fn node_end_timers(state state: State) -> Int {
-  list.count(dict.values(state.timers), fn(due) {
-    case due {
-      cast_state.NodesEnd(..) -> True
-      _ -> False
-    }
-  })
+  list.length(
+    support.timers_matching(state:, matching: fn(due) {
+      case due {
+        cast_state.NodesEnd(..) -> True
+        _ -> False
+      }
+    }),
+  )
 }
 
 pub fn an_open_periodic_proxy_ticks_each_tick_time_with_one_timer_and_no_nodes_end_and_a_late_timer_fires_each_due_tick_in_order_test() -> Nil {
@@ -839,7 +830,7 @@ pub fn an_open_periodic_proxy_ticks_each_tick_time_with_one_timer_and_no_nodes_e
     support.plans_of([
       holder(proxies: [
         periodic(
-          schedule: until_the_node_ends(delay_ms: 1000, tick_ms: 1000),
+          schedule: support.open_schedule(delay_ms: 1000, tick_ms: 1000),
           condition: spell_plan.Always,
           named: child(),
         ),
@@ -860,12 +851,22 @@ pub fn an_open_periodic_proxy_ticks_each_tick_time_with_one_timer_and_no_nodes_e
       [press_ms + second * 1000, ..times]
     })
     as "a child at the delay plus each tick time after the go, up to 60 s on"
-  assert support.tick_timers(state:) == 1
-    as "one timer for the holder's row, re-armed one tick at a time"
-  assert node_end_timers(state:) == 0
-    as "no NodesEnd timer: the node lasts until removed"
   assert dict.size(state.lingering) + dict.size(state.casts) == 1
     as "the cast lingers with its node"
+  // The run is replayed to each tick's time: after every step the holder's row is the only
+  // tick timer and no node's end is armed, since the node lasts until removed.
+  list.each(int.range(from: 60, to: 0, with: [], run: list.prepend), fn(second) {
+    let #(at_step, _) =
+      ran(
+        caster: support.caster(),
+        pressed: pressed(plans:, caster: support.caster()),
+        until_ms: press_ms + second * 1000,
+      )
+    assert support.tick_timers(state: at_step) == 1
+      as "one timer for the holder's row, re-armed one tick at a time"
+    assert node_end_timers(state: at_step) == 0
+      as "no NodesEnd timer: the node lasts until removed"
+  })
   // The timer for tick 3 (due press + 4000) is handled 2500 ms late, at press + 6500: ticks
   // 3, 4 and 5 (due at press + 4000, 5000 and 6000) each start a child, then tick 6 is armed.
   let #(early, _) =
@@ -883,20 +884,66 @@ pub fn an_open_periodic_proxy_ticks_each_tick_time_with_one_timer_and_no_nodes_e
       timer:,
       at: press_ms + 6500,
     )
-  let late_starts = support.started_in(effects: late)
-  assert list.length(late_starts) == 3
+  assert list.length(support.started_in(effects: late)) == 3
     as "ticks 3, 4 and 5 are due by the late firing: three children, and tick 6, due 7000 ms after the press, is not"
-  assert list.sort(
-      list.map(late_starts, fn(start) { start.cast_id }),
-      int.compare,
-    )
-    == list.map(late_starts, fn(start) { start.cast_id })
-    as "the due ticks fire in order"
   assert list.map(support.started_timers(effects: late), fn(started) {
       started.1
     })
     == [500]
     as "the next tick is armed 500 ms on, never before now"
+  // Two open rows on one holder make the order of the due ticks visible: row 121345 (child
+  // 71371) ticks 2000, 3000, ... after the go and row 121346 (child 71372) 1500, 3000, 4500,
+  // ... 6000. A timer handled at 6500 lands every tick due by then, earliest first and at
+  // one time the lower row id first.
+  let other_child = support.child(spell4_id: 71_372, base: 71_372)
+  let two_rows =
+    support.plans_of([
+      holder(proxies: [
+        periodic(
+          schedule: support.open_schedule(delay_ms: 1000, tick_ms: 1000),
+          condition: spell_plan.Always,
+          named: child(),
+        ),
+        Proxy(
+          ..periodic(
+            schedule: support.open_schedule(delay_ms: 0, tick_ms: 1500),
+            condition: spell_plan.Always,
+            named: other_child,
+          ),
+          effect_id: Spell4EffectsId(121_346),
+        ),
+      ]),
+    ])
+  let #(two_pressed, _) =
+    ran(
+      caster: support.caster(),
+      pressed: pressed(plans: two_rows, caster: support.caster()),
+      until_ms: press_ms + 1000,
+    )
+  let assert [first_timer, ..] = tick_timer_ids(state: two_pressed)
+    as "the holder's rows have armed ticks"
+  let #(_, late_two) =
+    support.fired_raw_as(
+      caster: support.caster(),
+      state: two_pressed,
+      timer: first_timer,
+      at: press_ms + 6500,
+    )
+  assert list.map(support.started_in(effects: late_two), fn(start) {
+      start.spell4_id
+    })
+    == [
+      71_372,
+      71_371,
+      71_371,
+      71_372,
+      71_371,
+      71_372,
+      71_371,
+      71_371,
+      71_372,
+    ]
+    as "due at 1500 (row 121346), 2000, 3000 (121345 then 121346), 4000, 4500, 5000, 6000 (121345 then 121346): each tick in the order of its due time"
 }
 
 pub fn an_open_periodic_proxy_under_an_aura_stops_at_the_auras_end_and_the_node_end_writes_the_0x7fe_alone_test() -> Nil {
@@ -907,7 +954,7 @@ pub fn an_open_periodic_proxy_under_an_aura_stops_at_the_auras_end_and_the_node_
     Spell(
       ..holder(proxies: [
         periodic(
-          schedule: until_the_node_ends(delay_ms: 0, tick_ms: 1000),
+          schedule: support.open_schedule(delay_ms: 0, tick_ms: 1000),
           condition: spell_plan.Always,
           named: child(),
         ),
@@ -957,7 +1004,7 @@ pub fn each_stack_of_a_child_that_holds_an_open_proxy_keeps_one_tick_timer_and_t
       ..holding(
         proxies: [
           periodic(
-            schedule: until_the_node_ends(delay_ms: 0, tick_ms: 250),
+            schedule: support.open_schedule(delay_ms: 0, tick_ms: 250),
             condition: spell_plan.Always,
             named: grandchild,
           ),

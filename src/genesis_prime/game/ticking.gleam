@@ -10,10 +10,11 @@
 ////   rounded down, and only within the row's life (`within_life`).
 //// - **A row with flags bit 2 lasts until removed** (`Spell4Effects.effectType.8.periodic`);
 ////   every periodic row with a durationTime of 0 has the bit. A damage or heal row
-////   that lasts until removed has no schedule (`schedule_of`). A periodic Proxy's
-////   open schedule (`open_schedule_of`) has no count: it ticks every tickTime until its
-////   node ends (`ending_with_node` cuts it at the go to the node's end when the node has
-////   one, an aura's).
+////   that lasts until removed has no schedule (`schedule_of`).
+//// - **A periodic Proxy with flags bit 2 ticks every tickTime until its holder spell is
+////   removed** (`Spell4Effects.effectType.26.periodic`): its open schedule
+////   (`open_schedule_of`) has no count, and `ending_with_node` cuts it at the go to the end
+////   of the node when the node has one, an aura's (`life_under_aura`, `0x1407180c0`).
 
 import genesis_prime/game/lasting
 import genesis_prime/gap
@@ -33,7 +34,8 @@ pub type Schedule {
 pub type Count {
   /// This many ticks, the last landing within the row's durationTime.
   Ticks(Int)
-  /// No count: the row has flags bit 2 and ticks until its node ends.
+  /// No count: a periodic Proxy row with flags bit 2 ticks every tickTime until its holder
+  /// spell is removed (`Spell4Effects.effectType.26.periodic`) or its node ends.
   UntilTheNodeEnds
 }
 
@@ -41,7 +43,8 @@ pub type Count {
 pub type ScheduleError {
   /// Flags bit 2: the row lasts until removed.
   UntilRemoved
-  /// A life shorter than one tick; no row has one, so the load fails.
+  /// A life shorter than one tick, or a tickTime of 0 on an open row; no row has the
+  /// first, so the load fails.
   NoTick(tick_ms: Int, duration_ms: Int)
 }
 
@@ -69,19 +72,25 @@ pub fn schedule_of(
 }
 
 /// The open schedule of a periodic Proxy row with flags bit 2 and a tickTime of `tick_ms`:
-/// its delay, tickTime and durationTime, with no count. The caller decides which rows
+/// its delay, tickTime and durationTime, with no count, since the row ticks until its holder
+/// spell is removed (`Spell4Effects.effectType.26.periodic`). A tickTime of 0 has none, as in
+/// `schedule_of`: a tick due at every moment would never end. The caller decides which rows
 /// are read as open; a damage or heal row that lasts until removed still has none
 /// (`schedule_of`).
 pub fn open_schedule_of(
   row row: lasting.LastingRow,
   tick_ms tick_ms: Int,
-) -> Schedule {
-  Schedule(
+) -> Result(Schedule, ScheduleError) {
+  use <- bool.guard(
+    when: tick_ms < 1,
+    return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
+  )
+  Ok(Schedule(
     delay_ms: row.delay_ms,
     tick_ms:,
     duration_ms: row.duration_ms,
     count: UntilTheNodeEnds,
-  )
+  ))
 }
 
 /// Whether the schedule has no count, so its row's node lasts until removed

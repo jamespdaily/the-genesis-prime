@@ -2676,17 +2676,6 @@ fn periodic_proxy(schedule schedule: ticking.Schedule) -> spell_plan.Proxy {
   )
 }
 
-/// The schedule of a row with flags bit 2 and a delay of 1000, a tickTime of 1000 and no
-/// durationTime (row 210304).
-fn until_the_node_ends() -> ticking.Schedule {
-  ticking.Schedule(
-    delay_ms: 1000,
-    tick_ms: 1000,
-    duration_ms: 0,
-    count: ticking.UntilTheNodeEnds,
-  )
-}
-
 pub fn the_node_of_a_holder_with_only_an_open_proxy_lasts_until_removed_or_until_its_aura_ends_test() -> Nil {
   use <- owned_test.run(5000)
   let timed =
@@ -2701,19 +2690,19 @@ pub fn the_node_of_a_holder_with_only_an_open_proxy_lasts_until_removed_or_until
     [
       #(
         "a holder with only an open Proxy has a node that lasts until removed",
-        [until_the_node_ends()],
+        [support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
         option.None,
         lasting.UntilRemoved,
       ),
       #(
         "as an aura of 6000 ms started at 1000 its node ends with the aura",
-        [until_the_node_ends()],
+        [support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
         option.Some(6000),
         lasting.EndsAt(ms: 7000),
       ),
       #(
         "an aura that ends at or before the go gives no end (the client reads a sum not later than now as none)",
-        [until_the_node_ends()],
+        [support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
         option.Some(1500),
         lasting.UntilRemoved,
       ),
@@ -2725,7 +2714,7 @@ pub fn the_node_of_a_holder_with_only_an_open_proxy_lasts_until_removed_or_until
       ),
       #(
         "an open and a finite Proxy together: the open one decides",
-        [timed, until_the_node_ends()],
+        [timed, support.open_schedule(delay_ms: 1000, tick_ms: 1000)],
         option.None,
         lasting.UntilRemoved,
       ),

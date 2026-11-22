@@ -221,6 +221,12 @@ pub fn an_open_schedule_is_cut_by_a_node_that_ends_alone_and_a_finite_one_and_wi
       == open(delay_ms: 1000, tick_ms: 1000)
       as "a life no row bounds: within_life leaves an open schedule as it is (delay 1000, tick 1000, duration 0 gave 0 ticks before)"
   })
+  assert ticking.open_schedule_of(
+      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      tick_ms: 0,
+    )
+    == Error(NoTick(tick_ms: 0, duration_ms: 0))
+    as "an open row of a tickTime of 0 has no schedule, as schedule_of has none: a tick due at every moment would never end"
   case client_tables.present() {
     True -> rows_that_last_until_removed_read_as_open_schedules()
     False -> Nil
@@ -245,7 +251,7 @@ fn rows_that_last_until_removed_read_as_open_schedules() -> Nil {
         as "the row's own delay, tickTime and no durationTime"
       let lasting_row = spell_plan.lasting_row_of(effect: row)
       assert ticking.open_schedule_of(row: lasting_row, tick_ms:)
-        == open(delay_ms:, tick_ms:)
+        == Ok(open(delay_ms:, tick_ms:))
         as "the open reader keeps the row's delay, tickTime and durationTime 0"
       assert ticking.schedule_of(row: lasting_row, tick_ms:)
         == Error(UntilRemoved)

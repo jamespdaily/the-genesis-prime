@@ -23,7 +23,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/spell_area.{DamageEffect, TickingDamage}
 import genesis_prime/game/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
 import genesis_prime/game/spend
-import genesis_prime/game/ticking.{Schedule, Ticks, UntilTheNodeEnds}
+import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_result
@@ -682,7 +682,7 @@ pub fn a_late_node_end_sends_no_tick_past_the_node_life_test() -> Nil {
   // ticks the aura holds, so the node's end handled 3000 ms late starts no third child.
   let aura =
     spell_plan.Spell(
-      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 1000)),
+      ..proxy_spell(schedule: support.open_schedule(delay_ms: 0, tick_ms: 1000)),
       aura_ms: Some(2500),
     )
   let open_early = proxy_run(spell: aura, until_ms: 3400)
@@ -860,7 +860,7 @@ pub fn a_later_go_restarts_the_schedule_test() -> Nil {
   // first go's tick 1, due at 2000.
   let open_twice =
     spell_plan.Spell(
-      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 1000)),
+      ..proxy_spell(schedule: support.open_schedule(delay_ms: 0, tick_ms: 1000)),
       phase_delays_ms: [0, 500],
     )
   assert support.tick_timers(
@@ -997,7 +997,7 @@ pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
   // stack's cap, and only the second cast's open row ticks.
   let open_capped =
     spell_plan.Spell(
-      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      ..proxy_spell(schedule: support.open_schedule(delay_ms: 0, tick_ms: 2000)),
       stack: lasting_stack_of_one(),
     )
   let open_plans = support.plans_of([open_capped])
@@ -1062,7 +1062,7 @@ pub fn a_dropped_node_stops_its_ticks_test() -> Nil {
     support.with_effects(spell: surge(), kinds: [
       spell_plan.ProxyEffect(proxy_row_of(
         effect_id: 121_345,
-        schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000),
+        schedule: support.open_schedule(delay_ms: 0, tick_ms: 2000),
       )),
     ])
   let both =
@@ -1229,7 +1229,7 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
   assert first_tick_frames(63_000, every_two_seconds())
     == [spell_effect_tick.message_id, spell_started.message_id]
     as "one above it casts after"
-  let open_row = open_proxy_every(delay_ms: 0, tick_ms: 2000)
+  let open_row = support.open_schedule(delay_ms: 0, tick_ms: 2000)
   assert first_tick_frames(61_000, open_row)
     == [spell_started.message_id, spell_effect_tick.message_id]
     as "an open Proxy row orders by its id among the rows as a finite one does: below the heal's, first"
@@ -1462,7 +1462,10 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
   // An open row has no node's end to cancel, and its cast ends with the caster all the same.
   let open_run =
     proxy_run(
-      spell: proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      spell: proxy_spell(schedule: support.open_schedule(
+        delay_ms: 0,
+        tick_ms: 2000,
+      )),
       until_ms: 3000,
     )
   assert support.tick_timers(state: open_run.state) == 1
@@ -1689,7 +1692,7 @@ pub fn a_cancel_keeps_ticks_and_an_interrupt_ends_them_test() -> Nil {
   // and a persistence's end cancels them.
   let open_twice =
     spell_plan.Spell(
-      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      ..proxy_spell(schedule: support.open_schedule(delay_ms: 0, tick_ms: 2000)),
       phase_delays_ms: [0, 1000],
     )
   let open_first =
@@ -1726,7 +1729,7 @@ pub fn a_cancel_keeps_ticks_and_an_interrupt_ends_them_test() -> Nil {
     as "one timer, re-armed one tick at a time"
   let open_persisting =
     spell_plan.Spell(
-      ..proxy_spell(schedule: open_proxy_every(delay_ms: 0, tick_ms: 2000)),
+      ..proxy_spell(schedule: support.open_schedule(delay_ms: 0, tick_ms: 2000)),
       caster_persistence: Some(
         prerequisites.single(id: 903, condition: #(28, 1, 0, 0)),
       ),
@@ -1945,15 +1948,6 @@ fn proxy_spell(schedule schedule: ticking.Schedule) -> Spell {
   ])
 }
 
-/// A Proxy row with flags bit 2 (rows 210304, 217944 and 210337): this delay and tickTime and
-/// no durationTime, ticking until its node ends.
-fn open_proxy_every(
-  delay_ms delay_ms: Int,
-  tick_ms tick_ms: Int,
-) -> ticking.Schedule {
-  Schedule(delay_ms:, tick_ms:, duration_ms: 0, count: UntilTheNodeEnds)
-}
-
 /// Row 82888's schedule (delay 1000, tickTime 1000, durationTime 4000), as a Proxy row's.
 fn atomic_proxy() -> ticking.Schedule {
   Schedule(delay_ms: 1000, tick_ms: 1000, duration_ms: 4000, count: Ticks(4))
@@ -2002,20 +1996,16 @@ fn cast_result_failed_id() -> Int {
   spell_failed.message_id
 }
 
-/// Row 210304's schedule: delay 1000, tickTime 1000, flags bit 2 and no durationTime.
-fn open_proxy() -> ticking.Schedule {
-  Schedule(
-    delay_ms: 1000,
-    tick_ms: 1000,
-    duration_ms: 0,
-    count: UntilTheNodeEnds,
-  )
-}
-
 pub fn leaving_the_world_drops_an_open_proxys_ticks_and_its_cast_test() -> Nil {
   use <- owned_test.run(5000)
   let run =
-    proxy_run(spell: proxy_spell(schedule: open_proxy()), until_ms: 3000)
+    proxy_run(
+      spell: proxy_spell(schedule: support.open_schedule(
+        delay_ms: 1000,
+        tick_ms: 1000,
+      )),
+      until_ms: 3000,
+    )
   assert dict.size(run.state.lingering) == 1 && dict.size(run.state.casts) == 0
     as "the go has gone: the cast lingers on its node, which lasts until removed"
   let timers = dict.keys(run.state.timers)
