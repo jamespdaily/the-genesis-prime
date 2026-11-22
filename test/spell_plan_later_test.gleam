@@ -32,6 +32,7 @@ import genesis_prime/table/telegraph_damage
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import planted_table.{type Cell, Float, Integer}
@@ -337,6 +338,99 @@ fn base_of(
   Spell4BaseId(row.spell4_base_id_base_spell)
 }
 
+/// The row's id when it is one of the `left_out_rows` and the plan leaves it out as aimed at
+/// other units; `Error(Nil)` when it is read, which every other row must be.
+fn read_or_left_out(
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+  place place: spell_plan.RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+  left_out_rows left_out_rows: List(Int),
+) -> Result(Int, Nil) {
+  let name =
+    int.to_string(effect.id) <> " of " <> int.to_string(effect.spell_id)
+  case list.contains(left_out_rows, effect.id) {
+    True -> {
+      assert spell_plan.read_row(tables:, sources:, place:, effect:)
+        == Ok(spell_plan.LeftOut(why: spell_plan.AimedAtOtherUnits))
+        as { "the row " <> name <> " is left out as aimed at other units" }
+      Ok(effect.id)
+    }
+    False -> {
+      assert effect_row_read.is_read(tables:, sources:, place:, effect:)
+        as {
+          "a freed ability that plans and does nothing is a silent wrong result: the row "
+          <> name
+          <> " is read"
+        }
+      Error(Nil)
+    }
+  }
+}
+
+/// Each ability (a Spell4 id) is a class ability's SpellLevel row, is not listed unplanned, is held
+/// by the plans, and every effect row of its tree and of its alternate's tree is read
+/// (`effect_row_read.is_read`) except the `left_out_rows` (Spell4Effects ids), which are the rows
+/// left out as aimed at other units and no others. A freed ability that plans and does nothing
+/// is a silent wrong result, so every freed ability passes this check. The abilities as planned
+/// are returned, in the order given.
+fn freed_and_read(
+  tables tables: table_store.Tables,
+  spell4_ids spell4_ids: List(Int),
+  left_out_rows left_out_rows: List(Int),
+) -> List(spell_plan.Spell) {
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  let unplanned = list.map(left_out, fn(one) { one.spell4_id })
+  let sources = spell_plan.sources_of(tables:)
+  let place_of =
+    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  let planned =
+    list.map(spell4_ids, fn(spell4_id) {
+      assert list.any(spell_level.all(tables), fn(row) {
+        row.spell4_id == spell4_id && loadout.is_class_ability(row:)
+      })
+        as "the id is a class ability's SpellLevel row"
+      assert !list.contains(unplanned, spell4_id)
+        as "the ability is built, so it is not listed"
+      let assert Ok(ability) =
+        spell_plan.in_plans(
+          plans: spell_plan.plans_with_later(tables:),
+          base: base_of(tables:, spell4_id:),
+        )
+        as "the plans hold the ability"
+      ability
+    })
+  let left_out_seen =
+    list.flat_map(planned, fn(ability) {
+      let alternate_tree = case ability.alternate {
+        Some(alternate) ->
+          spell_plan.tree(spell: alternate, started: fn(_) { True })
+        None -> []
+      }
+      list.append(
+        spell_plan.tree(spell: ability, started: fn(_) { True }),
+        alternate_tree,
+      )
+      |> list.flat_map(fn(spell) {
+        spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
+        |> list.filter_map(fn(effect) {
+          read_or_left_out(
+            tables:,
+            sources:,
+            place: place_of(effect.spell_id),
+            effect:,
+            left_out_rows:,
+          )
+        })
+      })
+    })
+  assert list.unique(left_out_seen) |> list.sort(int.compare)
+    == list.sort(left_out_rows, int.compare)
+    as "each row named as left out is found in the abilities' trees"
+  planned
+}
+
 pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -344,22 +438,11 @@ pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Ni
   let assert Ok(left_out) =
     spell_plan.unplanned(tables:, area_checked: spell_area.checker)
   let unplanned = list.map(left_out, fn(one) { one.spell4_id })
-  list.each(spell_tables.flag_8_abilities, fn(spell4_id) {
-    assert !list.contains(unplanned, spell4_id)
-      as "a flag 8 row is at the position the cast holds, which the player's reading builds"
-    let assert Ok(spell4_row) = spell4.get(tables:, id: Spell4Id(spell4_id))
-      as "the ability is a Spell4 row"
-    assert case
-      spell_plan.in_plans(
-        plans: spell_plan.plans_with_later(tables:),
-        base: Spell4BaseId(spell4_row.spell4_base_id_base_spell),
-      )
-    {
-      Ok(_) -> True
-      Error(Nil) -> False
-    }
-      as "and the plans hold it"
-  })
+  freed_and_read(
+    tables:,
+    spell4_ids: spell_tables.flag_8_abilities,
+    left_out_rows: [],
+  )
   let assert Ok(miasma) =
     list.find(left_out, fn(one) { one.spell4_id == 41_484 })
     as "Unsteady Miasma stays listed"
@@ -400,48 +483,23 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
   let tables = client_tables.shared()
   let assert Ok(left_out) =
     spell_plan.unplanned(tables:, area_checked: spell_area.checker)
-  let unplanned = list.map(left_out, fn(one) { one.spell4_id })
-  let sources = spell_plan.sources_of(tables:)
-  let place_of =
-    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
-  list.each(spell_tables.flag_0_or_2_abilities, fn(spell4_id) {
-    assert list.any(spell_level.all(tables), fn(row) {
-      row.spell4_id == spell4_id && loadout.is_class_ability(row:)
-    })
-      as "the id is a class ability's SpellLevel row"
-    assert !list.contains(unplanned, spell4_id)
-      as "a hit row placed on the cast's target is built, so the ability is not listed"
-    let assert Ok(ability) =
-      spell_plan.in_plans(
-        plans: spell_plan.plans_with_later(tables:),
-        base: base_of(tables:, spell4_id:),
-      )
-      as "the plans hold the ability"
-    let tree = spell_plan.tree(spell: ability, started: fn(_) { True })
-    assert list.any(tree, fn(spell) {
-      list.any(
-        telegraph_rows_of(tables:, spell4_id: spell.spell4_id.value),
-        fn(row) { row.target_type_flags == 0 || row.target_type_flags == 2 },
-      )
-    })
-      as "a spell of its tree holds a hit row with targetTypeFlags 0 or 2"
-    list.each(tree, fn(spell) {
-      list.each(
-        spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value),
-        fn(effect) {
-          let place = place_of(effect.spell_id)
-          assert effect_row_read.is_read(tables:, sources:, place:, effect:)
-            as {
-              "a freed ability that plans and does nothing is a silent wrong result: the row "
-              <> int.to_string(effect.id)
-              <> " of "
-              <> int.to_string(spell.spell4_id.value)
-              <> " is read"
-            }
-        },
-      )
-    })
-  })
+  list.each(
+    freed_and_read(
+      tables:,
+      spell4_ids: spell_tables.flag_0_or_2_abilities,
+      left_out_rows: [],
+    ),
+    fn(ability) {
+      let tree = spell_plan.tree(spell: ability, started: fn(_) { True })
+      assert list.any(tree, fn(spell) {
+        list.any(
+          telegraph_rows_of(tables:, spell4_id: spell.spell4_id.value),
+          fn(row) { row.target_type_flags == 0 || row.target_type_flags == 2 },
+        )
+      })
+        as "a spell of its tree holds a hit row with targetTypeFlags 0 or 2"
+    },
+  )
   list.each(
     [
       #(
@@ -480,4 +538,38 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
         as reason
     },
   )
+}
+
+pub fn the_five_abilities_the_orders_free_are_planned_and_every_row_of_their_trees_is_read_but_the_allies_heal_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  // Collapse 39372 (Furthest), Crisis Wave 41382, Soothe 33140 and Vitality Burst 39132
+  // (heals ordered by health) and Dual Fire 39068 (a heal by health beside a Closest damage
+  // child): `table_rows -- Spell4Effects spellId=39068 spellId=53286`. Dual Fire's row 84876 and
+  // the row 126516 of its Surge alternate 53286 have flags 4, the area alone, which the plan
+  // leaves out: each heal reaches nobody (the alternate's other rows, the Proxy 126517 to the
+  // damage child 53297, are read), and the heals of flags 5 reach the caster alone. The gaps
+  // `spell_plan` "Spell areas" (the caster's allies in a spell that hits no foes) and
+  // `cast/heal` "Casting" (a heal aimed at another unit lands nothing) state both.
+  let abilities =
+    freed_and_read(
+      tables:,
+      spell4_ids: [39_372, 41_382, 33_140, 39_132, 39_068],
+      left_out_rows: [84_876, 126_516],
+    )
+  let assert [collapse, ..] = abilities as "Collapse is the first ability"
+  let collapse_rows =
+    list.flat_map(
+      spell_plan.tree(spell: collapse, started: fn(_) { True }),
+      fn(spell) {
+        spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
+        |> list.map(fn(effect) { effect.id })
+      },
+    )
+  list.each([86_110, 141_664, 86_112, 145_055], fn(row) {
+    assert list.contains(collapse_rows, row)
+      as "Collapse's tree holds the row, which the loop above found read"
+  })
 }

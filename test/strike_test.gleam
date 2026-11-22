@@ -1031,6 +1031,130 @@ pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil
     as "Kick's one damage effect, aimed at the area"
 }
 
+/// Kick's area (58591) with its row's order and count replaced.
+fn kick_areas_ordered(
+  order order: area.Order,
+  target_count target_count: Int,
+) -> spell_area.Areas {
+  let areas = spell_tables.fixture_areas()
+  let assert Ok(kick) = dict.get(areas, 58_591)
+    as "Kick is in the fixture's areas"
+  let assert Some(row) = kick.row as "Kick has an area row"
+  dict.insert(
+    areas,
+    58_591,
+    spell_area.SpellArea(
+      ..kick,
+      row: Some(area.Row(..row, order:, target_count:)),
+    ),
+  )
+}
+
+fn selected_units(selection selection: Selection) -> List(Int) {
+  list.map(selection.units, fn(aimed) { aimed.unit_id })
+}
+
+pub fn a_player_area_that_picks_the_furthest_strikes_the_furthest_units_inside_its_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The caster stands at the origin and Kick's cone holds 21, 22, 23 and 25 at 3, 5, 6.5 and 8 m
+  // (the z of their rows in `picture`), so the farthest-first order is 25, 23, 22, 21; 24 is
+  // behind, 26 is dead, 27 is Friendly to Exiles and 28 is a player. The N furthest foes are
+  // the texts' words ("Pull the 3 furthest foes", text 320951); the distance from the area's
+  // centre and a tie to the lower id are guesses the gap states.
+  list.each(
+    [
+      #(3, [25, 23, 22], "the 3 furthest inside, furthest first"),
+      #(10, [25, 23, 22, 21], "a count above the units inside takes them all"),
+    ],
+    fn(case_) {
+      let #(target_count, wanted, reason) = case_
+      assert selected_units(selection: strike.select(
+          asked: asked(cast_id: 5, phase: 0),
+          attacker: strike_support.attacker(),
+          picture: picture(),
+          areas: kick_areas_ordered(order: area.Furthest, target_count:),
+          now_ms: 0,
+        ))
+        == wanted
+        as reason
+    },
+  )
+}
+
+pub fn a_player_area_that_picks_at_random_follows_the_cast_id_and_every_go_of_one_cast_ranks_alike_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Each unit's key is the 32-bit finalizer of MurmurHash3 over `cast_id * 0x9E3779B1 +
+  // unit_id`, ascending, the lower id first on a tie (`area.mix`, a guess: the client names
+  // Random and orders nothing). The lists were worked out once with an independent script over
+  // units 21, 22, 23 and 25, the units inside Kick's cone.
+  let areas = kick_areas_ordered(order: area.Random, target_count: 2)
+  let select_at = fn(cast_id) {
+    selected_units(selection: strike.select(
+      asked: asked(cast_id:, phase: 0),
+      attacker: strike_support.attacker(),
+      picture: picture(),
+      areas:,
+      now_ms: 0,
+    ))
+  }
+  list.each(
+    [
+      #(5, [22, 21]),
+      #(6, [22, 23]),
+      #(7, [23, 25]),
+      #(8, [21, 25]),
+      #(10, [25, 22]),
+    ],
+    fn(case_) {
+      assert select_at(case_.0) == case_.1
+        as "the cast id seeds the order, so the same cast id picks the same units"
+      assert select_at(case_.0) == select_at(case_.0)
+        as "a replayed cast picks the same units"
+    },
+  )
+  // Stagger 38780 at its four gos: one cast id ranks the units alike at every go, the phase
+  // is not in the seed.
+  use <- unitest.guard(client_tables.present())
+  let stagger_areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(stagger) = dict.get(stagger_areas, 38_780)
+    as "Stagger is in the areas of the level-1 abilities"
+  let assert Some(row) = stagger.row as "Stagger has an area row"
+  let randomised =
+    dict.insert(
+      stagger_areas,
+      38_780,
+      spell_area.SpellArea(
+        ..stagger,
+        row: Some(area.Row(..row, order: area.Random, target_count: 3)),
+      ),
+    )
+  let close_by =
+    dict.from_list([
+      #(21, foe_at(x: 0.0, z: -1.0)),
+      #(22, foe_at(x: 0.0, z: -2.0)),
+      #(23, foe_at(x: 0.0, z: -3.0)),
+      #(24, foe_at(x: 0.0, z: -4.0)),
+      #(25, foe_at(x: 0.0, z: -5.0)),
+      #(26, foe_at(x: 0.0, z: -6.0)),
+      #(27, foe_at(x: 0.0, z: -9.0)),
+    ])
+  let by_go =
+    list.map([0, 1, 2, 3], fn(phase) {
+      selected_units(selection: strike.select(
+        asked: GoAsked(..asked(cast_id: 5, phase:), spell4_id: Spell4Id(38_780)),
+        attacker: strike_support.attacker(),
+        picture: close_by,
+        areas: randomised,
+        now_ms: 0,
+      ))
+    })
+  let assert [first, ..rest] = by_go
+  assert list.all(rest, fn(later) { later == first })
+    as "every go of one cast ranks the units alike"
+  assert first == [22, 21, 23]
+    as "cast id 5 ranks the units 21 to 27 as 22, 21, 27, 23, 25, 26, 24 (the same key rule as above); unit 27 stands at 9 m, outside Stagger's 8 m row, so the three taken are the first three inside it: 22, 21 and 23"
+}
+
 pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test() -> Nil {
   use <- owned_test.run(60_000)
   let chosen =

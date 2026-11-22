@@ -10,6 +10,7 @@
 //// - Spell4TargetMechanics 6, which Kick's Spell4Base 38017 names: targetType 2 (the caster).
 //// - Spell4Effects 140383: one Physical damage effect aimed at the area (targetFlags
 ////   4), multiplier 1.0, with the formula's parameters of kinds 12, 13 and 10.
+//// - Spell4Effects 140382: one crowd-control state (effectType 4) aimed at the area (targetFlags 4).
 
 import fixture_tables
 import genesis_prime/game/effect_row_read
@@ -47,6 +48,8 @@ pub type Kick {
     shape: Int,
     /// Spell4Effects.targetFlags of the damage effect.
     effect_target_flags: Int,
+    /// Spell4Effects.targetFlags of the crowd-control effect.
+    control_target_flags: Int,
     /// Spell4Effects.dataBits00 of the damage effect: its multiplier as 32 float bits.
     multiplier_bits: Int,
     /// The formula's parameters of the damage effect as (type, value) pairs, at most
@@ -64,6 +67,8 @@ const telegraph_row = 168
 
 const effect_row_id = 140_383
 
+const control_row_id = 140_382
+
 const target_mechanic_row = 6
 
 /// Kick as the client's rows hold it, read from the typed records of the shared
@@ -73,6 +78,9 @@ pub fn kick() -> Kick {
   let assert Ok(effect) =
     spell4_effects.get(tables:, id: Spell4EffectsId(effect_row_id))
     as "the rows hold Kick's damage effect"
+  let assert Ok(control) =
+    spell4_effects.get(tables:, id: Spell4EffectsId(control_row_id))
+    as "the rows hold Kick's crowd-control effect"
   let assert Ok(area) =
     spell4_aoe_target_constraints.get(
       tables:,
@@ -102,6 +110,7 @@ pub fn kick() -> Kick {
     telegraph_damage_flags: telegraph.telegraph_damage_flags,
     shape: telegraph.damage_shape_enum,
     effect_target_flags: effect.target_flags,
+    control_target_flags: control.target_flags,
     multiplier_bits: effect.data_bits00,
     parameters: list.filter(
       [
@@ -115,8 +124,8 @@ pub fn kick() -> Kick {
   )
 }
 
-/// The client's rows with Kick's damage effect, hit shape and valid targets as `kick`
-/// holds them.
+/// The client's rows with Kick's damage effect, crowd-control effect, hit shape and valid
+/// targets as `kick` holds them.
 pub fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
   let rows = spell_tables.fixture_rows()
   let parameters =
@@ -135,14 +144,19 @@ pub fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
   spell_tables.Rows(
     ..rows,
     spell4_effects: changed(
-      rows: rows.spell4_effects,
+      rows: changed(
+        rows: rows.spell4_effects,
+        schema: spell4_effects.schema,
+        id: effect_row_id,
+        with: [
+          #("targetFlags", Integer(kick.effect_target_flags)),
+          #("dataBits00", Integer(kick.multiplier_bits)),
+          ..parameters
+        ],
+      ),
       schema: spell4_effects.schema,
-      id: effect_row_id,
-      with: [
-        #("targetFlags", Integer(kick.effect_target_flags)),
-        #("dataBits00", Integer(kick.multiplier_bits)),
-        ..parameters
-      ],
+      id: control_row_id,
+      with: [#("targetFlags", Integer(kick.control_target_flags))],
     ),
     spell4_target_mechanics: changed(
       rows: rows.spell4_target_mechanics,

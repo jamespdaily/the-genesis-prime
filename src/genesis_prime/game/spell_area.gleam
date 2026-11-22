@@ -50,19 +50,21 @@
 //// - **A Proxy with its spell in dataBits01** (dataBits00 0 and a Spell4 id in dataBits01,
 ////   `ProxyNamesSpellInDataBits01`) casts that spell every tickTime
 ////   (`Spell4Effects.effectType.26.periodic`), which the plan does not start, so `checker`
-////   refuses a spell that holds one beside a hit row placed on the cast's target: the
-////   ability that row would free is planned and casts only its other rows. A spell that
-////   holds such a Proxy with no such hit row is not refused, and its ability is planned
-////   without that cast.
-//// - **Order.** Every area row of the level-1 abilities has `targetSelection`
-////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
-////   `Spell4ValidTargets.targetBitmask`). A creature's special may also select Furthest (2)
-////   or Random (3); orders 4 and 5 need a unit's health, which a creature's sight of a
-////   fighter does not hold (`SelectionNeedsHealth`).
-//// - **Two readings** read a spell's rows: a player's ability (`PlayerReading`: Closest
-////   and the shapes of the level-1 trees) and a creature's special (`CreatureReading`: also
-////   Furthest, Random, rings, crosses, pies and unhalved boxes), so a player's strike
-////   refuses orders 2 to 5 and shapes 1, 3, 5 and 6.
+////   refuses a spell that holds one beside a hit row placed on the cast's target, or beside an
+////   area row ordered beyond Closest: the ability that row would free is planned and casts only
+////   its other rows. A spell that holds such a Proxy with neither is not refused, and its
+////   ability is planned without that cast.
+//// - **Order.** An area row's `targetSelection` is read for a player and a creature alike:
+////   Closest (1), Furthest (2) and Random (3) are the orders `area.select_ordered` takes, and
+////   no strike selects a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
+////   `Spell4ValidTargets.targetBitmask`). Orders 4 and 5 (by health) need a unit's health,
+////   which the units a strike chooses from do not hold: a creature's row is refused
+////   (`SelectionNeedsHealth`), and a player's is read as no area (`SpellArea.row` `None`),
+////   refused (`SelectionNeedsHealth`) only for a phase that selects units from it, since the
+////   client's texts name allies for those rows and the server finds none.
+//// - **Two readings** read a spell's rows: a player's ability (`PlayerReading`: the shapes of
+////   the level-1 trees) and a creature's special (`CreatureReading`: also rings, crosses,
+////   pies and unhalved boxes), so a player's strike refuses shapes 1, 3, 5 and 6.
 //// - **Where a hit is centred** is its anchor, one for the spell (`anchor_of`): a hit row is
 ////   placed on the caster (`targetTypeFlags` 1) or on the cast's target (0 or 2), and drawn where
 ////   the cast's 0x7ff puts it and stays there (TelegraphDamage flag 0x4000 or 0x1000:
@@ -90,9 +92,10 @@
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
 ////   with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
-////   `targetSelection` other than 1 (a creature's: other than 1 to 3, with 4 and 5 named by
-////   `SelectionNeedsHealth`); a valid-targets bitmask other than 0 on a spell
-////   with an area row; a hit row placed on anything but the caster, the cast's target and the
+////   `targetSelection` other than 1 to 5 (4 and 5 are refused by `SelectionNeedsHealth` for a
+////   creature and for a player's phase that selects units from the area); a valid-targets
+////   bitmask other than 0 on a spell with an area row; a hit row placed on anything but the
+////   caster, the cast's target and the
 ////   held position (`targetTypeFlags` other than 0, 1, 2 and 8; for a creature other than 0 to
 ////   2: `TelegraphOnStruckUnits` for bit 4, else `TelegraphNotOnCaster`); a spell's hit rows
 ////   placed apart (`PlacedApart`); a pressed spell whose hit row is on the target and whose
@@ -153,15 +156,13 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 
-/// Whose area a spell's rows are read for: what the strike of each can take differs, since a
-/// player's strike has the health of the units it shows and a creature's does not, and a
-/// player's abilities (the level-1 trees) hold only the shapes and orders that
-/// `PlayerReading` builds.
+/// Whose area a spell's rows are read for: the shapes each can take differ, since a player's
+/// abilities (the level-1 trees) hold only the shapes `PlayerReading` builds.
 pub type Reading {
-  /// A player's ability: Closest alone, and the circle, box, cone and rectangle shapes.
+  /// A player's ability: the circle, box, cone and rectangle shapes.
   PlayerReading
-  /// A creature's special: Closest, Furthest and Random, and also the ring, cross, pie and
-  /// unhalved-box shapes (`0x14054d170.shapes_1_3_5_6`).
+  /// A creature's special: also the ring, cross, pie and unhalved-box shapes
+  /// (`0x14054d170.shapes_1_3_5_6`).
   CreatureReading
 }
 
@@ -228,7 +229,8 @@ pub type PhaseStrike {
 pub type SpellArea {
   SpellArea(
     spell4_id: Spell4Id,
-    /// The area row, `None` for a spell with no `Spell4AoeTargetConstraints` row.
+    /// The area row, `None` for a spell with no `Spell4AoeTargetConstraints` row and for a row
+    /// ordered by health, which no go of the spell selects units from.
     row: Option(Row),
     /// How a unit counts as inside the area at each go, in go order (`inside`): the hit
     /// rows placed on the caster that the go's phase names, from the never-drawn twins, else
@@ -258,11 +260,11 @@ pub type AreaError {
   NoRow(table: String, id: Int)
   /// A spell strikes an area in one of its phases but names no area row.
   NoAreaRow(spell4_id: Int)
-  /// An area row selects in an order the reading does not build (a player's: not Closest, 1;
-  /// a creature's: not 1 to 3 and not 4 or 5).
+  /// An area row selects in no order the client names (`targetSelection` 0, None, or above 5).
   SelectionNotBuilt(spell4_id: Int, target_selection: Int)
-  /// A creature's area row selects by a unit's health (`targetSelection` 4,
-  /// LowestAbsoluteHealth, or 5, MissingMostHealth), which its sight of a fighter lacks.
+  /// An area row selects units by a unit's health (`targetSelection` 4, LowestAbsoluteHealth,
+  /// or 5, MissingMostHealth), which the units a strike chooses from do not hold: a creature's
+  /// row, or a player's whose phase selects units from the area.
   SelectionNeedsHealth(spell4_id: Int, target_selection: Int)
   /// A spell's valid targets hold a bit: it would strike the dead or more.
   ValidTargetsNotAlive(spell4_id: Int, target_bitmask: Int)
@@ -304,8 +306,9 @@ pub type AreaError {
   TelegraphTimedFromAGo(spell4_id: Int, telegraph_id: Int)
   /// A Proxy row names no spell in dataBits00 but holds the id of a Spell4 row in dataBits01,
   /// which it casts every tickTime (`Spell4Effects.effectType.26.periodic`) and the plan does
-  /// not start, in a spell whose hit row is placed on the cast's target: `checker` refuses the
-  /// spell, since the ability that row frees would be planned without that cast.
+  /// not start, in a spell whose hit row is placed on the cast's target or whose area row is
+  /// ordered beyond Closest: `checker` refuses the spell, since the ability that row frees
+  /// would be planned without that cast.
   ProxyNamesSpellInDataBits01(
     spell4_id: Int,
     effect_id: Int,
@@ -349,13 +352,13 @@ pub fn describe(error error: AreaError) -> String {
       <> int.to_string(spell4_id)
       <> " has an area row that selects in order "
       <> int.to_string(target_selection)
-      <> ", which is not built (a player's ability takes Closest, 1; a creature's special 1 to 3)"
+      <> ", which is no order the client names (0, None, is not one; 1 to 5 are)"
     SelectionNeedsHealth(spell4_id:, target_selection:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " has an area row that selects in order "
       <> int.to_string(target_selection)
-      <> ", by a unit's health, which a creature's sight of a fighter does not hold"
+      <> ", by a unit's health, which the units a strike chooses from do not hold"
     ValidTargetsNotAlive(spell4_id:, target_bitmask:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -523,7 +526,7 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
 /// What a later ability's spells must pass to be planned (genesis_prime/game/spell_plan
 /// `Checker`): the area of each is built as `build` builds it, no damage row lasts until
 /// removed and no Proxy holds a spell in dataBits01 alone beside a hit row placed on the cast's
-/// target, and an error of what the rule does
+/// target or an area row ordered beyond Closest, and an error of what the rule does
 /// not build leaves the ability out of the plans, so no ability holds a spell the load of the
 /// areas would refuse.
 pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
@@ -539,7 +542,7 @@ pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
       case until_removed_damage_row_of(tables:, effects:, id:) {
         Some(error) -> Error(error)
         None ->
-          case placed_on_the_target(area:) {
+          case placed_on_the_target(area:) || ordered_beyond_closest(area:) {
             True -> proxy_naming_a_spell_in_data_of(tables:, effects:, id:)
             False -> Ok(Nil)
           }
@@ -551,8 +554,8 @@ pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
 
 /// The refusal of the first Proxy row of the spell that has no spell in dataBits00 and the id
 /// of a Spell4 row in dataBits01 (`ProxyNamesSpellInDataBits01`). Only `checker` runs it, for a
-/// spell with a hit row on the cast's target; a Proxy with dataBits01 0 names nothing and stays
-/// accepted.
+/// spell with a hit row on the cast's target or an area row ordered beyond Closest; a Proxy
+/// with dataBits01 0 names nothing and stays accepted.
 fn proxy_naming_a_spell_in_data_of(
   tables tables: table_store.Tables,
   effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
@@ -717,6 +720,15 @@ fn targeting_given(
   }
 }
 
+/// Whether the spell's area row takes Furthest or Random. A row ordered by health is no area
+/// (`SpellArea.row`), so it is not beyond Closest here.
+fn ordered_beyond_closest(area area: SpellArea) -> Bool {
+  case area.row {
+    Some(Row(order: Furthest, ..)) | Some(Row(order: Random, ..)) -> True
+    Some(Row(order: Nearest, ..)) | None -> False
+  }
+}
+
 /// Whether the spell has a hit row and it is placed on the cast's target: a spell with no hit
 /// row has no shapes and is centred on its primary target only by default.
 fn placed_on_the_target(area area: SpellArea) -> Bool {
@@ -784,16 +796,15 @@ fn area_of(
       id: spell.spell4_base_id.value,
     )),
   )
-  use area_row <- result.try(area_row_of(
-    tables:,
-    id:,
-    row:,
-    reading: PlayerReading,
-  ))
-  use Nil <- result.try(case area_row {
+  use read <- result.try(area_row_of(tables:, id:, row:))
+  use Nil <- result.try(case read {
     Some(..) -> valid_targets_checked(tables:, id:, base:)
     None -> Ok(Nil)
   })
+  let area_row = case read {
+    Some(Ordered(row:)) -> Some(row)
+    Some(ByHealth(..)) | None -> None
+  }
   use placed <- result.try(placed_rows(
     id:,
     rows: hit_rows_of(tables:, links:, id:),
@@ -823,15 +834,17 @@ fn area_of(
       spell:,
     )
   // A phase that selects units at some n, every effect chosen being the widest, must
-  // have an area row.
+  // have an area row, and one that selects units in an order the server builds.
   let selects =
     spell_plan.go_numbers(go_count: phase_count_of(spell:))
     |> list.any(fn(phase) {
       phase_of(spell: area, phase:, spent: None).selects_area
     })
-  use Nil <- result.try(case area_row, selects {
+  use Nil <- result.try(case read, selects {
     None, True -> Error(NoAreaRow(spell4_id: id))
-    _, _ -> Ok(Nil)
+    Some(ByHealth(target_selection:)), True ->
+      Error(SelectionNeedsHealth(spell4_id: id, target_selection:))
+    None, False | Some(Ordered(..)), _ | Some(ByHealth(..)), False -> Ok(Nil)
   })
   Ok(area)
 }
@@ -859,12 +872,21 @@ fn valid_targets_checked(
   }
 }
 
+/// What an area row's `targetSelection` reads as.
+type OrderRead {
+  /// An order `area.select_ordered` takes: Closest, Furthest or Random.
+  Ordered(row: Row)
+  /// An order by a unit's health, which no strike chooses by: the row's selection number.
+  ByHealth(target_selection: Int)
+}
+
+/// The spell's area row as its order reads: `None` for a spell with no area row, or the refusal
+/// of an order the client does not name.
 fn area_row_of(
   tables tables: table_store.Tables,
   id id: Int,
   row row: spell4.Spell4,
-  reading reading: Reading,
-) -> Result(Option(Row), AreaError) {
+) -> Result(Option(OrderRead), AreaError) {
   case row.spell4_aoe_target_constraints_id {
     0 -> Ok(None)
     constraints_id -> {
@@ -878,27 +900,26 @@ fn area_row_of(
           id: constraints_id,
         )),
       )
-      let row_of = fn(order) {
+      let ordered = fn(order) {
         Ok(
-          Some(Row(
-            min_range: constraints.min_range,
-            max_range: constraints.max_range,
-            degrees: constraints.angle,
-            target_count: constraints.target_count,
-            order:,
-          )),
+          Some(
+            Ordered(row: Row(
+              min_range: constraints.min_range,
+              max_range: constraints.max_range,
+              degrees: constraints.angle,
+              target_count: constraints.target_count,
+              order:,
+            )),
+          ),
         )
       }
-      case constraints.target_selection, reading {
-        1, PlayerReading | 1, CreatureReading -> row_of(Nearest)
-        2, CreatureReading -> row_of(Furthest)
-        3, CreatureReading -> row_of(Random)
-        4, CreatureReading | 5, CreatureReading ->
-          Error(SelectionNeedsHealth(
-            spell4_id: id,
-            target_selection: constraints.target_selection,
-          ))
-        selection, PlayerReading | selection, CreatureReading ->
+      case constraints.target_selection {
+        1 -> ordered(Nearest)
+        2 -> ordered(Furthest)
+        3 -> ordered(Random)
+        4 | 5 ->
+          Ok(Some(ByHealth(target_selection: constraints.target_selection)))
+        selection ->
           Error(SelectionNotBuilt(spell4_id: id, target_selection: selection))
       }
     }
@@ -1504,15 +1525,12 @@ pub fn area_of_spell(
     spell4.get(tables:, id: spell4_id)
     |> result.replace_error(NoRow(table: "Spell4", id:)),
   )
-  use area_row <- result.try(area_row_of(
-    tables:,
-    id:,
-    row:,
-    reading: CreatureReading,
-  ))
-  case area_row {
+  use read <- result.try(area_row_of(tables:, id:, row:))
+  case read {
     None -> Ok(None)
-    Some(area_row) -> {
+    Some(ByHealth(target_selection:)) ->
+      Error(SelectionNeedsHealth(spell4_id: id, target_selection:))
+    Some(Ordered(row: area_row)) -> {
       let links = telegraph_links_by_spell(tables:)
       use shapes <- result.try(hit_shapes_of(
         tables:,
@@ -1651,7 +1669,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Proxy rows that name their spell in dataBits01",
-      missing: "a Proxy with dataBits00 0 casts the Spell4 of its dataBits01 every tickTime (a guess from its rows), which the plan does not start; a later ability with a spell that holds one beside a hit row placed on the cast's target is refused when its plan is built (Field Probes would otherwise be planned and cast only its other rows), but a planned ability whose spells hold such a Proxy with no such hit row loses that timed cast, and the coverage measure lists those Proxy rows under effect type 26",
+      missing: "a Proxy with dataBits00 0 casts the Spell4 of its dataBits01 every tickTime (a guess from its rows), which the plan does not start; a later ability with a spell that holds one beside a hit row placed on the cast's target, or beside an area row ordered beyond Closest, is refused when its plan is built (Field Probes and Restrictor 38279, whose field 38287 names Snare 77118, would otherwise be planned and cast only their other rows), but a planned ability whose spells hold such a Proxy with neither loses that timed cast (Nullifier 58868, whose Proxy 141450 names 77099 on a Closest row), and the coverage measure lists those Proxy rows under effect type 26",
     ),
     gap.Entry(
       area: "Creature target and ground rows",
@@ -1676,6 +1694,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Creature hit rows by go",
       missing: "a creature's cast strikes with the hit rows the client draws at the go, and for a cast whose phase the client compares (a Multiphase cast, or a channel whose spellChannelFlags has bit 1) that its phase names: a row still counts as drawn at a go equal to its end, and a hit twin (flag 0x40, never drawn) is struck by its phase alone (at every go for a cast whose phase the client does not compare), both guesses the client's code does not settle; a hit row behind a caster prerequisite (prerequisiteIdCaster, which the client draws only while the caster passes it) is read as drawn whatever the caster, no row of the retail-listed specials has one; a drawn hit row timed from a go (flag 0x2000) is refused",
+    ),
+    gap.Entry(
+      area: "Player area orders",
+      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
     ),
     gap.Entry(
       area: "Creature area orders and shapes",

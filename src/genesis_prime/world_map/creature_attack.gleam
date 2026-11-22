@@ -421,7 +421,7 @@ fn only_damage_and_delay(
 }
 
 /// The spell has an area row its telegraph can be read from by the creature reading
-/// (`spell_area.CreatureReading`: Closest, Furthest or Random, and the shapes it builds), its
+/// (`spell_area.CreatureReading`: the shapes it builds), its
 /// rows are placed alike, on the caster or on the cast's target (`spell_area.PlacedApart`), the
 /// hit shapes of each of its gos read (`spell_area.hit_shapes_by_go`), and at least one go its
 /// damage rows name has a hit shape: a cast none of whose strike gos can strike is

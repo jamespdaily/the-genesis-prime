@@ -106,6 +106,9 @@ import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/message/spell_effect_damage
+import genesis_prime/message/spell_effect_info
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
@@ -5277,6 +5280,101 @@ pub fn a_medic_presses_fissure_among_still_beasts_and_each_go_strikes_only_the_b
     as "opcode.0x7f4: the second go strikes the 6 wide rectangle (TelegraphDamage 2997, phaseFlags 2), which holds A and B and not C, which the first go struck"
   assert struck(list.append(third, third_flushed)) == [beast_ahead]
     as "opcode.0x7f4: the third go strikes the 2 wide rectangle (TelegraphDamage 2996, phaseFlags 4), which holds A alone"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// A level-6 Medic saved at 100 health holds Crisis Wave (Spell4Base 25579, Spell4 41382, bag
+/// index 7: the Medic's 5 to 6 rise gives it) and presses it on itself. Its area row 661 is
+/// ordered by health (MissingMostHealth), which the server reads as no area: the press is
+/// confirmed, its go lists the Medic alone with the heal of row 93037 (type 10, flags 5: the caster and the
+/// area) and the Medic's health rises by the amount that heal's description gives. The allies
+/// the order would pick are not found. The clock is driven and nothing waits on real time.
+pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_caster_where_the_order_refused_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  let started =
+    world_with_spawns(spawns: [], tables: character_tables.shared(), time:)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 6,
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let assert Ok(_) =
+    pog.query("update character set health = 100 where character_id = $1")
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the row holds a health below the level's maximum, so a heal is a real change"
+  send_play(game:, character_id: character)
+  let #(entry, have) = game_client.read_entry_kept(game:, have: <<>>)
+  let own = game_client.unit_create_player_in(frames: entry).unit_id
+  assert health_in(frames: entry) == 100
+    as "opcode.0x262: the Medic enters with the 100 it was saved with"
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames: entry), fn(item) { item.1 == 25_579 })
+    as "the level-6 Medic holds Crisis Wave's base 25579 (SpellLevel 1194)"
+  game_client.press_ability(game:, client_cast_id: 1, bag_index:, target: 0)
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 14)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Crisis Wave is planned, so the press is not refused"
+  let assert Ok(cast_id) =
+    game_client.confirmed_cast_of(frames: pressed, client_cast_id: 1)
+    as "opcode.0x7fd: the press is confirmed with the server's cast id"
+  // Spell4.41382 castTime 1250: the go waits for the clock. A pressed cast is told its player
+  // by the 0x7fd and the go; the 0x7ff is for a child and for the viewers.
+  driven_time.advance(time:, ms: 1250)
+  let #(went, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      finishes(frames:, cast_id:)
+    })
+  assert game_client.go_targets_in(frames: went)
+    |> list.filter(fn(go) { go.0 == cast_id })
+    == [#(cast_id, [own])]
+    as "opcode.0x7f4: the go lists the Medic alone, the allies the order would pick are not found"
+  assert game_client.missed_in(frames: went) == []
+    as "opcode.0x7fb: nothing is missed"
+  let assert [go] =
+    list.filter_map(went, fn(frame) {
+      case frame.message_id == 0x07F4 {
+        True -> spell_go.decode(frame.body) |> result.replace_error(Nil)
+        False -> Error(Nil)
+      }
+    })
+    |> list.filter(fn(go) { go.cast_id == cast_id })
+    as "the cast has one go"
+  let assert [info] = go.targets as "the go has the Medic's target info"
+  let assert [
+    spell_effect_info.SpellEffectInfo(
+      spell4_effects_id: 93_037,
+      result: spell_effect_result.Damage(spell_effect_damage.SpellEffectDamage(
+        description:,
+      )),
+      ..,
+    ),
+  ] = info.effects
+    as "the Medic's info holds the heal row 93037 (Spell4Effects 93037: type 10, flags 5)"
+  let healed = description.health_damage_with_overkill - description.overkill
+  assert healed > 0 as "the heal changes the Medic's health"
+  // The 1250 ms the clock ran also fire the Medic's health regeneration (`player_life`), each
+  // tick its own 0x92f, before the go; the heal's 0x92f is the first after it, and the read
+  // ends at the cast's 0x7fe, which follows it.
+  let go_index =
+    index_where(frames: went, found: fn(frame) { frame.message_id == 0x07F4 })
+  let health_in_frames = fn(frames) {
+    game_client.own_health_of(events: game_client.fight_in(frames:), unit: own)
+  }
+  let before =
+    health_in_frames(list.take(went, go_index))
+    |> list.last
+    |> result.unwrap(100)
+  let assert [after, ..] = health_in_frames(list.drop(went, go_index + 1))
+    as "the heal's 0x92f follows the go before the cast ends"
+  assert after - before == healed
+    as "opcode.0x92f: the heal raises the Medic's health by the amount the heal's description gives"
   game_client.close(game:)
   login_support.stop(started)
 }
