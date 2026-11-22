@@ -19,7 +19,7 @@ roll other dice: without it all runs would roll the same ones, and a test that d
 roll could not fail here. A VM takes the file as its one argument
 because unitest runs one file per start. The skip variables are the ones ./check's test run
 sets: the tests tagged serial (they share a machine-wide resource, so VMs side by side
-would break them), world_data, client_rows and dev_tool are not run.
+would break them), world_data, real_start and client_rows are not run.
 
 A run that does not end fails the run: a test that hangs only under load is the
 timing fault this tool looks for. GENESIS_REPEAT_SECONDS (default 450) is the budget for
@@ -68,8 +68,8 @@ SALT_VARIABLE = "GENESIS_TEST_SEED_SALT"
 SKIP_VARIABLES = (
     "GENESIS_TEST_SKIP_SERIAL",
     "GENESIS_TEST_SKIP_WORLD_DATA",
+    "GENESIS_TEST_SKIP_REAL_START",
     "GENESIS_TEST_SKIP_CLIENT_ROWS",
-    "GENESIS_TEST_SKIP_DEV_TOOL",
 )
 
 # unitest's status line: "6 passed, no failures", "0 passed, no failures, 12 skipped",

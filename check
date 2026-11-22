@@ -68,9 +68,7 @@
 #                  then the tests tagged serial, one at a time; the test tagged
 #                  world_data is left to the world-data part, the test tagged
 #                  real_start to the real-start part, the test tagged
-#                  client_rows to the client-suite part, and the tests tagged
-#                  dev_tool (the developer tools' own, run by hand with
-#                  `gleam test -- --tag dev_tool`) are skipped. A test that returns
+#                  client_rows to the client-suite part. A test that returns
 #                  after more than half its deadline prints a `check WARNING: test`
 #                  line (test/owned_test.gleam), which the summary repeats from this
 #                  part's log and the world-data part's and the real-start part's;
@@ -621,10 +619,10 @@ wait_for_status() {
 gleam_test() {
   local status=0
   if [ -n "$test_workers" ]; then
-    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 \
       run_built genesis_prime_test --workers "$test_workers" --reporter table --no-color || status=1
   else
-    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 \
       run_built genesis_prime_test --reporter table --no-color || status=1
   fi
   GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" run_built genesis_prime_test --tag serial --reporter table --no-color || status=1
