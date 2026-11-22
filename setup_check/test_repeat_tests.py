@@ -66,8 +66,8 @@ until (set -C; : >"$dir/ticket.$ticket") 2>/dev/null; do ticket=$((ticket + 1));
 touch "$dir/alive.$$"
 alive() { ls "$dir" | grep -c '^alive\\.'; }
 printf 'start %s seed %s file %s alive %s skip %s%s%s%s salt %s\\n' "$ticket" "$seed" "$file" "$(alive)" \\
-  "$GENESIS_TEST_SKIP_SERIAL" "$GENESIS_TEST_SKIP_WORLD_DATA" "$GENESIS_TEST_SKIP_CLIENT_ROWS" \\
-  "$GENESIS_TEST_SKIP_DEV_TOOL" "$GENESIS_TEST_SEED_SALT" >>"$dir/starts.log"
+  "$GENESIS_TEST_SKIP_SERIAL" "$GENESIS_TEST_SKIP_WORLD_DATA" "$GENESIS_TEST_SKIP_REAL_START" \\
+  "$GENESIS_TEST_SKIP_CLIENT_ROWS" "$GENESIS_TEST_SEED_SALT" >>"$dir/starts.log"
 if [ -n "$PLANT_AT_ONCE" ] && [ "$ticket" -le "$PLANT_AT_ONCE" ]; then
   touch "$dir/arrived.$ticket"
   arrived() { ls "$dir" | grep -c '^arrived\\.'; }
@@ -272,7 +272,16 @@ class RepeatTestsTest(PlantedRepeatCase):
         # Each of the first three stubs waited until three were alive, so three started
         # together; no stub ever saw more than three beside it.
         self.assertEqual(max(int(row["alive"]) for row in rows), 3)
-        # The tests that need the whole machine are skipped as ./check's test run skips them.
+        # The tests that need the whole machine are skipped as ./check's test run skips them:
+        # the stub prints the variables the first test run of ./check sets, in its order, and
+        # the script sets each of them.
+        checked = re.search(
+            r"GENESIS_TEST_SKIP_SERIAL=1(?: GENESIS_TEST_SKIP_\w+=1)*", (REPOSITORY / "check").read_text()
+        )
+        self.assertIsNotNone(checked, "check sets the skip variables in its first test run")
+        checked_variables = re.findall(r"(GENESIS_TEST_SKIP_\w+)=1", checked.group(0))
+        printed = re.findall(r"\$(GENESIS_TEST_SKIP_\w+)", ERL_STUB)
+        self.assertEqual(printed, checked_variables)
         self.assertEqual({row["skip"] for row in rows}, {"1111"})
 
     def test_each_run_gets_its_own_salt_and_a_failing_run_prints_the_command_that_repeats_it(self):
