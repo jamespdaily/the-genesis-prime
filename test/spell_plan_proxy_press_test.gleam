@@ -17,7 +17,7 @@
 ////   - Spell4 30646: castMethod 7 (ChargeRelease), thresholdTime 0, one Proxy row, 56164,
 ////     whose caster apply is 0.
 //// - `prerequisite.press_unread_types`: a press gate whose check draws a roll (type 37)
-////   or reads the unit the press names second (types 50, 108 and 130) is refused at load,
+////   or reads the unit the press names second (types 50, 60, 108 and 130) is refused at load,
 ////   as an undecoded gate is (`Prerequisite.prerequisiteTypeId`).
 
 import client_tables
@@ -109,10 +109,11 @@ pub fn proxy_press_gate_holding_a_condition_type_the_server_does_not_read_is_ref
 
 pub fn proxy_press_gate_that_needs_a_roll_or_the_second_unit_is_refused_at_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  [37, 130]
+  [37, 60, 130]
   |> list.each(fn(type_id) {
     // Kept edit: Prerequisite 16451, the caster apply gate of Proxy row 96992, made a
-    // condition of type 37 (a roll) and then of type 130 (the second unit's groups).
+    // condition of type 37 (a roll), of type 60 (the second unit's stacks) and then of type 130
+    // (the second unit's groups).
     fixture_tables.changed(
       table: "Prerequisite",
       id: 16_451,
