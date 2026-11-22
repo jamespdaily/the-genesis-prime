@@ -2355,7 +2355,7 @@ pub fn the_despawn_type_is_counted_read_by_the_rows_the_plan_applies_test() -> N
     as "a dropped row of a Proxy child is applied by the Proxy's route, so it is read"
 }
 
-pub fn the_unit_state_type_is_counted_read_by_the_rows_the_plan_applies_test() -> Nil {
+pub fn the_clients_752_unit_state_rows_count_with_a_stated_gap_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
@@ -2364,7 +2364,7 @@ pub fn the_unit_state_type_is_counted_read_by_the_rows_the_plan_applies_test() -
     as "table_rows -- Spell4Effects effectType=15: 752 rows"
 }
 
-pub fn type_35_rows_aimed_at_the_caster_are_counted_read_test() -> Nil {
+pub fn the_clients_3288_type_35_rows_count_with_a_stated_gap_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
