@@ -262,13 +262,7 @@ pub fn on_caster_of(
   caster caster: Caster,
   passed_in passed_in: Option(Float),
 ) -> damage.OnCaster {
-  damage.OnCaster(
-    attacker: damage.Attacker(
-      ..caster.stats,
-      passed_in: option.unwrap(passed_in, caster.stats.passed_in),
-    ),
-    vitals: caster.vitals,
-  )
+  damage.on_caster_with(stats: caster.stats, vitals: caster.vitals, passed_in:)
 }
 
 /// The damage description of a heal: the split's amount as the raw, the scaled raw and the

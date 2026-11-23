@@ -45,9 +45,10 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
-import genesis_prime/message/spell_effect_tick.{
-  type SpellEffectTick, SpellEffectTick,
+import genesis_prime/message/spell_damage_description.{
+  type SpellDamageDescription,
 }
+import genesis_prime/message/spell_effect_tick.{SpellEffectTick}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/step.{type ConnectionId, type TimerId}
@@ -720,13 +721,11 @@ fn healed_by_tick(
       ),
     ),
     list.flatten([
-      tick_effects(
-        tick: SpellEffectTick(
-          cast_id:,
-          spell4_effects_id: effect_id.value,
-          unit_id: caster.unit_id,
-          descriptions: [cast_heal.heal_description(healed:)],
-        ),
+      tick_written(
+        cast_id:,
+        effect_id:,
+        unit_id: caster.unit_id,
+        descriptions: [cast_heal.heal_description(healed:)],
         audience:,
       ),
       [
@@ -739,11 +738,22 @@ fn healed_by_tick(
   )
 }
 
-/// 0x7f8 to the caster and told to the audience.
-fn tick_effects(
-  tick tick: SpellEffectTick,
+/// The 0x7f8 of one tick of the effect row on the unit, with the descriptions of what the
+/// tick did, written to the caster and told to the audience.
+fn tick_written(
+  cast_id cast_id: Int,
+  effect_id effect_id: Spell4EffectsId,
+  unit_id unit_id: Int,
+  descriptions descriptions: List(SpellDamageDescription),
   audience audience: Set(ConnectionId),
 ) -> List(Effect) {
+  let tick =
+    SpellEffectTick(
+      cast_id:,
+      spell4_effects_id: effect_id.value,
+      unit_id:,
+      descriptions:,
+    )
   [
     Send(frame: cast_frame.ticked_frame(tick:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
@@ -774,29 +784,25 @@ pub fn tick_outcome(
   case struck, cast_state.ticking_go(row:) == asked.go {
     Some(Hit(unit: HitOtherPlayer(heals:), ..)), _ -> #(
       cast,
-      tick_effects(
-        tick: SpellEffectTick(
-          cast_id:,
-          spell4_effects_id: asked.effect_id.value,
-          unit_id: asked.unit_id,
-          descriptions: list.map(heals, fn(landed) {
-            cast_heal.heal_description(healed: cast_heal.applied(landed:))
-          }),
-        ),
+      tick_written(
+        cast_id:,
+        effect_id: asked.effect_id,
+        unit_id: asked.unit_id,
+        descriptions: list.map(heals, fn(landed) {
+          cast_heal.heal_description(healed: cast_heal.applied(landed:))
+        }),
         audience:,
       ),
     )
     Some(Hit(descriptions:, ..)), _ -> {
       let written =
-        tick_effects(
-          tick: SpellEffectTick(
-            cast_id:,
-            spell4_effects_id: asked.effect_id.value,
-            unit_id: asked.unit_id,
-            descriptions: list.map(descriptions, fn(description) {
-              description.damage
-            }),
-          ),
+        tick_written(
+          cast_id:,
+          effect_id: asked.effect_id,
+          unit_id: asked.unit_id,
+          descriptions: list.map(descriptions, fn(description) {
+            description.damage
+          }),
           audience:,
         )
       let killed =

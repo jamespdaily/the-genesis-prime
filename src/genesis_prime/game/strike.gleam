@@ -770,12 +770,10 @@ fn heal_tell(
     vital:,
     amount: damage.amount_on_caster(
       formula:,
-      caster: damage.OnCaster(
-        attacker: damage.Attacker(
-          ..attacker.stats,
-          passed_in: option.unwrap(passed_in, attacker.stats.passed_in),
-        ),
+      caster: damage.on_caster_with(
+        stats: attacker.stats,
         vitals: attacker.vitals,
+        passed_in:,
       ),
     ),
   )

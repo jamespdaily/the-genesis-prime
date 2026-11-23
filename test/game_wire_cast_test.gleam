@@ -2458,31 +2458,63 @@ fn ticks_in(
 }
 
 /// An Esper of level 9 (Bolster is an Esper's from level 7, Spell4Base 19031) presses
-/// Bolster at a Medic of level 9 that entered 300 health below its maximum, on the
-/// client's real tables. Spell4 32821 (castTime 0) holds one periodic heal row at the primary
-/// target, Spell4Effects 80077 (effectType 10, targetFlags 2, tickTime 1000, durationTime
-/// 8000, formula 0.1977 of the Support Power and 10.54 a level, the stat part rounded alone,
+/// Bolster at a Medic of level 9 that entered below its maximum, on the client's real
+/// tables. Spell4 32821 (castTime 0) holds one periodic heal row at the primary target,
+/// Spell4Effects 80077 (effectType 10, targetFlags 2, tickTime 1000, durationTime 8000,
+/// formula 0.1977 of the Support Power and 10.54 a level, the stat part rounded alone,
 /// `0x140565600`): each tick tells the Medic's connection the row, the Medic applies it and
 /// answers, and the Esper's client reads a 0x7f8 naming the Medic with the heal the Medic
-/// applied (`opcode.0x7f8`, `spell.heal_result_log`). The Medic regenerates 2.5% of its
-/// maximum every 500 ms out of combat (a server choice, `player_life`), and the Esper presses
-/// 250 ms after the clock starts so that no regeneration falls at a tick: the ticks are
-/// at 1250 ms and each 1000 ms on, the regenerations at each 500 ms, so the room each tick
-/// reads is the one after the regenerations before it.
+/// applied (`opcode.0x7f8`, `spell.heal_result_log`).
+///
+/// The Medic regenerates 2.5% of its maximum, r, every 500 ms out of combat (a server
+/// choice, `player_life`), and the Esper presses 250 ms after the clock starts so that no
+/// regeneration falls at a tick: the ticks are at 1250 ms and each 1000 ms on, the
+/// regenerations at each 500 ms, so the room tick k reads is the missing health less 2k
+/// regenerations and the k - 1 earlier ticks. The Medic enters 8 r + 3 a + a / 2 below its
+/// maximum, a being the tick's amount: ticks 1 to 3 are taken whole, tick 4 finds a / 2 of
+/// room and is partly overheal, and ticks 5 to 8 find the Medic full and are wholly
+/// overheal. Each tick's overheal is checked against the health the Medic's client was
+/// last told before it, and the Medic's next 0x92f is that health and what the tick took.
 pub fn an_esper_pressing_bolster_at_an_ally_heals_it_on_each_tick_and_the_caster_reads_each_0x7f8_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let time = driven_time.new()
   let tables = client_tables.shared()
   let started = started_on(tables:, time:)
-  let missing = 300
   let #(_, medic_entry) =
     world_entry_support.entry(
       tables:,
       character: world_entry_support.character(class: 4, faction: 166, level: 9),
     )
-  let saved =
-    casting.caster_of(tables:, entered: medic_entry).vitals.max_health - missing
+  let #(_, esper_entry) =
+    world_entry_support.entry(
+      tables:,
+      character: world_entry_support.character(class: 3, faction: 166, level: 9),
+    )
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the client's tables hold GameFormula row 1266"
+  // Spell4Effects 80077 at level 9: round(0.1977 x Support Power) + 10.54 x 9, the Support
+  // Power being the Support Rating times GameFormula 1266's second value.
+  let amount_of = fn(support_rating) {
+    float.round(
+      int.to_float(float.round(
+        0.1977 *. { support_rating *. power.datafloat01 },
+      ))
+      +. 94.86,
+    )
+  }
+  let max_health =
+    casting.caster_of(tables:, entered: medic_entry).vitals.max_health
+  let regeneration =
+    float.truncate(
+      int.to_float(max_health) *. spawn_support.numbers.health_regen_fraction,
+    )
+  let planned_amount =
+    amount_of(
+      casting.caster_of(tables:, entered: esper_entry).stats.support_rating,
+    )
+  let missing = 8 * regeneration + 3 * planned_amount + planned_amount / 2
+  let saved = max_health - missing
   let TwoEntered(
     first:,
     second:,
@@ -2515,16 +2547,12 @@ pub fn an_esper_pressing_bolster_at_an_ally_heals_it_on_each_tick_and_the_caster
       tables:,
     )
   assert medic == 2 && medic_sheet.max_health == saved + missing
-    as "the Medic is the second unit and its own 0x262 gives the maximum health its saved health is 300 below"
+    as "the Medic is the second unit and its own 0x262 gives the maximum health its saved health is the missing health below"
   assert health_in(frames: second_burst) == saved
     as "opcode.0x262: the Medic enters with the health it saved"
-  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
-    as "the client's tables hold GameFormula row 1266"
-  let support_power =
-    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
-  // Spell4Effects 80077 at level 9: round(0.1977 x Support Power) + 10.54 x 9.
-  let amount =
-    float.round(int.to_float(float.round(0.1977 *. support_power)) +. 94.86)
+  let amount = amount_of(own_property_in(frames: first_burst, property_id: 36))
+  assert amount == planned_amount
+    as "the Esper's own 0x262 gives the Support Rating the Medic's missing health was sized by"
   let bag_index =
     connection_support.bag_index_of(
       tables:,
@@ -2634,18 +2662,54 @@ pub fn an_esper_pressing_bolster_at_an_ally_heals_it_on_each_tick_and_the_caster
       unit: medic,
     )
   }
-  let medic_writes = list.flat_map(steps, fn(step) { writes_of(step.1) })
-  let assert [first_step, ..] = steps
-  let assert Ok(last_regeneration) = list.last(medic_health_before)
-    as "the Medic regenerated before the first tick"
-  assert overheals == list.sort(overheals, int.compare)
-    && list.first(overheals) == Ok(0)
-    && list.last(overheals) == Ok(amount)
-    as "the first tick took its amount whole, the room runs out, and each tick takes no more than the one before"
-  assert writes_of(first_step.1) == [last_regeneration + amount]
-    as "opcode.0x92f: the Medic's health rises by the first tick's whole amount, written once (the regenerations before the tick are its own)"
-  assert list.last(medic_writes) == Ok(medic_sheet.max_health)
-    && medic_writes == list.sort(medic_writes, int.compare)
+  assert medic_health_before == [saved + regeneration, saved + 2 * regeneration]
+    as "opcode.0x92f: the Medic regenerated twice before the first tick, 2.5% of its maximum each time"
+  assert list.take(overheals, 3) == [0, 0, 0]
+    && list.drop(overheals, 4) == list.repeat(amount, 4)
+    as "ticks 1 to 3 find room for the whole heal and ticks 5 to 8 find the Medic full"
+  assert list.take(list.drop(overheals, 3), 1) == [amount - amount / 2]
+    as "tick 4 finds half of the heal's room: the rest is overheal"
+  // The health the Medic's client was told before each tick, and what the tick wrote: the
+  // news up to the step's pong, the tick's own 0x92f last when the tick took any.
+  let medic_told =
+    list.index_fold(
+      list.zip(steps, overheals),
+      [saved, ..medic_health_before],
+      fn(told, step_and_overheal, index) {
+        let #(step, overheal) = step_and_overheal
+        let tick = index + 1
+        let told = list.append(told, writes_of(step.1))
+        let taken = amount - overheal
+        let tick_name = "tick " <> int.to_string(tick)
+        case list.reverse(told) {
+          [written, before, ..] if taken > 0 -> {
+            assert written == before + taken
+              as {
+                "opcode.0x92f: "
+                <> tick_name
+                <> " raises the health the Medic's client was last told by what it took"
+              }
+            assert overheal == amount - int.min(amount, max_health - before)
+              as {
+                "opcode.0x7f8: "
+                <> tick_name
+                <> " takes what the Medic's room allows and the rest is overheal"
+              }
+          }
+          [before, ..] -> {
+            assert before == max_health && overheal == amount
+              as {
+                "a tick that takes nothing finds the Medic at its maximum and is wholly overheal: "
+                <> tick_name
+              }
+          }
+          [] -> panic as "the Medic's client was told its health"
+        }
+        told
+      },
+    )
+  assert list.last(medic_told) == Ok(max_health)
+    && medic_told == list.sort(medic_told, int.compare)
     as "the Medic's health only rises, to its maximum"
   assert list.filter(esper_frames, fn(frame) {
       frame.message_id == spell_finished.message_id
