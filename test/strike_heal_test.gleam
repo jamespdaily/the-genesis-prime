@@ -17,6 +17,7 @@
 import attacker_support
 import cast_support
 import client_tables
+import fixture_tables
 import genesis_prime/game/area
 import genesis_prime/game/cast/state.{GoAsked} as cast_state
 import genesis_prime/game/damage
@@ -44,6 +45,7 @@ import gleam/option.{None, Some}
 import map_support
 import owned_test
 import place_support
+import planted_table
 import player_state_support
 import properties_support
 import rating_support
@@ -276,6 +278,38 @@ fn player_at(x x: Float, z z: Float) -> shown.Shown {
   )
 }
 
+/// A player of the picture at (`x`, `z`) as `player_at` has it, missing `missing` health of
+/// the maximum `player_state_support.full_health`.
+fn hurt_at(x x: Float, z z: Float, missing missing: Int) -> shown.Shown {
+  let assert shown.ShownPlayer(state:) = player_at(x:, z:)
+    as "`player_at` is a shown player"
+  shown.ShownPlayer(
+    state: player_state.PlayerState(
+      ..state,
+      health: player_state_support.full_health - missing,
+    ),
+  )
+}
+
+/// The areas of the fixture's rows with Emission's heal row 141384 aimed at the area alone
+/// (targetFlags 4, as Dual Fire's rows 84876 and 126516 are) and its area row 662 ordered by
+/// missing health (targetSelection 5) taking 4 units, built as the load builds them.
+fn emission_by_health_at_the_area_alone() -> spell_area.Areas {
+  fixture_tables.changes(
+    edits: [
+      #("Spell4Effects", 141_384, [#("targetFlags", planted_table.Integer(4))]),
+      #("Spell4AoeTargetConstraints", 662, [
+        #("targetSelection", planted_table.Integer(5)),
+      ]),
+    ],
+    body: fn(tables) {
+      let assert Ok(areas) = spell_area.build(tables:)
+        as "the edited rows build their areas"
+      areas
+    },
+  )
+}
+
 /// The fixture's areas with the row of Emission's area (58841: Spell4AoeTargetConstraints 662,
 /// 0 to 15 m, 4 targets, Closest) taking `count` units in `order`.
 fn emission_areas(
@@ -299,8 +333,7 @@ fn emission_areas(
 type AllyRow {
   AllyRow(
     reason: String,
-    order: area.Order,
-    count: Int,
+    areas: spell_area.Areas,
     picture: List(#(Int, shown.Shown)),
     sight: List(Int),
     players: List(Int),
@@ -324,24 +357,21 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
     [
       AllyRow(
         "three allies inside, count 2, nearest first: the two nearest, in order of distance",
-        area.Nearest,
-        2,
+        emission_areas(order: area.Nearest, count: 2),
         three,
         [31, 32, 33],
         [32, 33],
       ),
       AllyRow(
         "the same, furthest first: the two furthest, furthest first",
-        area.Furthest,
-        2,
+        emission_areas(order: area.Furthest, count: 2),
         three,
         [31, 32, 33],
         [31, 33],
       ),
       AllyRow(
         "an ally 40 m away and one 6 m behind the caster, outside the cone, are not selected",
-        area.Nearest,
-        4,
+        emission_areas(order: area.Nearest, count: 4),
         [
           #(32, player_at(x: 0.0, z: -4.0)),
           #(34, player_at(x: 0.0, z: -40.0)),
@@ -352,8 +382,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
       ),
       AllyRow(
         "the nearest ally has no address in the caster's sight: there is nothing to tell it, so the count of 1 goes to the next",
-        area.Nearest,
-        1,
+        emission_areas(order: area.Nearest, count: 1),
         [
           #(32, player_at(x: 0.0, z: -4.0)),
           #(36, player_at(x: 0.0, z: -3.0)),
@@ -363,8 +392,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
       ),
       AllyRow(
         "a creature inside the cone is not selected, and the caster, shown as a player, is never one of the units of its area",
-        area.Nearest,
-        4,
+        emission_areas(order: area.Nearest, count: 4),
         [
           #(7, player_at(x: 0.0, z: -2.0)),
           #(
@@ -381,6 +409,51 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
         [7, 32],
         [32],
       ),
+      AllyRow(
+        "by missing health, count 2: the two others missing the most, the most first, and the caster, missing more than any, is not among them (its flag heals it)",
+        emission_areas(order: area.MissingMostHealth, count: 2),
+        [
+          #(7, hurt_at(x: 0.0, z: 0.0, missing: 4000)),
+          #(31, hurt_at(x: 0.0, z: -10.0, missing: 100)),
+          #(32, hurt_at(x: 0.0, z: -4.0, missing: 900)),
+          #(33, hurt_at(x: 0.0, z: -7.0, missing: 500)),
+          #(34, hurt_at(x: 0.0, z: -5.0, missing: 0)),
+        ],
+        [7, 31, 32, 33, 34],
+        [32, 33],
+      ),
+      AllyRow(
+        "by missing health, fewer allies than the count: all of them, the unhurt one last",
+        emission_areas(order: area.MissingMostHealth, count: 4),
+        [
+          #(31, hurt_at(x: 0.0, z: -4.0, missing: 0)),
+          #(32, hurt_at(x: 0.0, z: -10.0, missing: 300)),
+        ],
+        [31, 32],
+        [32, 31],
+      ),
+      AllyRow(
+        "by missing health, an ally outside the cone is not selected whatever it misses",
+        emission_areas(order: area.MissingMostHealth, count: 4),
+        [
+          #(32, hurt_at(x: 0.0, z: -4.0, missing: 10)),
+          #(34, hurt_at(x: 0.0, z: -40.0, missing: 4999)),
+          #(35, hurt_at(x: 0.0, z: 6.0, missing: 4999)),
+        ],
+        [32, 34, 35],
+        [32],
+      ),
+      AllyRow(
+        "a heal row aimed at the area alone (targetFlags 4, as Dual Fire's) by missing health: the other allies, most injured first, and not the caster, whose place among the candidates is not built",
+        emission_by_health_at_the_area_alone(),
+        [
+          #(7, hurt_at(x: 0.0, z: 0.0, missing: 4000)),
+          #(32, hurt_at(x: 0.0, z: -4.0, missing: 200)),
+          #(33, hurt_at(x: 0.0, z: -7.0, missing: 800)),
+        ],
+        [7, 32, 33],
+        [33, 32],
+      ),
     ],
     fn(row) {
       let selection =
@@ -390,7 +463,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
             sight: list.map(row.sight, fn(unit_id) { ally(unit_id:) }),
           ),
           picture: dict.from_list(row.picture),
-          areas: emission_areas(order: row.order, count: row.count),
+          areas: row.areas,
           now_ms: 1000,
         )
       assert list.map(selection.players, fn(address) { address.unit_id })

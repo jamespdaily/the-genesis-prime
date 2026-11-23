@@ -2733,7 +2733,105 @@ pub fn a_players_phase_that_selects_the_area_by_health_is_refused_by_name_test()
   })
 }
 
-pub fn the_clients_rows_hold_collapse_by_furthest_and_the_heals_by_health_and_no_go_of_them_selects_by_health_test() -> Nil {
+/// Kick's area and whether its first go selects from it, with Kick made a friendly spell on
+/// the fixture's rows: its mechanic row 6 beneficial (flags 1, which Nullifier's field shares),
+/// its damage row 140383 an instant heal aimed at the area (type 10, targetFlags 4), its
+/// crowd-control row 140382 aimed at the caster alone, so no row of Kick hits foes, the heal with no delay (the instant rows are the ones told), and its
+/// Spell4 pointed at a copy of area row 640 (row 900001, which Relentless Strikes' stage spells
+/// do not share) ordered `selection`. The edits stand in for no client row: no spell of the
+/// fixture holds a friendly area ordered by health.
+fn friendly_kick_ordered(selection selection: Int) -> #(Option(Row), Bool) {
+  let assert Ok(rows) =
+    fixture_tables.add(
+      rows: fixture_tables.rows(),
+      table: "Spell4AoeTargetConstraints",
+      copy_of: 640,
+      id: 900_001,
+      with: [#("targetSelection", Integer(selection))],
+    )
+    as "the area row 640 is in the fixture"
+  let assert Ok(rows) =
+    fixture_tables.change_all(rows:, edits: [
+      #("Spell4", 58_591, [#("spell4AoeTargetConstraintsId", Integer(900_001))]),
+      #("Spell4TargetMechanics", 6, [#("flags", Integer(1))]),
+      #("Spell4Effects", 140_383, [
+        #("effectType", Integer(10)),
+        #("delayTime", Integer(0)),
+        #("targetFlags", Integer(4)),
+      ]),
+      #("Spell4Effects", 140_382, [#("targetFlags", Integer(1))]),
+    ])
+    as "the edits name rows and columns the fixture holds"
+  fixture_tables.on_rows(rows:, reaching: [], body: fn(tables) {
+    let kick = fixture_area_of(tables:, spell4_id: 58_591)
+    let assert Ok(phase) = spell_area.phase(spell: kick, phase: 0, spent: None)
+      as "Kick has a first phase"
+    #(kick.row, phase.selects_area)
+  })
+}
+
+/// The area the tables' load built for the spell.
+fn fixture_area_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> spell_area.SpellArea {
+  let assert Ok(found) =
+    spell_area.of_spell(
+      areas: spell_area.areas(tables:),
+      spell4_id: Spell4Id(spell4_id),
+    )
+    as "the spell is in the areas"
+  found
+}
+
+/// An area that finds the caster's allies (a beneficial mechanic, no foe row, an instant heal
+/// aimed at the area) builds the order by missing health (targetSelection 5) and its phase
+/// selects from it; order 4, lowest health, is still no area; a phase that selects the area
+/// through a Proxy aimed at the area alone (Nullifier's field 58868, a periodic Proxy: the
+/// shape of Sentinel 54395, Warden 33392 and Barrier 78081, which start a child on each unit)
+/// stays refused by name, since a child on each ally is not built.
+pub fn an_area_that_finds_allies_builds_the_order_by_health_and_a_phase_that_selects_it_through_a_proxy_stays_refused_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let assert Some(kick_row) = client_kick().row
+    as "Kick's area row 640 is built"
+  assert friendly_kick_ordered(selection: 5)
+    == #(Some(Row(..kick_row, order: area.MissingMostHealth)), True)
+    as "a friendly area at order 5 builds a row of MissingMostHealth and its phase selects from it"
+  assert friendly_kick_ordered(selection: 4) == #(None, False)
+    as "order 4 is no area, as before, and nothing selects from it"
+  assert friendly_kick_ordered(selection: 1) == #(Some(kick_row), True)
+    as "the control: the same friendly area at order 1 builds Kick's row"
+  // Nullifier's field 58868 (area row 119, Closest) holds the periodic Proxy 141450 aimed at
+  // the area; its mechanic is row 6, made beneficial here.
+  let field_ordered = fn(selection) {
+    fixture_tables.changes(
+      edits: [
+        #("Spell4TargetMechanics", 6, [#("flags", Integer(1))]),
+        #("Spell4AoeTargetConstraints", 119, [
+          #("targetSelection", Integer(selection)),
+        ]),
+      ],
+      body: fn(tables) {
+        let assert Ok(left_out) =
+          spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+        let assert Ok(nullifier) =
+          list.find(left_out, fn(one) { one.spell4_id == 70_757 })
+          as "Nullifier is left out of the plans"
+        spell_plan.describe(error: nullifier.error)
+      },
+    )
+  }
+  assert string.contains(
+    field_ordered(5),
+    spell_area.describe(error: SelectionNeedsHealth(
+      spell4_id: 58_868,
+      target_selection: 5,
+    )),
+  )
+    as "a beneficial field whose phase selects through a Proxy aimed at the area alone, ordered by missing health, is refused by name"
+}
+
+pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_by_missing_health_select_and_no_other_spell_ordered_by_health_does_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
@@ -2786,11 +2884,49 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_heals_by_health_and_no
     })
   assert ordered_by_health != []
     as "the abilities the orders free include spells whose area row orders by health"
+  // The 14 instant heal rows of the six abilities whose friendly area is ordered by missing
+  // health that the plan reads (Crisis Wave 93037; Soothe 78168, 78280, 78282; Vitality Burst
+  // 85507, 85508, 85509, 85526, 85527, 85529; Triage 141503; Dual Fire 84876 and its Surge
+  // alternate's 126516; Regenerative Pulse's alternate 204570): the spells that hold them build
+  // the order and select units from it.
+  let healing_spells =
+    list.map(
+      [
+        93_037, 78_168, 78_280, 78_282, 85_507, 85_508, 85_509, 85_526, 85_527,
+        85_529, 141_503, 84_876, 126_516, 204_570,
+      ],
+      fn(row_id) {
+        let assert Ok(row) =
+          spell4_effects.get(tables:, id: Spell4EffectsId(row_id))
+          as "the heal row is in the table"
+        row.spell_id
+      },
+    )
+    |> list.unique
+  list.each(healing_spells, fn(spell4_id) {
+    let found = area_of(spell4_id)
+    assert option.map(found.row, fn(row) { row.order })
+      == Some(area.MissingMostHealth)
+      as "a friendly area's heal spell builds the order by missing health"
+    assert found.finds_allies as "its area finds the caster's allies"
+    assert selects_at_any_go(found)
+      as "a go of it selects the allies from its area"
+  })
+  // Every other spell of the areas that orders by health selects nothing from it: Mental Boon's
+  // and Astral Infusion's, whose Proxy and periodic heal aim at the caster, hold no row. The
+  // three abilities that start a child on the most injured ally by a Proxy aimed at the area
+  // alone (Sentinel 54395, Warden 33392, Barrier 78081) are refused with their abilities, so
+  // no area of them is among these.
   list.each(ordered_by_health, fn(found) {
-    assert found.row == None
-      as "a row ordered by health picks allies, which the server does not find, so it is no area"
-    assert !selects_at_any_go(found)
-      as "no go of a heal ordered by health selects units from the area"
+    case list.contains(healing_spells, found.spell4_id.value) {
+      True -> Nil
+      False -> {
+        assert found.row == None
+          as "a spell that does not heal the area by health holds no order by health"
+        assert !selects_at_any_go(found)
+          as "and no go of it selects units from the area"
+      }
+    }
   })
   let damage_child = area_of(39_379)
   assert option.map(damage_child.row, fn(row) {

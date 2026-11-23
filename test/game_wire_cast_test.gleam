@@ -1076,10 +1076,11 @@ pub fn a_medic_presses_fissure_among_still_beasts_and_each_go_strikes_only_the_b
 
 /// A level-6 Medic saved at 100 health holds Crisis Wave (Spell4Base 25579, Spell4 41382, bag
 /// index 7: the Medic's 5 to 6 rise gives it) and presses it on itself. Its area row 661 is
-/// ordered by health (MissingMostHealth), which the server reads as no area: the press is
-/// confirmed, its go lists the Medic alone with the heal of row 93037 (type 10, flags 5: the caster and the
-/// area) and the Medic's health rises by the amount that heal's description gives. The allies
-/// the order would pick are not found. The clock is driven and nothing waits on real time.
+/// ordered by missing health (MissingMostHealth), which a friendly area finds the caster's
+/// allies by: the press is confirmed, its go lists the Medic alone, no other player being in
+/// sight, with the heal of row 93037 (type 10, flags 5: the caster and the area) and the
+/// Medic's health rises by the amount that heal's description gives. The clock is driven and
+/// nothing waits on real time.
 pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_caster_where_the_order_refused_it_test() -> Nil {
   use <- owned_test.run(120_000)
   let time = driven_time.new()
@@ -1124,7 +1125,7 @@ pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_c
   assert game_client.go_targets_in(frames: went)
     |> list.filter(fn(go) { go.0 == cast_id })
     == [#(cast_id, [own])]
-    as "opcode.0x7f4: the go lists the Medic alone, the allies the order would pick are not found"
+    as "opcode.0x7f4: the go lists the Medic alone, no other player being in sight for the area to find"
   assert game_client.missed_in(frames: went) == []
     as "opcode.0x7fb: nothing is missed"
   let assert [go] =

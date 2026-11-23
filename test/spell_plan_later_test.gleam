@@ -539,7 +539,7 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
   )
 }
 
-pub fn the_five_abilities_the_orders_free_are_planned_and_every_row_of_their_trees_is_read_but_the_allies_heal_test() -> Nil {
+pub fn the_five_abilities_the_orders_free_are_planned_and_every_row_of_their_trees_is_read_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -547,16 +547,13 @@ pub fn the_five_abilities_the_orders_free_are_planned_and_every_row_of_their_tre
   // Collapse 39372 (Furthest), Crisis Wave 41382, Soothe 33140 and Vitality Burst 39132
   // (heals ordered by health) and Dual Fire 39068 (a heal by health beside a Closest damage
   // child): `table_rows -- Spell4Effects spellId=39068 spellId=53286`. Dual Fire's row 84876 and
-  // the row 126516 of its Surge alternate 53286 have flags 4, the area alone, which the plan
-  // leaves out: each heal reaches nobody (the alternate's other rows, the Proxy 126517 to the
-  // damage child 53297, are read), and the heals of flags 5 reach the caster alone. The gaps
-  // `spell_plan` "Spell areas" (the caster's allies in a spell that hits no foes) and
-  // `cast/heal` "Casting" (a heal aimed at another unit lands nothing) state both.
+  // the row 126516 of its Surge alternate 53286 have flags 4, the area alone, which an area that
+  // finds the caster's allies reads (the Proxy 126517 to the damage child 53297 is read too).
   let abilities =
     freed_and_read(
       tables:,
       spell4_ids: [39_372, 41_382, 33_140, 39_132, 39_068],
-      left_out_rows: [84_876, 126_516],
+      left_out_rows: [],
     )
   let assert [collapse, ..] = abilities as "Collapse is the first ability"
   let collapse_rows =

@@ -124,8 +124,18 @@ pub fn only_alive_hostile_or_neutral_creatures_other_than_the_caster_are_candida
       now_ms: 0,
     )
     == [
-      Candidate(unit_id: 1, at: Point(x: 1.0, z: -3.0), hit_radius: 3.0),
-      Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0),
+      Candidate(
+        unit_id: 1,
+        at: Point(x: 1.0, z: -3.0),
+        hit_radius: 3.0,
+        missing_health: 0,
+      ),
+      Candidate(
+        unit_id: 5,
+        at: Point(x: 5.0, z: -3.0),
+        hit_radius: 3.0,
+        missing_health: 0,
+      ),
     ]
     as "unit 2 is dead, 3 is a player, 4 is Friendly to Exiles (Friendly to Exiles), 7 is the caster; the Neutral unit 5 is struck"
 }
@@ -195,9 +205,24 @@ pub fn the_faction_level_read_is_the_casters_own_test() -> Nil {
     )
   assert for_dominion
     == [
-      Candidate(unit_id: 1, at: Point(x: 1.0, z: -3.0), hit_radius: 3.0),
-      Candidate(unit_id: 4, at: Point(x: 4.0, z: -3.0), hit_radius: 3.0),
-      Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0),
+      Candidate(
+        unit_id: 1,
+        at: Point(x: 1.0, z: -3.0),
+        hit_radius: 3.0,
+        missing_health: 0,
+      ),
+      Candidate(
+        unit_id: 4,
+        at: Point(x: 4.0, z: -3.0),
+        hit_radius: 3.0,
+        missing_health: 0,
+      ),
+      Candidate(
+        unit_id: 5,
+        at: Point(x: 5.0, z: -3.0),
+        hit_radius: 3.0,
+        missing_health: 0,
+      ),
     ]
     as "the creature's news says whom it may be attacked by: unit 4 may be attacked by the Dominion"
 }
@@ -211,7 +236,14 @@ pub fn a_creature_marked_dead_by_its_news_is_no_longer_a_candidate_test() -> Nil
       caster_unit_id: 7,
       now_ms: 0,
     )
-    == [Candidate(unit_id: 5, at: Point(x: 5.0, z: -3.0), hit_radius: 3.0)]
+    == [
+      Candidate(
+        unit_id: 5,
+        at: Point(x: 5.0, z: -3.0),
+        hit_radius: 3.0,
+        missing_health: 0,
+      ),
+    ]
     as "a Died news sets alive false (opcode.0x88c)"
 }
 
@@ -904,19 +936,55 @@ pub fn only_alive_friendly_players_with_a_place_other_than_the_caster_are_ally_c
       #(7, creature(x: 7.0, attackable: not_exiles, alive: True)),
       #(9, player_at(x: 9.0, disposition: friendly, alive: True)),
       #(1, player_at(x: 1.0, disposition: friendly, alive: True)),
+      #(
+        10,
+        with_health(
+          player: player_at(x: 10.0, disposition: friendly, alive: True),
+          health: 1500,
+          maximum_health: 5000,
+        ),
+      ),
+      #(
+        11,
+        with_health(
+          player: player_at(x: 11.0, disposition: friendly, alive: False),
+          health: 0,
+          maximum_health: 5000,
+        ),
+      ),
+      #(
+        12,
+        with_health(
+          player: player_at(x: 12.0, disposition: friendly, alive: True),
+          health: 6000,
+          maximum_health: 5000,
+        ),
+      ),
     ])
+  let candidate = fn(unit_id, x, missing_health) {
+    Candidate(
+      unit_id:,
+      at: Point(x:, z: -1.0),
+      hit_radius: place_support.player_hit_radius,
+      missing_health:,
+    )
+  }
   assert shown.ally_candidates(picture:, caster_unit_id: 5)
     == [
-      Candidate(
-        unit_id: 1,
-        at: Point(x: 1.0, z: -1.0),
-        hit_radius: place_support.player_hit_radius,
-      ),
-      Candidate(
-        unit_id: 9,
-        at: Point(x: 9.0, z: -1.0),
-        hit_radius: place_support.player_hit_radius,
-      ),
+      candidate(1, 1.0, 0),
+      candidate(9, 9.0, 0),
+      candidate(10, 10.0, 3500),
+      candidate(12, 12.0, 0),
     ]
-    as "unit 2 is dead, 3 is Neutral and 4 Hostile to the caster, 5 is the caster, 6 has no place yet, 7 is a creature; unit 1, in the picture twice, is one candidate"
+    as "unit 2 is dead, 3 is Neutral and 4 Hostile to the caster, 5 is the caster, 6 has no place yet, 7 is a creature, 11 is dead and misses all its health; unit 1, in the picture twice, is one candidate; a unit at full health misses 0, one holding 1500 of 5000 misses 3500, and one holding more than its maximum (a maximum the picture holds one news behind) misses 0"
+}
+
+/// The player with the health and the maximum its viewer's client holds.
+fn with_health(
+  player player: shown.Shown,
+  health health: Int,
+  maximum_health maximum_health: Int,
+) -> shown.Shown {
+  let assert ShownPlayer(state:) = player as "the helper is given a player"
+  ShownPlayer(state: PlayerState(..state, health:, maximum_health:))
 }

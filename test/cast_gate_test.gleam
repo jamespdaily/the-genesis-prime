@@ -997,6 +997,7 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
     )
   let primary = spell_plan.AimsAtPrimaryTarget
   let caster_and_primary = spell_plan.AimsAtCasterAndPrimaryTarget
+  let area = spell_plan.AimsAtArea
   list.each(
     [
       RollRow(
@@ -1051,6 +1052,33 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         [1],
         [50, 50, 50],
         3,
+        [1, 2],
+      ),
+      RollRow(
+        "the ally answered row 1, aimed at the area alone behind a caster gate: the strike gated it once and the caster is not healed by it, so the go draws none and the roll 50 reaches the caster's row, which passes",
+        area,
+        caster_gate,
+        [1],
+        [50, 51],
+        1,
+        [1, 2],
+      ),
+      RollRow(
+        "the ally answered row 1, aimed at the area alone behind both gates: neither gate is checked again",
+        area,
+        both_gates,
+        [1],
+        [50, 51],
+        1,
+        [1, 2],
+      ),
+      RollRow(
+        "no answer, row 1 aimed at the area alone: the strike told it to the allies it selected and drew its rolls, so the go draws none whoever answered",
+        area,
+        caster_gate,
+        [],
+        [50, 51],
+        1,
         [1, 2],
       ),
     ],

@@ -22,7 +22,8 @@
 ////   Proxies that start a child, of the gains that may be given and of the lasting
 ////   effects of the phase, and, for a row behind a target apply prerequisite, one set for
 ////   each unit the row reaches (`rolls_needed`), except the heal rows the strike told a
-////   player that answered them: the strike drew those rolls once (`heal_told`,
+////   player that answered them, or told the allies of a friendly area it selected (a row aimed
+////   at the area alone): the strike drew those rolls once (`heal_told`,
 ////   `heal_answered`); the connection draws that many from its
 ////   seed before it calls `cast.went`, and none when there is no such condition, so no other
 ////   roll of the connection moves.
@@ -222,10 +223,13 @@ pub fn heal_answered(
   }
 }
 
-/// Whether the heal row `kind` aims at the primary target alone and the round holds the
-/// primary target's answer: the strike told the row, and the go keeps nothing of it but
-/// what the answer lists, so it checks none of its caster gates and draws no roll for them
-/// (`heal_answered` for the target gate). A row aimed at the caster as well keeps its caster
+/// Whether the heal row `kind` is one the strike told, so that the go keeps nothing of it but
+/// what the answers list: it checks none of its caster gates and draws no roll for them
+/// (`heal_answered` for the target gate). A row aimed at the primary target alone is told when
+/// the round holds the primary target's answer. A row aimed at the area alone is a friendly
+/// area's heal of its other allies, which the strike gated once, for the caster and for each
+/// ally it selected, whoever answered: the caster is not among the units it reaches, so it has
+/// no part of the row for the go to gate. A row aimed at the caster as well keeps its caster
 /// gate, which gates the caster's part of the row.
 pub fn heal_told(
   kind kind: spell_plan.Kind,
@@ -235,6 +239,11 @@ pub fn heal_told(
   case spell_plan.as_heal(kind:) {
     Ok(spell_plan.Heal(aim: spell_plan.AimsAtPrimaryTarget, ..)) ->
       heal_answered(kind:, struck:, unit_id: primary_target)
+    Ok(spell_plan.Heal(aim: spell_plan.AimsAtArea, ..) as heal) ->
+      case spell_plan.telling_of(heal:) {
+        spell_plan.ToldAtGo -> True
+        spell_plan.ToldAtEachTick | spell_plan.NotTold -> False
+      }
     Ok(spell_plan.Heal(..)) | Ok(spell_plan.TickingHeal(..)) | Error(Nil) ->
       False
   }

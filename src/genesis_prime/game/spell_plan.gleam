@@ -2207,10 +2207,11 @@ pub fn spell_hits_foes(
 /// Whether a spell's area finds the caster's allies rather than foes: the mechanic is
 /// beneficial (`target_mechanic.is_beneficial`), none of the spell's own damage or crowd-control
 /// rows names the primary target or the area (`spell_hits_foes`), and its area row orders
-/// by distance or at random (`Spell4AoeTargetConstraints.targetSelection` 1, 2 and 3, the orders
-/// the strike builds; 0 is no area row). The client selects no unit from an area
+/// by distance, at random or by missing health (`Spell4AoeTargetConstraints.targetSelection`
+/// 1, 2, 3 and 5, the orders the strike builds; 0 is no area row, and 4, the lowest health,
+/// is not built). The client selects no unit from an area
 /// (`Spell4AoeTargetConstraints.client_use`), so this is the server's reading of the texts'
-/// "yourself and N allies" (361096, 508644), and an area ordered by health is read as no area.
+/// "yourself and N allies" (361096, 508644).
 pub fn area_finds_allies(
   mechanics_flags mechanics_flags: Int,
   effects effects: List(spell4_effects.Spell4Effects),
@@ -2218,8 +2219,7 @@ pub fn area_finds_allies(
 ) -> Bool {
   target_mechanic.is_beneficial(flags: mechanics_flags)
   && !spell_hits_foes(effects:)
-  && target_selection >= 1
-  && target_selection <= 3
+  && { target_selection >= 1 && target_selection <= 3 || target_selection == 5 }
 }
 
 /// Whether the area of the Spell4 `row` finds the caster's allies (`area_finds_allies`),
@@ -8179,7 +8179,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row only, and only when the area orders by distance or at random (Closest, Furthest, Random): every other row has the area's bit left out of an aim that holds the caster's bit too, so a Proxy aimed at the caster and the area starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\", and a Proxy aimed at the area alone (Affinity's) starts its child on no unit, since the area finds allies, which are no struck units, and no foe; a delayed or periodic heal reaches the caster alone; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too, so a Proxy aimed at the caster and the area starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\", and a Proxy aimed at the area alone (Affinity's) starts its child on no unit, since the area finds allies, which are no struck units, and no foe; a delayed or periodic heal reaches the caster alone; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is left out, since the strike holds no unit's health percentage for the gate; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",
