@@ -16,6 +16,7 @@
 
 import attacker_support
 import cast_support
+import client_tables
 import genesis_prime/game/area
 import genesis_prime/game/cast/state.{GoAsked} as cast_state
 import genesis_prime/game/damage
@@ -48,6 +49,7 @@ import properties_support
 import rating_support
 import spell_tables
 import strike_support
+import unitest
 
 const mind_over_body = 32_820
 
@@ -421,6 +423,54 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
     as "Kick's area is a foe's: it selects creatures only, never the player in its cone"
   assert list.map(kick.units, fn(aimed) { aimed.unit_id }) == [20]
     as "the control: the same picture gives Kick's area the creature 20, so the case above is a friendly area's choice"
+}
+
+/// Affinity's Spell4 39063 (Spell4Effects 207513, a Proxy at the area that starts the child
+/// 79079 on each unit the area strikes, 250 ms after the go) is beneficial and holds no foe row,
+/// so its area finds allies (Closest, 1 target, 0 to 35 m, 360 degrees): a foe creature inside
+/// it is not struck, so the child starts on no creature, where a spell that hits foes starts it
+/// on each one. The control is the same area read as a foe's.
+pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let affinity = 39_063
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(friendly) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(affinity))
+    as "Affinity is in the areas"
+  assert friendly.finds_allies as "Affinity's area finds allies"
+  let assert Ok(phase) =
+    spell_area.phase(spell: friendly, phase: 0, spent: None)
+    as "Affinity has a first phase"
+  assert phase.selects_area
+    as "the Proxy that starts its child on each struck unit makes the phase select the area"
+  let selected_by = fn(area) {
+    strike.select(
+      asked: go(primary_target: 7, spell4_id: affinity),
+      attacker: healer(sight: []),
+      picture: dict.from_list([
+        #(
+          20,
+          strike_support.creature_at(
+            x: 0.0,
+            z: -10.0,
+            alive: True,
+            attackable: Attackable(exile: True, dominion: True),
+          ),
+        ),
+      ]),
+      areas: dict.from_list([#(affinity, area)]),
+      now_ms: 1000,
+    )
+  }
+  assert selected_by(friendly).units == []
+    as "a foe creature 10 m away is not struck by a friendly area, so no child starts on it"
+  assert list.map(
+      selected_by(spell_area.SpellArea(..friendly, finds_allies: False)).units,
+      fn(aimed) { aimed.unit_id },
+    )
+    == [20]
+    as "the control: read as a foe's area it strikes the creature 20, so the case above is the friendly area's choice"
 }
 
 /// A selection of the player 9 for the heal rows `heals`, with the creatures `units` in

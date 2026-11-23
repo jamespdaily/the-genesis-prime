@@ -5708,7 +5708,9 @@ fn kind_reading(
         Applied(read_as(RemoveStealthEffect(remove:)))
       })
     effect_kind.Heal(vital:) -> {
-      use <- when_reached(reaches: reaches || heals_allies(place:, effect:))
+      use <- when_reached(
+        reaches: reaches || heals_allies(tables:, place:, effect:),
+      )
       heal_reading(tables:, place:, spell4_id:, effect:, vital:)
     }
     effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
@@ -6225,14 +6227,14 @@ fn heal_reading(
     applied_condition_of(
       tables:,
       effect:,
-      reach: case heals_allies(place:, effect:) {
+      reach: case heals_allies(tables:, place:, effect:) {
         True -> PastTheCaster
         False -> reach_of_flags(target_flags: effect.target_flags)
       },
     ),
   )
   use heal <- try_heal(heal_of(spell4_id:, effect:, vital:, condition:))
-  let heal = heal_in_place(place:, effect:, heal:)
+  let heal = heal_in_place(tables:, place:, effect:, heal:)
   use Nil <- result.map(
     not_on_a_struck_unit(place:, aim: heal.aim, refused: fn(by) {
       HealOnStruckUnit(
@@ -6247,9 +6249,15 @@ fn heal_reading(
 
 /// Whether a heal row is read for the allies the area of its place finds: the place finds
 /// allies (`area_finds_allies`), the row is instant (no delayTime and no tickTime, the rows the
-/// strike tells another player, `telling_of`) and its targetFlags name the area. A delayed or
-/// periodic row keeps the reading of a place whose area finds no allies (`aim_in_place`).
+/// strike tells another player, `telling_of`), its targetFlags name the area, and its target
+/// apply prerequisite, if it has one, is one the strike can check for another player
+/// (`target_gate_read` for a unit past the caster): the strike knows an ally by its place
+/// alone, so a gate on the casts held on a unit (type 15, 59, 129) or on its own state is not
+/// read for an ally. Such a row keeps the reading of a place whose area finds no allies
+/// (`aim_in_place`), the caster's own heal, and the gate is checked for the caster as before.
+/// A prerequisite row the tables lack is left to that reading, which fails the load.
 fn heals_allies(
+  tables tables: table_store.Tables,
   place place: RowPlace,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Bool {
@@ -6260,18 +6268,28 @@ fn heals_allies(
     Ok(aim) -> reaches_area(aim:)
     Error(Nil) -> False
   }
+  && case effect.prerequisite_id_target_apply {
+    0 -> True
+    id ->
+      case prerequisite_of(tables:, id:) {
+        Ok(target) ->
+          result.is_ok(target_gate_read(target:, effect:, reach: PastTheCaster))
+        Error(..) -> False
+      }
+  }
 }
 
 /// The heal with its aim as the place reads it (`aim_in_place`), except that a row read for
 /// the allies of its place's area (`heals_allies`) is aimed as its targetFlags say, area
 /// included.
 fn heal_in_place(
+  tables tables: table_store.Tables,
   place place: RowPlace,
   effect effect: spell4_effects.Spell4Effects,
   heal heal: Heal,
 ) -> Heal {
   let aim = case
-    heals_allies(place:, effect:),
+    heals_allies(tables:, place:, effect:),
     aim_of(target_flags: effect.target_flags)
   {
     True, Ok(aim) -> aim
@@ -8161,7 +8179,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row only, and only when the area orders by distance or at random (Closest, Furthest, Random): every other row has the area's bit left out of an aim that holds the caster's bit too, so a Proxy aimed by it starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\"; a delayed or periodic heal reaches the caster alone; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row only, and only when the area orders by distance or at random (Closest, Furthest, Random): every other row has the area's bit left out of an aim that holds the caster's bit too, so a Proxy aimed at the caster and the area starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\", and a Proxy aimed at the area alone (Affinity's) starts its child on no unit, since the area finds allies, which are no struck units, and no foe; a delayed or periodic heal reaches the caster alone; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",

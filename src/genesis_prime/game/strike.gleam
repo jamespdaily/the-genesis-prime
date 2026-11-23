@@ -451,12 +451,16 @@ fn players_of_heals(
       })
     False -> []
   }
-  list.append(
-    primary,
-    list.filter(in_the_area, fn(address) {
-      address.unit_id != asked.primary_target
-    }),
-  )
+  case primary {
+    [] -> in_the_area
+    [_, ..] ->
+      list.append(
+        primary,
+        list.filter(in_the_area, fn(address) {
+          address.unit_id != asked.primary_target
+        }),
+      )
+  }
 }
 
 /// Where a cast's area is centred (`area.centre_of`): on the pose the cast started at, the
