@@ -21,7 +21,7 @@
 #   1. origin/main is fetched. A branch that holds origin/main has had CI on exactly that
 #      combination (CI tests the head merged with main), so nothing is merged in; otherwise
 #      origin/main is merged into the worktree's copy of the branch, `./check fast` runs
-#      there (the push hook requires it), and the merge is pushed to the branch.
+#      there (so the merge commit builds before it is pushed), and the merge is pushed to the branch.
 #   2. dev/pr_wait.sh P waits for the head's checks.
 #   3. origin/main is fetched again. If the branch holds it, `gh pr merge P --merge
 #      --match-head-commit <head>` merges the pull request; if main moved while CI ran,
@@ -45,9 +45,7 @@
 # wait, with nothing merged in, has pushed nothing.
 #
 # The merge itself is pinned to the head that CI passed on; main is not pinned, so a push to
-# main between the last fetch and `gh pr merge` can still land first. A pull request merged
-# by this script is read by the progress hook (dev/hooks/progress_lines.py) as the merge of
-# P, so its CI and merge lines are posted.
+# main between the last fetch and `gh pr merge` can still land first.
 #
 # MERGE_WHEN_GREEN_POLL_SECONDS (default 5): the pause between asks while GitHub catches up
 # with a push.
