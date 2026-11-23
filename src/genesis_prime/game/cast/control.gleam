@@ -704,6 +704,13 @@ pub fn modifiers_armed(
                 spell:,
                 now_ms:,
               )
+            Error(Nil) if entry.unit_id == caster.unit_id ->
+              caster_modifier_armed(
+                cast:,
+                row:,
+                source:,
+                change: HeldChange(held_changes.Property(modifier:)),
+              )
             Error(Nil) ->
               creature_modifier_armed(
                 cast:,
@@ -1252,12 +1259,16 @@ fn caster_modifier_armed(
 }
 
 /// The modifier rows of a spell that change the caster: the rows aimed at struck units
-/// are the creature's (`units_ended`).
+/// are the creature's (`units_ended`), except a struck-unit row whose aim names the primary
+/// target, which a press at oneself puts on the caster.
 pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
   spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
   |> list.filter(fn(row) {
     case row.change {
-      spell_plan.StruckChange(..) -> False
+      spell_plan.StruckChange(..) ->
+        spell_plan.reaches_primary_target(aim: spell_plan.modifier_aim(
+          modifier: row,
+        ))
       spell_plan.PropertyChange(..)
       | spell_plan.LookChange(..)
       | spell_plan.AbsorbChange(..) -> True

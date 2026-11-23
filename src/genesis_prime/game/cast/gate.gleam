@@ -378,7 +378,9 @@ pub fn rows_with_units(
 ///   out here with no log line; the plan refuses the row where that part would be the unit
 ///   a Proxy's child is started on (`spell_plan.not_on_a_struck_unit`).
 /// - An absorb lands on the caster, and a property modifier aimed at struck units
-///   (`StruckChange`) on a creature the go hit.
+///   (`StruckChange`) on a creature the go hit, and on the caster when the press named the
+///   caster and the row's aim names the primary target (Phantasmal Armor's modifier rows,
+///   Spell4Effects 130474 and 203798 to 203801).
 /// - An absorb or a `StruckChange` row whose aim names the primary target also lands on the
 ///   player the press named when that is another player in the caster's sight, at once and
 ///   with an end of its own (`player_row`); `press_target` is that player, none for a child a
@@ -393,9 +395,17 @@ pub fn modifier_applies(
 ) -> Bool {
   let on_the_player =
     player_row(row:, unit_id:, caster:, press_target:) == Lands
+  let on_the_caster =
+    press_target == Some(caster.unit_id)
+    && unit_id == caster.unit_id
+    && spell_plan.reaches_primary_target(aim: spell_plan.modifier_aim(
+      modifier: row,
+    ))
   case row.change {
     spell_plan.StruckChange(..) ->
-      result.is_ok(creature_hit(struck:, unit_id:)) || on_the_player
+      result.is_ok(creature_hit(struck:, unit_id:))
+      || on_the_player
+      || on_the_caster
     spell_plan.AbsorbChange(..) -> unit_id == caster.unit_id || on_the_player
     spell_plan.PropertyChange(..) | spell_plan.LookChange(..) ->
       unit_id == caster.unit_id

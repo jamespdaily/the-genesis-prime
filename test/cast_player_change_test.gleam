@@ -44,7 +44,6 @@ import gleam/string
 import map_support
 import owned_test
 import prerequisite_support
-import spell_tables
 
 const ally = 40
 
@@ -83,38 +82,6 @@ fn picture(unit_id: Int) -> activate.Target {
     True -> activate.AnotherPlayer
     False -> activate.Unseen
   }
-}
-
-/// Phantasmal Armor tier 9 as its rows plan it, holding these rows, which no level-1
-/// ability's tree holds: a Targeted spell (Mind Over Body's mechanics, Spell4TargetMechanics
-/// row 4) that goes at once, in the stack group 387 with a cap of 1.
-fn armor_spell(rows rows: List(spell_plan.PropertyModifier)) -> Spell {
-  Spell(
-    ..support.with_effects(
-      spell: Spell(
-        ..support.child(spell4_id: 54_806, base: 3),
-        targeting: spell_tables.client_spell(spell4_id: 32_820).targeting,
-        cooldown_ms: 0,
-      ),
-      kinds: list.map(rows, spell_plan.ModifierEffect),
-    ),
-    outlives_caster: True,
-    stack: lasting.Stack(group_id: 387, cap: 1),
-  )
-}
-
-fn armor_rows() -> List(spell_plan.PropertyModifier) {
-  [
-    support.armor_absorb_row(
-      id: absorb_id,
-      support_factor: 2.605299949645996,
-      aim: spell_plan.AimsAtPrimaryTarget,
-    ),
-    support.armor_modifier_row(
-      id: modifier_id,
-      aim: spell_plan.AimsAtPrimaryTarget,
-    ),
-  ]
 }
 
 fn plans_of(spell spell: Spell) -> Plans {
@@ -266,9 +233,9 @@ type Go {
 fn armor_with(
   absorb absorb: fn(spell_plan.PropertyModifier) -> spell_plan.PropertyModifier,
 ) -> Spell {
-  let assert [absorb_row, modifier_row] = armor_rows()
+  let assert [absorb_row, modifier_row] = support.armor_rows()
     as "the armor has an absorb row and a modifier row"
-  armor_spell(rows: [absorb(absorb_row), modifier_row])
+  support.armor_spell(rows: [absorb(absorb_row), modifier_row])
 }
 
 pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_and_lists_them_on_that_player_test() -> Nil {
@@ -290,7 +257,7 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
   let rows = [
     Go(
       why: "Phantasmal Armor tier 9 at the ally in sight: both rows are listed on the ally and each told in the plan's row order, the pool of 139 and the modifier, kept when unseen because the spell holds propertyFlags 0x100",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       at_go: esper_seeing(players: [ally]),
       rolls: [],
       listed: [absorb_id, modifier_id],
@@ -299,7 +266,7 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
     ),
     Go(
       why: "the ally out of the caster's sight at the go: nothing is listed on it, nothing is told, and a debug line names each row",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       at_go: esper_seeing(players: []),
       rolls: [],
       listed: [],
@@ -308,7 +275,10 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
     ),
     Go(
       why: "a spell whose propertyFlags lack 0x100: the changes end when the caster is unseen",
-      spell: Spell(..armor_spell(rows: armor_rows()), outlives_caster: False),
+      spell: Spell(
+        ..support.armor_spell(rows: support.armor_rows()),
+        outlives_caster: False,
+      ),
       at_go: esper_seeing(players: [ally]),
       rolls: [],
       listed: [absorb_id, modifier_id],
@@ -412,7 +382,7 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
   // lives the rows' 10 000 ms, so its 0x7fe is at the go plus 10 000.
   let #(state, pressed, went) =
     pressed_and_gone(
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       state: cast_state.new(),
       at_press: esper_seeing(players: [ally]),
       at_go: esper_seeing(players: [ally]),
@@ -443,7 +413,7 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
   // first's: the one end is told at the second go plus 10 000.
   let two_gos =
     Spell(
-      ..armor_spell(rows: [
+      ..support.armor_spell(rows: [
         support.armor_modifier_row(
           id: modifier_id,
           aim: spell_plan.AimsAtPrimaryTarget,
@@ -598,14 +568,18 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
   use <- owned_test.run(5000)
   let seen = esper_seeing(players: [ally])
   let fighting = cast_state.Caster(..seen, in_combat: True)
-  let unkept = Spell(..armor_spell(rows: armor_rows()), outlives_caster: False)
+  let unkept =
+    Spell(
+      ..support.armor_spell(rows: support.armor_rows()),
+      outlives_caster: False,
+    )
   let removed = fn(state) {
     cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100)
   }
   let paths = [
     Path(
       why: "time: each change's end timer fires at the go plus 10 000 and tells its end, and the node's end in the same millisecond tells nothing more but writes the 0x7fe",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, _) {
         fired_in_order(
@@ -623,7 +597,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "time, the node's end first: it ends both, and the end timers, late, tell nothing more",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, _) {
         fired_in_order(
@@ -641,7 +615,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "the caster's death ends both and writes the 0x7fe that the client keeps a 0x100 buff for",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, _) {
         cast.died(
@@ -655,7 +629,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "the caster leaving ends both and writes nothing",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, _) { cast_tick.left(cast: state) },
       finishes: False,
@@ -678,7 +652,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "the ally leaving the caster's sight, for a spell that holds 0x100, ends nothing then; each end timer tells its end at the go plus 10 000, addressed from the go's address though the caster no longer sees the ally",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, _) {
         let #(state, removal) = removed(state)
@@ -700,7 +674,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "a type 80 removal of the cast's node on the ally ends both and writes the 0x811 that takes the node off it, and the end timers are cancelled, so they tell nothing at the go plus 10 000",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, _) {
         let timers = player_end_timers(state:)
@@ -708,7 +682,9 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
           as "the go started an end timer for each change"
         let #(state, _, removal) =
           pressed_and_gone_in(
-            plans: armor_and_its_removal(spell: armor_spell(rows: armor_rows())),
+            plans: armor_and_its_removal(
+              spell: support.armor_spell(rows: support.armor_rows()),
+            ),
             bag: bag_of_base_1,
             state:,
             at_press: seen,
@@ -729,13 +705,13 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "a push off by the stack rule while the node is live (a second press of the same spell, stack group 387 with a cap of 1) ends the first cast's changes before the second cast's start, writes the 0x811, and the first cast's end timers tell nothing more",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, first) {
         let timers = player_end_timers(state:)
         let #(state, pressed, went) =
           pressed_and_gone(
-            spell: armor_spell(rows: armor_rows()),
+            spell: support.armor_spell(rows: support.armor_rows()),
             state:,
             at_press: seen,
             at_go: seen,
@@ -779,7 +755,9 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "a persistence that stops holding while the cast lingers for its node on the ally ends both and writes the cast's 0x7fe",
-      spell: armor_in_combat(spell: armor_spell(rows: armor_rows())),
+      spell: armor_in_combat(
+        spell: support.armor_spell(rows: support.armor_rows()),
+      ),
       caster: fighting,
       run: fn(state, _) {
         cast.persisted(
@@ -794,10 +772,13 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     Path(
       why: "a persistence that stops holding while the cast is live, with a go still to come, ends both and writes the cast's 0x7fe",
       spell: armor_in_combat(
-        spell: Spell(..armor_spell(rows: armor_rows()), phase_delays_ms: [
-          0,
-          1000,
-        ]),
+        spell: Spell(
+          ..support.armor_spell(rows: support.armor_rows()),
+          phase_delays_ms: [
+            0,
+            1000,
+          ],
+        ),
       ),
       caster: fighting,
       run: fn(state, _) {
@@ -812,7 +793,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     ),
     Path(
       why: "a lingering cast that ends (its activation stopped) ends both and writes the cast's 0x7fe",
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       caster: seen,
       run: fn(state, id) { cast.activation_stopped(cast: state, cast_id: id) },
       finishes: True,
@@ -855,7 +836,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
   // The caster leaving writes nothing and leaves no timer waiting.
   let #(state, _, _) =
     pressed_and_gone(
-      spell: armor_spell(rows: armor_rows()),
+      spell: support.armor_spell(rows: support.armor_rows()),
       state: cast_state.new(),
       at_press: seen,
       at_go: seen,
@@ -871,7 +852,7 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
 
 pub fn a_re_press_of_the_same_caster_before_the_kept_buff_ends_replaces_the_held_change_test() -> Nil {
   use <- owned_test.run(5000)
-  let spell = armor_spell(rows: armor_rows())
+  let spell = support.armor_spell(rows: support.armor_rows())
   let seen = esper_seeing(players: [ally])
   let kept = held_changes.KeptWhenUnseen
   let #(state, pressed, _) =
