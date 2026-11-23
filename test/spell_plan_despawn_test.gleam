@@ -39,35 +39,17 @@ fn despawn_row(
   target_flags target_flags: Int,
   columns columns: List(#(String, Cell)),
 ) -> List(Cell) {
-  let defaults = [
-    #("ID", Integer(id)),
-    #("spellId", Integer(strike)),
-    #("effectType", Integer(97)),
-    #("targetFlags", Integer(target_flags)),
-    #("phaseFlags", Integer(-1)),
-    #("orderIndex", Integer(9)),
-  ]
-  planted_table.row(
-    spell4_effects.schema,
-    list.append(
-      list.filter(defaults, fn(default) {
-        !list.any(columns, fn(given) { given.0 == default.0 })
-      }),
-      columns,
-    ),
+  spell_tables.effect_row_over(
+    id:,
+    effect_type: 97,
+    target_flags:,
+    defaults: [],
+    columns:,
   )
 }
 
 fn despawns_of(rows rows: spell_tables.Rows) -> List(spell_plan.Despawn) {
-  let assert Ok(spell) = spell_tables.planned_strike(rows:)
-  spell_plan.payloads(spell:, as_kind: spell_plan.as_despawn)
-}
-
-/// What the plan makes of a client-shaped row, in a place that hits no foes.
-fn reading_of(
-  effect effect: spell4_effects.Spell4Effects,
-) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
-  spell_tables.read_row(effect:, place: spell_tables.pressed)
+  spell_tables.payloads_of_rows(rows:, as_kind: spell_plan.as_despawn)
 }
 
 pub fn a_despawn_row_aimed_at_the_target_is_a_planned_despawn_with_its_delay_test() -> Nil {
@@ -102,7 +84,8 @@ pub fn a_despawn_row_aimed_at_the_target_is_a_planned_despawn_with_its_delay_tes
       id: Spell4EffectsId(71_140),
     )
     as "the client's row 71140 is in the fixture"
-  let assert Ok(spell_plan.Applied(read)) = reading_of(effect: row)
+  let assert Ok(spell_plan.Applied(read)) =
+    spell_tables.read_pressed(effect: row)
   assert spell_tables.planned_kinds(reading: spell_plan.Applied(read))
     == [
       spell_plan.DespawnEffect(spell_plan.Despawn(
@@ -153,7 +136,7 @@ pub fn a_despawn_row_aimed_at_the_caster_alone_is_left_out_by_name_test() -> Nil
       effect_type: 97,
       target_flags: 1,
     )
-  assert reading_of(effect: row)
+  assert spell_tables.read_pressed(effect: row)
     == Ok(spell_plan.LeftOut(why: spell_plan.DespawnAimedAtTheCasterOnly))
   assert !effect_kind.is_row_read(effect_type: 97, target_flags: 1)
     as "the measure counts such a row unread"
@@ -180,7 +163,7 @@ pub fn a_despawn_row_with_unread_data_is_left_out_naming_the_column_test() -> Ni
       effect_type: 97,
       target_flags: 2,
     )
-  assert reading_of(
+  assert spell_tables.read_pressed(
       effect: spell4_effects.Spell4Effects(..blank, data_bits00: 1),
     )
     == Ok(
@@ -188,7 +171,7 @@ pub fn a_despawn_row_with_unread_data_is_left_out_naming_the_column_test() -> Ni
         column: "dataBits00",
       )),
     )
-  assert reading_of(
+  assert spell_tables.read_pressed(
       effect: spell4_effects.Spell4Effects(..blank, data_bits00: 247_248),
     )
     == Ok(
@@ -202,7 +185,7 @@ pub fn a_despawn_row_with_unread_data_is_left_out_naming_the_column_test() -> Ni
       id: Spell4EffectsId(70_045),
     )
     as "the client's row 70045 (targetFlags 2, dataBits01 5) is in the fixture"
-  assert reading_of(effect: client_row)
+  assert spell_tables.read_pressed(effect: client_row)
     == Ok(
       spell_plan.LeftOut(why: spell_plan.DespawnDataNotRead(
         column: "dataBits01",
@@ -226,20 +209,9 @@ fn gated_rows(
   condition_type condition_type: Int,
   target_flags target_flags: Int,
 ) -> spell_tables.Rows {
-  let rows =
-    spell_tables.rows_with_effect(
-      effect: despawn_row(id: 99_101, target_flags:, columns: [
-        #("prerequisiteIdTargetApply", Integer(99_907)),
-      ]),
-    )
-  spell_tables.Rows(
-    ..rows,
-    prerequisites: spell_tables.sorted_by_id([
-      spell_tables.prerequisite_row(id: 99_907, flags: 0, conditions: [
-        #(condition_type, 1, 0, 48_404),
-      ]),
-      ..rows.prerequisites
-    ]),
+  spell_tables.rows_gated_on_target_apply(
+    condition_type:,
+    effect_of: fn(columns) { despawn_row(id: 99_101, target_flags:, columns:) },
   )
 }
 

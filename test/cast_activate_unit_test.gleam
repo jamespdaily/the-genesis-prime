@@ -53,16 +53,7 @@ const unit_radius = 0.25
 
 /// The caster stands at a place of exactly representable numbers.
 fn standing() -> cast_state.Caster {
-  cast_state.Caster(
-    ..support.caster(),
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 4096.0,
-      y: 0.0,
-      z: 512.0,
-    ),
-  )
+  support.standing_at(caster: support.caster(), x: 4096.0, y: 0.0, z: 512.0)
 }
 
 /// The unit of the creature, `east` units east of the standing caster.

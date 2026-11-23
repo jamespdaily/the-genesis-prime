@@ -336,3 +336,18 @@ pub fn player() -> Player {
 pub fn pose(x x: Float, z z: Float, yaw yaw: Float) -> Pose {
   Pose(at: Point(x:, z:), yaw:)
 }
+
+/// Every condition type from 1 to 300 that `prerequisite.is_read` refuses, lowest first.
+pub fn unread_types() -> List(Int) {
+  int.range(from: 300, to: 0, with: [], run: fn(unread, type_id) {
+    case prerequisite.is_read(type_id:) {
+      True -> unread
+      False -> [type_id, ..unread]
+    }
+  })
+}
+
+/// A row with a condition of a type the server does not read.
+pub fn unread_row() -> Prerequisite {
+  single(id: 41_834, condition: #(unread_type(), 1, 10_518, 1))
+}

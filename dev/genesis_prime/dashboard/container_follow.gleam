@@ -26,7 +26,6 @@
 ////   read.
 //// - A page that gets an update is sent the whole ring (`log_lines` numbers each
 ////   entry); a read that changed nothing sends nothing.
-//// - A subscriber that ends is told to the follower's watcher, if it has one.
 //// - The follower keeps no state a restart cannot rebuild: pages subscribe again
 ////   when their runtimes are rebuilt (the supervisor restarts both together).
 ////
@@ -36,9 +35,7 @@
 //// Overview's reads do.
 
 import genesis_prime/dashboard/container_log.{type Read, type Tracking}
-import genesis_prime/dashboard/follow.{
-  type Event, type Followed, type Trouble, Followed, ReadMade, SubscriberDropped,
-}
+import genesis_prime/dashboard/follow.{type Followed, type Trouble, Followed}
 import genesis_prime/dashboard/log_lines.{type Lines, type Source}
 import genesis_prime/dashboard/read_poll.{type Poll}
 import genesis_prime/dashboard/script
@@ -77,8 +74,7 @@ pub type Message =
 
 /// What a follower follows and how: the container's log, how a read is started,
 /// how often it reads and how long a read may run, the arm of that timer
-/// (`subscribers.send_after`, or a test's own), and who is told of its reads and
-/// drops.
+/// (`subscribers.send_after`, or a test's own).
 pub type Settings {
   Settings(
     source: Source,
@@ -86,7 +82,6 @@ pub type Settings {
     interval_ms: Int,
     deadline_ms: Int,
     arm: subscribers.Arm(Message),
-    watcher: Option(Subject(Event)),
   )
 }
 
@@ -194,17 +189,11 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       }
       state
     }
-    read_poll.PageLeft(last:) -> {
-      let state = case last {
+    read_poll.PageLeft(last:) ->
+      case last {
         True -> dropped(state)
         False -> state
       }
-      follow.tell(
-        watcher: state.settings.watcher,
-        event: SubscriberDropped(state.settings.source),
-      )
-      state
-    }
     read_poll.ReadAnswered(answer:) -> shown(state, answer)
     read_poll.ReadTimedOut ->
       shown(state, Error(container_log.timed_out(state.settings.deadline_ms)))
@@ -212,15 +201,9 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   })
 }
 
-/// How a read starts: with the tracking as it stands, and the watcher told.
+/// How a read starts: with the tracking as it stands.
 fn started_by(state: State) -> read_poll.Start(Result(Read, Trouble)) {
-  fn(answer) {
-    follow.tell(
-      watcher: state.settings.watcher,
-      event: ReadMade(state.settings.source),
-    )
-    state.settings.start_read(state.tracking, answer)
-  }
+  fn(answer) { state.settings.start_read(state.tracking, answer) }
 }
 
 /// The last page left: the lines and the tracking are dropped, so the next page

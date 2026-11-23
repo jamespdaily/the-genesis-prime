@@ -116,12 +116,11 @@ pub fn sigterm_stops_the_server_through_otp_and_its_recording_ends_with_its_clos
     as "the application's stop callback ran: the stop went through OTP"
 }
 
-/// How many nodes the repeated SIGTERM test ends one after the other.
+/// How many nodes the SIGTERM before the ready line ends in a row.
 const repeated_nodes = 6
 
-/// A SIGTERM while the readiness ask waits is the same scenario for every
-/// node, so one test ends several in a row, since the race it checks for needs
-/// a loaded machine to show.
+/// Each node is ended while its readiness ask still waits on a database that does
+/// not answer.
 pub fn sigterm_before_the_ready_line_ends_each_node_with_status_0_no_ready_line_and_no_error_in_its_output_test() -> Nil {
   use <- owned_test.run(120_000)
   int.range(from: 1, to: repeated_nodes + 1, with: Nil, run: fn(_, attempt) {

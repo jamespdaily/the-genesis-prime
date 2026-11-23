@@ -18,7 +18,7 @@
 import cast_item_use_test as items
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/activate.{type Target, Body, NoLink, Usable}
+import genesis_prime/game/activate.{type Target}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{
   type Effect, type State, WithCast, WithNothing, WithUse,
@@ -31,14 +31,12 @@ import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_go
-import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{None}
 import gleam/set
 import owned_test
-import place_support
 import planted_table.{Integer}
 import quest_support
 import spell_tables
@@ -329,36 +327,9 @@ pub fn a_cast_cancelled_before_its_go_raises_nothing_test() -> Nil {
     as "no go, so no row was applied, and no timer of one waits"
 }
 
-fn creature_of(creature_id creature_id: Int) -> activate.Creature {
-  let assert Ok(row) =
-    creature2.get(tables: fixture_tables.shared(), id: Creature2Id(creature_id))
-    as "the creature is a root of the fixture"
-  activate.creature_of(row:)
-}
-
 /// A creature of the fixture 3 m east of the caster, alive.
 fn nearby(creature_id creature_id: Int) -> Target {
-  Usable(
-    creature_id:,
-    creature: creature_of(creature_id:),
-    checklist_index: 0,
-    link: NoLink,
-    body: Body(
-      place: place_support.at(
-        world_id: 3460,
-        world_zone_id: 6009,
-        x: 4099.5,
-        y: 0.0,
-        z: 512.0,
-      ),
-      radius: 0.25,
-    ),
-    alive: True,
-    in_combat: False,
-    held: [],
-    unit_states: [],
-    withheld: None,
-  )
+  support.usable_at(creature_id:, x: 4099.5, radius: 0.25)
 }
 
 fn right_click(
@@ -395,16 +366,7 @@ fn right_click(
 
 /// A caster at the place the activate tests use.
 fn standing_with(quests quests: List(Int)) -> cast_state.Caster {
-  cast_state.Caster(
-    ..holding(quests:),
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 4096.0,
-      y: 0.0,
-      z: 512.0,
-    ),
-  )
+  support.standing_at(caster: holding(quests:), x: 4096.0, y: 0.0, z: 512.0)
 }
 
 /// What a right-click of the creature at 1000 ms starts, with everything every timer then

@@ -25,7 +25,7 @@ import cast_support as support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{CastStarted}
-import genesis_prime/game/activate.{type Target, Body, NoLink, Usable}
+import genesis_prime/game/activate.{type Target, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
@@ -41,10 +41,8 @@ import genesis_prime/message/crowd_control_state
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse} as use_message
 import genesis_prime/message/spell_cast_confirmed
-import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_go
 import genesis_prime/step.{LogWarning}
-import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bit_array
@@ -57,6 +55,7 @@ import item_charge_support
 import owned_test
 import place_support
 import planted_table.{Integer}
+import prerequisite_support
 import quest_support
 
 pub const grenade = 12_444
@@ -117,35 +116,12 @@ pub fn standing(
   )
 }
 
-fn creature_of(creature_id creature_id: Int) -> activate.Creature {
-  let assert Ok(row) =
-    creature2.get(tables: tables(), id: Creature2Id(creature_id))
-    as "the creature is a root of the fixture"
-  activate.creature_of(row:)
-}
-
 /// A creature standing this far from the caster, edge to edge.
 pub fn shown(creature_id creature_id: Int, metres metres: Float) -> Target {
-  Usable(
+  support.usable_at(
     creature_id:,
-    creature: creature_of(creature_id:),
-    checklist_index: 0,
-    link: NoLink,
-    body: Body(
-      place: place_support.at(
-        world_id: 3460,
-        world_zone_id: 6009,
-        x: 4096.0 +. metres +. caster_radius +. object_radius,
-        y: 0.0,
-        z: 512.0,
-      ),
-      radius: object_radius,
-    ),
-    alive: True,
-    in_combat: False,
-    held: [],
-    unit_states: [],
-    withheld: None,
+    x: 4096.0 +. metres +. caster_radius +. object_radius,
+    radius: object_radius,
   )
 }
 
@@ -307,18 +283,13 @@ pub fn use_item_in(
 
 /// What the effects refuse: each 0x7fc's cast id, spell and result.
 pub fn refused_with(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
-  list.map(
-    support.frames_of(message_id: spell_cast_refused.message_id, effects:),
-    fn(frame) {
-      let assert Ok(refused) = spell_cast_refused.decode(frame.body)
-        as "a 0x7fc the rule wrote decodes"
-      #(
-        refused.client_cast_id,
-        refused.spell4_id,
-        cast_result.to_value(refused.result),
-      )
-    },
-  )
+  list.map(support.refused_in(effects:), fn(refused) {
+    #(
+      refused.client_cast_id,
+      refused.spell4_id,
+      cast_result.to_value(refused.result),
+    )
+  })
 }
 
 /// The use is taken, and answered with the one refusal and nothing else.
@@ -783,7 +754,7 @@ pub fn an_item_whose_prerequisite_fails_is_refused_17_test() -> Nil {
 
 pub fn an_item_whose_prerequisite_the_server_cannot_read_is_refused_285_and_logged_once_test() -> Nil {
   use <- owned_test.run(10_000)
-  let assert [unread, ..] = unread_types()
+  let assert [unread, ..] = prerequisite_support.unread_types()
     as "the client's Prerequisite types include some the server does not read"
   use tables <- with_prerequisite_624(extra: [
     #("prerequisiteTypeId0", Integer(unread)),
@@ -811,16 +782,6 @@ pub fn an_item_whose_prerequisite_the_server_cannot_read_is_refused_285_and_logg
     as "the gap is logged once"
   assert string.contains(line, "type " <> int.to_string(unread))
     as "the log line names the type"
-}
-
-/// Condition types below 301 the server does not read, lowest first.
-fn unread_types() -> List(Int) {
-  int.range(from: 300, to: 0, with: [], run: fn(unread, type_id) {
-    case prerequisite.is_read(type_id:) {
-      True -> unread
-      False -> [type_id, ..unread]
-    }
-  })
 }
 
 pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {

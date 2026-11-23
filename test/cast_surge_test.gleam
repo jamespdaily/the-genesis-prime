@@ -74,16 +74,13 @@ fn pressed(
   caster caster: Caster,
   bag bag: Int,
 ) -> List(Effect) {
-  let #(_, effects) =
-    support.pressed_raw_in(
-      plans: support.plans(),
-      state:,
-      caster:,
-      bag_index: bag,
-      target: 0,
-      at: 3000,
-    )
-  effects
+  support.pressed_effects(
+    plans: support.plans(),
+    state:,
+    caster:,
+    bag_index: bag,
+    at: 3000,
+  )
 }
 
 /// The Spell4 id each root cast the press starts, as its viewers are told.

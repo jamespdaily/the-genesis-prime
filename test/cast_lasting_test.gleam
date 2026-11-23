@@ -34,8 +34,7 @@ import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Stack}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, Always, ForceRemove, GatedOnCaster, GatedOnTarget,
-  Lasting,
+  type Plans, type Spell, Always, GatedOnCaster, GatedOnTarget, Lasting,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
@@ -103,17 +102,14 @@ fn remover(
   count count: Int,
   condition condition: spell_plan.Condition,
 ) -> Spell {
-  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
-    spell_plan.RemoveEffect(ForceRemove(
-      effect_id: Spell4EffectsId(196_521),
-      phase_flags: -1,
-      aim: spell_plan.AimsAtCaster,
-      selector:,
-      count:,
-      condition:,
-      tag: spend.always,
-    )),
-  ])
+  support.removing(
+    spell4_id:,
+    base:,
+    effect_id: 196_521,
+    selector:,
+    count:,
+    condition:,
+  )
 }
 
 // The bag indices of the planted bases: base 1 is bag index 8, base 2 is 10, base 3
@@ -132,16 +128,7 @@ fn press_striking(
   struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster: support.caster(),
-      bag_index: bag,
-      target: 0,
-      at: ms,
-    )
-  support.answered_by(state:, effects:, at: ms, struck:)
+  support.pressed_striking_in(plans:, state:, bag_index: bag, struck:, at: ms)
 }
 
 // ---- what a go lists ----
@@ -913,6 +900,15 @@ fn short_buff_on_a_long_channel() -> Plans {
 fn short_buff_on_a_long_channel_with(
   cast_bar cast_bar: spell_plan.CastBar,
 ) -> Plans {
+  buffed_channel(initial_delay_ms: 0, cast_bar:)
+}
+
+/// The plans of a channel of 6000 ms pulsing every 3000 ms that starts a one-second buff on
+/// the caster, whose first go comes after this delay, with this cast bar.
+fn buffed_channel(
+  initial_delay_ms initial_delay_ms: Int,
+  cast_bar cast_bar: spell_plan.CastBar,
+) -> Plans {
   support.plans_of([
     spell_plan.Spell(
       ..channel(
@@ -925,7 +921,7 @@ fn short_buff_on_a_long_channel_with(
           ),
         ],
         channel: spell_plan.Channel(
-          initial_delay_ms: 0,
+          initial_delay_ms:,
           max_time_ms: 6000,
           pulse_time_ms: 3000,
         ),
@@ -938,26 +934,7 @@ fn short_buff_on_a_long_channel_with(
 /// The channel of `short_buff_on_a_long_channel` whose first pulse waits 2000 ms: a live
 /// cast that is not the current cast and holds no node until then.
 fn channel_before_its_first_go() -> Plans {
-  support.plans_of([
-    spell_plan.Spell(
-      ..channel(
-        lasting: [
-          fluff(
-            id: 1,
-            aim: spell_plan.AimsAtCaster,
-            duration_ms: 1000,
-            until_removed: False,
-          ),
-        ],
-        channel: spell_plan.Channel(
-          initial_delay_ms: 2000,
-          max_time_ms: 6000,
-          pulse_time_ms: 3000,
-        ),
-      ),
-      cast_bar: spell_plan.HidesCastBar,
-    ),
-  ])
+  buffed_channel(initial_delay_ms: 2000, cast_bar: spell_plan.HidesCastBar)
 }
 
 pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_on_test() -> Nil {
@@ -1668,34 +1645,6 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
 
 // ---- the creatures told what a cast holds on them ----
 
-/// A unit the round struck as the creature `unit_id` of `life`, at `struck_at_ms`.
-fn creature_hit(
-  unit_id unit_id: Int,
-  life life: Int,
-  struck_at_ms struck_at_ms: Int,
-) -> cast_state.Struck {
-  cast_state.Hit(
-    unit_id:,
-    unit: cast_state.HitCreature(life:, struck_at_ms:),
-    descriptions: [],
-    controls: [],
-    armor_removed: 0,
-    ticking: [],
-  )
-}
-
-/// The player `unit_id` a round struck, which is no creature.
-fn player_hit(unit_id unit_id: Int) -> cast_state.Struck {
-  cast_state.Hit(
-    unit_id:,
-    unit: cast_state.HitPlayer,
-    descriptions: [],
-    controls: [],
-    armor_removed: 0,
-    ticking: [],
-  )
-}
-
 /// What `creature_view.compared` gives the player 7 for each state in turn, the told map
 /// carried from one state to the next as the connection's state carries it.
 fn compared_in_turn(
@@ -1818,7 +1767,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       plans: area_buff(duration_ms: 3000),
       state: cast_state.new(),
       bag: bag_of_base_3,
-      struck: [creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)],
+      struck: [support.creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)],
       at: 1000,
     )
   let creature_cast = support.pressed_id(effects: creature_effects)
@@ -1854,7 +1803,10 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       plans: area_buff(duration_ms: 3000),
       state: cast_state.new(),
       bag: bag_of_base_3,
-      struck: [player_hit(unit_id: 21), cast_state.Deflected(unit_id: 20)],
+      struck: [
+        support.player_hit(unit_id: 21),
+        cast_state.Deflected(unit_id: 20),
+      ],
       at: 1000,
     )
   // Fissure: Spell4 41843 (Spell4Base 26038) starts the proxy 41844 on the caster, whose
@@ -1883,8 +1835,10 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       at: 1000,
       struck_of: fn(asked) {
         case asked.spell4_id.value {
-          41_886 -> [creature_hit(unit_id: 20, life: 2, struck_at_ms: 1500)]
-          _ -> [creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)]
+          41_886 -> [
+            support.creature_hit(unit_id: 20, life: 2, struck_at_ms: 1500),
+          ]
+          _ -> [support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)]
         }
       },
       rolls: [],
@@ -1915,7 +1869,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         plans: two_gos_of_an_area_buff(),
         state: cast_state.new(),
         bag: bag_of_base_3,
-        struck: [creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)],
+        struck: [support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)],
         at: 1000,
       )
     let #(second, _) =
@@ -1931,8 +1885,8 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
     #(first, second, support.pressed_id(effects:))
   }
   let #(first_go, again, channel_cast) =
-    two_gos([creature_hit(unit_id: 20, life: 1, struck_at_ms: 2000)])
-  let #(_, missed, _) = two_gos([player_hit(unit_id: 20)])
+    two_gos([support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 2000)])
+  let #(_, missed, _) = two_gos([support.player_hit(unit_id: 20)])
   let in_a_channel = fn(starts_ms, ends_ms) {
     creature_view_of(
       cast_id: channel_cast,
@@ -2018,9 +1972,9 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       state: cast_state.new(),
       bag: bag_of_base_3,
       struck: [
-        creature_hit(unit_id: 22, life: 1, struck_at_ms: 1000),
-        creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000),
-        creature_hit(unit_id: 21, life: 1, struck_at_ms: 1000),
+        support.creature_hit(unit_id: 22, life: 1, struck_at_ms: 1000),
+        support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000),
+        support.creature_hit(unit_id: 21, life: 1, struck_at_ms: 1000),
       ],
       at: 1000,
     )
@@ -2216,7 +2170,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
 pub fn a_holder_gone_or_left_is_told_by_the_compare_test() -> Nil {
   use <- owned_test.run(5000)
   let plans = area_buff(duration_ms: 3000)
-  let struck = [creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)]
+  let struck = [support.creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)]
   let #(held, effects) =
     press_striking(
       plans:,

@@ -3,15 +3,19 @@
 //// and the strikes the caster's connection tells a creature through the registry.
 
 import ask_support
+import cast_support
 import driven_time
 import genesis_prime/client_connection.{
   type Message, type PeerNews, CreatureAppeared, ForStay, PeerNews, SentByMap,
   SentByPeer,
 }
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Key, Strike}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell
 import genesis_prime/step.{ConnectionId}
@@ -21,6 +25,7 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import gleam/dict
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
 import gleam/list
@@ -435,4 +440,79 @@ pub fn watched_by_two(respawn_ms respawn_ms: Int) -> Watched {
     next(received: viewer, what: "the beast's 0x262", wanted: appearance)
   let pid = creature_pid(time:, world:, run:, unit_id: beast.unit_id, life: 2)
   Watched(world:, run:, time:, caster:, viewer:, beast:, appeared:, pid:)
+}
+
+/// Tells the creature of the unit and life in the run what a cast's effect asked of it, the
+/// way the caster's connection does through the registry; stops the test when the registry
+/// holds no creature at that address.
+pub fn told_creature(
+  world world: World,
+  run run: MapProcess,
+  unit_id unit_id: Int,
+  life life: Int,
+  request request: client_connection.Request,
+) -> Nil {
+  let assert Ok(Nil) =
+    server.tell_creature(
+      creatures: world.creatures,
+      to: step.Creature(
+        map: ship,
+        incarnation: run.incarnation,
+        unit_id:,
+        life:,
+      ),
+      request:,
+    )
+    as "the creature is found by its address and told"
+  Nil
+}
+
+/// The effects of a press of the planted spell whose go (at `went_at_ms`) strikes these
+/// creatures, each a unit id and its life, struck at `struck_at_ms`, and then asks for
+/// `kind` on each struck unit: the press's effects followed by the go's.
+pub fn effects_of_a_go_on_creatures(
+  kind kind: spell_plan.Kind,
+  units units: List(#(Int, Int)),
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+) -> List(cast_state.Effect) {
+  let assert [#(first, _), ..] = units
+  let #(state, pressed) =
+    cast_support.pressed_raw_in(
+      plans: cast_support.plans_starting_on_each_struck(
+        started: cast_support.with_effects(
+          spell: cast_support.child(spell4_id: 30_600, base: 21_614),
+          kinds: [kind],
+        ),
+      ),
+      state: cast_state.new(),
+      caster: cast_support.caster(),
+      bag_index: 11,
+      target: first,
+      at: struck_at_ms,
+    )
+  let struck =
+    list.map(units, fn(unit) {
+      cast_support.creature_hit(unit_id: unit.0, life: unit.1, struck_at_ms:)
+    })
+  let #(_, answered) =
+    cast_support.answered_each(
+      caster: cast_support.caster(),
+      state:,
+      effects: pressed,
+      at: went_at_ms,
+      struck_of: fn(_) { struck },
+      rolls: [],
+      poses: dict.new(),
+    )
+  list.append(pressed, answered)
+}
+
+/// The clock's time before and 250 ms after it is driven on: a go's strike and the go.
+pub fn times_of_a_go_after_250_ms(watched watched: Watched) -> #(Int, Int) {
+  let struck_at_ms = clock_ms(time: watched.time)
+  driven_time.advance(time: watched.time, ms: 250)
+  let went_at_ms = clock_ms(time: watched.time)
+  assert went_at_ms == struck_at_ms + 250
+  #(struck_at_ms, went_at_ms)
 }
