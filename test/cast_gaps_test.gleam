@@ -12,6 +12,9 @@ import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/connection/landing as connection_landing
+import genesis_prime/game/heal_split
+import genesis_prime/game/strike
 import genesis_prime/gap.{type Entry}
 import gleam/list
 import gleam/string
@@ -139,6 +142,30 @@ fn limits() -> List(Limit) {
       "Casting",
       ["stack", "different casters"],
       "the modifiers of different casters on one creature do not stack",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["LandsHeal", "ReceivesHeal"],
+      "a heal told to a player raises neither the healer's LandsHeal nor the healed player's ReceivesHeal",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["round", "closed"],
+      "a heal told to a player is applied also after the caster's round has closed",
+    ),
+    Limit(
+      strike.gaps(),
+      "Casting",
+      ["answer", "dropped"],
+      "a healed player's answer is dropped by the connection it is told to",
+    ),
+    Limit(
+      heal_split.gaps(),
+      "Casting",
+      ["HealToShieldConversion", "above 1", "guess"],
+      "a share above 1 caps the shield part at the heal, while the client shows the uncapped part",
     ),
   ]
 }

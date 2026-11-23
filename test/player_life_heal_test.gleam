@@ -1,5 +1,9 @@
-//// A heal of a player's own shield or health (`genesis_prime/game/player_life` `healed`),
-//// as the pure rule it is. Expected values come from these places.
+//// A heal of a player's shield or health (`genesis_prime/game/player_life` `healed`, `healed_by`
+//// and `heals_taken`), as the pure rule it is. Expected values come from these places.
+//// - `table_rows -- UnitProperty2 162 163`: "Healing Multiplier: Outgoing" and "Healing
+////   Multiplier: Incoming". The client reads neither (`UnitProperty2.damage_heal_multipliers`:
+////   where they enter a heal is the server's rule), so a heal another player tells is the
+////   healer's 162 times the healed player's own 163.
 //// - `Spell4Effects.effectType.10`: the client never changes the health on a heal
 ////   result either, so the server adds the amount to the health, capped at the most, and
 ////   sends it as 0x92f to the player and 0x937 to each viewer.
@@ -24,16 +28,22 @@
 import cast_support
 import genesis_prime/client_connection
 import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnHealth, OwnShield, ToClient, ToViewers,
 }
+import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties.{type Properties}
-import genesis_prime/table/id.{UnitProperty2Id}
+import genesis_prime/step.{ConnectionId}
+import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/world_map/stay
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import owned_test
 import player_life_support
 import properties_support
+import qcheck
 import spawn_support
 
 /// A level-1 player's properties at their defaults, in which both healing
@@ -438,8 +448,7 @@ pub fn a_heal_with_shield_conversion_splits_between_shield_and_health_test() -> 
     )
   assert player_life.shield(life:) == 344
     as "the shield rises by the heal's 100 at most, not by int(100 x 1.2) = 120"
-  assert player_life.health(life:) == 612
-    as "and the health part is 0, not a negative 20"
+  assert player_life.health(life:) == 612 as "and the health does not move"
   assert effects
     == [
       ToClient(OwnShield(shield: 344)),
@@ -470,4 +479,310 @@ pub fn a_heal_with_shield_conversion_at_full_shield_all_goes_to_health_test() ->
   assert player_life.health(life:) == 600 as "and the whole 100 is health"
   assert effects == health_told(health: 600)
     as "no stat 20: the shield did not move"
+}
+
+/// The heal rows of one strike of the caster's connection 3, healing with `outgoing`.
+fn told(
+  outgoing outgoing: Float,
+  rows rows: List(#(effect_kind.Vital, Int)),
+) -> strike_tell.PlayerStrike {
+  strike_tell.PlayerStrike(
+    key: strike_tell.Key(
+      cast_id: 32_820,
+      occasion: strike_tell.AtGo(phase: 0),
+      unit_id: 9,
+    ),
+    from: ConnectionId(3),
+    stay: stay.none_yet(),
+    outgoing:,
+    heals: list.index_map(rows, fn(row, index) {
+      strike_tell.HealTell(
+        effect_id: Spell4EffectsId(62_019 + index),
+        vital: row.0,
+        amount: row.1,
+      )
+    }),
+  )
+}
+
+/// A player at 586 of 736 health (150 below) with a full shield of 450.
+fn missing_150() -> Life {
+  let #(life, _) =
+    player_life.entering(
+      saved: Some(586),
+      max_health: 736,
+      shield: 450,
+      regeneration: player_life_support.regeneration,
+      place: player_life_support.place(),
+    )
+  life
+}
+
+/// A player at 735 of 736 health and 448 of 450 shield: one health and two shield short.
+fn nearly_full() -> Life {
+  let #(life, _) =
+    player_life.healed(
+      life: struck_from(health: 600),
+      vital: effect_kind.Health,
+      amount: 165,
+      properties: unmodified(),
+    )
+  let #(life, _) =
+    player_life.healed(
+      life:,
+      vital: effect_kind.Shield,
+      amount: 48,
+      properties: unmodified(),
+    )
+  assert player_life.health(life:) == 735 && player_life.shield(life:) == 448
+  life
+}
+
+fn shield_told(shield shield: Int) -> List(Effect) {
+  [
+    ToClient(OwnShield(shield:)),
+    ToViewers(client_connection.Shield(shield:)),
+  ]
+}
+
+type Told {
+  Told(
+    reason: String,
+    healer_outgoing: Float,
+    target: Properties,
+    life: Life,
+    vital: effect_kind.Vital,
+    amount: Int,
+    split: heal_split.Split,
+  )
+}
+
+/// A heal a healer told, as the player it heals works it out: the healer's 162 comes with
+/// the tell, and the player's own 163 and 111 apply (the rows' names; where they enter a
+/// heal is the server's rule). The splits are worked by hand from `Split`'s definition:
+/// the amount is the formula's times 162 times 163, the shield takes int(amount x 111) up
+/// to its room, the health the rest up to its room, and the overheal what neither took.
+pub fn a_heal_told_by_another_player_reads_the_healers_outgoing_and_the_targets_own_incoming_and_conversion_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      Told(
+        "the healer's 162 of 1.5 comes from the tell and the target's own 163 of 0.5 applies: 40 x 1.5 x 0.5 is 30 of the 50 the shield has room for",
+        1.5,
+        scaled(properties: unmodified(), property: 163, factor: 0.5),
+        struck_to_400(),
+        effect_kind.Shield,
+        40,
+        Split(amount: 30, shield: 30, health: 0, overheal: 0),
+      ),
+      Told(
+        "the target's own 162 of 0 is not read: the heal is the 40 the healer's 1.0 gives, not 0",
+        1.0,
+        scaled(properties: unmodified(), property: 162, factor: 0.0),
+        struck_to_400(),
+        effect_kind.Shield,
+        40,
+        Split(amount: 40, shield: 40, health: 0, overheal: 0),
+      ),
+      Told(
+        "the target's own 111 of 0.5 applies to a told health heal: 50 of the 100 to the shield (room 50) and the other 50 to the health",
+        1.0,
+        converting(share: 0.5),
+        struck_from(health: 600),
+        effect_kind.Health,
+        100,
+        Split(amount: 100, shield: 50, health: 50, overheal: 0),
+      ),
+    ],
+    fn(case_) {
+      let #(healed, split, _) =
+        player_life.healed_by(
+          life: case_.life,
+          vital: case_.vital,
+          amount: case_.amount,
+          outgoing: case_.healer_outgoing,
+          properties: case_.target,
+        )
+      assert split == case_.split as case_.reason
+      assert player_life.shield(life: healed)
+        - player_life.shield(life: case_.life)
+        == split.shield
+        as { case_.reason <> ": the shield rises by the split's part" }
+      assert player_life.health(life: healed)
+        - player_life.health(life: case_.life)
+        == split.health
+        as { case_.reason <> ": the health rises by the split's part" }
+    },
+  )
+}
+
+type Taken {
+  Taken(
+    reason: String,
+    life: Life,
+    rows: List(#(effect_kind.Vital, Int)),
+    splits: List(heal_split.Split),
+    health: Int,
+    shield: Int,
+    news: List(Effect),
+  )
+}
+
+/// Each row of a strike another player tells is applied in the order told, on the life the
+/// one before left; the answer lists the splits in that order and the news is each row's
+/// (`Split`'s definition gives the splits, worked by hand). A dead player takes none
+/// (`Spell4ValidTargets.targetBitmask`: no strike reaches a dead unit).
+pub fn heal_rows_told_by_another_player_are_applied_in_order_each_on_the_life_the_one_before_left_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let landed = fn(life, rows) {
+    player_life.heals_taken(
+      life:,
+      properties: unmodified(),
+      strike: told(outgoing: 1.0, rows:),
+    )
+  }
+  list.each(
+    [
+      Taken(
+        "two health rows of 100 on 150 of room: the second finds 50 of room",
+        missing_150(),
+        [#(effect_kind.Health, 100), #(effect_kind.Health, 100)],
+        [
+          Split(amount: 100, shield: 0, health: 100, overheal: 0),
+          Split(amount: 100, shield: 0, health: 50, overheal: 50),
+        ],
+        736,
+        450,
+        list.append(health_told(health: 686), health_told(health: 736)),
+      ),
+      Taken(
+        "rows of 200 then 100 on 150 of room: the first takes the room",
+        missing_150(),
+        [#(effect_kind.Health, 200), #(effect_kind.Health, 100)],
+        [
+          Split(amount: 200, shield: 0, health: 150, overheal: 50),
+          Split(amount: 100, shield: 0, health: 0, overheal: 100),
+        ],
+        736,
+        450,
+        health_told(health: 736),
+      ),
+      Taken(
+        "rows of 100 then 200 on 150 of room: the order told is the order applied",
+        missing_150(),
+        [#(effect_kind.Health, 100), #(effect_kind.Health, 200)],
+        [
+          Split(amount: 100, shield: 0, health: 100, overheal: 0),
+          Split(amount: 200, shield: 0, health: 50, overheal: 150),
+        ],
+        736,
+        450,
+        list.append(health_told(health: 686), health_told(health: 736)),
+      ),
+      Taken(
+        "a shield row then a health row on a life 2 shield and 1 health short: the shield's news first",
+        nearly_full(),
+        [#(effect_kind.Shield, 10), #(effect_kind.Health, 40)],
+        [
+          Split(amount: 10, shield: 2, health: 0, overheal: 8),
+          Split(amount: 40, shield: 0, health: 1, overheal: 39),
+        ],
+        736,
+        450,
+        list.append(shield_told(shield: 450), health_told(health: 736)),
+      ),
+      Taken(
+        "no rows: an empty answer, the life unchanged and no news",
+        missing_150(),
+        [],
+        [],
+        586,
+        450,
+        [],
+      ),
+    ],
+    fn(case_) {
+      let #(life, outcome, news) = landed(case_.life, case_.rows)
+      let heals =
+        list.index_map(list.zip(case_.rows, case_.splits), fn(pair, index) {
+          let #(row, split) = pair
+          strike_tell.HealLanded(
+            effect_id: Spell4EffectsId(62_019 + index),
+            vital: row.0,
+            split:,
+          )
+        })
+      assert outcome == strike_tell.HealsLanded(heals:) as case_.reason
+      assert player_life.health(life:) == case_.health as case_.reason
+      assert player_life.shield(life:) == case_.shield as case_.reason
+      assert news == case_.news as case_.reason
+    },
+  )
+  let dead = player_life_support.dead()
+  let #(life, outcome, news) =
+    landed(dead, [#(effect_kind.Health, 100), #(effect_kind.Shield, 50)])
+  assert outcome == strike_tell.PlayerDead
+    as "a dead player answers PlayerDead for rows that would apply"
+  assert life == dead && news == []
+    as "no row is applied to a dead player, so no partial heal and no news"
+}
+
+/// A heal never raises a vital past its maximum, and each split accounts for its whole
+/// amount: `Split`'s definition (shield + health + overheal is the amount; a shield row
+/// raises only the shield), so the life's rise is the splits' parts summed.
+pub fn a_heal_row_list_never_raises_a_vital_past_its_maximum_and_each_split_accounts_for_its_whole_amount_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let row =
+    qcheck.tuple2(
+      qcheck.map(qcheck.bool(), fn(health) {
+        case health {
+          True -> effect_kind.Health
+          False -> effect_kind.Shield
+        }
+      }),
+      qcheck.bounded_int(from: 0, to: 2000),
+    )
+  qcheck.given(
+    qcheck.tuple5(
+      qcheck.list_from(row),
+      qcheck.bounded_float(from: 0.0, to: 2.0),
+      qcheck.bounded_float(from: 0.0, to: 2.0),
+      qcheck.bounded_float(from: 0.0, to: 2.0),
+      qcheck.bounded_int(from: 100, to: 800),
+    ),
+    fn(drawn) {
+      let #(rows, outgoing, incoming, share, saved) = drawn
+      let properties =
+        scaled(properties: converting(share:), property: 163, factor: incoming)
+      let before = struck_from(health: saved)
+      let #(after, outcome, _) =
+        player_life.heals_taken(
+          life: before,
+          properties:,
+          strike: told(outgoing:, rows:),
+        )
+      assert player_life.health(life: after)
+        <= player_life.max_health(life: after)
+        as "the health stays at or under its maximum"
+      assert player_life.shield(life: after)
+        <= player_life.max_shield(life: after)
+        as "the shield stays at or under its maximum"
+      let assert strike_tell.HealsLanded(heals:) = outcome
+      assert list.length(heals) == list.length(rows)
+        as "one landed split for each row told"
+      list.each(heals, fn(heal) {
+        let split = heal.split
+        assert split.shield + split.health + split.overheal == split.amount
+          as "shield + health + overheal is the whole amount"
+        assert heal.vital != effect_kind.Shield || split.health == 0
+          as "a shield row raises only the shield"
+      })
+      assert player_life.shield(life: after) - player_life.shield(life: before)
+        == list.fold(heals, 0, fn(sum, heal) { sum + heal.split.shield })
+        as "the shield's rise is the splits' shield parts"
+      assert player_life.health(life: after) - player_life.health(life: before)
+        == list.fold(heals, 0, fn(sum, heal) { sum + heal.split.health })
+        as "the health's rise is the splits' health parts"
+    },
+  )
 }
