@@ -27,10 +27,9 @@ import genesis_prime/game/cast/state.{type GoAsked} as cast_state
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell, Proxy, Spell}
+import genesis_prime/game/spell_plan.{type Spell, Proxy}
 import genesis_prime/game/spend
-import genesis_prime/message/spell_started
-import genesis_prime/step.{LogDebug, LogWarning}
+import genesis_prime/step.{LogWarning}
 import genesis_prime/table/id.{Spell4Id}
 import gleam/int
 import gleam/list
@@ -49,13 +48,7 @@ const crush = 1
 const first_cast = 2_147_497_984
 
 fn mind_burst_spell() -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_tables.fixture_plans(),
-      base: id.Spell4BaseId(19_019),
-    )
-    as "the planted Esper holds Mind Burst with its spend"
-  spell
+  spell_tables.planted_ability(base: 19_019)
 }
 
 /// The Esper's resource (Class 3: slot 1, a maximum of 5) holding `points`.
@@ -113,25 +106,7 @@ fn asked_goes(effects effects: List(cast_state.Effect)) -> List(GoAsked) {
 
 /// The Spell4 id of each cast the writes start, in order.
 fn started(effects effects: List(cast_state.Effect)) -> List(Int) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(start) = spell_started.decode(frame.body)
-          as "0x7ff decodes"
-        Ok(start.spell4_id)
-      }
-      False -> Error(Nil)
-    }
-  })
-}
-
-fn debug_lines(effects effects: List(cast_state.Effect)) -> List(String) {
-  list.filter_map(support.logs(effects:), fn(line) {
-    case line.0 == LogDebug {
-      True -> Ok(line.1)
-      False -> Error(Nil)
-    }
-  })
+  list.map(support.started_in(effects:), fn(start) { start.spell4_id })
 }
 
 // ---- 5: the accept takes every point and the go carries n ----
@@ -309,7 +284,7 @@ pub fn a_5_point_mind_burst_without_the_reckful_amp_starts_no_crit_buff_test() -
     as "Prerequisite 23344 fails: the caster holds no cast of 57027 (the issue's evidence: EldanAugmentation 340)"
   let crit_gate_lines = fn(points) {
     list.count(
-      debug_lines(
+      support.debug_lines(
         effects: pressed_and_gone(spell: mind_burst_spell(), points:, rolls: []),
       ),
       fn(line) { string.contains(line, "prerequisite 23344") },
@@ -404,13 +379,7 @@ pub fn mind_burst_with_no_psi_point_is_refused_51_and_pays_nothing_test() -> Nil
 /// Mind Burst with no global cooldown, so a second press of it in the same step
 /// meets only its cost.
 fn quick_mind_burst() -> Spell {
-  Spell(
-    ..mind_burst_spell(),
-    global_cooldown: spell_plan.GlobalCooldown(
-      refused_while_running: False,
-      starts_for_ms: None,
-    ),
-  )
+  support.without_global_cooldown(spell: mind_burst_spell())
 }
 
 pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test() -> Nil {

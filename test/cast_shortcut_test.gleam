@@ -35,15 +35,12 @@ import genesis_prime/game/start_place
 import genesis_prime/game/target_mechanic
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
-import genesis_prime/message/client_side_interaction_result.{
-  ClientSideInteractionResult,
-}
+
 import genesis_prime/message/crowd_control_state.{type CrowdControlState, Stun}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_go
-import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/table/loader/store as table_store
@@ -140,17 +137,7 @@ fn unit(id unit_id: Int, of creature_id: Int, at gap: Float) -> Unit {
 }
 
 fn place_of(unit unit: Unit) -> start_place.Place {
-  let live = place_support.live_character_place()
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: 6009,
-    x: start_place.x(live)
-      +. place_support.player_hit_radius
-      +. creature_radius
-      +. unit.gap,
-    y: start_place.y(live),
-    z: start_place.z(live),
-  )
+  support.place_beside_the_player(gap: unit.gap)
 }
 
 fn picture_of(scene scene: Scene) -> shown.Picture {
@@ -525,44 +512,20 @@ fn interaction_answered(
   cast_id cast_id: Int,
   result result: interaction_result.InteractionResult,
 ) -> Result(#(cast_state.State, List(Effect)), cast_state.Refusal) {
-  let assert Ok(body) =
-    client_side_interaction_result.encode(ClientSideInteractionResult(
-      cast_id:,
-      result:,
-      spell4_base_id_plus_one: the_interaction_word,
-    ))
-    as "the answer fits the message"
-  cast.take(
-    target_of: support.nothing_shown,
-    cast: state,
-    message: cast_state.Answered,
-    body:,
+  support.interaction_answered(
+    state:,
+    cast_id:,
+    result:,
+    word: the_interaction_word,
     caster: support.caster(),
-    plans: support.plans(),
-    now: support.at(ms: 1200),
+    at: 1200,
   )
 }
 
 /// The primary target unit of each 0x7fd the effects write.
 fn confirmed_targets(effects effects: List(Effect)) -> List(Int) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == 0x07FD {
-      True -> {
-        let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
-          as "a 0x7fd the rule wrote decodes"
-        Ok(confirmed.primary_target_unit_id)
-      }
-      False -> Error(Nil)
-    }
-  })
-}
-
-fn warnings(effects effects: List(Effect)) -> List(String) {
-  list.filter_map(support.logs(effects:), fn(line) {
-    case line {
-      #(LogWarning, text) -> Ok(text)
-      _ -> Error(Nil)
-    }
+  list.map(support.confirmed_in(effects:), fn(confirmed) {
+    confirmed.primary_target_unit_id
   })
 }
 
@@ -823,7 +786,7 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
   assert support.refusal_results(effects:)
     == [code(cast_result.IllegalSpellCast)]
     as "Spell4 30485 (valid targets bitmask 2) lets a player be its target, and a player reaches the client's player faction test (0x1403b4560), which is not built: refused 285"
-  let assert [line] = warnings(effects:)
+  let assert [line] = support.warning_lines(effects:)
   assert string.contains(
       line,
       "30485 names another player, who reaches the client's player faction test",
@@ -844,7 +807,7 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
   assert support.refusal_results(effects: own)
     == [code(cast_result.IllegalSpellCast)]
     as "Spell4TargetMechanics 4's flags (11) have value 2: the caster may be its own target, and then the player faction test judges it: refused 285"
-  let assert [own_line] = warnings(effects: own)
+  let assert [own_line] = support.warning_lines(effects: own)
   assert string.ends_with(
       own_line,
       "names the caster itself, which the client's player faction test judges: it is refused with 285",
@@ -967,7 +930,7 @@ pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {
   assert support.refusal_results(effects: at_another)
     == [code(cast_result.PrereqTargetCast)]
     as "a press at a creature of Creature2 41884 (flags 16388, bit 0 clear, so it passes the cast group of Spell4Base 53267, which has none) meets neither condition (52428, 30233): refused 281"
-  assert warnings(effects: at_another) == []
+  assert support.warning_lines(effects: at_another) == []
     as "the condition is read, so no warning about an unread condition is written"
 }
 
@@ -986,7 +949,7 @@ pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -
   assert support.refusal_results(effects: first)
     == [code(cast_result.PrereqTargetCast)]
     as "Spell4 43164's TargetCast is Prerequisite 17071, whose first condition is type 71, which the server does not read: refused as the cast cannot be judged"
-  let assert [line] = warnings(effects: first)
+  let assert [line] = support.warning_lines(effects: first)
   assert string.contains(line, "43164") && string.contains(line, "71")
     as "the log names the spell and the type"
   assert string.ends_with(
@@ -999,7 +962,7 @@ pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -
     press_at(scene:, state:, spell4_id: 43_164, target: 911, at: 2000)
   assert support.refusal_results(effects: second)
     == [code(cast_result.PrereqTargetCast)]
-    && warnings(effects: second) == []
+    && support.warning_lines(effects: second) == []
     as "a second press is refused the same and not logged again"
 }
 
@@ -1018,7 +981,7 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
   assert support.refusal_results(effects:)
     == [code(cast_result.PrereqCasterCast)]
     as "Spell4 32581's CasterCast is Prerequisite 28094, a type 16 the server does not read"
-  let assert [line] = warnings(effects:)
+  let assert [line] = support.warning_lines(effects:)
   assert string.contains(line, "16") as "the log names the type"
   assert string.ends_with(
       line,
@@ -1051,7 +1014,7 @@ pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test()
   assert support.refusal_results(effects:)
     == [code(cast_result.IllegalSpellCast)]
     as "a bit-8 aim is not read, so the plan refuses the spell and its press is refused 285"
-  let assert [line] = warnings(effects:)
+  let assert [line] = support.warning_lines(effects:)
   assert string.contains(line, "35436")
     && string.ends_with(line, ": it is refused with 285")
     as "the log names the spell and what is missing, the plan's refusal"
@@ -1076,7 +1039,7 @@ pub fn a_press_that_drops_crowd_control_effects_logs_once_drops_them_and_goes_on
   assert support.refusal_results(effects: pressed) == []
     && confirmed_targets(effects: pressed) == [913]
     as "the press is taken and the caster is told at once, as for any planned spell"
-  let assert [line] = warnings(effects: pressed)
+  let assert [line] = support.warning_lines(effects: pressed)
   assert string.contains(line, "35436")
     && string.contains(line, "212028")
     && string.ends_with(
@@ -1087,7 +1050,7 @@ pub fn a_press_that_drops_crowd_control_effects_logs_once_drops_them_and_goes_on
     as "the log names the spell, the dropped row and what is missing, and names no issue"
   let #(_, again) =
     press_at(scene:, state:, spell4_id: 35_436, target: 913, at: 20_000)
-  assert warnings(effects: again) == []
+  assert support.warning_lines(effects: again) == []
     as "a second press does not log the gap again"
   let assert Ok(shortcut_spell.Aimed(spell:, ..)) =
     shortcut_spell.planned_of(shortcuts: shortcuts(), spell4_id: 35_436)

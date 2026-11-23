@@ -32,10 +32,8 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{Change}
-import genesis_prime/message/spell_go
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import gleam/dict
-import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -79,24 +77,6 @@ fn press(spell spell: Spell) -> #(State, List(cast_state.Effect)) {
   )
 }
 
-/// The effects the go's target info of the unit lists, with each one's delay, and the
-/// unit.
-fn listed(
-  effects effects: List(cast_state.Effect),
-) -> List(#(Int, List(#(Int, Int)))) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  list.map(decoded.targets, fn(info) {
-    #(
-      info.unit_id,
-      list.map(info.effects, fn(effect) {
-        #(effect.spell4_effects_id, effect.delay_ms)
-      })
-        |> list.sort(fn(first, second) { int.compare(first.0, second.0) }),
-    )
-  })
-}
-
 /// Whether the effect starts or ends a change of one of the caster's properties.
 fn changes_a_property(effect effect: cast_state.Effect) -> Bool {
   case effect {
@@ -134,7 +114,8 @@ pub fn gates_go_lists_the_blink_in_the_casters_target_info_beside_the_modifier_t
         support.falling_row(),
       ]),
     )
-  assert listed(effects:) == [#(7, [#(67_776, 200), #(67_777, 180)])]
+  assert support.listed_with_delays(effects:)
+    == [#(7, [#(67_776, 200), #(67_777, 180)])]
     as "unit 7 is the caster the rows aim at; 67776 is listed with its delay of 200 beside 67777's 180"
 }
 
@@ -142,7 +123,7 @@ pub fn a_forced_move_alone_is_listed_on_the_caster_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
     press(spell: holder(forced_moves: [blink_row()], modifiers: []))
-  assert listed(effects:) == [#(7, [#(67_776, 200)])]
+  assert support.listed_with_delays(effects:) == [#(7, [#(67_776, 200)])]
 }
 
 pub fn a_forced_move_of_a_phase_the_go_is_not_in_is_not_listed_test() -> Nil {
@@ -150,7 +131,8 @@ pub fn a_forced_move_of_a_phase_the_go_is_not_in_is_not_listed_test() -> Nil {
   // The row is moved to phaseFlags 2 (phase 1 only), which a go of phase 0 does not hold.
   let later = spell_plan.ForcedMove(..blink_row(), phase_flags: 2)
   let #(_, effects) = press(spell: holder(forced_moves: [later], modifiers: []))
-  assert listed(effects:) == [] as "no row applies in phase 0"
+  assert support.listed_with_delays(effects:) == []
+    as "no row applies in phase 0"
 }
 
 pub fn a_forced_move_behind_a_target_prerequisite_is_not_listed_test() -> Nil {
@@ -168,7 +150,7 @@ pub fn a_forced_move_behind_a_target_prerequisite_is_not_listed_test() -> Nil {
       ),
     )
   let #(_, effects) = press(spell: holder(forced_moves: [gated], modifiers: []))
-  assert listed(effects:) == []
+  assert support.listed_with_delays(effects:) == []
     as "a row behind a target prerequisite is not applied, as a Fluff effect's is not"
 }
 
@@ -252,7 +234,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         struck: [],
         rolls: [roll],
       )
-    listed(effects:)
+    support.listed_with_delays(effects:)
   }
   assert went(50) == [#(7, [#(67_776, 200)])]
     as "a roll of 50 passes comparison 6 on 50"
@@ -291,14 +273,7 @@ fn throwing_row(delay_ms delay_ms: Int) -> spell_plan.StruckMove {
 
 /// A creature the round hit in `life` at the monotonic time 1000.
 fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
-  cast_state.Hit(
-    unit_id:,
-    unit: cast_state.HitCreature(life:, struck_at_ms: 1000),
-    descriptions: [],
-    controls: [],
-    armor_removed: 0,
-    ticking: [],
-  )
+  support.creature_hit(unit_id:, life:, struck_at_ms: 1000)
 }
 
 /// The effects of the press and of the go that the round `struck` answers.
@@ -306,18 +281,13 @@ fn thrown_by(
   spell spell: Spell,
   struck struck: List(cast_state.Struck),
 ) -> #(State, List(cast_state.Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: support.plans_with(spell:),
-      state: cast_state.new(),
-      caster: support.caster(),
-      bag_index: bag_of_base_3,
-      target: 0,
-      at: 1000,
-    )
-  let #(state, answered) =
-    support.answered_by(state:, effects:, at: 1000, struck:)
-  #(state, list.append(effects, answered))
+  support.pressed_and_answered(
+    spell:,
+    bag_index: bag_of_base_3,
+    target: 0,
+    struck:,
+    at: 1000,
+  )
 }
 
 fn thrower(rows rows: List(spell_plan.StruckMove)) -> Spell {
@@ -440,7 +410,7 @@ pub fn a_go_lists_each_throw_on_the_creature_it_throws_with_its_delay_test() -> 
       cast_state.Deflected(unit_id: 21),
       hit(unit_id: 23, life: 5),
     ])
-  assert listed(effects:) == [#(23, [#(73_826, 200)])]
+  assert support.listed_with_delays(effects:) == [#(23, [#(73_826, 200)])]
     as "Spell4Effects.effectType.3.other_unit: the go lists the ForcedMove row with its delay of 200 ms on the creature it throws, 23, and on none that deflected the strike"
 }
 
@@ -628,6 +598,7 @@ pub fn forced_move_past_the_caster_behind_a_target_gate_moves_only_passing_units
     )
   assert support.throws(effects: answered) == [thrown(23, 5)]
     as "the creature 23 passes the gate and is thrown in the life the go struck; creature 21 fails it and stays"
-  assert listed(effects: answered) == [#(21, []), #(23, [#(73_826, 0)])]
+  assert support.listed_with_delays(effects: answered)
+    == [#(21, []), #(23, [#(73_826, 0)])]
     as "the go names both struck units and lists the row on the creature it throws only"
 }

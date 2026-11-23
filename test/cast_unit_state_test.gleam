@@ -43,7 +43,6 @@ import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState, Stun}
-import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
@@ -90,14 +89,7 @@ fn holder(rows rows: List(spell_plan.UnitState)) -> Spell {
 
 /// A creature the round hit in `life` at the monotonic time 900, before the go at 1000.
 fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
-  cast_state.Hit(
-    unit_id:,
-    unit: cast_state.HitCreature(life:, struck_at_ms: 900),
-    descriptions: [],
-    controls: [],
-    armor_removed: 0,
-    ticking: [],
-  )
+  support.creature_hit(unit_id:, life:, struck_at_ms: 900)
 }
 
 /// The press of the spell at 1000 aimed at `target`, and the go its round answers at 1000.
@@ -106,18 +98,13 @@ fn went(
   target target: Int,
   struck struck: List(cast_state.Struck),
 ) -> #(State, List(cast_state.Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: support.plans_with(spell:),
-      state: cast_state.new(),
-      caster: support.caster(),
-      bag_index: bag_of_base_3,
-      target:,
-      at: 1000,
-    )
-  let #(state, answered) =
-    support.answered_by(state:, effects:, at: 1000, struck:)
-  #(state, list.append(effects, answered))
+  support.pressed_and_answered(
+    spell:,
+    bag_index: bag_of_base_3,
+    target:,
+    struck:,
+    at: 1000,
+  )
 }
 
 fn holding(
@@ -418,17 +405,7 @@ type Shown {
 }
 
 fn place_of_the_unit() -> start_place.Place {
-  let live = place_support.live_character_place()
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: 6009,
-    x: start_place.x(live)
-      +. place_support.player_hit_radius
-      +. creature_radius
-      +. 10.0,
-    y: start_place.y(live),
-    z: start_place.z(live),
-  )
+  support.place_beside_the_player(gap: 10.0)
 }
 
 fn picture_of(shown shown: Shown) -> shown.Picture {
@@ -555,15 +532,8 @@ fn refused_with(effects effects: List(Effect)) -> List(Int) {
 }
 
 fn confirmed_targets(effects effects: List(Effect)) -> List(Int) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == 0x07FD {
-      True -> {
-        let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
-          as "a 0x7fd the rule wrote decodes"
-        Ok(confirmed.primary_target_unit_id)
-      }
-      False -> Error(Nil)
-    }
+  list.map(support.confirmed_in(effects:), fn(confirmed) {
+    confirmed.primary_target_unit_id
   })
 }
 

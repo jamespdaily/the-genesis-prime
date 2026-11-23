@@ -74,15 +74,7 @@ fn lines(steps steps: List(#(Int, List(cast_state.Effect)))) -> List(String) {
 
 /// The cast ids of the 0x7ff among the writes, in order.
 fn started_ids(effects effects: List(cast_state.Effect)) -> List(Int) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id {
-      0x07FF -> {
-        let assert Ok(started) = spell_started.decode(frame.body)
-        Ok(started.cast_id)
-      }
-      _ -> Error(Nil)
-    }
-  })
+  list.map(support.started_in(effects:), fn(start) { start.cast_id })
 }
 
 pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0x7fd_test() -> Nil {

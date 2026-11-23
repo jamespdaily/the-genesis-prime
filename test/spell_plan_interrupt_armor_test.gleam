@@ -53,36 +53,17 @@ fn armor_row(
   target_flags target_flags: Int,
   columns columns: List(#(String, Cell)),
 ) -> List(Cell) {
-  let defaults = [
-    #("ID", Integer(id)),
-    #("spellId", Integer(strike)),
-    #("effectType", Integer(52)),
-    #("targetFlags", Integer(target_flags)),
-    #("phaseFlags", Integer(-1)),
-    #("orderIndex", Integer(9)),
-  ]
-  planted_table.row(
-    spell4_effects.schema,
-    list.append(
-      list.filter(defaults, fn(default) {
-        !list.any(columns, fn(given) { given.0 == default.0 })
-      }),
-      columns,
-    ),
+  spell_tables.effect_row_over(
+    id:,
+    effect_type: 52,
+    target_flags:,
+    defaults: [],
+    columns:,
   )
 }
 
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.PropertyModifier) {
-  let assert Ok(spell) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
-}
-
-fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
-  let assert Error(error) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-    as "the build fails"
-  error
+  spell_tables.planned_payloads(row:, as_kind: spell_plan.as_modifier)
 }
 
 // ---- the rows of the plan ----
@@ -226,7 +207,7 @@ pub fn a_planted_area_proxys_child_holding_an_interrupt_armor_row_on_its_primary
   use <- owned_test.run(60_000)
   // The planted Telekinetic Strike (32893) holds Proxy 62204, aimed at the area (targetFlags
   // 4), which starts 30900 on each unit it strikes (`spell_tables`).
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: armor_row(id: 99_054, target_flags: 2, columns: [
         #("spellId", Integer(30_900)),
         #("dataBits00", Integer(1)),
@@ -239,7 +220,7 @@ pub fn a_planted_area_proxys_child_holding_an_interrupt_armor_row_on_its_primary
       effect_id: 99_054,
     )
     as "the child's primary target is a struck unit, so the load fails, naming the Proxy and the row"
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: armor_row(id: 99_055, target_flags: 3, columns: [
         #("spellId", Integer(30_900)),
         #("dataBits00", Integer(1)),
@@ -288,7 +269,7 @@ pub fn an_interrupt_armor_row_aimed_only_at_struck_units_is_left_out_test() -> N
 
 pub fn an_interrupt_armor_row_with_an_unknown_data_bits01_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: armor_row(id: 99_052, target_flags: 1, columns: [
         #("dataBits00", Integer(1)),
         #("dataBits01", Integer(2)),

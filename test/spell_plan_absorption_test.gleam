@@ -90,16 +90,7 @@ fn absorption_row(
 }
 
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.PropertyModifier) {
-  let assert Ok(spell) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
-}
-
-fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
-  let assert Error(error) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-    as "the build fails"
-  error
+  spell_tables.planned_payloads(row:, as_kind: spell_plan.as_modifier)
 }
 
 /// The plan's reading of one row, whose tables the plan reads nothing from for a type 29
@@ -235,7 +226,7 @@ pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_
     as "a row that names the caster and the primary target also names the struck unit, which no absorb is built on, so the load fails as it does for flags 2"
   // The planted Telekinetic Strike holds Proxy 62204 aimed at the area (targetFlags 4),
   // which starts 30900 on each unit it strikes (`spell_tables`).
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: absorption_row(id: 99_060, target_flags: 2, columns: [
         #("spellId", Integer(30_900)),
         #("durationTime", Integer(5000)),
@@ -270,7 +261,7 @@ pub fn an_absorption_row_aimed_only_at_other_units_is_left_out_and_one_with_the_
 pub fn a_periodic_absorption_row_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   // A planted copy of row 46247 (Spell4 27567): tickTime 1000, durationTime 6001.
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: absorption_row(id: 46_247, target_flags: 1, columns: [
         #("tickTime", Integer(1000)),
         #("durationTime", Integer(6001)),
@@ -288,7 +279,7 @@ pub fn a_periodic_absorption_row_fails_the_load_test() -> Nil {
 
 pub fn an_absorption_row_with_no_lifetime_fails_the_load_and_one_with_flags_bit_2_lasts_until_removed_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: absorption_row(id: 99_062, target_flags: 1, columns: [
         #("dataBits04", Integer(7)),
         ..amount_columns()
@@ -324,7 +315,7 @@ pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> N
   // Kind 9 is the caster's Weapon DPS, which `damage.unread_on_caster` refuses for an effect
   // on its caster; kind 18, the passed-in value, it reads (0x140565600).
   let with_kind = fn(kind) {
-    plan_error(
+    spell_tables.plan_error(
       row: absorption_row(id: 99_064, target_flags: 1, columns: [
         #("durationTime", Integer(5000)),
         #("parameterType01", Integer(kind)),
@@ -347,7 +338,7 @@ pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> N
       parameter_kind: 18,
     )
     as "kind 18 is read: the row goes on to the amount's own check"
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: absorption_row(id: 99_065, target_flags: 1, columns: [
         #("durationTime", Integer(5000)),
         #("dataBits01", Integer(2_139_095_040)),
@@ -363,7 +354,7 @@ pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> N
 pub fn an_absorption_row_whose_amount_is_0_for_every_caster_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   let refused = fn(id, columns) {
-    plan_error(
+    spell_tables.plan_error(
       row: absorption_row(id:, target_flags: 1, columns: [
         #("durationTime", Integer(5000)),
         ..columns

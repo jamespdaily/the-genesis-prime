@@ -62,16 +62,6 @@ fn in_combat() -> Prerequisite {
   prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
 }
 
-/// A row with a condition of a type the server does not read.
-fn unread() -> Prerequisite {
-  prerequisites.single(id: 41_834, condition: #(
-    prerequisites.unread_type(),
-    1,
-    10_518,
-    1,
-  ))
-}
-
 /// A spell of base 1 with these cast conditions.
 fn gated(
   caster_cast caster_cast: spell_plan.CasterCast,
@@ -340,12 +330,6 @@ pub fn a_refused_press_changes_nothing_else_test() -> Nil {
 
 // ---- 7: a held press is checked at its start ----
 
-fn due_timer(effects effects: List(Effect)) -> #(TimerId, Int) {
-  let assert [started, ..] = support.started_timers(effects:)
-    as "the step started a timer"
-  started
-}
-
 /// A timer fired by this caster at the time, its go answered with no unit struck.
 fn fired_by(
   state state: State,
@@ -390,7 +374,7 @@ pub fn a_press_within_500_ms_of_its_cooldowns_end_is_held_with_nothing_written_a
     )
   assert support.writes(effects:) == []
     as "0x1403ace00: a press CheckCast marks 317 returns before the prerequisites, so the client sends it unchecked and the server writes nothing when it holds it"
-  let #(timer, after_ms) = due_timer(effects:)
+  let #(timer, after_ms) = support.first_timer(effects:)
   assert after_ms == 300 as "the cooldown's end"
   let #(_, at_the_end) =
     fired_by(state: held, caster: out_of_combat, timer:, at: 6000)
@@ -431,7 +415,7 @@ pub fn a_held_press_whose_condition_passes_at_its_start_casts_test() -> Nil {
       bag: gated_bag,
       at: 5700,
     )
-  let #(timer, _) = due_timer(effects:)
+  let #(timer, _) = support.first_timer(effects:)
   let #(_, at_the_end) =
     fired_by(state: held, caster: in_combat_caster, timer:, at: 6000)
   assert refusals(effects: at_the_end) == []
@@ -468,7 +452,7 @@ pub fn a_press_held_behind_the_current_cast_is_checked_again_when_that_cast_clea
       target: 0,
       at: 1000,
     )
-  let #(go_timer, _) = due_timer(effects: started)
+  let #(go_timer, _) = support.first_timer(effects: started)
   // 400 ms before the go: inside the window, so the press waits for the clear.
   let #(held, held_effects) =
     support.press_by(
@@ -528,7 +512,7 @@ pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_a
     )
     as "the first press of the held key passes in combat"
   // The cast over, the held key waits for the spell's cooldown on a timer of its own.
-  let #(repeat_timer, after_ms) = due_timer(effects: first)
+  let #(repeat_timer, after_ms) = support.first_timer(effects: first)
   assert after_ms == 2000
     as "the spell's cooldown of 2000 ms from the go at 1000"
   let #(state, repeated) =
@@ -711,7 +695,7 @@ pub fn a_waiver_of_a_type_the_server_does_not_read_refuses_with_the_requirements
   let rampage =
     Spell(
       ..support.ability(base: 37_968),
-      caster_cast: RequirementWaiver(prerequisite: unread()),
+      caster_cast: RequirementWaiver(prerequisite: prerequisites.unread_row()),
     )
   let plans = support.plans_with(spell: rampage)
   let caster = kinetic_energy(value: 249.0)
@@ -765,7 +749,7 @@ pub fn a_cast_condition_of_an_unread_type_refuses_151_with_one_warning_test() ->
   use <- owned_test.run(5000)
   unread_refusal(
     spell: gated(
-      caster_cast: CastGate(prerequisite: unread()),
+      caster_cast: CastGate(prerequisite: prerequisites.unread_row()),
       target_cast: None,
     ),
     expecting: 151,
@@ -775,7 +759,10 @@ pub fn a_cast_condition_of_an_unread_type_refuses_151_with_one_warning_test() ->
 pub fn a_target_cast_of_an_unread_type_refuses_281_with_one_warning_test() -> Nil {
   use <- owned_test.run(5000)
   unread_refusal(
-    spell: gated(caster_cast: NoCasterCast, target_cast: Some(unread())),
+    spell: gated(
+      caster_cast: NoCasterCast,
+      target_cast: Some(prerequisites.unread_row()),
+    ),
     expecting: 281,
   )
 }

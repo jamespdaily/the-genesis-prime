@@ -36,7 +36,6 @@ fn following(
       reader: follow.file_reader(),
       interval_ms: 86_400_000,
       arm: timers.arm(process.new_subject()),
-      watcher: None,
     ))
   let subscriber = process.new_subject()
   follow.subscribe(follower: started.data, subscriber:)

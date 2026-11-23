@@ -20,7 +20,6 @@ import genesis_prime/game/class_resource.{Gain, Payment}
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
-import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/float
@@ -55,16 +54,7 @@ fn pressed_through(
 
 /// The children of the spell started among the effects (0x7ff).
 fn children_started(effects: List(cast_state.Effect), spell4_id: Int) -> Int {
-  list.count(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(started) = spell_started.decode(frame.body)
-          as "0x7ff decodes"
-        started.spell4_id == spell4_id
-      }
-      False -> False
-    }
-  })
+  support.started_count(effects:, spell4_id:)
 }
 
 // ---- 19 ----

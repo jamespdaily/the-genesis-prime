@@ -8,7 +8,6 @@
 //// with the rows the test gives it. The schedules are planted for the test; how a row's
 //// times give its schedule is genesis_prime/game/ticking's.
 
-import attacker_support
 import cast_support as support
 import genesis_prime/client_connection.{type News, CastTicked}
 import genesis_prime/connection/frame.{type Frame}
@@ -97,12 +96,11 @@ fn hit_ticking(
   unit_id unit_id: Int,
   ticking ticking: List(spell_area.TickingDamage),
 ) -> cast_state.Struck {
-  cast_state.Hit(
+  support.hit_with(
     unit_id:,
     unit: cast_state.HitCreature(life: 3, struck_at_ms: press_ms),
     descriptions: [],
     controls: [],
-    armor_removed: 0,
     ticking:,
   )
 }
@@ -268,7 +266,7 @@ fn tick_hit(
   asked asked: cast_state.TickAsked,
   killed killed: Int,
 ) -> cast_state.Struck {
-  cast_state.Hit(
+  support.hit_with(
     unit_id: asked.unit_id,
     unit: cast_state.HitCreature(life: asked.life, struck_at_ms: 0),
     descriptions: [
@@ -279,24 +277,16 @@ fn tick_hit(
       ),
     ],
     controls: [],
-    armor_removed: 0,
     ticking: [],
   )
 }
 
 fn tick_damage(killed killed: Int) -> SpellDamageDescription {
-  SpellDamageDescription(
-    raw_damage: 8,
-    scaled_raw_damage: 8,
-    absorbed: 0,
-    shield_absorbed: 0,
-    health_damage_with_overkill: 8,
-    overkill: 0,
-    glance: 0,
+  support.landed_damage(
+    amount: 8,
     killed:,
     combat_result: combat_result.Hit,
     damage_type: damage_type.Tech,
-    hits: [],
   )
 }
 
@@ -400,15 +390,26 @@ fn no_tick_after_finish(run run: Run) -> Nil {
 
 /// A run of the surge on creature 10 to its end, every tick landing.
 fn surge_run(answer answer: fn(Int, cast_state.TickAsked) -> Answer) -> Run {
-  let struck = [hit_ticking(unit_id: 10, ticking: surge_ticking())]
+  surge_ran(spell: surge(), ticking: surge_ticking(), answer:, until_ms: 20_000)
+}
+
+/// The press of the spell, whose go strikes unit 10 with this ticking damage, and the run of
+/// its timers up to `until_ms`, each tick answered by `answer`.
+fn surge_ran(
+  spell spell: Spell,
+  ticking ticking: List(spell_area.TickingDamage),
+  answer answer: fn(Int, cast_state.TickAsked) -> Answer,
+  until_ms until_ms: Int,
+) -> Run {
+  let struck = [hit_ticking(unit_id: 10, ticking:)]
   pressed(
-    plans: support.plans_of([surge()]),
+    plans: support.plans_of([spell]),
     caster: support.caster(),
     struck:,
     answer:,
   )
   |> fn(run) {
-    ran(caster: support.caster(), run:, until_ms: 20_000, struck:, answer:)
+    ran(caster: support.caster(), run:, until_ms:, struck:, answer:)
   }
 }
 
@@ -565,16 +566,12 @@ fn atomic_surge_run(
   answer answer: fn(Int, cast_state.TickAsked) -> Answer,
   until_ms until_ms: Int,
 ) -> Run {
-  let struck = [hit_ticking(unit_id: 10, ticking: atomic_surge_ticking())]
-  pressed(
-    plans: support.plans_of([longer_time_spell()]),
-    caster: support.caster(),
-    struck:,
+  surge_ran(
+    spell: longer_time_spell(),
+    ticking: atomic_surge_ticking(),
     answer:,
+    until_ms:,
   )
-  |> fn(run) {
-    ran(caster: support.caster(), run:, until_ms:, struck:, answer:)
-  }
 }
 
 /// The step that writes the cast's 0x7fe, which there is one of.
@@ -1965,21 +1962,7 @@ fn shield_heal(schedule schedule: ticking.Schedule) -> spell_plan.Heal {
 /// its 450 shield: Mind Over Body's formula reads it as round(0.3281 x 100) + 17.51 x 5 =
 /// 33 + 87.55 = 120.55, which is 121 (the stat part is rounded alone, `0x140565600`).
 fn healing_caster() -> Caster {
-  cast_state.Caster(
-    ..support.caster(),
-    stats: damage.Attacker(
-      ..attacker_support.fresh(),
-      level: 5,
-      assault_rating: 0.0,
-      support_rating: 400.0,
-    ),
-    vitals: damage.Vitals(
-      health: 500,
-      max_health: 736,
-      shield: 250,
-      max_shield: 450,
-    ),
-  )
+  support.healing_caster(health: 500)
 }
 
 /// A cast of base 3 with these heal rows to its end, its go striking nothing.
@@ -2007,17 +1990,12 @@ fn heal_run(rows rows: List(spell_plan.Heal)) -> Run {
 }
 
 fn surge_run_until(until_ms until_ms: Int) -> Run {
-  let struck = [hit_ticking(unit_id: 10, ticking: surge_ticking())]
-  let answer = landed(killed: 0)
-  pressed(
-    plans: support.plans_of([surge()]),
-    caster: support.caster(),
-    struck:,
-    answer:,
+  surge_ran(
+    spell: surge(),
+    ticking: surge_ticking(),
+    answer: landed(killed: 0),
+    until_ms:,
   )
-  |> fn(run) {
-    ran(caster: support.caster(), run:, until_ms:, struck:, answer:)
-  }
 }
 
 /// The heals the effects start, as the row, the vital and the amount.
@@ -2051,18 +2029,11 @@ fn heal_description(
   amount amount: Int,
   kind kind: damage_type.DamageType,
 ) -> SpellDamageDescription {
-  SpellDamageDescription(
-    raw_damage: amount,
-    scaled_raw_damage: amount,
-    absorbed: 0,
-    shield_absorbed: 0,
-    health_damage_with_overkill: amount,
-    overkill: 0,
-    glance: 0,
+  support.landed_damage(
+    amount:,
     killed: 0,
     combat_result: combat_result.Hit,
     damage_type: kind,
-    hits: [],
   )
 }
 
@@ -2178,12 +2149,7 @@ fn first_step(run run: Run) -> #(Int, List(Effect)) {
 
 /// The Spell4 id of each 0x7ff the effects write.
 fn children_started(effects effects: List(Effect)) -> List(Int) {
-  support.frames_of(message_id: spell_started.message_id, effects:)
-  |> list.map(fn(frame) {
-    let assert Ok(start) = spell_started.decode(frame.body)
-      as "a 0x7ff the rule wrote decodes"
-    start.spell4_id
-  })
+  list.map(support.started_in(effects:), fn(start) { start.spell4_id })
 }
 
 /// The time of the step of each 0x7ff the run writes.

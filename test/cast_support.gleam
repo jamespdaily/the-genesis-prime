@@ -11,6 +11,7 @@
 import attacker_support
 import class_resource_support
 import client_tables
+import fixture_tables
 import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
@@ -25,23 +26,37 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/heal_split
+import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/look.{type Disguise, Disguise}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_advance
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, AtFirstGo, GlobalCooldown, KeepsStealth,
   NoWeaponNeeded, Normal, Spell, StealthRow,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/start_place
+import genesis_prime/game/strike_tell
 import genesis_prime/game/target_mechanic
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
+import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
 import genesis_prime/message/combat_result
+import genesis_prime/message/damage_type
+import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_damage_description.{
+  type SpellDamageDescription, SpellDamageDescription,
+}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{
   type SpellEffectInfo, SpellEffectInfo,
@@ -59,9 +74,10 @@ import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId, Now,
   TimerId,
 }
+import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  type Spell4BaseId, Item2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
-  UnitProperty2Id,
+  type Spell4BaseId, Creature2Id, Item2Id, ItemDisplayId, ItemSlotId,
+  Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import gleam/dict
 import gleam/int
@@ -386,8 +402,12 @@ pub fn spell_holding(
 
 /// The ability of the Spell4Base id as the plans hold it.
 pub fn ability(base base: Int) -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(plans: plans(), base: Spell4BaseId(base))
+  ability_in(plans: plans(), base:)
+}
+
+/// The ability of the Spell4Base id in these plans.
+pub fn ability_in(plans plans: Plans, base base: Int) -> Spell {
+  let assert Ok(spell) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
     as "the plans hold the ability"
   spell
 }
@@ -467,17 +487,7 @@ pub fn holding(
   class_id class_id: Int,
   value value: Float,
 ) -> class_resource.Resources {
-  class_resource.new(
-    resource: class_resource.Resource(
-      ..class_resource_support.resource_of(class_id),
-      start: value,
-    ),
-    properties: class_resource_support.properties_of(
-      class_id:,
-      changes: [],
-      level: 1,
-    ),
-  )
+  holding_changing(class_id:, value:, changes: [])
 }
 
 /// The class's resource holding `focus` points of Focus, a pool of that size (property 5
@@ -755,8 +765,16 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
 pub fn target_timeline(
   fired fired: List(#(Int, List(Effect))),
 ) -> List(#(Int, Effect)) {
+  timeline_of(fired:, pick: target_changes)
+}
+
+/// The time each step's effects were taken at, with each item `pick` finds in them, in order.
+pub fn timeline_of(
+  fired fired: List(#(Int, List(Effect))),
+  pick pick: fn(List(Effect)) -> List(a),
+) -> List(#(Int, a)) {
   list.flat_map(fired, fn(step) {
-    list.map(target_changes(effects: step.1), fn(change) { #(step.0, change) })
+    list.map(pick(step.1), fn(found) { #(step.0, found) })
   })
 }
 
@@ -864,9 +882,7 @@ pub fn controls_ended(effects effects: List(Effect)) -> List(Effect) {
 pub fn throw_timeline(
   fired fired: List(#(Int, List(Effect))),
 ) -> List(#(Int, Effect)) {
-  list.flat_map(fired, fn(step) {
-    list.map(throws(effects: step.1), fn(throw) { #(step.0, throw) })
-  })
+  timeline_of(fired:, pick: throws)
 }
 
 /// The delay of each timer the effects start, in order.
@@ -1234,8 +1250,26 @@ pub fn pressed_striking(
   struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(State, List(Effect)) {
+  pressed_striking_in(plans: plans(), state:, bag_index:, struck:, at: ms)
+}
+
+/// The same with these plans.
+pub fn pressed_striking_in(
+  plans plans: Plans,
+  state state: State,
+  bag_index bag_index: Int,
+  struck struck: List(cast_state.Struck),
+  at ms: Int,
+) -> #(State, List(Effect)) {
   let #(state, effects) =
-    pressed_raw(state:, caster: caster(), bag_index:, target: 0, at: ms)
+    pressed_raw_in(
+      plans:,
+      state:,
+      caster: caster(),
+      bag_index:,
+      target: 0,
+      at: ms,
+    )
   answered_by(state:, effects:, at: ms, struck:)
 }
 
@@ -1299,16 +1333,7 @@ pub fn cancelled(
   bit bit: Int,
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast_state.Refusal) {
-  cast.take(
-    target_of: nothing_shown,
-    cast: state,
-    message: cast_state.Cancelled,
-    body: cancel_body(cast_id:, reason:, bit:),
-    caster: caster(),
-    plans: plans(),
-    now: at(ms:),
-  )
-  |> result.map(fn(step) { then_procs(step:, caster: caster(), at: ms) })
+  cancelled_in(plans: plans(), state:, cast_id:, reason:, bit:, at: ms)
 }
 
 /// The client's 0x801 at the time, taken by the rule with these plans.
@@ -2148,11 +2173,24 @@ pub fn times_of(
 pub fn started_in(
   effects effects: List(Effect),
 ) -> List(spell_started.SpellStarted) {
-  frames_of(message_id: spell_started.message_id, effects:)
-  |> list.map(fn(frame) {
-    let assert Ok(start) = spell_started.decode(frame.body)
-      as "a 0x7ff the rule wrote decodes"
-    start
+  decoded_in(
+    effects:,
+    message_id: spell_started.message_id,
+    decode: spell_started.decode,
+  )
+}
+
+/// Each message of the id the effects write, decoded by `decode`; a frame the rule wrote
+/// that does not decode stops the test.
+pub fn decoded_in(
+  effects effects: List(Effect),
+  message_id message_id: Int,
+  decode decode: fn(BitArray) -> Result(message, error),
+) -> List(message) {
+  list.map(frames_of(message_id:, effects:), fn(frame) {
+    let assert Ok(message) = decode(frame.body)
+      as "a message the rule wrote decodes"
+    message
   })
 }
 
@@ -2729,4 +2767,481 @@ pub fn live_casts_holding_only_a_node(
       )
     }),
   )
+}
+
+// ---- what the tests of several rules decode, find and build the same way ----
+
+/// Each 0x7f4 the effects write, decoded.
+pub fn goes_in(effects effects: List(Effect)) -> List(spell_go.SpellGo) {
+  decoded_in(effects:, message_id: spell_go.message_id, decode: spell_go.decode)
+}
+
+/// Each 0x7fc the effects write, decoded.
+pub fn refused_in(
+  effects effects: List(Effect),
+) -> List(spell_cast_refused.SpellCastRefused) {
+  decoded_in(
+    effects:,
+    message_id: spell_cast_refused.message_id,
+    decode: spell_cast_refused.decode,
+  )
+}
+
+/// Each 0x7fd the effects write, decoded.
+pub fn confirmed_in(
+  effects effects: List(Effect),
+) -> List(spell_cast_confirmed.SpellCastConfirmed) {
+  decoded_in(
+    effects:,
+    message_id: spell_cast_confirmed.message_id,
+    decode: spell_cast_confirmed.decode,
+  )
+}
+
+/// The targets of the one 0x7f4 the effects write.
+pub fn go_targets(effects effects: List(Effect)) -> List(SpellTargetInfo) {
+  let assert [go] = goes_in(effects:) as "the effects write one 0x7f4"
+  go.targets
+}
+
+/// The effect id of each effect of each target of each 0x7f4 the effects write, in order.
+pub fn listed_effect_ids(effects effects: List(Effect)) -> List(Int) {
+  list.flat_map(goes_in(effects:), fn(go) {
+    list.flat_map(go.targets, fn(target) {
+      list.map(target.effects, fn(effect) { effect.spell4_effects_id })
+    })
+  })
+}
+
+/// The one 0x7f4 the effects write, as each target unit with the ids of its effects, both
+/// by id.
+pub fn listed_by_unit(
+  effects effects: List(Effect),
+) -> List(#(Int, List(Int))) {
+  list.map(go_targets(effects:), fn(info) {
+    #(
+      info.unit_id,
+      list.map(info.effects, fn(effect) { effect.spell4_effects_id })
+        |> list.sort(int.compare),
+    )
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+}
+
+/// The one 0x7f4 the effects write, as each target unit in the go's order with the id and
+/// delay of each of its effects, by id.
+pub fn listed_with_delays(
+  effects effects: List(Effect),
+) -> List(#(Int, List(#(Int, Int)))) {
+  list.map(go_targets(effects:), fn(info) {
+    #(
+      info.unit_id,
+      list.map(info.effects, fn(effect) {
+        #(effect.spell4_effects_id, effect.delay_ms)
+      })
+        |> list.sort(fn(first, second) { int.compare(first.0, second.0) }),
+    )
+  })
+}
+
+/// The Spell4 id and the root and parent Spell4 ids of each 0x7ff told to the connection
+/// `connection`, in order.
+pub fn started_told_to(
+  effects effects: List(Effect),
+  connection connection: Int,
+) -> List(#(Int, Int, Int)) {
+  list.filter_map(tells(effects:), fn(tell) {
+    case tell {
+      #(ConnectionId(told), client_connection.CastStarted(start:))
+        if told == connection
+      -> Ok(#(start.spell4_id, start.root_spell4_id, start.parent_spell4_id))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The cast id of the first 0x7ff the effects write for the Spell4.
+pub fn started_cast_id(
+  effects effects: List(Effect),
+  spell4_id spell4_id: Int,
+) -> Int {
+  let assert Ok(start) =
+    list.find(started_in(effects:), fn(start) { start.spell4_id == spell4_id })
+    as "the effects start a cast of the Spell4"
+  start.cast_id
+}
+
+/// The lines the effects log at the debug level, in order.
+pub fn debug_lines(effects effects: List(Effect)) -> List(String) {
+  lines_at(effects:, level: step.LogDebug)
+}
+
+/// The lines the effects log at the level, in order.
+pub fn lines_at(
+  effects effects: List(Effect),
+  level level: LogLevel,
+) -> List(String) {
+  list.filter_map(logs(effects:), fn(line) {
+    case line.0 == level {
+      True -> Ok(line.1)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The lines the effects log at the warning level, in order.
+pub fn warning_lines(effects effects: List(Effect)) -> List(String) {
+  lines_at(effects:, level: step.LogWarning)
+}
+
+/// The first timer the effects start, with its delay.
+pub fn first_timer(effects effects: List(Effect)) -> #(TimerId, Int) {
+  let assert [first, ..] = started_timers(effects:)
+    as "the effects start a timer"
+  first
+}
+
+/// The number inside a timer id.
+pub fn timer_number(timer timer: TimerId) -> Int {
+  let TimerId(number) = timer
+  number
+}
+
+/// A hit on a unit as the rule's strike reports it, with no interrupt armor taken.
+pub fn hit_with(
+  unit_id unit_id: Int,
+  unit unit: cast_state.HitUnit,
+  descriptions descriptions: List(hit.Description),
+  controls controls: List(strike_tell.ControlLanded),
+  ticking ticking: List(spell_area.TickingDamage),
+) -> cast_state.Struck {
+  cast_state.Hit(
+    unit_id:,
+    unit:,
+    descriptions:,
+    controls:,
+    armor_removed: 0,
+    ticking:,
+  )
+}
+
+/// A hit on a creature in the life given, struck at the time given, with no controls and
+/// no ticking damage.
+pub fn creature_hit(
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+) -> cast_state.Struck {
+  hit_with(
+    unit_id:,
+    unit: cast_state.HitCreature(life:, struck_at_ms:),
+    descriptions: [],
+    controls: [],
+    ticking: [],
+  )
+}
+
+/// A hit on a player, with no controls and no ticking damage.
+pub fn player_hit(unit_id unit_id: Int) -> cast_state.Struck {
+  hit_with(
+    unit_id:,
+    unit: cast_state.HitPlayer,
+    descriptions: [],
+    controls: [],
+    ticking: [],
+  )
+}
+
+/// The damage of a landed blow of `amount` as a description holds it: the damage taken whole,
+/// no absorption, no overkill and no glance.
+pub fn landed_damage(
+  amount amount: Int,
+  killed killed: Int,
+  combat_result combat_result: combat_result.CombatResult,
+  damage_type damage_type: damage_type.DamageType,
+) -> SpellDamageDescription {
+  SpellDamageDescription(
+    raw_damage: amount,
+    scaled_raw_damage: amount,
+    absorbed: 0,
+    shield_absorbed: 0,
+    health_damage_with_overkill: amount,
+    overkill: 0,
+    glance: 0,
+    killed:,
+    combat_result:,
+    damage_type:,
+    hits: [],
+  )
+}
+
+/// A press of the bag index as the rule gives it, the go left asked for, whose effects the
+/// step gives and not its state.
+pub fn pressed_effects(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag_index bag_index: Int,
+  at ms: Int,
+) -> List(Effect) {
+  let #(_, effects) =
+    pressed_raw_in(plans:, state:, caster:, bag_index:, target: 0, at: ms)
+  effects
+}
+
+/// A press of the spell, as the ability at the bag index, aimed at the target by the
+/// default caster at `ms` on a new state, and its go answered by a round that struck these
+/// units: the state, and the press's effects followed by the answer's.
+pub fn pressed_and_answered(
+  spell spell: Spell,
+  bag_index bag_index: Int,
+  target target: Int,
+  struck struck: List(cast_state.Struck),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects) =
+    pressed_raw_in(
+      plans: plans_with(spell:),
+      state: cast_state.new(),
+      caster: caster(),
+      bag_index:,
+      target:,
+      at: ms,
+    )
+  let #(state, answered) = answered_by(state:, effects:, at: ms, struck:)
+  #(state, list.append(effects, answered))
+}
+
+/// The default caster standing at this place of the world 3460's zone 6009.
+pub fn standing_at(
+  caster caster: Caster,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+) -> Caster {
+  cast_state.Caster(
+    ..caster,
+    place: place_support.at(world_id: 3460, world_zone_id: 6009, x:, y:, z:),
+  )
+}
+
+/// The caster moved to this east and south, at the height it stands at.
+pub fn caster_at(x x: Float, z z: Float) -> Caster {
+  let caster = caster()
+  cast_state.Caster(
+    ..caster,
+    place: start_place.moved(
+      place: caster.place,
+      x:,
+      y: start_place.y(caster.place),
+      z:,
+    ),
+  )
+}
+
+/// The caster of a healing: support rating 400 and these health points of 736, with the
+/// shield 250 of 450.
+pub fn healing_caster(health health: Int) -> Caster {
+  cast_state.Caster(
+    ..caster(),
+    stats: damage.Attacker(
+      ..attacker_support.fresh(),
+      level: 5,
+      assault_rating: 0.0,
+      support_rating: 400.0,
+    ),
+    vitals: damage.Vitals(
+      health:,
+      max_health: 736,
+      shield: 250,
+      max_shield: 450,
+    ),
+  )
+}
+
+/// The spell with no global cooldown.
+pub fn without_global_cooldown(spell spell: Spell) -> Spell {
+  Spell(
+    ..spell,
+    global_cooldown: GlobalCooldown(
+      refused_while_running: False,
+      starts_for_ms: None,
+    ),
+  )
+}
+
+/// The spell with no global cooldown and its `free_while_live` set.
+pub fn free_while_live(spell spell: Spell) -> Spell {
+  Spell(..without_global_cooldown(spell:), free_while_live: True)
+}
+
+/// A planted spell of the Spell4 and base given that goes at once and removes, aimed at the
+/// caster, the lasting effects of the selector.
+pub fn removing(
+  spell4_id spell4_id: Int,
+  base base: Int,
+  effect_id effect_id: Int,
+  selector selector: lasting.Selector,
+  count count: Int,
+  condition condition: spell_plan.Condition,
+) -> Spell {
+  with_effects(spell: child(spell4_id:, base:), kinds: [
+    spell_plan.RemoveEffect(spell_plan.ForceRemove(
+      effect_id: Spell4EffectsId(effect_id),
+      phase_flags: -1,
+      aim: spell_plan.AimsAtCaster,
+      selector:,
+      count:,
+      condition:,
+      tag: spend.always,
+    )),
+  ])
+}
+
+/// A lasting row that never ends, of the effect id and aim given.
+pub fn marker_row(id id: Int, aim aim: spell_plan.Aim) -> spell_plan.Lasting {
+  spell_plan.Lasting(
+    effect_id: Spell4EffectsId(id),
+    phase_flags: -1,
+    aim:,
+    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    condition: Always,
+    tag: spend.always,
+  )
+}
+
+/// The resources of a class holding `value` in its slot 1, and these changes to its unit
+/// properties.
+pub fn holding_changing(
+  class_id class_id: Int,
+  value value: Float,
+  changes changes: List(#(Int, Float)),
+) -> class_resource.Resources {
+  class_resource.new(
+    resource: class_resource.Resource(
+      ..class_resource_support.resource_of(class_id),
+      start: value,
+    ),
+    properties: class_resource_support.properties_of(
+      class_id:,
+      changes:,
+      level: 1,
+    ),
+  )
+}
+
+/// A creature of the client's rows, as the activation reads it.
+pub fn creature_of(creature_id creature_id: Int) -> activate.Creature {
+  let assert Ok(row) =
+    creature2.get(tables: fixture_tables.shared(), id: Creature2Id(creature_id))
+    as "the creature is a root of the fixture"
+  activate.creature_of(row:)
+}
+
+/// A usable creature, alive and out of combat, whose body of radius `radius` stands this
+/// far east of the unit at 4096.0, 0.0, 512.0.
+pub fn usable_at(
+  creature_id creature_id: Int,
+  x x: Float,
+  radius radius: Float,
+) -> activate.Target {
+  activate.Usable(
+    creature_id:,
+    creature: creature_of(creature_id:),
+    checklist_index: 0,
+    link: activate.NoLink,
+    body: activate.Body(
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x:,
+        y: 0.0,
+        z: 512.0,
+      ),
+      radius:,
+    ),
+    alive: True,
+    in_combat: False,
+    held: [],
+    unit_states: [],
+    withheld: None,
+  )
+}
+
+/// The cast's answer to an interaction (0x95): the client's result and word, taken by the
+/// rule for this caster at `ms`.
+pub fn interaction_answered(
+  state state: State,
+  cast_id cast_id: Int,
+  result result: interaction_result.InteractionResult,
+  word word: Int,
+  caster caster: Caster,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
+  let assert Ok(body) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id:,
+      result:,
+      spell4_base_id_plus_one: word,
+    ))
+    as "the answer fits the message"
+  cast.take(
+    target_of: nothing_shown,
+    cast: state,
+    message: cast_state.Answered,
+    body:,
+    caster:,
+    plans: plans(),
+    now: at(ms:),
+  )
+}
+
+/// A place a creature of radius 1.0 stands at, `gap` east of the live character's place,
+/// edge to edge.
+pub fn place_beside_the_player(gap gap: Float) -> start_place.Place {
+  let live = place_support.live_character_place()
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: start_place.x(live) +. place_support.player_hit_radius +. 1.0 +. gap,
+    y: start_place.y(live),
+    z: start_place.z(live),
+  )
+}
+
+/// The spell of the Spell4 id among the spells the trees of the client's plans reach.
+pub fn real_spell(spell4_id spell4_id: Int) -> Spell {
+  let assert Ok(spell) =
+    list.flat_map(dict.values(real_plans()), fn(ability) {
+      spell_plan.tree(spell: ability, started: fn(_) { True })
+    })
+    |> list.find(fn(spell) { spell.spell4_id.value == spell4_id })
+    as "a tree of the plans holds the spell"
+  spell
+}
+
+/// A disguise of one worn visual in slot 64.
+pub fn disguise_of(display display: Int) -> Disguise {
+  Disguise(shown: [
+    WornVisual(slot: ItemSlotId(64), display: ItemDisplayId(display)),
+  ])
+}
+
+/// A change of unit property 100, mode 2, by the factor 0.5.
+pub fn slowing_change() -> unit_properties.Modifier {
+  unit_properties.Change(
+    property: UnitProperty2Id(100),
+    mode: 2,
+    multiplier: 0.5,
+    flat: 0.0,
+    per_level: 0.0,
+  )
+}
+
+/// The number of 0x7ff the effects write for the Spell4.
+pub fn started_count(
+  effects effects: List(Effect),
+  spell4_id spell4_id: Int,
+) -> Int {
+  list.count(started_in(effects:), fn(start) { start.spell4_id == spell4_id })
 }
