@@ -98,6 +98,7 @@ pub fn main() -> Nil {
           skipped_when_set("GENESIS_TEST_SKIP_WORLD_DATA", tag: "world_data"),
           skipped_when_set("GENESIS_TEST_SKIP_REAL_START", tag: "real_start"),
           skipped_when_set("GENESIS_TEST_SKIP_CLIENT_ROWS", tag: "client_rows"),
+          skipped_when_set("GENESIS_TEST_SKIP_REAL_TABLES", tag: "real_tables"),
         ]),
       ),
     ),
