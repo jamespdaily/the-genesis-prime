@@ -6055,7 +6055,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A periodic Proxy aimed at the caster starts its child at each tick without reading the target apply prerequisite of its row, which the client's tables hold on 5 such rows; none is aimed at the primary target.",
+      missing: "A periodic Proxy aimed at the caster starts its child at each tick without reading the target apply prerequisite of its row, which some of the client's rows hold; none aimed at the primary target does.",
     ),
     gap.Entry(
       area: "Casting",
