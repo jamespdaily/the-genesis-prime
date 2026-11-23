@@ -5,7 +5,8 @@
 ////   bits (1 the caster, 2 the primary target, 4 the area), and a unit the bits name twice
 ////   is one unit.
 //// - `spell_plan.spell_hits_foes` (the server's choice, Jim's decision of 2026-11-15): the
-////   area bit is read only in a spell that hits foes.
+////   area bit is read only in a spell that hits foes, or, for an instant heal, in a spell
+////   whose area finds the caster's allies (`spell_plan.area_finds_allies`).
 //// - The client's rows, kept in the fixture (`table_rows -- Spell4Effects <ids>`):
 ////   - 72210 (Spell4 35662), type 17, flags 7, until the end of 5000 ms; the spell's 72206
 ////     is a damage row aimed at the area, so it hits foes.
@@ -212,14 +213,18 @@ pub fn union_heal_reaches_each_unit_once_and_heals_only_the_caster_test() -> Nil
     })
     == 1
     as "the caster is healed once, though flags 7 name it, the creature 20 and the area"
-  let assert [#(LogDebug, line)] = support.logs(effects:)
-    as "one debug line says the creature 20 is not healed"
-  assert string.contains(line, "123870")
-    && string.contains(line, "unit 20")
-    && string.contains(line, "lands nothing here")
-    as "it names the row, the unit and what is missing"
+  let assert [#(LogDebug, first), #(LogDebug, second)] = support.logs(effects:)
+    as "one debug line for each creature the row names and cannot heal"
+  assert string.contains(first, "123870")
+    && string.contains(first, "unit 20")
+    && string.contains(first, "lands nothing here")
+    as "the first names the row, the primary target 20 and what is missing"
+  assert string.contains(second, "123870")
+    && string.contains(second, "unit 21")
+    && string.contains(second, "lands nothing here")
+    as "the second names the row and the struck unit 21, which the area bit names since the spell's area finds allies"
   assert support.child_go_listing(effects:) == [#(7, [123_870]), #(21, [])]
-    as "the go lists the heal on the caster alone: the creature 20 lands nothing, and struck unit 21 lists none because the area bit is not read in a spell that hits no foes (#834)"
+    as "the go lists the heal on the caster alone: no creature is healed, and struck unit 21 lists none"
 }
 
 pub fn union_proxy_starts_its_child_on_the_caster_and_on_each_struck_unit_test() -> Nil {

@@ -60,17 +60,12 @@ import gleam/option.{type Option, None, Some}
 /// strict judging would refuse at the edge a press the player's own screen shows in range.
 const range_allowance_metres = 2.0
 
-/// The Spell4TargetMechanics.flags and Spell4ValidTargets.targetBitmask values the checks
-/// test (the fact file's `Spell4TargetMechanics.flags` and `Spell4ValidTargets.targetBitmask`).
+/// The Spell4TargetMechanics.flags values the checks test (the fact file's
+/// `Spell4TargetMechanics.flags`); the Spell4ValidTargets.targetBitmask bits are named in
+/// `target_mechanic`.
 const mechanics_friendly_passes = 8
 
 const mechanics_hostile_passes = 16
-
-const valid_refuses_player = 1
-
-const valid_skips_faction_test = 2
-
-const valid_same_group_only = 16
 
 /// Whether the target is in the caster's group: both group ids are non-zero and equal
 /// (`UnitsShareGroup` `0x140561e60`).
@@ -95,7 +90,10 @@ pub fn faction_precheck(
 ) -> Option(Verdict) {
   let flags = spell.targeting.mechanics_flags
   let refuses = case
-    has(flags: spell.targeting.valid_targets, bit: valid_skips_faction_test)
+    has(
+      flags: spell.targeting.valid_targets,
+      bit: target_mechanic.valid_skips_faction_test,
+    )
   {
     True -> False
     False ->
@@ -160,7 +158,10 @@ fn group_refusal(
   target target: PlayerState,
 ) -> Option(Verdict) {
   use <- bool.guard(
-    when: !has(flags: spell.targeting.valid_targets, bit: valid_same_group_only)
+    when: !has(
+      flags: spell.targeting.valid_targets,
+      bit: target_mechanic.valid_same_group_only,
+    )
       || shares_group(caster:, target:),
     return: None,
   )
@@ -235,7 +236,7 @@ pub fn held_refusal(
 /// Whether a spell with these valid-target bits refuses every player: bit 0 (102,
 /// `0x1403b2240`).
 pub fn refuses_a_player(valid_targets valid_targets: Int) -> Bool {
-  has(flags: valid_targets, bit: valid_refuses_player)
+  has(flags: valid_targets, bit: target_mechanic.valid_refuses_player)
 }
 
 /// 102 for a spell that refuses a player.
@@ -273,7 +274,10 @@ fn second_faction_refusal(
 ) -> Option(Verdict) {
   let flags = spell.targeting.mechanics_flags
   let skips =
-    has(flags: spell.targeting.valid_targets, bit: valid_skips_faction_test)
+    has(
+      flags: spell.targeting.valid_targets,
+      bit: target_mechanic.valid_skips_faction_test,
+    )
   case target.disposition {
     Friendly ->
       case target.pvp_flagged && !caster.pvp_flagged {

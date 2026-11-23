@@ -355,9 +355,9 @@ import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
   type Spell4Id, type UnitProperty2Id, CCStateAdditionalDataId, ItemDisplayId,
-  PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
-  Spell4GroupListId, Spell4Id, Spell4StackGroupId, Spell4TargetAngleId,
-  SpellCoolDownId, UnitProperty2Id,
+  PrerequisiteId, Spell4AoeTargetConstraintsId, Spell4BaseId, Spell4ConditionsId,
+  Spell4EffectsId, Spell4GroupListId, Spell4Id, Spell4StackGroupId,
+  Spell4TargetAngleId, SpellCoolDownId, UnitProperty2Id,
 }
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
@@ -366,6 +366,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
@@ -1372,15 +1373,16 @@ pub type Telling {
 }
 
 /// When the heal `heal` is told to another player: an instant row with no delay that
-/// aims at the primary target is told at the go, a periodic row that aims at it is told at
-/// each tick, and a delayed instant row or one that aims at the caster alone is not told
-/// (the caster's own part of a row is the caster's). The go's strike, the go's gate and the
-/// tick ask this one question, so a row is never gated or rolled for by one and told by
+/// aims at the primary target or the area is told at the go (to the primary target and to the
+/// allies the area found, `area_finds_allies`), a periodic row that aims at the primary target
+/// is told at each tick, and a delayed instant row or one that aims at the caster alone is not
+/// told (the caster's own part of a row is the caster's). The go's strike, the go's gate and
+/// the tick ask this one question, so a row is never gated or rolled for by one and told by
 /// another.
 pub fn telling_of(heal heal: Heal) -> Telling {
   case heal {
     Heal(aim:, delay_ms: 0, ..) ->
-      case reaches_primary_target(aim:) {
+      case reaches_primary_target(aim:) || reaches_area(aim:) {
         True -> ToldAtGo
         False -> NotTold
       }
@@ -2149,6 +2151,7 @@ pub type RowPlace {
     spends_all: Bool,
     hits_foes: Bool,
     throws_target: Bool,
+    finds_allies: Bool,
   )
 }
 
@@ -2199,6 +2202,54 @@ pub fn spell_hits_foes(
     && effect.target_flags >= 2
     && effect.target_flags <= 7
   })
+}
+
+/// Whether a spell's area finds the caster's allies rather than foes: the mechanic is
+/// beneficial (`target_mechanic.is_beneficial`), none of the spell's own damage or crowd-control
+/// rows names the primary target or the area (`spell_hits_foes`), and its area row orders
+/// by distance or at random (`Spell4AoeTargetConstraints.targetSelection` 1, 2 and 3, the orders
+/// the strike builds; 0 is no area row). The client selects no unit from an area
+/// (`Spell4AoeTargetConstraints.client_use`), so this is the server's reading of the texts'
+/// "yourself and N allies" (361096, 508644), and an area ordered by health is read as no area.
+pub fn area_finds_allies(
+  mechanics_flags mechanics_flags: Int,
+  effects effects: List(spell4_effects.Spell4Effects),
+  target_selection target_selection: Int,
+) -> Bool {
+  target_mechanic.is_beneficial(flags: mechanics_flags)
+  && !spell_hits_foes(effects:)
+  && target_selection >= 1
+  && target_selection <= 3
+}
+
+/// Whether the area of the Spell4 `row` finds the caster's allies (`area_finds_allies`),
+/// from the spell's own `effects`; a row the tables lack finds none.
+pub fn spell_finds_allies(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Bool {
+  let target_selection =
+    spell4_aoe_target_constraints.get(
+      tables:,
+      id: Spell4AoeTargetConstraintsId(row.spell4_aoe_target_constraints_id),
+    )
+    |> result.map(fn(constraints) { constraints.target_selection })
+    |> result.unwrap(0)
+  case
+    target_mechanic.rows_of_base(
+      tables:,
+      base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+    )
+  {
+    Ok(#(_, mechanics)) ->
+      area_finds_allies(
+        mechanics_flags: mechanics.flags,
+        effects:,
+        target_selection:,
+      )
+    Error(..) -> False
+  }
 }
 
 /// The Spell4 ids of the spells that hit foes (`spell_hits_foes`), among the Spell4Effects
@@ -3765,6 +3816,7 @@ fn spell_of(
       spends_all: spends_all_of(costs:),
       hits_foes: spell_hits_foes(effects:),
       throws_target: spell_throws_target(effects:),
+      finds_allies: spell_finds_allies(tables:, row:, effects:),
     )
   use Nil <- result.try(
     list.try_each(effects, spend_tag_read(place:, effect: _)),
@@ -5656,7 +5708,7 @@ fn kind_reading(
         Applied(read_as(RemoveStealthEffect(remove:)))
       })
     effect_kind.Heal(vital:) -> {
-      use <- when_reached(reaches:)
+      use <- when_reached(reaches: reaches || heals_allies(place:, effect:))
       heal_reading(tables:, place:, spell4_id:, effect:, vital:)
     }
     effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
@@ -6169,13 +6221,18 @@ fn heal_reading(
   effect effect: spell4_effects.Spell4Effects,
   vital vital: effect_kind.Vital,
 ) -> Result(RowReading, PlanError) {
-  use condition <- result.try(applied_condition_of(
-    tables:,
-    effect:,
-    reach: reach_of_flags(target_flags: effect.target_flags),
-  ))
+  use condition <- result.try(
+    applied_condition_of(
+      tables:,
+      effect:,
+      reach: case heals_allies(place:, effect:) {
+        True -> PastTheCaster
+        False -> reach_of_flags(target_flags: effect.target_flags)
+      },
+    ),
+  )
   use heal <- try_heal(heal_of(spell4_id:, effect:, vital:, condition:))
-  let heal = heal_in_place(place:, heal:)
+  let heal = heal_in_place(place:, effect:, heal:)
   use Nil <- result.map(
     not_on_a_struck_unit(place:, aim: heal.aim, refused: fn(by) {
       HealOnStruckUnit(
@@ -6188,9 +6245,38 @@ fn heal_reading(
   Applied(read_as(HealEffect(heal:)))
 }
 
-/// The heal with its aim as the place reads it (`aim_in_place`).
-fn heal_in_place(place place: RowPlace, heal heal: Heal) -> Heal {
-  let aim = aim_in_place(place:, aim: heal.aim)
+/// Whether a heal row is read for the allies the area of its place finds: the place finds
+/// allies (`area_finds_allies`), the row is instant (no delayTime and no tickTime, the rows the
+/// strike tells another player, `telling_of`) and its targetFlags name the area. A delayed or
+/// periodic row keeps the reading of a place whose area finds no allies (`aim_in_place`).
+fn heals_allies(
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Bool {
+  place.finds_allies
+  && effect.delay_time == 0
+  && effect.tick_time == 0
+  && case aim_of(target_flags: effect.target_flags) {
+    Ok(aim) -> reaches_area(aim:)
+    Error(Nil) -> False
+  }
+}
+
+/// The heal with its aim as the place reads it (`aim_in_place`), except that a row read for
+/// the allies of its place's area (`heals_allies`) is aimed as its targetFlags say, area
+/// included.
+fn heal_in_place(
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+  heal heal: Heal,
+) -> Heal {
+  let aim = case
+    heals_allies(place:, effect:),
+    aim_of(target_flags: effect.target_flags)
+  {
+    True, Ok(aim) -> aim
+    True, Error(Nil) | False, _ -> aim_in_place(place:, aim: heal.aim)
+  }
   case heal {
     Heal(..) -> Heal(..heal, aim:)
     TickingHeal(..) -> TickingHeal(..heal, aim:)
@@ -8075,7 +8161,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes: the area's bit is left out of an aim that holds the caster's bit too, so a Proxy aimed by it starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\"; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row only, and only when the area orders by distance or at random (Closest, Furthest, Random): every other row has the area's bit left out of an aim that holds the caster's bit too, so a Proxy aimed by it starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\"; a delayed or periodic heal reaches the caster alone; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",

@@ -45,6 +45,7 @@ fn no_proxy_place() -> spell_plan.RowPlace {
     spends_all: False,
     hits_foes: False,
     throws_target: False,
+    finds_allies: False,
   )
 }
 

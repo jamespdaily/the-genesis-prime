@@ -9,6 +9,7 @@
 //// its CombatState news     ─▶ in combat changed
 //// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
 ////                                              candidates (genesis_prime/game/area)
+//// ally_candidates(picture, caster)          ─▶ the alive Friendly players with a place, as candidates
 //// ```
 ////
 //// - **The picture is one news message stale at worst.** A creature that died in
@@ -32,6 +33,9 @@
 ////   (`creature.facing`: kind 4 paths move a creature without turning it).
 //// - **A creature that faces a unit standing on its own ground point** keeps the yaw it showed
 ////   at the last news or move before (`with_resolved`, `ShownCreature.faced_yaw`).
+//// - **An ally** is another player of the picture whose disposition toward the caster is
+////   Friendly (`GetUnitDispositionTo` 0x14045a950), alive and placed (`ally_candidates`): the
+////   units an area that finds the caster's allies selects from.
 //// - **Another player's unit** keeps what a press at it judges (genesis_prime/game/player_state):
 ////   its life, combat, crowd-control states and the place its last position command gave
 ////   (`with_player_at`), changed by the news the viewer takes; the creatures that face it
@@ -40,6 +44,7 @@
 ////   which is part of its address (genesis_prime/step `Creature`).
 
 import genesis_prime/game/area.{type Candidate, type Point, type Pose, Candidate}
+import genesis_prime/game/faction_level
 import genesis_prime/game/held_state.{type HeldState}
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/prerequisite.{
@@ -307,6 +312,35 @@ pub fn candidates(
             ))
           False -> Error(Nil)
         }
+    }
+  })
+}
+
+/// The alive players of the picture whose disposition toward the caster is Friendly
+/// (`GetUnitDispositionTo` 0x14045a950), as candidates for an area that finds the caster's
+/// allies, in unit id order: never the caster `caster_unit_id`, a creature, or a player with
+/// no place yet. A player stands where its last position command put it. An area whose
+/// valid targets hold no bit 8 strikes only the living (`Spell4ValidTargets.targetBitmask`).
+pub fn ally_candidates(
+  picture picture: Picture,
+  caster_unit_id caster_unit_id: Int,
+) -> List(Candidate) {
+  dict.to_list(picture)
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.filter_map(fn(entry) {
+    let #(unit_id, shown) = entry
+    case shown {
+      ShownCreature(..) | ShownObject(..) -> Error(Nil)
+      ShownPlayer(state: PlayerState(
+        alive: True,
+        disposition: faction_level.Friendly,
+        place: Some(place),
+        hit_radius:,
+        ..,
+      ))
+        if unit_id != caster_unit_id
+      -> Ok(Candidate(unit_id:, at: area.point_of(place), hit_radius:))
+      ShownPlayer(..) -> Error(Nil)
     }
   })
 }

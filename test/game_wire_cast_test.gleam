@@ -57,6 +57,7 @@ import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/result
 import login_support
 import owned_test
@@ -2444,6 +2445,184 @@ pub fn an_esper_pressing_mind_over_body_at_an_ally_heals_it_and_the_go_lists_the
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
+}
+
+/// What a Medic's press of Emission, with a hurt Medic ally standing `south` metres south of it,
+/// showed the two clients.
+type EmissionRound {
+  EmissionRound(
+    caster: Int,
+    ally: Int,
+    saved: Int,
+    amount: Int,
+    go: spell_go.SpellGo,
+    caster_healths: List(Int),
+    ally_healths: List(Int),
+  )
+}
+
+/// A Medic of level 6 presses Emission (Spell4 58841, Spell4Base 38210) with no target named,
+/// facing -z, while a Medic ally that entered with 100 health stands `south` metres south of it
+/// (a negative number is ahead), the caster saved with the same health. The first pulse of the
+/// channel goes at 410 ms (the row's phaseFlags 1 is the first go), before either Medic's
+/// regeneration, which falls every 500 ms (`player_life`): both read their own health after the
+/// heal.
+fn emission_pressed_with_an_ally(south south: Float) -> EmissionRound {
+  let time = driven_time.new()
+  let tables = character_tables.shared()
+  let started = started_on(tables:, time:)
+  let saved = 100
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    second_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    game_wire_support.two_players_enter_saved(
+      started:,
+      first_class: 4,
+      level: 6,
+      saved_health: option.Some(saved),
+      first_acts: fn(_, have) { #([], have) },
+    )
+  let caster = unit_of_player(frames: first_burst)
+  let ally = unit_of(seen_second)
+  assert health_in(frames: first_burst) == saved
+    && health_in(frames: second_burst) == saved
+    as "opcode.0x262: both Medics enter with the 100 they were saved with"
+  let #(x, y, z) =
+    game_client.placed_by_tail(
+      tail: game_client.unit_create_player_in(frames: first_burst).tail,
+    )
+  game_client.face(game: first, yaw: 0.0, clock: 100)
+  game_client.move_to(game: second, clock: 110, x:, y:, z: z +. south)
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0638 })
+    })
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames: first_burst), fn(item) {
+      item.1 == 38_210
+    })
+    as "the level-6 Medic holds Emission's base 38210 (SpellLevel 1221)"
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: 0,
+  )
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Emission is planned, so the press is not refused"
+  driven_time.advance(time:, ms: 410)
+  let #(went, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      gos_in(frames:) != []
+    })
+  let #(rest, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let caster_frames = list.flatten([went, rest])
+  let #(ally_read, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      gos_in(frames:) != []
+    })
+  let #(ally_rest, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let ally_frames = list.append(ally_read, ally_rest)
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the tables hold GameFormula row 1266"
+  let support_power =
+    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
+  let amount =
+    float.round(
+      int.to_float(float.round(0.0784 *. support_power)) +. 3.41 *. 6.0,
+    )
+  let assert [go, ..] = gos_in(frames: caster_frames)
+    as "the caster's client reads the first pulse's 0x7f4, the only one that holds the heal (phaseFlags 1)"
+  let healths = fn(frames, unit) {
+    game_client.own_health_of(events: game_client.fight_in(frames:), unit:)
+  }
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+  EmissionRound(
+    caster:,
+    ally:,
+    saved:,
+    amount:,
+    go:,
+    caster_healths: healths(caster_frames, caster),
+    ally_healths: healths(ally_frames, ally),
+  )
+}
+
+/// The unit id the player's own 0x262 among `frames` gives it.
+fn unit_of_player(frames frames: List(Frame)) -> Int {
+  game_client.unit_create_player_in(frames:).unit_id
+}
+
+/// The rows of the heal 141384 the go lists on the unit `unit_id`, one list for each of its
+/// entries (the caster's entry also holds the Gain row 179618 of Emission's first go, which is
+/// not under test).
+fn heal_listed_on(
+  round: EmissionRound,
+  unit_id: Int,
+) -> List(List(#(Int, spell_effect_result.SpellEffectResult))) {
+  list.filter(round.go.targets, fn(target) { target.unit_id == unit_id })
+  |> list.map(fn(target) {
+    list.filter(target.effects, fn(effect) {
+      effect.spell4_effects_id == 141_384
+    })
+    |> list.map(fn(effect) { #(effect.spell4_effects_id, effect.result) })
+  })
+}
+
+/// A Medic of level 6 presses Emission (Spell4 58841) with no target named, which none of the
+/// whole-server tests walks: its area is a friendly one (Spell4TargetMechanics flags 9, bit 0
+/// beneficial), so the allies of the cone 3063 (shape 8, 1 to 15 m over 50 degrees ahead of
+/// the caster) take the heal of its row 141384 (type 10, targetFlags 5, delay 0, parameter 13
+/// x 0.0784 and 10 x 3.41, `0x140565600`: the stat part rounded alone). A hurt Medic ally 8 m
+/// ahead applies it itself and answers, the caster's 0x7f4 lists the ally's heal with the
+/// split the ally answered and the caster's own, and both Medics' own 0x92f show their health
+/// raised by the amount. The same ally 8 m behind the caster, outside the cone, is not healed
+/// and not listed.
+pub fn a_medic_pressing_emission_heals_the_ally_in_its_cone_and_the_caster_reads_the_go_with_its_heal_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let listed = heal_listed_on
+  let heal_of = fn(round: EmissionRound) {
+    [
+      #(
+        141_384,
+        cast_support.heal_result(
+          amount: round.amount,
+          kind: damage_type.Heal,
+          overkill: 0,
+        ),
+      ),
+    ]
+  }
+  let ahead = emission_pressed_with_an_ally(south: -8.0)
+  assert ahead.amount > 0 as "the row's amount is above 0"
+  assert listed(ahead, ahead.ally) == [heal_of(ahead)]
+    as "opcode.0x7f4: the ally 8 m ahead is listed with its own heal, the split it answered: the whole amount, the ally's room being 100 or more"
+  assert listed(ahead, ahead.caster) == [heal_of(ahead)]
+    as "opcode.0x7f4: the caster's own heal is listed, its room being as large"
+  assert list.last(ahead.ally_healths) == Ok(ahead.saved + ahead.amount)
+    as "opcode.0x92f: the ally's health rises by the row's amount"
+  assert list.last(ahead.caster_healths) == Ok(ahead.saved + ahead.amount)
+    as "opcode.0x92f: the caster's own health rises by the row's amount"
+  let behind = emission_pressed_with_an_ally(south: 8.0)
+  assert listed(behind, behind.ally) == []
+    as "opcode.0x7f4: the ally 8 m behind the caster is outside the cone and not listed"
+  assert behind.ally_healths == []
+    as "opcode.0x92f: the ally outside the cone is told no health"
+  assert listed(behind, behind.caster) == [heal_of(behind)]
+    as "the control: the caster's own heal is listed whoever stands in the cone"
 }
 
 /// The 0x7f8 among `frames`, decoded, in order.

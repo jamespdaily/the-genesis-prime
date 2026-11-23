@@ -852,6 +852,46 @@ pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test()
     as "the states take the first three rolls as before"
   assert told_heals(effects: with_heal) == []
     as "the heal row takes the rolls after the states': the caster roll 1 passes and the player's roll 50 fails the target gate 860 (read before the states', it would have been given the rolls 1 and 5 and told)"
+  // The same row aimed at the caster and the area, whose area found the allies 9 and 12: its
+  // target gate is rolled once for each ally, after the one caster roll.
+  let other_ally =
+    PlayerAddress(..ally(), unit_id: 12, stay: map_support.stay(count: 3))
+  let area_heal =
+    spell_area.InstantHeal(
+      ..heal_row(caster_apply: 3286, target_apply: 860),
+      aim: spell_plan.AimsAtCasterAndArea,
+    )
+  let healing_allies =
+    Selection(
+      ..chosen,
+      players: [ally(), other_ally],
+      area: [10, 11, 9, 12],
+      heals: [area_heal],
+    )
+  assert strike.entropy_needed(selection: healing_allies)
+    == 2 * 12 + 6 * prerequisite.roll_bytes
+    as "12 bytes for each of the two creatures, the states' three rolls, then the heal row's one caster roll and one target roll for each of the two allies"
+  let #(_, with_allies) =
+    begun(
+      selection: healing_allies,
+      gate: gate_of(caster: support.caster(), creatures: []),
+      entropy: entropy(
+        rolls: [#(1_073_741_824, 0, 0), #(2_147_483_648, 0, 3_221_225_472)],
+        gate: [
+          word_for(roll: 1),
+          word_for(roll: 5),
+          word_for(roll: 50),
+          word_for(roll: 1),
+          word_for(roll: 5),
+          word_for(roll: 50),
+        ],
+      ),
+    )
+  assert list.map(strike_support.players_told(effects: with_allies), fn(told) {
+      told.0.unit_id
+    })
+    == [9]
+    as "the caster roll 1 passes, ally 9's roll 5 passes the target gate 860 and ally 12's roll 50 fails it: only ally 9 is told"
 }
 
 pub fn a_gate_unread_at_run_time_drops_the_row_for_that_unit_with_a_debug_line_test() -> Nil {
