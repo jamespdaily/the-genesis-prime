@@ -2959,8 +2959,11 @@ pub fn an_esper_walks_out_of_the_sight_of_the_ally_it_pressed_phantasmal_armor_a
   let #(after_removal, second_have) =
     game_client.read_until_pong(game: second, have: second_have, number: 1)
   let until_pong = list.flatten([medic_read, removal_read, after_removal])
-  assert finished_casts_in(frames: until_pong) == []
-    as "opcode.0x7fe: the removal of the caster's unit leaves the cast of a 0x100 spell and its buff on the Medic"
+  assert !list.contains(
+    finished_casts_in(frames: until_pong),
+    started_cast.cast_id,
+  )
+    as "opcode.0x7fe: the removal of the caster's unit leaves the cast of a 0x100 spell and its buff on the Medic (the Interrupt Armor child, a cast of its own, is finished with the unit)"
   assert absorptions_in(frames: until_pong, unit: medic) == [pool]
     as "opcode.0x938: and the Medic's absorption is not told to change"
   // The cast's node on the Medic ends 10 000 ms after the go: the Esper's connection tells
