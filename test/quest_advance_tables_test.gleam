@@ -33,6 +33,19 @@ fn type_42_rows(tables tables: Tables) -> List(Spell4Effects) {
   |> list.filter(fn(row) { row.effect_type == 42 })
 }
 
+/// Whether the refusal text `why` of the spell names the effect of one of its type 42 rows
+/// (the plan writes `effect N ` for the effect it refuses).
+fn refused_for_a_type_42_row(
+  why why: String,
+  rows rows: List(Spell4Effects),
+  spell4_id spell4_id: Int,
+) -> Bool {
+  list.any(rows, fn(row) {
+    row.spell_id == spell4_id
+    && string.contains(why, "effect " <> int.to_string(row.id) <> " ")
+  })
+}
+
 /// What the plan makes of the row, as a name: `applied`, the name of the reason it is left out,
 /// or the plan's own refusal.
 fn outcome_of(tables tables: Tables, effect effect: Spell4Effects) -> String {
@@ -127,10 +140,7 @@ pub fn no_activate_spell_is_refused_for_a_type_42_row_and_the_use_rule_counts_th
     list.filter(set.to_list(routed), fn(spell4_id) {
       case activate.planned_of(activations:, spell4_id:) {
         Ok(activate.CannotBePlanned(why:)) ->
-          list.any(rows, fn(row) {
-            row.spell_id == spell4_id
-            && string.contains(why, "effect " <> int.to_string(row.id) <> " ")
-          })
+          refused_for_a_type_42_row(why:, rows:, spell4_id:)
         Ok(activate.Planned(..)) | Ok(activate.NoSpell4Row) | Error(Nil) ->
           False
       }
@@ -221,7 +231,7 @@ fn result_try(
   }
 }
 
-pub fn the_objectives_a_row_names_are_reachable_or_pinned_as_a_gap_test() -> Nil {
+pub fn no_ability_a_player_holds_names_an_objective_left_open_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
@@ -333,10 +343,7 @@ pub fn an_item_spell_with_a_type_42_row_and_no_activate_row_is_planned_or_refuse
       case activate.planned_of(activations:, spell4_id:) {
         Ok(activate.Planned(..)) -> True
         Ok(activate.CannotBePlanned(why:)) -> {
-          assert !list.any(rows, fn(row) {
-            row.spell_id == spell4_id
-            && string.contains(why, "effect " <> int.to_string(row.id) <> " ")
-          })
+          assert !refused_for_a_type_42_row(why:, rows:, spell4_id:)
             as {
               "Spell4 "
               <> int.to_string(spell4_id)

@@ -554,28 +554,40 @@ pub fn tier_changes_and_amps_in_a_save_are_dropped_and_the_bar_is_kept_test() ->
     as "it says how many were not applied"
 }
 
-/// The Novice loadouts the client's CharacterCreation rows give, one for each class and
-/// faction pair, as `#(class_id, faction_id, loadout)`. A class holds one in every faction a
-/// player starts in.
+/// The CharacterCreation start enum of the Novice (PreTutorial) rows, the ones the
+/// loadouts are built from (`Item2.novice_set`).
+const novice_start = 4
+
+/// The Novice loadouts of every class and faction the client's CharacterCreation rows
+/// let a player start in (an enabled row that is not costume-only, of the Novice
+/// start), one for each pair, as `#(class_id, faction_id, loadout)`. The pairs come
+/// from the rows, not from the loadouts, so a pair with no loadout fails here.
 fn novice_loadouts(
   tables tables: table_store.Tables,
 ) -> List(#(Int, Int, loadout.Loadout)) {
-  let found =
-    list.filter_map(character_creation.all(tables), fn(row) {
-      loadout.of(
-        tables:,
-        class_id: ClassId(row.class_id),
-        faction_id: row.faction_id,
-      )
-      |> result.map(fn(held) { #(row.class_id, row.faction_id, held) })
+  let pairs =
+    character_creation.all(tables)
+    |> list.filter(fn(row) {
+      row.character_creation_start_enum == novice_start
+      && row.enabled
+      && !row.costume_only
     })
+    |> list.map(fn(row) { #(row.class_id, row.faction_id) })
     |> list.unique
-  let classes = list.unique(list.map(found, fn(one) { one.0 }))
-  let factions = list.unique(list.map(found, fn(one) { one.1 }))
-  assert classes != [] as "the client's CharacterCreation holds Novice starts"
-  assert list.length(found) == list.length(classes) * list.length(factions)
-    as "every class has a loadout in every faction a player starts in"
-  found
+  assert pairs != [] as "the client's CharacterCreation holds Novice starts"
+  list.map(pairs, fn(pair) {
+    let #(class_id, faction_id) = pair
+    let assert Ok(held) =
+      loadout.of(tables:, class_id: ClassId(class_id), faction_id:)
+      as {
+        "class "
+        <> int.to_string(class_id)
+        <> ", faction "
+        <> int.to_string(faction_id)
+        <> ": a player can start as this pair, so it has a loadout"
+      }
+    #(class_id, faction_id, held)
+  })
 }
 
 pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_every_level_test() -> Nil {
