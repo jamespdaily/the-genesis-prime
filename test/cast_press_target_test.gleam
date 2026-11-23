@@ -295,6 +295,8 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
       struck_of: fn(_) { [healed] },
     )
   let answered = list.flat_map(answered_steps, fn(step) { step.1 })
+  assert list.length(support.goes_in(effects: answered)) == 1
+    as "the round answered by the ally writes one 0x7f4"
   assert targets_named(effects: answered) == [ally]
     as "the go's 0x7f4 names the ally it healed"
   assert support.listed_on(effects: answered, unit_id: ally)
