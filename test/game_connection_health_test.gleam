@@ -1,7 +1,7 @@
 //// The game connection's rule (`genesis_prime/game/connection`), run as the
 //// pure function it is: inputs in, new state and effects out. These tests cover
-//// the health a player leaves with: each save carries it, a save while dead
-//// carries 0, and the next entry is at it (a dead entry is the death test's).
+//// the health a player leaves with: each save carries it, and the next entry is
+//// at it (a dead entry and the save of a dead player are the death test's).
 ////
 //// Expected values come from these places.
 //// - A level-1 player's full health is 736 (`player.level1_base_health`), and
@@ -11,11 +11,9 @@
 //// - The client shows stat 0 of the player's 0x262 as the unit's health and
 ////   Base Health, property 7, as its maximum (`opcode.0x262`,
 ////   `vector.opcode.0x262.health`).
-//// - A save while dead keeps 0, the health the client creates a unit dead at
-////   (`0x140457bc5`, `death.enter_dead`); an entry with none saved is at full
-////   health, alive. A saved health above the maximum enters at the maximum, and
-////   one above 0 at or below it enters at itself: the server's choice, since the
-////   client holds no saved health.
+//// - A saved health at or below the maximum enters at itself and an entry with
+////   none saved is at full health: the server's choice, since the client holds
+////   no saved health (`player_life_test` holds the rule).
 
 import connection_rule_support as support
 import game_connection_support
@@ -47,11 +45,6 @@ fn struck() -> game_connection.State {
     game_connection_support.in_world(),
     game_connection_support.a_beast_strike(game_connection_support.own_unit_id),
   ).0
-}
-
-/// The tests' player, dead and seen by connection 2.
-fn dead() -> game_connection.State {
-  game_connection_support.dead_in_world().0
 }
 
 /// The step after the 60 s timer fired.
@@ -141,22 +134,6 @@ pub fn the_drop_save_carries_the_health_the_player_has_now_test() -> Nil {
     )
 }
 
-pub fn a_save_while_dead_keeps_0_and_the_place_of_the_body_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let zero =
-    game_connection_support.save_asked_keeping(
-      sequence: 1,
-      place: game_connection_support.entry_place(),
-      health: Some(0),
-    )
-  assert game_connection_support.ask_request(timer_fired(dead())) == zero
-    as "the 60 s save of a dead player keeps 0 and the place where the body lies, so it comes back dead (death.enter_dead)"
-  assert game_connection_support.ask_request(camp_finished(dead())) == zero
-    as "and so does the camp's"
-  assert game_connection_support.ask_request(dropped(dead())) == zero
-    as "and the drop's"
-}
-
 pub fn a_save_the_database_refused_for_the_health_is_an_error_and_the_player_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) =
@@ -196,27 +173,6 @@ pub fn a_saved_health_below_the_maximum_is_the_stat_0_of_the_players_own_0x262_a
   assert unit_fields.stat(tail: unit.tail, stat_id: unit_fields.shield_stat)
     == Ok(450)
     as "the shield enters full as before"
-}
-
-pub fn a_saved_health_at_the_maximum_enters_at_the_maximum_test() -> Nil {
-  use <- owned_test.run(10_000)
-  assert health_of(entry_unit(Some(game_connection_support.full_health)))
-    == Ok(game_connection_support.full_health)
-}
-
-pub fn a_saved_health_above_the_maximum_enters_at_the_maximum_test() -> Nil {
-  use <- owned_test.run(10_000)
-  assert health_of(entry_unit(Some(game_connection_support.full_health + 1)))
-    == Ok(game_connection_support.full_health)
-    as "a row that holds more than the level gives is capped at entry"
-  assert health_of(entry_unit(Some(1_000_000)))
-    == Ok(game_connection_support.full_health)
-}
-
-pub fn a_character_with_no_saved_health_enters_at_full_health_test() -> Nil {
-  use <- owned_test.run(10_000)
-  assert health_of(entry_unit(None)) == Ok(game_connection_support.full_health)
-    as "nothing saved, as for a character never saved: alive at full health"
 }
 
 pub fn a_player_that_entered_with_less_health_is_struck_from_there_test() -> Nil {
