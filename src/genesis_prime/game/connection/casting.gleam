@@ -113,6 +113,7 @@ import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/objective_link
 import genesis_prime/game/passed_in_value
+import genesis_prime/game/player_address
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -152,7 +153,8 @@ import gleam/set
 /// (genesis_prime/game/cast): the press is refused or accepted and its writes,
 /// tells and timers are carried out, the cancel ends a cast, and a refusal ends
 /// the connection. A dead player's press is checked as the client checks it
-/// (`caster_of`).
+/// (`caster_of`), and the unit a press names is judged from the player's picture
+/// (`activate_target`).
 pub fn cast_message(
   session session: Session,
   now now: Now,
@@ -160,13 +162,15 @@ pub fn cast_message(
   inner inner: Frame,
   message message: cast_state.Message,
 ) -> client_connection.Handled(Session) {
+  let WorldCast(caster:, target_of:, ..) = world_cast(session:, now:, entered:)
   case
     cast.take(
       cast: entered.cast,
       message:,
       body: inner.body,
-      caster: caster_of(tables: session.settings.tables, entered:),
+      caster:,
       plans: connection_state.plans_of(session:),
+      target_of:,
       now:,
     )
   {
@@ -887,6 +891,10 @@ pub fn caster_of(
     surge_spell: spell_surge.spell(tables:),
     weapon: entered.gear.weapon,
     audience: connection_state.viewer_connections(entered:),
+    players_in_sight: player_address.in_sight(
+      viewers: entered.viewers,
+      picture: entered.shown,
+    ),
     dead: player_life.state(life:) == player_life.Dead,
     resources: entered.resources,
     in_combat: player_life.in_combat(life:),

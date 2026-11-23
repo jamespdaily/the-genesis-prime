@@ -685,6 +685,9 @@ pub type Spell {
     /// The spell's school (`Spell4Base.school`, `Spell.CodeEnumSchool`): 0 Spell, 1 Melee,
     /// 2 Ranged, 3 Unarmed.
     school: Int,
+    /// Whom the spell may be cast at (`Spell4Base`'s Spell4TargetMechanics and
+    /// Spell4ValidTargets rows), which a press at a unit is judged by.
+    targeting: target_mechanic.Targeting,
     method: CastMethod,
     /// Spell4.castTime; 0 goes at once.
     cast_time_ms: Int,
@@ -3590,6 +3593,23 @@ fn spell_of(
       id: row.spell4_base_id_base_spell,
     )),
   )
+  use targeting <- result.try(
+    target_mechanic.targeting_of(
+      tables:,
+      base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+    )
+    |> result.map_error(fn(missing) {
+      case missing {
+        target_mechanic.NoMechanicsRow(missing: target_mechanic.NoBaseRow(id:)) ->
+          NoRow(table: "Spell4Base", id:)
+        target_mechanic.NoMechanicsRow(missing: target_mechanic.NoTargetMechanicsRow(
+          id:,
+        )) -> NoRow(table: "Spell4TargetMechanics", id:)
+        target_mechanic.NoValidTargetsRow(id:) ->
+          NoRow(table: "Spell4ValidTargets", id:)
+      }
+    }),
+  )
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
   let rows = prerequisite.table_rows(tables:)
   let arcs = prerequisite.table_arcs(tables:)
@@ -3802,6 +3822,7 @@ fn spell_of(
       spell4_id: Spell4Id(spell4_id),
       spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
       school: base.school,
+      targeting:,
       method:,
       cast_time_ms: row.cast_time,
       cooldown_ms: row.spell_cool_down,

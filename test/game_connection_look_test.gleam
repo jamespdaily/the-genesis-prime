@@ -259,6 +259,7 @@ fn created_for(
         event: support.sent_by_the_map(SeenBy(
           by: ConnectionId(viewer),
           stay: support.viewer_stay(viewer),
+          unit_id: support.viewer_unit_id(viewer),
         )),
       ).1,
     )

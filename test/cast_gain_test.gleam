@@ -203,6 +203,7 @@ fn mind_burst_held_behind_the_go(
   let take = fn(state, body, at) {
     let assert Ok(taken) =
       cast.take(
+        target_of: support.nothing_shown,
         cast: state,
         message: cast_state.Pressed,
         body:,

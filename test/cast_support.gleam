@@ -14,6 +14,7 @@ import client_tables
 import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/activate
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/cost as cast_cost
@@ -31,6 +32,7 @@ import genesis_prime/game/spell_plan.{
   NoWeaponNeeded, Normal, Spell, StealthRow,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/target_mechanic
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cancel_cast.{CancelCast}
@@ -134,6 +136,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     spell4_id: Spell4Id(spell4_id),
     spell4_base_id: Spell4BaseId(base),
     school: 0,
+    targeting: target_mechanic.at_the_caster,
     method: Normal,
     cast_time_ms: 0,
     cooldown_ms: 0,
@@ -399,6 +402,7 @@ pub fn caster() -> Caster {
     surge_spell: Spell4Id(47_439),
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
+    players_in_sight: dict.new(),
     dead: False,
     resources: class_resource_support.new(resource: full_slot_1()),
     in_combat: False,
@@ -419,6 +423,11 @@ pub fn caster() -> Caster {
     ),
     checker: prerequisite.Checker(items: [], book: [], world_difficulty: 0),
   )
+}
+
+/// What a unit is to a caster whose picture shows nothing: unseen.
+pub fn nothing_shown(_unit_id: Int) -> activate.Target {
+  activate.Unseen
 }
 
 /// The same player dead, as the connection builds it when it tells the rule of its
@@ -1000,6 +1009,7 @@ pub fn key_raw_in(
 ) -> #(State, List(Effect)) {
   let assert Ok(taken) =
     cast.take(
+      target_of: nothing_shown,
       cast: state,
       message: cast_state.KeyHeld,
       body: hold_body(bag_index:, target: 0, held:),
@@ -1198,6 +1208,7 @@ pub fn pressed_counting(
 ) -> #(State, List(Effect), Int) {
   let assert Ok(taken) =
     cast.take(
+      target_of: nothing_shown,
       cast: state,
       message: cast_state.Pressed,
       body: press_body(client_cast_id: 9, bag_index:, target:, press: 1),
@@ -1220,6 +1231,7 @@ pub fn cancelled(
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   cast.take(
+    target_of: nothing_shown,
     cast: state,
     message: cast_state.Cancelled,
     body: cancel_body(cast_id:, reason:, bit:),
@@ -1240,6 +1252,7 @@ pub fn cancelled_in(
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   cast.take(
+    target_of: nothing_shown,
     cast: state,
     message: cast_state.Cancelled,
     body: cancel_body(cast_id:, reason:, bit:),

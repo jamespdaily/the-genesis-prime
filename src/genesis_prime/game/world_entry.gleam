@@ -161,6 +161,7 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/objective
+import genesis_prime/game/player_address
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -362,7 +363,7 @@ pub type Joined {
 /// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
 /// `SeenBy` and `UnseenBy` keep `viewers`, the connections whose players see
-/// this one, each with its player's stay as the map named it, the
+/// this one, each with its player's stay and unit id as the map named them, the
 /// connection sends everything about the player's own unit to them, and `shown`
 /// and `gone` are the units its client holds and the ones the map reported gone
 /// (genesis_prime/game/connection).
@@ -419,7 +420,7 @@ pub type Entered {
     /// the properties it gave them.
     gear: Gear,
     clock_origin_ms: Int,
-    viewers: Dict(ConnectionId, Stay),
+    viewers: Dict(ConnectionId, player_address.Viewer),
     shown: shown.Picture,
     casts_written: Dict(Int, Int),
     gone: Set(Int),

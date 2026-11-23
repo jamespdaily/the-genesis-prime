@@ -804,6 +804,7 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
         game_connection_support.sent_by_the_map(SeenBy(
           by: ConnectionId(3),
           stay: game_connection_support.viewer_stay(3),
+          unit_id: game_connection_support.viewer_unit_id(3),
         )),
       ),
     )
@@ -1014,6 +1015,7 @@ pub fn a_viewer_that_arrives_while_the_player_is_dead_gets_its_0x262_with_health
       game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
+        unit_id: game_connection_support.viewer_unit_id(3),
       )),
     )
   let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:))] =
@@ -1044,6 +1046,7 @@ pub fn a_viewer_that_arrives_after_a_hit_gets_the_players_shield_and_health_now_
       game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
+        unit_id: game_connection_support.viewer_unit_id(3),
       )),
     )
   let assert [#(3, PeerNews(news: Appeared(unit:), ..))] =
@@ -1190,6 +1193,7 @@ pub fn a_viewer_that_arrives_while_the_player_entered_dead_gets_health_0_and_shi
       game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
+        unit_id: game_connection_support.viewer_unit_id(3),
       )),
     )
   let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:))] =
