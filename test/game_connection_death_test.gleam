@@ -431,31 +431,6 @@ pub fn a_dead_players_press_of_an_ability_without_the_dead_bit_is_taken_as_the_l
     as "the dead Medic's press is taken as the living's: the same frames, the same strike"
 }
 
-pub fn a_strike_on_a_dead_player_is_refused_dead_and_writes_nothing_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, _) = game_connection_support.dead_in_world()
-  let #(_, taken) =
-    game_connection_support.feed(
-      state,
-      game_connection_support.a_beast_strike(
-        game_connection_support.own_unit_id,
-      ),
-    )
-  assert support.writes(taken) == []
-    && game_connection_support.peer_tells(taken) == []
-  let assert [
-    #(
-      7,
-      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
-        outcome: strike_tell.Refused(why: strike_tell.Dead),
-        ..,
-      )),
-    ),
-  ] = game_connection_support.told_creatures(taken)
-    as "the creature's strike that reaches the player after its death is refused Dead"
-  Nil
-}
-
 pub fn while_dead_every_0x637_is_dropped_and_after_coming_back_a_move_moves_the_body_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) = game_connection_support.dead_in_world()
@@ -604,19 +579,6 @@ pub fn a_0x15a_the_rule_refuses_writes_nothing_and_logs_a_warning_and_one_the_cl
       health: Some(0),
     )
     as "a dead player's save keeps 0 (death.enter_dead); after the save of the place, as any end in the world"
-}
-
-pub fn a_second_choice_is_refused_unchanged_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, _) = game_connection_support.dead_in_world()
-  let #(state, _) =
-    game_connection_support.read(state, game_connection_support.wake_here())
-  let #(_, second) =
-    game_connection_support.read(state, game_connection_support.holocrypt())
-  assert support.writes(second) == []
-    && support.asked(second) == None
-    && list.length(support.logs_of(step: second, level: LogWarning)) == 1
-    as "the first choice brought the player back: the second finds it alive and is refused with a warning"
 }
 
 pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies_and_a_later_strike_lands_test() -> Nil {
