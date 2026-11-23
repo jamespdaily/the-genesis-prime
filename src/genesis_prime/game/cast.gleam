@@ -1390,7 +1390,7 @@ fn activation_in_range(
   cast_time_ms cast_time_ms: Int,
   effects effects: List(activate.ActivateEffect),
   dropped dropped: activate.Dropped,
-  limits limits: activate.Limits,
+  limits limits: spell_plan.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
   case cast_press.target_state_refusal(spell:, alive:, held:) {
     Some(result) ->
@@ -1450,7 +1450,7 @@ fn activation_reached(
   cast_time_ms cast_time_ms: Int,
   effects effects: List(activate.ActivateEffect),
   dropped dropped: activate.Dropped,
-  limits limits: activate.Limits,
+  limits limits: spell_plan.Limits,
 ) -> Result(ActivationChecked, Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
@@ -2418,10 +2418,12 @@ fn press_of(
 
 /// A resolved press: the 91 refusal of a press at a player the caster no longer has in
 /// sight, the 285 refusal of a spell with no threshold time that no Proxy replaced (the
-/// client tests the resolved spell, `0x1403c0144`, fact `cast.proxy_press`), else the
-/// verdict on the spell. Every start of a bag cast passes here, so a repeat, a queued
-/// press and a press released from a wait are judged by the players in sight of the
-/// input that starts them. A Proxy of such a press is cast as the press itself (`Base` of
+/// client tests the resolved spell, `0x1403c0144`, fact `cast.proxy_press`), the faction
+/// test of a press at a player (`press_target.faction_precheck`, which the client runs
+/// before the caster's checks), the verdict on the spell, and, when the caster's checks pass
+/// or queue the press, the rest of the target's checks (`press_target.judge`). Every start
+/// of a bag cast passes here, so a repeat, a queued press and a press released from a wait
+/// are judged by the players in sight of the input that starts them. A Proxy of such a press is cast as the press itself (`Base` of
 /// the Proxy's spell), so a Proxy with a threshold of its own opens it.
 fn press_resolved(
   cast cast: State,
@@ -2440,8 +2442,16 @@ fn press_resolved(
       result:,
     )
   }
+  let target_state = case resolution.primary_target {
+    OnPlayer(unit_id:) ->
+      case dict.has_key(caster.players_in_sight, unit_id) {
+        True -> dict.get(caster.other_players, unit_id) |> option.from_result
+        False -> None
+      }
+    OnCaster -> None
+  }
   let target_unseen = case resolution.primary_target {
-    OnPlayer(unit_id:) -> !dict.has_key(caster.players_in_sight, unit_id)
+    OnPlayer(..) -> option.is_none(target_state)
     OnCaster -> False
   }
   let judged = case
@@ -2455,13 +2465,13 @@ fn press_resolved(
     True, _ -> Refuse(result: cast_result.NoTarget)
     False, True -> Refuse(result: cast_result.IllegalSpellCast)
     False, False ->
-      cast_press.verdict(
+      cast_press.verdict_at(
         cast:,
         caster:,
         spell:,
         now_ms:,
         is_release:,
-        target_subject: None,
+        target: target_state,
       )
   }
   let primary_target = case resolution.primary_target {

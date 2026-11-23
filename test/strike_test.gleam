@@ -56,6 +56,7 @@ import gleam/option.{type Option, None, Some}
 import map_support
 import owned_test
 import place_support
+import player_state_support
 import properties_support
 import rating_support
 import spell_tables
@@ -970,7 +971,7 @@ fn picture() -> shown.Picture {
         attackable: Attackable(exile: False, dominion: True),
       ),
     ),
-    #(28, ShownPlayer(at: option.None)),
+    #(28, ShownPlayer(state: player_state_support.a_player())),
     #(
       20,
       strike_support.creature_at(
@@ -1184,7 +1185,7 @@ pub fn a_despawn_row_selects_no_player_and_no_static_object_test() -> Nil {
           attackable: Attackable(exile: True, dominion: True),
         ),
       ),
-      #(28, ShownPlayer(at: option.None)),
+      #(28, ShownPlayer(state: player_state_support.a_player())),
       #(29, object),
     ])
   let selected = fn(primary_target) {

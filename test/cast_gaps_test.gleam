@@ -38,8 +38,38 @@ fn limits() -> List(Limit) {
     Limit(
       cast_press.gaps(),
       "Casting",
-      ["press of an ability at another player", "accepted without"],
-      "a press at another player is accepted without the target's life, combat, crowd-control state, range, faction and group",
+      ["press of an ability at another player", "refused as not built"],
+      "a spell with a cast group, a target vital, a required zone or an unread target condition bit pressed at another player is refused as not built",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["press of an ability at another player", "line of sight"],
+      "a press at another player is never refused for terrain or line of sight (101, 166)",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["press of an ability at another player", "invulnerable"],
+      "a press at another player is not judged for an invulnerable or immune state, a taxi ride or a duel (96, 92, 120)",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["press of an ability at another player", "pet or master"],
+      "a press at another player whose spell needs the target to be the caster's pet or master is refused 255 or 256",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["PvP flag or group", "in sight"],
+      "a PvP flag or group that changes while a player is in sight reaches no viewer",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["press of an ability at another player", "2 m"],
+      "a press at another player is allowed 2 m beyond the spell's maximum range, the server's guess",
     ),
     Limit(
       cast_press.gaps(),
@@ -62,7 +92,7 @@ fn limits() -> List(Limit) {
     Limit(
       cast_press.gaps(),
       "Casting",
-      ["zone", "vital"],
+      ["press at a creature", "zone", "vital"],
       "a press at a creature does not test its zone or vital state",
     ),
     Limit(
@@ -292,4 +322,9 @@ pub fn the_press_entry_names_only_the_creature_states_a_press_does_not_test_test
       missing: "A press at a creature is not refused for a zone or vital state of its target that the server does not hold.",
     ),
   )
+  assert !list.any(cast_press.gaps(), fn(entry) {
+    string.contains(entry.missing, "another player")
+    && string.contains(entry.missing, "accepted without")
+  })
+    as "a press at another player is judged by the target's life, combat, crowd-control states, range, faction and group, so no entry says it is accepted without them"
 }

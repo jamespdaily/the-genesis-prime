@@ -919,6 +919,16 @@ pub fn caster_of(
       viewers: entered.viewers,
       picture: entered.shown,
     ),
+    other_players: player_address.states_in_sight(
+      viewers: entered.viewers,
+      picture: entered.shown,
+    ),
+    hit_radius: hit_radius.of_playing(
+      tables:,
+      race_id: entered.character.race_id,
+    ),
+    pvp_flagged: int.bitwise_and(entered.unit.pvp_flags, 1) == 1,
+    group_id: entered.unit.group_id,
     dead: player_life.state(life:) == player_life.Dead,
     resources: entered.resources,
     in_combat: player_life.in_combat(life:),

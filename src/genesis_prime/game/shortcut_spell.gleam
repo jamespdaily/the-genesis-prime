@@ -21,7 +21,6 @@
 ////   with the reason in `item_refusals`. An item's spell of any other kind stays with the
 ////   creature's activate cast (genesis_prime/game/activate).
 
-import genesis_prime/game/activate
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/item_property
 import genesis_prime/game/objective_kind
@@ -52,14 +51,6 @@ pub type Planned {
   NoSpell4Row
   /// The spell's tree cannot be planned: the reason in words.
   CannotBePlanned(why: String)
-}
-
-/// What the client tests of the target's combat before it sends a cast (`0x1403b2240`).
-pub type TargetCombat {
-  /// No test: the target may be in combat.
-  CombatAllowed
-  /// A target in combat is refused 108.
-  OutOfCombatOnly
 }
 
 /// The plans of the spells the cast-a-spell objectives name and the Caster-kind spells items
@@ -244,9 +235,9 @@ pub type Aim {
     /// Spell4Base.targetGroupIdCastGroup, 0 for none.
     cast_group_id: Int,
     /// What the target's Spell4Conditions row says of its combat.
-    target_combat: TargetCombat,
+    target_combat: spell_plan.TargetCombat,
     /// The Spell4 row's range limits.
-    limits: activate.Limits,
+    limits: spell_plan.Limits,
   )
 }
 
@@ -316,7 +307,7 @@ fn aim_of(
     |> result.replace_error(NoValidTargetsRow),
   )
   use target_combat <- result.map(case row.spell4_conditions_id_target {
-    0 -> Ok(CombatAllowed)
+    0 -> Ok(spell_plan.CombatAllowed)
     conditions_id ->
       spell4_conditions.get(tables:, id: Spell4ConditionsId(conditions_id))
       |> result.replace_error(NoTargetConditionsRow)
@@ -326,7 +317,7 @@ fn aim_of(
     targeting:,
     cast_group_id: base.target_group_id_cast_group,
     target_combat:,
-    limits: activate.Limits(
+    limits: spell_plan.Limits(
       min: row.target_min_range,
       max: row.target_max_range,
       vertical: row.target_vertical_range,
@@ -339,13 +330,13 @@ fn aim_of(
 /// combat (108). A row that asks for the target in combat is not read.
 fn combat_of(
   conditions conditions: spell4_conditions.Spell4Conditions,
-) -> Result(TargetCombat, AimError) {
+) -> Result(spell_plan.TargetCombat, AimError) {
   case
     spell_effect.has_flag(flags: conditions.condition_mask, bit: 2),
     spell_effect.has_flag(flags: conditions.condition_value, bit: 2)
   {
-    False, _ -> Ok(CombatAllowed)
-    True, False -> Ok(OutOfCombatOnly)
+    False, _ -> Ok(spell_plan.CombatAllowed)
+    True, False -> Ok(spell_plan.OutOfCombatOnly)
     True, True -> Error(AsksForTargetInCombat)
   }
 }

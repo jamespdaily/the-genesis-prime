@@ -303,7 +303,11 @@
 ////   whether its caster must be alive, must be dead or may be either
 ////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other
 ////   conditions are not read. The target row's bit 0 is read the same way
-////   (`Spell4.spell4ConditionsIdTarget`, `Spell.target_death`), for the activate cast.
+////   (`Spell4.spell4ConditionsIdTarget`, `Spell.target_death`), for the activate cast and a
+////   press at another player.
+//// - **The target aim.** A press at another player also reads the range limits, the combat
+////   test (bit 1 of the target condition row), the cast group and the pet bits of the target
+////   rows, and names what it does not read (`target_aim_of`, `Spell.target_aim`).
 //// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown,
 ////   Class or Prerequisite row the tree names that the tables lack (a Prerequisite
 ////   column of a Spell4 row included), a Prerequisite row that nests itself through the
@@ -736,6 +740,10 @@ pub type Spell {
     /// ccStateMask of the Spell4CCConditions row the Spell4's target column names, 0 for
     /// no row; bit n is the state n.
     target_cc_mask: Int,
+    /// What a press at another player is judged by besides the faction and the target's state:
+    /// the range, the combat test, the cast group and what the plan does not read of the
+    /// target rows (`target_aim_of`).
+    target_aim: TargetAim,
     global_cooldown: GlobalCooldown,
     /// The innate costs a press pays, in the client's order: the Spell4 row's two,
     /// then a stage's Spell4Thresholds row's two (`0x1403b3320`).
@@ -3683,6 +3691,33 @@ fn spell_of(
   ))
   let caster_death = caster_death_of(conditions: caster_conditions)
   let target_death = caster_death_of(conditions: target_conditions)
+  let assert Ok(#(_, mechanics)) =
+    target_mechanic.rows_of_base(
+      tables:,
+      base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+    )
+    as "targeting_read found the Spell4Base and Spell4TargetMechanics rows"
+  let target_aim =
+    target_aim_of(rows: TargetRows(
+      limits: Limits(
+        min: row.target_min_range,
+        max: row.target_max_range,
+        vertical: row.target_vertical_range,
+      ),
+      conditions_mask: case target_conditions {
+        Some(condition) -> condition.condition_mask
+        None -> 0
+      },
+      conditions_value: case target_conditions {
+        Some(condition) -> condition.condition_value
+        None -> 0
+      },
+      begin_innate_requirement: row.target_begin_innate_requirement,
+      zone_required: base.world_zone_id_zone_required,
+      cast_group_id: base.target_group_id_cast_group,
+      targeting_flags: base.targeting_flags,
+      target_type: mechanics.target_type,
+    ))
   use costs <- result.try(costs_of(
     row:,
     innate: [
@@ -3873,6 +3908,7 @@ fn spell_of(
       target_death:,
       caster_cc_mask:,
       target_cc_mask:,
+      target_aim:,
       global_cooldown:,
       costs:,
       requirements:,
@@ -7267,6 +7303,108 @@ fn global_cooldown_of(
       ))
     }
   }
+}
+
+/// How near and how far, and how far up or down, a spell reaches a unit, edge to edge
+/// (`Spell4.targetMinRange`, `targetMaxRange`, `targetVerticalRange`; a vertical range of -1
+/// is none).
+pub type Limits {
+  Limits(min: Float, max: Float, vertical: Float)
+}
+
+/// What the target's combat has to be for a press (bit 1 of the target condition row,
+/// `0x1403b2240`).
+pub type TargetCombat {
+  /// No test: the target may be in combat or out of it.
+  CombatAllowed
+  /// A target in combat is refused 108.
+  OutOfCombatOnly
+  /// A target out of combat is refused 109.
+  MustBeInCombat
+}
+
+/// Whether the spell needs the target to be the caster's pet (bit 2 of
+/// `Spell4Base.targetingFlags`, refused 255) or its master (bit 3, refused 256); a spell of
+/// target type 2, 3, 4, 7 or 8 is never tested for either (`0x1403b0880`).
+pub type PetBits {
+  PetBits(must_be_pet: Bool, must_be_master: Bool)
+}
+
+/// What a press at another player reads of the spell besides its faction and the target's
+/// life and crowd-control states.
+pub type TargetAim {
+  TargetAim(
+    limits: Limits,
+    combat: TargetCombat,
+    /// Spell4Base.targetGroupIdCastGroup, 0 for none.
+    cast_group_id: Int,
+    /// What the server does not read of the target rows, in words, when the spell has any:
+    /// a target vital requirement, a required zone or a target condition bit outside
+    /// `target_mask_read`.
+    unread: Option(String),
+    pets: PetBits,
+  )
+}
+
+/// The columns `target_aim_of` reads.
+pub type TargetRows {
+  TargetRows(
+    limits: Limits,
+    /// The mask and value of the target Spell4Conditions row, 0 and 0 for none.
+    conditions_mask: Int,
+    conditions_value: Int,
+    /// Spell4.targetBeginInnateRequirement.
+    begin_innate_requirement: Int,
+    /// Spell4Base.worldZoneIdZoneRequired.
+    zone_required: Int,
+    cast_group_id: Int,
+    /// Spell4Base.targetingFlags.
+    targeting_flags: Int,
+    /// Spell4TargetMechanics.targetType.
+    target_type: Int,
+  )
+}
+
+/// The aim of a spell's target rows: the limits as the row gives them, the combat test of
+/// bit 1 of the target condition mask (a clear value bit is 108, a set one 109), the cast
+/// group, the pet bits (not for a spell of target type 2, 3, 4, 7 or 8, `0x1403b0880`) and
+/// the first thing the server does not read: a target vital requirement, a required zone,
+/// or a condition bit outside `target_mask_read`.
+pub fn target_aim_of(rows rows: TargetRows) -> TargetAim {
+  let combat = case
+    spell_effect.has_flag(flags: rows.conditions_mask, bit: 2),
+    spell_effect.has_flag(flags: rows.conditions_value, bit: 2)
+  {
+    False, _ -> CombatAllowed
+    True, False -> OutOfCombatOnly
+    True, True -> MustBeInCombat
+  }
+  let tests_pets = !list.contains([2, 3, 4, 7, 8], rows.target_type)
+  TargetAim(
+    limits: rows.limits,
+    combat:,
+    cast_group_id: rows.cast_group_id,
+    unread: case
+      rows.begin_innate_requirement != 0,
+      rows.zone_required != 0,
+      int.bitwise_and(rows.conditions_mask, int.bitwise_not(target_mask_read))
+      != 0
+    {
+      True, _, _ ->
+        Some("a target vital requirement (Spell4.targetBeginInnateRequirement)")
+      False, True, _ ->
+        Some("a required zone (Spell4Base.worldZoneIdZoneRequired)")
+      False, False, True ->
+        Some("a target condition bit the plan does not read (target_mask_read)")
+      False, False, False -> None
+    },
+    pets: PetBits(
+      must_be_pet: tests_pets
+        && spell_effect.has_flag(flags: rows.targeting_flags, bit: 4),
+      must_be_master: tests_pets
+        && spell_effect.has_flag(flags: rows.targeting_flags, bit: 8),
+    ),
+  )
 }
 
 /// The mask bits of a target condition row that the activate cast accounts for, in the

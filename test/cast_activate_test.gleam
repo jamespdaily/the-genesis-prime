@@ -707,7 +707,7 @@ pub fn activate_range_is_edge_to_edge_test() -> Nil {
       spell4_id: 1817,
       planned: Planned(
         ..planned,
-        limits: activate.Limits(..limits, vertical: 2.0),
+        limits: spell_plan.Limits(..limits, vertical: 2.0),
       ),
     )
   let high = creature_with(min: 0.0, max: 100.0)

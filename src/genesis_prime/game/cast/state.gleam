@@ -25,6 +25,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/look
 import genesis_prime/game/player_address.{type PlayerAddress}
+import genesis_prime/game/player_state.{type PlayerState}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
@@ -103,6 +104,17 @@ pub type Caster {
     /// addressed by (genesis_prime/game/player_address): the units a press can name as
     /// its target.
     players_in_sight: Dict(Int, PlayerAddress),
+    /// What a press judges of each of those players, by unit id, as the player's client
+    /// was told of it (genesis_prime/game/player_state).
+    other_players: Dict(Int, PlayerState),
+    /// The player's hit radius, the Race row's (`hit_radius.of_playing`), which the range
+    /// to another unit is measured from the edge of.
+    hit_radius: Float,
+    /// Whether the player is PvP flagged: bit 0 of its 0x262's flags (`IsUnitPvpFlagged`,
+    /// `0x1403b48b0`).
+    pvp_flagged: Bool,
+    /// The player's group id, the 0x262's, 0 for none.
+    group_id: Int,
     /// Whether the player is dead (genesis_prime/game/player_life), which the
     /// client checks a press against (`cast.dead_player`).
     dead: Bool,

@@ -43,6 +43,7 @@ import gleam/option.{Some}
 import gleam/string
 import map_support
 import owned_test
+import player_state_support
 import prerequisite_support
 
 const ally = 40
@@ -68,6 +69,7 @@ fn esper_seeing(players players: List(Int)) -> Caster {
   cast_state.Caster(
     ..support.caster(),
     stats: attacker_support.novice(),
+    other_players: player_state_support.in_range_of_the_caster(units: players),
     players_in_sight: dict.from_list(
       list.map(players, fn(unit_id) {
         #(unit_id, PlayerAddress(..address(), unit_id:))
