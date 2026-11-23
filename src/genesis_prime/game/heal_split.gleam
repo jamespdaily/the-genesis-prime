@@ -21,6 +21,7 @@
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/unit_properties.{type Properties}
+import genesis_prime/gap
 import gleam/float
 import gleam/int
 
@@ -100,4 +101,14 @@ pub fn split(
       Split(amount:, shield:, health:, overheal: amount - shield - health)
     }
   }
+}
+
+/// What a heal's split does that the client's reader does not show.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "A health heal whose HealToShieldConversion is above 1 gives the shield at most the heal's amount and the health 0, a server's guess because the client's reader wraps there; the client is still sent the property as computed, so its floater and combat log show the uncapped shield part and a health part below 0.",
+    ),
+  ]
 }

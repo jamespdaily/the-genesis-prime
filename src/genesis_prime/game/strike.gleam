@@ -1434,7 +1434,9 @@ fn timer_effects(state state: State, now now: Now) -> #(State, List(Effect)) {
   }
 }
 
-/// What a strike does not order that the client's does.
+/// What a strike does not do that the client's does, in the areas its entries fall in:
+/// the order of news at a watcher's connection (Strikes) and a healed player's answer
+/// (Casting).
 pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(

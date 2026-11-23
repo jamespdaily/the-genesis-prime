@@ -448,8 +448,7 @@ pub fn a_heal_with_shield_conversion_splits_between_shield_and_health_test() -> 
     )
   assert player_life.shield(life:) == 344
     as "the shield rises by the heal's 100 at most, not by int(100 x 1.2) = 120"
-  assert player_life.health(life:) == 612
-    as "and the health part is 0, not a negative 20"
+  assert player_life.health(life:) == 612 as "and the health does not move"
   assert effects
     == [
       ToClient(OwnShield(shield: 344)),
@@ -748,10 +747,7 @@ pub fn a_heal_row_list_never_raises_a_vital_past_its_maximum_and_each_split_acco
       qcheck.list_from(row),
       qcheck.bounded_float(from: 0.0, to: 2.0),
       qcheck.bounded_float(from: 0.0, to: 2.0),
-      // HealToShieldConversion is the share of a heal the shield takes (`0x1405d8350`),
-      // so it lies in 0 to 1: a share above 1 gives the shield more than the heal and
-      // `heal_split.split` a health part below 0.
-      qcheck.bounded_float(from: 0.0, to: 1.0),
+      qcheck.bounded_float(from: 0.0, to: 2.0),
       qcheck.bounded_int(from: 100, to: 800),
     ),
     fn(drawn) {

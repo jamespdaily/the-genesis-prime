@@ -28,6 +28,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/dev_command
 import genesis_prime/game/dropped
 import genesis_prime/game/forced_move
+import genesis_prime/game/heal_split
 import genesis_prime/game/hello_reply
 import genesis_prime/game/hit
 import genesis_prime/game/interaction
@@ -135,6 +136,7 @@ pub fn registry() -> List(Entry) {
     cast_cost.gaps(),
     cast_heal.gaps(),
     cast_proc.gaps(),
+    heal_split.gaps(),
   ])
 }
 

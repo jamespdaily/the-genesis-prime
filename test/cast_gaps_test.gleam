@@ -13,6 +13,7 @@ import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/connection/landing as connection_landing
+import genesis_prime/game/heal_split
 import genesis_prime/game/strike
 import genesis_prime/gap.{type Entry}
 import gleam/list
@@ -153,6 +154,12 @@ fn limits() -> List(Limit) {
       "Casting",
       ["answer", "dropped"],
       "a healed player's answer is dropped by the connection it is told to",
+    ),
+    Limit(
+      heal_split.gaps(),
+      "Casting",
+      ["HealToShieldConversion", "above 1", "guess"],
+      "a share above 1 caps the shield part at the heal, while the client shows the uncapped part",
     ),
   ]
 }
