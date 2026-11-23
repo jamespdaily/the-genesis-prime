@@ -14,8 +14,6 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/target_group
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Faction2Id}
-import genesis_prime/table/item2
-import genesis_prime/table/item_special
 import genesis_prime/table/loader/store.{type Tables}
 import genesis_prime/table/quest2
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
@@ -33,6 +31,19 @@ import unitest
 fn type_42_rows(tables tables: Tables) -> List(Spell4Effects) {
   spell4_effects.all(tables)
   |> list.filter(fn(row) { row.effect_type == 42 })
+}
+
+/// Whether the refusal text `why` of the spell names the effect of one of its type 42 rows
+/// (the plan writes `effect N ` for the effect it refuses).
+fn refused_for_a_type_42_row(
+  why why: String,
+  rows rows: List(Spell4Effects),
+  spell4_id spell4_id: Int,
+) -> Bool {
+  list.any(rows, fn(row) {
+    row.spell_id == spell4_id
+    && string.contains(why, "effect " <> int.to_string(row.id) <> " ")
+  })
 }
 
 /// What the plan makes of the row, as a name: `applied`, the name of the reason it is left out,
@@ -62,6 +73,7 @@ fn outcome_of(tables tables: Tables, effect effect: Spell4Effects) -> String {
 
 pub fn every_type_42_row_is_applied_dropped_or_left_out_by_a_named_reason_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let rows = type_42_rows(tables:)
@@ -111,6 +123,7 @@ pub fn every_type_42_row_is_applied_dropped_or_left_out_by_a_named_reason_test()
 
 pub fn no_activate_spell_is_refused_for_a_type_42_row_and_the_use_rule_counts_the_rows_it_does_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let sources = spell_plan.sources_of(tables:)
@@ -127,10 +140,7 @@ pub fn no_activate_spell_is_refused_for_a_type_42_row_and_the_use_rule_counts_th
     list.filter(set.to_list(routed), fn(spell4_id) {
       case activate.planned_of(activations:, spell4_id:) {
         Ok(activate.CannotBePlanned(why:)) ->
-          list.any(rows, fn(row) {
-            row.spell_id == spell4_id
-            && string.contains(why, "effect " <> int.to_string(row.id) <> " ")
-          })
+          refused_for_a_type_42_row(why:, rows:, spell4_id:)
         Ok(activate.Planned(..)) | Ok(activate.NoSpell4Row) | Error(Nil) ->
           False
       }
@@ -221,8 +231,9 @@ fn result_try(
   }
 }
 
-pub fn the_objectives_a_row_names_are_reachable_or_pinned_as_a_gap_test() -> Nil {
+pub fn no_ability_a_player_holds_names_an_objective_left_open_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let sources = spell_plan.sources_of(tables:)
@@ -278,62 +289,77 @@ pub fn the_objectives_a_row_names_are_reachable_or_pinned_as_a_gap_test() -> Nil
     as "53 visible, required, marked type 5 objectives no creature links are named by a type 42 row"
   assert list.length(with_a_route) == 12
     as "12 of them have a row of an activate spell of a creature or an item that the plan applies and the activate cast plans, so a cast that starts can finish them"
-  assert list.map(without, fn(found) { { found.2 }.objective_id })
-    |> list.sort(int.compare)
-    == unreachable_objectives
-    as "the other 41 stay open as they do: no table gives a player the spell that advances them"
+  assert without != []
+    as "some named objective has no route, so the check below has objectives to hold"
+  // The spells a player holds: every ability the server plans, with the spells its tree casts.
+  let ability_spells =
+    dict.values(spell_plan.plans_with_later(tables:))
+    |> list.flat_map(spell_plan.tree(spell: _, started: fn(_) { True }))
+    |> list.map(fn(spell) { spell.spell4_id.value })
+    |> set.from_list
+  list.each(without, fn(found) {
+    let #(quest_id, index, objective) = found
+    list.each(rows, fn(row) {
+      case row.data_bits00 == quest_id && row.data_bits01 == index {
+        True -> {
+          assert !set.contains(ability_spells, row.spell_id)
+            as {
+              "QuestObjective "
+              <> int.to_string(objective.objective_id)
+              <> " is named by the row of Spell4 "
+              <> int.to_string(row.spell_id)
+              <> ", an ability a player holds, yet no cast of it can advance the objective"
+            }
+          Nil
+        }
+        False -> Nil
+      }
+    })
+  })
 }
 
-/// The QuestObjective ids of the 41 objectives a type 42 row names that no spell a player holds
-/// advances. They stay open, a pinned gap.
-const unreachable_objectives = [
-  7009, 7169, 8039, 8753, 8988, 8989, 8990, 9749, 10_291, 10_304, 12_664, 12_742,
-  12_863, 12_893, 12_894, 12_895, 13_480, 13_544, 13_938, 14_144, 14_232, 14_485,
-  14_488, 14_583, 14_953, 15_591, 15_616, 16_620, 17_798, 17_872, 18_325, 18_326,
-  18_567, 18_570, 19_033, 19_351, 19_354, 21_095, 21_096, 21_097, 21_115,
-]
-
-/// The item spells that start only for a type 42 row, which hold no Activate row: an item's cast
-/// of any of them plans (`activate.planned_of`) and starts, where it was refused as unbuilt.
-/// Spell4 26477 (Item2 12336, "Disruptor Beam [DEPRECATED?]") names Quest2 1, which has no
-/// objective, and starts a cast that does nothing; the client's own item check
-/// (`0x140398cc0`) runs before the spell and refuses what it refuses.
-pub fn the_item_spells_that_start_only_for_a_type_42_row_are_these_test() -> Nil {
+/// An item's spell with a type 42 row and no Activate row (type 7) is castable when it plans
+/// (`activate.planned_of`), and where it does not plan the refusal names a row of another type,
+/// never a type 42 row: a type 42 row alone does not keep an item's cast from starting. The
+/// client's own item check (`0x140398cc0`) runs before the spell and refuses what it refuses.
+pub fn an_item_spell_with_a_type_42_row_and_no_activate_row_is_planned_or_refused_for_another_type_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let sources = spell_plan.sources_of(tables:)
   let activations = activate.activations(tables:)
-  let with_a_row =
-    set.from_list(list.map(type_42_rows(tables:), fn(row) { row.spell_id }))
-  let starting =
+  let rows = type_42_rows(tables:)
+  let with_a_row = set.from_list(list.map(rows, fn(row) { row.spell_id }))
+  let outcomes =
     item_property.spells_on_activate(tables:)
     |> list.filter(fn(spell4_id) {
       set.contains(with_a_row, spell4_id)
       && !list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
         effect.effect_type == 7
       })
-      && case activate.planned_of(activations:, spell4_id:) {
+    })
+    |> list.map(fn(spell4_id) {
+      case activate.planned_of(activations:, spell4_id:) {
         Ok(activate.Planned(..)) -> True
-        Ok(activate.CannotBePlanned(..))
-        | Ok(activate.NoSpell4Row)
-        | Error(Nil) -> False
+        Ok(activate.CannotBePlanned(why:)) -> {
+          assert !refused_for_a_type_42_row(why:, rows:, spell4_id:)
+            as {
+              "Spell4 "
+              <> int.to_string(spell4_id)
+              <> " is refused for a type 42 row: "
+              <> why
+            }
+          False
+        }
+        Ok(activate.NoSpell4Row) | Error(Nil) ->
+          panic as {
+            "the item spell "
+            <> int.to_string(spell4_id)
+            <> " is not among the activate spells the load plans"
+          }
       }
     })
-    |> list.unique
-    |> list.sort(int.compare)
-  assert starting == [24_501, 26_477, 27_724]
-    as "ItemSpecial.spell4IdOnActivate: the railgun's spell, the deprecated Disruptor Beam and Spell4 27724 start for a type 42 row alone"
-  let items =
-    item2.all(tables)
-    |> list.filter(fn(row) {
-      list.any(item_special.all(tables), fn(special) {
-        special.id == row.item_special_id00
-        && list.contains(starting, special.spell4_id_on_activate)
-      })
-    })
-    |> list.map(fn(row) { row.id })
-    |> list.sort(int.compare)
-  assert items == [6938, 12_336, 12_635, 12_639, 12_689]
-    as "Item2 6938, 12635 and 12639 use 24501, 12336 uses 26477 and 12689 uses 27724 (which Item2 12689 requires Quest2 4982 for)"
+  assert list.any(outcomes, fn(planned) { planned })
+    as "an item spell holds a type 42 row and no Activate row, and plans"
 }
