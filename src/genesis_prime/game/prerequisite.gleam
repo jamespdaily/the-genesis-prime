@@ -2531,7 +2531,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Prerequisites",
-      missing: "the casts of every other caster on a creature (types 15, 59 and 129): the check of a creature a player struck leaves them unread",
+      missing: "the casts of every other caster on a creature or on a player a bag press named (types 15, 59 and 129): the check of a creature a player struck, and of the player a press named, leaves them unread",
     ),
   ]
 }

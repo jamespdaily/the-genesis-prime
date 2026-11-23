@@ -23,6 +23,7 @@ import gleam/list
 import gleam/result
 import gleam/set
 import owned_test
+import spell_tables
 import unitest
 
 /// The Spell4 rows of a Channeled base with a cost type and an amount in either column.
@@ -315,13 +316,7 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
 
 /// The costs the plan of the Spell4 row holds, planned alone as a pressed ability.
 fn planned_costs(tables: store.Tables, spell4_id: Int) -> List(Cost) {
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id:,
-      chain: [],
-    )
+  let assert Ok(spell) = spell_tables.planned_alone(tables:, spell4_id:)
     as "a spell a player presses plans"
   spell.costs
 }

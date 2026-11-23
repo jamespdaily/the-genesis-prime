@@ -18,12 +18,9 @@ import client_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/loadout
 import genesis_prime/message/spell_started
 import genesis_prime/step.{type ConnectionStep}
-import genesis_prime/table/id.{ClassId, Spell4BaseId}
 import gleam/bool
 import gleam/list
 import gleam/option
@@ -36,22 +33,15 @@ const impale_base = 23_161
 /// The Beast's unit.
 const beast = 40
 
-/// The bag index of the ability of this Spell4Base in a level-1 Stalker's bag.
+/// The bag index of an ability of the Stalker's Novice set (class 5, Exile) at level 1,
+/// from the client's tables.
 fn bag_index_of(base base: Int) -> Int {
-  let assert Ok(set) =
-    loadout.of(
-      tables: client_tables.shared(),
-      class_id: ClassId(5),
-      faction_id: 166,
-    )
-    as "the client's tables hold the Stalker's Novice set"
-  let assert Ok(index) =
-    list.index_map(ability_book.bag(loadout: set, level: 1), fn(held, index) {
-      #(held, index)
-    })
-    |> list.key_find(Spell4BaseId(base))
-    as "the Stalker's bag holds the ability"
-  index
+  connection_support.bag_index_of(
+    tables: client_tables.shared(),
+    class_id: 5,
+    level: 1,
+    ability: base,
+  )
 }
 
 /// A Stalker in the world over the client's tables, with a Beast shown 3 m ahead of it whose

@@ -32,7 +32,6 @@ import genesis_prime/client_connection.{
   type Answer, type Request, AskMap, AskStore, FromStore, Removed, TellMoved,
   TellTargetMoved,
 }
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
@@ -48,8 +47,6 @@ import genesis_prime/message/enter_world
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
 import genesis_prime/message/quest_state.{type QuestState, QuestState}
-import genesis_prime/message/relayed_movement
-import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
@@ -628,18 +625,6 @@ fn position_bits(place place: Place) -> UnitPositionCommand {
   )
 }
 
-/// The position the one 0x638 among the frames puts the player at.
-fn placed_at(frames frames: List(Frame)) -> UnitPositionCommand {
-  let assert [placement] =
-    list.filter(frames, fn(frame) { frame.message_id == 0x0638 })
-    as "the move writes one 0x638"
-  let assert Ok(moved) = unit_movement.decode(placement.body)
-    as "the frame is a 0x638"
-  let assert [relayed_movement.Position(position), ..] = moved.commands
-    as "the first command is the position"
-  position
-}
-
 /// One `!go` in the player's world, with what the player sees of it.
 type Placed {
   Placed(
@@ -719,7 +704,8 @@ pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test()
       assert support.written_ids(taken)
         == [0x01C2, 0x083C, 0x0639, 0x0638, 0x0636, 0x01C8]
         as "the answer to the line, the client's placement, then the system line"
-      assert placed_at(frames:) == position_bits(place: row.place) as row.why
+      assert support.placed_at(frames:) == position_bits(place: row.place)
+        as row.why
       assert support.decoded(frames, 0x0636, client_control_granted.decode)
         == [
           ClientControlGranted(

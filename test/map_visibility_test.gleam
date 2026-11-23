@@ -34,7 +34,6 @@ import gleam/set
 import map_spawn_support as spawns
 import map_support
 import owned_test
-import place_support
 import spawn_support
 
 /// Creature2.prerequisiteIdVisibility of the Start Arrow (73707): quest 10527 or 10532
@@ -53,13 +52,7 @@ fn hidden(numbers: List(Int)) -> set.Set(PrerequisiteId) {
 }
 
 fn place_at(x: Float) -> Place {
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: spawn_support.warfare_woods,
-    x:,
-    y: 0.0,
-    z: 0.0,
-  )
+  spawns.at(x)
 }
 
 /// A static object of this creature standing at `x`, shown or hidden by its

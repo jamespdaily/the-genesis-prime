@@ -24,7 +24,7 @@ import game_client
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{AskStore, FromMap, Removed}
 import genesis_prime/game/departures
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_result
@@ -44,6 +44,7 @@ import genesis_prime/world_map/spawn
 import gleam/list
 import gleam/option.{Some}
 import owned_test
+import place_support
 import quest_support
 
 const northern_wilds = 73_606
@@ -57,22 +58,6 @@ const crimson_isle_spell4_base = 22_504
 const confirmed_start = [0x07FD]
 
 const refused_start = [0x07FC]
-
-fn assert_landing(
-  place place: Place,
-  world world: Int,
-  zone zone: Int,
-  x x: Float,
-  y y: Float,
-  z z: Float,
-  reason reason: String,
-) -> Nil {
-  assert start_place.world_id(place) == world as reason
-  assert start_place.world_zone_id(place) == zone as reason
-  assert start_place.x(place) == x as reason
-  assert start_place.y(place) == y as reason
-  assert start_place.z(place) == z as reason
-}
 
 /// The frames of the step that are quest messages, decoded: the progress of each
 /// objective and the states.
@@ -150,7 +135,7 @@ pub fn the_yes_moves_the_player_to_the_northern_wilds_test() -> Nil {
   assert map_id == MapId(world_id: 426, instance: 0)
     as "WorldLocation2 42074 is in world 426: its map is asked"
   assert alive
-  assert_landing(
+  place_support.assert_place(
     place:,
     world: 426,
     zone: 648,
@@ -233,7 +218,7 @@ pub fn the_yes_at_crimson_isle_lands_at_mondos_beachhead_test() -> Nil {
   let #(map_id, place, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 870, instance: 0)
     as "WorldLocation2 8223 is in world 870"
-  assert_landing(
+  place_support.assert_place(
     place:,
     world: 870,
     zone: 1236,
@@ -342,7 +327,7 @@ pub fn a_second_yes_in_state_2_moves_the_player_without_counting_test() -> Nil {
   let #(map_id, place, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "WorldLocation2 42074 is in world 426"
-  assert_landing(
+  place_support.assert_place(
     place:,
     world: 426,
     zone: 648,
@@ -388,7 +373,7 @@ pub fn a_completed_quest_lands_at_the_yes_without_a_count_test() -> Nil {
   let #(map_id, place, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "WorldLocation2 42074 is in world 426"
-  assert_landing(
+  place_support.assert_place(
     place:,
     world: 426,
     zone: 648,
@@ -487,7 +472,7 @@ pub fn a_relog_after_the_move_enters_at_the_landing_test() -> Nil {
   let assert AskStore(request: store.Move(SavePlace(place:, quests:, ..))) =
     connection_support.ask_request(saving)
     as "the camp's end saves the player"
-  assert_landing(
+  place_support.assert_place(
     place:,
     world: 426,
     zone: 648,
@@ -514,7 +499,7 @@ pub fn a_relog_after_the_move_enters_at_the_landing_test() -> Nil {
   let #(map_id, landing, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "the new login's join is at the Northern Wilds landing's map"
-  assert_landing(
+  place_support.assert_place(
     place: landing,
     world: 426,
     zone: 648,
@@ -625,7 +610,7 @@ pub fn a_relog_between_the_yes_and_the_move_enters_at_the_landing_test() -> Nil 
   let #(map_id, landing, _) = departures_support.join_of(taken: joining)
   assert map_id == MapId(world_id: 426, instance: 0)
     as "the new login's join is at the Northern Wilds landing's map"
-  assert_landing(
+  place_support.assert_place(
     place: landing,
     world: 426,
     zone: 648,

@@ -21,7 +21,6 @@
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/faction_level
@@ -52,17 +51,12 @@ fn progress_frame(
   index index: Int,
   progress progress: Int,
 ) -> #(Int, BitArray) {
-  #(
-    0x0361,
-    message_support.packed([#(15, 6591), #(32, index), #(32, progress)]),
-  )
+  message_support.quest_progress_frame(quest: 6591, index:, progress:)
 }
 
 /// The ids and bodies the step writes to the client, in order.
 fn written(taken taken: ConnectionStep(Request)) -> List(#(Int, BitArray)) {
-  list.map(connection_support.written(taken:), fn(frame: Frame) {
-    #(frame.message_id, frame.body)
-  })
+  connection_support.written_pairs(taken:)
 }
 
 /// What the steps tell of quests: their 0x361 and 0x35c frames.

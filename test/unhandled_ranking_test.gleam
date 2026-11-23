@@ -12,11 +12,8 @@
 ////   connection, written into a folder of its own and read back, as
 ////   `wire_client_message_test`'s recordings are.
 
-import genesis_prime/connection/cipher
-import genesis_prime/connection/encrypted_frame
-import genesis_prime/connection/frame.{Frame}
+import genesis_prime/connection/frame
 import genesis_prime/game/connection as game_connection
-import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/recording_dump
 import genesis_prime/unhandled_ranking
 import genesis_prime/wire_recording.{Accepted, Client, Read}
@@ -26,29 +23,6 @@ import gleam/string
 import owned_test
 import recording_support
 import wire_replay_support as support
-
-/// A message the client sends in its wrapper, under the base key.
-fn sent(id id: Int, body body: BitArray) -> BitArray {
-  let assert Ok(bytes) =
-    encrypted_frame.wrap(
-      encrypted_frame.ClientWrapper,
-      Frame(message_id: id, body:),
-      cipher.base(),
-    )
-    as "the frame is within the size limit"
-  bytes
-}
-
-/// A message the client sends inside a 0x038C, as the client sends world
-/// messages.
-fn carried(id id: Int) -> BitArray {
-  let assert Ok(inner) = frame.encode(message_id: id, body: <<>>)
-    as "the frame is within the size limit"
-  let assert Ok(body) =
-    world_message.encode(WorldMessage(send_kind: 3, inner_frame: inner))
-    as "the carrier encodes"
-  sent(id: 0x038C, body:)
-}
 
 /// The ranked lines and the stopped sentences of a planted folder: the first
 /// connection sends 0x07CC twice, once inside a carrier, 0x082D once, 0x0FFF
@@ -60,7 +34,7 @@ fn planted_ranking(folder: String) -> #(List(String), List(String)) {
     as "a ping is within the size limit"
   let assert Ok(server_message) = frame.encode(message_id: 0x0FFF, body: <<1>>)
     as "a frame is within the size limit"
-  let whole = sent(id: 0x0FFE, body: <<>>)
+  let whole = support.sent(id: 0x0FFE, body: <<>>)
   let assert Ok(cut) = bit_array.slice(whole, 0, bit_array.byte_size(whole) - 1)
     as "the frame is longer than one byte"
   let planted = fn(ordinal) {
@@ -77,16 +51,44 @@ fn planted_ranking(folder: String) -> #(List(String), List(String)) {
       support.In(0, support.now_at(1), Accepted),
       support.In(1, support.now_at(2), Accepted),
       support.In(2, support.now_at(3), Accepted),
-      support.In(0, support.now_at(4), Read(sent(id: 0x07CC, body: <<>>))),
-      support.In(0, support.now_at(5), Read(carried(id: 0x07CC))),
-      support.In(0, support.now_at(6), Read(sent(id: 0x082D, body: <<>>))),
-      support.In(0, support.now_at(7), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(
+        0,
+        support.now_at(4),
+        Read(support.sent(id: 0x07CC, body: <<>>)),
+      ),
+      support.In(
+        0,
+        support.now_at(5),
+        Read(support.carried(id: 0x07CC, body: <<>>)),
+      ),
+      support.In(
+        0,
+        support.now_at(6),
+        Read(support.sent(id: 0x082D, body: <<>>)),
+      ),
+      support.In(
+        0,
+        support.now_at(7),
+        Read(support.sent(id: 0x0FFF, body: <<>>)),
+      ),
       support.In(0, support.now_at(8), Read(ping)),
       support.In(0, support.now_at(9), Read(<<ping:bits, ping:bits>>)),
-      support.In(1, support.now_at(10), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(
+        1,
+        support.now_at(10),
+        Read(support.sent(id: 0x0FFF, body: <<>>)),
+      ),
       support.Out(1, server_message),
-      support.In(1, support.now_at(11), Read(sent(id: 0x0FFF, body: <<>>))),
-      support.In(1, support.now_at(12), Read(sent(id: 0x0FFE, body: <<>>))),
+      support.In(
+        1,
+        support.now_at(11),
+        Read(support.sent(id: 0x0FFF, body: <<>>)),
+      ),
+      support.In(
+        1,
+        support.now_at(12),
+        Read(support.sent(id: 0x0FFE, body: <<>>)),
+      ),
       support.In(2, support.now_at(13), Read(whole)),
       support.In(2, support.now_at(14), Read(cut)),
       support.Closed(0, Client),
@@ -175,8 +177,16 @@ pub fn a_recording_with_no_closing_line_is_counted_and_named_as_unfinished_test(
     ],
     steps: [
       support.In(0, support.now_at(1), Accepted),
-      support.In(0, support.now_at(2), Read(sent(id: 0x0FFF, body: <<>>))),
-      support.In(0, support.now_at(3), Read(sent(id: 0x0FFF, body: <<>>))),
+      support.In(
+        0,
+        support.now_at(2),
+        Read(support.sent(id: 0x0FFF, body: <<>>)),
+      ),
+      support.In(
+        0,
+        support.now_at(3),
+        Read(support.sent(id: 0x0FFF, body: <<>>)),
+      ),
     ],
   )
   let #(connections, unread) = recording_dump.load(folder)

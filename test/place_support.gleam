@@ -34,3 +34,35 @@ pub fn at(
     as "the test's world is not 0"
   place
 }
+
+/// The place is in the world and zone, at the point, or the test fails with `reason`.
+pub fn assert_place(
+  place place: Place,
+  world world: Int,
+  zone zone: Int,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+  reason reason: String,
+) -> Nil {
+  assert start_place.world_id(place) == world as reason
+  assert start_place.world_zone_id(place) == zone as reason
+  assert start_place.x(place) == x as reason
+  assert start_place.y(place) == y as reason
+  assert start_place.z(place) == z as reason
+}
+
+/// The landing is a place in the world and zone, at the point, or the test fails with
+/// `reason`.
+pub fn assert_landed(
+  landing landing: Result(Place, refusal),
+  world world: Int,
+  zone zone: Int,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+  reason reason: String,
+) -> Nil {
+  let assert Ok(place) = landing as reason
+  assert_place(place:, world:, zone:, x:, y:, z:, reason:)
+}

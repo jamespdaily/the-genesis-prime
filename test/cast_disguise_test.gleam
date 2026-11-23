@@ -120,9 +120,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Disguise)) {
 
 /// The spell4_effects_id of each effect the go lists on the caster.
 fn listed(effects effects: List(Effect)) -> List(Int) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  let assert [info] = decoded.targets
+  let assert [info] = support.go_targets(effects:)
   list.map(info.effects, fn(effect) { effect.spell4_effects_id })
 }
 

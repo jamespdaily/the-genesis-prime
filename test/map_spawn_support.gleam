@@ -37,11 +37,16 @@ pub const far = 50_000.0
 
 /// A place `x` units along the world's x axis in Warfare Woods.
 pub fn at(x: Float) -> Place {
+  standing(x:, y: 0.0)
+}
+
+/// A place in Warfare Woods `x` along and `y` up, at z 0.
+pub fn standing(x x: Float, y y: Float) -> Place {
   place_support.at(
     world_id: 3460,
     world_zone_id: spawn_support.warfare_woods,
     x:,
-    y: 0.0,
+    y:,
     z: 0.0,
   )
 }

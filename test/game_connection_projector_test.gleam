@@ -36,7 +36,6 @@ import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/relayed_movement
-import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
@@ -199,18 +198,6 @@ fn ids_of(frames frames: List(Frame)) -> List(Int) {
   list.map(frames, fn(frame) { frame.message_id })
 }
 
-/// The position the one 0x638 among the frames puts the player at.
-fn placed_at(frames frames: List(Frame)) -> UnitPositionCommand {
-  let assert [placement] =
-    list.filter(frames, fn(frame) { frame.message_id == 0x0638 })
-    as "the move writes one 0x638"
-  let assert Ok(moved) = unit_movement.decode(placement.body)
-    as "the frame is a 0x638"
-  let assert [relayed_movement.Position(position), ..] = moved.commands
-    as "the first command is the position"
-  position
-}
-
 fn bits_of(x x: Float, y y: Float, z z: Float) -> UnitPositionCommand {
   UnitPositionCommand(
     x: float32.to_bits(x),
@@ -310,7 +297,7 @@ pub fn the_combat_projector_moves_the_player_to_warfare_woods_at_the_casts_end_t
       QuestObjectiveProgress(quest_id: 10_527, objective_index: 4, progress: 1),
     ]
     as "QuestObjective 21325, type 12 data 73735: the use is the fifth objective of Quest2 10527"
-  assert placed_at(frames:)
+  assert connection_support.placed_at(frames:)
     == UnitPositionCommand(
       x: 0xc24a224e,
       y: 0xc45759aa,
@@ -394,7 +381,7 @@ pub fn the_dominion_cryo_projector_lands_in_the_dominion_pod_test() -> Nil {
   assert !list.contains(ids_of(frames: frames_of(steps: early)), 0x083C)
     as "Creature2 73745 casts for 2000 ms: no go before"
   let #(_, _, steps) = run_to(state:, pending:, until_ms: 2000)
-  assert placed_at(frames: frames_of(steps:))
+  assert connection_support.placed_at(frames: frames_of(steps:))
     == bits_of(x: -3689.68408203125, y: -436.7900390625, z: -4356.00390625)
     as "WorldLocation2 51657: the Dominion's pod"
 }
@@ -496,7 +483,7 @@ pub fn a_zone_report_after_the_echo_counts_the_landings_objective_test() -> Nil 
   let #(state, _, pending) =
     pressed(state: exile_before_the_mission_projector())
   let #(state, _, steps) = run_to(state:, pending:, until_ms: 1000)
-  assert placed_at(frames: frames_of(steps:))
+  assert connection_support.placed_at(frames: frames_of(steps:))
     == bits_of(x: 476.4630126953125, y: -393.81201171875, z: 254.22799682617188)
     as "WorldLocation2 51616"
   let #(state, _) =

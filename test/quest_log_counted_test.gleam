@@ -17,10 +17,8 @@
 //// - 3297: objective 0 is 7943 (flags 0x28, count 4), objective 1 is 4299 (flags
 ////   18, count 1).
 
-import character_tables
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/store.{type QuestRow}
-import gleam/list
 import gleam/option.{Some}
 import owned_test
 import quest_support
@@ -32,18 +30,12 @@ const three_singles = 2347
 const skipped_first = 3297
 
 fn quest(id id: Int) -> quest_log.Quest {
-  let assert Ok(quest) =
-    quest_log.quest_of(tables: character_tables.shared(), id:)
-    as "the fixture holds the quest's rows"
-  quest
+  quest_support.quest_of(id:)
 }
 
+/// The saved row of the quest, as the place save writes it.
 fn saved(log log: QuestLog, quest_id quest_id: Int) -> QuestRow {
-  let assert Ok(row) =
-    quest_log.rows(log:, now_ms: 0)
-    |> list.find(fn(row) { row.quest_id == quest_id })
-    as "the log holds the quest"
-  row
+  quest_support.saved_row(log:, quest_id:)
 }
 
 fn done_mask_of(log log: QuestLog, quest_id quest_id: Int) -> Int {

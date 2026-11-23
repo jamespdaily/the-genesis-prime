@@ -16,10 +16,7 @@
 
 import fixture_tables
 import game_connection_support as support
-import genesis_prime/game/ability_book
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/loadout
-import genesis_prime/table/id.{ClassId, Spell4BaseId}
 import gleam/int
 import gleam/list
 import gleam/option
@@ -42,23 +39,6 @@ const ungated_damage = 86_308
 const named_unit = 42
 
 const unnamed_unit = 43
-
-fn bag_index_of(base base: Int) -> Int {
-  let assert Ok(set) =
-    loadout.of(
-      tables: fixture_tables.shared(),
-      class_id: ClassId(5),
-      faction_id: 166,
-    )
-    as "the fixture holds the Stalker's Novice set"
-  let assert Ok(index) =
-    list.index_map(ability_book.bag(loadout: set, level: 1), fn(held, index) {
-      #(held, index)
-    })
-    |> list.key_find(Spell4BaseId(base))
-    as "the Stalker's bag holds the ability"
-  index
-}
 
 pub fn strike_tell_carries_only_the_passing_rows_test() -> Nil {
   use <- owned_test.run(120_000)
@@ -103,7 +83,7 @@ pub fn strike_tell_carries_only_the_passing_rows_test() -> Nil {
     support.pressed_until_answered(
       state:,
       world: Nil,
-      bag_index: bag_index_of(base: impale_base),
+      bag_index: support.stalker_bag_index_of(base: impale_base),
       client_cast_id: 1,
       ms: 1000,
       until_ms: 3000,

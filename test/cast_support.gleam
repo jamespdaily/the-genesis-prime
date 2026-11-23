@@ -948,11 +948,7 @@ pub fn timeline(
 
 /// The numbers of these timers, sorted.
 pub fn timer_numbers(timers timers: List(TimerId)) -> List(Int) {
-  list.map(timers, fn(timer) {
-    let TimerId(number) = timer
-    number
-  })
-  |> list.sort(int.compare)
+  list.map(timers, timer_number) |> list.sort(int.compare)
 }
 
 /// The input time: a monotonic time, the system time 0.
@@ -2719,6 +2715,25 @@ pub fn interrupt_armor_row(
   )
 }
 
+/// Row 199192 of Spell4 76766 as the client holds it (`table_rows -- Spell4Effects
+/// 199192`): Interrupt Armor, +1 point kept at the end for 5000 ms, aimed as given (its
+/// targetFlags is 2, the primary target).
+pub fn spectral_form_row(
+  aim aim: spell_plan.Aim,
+) -> spell_plan.PropertyModifier {
+  interrupt_armor_row(
+    id: 199_192,
+    aim:,
+    points: 1,
+    takes_back: False,
+    row: lasting.LastingRow(
+      delay_ms: 0,
+      duration_ms: 5000,
+      until_removed: False,
+    ),
+  )
+}
+
 /// The Proxies of a go aimed at the caster, ticking on the caster as a go at its own start
 /// arms them.
 pub fn proxies_ticking_on_the_caster(
@@ -2745,6 +2760,20 @@ pub fn proxy_tick_asks(
       cast_state.FindProxyTickUnits(asked:) -> Ok(asked)
       _ -> Error(Nil)
     }
+  })
+}
+
+/// Each tick strike among the effects closed by `close`, the effects each close writes
+/// following all the effects given.
+pub fn ticks_closed(
+  state state: State,
+  effects effects: List(Effect),
+  close close: fn(State, cast_state.TickAsked) -> #(State, List(Effect)),
+) -> #(State, List(Effect)) {
+  list.fold(tick_strikes(effects:), #(state, effects), fn(so_far, asked) {
+    let #(state, done) = so_far
+    let #(state, closed) = close(state, asked)
+    #(state, list.append(done, closed))
   })
 }
 
@@ -2868,6 +2897,17 @@ pub fn refused_in(
   )
 }
 
+/// What the effects refuse: each 0x7fc's client cast id, Spell4 id and result.
+pub fn refused_with(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
+  list.map(refused_in(effects:), fn(refused) {
+    #(
+      refused.client_cast_id,
+      refused.spell4_id,
+      cast_result.to_value(refused.result),
+    )
+  })
+}
+
 /// Each 0x7fd the effects write, decoded.
 pub fn confirmed_in(
   effects effects: List(Effect),
@@ -2939,23 +2979,17 @@ pub fn heal_result(
   kind kind: damage_type.DamageType,
   overkill overkill: Int,
 ) -> spell_effect_result.SpellEffectResult {
-  spell_effect_result.Damage(
-    spell_effect_damage.SpellEffectDamage(
-      description: SpellDamageDescription(
-        raw_damage: amount,
-        scaled_raw_damage: amount,
-        absorbed: 0,
-        shield_absorbed: 0,
-        health_damage_with_overkill: amount,
-        overkill:,
-        glance: 0,
+  spell_effect_result.Damage(spell_effect_damage.SpellEffectDamage(
+    description: SpellDamageDescription(
+      ..landed_damage(
+        amount:,
         killed: 0,
         combat_result: combat_result.Hit,
         damage_type: kind,
-        hits: [],
       ),
+      overkill:,
     ),
-  )
+  ))
 }
 
 /// The effect id of each effect of each target of each 0x7f4 the effects write, in order.
@@ -2964,6 +2998,32 @@ pub fn listed_effect_ids(effects effects: List(Effect)) -> List(Int) {
     list.flat_map(go.targets, fn(target) {
       list.map(target.effects, fn(effect) { effect.spell4_effects_id })
     })
+  })
+}
+
+/// The effect id of each effect each 0x7f4 the effects write lists on the unit, in order.
+pub fn listed_on_unit(
+  effects effects: List(Effect),
+  unit_id unit_id: Int,
+) -> List(Int) {
+  list.flat_map(goes_in(effects:), fn(go) { listed_by_go(go:, unit_id:) })
+}
+
+/// The effect id of each effect the 0x7f4 of the cast the effects write lists on the unit,
+/// in order.
+pub fn listed_on_unit_by_cast(
+  effects effects: List(Effect),
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+) -> List(Int) {
+  list.filter(goes_in(effects:), fn(go) { go.cast_id == cast_id })
+  |> list.flat_map(fn(go) { listed_by_go(go:, unit_id:) })
+}
+
+fn listed_by_go(go go: spell_go.SpellGo, unit_id unit_id: Int) -> List(Int) {
+  list.filter(go.targets, fn(target) { target.unit_id == unit_id })
+  |> list.flat_map(fn(target) {
+    list.map(target.effects, fn(effect) { effect.spell4_effects_id })
   })
 }
 
@@ -3014,15 +3074,23 @@ pub fn started_told_to(
   })
 }
 
+/// The first 0x7ff the effects write for the Spell4.
+pub fn first_started(
+  effects effects: List(Effect),
+  spell4_id spell4_id: Int,
+) -> spell_started.SpellStarted {
+  let assert Ok(start) =
+    list.find(started_in(effects:), fn(start) { start.spell4_id == spell4_id })
+    as "the effects start a cast of the Spell4"
+  start
+}
+
 /// The cast id of the first 0x7ff the effects write for the Spell4.
 pub fn started_cast_id(
   effects effects: List(Effect),
   spell4_id spell4_id: Int,
 ) -> Int {
-  let assert Ok(start) =
-    list.find(started_in(effects:), fn(start) { start.spell4_id == spell4_id })
-    as "the effects start a cast of the Spell4"
-  start.cast_id
+  first_started(effects:, spell4_id:).cast_id
 }
 
 /// The lines the effects log at the debug level, in order.
@@ -3350,14 +3418,17 @@ pub fn interaction_answered(
   )
 }
 
-/// A place a creature of radius 1.0 stands at, `gap` east of the live character's place,
+/// A place a creature of `radius` stands at, `gap` east of the live character's place,
 /// edge to edge.
-pub fn place_beside_the_player(gap gap: Float) -> start_place.Place {
+pub fn place_beside_the_player(
+  radius radius: Float,
+  gap gap: Float,
+) -> start_place.Place {
   let live = place_support.live_character_place()
   place_support.at(
     world_id: 3460,
     world_zone_id: 6009,
-    x: start_place.x(live) +. place_support.player_hit_radius +. 1.0 +. gap,
+    x: start_place.x(live) +. place_support.player_hit_radius +. radius +. gap,
     y: start_place.y(live),
     z: start_place.z(live),
   )

@@ -21,7 +21,7 @@
 import client_tables
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
-  type Spell, CastGate, NoCasterCast, NoRow, RequirementWaiver,
+  CastGate, NoCasterCast, NoRow, RequirementWaiver,
 }
 import genesis_prime/table/id
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -32,17 +32,6 @@ import owned_test
 import prerequisite_support as support
 import spell_tables
 import unitest
-
-/// The spell of the Spell4 id among the spells the ability's tree reaches.
-fn in_tree(base base: Int, spell4_id spell4_id: Int) -> Spell {
-  let assert Ok(spell) =
-    spell_plan.tree(spell: spell_tables.client_ability(base:), started: fn(_) {
-      True
-    })
-    |> list.find(fn(member) { member.spell4_id.value == spell4_id })
-    as { "the tree holds Spell4 " <> int.to_string(spell4_id) }
-  spell
-}
 
 /// The row `id` as the client's table holds it, with the rows it nests, for the
 /// prerequisite the plan should hold.
@@ -97,7 +86,7 @@ pub fn rampages_cast_prerequisite_is_a_waiver_and_no_gate_test() -> Nil {
 pub fn the_spell_surge_buffs_caster_persistence_is_its_row_36425_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  let buff = in_tree(base: 31_213, spell4_id: 47_439)
+  let buff = spell_tables.in_tree(base: 31_213, spell4_id: 47_439)
   assert buff.caster_persistence == Some(expected(id: 36_425))
     as "Spell4.47439: prerequisiteIdCasterPersistence 36425, slot 4 at least 25"
   assert buff.caster_cast == NoCasterCast && buff.target_cast == None

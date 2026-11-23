@@ -156,10 +156,7 @@ fn went(
 }
 
 fn timers(effects effects: List(Effect)) -> List(strike.Effect) {
-  strike_support.only(effects:, kinds: [
-    strike_support.TimerStarted,
-    strike_support.TimerCancelled,
-  ])
+  strike_support.timers(effects:)
 }
 
 pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_its_own_rolls_and_arms_one_timer_test() -> Nil {

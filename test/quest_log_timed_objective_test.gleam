@@ -61,10 +61,7 @@ const gated_timer = 3204
 const optional_timer = 4517
 
 fn quest(id id: Int) -> quest_log.Quest {
-  let assert Ok(quest) =
-    quest_log.quest_of(tables: character_tables.shared(), id:)
-    as "the fixture holds the quest's rows"
-  quest
+  quest_support.quest_of(id:)
 }
 
 fn nothing() -> QuestLog {

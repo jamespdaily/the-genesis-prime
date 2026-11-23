@@ -35,6 +35,7 @@ import gleam/result
 import gleam/set
 import owned_test
 import planted_table.{Integer}
+import spell_tables
 import unitest
 
 /// The spells that hold a state naming a helper and a type 3 row of their own aimed past
@@ -49,12 +50,7 @@ fn controls_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
 ) -> Result(List(spell_plan.CrowdControl), spell_plan.PlanError) {
-  spell_plan.spell_alone(
-    tables:,
-    sources: spell_plan.sources_of(tables:),
-    spell4_id:,
-    chain: [],
-  )
+  spell_tables.planned_alone(tables:, spell4_id:)
   |> result.map(spell_plan.payloads(_, as_kind: spell_plan.as_control))
 }
 

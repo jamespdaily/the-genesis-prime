@@ -2455,18 +2455,7 @@ fn nullifier_caster() -> cast_state.Caster {
 
 /// The cast id the 0x7ff of the field 58868 names in the effects.
 fn field_cast_id(effects effects: List(Effect)) -> Int {
-  let assert [id, ..] =
-    support.frames_of(message_id: spell_started.message_id, effects:)
-    |> list.filter_map(fn(frame) {
-      let assert Ok(started) = spell_started.decode(frame.body)
-        as "a 0x7ff the rule wrote decodes"
-      case started.spell4_id {
-        58_868 -> Ok(started.cast_id)
-        _ -> Error(Nil)
-      }
-    })
-    as "the effects start the field 58868"
-  id
+  support.started_cast_id(spell4_id: 58_868, effects:)
 }
 
 /// The times at which the steps write a 0x7fe naming the cast, and a 0x811 naming it.

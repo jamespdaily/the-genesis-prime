@@ -31,22 +31,18 @@
 
 import character_tables
 import fixture_tables
-import game_connection_support as connection_support
-import genesis_prime/game/interaction
 import genesis_prime/game/prerequisite.{Factions, Player}
 import genesis_prime/game/quest.{
   type Asker, type Taken, type Verdict, Acceptable, Asker, NotRead, Refused,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown.{type Picture}
-import genesis_prime/message/item_place.{ItemPlace}
-import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_retry.{QuestRetry}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
   type HeldItem, type QuestRow, ActiveQuest, HeldItem, QuestRow,
 }
-import genesis_prime/table/id.{Item2Id, Quest2Id, RaceId}
+import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2, Quest2}
 import genesis_prime/world_map/creature_life.{Hostile}
@@ -58,12 +54,10 @@ import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Integer}
-import prerequisite_support
+import quest_request_support
 import quest_support
 import quest_walker_support
 import simple_unit_support
-
-const exile = 167
 
 const dominion = 166
 
@@ -83,18 +77,11 @@ fn accepted(quest_id: Int) -> QuestRow {
   quest_support.untouched(quest_id:)
 }
 
-/// A level 20 Exile of race 3, class 5 and path 1 whose log holds these rows.
-fn asker(log log: List(QuestRow)) -> Asker {
-  Asker(
-    player: prerequisite_support.player(),
-    factions: Factions(current: exile, base: exile),
-    log: quest_support.log_of(rows: log),
-    checker: prerequisite_support.empty_checker(),
-  )
-}
-
 fn dominion_asker(log log: List(QuestRow)) -> Asker {
-  Asker(..asker(log:), factions: Factions(current: dominion, base: dominion))
+  Asker(
+    ..quest_request_support.asker(log:),
+    factions: Factions(current: dominion, base: dominion),
+  )
 }
 
 fn at_level(asker: Asker, level: Int) -> Asker {
@@ -154,13 +141,17 @@ fn verdict_of(quest_id: Int, asker: Asker) -> Verdict {
 pub fn accept_answers_accepted_and_adds_a_tracked_entry_test() -> Nil {
   use <- owned_test.run(10_000)
   let held =
-    quest_support.with_items(asker(log: []), items: [
+    quest_support.with_items(quest_request_support.asker(log: []), items: [
       item(item2_id: 4861, location: 1, bag_index: 0),
     ])
   let taken =
     took(
       message: quest.Accept,
-      body: accept_body(location: 1, bag_index: 0, quest_id: 2417),
+      body: quest_request_support.accept_body(
+        location: 1,
+        bag_index: 0,
+        quest_id: 2417,
+      ),
       asker: held,
     )
   assert taken.effects
@@ -192,7 +183,8 @@ pub fn accept_answers_accepted_and_adds_a_tracked_entry_test() -> Nil {
 
 pub fn accept_refuses_a_quest_already_accepted_or_achieved_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert verdict_of(1806, asker(log: [accepted(1806)])) == Refused(code: 2)
+  assert verdict_of(1806, quest_request_support.asker(log: [accepted(1806)]))
+    == Refused(code: 2)
     as "check 2: a quest in the active list in state 1"
   let achieved =
     quest_support.active(
@@ -203,9 +195,10 @@ pub fn accept_refuses_a_quest_already_accepted_or_achieved_test() -> Nil {
       done_mask: 1,
       progress: [1],
     )
-  assert verdict_of(1806, asker(log: [achieved])) == Refused(code: 2)
+  assert verdict_of(1806, quest_request_support.asker(log: [achieved]))
+    == Refused(code: 2)
     as "check 2: state 2, achieved and not yet handed in"
-  assert verdict_of(1806, asker(log: [])) == Acceptable
+  assert verdict_of(1806, quest_request_support.asker(log: [])) == Acceptable
     as "the same quest with no record passes every check"
 }
 
@@ -217,13 +210,17 @@ pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
   list.each([5, 6, 7], fn(state) {
     let held =
       quest_support.with_items(
-        asker(log: [quest_support.known(2417, state)]),
+        quest_request_support.asker(log: [quest_support.known(2417, state)]),
         items: [item(item2_id: 4861, location: 1, bag_index: 0)],
       )
     let taken =
       took(
         message: quest.Accept,
-        body: accept_body(location: 1, bag_index: 0, quest_id: 2417),
+        body: quest_request_support.accept_body(
+          location: 1,
+          bag_index: 0,
+          quest_id: 2417,
+        ),
         asker: held,
       )
     assert taken.effects
@@ -240,7 +237,9 @@ pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
 pub fn accept_takes_a_completed_quest_again_only_when_it_repeats_test() -> Nil {
   use <- owned_test.run(10_000)
   let done = fn(quest_id) {
-    asker(log: [quest_support.completed(quest_id:, at: 1000)])
+    quest_request_support.asker(log: [
+      quest_support.completed(quest_id:, at: 1000),
+    ])
   }
   assert verdict_of(1857, done(1857)) == Acceptable
     as "1857 is daily (questRepeatPeriodEnum 1)"
@@ -252,24 +251,29 @@ pub fn accept_takes_a_completed_quest_again_only_when_it_repeats_test() -> Nil {
 
 pub fn accept_refuses_an_unmentioned_communicator_quest_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert verdict_of(1872, asker(log: [])) == Refused(code: 11)
+  assert verdict_of(1872, quest_request_support.asker(log: []))
+    == Refused(code: 11)
     as "1872 has flags 0x404: the mention bit, and no state of 4 to 7"
-  assert verdict_of(1872, asker(log: [quest_support.known(1872, 5)]))
+  assert verdict_of(
+      1872,
+      quest_request_support.asker(log: [quest_support.known(1872, 5)]),
+    )
     == Acceptable
     as "a Mentioned entry lets it through"
 }
 
 pub fn accept_refuses_a_quest_for_the_other_faction_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert verdict_of(2989, asker(log: [])) == Refused(code: 14)
+  assert verdict_of(2989, quest_request_support.asker(log: []))
+    == Refused(code: 14)
     as "2989 is for Dominion (enum 1), the asker is Exile 167"
   assert verdict_of(2989, dominion_asker(log: [])) == Acceptable
   assert verdict_of(2545, dominion_asker(log: [])) == Refused(code: 14)
     as "2545 is for Exile (enum 0), the asker is Dominion 166"
-  assert verdict_of(2545, asker(log: [])) == Acceptable
+  assert verdict_of(2545, quest_request_support.asker(log: [])) == Acceptable
   assert verdict(
       quest: Quest2(..row(1806), quest_player_faction_enum: 3),
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
     )
     == Refused(code: 14)
     as "an enum of 3 or more is refused for either faction"
@@ -279,21 +283,36 @@ pub fn accept_refuses_another_race_test() -> Nil {
   use <- owned_test.run(10_000)
   // No client row has a race condition, so a row is made with one.
   let needs_race_1 = Quest2(..row(1806), preq_race: 1)
-  assert verdict(quest: needs_race_1, asker: asker(log: [])) == Refused(code: 4)
+  assert verdict(
+      quest: needs_race_1,
+      asker: quest_request_support.asker(log: []),
+    )
+    == Refused(code: 4)
     as "the asker is race 3"
   let needs_race_3 = Quest2(..row(1806), preq_race: 3)
-  assert verdict(quest: needs_race_3, asker: asker(log: [])) == Acceptable
+  assert verdict(
+      quest: needs_race_3,
+      asker: quest_request_support.asker(log: []),
+    )
+    == Acceptable
 }
 
 pub fn accept_refuses_another_class_test() -> Nil {
   use <- owned_test.run(10_000)
   // No client row has a class condition either.
   let needs_class_1 = Quest2(..row(1806), preq_class: 1)
-  assert verdict(quest: needs_class_1, asker: asker(log: []))
+  assert verdict(
+      quest: needs_class_1,
+      asker: quest_request_support.asker(log: []),
+    )
     == Refused(code: 5)
     as "the asker is class 5"
   let needs_class_5 = Quest2(..row(1806), preq_class: 5)
-  assert verdict(quest: needs_class_5, asker: asker(log: [])) == Acceptable
+  assert verdict(
+      quest: needs_class_5,
+      asker: quest_request_support.asker(log: []),
+    )
+    == Acceptable
 }
 
 pub fn accept_refuses_a_quest_its_episode_holds_back_test() -> Nil {
@@ -303,38 +322,49 @@ pub fn accept_refuses_a_quest_its_episode_holds_back_test() -> Nil {
   let mentioned = quest_support.known(5259, 5)
   assert verdict_of(
       5259,
-      asker(log: [mentioned, quest_support.completed(4791, at: 1000)]),
+      quest_request_support.asker(log: [
+        mentioned,
+        quest_support.completed(4791, at: 1000),
+      ]),
     )
     == Refused(code: 10)
     as "episode 411 is not open and every member that counts is completed"
-  assert verdict_of(5259, asker(log: [mentioned])) == Acceptable
+  assert verdict_of(5259, quest_request_support.asker(log: [mentioned]))
+    == Acceptable
     as "4791 still to do lets the episode through"
 }
 
 pub fn accept_refuses_below_the_quest_level_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert verdict_of(2575, at_level(asker(log: []), 39)) == Refused(code: 3)
+  assert verdict_of(2575, at_level(quest_request_support.asker(log: []), 39))
+    == Refused(code: 3)
     as "2575's preq_level is 40"
-  assert verdict_of(2575, at_level(asker(log: []), 40)) == Acceptable
+  assert verdict_of(2575, at_level(quest_request_support.asker(log: []), 40))
+    == Acceptable
 }
 
 pub fn accept_joins_level_and_prerequisite_quests_with_preq_flags_2_test() -> Nil {
   use <- owned_test.run(10_000)
   // 3918: preq_level 11, preq_flags 2, preq_quest0 4294.
-  let low = at_level(asker(log: []), 10)
+  let low = at_level(quest_request_support.asker(log: []), 10)
   assert verdict_of(3918, low) == Refused(code: 3)
     as "level 10 and the quest not completed: both fail, one check, the level's code"
   assert verdict_of(
       3918,
-      at_level(asker(log: [quest_support.completed(4294, at: 1000)]), 10),
+      at_level(
+        quest_request_support.asker(log: [
+          quest_support.completed(4294, at: 1000),
+        ]),
+        10,
+      ),
     )
     == Acceptable
     as "the joined check refuses only when both fail"
-  assert verdict_of(3918, asker(log: [])) == Acceptable
+  assert verdict_of(3918, quest_request_support.asker(log: [])) == Acceptable
     as "level 20 meets the level, so 4294 is not needed"
   assert verdict(
       quest: Quest2(..row(3918), preq_flags: 0),
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
     )
     == Refused(code: 8)
     as "without bit 2 the quest check stands alone"
@@ -353,15 +383,25 @@ pub fn the_level_and_quest_checks_each_run_on_their_own_mask_bit_test() -> Nil {
   }
   let without_level = int.bitwise_and(quest.every_check, int.bitwise_not(0x2))
   let without_quests = int.bitwise_and(quest.every_check, int.bitwise_not(0x40))
-  let low = at_level(asker(log: []), 10)
-  assert verdict_under(without_level, 2575, asker(log: [])) == Acceptable
+  let low = at_level(quest_request_support.asker(log: []), 10)
+  assert verdict_under(
+      without_level,
+      2575,
+      quest_request_support.asker(log: []),
+    )
+    == Acceptable
     as "a mask without bit 1 does not refuse a quest of level 40 for a level 20 player"
   assert verdict_under(without_level, 3918, low) == Refused(code: 8)
     as "without bit 1 the joined check does not run, so the quest check stands alone"
   assert verdict_under(
       without_level,
       3918,
-      at_level(asker(log: [quest_support.completed(4294, at: 1000)]), 10),
+      at_level(
+        quest_request_support.asker(log: [
+          quest_support.completed(4294, at: 1000),
+        ]),
+        10,
+      ),
     )
     == Acceptable
     as "without bit 1 the level is not asked, so a met prerequisite quest passes"
@@ -382,33 +422,45 @@ pub fn accept_needs_prerequisite_quests_all_or_any_test() -> Nil {
     as "one of two is not all"
   assert verdict_of(5859, dominion_asker(log: [])) == Refused(code: 8)
   // 9299: preq_flags 1, preq_quest0 9428 and preq_quest01 9207: any.
-  assert verdict_of(9299, asker(log: done([9207]))) == Acceptable
+  assert verdict_of(9299, quest_request_support.asker(log: done([9207])))
+    == Acceptable
     as "bit 1: one of them is enough"
-  assert verdict_of(9299, asker(log: done([9428, 9207]))) == Acceptable
-  assert verdict_of(9299, asker(log: [])) == Refused(code: 8)
+  assert verdict_of(9299, quest_request_support.asker(log: done([9428, 9207])))
+    == Acceptable
+  assert verdict_of(9299, quest_request_support.asker(log: []))
+    == Refused(code: 8)
 }
 
 pub fn accept_refuses_a_taken_exclusion_test() -> Nil {
   use <- owned_test.run(10_000)
   // 3195 names exclusions 3215 and 3216.
-  assert verdict_of(3195, asker(log: [accepted(3215)])) == Refused(code: 9)
+  assert verdict_of(3195, quest_request_support.asker(log: [accepted(3215)]))
+    == Refused(code: 9)
     as "an accepted exclusion"
   assert verdict_of(
       3195,
-      asker(log: [quest_support.completed(quest_id: 3216, at: 1000)]),
+      quest_request_support.asker(log: [
+        quest_support.completed(quest_id: 3216, at: 1000),
+      ]),
     )
     == Refused(code: 9)
     as "a completed exclusion"
-  assert verdict_of(3195, asker(log: [quest_support.known(3215, 6)]))
+  assert verdict_of(
+      3195,
+      quest_request_support.asker(log: [quest_support.known(3215, 6)]),
+    )
     == Acceptable
     as "an abandoned quest (state 6) is not taken"
   let all_of_them = Quest2(..row(3195), preq_flags: 32)
-  assert verdict(quest: all_of_them, asker: asker(log: [accepted(3215)]))
+  assert verdict(
+      quest: all_of_them,
+      asker: quest_request_support.asker(log: [accepted(3215)]),
+    )
     == Acceptable
     as "preq_flags 32 refuses only when every named exclusion is taken"
   assert verdict(
       quest: all_of_them,
-      asker: asker(log: [
+      asker: quest_request_support.asker(log: [
         accepted(3215),
         quest_support.completed(quest_id: 3216, at: 1000),
       ]),
@@ -420,13 +472,14 @@ pub fn accept_names_reputation_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
   // 3243 names factionIdPreq0 648 and prerequisite quests 3176 and 3185.
   let done =
-    asker(log: [
+    quest_request_support.asker(log: [
       quest_support.completed(quest_id: 3176, at: 1000),
       quest_support.completed(quest_id: 3185, at: 1000),
     ])
   assert verdict_of(3243, done) == NotRead(gap: quest.Reputation)
     as "the server holds no reputation, so it says so and does not accept"
-  assert verdict_of(3243, asker(log: [])) == Refused(code: 8)
+  assert verdict_of(3243, quest_request_support.asker(log: []))
+    == Refused(code: 8)
     as "check 8 comes before the reputation"
 }
 
@@ -453,7 +506,11 @@ pub fn accept_needs_the_prerequisite_item_held_test() -> Nil {
     as "an item not found in the four places may be in the per-item counter"
   assert verdict_of(
       9793,
-      holding(asker: asker(log: []), item: 49_795, location: 1),
+      holding(
+        asker: quest_request_support.asker(log: []),
+        item: 49_795,
+        location: 1,
+      ),
     )
     == Acceptable
     as "9793: preq_flags 24, preq_item 49795"
@@ -462,11 +519,13 @@ pub fn accept_needs_the_prerequisite_item_held_test() -> Nil {
 pub fn accept_checks_the_prerequisite_for_the_player_test() -> Nil {
   use <- owned_test.run(10_000)
   // 3678 names Prerequisite 2967, which wants the Explorer path (3).
-  assert verdict_of(3678, on_path(asker(log: []), 1)) == Refused(code: 12)
-  assert verdict_of(3678, on_path(asker(log: []), 3)) == Acceptable
-  assert verdict_of(4943, asker(log: [])) == Acceptable
+  assert verdict_of(3678, on_path(quest_request_support.asker(log: []), 1))
+    == Refused(code: 12)
+  assert verdict_of(3678, on_path(quest_request_support.asker(log: []), 3))
+    == Acceptable
+  assert verdict_of(4943, quest_request_support.asker(log: [])) == Acceptable
     as "4943's Prerequisite 2968 holds for this player"
-  assert verdict_of(5084, asker(log: []))
+  assert verdict_of(5084, quest_request_support.asker(log: []))
     == NotRead(gap: quest.PrerequisiteType(prerequisite_type: 19))
     as "5084's Prerequisite 8252 holds a condition of type 19, which the server does not read"
   // Quest 3524 of the client names Prerequisite 2755, which the table lacks, and the
@@ -480,7 +539,7 @@ pub fn accept_checks_the_prerequisite_for_the_player_test() -> Nil {
   assert quest.can_accept(
       tables:,
       quest: target,
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
       mask: quest.every_check,
     )
     == Ok(Refused(code: 12))
@@ -493,7 +552,8 @@ pub fn quest_10510_is_acceptable_outside_the_tutorial_worlds_and_refused_inside_
   // Prerequisite 43306: 43305 (type 288, comparison 2, title 400: no title is owned)
   // and 41782 (type 109, comparison 2, Worlds 1537, 1634 and 3460).
   let exile_at = fn(world_id, level) {
-    let base = asker(log: [quest_support.known(10_510, 5)])
+    let base =
+      quest_request_support.asker(log: [quest_support.known(10_510, 5)])
     Asker(..base, player: Player(..base.player, world_id:, level:))
   }
   // Each case: world, level, the verdict, and why.
@@ -529,22 +589,27 @@ pub fn quest_10510_is_acceptable_outside_the_tutorial_worlds_and_refused_inside_
 pub fn accept_refuses_another_path_test() -> Nil {
   use <- owned_test.run(10_000)
   // 4004 wants path 3 and 4940 path 2 (Quest2.subMissionPathType); the asker is path 1.
-  assert verdict_of(4004, asker(log: [])) == Refused(code: 13)
-  assert verdict_of(4940, asker(log: [])) == Refused(code: 13)
-  assert verdict_of(4004, on_path(asker(log: []), 3)) == Acceptable
-  assert verdict_of(4940, on_path(asker(log: []), 2)) == Acceptable
-  assert verdict_of(1806, asker(log: [])) == Acceptable
+  assert verdict_of(4004, quest_request_support.asker(log: []))
+    == Refused(code: 13)
+  assert verdict_of(4940, quest_request_support.asker(log: []))
+    == Refused(code: 13)
+  assert verdict_of(4004, on_path(quest_request_support.asker(log: []), 3))
+    == Acceptable
+  assert verdict_of(4940, on_path(quest_request_support.asker(log: []), 2))
+    == Acceptable
+  assert verdict_of(1806, quest_request_support.asker(log: [])) == Acceptable
     as "a quest with subMissionPathType -1 wants no path"
 }
 
 pub fn accept_refuses_a_full_log_but_not_a_contract_count_test() -> Nil {
   use <- owned_test.run(10_000)
-  let full = asker(log: list.map(quest_support.plain(), accepted))
+  let full =
+    quest_request_support.asker(log: list.map(quest_support.plain(), accepted))
   assert list.length(quest_support.plain()) == 40
   assert verdict_of(1806, full) == Refused(code: 15)
     as "the active list holds 40 (GameFormula 655), all of them accepted"
   let with_contracts =
-    asker(
+    quest_request_support.asker(
       log: list.flatten([
         list.map(list.take(quest_support.plain(), 39), accepted),
         [accepted(9880), accepted(9881)],
@@ -558,22 +623,22 @@ pub fn accept_refuses_a_full_log_but_not_a_contract_count_test() -> Nil {
 
 pub fn accept_offers_undrawn_periodic_quests_and_names_drawn_ones_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert verdict_of(1857, asker(log: [])) == Acceptable
+  assert verdict_of(1857, quest_request_support.asker(log: [])) == Acceptable
     as "1857 repeats daily and is in no group (group 0)"
   // PeriodicQuestGroup 1 offers every quest with no limit (-1 and -1).
   assert verdict(
       quest: Quest2(..row(1857), periodic_quest_group_id: 1),
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
     )
     == Acceptable
   // 9578 is in group 34 (offers 2, holds 2) and 9713 in group 29 (offers all, holds 1).
-  assert verdict_of(9578, asker(log: []))
+  assert verdict_of(9578, quest_request_support.asker(log: []))
     == NotRead(gap: quest.PeriodicDraw(group_id: 34))
-  assert verdict_of(9713, asker(log: []))
+  assert verdict_of(9713, quest_request_support.asker(log: []))
     == NotRead(gap: quest.PeriodicDraw(group_id: 29))
   assert verdict(
       quest: Quest2(..row(1857), periodic_quest_weight: 0),
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
     )
     == Refused(code: 16)
     as "a repeating quest of weight 0 joins no group"
@@ -595,7 +660,7 @@ pub fn a_periodic_quest_of_no_known_group_takes_group_1s_limits_test() -> Nil {
     quest.can_accept(
       tables:,
       quest: Quest2(..row(1857), periodic_quest_group_id: group_id),
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
       mask: quest.every_check,
     )
   }
@@ -610,9 +675,9 @@ pub fn a_periodic_quest_of_no_known_group_takes_group_1s_limits_test() -> Nil {
 pub fn accept_names_a_contract_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
   let contract = Quest2(..row(1806), flags: 0x80000)
-  assert verdict(quest: contract, asker: asker(log: []))
+  assert verdict(quest: contract, asker: quest_request_support.asker(log: []))
     == NotRead(gap: quest.Contract)
-  assert verdict_of(9880, at_level(asker(log: []), 50))
+  assert verdict_of(9880, at_level(quest_request_support.asker(log: []), 50))
     == NotRead(gap: quest.Contract)
 }
 
@@ -698,7 +763,7 @@ fn order_11_2() -> Order {
   Order(
     name: "11 before 2",
     quest: row(1872),
-    asker: asker(log: [accepted(1872)]),
+    asker: quest_request_support.asker(log: [accepted(1872)]),
     earlier: Refused(code: 11),
     later: None,
   )
@@ -722,7 +787,11 @@ fn order_14_4() -> Order {
     quest: faction_enum(quest:, enum: 0),
     asker: dominion_asker(log: []),
     earlier: Refused(code: 14),
-    later: alone(quest:, asker: asker(log: []), verdict: Refused(4)),
+    later: alone(
+      quest:,
+      asker: quest_request_support.asker(log: []),
+      verdict: Refused(4),
+    ),
   )
 }
 
@@ -731,9 +800,13 @@ fn order_4_5() -> Order {
   Order(
     name: "4 before 5",
     quest: needing_race(quest:, race: 1),
-    asker: asker(log: []),
+    asker: quest_request_support.asker(log: []),
     earlier: Refused(code: 4),
-    later: alone(quest:, asker: asker(log: []), verdict: Refused(5)),
+    later: alone(
+      quest:,
+      asker: quest_request_support.asker(log: []),
+      verdict: Refused(5),
+    ),
   )
 }
 
@@ -742,9 +815,13 @@ fn order_5_10() -> Order {
   Order(
     name: "5 before 10",
     quest: needing_class(quest: row(5259), class: 1),
-    asker: asker(log:),
+    asker: quest_request_support.asker(log:),
     earlier: Refused(code: 5),
-    later: alone(quest: row(5259), asker: asker(log:), verdict: Refused(10)),
+    later: alone(
+      quest: row(5259),
+      asker: quest_request_support.asker(log:),
+      verdict: Refused(10),
+    ),
   )
 }
 
@@ -752,11 +829,14 @@ fn order_10_3() -> Order {
   Order(
     name: "10 before 3",
     quest: row(5259),
-    asker: at_level(asker(log: [mentioned_5259(), done(4791)]), 10),
+    asker: at_level(
+      quest_request_support.asker(log: [mentioned_5259(), done(4791)]),
+      10,
+    ),
     earlier: Refused(code: 10),
     later: alone(
       quest: row(5259),
-      asker: at_level(asker(log: [mentioned_5259()]), 10),
+      asker: at_level(quest_request_support.asker(log: [mentioned_5259()]), 10),
       verdict: Refused(3),
     ),
   )
@@ -767,9 +847,13 @@ fn order_3_8() -> Order {
   Order(
     name: "3 before 8",
     quest:,
-    asker: at_level(asker(log: []), 10),
+    asker: at_level(quest_request_support.asker(log: []), 10),
     earlier: Refused(code: 3),
-    later: alone(quest:, asker: asker(log: []), verdict: Refused(8)),
+    later: alone(
+      quest:,
+      asker: quest_request_support.asker(log: []),
+      verdict: Refused(8),
+    ),
   )
 }
 
@@ -782,11 +866,11 @@ fn order_8_9() -> Order {
   Order(
     name: "8 before 9",
     quest:,
-    asker: asker(log: [accepted(3215)]),
+    asker: quest_request_support.asker(log: [accepted(3215)]),
     earlier: Refused(code: 8),
     later: alone(
       quest:,
-      asker: asker(log: [done(4294), accepted(3215)]),
+      asker: quest_request_support.asker(log: [done(4294), accepted(3215)]),
       verdict: Refused(9),
     ),
   )
@@ -797,11 +881,11 @@ fn order_9_6() -> Order {
   Order(
     name: "9 before 6",
     quest: target,
-    asker: asker(log: [accepted(3215)]),
+    asker: quest_request_support.asker(log: [accepted(3215)]),
     earlier: Refused(code: 9),
     later: alone(
       quest: target,
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
       verdict: NotRead(gap: quest.Reputation),
     ),
   )
@@ -812,14 +896,14 @@ fn order_6_7() -> Order {
   Order(
     name: "6 before 7",
     quest: needing_item(quest: row(3243), item: 6873),
-    asker: asker(log:),
+    asker: quest_request_support.asker(log:),
     earlier: NotRead(gap: quest.Reputation),
     later: alone(
       quest: needing_reputation(
         quest: needing_item(quest: row(3243), item: 6873),
         faction: 0,
       ),
-      asker: asker(log:),
+      asker: quest_request_support.asker(log:),
       verdict: NotRead(gap: quest.PrerequisiteItemCounter),
     ),
   )
@@ -830,11 +914,15 @@ fn order_7_12() -> Order {
   Order(
     name: "7 before 12",
     quest: target,
-    asker: on_path(asker(log: []), 1),
+    asker: on_path(quest_request_support.asker(log: []), 1),
     earlier: NotRead(gap: quest.PrerequisiteItemCounter),
     later: alone(
       quest: target,
-      asker: holding(asker: on_path(asker(log: []), 1), item: 6873, location: 1),
+      asker: holding(
+        asker: on_path(quest_request_support.asker(log: []), 1),
+        item: 6873,
+        location: 1,
+      ),
       verdict: Refused(12),
     ),
   )
@@ -844,11 +932,11 @@ fn order_12_13() -> Order {
   Order(
     name: "12 before 13",
     quest: on_the_path(quest: row(3678), path: 3),
-    asker: on_path(asker(log: []), 1),
+    asker: on_path(quest_request_support.asker(log: []), 1),
     earlier: Refused(code: 12),
     later: alone(
       quest: row(4004),
-      asker: on_path(asker(log: []), 1),
+      asker: on_path(quest_request_support.asker(log: []), 1),
       verdict: Refused(13),
     ),
   )
@@ -858,11 +946,11 @@ fn order_13_15() -> Order {
   Order(
     name: "13 before 15",
     quest: row(4004),
-    asker: on_path(asker(log: all_forty()), 1),
+    asker: on_path(quest_request_support.asker(log: all_forty()), 1),
     earlier: Refused(code: 13),
     later: alone(
       quest: row(4004),
-      asker: on_path(asker(log: all_forty()), 3),
+      asker: on_path(quest_request_support.asker(log: all_forty()), 3),
       verdict: Refused(15),
     ),
   )
@@ -873,9 +961,13 @@ fn order_15_16() -> Order {
   Order(
     name: "15 before 16",
     quest:,
-    asker: asker(log: all_forty()),
+    asker: quest_request_support.asker(log: all_forty()),
     earlier: Refused(code: 15),
-    later: alone(quest:, asker: asker(log: []), verdict: Refused(16)),
+    later: alone(
+      quest:,
+      asker: quest_request_support.asker(log: []),
+      verdict: Refused(16),
+    ),
   )
 }
 
@@ -884,11 +976,11 @@ fn order_16_17() -> Order {
   Order(
     name: "16 before 17",
     quest: weightless(quest: contract),
-    asker: asker(log: []),
+    asker: quest_request_support.asker(log: []),
     earlier: Refused(code: 16),
     later: alone(
       quest: contract,
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
       verdict: NotRead(gap: quest.Contract),
     ),
   )
@@ -935,21 +1027,22 @@ pub fn accept_reports_the_first_failure_in_the_client_order_test() -> Nil {
 
 pub fn accept_from_an_item_needs_the_item_that_starts_the_quest_test() -> Nil {
   use <- owned_test.run(10_000)
-  let body = accept_body(location: 1, bag_index: 0, quest_id: 2417)
+  let body =
+    quest_request_support.accept_body(location: 1, bag_index: 0, quest_id: 2417)
   let started = fn(asker) { took(message: quest.Accept, body:, asker:) }
   let sent = [quest.SendState(quest_id: 2417, state: 1, objective_id: 0)]
   assert started(
-      quest_support.with_items(asker(log: []), items: [
+      quest_support.with_items(quest_request_support.asker(log: []), items: [
         item(item2_id: 4861, location: 1, bag_index: 0),
       ]),
     ).effects
     == sent
     as "Item2 4861 starts quest 2417 (quest2IdActivation) and is held at the place named"
-  assert_declined(started(asker(log: [])), quest: 2417)
+  assert_declined(started(quest_request_support.asker(log: [])), quest: 2417)
   // Item2 1039 starts no quest.
   assert_declined(
     started(
-      quest_support.with_items(asker(log: []), items: [
+      quest_support.with_items(quest_request_support.asker(log: []), items: [
         item(item2_id: 1039, location: 1, bag_index: 0),
       ]),
     ),
@@ -957,7 +1050,7 @@ pub fn accept_from_an_item_needs_the_item_that_starts_the_quest_test() -> Nil {
   )
   assert_declined(
     started(
-      quest_support.with_items(asker(log: []), items: [
+      quest_support.with_items(quest_request_support.asker(log: []), items: [
         item(item2_id: 4861, location: 1, bag_index: 1),
       ]),
     ),
@@ -977,9 +1070,16 @@ fn assert_declined(taken: Taken, quest quest_id: Int) -> Nil {
 pub fn accept_from_the_dialog_needs_a_giver_in_reach_or_a_mentioned_call_test() -> Nil {
   use <- owned_test.run(10_000)
   let dialog = fn(quest_id) {
-    accept_body(location: 300, bag_index: 0xFFFF_FFFF, quest_id:)
+    quest_request_support.accept_body(
+      location: 300,
+      bag_index: 0xFFFF_FFFF,
+      quest_id:,
+    )
   }
-  let done = asker(log: [quest_support.completed(quest_id: 10_520, at: 1000)])
+  let done =
+    quest_request_support.asker(log: [
+      quest_support.completed(quest_id: 10_520, at: 1000),
+    ])
   let from = fn(picture, quest_id, asker) {
     took_in(message: quest.Accept, body: dialog(quest_id), asker:, picture:)
   }
@@ -1025,7 +1125,7 @@ pub fn accept_from_the_dialog_needs_a_giver_in_reach_or_a_mentioned_call_test() 
     quest: 1806,
   )
   // A communicator quest the log holds a state of 4 to 7 for needs no creature.
-  let called = asker(log: [quest_support.known(1872, 5)])
+  let called = quest_request_support.asker(log: [quest_support.known(1872, 5)])
   assert from(dict.new(), 1872, called).effects
     == [quest.SendState(quest_id: 1872, state: 1, objective_id: 0)]
     as "1872 has Quest2 flag 4, the communicator's, and the log holds it mentioned"
@@ -1037,12 +1137,16 @@ pub fn accept_from_the_dialog_needs_a_giver_in_reach_or_a_mentioned_call_test() 
 pub fn a_quest_is_accepted_from_a_simple_giver_in_reach_test() -> Nil {
   use <- owned_test.run(10_000)
   let dialog =
-    accept_body(location: 300, bag_index: 0xFFFF_FFFF, quest_id: 3689)
+    quest_request_support.accept_body(
+      location: 300,
+      bag_index: 0xFFFF_FFFF,
+      quest_id: 3689,
+    )
   let from = fn(gap, hostile_to) {
     took_in(
       message: quest.Accept,
       body: dialog,
-      asker: asker(log: []),
+      asker: quest_request_support.asker(log: []),
       picture: simple_unit_support.picture(
         creature_id: 12_545,
         faction_id: 219,
@@ -1070,10 +1174,10 @@ pub fn retry_takes_only_a_botched_quest_test() -> Nil {
     quest.take(
       message: quest.Retry,
       body: retry_body(quest_id: 2417),
-      asker: quest_support.with_items(asker(log:), items: [
+      asker: quest_support.with_items(quest_request_support.asker(log:), items: [
         item(item2_id: 4861, location: 1, bag_index: 0),
       ]),
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture: dict.new(),
       tables:,
       now_ms: 0,
@@ -1147,10 +1251,10 @@ pub fn a_quest_the_server_cannot_check_logs_what_it_does_not_read_and_no_issue_t
         message: quest.Retry,
         body: retry_body(quest_id: 2417),
         asker: quest_support.with_items(
-          asker(log: [quest_support.known(2417, 4)]),
+          quest_request_support.asker(log: [quest_support.known(2417, 4)]),
           items: [item(item2_id: 4861, location: 1, bag_index: 0)],
         ),
-        standing: standing(),
+        standing: quest_request_support.standing(),
         picture: dict.new(),
         tables:,
         now_ms: 0,
@@ -1223,14 +1327,20 @@ pub fn every_quest_gap_kind_has_its_static_sentence_in_the_quest_gaps_test() -> 
 
 pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Nil {
   use <- owned_test.run(10_000)
-  let unknown = accept_body(location: 1, bag_index: 0, quest_id: 32_000)
-  let unchanged = asker(log: [quest_support.known(1806, 5)])
+  let unknown =
+    quest_request_support.accept_body(
+      location: 1,
+      bag_index: 0,
+      quest_id: 32_000,
+    )
+  let unchanged =
+    quest_request_support.asker(log: [quest_support.known(1806, 5)])
   let first =
     quest.take(
       message: quest.Accept,
       body: unknown,
       asker: unchanged,
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture: dict.new(),
       tables: tables(),
       now_ms: 0,
@@ -1246,7 +1356,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       message: quest.Accept,
       body: unknown,
       asker: unchanged,
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture: dict.new(),
       tables: tables(),
       now_ms: 0,
@@ -1259,7 +1369,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       message: quest.Retry,
       body: retry_body(quest_id: 1806),
       asker: unchanged,
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture: dict.new(),
       tables: tables(),
       now_ms: 0,
@@ -1269,7 +1379,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
     as "another reason warns once again: 1806 is Mentioned, not Botched"
   // 2417 is held Botched and its item is in a bag, so only the message is wrong: the
   // client sends a Botched quest as 0x0365 only (`opcode.0x35b`, `opcode.0x365`).
-  let botched = asker(log: [quest_support.known(2417, 4)])
+  let botched = quest_request_support.asker(log: [quest_support.known(2417, 4)])
   let from_item =
     quest_support.with_items(botched, items: [
       item(item2_id: 4861, location: 1, bag_index: 0),
@@ -1277,9 +1387,13 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
   let assert Ok(accepted_botched) =
     quest.take(
       message: quest.Accept,
-      body: accept_body(location: 1, bag_index: 0, quest_id: 2417),
+      body: quest_request_support.accept_body(
+        location: 1,
+        bag_index: 0,
+        quest_id: 2417,
+      ),
       asker: from_item,
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture: dict.new(),
       tables: tables(),
       now_ms: 0,
@@ -1294,7 +1408,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       message: quest.Accept,
       body: <<1>>,
       asker: unchanged,
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture: dict.new(),
       tables: tables(),
       now_ms: 0,
@@ -1302,28 +1416,6 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
     )
     as "a body the client's reader would refuse ends the connection"
   Nil
-}
-
-fn standing() -> interaction.Player {
-  interaction.Player(
-    race_id: RaceId(3),
-    faction: shown.Exile,
-    place: connection_support.entry_place(),
-  )
-}
-
-fn accept_body(
-  location location: Int,
-  bag_index bag_index: Int,
-  quest_id quest_id: Int,
-) -> BitArray {
-  let assert Ok(body) =
-    quest_accept.encode(QuestAccept(
-      item: ItemPlace(location:, bag_index:),
-      quest_id:,
-    ))
-    as "the request fits its fields"
-  body
 }
 
 fn retry_body(quest_id quest_id: Int) -> BitArray {
@@ -1351,7 +1443,7 @@ fn took_in(
       message:,
       body:,
       asker:,
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture:,
       tables: tables(),
       now_ms: 0,

@@ -316,28 +316,12 @@ fn started_of(
   spell4_id spell4_id: Int,
   effects effects: List(Effect),
 ) -> spell_started.SpellStarted {
-  let assert Ok(start) =
-    list.filter_map(support.frames_of(message_id: 0x07FF, effects:), fn(frame) {
-      let assert Ok(start) = spell_started.decode(frame.body)
-        as "a 0x7ff the rule wrote decodes"
-      case start.spell4_id == spell4_id {
-        True -> Ok(start)
-        False -> Error(Nil)
-      }
-    })
-    |> list.first
-    as "the effects start a cast of the spell"
-  start
+  support.first_started(effects:, spell4_id:)
 }
 
 /// The effect rows the goes of the effects list on the caster, unit 7, in order.
 fn listed_on_the_caster(effects effects: List(Effect)) -> List(Int) {
-  list.flat_map(support.goes_in(effects:), fn(go) {
-    list.filter(go.targets, fn(target) { target.unit_id == 7 })
-    |> list.flat_map(fn(target) {
-      list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-    })
-  })
+  support.listed_on_unit(effects:, unit_id: 7)
 }
 
 fn is_strike(effect effect: Effect) -> Bool {
@@ -539,21 +523,10 @@ fn listed_by(
   spell4_id spell4_id: Int,
   effects effects: List(Effect),
 ) -> List(Int) {
-  let cast_id = started_of(spell4_id:, effects:).cast_id
-  list.flat_map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      case go.cast_id == cast_id {
-        True ->
-          list.filter(go.targets, fn(target) { target.unit_id == 7 })
-          |> list.flat_map(fn(target) {
-            list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-          })
-        False -> []
-      }
-    },
+  support.listed_on_unit_by_cast(
+    effects:,
+    cast_id: started_of(spell4_id:, effects:).cast_id,
+    unit_id: 7,
   )
 }
 
@@ -1633,9 +1606,7 @@ fn starts_at(
   spell4_id spell4_id: Int,
   effects effects: List(Effect),
 ) -> List(Int) {
-  list.filter_map(support.frames_of(message_id: 0x07FF, effects:), fn(frame) {
-    let assert Ok(start) = spell_started.decode(frame.body)
-      as "a 0x7ff the rule wrote decodes"
+  list.filter_map(support.started_in(effects:), fn(start) {
     case start.spell4_id == spell4_id {
       True -> Ok(start.primary_target_unit_id)
       False -> Error(Nil)
@@ -2030,37 +2001,30 @@ fn tick_settled(
       rolls: [],
       poses: dict.new(),
     )
-  list.fold(
-    support.tick_strikes(effects:),
-    #(state, effects),
-    fn(so_far, asked) {
-      let #(state, done) = so_far
-      let killed = case ms == kills_at {
-        True -> 1
-        False -> 0
-      }
-      let #(state, round) =
-        cast.ticked(
-          cast: state,
-          caster:,
-          now: support.at(ms:),
-          asked:,
-          struck: Some(landed_tick(asked:, killed:)),
-        )
-        |> support.then_procs(caster:, at: ms)
-      let #(state, round) =
-        support.answered_each(
-          caster:,
-          state:,
-          effects: round,
-          at: ms,
-          struck_of: fn(_) { [] },
-          rolls: [],
-          poses: dict.new(),
-        )
-      #(state, list.append(done, round))
-    },
-  )
+  support.ticks_closed(state:, effects:, close: fn(state, asked) {
+    let killed = case ms == kills_at {
+      True -> 1
+      False -> 0
+    }
+    let #(state, round) =
+      cast.ticked(
+        cast: state,
+        caster:,
+        now: support.at(ms:),
+        asked:,
+        struck: Some(landed_tick(asked:, killed:)),
+      )
+      |> support.then_procs(caster:, at: ms)
+    support.answered_each(
+      caster:,
+      state:,
+      effects: round,
+      at: ms,
+      struck_of: fn(_) { [] },
+      rolls: [],
+      poses: dict.new(),
+    )
+  })
 }
 
 /// Every timer due by `until` ms fires, earliest first, each step settled as

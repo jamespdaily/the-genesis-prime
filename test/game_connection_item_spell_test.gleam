@@ -26,7 +26,6 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/item_count_changed
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
-import genesis_prime/message/player_health
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
@@ -96,15 +95,6 @@ fn a_strike() -> step.Event(
       ),
     ),
   )
-}
-
-fn healths(taken taken: ConnectionStep(Request)) -> List(Int) {
-  connection_support.decoded(
-    connection_support.heard(taken, connection_support.keyed()),
-    player_health.message_id,
-    player_health.decode,
-  )
-  |> list.map(fn(told) { told.health })
 }
 
 /// The properties the step's 0x93a frames carry for this property id, as the value each
@@ -188,7 +178,7 @@ pub fn a_consumables_use_shows_its_heal_or_its_buff_and_spends_one_of_the_stack_
           )),
         )
       let #(state, struck) = connection_support.feed(state:, event: a_strike())
-      let assert [hurt] = healths(taken: struck)
+      let assert [hurt] = connection_support.healths(taken: struck)
         as "the blow lowers the health: one 0x92f"
       assert hurt < full as scene.why
       let #(state, pressed) =
@@ -247,7 +237,8 @@ pub fn a_consumables_use_shows_its_heal_or_its_buff_and_spends_one_of_the_stack_
             && started.caster_item_level == item_level
             as scene.why
           assert described(taken: answered, effect_id:) == [amount] as scene.why
-          assert healths(taken: answered) == [int.min(full, hurt + amount)]
+          assert connection_support.healths(taken: answered)
+            == [int.min(full, hurt + amount)]
             as scene.why
           let #(_, again) =
             connection_support.at(
