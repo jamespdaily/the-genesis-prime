@@ -15,8 +15,8 @@ CharacterCustomization	9	Human male look row	character_creation_test
 CharacterCustomization	10	Human male look row	character_select_test
 CharacterCustomization	603	Human female look row	appearance_test
 CharacterCustomization	604	Human female look row	appearance_test
-WorldLocation2	51739	Exile objective circle	game_wire_quest_test
-WorldLocation2	52898	Dominion objective circle	game_wire_quest_test
+WorldLocation2	51739	Exile objective circle	game_wire_creature_test
+WorldLocation2	52898	Dominion objective circle	dagun_spawn_test
 WorldZone	1755	deepest zone chain	top_zone_test
 WorldZone	147	zone whose parent row is missing	top_zone_test
 Creature2	73464	Virtual Battle Beast	spawn_test
@@ -1251,7 +1251,7 @@ SpellLevel	1144	Spellslinger ability after level 1	ability_book_test, experience
 SpellLevel	1148	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1155	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	931	Warrior Flash Bang, level 14 (class 1)	game_wire_cast_test
-SpellLevel	938	Warrior Plasma Wall, level 10 (class 1)	game_wire_ability_test, game_wire_cast_test, game_wire_creature_test, game_wire_item_test
+SpellLevel	938	Warrior Plasma Wall, level 10 (class 1)	game_wire_cast_test
 SpellLevel	632	Medic Nullifier, level 8 (class 4)	game_wire_cast_test, cast_lasting_test
 SpellLevel	1119	Medic Restrictor, level 12 (class 4)	game_wire_cast_test
 Spell4Base	53378	Level Up (castMethod 0)	level_up_test
