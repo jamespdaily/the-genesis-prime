@@ -138,10 +138,14 @@ jobs:
       # The wall time a part warns over, and a third of its hang limit (the only time
       # limit that fails the run).
       GENESIS_CHECK_BUDGET_SECONDS: "400"
+      GENESIS_TEST_WORKERS: "4"
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres
     steps:
+      - name: Planted failure of the first attempt
+        if: ${{ matrix.name == 'migrations' && github.run_attempt == 1 }}
+        run: exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ matrix.fast || needs.scope.outputs.light != 'true' }}
         with:
