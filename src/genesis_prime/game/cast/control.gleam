@@ -55,6 +55,10 @@
 ////   the player, the change stays, and its timer ends it, told from the go's address. A
 ////   later cast of the same stack group that no node of an earlier cast holds a change for
 ////   ends that cast's change first (`kept_pushed_off`).
+//// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
+////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
+////   five modifier rows (Spell4Effects 130474 and 203798 to 203801). The same row of a child
+////   a Proxy started has no press target and is not put on the caster.
 //// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
 ////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
 ////   the caster): each is aimed at the creatures the go

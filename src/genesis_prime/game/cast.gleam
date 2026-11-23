@@ -6001,9 +6001,5 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Casting",
       missing: "A target apply prerequisite on an absorb or a type 11 row aimed at another player reads what the caster's picture shows of that player, not the player's own state.",
     ),
-    gap.Entry(
-      area: "Casting",
-      missing: "A press of a spell at oneself lands none of its type 11 rows aimed at the primary target: Phantasmal Armor pressed at oneself gives its absorb and no damage reduction, because the five modifier rows are not read as the caster's own.",
-    ),
   ]
 }

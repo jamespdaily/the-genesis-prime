@@ -162,12 +162,6 @@ fn limits() -> List(Limit) {
       "a target gate on an absorb or modifier row aimed at another player reads what the caster's picture shows of it",
     ),
     Limit(
-      cast.gaps(),
-      "Casting",
-      ["oneself", "damage reduction"],
-      "a press at oneself lands no type 11 row aimed at the primary target",
-    ),
-    Limit(
       cast_control.gaps(),
       "Casting",
       ["stack", "different casters"],
