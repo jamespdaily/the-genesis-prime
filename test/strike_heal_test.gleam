@@ -531,7 +531,7 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
       AnswerRow(
         "the heals landed close the round: the timer is cancelled and the go lists the player with what it applied and no description",
         [],
-        [says(HealsLanded([first_heal(), second_heal()]), at_ms: 1100)],
+        [says(outcome: HealsLanded([first_heal(), second_heal()]), at_ms: 1100)],
         [
           closed_with(struck: [player_hit(heals: [first_heal(), second_heal()])]),
         ],
@@ -539,14 +539,14 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
       AnswerRow(
         "a dead player leaves its place: the go is still written and names no one",
         [],
-        [says(PlayerDead, at_ms: 1100)],
+        [says(outcome: PlayerDead, at_ms: 1100)],
         [closed_with(struck: [])],
       ),
       AnswerRow(
         "the player answers before the creature: the round waits for the creature, then lists the creature first, in selection order",
         [10],
         [
-          says(HealsLanded([first_heal()]), at_ms: 1100),
+          says(outcome: HealsLanded([first_heal()]), at_ms: 1100),
           CreatureLands(at_ms: 1200),
         ],
         [
@@ -561,8 +561,8 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
         "a second answer for the same place is dropped and the first answer's heals stand",
         [10],
         [
-          says(HealsLanded([first_heal()]), at_ms: 1100),
-          says(HealsLanded([second_heal()]), at_ms: 1150),
+          says(outcome: HealsLanded([first_heal()]), at_ms: 1100),
+          says(outcome: HealsLanded([second_heal()]), at_ms: 1150),
           CreatureLands(at_ms: 1200),
         ],
         [
@@ -619,7 +619,7 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
       AnswerRow(
         "an answer processed at 2500, after the deadline of 2000 but before the timer is processed, is taken and listed: the round closes by processing its timer, not by the clock",
         [],
-        [says(HealsLanded([first_heal()]), at_ms: 2500)],
+        [says(outcome: HealsLanded([first_heal()]), at_ms: 2500)],
         [closed_with(struck: [player_hit(heals: [first_heal()])])],
       ),
       AnswerRow(
@@ -627,7 +627,7 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
         [],
         [
           TimerProcessed(at_ms: 2000),
-          says(HealsLanded([first_heal()]), at_ms: 2100),
+          says(outcome: HealsLanded([first_heal()]), at_ms: 2100),
         ],
         [
           [
