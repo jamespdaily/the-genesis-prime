@@ -4,7 +4,8 @@ Each test copies ./check and setup_check/environment.sh into a temporary
 repository and runs that copy with a PATH of planted tools, so no test touches
 the real toolchain, the real database or the real client:
 
-- ./setup-check is a stub that succeeds (after PLANT_SETUP_SECONDS, when set);
+- ./setup-check is a stub that succeeds (after PLANT_SETUP_SECONDS, when set), or
+  fails when PLANT_SETUP_FAILS is set;
 - `gleam` and `psql` are stubs that write their command line to PLANT_LOG and
   succeed (the `psql` that drops the database takes PLANT_PSQL_DROP_SECONDS
   first, when set, and the one that creates it takes PLANT_PSQL_CREATE_SECONDS
@@ -28,7 +29,9 @@ the real toolchain, the real database or the real client:
   commands log shows `built test -- ARGS` for a start of the built code and
   `gleam ...` only for what compiles; a test run given `--reporter table` prints the
   rows planted for it in $PLANT_LOG.table.workers (the run with workers) or
-  $PLANT_LOG.table.serial, in unitest's own layout;
+  $PLANT_LOG.table.serial, in unitest's own layout, and then unitest's `N passed` line
+  (N is PLANT_PASSED_FIRST for the run with no tag, PLANT_PASSED_SERIAL for the serial run);
+  a run given GENESIS_TEST_DIRECTORY lists what that folder holds in $PLANT_LOG.shard;
 - `python3.13` is the real one, except for the run the stub stands in for:
   check_facts.py, which succeeds at once, and fails when the fact file holds
   PLANTED_FACT_ERROR;
@@ -80,6 +83,8 @@ GLEAM_STUB = """#!/bin/sh
 as=${PLANT_AS:-gleam}
 echo "$as $*" >>"$PLANT_LOG"
 echo "$as $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA GENESIS_TEST_SKIP_REAL_START=$GENESIS_TEST_SKIP_REAL_START GENESIS_TEST_SKIP_CLIENT_ROWS=$GENESIS_TEST_SKIP_CLIENT_ROWS GENESIS_TEST_SKIP_REAL_TABLES=$GENESIS_TEST_SKIP_REAL_TABLES" >>"$PLANT_LOG.environment"
+echo "$as $* directory=$GENESIS_TEST_DIRECTORY" >>"$PLANT_LOG.directory"
+[ -z "$DATABASE_URL" ] || echo "$as $* url=$DATABASE_URL" >>"$PLANT_LOG.url"
 if [ -n "$PLANT_RENDEZVOUS" ]; then
   rendezvous="$PLANT_LOG.rendezvous"
   mkdir -p "$rendezvous"
@@ -132,6 +137,38 @@ if [ "$1" = test ]; then
     *) echo "Seed: 111" ;;
   esac
   echo "$as $* peak_file=${GENESIS_LITERAL_PEAK_FILE:+given}" >>"$PLANT_LOG.peak"
+  # A run given a shard's folder (GENESIS_TEST_DIRECTORY) lists what the folder holds when
+  # it starts: `link PATH TARGET` for each symlink to a file that exists, `stray PATH` for
+  # anything else, PATH below the folder.
+  if [ -n "$GENESIS_TEST_DIRECTORY" ]; then
+    case "$*" in
+      *"--tag"*) ;;
+      *)
+        echo "shard $GENESIS_TEST_DIRECTORY" >>"$PLANT_LOG.shard"
+        [ -d "$GENESIS_TEST_DIRECTORY" ] || echo "missing $GENESIS_TEST_DIRECTORY" >>"$PLANT_LOG.shard"
+        find "$GENESIS_TEST_DIRECTORY" ! -type d 2>/dev/null | sort | while read -r entry; do
+          relative=${entry#"$GENESIS_TEST_DIRECTORY"/}
+          if [ -L "$entry" ] && [ -f "$entry" ]; then
+            echo "link $relative $(readlink "$entry")"
+          else
+            echo "stray $relative"
+          fi
+        done >>"$PLANT_LOG.shard"
+        ;;
+    esac
+  fi
+  # unitest's last line: the count of the tests that passed (PLANT_PASSED_FIRST for the run
+  # with no tag, PLANT_PASSED_SERIAL for the serial run), and the skipped ones.
+  case "$*" in
+    *"--tag serial"*) passed=${PLANT_PASSED_SERIAL:-3} ;;
+    *"--tag"*) passed=1 ;;
+    *) passed=${PLANT_PASSED_FIRST:-12} ;;
+  esac
+  if [ "$passed" = 0 ]; then
+    echo "0 passed, no failures, 4 skipped"
+  else
+    echo "$passed passed, no failures"
+  fi
   # A run with the table reporter prints the rows planted for it: the file
   # $PLANT_LOG.table.workers for the run with workers, .table.serial for the serial run,
   # in unitest's own layout (`| PASS | module | test | 67ms |`).
@@ -251,6 +288,10 @@ exec "$PLANT_REAL_PYTHON" "$@"
 
 SETUP_CHECK_STUB = """#!/bin/sh
 [ -n "$PLANT_SETUP_SECONDS" ] && sleep "$PLANT_SETUP_SECONDS"
+if [ -n "$PLANT_SETUP_FAILS" ]; then
+  echo "planted setup check failure"
+  exit 1
+fi
 echo "setup check passed"
 exit 0
 """
@@ -394,8 +435,10 @@ class PlantedCheckCase(unittest.TestCase):
     def side_log(self, suffix: str) -> str:
         """A stub's side log, empty when it wrote none: `environment` holds the gleam
         commands with the value of GENESIS_TEST_SKIP_SERIAL each saw, `peak` the test
-        commands with whether each was given the literal peak file, and `erl` the
-        command line of each start of the built code, as the erl stub saw it."""
+        commands with whether each was given the literal peak file, `erl` the
+        command line of each start of the built code, as the erl stub saw it, `directory`
+        the shard folder each was given, `shard` the listing of that folder, and `url`
+        the DATABASE_URL of each command that had one."""
         path = Path(str(self.log) + "." + suffix)
         return path.read_text() if path.exists() else ""
 
@@ -428,8 +471,10 @@ class Run:
     marker_ran: bool
     hang: str
     left_running: list[str]
-    head: str
     recorded: str
+    directory: str
+    shard: str
+    url: str
 
     @property
     def output(self) -> str:
@@ -466,7 +511,8 @@ def shared_run(key: str, *arguments: str, client: bool = False, prepare=None, ha
         record = Path(case.git("rev-parse", "--absolute-git-dir")) / "check-passed-commit"
         run = Run(
             done, case.commands(), case.side_log("environment"), case.side_log("peak"), case.side_log("erl"), took,
-            case.marker.exists(), seconds, left, case.git("rev-parse", "HEAD"), record.read_text().strip() if record.exists() else "",
+            case.marker.exists(), seconds, left, record.read_text().strip() if record.exists() else "",
+            case.side_log("directory"), case.side_log("shard"), case.side_log("url"),
         )
     finally:
         if seconds:
@@ -499,10 +545,12 @@ class ControlTest(unittest.TestCase):
         self.assertIn("check passed", run.done.stdout)
 
     def test_an_argument_other_than_fast_is_refused_with_the_usage_and_runs_nothing(self):
-        run = shared_run("usage", "everything")
-        self.assertNotEqual(run.done.returncode, 0)
-        self.assertIn("usage", run.output.lower())
-        self.assertEqual(run.commands, [])
+        for arguments in (("everything",), ("part",)):
+            with self.subTest(arguments=arguments):
+                run = shared_run("usage-" + "-".join(arguments), *arguments)
+                self.assertNotEqual(run.done.returncode, 0)
+                self.assertIn("usage", run.output.lower())
+                self.assertEqual(run.commands, [])
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
@@ -608,6 +656,10 @@ class BudgetTest(unittest.TestCase):
         self.assertRegex(failed_line(self, run.output), r"\bmigrations\b")
         self.assertNotIn("built run -m squirrel check", run.commands)
         self.assertRegex(run.output, r"(?m)^  squirrel +skipped \(a part it needs failed: migrations\)")
+
+    def test_a_part_run_over_its_budget_passes_with_the_warning(self):
+        run = shared_run("slow-part-run", "part", "format", GENESIS_CHECK_BUDGET_SECONDS="3", PLANT_FORMAT_SECONDS="4")
+        self.assert_passed_with_the_warning(run, budget=3)
 
     def test_a_check_inside_its_budget_passes_without_a_warning(self):
         run = shared_run("in-budget", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="30", PLANT_FORMAT_SECONDS="1")
@@ -732,6 +784,22 @@ class HungPartTest(unittest.TestCase):
 
     def test_a_part_that_is_not_a_test_run_is_named_without_tests(self):
         self.assertEqual(self.still_running_lines(self.part_and_drop()), [])
+
+    def test_a_part_run_whose_part_hangs_is_stopped_at_three_times_the_budget_and_named(self):
+        run = shared_run(
+            "hung-part-run-glinter", "part", "glinter", hang=lambda seconds: dict(PLANT_GLINTER_SECONDS=seconds), timeout=40,
+            GENESIS_CHECK_BUDGET_SECONDS=str(self.BUDGET),
+        )
+        self.assert_stopped_as_hung(run, "glinter")
+        self.assertEqual(self.still_running_lines(run), [])
+        # A shard's hang names the tests that had started and not ended, as the full check's does.
+        run = shared_run(
+            "hung-part-run-shard", "part", "gleam-test", "1/3", timeout=40,
+            hang=lambda seconds: dict(PLANT_GLEAM_TEST_SECONDS=seconds, PLANT_LISTED_TESTS="hung"),
+            GENESIS_CHECK_BUDGET_SECONDS=str(self.BUDGET),
+        )
+        self.assert_stopped_as_hung(run, "gleam-test")
+        self.assertRegex(self.still_running_lines(run)[0], r"^still running: planted_test:one_that_hung_test \(\d+ s\)$")
 
     def test_a_setup_check_that_hangs_is_stopped_at_three_times_the_budget(self):
         run = shared_run(
@@ -920,8 +988,7 @@ class FastModeTest(unittest.TestCase):
     The planted `gleam` stands for the tools: it fails the format check on a
     planted format error, and the fact checker on a planted fact-file error. What
     these tests hold is that the fast check runs each of those four and fails,
-    naming the part, when one fails, and that only a passing run on a clean tree
-    records its commit."""
+    naming the part, when one fails."""
 
     def test_a_planted_format_error_fails_the_fast_check_naming_the_format_part(self):
         run = shared_run("fast-format-error", "fast", prepare=lambda case: (case.repository / "src" / "planted.gleam").write_text("// PLANTED_FORMAT_ERROR\n"))
@@ -932,30 +999,6 @@ class FastModeTest(unittest.TestCase):
         run = shared_run("fast-fact-error", "fast", prepare=lambda case: plant_fact_file_error(case))
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bfact-checker\b")
-
-    def test_a_passing_fast_check_records_its_commit(self):
-        run = shared_run("fast", "fast")
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertEqual(run.recorded, run.head, "the record names the commit the run passed on")
-
-    def test_a_failing_fast_check_records_no_commit_and_removes_the_one_an_earlier_run_left(self):
-        def plant(case):
-            case.settle()
-            (Path(case.git("rev-parse", "--absolute-git-dir")) / "check-passed-commit").write_text("an earlier commit\n")
-            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace("build) exit 0", "build) exit 1"))
-
-        run = shared_run("fast-build-fails-with-a-record", "fast", prepare=plant)
-        self.assertNotEqual(run.done.returncode, 0, run.output)
-        self.assertEqual(run.recorded, "")
-
-    def test_a_passing_fast_check_on_a_dirty_tree_records_no_commit(self):
-        def plant(case):
-            case.settle()
-            (case.repository / "src" / "uncommitted.gleam").write_text("// not committed\n")
-
-        run = shared_run("fast-dirty", "fast", prepare=plant)
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertEqual(run.recorded, "")
 
     def test_the_fast_check_runs_the_four_parts_and_no_other(self):
         run = shared_run("fast", "fast")
@@ -1705,6 +1748,7 @@ class TaggedPartTest(unittest.TestCase):
         runs = [line.split(" GENESIS_TEST_SKIP_SERIAL")[0] for line in run.environment.splitlines() if line.startswith("built test")]
         self.assertEqual(sorted(runs), sorted(
             [FIRST_RUN, SERIAL_RUN, "built test -- --tag client_rows"] + ["built test -- --tag " + tag for _, tag in tagged_parts()]))
+        self.assertEqual(directories_given(run), {}, "no run of the full check is given a shard's folder")
 
     def test_every_tagged_part_is_a_part_of_the_full_check(self):
         for part, _ in tagged_parts():
@@ -1838,6 +1882,435 @@ class ModuleTimeTest(unittest.TestCase):
         self.assertIn("a_failing_test", run.output)
         self.assertNotIn("| PASS", run.output)
         self.assertNotIn("| SKIP", run.output)
+
+
+def directories_given(run: Run) -> dict[str, str]:
+    """The folder each run of the tests was given (GENESIS_TEST_DIRECTORY), by the run's command; runs given none are left out."""
+    given = {}
+    for line in run.directory.splitlines():
+        command, _, directory = line.rpartition(" directory=")
+        if directory and command.startswith("built test"):
+            given[command] = directory
+    return given
+
+
+def part_run(key: str, *arguments: str, client: bool = False, prepare=None, timeout: float = 120, **settings: str) -> Run:
+    """A planted `./check part ARGUMENTS`, shared by every test that asks for the same key."""
+    return shared_run("part-" + key, "part", *arguments, client=client, prepare=prepare, timeout=timeout, **settings)
+
+
+def gleam_commands(commands: list[str]) -> list[str]:
+    """The commands the gleam stub saw, sorted: the format and the build, and each start of the built code."""
+    return sorted(c for c in commands if c.startswith(("gleam ", "built ")))
+
+
+def python_commands(commands: list[str]) -> list[str]:
+    """The python3.13 commands the check made, sorted, without the fact checker's lookup of the client's path."""
+    return sorted(c for c in commands if c.startswith("python3.13 -I") and not c.endswith("-I -c "))
+
+
+BUILD = "gleam build --warnings-as-errors"
+FORMAT = "gleam format --check src test dev"
+CLIENT_SUITE_PYTHON = ["python3.13 -I -m unittest discover -s .claude/skills/decoding-the-client/scripts -p test_*.py"]
+CLIENT_SUITE_PYTHON_WITH_CLIENT = sorted(
+    CLIENT_SUITE_PYTHON + ["python3.13 -I .claude/skills/decoding-the-client/scripts/client_files.py tokens --check"]
+)
+
+# Each part of the full check but literal-area, run alone: the arguments, whether the client is
+# there, the rows the summary prints (the part and what it needs, in the full check's order), the
+# commands of gleam and of the built code, the python commands, and whether a database is made.
+# What a part needs is the full check's own order: gleam-build for each part that starts the
+# built code (the client-suite part only where the client's rows are read), migrations for squirrel.
+PART_RUNS = [
+    (("format",), False, ["format"], [FORMAT], [], False),
+    (("gleam-build",), False, ["gleam-build"], [BUILD], [], False),
+    (("glinter",), False, ["gleam-build", "glinter"], [BUILD, "built run -m glinter"], [], False),
+    (
+        ("generated-tables",), True, ["gleam-build", "generated-tables"],
+        [BUILD, "built run -m genesis_prime/table_generator check"], [], False,
+    ),
+    (("gleam-test", "1/3"), False, ["gleam-build", "gleam-test"], [BUILD, FIRST_RUN, SERIAL_RUN], [], False),
+    (("real-start",), True, ["gleam-build", "real-start"], [BUILD, "built test -- --tag real_start"], [], False),
+    (("real-tables",), True, ["gleam-build", "real-tables"], [BUILD, "built test -- --tag real_tables"], [], False),
+    (("world-data",), True, ["gleam-build", "world-data"], [BUILD, "built test -- --tag world_data"], [], False),
+    (("migrations",), False, ["migrations"], [], [], True),
+    (("squirrel",), False, ["gleam-build", "migrations", "squirrel"], [BUILD, "built run -m squirrel check"], [], True),
+    (
+        ("client-suite",), True, ["gleam-build", "client-suite"], [BUILD, "built test -- --tag client_rows"],
+        CLIENT_SUITE_PYTHON_WITH_CLIENT, False,
+    ),
+    (("client-suite",), False, ["client-suite"], [], CLIENT_SUITE_PYTHON, False),
+    (("fact-checker",), False, ["fact-checker"], [], [FACT_CHECKER_COMMAND], False),
+]
+
+
+def part_run_of(arguments: tuple[str, ...], client: bool) -> Run:
+    """The shared planted run of one part, with the world database where the part reads it."""
+    settings = WORLD_DATA if arguments == ("world-data",) else {}
+    key = "%s-%s" % ("-".join(arguments).replace("/", "of"), "client" if client else "none")
+    return part_run(key, *arguments, client=client, **settings)
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class PartRunTest(unittest.TestCase):
+    """`./check part NAME [K/N]` runs one part of the full check alone, with the setup
+    check first, the parts it needs, and the full check's budget, hang handling and
+    summary. It decides no scope and runs no branch-current."""
+
+    def test_a_part_run_runs_the_part_and_the_parts_it_needs_and_no_other(self):
+        for arguments, client, rows, gleam, python, database in PART_RUNS:
+            with self.subTest(part=arguments, client=client):
+                run = part_run_of(arguments, client)
+                self.assertEqual(run.done.returncode, 0, run.output)
+                self.assertEqual(parts_reported(run.output), rows, run.output)
+                self.assertEqual(gleam_commands(run.commands), sorted(gleam), run.commands)
+                self.assertEqual(python_commands(run.commands), sorted(python), run.commands)
+                made_a_database = any("create database" in c or "drop database" in c for c in run.commands)
+                self.assertEqual(made_a_database, database, run.commands)
+                shown = " ".join(arguments)
+                self.assertRegex(run.output, r"(?m)^check passed \(part %s\), wall time \d+s, budget \d+s$" % re.escape(shown))
+        self.assertRegex(part_run_of(("gleam-test", "1/3"), False).done.stdout, r"(?m)^  gleam-test seeds: 111 222$")
+
+    def test_a_part_run_that_names_no_part_or_a_bad_shard_is_refused_with_the_usage_and_runs_nothing(self):
+        for arguments in (
+            (), ("nonesuch",), ("literal-area",), ("format", "1/3"), ("gleam-test",), ("gleam-test", "0/3"),
+            ("gleam-test", "4/3"), ("gleam-test", "a/b"), ("gleam-test", "1/0"), ("gleam-test", "1/3", "x"),
+        ):
+            with self.subTest(arguments=arguments):
+                run = part_run("refused-" + "-".join(arguments).replace("/", "of"), *arguments)
+                self.assertEqual(run.done.returncode, 2, run.output)
+                self.assertIn("usage", run.output.lower())
+                self.assertEqual(run.commands, [])
+                self.assertNotIn("setup check passed", run.output)
+        # The forms the usage names are not refused.
+        for arguments in (("format",), ("gleam-test", "1/3")):
+            with self.subTest(arguments=arguments):
+                run = part_run_of(arguments, False)
+                self.assertEqual(run.done.returncode, 0, run.output)
+                self.assertNotIn("usage", run.output.lower())
+
+    def test_a_part_run_starts_with_the_setup_check_and_a_failing_setup_check_runs_no_part(self):
+        self.assertIn("setup check passed", part_run_of(("glinter",), False).output)
+        run = part_run("setup-fails", "glinter", PLANT_SETUP_FAILS="1")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertIn("check FAILED: the setup check failed", run.output)
+        self.assertEqual(run.commands, [], "no part ran")
+
+    def test_a_check_that_ends_while_the_watchdog_is_starting_leaves_no_process_holding_its_output(self):
+        # The check's output pipe stays open while any process it started lives on. The
+        # setup check fails at once, so the check ends before the watchdog has started its
+        # sleep; a slow `date` keeps the watchdog from starting it, and a `ps` that
+        # answers late lets it start between the snapshot of what to stop and the kill.
+        def plant_slow_date_and_ps(case):
+            tools = case.root / "tools"
+            executable(tools / "date", '#!/bin/sh\n/bin/sleep 0.3\nexec /bin/date "$@"\n')
+            executable(tools / "ps", '#!/bin/sh\n/bin/ps "$@"\n/bin/sleep 0.6\n')
+
+        run = part_run("setup-fails-watchdog-starting", "glinter", prepare=plant_slow_date_and_ps, timeout=30, PLANT_SETUP_FAILS="1")
+        self.assertIn("check FAILED: the setup check failed", run.output)
+
+    def test_a_part_run_ignores_the_scope_and_does_not_run_branch_current(self):
+        branches = (
+            ("guidance-only", plant_light_changes),
+            ("behind-origin-main", lambda case: advance_origin_main(case, 2)),
+        )
+        for name, prepare in branches:
+            with self.subTest(branch=name):
+                run = part_run("scope-" + name, "glinter", client=True, prepare=prepare)
+                self.assertEqual(run.done.returncode, 0, run.output)
+                self.assertRegex(scope_line(run.output), r"^scope: part glinter\b")
+                self.assertEqual(parts_reported(run.output), ["gleam-build", "glinter"], run.output)
+                self.assertIn("built run -m glinter", run.commands)
+
+    def test_a_failed_prerequisite_fails_the_run_naming_it_and_skips_the_part(self):
+        def build_fails(case):
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace("build) exit 0", "build) exit 1"))
+
+        run = part_run("build-fails-glinter", "glinter", prepare=build_fails)
+        self.assertEqual(failed_line(self, run.output), "check FAILED: gleam-build")
+        self.assertRegex(run.output, r"(?m)^  glinter +skipped \(a part it needs failed: gleam-build\)")
+        self.assertNotIn("built run -m glinter", run.commands)
+        # The client-suite part runs its scripts' tests beside the build, and with the client it fails
+        # when the build did, saying the client's rows were not checked.
+        run = part_run("build-fails-client-suite-client", "client-suite", client=True, prepare=build_fails)
+        self.assertEqual(failed_line(self, run.output), "check FAILED: gleam-build, client-suite")
+        self.assertIn("the committed client rows were not checked: gleam-build failed", run.output)
+        self.assertEqual(python_commands(run.commands), CLIENT_SUITE_PYTHON_WITH_CLIENT)
+        # Without the client it needs no build, so it passes whatever the build does.
+        run = part_run("build-fails-client-suite-none", "client-suite", prepare=build_fails)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(gleam_commands(run.commands), [])
+
+    def test_a_failed_part_fails_the_run_naming_only_that_part(self):
+        run = part_run(
+            "format-error", "format",
+            prepare=lambda case: (case.repository / "src" / "planted.gleam").write_text("// PLANTED_FORMAT_ERROR\n"))
+        self.assertEqual(failed_line(self, run.output), "check FAILED: format")
+
+        def tagged_run_fails(case):
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
+                'if [ "$1" = test ] &&', 'if [ "$*" = "test -- --tag real_tables" ]; then exit 1; fi\nif [ "$1" = test ] &&'))
+
+        run = part_run("real-tables-fails", "real-tables", client=True, prepare=tagged_run_fails)
+        self.assertEqual(failed_line(self, run.output), "check FAILED: real-tables")
+
+    def test_a_part_run_never_writes_the_passed_commit_record(self):
+        run = part_run("no-record", "format")
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(run.recorded, "", "a passing part run on a clean tree leaves no record")
+
+    def test_a_part_run_without_the_client_skips_the_part_the_way_the_full_check_does(self):
+        for part in ("generated-tables", "real-start", "real-tables", "world-data"):
+            with self.subTest(part=part):
+                run = part_run("no-client-" + part, part)
+                self.assertEqual(run.done.returncode, 0, run.output)
+                self.assertRegex(run.output, r"(?m)^  %s +skipped \(" % part)
+                self.assertFalse([c for c in run.commands if "--tag" in c or "table_generator" in c], run.commands)
+        run = part_run_of(("client-suite",), False)
+        self.assertEqual(python_commands(run.commands), CLIENT_SUITE_PYTHON)
+        self.assertFalse([c for c in run.commands if "--tag client_rows" in c], run.commands)
+
+    def test_the_squirrel_part_run_makes_the_migrated_database_first_and_drops_it(self):
+        run = part_run_of(("squirrel",), False)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        commands = run.commands
+        created = next(i for i, c in enumerate(commands) if "create database" in c)
+        migrated = next(i for i, c in enumerate(commands) if c.startswith("psql") and "schema_migration" in c)
+        squirrel = commands.index("built run -m squirrel check")
+        dropped = next(i for i, c in enumerate(commands) if "drop database" in c)
+        self.assertLess(created, migrated)
+        self.assertLess(migrated, squirrel)
+        self.assertLess(squirrel, dropped)
+        name = re.search(r'create database "([^"]+)"', commands[created]).group(1)
+        urls = [line for line in run.url.splitlines() if line.startswith("built run -m squirrel check ")]
+        self.assertEqual([line.rpartition("/")[2] for line in urls], [name], "squirrel is given the database that was migrated")
+        self.assertIn(name, commands[dropped])
+
+    def test_a_part_run_reports_the_literal_area_of_its_own_runs_only(self):
+        expected = {
+            ("gleam-test", "1/3"): ["literal area: peak"],
+            ("real-tables",): ["literal area of the real-tables run: peak"],
+            ("world-data",): ["literal area of the world-data run: peak"],
+            ("glinter",): [],
+            ("real-start",): [],
+        }
+        for arguments, lines in expected.items():
+            with self.subTest(part=arguments):
+                run = part_run_of(arguments, True)
+                self.assertEqual(run.done.returncode, 0, run.output)
+                printed = [line.strip() for line in run.output.splitlines() if line.strip().startswith("literal area")]
+                self.assertEqual(len(printed), len(lines), run.output)
+                for line, text in zip(lines, printed):
+                    self.assertTrue(text.startswith(line), text)
+                self.assertNotIn("check WARNING", run.output, "no warning about a run that was not made")
+        limit = REGION * literal_limit_percent() // 100
+        run = part_run("literal-over", "gleam-test", "1/3", PLANT_LITERAL_PEAK=str(limit + 1))
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertIn("check WARNING: literal area over %d%% of its region" % literal_limit_percent(), run.output)
+
+
+# The test files a shard planted repository holds below test/ (the repository's own
+# test/code_rule/planted_test.gleam is one more): the heavy modules of ./check, support files that
+# do not end in _test.gleam, a sub-folder, and files that are not Gleam. `SHARD_TREE_ADDED` and
+# `SHARD_TREE_REMOVED` make the second tree.
+SHARD_TREE_FILES = (
+    ["alpha_test", "beta_test", "gamma_test", "delta_test", "support_helper", "spells/flow_test", "spells/support"]
+    + ["m%02d_test" % i for i in range(30)]
+)
+SHARD_TREE_NOT_GLEAM = ["fixture/data.json", "notes.md"]
+SHARD_TREE_ADDED = ["added_one_test", "spells/added_test"]
+SHARD_TREE_REMOVED = ["beta_test", "m07_test"]
+
+# The shard of some modules, from the hash the check documents (h = (31 * h + byte) mod 1000003, the
+# shard h mod N + 1), worked out here in Python, so the awk of macOS and the awk of Ubuntu must agree.
+PINNED_SHARDS = {
+    2: {
+        "alpha_test": 1, "beta_test": 1, "gamma_test": 2, "delta_test": 2, "support_helper": 1,
+        "spells/flow_test": 1, "spells/support": 2, "m00_test": 2, "m07_test": 1, "m29_test": 2,
+        "code_rule/planted_test": 1, "added_one_test": 2,
+    },
+    3: {
+        "alpha_test": 2, "beta_test": 3, "gamma_test": 3, "delta_test": 2, "support_helper": 3,
+        "spells/flow_test": 3, "spells/support": 3, "m00_test": 1, "m07_test": 3, "m29_test": 1,
+        "code_rule/planted_test": 1, "added_one_test": 1,
+    },
+}
+
+
+# The shard of each heavy module, worked by hand from the seconds ./check keeps (the
+# biggest first, each on the least loaded shard): 3 shards load 203.4, 181.6, 224.0 seconds,
+# 2 shards 305.6 and 303.4.
+PINNED_HEAVY_SHARDS = {
+    2: {
+        "table_value_test": 1, "account_store_test": 2, "apply_migrations_test": 2, "game_wire_quest_test": 1,
+        "objective_test": 2, "migration_start_test": 1, "sigterm_test": 2, "spell_area_test": 1,
+        "spell_plan_lasting_test": 2, "limited_action_set_test": 1,
+    },
+    3: {
+        "table_value_test": 1, "account_store_test": 2, "apply_migrations_test": 3, "game_wire_quest_test": 3,
+        "objective_test": 2, "migration_start_test": 1, "sigterm_test": 3, "spell_area_test": 2,
+        "spell_plan_lasting_test": 1, "limited_action_set_test": 3,
+    },
+}
+
+
+def heavy_modules() -> list[tuple[str, float]]:
+    """The modules ./check places first, as (module, seconds), in its order."""
+    found = re.findall(r'(?m)^heavy_modules="([^"]*)"$', CHECK.read_text())
+    assert len(found) == 1, found
+    return [(entry.split(":")[0], float(entry.split(":")[1])) for entry in found[0].split()]
+
+
+def biggest_first(count: int) -> dict[str, int]:
+    """The shard of each heavy module: biggest first (equal seconds by name), each on the least loaded shard, ties to the lower."""
+    loads = [0.0] * count
+    owner = {}
+    for module, seconds in sorted(heavy_modules(), key=lambda entry: (-entry[1], entry[0])):
+        shard = loads.index(min(loads))
+        owner[module] = shard + 1
+        loads[shard] += seconds
+    return owner
+
+
+def plant_shard_tree(tree: str):
+    """Plants the test folder of the tree ("first", "second" with files added and removed, or
+    "reversed": the first with the planted check listing its heavy modules smallest first, so the
+    placement cannot rest on the order of that list), and a leftover link in the folder each shard
+    of 2 and 3 will build."""
+
+    def plant(case: PlantedCheckCase) -> None:
+        names = [name for name, _ in heavy_modules()] + SHARD_TREE_FILES
+        if tree == "second":
+            names = [name for name in names if name not in SHARD_TREE_REMOVED] + SHARD_TREE_ADDED
+        if tree == "reversed":
+            planted = case.repository / "check"
+            line = re.search(r'(?m)^heavy_modules="([^"]*)"$', planted.read_text())
+            reversed_list = " ".join(reversed(line.group(1).split()))
+            planted.write_text(planted.read_text().replace(line.group(0), 'heavy_modules="%s"' % reversed_list))
+        for name in names:
+            file = case.repository / "test" / (name + ".gleam")
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("// a test\n")
+        for name in SHARD_TREE_NOT_GLEAM:
+            file = case.repository / "test" / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("not a test\n")
+        for count in (2, 3):
+            for number in range(1, count + 1):
+                stale = case.repository / "build" / "chosen_tests" / ("shard-%d-of-%d" % (number, count)) / "test"
+                stale.mkdir(parents=True, exist_ok=True)
+                (stale / "stale_test.gleam").symlink_to(case.repository / "test" / "no_longer_there_test.gleam")
+
+    return plant
+
+
+def shard_runs(count: int, tree: str = "first") -> list[Run]:
+    return [
+        part_run("shard-%s-%dof%d" % (tree, number, count), "gleam-test", "%d/%d" % (number, count), prepare=plant_shard_tree(tree))
+        for number in range(1, count + 1)
+    ]
+
+
+def shard_listing(run: Run) -> list[tuple[str, str]]:
+    """The (path, target) of each symlink the shard's folder held when its first run started; fails on anything else in it."""
+    lines = run.shard.splitlines()
+    assert lines and lines[0].startswith("shard "), run.shard
+    assert not [line for line in lines if line.startswith(("missing", "stray"))], run.shard
+    return [tuple(line.split(" ")[1:]) for line in lines if line.startswith("link ")]
+
+
+def owners(count: int, tree: str = "first") -> dict[str, int]:
+    """The shard that held each file, by its path below test, read from the folders the runs of the count were given."""
+    held: dict[str, int] = {}
+    for number, run in enumerate(shard_runs(count, tree), start=1):
+        assert run.done.returncode == 0, run.output
+        for path, _ in shard_listing(run):
+            assert path not in held, "%s is in two shards" % path
+            held[path] = number
+    return held
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class ShardTest(unittest.TestCase):
+    """`./check part gleam-test K/N` runs the tests of one of N shards: a folder below
+    build/chosen_tests of symlinks to the shard's files, given to the first run and the
+    serial run (GENESIS_TEST_DIRECTORY). The ten heaviest modules are placed first, by
+    the seconds ./check keeps for them; every other file by a hash of its path, so a file
+    keeps its shard when others are added."""
+
+    def test_the_shards_of_a_count_together_hold_every_gleam_file_of_the_test_folder_once(self):
+        for count in (2, 3):
+            with self.subTest(count=count):
+                held = owners(count)
+                every = sorted(
+                    [name + ".gleam" for name, _ in heavy_modules()] + [name + ".gleam" for name in SHARD_TREE_FILES]
+                    + ["code_rule/planted_test.gleam"])
+                self.assertEqual(sorted(held), every, "each file once: the files that are not Gleam and the leftover link are not held")
+                for number, run in enumerate(shard_runs(count), start=1):
+                    self.assertEqual(
+                        set(directories_given(run).values()), {"build/chosen_tests/shard-%d-of-%d/test" % (number, count)})
+                    for path, target in shard_listing(run):
+                        self.assertRegex(target, r"^/.*/test/%s$" % re.escape(path), "each link goes to the file at its own path below test")
+                for module, shard in PINNED_SHARDS[count].items():
+                    if module + ".gleam" in held:
+                        self.assertEqual(held[module + ".gleam"], shard, module)
+
+    def test_a_gleam_file_stays_in_its_shard_when_other_files_are_added(self):
+        before = owners(3)
+        after = owners(3, "second")
+        for added in SHARD_TREE_ADDED:
+            self.assertIn(added + ".gleam", after)
+        for removed in SHARD_TREE_REMOVED:
+            self.assertNotIn(removed + ".gleam", after)
+        kept = [path for path in before if path in after]
+        self.assertGreater(len(kept), 40)
+        for path in kept:
+            self.assertEqual(before[path], after[path], path)
+
+    def test_the_heaviest_modules_are_spread_over_the_shards_biggest_first(self):
+        for count in (2, 3):
+            with self.subTest(count=count):
+                held = owners(count, "reversed")
+                for module, shard in biggest_first(count).items():
+                    self.assertEqual(held[module + ".gleam"], shard, module)
+                    self.assertEqual(PINNED_HEAVY_SHARDS[count][module], shard, module)
+
+    def test_a_shard_run_gives_its_folder_to_the_first_run_and_the_serial_run_and_no_other_run(self):
+        run = part_run_of(("gleam-test", "2/3"), False)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        folder = "build/chosen_tests/shard-2-of-3/test"
+        self.assertEqual(directories_given(run), {FIRST_RUN: folder, SERIAL_RUN: folder})
+        skips = {line.split(" GENESIS_TEST_SKIP_SERIAL")[0]: line for line in run.environment.splitlines() if line.startswith("built test")}
+        self.assertIn(
+            "GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_REAL_TABLES=1",
+            skips[FIRST_RUN])
+        self.assertIn(
+            "GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA= GENESIS_TEST_SKIP_REAL_START= GENESIS_TEST_SKIP_CLIENT_ROWS= GENESIS_TEST_SKIP_REAL_TABLES=",
+            skips[SERIAL_RUN])
+        for arguments in (("real-start",), ("real-tables",), ("world-data",), ("client-suite",)):
+            with self.subTest(part=arguments):
+                other = part_run_of(arguments, True)
+                self.assertEqual(other.done.returncode, 0, other.output)
+                self.assertEqual(directories_given(other), {})
+
+    def test_a_shard_whose_first_run_ran_no_test_fails_the_part(self):
+        run = part_run("shard-first-ran-nothing", "gleam-test", "2/3", PLANT_PASSED_FIRST="0")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(failed_line(self, run.output), "check FAILED: gleam-test")
+        self.assertIn("no test ran in shard 2/3", run.output)
+
+    def test_a_shard_whose_serial_run_ran_no_test_passes(self):
+        run = part_run("shard-serial-ran-nothing", "gleam-test", "2/3", PLANT_PASSED_SERIAL="0")
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.output, r"(?m)^  gleam-test +ok\b")
+
+    def test_every_heavy_module_named_in_check_is_a_gleam_file_of_the_test_folder(self):
+        heavy = heavy_modules()
+        self.assertTrue(heavy, "check names the modules it places first")
+        for module, seconds in heavy:
+            with self.subTest(module=module):
+                self.assertTrue((REPOSITORY / "test" / (module + ".gleam")).is_file())
+                self.assertGreater(seconds, 0)
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")

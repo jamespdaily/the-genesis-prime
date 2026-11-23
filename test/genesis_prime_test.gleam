@@ -62,6 +62,10 @@ import unitest
 /// literal area is 60% of its region, which the modules' literals would
 /// push toward the limit.
 ///
+/// With `GENESIS_TEST_DIRECTORY` set to a folder, unitest reads its tests from that
+/// folder instead of `test`: `./check part gleam-test K/N` builds a folder of symlinks
+/// to the files of shard K of N, and the first run and the serial run both read it.
+///
 /// With `GENESIS_LITERAL_PEAK_FILE` set to a file, the run keeps the literal
 /// allocator's highest carriers size in it (`literal_area`), which `./check`
 /// reads when the run has ended.
@@ -90,7 +94,8 @@ pub fn main() -> Nil {
   unitest.run(
     unitest.Options(
       ..unitest.default_options(),
-      test_directory: chosen_test_directory(argv.load().arguments)
+      test_directory: shard_directory()
+        |> result.lazy_or(fn() { chosen_test_directory(argv.load().arguments) })
         |> result.unwrap(unitest.default_options().test_directory),
       ignored_tags: list.append(
         skipped_when_set("GENESIS_TEST_SKIP_SERIAL", tag: "serial"),
@@ -110,6 +115,14 @@ fn warm_client_tables() -> Nil {
   let _server_tables = client_tables.shared()
   let _every_table = client_tables.every_table()
   Nil
+}
+
+/// The folder `GENESIS_TEST_DIRECTORY` names, when it is set to one.
+fn shard_directory() -> Result(String, Nil) {
+  case envoy.get("GENESIS_TEST_DIRECTORY") {
+    Ok("") | Error(Nil) -> Error(Nil)
+    Ok(directory) -> Ok(directory)
+  }
 }
 
 fn runs_chosen_tests(arguments: List(String)) -> Bool {
