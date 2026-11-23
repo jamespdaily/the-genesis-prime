@@ -740,7 +740,9 @@ pub fn modifiers_armed(
                 spell:,
                 now_ms:,
               )
-            Ok(_), None | Error(Nil), _ ->
+            Ok(_), None ->
+              panic as "a property change without armor is aimed at the caster alone (spell_plan.modifier_aim), and the caster is not among the other players in its sight"
+            Error(Nil), _ ->
               caster_modifier_armed(
                 cast:,
                 row:,

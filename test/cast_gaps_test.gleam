@@ -158,8 +158,8 @@ fn limits() -> List(Limit) {
     Limit(
       cast.gaps(),
       "Casting",
-      ["periodic Proxy aimed at the primary target", "lands on the caster"],
-      "a periodic Proxy aimed at the primary target ticks on the caster, so Bolster's absorb lands on the caster",
+      ["periodic Proxy", "target apply prerequisite"],
+      "a periodic Proxy aimed at the caster starts its child at each tick without reading its target apply prerequisite",
     ),
     Limit(
       cast.gaps(),

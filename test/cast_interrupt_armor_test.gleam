@@ -20,14 +20,13 @@
 import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/lasting.{type LastingRow, LastingRow}
-import genesis_prime/game/spell_plan.{AimsAtCaster, Always, InterruptArmor}
+import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/spell_plan.{AimsAtCaster, Always}
 import genesis_prime/game/spend
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
-import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -40,30 +39,12 @@ const bag_of_base_1 = 8
 
 /// Row 199192 as the client holds it: +1 for 5000 ms, kept at the end.
 fn spectral_form_row() -> spell_plan.PropertyModifier {
-  armor_row(
+  support.interrupt_armor_row(
     id: 199_192,
+    aim: AimsAtCaster,
     points: 1,
     takes_back: False,
     row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
-  )
-}
-
-fn armor_row(
-  id id: Int,
-  points points: Int,
-  takes_back takes_back: Bool,
-  row row: LastingRow,
-) -> spell_plan.PropertyModifier {
-  spell_plan.PropertyModifier(
-    effect_id: Spell4EffectsId(id),
-    phase_flags: -1,
-    change: spell_plan.PropertyChange(
-      support.raising_interrupt_armor_threshold(points: int.to_float(points)),
-    ),
-    row:,
-    condition: Always,
-    tag: spend.always,
-    armor: Some(InterruptArmor(points:, takes_back:, aim: AimsAtCaster)),
   )
 }
 
@@ -131,8 +112,9 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
   use <- owned_test.run(5000)
   // Row 210961: delay 150000 and flags 2, which never ends.
   let delayed =
-    armor_row(
+    support.interrupt_armor_row(
       id: 210_961,
+      aim: AimsAtCaster,
       points: 1,
       takes_back: True,
       row: LastingRow(delay_ms: 150_000, duration_ms: 0, until_removed: True),
@@ -249,8 +231,9 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
 pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
   use <- owned_test.run(5000)
   let delayed =
-    armor_row(
+    support.interrupt_armor_row(
       id: 210_961,
+      aim: AimsAtCaster,
       points: 1,
       takes_back: True,
       row: LastingRow(delay_ms: 150_000, duration_ms: 0, until_removed: True),

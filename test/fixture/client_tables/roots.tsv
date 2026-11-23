@@ -1551,3 +1551,4 @@ Spell4	54904	Mind Over Body - Tier 9, whose Spell4Effects 130872 is a Proxy aime
 Spell4	54912	Mind Over Body - Tier 9 child, which lists a Fluff row on the unit it starts on	cast_player_change_test
 Spell4	77864	Phantasmal Armor - Tier 9 child, whose absorb and outfit rows are gated on the target of the live cast of 54806	cast_player_change_test
 Spell4	87531	Bolster - Tier 9 child of the periodic Proxy 229005, whose Spell4Effects 229006 is a 3000 ms absorb aimed at the primary target	cast_player_change_test
+Spell4	52142	Bolster - Tier 9, whose Spell4Effects 229005 is a periodic Proxy aimed at the primary target that starts 87531	cast_player_change_test

@@ -11,7 +11,8 @@
 ////   left, since a cancel ends no buff.
 //// - **A periodic Proxy** ticks as a damage or heal row does, from the go that armed it: each
 ////   tick reads the Proxy's caster gates again and starts the named spell as a child cast of
-////   the holder, on the caster when the Proxy is aimed at it (`proxy_tick_child`), and on each
+////   the holder, on the caster when the Proxy is aimed at it, on the player a bag press named
+////   when it is aimed at the primary target (`proxy_tick_child`), and on each
 ////   unit inside the area when it is aimed at the area, which the connection finds at the
 ////   tick (`FindProxyTickUnits`), `Spell4Effects.effectType.26.periodic`.
 
@@ -326,8 +327,8 @@ fn tick_timers_cancelled(
 /// `cast.ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
 /// (genesis_prime/client_connection `CastTicked`) and heals the caster
 /// (`CasterChangeStarts`), reading the vitals the heal ticks before it in the step left,
-/// and heals nothing on a dead caster; a Proxy row aimed at the caster starts its child with
-/// `start_child` (`proxy_tick_child`), and one aimed at the area asks the connection for
+/// and heals nothing on a dead caster; a Proxy row aimed at the caster or the primary target
+/// starts its child on its unit with `start_child` (`proxy_tick_child`), and one aimed at the area asks the connection for
 /// the units inside its area (`FindProxyTickUnits`), whose answer starts a child on each
 /// (`cast.proxy_tick_units_found`). Then each row that fired has its next tick armed,
 /// or none after its last (genesis_prime/game/ticking `next_tick`). Any tick timer of the
@@ -338,7 +339,7 @@ pub fn ticks_due(
   caster caster: Caster,
   now_ms now_ms: Int,
   cast_id cast_id: Int,
-  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+  start_child start_child: fn(State, Caster, Holder, Proxy, Int) ->
     #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
   let #(cast, landed, fired) =
@@ -369,7 +370,7 @@ fn due_ticks_landed(
   caster caster: Caster,
   now_ms now_ms: Int,
   cast_id cast_id: Int,
-  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+  start_child start_child: fn(State, Caster, Holder, Proxy, Int) ->
     #(State, List(Effect)),
   landed landed: List(Effect),
   fired fired: Set(TickKey),
@@ -461,7 +462,7 @@ fn tick_landed(
   holder holder: Holder,
   key key: TickKey,
   tick tick: Int,
-  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+  start_child start_child: fn(State, Caster, Holder, Proxy, Int) ->
     #(State, List(Effect)),
 ) -> #(State, Caster, List(Effect)) {
   case dict.get(holder.ticking, key) {
@@ -533,7 +534,14 @@ fn tick_landed(
         None -> #(cast, caster, landed)
         Some(proxy) -> {
           let #(cast, started) =
-            proxy_tick_child(cast:, caster:, holder:, proxy:, start_child:)
+            proxy_tick_child(
+              cast:,
+              caster:,
+              holder:,
+              proxy:,
+              unit_id: cast_state.key_unit(key:),
+              start_child:,
+            )
           #(cast, caster, started)
         }
       }
@@ -541,8 +549,8 @@ fn tick_landed(
   }
 }
 
-/// Tick `tick` of a periodic Proxy row lands: one aimed at the caster is stored with its tick
-/// counted and its child started by `tick_landed`; one aimed at the area asks the connection
+/// Tick `tick` of a periodic Proxy row lands: one aimed at the caster or the primary target
+/// is stored with its tick counted and its child started by `tick_landed`; one aimed at the area asks the connection
 /// for the units inside its area (`FindProxyTickUnits`) and holds a round open until the
 /// answer, unless the Proxy's gates or the named spell's caster condition stop it
 /// (`proxy_tick_refusal`), which leaves the debug lines and no round. The ask carries the
@@ -592,19 +600,20 @@ fn proxy_row_landed(
   }
 }
 
-/// The child a tick of a periodic Proxy aimed at the caster starts (`proxy_tick_refusal`
-/// says when none starts).
+/// The child a tick of a periodic Proxy aimed at the caster or the primary target starts on
+/// `unit_id`, the unit the row ticks on (`proxy_tick_refusal` says when none starts).
 fn proxy_tick_child(
   cast cast: State,
   caster caster: Caster,
   holder holder: Holder,
   proxy proxy: Proxy,
-  start_child start_child: fn(State, Caster, Holder, Proxy) ->
+  unit_id unit_id: Int,
+  start_child start_child: fn(State, Caster, Holder, Proxy, Int) ->
     #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
   case proxy_tick_refusal(cast:, caster:, holder:, proxy:) {
     Some(logs) -> #(cast, logs)
-    None -> start_child(cast, caster, holder, proxy)
+    None -> start_child(cast, caster, holder, proxy, unit_id)
   }
 }
 
@@ -856,14 +865,16 @@ fn node_ended_now(
 
 /// The Proxies of a go that start their child at each tick (`Proxy.period`); the others
 /// start theirs at the go. One aimed at the caster ticks on the caster; one aimed at the
-/// area ticks on the cast's primary target, the unit whose node ends it, and carries the
-/// go's `phase`, the pose the cast started at and the pose the primary target stood in at the
-/// go (`primary_pose`, none for the caster), which the units inside the area are found
-/// around at each tick.
+/// primary target ticks on the player the bag press named, or on the caster when it named
+/// none (`named_player`), as the go starts its child; one aimed at the area ticks on the
+/// cast's primary target, the unit whose node ends it, and carries the go's `phase`, the pose
+/// the cast started at and the pose the primary target stood in at the go (`primary_pose`,
+/// none for the caster), which the units inside the area are found around at each tick.
 pub fn proxies_ticking(
   proxies proxies: List(Proxy),
   caster caster: Caster,
   primary_target primary_target: Int,
+  named_player named_player: Option(Int),
   phase phase: Int,
   started_at started_at: area.Pose,
   primary_pose primary_pose: Option(area.Pose),
@@ -873,7 +884,9 @@ pub fn proxies_ticking(
       Some(periodic) ->
         Ok(TickingOn(
           unit_id: case proxy.target {
-            spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> caster.unit_id
+            spell_plan.OnCaster -> caster.unit_id
+            spell_plan.OnPrimaryTarget ->
+              option.unwrap(named_player, caster.unit_id)
             spell_plan.OnEachStruck -> primary_target
           },
           life: 0,
@@ -1768,9 +1781,10 @@ pub fn struck_subject(
 
 /// What a Proxy's target gate gives for the unit its child would be made on. The gate's
 /// first unit is that unit and its second the caster
-/// (`Spell4Effects.prerequisiteIdTargetApply`): a struck unit as the caster's picture
-/// shows it (`of_struck`, so a unit with no pose leaves a type 108 condition not read), or
-/// the caster for a Proxy aimed at it, which stands on its own point, as `subject` has it.
+/// (`Spell4Effects.prerequisiteIdTargetApply`): a struck unit, or the player a bag press
+/// named, as the caster's picture shows it (`of_struck`, so a unit with no pose leaves a
+/// type 108 condition not read), or the caster, which stands on its own point, as
+/// `subject` has it.
 /// A Proxy with no target gate starts. The plan gives a Proxy no condition but `Always`,
 /// `GatedOnCaster` and `GatedOnCasterAndTarget`; a Proxy that holds `GatedOnTarget`, which
 /// it never builds for one, starts on a unit that passes the gate, as any row does. The
@@ -1790,9 +1804,9 @@ pub fn target_gate(
   case proxy.condition {
     spell_plan.GatedOnTarget(prerequisite: target)
     | spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
-      let gate_subject = case proxy.target {
-        spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> subject
-        spell_plan.OnEachStruck ->
+      let gate_subject = case proxy.target, primary_target == caster.unit_id {
+        spell_plan.OnCaster, _ | spell_plan.OnPrimaryTarget, True -> subject
+        spell_plan.OnPrimaryTarget, False | spell_plan.OnEachStruck, _ ->
           struck_subject(
             cast:,
             caster:,

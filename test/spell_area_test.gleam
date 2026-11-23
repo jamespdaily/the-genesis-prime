@@ -736,6 +736,20 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
         "a cone and a rectangle too",
       ),
       #(
+        [spell_plan.Proxied(target: spell_plan.OnPrimaryTarget)],
+        every_anchor,
+        [box, cone, rectangle, turned_circle, circle_ahead, circle_aside],
+        True,
+        "a Proxy aimed at the primary target is read as on the caster, whichever player a bag press named: the client's children of such Proxies hold one hit shape, a circle with no offset (the whole-table test of spell_plan_later_test)",
+      ),
+      #(
+        [spell_plan.Proxied(target: spell_plan.OnEachStruck)],
+        on_the_target,
+        [box, cone, rectangle, circle_ahead, circle_aside],
+        False,
+        "the same shapes under a Proxy on each struck unit are not built, since that unit's yaw is not known",
+      ),
+      #(
         on_another_unit,
         on_the_caster,
         [box],

@@ -624,7 +624,9 @@ fn start_checked(
 /// press and a Proxy on the caster have the caster as their primary target, so every anchor is
 /// the caster's place, and so does a proc aimed at its holder (`cast` `proc_started` casts it at
 /// the holder). A Proxy aimed at the primary target is read as on the caster, whichever
-/// player a bag press named. A spell started on a struck unit, or by a proc aimed at another unit, has another
+/// player a bag press named, which holds only because the one child of such a Proxy that has
+/// a hit row draws a circle with no offset (Spell4 54912), which the reading below builds
+/// too. A spell started on a struck unit, or by a proc aimed at another unit, has another
 /// unit as its primary target, whose place the strike knows and whose yaw it does not
 /// (`strike.select`: yaw 0.0): a row on the caster is centred on the caster, and a row on the
 /// target only when every hit shape is a circle with no offset, which reads no yaw

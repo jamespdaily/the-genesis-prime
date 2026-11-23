@@ -69,7 +69,8 @@
 ////   oneself or at a creature, a quest button, an activation, a proc's spell); the child
 ////   carries that player, so its rows aimed at the primary target land on the player
 ////   (Phantasmal Armor's Interrupt Armor, Spell4Effects 199192), and a player the caster no
-////   longer sees when the child starts gets none and a debug line. A child's timer is
+////   longer sees when the child starts gets none and a debug line, and so does the tick of
+////   a periodic one, which ticks on that player (`cast_tick.proxies_ticking`). A child's timer is
 ////   its own: the parent's finish
 ////   leaves the pending children, which start 100 ms after it (Crush), and only
 ////   the player leaving the world cancels them.
@@ -2912,15 +2913,15 @@ fn finish_fired(
   }
 }
 
-/// How a tick of a periodic Proxy aimed at the caster starts its child, for
-/// `cast_tick.ticks_due`: the named spell on the caster as a child of the holder, the holder's
-/// root as its root, counting no quest objective and holding no item's value, as a proc's
-/// spell does. A Proxy aimed at the area starts its children through `children` once the
+/// How a tick of a periodic Proxy aimed at the caster or the primary target starts its child,
+/// for `cast_tick.ticks_due`: the named spell on the unit the row ticks on, the caster or the
+/// player a bag press named, as a child of the holder, the holder's root as its root, counting
+/// no quest objective and holding no item's value, as a proc's spell does. A Proxy aimed at the area starts its children through `children` once the
 /// connection has found the units (`proxy_tick_units_found`).
 fn tick_child_started(
   now_ms now_ms: Int,
-) -> fn(State, Caster, Holder, Proxy) -> #(State, List(Effect)) {
-  fn(cast: State, caster: Caster, holder: Holder, proxy: Proxy) {
+) -> fn(State, Caster, Holder, Proxy, Int) -> #(State, List(Effect)) {
+  fn(cast: State, caster: Caster, holder: Holder, proxy: Proxy, unit_id: Int) {
     child_started(
       cast:,
       caster:,
@@ -2928,8 +2929,11 @@ fn tick_child_started(
       spell: proxy.spell,
       root: holder.root,
       parent: holder.spell.spell4_id,
-      primary_target: caster.unit_id,
-      named_player: None,
+      primary_target: unit_id,
+      named_player: case unit_id == caster.unit_id {
+        True -> None
+        False -> Some(unit_id)
+      },
       counted_with: WithNothing,
       from: None,
     )
@@ -4444,8 +4448,9 @@ fn go(
       // The subject is read once here, before the children start and before the
       // finish: every gate of this go decides on the state before the go's own effects.
       let subject = cast_tick.subject_of(cast:, caster:)
-      // A periodic Proxy is armed whether or not its caster gate passes here: each tick
-      // reads the gate again (`cast_tick.proxy_tick_child`).
+      // A periodic Proxy is armed whether or not its caster gate passes here, and whether or
+      // not the player it ticks on is in the caster's sight: each tick reads the gate and the
+      // sight again (`cast_tick.proxy_tick_child`, `child_started`).
       let #(periodic, once) =
         list.partition(
           cast_gate.proxies_with_targets(
@@ -4507,9 +4512,9 @@ fn go(
           ),
           rolls:,
         )
-      // A periodic Proxy ticks from this go, on the caster or, aimed at the area, on the
-      // units inside the area at each tick; it gives its unit's node its life but is listed in
-      // no 0x7f4 (`cast_tick.proxies_ticking`).
+      // A periodic Proxy ticks from this go, on the caster, on the player the press named or,
+      // aimed at the area, on the units inside the area at each tick; it gives its unit's node
+      // its life but is listed in no 0x7f4 (`cast_tick.proxies_ticking`).
       let aimed =
         Aimed(
           ..aimed,
@@ -4519,6 +4524,7 @@ fn go(
               proxies: periodic,
               caster:,
               primary_target: live.primary_target,
+              named_player: live.named_player,
               phase:,
               started_at: live.started_at,
               primary_pose: case live.primary_target == caster.unit_id {
@@ -4946,7 +4952,7 @@ fn reached_by(
             target_verdict:,
           )
         spell_plan.ModifierEffect(modifier: row) -> {
-          let press_target = press_target_of(live:)
+          let press_target = press_target_of(live:, caster:)
           let what =
             "the "
             <> cast_control.modifier_kind_named(row:)
@@ -5074,14 +5080,16 @@ fn reached_by(
   )
 }
 
-/// The player a press named, for the rows of a cast the player pressed: the cast's primary
-/// target; for a child a Proxy started, the player it was started on when that is the
-/// player a bag press named (`Live.named_player`), none otherwise, since the primary target
-/// of any other child is the plan's stand-in.
-fn press_target_of(live live: Live) -> Option(Int) {
-  case live.parent {
-    None -> Some(live.primary_target)
-    Some(_) -> live.named_player
+/// The unit a press named, for the rows of a cast the player pressed: the player a bag press
+/// named (`Live.named_player`, which a child of a Proxy aimed at the primary target carries
+/// too), or the caster for a cast on the caster. A cast at a creature, which a quest button or
+/// an activation makes, names no player, and the primary target of any other child is the
+/// plan's stand-in, so both name none.
+fn press_target_of(live live: Live, caster caster: Caster) -> Option(Int) {
+  case live.named_player, live.parent {
+    Some(player), _ -> Some(player)
+    None, None if live.primary_target == caster.unit_id -> Some(caster.unit_id)
+    None, _ -> None
   }
 }
 
@@ -6047,7 +6055,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A periodic Proxy aimed at the primary target (Bolster's Proxy 229005) starts its child on the caster at each tick, whoever the press named, so Bolster's 3 s absorb (Spell4Effects 229006) lands on the caster and not on the player the press named.",
+      missing: "A periodic Proxy aimed at the caster starts its child at each tick without reading the target apply prerequisite of its row, which the client's tables hold on 5 such rows; none is aimed at the primary target.",
     ),
     gap.Entry(
       area: "Casting",

@@ -2684,23 +2684,26 @@ pub fn raising_interrupt_armor_threshold(
   )
 }
 
-/// The Interrupt Armor row of the Proxy child 76766 as the client holds it (`table_rows --
-/// Spell4Effects 199192`): effectType 52, +1 point (dataBits00 1) kept at the end
-/// (dataBits01 0), durationTime 5000, delayTime 0, phaseFlags -1, no gate; targetFlags is 2,
-/// the primary target, and the aim is the one given.
+/// An Interrupt Armor row (effectType 52): `points` of armor (dataBits00) kept at the end or,
+/// with `takes_back`, taken back (dataBits01), the lasting `row` given, phaseFlags -1, no
+/// gate, aimed as given.
 pub fn interrupt_armor_row(
+  id id: Int,
   aim aim: spell_plan.Aim,
+  points points: Int,
+  takes_back takes_back: Bool,
+  row row: lasting.LastingRow,
 ) -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
-    effect_id: Spell4EffectsId(199_192),
+    effect_id: Spell4EffectsId(id),
     phase_flags: -1,
-    change: spell_plan.PropertyChange(raising_interrupt_armor_threshold(
-      points: 1.0,
-    )),
-    row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+    change: spell_plan.PropertyChange(
+      raising_interrupt_armor_threshold(points: int.to_float(points)),
+    ),
+    row:,
     condition: spell_plan.Always,
     tag: spend.always,
-    armor: Some(spell_plan.InterruptArmor(points: 1, takes_back: False, aim:)),
+    armor: Some(spell_plan.InterruptArmor(points:, takes_back:, aim:)),
   )
 }
 
@@ -2714,6 +2717,7 @@ pub fn proxies_ticking_on_the_caster(
     proxies:,
     caster:,
     primary_target: caster.unit_id,
+    named_player: None,
     phase: 0,
     started_at: area.pose_of(place: caster.place),
     primary_pose: None,

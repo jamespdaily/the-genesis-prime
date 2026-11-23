@@ -28,16 +28,22 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
+import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/game/spend
+import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties.{type Source}
+import genesis_prime/message/spell_started
 import genesis_prime/step.{type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -1049,6 +1055,25 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
       condition:,
     ))
   }
+  // A planted target apply prerequisite of type 15 (`TargetOfLiveCast`) on the parent
+  // itself, Spell4 90001: comparison 1 passes for a unit that is the target of a live cast
+  // of it, comparison 2 for one that is not. The gate's first unit is the unit the child is
+  // made on, the caster second (`Spell4Effects.prerequisiteIdTargetApply`): for a child on
+  // the ally the ally is the unit read, as the caster's picture shows it, which holds none
+  // of its casts (`prerequisite.of_struck`), while the caster's own unit holds them. No
+  // client row holds such a gate on a Proxy aimed at the primary target.
+  let gated_by_the_live_cast = fn(comparison) {
+    on_the_target(
+      spell_plan.GatedOnTarget(
+        prerequisite: prerequisite_support.single(id: 900_010, condition: #(
+          15,
+          comparison,
+          0,
+          90_001,
+        )),
+      ),
+    )
+  }
   let rows = [
     Child(
       why: "a bag press at the ally in sight starts Phantasmal Armor's Proxy child (83947 to 76766) on the ally",
@@ -1143,6 +1168,50 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
       starts: [#(1000, ally)],
       debug: [],
     ),
+    Child(
+      why: "a Proxy aimed at the primary target behind 'the unit is the target of a live cast of the pressed spell', pressed at the ally: the gate reads the ally as the caster's picture shows it, which holds no casts, so type 15 is not read and no child starts",
+      parent: gated_by_the_live_cast(1),
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 90_003,
+      starts: [],
+      debug: ["900010", "of type 15", "is not read"],
+    ),
+    Child(
+      why: "the same Proxy behind 'the unit is not the target of a live cast of the pressed spell': the caster's own subject would pass it for the ally, which the picture cannot tell, so no child starts and a line says so",
+      parent: gated_by_the_live_cast(2),
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 90_003,
+      starts: [],
+      debug: ["900010", "of type 15", "is not read"],
+    ),
+    Child(
+      why: "the first gate in a press at oneself starts the child on the caster, the target of its own cast",
+      parent: gated_by_the_live_cast(1),
+      target: 7,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 90_003,
+      starts: [#(1000, 7)],
+      debug: [],
+    ),
+    Child(
+      why: "the second gate in a press at oneself starts no child",
+      parent: gated_by_the_live_cast(2),
+      target: 7,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 90_003,
+      starts: [],
+      debug: [],
+    ),
   ]
   list.each(rows, fn(row) {
     let #(_, pressed, went, steps) = pressed_and_run(child: row)
@@ -1233,7 +1302,10 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
   // Spell4 82431), and 203809 (Spell4 77864) a type 29 row behind the target condition 36645
   // (the unit is not the target of a live cast of Spell4 54806) (`table_rows -- Spell4Effects
   // 199192 216950 203809 -- Prerequisite 38543 36645`). The child's propertyFlags are 0 (76766,
-  // 82438), so its changes end when the caster stops seeing the ally.
+  // 82438), so its changes end when the caster stops seeing the ally. Spell4Effects 229006
+  // (Spell4 87531) is a type 29 absorb of 3000 ms with mask 7, 0.1 of Support Power and
+  // propertyFlags 0 (`table_rows -- Spell4Effects 229006`): a Novice's Support Power is
+  // 13.921875, and the stat part is rounded alone (`0x140565600`), round(0.1 x 13.921875) = 1.
   let armor = as_base_3(spell4_id: 32_823)
   let started_by = fn(child) {
     parent_of(proxy: proxy_of(
@@ -1283,6 +1355,22 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
       child: 82_438,
       listed_on_ally: [],
       told: [],
+      on_the_caster: [],
+      parent_told: 0,
+    ),
+    Landing(
+      why: "the absorb 229006 of 87531 started on the ally is told to the ally as the Esper's pool, listed on it and ending with the caster's sight, and starts nothing on the caster",
+      parent: started_by(spell_tables.client_spell(spell4_id: 87_531)),
+      target: ally,
+      child: 87_531,
+      listed_on_ally: [229_006],
+      told: [
+        #(
+          229_006,
+          held_changes.Absorb(amount: 1, mask: 7),
+          held_changes.EndsWhenUnseen,
+        ),
+      ],
       on_the_caster: [],
       parent_told: 0,
     ),
@@ -1589,4 +1677,630 @@ pub fn at_a_stack_cap_of_two_a_kept_cast_and_a_cast_with_a_node_count_together_t
       ],
     ])
     as "the third press pushes off the oldest cast on the ally, the kept one, and only that one: the second keeps its node and its changes"
+}
+
+// ---- a periodic Proxy aimed at the primary target ----
+
+/// The ally's answer to a heal tick of Bolster's row 123122: a heal of 10, all of it health.
+fn ally_healed() -> cast_state.Struck {
+  cast_state.Hit(
+    unit_id: ally,
+    unit: cast_state.HitOtherPlayer(heals: [
+      strike_tell.HealLanded(
+        effect_id: Spell4EffectsId(123_122),
+        vital: effect_kind.Health,
+        split: heal_split.Split(amount: 10, shield: 0, health: 10, overheal: 0),
+      ),
+    ]),
+    descriptions: [],
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// Each heal tick the effects ask of the ally answered with `ally_healed`, the answer's
+/// effects following the ask.
+fn heal_ticks_answered(
+  state state: State,
+  caster caster: Caster,
+  effects effects: List(Effect),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  list.fold(effects, #(state, []), fn(so_far, effect) {
+    let #(state, done) = so_far
+    case effect {
+      cast_state.TickStrike(asked:) -> {
+        let #(state, closed) =
+          cast.ticked(
+            cast: state,
+            caster:,
+            now: support.at(ms:),
+            asked:,
+            struck: Some(ally_healed()),
+          )
+        #(state, list.append(done, [effect, ..closed]))
+      }
+      _ -> #(state, list.append(done, [effect]))
+    }
+  })
+}
+
+/// Something that happens at a time of the course besides the timers: a press, a removal, a
+/// death. It returns the state and the effects.
+type Happening {
+  Happening(at_ms: Int, run: fn(State) -> #(State, List(Effect)))
+}
+
+/// One course of Bolster tier 9 (Spell4 52142, planted as the base 3 ability): the plans, what
+/// happens besides the timers, the caster at each time (what it sees and its Support
+/// Rating), when the clock stops, and what the row checks of the run.
+type Course {
+  Course(
+    why: String,
+    plans: Plans,
+    happenings: List(Happening),
+    caster_at: fn(Int) -> Caster,
+    until_ms: Int,
+    check: fn(Run) -> Nil,
+  )
+}
+
+/// What a course came to: the state after each happening (the first is the go) and at the
+/// end, every step in time order, the happenings' and the timers', and the id of the first
+/// cast.
+type Run {
+  Run(
+    after_each: List(State),
+    last: State,
+    steps: List(#(Int, List(Effect))),
+    first_cast_id: Int,
+  )
+}
+
+/// The effects of every step at the time `ms`.
+fn effects_at(run run: Run, ms ms: Int) -> List(Effect) {
+  list.flat_map(run.steps, fn(step) {
+    case step.0 == ms {
+      True -> step.1
+      False -> []
+    }
+  })
+}
+
+/// The caster of the course who sees these players and holds this Support Rating.
+fn esper_rated(rating rating: Float, seeing seeing: List(Int)) -> Caster {
+  cast_state.Caster(
+    ..esper_seeing(players: seeing),
+    stats: damage.Attacker(..attacker_support.novice(), support_rating: rating),
+  )
+}
+
+/// A press of the ability at bag slot `bag` at the unit `target`, go included.
+fn pressing(
+  plans plans: Plans,
+  bag bag: Int,
+  target target: Int,
+  caster_at caster_at: fn(Int) -> Caster,
+  at ms: Int,
+) -> Happening {
+  Happening(at_ms: ms, run: fn(state) {
+    let #(state, pressed, went) =
+      pressed_at_and_gone_in(
+        plans:,
+        bag:,
+        target:,
+        state:,
+        at_press: caster_at(ms),
+        at_go: caster_at(ms),
+        rolls: [],
+        at: ms,
+      )
+    #(state, list.append(pressed, went))
+  })
+}
+
+/// The run of a course: the happenings in time order and, between them, every timer fired on
+/// the driven clock, each go answered as a round that struck nobody and each heal tick on the
+/// ally answered with a heal.
+fn run_of(course course: Course) -> Run {
+  let step = fn(_, state, due, timer) {
+    let caster = course.caster_at(due)
+    let #(state, raw) =
+      cast.timer_fired(cast: state, timer:, caster:, now: support.at(ms: due))
+    let #(state, answered) =
+      support.answered_each(
+        caster:,
+        state:,
+        effects: raw,
+        at: due,
+        struck_of: fn(_) { [] },
+        rolls: [],
+        poses: dict.new(),
+      )
+    let #(state, effects) =
+      heal_ticks_answered(state:, caster:, effects: answered, at: due)
+    support.Step(context: Nil, state:, effects:, record: #(due, effects))
+  }
+  let happenings =
+    list.sort(course.happenings, fn(first, second) {
+      int.compare(first.at_ms, second.at_ms)
+    })
+  let #(state, pending, steps, after_each) =
+    list.fold(happenings, #(cast_state.new(), [], [], []), fn(so_far, one) {
+      let #(state, pending, steps, after_each) = so_far
+      let #(_, state, fired, left) =
+        support.fire_pending(
+          context: Nil,
+          state:,
+          pending:,
+          until_ms: one.at_ms - 1,
+          step:,
+        )
+      let #(state, effects) = one.run(state)
+      let cancelled = support.cancelled_timers(effects:)
+      #(
+        state,
+        list.append(
+          list.filter(left, fn(waiting) { !list.contains(cancelled, waiting.1) }),
+          support.due_of(effects:, now_ms: one.at_ms),
+        ),
+        list.flatten([steps, fired, [#(one.at_ms, effects)]]),
+        list.append(after_each, [state]),
+      )
+    })
+  let #(_, last, fired, _) =
+    support.fire_pending(
+      context: Nil,
+      state:,
+      pending:,
+      until_ms: course.until_ms,
+      step:,
+    )
+  let assert Ok(first_press) = list.first(steps)
+    as "the first happening writes the press"
+  Run(
+    after_each:,
+    last:,
+    steps: list.append(steps, fired),
+    first_cast_id: support.pressed_id(effects: first_press.1),
+  )
+}
+
+/// Every 0x7ff of the child Spell4 87531 with the time it is written at.
+fn child_starts_of(run run: Run) -> List(#(Int, spell_started.SpellStarted)) {
+  list.flat_map(run.steps, fn(step) {
+    list.filter_map(support.started_in(effects: step.1), fn(start) {
+      case start.spell4_id == 87_531 {
+        True -> Ok(#(step.0, start))
+        False -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// An absorb pool told to the ally: the source it was told with, its amount, when it was
+/// told and when each end of it was told.
+type Pool {
+  Pool(source: Source, amount: Int, started_ms: Int, ended_ms: List(Int))
+}
+
+/// Every absorb pool the run told the ally, in the order told.
+fn pools_of(run run: Run) -> List(Pool) {
+  list.fold(run.steps, [], fn(pools, step) {
+    list.fold(step.1, pools, fn(pools, effect) {
+      pool_changed(pools:, effect:, at_ms: step.0)
+    })
+  })
+}
+
+/// The pools after one effect: an absorb told to the ally starts a pool, and the end of a
+/// pool told to the ally adds its time.
+fn pool_changed(
+  pools pools: List(Pool),
+  effect effect: Effect,
+  at_ms ms: Int,
+) -> List(Pool) {
+  case effect {
+    cast_state.OtherPlayerChangeStarts(
+      address:,
+      source:,
+      change: held_changes.Absorb(amount:, ..),
+      ..,
+    )
+      if address.unit_id == ally
+    ->
+      list.append(pools, [
+        Pool(source:, amount:, started_ms: ms, ended_ms: []),
+      ])
+    cast_state.OtherPlayerChangeEnds(address:, source:)
+      if address.unit_id == ally
+    ->
+      list.map(pools, fn(pool) {
+        case pool.source == source {
+          True -> Pool(..pool, ended_ms: list.append(pool.ended_ms, [ms]))
+          False -> pool
+        }
+      })
+    _ -> pools
+  }
+}
+
+/// How many pools of the child the ally holds at `ms`: told by then and not ended.
+fn held_at(pools pools: List(Pool), ms ms: Int) -> Int {
+  list.count(pools, fn(pool) {
+    pool.started_ms <= ms && list.all(pool.ended_ms, fn(ended) { ended > ms })
+  })
+}
+
+/// The tick timers of the state, each as the cast id, the unit and the effect id.
+fn tick_timers_of(state state: State) -> List(#(Int, Int, Int)) {
+  list.filter_map(cast_state.timers_in_order(cast: state), fn(entry) {
+    case entry.1 {
+      cast_state.Tick(cast_id:, unit_id:, effect_id:, ..) ->
+        Ok(#(cast_id, unit_id, effect_id.value))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The units the cast `cast_id` holds a node on in the state.
+fn node_units_of(state state: State, cast_id cast_id: Int) -> List(Int) {
+  list.filter_map(cast_state.holders(cast: state), fn(entry) {
+    case entry.0 == cast_id {
+      True -> Ok(dict.keys({ entry.1 }.nodes))
+      False -> Error(Nil)
+    }
+  })
+  |> list.flatten
+  |> list.sort(int.compare)
+}
+
+/// The Spell4 52142 of Bolster tier 9 as the planted base 3 ability, the plans that hold it,
+/// and, as base 1, a press at the same player that takes the nodes of its cast off with a
+/// type 80 row.
+fn bolster() -> Spell {
+  as_base_3(spell4_id: 52_142)
+}
+
+fn bolster_with_a_removal() -> Plans {
+  let spell = bolster()
+  support.with_spells(plans: plans_of(spell:), spells: [
+    support.with_effects(
+      spell: Spell(
+        ..support.child(spell4_id: 301, base: 1),
+        targeting: spell.targeting,
+      ),
+      kinds: [
+        spell_plan.RemoveEffect(spell_plan.ForceRemove(
+          effect_id: Spell4EffectsId(196_521),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtPrimaryTarget,
+          selector: lasting.Spell(spell.spell4_id),
+          count: 1,
+          condition: Always,
+          tag: spend.always,
+        )),
+      ],
+    ),
+  ])
+}
+
+/// The state after the nth happening of the run, counting from 1.
+fn after(run run: Run, happening happening: Int) -> State {
+  let assert [state, ..] = list.drop(run.after_each, happening - 1)
+    as "the course has that many happenings"
+  state
+}
+
+/// The units the 0x7f4 of the cast `cast_id` among the effects lists, each with the effect
+/// ids listed on it.
+fn listed_by(
+  effects effects: List(Effect),
+  cast_id cast_id: Int,
+) -> List(#(Int, List(Int))) {
+  list.flat_map(support.goes_in(effects:), fn(go) {
+    case go.cast_id == cast_id {
+      True ->
+        list.map(go.targets, fn(unit) {
+          #(
+            unit.unit_id,
+            list.map(unit.effects, fn(info) { info.spell4_effects_id }),
+          )
+        })
+      False -> []
+    }
+  })
+}
+
+/// The cast ids the effects write a 0x7fe for.
+fn finished_in(effects effects: List(Effect)) -> List(Int) {
+  support.finished_ids(support.writes(effects:))
+}
+
+pub fn a_periodic_proxy_aimed_at_the_primary_target_ticks_on_the_player_the_press_named_and_each_tick_starts_its_child_on_that_player_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Spell4 52142 (Bolster tier 9, castTime 0, spellCoolDown 1000, stack group 2410 cap 2) holds
+  // the heal row 123122 (type 10, targetFlags 2, tickTime 1000, durationTime 8000) and the
+  // Proxy 229005 (type 26, targetFlags 2, tickTime 1000, durationTime 8000), which casts
+  // Spell4 87531 at each of the 8 ticks; 87531 holds the absorb 229006 (type 29, 3000 ms, 0.1
+  // of Support Power, propertyFlags 0, stack group 2411 cap 25) (`table_rows -- Spell4 52142
+  // 87531 -- Spell4Effects 123122 229005 229006`). The press is the go (castTime 0), at 1000,
+  // and tick k is at 1000 + 1000 k. A Novice's Support Power is 13.921875, so a pool is
+  // round(0.1 x 13.921875) = 1; a caster of 400 Support Rating has 100, so a pool of 10. The
+  // server's choice: the tick of a Proxy aimed at the primary target starts its child on the
+  // player the press named, as the go does. The last node of a cast ends with its 0x7fe and
+  // no 0x811 (`cast.nodes_ended`).
+  let go = 1000
+  let tick = fn(k) { go + 1000 * k }
+  let seeing_ally = fn(_) { esper_seeing(players: [ally]) }
+  let plans = plans_of(spell: bolster())
+  let press_at = fn(target, ms) {
+    pressing(
+      plans:,
+      bag: bag_of_base_3,
+      target:,
+      caster_at: seeing_ally,
+      at: ms,
+    )
+  }
+  let course = fn(why, check) {
+    Course(
+      why:,
+      plans:,
+      happenings: [press_at(ally, go)],
+      caster_at: seeing_ally,
+      until_ms: tick(8) + 3500,
+      check:,
+    )
+  }
+  let all_ticks = list.map([1, 2, 3, 4, 5, 6, 7, 8], tick)
+  let child_starts_at = fn(run) {
+    list.map(child_starts_of(run:), fn(start) { start.0 })
+  }
+  let courses = [
+    course(
+      "the go: both rows tick on the ally and none on the Esper, the 0x7f4 lists the heal row on the ally and no effect for the Proxy, the Esper holds no node of the cast and the cast's 0x7fe comes with the end of the ally's node at the go plus 8000",
+      fn(run) {
+        let why = "the go"
+        assert list.sort(
+            tick_timers_of(state: after(run:, happening: 1)),
+            fn(first, second) { int.compare(first.2, second.2) },
+          )
+          == [
+            #(run.first_cast_id, ally, 123_122),
+            #(run.first_cast_id, ally, 229_005),
+          ]
+          as { why <> ": the tick timers" }
+        assert listed_by(
+            effects: effects_at(run:, ms: go),
+            cast_id: run.first_cast_id,
+          )
+          == [#(ally, [123_122])]
+          as { why <> ": the 0x7f4 lists the heal row on the ally alone" }
+        assert node_units_of(
+            state: after(run:, happening: 1),
+            cast_id: run.first_cast_id,
+          )
+          == [ally]
+          as { why <> ": the nodes of the cast" }
+        assert list.contains(
+          finished_in(effects: effects_at(run:, ms: tick(8))),
+          run.first_cast_id,
+        )
+          as { why <> ": the cast's 0x7fe at the go plus 8000" }
+        assert list.all(run.steps, fn(step) {
+          step.0 >= tick(8)
+          || !list.contains(finished_in(effects: step.1), run.first_cast_id)
+        })
+          as { why <> ": and none before" }
+        assert support.removed_targets(
+            support.writes(effects: effects_at(run:, ms: tick(8))),
+          )
+          == []
+          as { why <> ": the last node ends with the 0x7fe, no 0x811" }
+      },
+    ),
+    course(
+      "tick k: one 0x7ff of 87531 naming the ally as primary target with the Esper as caster and the pressed spell as parent and root, and one pool told to the ally with a source of its own",
+      fn(run) {
+        let why = "each tick"
+        assert child_starts_at(run) == all_ticks
+          as { why <> ": the child starts at each tick, once" }
+        assert list.all(child_starts_of(run:), fn(start) {
+          let start = start.1
+          start.primary_target_unit_id == ally
+          && start.caster_unit_id == 7
+          && start.parent_spell4_id == 52_142
+          && start.root_spell4_id == 52_142
+        })
+          as { why <> ": each names the ally, the Esper and Bolster" }
+        let pools = pools_of(run:)
+        assert list.map(pools, fn(pool) { pool.started_ms }) == all_ticks
+          as { why <> ": one pool told to the ally at each tick" }
+        assert list.length(
+            list.unique(list.map(pools, fn(pool) { pool.source })),
+          )
+          == 8
+          as { why <> ": each with a source of its own" }
+        assert list.all(pools, fn(pool) {
+          pool.source.effect_id.value == 229_006
+        })
+          as { why <> ": the row of the absorb" }
+        assert list.all(pools, fn(pool) { pool.amount == 1 })
+          as { why <> ": 1 of a Novice's Support Power" }
+      },
+    ),
+    Course(
+      ..course(
+        "a caster of 400 Support Rating from tick 2: the child's go reads the caster as it is then",
+        fn(run) {
+          assert list.map(pools_of(run:), fn(pool) { pool.amount })
+            == [1, 10, 10, 10, 10, 10, 10, 10]
+            as "tick 1's pool is the Novice's, every later one 0.1 of 100"
+        },
+      ),
+      caster_at: fn(ms) {
+        case ms >= tick(2) {
+          True -> esper_rated(rating: 400.0, seeing: [ally])
+          False -> esper_seeing(players: [ally])
+        }
+      },
+    ),
+    course(
+      "held at once: three pools between ticks, at the go plus 3500, 4500 and 8500, each end told once at its tick plus 3000 and none before, and none pushed off (group 2411, cap 25)",
+      fn(run) {
+        let why = "the pools"
+        let pools = pools_of(run:)
+        list.each([go + 3500, go + 4500, go + 8500], fn(ms) {
+          assert held_at(pools:, ms:) == 3
+            as { why <> ": held at " <> int.to_string(ms) }
+        })
+        assert list.map(pools, fn(pool) { pool.ended_ms })
+          == list.map(all_ticks, fn(ms) { [ms + 3000] })
+          as { why <> ": each end told once, at its tick plus 3000" }
+      },
+    ),
+    Course(
+      ..course(
+        "a type 80 removal of the cast's node on the ally at the go plus 2500: no tick from the go plus 3000 starts a child, and the two pools told stay held to their own ends",
+        fn(run) {
+          assert child_starts_at(run) == [tick(1), tick(2)]
+            as "only the two ticks before the removal start a child"
+          assert tick_timers_of(state: run.last) == []
+            as "no tick timer is left"
+          assert list.map(pools_of(run:), fn(pool) {
+              #(pool.started_ms, pool.ended_ms)
+            })
+            == [#(tick(1), [tick(1) + 3000]), #(tick(2), [tick(2) + 3000])]
+            as "each pool ends at its own end, once"
+          assert support.removed_targets(
+              support.writes(effects: effects_at(run:, ms: go + 2500)),
+            )
+            == [#(run.first_cast_id, [ally])]
+            as "the removal's 0x811 names the ally alone"
+        },
+      ),
+      plans: bolster_with_a_removal(),
+      happenings: [
+        press_at(ally, go),
+        pressing(
+          plans: bolster_with_a_removal(),
+          bag: bag_of_base_1,
+          target: ally,
+          caster_at: seeing_ally,
+          at: go + 2500,
+        ),
+      ],
+    ),
+    Course(
+      ..course(
+        "the third press at the stack cap of Bolster (group 2410, cap 2) pushes the first cast's node off the ally: its remaining ticks of both rows stop and the children it already started keep their pools",
+        fn(run) {
+          let third = after(run:, happening: 3)
+          let ids =
+            list.unique(
+              list.map(tick_timers_of(state: third), fn(timer) { timer.0 }),
+            )
+          assert list.length(ids) == 2 && !list.contains(ids, run.first_cast_id)
+            as "after the third press only the second and third casts tick, each with both rows"
+          assert list.length(tick_timers_of(state: third)) == 4
+            as "two rows for each of the two casts"
+          assert list.contains(
+            support.removed_targets(
+              support.writes(effects: effects_at(run:, ms: go + 3700)),
+            ),
+            #(run.first_cast_id, [ally]),
+          )
+            as "the push off's 0x811 names the first cast's node on the ally"
+          let before =
+            list.filter(pools_of(run:), fn(pool) { pool.started_ms < go + 3700 })
+          assert list.length(before) == 5
+            as "the first cast's three ticks and the second's two started a pool each before the push off"
+          assert list.all(before, fn(pool) {
+            pool.ended_ms == [pool.started_ms + 3000]
+          })
+            as "each keeps its pool to its own end, told once"
+        },
+      ),
+      happenings: [
+        press_at(ally, go),
+        press_at(ally, go + 1300),
+        press_at(ally, go + 3700),
+      ],
+    ),
+    Course(
+      ..course(
+        "the ally out of the caster's sight at tick 3 and back at tick 4: tick 3 starts no child and a debug line says it is not in the caster's sight, and the ticks go on",
+        fn(run) {
+          assert child_starts_at(run)
+            == [tick(1), tick(2), tick(4), tick(5), tick(6), tick(7), tick(8)]
+            as "tick 3 starts nothing and tick 4 starts one again"
+          assert list.any(
+            support.debug_lines(effects: effects_at(run:, ms: tick(3))),
+            fn(line) {
+              string.contains(line, "87531")
+              && string.contains(line, "not in the caster's sight")
+            },
+          )
+            as "tick 3 writes the line"
+        },
+      ),
+      caster_at: fn(ms) {
+        case ms == tick(3) {
+          True -> esper_seeing(players: [])
+          False -> esper_seeing(players: [ally])
+        }
+      },
+    ),
+    Course(
+      ..course(
+        "a press at oneself: both rows tick on the Esper and each child starts on the Esper, told to nobody",
+        fn(run) {
+          assert list.sort(
+              tick_timers_of(state: after(run:, happening: 1)),
+              fn(first, second) { int.compare(first.2, second.2) },
+            )
+            == [
+              #(run.first_cast_id, 7, 123_122),
+              #(run.first_cast_id, 7, 229_005),
+            ]
+            as "both rows tick on the caster"
+          assert list.map(child_starts_of(run:), fn(start) {
+              #(start.0, start.1.primary_target_unit_id)
+            })
+            == list.map(all_ticks, fn(ms) { #(ms, 7) })
+            as "each child starts on the Esper"
+          assert pools_of(run:) == [] as "no pool is told to the ally"
+        },
+      ),
+      happenings: [press_at(7, go)],
+    ),
+    Course(
+      ..course(
+        "the Esper dies at the go plus 3500: the ends of the three pools held are told once each at the death and the timers tell none later",
+        fn(run) {
+          let pools = pools_of(run:)
+          assert list.length(pools) == 3
+            as "the three ticks before the death started a pool each"
+          assert list.all(pools, fn(pool) { pool.ended_ms == [go + 3500] })
+            as "each end is told once, at the death"
+        },
+      ),
+      happenings: [
+        press_at(ally, go),
+        Happening(at_ms: go + 3500, run: fn(state) {
+          cast.died(
+            cast: state,
+            caster: support.dead_caster(),
+            now: support.at(ms: go + 3500),
+          )
+        }),
+      ],
+    ),
+  ]
+  list.each(courses, fn(course) {
+    let run = run_of(course:)
+    course.check(run)
+  })
 }

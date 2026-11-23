@@ -1223,6 +1223,23 @@ fn absorb_aimed(aim aim: spell_plan.Aim) -> spell_plan.PropertyModifier {
   support.armor_absorb_row(id: 130_470, support_factor: 2.605299949645996, aim:)
 }
 
+/// Row 199192 of Spell4 76766 as the client holds it (`table_rows -- Spell4Effects 199192`):
+/// Interrupt Armor, +1 point kept at the end for 5000 ms, aimed as given (its targetFlags is
+/// 2, the primary target).
+fn spectral_form_row(aim aim: spell_plan.Aim) -> spell_plan.PropertyModifier {
+  support.interrupt_armor_row(
+    id: 199_192,
+    aim:,
+    points: 1,
+    takes_back: False,
+    row: lasting.LastingRow(
+      delay_ms: 0,
+      duration_ms: 5000,
+      until_removed: False,
+    ),
+  )
+}
+
 /// Phantasmal Armor's modifier row, 130474, with the aim given.
 fn modifier_aimed(aim aim: spell_plan.Aim) -> spell_plan.PropertyModifier {
   support.armor_modifier_row(id: 130_474, aim:)
@@ -1417,7 +1434,7 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
     ),
     #(
       "an Interrupt Armor row aimed at the primary target lands on the player the press named when the caster sees it (Spell4Effects 199192)",
-      support.interrupt_armor_row(aim: primary),
+      spectral_form_row(aim: primary),
       at_ally,
       ally,
       [ally],
@@ -1426,7 +1443,7 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
     ),
     #(
       "the same Interrupt Armor row with the player out of the caster's sight: it does not",
-      support.interrupt_armor_row(aim: primary),
+      spectral_form_row(aim: primary),
       at_ally,
       ally,
       [],
@@ -1436,7 +1453,7 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
     #(
       "the same Interrupt Armor row with a delay lands nothing on a player, as an absorb row does not",
       spell_plan.PropertyModifier(
-        ..support.interrupt_armor_row(aim: primary),
+        ..spectral_form_row(aim: primary),
         row: one_second,
       ),
       at_ally,
@@ -1448,7 +1465,7 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
     #(
       "the same Interrupt Armor row that lasts until removed lands nothing on a player",
       spell_plan.PropertyModifier(
-        ..support.interrupt_armor_row(aim: primary),
+        ..spectral_form_row(aim: primary),
         row: until_removed,
       ),
       at_ally,
@@ -1459,7 +1476,7 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
     ),
     #(
       "an Interrupt Armor row aimed at the caster lands on the caster alone, whoever the press named",
-      support.interrupt_armor_row(aim: spell_plan.AimsAtCaster),
+      spectral_form_row(aim: spell_plan.AimsAtCaster),
       at_ally,
       ally,
       [ally],
@@ -1468,7 +1485,7 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
     ),
     #(
       "an Interrupt Armor row aimed at the primary target of a child a Proxy started on the caster (no press target) lands on the caster alone",
-      support.interrupt_armor_row(aim: primary),
+      spectral_form_row(aim: primary),
       option.None,
       7,
       [ally],
@@ -1511,7 +1528,7 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
       as reason
   })
   assert cast_gate.modifier_refusal(
-      row: support.interrupt_armor_row(aim: primary),
+      row: spectral_form_row(aim: primary),
       unit_id: ally,
       caster: seeing(players: []),
       press_target: at_ally,
