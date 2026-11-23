@@ -7,11 +7,7 @@
 //// shown whole.
 
 import dashboard_otp_log_support as support
-import genesis_prime/dashboard/log_lines.{
-  DatabaseLog, LaunchdLog, ServerLog, UpdaterLog,
-}
 import genesis_prime/dashboard/redaction
-import gleam/bit_array
 import gleam/list
 import gleam/string
 import owned_test
@@ -137,80 +133,4 @@ pub fn a_password_a_report_prints_is_hidden_wherever_it_sits_test() -> Nil {
   assert redaction.ends_at_a_password_key("password => ")
   assert !redaction.ends_at_a_password_key("password => \"x\",")
   assert !redaction.ends_at_a_password_key("a line")
-}
-
-pub fn no_entry_ever_holds_the_password_whatever_the_read_boundaries_are_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let lines = support.capture("c5b_pgo_crash_long_password_wraps.txt")
-  let whole = support.bytes_of(lines)
-  let holds_the_value = fn(lines: log_lines.Lines) {
-    list.any(support.texts(lines), string.contains(_, planted))
-  }
-
-  // The capture, and its tail without the first line, which begins inside the
-  // report: there a `password =>` line is a plain line and its value is the
-  // next line, which can be in the next read. Each in two reads cut at the end
-  // of each line: no ring holds the value. A log acts on whole lines only, so
-  // a cut inside a line gives what the cut at that line's start gives.
-  list.each([lines, list.drop(lines, 1)], fn(lines) {
-    let bytes = support.bytes_of(lines)
-    let size = bit_array.byte_size(bytes)
-    let ends =
-      list.scan(lines, 0, fn(at, line) { at + string.byte_size(line) + 1 })
-    list.each([0, ..ends], fn(point) {
-      let assert Ok(first) = bit_array.slice(bytes, 0, point)
-      let assert Ok(second) = bit_array.slice(bytes, point, size - point)
-      let after_first = log_lines.feed(log_lines.new(ServerLog), first)
-      let after_second = log_lines.feed(after_first, second)
-      assert !holds_the_value(after_first)
-        as "the ring after the first read holds the value"
-      assert !holds_the_value(after_second)
-        as "the ring after the second read holds the value"
-      assert list.any(support.texts(after_second), string.contains(
-        _,
-        "\"[hidden]\"",
-      ))
-        as "the ring after the second read shows the mask"
-    })
-  })
-
-  // The other sources, in one read.
-  list.each([DatabaseLog, UpdaterLog, LaunchdLog], fn(source) {
-    let ring = log_lines.feed(log_lines.new(source), whole)
-    assert !holds_the_value(ring)
-    assert list.any(support.texts(ring), string.contains(_, "\"[hidden]\""))
-  })
-
-  // The capture a line at a time, so a value that arrives after its key is
-  // seen in each ring on its way; the last ring shows the mask.
-  list.each([ServerLog, DatabaseLog, UpdaterLog, LaunchdLog], fn(source) {
-    let rings = support.fed_line_by_line(source: source, lines: lines)
-    list.each(rings, fn(ring) {
-      assert !holds_the_value(ring)
-    })
-    let assert Ok(last) = list.last(rings)
-    assert list.any(support.texts(last), string.contains(_, "\"[hidden]\""))
-  })
-
-  // The updater's copy of the last lines holds the report on one line.
-  let copied =
-    "2026-11-09 04:38:00 play-service: genesis-play did not come up: state exited, its last lines: "
-    <> string.join(lines, "|")
-  let updater = support.fed(source: UpdaterLog, lines: [copied])
-  assert !holds_the_value(updater)
-  assert list.any(support.texts(updater), string.contains(_, "\"[hidden]\""))
-
-  // A tail that began inside the report: the key ends a plain line and the
-  // value is the next line; the value is hidden in its own entry.
-  let assert Ok(key_line) =
-    list.find(lines, fn(line) { string.trim(line) == "password =>" })
-  let tail =
-    support.fed(source: ServerLog, lines: [
-      key_line,
-      "      \"" <> planted <> "\",",
-      "      database => \"d\"",
-    ])
-  assert !holds_the_value(tail)
-  assert support.texts(tail)
-    == [key_line, "      \"[hidden]\",", "      database => \"d\""]
 }

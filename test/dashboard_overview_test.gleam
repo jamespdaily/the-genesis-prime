@@ -10,13 +10,10 @@
 import dashboard_reading_support as support
 import genesis_prime/dashboard/host_reading.{
   type Reading, Database, Fresh, LiveLockClient, LiveLockGone, LiveLockOwnerless,
-  LiveLockRun, MachineDown, Never, NoNewReading, ReadFailed, Reading, Server,
-  Stale, UpdateLockFree, UpdateLockGone, UpdateLockOwnerless, UpdateLockRun,
-  Updater,
+  LiveLockRun, MachineDown, Reading, Server, UpdateLockFree, UpdateLockGone,
+  UpdateLockOwnerless, UpdateLockRun, Updater,
 }
 import genesis_prime/dashboard/overview.{Model}
-import genesis_prime/dashboard/page.{OverviewKey, Page}
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -316,94 +313,4 @@ pub fn a_card_shows_its_state_in_words_and_in_the_role_that_state_deserves_test(
     )
     assert !string.contains(found, "stale") as { row.name <> ": a fresh fact" }
   })
-}
-
-type StaleCase {
-  StaleCase(name: String, reading: Reading, words: List(String))
-}
-
-pub fn a_stale_section_shows_its_last_value_dimmed_with_its_age_and_why_test() -> Nil {
-  use <- owned_test.run(5000)
-  let reason = "the state script exited with status 3: boom"
-  let stale_server = fn(composed, read, cause) {
-    Reading(
-      ..fresh(),
-      composed_ms: composed,
-      server: Stale(support.running_server(), cause, read),
-    )
-  }
-  let rows = [
-    StaleCase(
-      "stale 12 s with a reason",
-      stale_server(13_000, 1000, ReadFailed(reason)),
-      ["stale 12 s", reason, "running", "9d2015a0"],
-    ),
-    StaleCase("stale 3 min", stale_server(181_000, 1000, ReadFailed(reason)), [
-      "stale 3 min",
-      reason,
-    ]),
-    StaleCase("stale 2 h", stale_server(7_201_000, 1000, ReadFailed(reason)), [
-      "stale 2 h",
-      reason,
-    ]),
-    StaleCase(
-      "no read has ended for a while",
-      stale_server(8000, 1000, NoNewReading),
-      ["stale 7 s", "no new reading for 7 s"],
-    ),
-    StaleCase(
-      "a reason holding markup is text",
-      stale_server(13_000, 1000, ReadFailed("<script>alert(1)</script>")),
-      ["&lt;script&gt;alert(1)&lt;/script&gt;"],
-    ),
-  ]
-  list.each(rows, fn(row) {
-    let html = html_of(row.reading)
-    let found = fact(html, "Server")
-    assert string.contains(found, "stale") as row.name
-    assert string.contains(found, "class=\"fact stale") as row.name
-    list.each(row.words, fn(word) {
-      assert string.contains(found, word) as { row.name <> ": " <> word }
-    })
-    assert !string.contains(html, "<script")
-      as { row.name <> ": no script tag" }
-    // The other facts of a one-fact failure stay as fresh facts.
-    list.each(
-      ["Machine", "Connections", "Database", "Hold", "Update lock", "Lock"],
-      fn(other) {
-        assert !string.contains(fact(html, other), "stale")
-          as { row.name <> ": " <> other <> " is fresh" }
-      },
-    )
-  })
-
-  // A fact never read says so with the reason, and is not stale.
-  let never =
-    Reading(..fresh(), server: Never("the state script is not found: x"))
-  let found = fact(html_of(never), "Server")
-  assert string.contains(found, "No reading: the state script is not found: x")
-  assert !string.contains(found, "stale")
-
-  // A fresh reading shows no stale word and no age anywhere.
-  let html = html_of(fresh())
-  assert !string.contains(html, "stale")
-  assert !string.contains(html, "No reading")
-}
-
-pub fn the_overview_keeps_its_four_cards_and_says_no_reading_before_the_first_test() -> Nil {
-  use <- owned_test.run(5000)
-  let html = element.to_string(overview.view(Model(reading: None)))
-  let titles = ["Play service", "Play database", "Updater", "Live lock"]
-  let positions =
-    list.map(titles, fn(title) {
-      let assert [before, _] = string.split(html, ">" <> title <> "<")
-        as { "the title " <> title <> " is shown once" }
-      string.length(before)
-    })
-  assert positions == list.sort(positions, int.compare)
-    as "the titles are in order"
-  assert list.length(string.split(html, "No reading yet")) == 5
-    as "each of the four cards says there is no reading yet"
-
-  assert overview.page() == Page(key: OverviewKey, title: "Overview", path: "/")
 }

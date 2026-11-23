@@ -63,29 +63,6 @@ pub fn bound_addresses(port: Int) -> List(String)
 @external(erlang, "dashboard_support_ffi", "accepts")
 pub fn accepts(port: Int) -> Bool
 
-@external(erlang, "dashboard_support_ffi", "connect_and_send")
-fn connect_and_send(port: Int, request: BitArray) -> Connection
-
-@external(erlang, "dashboard_support_ffi", "read_reply")
-fn read_reply_unnamed(
-  connection: Connection,
-) -> #(Connection, Int, List(#(String, String)), BitArray)
-
-/// Reads the answer to a request already sent: a wait that the test's deadline
-/// names while the server has not answered.
-fn read_reply(
-  connection: Connection,
-) -> #(Connection, Int, List(#(String, String)), BitArray) {
-  open_wait.named("the server's answer to the request", fn() {
-    read_reply_unnamed(connection)
-  })
-}
-
-/// Whether the server has already written bytes on the connection. The bytes
-/// stay for the next read.
-@external(erlang, "dashboard_support_ffi", "has_bytes")
-pub fn has_bytes(connection: Connection) -> Bool
-
 /// Holds the factory of page runtimes: a start asked of it waits in its
 /// mailbox. Gives the process held.
 @external(erlang, "dashboard_support_ffi", "suspend")
@@ -120,79 +97,8 @@ fn open(
   })
 }
 
-@external(erlang, "dashboard_support_ffi", "read_text_frame")
-fn try_read_frame_unnamed(connection: Connection) -> Result(BitArray, Int)
-
-/// The payload of the next websocket text frame the server sends on the
-/// connection, or the first byte of what came instead (a close frame is 0x88, a
-/// binary frame 0x82, an HTTP answer starts with `H`, 0x48). The read is a wait
-/// that the test's deadline names while the server has sent nothing.
-pub fn try_read_frame(connection: Connection) -> Result(BitArray, Int) {
-  open_wait.named("the next websocket frame the server sends", fn() {
-    try_read_frame_unnamed(connection)
-  })
-}
-
-/// The payload of the next websocket text frame; anything else fails the test
-/// naming the byte that came.
-pub fn read_frame(connection: Connection) -> BitArray {
-  case try_read_frame(connection) {
-    Ok(payload) -> payload
-    Error(first_byte) ->
-      panic as {
-        "the next websocket frame is not a text frame: its first byte is "
-        <> int.to_string(first_byte)
-        <> ", not 129"
-      }
-  }
-}
-
 @external(erlang, "dashboard_support_ffi", "close")
 pub fn close(connection: Connection) -> Nil
-
-@external(erlang, "dashboard_support_ffi", "closes")
-fn closes_unnamed(connection: Connection) -> Bool
-
-/// Reads from the connection until the server closes it; true when it did. The
-/// read is a wait that the test's deadline names while the server keeps the
-/// connection open.
-pub fn closes(connection: Connection) -> Bool {
-  open_wait.named("the server to close the connection", fn() {
-    closes_unnamed(connection)
-  })
-}
-
-/// The operating-system process id of the test's own VM, a process that stays
-/// alive for as long as the test runs.
-@external(erlang, "dashboard_support_ffi", "os_pid")
-pub fn os_pid() -> Int
-
-/// Whether the operating-system process with this id is alive.
-@external(erlang, "dashboard_support_ffi", "process_alive")
-pub fn process_alive(os_pid: Int) -> Bool
-
-/// The longest deadline `until_pid_recorded` tries.
-const longest_deadline_ms = 6400
-
-/// Runs a program that records its own process id and then blocks, until a run
-/// has the id recorded: a cold start of its interpreter may not have written it
-/// by a short deadline, so the run is repeated with twice the deadline. `run`
-/// makes one run with the deadline and gives its answer; `recorded` gives the
-/// ids recorded so far, none when the program has not written one yet. Gives the
-/// last run's answer and the first id recorded.
-pub fn until_pid_recorded(
-  run run: fn(Int) -> answer,
-  recorded recorded: fn() -> List(Int),
-  deadline_ms deadline_ms: Int,
-) -> #(answer, Int) {
-  let answer = run(deadline_ms)
-  case recorded() {
-    [pid, ..] -> #(answer, pid)
-    [] if deadline_ms < longest_deadline_ms ->
-      until_pid_recorded(run:, recorded:, deadline_ms: deadline_ms * 2)
-    [] -> panic as "the program never recorded its process id"
-  }
-}
 
 pub fn gate() -> Gate {
   Gate(key:, port:)
@@ -284,55 +190,9 @@ pub fn header(reply reply: Reply, name name: String) -> Option(String) {
   list.key_find(reply.headers, name) |> option.from_result
 }
 
-/// Sends a GET to the dashboard on the loopback port and reads the reply.
-pub fn send(
-  port port: Int,
-  path path: String,
-  headers headers: List(#(String, String)),
-) -> Reply {
-  let #(connection, status, reply_headers, body) =
-    open(port, request_bytes(path:, headers:))
-  close(connection)
-  Reply(status:, headers: reply_headers, body:)
-}
-
 /// The headers a browser sends to the dashboard on `port`.
 pub fn browser(port port: Int) -> List(#(String, String)) {
   [#("Host", "127.0.0.1:" <> int.to_string(port))]
-}
-
-/// Sends a websocket handshake to `path` and reads the reply to it. The
-/// connection stays open for the caller to read frames from and close.
-pub fn handshake(
-  port port: Int,
-  path path: String,
-  headers headers: List(#(String, String)),
-) -> #(Connection, Reply) {
-  let #(connection, status, reply_headers, body) =
-    open(
-      port,
-      request_bytes(path:, headers: list.append(headers, upgrade_headers)),
-    )
-  #(connection, Reply(status:, headers: reply_headers, body:))
-}
-
-/// Sends a websocket handshake to `path` without reading the reply: the
-/// connection is for `handshake_reply` and `has_bytes`.
-pub fn handshake_sent(
-  port port: Int,
-  path path: String,
-  headers headers: List(#(String, String)),
-) -> Connection {
-  connect_and_send(
-    port,
-    request_bytes(path:, headers: list.append(headers, upgrade_headers)),
-  )
-}
-
-/// Reads the reply to a handshake sent with `handshake_sent`.
-pub fn handshake_reply(connection: Connection) -> Reply {
-  let #(_, status, reply_headers, body) = read_reply(connection)
-  Reply(status:, headers: reply_headers, body:)
 }
 
 /// Runs `during` while the factory of page runtimes holds every ask made of it,
@@ -410,10 +270,6 @@ fn asked_again(
     _ -> #(connection, reply)
   }
 }
-
-/// Whether this side has closed the connection.
-@external(erlang, "dashboard_support_ffi", "is_closed")
-pub fn is_closed(connection: Connection) -> Bool
 
 const upgrade_headers = [
   #("Upgrade", "websocket"),

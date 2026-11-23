@@ -131,7 +131,7 @@ pub type Read {
 /// Splits what `podman logs --timestamps` printed. The piece after the last
 /// newline is dropped: a read that was cut ends inside a line, which is read
 /// whole the next time.
-pub fn split(output: BitArray) -> Output {
+fn split(output: BitArray) -> Output {
   let pieces = pieces_of(whole: output, start: 0, index: 0, found: [])
   let found =
     list.fold(pieces, #([], []), fn(found, piece) {
@@ -273,7 +273,7 @@ fn text_of_codepoints(rest: BitArray, found: List(UtfCodepoint)) -> String {
 /// Drops from the head of a read the lines of the cursor's second that were
 /// shown already, and gives the lines that are new and the cursor after them.
 /// The cursor stays when no line is new.
-pub fn take(
+fn take(
   cursor cursor: Option(Cursor),
   lines lines: List(Line),
 ) -> #(List(Line), Option(Cursor)) {
