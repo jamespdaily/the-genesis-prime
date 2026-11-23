@@ -423,6 +423,7 @@ pub fn a_third_copy_of_a_cap_2_group_takes_the_oldest_off_test() -> Nil {
   ]
   assert lasting.pushed_off(
       holds:,
+      kept: [],
       spell4_id: Spell4Id(42_569),
       stack: Stack(group_id: 1450, cap: 2),
       unit_id: 7,
@@ -437,6 +438,7 @@ pub fn a_cast_below_the_cap_pushes_nothing_off_test() -> Nil {
   ]
   assert lasting.pushed_off(
       holds:,
+      kept: [],
       spell4_id: Spell4Id(42_569),
       stack: Stack(group_id: 1450, cap: 2),
       unit_id: 7,
@@ -452,6 +454,7 @@ pub fn the_group_counts_the_casts_of_its_other_spells_too_test() -> Nil {
   ]
   assert lasting.pushed_off(
       holds:,
+      kept: [],
       spell4_id: Spell4Id(3),
       stack: Stack(group_id: 9, cap: 2),
       unit_id: 7,
@@ -469,6 +472,7 @@ pub fn a_cap_of_0_keeps_one_cast_per_spell_test() -> Nil {
   ]
   assert lasting.pushed_off(
       holds:,
+      kept: [],
       spell4_id: Spell4Id(34_718),
       stack: Stack(group_id: 2, cap: 0),
       unit_id: 7,
@@ -484,6 +488,7 @@ pub fn another_group_is_not_pushed_off_test() -> Nil {
   ]
   assert lasting.pushed_off(
       holds:,
+      kept: [],
       spell4_id: Spell4Id(5),
       stack: Stack(group_id: 77, cap: 2),
       unit_id: 7,
@@ -498,6 +503,7 @@ pub fn pushing_reads_only_the_holds_on_its_unit_test() -> Nil {
   ]
   assert lasting.pushed_off(
       holds:,
+      kept: [],
       spell4_id: Spell4Id(42_569),
       stack: Stack(group_id: 1450, cap: 1),
       unit_id: 8,
@@ -516,6 +522,7 @@ pub fn the_cast_ids_listed_are_the_ones_pushed_off_in_age_order_test() -> Nil {
   assert list.map(
       lasting.pushed_off(
         holds:,
+        kept: [],
         spell4_id: Spell4Id(1),
         stack: Stack(group_id: 4, cap: 1),
         unit_id: 7,
@@ -816,4 +823,43 @@ pub fn an_aura_gives_the_node_the_cases_the_client_reads_from_its_buff_timing_te
     )
   assert later.life == EndsAt(ms: 7000)
     as "a second go of the same cast keeps the aura's end"
+}
+
+pub fn a_kept_cast_counts_against_the_cap_but_is_not_taken_off_by_its_node_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Cap 2, one cast with a node (20, started at 200) and one kept with no node: the new cast
+  // is over the cap's room by one, so the oldest of the two is pushed off. When that is the
+  // kept cast, the change it holds ends (`cast_control`) and the node path takes no node off;
+  // when it is the cast with the node, the node is taken off.
+  let holds = [
+    stacked(cast_id: 20, started: 200, spell: 42_569, group: 1450, cap: 2),
+  ]
+  let kept_at = fn(started_ms) {
+    [
+      lasting.StackedCast(
+        cast_id: 10,
+        spell4_id: Spell4Id(42_569),
+        stack: Stack(group_id: 1450, cap: 2),
+        started_ms:,
+      ),
+    ]
+  }
+  assert lasting.pushed_off(
+      holds:,
+      kept: kept_at(100),
+      spell4_id: Spell4Id(42_569),
+      stack: Stack(group_id: 1450, cap: 2),
+      unit_id: 7,
+    )
+    == []
+    as "the kept cast is the oldest: it is the one pushed off, and it holds no node to take off"
+  assert lasting.pushed_off(
+      holds:,
+      kept: kept_at(300),
+      spell4_id: Spell4Id(42_569),
+      stack: Stack(group_id: 1450, cap: 2),
+      unit_id: 7,
+    )
+    == [NodeOff(cast_id: 20, unit_id: 7)]
+    as "a kept cast started after the cast with the node leaves that cast the oldest: its node is taken off"
 }

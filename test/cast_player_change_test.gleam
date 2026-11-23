@@ -36,14 +36,15 @@ import genesis_prime/game/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/step.{type TimerId, ConnectionId}
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/string
 import map_support
 import owned_test
 import prerequisite_support
+import spell_tables
 
 const ally = 40
 
@@ -63,10 +64,11 @@ fn address() -> PlayerAddress {
   )
 }
 
-/// The Novice Esper, who sees these players.
+/// The Novice Esper, who holds 1000 Focus (Phantasmal Armor's cost) and sees these players.
 fn esper_seeing(players players: List(Int)) -> Caster {
   cast_state.Caster(
     ..support.caster(),
+    resources: support.holding_focus(class_id: 3, focus: 1000.0),
     stats: attacker_support.novice(),
     players_in_sight: dict.from_list(
       list.map(players, fn(unit_id) {
@@ -88,10 +90,11 @@ fn plans_of(spell spell: Spell) -> Plans {
   support.with_spells(plans: support.plans(), spells: [spell])
 }
 
-/// A 0x9a at the ally of the ability in bag slot `bag` of `plans`, taken by the rule.
-fn pressed_at_the_ally_in(
+/// A 0x9a at the unit `target` of the ability in bag slot `bag` of `plans`, taken by the rule.
+fn pressed_at_in(
   plans plans: Plans,
   bag bag: Int,
+  target target: Int,
   state state: State,
   caster caster: Caster,
   at ms: Int,
@@ -103,7 +106,7 @@ fn pressed_at_the_ally_in(
       body: support.press_body(
         client_cast_id: 9,
         bag_index: bag,
-        target: ally,
+        target:,
         press: 1,
       ),
       caster:,
@@ -111,17 +114,18 @@ fn pressed_at_the_ally_in(
       target_of: picture,
       now: support.at(ms:),
     )
-    as "the press at the ally in sight is taken"
+    as "the press in sight is taken"
   taken
 }
 
-/// The press and its go of the ability in bag slot `bag` of `plans`, answered by a round
-/// that struck nobody (the ally is no creature and answers nothing), for the caster at the
-/// go: the state after, the press's effects and the go's, with the rolls the go's type 37
-/// conditions take.
-fn pressed_and_gone_in(
+/// The press at the unit `target` and its go of the ability in bag slot `bag` of `plans`,
+/// answered by a round that struck nobody (the ally is no creature and answers nothing), for
+/// the caster at the go: the state after, the press's effects and the go's, with the rolls
+/// the go's type 37 conditions take.
+fn pressed_at_and_gone_in(
   plans plans: Plans,
   bag bag: Int,
+  target target: Int,
   state state: State,
   at_press at_press: Caster,
   at_go at_go: Caster,
@@ -129,7 +133,7 @@ fn pressed_and_gone_in(
   at ms: Int,
 ) -> #(State, List(Effect), List(Effect)) {
   let #(state, pressed) =
-    pressed_at_the_ally_in(plans:, bag:, state:, caster: at_press, at: ms)
+    pressed_at_in(plans:, bag:, target:, state:, caster: at_press, at: ms)
   let #(state, went) =
     support.answered_each(
       caster: at_go,
@@ -141,6 +145,28 @@ fn pressed_and_gone_in(
       poses: dict.new(),
     )
   #(state, pressed, went)
+}
+
+/// The press at the ally and its go of the ability in bag slot `bag` of `plans`.
+fn pressed_and_gone_in(
+  plans plans: Plans,
+  bag bag: Int,
+  state state: State,
+  at_press at_press: Caster,
+  at_go at_go: Caster,
+  rolls rolls: List(Int),
+  at ms: Int,
+) -> #(State, List(Effect), List(Effect)) {
+  pressed_at_and_gone_in(
+    plans:,
+    bag:,
+    target: ally,
+    state:,
+    at_press:,
+    at_go:,
+    rolls:,
+    at: ms,
+  )
 }
 
 /// The press and its go of the spell, as `pressed_and_gone_in` has them for its ability.
@@ -896,4 +922,671 @@ pub fn a_re_press_of_the_same_caster_before_the_kept_buff_ends_replaces_the_held
     fired_in_order(state:, timers: first_timers, seeing: [ally], at: 11_000)
   assert told(effects: late) == []
     as "the first cast's end timers were cancelled with its changes, so they tell nothing at the go plus 10 000"
+}
+
+// ---- a Proxy aimed at the primary target ----
+
+/// A client spell of the fixture as the planted base 3 ability, which the bag holds at
+/// `bag_of_base_3`.
+fn as_base_3(spell4_id spell4_id: Int) -> Spell {
+  Spell(
+    ..spell_tables.client_spell(spell4_id:),
+    spell4_base_id: Spell4BaseId(3),
+  )
+}
+
+/// A Proxy row of a planted parent that starts `child` on the unit `target` aims at, after
+/// `delay_ms`, behind `condition`.
+fn proxy_of(
+  child child: Spell,
+  target target: spell_plan.ProxyTarget,
+  delay_ms delay_ms: Int,
+  condition condition: spell_plan.Condition,
+) -> spell_plan.Proxy {
+  spell_plan.Proxy(
+    period: None,
+    effect_id: Spell4EffectsId(90_002),
+    delay_ms:,
+    phase_flags: -1,
+    condition:,
+    tag: spend.always,
+    target:,
+    spell: child,
+    gains: [],
+  )
+}
+
+/// A Targeted beneficial parent (Phantasmal Armor's mechanics) of the planted base 3 holding
+/// one Proxy.
+fn parent_of(proxy proxy: spell_plan.Proxy) -> Spell {
+  spell_plan.with_proxies(
+    spell: Spell(
+      ..support.child(spell4_id: 90_001, base: 3),
+      targeting: spell_tables.client_spell(spell4_id: 32_820).targeting,
+    ),
+    proxies: [proxy],
+  )
+}
+
+/// One press of a parent that holds a Proxy aimed at the primary target or the caster:
+/// the unit pressed at, whom the caster sees at the go and later, the rolls of the go, the
+/// child's Spell4 and each start of it as the time and the primary target it names.
+type Child {
+  Child(
+    why: String,
+    parent: Spell,
+    target: Int,
+    sees_at_go: List(Int),
+    sees_later: List(Int),
+    rolls: List(Int),
+    child: Int,
+    starts: List(#(Int, Int)),
+    debug: List(String),
+  )
+}
+
+/// The time and primary target of each 0x7ff of the Spell4 the effects write.
+fn starts_of(
+  effects effects: List(Effect),
+  spell4_id spell4_id: Int,
+  at ms: Int,
+) -> List(#(Int, Int)) {
+  list.filter_map(support.started_in(effects:), fn(start) {
+    case start.spell4_id == spell4_id {
+      True -> Ok(#(ms, start.primary_target_unit_id))
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// A press of the parent at `target` in the caster's sight of `sees_at_go` and what every
+/// timer then does for a caster who sees `sees_later`: the state, the press's effects, the
+/// go's and each timer step's time and effects.
+fn pressed_and_run(
+  child row: Child,
+) -> #(State, List(Effect), List(Effect), List(#(Int, List(Effect)))) {
+  let #(state, pressed, went) =
+    pressed_at_and_gone_in(
+      plans: plans_of(spell: row.parent),
+      bag: bag_of_base_3,
+      target: row.target,
+      state: cast_state.new(),
+      at_press: esper_seeing(players: [ally]),
+      at_go: esper_seeing(players: row.sees_at_go),
+      rolls: row.rolls,
+      at: 1000,
+    )
+  let #(state, steps) =
+    support.run_timers_each(
+      caster: esper_seeing(players: row.sees_later),
+      state:,
+      effects: list.append(pressed, went),
+      from_ms: 1000,
+      struck_of: fn(_) { [] },
+    )
+  #(state, pressed, went, steps)
+}
+
+pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_press_named_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects 83947 (Spell4 32823, Phantasmal Armor tier 1) is a Proxy aimed at the
+  // primary target (targetFlags 2) that starts Spell4 76766; 130872 (Spell4 54904, Mind Over
+  // Body tier 9, castTime 1250) is one with a delay of 25 ms that starts 54912 (`table_rows
+  // -- Spell4Effects 83947 130872`). Mind Over Body's heal row 130870 is aimed at the ally
+  // and lands nothing here, which its debug line says (the healed player's receipt is
+  // another step). The client starts no Proxy (`Spell4Effects.effectType.26`): the server
+  // starts a Proxy aimed at the primary target on the player a bag press named
+  // (`press.at_a_unit`) and, for a press at oneself, a creature or a cast no bag press made,
+  // on the caster.
+  let armor = as_base_3(spell4_id: 32_823)
+  let mind_over_body = as_base_3(spell4_id: 54_904)
+  let plain = support.child(spell4_id: 90_003, base: 4)
+  let on_the_target = fn(condition) {
+    parent_of(proxy: proxy_of(
+      child: plain,
+      target: spell_plan.OnPrimaryTarget,
+      delay_ms: 0,
+      condition:,
+    ))
+  }
+  let rows = [
+    Child(
+      why: "a bag press at the ally in sight starts Phantasmal Armor's Proxy child (83947 to 76766) on the ally",
+      parent: armor,
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 76_766,
+      starts: [#(1000, ally)],
+      debug: [],
+    ),
+    Child(
+      why: "a press at oneself starts the child once, on the caster",
+      parent: armor,
+      target: 7,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 76_766,
+      starts: [#(1000, 7)],
+      debug: [],
+    ),
+    Child(
+      why: "a Proxy aimed at the caster in a press at the ally starts its child on the caster",
+      parent: parent_of(proxy: proxy_of(
+        child: plain,
+        target: spell_plan.OnCaster,
+        delay_ms: 0,
+        condition: Always,
+      )),
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 90_003,
+      starts: [#(1000, 7)],
+      debug: [],
+    ),
+    Child(
+      why: "a Proxy with a delay of 25 ms starts nothing at the go (castTime 1250, so at 2250) and its child, 25 ms later, on the ally (130872 to 54912)",
+      parent: mind_over_body,
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      child: 54_912,
+      starts: [#(2275, ally)],
+      debug: ["130870"],
+    ),
+    Child(
+      why: "the ally out of the caster's sight when the delay ends: no child starts and a debug line says so, as a press at an unseen player is refused 91",
+      parent: mind_over_body,
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [],
+      rolls: [],
+      child: 54_912,
+      starts: [],
+      debug: ["130870", "54912", "not in the caster's sight"],
+    ),
+    Child(
+      why: "the ally out of the caster's sight at the go: no child starts either",
+      parent: armor,
+      target: ally,
+      sees_at_go: [],
+      sees_later: [],
+      rolls: [],
+      child: 76_766,
+      starts: [],
+      debug: ["76766", "not in the caster's sight"],
+    ),
+    Child(
+      why: "a Proxy aimed at the primary target whose caster gate fails (4585: at most 50, roll 80) starts no child",
+      parent: on_the_target(spell_plan.GatedOnCaster(gates: [chance_gate()])),
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [80],
+      child: 90_003,
+      starts: [],
+      debug: [],
+    ),
+    Child(
+      why: "the same gate with a roll of 30 passes: the child starts on the ally",
+      parent: on_the_target(spell_plan.GatedOnCaster(gates: [chance_gate()])),
+      target: ally,
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [30],
+      child: 90_003,
+      starts: [#(1000, ally)],
+      debug: [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(_, pressed, went, steps) = pressed_and_run(child: row)
+    let started =
+      list.flatten([
+        starts_of(effects: went, spell4_id: row.child, at: 1000),
+        list.flat_map(steps, fn(step) {
+          starts_of(effects: step.1, spell4_id: row.child, at: step.0)
+        }),
+      ])
+    assert started == row.starts as row.why
+    let lines =
+      list.flatten([
+        support.debug_lines(effects: went),
+        list.flat_map(steps, fn(step) { support.debug_lines(effects: step.1) }),
+      ])
+    assert list.all(row.debug, fn(words) {
+      list.any(lines, string.contains(_, words))
+    })
+      as { row.why <> ": the debug lines say " <> string.join(row.debug, ", ") }
+    assert row.debug != [] || lines == []
+      as {
+        row.why
+        <> ": and none is written otherwise, not "
+        <> string.join(lines, "; ")
+      }
+    assert support.refusal_results(effects: pressed) == []
+      as { row.why <> ": the press is accepted" }
+  })
+  // The first row's start in full: the ally's connection reads the child's 0x7ff with the
+  // pressed spell as its parent and root, and no threshold is touched.
+  let #(state, pressed, went, _) =
+    pressed_and_run(
+      child: Child(
+        why: "",
+        parent: armor,
+        target: ally,
+        sees_at_go: [ally],
+        sees_later: [ally],
+        rolls: [],
+        child: 76_766,
+        starts: [],
+        debug: [],
+      ),
+    )
+  let effects = list.append(pressed, went)
+  let assert [child_start] =
+    list.filter(support.started_in(effects:), fn(start) {
+      start.spell4_id == 76_766
+    })
+    as "the child starts once"
+  assert child_start.caster_unit_id == 7
+    && child_start.primary_target_unit_id == ally
+    && child_start.parent_spell4_id == 32_823
+    && child_start.root_spell4_id == 32_823
+    as "opcode.0x7ff: the child names the ally as its primary target, the Esper as its caster and the pressed spell as its parent and root"
+  assert list.contains(support.started_told_to(effects:, connection: 2), #(
+    76_766,
+    32_823,
+    32_823,
+  ))
+    as "the ally's connection reads the child's 0x7ff"
+  assert state.thresholds == dict.new() as "a child touches no threshold"
+}
+
+/// One child a parent started by its go, and what its rows do: where the press was
+/// (`target`), the child's Spell4, the effect ids its 0x7f4 lists on the ally and on the
+/// caster, the changes it tells the ally (as the row it is for), the changes it starts on the
+/// caster and how the changes it tells end when the caster stops seeing the ally.
+type Landing {
+  Landing(
+    why: String,
+    parent: Spell,
+    target: Int,
+    child: Int,
+    listed_on_ally: List(Int),
+    told: List(#(Int, held_changes.Change, held_changes.Sight)),
+    on_the_caster: List(#(Int, cast_state.CasterChange)),
+    parent_told: Int,
+  )
+}
+
+pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_on_the_caster_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects 199192 (Spell4 76766) is Interrupt Armor: effectType 52, dataBits00 1,
+  // durationTime 5000, targetFlags 2. 216950 (Spell4 82438) is a type 11 row behind the
+  // caster condition Prerequisite 38543, which nothing the Esper holds meets (no table starts
+  // Spell4 82431), and 203809 (Spell4 77864) a type 29 row behind the target condition 36645
+  // (the unit is not the target of a live cast of Spell4 54806) (`table_rows -- Spell4Effects
+  // 199192 216950 203809 -- Prerequisite 38543 36645`). The child's propertyFlags are 0 (76766,
+  // 82438), so its changes end when the caster stops seeing the ally.
+  let armor = as_base_3(spell4_id: 32_823)
+  let started_by = fn(child) {
+    parent_of(proxy: proxy_of(
+      child:,
+      target: spell_plan.OnPrimaryTarget,
+      delay_ms: 0,
+      condition: Always,
+    ))
+  }
+  let interrupt_armor = support.raising_interrupt_armor_threshold(points: 1.0)
+  let rows = [
+    Landing(
+      why: "the Interrupt Armor row of 76766 started on the ally is told to the ally and listed on it, ending with the caster's sight, and starts nothing on the caster",
+      parent: armor,
+      target: ally,
+      child: 76_766,
+      listed_on_ally: [199_192],
+      told: [
+        #(
+          199_192,
+          held_changes.Property(modifier: interrupt_armor),
+          held_changes.EndsWhenUnseen,
+        ),
+      ],
+      on_the_caster: [],
+      parent_told: 1,
+    ),
+    Landing(
+      why: "the same child started on the caster (a press at oneself) is the caster's own change and tells nobody",
+      parent: armor,
+      target: 7,
+      child: 76_766,
+      listed_on_ally: [],
+      told: [],
+      on_the_caster: [
+        #(
+          199_192,
+          cast_state.HeldChange(held_changes.Property(modifier: interrupt_armor)),
+        ),
+      ],
+      parent_told: 0,
+    ),
+    Landing(
+      why: "82438 started on the ally lands nothing: its row's caster condition fails",
+      parent: started_by(spell_tables.client_spell(spell4_id: 82_438)),
+      target: ally,
+      child: 82_438,
+      listed_on_ally: [],
+      told: [],
+      on_the_caster: [],
+      parent_told: 0,
+    ),
+    Landing(
+      why: "77864 started on the ally lands nothing: the ally is the target of the live cast of 54806, which its rows' target condition refuses",
+      parent: started_by(spell_tables.client_spell(spell4_id: 77_864)),
+      target: ally,
+      child: 77_864,
+      listed_on_ally: [],
+      told: [],
+      on_the_caster: [],
+      parent_told: 0,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(_, pressed, went) =
+      pressed_at_and_gone_in(
+        plans: plans_of(spell: row.parent),
+        bag: bag_of_base_3,
+        target: row.target,
+        state: cast_state.new(),
+        at_press: esper_seeing(players: [ally]),
+        at_go: esper_seeing(players: [ally]),
+        rolls: [],
+        at: 1000,
+      )
+    let parent_id = support.pressed_id(effects: pressed)
+    let child_id = support.started_cast_id(effects: went, spell4_id: row.child)
+    let own = fn(source: Source) { source.cast_id == child_id }
+    assert list.filter_map(told(effects: went), fn(change) {
+        case change {
+          cast_state.OtherPlayerChangeStarts(address:, source:, change:, sight:) ->
+            case own(source) {
+              True ->
+                Ok(#(address.unit_id, source.effect_id.value, change, sight))
+              False -> Error(Nil)
+            }
+          _ -> Error(Nil)
+        }
+      })
+      == list.map(row.told, fn(change) { #(ally, change.0, change.1, change.2) })
+      as { row.why <> ": the changes told to the ally" }
+    assert list.filter_map(support.goes_in(effects: went), fn(go) {
+        case go.cast_id == child_id {
+          True -> Ok(go.targets)
+          False -> Error(Nil)
+        }
+      })
+      |> list.flatten
+      |> list.filter(fn(unit) { unit.unit_id == ally })
+      |> list.flat_map(fn(unit) {
+        list.map(unit.effects, fn(effect) { effect.spell4_effects_id })
+      })
+      == row.listed_on_ally
+      as { row.why <> ": the child's 0x7f4 lists these effects on the ally" }
+    assert list.filter_map(
+        support.caster_change_starts(effects: went),
+        fn(start) {
+          case own(start.0) {
+            True -> Ok(#(start.0.effect_id.value, start.1))
+            False -> Error(Nil)
+          }
+        },
+      )
+      == row.on_the_caster
+      as { row.why <> ": the changes the child starts on the caster" }
+    assert list.filter(told(effects: went), fn(change) {
+        case change {
+          cast_state.OtherPlayerChangeStarts(source:, ..) ->
+            source.cast_id == parent_id
+          _ -> False
+        }
+      })
+      |> list.length
+      == row.parent_told
+      as {
+        row.why
+        <> ": the parent's own rows are told once (the absorb 62024), as in Part 7b, and the child adds its own"
+      }
+  })
+}
+
+/// The plans of the armor (Phantasmal Armor tier 1 as the base 3 ability) and of a planted
+/// spell of base 1 pressed at the same player that takes the nodes of the cast of the Spell4
+/// `removed` off it with a type 80 row (SpellForceRemove, a selector of that Spell4, a count
+/// of 1, aimed at the primary target).
+fn armor_and_the_removal_of(removed removed: Int) -> Plans {
+  let armor = as_base_3(spell4_id: 32_823)
+  support.with_spells(plans: plans_of(spell: armor), spells: [
+    support.with_effects(
+      spell: Spell(
+        ..support.child(spell4_id: 301, base: 1),
+        targeting: armor.targeting,
+      ),
+      kinds: [
+        spell_plan.RemoveEffect(spell_plan.ForceRemove(
+          effect_id: Spell4EffectsId(196_521),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtPrimaryTarget,
+          selector: lasting.Spell(Spell4Id(removed)),
+          count: 1,
+          condition: Always,
+          tag: spend.always,
+        )),
+      ],
+    ),
+  ])
+}
+
+/// The ends of the changes the child cast `child_id` (Interrupt Armor, 5000 ms) and the
+/// parent cast `parent_id` (the absorb, 10 000 ms) hold on the ally, in the order told.
+fn told_ends(
+  effects effects: List(Effect),
+  child_id child_id: Int,
+  parent_id parent_id: Int,
+) -> List(String) {
+  list.filter_map(told(effects:), fn(change) {
+    case change {
+      cast_state.OtherPlayerChangeEnds(source:, ..)
+        if source.cast_id == child_id
+      -> Ok("child")
+      cast_state.OtherPlayerChangeEnds(source:, ..)
+        if source.cast_id == parent_id
+      -> Ok("parent")
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// How one path ends the child's armor and the parent's absorb on the ally: what it does to
+/// the state the go left (given the child's cast id and the parent's), and the ends it tells
+/// at once and each end the timers still left tell afterwards.
+type ChildPath {
+  ChildPath(
+    why: String,
+    run: fn(State, Int, Int) -> #(State, List(Effect)),
+    at_once: List(String),
+    later: List(#(Int, String)),
+  )
+}
+
+pub fn the_end_of_the_interrupt_armor_a_child_told_to_the_ally_is_told_once_by_each_path_that_ends_its_node_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let seen = esper_seeing(players: [ally])
+  // The press of the removal waits out the armor's global cooldown (Spell4 32823: 1250 ms).
+  // The child's row 199192 lasts 5000 ms and the parent's absorb 62024 lasts 10 000 ms
+  // (`table_rows -- Spell4Effects 199192 62024`), each a cast of its own with its own node on
+  // the ally, so each ends alone and a removal names one cast.
+  let removal_at_2500 = fn(removed) {
+    fn(state, _, _) {
+      let #(state, _, removal) =
+        pressed_and_gone_in(
+          plans: armor_and_the_removal_of(removed:),
+          bag: bag_of_base_1,
+          state:,
+          at_press: seen,
+          at_go: seen,
+          rolls: [],
+          at: 2500,
+        )
+      #(state, removal)
+    }
+  }
+  let paths = [
+    ChildPath(
+      why: "time: the child's end is told at the go plus 5000 and the parent's, still held then, at the go plus 10 000",
+      run: fn(state, _, _) { #(state, []) },
+      at_once: [],
+      later: [#(6000, "child"), #(11_000, "parent")],
+    ),
+    ChildPath(
+      why: "a type 80 removal naming the child's node on the ally ends the armor once and the parent's absorb stays held",
+      run: removal_at_2500(76_766),
+      at_once: ["child"],
+      later: [#(11_000, "parent")],
+    ),
+    ChildPath(
+      why: "a type 80 removal naming the parent's node on the ally ends the absorb and the child's armor stays held",
+      run: removal_at_2500(32_823),
+      at_once: ["parent"],
+      later: [#(6000, "child")],
+    ),
+    ChildPath(
+      why: "the caster's death ends both, once each",
+      run: fn(state, _, _) {
+        cast.died(
+          cast: state,
+          caster: support.dead_caster(),
+          now: support.at(ms: 1100),
+        )
+      },
+      at_once: ["parent", "child"],
+      later: [],
+    ),
+    ChildPath(
+      why: "the caster leaving ends both, once each",
+      run: fn(state, _, _) { cast_tick.left(cast: state) },
+      at_once: ["parent", "child"],
+      later: [],
+    ),
+  ]
+  list.each(paths, fn(path) {
+    let #(state, pressed, went) =
+      pressed_and_gone(
+        spell: as_base_3(spell4_id: 32_823),
+        state: cast_state.new(),
+        at_press: seen,
+        at_go: seen,
+        rolls: [],
+        at: 1000,
+      )
+    let parent_id = support.pressed_id(effects: pressed)
+    let child_id = support.started_cast_id(effects: went, spell4_id: 76_766)
+    assert told_ends(effects: list.append(pressed, went), child_id:, parent_id:)
+      == []
+      as { path.why <> ": nothing is told ended by the go" }
+    let #(state, effects) = path.run(state, child_id, parent_id)
+    assert list.sort(told_ends(effects:, child_id:, parent_id:), string.compare)
+      == list.sort(path.at_once, string.compare)
+      as { path.why <> ": the ends told at once" }
+    // The timers left, each fired at its own time, tell the later ends and nothing more.
+    let #(_, fired) =
+      support.run_timers_each(
+        caster: seen,
+        state:,
+        effects: list.append(pressed, went),
+        from_ms: 1000,
+        struck_of: fn(_) { [] },
+      )
+    assert list.filter_map(fired, fn(step) {
+        case told_ends(effects: step.1, child_id:, parent_id:) {
+          [] -> Error(Nil)
+          ends -> Ok(#(step.0, string.join(ends, ",")))
+        }
+      })
+      == path.later
+      as { path.why <> ": the ends the timers tell afterwards" }
+  })
+}
+
+pub fn at_a_stack_cap_of_two_a_kept_cast_and_a_cast_with_a_node_count_together_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The stack rule is the server's (`lasting.stack_pushed_off`): the casts of one stack
+  // group on a unit beyond the cap less one are pushed off, oldest first. A change kept after
+  // the caster lost sight of the player is held by no node, and a cast with a node holds one:
+  // both are casts on the player, so with a cap of 2 the third press pushes the oldest off,
+  // the kept one, though each kind alone is under the cap.
+  let spell =
+    Spell(
+      ..support.armor_spell(rows: support.armor_rows()),
+      stack: lasting.Stack(group_id: 387, cap: 2),
+    )
+  let seen = esper_seeing(players: [ally])
+  let #(state, pressed, _) =
+    pressed_and_gone(
+      spell:,
+      state: cast_state.new(),
+      at_press: seen,
+      at_go: seen,
+      rolls: [],
+      at: 1000,
+    )
+  let first = support.pressed_id(effects: pressed)
+  // The ally leaves the caster's sight: the first cast's changes stay, its node is gone.
+  let #(state, removal) =
+    cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100)
+  assert told(effects: removal) == []
+    as "the changes of a spell that outlives its caster's sight stay"
+  let #(state, pressed, went) =
+    pressed_and_gone(
+      spell:,
+      state:,
+      at_press: seen,
+      at_go: seen,
+      rolls: [],
+      at: 3000,
+    )
+  let second = support.pressed_id(effects: pressed)
+  assert list.filter(told(effects: went), fn(change) {
+      case change {
+        cast_state.OtherPlayerChangeEnds(..) -> True
+        _ -> False
+      }
+    })
+    == []
+    as "two casts on the ally are within the cap of 2: the second press pushes nothing off"
+  let #(_, pressed, went) =
+    pressed_and_gone(
+      spell:,
+      state:,
+      at_press: seen,
+      at_go: seen,
+      rolls: [],
+      at: 5000,
+    )
+  let third = support.pressed_id(effects: pressed)
+  assert first != second && second != third as "each press is a cast of its own"
+  assert told(effects: went)
+    == list.flatten([
+      ends_of(cast_id: first),
+      [
+        pool_starts(cast_id: third, sight: held_changes.KeptWhenUnseen),
+        armor_starts(cast_id: third, sight: held_changes.KeptWhenUnseen),
+      ],
+    ])
+    as "the third press pushes off the oldest cast on the ally, the kept one, and only that one: the second keeps its node and its changes"
 }

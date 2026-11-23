@@ -185,10 +185,15 @@ fn host_of(ability ability: Spell, phase phase: Int) -> Result(Proxy, Nil) {
     proxy.delay_ms == 0
     && proxy.period == None
     && case proxy.target, proxy.condition {
-      spell_plan.OnCaster, spell_plan.Always -> True
+      spell_plan.OnCaster, spell_plan.Always
+      | spell_plan.OnPrimaryTarget, spell_plan.Always
+      -> True
       spell_plan.OnCaster, spell_plan.GatedOnCaster(..)
       | spell_plan.OnCaster, spell_plan.GatedOnTarget(..)
       | spell_plan.OnCaster, spell_plan.GatedOnCasterAndTarget(..)
+      | spell_plan.OnPrimaryTarget, spell_plan.GatedOnCaster(..)
+      | spell_plan.OnPrimaryTarget, spell_plan.GatedOnTarget(..)
+      | spell_plan.OnPrimaryTarget, spell_plan.GatedOnCasterAndTarget(..)
       | spell_plan.OnEachStruck, _
       -> False
     }

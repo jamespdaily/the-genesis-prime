@@ -112,7 +112,7 @@ fn effect_rolls_needed(
           strike_rolls_needed(
             condition: proxy.condition,
             units: case proxy.target {
-              spell_plan.OnCaster -> 1
+              spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> 1
               spell_plan.OnEachStruck -> list.length(hit_units(struck:))
             },
           )
@@ -326,7 +326,7 @@ pub fn proxies_with_targets(
 /// strikes nobody).
 fn starts_a_child(proxy proxy: Proxy, hit hit: Bool) -> Bool {
   case proxy.target, proxy.period {
-    spell_plan.OnCaster, _ -> True
+    spell_plan.OnCaster, _ | spell_plan.OnPrimaryTarget, _ -> True
     spell_plan.OnEachStruck, Some(_) -> True
     spell_plan.OnEachStruck, None -> hit
   }
@@ -373,20 +373,22 @@ pub fn rows_with_units(
 }
 
 /// Whether a modifier row takes effect on `unit_id`, one of the units its aim names.
-/// - A property, look or Interrupt Armor change lands on the caster alone: the server gives
-///   no other unit a property, a look or armor. A part of the aim past the caster is left
-///   out here with no log line; the plan refuses the row where that part would be the unit
-///   a Proxy's child is started on (`spell_plan.not_on_a_struck_unit`).
+/// - A property or look change lands on the caster alone: the server gives no other unit a
+///   property or a look. A part of the aim past the caster is left out here with no log line;
+///   the plan refuses the row where that part would be the unit a Proxy's child is started on
+///   (`spell_plan.not_on_a_struck_unit`).
 /// - An absorb lands on the caster, and a property modifier aimed at struck units
 ///   (`StruckChange`) on a creature the go hit, and on the caster when the press named the
 ///   caster: a `StruckChange` aim names the caster only through the primary target, which a
 ///   press at oneself makes the caster (Phantasmal Armor's modifier rows, Spell4Effects
 ///   130474 and 203798 to 203801).
-/// - An absorb or a `StruckChange` row whose aim names the primary target also lands on the
-///   player the press named when that is another player in the caster's sight, at once and
-///   with an end of its own (`player_row`); `press_target` is that player, none for a child a
-///   Proxy started, whose primary target is the plan's stand-in. A player the round hit that
-///   the press did not name is left out.
+/// - An absorb, an Interrupt Armor row (a `PropertyChange` with `armor` set) or a
+///   `StruckChange` row whose aim names the primary target also lands on the player the press
+///   named when that is another player in the caster's sight, at once and with an end of its
+///   own (`player_row`); `press_target` is that player: for a bag press its primary target,
+///   for a child a Proxy aimed at the primary target started on that player the same player,
+///   and none for every other child and cast, whose primary target stands for the caster. A
+///   player the round hit that the press did not name is left out.
 pub fn modifier_applies(
   row row: spell_plan.PropertyModifier,
   unit_id unit_id: Int,
@@ -404,8 +406,8 @@ pub fn modifier_applies(
       || on_the_player
       || on_the_caster
     spell_plan.AbsorbChange(..) -> unit_id == caster.unit_id || on_the_player
-    spell_plan.PropertyChange(..) | spell_plan.LookChange(..) ->
-      unit_id == caster.unit_id
+    spell_plan.PropertyChange(..) -> unit_id == caster.unit_id || on_the_player
+    spell_plan.LookChange(..) -> unit_id == caster.unit_id
   }
 }
 
@@ -434,7 +436,8 @@ fn player_row(
     ))
   let changes_a_player = case row.change {
     spell_plan.StruckChange(..) | spell_plan.AbsorbChange(..) -> True
-    spell_plan.PropertyChange(..) | spell_plan.LookChange(..) -> False
+    spell_plan.PropertyChange(..) -> option.is_some(row.armor)
+    spell_plan.LookChange(..) -> False
   }
   use <- bool.guard(
     when: !names_the_player || !changes_a_player,

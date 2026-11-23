@@ -853,3 +853,51 @@ pub fn augmented_blades_tree_is_read_in_full_and_its_ability_is_planned_test() -
     == [46_935, 57_357, 79_753, 79_757, 79_758, 82_838, 82_839]
     as "the tree is the seven spells the Proxies reach"
 }
+
+pub fn the_proxies_of_the_three_targeted_root_abilities_start_the_five_counted_children_on_the_press_target_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  // The three abilities whose root is a Targeted beneficial kind and whose Proxy rows aim at
+  // the primary target (Spell4Effects.targetFlags 2): 19030 Mind Over Body, 19031 Bolster
+  // and 19033 Phantasmal Armor (`table_rows -- Spell4Effects spellId=ID` for each tier
+  // spell). Each Proxy row counts once, whatever tiers and trees reach it.
+  let abilities = [19_030, 19_031, 19_033]
+  let proxies =
+    list.filter(spell4.all(tables), fn(row) {
+      list.contains(abilities, row.spell4_base_id_base_spell)
+    })
+    |> list.flat_map(fn(row) {
+      let assert Ok(tier) =
+        spell_plan.spell_alone(tables:, sources:, spell4_id: row.id, chain: [])
+        as "each tier of the three abilities plans alone"
+      spell_plan.tree(spell: tier, started: fn(_) { True })
+      |> list.flat_map(fn(spell) {
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
+      })
+    })
+    |> list.unique
+  let on_the_press_target =
+    list.filter(proxies, fn(proxy) {
+      proxy.target == spell_plan.OnPrimaryTarget
+    })
+  assert list.length(on_the_press_target) == 26
+    as "26 Proxy rows aim at the primary target: 19033 15, 19031 10, 19030 1"
+  assert list.all(on_the_press_target, fn(proxy) {
+    proxy.condition == spell_plan.Always
+  })
+    as "each of them has no gate"
+  let children =
+    list.map(on_the_press_target, fn(proxy) { proxy.spell.spell4_id.value })
+  assert list.map(list.unique(children), fn(child) {
+      #(child, list.count(children, fn(other) { other == child }))
+    })
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    == [#(54_912, 1), #(76_766, 14), #(77_864, 1), #(82_438, 9), #(87_531, 1)]
+    as "the five children are 54912 (1 row), 76766 (14), 77864 (1), 82438 (9) and 87531 (1)"
+  assert !list.any(proxies, fn(proxy) {
+    proxy.target == spell_plan.OnEachStruck
+  })
+    as "no Proxy of the three abilities' trees is aimed at each struck unit"
+}
