@@ -1536,10 +1536,7 @@ pub fn a_damage_row_with_no_tick_time_is_read_as_one_strike_test() -> Nil {
 
 /// The client's Spell4Effects row `id` from the fixture.
 fn fixture_effect(id id: Int) -> spell4_effects.Spell4Effects {
-  let assert Ok(row) =
-    spell4_effects.get(tables: fixture_tables.shared(), id: Spell4EffectsId(id))
-    as "the fixture holds the row"
-  row
+  spell_tables.effect_row_in(tables: fixture_tables.shared(), id:)
 }
 
 pub fn the_area_load_builds_a_damage_row_that_names_an_attribute_test() -> Nil {

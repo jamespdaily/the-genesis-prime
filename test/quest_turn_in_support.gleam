@@ -17,20 +17,20 @@ import genesis_prime/game/prerequisite.{type Factions, Factions}
 import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_turn_in.{type Taken}
 import genesis_prime/game/shown
-import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
+import genesis_prime/game/vendor_trade.{type Effect}
 import genesis_prime/message/quest_turn_in.{QuestTurnIn} as quest_turn_in_message
-import genesis_prime/store.{type HeldItem, type QuestRow, HeldItem}
-import genesis_prime/table/id.{Item2Id, RaceId}
+import genesis_prime/store.{type HeldItem, type QuestRow}
+import genesis_prime/table/id.{RaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
-import gleam/option
 import gleam/set.{type Set}
 import planted_table.{type Cell, Integer}
 import player_life_support
 import prerequisite_support
 import quest_support
 import quest_walker_support
+import vendor_support
 
 /// The Unix seconds a turn-in is taken at.
 pub const unix_seconds = 1_700_000_000
@@ -106,28 +106,12 @@ pub fn in_bag(
   index index: Int,
   count count: Int,
 ) -> HeldItem {
-  HeldItem(
-    item_guid: guid,
-    item2_id: Item2Id(item2_id),
-    location: 1,
-    bag_index: index,
-    stack_count: count,
-    words: store.ItemWords(
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: option.None,
-    ),
-  )
+  vendor_support.in_bag(guid:, item2_id:, index:, count:)
 }
 
 /// The credits held as the currencies the rule reads.
 pub fn credits(total total: Int) -> Currencies {
-  currency.with_amount(
-    currencies: currency.from_held(held: []),
-    currency_type_id: currency.credits_type,
-    total:,
-  )
+  vendor_support.credits(total:)
 }
 
 /// The 0x35D the scene's player sends.
@@ -221,12 +205,7 @@ pub fn refused(
 
 /// The codes of the 0x106s among the effects.
 pub fn codes(effects effects: List(Effect)) -> List(Int) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Refuse(code:) -> Ok(code)
-      Send(..) | Log(..) -> Error(Nil)
-    }
-  })
+  vendor_support.codes(effects:)
 }
 
 /// Runs the body on the tables with these rows changed, each a table, an id and the cells

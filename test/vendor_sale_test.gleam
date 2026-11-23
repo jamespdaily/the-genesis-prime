@@ -40,9 +40,7 @@ import genesis_prime/game/vendor
 import genesis_prime/game/vendor_sale.{
   type Taken, Asks, Refused, Sale, SellJunk, SellStack, SoldItem,
 }
-import genesis_prime/game/vendor_trade.{
-  type Effect, Log, NotDecoded, Refuse, Send,
-}
+import genesis_prime/game/vendor_trade.{type Effect, Log, NotDecoded, Refuse}
 import genesis_prime/game/world_entry.{Buyback, BuybackEntry}
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
@@ -68,17 +66,6 @@ import owned_test
 import planted_table.{Integer}
 import player_life_support
 import vendor_support
-
-/// Dorian Walker's vendor window, open on his unit.
-fn walkers_window() -> Option(vendor.Opened) {
-  let assert Ok(walkers) =
-    vendor.get(
-      vendors: vendor_support.stocking(creature_ids: [74_812]),
-      creature_id: id.Creature2Id(74_812),
-    )
-    as "the vendors of the test hold Dorian Walker"
-  Some(vendor.Opened(unit_id: vendor_support.walker_unit, vendor: walkers))
-}
 
 /// The vendors of Dorian Walker with a sell multiplier of `multiplier`.
 fn paying(multiplier multiplier: Float) -> vendor.Vendors {
@@ -110,14 +97,6 @@ fn junk_body() -> BitArray {
   let assert Ok(body) = vendor_sell_junk.encode(vendor_sell_junk.VendorSellJunk)
     as "the message has no field to refuse"
   body
-}
-
-fn credits(total total: Int) -> Currencies {
-  currency.with_amount(
-    currencies: currency.from_held(held: []),
-    currency_type_id: currency.credits_type,
-    total:,
-  )
 }
 
 /// A stack of Item2 `item2_id` at a place.
@@ -178,8 +157,8 @@ fn selling(
   Scene(
     request: SellStack(body: stack_body(location:, bag_index: index, quantity:)),
     items: [],
-    credits: credits(total: 100),
-    opened: walkers_window(),
+    credits: vendor_support.credits(total: 100),
+    opened: vendor_support.walkers_window(),
     life: player_life_support.alive(),
     picture: vendor_support.picture_with_walker(gap: 1.0),
     vendors: vendor_support.stocking(creature_ids: [74_812]),
@@ -240,16 +219,6 @@ fn refused(scene scene: Scene) -> List(Effect) {
   effects
 }
 
-/// The codes of the 0x106s among the effects.
-fn codes(effects effects: List(Effect)) -> List(Int) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Refuse(code:) -> Ok(code)
-      Send(..) | Log(..) -> Error(Nil)
-    }
-  })
-}
-
 /// The level and text of the one log line and the code of the one 0x106 among the effects
 /// of a refusal that is logged.
 fn logged_code(effects effects: List(Effect)) -> #(step.LogLevel, Int) {
@@ -261,16 +230,6 @@ fn logged_text(effects effects: List(Effect)) -> #(step.LogLevel, Int, String) {
   let assert [Log(level:, text:), Refuse(code:)] = effects
     as "a logged refusal is a log line, then the 0x106"
   #(level, code, text)
-}
-
-/// The frames among the effects.
-fn frames(effects effects: List(Effect)) -> List(Frame) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Send(frame:) -> Ok(frame)
-      Log(..) | Refuse(..) -> Error(Nil)
-    }
-  })
 }
 
 /// The 0xBA entry the client reads for a sale of `quantity` of an item for `paid` credits:
@@ -332,7 +291,8 @@ fn entry_in(
 
 /// Dorian Walker's window, open on the unit `unit_id`.
 fn window_on(unit_id unit_id: Int) -> Option(vendor.Opened) {
-  let assert Some(vendor.Opened(vendor: walkers, ..)) = walkers_window()
+  let assert Some(vendor.Opened(vendor: walkers, ..)) =
+    vendor_support.walkers_window()
     as "the window of the test is open"
   Some(vendor.Opened(unit_id:, vendor: walkers))
 }
@@ -427,7 +387,7 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
     Scene(
       ..sell(items:, index: 2, quantity: 7),
       vendors: paying(multiplier: 1.55),
-      credits: credits(total: 1000),
+      credits: vendor_support.credits(total: 1000),
     )
   let sale = asked(scene:)
   assert sale
@@ -484,7 +444,7 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
       ),
     ])
     as "the sale is the buyback list's entry 3, the next id 4"
-  let assert [total, gain, removed, added] = frames(effects:)
+  let assert [total, gain, removed, added] = vendor_support.frames(effects:)
     as "a 0x919, a 0xDD, then a 0x148 and a 0xBA for the stack"
   assert_total(frame: total, total: 1105)
   // opcode.0xdd: the 1105 less the 1000 held
@@ -557,7 +517,7 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the 2 items sold and the 2 credits"
-  let assert [total, gain, lowered, added] = frames(effects:)
+  let assert [total, gain, lowered, added] = vendor_support.frames(effects:)
     as "a 0x919, a 0xDD, then a 0x17F and a 0xBA"
   assert_total(frame: total, total: 102)
   // opcode.0xdd: the 102 less the 100 held
@@ -575,7 +535,9 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
 pub fn a_sell_quantity_of_0_is_refused_with_no_quantity_test() -> Nil {
   use <- owned_test.run(10_000)
   let items = [in_bag(guid: 12, item2_id: 20_791, index: 0, count: 5)]
-  assert codes(effects: refused(scene: sell(items:, index: 0, quantity: 0)))
+  assert vendor_support.codes(
+      effects: refused(scene: sell(items:, index: 0, quantity: 0)),
+    )
     == [24]
     as "enum 24, Vendor_NoQuantity"
 }
@@ -585,7 +547,9 @@ pub fn a_sell_quantity_over_the_stack_count_is_refused_test() -> Nil {
   let items = [in_bag(guid: 12, item2_id: 20_791, index: 0, count: 5)]
   assert asked(scene: sell(items:, index: 0, quantity: 5)).first.sold_count == 5
     as "the whole count may be sold"
-  assert codes(effects: refused(scene: sell(items:, index: 0, quantity: 6)))
+  assert vendor_support.codes(
+      effects: refused(scene: sell(items:, index: 0, quantity: 6)),
+    )
     == [19]
     as "0x1403d6a10: a quantity over the stack's count is enum 19"
   // A held count of 0 reads as 1 (0x1403d6a10).
@@ -593,7 +557,7 @@ pub fn a_sell_quantity_over_the_stack_count_is_refused_test() -> Nil {
   assert asked(scene: sell(items: uncounted, index: 0, quantity: 1)).first.sold_count
     == 1
     as "a count of 0 reads as 1, so one may be sold"
-  assert codes(
+  assert vendor_support.codes(
       effects: refused(scene: sell(items: uncounted, index: 0, quantity: 2)),
     )
     == [19]
@@ -605,7 +569,9 @@ pub fn a_sell_of_more_than_one_of_an_item_that_does_not_stack_is_refused_with_st
   // Item2 13176's joined flags lack 4 (it does not stack: maxStackCount 1); a held count
   // of 3 stands for a row the client would hold only by a changed count.
   let items = [in_bag(guid: 13, item2_id: 13_176, index: 0, count: 3)]
-  assert codes(effects: refused(scene: sell(items:, index: 0, quantity: 2)))
+  assert vendor_support.codes(
+      effects: refused(scene: sell(items:, index: 0, quantity: 2)),
+    )
     == [11]
     as "0x1403d6a10: more than one of an item that does not stack is enum 11, Vendor_StackSize"
   assert asked(scene: sell(items:, index: 0, quantity: 1)).first.paid == 78
@@ -618,7 +584,9 @@ pub fn an_item_with_no_sell_price_is_refused_with_i_wont_buy_that_test() -> Nil 
   // credit amount is 0 (`item_price_test`).
   list.each([9939, 1154], fn(item2_id) {
     let items = [in_bag(guid: 14, item2_id:, index: 0, count: 1)]
-    assert codes(effects: refused(scene: sell(items:, index: 0, quantity: 1)))
+    assert vendor_support.codes(
+        effects: refused(scene: sell(items:, index: 0, quantity: 1)),
+      )
       == [23]
       as "0x14040d160.sell_cleared and 0x1403d6a10: an item with no sell price is enum 23"
   })
@@ -647,7 +615,7 @@ pub fn an_item_in_the_bank_is_refused_and_an_empty_place_is_refused_with_bad_ite
     ]
     let scene =
       Scene(..selling(location:, index: 0, quantity: 1), items: banked)
-    assert codes(effects: refused(scene:)) == [23]
+    assert vendor_support.codes(effects: refused(scene:)) == [23]
       as "0x1403d6a10: a bank location is enum 23"
   })
   // The client sends nothing for a place that holds no item, so 18 is the server's choice.
@@ -674,24 +642,27 @@ pub fn an_item_failing_two_checks_gets_the_code_of_the_check_the_client_runs_fir
       picture: far,
     )
   }
-  assert codes(effects: refused(scene: bag_scene(0))) == [24]
+  assert vendor_support.codes(effects: refused(scene: bag_scene(0))) == [24]
     as "a worn bag sold in a quantity of 0 is refused with 24, the quantity check, not 25"
   assert logged_code(effects: refused(scene: bag_scene(1))) == #(LogWarning, 25)
     as "a worn bag with a vendor beyond the window's 9.0 is refused with 25 first: the range comes last"
-  assert codes(effects: refused(scene: bag_scene(2))) == [19]
+  assert vendor_support.codes(effects: refused(scene: bag_scene(2))) == [19]
     as "and a quantity over its count of 1 is refused with 19, before the bag check"
   // 13176 does not stack: two of three is 11, and 6 of 3 is 19 first.
   let unstacking = [in_bag(guid: 13, item2_id: 13_176, index: 0, count: 3)]
   let far_sale = fn(items, quantity) {
     Scene(..sell(items:, index: 0, quantity:), picture: far)
   }
-  assert codes(effects: refused(scene: far_sale(unstacking, 6))) == [19]
+  assert vendor_support.codes(effects: refused(scene: far_sale(unstacking, 6)))
+    == [19]
     as "0x1403d6a10: the count check is before the stack-size check"
-  assert codes(effects: refused(scene: far_sale(unstacking, 2))) == [11]
+  assert vendor_support.codes(effects: refused(scene: far_sale(unstacking, 2)))
+    == [11]
     as "and the stack-size check is before the range"
   // An item with no price is 23 from the client's price check, before the range's 17.
   let unpriced = [in_bag(guid: 14, item2_id: 9939, index: 0, count: 1)]
-  assert codes(effects: refused(scene: far_sale(unpriced, 1))) == [23]
+  assert vendor_support.codes(effects: refused(scene: far_sale(unpriced, 1)))
+    == [23]
     as "0x1403d6a10 ends with the price check, which is before the range"
   // The server's own refusals come after all of the client's checks, the range included.
   let worn_item = [
@@ -821,7 +792,7 @@ pub fn a_sale_past_the_credit_cap_stops_credits_at_the_cap_test() -> Nil {
   let scene =
     Scene(
       ..sell(items:, index: 0, quantity: 3),
-      credits: credits(total: 499_990),
+      credits: vendor_support.credits(total: 499_990),
     )
   let sale = asked(scene:)
   assert sale.first.paid == 30 as "the sale pays 30"
@@ -835,7 +806,7 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
   let scene =
     Scene(
       ..sell(items:, index: 0, quantity: 3),
-      credits: credits(total: 500_000),
+      credits: vendor_support.credits(total: 500_000),
     )
   let sale = asked(scene:)
   assert sale.after == 500_000 as "the credits stay at the cap"
@@ -859,7 +830,7 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
     )
   assert left == [] as "the item still leaves"
   assert currency.credits(currencies: held_credits) == 500_000
-  let assert [total, removed, added] = frames(effects:)
+  let assert [total, removed, added] = vendor_support.frames(effects:)
   assert_total(frame: total, total: 500_000)
   assert_removed(frame: removed, guid: 11)
   assert_entry(
@@ -969,7 +940,8 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
   assert list.map(buyback.entries, fn(entry) { entry.buyback_id }) == [1, 2, 3]
     as "each stack is an entry, from the next id"
   assert buyback.next_id == 4
-  let assert [total, gain, r1, b1, r2, b2, r3, b3] = frames(effects:)
+  let assert [total, gain, r1, b1, r2, b2, r3, b3] =
+    vendor_support.frames(effects:)
     as "one 0x919 and one 0xDD, then a 0x148 and a 0xBA for each stack"
   assert_total(frame: total, total: 106)
   // opcode.0xdd: one line for the whole sale, the 106 less the 100 held
@@ -1177,7 +1149,7 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
   assert left == [bagged]
     as "the worn item leaves the held items; the stack in the bags stays"
   assert currency.credits(currencies: held_credits) == 178
-  let assert [total, gain, removed, added] = frames(effects:)
+  let assert [total, gain, removed, added] = vendor_support.frames(effects:)
     as "a 0x919, a 0xDD, then a 0x148 and a 0xBA, as for a stack in the bags"
   assert_total(frame: total, total: 178)
   // opcode.0xdd: the 178 less the 100 held
@@ -1267,7 +1239,7 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
     as "the Glory held is the total the store left"
   assert currency.credits(currencies: held_currencies) == 100
     as "the credits are as they were"
-  let assert [total, gain, removed, added] = frames(effects:)
+  let assert [total, gain, removed, added] = vendor_support.frames(effects:)
     as "a 0x919, a 0xDD, then a 0x148 and a 0xBA"
   assert_total_of(frame: total, kind: 6, total: 60)
   // opcode.0xdd: the 4-bit field is the currency type 7, Glory, and the amount the 60 less the 0 held
@@ -1314,7 +1286,7 @@ pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_k
   let items = [in_bag(guid: 21, item2_id: 16_053, index: 0, count: 1)]
   let renown =
     currency.with_amount(
-      currencies: credits(total: 100),
+      currencies: vendor_support.credits(total: 100),
       currency_type_id: 2,
       total: 4000,
     )
@@ -1346,7 +1318,7 @@ pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_k
     )
   assert currency.held(currencies: held_currencies, currency_type_id: 2) == 5000
   assert currency.credits(currencies: held_currencies) == 100
-  let assert [total, gain, _, added] = frames(effects:)
+  let assert [total, gain, _, added] = vendor_support.frames(effects:)
   assert_total_of(frame: total, kind: 1, total: 5000)
   // opcode.0xdd: what Renown gained after the cap, the 5,000 less the 4,000 held, not the 2,500 the item pays
   assert_gain(frame: gain, currency_type_id: 2, amount: 1000)
@@ -1409,7 +1381,7 @@ pub fn a_buyback_entry_carries_the_sold_items_word_test() -> Nil {
   let assert [entry] = buyback.entries as "the sale is one entry"
   assert entry.words.random_stats == word
     as "the entry holds the word the store saved with the stack"
-  let assert [_, _, _, added] = frames(effects:)
+  let assert [_, _, _, added] = vendor_support.frames(effects:)
     as "a 0x919, a 0xDD, a 0x148 and a 0xBA for the stack"
   let assert Ok(buyback_added.BuybackAdded(entry: sent)) =
     buyback_added.decode(added.body)
@@ -1461,7 +1433,7 @@ pub fn a_sale_sends_the_gain_after_the_total_test() -> Nil {
         ),
       ]),
     )
-  let assert [total, gain, removed, added] = frames(effects:)
+  let assert [total, gain, removed, added] = vendor_support.frames(effects:)
     as "a 0x919, a 0xDD, then the stack's 0x148 and 0xBA"
   assert_total(frame: total, total: 130)
   assert_gain(frame: gain, currency_type_id: 1, amount: 30)

@@ -44,6 +44,7 @@ import gleam/option.{None, Some}
 import owned_test
 import properties_support
 import qcheck
+import spell_tables
 
 /// An effect row of the client: dataBits00 1.0 as a float, dataBits01 0, and the
 /// parameters (type 12 Assault Power, type 13 Support Power, type 10 level).
@@ -69,10 +70,7 @@ fn level_one(rating rating: Float, support support: Float) -> damage.Attacker {
 
 /// The client's Spell4Effects row `id` from the fixture.
 fn client_row(id id: Int) -> spell4_effects.Spell4Effects {
-  let assert Ok(row) =
-    spell4_effects.get(tables: fixture_tables.shared(), id: Spell4EffectsId(id))
-    as "the fixture holds the row"
-  row
+  spell_tables.effect_row_in(tables: fixture_tables.shared(), id:)
 }
 
 /// The formula of the client's damage or heal row `id`, as the area load builds it.

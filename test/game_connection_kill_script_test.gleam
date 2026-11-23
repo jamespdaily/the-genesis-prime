@@ -17,7 +17,6 @@
 import experience_support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/objective
 import genesis_prime/step.{type ConnectionStep}
@@ -38,21 +37,16 @@ fn progress_frame(
   index index: Int,
   progress progress: Int,
 ) -> #(Int, BitArray) {
-  #(
-    0x0361,
-    message_support.packed([#(15, 5895), #(32, index), #(32, progress)]),
-  )
+  message_support.quest_progress_frame(quest: 5895, index:, progress:)
 }
 
 fn state_frame(state state: Int) -> #(Int, BitArray) {
-  #(0x035C, message_support.packed([#(15, 5895), #(32, state), #(32, 0)]))
+  message_support.quest_state_frame(quest: 5895, state:)
 }
 
 /// The ids and bodies the step writes to the client, in order.
 fn written(taken taken: ConnectionStep(Request)) -> List(#(Int, BitArray)) {
-  list.map(connection_support.written(taken:), fn(frame: Frame) {
-    #(frame.message_id, frame.body)
-  })
+  connection_support.written_pairs(taken:)
 }
 
 /// What the step tells of quests: its 0x361 and 0x35c frames.

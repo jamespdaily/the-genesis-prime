@@ -20,6 +20,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/miss_reason
+import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
@@ -173,9 +174,23 @@ pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a
         instance_id: 1,
         delay_ms: 166,
         lifetime_ms: 0,
-        result: spell_effect_result.Damage(SpellEffectDamage(
-          description: tech_hit(combat_result: combat_result.Hit).damage,
-        )),
+        result: spell_effect_result.Damage(
+          SpellEffectDamage(
+            description: SpellDamageDescription(
+              raw_damage: 14,
+              scaled_raw_damage: 14,
+              absorbed: 0,
+              shield_absorbed: 0,
+              health_damage_with_overkill: 14,
+              overkill: 0,
+              glance: 0,
+              killed: 0,
+              combat_result: combat_result.Hit,
+              damage_type: damage_type.Tech,
+              hits: [],
+            ),
+          ),
+        ),
       ),
     ]
     as "the answer's description rides in the target info with the effect row and its delay (opcode.0x7f4.target_info)"

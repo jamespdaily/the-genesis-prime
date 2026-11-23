@@ -21,8 +21,8 @@
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{
-  type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, ConnectionId,
-  LogError, OwnEvent, Started, Told, WatchEnded, WatchId,
+  type ServiceStep, Asked, CallerId, ConnectionId, LogError, OwnEvent, Started,
+  Told, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/map.{
   type State, Join, Joined, Leave, Moved, Noticed, SeenBy, UnseenBy,
@@ -47,16 +47,12 @@ const started_at_ms = 5000
 fn started() -> State {
   let state = map_support.empty(incarnation: 1)
   let #(state, _) =
-    feed(state: state, at_ms: started_at_ms, event: OwnEvent(Started))
+    map_spawn_support.feed(
+      state: state,
+      at_ms: started_at_ms,
+      event: OwnEvent(Started),
+    )
   state
-}
-
-fn feed(
-  state state: State,
-  at_ms at_ms: Int,
-  event event: Event(ServiceEvent(map.Message)),
-) -> #(State, ServiceStep(map.Outgoing)) {
-  map.step(state, support.input_at_ms(ms: at_ms, event:))
 }
 
 /// A place `x` units along the world's x axis.
@@ -84,7 +80,7 @@ fn join_for(
   elapsed_ms elapsed_ms: Int,
   stay stay: Int,
 ) -> #(State, ServiceStep(map.Outgoing)) {
-  feed(
+  map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
     event: OwnEvent(Asked(
@@ -109,7 +105,7 @@ fn move(
   x x: Float,
   elapsed_ms elapsed_ms: Int,
 ) -> #(State, ServiceStep(map.Outgoing)) {
-  feed(
+  map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
     event: OwnEvent(
@@ -128,7 +124,7 @@ fn leave(
   connection connection: Int,
   elapsed_ms elapsed_ms: Int,
 ) -> #(State, ServiceStep(map.Outgoing)) {
-  feed(
+  map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
     event: OwnEvent(Asked(
@@ -280,7 +276,7 @@ fn ends(
   connection connection: Int,
   elapsed_ms elapsed_ms: Int,
 ) -> #(State, ServiceStep(map.Outgoing)) {
-  feed(
+  map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
     event: WatchEnded(WatchId(connection)),

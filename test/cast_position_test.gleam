@@ -30,7 +30,6 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/game/spend
 import genesis_prime/game/start_place
-import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import gleam/dict
@@ -162,14 +161,9 @@ fn hit(unit_id unit_id: Int) -> cast_state.Struck {
 
 /// The child casts a step started, each as (Spell4 id, primary target unit id).
 fn children_started(effects effects: List(Effect)) -> List(#(Int, Int)) {
-  list.map(
-    support.frames_of(message_id: spell_started.message_id, effects:),
-    fn(frame) {
-      let assert Ok(decoded) = spell_started.decode(frame.body)
-        as "a 0x7ff the rule wrote decodes"
-      #(decoded.spell4_id, decoded.primary_target_unit_id)
-    },
-  )
+  list.map(support.started_in(effects:), fn(decoded) {
+    #(decoded.spell4_id, decoded.primary_target_unit_id)
+  })
   |> list.sort(fn(first, second) {
     int.compare(first.1, second.1)
     |> order.break_tie(with: int.compare(first.0, second.0))

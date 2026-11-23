@@ -41,8 +41,6 @@ import genesis_prime/game/spell_plan.{
   type Plans, type Spell, CastGate, NoCasterCast, RequirementWaiver, Spell,
 }
 import genesis_prime/game/spend
-import genesis_prime/message/cast_result
-import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{type TimerId, LogWarning, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/int
@@ -74,24 +72,6 @@ fn refusals(effects effects: List(Effect)) -> List(Int) {
   support.refusal_results(effects:)
 }
 
-/// The Spell4 id and the result of each 0x7fc, and the client cast id.
-fn refused_frames(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_cast_refused.message_id {
-      True -> {
-        let assert Ok(refused) = spell_cast_refused.decode(frame.body)
-          as "a 0x7fc the rule wrote decodes"
-        Ok(#(
-          refused.client_cast_id,
-          refused.spell4_id,
-          cast_result.to_value(refused.result),
-        ))
-      }
-      False -> Error(Nil)
-    }
-  })
-}
-
 // ---- 5: Spectral Form ----
 
 /// An Esper whose bag holds Spectral Form (Spell4Base 38012) at index 0.
@@ -115,7 +95,7 @@ pub fn an_esper_out_of_combat_pressing_spectral_form_is_refused_151_and_nothing_
       bag: 0,
       at: 1000,
     )
-  assert refused_frames(effects:) == [#(9, 58_586, 151)]
+  assert support.refused_with(effects:) == [#(9, 58_586, 151)]
     as "Prerequisite 903 needs the caster in combat; the press is refused 0x7fc {client id 9, Spell4 58586, 151} (0x1403ace00)"
   assert support.ids(frames: support.writes(effects:)) == [0x07FC]
     as "nothing else is written: no 0x7fd, no cast"
@@ -378,7 +358,7 @@ pub fn a_press_within_500_ms_of_its_cooldowns_end_is_held_with_nothing_written_a
   assert after_ms == 300 as "the cooldown's end"
   let #(_, at_the_end) =
     fired_by(state: held, caster: out_of_combat, timer:, at: 6000)
-  assert refused_frames(effects: at_the_end) == [#(9, 5001, 151)]
+  assert support.refused_with(effects: at_the_end) == [#(9, 5001, 151)]
     as "at its start the condition is checked as the client would have: 0x7fc {client id 9, Spell4 5001, 151}"
   assert !list.contains(
     support.ids(frames: support.writes(effects: at_the_end)),
@@ -466,7 +446,7 @@ pub fn a_press_held_behind_the_current_cast_is_checked_again_when_that_cast_clea
     as "a press with 500 ms or less of the current cast left is held and nothing is written (cast.press_queue)"
   let #(_, cleared) =
     fired_by(state: held, caster: out_of_combat, timer: go_timer, at: 2000)
-  assert refused_frames(effects: cleared) == [#(9, 5001, 151)]
+  assert support.refused_with(effects: cleared) == [#(9, 5001, 151)]
     as "when the go clears the current cast the held press starts and its condition is checked then: out of combat, 151"
 }
 
@@ -517,7 +497,7 @@ pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_a
     as "the spell's cooldown of 2000 ms from the go at 1000"
   let #(state, repeated) =
     fired_by(state:, caster: out_of_combat, timer: repeat_timer, at: 3000)
-  assert refused_frames(effects: repeated) == [#(0, 5001, 151)]
+  assert support.refused_with(effects: repeated) == [#(0, 5001, 151)]
     as "the repeat is checked and refused 0x7fc {client id 0, Spell4 5001, 151}"
   assert support.started_timers(effects: repeated) == []
     as "the refused repeat arms no further repeat"

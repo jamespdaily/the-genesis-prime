@@ -21,7 +21,6 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/hit.{Worked}
 import genesis_prime/game/strike_tell
-import genesis_prime/message/player_health
 import genesis_prime/step.{type ConnectionStep, OwnEffect}
 import genesis_prime/table/loader/store as store_tables
 import gleam/float
@@ -99,16 +98,6 @@ fn amounts_told(
   })
 }
 
-/// The healths the step's 0x92f frames carry, in order.
-fn healths(taken taken: ConnectionStep(Request)) -> List(Int) {
-  connection_support.decoded(
-    connection_support.heard(taken, connection_support.keyed()),
-    player_health.message_id,
-    player_health.decode,
-  )
-  |> list.map(fn(told) { told.health })
-}
-
 /// Half of a health, rounded as the client rounds a stat part.
 fn half_of(health health: Int) -> Int {
   float.round(0.5 *. int.to_float(health))
@@ -140,7 +129,7 @@ pub fn the_go_reads_the_casters_health_as_it_is_at_the_go_test() -> Nil {
         damage: 1000,
       ),
     )
-  let assert [after_the_blow] = healths(taken: struck)
+  let assert [after_the_blow] = connection_support.healths(taken: struck)
     as "the blow lowers the health: one 0x92f tells the client the new value"
   let #(_, steps) =
     connection_support.casts_run(
@@ -189,7 +178,7 @@ pub fn a_tick_reads_the_casters_vitals_at_that_tick_test() -> Nil {
         damage: 1000,
       ),
     )
-  let assert [after_the_blow] = healths(taken: struck)
+  let assert [after_the_blow] = connection_support.healths(taken: struck)
     as "the blow lowers the health: one 0x92f"
   let #(_, rest) =
     connection_support.casts_run(

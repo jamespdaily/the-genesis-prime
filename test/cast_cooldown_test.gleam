@@ -179,13 +179,9 @@ fn delays_of(effects effects: List(Effect)) -> List(Int) {
   list.map(support.started_timers(effects:), fn(started) { started.1 })
 }
 
-fn numbers_of(timers timers: List(TimerId)) -> List(Int) {
-  list.map(timers, support.timer_number) |> list.sort(int.compare)
-}
-
 /// The timers a step started, in numbers.
 fn started_numbers(effects effects: List(Effect)) -> List(Int) {
-  numbers_of(
+  support.timer_numbers(
     timers: list.map(support.started_timers(effects:), fn(started) { started.0 }),
   )
 }
@@ -693,7 +689,9 @@ pub fn taking_the_casts_node_off_the_caster_drops_the_row_and_cancels_its_timers
     support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   let #(state, removal) =
     support.press(plans:, state:, bag: bag_of_remover, at: 2000)
-  assert numbers_of(timers: support.cancelled_timers(effects: removal))
+  assert support.timer_numbers(timers: support.cancelled_timers(
+      effects: removal,
+    ))
     == started_numbers(effects: first)
     as "the row's end and the node's end, the two timers the first press started"
   let after = slow_cast(plans:, state:, at: 3000)

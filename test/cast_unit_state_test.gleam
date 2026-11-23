@@ -406,7 +406,7 @@ type Shown {
 }
 
 fn place_of_the_unit() -> start_place.Place {
-  support.place_beside_the_player(gap: 10.0)
+  support.place_beside_the_player(radius: creature_radius, gap: 10.0)
 }
 
 fn picture_of(shown shown: Shown) -> shown.Picture {

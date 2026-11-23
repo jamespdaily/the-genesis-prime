@@ -1701,30 +1701,21 @@ fn ally_healed() -> cast_state.Struck {
   )
 }
 
-/// Each heal tick the effects ask of the ally answered with `ally_healed`, the answer's
-/// effects following the ask.
+/// Each heal tick the effects ask of the ally answered with `ally_healed`.
 fn heal_ticks_answered(
   state state: State,
   caster caster: Caster,
   effects effects: List(Effect),
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  list.fold(effects, #(state, []), fn(so_far, effect) {
-    let #(state, done) = so_far
-    case effect {
-      cast_state.TickStrike(asked:) -> {
-        let #(state, closed) =
-          cast.ticked(
-            cast: state,
-            caster:,
-            now: support.at(ms:),
-            asked:,
-            struck: Some(ally_healed()),
-          )
-        #(state, list.append(done, [effect, ..closed]))
-      }
-      _ -> #(state, list.append(done, [effect]))
-    }
+  support.ticks_closed(state:, effects:, close: fn(state, asked) {
+    cast.ticked(
+      cast: state,
+      caster:,
+      now: support.at(ms:),
+      asked:,
+      struck: Some(ally_healed()),
+    )
   })
 }
 
@@ -1871,14 +1862,7 @@ fn run_of(course course: Course) -> Run {
 
 /// Every 0x7ff of the child Spell4 87531 with the time it is written at.
 fn child_starts_of(run run: Run) -> List(#(Int, spell_started.SpellStarted)) {
-  list.flat_map(run.steps, fn(step) {
-    list.filter_map(support.started_in(effects: step.1), fn(start) {
-      case start.spell4_id == 87_531 {
-        True -> Ok(#(step.0, start))
-        False -> Error(Nil)
-      }
-    })
-  })
+  support.starts_of(steps: run.steps, spell4_id: 87_531)
 }
 
 /// An absorb pool told to the ally: the source it was told with, its amount, when it was
@@ -2032,7 +2016,8 @@ pub fn a_periodic_proxy_aimed_at_the_primary_target_ticks_on_the_player_the_pres
   // round(0.1 x 13.921875) = 1; a caster of 400 Support Rating has 100, so a pool of 10. The
   // server's choice: the tick of a Proxy aimed at the primary target starts its child on the
   // player the press named, as the go does. The last node of a cast ends with its 0x7fe and
-  // no 0x811 (`cast.nodes_ended`).
+  // no 0x811: a finish 0x7fe destroys every node of the cast and then the cast
+  // (`cast.target_node_end`), so a 0x811 first would add nothing (`opcode.0x811`).
   let go = 1000
   let tick = fn(k) { go + 1000 * k }
   let seeing_ally = fn(_) { esper_seeing(players: [ally]) }

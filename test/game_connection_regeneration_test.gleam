@@ -36,7 +36,7 @@ import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, CancelTimer, OwnEffect,
-  OwnEvent, StartTimer, TimerFired, TimerId, Unwatch, Watch,
+  OwnEvent, TimerFired, TimerId, Unwatch, Watch,
 }
 import gleam/list
 import gleam/option.{Some}
@@ -61,13 +61,7 @@ fn entering_saved(
 
 /// The timers a step starts, as (timer, after_ms).
 fn started(taken: ConnectionStep(Request)) -> List(#(step.TimerId, Int)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(StartTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
+  game_connection_support.timers_started(taken:)
 }
 
 /// The timers a step cancels.

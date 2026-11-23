@@ -266,3 +266,8 @@ pub fn lines_logged(
     #(level, text)
   })
 }
+
+/// The timers the effects start or cancel.
+pub fn timers(effects effects: List(strike.Effect)) -> List(strike.Effect) {
+  only(effects:, kinds: [TimerStarted, TimerCancelled])
+}

@@ -44,9 +44,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
-import genesis_prime/table/id.{
-  PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
-}
+import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, UnitProperty2Id}
 import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
@@ -337,24 +335,12 @@ pub fn a_conversion_row_naming_no_property_or_a_nan_share_fails_the_load_test() 
 
 // ---- the plan: the client's tables ----
 
-/// The spell of this Spell4 id inside the tree of the plan of this Spell4Base.
-fn in_tree(base base: Int, spell4_id spell4_id: Int) -> spell_plan.Spell {
-  let plans = spell_plan.plans(tables: client_tables.shared())
-  let assert Ok(root) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
-    as "the plans hold the base"
-  let assert Ok(found) =
-    spell_plan.tree(spell: root, started: fn(_) { True })
-    |> list.find(fn(spell) { spell.spell4_id == Spell4Id(spell4_id) })
-    as "the tree holds the spell"
-  found
-}
-
 pub fn onslaughts_42908_lists_109482_on_the_caster_for_8_seconds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   // Spell4Base 30828 is the Warrior's innate active (Class 1); 46867 reaches 42908
   // through its ungated Proxy 127637.
-  let spell = in_tree(base: 30_828, spell4_id: 42_908)
+  let spell = spell_tables.in_tree(base: 30_828, spell4_id: 42_908)
   assert spell_tables.lasting_row_of(spell:, effect_id: 109_482)
     == Ok(spell_plan.Lasting(
       effect_id: Spell4EffectsId(109_482),
@@ -371,7 +357,7 @@ pub fn the_stalkers_stealth_child_holds_91018_gated_on_caster_and_target_prerequ
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   // Spell4Base 30075 is the Stalker's innate active (Class 5); 46073 starts 38784.
-  let spell = in_tree(base: 30_075, spell4_id: 38_784)
+  let spell = spell_tables.in_tree(base: 30_075, spell4_id: 38_784)
   let assert Ok(row) = spell_tables.lasting_row_of(spell:, effect_id: 91_018)
   let assert GatedOnCasterAndTarget(caster: [caster], target:) = row.condition
   assert prerequisite.id(prerequisite: caster) == PrerequisiteId(11_311)
@@ -384,7 +370,7 @@ pub fn the_engineers_passive_holds_229304_as_a_conversion_from_47_to_60_until_re
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   // Spell4Base 29076 is the Engineer's innate passive (Class 2), whose spell is 45000.
-  let spell = in_tree(base: 29_076, spell4_id: 45_000)
+  let spell = spell_tables.in_tree(base: 29_076, spell4_id: 45_000)
   let assert Ok(row) =
     list.find(
       spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier),

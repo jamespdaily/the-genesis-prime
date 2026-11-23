@@ -7,6 +7,9 @@ import ask_support
 import client_tables
 import driven_time
 import genesis_prime/client_archive
+import genesis_prime/connection/cipher
+import genesis_prime/connection/encrypted_frame
+import genesis_prime/connection/frame.{Frame}
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
@@ -14,6 +17,7 @@ import genesis_prime/game/zone_welcome
 import genesis_prime/login/auth_connection
 import genesis_prime/login/recorded_realm
 import genesis_prime/login/sts_connection
+import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/recorded_message.{type Received, type Unread, FramesRead}
 import genesis_prime/seed.{type Seed}
 import genesis_prime/server
@@ -507,4 +511,26 @@ pub fn replay_tree(
       #(result, wire_replay.finish(replay))
     }
   }
+}
+
+/// A message the client sends in its wrapper, under the base key.
+pub fn sent(id id: Int, body body: BitArray) -> BitArray {
+  let assert Ok(bytes) =
+    encrypted_frame.wrap(
+      encrypted_frame.ClientWrapper,
+      Frame(message_id: id, body:),
+      cipher.base(),
+    )
+    as "the frame is within the size limit"
+  bytes
+}
+
+/// A message the client sends inside a 0x038C, as it sends world messages.
+pub fn carried(id id: Int, body body: BitArray) -> BitArray {
+  let assert Ok(inner) = frame.encode(message_id: id, body:)
+    as "the frame is within the size limit"
+  let assert Ok(carrier) =
+    world_message.encode(WorldMessage(send_kind: 3, inner_frame: inner))
+    as "the carrier encodes"
+  sent(id: 0x038C, body: carrier)
 }

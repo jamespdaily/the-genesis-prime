@@ -139,7 +139,7 @@ fn unit(id unit_id: Int, of creature_id: Int, at gap: Float) -> Unit {
 }
 
 fn place_of(unit unit: Unit) -> start_place.Place {
-  support.place_beside_the_player(gap: unit.gap)
+  support.place_beside_the_player(radius: creature_radius, gap: unit.gap)
 }
 
 fn picture_of(scene scene: Scene) -> shown.Picture {

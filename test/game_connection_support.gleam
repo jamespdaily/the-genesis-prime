@@ -59,6 +59,7 @@ import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/player_health
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/spell_cast_refused
@@ -74,7 +75,10 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
-import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_movement
+import genesis_prime/message/unit_position_command.{
+  type UnitPositionCommand, UnitPositionCommand,
+}
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stealth
 import genesis_prime/message/vendor_buyback.{VendorBuyback}
@@ -1748,20 +1752,22 @@ pub fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
 /// The bag index of an ability of the Stalker's Novice set (class 5, Exile) at level 1,
 /// from the fixture's rows.
 pub fn stalker_bag_index_of(base base: Int) -> Int {
-  let assert Ok(set) =
-    loadout.of(
-      tables: fixture_tables.shared(),
-      class_id: ClassId(5),
-      faction_id: 166,
-    )
-    as "the fixture holds the Stalker's Novice set"
-  let assert Ok(index) =
-    list.index_map(ability_book.bag(loadout: set, level: 1), fn(held, index) {
-      #(held, index)
-    })
-    |> list.key_find(Spell4BaseId(base))
-    as "the Stalker's bag holds the ability"
-  index
+  bag_index_of(
+    tables: fixture_tables.shared(),
+    class_id: 5,
+    level: 1,
+    ability: base,
+  )
+}
+
+/// The healths the step's 0x92f frames carry, in order.
+pub fn healths(taken taken: ConnectionStep(Request)) -> List(Int) {
+  decoded(
+    heard(taken:, cipher: keyed()),
+    player_health.message_id,
+    player_health.decode,
+  )
+  |> list.map(fn(told) { told.health })
 }
 
 /// The Medic of level 1 in the world, who presses Paralytic Surge at bag index 2.
@@ -3494,4 +3500,36 @@ pub fn session_in(status status: state.Status) -> state.Session {
     held: [],
     status:,
   )
+}
+
+/// The timers the step starts with their waits, in order.
+pub fn timers_started(
+  taken taken: ConnectionStep(Request),
+) -> List(#(step.TimerId, Int)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(StartTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The ids and bodies the step writes to the client, in order.
+pub fn written_pairs(
+  taken taken: ConnectionStep(Request),
+) -> List(#(Int, BitArray)) {
+  list.map(written(taken:), fn(frame: Frame) { #(frame.message_id, frame.body) })
+}
+
+/// The position the one 0x638 among the frames puts the player at.
+pub fn placed_at(frames frames: List(Frame)) -> UnitPositionCommand {
+  let assert [placement] =
+    list.filter(frames, fn(frame) { frame.message_id == 0x0638 })
+    as "the move writes one 0x638"
+  let assert Ok(moved) = unit_movement.decode(placement.body)
+    as "the frame is a 0x638"
+  let assert [relayed_movement.Position(position), ..] = moved.commands
+    as "the first command is the position"
+  position
 }

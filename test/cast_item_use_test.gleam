@@ -36,7 +36,6 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_group
-import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse} as use_message
@@ -281,23 +280,12 @@ pub fn use_item_in(
   )
 }
 
-/// What the effects refuse: each 0x7fc's cast id, spell and result.
-pub fn refused_with(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
-  list.map(support.refused_in(effects:), fn(refused) {
-    #(
-      refused.client_cast_id,
-      refused.spell4_id,
-      cast_result.to_value(refused.result),
-    )
-  })
-}
-
 /// The use is taken, and answered with the one refusal and nothing else.
 fn refusal_of(
   taken taken: Result(#(State, List(Effect)), cast_state.Refusal),
 ) -> #(Int, Int) {
   let assert Ok(#(_, effects)) = taken as "an item use that fits is answered"
-  let assert [#(cast_id, spell4_id, result)] = refused_with(effects:)
+  let assert [#(cast_id, spell4_id, result)] = support.refused_with(effects:)
     as "one 0x7fc"
   assert cast_id == clients_cast_id
     as "the refusal answers the client's cast id"
@@ -370,7 +358,7 @@ pub fn item_use_at_an_empty_place_is_refused_22_test() -> Nil {
       at: 1000,
     )
     as "a use of an empty place is answered"
-  assert refused_with(effects:) == [#(clients_cast_id, 0, 22)]
+  assert support.refused_with(effects:) == [#(clients_cast_id, 0, 22)]
     as "UseItem 0x1403998e0 gives a place with no item 0x16 (22), and there is no spell to name"
   assert list.length(support.writes(effects:)) == 1
     && support.started_timers(effects:) == []
@@ -684,7 +672,7 @@ fn thrown_at(metres metres: Float) -> Result(Nil, #(Int, Int)) {
       at: 1000,
     )
     as "the use is answered"
-  case refused_with(effects:) {
+  case support.refused_with(effects:) {
     [] -> Ok(Nil)
     [#(_, spell4_id, result)] -> Error(#(spell4_id, result))
     _ -> panic as "at most one refusal"
@@ -774,8 +762,10 @@ pub fn an_item_whose_prerequisite_the_server_cannot_read_is_refused_285_and_logg
   }
   let #(state, first) = thrown(cast_state.new(), 1000)
   let #(_, second) = thrown(state, 2000)
-  assert refused_with(effects: first) == [#(clients_cast_id, 26_663, 285)]
-    && refused_with(effects: second) == [#(clients_cast_id, 26_663, 285)]
+  assert support.refused_with(effects: first)
+    == [#(clients_cast_id, 26_663, 285)]
+    && support.refused_with(effects: second)
+    == [#(clients_cast_id, 26_663, 285)]
     as "a prerequisite of a type the server does not read cannot be judged: IllegalSpellCast (285), each time"
   let assert [#(LogWarning, line)] =
     list.append(support.logs(effects: first), support.logs(effects: second))
@@ -802,7 +792,7 @@ pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {
   // (`player.abilityQueueMax`); a cast the client sent with a cast id is never queued, so
   // the server refuses the press as it refuses a hold (14), and the refusal 15 is a press
   // with more than 500 ms left.
-  assert refused_with(effects: used_as(
+  assert support.refused_with(effects: used_as(
       state:,
       client_cast_id: 10,
       item: grenade,
@@ -1003,7 +993,7 @@ pub fn an_item_use_spends_only_when_its_cast_starts_test() -> Nil {
           at: 1000,
         )
         as row.why
-      assert list.map(refused_with(effects:), fn(refused) {
+      assert list.map(support.refused_with(effects:), fn(refused) {
           #(refused.1, refused.2)
         })
         == [row.refused]
@@ -1326,7 +1316,8 @@ pub fn an_item_spell_with_a_type_42_row_is_planned_and_cast_without_a_use_of_its
         as row.why
       case row.refused {
         Some(result) -> {
-          assert refused_with(effects:) == [#(clients_cast_id, 24_501, result)]
+          assert support.refused_with(effects:)
+            == [#(clients_cast_id, 24_501, result)]
             as row.why
           Nil
         }
@@ -1615,13 +1606,17 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
         }
         RefusedWith(result:) -> {
           let assert Ok(cast_state.Frames(effects:, ..)) = used as case_.why
-          assert list.map(refused_with(effects:), fn(refusal) { refusal.2 })
+          assert list.map(support.refused_with(effects:), fn(refusal) {
+              refusal.2
+            })
             == [result]
             as case_.why
         }
         NotBuilt(naming:) -> {
           let assert Ok(cast_state.Frames(effects:, ..)) = used as case_.why
-          assert list.map(refused_with(effects:), fn(refusal) { refusal.2 })
+          assert list.map(support.refused_with(effects:), fn(refusal) {
+              refusal.2
+            })
             == [285]
             as case_.why
           let assert [#(LogWarning, line)] = support.logs(effects:) as case_.why
@@ -1800,9 +1795,9 @@ pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test
       at: 2000,
     )
     as "the second use is answered"
-  assert refused_with(effects: first) == [#(clients_cast_id, 28, 285)]
+  assert support.refused_with(effects: first) == [#(clients_cast_id, 28, 285)]
     as "Spell4 28 is cast at a unit and has no Activate and no QuestAdvanceObjective row, which is all the creature's activate cast plays: IllegalSpellCast (285)"
-  assert refused_with(effects: second) == [#(clients_cast_id, 28, 285)]
+  assert support.refused_with(effects: second) == [#(clients_cast_id, 28, 285)]
     as "the second use is refused the same"
   let assert [#(LogWarning, line)] =
     list.append(support.logs(effects: first), support.logs(effects: second))

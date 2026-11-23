@@ -168,15 +168,12 @@ fn progress(
   index index: Int,
   progress progress: Int,
 ) -> #(Int, BitArray) {
-  #(
-    0x0361,
-    message_support.packed([#(15, quest), #(32, index), #(32, progress)]),
-  )
+  message_support.quest_progress_frame(quest:, index:, progress:)
 }
 
 /// A 0x35c of the client's reader with objective id 0.
 fn state_of(quest quest: Int, state state: Int) -> #(Int, BitArray) {
-  #(0x035C, message_support.packed([#(15, quest), #(32, state), #(32, 0)]))
+  message_support.quest_state_frame(quest:, state:)
 }
 
 pub fn a_hidden_objective_waits_while_a_required_objective_is_open_test() -> Nil {

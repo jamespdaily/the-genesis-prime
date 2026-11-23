@@ -70,22 +70,6 @@ fn entry_place(character character: Character, quest quest: QuestRow) -> Place {
   asked_place(effects:)
 }
 
-fn assert_place(
-  place place: Place,
-  world world: Int,
-  zone zone: Int,
-  x x: Float,
-  y y: Float,
-  z z: Float,
-  reason reason: String,
-) -> Nil {
-  assert start_place.world_id(place) == world as reason
-  assert start_place.world_zone_id(place) == zone as reason
-  assert start_place.x(place) == x as reason
-  assert start_place.y(place) == y as reason
-  assert start_place.z(place) == z as reason
-}
-
 pub fn a_departure_rejoin_keeps_the_players_health_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
@@ -131,7 +115,7 @@ pub fn a_departure_rejoin_keeps_the_players_health_test() -> Nil {
   let #(whole, _) = rejoin(None)
   assert player_life.health(life: whole.life) == full
     as "a rejoin given none enters with the full health, as the Holocrypt's join does"
-  assert_place(
+  place_support.assert_place(
     place: asked_place(effects:),
     world: 426,
     zone: 648,
@@ -282,7 +266,7 @@ pub fn a_rejoin_starts_in_world_loading_test() -> Nil {
 pub fn a_saved_choice_in_the_terminals_world_enters_at_its_landing_test() -> Nil {
   use <- owned_test.run(60_000)
   // Talk (index 0), travel (1) and the Northern Wilds choice (2) done: mask 0b111.
-  assert_place(
+  place_support.assert_place(
     place: entry_place(
       character: tutorial_character(),
       quest: bon_voyage(done: 7, progress: [1, 1, 1, 0, 0]),
@@ -295,7 +279,7 @@ pub fn a_saved_choice_in_the_terminals_world_enters_at_its_landing_test() -> Nil
     reason: "21328 done in world 3460: the player enters at WorldLocation2 42074, the Northern Wilds landing",
   )
   // The Everstar Grove choice (3) instead: mask 0b1011.
-  assert_place(
+  place_support.assert_place(
     place: entry_place(
       character: tutorial_character(),
       quest: bon_voyage(done: 11, progress: [1, 1, 0, 1, 0]),
@@ -308,7 +292,7 @@ pub fn a_saved_choice_in_the_terminals_world_enters_at_its_landing_test() -> Nil
     reason: "21329 done in world 3460: the player enters at WorldLocation2 41641, the Everstar Grove landing",
   )
   // Travel counted with no choice (mask 0b11) is no departure: the saved place.
-  assert_place(
+  place_support.assert_place(
     place: entry_place(
       character: tutorial_character(),
       quest: bon_voyage(done: 3, progress: [1, 1, 0, 0, 0]),
@@ -331,7 +315,7 @@ pub fn a_saved_choice_in_the_terminals_world_enters_at_its_landing_test() -> Nil
     )
   let assert world_entry.Join(effects:, ..) = loaded
     as "the character is taken into the world"
-  assert_place(
+  place_support.assert_place(
     place: asked_place(effects:),
     world: 3460,
     zone: 6009,
@@ -355,7 +339,7 @@ pub fn a_saved_choice_outside_the_terminals_world_keeps_the_saved_place_test() -
         z: -5000.0,
       )),
     )
-  assert_place(
+  place_support.assert_place(
     place: entry_place(
       character:,
       quest: bon_voyage(done: 7, progress: [1, 1, 1, 0, 0]),

@@ -24,13 +24,10 @@
 import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/loadout
 import genesis_prime/message/spell_started
 import genesis_prime/step.{type ConnectionStep}
-import genesis_prime/table/id.{ClassId, Spell4BaseId}
 import gleam/int
 import gleam/list
 import gleam/option
@@ -45,23 +42,6 @@ const unit_behind = 40
 
 /// The Beast that faces the Stalker.
 const unit_facing = 41
-
-fn bag_index_of(base base: Int) -> Int {
-  let assert Ok(set) =
-    loadout.of(
-      tables: fixture_tables.shared(),
-      class_id: ClassId(5),
-      faction_id: 166,
-    )
-    as "the fixture holds the Stalker's Novice set"
-  let assert Ok(index) =
-    list.index_map(ability_book.bag(loadout: set, level: 1), fn(held, index) {
-      #(held, index)
-    })
-    |> list.key_find(Spell4BaseId(base))
-    as "the Stalker's bag holds the ability"
-  index
-}
 
 /// A Stalker in the world with both Beasts shown to its client.
 fn stalker_with_two_beasts() -> game_connection.State {
@@ -101,7 +81,7 @@ pub fn failed_target_gate_sends_nothing_for_that_unit_test() -> Nil {
   let #(_, steps) =
     support.pressed_until(
       state: stalker_with_two_beasts(),
-      bag_index: bag_index_of(base: impale_base),
+      bag_index: support.stalker_bag_index_of(base: impale_base),
       client_cast_id: 1,
       ms: 1000,
       until_ms: 3000,
@@ -161,7 +141,7 @@ pub fn a_creature_gate_on_an_area_row_lists_the_effect_only_on_the_named_creatur
   let #(_, steps) =
     support.pressed_until(
       state:,
-      bag_index: bag_index_of(base: impale_base),
+      bag_index: support.stalker_bag_index_of(base: impale_base),
       client_cast_id: 1,
       ms: 1000,
       until_ms: 3000,
@@ -231,7 +211,7 @@ pub fn a_creature_gate_on_a_primary_target_row_reads_the_primary_target_it_defle
     support.pressed_until_answered(
       state:,
       world: Nil,
-      bag_index: bag_index_of(base: impale_base),
+      bag_index: support.stalker_bag_index_of(base: impale_base),
       client_cast_id: 1,
       ms: 1000,
       until_ms: 3000,

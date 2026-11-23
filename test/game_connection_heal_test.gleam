@@ -36,7 +36,6 @@ import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
-import genesis_prime/message/player_health
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
@@ -211,16 +210,6 @@ pub fn a_struck_medic_pressing_energize_sees_the_heal_and_its_shield_rise_and_so
     as "and the same shield is told to the viewer, once (beside the properties the go's type 11 rows start)"
 }
 
-/// The healths the step's 0x92f frames carry, in order.
-fn healths(taken taken: ConnectionStep(Request)) -> List(Int) {
-  connection_support.decoded(
-    connection_support.heard(taken, connection_support.keyed()),
-    player_health.message_id,
-    player_health.decode,
-  )
-  |> list.map(fn(told) { told.health })
-}
-
 /// The steps of the timers the press started that are the cast's own (numbers from 1000),
 /// each fired in order on the state the one before left.
 fn fired_after(
@@ -337,7 +326,7 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
     )
   let #(state, struck) =
     connection_support.feed(state:, event: a_strike_of(damage: 1000))
-  let assert [before] = healths(taken: struck)
+  let assert [before] = connection_support.healths(taken: struck)
     as "the blow lowers the health: one 0x92f"
   let #(state, pressed) =
     connection_support.press_paralytic_surge(state:, client_cast_id: 1)
@@ -347,10 +336,11 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
     connection_support.feed(state:, event: connection_support.landed(key:))
   assert described_health_heals(taken: pressed) == [#(damage_type.Heal, 40, 0)]
     as "the go lists row 99912 as a Heal of 40 (kind 10 x 40 at level 1), no overheal while the health is below its maximum"
-  assert healths(taken: pressed) == []
+  assert connection_support.healths(taken: pressed) == []
     as "the health has not risen yet: the heal lands 20 ms after the go"
   let landed = fired_after(state:, pressed:)
-  assert list.flat_map(landed, fn(taken) { healths(taken:) }) == [before + 40]
+  assert list.flat_map(landed, fn(taken) { connection_support.healths(taken:) })
+    == [before + 40]
     as "the health rises by 40: one 0x92f to the Medic"
   let told = list.flat_map(landed, fn(taken) { told_to_the_viewer(taken:) })
   assert list.count(told, fn(news) {
@@ -371,7 +361,10 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
       bytes: connection_support.camp_finished_message(),
     )
   let after_leaving = fired_after(state: gone, pressed:)
-  assert list.flat_map(after_leaving, fn(taken) { healths(taken:) }) == []
+  assert list.flat_map(after_leaving, fn(taken) {
+      connection_support.healths(taken:)
+    })
+    == []
     as "with no player in the world the change is dropped"
 }
 
@@ -514,7 +507,7 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
     as "opcode.0x935: the Psi Points (slot 1, stat 3) are spent to 0"
   assert list.any(changes, fn(change) { change.stat_id == 1 })
     as "opcode.0x935: the Focus the cost asks is paid (stat 1)"
-  assert healths(taken: pressed) == []
+  assert connection_support.healths(taken: pressed) == []
     as "no health rises at the press: the first tick is 500 ms on"
   // The heals land at each tick of the clock, driven in steps of one tick: tick k at
   // 500 ms times k after the go.
@@ -536,7 +529,10 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
             until_ms: at_ms - 1,
             steps: [],
           )
-        assert list.flat_map(before, fn(taken) { healths(taken:) }) == []
+        assert list.flat_map(before, fn(taken) {
+            connection_support.healths(taken:)
+          })
+          == []
           as "no health rises before the tick, 500 ms after the one before"
         let #(state, pending, at) =
           connection_support.casts_left(
@@ -545,7 +541,9 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
             until_ms: at_ms,
             steps: [],
           )
-        assert list.flat_map(at, fn(taken) { healths(taken:) })
+        assert list.flat_map(at, fn(taken) {
+            connection_support.healths(taken:)
+          })
           == [health + heal]
           as "opcode.0x92f: the tick raises the health by the heal of the 3-point tier"
         #(state, pending, health + heal)
