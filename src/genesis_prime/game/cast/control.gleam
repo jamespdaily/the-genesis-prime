@@ -296,7 +296,8 @@ fn creatures_ended(
 /// The Fluff, SpellForceRemove, property modifier, forced move, struck move, cooldown,
 /// Stealth, RemoveStealth, Proc, heal and ability restriction effects of the phase whose
 /// gates pass against the caster, a debug line for each that cannot be decided, and the
-/// rolls left. The effects are walked in the plan's rank order, which is the order their
+/// rolls left. A row `told` holds no gate here and draws no roll: the strike gated it once
+/// (`cast_gate.heal_told`). The effects are walked in the plan's rank order, which is the order their
 /// gates are checked in, after the Proxies' and the gains', the restrictions' last
 /// (`cast_gate.rolls_needed`).
 pub fn lasting_applied(
@@ -304,11 +305,18 @@ pub fn lasting_applied(
   phase phase: Int,
   spent spent: Option(Int),
   subject subject: prerequisite.Subject,
+  told told: fn(spell_plan.Kind) -> Bool,
   rolls rolls: List(Int),
 ) -> #(Applied, List(Effect), List(Int)) {
   let checked =
     spell_effect.in_phase(effects: spell.effects, phase:, spent:)
     |> list.filter_map(caster_checked)
+    |> list.map(fn(one) {
+      case told(one.planned.kind) {
+        True -> CasterChecked(..one, gates: [])
+        False -> one
+      }
+    })
   let #(passed, logs, rolls) =
     cast_gate.gated(
       rows: checked,

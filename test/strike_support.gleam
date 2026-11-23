@@ -6,13 +6,14 @@ import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/player_address
 import genesis_prime/game/shown.{Exile, ShownCreature}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
 import genesis_prime/game/spend
 import genesis_prime/game/strike.{type Attacker, Attacker}
 import genesis_prime/game/strike_tell
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step.{type LogLevel, type TimerId, ConnectionId}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/world_map/creature_life.{type Attackable, Hostile}
 import genesis_prime/world_map/creature_path
@@ -150,4 +151,118 @@ pub fn creature_facing(
     faced_yaw:,
     fights: True,
   )
+}
+
+// ---- reading what a strike gave ----
+
+/// What one effect of a strike is.
+pub type Kind {
+  CreatureTold
+  PlayerTold
+  TimerStarted
+  TimerCancelled
+  RoundClosed
+  TickClosed
+  NewsReleased
+  LineLogged
+}
+
+/// The kind of an effect: the one match over every variant of `strike.Effect` the tests
+/// read, so a variant added to it is added here and nowhere else.
+pub fn kind_of(effect effect: strike.Effect) -> Kind {
+  case effect {
+    strike.TellStrike(..) -> CreatureTold
+    strike.TellPlayerStrike(..) -> PlayerTold
+    strike.StartTimer(..) -> TimerStarted
+    strike.CancelTimer(..) -> TimerCancelled
+    strike.Went(..) -> RoundClosed
+    strike.Ticked(..) -> TickClosed
+    strike.Released(..) -> NewsReleased
+    strike.Log(..) -> LineLogged
+  }
+}
+
+/// The effects of one of these kinds, in order.
+pub fn only(
+  effects effects: List(strike.Effect),
+  kinds kinds: List(Kind),
+) -> List(strike.Effect) {
+  list.filter(effects, fn(effect) { list.contains(kinds, kind_of(effect:)) })
+}
+
+/// The creature strikes told, each as its unit, its life and the tell.
+pub fn creatures_told(
+  effects effects: List(strike.Effect),
+) -> List(#(Int, Int, strike_tell.Tell)) {
+  list.map(only(effects:, kinds: [CreatureTold]), fn(effect) {
+    let assert strike.TellStrike(unit_id:, life:, tell:) = effect
+      as "only the creature strikes were kept"
+    #(unit_id, life, tell)
+  })
+}
+
+/// The heal strikes told to players, each as the player's address and the tell.
+pub fn players_told(
+  effects effects: List(strike.Effect),
+) -> List(#(player_address.PlayerAddress, strike_tell.PlayerStrike)) {
+  list.map(only(effects:, kinds: [PlayerTold]), fn(effect) {
+    let assert strike.TellPlayerStrike(address:, strike:) = effect
+      as "only the player strikes were kept"
+    #(address, strike)
+  })
+}
+
+/// The timers started, each as its id and its delay.
+pub fn timers_started(
+  effects effects: List(strike.Effect),
+) -> List(#(TimerId, Int)) {
+  list.map(only(effects:, kinds: [TimerStarted]), fn(effect) {
+    let assert strike.StartTimer(timer:, after_ms:) = effect
+      as "only the started timers were kept"
+    #(timer, after_ms)
+  })
+}
+
+/// The ids of the timers cancelled.
+pub fn timers_cancelled(effects effects: List(strike.Effect)) -> List(TimerId) {
+  list.map(only(effects:, kinds: [TimerCancelled]), fn(effect) {
+    let assert strike.CancelTimer(timer:) = effect
+      as "only the cancelled timers were kept"
+    timer
+  })
+}
+
+/// The rounds that closed with a go, each as the go asked, the units it struck and the
+/// gates they passed.
+pub fn rounds_closed(
+  effects effects: List(strike.Effect),
+) -> List(
+  #(cast_state.GoAsked, List(cast_state.Struck), dict.Dict(Int, List(Int))),
+) {
+  list.map(only(effects:, kinds: [RoundClosed]), fn(effect) {
+    let assert strike.Went(asked:, struck:, gates_passed:) = effect
+      as "only the closed rounds were kept"
+    #(asked, struck, gates_passed)
+  })
+}
+
+/// The rounds that closed with a tick, each as the tick asked and the unit it struck.
+pub fn ticks_closed(
+  effects effects: List(strike.Effect),
+) -> List(#(cast_state.TickAsked, Option(cast_state.Struck))) {
+  list.map(only(effects:, kinds: [TickClosed]), fn(effect) {
+    let assert strike.Ticked(asked:, struck:) = effect
+      as "only the closed ticks were kept"
+    #(asked, struck)
+  })
+}
+
+/// The lines logged, each as its level and text.
+pub fn lines_logged(
+  effects effects: List(strike.Effect),
+) -> List(#(LogLevel, String)) {
+  list.map(only(effects:, kinds: [LineLogged]), fn(effect) {
+    let assert strike.Log(level:, text:) = effect as "only the lines were kept"
+    #(level, text)
+  })
 }

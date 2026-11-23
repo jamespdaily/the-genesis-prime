@@ -1880,14 +1880,7 @@ pub fn sheet(
   let assert Ok(support_factor) = result.map(power, fn(row) { row.datafloat01 })
     as "the client's tables hold GameFormula row 1266, whose second value 0x14064ca50 reads"
   let property = fn(id) {
-    case
-      list.find(unit.tail.properties, fn(property) {
-        property.property_id == id
-      })
-    {
-      Ok(property) -> property_value(property)
-      Error(Nil) -> 0.0
-    }
+    result.unwrap(property_of(unit:, property_id: id), 0.0)
   }
   Sheet(
     assault_power: float.round(property(35) *. assault_factor),
@@ -1895,6 +1888,18 @@ pub fn sheet(
     max_health: float.truncate(property(7)),
     max_shield: float.round(property(41)),
   )
+}
+
+/// The value the property `property_id` holds in the 0x262 of a player, `Error(Nil)` when
+/// the 0x262 does not set it.
+pub fn property_of(
+  unit unit: UnitCreatePlayer,
+  property_id property_id: Int,
+) -> Result(Float, Nil) {
+  list.find(unit.tail.properties, fn(property) {
+    property.property_id == property_id
+  })
+  |> result.map(property_value)
 }
 
 /// The float a property holds as its value.

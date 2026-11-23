@@ -185,21 +185,9 @@ fn passed(ids ids: List(Int)) -> strike_tell.Outcome {
 
 /// The units each strike told, with the effect ids of the gates it carries.
 fn gates_told(effects effects: List(strike.Effect)) -> List(#(Int, List(Int))) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      strike.TellStrike(unit_id:, tell: strike_tell.Strike(gates:, ..), ..) ->
-        Ok(#(
-          unit_id,
-          list.map(gates, fn(gate: strike_tell.Gate) { gate.effect_id }),
-        ))
-      strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
+  list.map(strike_support.creatures_told(effects:), fn(told) {
+    let #(unit_id, _life, strike_tell.Strike(gates:, ..)) = told
+    #(unit_id, list.map(gates, fn(gate: strike_tell.Gate) { gate.effect_id }))
   })
 }
 
@@ -208,18 +196,11 @@ fn gates_told(effects effects: List(strike.Effect)) -> List(#(Int, List(Int))) {
 fn closed(
   effects effects: List(strike.Effect),
 ) -> Result(#(List(cast_state.Struck), dict.Dict(Int, List(Int))), Nil) {
-  list.find_map(effects, fn(effect) {
-    case effect {
-      strike.Went(struck:, gates_passed:, ..) -> Ok(#(struck, gates_passed))
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
-  })
+  list.first(
+    list.map(strike_support.rounds_closed(effects:), fn(closed) {
+      #(closed.1, closed.2)
+    }),
+  )
 }
 
 /// What the cast rule does for a round that closed so.
@@ -592,18 +573,8 @@ pub fn two_gos_of_one_cast_are_two_rounds_each_with_its_own_gates_test() -> Nil 
   let #(_, after_first) =
     answer(state:, asked:, unit_id: 20, outcome: passed(ids: []))
   let went =
-    list.filter_map(after_first, fn(effect) {
-      case effect {
-        strike.Went(asked:, gates_passed:, ..) ->
-          Ok(#(asked.phase, dict.to_list(gates_passed)))
-        strike.TellStrike(..)
-        | strike.TellPlayerStrike(..)
-        | strike.StartTimer(..)
-        | strike.CancelTimer(..)
-        | strike.Ticked(..)
-        | strike.Released(..)
-        | strike.Log(..) -> Error(Nil)
-      }
+    list.map(strike_support.rounds_closed(effects: after_first), fn(closed) {
+      #({ closed.0 }.phase, dict.to_list(closed.2))
     })
   assert went == [#(0, []), #(1, [#(20, [gated_id])])]
     as "the first go closes in its turn with the gates its own answer passed (none), then the second with its own"
