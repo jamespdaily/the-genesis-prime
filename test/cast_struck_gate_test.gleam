@@ -133,6 +133,8 @@ fn selection_of(
     ticking: [],
     controls: [],
     gates: spell.struck_gates,
+    players: [],
+    heals: [],
   )
 }
 
@@ -190,7 +192,8 @@ fn gates_told(effects effects: List(strike.Effect)) -> List(#(Int, List(Int))) {
           unit_id,
           list.map(gates, fn(gate: strike_tell.Gate) { gate.effect_id }),
         ))
-      strike.StartTimer(..)
+      strike.TellPlayerStrike(..)
+      | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
       | strike.Ticked(..)
@@ -209,6 +212,7 @@ fn closed(
     case effect {
       strike.Went(struck:, gates_passed:, ..) -> Ok(#(struck, gates_passed))
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Ticked(..)
@@ -593,6 +597,7 @@ pub fn two_gos_of_one_cast_are_two_rounds_each_with_its_own_gates_test() -> Nil 
         strike.Went(asked:, gates_passed:, ..) ->
           Ok(#(asked.phase, dict.to_list(gates_passed)))
         strike.TellStrike(..)
+        | strike.TellPlayerStrike(..)
         | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Ticked(..)

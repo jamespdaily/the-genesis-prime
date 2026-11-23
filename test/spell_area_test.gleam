@@ -1908,6 +1908,90 @@ pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
     as "the only area-aimed effect is excluded at n 0, so the phase selects no area"
 }
 
+// ---- the heal rows a go tells a player ----
+
+/// The Spell4Effects ids of the heal rows the first phase of `spell4_id` tells a player,
+/// and whether the phase strikes the primary target, with the row 62019 (Mind Over Body's
+/// heal) changed as `changes` say.
+fn told_heals(
+  spell4_id spell4_id: Int,
+  changes changes: List(#(String, planted_table.Cell)),
+) -> #(List(Int), Bool) {
+  fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 62_019,
+    with: changes,
+    body: fn(tables) {
+      let assert Ok(phase) =
+        spell_area.phase(
+          spell: spell_tables.area_alone_on(tables:, spell4_id:),
+          phase: 0,
+          spent: None,
+        )
+        as "the spell has a first phase"
+      #(
+        list.map(phase.heals, fn(heal) { heal.effect_id.value }),
+        phase.strikes_primary_target,
+      )
+    },
+  )
+}
+
+pub fn a_phase_tells_a_player_only_the_instant_heal_rows_aimed_at_the_primary_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 62019 (Mind Over Body, Spell4 32820) is type 10 with targetFlags 2 (the
+  // primary target), no tickTime and no delay; 80077 (Bolster, Spell4 32821) is type 10
+  // with tickTime 1000 (`table_rows -- Spell4Effects 62019 80077`). `Spell4Effects.targetFlags`:
+  // bit 1 the caster, bit 2 the primary target, bit 4 the area. No client row is instant and
+  // delayed at the primary target, so the delayed row edits 62019's delayTime.
+  list.each(
+    [
+      #(
+        "Mind Over Body's row 62019, instant and aimed at the primary target, is told",
+        32_820,
+        [],
+        [62_019],
+      ),
+      #(
+        "a row aimed at the caster and the primary target (flags 3) is told",
+        32_820,
+        [#("targetFlags", Integer(3))],
+        [62_019],
+      ),
+      #(
+        "Bolster's periodic row 80077 (tickTime 1000) is not told: a period is another heal rule",
+        32_821,
+        [],
+        [],
+      ),
+      #(
+        "an instant row with a delay of 20 ms is not told",
+        32_820,
+        [#("delayTime", Integer(20))],
+        [],
+      ),
+      #(
+        "a row aimed at the caster alone (flags 1) is not told",
+        32_820,
+        [#("targetFlags", Integer(1))],
+        [],
+      ),
+      #(
+        "a row aimed at the area alone (flags 4) is not told",
+        32_820,
+        [#("targetFlags", Integer(4))],
+        [],
+      ),
+    ],
+    fn(row) {
+      let #(reason, spell4_id, changes, told) = row
+      assert told_heals(spell4_id:, changes:).0 == told as reason
+    },
+  )
+  assert !{ told_heals(spell4_id: 32_820, changes: []).1 }
+    as "a heal does not make the phase strike a creature primary target: the heal is told through the phase's heals, and a creature takes none"
+}
+
 // ---- the kit's crowd-control rows ----
 
 /// The kit's six CCStateSet rows as the client's tables hold them
@@ -1998,31 +2082,6 @@ pub fn crushs_knockdown_aimed_at_both_selects_the_area_and_strikes_the_primary_t
 
 // ---- the property modifiers aimed at other units ----
 
-/// A spell of the client's rows that no level-1 ability's tree holds, planned on its own
-/// (`spell_plan.spell_alone`) and set in an area with no row and no damage effect: the
-/// spells the tests below read hold no damage row, and what they ask is only what a phase
-/// of the plan selects.
-fn planned_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
-  let tables = fixture_tables.shared()
-  let assert Ok(spell) =
-    spell_plan.spell_alone(
-      tables:,
-      sources: spell_plan.sources_of(tables:),
-      spell4_id:,
-      chain: [],
-    )
-    as "the spell plans on its own from the client's rows"
-  spell_area.SpellArea(
-    spell4_id: Spell4Id(spell4_id),
-    row: None,
-    inside_by_go: [Some(InsideRow)],
-    anchor: area.FollowsTarget,
-    damage: [],
-    ticking: [],
-    spell:,
-  )
-}
-
 pub fn phase_with_a_union_damage_row_selects_the_area_and_strikes_the_target_test() -> Nil {
   use <- owned_test.run(60_000)
   // Spell4Effects 11846 (`table_rows -- Spell4Effects 11846`): spell 6518, effectType 8,
@@ -2035,7 +2094,7 @@ pub fn phase_with_a_union_damage_row_selects_the_area_and_strikes_the_target_tes
     as "a damage row aimed by flags 7 is read, and it strikes once"
   assert damage.aim == spell_plan.AimsAtCasterPrimaryTargetAndArea
     as "targetFlags 7 hold all three bits"
-  let planned = planned_alone(spell4_id: 6518)
+  let planned = spell_tables.area_alone(spell4_id: 6518)
   let area = spell_area.SpellArea(..planned, damage: [damage])
   let assert Ok(phase) = spell_area.phase(spell: area, phase: 0, spent: None)
   assert phase.selects_area
@@ -2052,7 +2111,7 @@ pub fn a_modifier_only_child_aimed_at_the_target_strikes_the_primary_target_test
   // 94370`): a UnitPropertyModifier of property 160, targetFlags 2, no damage and no
   // crowd control. Its base 26081 holds target mechanic 3, a spell cast on a unit
   // (`Spell4TargetMechanics.targetType`), so the row's unit is the one it is cast on.
-  let fissure = planned_alone(spell4_id: 41_886)
+  let fissure = spell_tables.area_alone(spell4_id: 41_886)
   let assert Ok(phase) = spell_area.phase(spell: fissure, phase: 0, spent: None)
   assert list.map(
       spell_plan.in_phase(
@@ -2078,7 +2137,7 @@ pub fn a_modifier_only_spell_aimed_at_the_area_selects_the_areas_units_test() ->
   // (`table_rows -- Spell4Effects 129039 183223 183224`): UnitPropertyModifier rows of
   // properties 159, 160 and 161, targetFlags 4, phaseFlags 1, and no damage or crowd
   // control row at other units. Its area row is 391 (`table_rows -- Spell4 54475`).
-  let aura = planned_alone(spell4_id: 54_475)
+  let aura = spell_tables.area_alone(spell4_id: 54_475)
   let assert Ok(phase) = spell_area.phase(spell: aura, phase: 0, spent: None)
   assert list.map(
       spell_plan.in_phase(
@@ -2103,7 +2162,7 @@ pub fn an_absorb_and_an_armor_row_aimed_at_the_target_strike_nobody_test() -> Ni
   // ModifyInterruptArmor row 198735, both targetFlags 2, phaseFlags 1, and no damage,
   // crowd-control or type 11 row (`table_rows -- Spell4Effects spellId=76618`). Only a
   // type 11 row aimed at other units names creatures to change.
-  let armor = planned_alone(spell4_id: 76_618)
+  let armor = spell_tables.area_alone(spell4_id: 76_618)
   let assert Ok(phase) = spell_area.phase(spell: armor, phase: 0, spent: None)
   assert list.map(
       spell_plan.in_phase(

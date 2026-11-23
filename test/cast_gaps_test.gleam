@@ -134,8 +134,8 @@ fn limits() -> List(Limit) {
     Limit(
       cast_heal.gaps(),
       "Casting",
-      ["unit other than the caster"],
-      "a heal on another unit lands nothing",
+      ["creature", "another player", "delay"],
+      "a heal aimed at a creature, or at another player with a delay or a period, lands nothing",
     ),
     Limit(
       cast_control.gaps(),
@@ -158,8 +158,14 @@ fn limits() -> List(Limit) {
     Limit(
       strike.gaps(),
       "Casting",
-      ["answer", "dropped"],
-      "a healed player's answer is dropped by the connection it is told to",
+      ["lists", "description"],
+      "the go lists a player a heal was told to with no description of what it applied",
+    ),
+    Limit(
+      strike.gaps(),
+      "Casting",
+      ["target gate", "another player", "not read"],
+      "a target gate on a heal row told to another player reads what the caster holds of it, not the player's own state",
     ),
     Limit(
       heal_split.gaps(),

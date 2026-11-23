@@ -1057,6 +1057,7 @@ fn caster_of_the_go(unit_id unit_id: Int) -> strike.Attacker {
     stats: attacker_support.novice(),
     vitals: attacker_support.novice_vitals(),
     properties: properties_support.fresh(level: 1),
+    players_in_sight: dict.new(),
   )
 }
 

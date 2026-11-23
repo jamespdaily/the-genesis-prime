@@ -1113,6 +1113,38 @@ pub fn fixture_strike() -> spell_plan.Spell {
   spell
 }
 
+/// A spell of the client's rows that no level-1 ability's tree holds, planned on its own
+/// (`spell_plan.spell_alone`) and set in an area with no row and no damage effect: the
+/// spells the tests below read hold no damage row, and what they ask is only what a phase
+/// of the plan selects.
+pub fn area_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
+  area_alone_on(tables: fixture_tables.shared(), spell4_id:)
+}
+
+/// The same area on other tables, such as the fixture's with one row changed.
+pub fn area_alone_on(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> spell_area.SpellArea {
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id:,
+      chain: [],
+    )
+    as "the spell plans on its own from the client's rows"
+  spell_area.SpellArea(
+    spell4_id: Spell4Id(spell4_id),
+    row: None,
+    inside_by_go: [Some(area.InsideRow)],
+    anchor: area.FollowsTarget,
+    damage: [],
+    ticking: [],
+    spell:,
+  )
+}
+
 /// The areas the client's rows build, built once.
 pub fn fixture_areas() -> spell_area.Areas {
   database_support.once("spell_tables_fixture_areas", fn() {

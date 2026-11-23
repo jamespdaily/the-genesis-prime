@@ -45,6 +45,7 @@ import player_life_support
 import properties_support
 import qcheck
 import spawn_support
+import strike_support
 
 /// A level-1 player's properties at their defaults, in which both healing
 /// multipliers are 1.0 (`UnitProperty2.damage_heal_multipliers`).
@@ -481,30 +482,6 @@ pub fn a_heal_with_shield_conversion_at_full_shield_all_goes_to_health_test() ->
     as "no stat 20: the shield did not move"
 }
 
-/// The heal rows of one strike of the caster's connection 3, healing with `outgoing`.
-fn told(
-  outgoing outgoing: Float,
-  rows rows: List(#(effect_kind.Vital, Int)),
-) -> strike_tell.PlayerStrike {
-  strike_tell.PlayerStrike(
-    key: strike_tell.Key(
-      cast_id: 32_820,
-      occasion: strike_tell.AtGo(phase: 0),
-      unit_id: 9,
-    ),
-    from: ConnectionId(3),
-    stay: stay.none_yet(),
-    outgoing:,
-    heals: list.index_map(rows, fn(row, index) {
-      strike_tell.HealTell(
-        effect_id: Spell4EffectsId(62_019 + index),
-        vital: row.0,
-        amount: row.1,
-      )
-    }),
-  )
-}
-
 /// A player at 586 of 736 health (150 below) with a full shield of 450.
 fn missing_150() -> Life {
   let #(life, _) =
@@ -638,7 +615,14 @@ pub fn heal_rows_told_by_another_player_are_applied_in_order_each_on_the_life_th
     player_life.heals_taken(
       life:,
       properties: unmodified(),
-      strike: told(outgoing: 1.0, rows:),
+      strike: strike_support.heal_strike(
+        from: ConnectionId(3),
+        stay: stay.none_yet(),
+        cast_id: 32_820,
+        unit_id: 9,
+        outgoing: 1.0,
+        heals: rows,
+      ),
     )
   }
   list.each(
@@ -759,7 +743,14 @@ pub fn a_heal_row_list_never_raises_a_vital_past_its_maximum_and_each_split_acco
         player_life.heals_taken(
           life: before,
           properties:,
-          strike: told(outgoing:, rows:),
+          strike: strike_support.heal_strike(
+            from: ConnectionId(3),
+            stay: stay.none_yet(),
+            cast_id: 32_820,
+            unit_id: 9,
+            outgoing:,
+            heals: rows,
+          ),
         )
       assert player_life.health(life: after)
         <= player_life.max_health(life: after)

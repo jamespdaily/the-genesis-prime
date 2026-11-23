@@ -18,16 +18,18 @@
 ////   taken off the caster, a persistence that stops holding and the caster's death drop a
 ////   pending heal with its timer; a later go of the cast heals again and cancels no
 ////   earlier heal. A periodic heal (a tickTime) heals the caster at each tick, after
-////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster (a child on a
-////   struck unit) lands nothing and a debug line says so. The server rolls no
+////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster lands nothing
+////   here and a debug line says so: another player is healed by the answer to the strike its
+////   go told its connection (genesis_prime/game/strike `TellPlayerStrike`), an instant row
+////   only, and a creature is not healed. The server rolls no
 ////   critical for a heal: the description is always a Hit, so the seed draws nothing for
 ////   it (the server's choice).
 
 import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type Healed, type Product, type Reached,
   type State, type Struck, type TickingOn, CasterChangeStarts, CooldownKept,
-  Deflected, Heal, Healed, Healing, Hit, HitCreature, HitPlayer, Immune, Log,
-  ModifierStart, Plain, TickingOn,
+  Deflected, Heal, Healed, Healing, Hit, HitCreature, HitOtherPlayer, HitPlayer,
+  Immune, Log, ModifierStart, Plain, TickingOn,
 } as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
@@ -48,7 +50,7 @@ import gleam/option.{type Option}
 
 /// The periodic damage rows of the go on each creature the round hit or found immune,
 /// in the life it struck (`Hit.ticking`, `Immune.ticking`); a deflected unit takes none,
-/// and a player's attacks carry none.
+/// and a player's attacks and a heal told to another player carry none.
 pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
   list.flat_map(struck, fn(one) {
     case one {
@@ -63,7 +65,11 @@ pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
             kind: cast_state.damage_tick(blow: row.damage),
           )
         })
-      Hit(unit: HitPlayer, ..) | Immune(unit: HitPlayer, ..) | Deflected(..) -> []
+      Hit(unit: HitPlayer, ..)
+      | Immune(unit: HitPlayer, ..)
+      | Hit(unit: HitOtherPlayer(..), ..)
+      | Immune(unit: HitOtherPlayer(..), ..)
+      | Deflected(..) -> []
     }
   })
 }
@@ -120,9 +126,10 @@ pub fn ticking_heals(
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
 /// every gate of the go (`cast_tick.subject_of`), and the overheal the vital's room leaves.
 /// A row's units are those its aim names (`cast_gate.units_aimed_at`) and only the caster
-/// is healed: the server gives no other unit a heal, so a heal aimed at another unit (the
-/// primary target of a cast on someone else, a unit the round hit) is left `Plain`, with a
-/// debug line naming its row (the server heals no other player). The plan refuses a heal that
+/// is healed here: a heal aimed at another unit (the primary target of a cast on someone
+/// else, a unit the round hit) is left `Plain`, with a debug line naming its row, since
+/// another player is healed by its answer to the strike its go told it and a creature is
+/// not healed. The plan refuses a heal that
 /// names the primary target in a child started on each struck unit
 /// (`spell_plan.not_on_a_struck_unit`).
 pub fn healed_on(
@@ -159,7 +166,7 @@ pub fn healed_on(
           <> int.to_string(effect_id.value)
           <> " is aimed at the unit "
           <> int.to_string(unit_id)
-          <> ", not the caster, and the server heals no other unit, so it lands nothing",
+          <> ", not the caster, so it lands nothing here: another player is healed only by its answer to the heal strike",
       ),
     ])
   }
@@ -282,7 +289,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Casting",
-      missing: "A heal aimed at a unit other than the caster lands nothing, with a debug line, because the server gives no other unit a heal.",
+      missing: "A heal aimed at a creature, or at another player with a delay or a period, lands nothing, with a debug line, because the server heals the caster by its own rule and another player only by its answer to an instant row.",
     ),
   ]
 }
