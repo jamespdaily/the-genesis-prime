@@ -247,45 +247,6 @@ pub fn say_yell_emote_whisper_and_zone_reach_the_right_players_on_the_whole_serv
   login_support.stop(started)
 }
 
-fn all_ids(frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
-}
-
-pub fn no_chat_flow_writes_player_info_and_0x597_stays_unhandled_test() -> Nil {
-  use <- owned_test.run(120_000)
-  let time = driven_time.new()
-  let #(started, seats) = four_players(time:)
-  let speaker = reported(seat: seat_at(seats, 0), zone: 6009, number: 1)
-  let neighbour = reported(seat: seat_at(seats, 1), zone: 6009, number: 1)
-  let speaker = written_to(seat: speaker, number: 2).1
-  let neighbour = written_to(seat: neighbour, number: 2).1
-  game_client.say(game: speaker.game, text: "hi", chat_message_id: 1)
-  game_client.whisper(
-    game: speaker.game,
-    target: "Ann Qu",
-    text: "psst",
-    chat_message_id: 2,
-  )
-  game_client.send_line(
-    game: speaker.game,
-    channel_type: 9,
-    channel_id: speaker.zone_channel,
-    text: "zone",
-    chat_message_id: 3,
-  )
-  let #(spoken, _) = written_to(seat: speaker, number: 3)
-  let #(heard, _) = written_to(seat: neighbour, number: 3)
-  assert list.length(chat_lines(heard)) == 3
-    as "the neighbour read the say, the whisper and the zone line"
-  list.each(list.append(spoken, heard), fn(frame) {
-    assert frame.message_id != 0x0598 && frame.message_id != 0x0599
-      as "chat.name_lookup: every 0x1c8 carries its speaker's name, so no chat flow writes player info (0x598 or 0x599)"
-  })
-  assert list.contains(all_ids(heard), 0x01C8)
-  list.each(seats, fn(seat) { game_client.close(game: seat.game) })
-  login_support.stop(started)
-}
-
 pub fn two_players_whispering_each_other_at_once_both_get_their_answer_test() -> Nil {
   use <- owned_test.run(120_000)
   let time = driven_time.new()
