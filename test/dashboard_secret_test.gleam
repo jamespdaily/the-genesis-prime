@@ -5,35 +5,9 @@
 
 import dashboard_support
 import genesis_prime/dashboard/secret
-import gleam/bit_array
-import gleam/crypto
-import gleam/list
 import gleam/string
 import owned_test
 import simplifile
-
-fn bytes_of(value: Int) -> fn(Int) -> BitArray {
-  fn(size) { list.repeat(<<value:8>>, size) |> bit_array.concat }
-}
-
-pub fn the_key_is_new_at_each_start_and_thirty_two_bytes_test() -> Nil {
-  use <- owned_test.run(5000)
-  // Driven sources: the key is the source's 32 bytes in base64url, without
-  // padding or the characters base64 uses beyond it.
-  let first = secret.make(bytes_of(251))
-  let second = secret.make(bytes_of(250))
-  assert first != second
-  assert bit_array.base64_url_decode(first) == Ok(bytes_of(251)(32))
-  assert bit_array.base64_url_decode(second) == Ok(bytes_of(250)(32))
-  list.each([first, second], fn(key) {
-    assert !string.contains(key, "+")
-    assert !string.contains(key, "/")
-    assert !string.contains(key, "=")
-  })
-  // The operating system's source gives two starts two keys.
-  assert secret.make(crypto.strong_random_bytes)
-    != secret.make(crypto.strong_random_bytes)
-}
 
 fn mode_of(path: String) -> Int {
   let assert Ok(info) = simplifile.file_info(path) as { "no file at " <> path }

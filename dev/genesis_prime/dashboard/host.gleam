@@ -101,13 +101,6 @@ fn initial(settings: Settings) -> fn(Subject(Message)) -> State {
   }
 }
 
-/// Starts a poller linked to the caller.
-pub fn start(
-  settings settings: Settings,
-) -> Result(actor.Started(Subject(Message)), actor.StartError) {
-  read_poll.start(initial(settings), handle)
-}
-
 /// The poller as a child of a supervisor, registered under `name` so that a
 /// restarted poller is reached by the same subject.
 pub fn supervised(
@@ -126,8 +119,8 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       option.map(state.latest, process.send(subscriber, _))
       state
     }
-    read_poll.PageLeft(last: True, ..) -> State(..state, latest: None)
-    read_poll.PageLeft(last: False, ..) | read_poll.Nothing -> state
+    read_poll.PageLeft(last: True) -> State(..state, latest: None)
+    read_poll.PageLeft(last: False) | read_poll.Nothing -> state
     read_poll.ReadAnswered(answer:) -> shown(state, Ran(answer))
     read_poll.ReadTimedOut ->
       shown(

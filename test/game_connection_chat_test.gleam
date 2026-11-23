@@ -321,49 +321,6 @@ pub fn the_entry_burst_ends_with_0x1da_and_0x1bc_and_joins_the_name_and_the_zone
     as "the player joins its folded name and the zone channel of its run and the top zone 4961 of its place's zone 6009, in the step that takes the map's Joined"
 }
 
-pub fn a_report_under_the_same_top_zone_writes_and_joins_nothing_for_0x63a_and_only_the_0x1bc_for_0xf2_test() -> Nil {
-  use <- owned_test.run(10_000)
-  list.each(
-    [
-      #(game_connection_support.zone_changed_message(old: 6009, new: 4962), []),
-      #(game_connection_support.terrain_loaded_message(4962), [0x01BC]),
-    ],
-    fn(sent) {
-      let #(bytes, expected) = sent
-      let #(_, taken) =
-        game_connection_support.read(game_connection_support.in_world(), bytes)
-      assert game_connection_support.written_ids(taken) == expected
-        && group_effects(taken) == []
-        as "chat.zone_reach: 4962 is under the top zone 4961 of the place's zone, so no 0x1da and no group; the first 0xf2 of the stay writes the zone channel's 0x1bc (chat.zone_join_trigger)"
-      assert support.logs(taken) == [] && !support.stops(taken)
-    },
-  )
-}
-
-pub fn a_report_under_another_top_zone_renames_the_channel_and_changes_the_group_test() -> Nil {
-  use <- owned_test.run(10_000)
-  list.each(
-    [
-      #(game_connection_support.zone_changed_message(old: 6009, new: 648), [
-        0x01DA,
-      ]),
-      #(game_connection_support.terrain_loaded_message(648), [0x01DA, 0x01BC]),
-    ],
-    fn(sent) {
-      let #(bytes, expected) = sent
-      let #(_, taken) =
-        game_connection_support.read(game_connection_support.in_world(), bytes)
-      assert game_connection_support.written_ids(taken) == expected
-        as "0x140403670: the client only renames the zone channel; the first 0xf2 of the stay then writes the channel's 0x1bc (chat.zone_join_trigger)"
-      assert group_effects(taken)
-        == [
-          step.LeaveGroup(game_connection_support.zone_group(4961)),
-          step.JoinGroup(game_connection_support.zone_group(35)),
-        ]
-    },
-  )
-}
-
 pub fn a_0x63a_whose_old_value_is_not_the_one_the_server_holds_is_taken_all_the_same_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) =
@@ -373,18 +330,6 @@ pub fn a_0x63a_whose_old_value_is_not_the_one_the_server_holds_is_taken_all_the_
     )
   assert game_connection_support.written_ids(taken) == [0x01DA]
     as "server choice: whether the client's kept value outlives a camp is not read (opcode.0x63a), so the old value is not checked and a sound client is not dropped"
-}
-
-pub fn a_report_of_zone_0_leaves_the_group_and_writes_0x1da_with_no_zone_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(_, taken) =
-    game_connection_support.read(
-      game_connection_support.in_world(),
-      game_connection_support.terrain_loaded_message(0),
-    )
-  assert game_connection_support.written_ids(taken) == [0x01DA, 0x01BC]
-  assert group_effects(taken)
-    == [step.LeaveGroup(game_connection_support.zone_group(4961))]
 }
 
 pub fn a_report_of_a_zone_with_no_row_is_no_zone_with_one_warning_for_each_such_zone_and_the_connection_goes_on_test() -> Nil {

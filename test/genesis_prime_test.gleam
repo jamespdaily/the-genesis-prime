@@ -30,6 +30,9 @@ import unitest
 /// The test tagged `client_rows` (the committed client rows against the client's
 /// own tables) is skipped the same way with `GENESIS_TEST_SKIP_CLIENT_ROWS=1`, and
 /// `./check` runs it in its client-suite part (`gleam test -- --tag client_rows`).
+/// The tests tagged `real_tables` (the tests that read the client's whole tables, minutes
+/// together) are skipped the same way with `GENESIS_TEST_SKIP_REAL_TABLES=1`, and `./check`
+/// runs them in its real-tables part (`gleam test -- --tag real_tables`).
 /// The coverage measure's tests are tagged `coverage` (`gleam test -- --tag
 /// coverage`); no tag of theirs is skipped, so every test runs in some part of the
 /// check.
@@ -95,6 +98,7 @@ pub fn main() -> Nil {
           skipped_when_set("GENESIS_TEST_SKIP_WORLD_DATA", tag: "world_data"),
           skipped_when_set("GENESIS_TEST_SKIP_REAL_START", tag: "real_start"),
           skipped_when_set("GENESIS_TEST_SKIP_CLIENT_ROWS", tag: "client_rows"),
+          skipped_when_set("GENESIS_TEST_SKIP_REAL_TABLES", tag: "real_tables"),
         ]),
       ),
     ),
