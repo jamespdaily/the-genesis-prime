@@ -35,8 +35,8 @@
 ////   ◀─ NotJoined(reason)         when the class and faction have no Novice set:
 ////                                    no unit id is given, no player kept, no watch opened
 ////                                          for each player c2 in sight, in the same step:
-////   ◀─ Noticed(c1's stay, SeenBy(c2, c2's stay))                              ─▶ send to c1
-////                                          Noticed(c2's stay, SeenBy(c1, c1's stay)) ─▶ send to c2
+////   ◀─ Noticed(c1's stay, SeenBy(c2, c2's stay, c2's unit id))                ─▶ send to c1
+////                                          Noticed(c2's stay, SeenBy(c1, c1's stay, c1's unit id)) ─▶ send to c2
 //// ```
 ////
 //// Leave, from the map's side, for a player whose connection goes on after its
@@ -293,7 +293,7 @@
 ////   - A map that dies ends every connection in it; no stealth copy outlives it.
 ////
 //// What a connection does with them is its own (genesis_prime/game/connection):
-//// told `SeenBy(v, stay)`, it sends v its 0x262 at its current place, then its
+//// told `SeenBy(v, stay, unit_id)`, it sends v its 0x262 at its current place, then its
 //// 0x638s as it moves; told `UnseenBy(v)`, its 0x355; on its camp, its 0x355
 //// to every viewer before its `Leave`. A viewer's connection writes only what
 //// its client can take, from the units it has shown and the ones the map reported
@@ -790,10 +790,11 @@ pub type Outgoing {
 /// What a map tells the connection of a player in it about who sees whom, for
 /// that player's stay (`Noticed`).
 pub type Notice {
-  /// The player of connection `by`, in its stay `stay`, sees this connection's
-  /// player, so this connection sends `by` its 0x262 at its place and then its
-  /// moves, each for `stay`.
-  SeenBy(by: ConnectionId, stay: Stay)
+  /// The player of connection `by`, in its stay `stay`, as the unit `unit_id`, sees
+  /// this connection's player, so this connection sends `by` its 0x262 at its place
+  /// and then its moves, each for `stay`, and knows `unit_id` as the address of that
+  /// player.
+  SeenBy(by: ConnectionId, stay: Stay, unit_id: Int)
   /// The player of connection `by` no longer sees this connection's player, by
   /// distance, by leaving the map or by its connection ending, so this connection
   /// sends `by` its 0x355 and no more moves.
@@ -3001,7 +3002,14 @@ fn watched(
   to to: #(ConnectionId, Player),
   by by: #(ConnectionId, Player),
 ) -> Effect(ServiceEffect(Outgoing)) {
-  notify(to:, notice: SeenBy(by: by.0, stay: { by.1 }.stay))
+  notify(
+    to:,
+    notice: SeenBy(
+      by: by.0,
+      stay: { by.1 }.stay,
+      unit_id: player_unit.unit_id(unit: { by.1 }.unit),
+    ),
+  )
 }
 
 /// The send that tells the player `to` that the player of connection `by` no

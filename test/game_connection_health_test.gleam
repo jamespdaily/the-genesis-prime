@@ -235,6 +235,7 @@ pub fn a_viewer_that_arrives_gets_the_health_the_player_entered_with_test() -> N
       game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
+        unit_id: game_connection_support.viewer_unit_id(3),
       )),
     )
   let assert [#(3, PeerNews(news: Appeared(unit:), ..))] =

@@ -76,6 +76,7 @@ fn refused_with(
 pub fn a_0x9a_with_client_cast_id_0_ends_the_connection_and_a_press_bit_of_0_is_logged_and_ignored_test() -> Nil {
   use <- owned_test.run(5000)
   assert cast.take(
+      target_of: support.nothing_shown,
       cast: cast_state.new(),
       message: cast_state.Pressed,
       body: support.press_body(
@@ -92,6 +93,7 @@ pub fn a_0x9a_with_client_cast_id_0_ends_the_connection_and_a_press_bit_of_0_is_
     as "opcode.0x9a: the cast id is the client's counter, never 0"
   let assert Ok(#(_, effects)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: cast_state.new(),
       message: cast_state.Pressed,
       body: support.press_body(
@@ -193,6 +195,7 @@ pub fn a_0x801_clears_the_current_cast_whatever_cast_it_names_test() -> Nil {
     support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let assert Ok(#(state, _)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: state,
       message: cast_state.Cancelled,
       body: support.cancel_body(
@@ -829,6 +832,7 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
   let id = confirmed.server_cast_id
   let cancel = fn(state, reason, bit) {
     cast.take(
+      target_of: support.nothing_shown,
       cast: state,
       message: cast_state.Cancelled,
       body: support.cancel_body(cast_id: id, reason:, bit:),
@@ -960,6 +964,7 @@ pub fn a_dead_casters_press_of_a_spell_that_cannot_be_cast_dead_is_refused_57_an
   use <- owned_test.run(5000)
   let assert Ok(#(after, effects)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: cast_state.new(),
       message: cast_state.Pressed,
       body: support.press_body(

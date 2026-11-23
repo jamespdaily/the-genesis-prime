@@ -282,8 +282,9 @@ pub fn armor_logged_frame(
   Frame(message_id: combat_log.message_id, body:)
 }
 
-/// 0x7ff for a cast that starts: the caster is its own primary target
-/// (`Spell4TargetMechanics.targetType`), the lists are empty (`spell.empty_lists`),
+/// 0x7ff for a cast that starts: the primary target is the unit the press named, the caster
+/// for a spell cast at the caster (`Spell4TargetMechanics.targetType`), the lists are empty
+/// (`spell.empty_lists`),
 /// the 16-bit value is the level of the item whose use started the cast, 0 for a cast
 /// that no item started (`opcode.0x7ff.caster_item_level`), and the two bits are the
 /// decode's safe values (`opcode.0x7ff.own_cast`, `opcode.0x7ff.activate`). The activate
@@ -401,8 +402,8 @@ pub fn refused_frame(
   Frame(message_id: spell_cast_refused.message_id, body:)
 }
 
-/// 0x07FD for the press's cast: the client's id, the server's, the caster as its
-/// primary target and the position and yaw the 0x7ff holds.
+/// 0x07FD for the press's cast: the client's id, the server's, the primary target the
+/// press named and the position and yaw the 0x7ff holds.
 pub fn confirmed_frame(
   client_cast_id client_cast_id: Int,
   start start: SpellStarted,

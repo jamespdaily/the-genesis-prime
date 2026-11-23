@@ -522,6 +522,7 @@ fn sorted_viewers(
   entered entered: world_entry.Entered,
 ) -> List(#(ConnectionId, Stay)) {
   map.sorted_by_connection(entered.viewers)
+  |> list.map(fn(viewer) { #(viewer.0, { viewer.1 }.stay) })
 }
 
 /// The player's level: its unit's stat 10, 1 when it has none.
@@ -703,7 +704,9 @@ pub fn news_to_connection(
   news news: client_connection.News,
 ) -> List(Effect(ConnectionEffect(Request))) {
   case dict.get(entered.viewers, connection) {
-    Ok(stay) -> [news_to(entered:, viewer: #(connection, stay), news:)]
+    Ok(viewer) -> [
+      news_to(entered:, viewer: #(connection, viewer.stay), news:),
+    ]
     Error(Nil) -> []
   }
 }

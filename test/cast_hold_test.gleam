@@ -130,6 +130,7 @@ pub fn a_held_press_the_rule_refuses_gets_0x7fc_with_client_cast_id_0_and_no_hol
   let unarmed = cast_state.Caster(..support.caster(), weapon: None)
   let assert Ok(#(_, effects)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: cast_state.new(),
       message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: 9, target: 0, held: 1),
@@ -555,6 +556,7 @@ pub fn a_hold_body_the_clients_reader_refuses_ends_the_connection_test() -> Nil 
   list.each([<<valid:bits, 0>>, <<1, 2, 3>>, <<>>], fn(body) {
     let assert Error(cast_state.NotDecoded(..)) =
       cast.take(
+        target_of: support.nothing_shown,
         cast: cast_state.new(),
         message: cast_state.KeyHeld,
         body:,

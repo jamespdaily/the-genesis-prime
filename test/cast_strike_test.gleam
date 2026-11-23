@@ -197,6 +197,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
   let #(second_state, _) = gone()
   let assert Ok(#(second_state, ended)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: second_state,
       message: cast_state.Cancelled,
       body: support.cancel_body(
@@ -285,6 +286,7 @@ pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test
   let #(state, _) = gone()
   let assert Ok(#(state, _)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: state,
       message: cast_state.Cancelled,
       body: support.cancel_body(

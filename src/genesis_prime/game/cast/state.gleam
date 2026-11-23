@@ -23,6 +23,7 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/look
+import genesis_prime/game/player_address.{type PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
@@ -97,6 +98,10 @@ pub type Caster {
     weapon: Option(Item2Id),
     /// The connections whose players see this one.
     audience: Set(ConnectionId),
+    /// The other players in the player's sight, by unit id, with what a tell to each is
+    /// addressed by (genesis_prime/game/player_address): the units a press can name as
+    /// its target.
+    players_in_sight: Dict(Int, PlayerAddress),
     /// Whether the player is dead (genesis_prime/game/player_life), which the
     /// client checks a press against (`cast.dead_player`).
     dead: Bool,
@@ -715,8 +720,8 @@ pub type TickingOn {
 /// was pressed, the bag ability the key names (the second spell of the 0x816 a first
 /// press opens), which stage of the ability's open threshold it casts (none for the
 /// ability's own spell), whether the spell is a Proxy of a press that has no threshold
-/// time (cast as the press itself, so its own threshold opens), and the debug lines the
-/// resolve gave.
+/// time (cast as the press itself, so its own threshold opens), the unit the press names
+/// as the cast's primary target, and the debug lines the resolve gave.
 pub type Resolution {
   Resolution(
     spell: Spell,
@@ -724,8 +729,26 @@ pub type Resolution {
     bag_spell: Spell4Id,
     stage: Option(Int),
     proxied: Bool,
+    primary_target: PressTarget,
     logs: List(Effect),
   )
+}
+
+/// The primary target of the cast a bag press starts, as its spell's targeting kind
+/// judged the unit the press named (genesis_prime/game/cast/press `at_a_unit`): the
+/// caster, or another player in the caster's sight (`Caster.players_in_sight`). A cast
+/// at a creature, on the ground or of a kind the server does not read is on the caster.
+pub type PressTarget {
+  OnCaster
+  OnPlayer(unit_id: Int)
+}
+
+/// Why a press is refused before it starts a cast: the unit it names, or the spell.
+pub type PressRefusal {
+  /// The client's own refusal (`opcode.0x9d.target_checks`).
+  PressRefused(result: cast_result.CastResult)
+  /// The press is one the server does not build: refused, and logged once for the spell.
+  PressNotBuilt(result: cast_result.CastResult, why: String)
 }
 
 /// What a cast is to its ability's threshold.
@@ -923,6 +946,8 @@ pub type Held {
 pub type Holding {
   Holding(
     ability: Spell,
+    /// The primary target the key's down named, which each repeat presses at.
+    target: PressTarget,
     /// The timer that waits for the cooldowns to end, when one runs.
     repeat_timer: Option(TimerId),
     /// The cast the hold started last, once it has started one: until that cast is

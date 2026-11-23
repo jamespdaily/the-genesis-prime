@@ -326,7 +326,7 @@ pub fn pressed_at(
       state:,
       caster:,
       bag_index: 0,
-      target: 0,
+      target: support.target_the_client_sends(caster:, plans:, bag_index: 0),
       at: at_ms,
     )
   case support.refusal_results(effects: raw) {
