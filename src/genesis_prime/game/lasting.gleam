@@ -391,9 +391,18 @@ fn oldest_first(
 ) -> List(Hold) {
   list.filter(holds, fn(hold) { hold.node.unit_id == unit_id && matching(hold) })
   |> list.sort(fn(first, second) {
-    int.compare(first.started_ms, second.started_ms)
-    |> order.break_tie(int.compare(first.cast_id, second.cast_id))
+    older(first: #(first.started_ms, first.cast_id), second: #(
+      second.started_ms,
+      second.cast_id,
+    ))
   })
+}
+
+/// The order of two casts by age: the start, then the cast id. Cast ids wrap, so the start
+/// comes first.
+fn older(first first: #(Int, Int), second second: #(Int, Int)) -> order.Order {
+  int.compare(first.0, second.0)
+  |> order.break_tie(int.compare(first.1, second.1))
 }
 
 /// A cast of one caster on one unit as the stack rule reads it: the cast, its spell, its
@@ -445,8 +454,10 @@ pub fn stack_pushed_off(
   let same =
     list.filter(casts, matching)
     |> list.sort(fn(first, second) {
-      int.compare(first.started_ms, second.started_ms)
-      |> order.break_tie(int.compare(first.cast_id, second.cast_id))
+      older(first: #(first.started_ms, first.cast_id), second: #(
+        second.started_ms,
+        second.cast_id,
+      ))
     })
   list.take(same, int.max(0, list.length(same) - room))
   |> list.map(fn(cast) { cast.cast_id })
