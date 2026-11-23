@@ -5,8 +5,8 @@
 //// `src/genesis_prime/table/` and `src/genesis_prime/table.gleam` from the
 //// folder named by `GENESIS_TABLE_DIR`. `gleam run -m genesis_prime/table_generator check`
 //// generates into a scratch folder and fails when the committed code differs;
-//// it does nothing where `GENESIS_NO_CLIENT=1`, because there is no client to
-//// read. Both format what they write with `gleam format`, and both print the
+//// `./check` does not start it where `GENESIS_NO_CLIENT=1`, because there is no
+//// client to read. Both format what they write with `gleam format`, and both print the
 //// columns that name an id of no loaded table, which stay `Int`.
 ////
 //// A 32-bit column is read as a signed number unless `column_sign.all` lists
@@ -360,12 +360,8 @@ fn report(differences: List(Difference)) -> String {
 /// `GENESIS_TABLE_DIR` and the `src` folder. Prints what differs and stops with
 /// an error status when the check fails.
 pub fn main() -> Nil {
-  case argv.load().arguments, envoy.get("GENESIS_NO_CLIENT") {
-    ["check"], Ok("1") ->
-      io.println(
-        "generated tables not compared: GENESIS_NO_CLIENT=1, no client",
-      )
-    ["check"], _ ->
+  case argv.load().arguments {
+    ["check"] ->
       finish(
         check(
           tables: table_folder.path(),
@@ -375,7 +371,7 @@ pub fn main() -> Nil {
         ),
         report_check,
       )
-    ["write"], _ ->
+    ["write"] ->
       finish(
         write(
           tables: table_folder.path(),
@@ -384,7 +380,7 @@ pub fn main() -> Nil {
         ),
         report_write,
       )
-    _, _ -> {
+    _ -> {
       io.println(
         "usage: gleam run -m genesis_prime/table_generator write | check",
       )

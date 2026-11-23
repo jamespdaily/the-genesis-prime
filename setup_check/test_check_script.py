@@ -471,7 +471,6 @@ class Run:
     marker_ran: bool
     hang: str
     left_running: list[str]
-    recorded: str
     directory: str
     shard: str
     url: str
@@ -508,10 +507,9 @@ def shared_run(key: str, *arguments: str, client: bool = False, prepare=None, ha
         done = case.run_check(*arguments, client=client, timeout=timeout, **settings)
         took = time.monotonic() - started
         left = subprocess.run(["pgrep", "-f", hang_pattern(seconds)], capture_output=True, text=True).stdout.split() if seconds else []
-        record = Path(case.git("rev-parse", "--absolute-git-dir")) / "check-passed-commit"
         run = Run(
             done, case.commands(), case.side_log("environment"), case.side_log("peak"), case.side_log("erl"), took,
-            case.marker.exists(), seconds, left, record.read_text().strip() if record.exists() else "",
+            case.marker.exists(), seconds, left,
             case.side_log("directory"), case.side_log("shard"), case.side_log("url"),
         )
     finally:
@@ -1090,7 +1088,6 @@ LIGHT_FILES = [
     ".claude/skills/writing-tests/SKILL.md",
     ".claude/skills/designing-processes/structure.md",
     ".claude/agents/implementer.md",
-    ".github/workflows/check.yml",
     "LICENSE",
     ".gitignore",
     "dev/card.sh",
@@ -1192,6 +1189,10 @@ class LightScopeTest(unittest.TestCase):
             with self.subTest(path=path):
                 run = scoped_run("not-light " + path, lambda case, path=path: plant_light_changes(case, ["CLAUDE.md", path]))
                 self.assert_every_part(run, path)
+
+    def test_the_workflow_that_runs_the_parts_is_not_light_since_only_its_own_run_tests_it(self):
+        run = scoped_run("not-light-workflow", lambda case: plant_light_changes(case, ["CLAUDE.md", ".github/workflows/check.yml"]))
+        self.assert_every_part(run, ".github/workflows/check.yml")
 
     def test_the_check_script_and_its_tests_and_the_compiled_tools_under_dev_are_not_light(self):
         for path in ("check", "setup_check/test_check_script.py", "dev/planted.gleam", "dev/genesis_prime/planted.sh"):
@@ -1300,6 +1301,50 @@ class LightScopeTest(unittest.TestCase):
 
         run = scoped_run("light-ls-files-fails", plant, PLANT_GIT_FAILS="ls-files")
         self.assert_every_part(run, "git ls-files")
+
+
+def scope_run(key: str, base: str, prepare, **settings: str) -> Run:
+    """A planted `./check scope BASE`, on CI's machine (no client, GITHUB_ACTIONS set)."""
+    return shared_run("scope-" + key, "scope", base, prepare=prepare, GITHUB_ACTIONS="true", **settings)
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class ScopeModeTest(unittest.TestCase):
+    """`./check scope BASE` is how CI's pull request run tells a light change from any other: it
+    reads the files changed since BASE against the light set, prints the one `scope:` line the
+    full check prints, and ends with 0 for a light change and 1 for any other case. It runs
+    on CI's machine, which the full check's own scope never reads as light, and starts nothing
+    else: no setup check, no part."""
+
+    def test_the_scope_mode_names_a_light_change_by_its_exit_status_and_every_other_case_by_the_reason(self):
+        def plant_other(case):
+            plant_light_changes(case, ["CLAUDE.md", "src/planted.gleam"])
+
+        def plant_workflow(case):
+            plant_light_changes(case, ["CLAUDE.md", ".github/workflows/check.yml"])
+
+        # (key, base, prepare, exit status, the line the output holds, why)
+        rows = [
+            ("light", "main", plant_light_changes, 0, "scope: light", "every changed file is in the light set"),
+            ("other", "main", plant_other, 1, "scope: every part, because the branch changes src/planted.gleam", "one file is not light"),
+            ("workflow", "main", plant_workflow, 1, "scope: every part, because the branch changes .github/workflows/check.yml", "the workflow is tested by its own run"),
+            ("nothing", "HEAD", plant_light_changes, 1, "scope: every part, because the branch changes no file", "no file changed since BASE"),
+            ("bad-base", "no-such-revision", plant_light_changes, 1, "git diff failed", "a base git cannot find: the files are not known"),
+        ]
+        for key, base, prepare, status, line, why in rows:
+            with self.subTest(why):
+                run = scope_run(key, base, prepare)
+                self.assertEqual(run.done.returncode, status, run.output)
+                self.assertIn(line, run.output)
+                self.assertEqual(scope_line(run.output).count("\n"), 0, "one scope line")
+                self.assertEqual(run.commands, [], "no part and no setup check ran")
+                self.assertNotIn("setup check passed", run.output)
+
+    def test_the_scope_mode_without_a_base_is_refused_with_the_usage(self):
+        run = shared_run("scope-no-base", "scope")
+        self.assertEqual(run.done.returncode, 2, run.output)
+        self.assertIn("usage", run.output.lower())
+        self.assertEqual(run.commands, [])
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
@@ -1853,6 +1898,9 @@ class ModuleTimeTest(unittest.TestCase):
             ("16.0", "m01_test"), ("12.0", "m12_test"), ("11.0", "m11_test"), ("10.0", "m10_test"),
             ("9.0", "m09_test"), ("8.0", "m08_test"), ("7.0", "m07_test"), ("6.0", "m06_test"),
             ("5.5", "m05_test"), ("4.0", "m04_test")])
+        # The balance of a shard is read from the sum of all its modules, not only the ten printed:
+        # 1 to 12 s, m05 as 2.0 + 3.5 s instead of 5, and the serial run's 15.0 + 0.5 s.
+        self.assertIn("  total test time: 94.0 s in 12 modules", run.output.splitlines())
 
     def test_a_skipped_test_adds_no_time_and_its_module_is_not_listed(self):
         def plant(case):
@@ -1860,6 +1908,7 @@ class ModuleTimeTest(unittest.TestCase):
 
         run = shared_run("module-times-skipped", prepare=plant)
         self.assertEqual(slowest_modules(run.output)[1], [("1.0", "m01_test")])
+        self.assertIn("  total test time: 1.0 s in 1 modules", run.output.splitlines())
 
     def test_the_two_runs_are_started_with_the_table_reporter_and_no_colour(self):
         commands = shared_run("full").commands
@@ -1867,7 +1916,9 @@ class ModuleTimeTest(unittest.TestCase):
         self.assertIn(SERIAL_RUN, commands)
 
     def test_runs_that_printed_no_rows_leave_the_list_out(self):
-        self.assertEqual(slowest_modules(shared_run("full").output), ("", []))
+        output = shared_run("full").output
+        self.assertEqual(slowest_modules(output), ("", []))
+        self.assertNotIn("total test time", output)
 
     def test_a_failing_part_prints_its_failed_rows_and_leaves_out_the_passed_and_skipped_ones(self):
         def plant(case):
@@ -2054,11 +2105,6 @@ class PartRunTest(unittest.TestCase):
         run = part_run("real-tables-fails", "real-tables", client=True, prepare=tagged_run_fails)
         self.assertEqual(failed_line(self, run.output), "check FAILED: real-tables")
 
-    def test_a_part_run_never_writes_the_passed_commit_record(self):
-        run = part_run("no-record", "format")
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertEqual(run.recorded, "", "a passing part run on a clean tree leaves no record")
-
     def test_a_part_run_without_the_client_skips_the_part_the_way_the_full_check_does(self):
         for part in ("generated-tables", "real-start", "real-tables", "world-data"):
             with self.subTest(part=part):
@@ -2127,14 +2173,17 @@ PINNED_SHARDS = {
     2: {
         "alpha_test": 1, "beta_test": 1, "gamma_test": 2, "delta_test": 2, "support_helper": 1,
         "spells/flow_test": 1, "spells/support": 2, "m00_test": 2, "m07_test": 1, "m29_test": 2,
-        "code_rule/planted_test": 1, "added_one_test": 2,
+        "code_rule/planted_test": 1,
     },
     3: {
         "alpha_test": 2, "beta_test": 3, "gamma_test": 3, "delta_test": 2, "support_helper": 3,
         "spells/flow_test": 3, "spells/support": 3, "m00_test": 1, "m07_test": 3, "m29_test": 1,
-        "code_rule/planted_test": 1, "added_one_test": 1,
+        "code_rule/planted_test": 1,
     },
 }
+
+# The shard (of 3) of the files the second tree adds, worked out the same way.
+PINNED_ADDED_SHARDS = {"added_one_test": 1, "spells/added_test": 1}
 
 
 # The shard of each heavy module, worked by hand from the seconds ./check keeps (the
@@ -2252,14 +2301,15 @@ class ShardTest(unittest.TestCase):
                     for path, target in shard_listing(run):
                         self.assertRegex(target, r"^/.*/test/%s$" % re.escape(path), "each link goes to the file at its own path below test")
                 for module, shard in PINNED_SHARDS[count].items():
-                    if module + ".gleam" in held:
-                        self.assertEqual(held[module + ".gleam"], shard, module)
+                    self.assertIn(module + ".gleam", held, "a pinned module the planted tree holds")
+                    self.assertEqual(held[module + ".gleam"], shard, module)
 
     def test_a_gleam_file_stays_in_its_shard_when_other_files_are_added(self):
         before = owners(3)
         after = owners(3, "second")
         for added in SHARD_TREE_ADDED:
             self.assertIn(added + ".gleam", after)
+            self.assertEqual(after[added + ".gleam"], PINNED_ADDED_SHARDS[added], added)
         for removed in SHARD_TREE_REMOVED:
             self.assertNotIn(removed + ".gleam", after)
         kept = [path for path in before if path in after]

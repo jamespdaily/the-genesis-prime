@@ -15,6 +15,15 @@
 #                         gleam-test only and required there: the Kth of N shards of
 #                         the test modules (below). A bad name or shard prints the
 #                         usage and exits 2 before anything runs.
+#        ./check scope BASE
+#                         whether the files changed since the commit BASE are all in
+#                         the light set (below), for CI's pull request run, which asks
+#                         it of the merge commit's first parent to choose its legs.
+#                         Prints the one `scope:` line the full check prints and exits 0
+#                         for a light change and 1 for every other case (no changed
+#                         file, a git command that failed, any other file). It reads
+#                         CI's machine as an ordinary one, and starts nothing: no setup
+#                         check, no part.
 #
 # A part run starts as the full check does (the watchdog, then the whole setup check,
 # which when it fails runs nothing else), decides no scope and runs no branch-current:
@@ -38,15 +47,17 @@
 # The full check chooses its scope from the files the branch changes since its
 # merge base with origin/main (or main): uncommitted and untracked files count,
 # and a deleted or renamed file counts under both of its names. When there is at
-# least one and every one is in the light set (light_set below: guidance, CI's
-# workflow, the licence, .gitignore and the untested shell and Python tools under
-# dev/, apply_migrations.sh excepted), it runs only the parts of ./check fast,
+# least one and every one is in the light set (light_set below: guidance, the
+# licence, .gitignore and the untested shell and Python tools under dev/,
+# apply_migrations.sh excepted; the workflow is not light, its own run is what tests
+# it), it runs only the parts of ./check fast,
 # with ./check fast's budget, prints one `scope: light` line saying why, and ends
 # with `check passed (scope: light)`. Every other case runs every part and prints
 # a `scope: every part` line with the reason: any other changed file, no changed
 # file, no merge base, a shallow history, a failed diff or ls-files, and CI's
-# machine (GENESIS_NO_CLIENT=1 or GITHUB_ACTIONS set), which so always runs every
-# part. branch-current and the setup check run first in either scope.
+# machine (GENESIS_NO_CLIENT=1 or GITHUB_ACTIONS set), whose runs name a part
+# or ask `./check scope`. branch-current and the setup check run first in either
+# scope.
 #
 # The full check starts with branch-current: HEAD must hold every commit of
 # origin/main as last fetched (git rev-list --count HEAD..origin/main; the check
@@ -220,6 +231,7 @@ prerequisites_of() {
 
 usage() {
   echo "usage: ./check [fast]"
+  echo "       ./check scope BASE         whether the files changed since BASE are all light: exit 0 for a light change, 1 for any other case"
   echo "       ./check part NAME [K/N]    one of: ${full_parts/ literal-area/}; K/N only for gleam-test, which needs it"
   exit 2
 }
@@ -227,6 +239,10 @@ usage() {
 mode=${1:-full}
 case "$mode" in
   full | fast) ;;
+  scope)
+    scope_base=${2:-}
+    [ -n "$scope_base" ] && [ -z "${3:-}" ] || usage
+    ;;
   part)
     part_name=${2:-}
     part_shard=${3:-}
@@ -304,21 +320,6 @@ export PGHOST PGPORT PGUSER
 # The parts of ./check fast, which a full check whose branch is light also runs.
 fast_parts="format gleam-build glinter fact-checker"
 
-work=$(mktemp -d)
-database="genesis_check_$$_${started}"
-case "$mode" in
-  full) parts=$full_parts ;;
-  fast) parts=$fast_parts ;;
-  part)
-    needed="$part_name $(prerequisites_of "$part_name")"
-    parts=""
-    for part in $full_parts; do
-      in_list "$part" "$needed" && parts="${parts:+$parts }$part"
-    done
-    scope_label=" (part $part_name${part_shard:+ $part_shard})"
-    ;;
-esac
-
 # The light set: the paths whose change no part beyond the fast parts reads. Each
 # entry is "pattern|reason". A pattern is a shell glob in which `**` crosses
 # folders; one without `**` matches only a path of its own depth, so `dev/*.sh`
@@ -330,7 +331,6 @@ light_set=(
   "CLAUDE.md|guidance: no part reads it"
   ".claude/skills/**/*.md|guidance: no part reads it"
   ".claude/agents/**|guidance: no part reads it"
-  ".github/workflows/**|CI's workflow: only CI runs it, and CI runs every part"
   "LICENSE|the licence text: no part reads it"
   ".gitignore|which files git skips: no part reads it"
   "dev/*.sh|a shell tool beside the code: no part tests it"
@@ -399,17 +399,43 @@ changed_files() {
   changed_list=$(printf '%s\n%s\n' "$tracked" "$untracked" | sed '/^$/d')
 }
 
-# decide_scope: sets scope to light or full, and scope_why to the reason, from the
-# files the branch changes since its merge base with main: light only when there
-# is at least one and every one is in the light set. It is full on CI's machine,
-# whose checkout is shallow anyway (GENESIS_NO_CLIENT=1, which a CI run without the
-# client's data secret sets, or GITHUB_ACTIONS), and wherever the changed files are not known: no merge base, a
-# shallow history, or a git command that failed.
+# scope_since BASE LABEL: sets scope to light or full, and scope_why to the reason, from the
+# files the working tree changes since BASE (LABEL names BASE in the reason): light only when
+# there is at least one and every one is in the light set, full wherever they are not known
+# (a git command that failed).
+scope_since() {
+  local base=$1 label=$2 path count=0 first=""
+  scope=full
+  if ! changed_files "$base"; then
+    scope_why="$changed_files_error, so the files the branch changes are not known"
+    return
+  fi
+  if [ -z "$changed_list" ]; then
+    scope_why="the branch changes no file since $label"
+    return
+  fi
+  while IFS= read -r path; do
+    if ! in_light_set "$path"; then
+      scope_why="the branch changes $path since $label, which is not in the light set"
+      return
+    fi
+    count=$((count + 1))
+    [ -n "$first" ] || first=$path
+  done <<<"$changed_list"
+  scope=light
+  scope_why="the $count files the branch changes since $label (first: $first) are all guidance or tools that no other part reads"
+}
+
+# decide_scope: the scope of a local full check, from the files the branch changes since its
+# merge base with main. It is full on CI's machine (GENESIS_NO_CLIENT=1, which a CI run without
+# the client's data secret sets, or GITHUB_ACTIONS), whose runs name their parts or ask
+# `./check scope`, and wherever the changed files are not known: no merge base, a shallow
+# history, or a git command that failed.
 decide_scope() {
-  local base path count=0 first=""
+  local base
   scope=full
   if [ "${GENESIS_NO_CLIENT:-}" = 1 ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
-    scope_why="this is CI's machine (GENESIS_NO_CLIENT=1 or GITHUB_ACTIONS is set), which runs every part"
+    scope_why="this is CI's machine (GENESIS_NO_CLIENT=1 or GITHUB_ACTIONS is set), which runs a part by name"
     return
   fi
   if history_is_shallow; then
@@ -421,25 +447,38 @@ decide_scope() {
     scope_why="there is no merge base with origin/main or main to find the changed files from"
     return
   fi
-  if ! changed_files "$base"; then
-    scope_why="$changed_files_error, so the files the branch changes are not known"
-    return
-  fi
-  if [ -z "$changed_list" ]; then
-    scope_why="the branch changes no file since its merge base with main"
-    return
-  fi
-  while IFS= read -r path; do
-    if ! in_light_set "$path"; then
-      scope_why="the branch changes $path since its merge base with main, which is not in the light set"
-      return
-    fi
-    count=$((count + 1))
-    [ -n "$first" ] || first=$path
-  done <<<"$changed_list"
-  scope=light
-  scope_why="the $count files the branch changes since its merge base with main (first: $first) are all guidance or tools that no other part reads"
+  scope_since "$base" "its merge base with main"
 }
+
+# ./check scope BASE: CI's pull request run asks which legs to run. The checkout there is the
+# merge commit of the head into the base, so BASE is its first parent and the changed files are
+# the pull request's. It prints the scope line and ends with 0 for a light change and 1 for any
+# other case, before anything is started or made.
+if [ "$mode" = scope ]; then
+  scope_since "$scope_base" "$scope_base"
+  if [ "$scope" = light ]; then
+    echo "scope: light, because $scope_why"
+    exit 0
+  fi
+  echo "scope: every part, because $scope_why"
+  exit 1
+fi
+
+work=$(mktemp -d)
+database="genesis_check_$$_${started}"
+case "$mode" in
+  full) parts=$full_parts ;;
+  fast) parts=$fast_parts ;;
+  part)
+    needed="$part_name $(prerequisites_of "$part_name")"
+    parts=""
+    for part in $full_parts; do
+      in_list "$part" "$needed" && parts="${parts:+$parts }$part"
+    done
+    scope_label=" (part $part_name${part_shard:+ $part_shard})"
+    ;;
+esac
+
 
 # skip NAME REASON: records that the part did not run on purpose, and why.
 skip() {
@@ -558,7 +597,7 @@ if [ "$mode" = full ]; then
     parts=$fast_parts
     scope_label=" (scope: light)"
     budget=$fast_budget
-    echo "scope: light, so only the fast parts run ($fast_parts): $scope_why; CI runs every part"
+    echo "scope: light, so only the fast parts run ($fast_parts): $scope_why; CI decides the same with ./check scope"
   else
     echo "scope: every part, because $scope_why"
   fi
@@ -698,9 +737,9 @@ wait_for_status() {
 heavy_modules="table_value_test:102.5 account_store_test:78.9 apply_migrations_test:66.7 game_wire_quest_test:58.1 objective_test:56.9 migration_start_test:56.7 sigterm_test:56.7 spell_area_test:45.8 spell_plan_lasting_test:44.2 limited_action_set_test:42.5"
 
 # shard_files NUMBER COUNT: prints the path below test of each .gleam file under test/ that
-# shard NUMBER of COUNT owns, one a line. A heavy module goes to the shard the biggest-first
-# rule gives (equal seconds by name, so the order of heavy_modules does not matter); any other file to h mod COUNT + 1, h = (31 * h + byte) mod 1000003 over the path
-# without `.gleam`, kept below 2^53 so every awk computes the same.
+# shard NUMBER of COUNT owns, one a line, by the rule in the header (equal seconds of two
+# heavy modules go by name, so the order of heavy_modules does not matter). The hash stays
+# below 2^53 so every awk computes the same.
 shard_files() {
   (cd test && find . -type f -name '*.gleam' | sed 's|^\./||' | LC_ALL=C sort) |
     LC_ALL=C awk -v number="$1" -v count="$2" -v heavy="$heavy_modules" '
@@ -862,11 +901,10 @@ running_tests() {
   fi
 }
 
-# test_module_times LOG: prints the ten test modules with the most test time in the
-# unitest tables of LOG, slowest first, as `    SECONDS s  module`: the sum of the
-# durations of a module's passed and failed tests, from every table in the log (a
-# skipped test has none). A row reads `| PASS | module | test | 67ms |`.
-test_module_times() {
+# module_milliseconds LOG: prints `MILLISECONDS module` for each test module in the unitest
+# tables of LOG: the sum of the durations of its passed and failed tests, from every table in
+# the log (a skipped test has none). A row reads `| PASS | module | test | 67ms |`.
+module_milliseconds() {
   awk -F'|' '
     $2 ~ /^ *(PASS|FAIL) *$/ && $5 ~ /[0-9]ms *$/ {
       module = $3
@@ -875,9 +913,22 @@ test_module_times() {
       gsub(/[^0-9]/, "", milliseconds)
       total[module] += milliseconds
     }
-    END { for (module in total) printf "%d %s\n", total[module], module }' "$1" |
-    sort -k1,1nr -k2,2 | head -10 |
+    END { for (module in total) printf "%d %s\n", total[module], module }' "$1"
+}
+
+# test_module_times LOG: prints the ten test modules with the most test time in LOG, slowest
+# first, as `    SECONDS s  module`. A module's tests run side by side, so the sum is the module's
+# test time, not the span it took.
+test_module_times() {
+  module_milliseconds "$1" | sort -k1,1nr -k2,2 | head -10 |
     awk '{ printf "    %6.1f s  %s\n", $1 / 1000, $2 }'
+}
+
+# test_total_time LOG: prints the test time of all the modules of LOG added up, and how many
+# there are, so the balance of the shards of gleam-test can be read from each one's summary.
+test_total_time() {
+  module_milliseconds "$1" |
+    awk '{ total += $1; count++ } END { if (count) printf "  total test time: %.1f s in %d modules\n", total / 1000, count }'
 }
 
 # literal_peak_report FILE RUN LABEL: prints the peak the run RUN recorded in FILE as
@@ -1097,6 +1148,7 @@ if [ -f "$work/gleam-test.log" ]; then
   if [ -n "$module_times" ]; then
     echo "  slowest test modules (the sum of each module's test times, gleam-test part):"
     echo "$module_times"
+    test_total_time "$work/gleam-test.log"
   fi
 fi
 
