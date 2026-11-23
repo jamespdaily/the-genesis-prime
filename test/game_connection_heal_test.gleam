@@ -29,6 +29,7 @@ import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
+import genesis_prime/game/held_changes
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
@@ -426,8 +427,8 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
             76_784, cast_state.Heal(vital: effect_kind.Health, amount:) ->
               Ok(amount)
             _, cast_state.Heal(..)
-            | _, cast_state.Property(..)
-            | _, cast_state.Absorb(..)
+            | _, cast_state.HeldChange(held_changes.Property(..))
+            | _, cast_state.HeldChange(held_changes.Absorb(..))
             | _, cast_state.Look(..)
             -> Error(Nil)
           }

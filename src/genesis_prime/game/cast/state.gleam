@@ -20,6 +20,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
+import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/look
@@ -146,15 +147,16 @@ pub type Caster {
 /// each owner of a change takes by its source and ignores when it holds none; a shield
 /// heal has no end.
 pub type CasterChange {
-  /// A property modifier (a UnitPropertyModifier or UnitPropertyConversion effect): the
-  /// connection applies it to the player's properties (genesis_prime/game/unit_properties `apply`).
-  Property(modifier: unit_properties.Modifier)
-  /// An absorb pool (an Absorption effect): the connection gives the player's life a pool of
-  /// `amount` that takes the damage types of `mask` (bit 1 Physical, 2 Tech, 4 Magic) before
-  /// its shield and health (genesis_prime/game/player_life `absorb_started`). The amount is
-  /// worked out at the go from the caster's stats, as a heal's is, and the pool lasts until
-  /// its end or it is used up (`Spell4Effects.effectType.29`).
-  Absorb(amount: Int, mask: Int)
+  /// A property modifier (a UnitPropertyModifier or UnitPropertyConversion effect) or an
+  /// absorb pool (an Absorption effect): the connection applies it to the player's
+  /// properties (genesis_prime/game/unit_properties `apply`) or gives the player's life
+  /// a pool of `amount` that takes the damage types of `mask` (bit 1 Physical, 2 Tech, 4
+  /// Magic) before its shield and health (genesis_prime/game/player_life
+  /// `absorb_started`). A pool's amount is worked out at the go from the caster's stats,
+  /// as a heal's is, and it lasts until its end or it is used up
+  /// (`Spell4Effects.effectType.29`). The same two changes are what a caster tells
+  /// another player (genesis_prime/game/held_changes `PlayerChangeStarts`).
+  HeldChange(change: held_changes.Change)
   /// A disguise (a DisguiseOutfit effect): the connection starts it on the player's look,
   /// writes the slots that changed to the player's client and tells its viewers
   /// (genesis_prime/game/look `start`). It ends with the modifiers' own end,

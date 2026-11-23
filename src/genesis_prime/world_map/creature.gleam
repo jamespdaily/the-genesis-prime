@@ -248,6 +248,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/area
 import genesis_prime/game/forced_move
+import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place.{type Place}
@@ -586,7 +587,7 @@ pub opaque type State {
     viewers: Dict(ConnectionId, Stay),
     properties: Properties,
     casters: Dict(ConnectionId, WatchId),
-    held_by: List(#(Source, ConnectionId)),
+    held: held_changes.Held,
     views: Dict(Int, #(ConnectionId, unit_casts.CastView)),
     next_watch: Int,
     stood_again_ms: Option(Int),
@@ -628,7 +629,7 @@ pub fn new(settings: Settings) -> State {
     viewers: dict.from_list(settings.creature.viewers),
     properties: base_properties(settings:),
     casters: dict.new(),
-    held_by: [],
+    held: held_changes.new(),
     views: dict.new(),
     next_watch: first_caster_watch,
     stood_again_ms: None,
@@ -1147,14 +1148,15 @@ fn modifier_started(
   use <- bool.guard(
     when: creature_life.is_dead(life: state.life)
       || struck_before_this_life(state:, struck_at_ms:)
-      || result.is_ok(list.key_find(state.held_by, source))
+      || result.is_ok(held_changes.holder_of(held: state.held, source:))
       || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:),
     return: #(state, Effects([])),
   )
   let #(properties, changed) =
     unit_properties.apply(properties: state.properties, source:, modifier:)
-  let state =
-    State(..state, held_by: list.append(state.held_by, [#(source, by)]))
+  let #(held, _) =
+    held_changes.started_by_connection(held: state.held, by:, source:)
+  let state = State(..state, held:)
   let #(state, watching) = watching(state:, by:)
   let news = changed_news(state:, changed:)
   let #(state, revalued) = revalued(state:, properties:, now_ms:)
@@ -1243,7 +1245,7 @@ fn stood_again(
       body: base_body(settings: state.settings),
       properties: base_properties(settings: state.settings),
       casters: dict.new(),
-      held_by: [],
+      held: held_changes.new(),
       views: dict.new(),
       stood_again_ms: Some(now_ms),
     ),
@@ -1321,18 +1323,29 @@ fn source_removed(
   source source: Source,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  case list.key_pop(state.held_by, source) {
+  case held_changes.released(held: state.held, source:) {
     Error(Nil) -> #(state, [])
-    Ok(#(by, held_by)) -> {
-      let state = State(..state, held_by:)
-      let #(properties, changed) =
-        unit_properties.remove(properties: state.properties, source:)
-      let news = changed_news(state:, changed:)
-      let #(state, revalued) = revalued(state:, properties:, now_ms:)
+    Ok(#(held, by)) -> {
+      let #(state, removed) =
+        modifier_removed(state: State(..state, held:), source:, now_ms:)
       let #(state, unwatched) = unwatching_last(state:, by:)
-      #(state, list.flatten([news, revalued, unwatched]))
+      #(state, list.append(removed, unwatched))
     }
   }
+}
+
+/// The modifier of `source`, already out of the ledger, taken off the creature's
+/// properties: the news of what changed and the creature's values again.
+fn modifier_removed(
+  state state: State,
+  source source: Source,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let #(properties, changed) =
+    unit_properties.remove(properties: state.properties, source:)
+  let news = changed_news(state:, changed:)
+  let #(state, revalued) = revalued(state:, properties:, now_ms:)
+  #(state, list.append(news, revalued))
 }
 
 /// The watch `watch` on a caster's connection ended: every source of that caster is
@@ -1372,24 +1385,26 @@ fn dropped_from(
       ..state,
       views: dict.filter(state.views, fn(_, held) { held.0 != by }),
     )
-  let sources =
-    list.filter_map(state.held_by, fn(held) {
-      case held.1 == by {
-        True -> Ok(held.0)
-        False -> Error(Nil)
-      }
+  let #(held, sources) = held_changes.released_by(held: state.held, by:)
+  let #(state, removed) =
+    list.fold(sources, #(State(..state, held:), []), fn(so_far, source) {
+      let #(state, done) = so_far
+      let #(state, more) = modifier_removed(state:, source:, now_ms:)
+      #(state, list.append(done, more))
     })
-  list.fold(sources, #(state, []), fn(so_far, source) {
-    let #(state, done) = so_far
-    let #(state, more) = source_removed(state:, source:, now_ms:)
-    #(state, list.append(done, more))
-  })
+  case sources {
+    [] -> #(state, removed)
+    [_, ..] -> {
+      let #(state, unwatched) = unwatching_last(state:, by:)
+      #(state, list.append(removed, unwatched))
+    }
+  }
 }
 
 /// Whether the connection `by` holds anything on the creature: a source of a property
 /// modifier or a view of a cast.
 fn holds_from(state state: State, by by: ConnectionId) -> Bool {
-  list.any(state.held_by, fn(held) { held.1 == by })
+  list.contains(held_changes.connections(held: state.held), by)
   || list.any(dict.values(state.views), fn(held) { held.0 == by })
 }
 
@@ -1401,7 +1416,7 @@ fn holding_connections(state state: State) -> List(ConnectionId) {
     dict.to_list(state.views)
     |> list.sort(fn(left, right) { int.compare(left.0, right.0) })
     |> list.map(fn(entry) { entry.1.0 })
-  list.unique(list.append(list.map(state.held_by, fn(held) { held.1 }), by_view))
+  list.unique(list.append(held_changes.connections(held: state.held), by_view))
 }
 
 /// The watch on the caster's connection `by`, started with its first modifier: none

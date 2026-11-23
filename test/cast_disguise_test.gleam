@@ -20,6 +20,7 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
+import genesis_prime/game/held_changes
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/look.{type Disguise}
 import genesis_prime/game/prerequisite
@@ -110,8 +111,9 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Disguise)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
       cast_state.Look(disguise:) -> Ok(#(start.0, disguise))
-      cast_state.Property(..) | cast_state.Heal(..) | cast_state.Absorb(..) ->
-        Error(Nil)
+      cast_state.HeldChange(held_changes.Property(..))
+      | cast_state.Heal(..)
+      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
     }
   })
 }

@@ -25,11 +25,11 @@ import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type GateDecision, type Holder,
   type Paid, type Reached, type State, type StrikeGate, type Struck,
   type TargetVerdict, type TickAsked, type TickKey, type Ticking, type TickingOn,
-  type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
-  CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
-  Deflected, FindProxyTickUnits, Finish, ForcedMoveStart, Go, Heal, Healed, Hit,
+  type Verdict, Accept, CancelTimer, Caster, CasterChangeStarts, CasterSide,
+  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, Deflected,
+  FindProxyTickUnits, Finish, ForcedMoveStart, Go, Heal, Healed, HeldChange, Hit,
   HitOtherPlayer, Immune, Lingering, Live, Look, ModifierEnd, ModifierStart,
-  NodesEnd, NotBuilt, ProcDue, Property, ProxyTickAsked, QuestAdvanceDue, Refuse,
+  NodesEnd, NotBuilt, ProcDue, ProxyTickAsked, QuestAdvanceDue, Refuse,
   RepeatHeld, RestrictionEnd, Send, StartChild, StartHeld, Starts, State,
   StateEnd, StrikeWithBlow, TargetChangeEnds, TargetModifierStart, Tell,
   TellHeal, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
@@ -1315,8 +1315,7 @@ pub fn pending_heals_cancelled(
   cast_state.cancel_timers(cast:, matching: fn(due) {
     case due {
       ModifierStart(source:, change: Heal(..)) -> source.cast_id == cast_id
-      ModifierStart(change: Property(..), ..)
-      | ModifierStart(change: Absorb(..), ..)
+      ModifierStart(change: HeldChange(..), ..)
       | ModifierStart(change: Look(..), ..)
       | TargetModifierStart(..)
       | ForcedMoveStart(..)

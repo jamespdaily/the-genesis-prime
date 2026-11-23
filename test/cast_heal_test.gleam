@@ -30,6 +30,7 @@ import genesis_prime/game/cast/state.{type Caster, type Effect} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
+import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{
   type Spell, AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster,
@@ -144,9 +145,15 @@ fn healed(
         source:,
         change: cast_state.Heal(vital:, amount:),
       ) -> Ok(#(source, vital, amount))
-      cast_state.CasterChangeStarts(change: cast_state.Property(..), ..)
+      cast_state.CasterChangeStarts(
+        change: cast_state.HeldChange(held_changes.Property(..)),
+        ..,
+      )
       | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
-      | cast_state.CasterChangeStarts(change: cast_state.Absorb(..), ..)
+      | cast_state.CasterChangeStarts(
+          change: cast_state.HeldChange(held_changes.Absorb(..)),
+          ..,
+        )
       | cast_state.Send(..)
       | cast_state.Tell(..)
       | cast_state.StartTimer(..)
@@ -343,10 +350,16 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     as "0.3 x (450 - 250) = 60: the gates' rule, a go's effects read the caster before the go's own"
   assert list.any(effects, fn(effect) {
     case effect {
-      cast_state.CasterChangeStarts(change: cast_state.Property(..), ..) -> True
+      cast_state.CasterChangeStarts(
+        change: cast_state.HeldChange(held_changes.Property(..)),
+        ..,
+      ) -> True
       cast_state.CasterChangeStarts(change: cast_state.Heal(..), ..)
       | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
-      | cast_state.CasterChangeStarts(change: cast_state.Absorb(..), ..)
+      | cast_state.CasterChangeStarts(
+          change: cast_state.HeldChange(held_changes.Absorb(..)),
+          ..,
+        )
       | cast_state.Send(..)
       | cast_state.Tell(..)
       | cast_state.StartTimer(..)

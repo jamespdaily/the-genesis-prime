@@ -153,6 +153,7 @@ import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
+import genesis_prime/game/held_changes
 import genesis_prime/game/innate
 import genesis_prime/game/inventory
 import genesis_prime/game/item_property
@@ -435,6 +436,10 @@ pub type Entered {
     /// The player's look, its item visuals and the disguises of its own spells held over
     /// them (genesis_prime/game/look): the connection owns it beside the properties.
     look: look.Look,
+    /// The changes other players' casts hold on the player, by caster
+    /// (genesis_prime/game/held_changes): empty at each entry, and gone with the entry at
+    /// a camp or a leave.
+    held: held_changes.Held,
     resources: class_resource.Resources,
     camp: camp.Camp,
     cast: cast_state.State,
@@ -1103,6 +1108,7 @@ pub fn joined(
               life:,
               properties:,
               look: look.new(base: unit.tail.item_visuals),
+              held: held_changes.new(),
               resources:,
               camp: camp.none(),
               cast: cast_state.new(),

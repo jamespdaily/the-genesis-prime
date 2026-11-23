@@ -156,6 +156,30 @@ fn limits() -> List(Limit) {
       "a heal told to a player is applied also after the caster's round has closed",
     ),
     Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["0x262", "from another player"],
+      "a cast held on a player by another player is not listed in the 0x262 a later viewer is sent",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["sight notice", "dropped"],
+      "a change told before the player's sight notice of its caster is dropped",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["death", "stack group"],
+      "a held change ends at its holder's death as a guess, is not scaled by the holder's stats, and two casters sharing a stack group both apply",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["caster that dies", "end tell"],
+      "a caster that dies in sight sends no end of its own: the held change waits for its end tell",
+    ),
+    Limit(
       strike.gaps(),
       "Casting",
       ["target gate", "another player", "not read"],
@@ -218,6 +242,13 @@ pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Ni
     assert list.contains(gaps.registry(), entry)
       as { limit.limit <> ": the registry prints it" }
   })
+  assert list.all(connection_landing.gaps(), fn(entry) {
+    list.any(limits(), fn(limit) {
+      limit.entries == connection_landing.gaps()
+      && list.all(limit.words, string.contains(entry.missing, _))
+    })
+  })
+    as "each gap the landing module states has a row above, held changes and heals alike"
   assert list.all(gaps.registry(), fn(entry) {
     !string.contains(entry.missing, "no description of what the heal applied")
   })

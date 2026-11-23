@@ -26,6 +26,7 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
+import genesis_prime/game/held_changes
 import genesis_prime/game/lasting.{type LastingRow, LastingRow}
 import genesis_prime/game/spell_plan.{Absorption, AimsAtCaster, Always}
 import genesis_prime/game/spend
@@ -92,9 +93,11 @@ fn absorb_row(
 fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
-      cast_state.Absorb(amount:, mask:) -> Ok(#(start.0, amount, mask))
-      cast_state.Property(..) | cast_state.Heal(..) | cast_state.Look(..) ->
-        Error(Nil)
+      cast_state.HeldChange(held_changes.Absorb(amount:, mask:)) ->
+        Ok(#(start.0, amount, mask))
+      cast_state.HeldChange(held_changes.Property(..))
+      | cast_state.Heal(..)
+      | cast_state.Look(..) -> Error(Nil)
     }
   })
 }
@@ -380,8 +383,14 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
     as "the absorb waits for its delay; the raised rating starts in the go's step"
   assert list.any(effects, fn(effect) {
     case effect {
-      cast_state.CasterChangeStarts(change: cast_state.Property(..), ..) -> True
-      cast_state.CasterChangeStarts(change: cast_state.Absorb(..), ..)
+      cast_state.CasterChangeStarts(
+        change: cast_state.HeldChange(held_changes.Property(..)),
+        ..,
+      ) -> True
+      cast_state.CasterChangeStarts(
+        change: cast_state.HeldChange(held_changes.Absorb(..)),
+        ..,
+      )
       | cast_state.CasterChangeStarts(change: cast_state.Heal(..), ..)
       | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
       | cast_state.CasterChangeEnds(..)

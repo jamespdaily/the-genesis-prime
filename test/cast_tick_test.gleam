@@ -17,6 +17,7 @@ import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as c
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
+import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_area.{DamageEffect, TickingDamage}
@@ -2006,8 +2007,9 @@ fn heals(
     case start.1 {
       cast_state.Heal(vital:, amount:) ->
         Ok(#({ start.0 }.effect_id.value, vital, amount))
-      cast_state.Property(..) | cast_state.Look(..) | cast_state.Absorb(..) ->
-        Error(Nil)
+      cast_state.HeldChange(held_changes.Property(..))
+      | cast_state.Look(..)
+      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
     }
   })
 }
