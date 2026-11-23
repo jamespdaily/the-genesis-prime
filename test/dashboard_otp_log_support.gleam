@@ -47,16 +47,6 @@ pub fn fed(source source: Source, lines lines: List(String)) -> Lines {
   log_lines.feed(log_lines.new(source), bytes_of(lines))
 }
 
-/// A log of this source after one read for each line.
-pub fn fed_line_by_line(
-  source source: Source,
-  lines lines: List(String),
-) -> List(Lines) {
-  list.scan(lines, log_lines.new(source), fn(so_far, line) {
-    log_lines.feed(so_far, bytes_of([line]))
-  })
-}
-
 /// Each entry's text and level, marks left out.
 pub fn shown(lines: Lines) -> List(#(String, Level)) {
   list.filter_map(log_lines.entries(lines), fn(entry) {
@@ -67,25 +57,12 @@ pub fn shown(lines: Lines) -> List(#(String, Level)) {
   })
 }
 
-/// Each entry's text, marks left out.
-pub fn texts(lines: Lines) -> List(String) {
-  list.map(shown(lines), fn(entry) { entry.0 })
-}
-
 /// An entry's text, or nothing for a mark.
 pub fn text_of(entry: Entry) -> String {
   case entry {
     Line(text:, ..) -> text
     Marker(..) -> ""
   }
-}
-
-/// The integers from `first` to `last`, both included.
-pub fn numbers(first first: Int, last last: Int) -> List(Int) {
-  int.range(from: first, to: last + 1, with: [], run: fn(all, number) {
-    [number, ..all]
-  })
-  |> list.reverse
 }
 
 /// The bytes cut into reads at each of the points (each taken modulo the
