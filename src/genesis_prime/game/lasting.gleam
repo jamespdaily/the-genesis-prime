@@ -414,22 +414,33 @@ pub type StackedCast {
 /// The holds a new cast of `spell4_id` with `stack` pushes off the unit `unit_id`
 /// when it gives the unit a node with life, from `holds`, the caster's own live and
 /// lingering holds on that unit, each a `NodeOff` of the casts `stack_pushed_off` names.
+/// `kept` are the caster's casts that hold a change on the unit and no node there: they count
+/// against the cap with the holds, and a cast of them that the rule names is ended by the
+/// change it holds, not here.
 pub fn pushed_off(
   holds holds: List(Hold),
+  kept kept: List(StackedCast),
   spell4_id spell4_id: Spell4Id,
   stack stack: Stack,
   unit_id unit_id: Int,
 ) -> List(Removal) {
-  list.filter(holds, fn(hold) { hold.node.unit_id == unit_id })
-  |> list.map(fn(hold) {
-    StackedCast(
-      cast_id: hold.cast_id,
-      spell4_id: hold.spell4_id,
-      stack: hold.stack,
-      started_ms: hold.started_ms,
-    )
-  })
+  let on_the_unit =
+    list.filter(holds, fn(hold) { hold.node.unit_id == unit_id })
+  list.append(
+    list.map(on_the_unit, fn(hold) {
+      StackedCast(
+        cast_id: hold.cast_id,
+        spell4_id: hold.spell4_id,
+        stack: hold.stack,
+        started_ms: hold.started_ms,
+      )
+    }),
+    kept,
+  )
   |> stack_pushed_off(spell4_id:, stack:)
+  |> list.filter(fn(cast_id) {
+    list.any(on_the_unit, fn(hold) { hold.cast_id == cast_id })
+  })
   |> list.map(fn(cast_id) { NodeOff(cast_id:, unit_id:) })
 }
 

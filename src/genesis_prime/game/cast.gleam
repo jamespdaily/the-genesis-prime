@@ -63,7 +63,13 @@
 ////   the caster second (`Spell4Effects.prerequisiteIdTargetApply`), the struck unit as
 ////   the caster's picture shows it when the round closes (`went`'s `poses`; a unit it no
 ////   longer shows decides nothing and leaves a debug line), or the caster on its own
-////   point for a Proxy aimed at it. The target gate takes no roll. A child's timer is
+////   point for a Proxy aimed at it. The target gate takes no roll. A Proxy aimed at the
+////   primary target (`spell_plan.OnPrimaryTarget`) starts its child on the player a bag
+////   press named (`Live.named_player`) and on the caster for any other cast (a press at
+////   oneself or at a creature, a quest button, an activation, a proc's spell); the child
+////   carries that player, so its rows aimed at the primary target land on the player
+////   (Phantasmal Armor's Interrupt Armor, Spell4Effects 199192), and a player the caster no
+////   longer sees when the child starts gets none and a debug line. A child's timer is
 ////   its own: the parent's finish
 ////   leaves the pending children, which start 100 ms after it (Crush), and only
 ////   the player leaving the world cancels them.
@@ -2001,6 +2007,7 @@ fn proc_started(
     root: holder.spell.spell4_id,
     parent: holder.spell.spell4_id,
     primary_target: at,
+    named_player: None,
     counted_with: WithNothing,
     from: None,
   )
@@ -2012,7 +2019,9 @@ fn proc_started(
 /// and a global cooldown starts only when the child's spell has one (`start`). `counted_with`
 /// and `from` are what the child counts its quest rows with and the item whose value it
 /// reads, handed down from the cast that started it (`WithNothing` and none for a proc and
-/// a tick).
+/// a tick). `named_player` is the player a child of a Proxy aimed at the primary target is
+/// started on (`children`): a player the caster no longer sees starts no child, and a debug
+/// line says so, as the press's own rule refuses a press at a player out of sight.
 fn child_started(
   cast cast: State,
   caster caster: Caster,
@@ -2021,22 +2030,43 @@ fn child_started(
   root root: Spell4Id,
   parent parent: Spell4Id,
   primary_target primary_target: Int,
+  named_player named_player: Option(Int),
   counted_with counted_with: AdvanceWith,
   from from: Option(PressedFrom),
 ) -> #(State, List(Effect)) {
-  start(
-    cast:,
-    caster:,
-    now_ms:,
-    spell:,
-    root:,
-    parent: Some(parent),
-    primary_target:,
-    client_cast_id: None,
-    role: Child(counted_with:, from:),
-    spent: None,
-    reserved: [],
-  )
+  let unseen =
+    option.then(named_player, fn(player) {
+      case dict.has_key(caster.players_in_sight, player) {
+        True -> None
+        False -> Some(player)
+      }
+    })
+  case unseen {
+    Some(player) -> #(cast, [
+      Log(
+        level: LogDebug,
+        text: "the child of the Proxy to Spell4 "
+          <> int.to_string(spell.spell4_id.value)
+          <> " is not started on unit "
+          <> int.to_string(player)
+          <> ": it is not in the caster's sight",
+      ),
+    ])
+    None ->
+      start(
+        cast:,
+        caster:,
+        now_ms:,
+        spell:,
+        root:,
+        parent: Some(parent),
+        primary_target:,
+        client_cast_id: None,
+        role: Child(counted_with:, from:, named_player:),
+        spent: None,
+        reserved: [],
+      )
+  }
 }
 
 /// A fire's delay ran out: its spell is cast, unless its holder's cast has ended since or the
@@ -2909,6 +2939,7 @@ fn tick_child_started(
       root: holder.root,
       parent: holder.spell.spell4_id,
       primary_target: caster.unit_id,
+      named_player: None,
       counted_with: WithNothing,
       from: None,
     )
@@ -2942,6 +2973,7 @@ fn fire(
           parent:,
           proxy:,
           primary_target:,
+          named_player:,
           counted_with:,
           from:,
         ) ->
@@ -2953,6 +2985,7 @@ fn fire(
             root:,
             parent:,
             primary_target:,
+            named_player:,
             counted_with:,
             from:,
           )
@@ -3387,6 +3420,7 @@ fn proxy_children_found(
       now_ms:,
       proxy:,
       targets: units,
+      named_player: None,
       root: holder.root,
       parent: holder.spell.spell4_id,
       counted_with: WithNothing,
@@ -3812,7 +3846,7 @@ pub fn level_up_started(
     parent: None,
     primary_target: caster.unit_id,
     client_cast_id: None,
-    role: Child(counted_with: WithNothing, from: None),
+    role: Child(counted_with: WithNothing, from: None, named_player: None),
     spent: None,
     reserved: [],
   )
@@ -3981,6 +4015,11 @@ fn start(
       root:,
       parent:,
       primary_target:,
+      named_player: case role {
+        Base(..) if primary_target != caster.unit_id -> Some(primary_target)
+        Child(named_player:, ..) -> named_player
+        Base(..) | Stage(..) | Passive | Activation(..) | Shortcut(..) -> None
+      },
       started_at: area.pose_of(place: caster.place),
       audience:,
       gone: 0,
@@ -4632,7 +4671,14 @@ fn go(
               proxy:,
               targets: case proxy.target {
                 spell_plan.OnCaster -> [caster.unit_id]
+                spell_plan.OnPrimaryTarget -> [
+                  option.unwrap(live.named_player, caster.unit_id),
+                ]
                 spell_plan.OnEachStruck -> cast_gate.hit_units(struck:)
+              },
+              named_player: case proxy.target {
+                spell_plan.OnPrimaryTarget -> live.named_player
+                spell_plan.OnCaster | spell_plan.OnEachStruck -> None
               },
               root: live.root,
               parent: live.spell.spell4_id,
@@ -5039,11 +5085,13 @@ fn reached_by(
 }
 
 /// The player a press named, for the rows of a cast the player pressed: the cast's primary
-/// target; none for a child a Proxy started, whose primary target is the plan's stand-in.
+/// target; for a child a Proxy started, the player it was started on when that is the
+/// player a bag press named (`Live.named_player`), none otherwise, since the primary target
+/// of any other child is the plan's stand-in.
 fn press_target_of(live live: Live) -> Option(Int) {
   case live.parent {
     None -> Some(live.primary_target)
-    Some(_) -> None
+    Some(_) -> live.named_player
   }
 }
 
@@ -5763,18 +5811,22 @@ fn cooldown_row_started(
 
 /// The children of a Proxy on the units `targets`, each the named spell as a child cast
 /// of `parent` with `root` as its root, counting its quest rows with `counted_with` and
-/// reading the item's value `from`: a go gives the caster for a Proxy aimed at the caster
-/// and each Hit unit of the round for one aimed at the area (none for a deflect), and a tick
-/// of a Proxy aimed at the area gives the units found inside it. A Proxy behind a target
-/// gate starts a child on a unit only when the gate passes against that unit, once for each
-/// unit, in the order of the units, each check taking the rolls its gate needs
-/// (`cast_tick.target_gate`); the rolls left follow the effects.
+/// reading the item's value `from`: a go gives the caster for a Proxy aimed at the caster,
+/// the player the press named for one aimed at the primary target (the caster when no
+/// player was named) and each Hit unit of the round for one aimed at the area (none for a
+/// deflect), and a tick of a Proxy aimed at the area gives the units found inside it.
+/// `named_player` is the player the press named, which a child of a Proxy aimed at the
+/// primary target carries. A Proxy behind a target gate starts a child on a unit only when
+/// the gate passes against that unit, once for each unit, in the order of the units, each
+/// check taking the rolls its gate needs (`cast_tick.target_gate`); the rolls left follow the
+/// effects.
 fn children(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
   proxy proxy: Proxy,
   targets targets: List(Int),
+  named_player named_player: Option(Int),
   root root: Spell4Id,
   parent parent: Spell4Id,
   counted_with counted_with: AdvanceWith,
@@ -5810,6 +5862,7 @@ fn children(
             root:,
             parent:,
             primary_target:,
+            named_player:,
             counted_with:,
             from:,
           )
@@ -5835,6 +5888,7 @@ fn child(
   root root: Spell4Id,
   parent parent: Spell4Id,
   primary_target primary_target: Int,
+  named_player named_player: Option(Int),
   counted_with counted_with: AdvanceWith,
   from from: Option(PressedFrom),
 ) -> #(State, List(Effect)) {
@@ -5848,6 +5902,7 @@ fn child(
         root:,
         parent:,
         primary_target:,
+        named_player:,
         counted_with:,
         from:,
       )
@@ -5859,6 +5914,7 @@ fn child(
             root:,
             parent:,
             primary_target:,
+            named_player:,
             proxy:,
             counted_with:,
             from:,
@@ -5997,7 +6053,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A property modifier aimed at the primary target (targetFlags 2) changes the creatures the go hit and the player the press named, so in a spell a Proxy starts on the caster it changes no unit: a child has no press target. Mental Boon's Nimble (property 39, Dash Regeneration) is not given, and Phantasmal Armor's Interrupt Armor child (Spell4 76766, a type 52 row aimed at the child's primary target) lands on its caster instead of the player the armor was pressed at, because the Proxy's target choice (`spell_plan.target_of`) starts a child aimed at the primary target (targetFlags 2) on the caster whoever the press named.",
+      missing: "A property modifier aimed at the primary target (targetFlags 2) changes the creatures the go hit and the player the press named, so in a spell a Proxy starts on the caster (a primary target that is the caster, a creature or a proc's unit) it changes no unit: such a child has no press target. Mental Boon's Nimble (property 39, Dash Regeneration) is not given.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A periodic Proxy aimed at the primary target (Bolster's Proxy 229005) starts its child on the caster at each tick, whoever the press named, so Bolster's 3 s absorb (Spell4Effects 229006) lands on the caster and not on the player the press named.",
     ),
     gap.Entry(
       area: "Casting",

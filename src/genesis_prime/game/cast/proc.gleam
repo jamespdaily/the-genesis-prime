@@ -886,12 +886,16 @@ pub fn effects_ended(
   let #(cast, effects) =
     list.fold(endings, #(cast, []), fn(so_far, ending) {
       let #(cast, effects) = so_far
-      let held =
-        list.any(dict.values(cast.timers), fn(due) {
-          cast_state.source_of(due:) == Some(ending.source)
-        })
+      let waits_for_the_ending = fn(due) {
+        case ending {
+          CasterChangeEnding(source:, ..) ->
+            cast_state.waits_for_caster_change(due:, source:)
+          CooldownEnding(source:) -> cast_state.source_of(due:) == Some(source)
+        }
+      }
+      let held = list.any(dict.values(cast.timers), waits_for_the_ending)
       let #(cast, cancels) =
-        cast_state.cancel_source_timers(cast:, source: ending.source)
+        cast_state.cancel_timers(cast:, matching: waits_for_the_ending)
       case ending {
         CasterChangeEnding(source:, until_removed:) if until_removed || held -> #(
           cast,
@@ -1054,6 +1058,7 @@ fn pushed_by(
   let removals =
     lasting.pushed_off(
       holds:,
+      kept: cast_control.kept_casts_on(cast:, cast_id:, unit_id: node.unit_id),
       spell4_id: live.spell.spell4_id,
       stack: live.spell.stack,
       unit_id: node.unit_id,

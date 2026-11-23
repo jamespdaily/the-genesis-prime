@@ -569,6 +569,7 @@ pub type Due {
     root: Spell4Id,
     parent: Spell4Id,
     primary_target: Int,
+    named_player: Option(Int),
     proxy: Proxy,
     counted_with: AdvanceWith,
     from: Option(PressedFrom),
@@ -858,7 +859,14 @@ pub type Role {
   /// or cast of the cast that started it, `counted_with` (none for a child a proc fire or the
   /// server started), and reads an item's passed-in value as the item's cast does: `from` is
   /// the item's use that pressed the cast that started it (`handed_down`), none otherwise.
-  Child(counted_with: AdvanceWith, from: Option(PressedFrom))
+  /// `named_player` is the player the child was started on when a bag press named that player
+  /// (`Live.named_player`), none for a child on the caster, on a struck unit or started by a
+  /// proc or a tick.
+  Child(
+    counted_with: AdvanceWith,
+    from: Option(PressedFrom),
+    named_player: Option(Int),
+  )
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
   /// The stage at `index` of the ability's open threshold.
@@ -954,6 +962,14 @@ pub type Live {
     /// The spell whose Proxy started this one; none for the pressed spell.
     parent: Option(Spell4Id),
     primary_target: Int,
+    /// The player, other than the caster, that a bag press named as the cast's primary
+    /// target, and that a child started on that player carries on: a Proxy aimed at the
+    /// primary target starts its child on this player, and a row of a child on it lands on it
+    /// (`cast_gate.modifier_applies`). None for a press at oneself, at a creature or on the
+    /// ground, for a stage of a threshold, for a cast no bag press made (a quest button, an
+    /// activation, a passive, a proc's spell) and for a child started on the caster or on a
+    /// struck unit: a primary target that stands for the caster is never this player.
+    named_player: Option(Int),
     /// The caster's pose when the cast started, which its 0x7fd or 0x7ff carries and the
     /// client stores once (`0x14053a210.held_position`).
     started_at: area.Pose,
@@ -1933,6 +1949,37 @@ pub fn is_quest_advance(due due: Due) -> Bool {
     | CooldownModifierStarts(..)
     | CooldownModifierEnds(..)
     | ProcDue(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..)
+    | Tick(..) -> False
+  }
+}
+
+/// Whether the timer waits for the start or the end of the caster's own change `source`: a
+/// delayed start of a creature's change under the same source belongs to the creature's node
+/// of the cast, which the caster's node ending does not end.
+pub fn waits_for_caster_change(
+  due due: Due,
+  source source: unit_properties.Source,
+) -> Bool {
+  case due {
+    ModifierStart(source: waited, ..) | ModifierEnd(source: waited) ->
+      waited == source
+    TargetModifierStart(..)
+    | ForcedMoveStart(..)
+    | RestrictionEnd(..)
+    | CooldownModifierStarts(..)
+    | CooldownModifierEnds(..)
+    | PlayerChangeEnd(..)
+    | Go(..)
+    | Finish(..)
+    | StartChild(..)
+    | NodesEnd(..)
+    | StateEnd(..)
+    | ProcDue(..)
+    | QuestAdvanceDue(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)

@@ -1113,3 +1113,66 @@ pub fn modifier_on_another_player_is_left_out_test() -> Nil {
   assert support.caster_change_starts(effects:) == []
   assert all_timer_delays(effects:) == [] as "and no node, so no timer"
 }
+
+pub fn a_delayed_modifier_on_a_creature_starts_though_a_removal_takes_the_casters_node_of_the_cast_off_first_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The row 7711 is aimed at the primary target and the area (`AimsAtPrimaryTargetAndArea`),
+  // so a press that names the caster or a creature makes it the caster's row as well as the
+  // struck creature's, and the cast holds a node on each. A type 80 removal aimed at the
+  // caster takes the caster's node off before the row's delay of 1000 ms runs out: it ends
+  // the caster's changes, and the start the creature waits for belongs to the creature's own
+  // node, which is still there, so it starts.
+  let creature_row =
+    spell_plan.PropertyModifier(
+      ..slowing_row(),
+      change: spell_plan.StruckChange(
+        modifier: slowing_modifier(),
+        aim: spell_plan.AimsAtPrimaryTargetAndArea,
+      ),
+    )
+  let plans =
+    support.plans_of([
+      support.spell_holding(spell4_id: 671, base: 3, modifiers: [creature_row]),
+      support.with_effects(
+        spell: support.child(spell4_id: 301, base: 1),
+        kinds: [
+          spell_plan.RemoveEffect(spell_plan.ForceRemove(
+            effect_id: Spell4EffectsId(196_521),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtCaster,
+            selector: lasting.Spell(Spell4Id(671)),
+            count: 1,
+            condition: Always,
+            tag: spend.always,
+          )),
+        ],
+      ),
+    ])
+  let #(state, first) =
+    pressed_striking(
+      plans:,
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck: creature_struck(),
+      at: 1000,
+    )
+  let id = support.pressed_id(effects: first)
+  let source = support.source_of(cast_id: id, effect_id: 7711)
+  let #(state, removal) =
+    pressed_striking(plans:, state:, bag: bag_of_base_1, struck: [], at: 1500)
+  assert support.caster_change_ends(effects: removal) == [source]
+    as "the removal of the caster's node ends the caster's change of the row"
+  let #(_, fired) =
+    support.run_timers_striking(
+      state:,
+      effects: list.append(first, removal),
+      from_ms: 1000,
+      struck: creature_struck(),
+    )
+  assert support.target_timeline(fired:)
+    == [
+      #(2000, started_on_creature(source)),
+      #(7000, ended_on_creature(source)),
+    ]
+    as "the creature's modifier starts at go + 1000 and ends with its node, though the caster's node of the cast was removed at 1500"
+}

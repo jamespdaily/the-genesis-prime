@@ -2696,6 +2696,26 @@ pub fn raising_interrupt_armor_threshold(
   )
 }
 
+/// The Interrupt Armor row of the Proxy child 76766 as the client holds it (`table_rows --
+/// Spell4Effects 199192`): effectType 52, +1 point (dataBits00 1) kept at the end
+/// (dataBits01 0), durationTime 5000, delayTime 0, phaseFlags -1, no gate; targetFlags is 2,
+/// the primary target, and the aim is the one given.
+pub fn interrupt_armor_row(
+  aim aim: spell_plan.Aim,
+) -> spell_plan.PropertyModifier {
+  spell_plan.PropertyModifier(
+    effect_id: Spell4EffectsId(199_192),
+    phase_flags: -1,
+    change: spell_plan.PropertyChange(raising_interrupt_armor_threshold(
+      points: 1.0,
+    )),
+    row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+    condition: spell_plan.Always,
+    tag: spend.always,
+    armor: Some(spell_plan.InterruptArmor(points: 1, takes_back: False, aim:)),
+  )
+}
+
 /// The Proxies of a go aimed at the caster, ticking on the caster as a go at its own start
 /// arms them.
 pub fn proxies_ticking_on_the_caster(

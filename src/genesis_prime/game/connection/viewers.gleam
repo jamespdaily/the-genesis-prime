@@ -1174,8 +1174,8 @@ fn life_news(
 }
 
 /// A frame about a cast, written only for a cast whose start this viewer wrote, which
-/// it then forgets when `forgetting`: the client drops a message that names a cast it
-/// does not hold.
+/// it then forgets when `forgetting`, with any mark that the client holds it with no caster:
+/// the client drops a message that names a cast it does not hold.
 fn written_cast_frame(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -1193,7 +1193,8 @@ fn written_cast_frame(
 }
 
 /// The frames of a cast of the unit written in order, when this client was sent the cast's
-/// start; the cast is forgotten after them when `forgetting`.
+/// start; the cast is forgotten after them when `forgetting`, and no longer held with no
+/// caster (`Entered.casts_orphaned`), so its end tells no second 0x7fe.
 fn written_cast_frames(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -1211,6 +1212,7 @@ fn written_cast_frames(
         world_entry.Entered(
           ..entered,
           casts_written: dict.delete(entered.casts_written, cast_id),
+          casts_orphaned: set.delete(entered.casts_orphaned, cast_id),
         )
       })
     False -> session

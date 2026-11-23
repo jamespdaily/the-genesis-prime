@@ -2521,6 +2521,7 @@ pub fn nullifiers_field_cast_finishes_at_its_spell_duration_with_the_0x7fe_alone
         root: Spell4Id(70_757),
         parent: Spell4Id(70_757),
         primary_target: caster.unit_id,
+        named_player: option.None,
         proxy:,
         counted_with: cast_state.WithNothing,
         from: option.None,

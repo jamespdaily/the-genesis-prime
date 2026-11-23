@@ -27,8 +27,10 @@ import connection_rule_support as rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
   type Answer, type Message, type News, type Request, Absorption, Appeared,
-  CastFinished, CastStarted, PropertiesChanged, Removed, TellPeer,
+  CastFinished, CastStarted, InterruptArmor, PropertiesChanged, Removed,
+  TellPeer,
 }
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/state as connection_state
@@ -47,6 +49,7 @@ import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
+import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, OwnEffect,
 }
@@ -91,6 +94,31 @@ fn pool_source(cast_id cast_id: Int) -> Source {
 /// The entry of property 161 with `value` bits and its default as base.
 fn armor_entry(value value: Int) -> UnitProperty {
   UnitProperty(property_id: 161, base: one_bits, value:)
+}
+
+/// The Interrupt Armor row 199192 (`table_rows -- Spell4Effects 199192`): +1 flat on property
+/// 44, the armor's maximum (default 0.0), for 5000 ms.
+fn interrupt_armor() -> Change {
+  held_changes.Property(unit_properties.Change(
+    property: unit_properties.interrupt_armor_threshold,
+    mode: 0,
+    multiplier: 1.0,
+    flat: 1.0,
+    per_level: 0.0,
+  ))
+}
+
+fn interrupt_armor_source(cast_id cast_id: Int) -> Source {
+  Source(cast_id:, effect_id: Spell4EffectsId(199_192))
+}
+
+/// The entry of property 44 with its default 0.0 as base and `value`.
+fn maximum_entry(value value: Float) -> UnitProperty {
+  UnitProperty(
+    property_id: 44,
+    base: float32.to_bits(0.0),
+    value: float32.to_bits(value),
+  )
 }
 
 /// What a held change is: the caster's connection number, the source and the change.
@@ -209,15 +237,63 @@ fn tells_but_news(
   })
 }
 
-/// What a step wrote and told, as the three things a held change writes.
+/// One write of the player's armor in a step: a 0x93a entry of property 44, the armor's
+/// maximum, or a 0x938 of stat 21, the armor itself.
+type ArmorWrite {
+  Maximum(entry: UnitProperty)
+  Armor(value: Int)
+}
+
+/// The writes of the armor the steps give the player's client, in the order of the frames:
+/// the client clamps the armor to the maximum when a 0x938 arrives (`opcode.0x938` armor),
+/// so the maximum goes first when the armor rises and last when it falls.
+fn armor_written(
+  steps steps: List(ConnectionStep(Request)),
+) -> List(ArmorWrite) {
+  list.flat_map(steps, fn(taken) {
+    list.flat_map(support.heard(taken, support.keyed()), armor_written_by)
+  })
+}
+
+/// What one frame writes of the armor.
+fn armor_written_by(frame frame: Frame) -> List(ArmorWrite) {
+  case frame.message_id {
+    0x093A -> {
+      let assert Ok(changed) = unit_properties_changed.decode(frame.body)
+        as "a 0x93a decodes"
+      list.filter(changed.properties, fn(entry) { entry.property_id == 44 })
+      |> list.map(fn(entry) { Maximum(entry:) })
+    }
+    0x0938 -> {
+      let assert Ok(changed) = unit_stat_changed.decode(frame.body)
+        as "a 0x938 decodes"
+      case changed.change {
+        unit_stat_change.InterruptArmor(UnitStatInterruptArmor(value:)) -> [
+          Armor(value:),
+        ]
+        unit_stat_change.Shield(..)
+        | unit_stat_change.Absorption(..)
+        | unit_stat_change.Level(..) -> []
+      }
+    }
+    _ -> []
+  }
+}
+
+/// What a step wrote and told, as the things a held change writes.
 type Seen {
-  Seen(properties: List(List(UnitProperty)), absorptions: List(Int))
+  Seen(
+    properties: List(List(UnitProperty)),
+    absorptions: List(Int),
+    armor: List(ArmorWrite),
+  )
 }
 
 fn seen(steps steps: List(ConnectionStep(Request))) -> Seen {
   Seen(
     properties: properties_written(steps:),
     absorptions: absorptions_written(steps:),
+    armor: armor_written(steps:),
   )
 }
 
@@ -228,8 +304,12 @@ pub fn a_change_a_player_in_sight_tells_is_applied_as_the_players_own_change_of_
     #(
       "a property modifier writes the 0x93a entry with the new value and tells each viewer",
       held(caster: 3, source: armor_source(cast_id: 100), change: armor()),
-      Seen(properties: [[armor_entry(value: armored_bits)]], absorptions: []),
-      PropertiesChanged(properties: [armor_entry(value: armored_bits)]),
+      Seen(
+        properties: [[armor_entry(value: armored_bits)]],
+        absorptions: [],
+        armor: [],
+      ),
+      [PropertiesChanged(properties: [armor_entry(value: armored_bits)])],
     ),
     #(
       "an absorb writes the pool's amount as the absorption stat and tells each viewer",
@@ -238,8 +318,24 @@ pub fn a_change_a_player_in_sight_tells_is_applied_as_the_players_own_change_of_
         source: pool_source(cast_id: 101),
         change: pool(amount: 300),
       ),
-      Seen(properties: [], absorptions: [300]),
-      Absorption(absorption: 300),
+      Seen(properties: [], absorptions: [300], armor: []),
+      [Absorption(absorption: 300)],
+    ),
+    #(
+      "an Interrupt Armor change (property 44, +1) writes the armor's maximum, then the armor stat at 1, to the player and tells each viewer both",
+      held(
+        caster: 3,
+        source: interrupt_armor_source(cast_id: 102),
+        change: interrupt_armor(),
+      ),
+      Seen(properties: [[maximum_entry(value: 1.0)]], absorptions: [], armor: [
+        Maximum(entry: maximum_entry(value: 1.0)),
+        Armor(value: 1),
+      ]),
+      [
+        PropertiesChanged(properties: [maximum_entry(value: 1.0)]),
+        InterruptArmor(armor: 1),
+      ],
     ),
   ]
   list.each(rows, fn(row) {
@@ -248,7 +344,7 @@ pub fn a_change_a_player_in_sight_tells_is_applied_as_the_players_own_change_of_
     let #(_, taken) = support.feed(state:, event: tell(starts(hold:)))
     assert seen(steps: [taken]) == written as reason
     list.each([2, 3], fn(viewer) {
-      assert news_told(steps: [taken], viewer:) == [news] as reason
+      assert news_told(steps: [taken], viewer:) == news as reason
     })
     assert tells_but_news(steps: [taken]) == []
       as "nothing is asked or answered: no tell but the viewers' news leaves the connection"
@@ -315,7 +411,8 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
         state:,
         event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(caster))),
       )
-    assert seen(steps: [unseen]) == Seen(properties: [], absorptions: [])
+    assert seen(steps: [unseen])
+      == Seen(properties: [], absorptions: [], armor: [])
       as reason
   })
 }
@@ -342,8 +439,36 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
           source: armor_source(cast_id: 100),
         ),
       ],
-      Seen(properties: [[armor_entry(value: one_bits)]], absorptions: []),
+      Seen(
+        properties: [[armor_entry(value: one_bits)]],
+        absorptions: [],
+        armor: [],
+      ),
       [PropertiesChanged(properties: [armor_entry(value: one_bits)])],
+    ),
+    #(
+      "a held Interrupt Armor change: the armor stat returns to 0 before the 0x93a that lowers the maximum, and the viewers get both in that order",
+      [
+        held(
+          caster: 3,
+          source: interrupt_armor_source(cast_id: 102),
+          change: interrupt_armor(),
+        ),
+      ],
+      [
+        PlayerChangeEnds(
+          from: ConnectionId(3),
+          source: interrupt_armor_source(cast_id: 102),
+        ),
+      ],
+      Seen(properties: [[maximum_entry(value: 0.0)]], absorptions: [], armor: [
+        Armor(value: 0),
+        Maximum(entry: maximum_entry(value: 0.0)),
+      ]),
+      [
+        InterruptArmor(armor: 0),
+        PropertiesChanged(properties: [maximum_entry(value: 0.0)]),
+      ],
     ),
     #(
       "a held absorb: the absorption stat returns to 0 and the viewers get it",
@@ -354,7 +479,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
           source: pool_source(cast_id: 101),
         ),
       ],
-      Seen(properties: [], absorptions: [0]),
+      Seen(properties: [], absorptions: [0], armor: []),
       [Absorption(absorption: 0)],
     ),
     #(
@@ -366,7 +491,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
           source: armor_source(cast_id: 7),
         ),
       ],
-      Seen(properties: [], absorptions: []),
+      Seen(properties: [], absorptions: [], armor: []),
       [],
     ),
     #(
@@ -378,7 +503,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
           source: armor_source(cast_id: 100),
         ),
       ],
-      Seen(properties: [], absorptions: []),
+      Seen(properties: [], absorptions: [], armor: []),
       [],
     ),
     #(
@@ -394,7 +519,11 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
           source: armor_source(cast_id: 100),
         ),
       ],
-      Seen(properties: [[armor_entry(value: one_bits)]], absorptions: []),
+      Seen(
+        properties: [[armor_entry(value: one_bits)]],
+        absorptions: [],
+        armor: [],
+      ),
       [PropertiesChanged(properties: [armor_entry(value: one_bits)])],
     ),
   ]
@@ -459,35 +588,43 @@ pub fn a_caster_the_map_says_no_longer_sees_the_player_ends_each_change_it_held_
       [armor_of_three, pool_of_three, pool_of_two],
       Unseen(3),
       [0x093A, 0x0938],
-      Seen(properties: [[armor_entry(value: one_bits)]], absorptions: [200]),
+      Seen(
+        properties: [[armor_entry(value: one_bits)]],
+        absorptions: [200],
+        armor: [],
+      ),
     ),
     #(
       "caster 3 holding nothing: nothing is written",
       [pool_of_two],
       Unseen(3),
       [],
-      Seen(properties: [], absorptions: []),
+      Seen(properties: [], absorptions: [], armor: []),
     ),
     #(
       "a change of a spell with propertyFlags 0x100 survives its caster's sight",
       [kept_armor_of_three, pool_of_three],
       Unseen(3),
       [0x0938],
-      Seen(properties: [], absorptions: [0]),
+      Seen(properties: [], absorptions: [0], armor: []),
     ),
     #(
       "a change of a spell with propertyFlags 0x100 ends with its caster's unit",
       [kept_armor_of_three, pool_of_three, pool_of_two],
       UnitGone(3),
       [0x093A, 0x0938],
-      Seen(properties: [[armor_entry(value: one_bits)]], absorptions: [200]),
+      Seen(
+        properties: [[armor_entry(value: one_bits)]],
+        absorptions: [200],
+        armor: [],
+      ),
     ),
     #(
       "the unit of a connection that is no caster's ends nothing",
       [armor_of_three],
       UnitGone(4),
       [],
-      Seen(properties: [], absorptions: []),
+      Seen(properties: [], absorptions: [], armor: []),
     ),
   ]
   list.each(rows, fn(row) {
@@ -529,7 +666,8 @@ pub fn a_caster_the_map_says_no_longer_sees_the_player_ends_each_change_it_held_
       state:,
       event: support.sent_by_the_map(notice_of(notice: Unseen(3))),
     )
-  assert seen(steps: [again]) == Seen(properties: [], absorptions: [])
+  assert seen(steps: [again])
+    == Seen(properties: [], absorptions: [], armor: [])
     as "a second notice for the same caster ends nothing"
   // The change that outlived sight still ends by its caster's end tell.
   let state = holding(holds: [kept_armor_of_three])
@@ -594,15 +732,19 @@ pub fn a_second_tell_of_the_same_source_replaces_what_the_ally_holds_test() -> N
       "an absorb told again refills the one pool: the stat reads the second amount, and one end empties it",
       first_pool,
       second_pool,
-      Seen(properties: [], absorptions: [200]),
-      Seen(properties: [], absorptions: [0]),
+      Seen(properties: [], absorptions: [200], armor: []),
+      Seen(properties: [], absorptions: [0], armor: []),
     ),
     #(
       "a property told again writes nothing, and one end restores it",
       armored,
       armored,
-      Seen(properties: [], absorptions: []),
-      Seen(properties: [[armor_entry(value: one_bits)]], absorptions: []),
+      Seen(properties: [], absorptions: [], armor: []),
+      Seen(
+        properties: [[armor_entry(value: one_bits)]],
+        absorptions: [],
+        armor: [],
+      ),
     ),
   ]
   list.each(rows, fn(row) {
@@ -977,6 +1119,23 @@ pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_c
         [Wrote(0x093A)],
         [Wrote(0x0938), Finished(100)],
         [],
+      ],
+    ),
+    #(
+      "the caster seen again with the cast listed finishes it itself before the ends: its finish writes the 0x7fe once and the end of the last source writes none",
+      [
+        CasterRemoved,
+        CasterSeenListing(cast_id: 100),
+        CasterFinishes,
+        End(armor_hold),
+        End(pool_hold),
+      ],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0262)],
+        [Finished(100)],
+        [Wrote(0x093A)],
+        [Wrote(0x0938)],
       ],
     ),
     #(

@@ -41,9 +41,11 @@
 ////   cast) and when the player leaves; a start still waiting for its delay is cancelled
 ////   with it and told nothing. A later go of the cast on the same creature starts it
 ////   again from that go. Casters' modifiers on one creature do not stack.
-//// - **A go's changes on another player** (an absorb, or a type 11 row aimed at the primary
-////   target, that the press named a player in the caster's sight for, with no delay and a
-////   lifetime): each is listed on that player like a Fluff effect, gives its node the row's
+//// - **A go's changes on another player** (an absorb, an Interrupt Armor row, or a type 11
+////   row aimed at the primary target, that the press named a player in the caster's sight
+////   for, or that a child a Proxy aimed at the primary target started on that player
+////   carries, with no delay and a lifetime): each is listed on that player like a Fluff
+////   effect, gives its node the row's
 ////   life, and is told to the player's connection at the go as `OtherPlayerChangeStarts`
 ////   (genesis_prime/game/held_changes `PlayerChangeStarts`; an absorb's pool is worked out
 ////   at the go from the caster as for the caster's own). The player applies it as its own
@@ -58,7 +60,8 @@
 //// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
 ////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
 ////   five modifier rows (Spell4Effects 130474 and 203798 to 203801). The same row of a child
-////   a Proxy started has no press target and is not put on the caster.
+////   a Proxy started on the caster or on a struck unit has no press target and is not put on
+////   the caster.
 //// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
 ////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
 ////   the caster): each is aimed at the creatures the go
@@ -726,12 +729,25 @@ pub fn modifiers_armed(
               )
           }
         spell_plan.PropertyChange(modifier:) ->
-          caster_modifier_armed(
-            cast:,
-            row:,
-            source:,
-            change: HeldChange(held_changes.Property(modifier:)),
-          )
+          case player, row.armor {
+            Ok(address), Some(_) ->
+              player_change_armed(
+                cast:,
+                cast_id:,
+                row:,
+                address:,
+                change: held_changes.Property(modifier:),
+                spell:,
+                now_ms:,
+              )
+            Ok(_), None | Error(Nil), _ ->
+              caster_modifier_armed(
+                cast:,
+                row:,
+                source:,
+                change: HeldChange(held_changes.Property(modifier:)),
+              )
+          }
         spell_plan.LookChange(disguise:) ->
           caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
         spell_plan.AbsorbChange(absorption:) -> {
@@ -873,9 +889,10 @@ fn player_change_armed(
 /// The changes of the caster's earlier casts on the player `on` names that the stack rule of
 /// its spell pushes off, as a node pushed off ends the changes it holds
 /// (`lasting.stack_pushed_off`): a change a cast kept after the caster lost sight of the
-/// player is held by no node, so the push off of nodes cannot find it. The push off of a
-/// cast with a live node on the player is that path's alone (`lasting.pushed_off`). A
-/// change on a creature pushes none off.
+/// player is held by no node, so the push off of nodes cannot find it. The casts with a live
+/// node on the player count against the cap here as the kept ones do, and the push off of a
+/// cast with a live node is that path's alone (`lasting.pushed_off`, which counts the kept
+/// casts the same way). A change on a creature pushes none off.
 fn kept_pushed_off(
   cast cast: State,
   cast_id cast_id: Int,
@@ -885,12 +902,30 @@ fn kept_pushed_off(
     HeldOnCreature(..) -> #(cast, [])
     HeldOnPlayer(address:, spell4_id:, stack:, ..) -> {
       let unit_id = address.unit_id
+      let kept = kept_casts_on(cast:, cast_id:, unit_id:)
+      let with_a_node =
+        list.filter_map(cast_state.holders(cast:), fn(entry) {
+          let #(held_cast_id, holder) = entry
+          case held_cast_id != cast_id && dict.has_key(holder.nodes, unit_id) {
+            True ->
+              Ok(lasting.StackedCast(
+                cast_id: held_cast_id,
+                spell4_id: holder.spell.spell4_id,
+                stack: holder.spell.stack,
+                started_ms: holder.started_ms,
+              ))
+            False -> Error(Nil)
+          }
+        })
       list.fold(
         lasting.stack_pushed_off(
-          casts: kept_casts_on(cast:, cast_id:, unit_id:),
+          casts: list.append(with_a_node, kept),
           spell4_id:,
           stack:,
-        ),
+        )
+          |> list.filter(fn(pushed) {
+            list.any(kept, fn(held) { held.cast_id == pushed })
+          }),
         #(cast, []),
         fn(so_far, old_cast_id) {
           let #(cast, effects) = so_far
@@ -910,7 +945,7 @@ fn kept_pushed_off(
 
 /// The casts of the caster other than `cast_id` that hold a change on the player `unit_id`
 /// and no node on it, as the stack rule reads them.
-fn kept_casts_on(
+pub fn kept_casts_on(
   cast cast: State,
   cast_id cast_id: Int,
   unit_id unit_id: Int,
@@ -1261,7 +1296,10 @@ fn caster_modifier_armed(
 
 /// The modifier rows of a spell that change the caster: the rows aimed at struck units
 /// are the creature's (`units_ended`), except a struck-unit row whose aim names the primary
-/// target, which a press at oneself puts on the caster.
+/// target, which a press at oneself puts on the caster. That row is listed for every press:
+/// where the press named another player, the end told for the caster finds no change of the
+/// caster's to end, and the timers that end cancels are the caster's own
+/// (`cast_state.waits_for_caster_change`), never a creature's delayed start.
 pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
   spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
   |> list.filter(fn(row) {

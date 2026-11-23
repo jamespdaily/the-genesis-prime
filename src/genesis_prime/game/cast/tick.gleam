@@ -561,7 +561,7 @@ fn proxy_row_landed(
   primary_pose primary_pose: Option(area.Pose),
 ) -> #(Ticking, Caster, List(Effect), Option(Proxy)) {
   case proxy.target {
-    spell_plan.OnCaster -> #(
+    spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> #(
       cast_state.with_tick(row:, tick:),
       caster,
       [],
@@ -873,7 +873,7 @@ pub fn proxies_ticking(
       Some(periodic) ->
         Ok(TickingOn(
           unit_id: case proxy.target {
-            spell_plan.OnCaster -> caster.unit_id
+            spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> caster.unit_id
             spell_plan.OnEachStruck -> primary_target
           },
           life: 0,
@@ -1811,7 +1811,7 @@ pub fn target_gate(
     spell_plan.GatedOnTarget(prerequisite: target)
     | spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
       let gate_subject = case proxy.target {
-        spell_plan.OnCaster -> subject
+        spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> subject
         spell_plan.OnEachStruck ->
           struck_subject(
             cast:,
