@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The full check, run locally and in CI (.github/workflows/check.yml).
+# The full check, run locally; CI runs each part of it as a job of its own (.github/workflows/check.yml).
 #
 # Usage: ./check          every part, the gate before a merge
 #        ./check fast     format, gleam-build, glinter and fact-checker only, for the
