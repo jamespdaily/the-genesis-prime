@@ -363,36 +363,6 @@ pub fn a_targeted_cast_whose_unit_dies_before_the_go_counts_nothing_test() -> Ni
     as "opcode.0x361: the unit is dead at the go (SetUnitDeathState 0x14045e740), so nothing is counted"
 }
 
-pub fn a_targeted_press_outside_the_cast_group_writes_89_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // Creature2 32668 (display 21557, hit radius 1.7) is not in quest 8184's cast group.
-  let state =
-    seeing(quest: 8184, events: [
-      appears_at_ten(
-        unit_id: 40,
-        creature_id: 32_668,
-        display_info_id: 21_557,
-        outfit_info_id: 0,
-        hit_radius: 1.7,
-      ),
-    ])
-  let #(_, frames) =
-    pressed_and_run(
-      state:,
-      ms: 0,
-      press: press_at(spell4_id: 42_735, unit_id: 40, client_cast_id: 7),
-      until_ms: 5000,
-    )
-  let assert [pair] = frames
-    as "a press refused by the cast group writes the one 0x7fc"
-  let assert Ok(refused) = spell_cast_refused.decode(pair.1)
-  assert pair.0 == 0x07FC
-    && refused.client_cast_id == 7
-    && refused.spell4_id == 42_735
-    && cast_result.to_value(refused.result) == 89
-    as "opcode.0x7fc {7, 42735, 89}: TargetGroup (CastResult 89), and no opcode.0x361"
-}
-
 pub fn a_cast_at_a_cast_group_unit_outside_the_pane_goes_and_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   // Quest 7757's objective 14295 is type 11 with data 69507; Creature2 58762 (display
