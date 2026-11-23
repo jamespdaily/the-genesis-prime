@@ -110,7 +110,7 @@ fn path_of(container: String) -> String {
 
 /// A read: inspects the container, then reads its log as the container's id and
 /// the tracking say, each call under `call_deadline_ms`. It waits for both calls.
-pub fn read_container(
+fn read_container(
   podman podman: String,
   container container: String,
   call_deadline_ms call_deadline_ms: Int,
@@ -173,13 +173,6 @@ fn initial(settings: Settings) -> fn(Subject(Message)) -> State {
   }
 }
 
-/// Starts a follower linked to the caller.
-pub fn start(
-  settings settings: Settings,
-) -> Result(actor.Started(Subject(Message)), actor.StartError) {
-  read_poll.start(initial(settings), handle)
-}
-
 /// The follower as a child of a supervisor, registered under `name` so that a
 /// restarted follower is reached by the same subject.
 pub fn supervised(
@@ -201,19 +194,15 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       }
       state
     }
-    read_poll.PageLeft(last:, ended:) -> {
+    read_poll.PageLeft(last:) -> {
       let state = case last {
         True -> dropped(state)
         False -> state
       }
-      case ended {
-        True ->
-          follow.tell(
-            watcher: state.settings.watcher,
-            event: SubscriberDropped(state.settings.source),
-          )
-        False -> Nil
-      }
+      follow.tell(
+        watcher: state.settings.watcher,
+        event: SubscriberDropped(state.settings.source),
+      )
       state
     }
     read_poll.ReadAnswered(answer:) -> shown(state, answer)

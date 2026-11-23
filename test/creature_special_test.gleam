@@ -675,10 +675,13 @@ fn lifted_over(
 
 pub fn the_target_row_lift_loads_the_named_specials_and_two_of_the_three_it_held_back_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   // The twenty specials the order, shape and placement lifts make loadable, each with the anchor
   // its rows give (`spell_area.area_of_spell`); 63569 has no telegraph row.
   let tables = client_tables.with_content_tables()
+  // Retail-record list (the Jabbithole creature pages, Abilities tab, as the import reads
+  // them), not values the client's tables derive.
   let following_target = [
     43_989, 46_353, 47_319, 47_518, 47_627, 48_590, 48_591, 61_226, 61_416,
     70_256,
@@ -742,6 +745,7 @@ pub fn the_target_row_lift_loads_the_named_specials_and_two_of_the_three_it_held
 
 pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_by_name_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   // The 63 retail-listed specials that strike at several gos, or before their last go, a
   // creature the retail record pairs each with (the lowest Creature2 id of the Jabbithole
@@ -749,6 +753,8 @@ pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_b
   // gos its damage rows name, `~/.genesis-prime/sweep-1106/drawn_at_go.txt`), over the
   // client's own tables. The measure counts 22 that strike at one go and 41 at two or more.
   let tables = client_tables.with_content_tables()
+  // Retail-record pairs (the Jabbithole creature pages, Abilities tab), with the strike gos
+  // of the measure above; not values the client's tables derive.
   let pairs = [
     #(34_050, 17_908, 3),
     #(34_055, 9598, 3),
@@ -840,6 +846,7 @@ pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_b
 
 pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   // The 50 spells of the retail-listed specials with a castTime of 0 that the lift loads, each
   // with the lowest Creature2 id of the Jabbithole pairing the import reads, the number of gos
@@ -856,6 +863,8 @@ pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -
   // hold a go no hit row is drawn at; 42531 and 42533 name every one of 481 gos (phaseFlags
   // -1). 63724 and 63726 have no hit row and strike inside their area row.
   let tables = client_tables.with_content_tables()
+  // Retail-record pairs (the Jabbithole creature pages, Abilities tab), with the gos of the
+  // measure above; not values the client's tables derive.
   let pairs = [
     #(33_919, 9573, 5, 5),
     #(34_227, 13_768, 4, 4),

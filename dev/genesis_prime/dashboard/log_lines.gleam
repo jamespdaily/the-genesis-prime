@@ -143,14 +143,6 @@ pub fn file_name(source: Source) -> Result(String, Nil) {
   }
 }
 
-/// The bytes of the line that has not ended.
-pub fn carried_bytes(lines: Lines) -> Int {
-  case lines.partial {
-    Carrying(bytes:) | Cutting(bytes:) -> bit_array.byte_size(bytes)
-    Skipping -> 0
-  }
-}
-
 /// The ring's entries, the oldest first.
 pub fn entries(lines: Lines) -> List(Entry) {
   lines.ring |> list.take(ring_lines) |> list.reverse
@@ -466,7 +458,7 @@ fn push(lines: Lines, entry: fn(Int) -> Entry) -> Lines {
 /// updater's script wrote (after its stamp, before the last lines it copied
 /// from a container): a container's own words never change what the updater
 /// said. Bad words win over warn words, and warn over ok.
-pub fn level(source source: Source, text text: String) -> Level {
+fn level(source source: Source, text text: String) -> Level {
   case source {
     UpdaterLog -> words_level(message_of(text))
     LaunchdLog ->

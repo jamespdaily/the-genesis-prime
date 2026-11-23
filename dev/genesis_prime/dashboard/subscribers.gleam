@@ -66,18 +66,17 @@ pub opaque type Subscribers(item, message) {
 /// What a page, the runtime or a test asks of a process's subscribers.
 pub type Request(item) {
   Join(subscriber: Subject(item))
-  Leave(subscriber: Subject(item))
   Ended(down: process.Down)
   Count(reply: Subject(Int))
 }
 
 /// What a request did, for the process to act on: a page joined (the first one
-/// started the timer chain), a page left or ended (the last one ended the
-/// chain), or nothing changed (a page that joined twice, or a count, which is
+/// started the timer chain), a page ended (the last one ended the chain), or
+/// nothing changed (a page that joined twice, or a count, which is
 /// answered).
 pub type Handled(item) {
   PageJoined(subscriber: Subject(item), first: Bool)
-  PageLeft(last: Bool, ended: Bool)
+  PageLeft(last: Bool)
   Unchanged
 }
 
@@ -89,7 +88,7 @@ type Joined(item, message) {
   AlreadyJoined
 }
 
-/// What a leave did: the last page left (the timer chain ended), or pages
+/// What a page's end did: the last page left (the timer chain ended), or pages
 /// remain or none left.
 type Left(item, message) {
   LastLeft(Subscribers(item, message))
@@ -144,9 +143,7 @@ pub fn handle(
         FirstJoined(joined) -> #(joined, PageJoined(subscriber:, first: True))
         LaterJoined(joined) -> #(joined, PageJoined(subscriber:, first: False))
       }
-    Leave(subscriber:) -> left(leave(subscribers:, subscriber:), ended: False)
-    Ended(down:) ->
-      left(leave_ended(subscribers:, monitor: down.monitor), ended: True)
+    Ended(down:) -> left(leave_ended(subscribers:, monitor: down.monitor))
     Count(reply:) -> {
       process.send(reply, count(subscribers))
       #(subscribers, Unchanged)
@@ -156,11 +153,10 @@ pub fn handle(
 
 fn left(
   left: Left(item, message),
-  ended ended: Bool,
 ) -> #(Subscribers(item, message), Handled(item)) {
   case left {
-    LastLeft(remaining) -> #(remaining, PageLeft(last: True, ended:))
-    StillSubscribed(remaining) -> #(remaining, PageLeft(last: False, ended:))
+    LastLeft(remaining) -> #(remaining, PageLeft(last: True))
+    StillSubscribed(remaining) -> #(remaining, PageLeft(last: False))
   }
 }
 
@@ -195,15 +191,6 @@ fn join(
       }
     }
   }
-}
-
-/// Takes a page's subscription back; the last page to leave ends the timer
-/// chain.
-fn leave(
-  subscribers subscribers: Subscribers(item, message),
-  subscriber subscriber: Subject(item),
-) -> Left(item, message) {
-  leaving(subscribers, fn(entry) { entry.subject == subscriber })
 }
 
 /// Drops the page whose monitor reported it ended; the last page to leave ends

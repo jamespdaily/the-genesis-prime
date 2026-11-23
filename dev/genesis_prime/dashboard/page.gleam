@@ -87,7 +87,7 @@ pub fn document(pages pages: List(Page), current current: Page) -> String {
 }
 
 /// A link to each page, in the page list's order, with `current` marked.
-pub fn navigation(
+fn navigation(
   pages pages: List(Page),
   current current: Page,
 ) -> Element(message) {

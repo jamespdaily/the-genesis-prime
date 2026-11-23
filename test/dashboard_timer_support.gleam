@@ -33,22 +33,3 @@ pub fn arm(events events: Subject(Event)) -> subscribers.Arm(message) {
     }
   }
 }
-
-/// The next event, or an error when none has been sent. Call it after a call to
-/// the process has returned.
-pub fn next(events events: Subject(Event)) -> Result(Event, Nil) {
-  process.receive(events, 0)
-}
-
-/// The timer armed next; fails when the process armed none.
-pub fn next_armed(events events: Subject(Event)) -> Event {
-  let assert Ok(Armed(..) as armed) = next(events:)
-    as "the process armed no timer"
-  armed
-}
-
-/// Fires an armed timer.
-pub fn fire(armed armed: Event) -> Nil {
-  let assert Armed(fire:, ..) = armed as "only an armed timer fires"
-  fire()
-}

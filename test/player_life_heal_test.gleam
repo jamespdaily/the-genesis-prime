@@ -433,6 +433,29 @@ pub fn a_heal_with_shield_conversion_splits_between_shield_and_health_test() -> 
   assert player_life.shield(life:) == 402
     as "int(5 x 0.5) = 2 to the shield (rounding would give 3)"
   assert player_life.health(life:) == 573 as "570 and the other 3"
+  // A share above 1 (Great Aegis adds 1.0 to Reserve Power's 0.2): int(100 x 1.2) = 120
+  // fits the shield's room of 206, but the heal has only 100.
+  let #(life, _) =
+    struck(life: struck_from(health: 736), cast_id: 3, damage: 1000)
+  assert player_life.shield(life:) == 244 && player_life.health(life:) == 612
+    as "a second blow of 1000 is mitigated to 250: 156 of it to the shield, 94 to the health"
+  let #(life, effects) =
+    player_life.healed(
+      life:,
+      vital: effect_kind.Health,
+      amount: 100,
+      properties: converting(share: 1.2),
+    )
+  assert player_life.shield(life:) == 344
+    as "the shield rises by the heal's 100 at most, not by int(100 x 1.2) = 120"
+  assert player_life.health(life:) == 612
+    as "and the health part is 0, not a negative 20"
+  assert effects
+    == [
+      ToClient(OwnShield(shield: 344)),
+      ToViewers(client_connection.Shield(shield: 344)),
+    ]
+    as "only the shield moved"
 }
 
 pub fn a_heal_with_shield_conversion_at_full_shield_all_goes_to_health_test() -> Nil {

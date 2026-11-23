@@ -57,7 +57,7 @@ pub const interval_ms = 1000
 /// How many bytes one read gives at most, the first read of a file included:
 /// 256 KiB, a guess (a real log is 0.3 MB in 15 days, and the page keeps 500
 /// lines).
-pub const read_limit_bytes = 262_144
+const read_limit_bytes = 262_144
 
 /// How long the supervisor waits for a follower to stop.
 const shutdown_ms = 1000
@@ -273,14 +273,6 @@ pub fn subscribe(
   process.send(follower, Pages(subscribers.Join(subscriber:)))
 }
 
-/// Takes a page's subscription back.
-pub fn unsubscribe(
-  follower follower: Subject(Message),
-  subscriber subscriber: Subject(Followed),
-) -> Nil {
-  process.send(follower, Pages(subscribers.Leave(subscriber:)))
-}
-
 /// A tick without the timer: reads now when a page is subscribed.
 pub fn read_now(follower follower: Subject(Message)) -> Nil {
   process.send(follower, ReadNow)
@@ -323,7 +315,7 @@ fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
       process.send(subscriber, followed(state))
       state
     }
-    subscribers.PageLeft(last:, ended:) -> {
+    subscribers.PageLeft(last:) -> {
       let state = case last {
         True ->
           State(
@@ -334,14 +326,10 @@ fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
           )
         False -> state
       }
-      case ended {
-        True ->
-          tell(
-            watcher: state.settings.watcher,
-            event: SubscriberDropped(state.settings.source),
-          )
-        False -> Nil
-      }
+      tell(
+        watcher: state.settings.watcher,
+        event: SubscriberDropped(state.settings.source),
+      )
       state
     }
   }

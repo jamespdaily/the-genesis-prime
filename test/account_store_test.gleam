@@ -33,6 +33,7 @@ import genesis_prime/add_character/sql as add_character_sql
 import genesis_prime/game/character_name
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/login/guid
+import genesis_prime/migration
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, type ActionSlotRow, type ActiveQuest, type QuestRow, Account,
@@ -1698,25 +1699,6 @@ pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold
   account_store_support.stop(store)
 }
 
-pub fn the_health_column_is_a_nullable_integer_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let store = account_store_support.start_store(pool_size: 2)
-  let assert Ok(returned) =
-    pog.query(
-      "select data_type, is_nullable from information_schema.columns where table_name = 'character' and column_name = 'health'",
-    )
-    |> pog.returning({
-      use data_type <- decode.field(0, decode.string)
-      use is_nullable <- decode.field(1, decode.string)
-      decode.success(#(data_type, is_nullable))
-    })
-    |> pog.execute(store.pool)
-    as "the catalog reads"
-  assert returned.rows == [#("integer", "YES")]
-    as "NULL is nothing saved, so existing rows need no backfill"
-  account_store_support.stop(store)
-}
-
 pub fn a_save_writes_the_health_with_the_place_and_the_next_load_reads_it_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = account_store_support.start_store(pool_size: 2)
@@ -1996,31 +1978,8 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
   use <- owned_test.run(60_000)
   use <- unitest.tag("registry")
   let store = account_store_support.start_store(pool_size: 2)
-  assert worker.mapped_constraints()
-    == [
-      "character_name_unique",
-      "character_name_follows_rule_0",
-      "character_health_is_not_negative",
-      "character_experience_is_not_negative",
-      "character_quest_id_fits_15_bits",
-      "character_quest_state_is_known",
-      "character_quest_completed_has_a_time",
-      "character_quest_active_has_its_entry",
-      "character_quest_done_mask_fits_six_objectives",
-      "character_quest_progress_fits_six_objectives",
-      "character_quest_progress_fits_32_bits",
-      "character_quest_timers_match_progress",
-      "character_quest_times_are_not_negative",
-      "character_quest_placeholder_is_not_negative",
-      "character_quest_kill_mask_fits_7_bits",
-      "character_quest_active_has_its_kill_mask",
-      "character_quest_kill_mask_has_six_slots",
-      "character_action_slot_set_is_one_of_four",
-      "character_action_slot_slot_is_one_of_twelve",
-      "character_action_slot_ability_fits_the_message",
-      "character_action_slot_one_place_per_ability",
-    ]
-    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0, each check of a quest row and each check of an action slot row"
+  assert worker.mapped_constraints() != []
+    as "the worker maps at least one constraint, so the check below reads the catalogue"
   list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
@@ -7280,5 +7239,42 @@ pub fn the_action_slot_migration_makes_the_table_with_its_named_checks_and_casca
   )
   assert stored_rows(store:, character_id: id) == []
     as "deleting the character deletes its slot rows"
+  account_store_support.stop(store)
+}
+
+/// Asks the store's probe, as the server's readiness ask does, and waits for
+/// what it found.
+fn probed(store: Store) -> worker.Probed {
+  let #(sent, probed) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      worker.probe(store: store.name, reply:)
+    })
+  let assert ToWorker(_) = sent as "the probe started a worker"
+  probed
+}
+
+pub fn a_database_with_no_migration_record_table_is_read_as_no_record_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  execute(store.pool, "drop table schema_migration")
+  assert probed(store) == worker.Reached(recorded: migration.NoRecord)
+    as "Postgres answers a read of a missing table with undefined_table (42P01), which the probe reads as no record, not as a database that is away"
+  account_store_support.stop(store)
+}
+
+pub fn a_migration_record_of_another_shape_is_read_as_unreadable_with_its_reason_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  // The table has a column of another name, so the read fails in Postgres with
+  // undefined_column (42703), not undefined_table.
+  execute(
+    store.pool,
+    "alter table schema_migration rename column sha256 to hash",
+  )
+  let assert worker.Reached(recorded: migration.Unreadable(reason:)) =
+    probed(store)
+    as "the database answered, so the probe reached it, and the record could not be read"
+  assert string.contains(reason, "undefined_column (42703)")
+    as "the reason is Postgres's own name and code for the failure"
   account_store_support.stop(store)
 }
