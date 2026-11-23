@@ -1306,3 +1306,40 @@ pub fn a_held_creature_outside_the_cast_group_is_refused_its_state_before_the_gr
     == [122]
     as "0x1403b2240 tests the target's crowd-control states before CheckCastActivateSpell's cast group: a stunned creature outside the group is refused 122, not 89"
 }
+
+pub fn a_proxy_aimed_at_the_primary_target_of_a_quest_button_cast_at_a_creature_starts_its_child_on_the_caster_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 25207 (targetType 5) starts on the creature the press names. Spell4Effects 999101 is
+  // a copy of Proxy 83947 (targetFlags 2, Spell4 76766) set in it: only a bag press names a
+  // player for a Proxy aimed at the primary target to start its child on
+  // (`spell_plan.OnPrimaryTarget`), so the child of a quest button's cast starts on the caster,
+  // unit 7, not on the creature the button's cast is aimed at.
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 83_947,
+    id: 999_101,
+    with: [#("spellId", Integer(25_207))],
+  )
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 915, of: 26_145, at: 10.0)])
+  let #(state, pressed) =
+    press_at_with(
+      shortcuts: shortcut_spell.shortcuts(tables:),
+      scene:,
+      state: cast_state.new(),
+      spell4_id: 25_207,
+      target: 915,
+      at: 1000,
+    )
+  assert confirmed_targets(effects: pressed) == [915]
+    as "the caster is told the button's cast starts on the creature"
+  let #(_, effects) = played(state:, pressed:, at: 1000)
+  assert list.map(
+      list.filter(support.started_in(effects:), fn(start) {
+        start.spell4_id == 76_766
+      }),
+      fn(start) { start.primary_target_unit_id },
+    )
+    == [the_caster]
+    as "its Proxy aimed at the primary target starts the child on the caster"
+}
