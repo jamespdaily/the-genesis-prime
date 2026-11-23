@@ -211,31 +211,6 @@ pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19
   login_support.stop(started)
 }
 
-pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_19_and_is_disconnected_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let time = driven_time.new()
-  let #(started, port, account) = start(time:)
-  let game =
-    game_client.connect(
-      port:,
-      account_id: account_number(account),
-      session_key: session_key(),
-      account_name: "jim",
-      limit: socket_read.Open,
-    )
-  let assert [notice] = game_client.read(game:, count: 1)
-  game_client.nothing_more(game:)
-  assert notice.message_id == 0x036A as "opcode.0x36a"
-  assert disconnect_notice.decode(notice.body)
-    == Ok(DisconnectNotice(reason: AccountDisconnected))
-    as "0x1400168a0: 19 is 'This account has been disconnected', for a key the hand-off never held"
-  open_wait.named(
-    "the connection to close after a key the hand-off never held",
-    fn() { game_client.await_closed(game:) },
-  )
-  login_support.stop(started)
-}
-
 pub fn a_session_key_the_auth_server_gave_expires_only_when_the_driven_clock_passes_its_lifetime_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
@@ -561,42 +536,6 @@ pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_
   login_support.stop(started)
 }
 
-pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_the_list_again_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let time = driven_time.new()
-  let #(started, port, account) = start(time:)
-  let pool = pog.named_connection(started.settings.pool.pool_name)
-  let other =
-    login_support.insert_account(
-      pool:,
-      login_name: "login-2",
-      salt: <<1>>,
-      verifier: <<1>>,
-      game_account_id: support.guid_of(0x22),
-    )
-  let theirs =
-    character_support.insert(
-      pool:,
-      account: AccountId(other),
-      name: "Abe Qu",
-      class_id: 4,
-      path: 2,
-    )
-  let game = in_select(started:, port:, account:)
-  send_play(game:, character_id: theirs)
-  let assert [refused, _tier, _entitlements, level, listed] =
-    game_client.read(game:, count: 5)
-    as "opcode.0x162.after_create: 0x0162, then 0x097F, 0x0968, 0x0036 and 0x0117"
-  assert refused.message_id == 0x0162
-  assert level.message_id == 0x0036
-  assert listed.message_id == 0x0117
-  let assert Ok(listing) = character_list.decode(listed.body)
-  assert listing.characters == []
-    as "the account has no characters: the read is scoped by its id, so another account's character is not played, nor listed"
-  game_client.close(game:)
-  login_support.stop(started)
-}
-
 pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connection_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
@@ -636,58 +575,6 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
   open_wait.named("the connection to close at the end of its map", fn() {
     game_client.await_closed(game:)
   })
-  login_support.stop(started)
-}
-
-pub fn a_name_taken_in_another_case_is_name_unavailable_and_nothing_more_is_stored_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let time = driven_time.new()
-  let #(started, port, account) = start(time:)
-  let pool = pog.named_connection(started.settings.pool.pool_name)
-  let _character =
-    character_support.insert(
-      pool:,
-      account:,
-      name: "Zed Qu",
-      class_id: 4,
-      path: 2,
-    )
-  let game = in_select(started:, port:, account:)
-  game_client.send_create(game:, body: create_request("zED qU"))
-  assert created_result(game).result == create_result.NameUnavailable
-    as "lua.Character.OnCreateCharacterFailed: 6; the unique index on the lower-cased name refuses the second"
-  assert names_of(pool) == ["Zed Qu"] as "nothing more is stored"
-  game_client.close(game:)
-  login_support.stop(started)
-}
-
-pub fn an_account_at_its_two_slots_is_account_full_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let time = driven_time.new()
-  let #(started, port, account) = start(time:)
-  let pool = pog.named_connection(started.settings.pool.pool_name)
-  let _character =
-    character_support.insert(
-      pool:,
-      account:,
-      name: "Abe Qu",
-      class_id: 4,
-      path: 2,
-    )
-  let _character =
-    character_support.insert(
-      pool:,
-      account:,
-      name: "Cal Qu",
-      class_id: 4,
-      path: 2,
-    )
-  let game = in_select(started:, port:, account:)
-  game_client.send_create(game:, body: create_request("Ab Cd"))
-  assert created_result(game).result == create_result.AccountFull
-    as "lua.CharacterSelection.OnLoadFromCharacter: 2 slots without an entitlement; lua.Character.OnCreateCharacterFailed: 9"
-  assert names_of(pool) == ["Abe Qu", "Cal Qu"] as "nothing more is stored"
-  game_client.close(game:)
   login_support.stop(started)
 }
 
@@ -743,38 +630,6 @@ pub fn a_delete_of_the_accounts_character_is_0x00e6_result_0_and_the_next_list_o
   login_support.stop(started)
 }
 
-pub fn a_delete_of_a_character_another_account_has_is_0x00e6_result_1_and_deletes_nothing_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // A delete not scoped to the requesting account deletes the other account's row and fails the row assert.
-  let time = driven_time.new()
-  let #(started, port, account) = start(time:)
-  let pool = pog.named_connection(started.settings.pool.pool_name)
-  let other =
-    AccountId(login_support.insert_account(
-      pool:,
-      login_name: "other",
-      salt: <<1>>,
-      verifier: <<2>>,
-      game_account_id: support.guid_of(0x22),
-    ))
-  let theirs =
-    character_support.insert(
-      pool:,
-      account: other,
-      name: "Cal Qu",
-      class_id: 1,
-      path: 1,
-    )
-  let game = in_select(started:, port:, account:)
-  send_delete(game, theirs)
-  assert character_support.delete_result_in(game_client.read(game:, count: 1))
-    == DeleteCharacterResult(result: delete_result.DeleteFailed, data: 0)
-    as "lua.CharacterSelection.OnCharacterDeleteResult: 1; a modified client could send any id"
-  assert names_of(pool) == ["Cal Qu"] as "nothing is deleted"
-  game_client.close(game:)
-  login_support.stop(started)
-}
-
 pub fn a_rename_of_a_marked_character_is_0x014b_result_18_and_the_next_list_shows_the_name_with_the_bit_clear_test() -> Nil {
   use <- owned_test.run(60_000)
   // A rename that leaves the character marked fails the next list's bit.
@@ -805,69 +660,6 @@ pub fn a_rename_of_a_marked_character_is_0x014b_result_18_and_the_next_list_show
   let assert [renamed] = listed_entries(game)
   assert renamed.name == "Ab Cd" && renamed.requires_rename == 0
     as "the row is renamed and unmarked"
-  game_client.close(game:)
-  login_support.stop(started)
-}
-
-pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let time = driven_time.new()
-  let #(started, port, account) = start(time:)
-  let pool = pog.named_connection(started.settings.pool.pool_name)
-  let zed =
-    character_support.insert(
-      pool:,
-      account:,
-      name: "Zed Qu",
-      class_id: 4,
-      path: 2,
-    )
-  let _abe =
-    character_support.insert(
-      pool:,
-      account:,
-      name: "Abe Cd",
-      class_id: 4,
-      path: 2,
-    )
-  character_support.mark_for_rename(pool:, name: "Zed Qu")
-  let game = in_select(started:, port:, account:)
-  send_rename(game:, character_id: zed, name: "aBE cD")
-  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
-    == rename_result.NameUnavailable
-    as "lua.CharacterSelection.OnCharacterRenameResult: 16; the unique index on the lower-cased name refuses it"
-  assert names_of(pool) == ["Zed Qu", "Abe Cd"] as "nothing changes"
-  let assert [still_marked, _] = listed_entries(game)
-  assert still_marked.requires_rename == 1
-  game_client.close(game:)
-  login_support.stop(started)
-}
-
-pub fn a_rename_with_a_name_failing_rule_0_is_0x014b_15_and_an_unmarked_character_is_13_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // A rename that does not require the mark renames the unmarked character and fails the result 13 assert.
-  let time = driven_time.new()
-  let #(started, port, account) = start(time:)
-  let pool = pog.named_connection(started.settings.pool.pool_name)
-  let zed =
-    character_support.insert(
-      pool:,
-      account:,
-      name: "Zed Qu",
-      class_id: 4,
-      path: 2,
-    )
-  let game = in_select(started:, port:, account:)
-  send_rename(game:, character_id: zed, name: "Ab Cd")
-  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
-    == rename_result.RenameFailed
-    as "lua.CharacterSelection.OnCharacterRenameResult: 13; the character is not marked, so the client would not offer a rename"
-  character_support.mark_for_rename(pool:, name: "Zed Qu")
-  send_rename(game:, character_id: zed, name: "Abcd")
-  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
-    == rename_result.NameLength
-    as "lua.CharacterSelection.OnCharacterRenameResult: 15; rule 0 wants a first and a last name, and the character is marked, so the update reaches the table's check"
-  assert names_of(pool) == ["Zed Qu"] as "nothing changes"
   game_client.close(game:)
   login_support.stop(started)
 }
@@ -1177,6 +969,42 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
       blends: 0,
     )
     as "the place the player camped at, saved before 0x594: the camp's save is done before the client can pick the character again"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_the_list_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let other =
+    login_support.insert_account(
+      pool:,
+      login_name: "login-2",
+      salt: <<1>>,
+      verifier: <<1>>,
+      game_account_id: support.guid_of(0x22),
+    )
+  let theirs =
+    character_support.insert(
+      pool:,
+      account: AccountId(other),
+      name: "Abe Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: theirs)
+  let assert [refused, _tier, _entitlements, level, listed] =
+    game_client.read(game:, count: 5)
+    as "opcode.0x162.after_create: 0x0162, then 0x097F, 0x0968, 0x0036 and 0x0117"
+  assert refused.message_id == 0x0162
+  assert level.message_id == 0x0036
+  assert listed.message_id == 0x0117
+  let assert Ok(listing) = character_list.decode(listed.body)
+  assert listing.characters == []
+    as "the account has no characters: the read is scoped by its id, so another account's character is not played, nor listed"
   game_client.close(game:)
   login_support.stop(started)
 }

@@ -79,6 +79,8 @@ avoid_panic = "off"
 # The whole-server wire tests call the setup they share (`game_wire_support`) by
 # its plain names, so a test body reads the same in whichever wire file it sits.
 "test/game_wire_*_test.gleam" = ["unqualified_import"]
+# The sitting bot's whole-server tests are written in the same way and sit with the tool's other tests.
+"test/sitting_bot_test.gleam" = ["unqualified_import"]
 
 # Modules that may have effects; every other module is a pure rule.
 [tools.code_rules]
