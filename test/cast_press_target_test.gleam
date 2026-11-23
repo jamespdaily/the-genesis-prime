@@ -501,6 +501,21 @@ pub fn a_held_key_down_at_another_player_starts_each_cast_at_that_player_test() 
     as "a key-down naming a unit the picture does not show is refused 91 with the client cast id 0"
   assert option.is_none(held.holding)
     as "cast.hold_stop: the refused key starts no hold"
+  let #(held_at_none, refused_at_none) =
+    key_at(
+      plans:,
+      state: cast_state.new(),
+      caster:,
+      bag_index: bag_of_base_3,
+      target: 0,
+      held: 1,
+      at: 1000,
+    )
+  assert refused_as(effects: refused_at_none) == [#(0, 91)]
+    && started_at(effects: refused_at_none) == []
+    as "opcode.0x4db: the client sends a key-down with target 0 without a check of its own, and the server refuses it 91 as the client refuses a 0x9a with no target (CheckCast 0x1403ae8c0)"
+  assert option.is_none(held_at_none.holding)
+    as "cast.hold_stop: a key-down at no target starts no hold"
 }
 
 // ---- a repeat whose target left ----
