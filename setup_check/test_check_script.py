@@ -1996,6 +1996,19 @@ class PartRunTest(unittest.TestCase):
         self.assertIn("check FAILED: the setup check failed", run.output)
         self.assertEqual(run.commands, [], "no part ran")
 
+    def test_a_check_that_ends_while_the_watchdog_is_starting_leaves_no_process_holding_its_output(self):
+        # The check's output pipe stays open while any process it started lives on. The
+        # setup check fails at once, so the check ends before the watchdog has started its
+        # sleep; a slow `date` keeps the watchdog from starting it, and a `ps` that
+        # answers late lets it start between the snapshot of what to stop and the kill.
+        def plant_slow_date_and_ps(case):
+            tools = case.root / "tools"
+            executable(tools / "date", '#!/bin/sh\n/bin/sleep 0.3\nexec /bin/date "$@"\n')
+            executable(tools / "ps", '#!/bin/sh\n/bin/ps "$@"\n/bin/sleep 0.6\n')
+
+        run = part_run("setup-fails-watchdog-starting", "glinter", prepare=plant_slow_date_and_ps, timeout=30, PLANT_SETUP_FAILS="1")
+        self.assertIn("check FAILED: the setup check failed", run.output)
+
     def test_a_part_run_ignores_the_scope_and_does_not_run_branch_current(self):
         branches = (
             ("guidance-only", plant_light_changes),
@@ -2124,6 +2137,23 @@ PINNED_SHARDS = {
 }
 
 
+# The shard of each heavy module, worked by hand from the seconds ./check keeps (the
+# biggest first, each on the least loaded shard): 3 shards load 203.4, 181.6, 224.0 seconds,
+# 2 shards 305.6 and 303.4.
+PINNED_HEAVY_SHARDS = {
+    2: {
+        "table_value_test": 1, "account_store_test": 2, "apply_migrations_test": 2, "game_wire_quest_test": 1,
+        "objective_test": 2, "migration_start_test": 1, "sigterm_test": 2, "spell_area_test": 1,
+        "spell_plan_lasting_test": 2, "limited_action_set_test": 1,
+    },
+    3: {
+        "table_value_test": 1, "account_store_test": 2, "apply_migrations_test": 3, "game_wire_quest_test": 3,
+        "objective_test": 2, "migration_start_test": 1, "sigterm_test": 3, "spell_area_test": 2,
+        "spell_plan_lasting_test": 1, "limited_action_set_test": 3,
+    },
+}
+
+
 def heavy_modules() -> list[tuple[str, float]]:
     """The modules ./check places first, as (module, seconds), in its order."""
     found = re.findall(r'(?m)^heavy_modules="([^"]*)"$', CHECK.read_text())
@@ -2132,10 +2162,10 @@ def heavy_modules() -> list[tuple[str, float]]:
 
 
 def biggest_first(count: int) -> dict[str, int]:
-    """The shard of each heavy module: biggest first, each on the least loaded shard, ties to the lower."""
+    """The shard of each heavy module: biggest first (equal seconds by name), each on the least loaded shard, ties to the lower."""
     loads = [0.0] * count
     owner = {}
-    for module, seconds in sorted(heavy_modules(), key=lambda entry: -entry[1]):
+    for module, seconds in sorted(heavy_modules(), key=lambda entry: (-entry[1], entry[0])):
         shard = loads.index(min(loads))
         owner[module] = shard + 1
         loads[shard] += seconds
@@ -2243,6 +2273,7 @@ class ShardTest(unittest.TestCase):
                 held = owners(count, "reversed")
                 for module, shard in biggest_first(count).items():
                     self.assertEqual(held[module + ".gleam"], shard, module)
+                    self.assertEqual(PINNED_HEAVY_SHARDS[count][module], shard, module)
 
     def test_a_shard_run_gives_its_folder_to_the_first_run_and_the_serial_run_and_no_other_run(self):
         run = part_run_of(("gleam-test", "2/3"), False)

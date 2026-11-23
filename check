@@ -484,9 +484,13 @@ on_hung() {
 }
 trap on_hung USR1
 
-# stop_everything_quickly PID: kills PID and everything it started, at once.
+# stop_everything_quickly PID: kills PID and everything it started, at once. PID is
+# frozen first: a PID still starting a process (the watchdog's sleep) would otherwise start
+# it between the snapshot and the kill, and that process, left without its parent, would
+# keep the check's output open until it ended.
 stop_everything_quickly() {
   local pids
+  kill -STOP "$1" 2>/dev/null
   pids=$(descendants_of "$1")
   kill -KILL $1 $pids 2>/dev/null
   return 0
@@ -687,15 +691,15 @@ wait_for_status() {
 # test only by chance.
 
 # heavy_modules: the test modules a shard places first, as `module:seconds`, with the
-# seconds of each module's tests in the first test run of CI run 45093306983 (the summary's
-# ten slowest modules; real_start_test its untagged tests). The tail of about 530 modules
-# has no measure and goes by hash. The ten split 273.5, 292.5 and 275.1 seconds over three
-# shards.
-heavy_modules="game_wire_test:214.9 sigterm_test:105.8 migration_start_test:78.4 real_start_test:69.9 objective_test:69.7 random_stat_test:64.9 spell_area_test:62.3 spell_plan_lasting_test:61.9 objective_hidden_test:58.6 account_store_test:54.7"
+# seconds of each module's tests in CI run 45126989760, the check of a branch that holds
+# the split of game_wire_test (the summary's ten slowest modules, all from the one run so the
+# seconds share a scale). The tail of the other modules has no measure and goes by hash. The
+# ten split 203.4, 181.6 and 224.0 seconds over three shards.
+heavy_modules="table_value_test:102.5 account_store_test:78.9 apply_migrations_test:66.7 game_wire_quest_test:58.1 objective_test:56.9 migration_start_test:56.7 sigterm_test:56.7 spell_area_test:45.8 spell_plan_lasting_test:44.2 limited_action_set_test:42.5"
 
 # shard_files NUMBER COUNT: prints the path below test of each .gleam file under test/ that
 # shard NUMBER of COUNT owns, one a line. A heavy module goes to the shard the biggest-first
-# rule gives; any other file to h mod COUNT + 1, h = (31 * h + byte) mod 1000003 over the path
+# rule gives (equal seconds by name, so the order of heavy_modules does not matter); any other file to h mod COUNT + 1, h = (31 * h + byte) mod 1000003 over the path
 # without `.gleam`, kept below 2^53 so every awk computes the same.
 shard_files() {
   (cd test && find . -type f -name '*.gleam' | sed 's|^\./||' | LC_ALL=C sort) |
@@ -709,7 +713,7 @@ shard_files() {
           seconds[i] = pair[2] + 0
         }
         for (i = 2; i <= entries; i++) {
-          for (j = i; j > 1 && seconds[j] > seconds[j - 1]; j--) {
+          for (j = i; j > 1 && (seconds[j] > seconds[j - 1] || (seconds[j] == seconds[j - 1] && name[j] < name[j - 1])); j--) {
             swap = name[j]; name[j] = name[j - 1]; name[j - 1] = swap
             swap = seconds[j]; seconds[j] = seconds[j - 1]; seconds[j - 1] = swap
           }
