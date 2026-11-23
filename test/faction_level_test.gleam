@@ -6,7 +6,8 @@
 
 import character_tables
 import fixture_tables
-import genesis_prime/game/faction_level
+import genesis_prime/game/faction_level.{Friendly, Hostile, Neutral}
+import gleam/list
 import owned_test
 import planted_table.{Integer}
 
@@ -34,6 +35,25 @@ pub fn faction_level_walks_parents_as_the_client_test() -> Nil {
   assert level(167, 174) == 5
   assert level(174, 174) == 10
   assert !faction_level.hostile(levels:, from: 167, to: 174)
+  // FactionDispositionFromLevel `0x140787830`: 0 to 2 Hostile, 3 to 7 Neutral, 8 to 10
+  // Friendly; the boundaries are 2 and 3, 7 and 8.
+  assert list.map([0, 2, 3, 7, 8, 10], fn(level) {
+      faction_level.disposition_of_level(level:)
+    })
+    == [
+      Hostile,
+      Hostile,
+      Neutral,
+      Neutral,
+      Friendly,
+      Friendly,
+    ]
+  // Faction2Relationship 684 gives Dominion (166) and Exile (167) level 0: Hostile each way;
+  // a faction toward itself is level 10: Friendly.
+  assert faction_level.disposition(levels:, from: 166, to: 167) == Hostile
+  assert faction_level.disposition(levels:, from: 167, to: 166) == Hostile
+  assert faction_level.disposition(levels:, from: 166, to: 166) == Friendly
+  assert faction_level.disposition(levels:, from: 167, to: 167) == Friendly
   // The client's parent chain stops at a faction it has met: 165 given parent 166
   // (whose parent is 165) is a cycle, and the levels still come from the same rows.
   use cyclic <- fixture_tables.changed(table: "Faction2", id: 165, with: [

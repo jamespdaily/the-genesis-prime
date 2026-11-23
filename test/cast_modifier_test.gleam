@@ -35,6 +35,7 @@ import gleam/list
 import gleam/option.{None}
 import map_support
 import owned_test
+import player_state_support
 import prerequisite_support
 
 /// 135954 as the client holds it: BaseCritChance, multiplier 1.0, flat 0.08, 8000 ms.
@@ -574,6 +575,9 @@ fn pressed_at_a_player(at ms: Int) -> #(cast_state.State, List(Effect)) {
   let caster =
     cast_state.Caster(
       ..support.caster(),
+      other_players: player_state_support.in_range_of_the_caster(units: [
+        armor_ally,
+      ]),
       players_in_sight: dict.from_list([
         #(
           armor_ally,

@@ -45,7 +45,7 @@
 import genesis_prime/game/effect_kind
 import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/spell_plan.{type Limits, type Spell, Limits}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -226,12 +226,6 @@ pub fn passes_cast_group(
 /// it is listed in (Spell4Effects.phaseFlags: bit n is phase n, every bit for -1).
 pub type ActivateEffect {
   ActivateEffect(effect_id: Spell4EffectsId, delay_ms: Int, phase_flags: Int)
-}
-
-/// The limits of a spell cast at a unit from its Spell4 row (targetMinRange,
-/// targetMaxRange and targetVerticalRange).
-pub type Limits {
-  Limits(min: Float, max: Float, vertical: Float)
 }
 
 /// What the plans hold of an activate spell.
@@ -531,11 +525,7 @@ fn planned_rows(
         spell:,
         effects:,
         dropped:,
-        limits: Limits(
-          min: row.target_min_range,
-          max: row.target_max_range,
-          vertical: row.target_vertical_range,
-        ),
+        limits: spell_plan.limits_of(row:),
         cast_group_id: case
           spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
         {

@@ -6,8 +6,8 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/activate.{
-  ActivateEffect, CannotBePlanned, Column, Creature, Limits, NoActivateSpell,
-  Picked, Planned, Unread,
+  ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
+  Planned, Unread,
 }
 import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
 import genesis_prime/game/spell_plan
@@ -268,7 +268,7 @@ pub fn the_activations_plan_item_spells_with_an_activate_effect_test() -> Nil {
       ),
     ]
     as "Spell4Effects 43805 is its Activate row, delay 0, phaseFlags 1"
-  assert limits == Limits(min: 0.0, max: 30.0, vertical: -1.0)
+  assert limits == spell_plan.Limits(min: 0.0, max: 30.0, vertical: -1.0)
     as "Spell4 26663: targetMaxRange 30.0, no minimum, targetVerticalRange -1"
   let assert Ok(Planned(effects:, limits:, ..)) =
     activate.planned_of(activations:, spell4_id: 1545)

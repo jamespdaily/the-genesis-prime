@@ -5,7 +5,7 @@
 ////
 //// ```
 //// Faction2 and Faction2Relationship ─▶ build ─▶ Levels(parents, levels)
-//// Levels, a faction, another         ─▶ level / hostile
+//// Levels, a faction, another         ─▶ level / hostile / disposition (Hostile, Neutral, Friendly)
 //// ```
 ////
 //// - **The lineage** of a faction is the faction and its parents, nearest first
@@ -35,6 +35,9 @@ pub opaque type Levels {
 /// The highest level the client calls Hostile (FactionDispositionFromLevel `0x140787830`,
 /// `world_data.creature_disposition`).
 const highest_hostile_level = 2
+
+/// The highest level the client calls Neutral (FactionDispositionFromLevel `0x140787830`).
+const highest_neutral_level = 7
 
 /// The key of the levels in the tables' store.
 const levels_key: table_store.DerivedKey(Levels) =
@@ -122,5 +125,32 @@ pub fn level(levels levels: Levels, from this: Int, to other: Int) -> Int {
 
 /// Whether a faction is Hostile toward another: its level is 0 to 2.
 pub fn hostile(levels levels: Levels, from this: Int, to other: Int) -> Bool {
-  level(levels:, from: this, to: other) <= highest_hostile_level
+  disposition(levels:, from: this, to: other) == Hostile
+}
+
+/// How a unit's faction sees another's, from the level (FactionDispositionFromLevel
+/// `0x140787830`).
+pub type Disposition {
+  Hostile
+  Neutral
+  Friendly
+}
+
+/// The disposition a level reads as (FactionDispositionFromLevel `0x140787830`): 0 to 2
+/// Hostile, 3 to 7 Neutral, 8 to 10 Friendly.
+pub fn disposition_of_level(level level: Int) -> Disposition {
+  case level <= highest_hostile_level, level <= highest_neutral_level {
+    True, _ -> Hostile
+    False, True -> Neutral
+    False, False -> Friendly
+  }
+}
+
+/// The disposition of a faction toward another: its level's reading.
+pub fn disposition(
+  levels levels: Levels,
+  from this: Int,
+  to other: Int,
+) -> Disposition {
+  disposition_of_level(level: level(levels:, from: this, to: other))
 }

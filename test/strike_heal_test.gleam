@@ -39,6 +39,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import map_support
 import owned_test
+import player_state_support
 import properties_support
 import rating_support
 import spell_tables
@@ -163,7 +164,7 @@ fn selected(
 /// A picture of the player 9 and the creature 20, both shown.
 fn picture() -> shown.Picture {
   dict.from_list([
-    #(9, shown.ShownPlayer(at: None)),
+    #(9, shown.ShownPlayer(state: player_state_support.a_player())),
     #(
       20,
       strike_support.creature_at(

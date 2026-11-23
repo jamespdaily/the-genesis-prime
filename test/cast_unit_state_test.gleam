@@ -29,6 +29,7 @@ import genesis_prime/game/activate.{Body, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
+import genesis_prime/game/held_state
 import genesis_prime/game/prerequisite
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
@@ -424,7 +425,7 @@ fn picture_of(shown shown: Shown) -> shown.Picture {
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: False,
         held: list.map(shown.held, fn(state) {
-          shown.HeldState(state:, instance_id: 1)
+          held_state.HeldState(state:, instance_id: 1)
         }),
         unit_states: list.index_map(shown.unit_states, fn(state, number) {
           shown.HeldUnitState(state:, number:)

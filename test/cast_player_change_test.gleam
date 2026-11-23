@@ -49,6 +49,7 @@ import gleam/option.{None, Some}
 import gleam/string
 import map_support
 import owned_test
+import player_state_support
 import prerequisite_support
 import spell_tables
 
@@ -76,6 +77,7 @@ fn esper_seeing(players players: List(Int)) -> Caster {
     ..support.caster(),
     resources: support.holding_focus(class_id: 3, focus: 1000.0),
     stats: attacker_support.novice(),
+    other_players: player_state_support.in_range_of_the_caster(units: players),
     players_in_sight: dict.from_list(
       list.map(players, fn(unit_id) {
         #(unit_id, PlayerAddress(..address(), unit_id:))

@@ -26,6 +26,7 @@ import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/held_state
 import genesis_prime/game/item_property
 import genesis_prime/game/objective_kind
 import genesis_prime/game/shortcut_spell
@@ -57,6 +58,7 @@ import gleam/string
 import owned_test
 import place_support
 import planted_table.{Integer}
+import player_state_support
 import unitest
 
 const the_self_spell = 25_306
@@ -156,7 +158,7 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: unit.in_combat,
         held: list.map(unit.held, fn(state) {
-          shown.HeldState(state:, instance_id: 1)
+          held_state.HeldState(state:, instance_id: 1)
         }),
         unit_states: [],
         face: option.None,
@@ -166,7 +168,9 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
     )
   })
   |> list.append(
-    list.map(scene.players, fn(id) { #(id, shown.ShownPlayer(at: option.None)) }),
+    list.map(scene.players, fn(id) {
+      #(id, shown.ShownPlayer(state: player_state_support.a_player()))
+    }),
   )
   |> dict.from_list
 }
