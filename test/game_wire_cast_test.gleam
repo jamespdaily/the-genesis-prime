@@ -2892,3 +2892,97 @@ pub fn an_esper_presses_phantasmal_armor_at_a_player_in_sight_and_that_player_re
   game_client.close(game: second)
   login_support.stop(started)
 }
+
+/// Phantasmal Armor as above, then the Esper walks out of the Medic's sight: 1040 units
+/// along z, past the sight range of 1024 (`sight.range`) from the Medic, who stays where it
+/// entered. The client keeps a cast whose spell holds propertyFlags 0x100 and its buff when
+/// the caster's unit is removed (`cast.target_node_end`), so the Medic's client reads the
+/// Esper's removal (0x355) with no 0x7fe of the cast before it and its absorption (stat 22
+/// of 0x938) not returned to 0; after the test's clock passes the row's 10 000 ms the Medic's
+/// client reads the 0x7fe of that cast once and the absorption return to 0. The end is a frame
+/// the Medic's own connection writes with the Esper out of its sight, after three processes
+/// (the map and the two connections) changed who sees whom; each read waits for its own frame
+/// and never for the order of one sender's frame against another's, and the clock is the
+/// test's.
+pub fn an_esper_walks_out_of_the_sight_of_the_ally_it_pressed_phantasmal_armor_at_and_the_ally_keeps_the_buff_and_the_absorb_until_the_end_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(first:, second:, seen_second:, second_have:, ..) =
+    two_players_enter(started:, first_class: 3, level: 6)
+  let esper = 1
+  let medic = unit_of(seen_second)
+  assert medic == 2 as "the Medic is the second unit"
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 6,
+      ability: 19_033,
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: medic,
+  )
+  // The pressed cast is the one of Spell4 32823 (the Interrupt Armor child on the Esper is a
+  // cast of its own), and the Medic's own absorption is told by its own connection.
+  let pressed_start = fn(frames) {
+    list.filter(
+      connection_support.decoded(
+        frames,
+        spell_started.message_id,
+        spell_started.decode,
+      ),
+      fn(start) { start.spell4_id == 32_823 },
+    )
+  }
+  let #(medic_read, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      pressed_start(frames) != []
+      && list.any(absorptions_in(frames:, unit: medic), fn(value) { value > 0 })
+    })
+  let assert [started_cast] = pressed_start(medic_read)
+    as "the Medic's client is told the pressed cast once"
+  let assert [pool] = absorptions_in(frames: medic_read, unit: medic)
+    as "the Medic's client is told its absorption once"
+  assert pool > 0 as "opcode.0x938: the Medic holds the Esper's pool"
+  // The Esper walks out of the Medic's sight, and the Medic's client reads its removal.
+  walk_to(game: first, z: 1040.0, clock: 1)
+  let #(_, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), esper)
+    })
+  let #(after_removal, second_have) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert finished_casts_in(frames: list.append(medic_read, after_removal)) == []
+    as "opcode.0x7fe: the removal of the caster's unit leaves the cast of a 0x100 spell and its buff on the Medic"
+  assert absorptions_in(frames: after_removal, unit: medic) == []
+    as "opcode.0x938: and the Medic's absorption is not told to change"
+  // The cast's node on the Medic ends 10 000 ms after the go: the Esper's connection tells
+  // the Medic's the end, which writes the absorption's end and the cast's 0x7fe.
+  driven_time.advance(time:, ms: 10_000)
+  let ended = fn(frames) {
+    list.contains(finished_casts_in(frames:), started_cast.cast_id)
+    && absorptions_in(frames:, unit: medic) == [0]
+  }
+  let #(medic_ended, second_have) =
+    game_client.read_until(game: second, have: second_have, found: ended)
+  assert list.count(finished_casts_in(frames: medic_ended), fn(id) {
+      id == started_cast.cast_id
+    })
+    == 1
+    as "opcode.0x7fe: the Medic's client reads the cast's end once, which ends its buff"
+  assert absorptions_in(frames: medic_ended, unit: medic) == [0]
+    as "opcode.0x938: and its absorption returns to 0"
+  let #(later, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 2)
+  assert finished_casts_in(frames: later) == []
+    as "the cast is finished once, not again by a later write"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
