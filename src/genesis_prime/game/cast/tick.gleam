@@ -1405,6 +1405,7 @@ fn node_row_of(entry entry: Reached) -> Result(lasting.NodeEffect, Nil) {
         )),
       )
     spell_plan.HealEffect(..), cast_state.Plain
+    | spell_plan.HealEffect(..), cast_state.Described(..)
     | spell_plan.HealEffect(..), cast_state.CooldownKept(..)
     | spell_plan.ProxyEffect(..), _
     | spell_plan.GainEffect(..), _

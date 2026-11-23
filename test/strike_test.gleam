@@ -137,18 +137,7 @@ fn landed() -> strike_tell.Outcome {
 }
 
 fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
-  list.filter(effects, fn(effect) {
-    case effect {
-      strike.TellStrike(..) -> True
-      strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> False
-    }
-  })
+  strike_support.only(effects:, kinds: [strike_support.CreatureTold])
 }
 
 /// The units each round that closed in these effects named, in order, by cast
@@ -156,33 +145,16 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
 fn went(
   effects effects: List(Effect),
 ) -> List(#(Int, Int, List(cast_state.Struck))) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      strike.Went(asked:, struck:, ..) ->
-        Ok(#(asked.cast_id, asked.phase, struck))
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
+  list.map(strike_support.rounds_closed(effects:), fn(closed) {
+    #({ closed.0 }.cast_id, { closed.0 }.phase, closed.1)
   })
 }
 
 fn timers(effects effects: List(Effect)) -> List(strike.Effect) {
-  list.filter(effects, fn(effect) {
-    case effect {
-      strike.StartTimer(..) | strike.CancelTimer(..) -> True
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> False
-    }
-  })
+  strike_support.only(effects:, kinds: [
+    strike_support.TimerStarted,
+    strike_support.TimerCancelled,
+  ])
 }
 
 pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_its_own_rolls_and_arms_one_timer_test() -> Nil {
@@ -208,29 +180,23 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
       now: at(ms: 1000),
     )
   let told =
-    list.filter_map(tells(effects:), fn(effect) {
-      case effect {
-        strike.TellStrike(
-          unit_id:,
-          life:,
-          tell: strike_tell.Strike(
+    list.map(strike_support.creatures_told(effects:), fn(told) {
+      case told {
+        #(
+          unit_id,
+          life,
+          strike_tell.Strike(
             key:,
             from:,
             striker: strike_tell.PlayerStriker(rolls:, ..),
             ..,
           ),
-        ) -> Ok(#(unit_id, life, key, from, rolls))
-        strike.TellStrike(
-          tell: strike_tell.Strike(striker: strike_tell.CreatureStriker(..), ..),
-          ..,
+        ) -> #(unit_id, life, key, from, rolls)
+        #(
+          _,
+          _,
+          strike_tell.Strike(striker: strike_tell.CreatureStriker(..), ..),
         ) -> panic as "a player's strike carries a player striker"
-        strike.TellPlayerStrike(..)
-        | strike.StartTimer(..)
-        | strike.CancelTimer(..)
-        | strike.Went(..)
-        | strike.Ticked(..)
-        | strike.Released(..)
-        | strike.Log(..) -> Error(Nil)
       }
     })
   assert told
@@ -357,18 +323,8 @@ fn effect_of(formula formula: damage.Formula) -> spell_area.DamageEffect {
 
 /// The offences each strike of a go carries, by the unit it is told to.
 fn offences_told(effects effects: List(Effect)) -> List(#(Int, Offence)) {
-  list.filter_map(tells(effects:), fn(effect) {
-    case effect {
-      strike.TellStrike(tell: strike_tell.Strike(offence:, ..), unit_id:, ..) ->
-        Ok(#(unit_id, offence))
-      strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
+  list.map(strike_support.creatures_told(effects:), fn(told) {
+    #(told.0, { told.2 }.offence)
   })
 }
 
@@ -2166,18 +2122,7 @@ pub fn a_state_aimed_at_the_area_does_not_reach_a_primary_target_outside_it_but_
         ),
         now_ms: 1000,
       )
-    list.filter_map(tells(effects:), fn(effect) {
-      case effect {
-        strike.TellStrike(unit_id:, ..) -> Ok(unit_id)
-        strike.TellPlayerStrike(..)
-        | strike.StartTimer(..)
-        | strike.CancelTimer(..)
-        | strike.Went(..)
-        | strike.Ticked(..)
-        | strike.Released(..)
-        | strike.Log(..) -> Error(Nil)
-      }
-    })
+    list.map(strike_support.creatures_told(effects:), fn(told) { told.0 })
   }
   assert told_to(AimsAtArea) == [10]
     as "Spell4Effects.targetFlags 4 aims at the units the area selected"
@@ -2351,12 +2296,12 @@ fn tick_begun(
 fn tick_tells(
   effects effects: List(Effect),
 ) -> List(#(Int, Int, strike_tell.Key, hit.Rolls, List(hit.Blow))) {
-  list.filter_map(tells(effects:), fn(effect) {
-    case effect {
-      strike.TellStrike(
-        unit_id:,
-        life:,
-        tell: strike_tell.Strike(
+  list.filter_map(strike_support.creatures_told(effects:), fn(told) {
+    case told {
+      #(
+        unit_id,
+        life,
+        strike_tell.Strike(
           key:,
           striker: strike_tell.PlayerStriker(rolls:, ..),
           offence:,
@@ -2364,14 +2309,7 @@ fn tick_tells(
           ..,
         ),
       ) -> Ok(#(unit_id, life, key, rolls, offence.blows))
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
+      #(_, _, strike_tell.Strike(..)) -> Error(Nil)
     }
   })
 }
@@ -2380,18 +2318,7 @@ fn tick_tells(
 fn ticked(
   effects effects: List(Effect),
 ) -> List(#(cast_state.TickAsked, Option(cast_state.Struck))) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      strike.Ticked(asked:, struck:) -> Ok(#(asked, struck))
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
-  })
+  strike_support.ticks_closed(effects:)
 }
 
 fn surge_tick_blow(damage damage: Int) -> hit.Blow {

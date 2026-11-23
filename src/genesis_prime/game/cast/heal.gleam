@@ -19,23 +19,30 @@
 ////   pending heal with its timer; a later go of the cast heals again and cancels no
 ////   earlier heal. A periodic heal (a tickTime) heals the caster at each tick, after
 ////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster lands nothing
-////   here and a debug line says so: another player is healed by the answer to the strike its
-////   go told its connection (genesis_prime/game/strike `TellPlayerStrike`), an instant row
-////   only, and a creature is not healed. The server rolls no
-////   critical for a heal: the description is always a Hit, so the seed draws nothing for
-////   it (the server's choice).
+////   here: another player is healed by the answer to the strike its go told its
+////   connection (genesis_prime/game/strike `TellPlayerStrike`), an instant row only, and a
+////   creature is not healed. When the round holds that player's answer, the go lists each
+////   row the answer names on the player with the description of the answer's split (the
+////   amount the player applied and what its vitals could not take as the overheal), never
+////   arms it, and neither gates nor rolls the rows the strike told again
+////   (`genesis_prime/game/cast/gate` `heal_told`, `heal_answered`); a row the answer does
+////   not name, and a heal on a unit that has no answer, lands nothing and a debug line says
+////   so. The server rolls no critical for a heal: the description is always a Hit, so the
+////   seed draws nothing for it (the server's choice).
 
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type Healed, type Product, type Reached,
   type State, type Struck, type TickingOn, CasterChangeStarts, CooldownKept,
-  Deflected, Heal, Healed, Healing, Hit, HitCreature, HitOtherPlayer, HitPlayer,
-  Immune, Log, ModifierStart, Plain, TickingOn,
+  Deflected, Described, Heal, Healed, Healing, Hit, HitCreature, HitOtherPlayer,
+  HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
 } as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/combat_result
@@ -44,9 +51,11 @@ import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription, SpellDamageDescription,
 }
 import genesis_prime/step.{LogDebug}
+import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option}
+import gleam/result
 
 /// The periodic damage rows of the go on each creature the round hit or found immune,
 /// in the life it struck (`Hit.ticking`, `Immune.ticking`); a deflected unit takes none,
@@ -124,12 +133,14 @@ pub fn ticking_heals(
 /// What a heal row reaching `unit_id` comes to: for a heal applied at once (a periodic
 /// one ticks, `ticking_heals`) on the caster, the `Healing` with the amount the caster's own
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
-/// every gate of the go (`cast_tick.subject_of`), and the overheal the vital's room leaves.
+/// every gate of the go (`cast_tick.subject_of`), and the overheal the vital's room leaves;
+/// for a heal on a player that answered it, the `Described` heal of the answer's split.
 /// A row's units are those its aim names (`cast_gate.units_aimed_at`) and only the caster
-/// is healed here: a heal aimed at another unit (the primary target of a cast on someone
-/// else, a unit the round hit) is left `Plain`, with a debug line naming its row, since
-/// another player is healed by its answer to the strike its go told it and a creature is
-/// not healed. The plan refuses a heal that
+/// is healed here: a heal aimed at another player the round holds the answer of is
+/// `Described` by the split of the answer's heal of the row, and one aimed at any other
+/// unit (a creature, a player with no answer or whose answer does not name the row) is left
+/// `Plain`, with a debug line naming its row, since another player is healed by its answer
+/// to the strike its go told it and a creature is not healed. The plan refuses a heal that
 /// names the primary target in a child started on each struck unit
 /// (`spell_plan.not_on_a_struck_unit`).
 pub fn healed_on(
@@ -137,6 +148,7 @@ pub fn healed_on(
   unit_id unit_id: Int,
   caster caster: Caster,
   passed_in passed_in: Option(Float),
+  struck struck: List(Struck),
 ) -> #(Product, List(Effect)) {
   case row, unit_id == caster.unit_id {
     spell_plan.Heal(effect_id:, vital:, formula:, delay_ms:, ..), True -> {
@@ -157,19 +169,50 @@ pub fn healed_on(
       )
     }
     spell_plan.TickingHeal(..), True -> #(Plain, [])
-    spell_plan.Heal(effect_id:, ..), False
-    | spell_plan.TickingHeal(effect_id:, ..), False
-    -> #(Plain, [
-      Log(
-        level: LogDebug,
-        text: "the Heal or HealShields effect "
-          <> int.to_string(effect_id.value)
-          <> " is aimed at the unit "
-          <> int.to_string(unit_id)
-          <> ", not the caster, so it lands nothing here: another player is healed only by its answer to the heal strike",
-      ),
+    spell_plan.Heal(effect_id:, ..), False ->
+      case answered(struck:, unit_id:, effect_id:) {
+        Ok(landed) -> #(
+          Described(healed: Healed(
+            effect_id:,
+            vital: landed.vital,
+            delay_ms: 0,
+            amount: landed.split.amount,
+            split: landed.split,
+          )),
+          [],
+        )
+        Error(Nil) -> #(Plain, [not_landed_log(effect_id:, unit_id:)])
+      }
+    spell_plan.TickingHeal(effect_id:, ..), False -> #(Plain, [
+      not_landed_log(effect_id:, unit_id:),
     ])
   }
+}
+
+/// What the player `unit_id` answered for the heal row `effect_id`, when the round holds
+/// its answer and the answer lists the row.
+fn answered(
+  struck struck: List(Struck),
+  unit_id unit_id: Int,
+  effect_id effect_id: Spell4EffectsId,
+) -> Result(strike_tell.HealLanded, Nil) {
+  use heals <- result.try(cast_gate.player_answer(struck:, unit_id:))
+  list.find(heals, fn(landed) { landed.effect_id == effect_id })
+}
+
+/// The debug line of a heal row that lands nothing on a unit other than the caster.
+fn not_landed_log(
+  effect_id effect_id: Spell4EffectsId,
+  unit_id unit_id: Int,
+) -> Effect {
+  Log(
+    level: LogDebug,
+    text: "the Heal or HealShields effect "
+      <> int.to_string(effect_id.value)
+      <> " is aimed at the unit "
+      <> int.to_string(unit_id)
+      <> ", not the caster, so it lands nothing here: another player is healed only by its answer to the heal strike",
+  )
 }
 
 /// What a heal of the formula's `amount` comes to for the caster's `vital`: the amount
@@ -256,8 +299,9 @@ pub fn heals_armed(
         #(cast, list.append(effects, armed))
       }
       // A heal that lands nothing (a periodic one ticks; another unit's is not built),
-      // and any effect that is no heal.
-      Plain | CooldownKept(..) -> so_far
+      // another player's heal, which that player applied itself, and any effect that is no
+      // heal.
+      Plain | Described(..) | CooldownKept(..) -> so_far
     }
   })
 }
@@ -289,7 +333,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Casting",
-      missing: "A heal aimed at a creature, or at another player with a delay or a period, lands nothing, with a debug line, because the server heals the caster by its own rule and another player only by its answer to an instant row.",
+      missing: "A heal aimed at a creature, or at another player with a delay or a period, lands nothing, with a debug line, because the server heals the caster by its own rule and another player only by its answer to an instant row. A row aimed at the caster and at another player keeps its caster gate at the go, so the player's heal, which it applied, is listed only while that gate still passes.",
     ),
   ]
 }

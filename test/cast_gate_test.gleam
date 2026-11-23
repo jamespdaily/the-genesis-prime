@@ -21,6 +21,7 @@
 //// cast time and one Proxy.
 
 import cast_support as support
+import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
@@ -28,19 +29,25 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource.{Gain}
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
 import genesis_prime/game/lasting
+import genesis_prime/game/player_address.{PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
+import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/string
+import map_support
 import owned_test
 import prerequisite_support
+import spell_tables
 
 const child_spell4_id = 99
 
@@ -700,6 +707,7 @@ fn passed_with(
       phase: 0,
       spent: None,
       subject: prerequisite_support.holding(held: [], second_unit: None),
+      told: fn(_) { False },
       rolls:,
     )
   #(
@@ -820,7 +828,18 @@ pub fn rolls_needed_counts_no_roll_for_a_modifier_with_no_life_test() -> Nil {
 /// gates of `lasting_applied`, then the target gates of the rows it reaches, each checked as
 /// `cast_gate.checked` takes its type 37 conditions' rolls off the front.
 fn rolls_the_go_takes(spell spell: Spell, rolls rolls: List(Int)) -> Int {
-  let #(state, asked) = live_go_of(spell:)
+  rolls_taken(go: live_go_of(spell:), spell:, struck: [], rolls:).0
+}
+
+/// The same for the go the cast `go` asks, in a round that closed with `struck`: how many
+/// rolls it takes and the effect ids of the heal rows that pass their caster gates.
+fn rolls_taken(
+  go go: #(cast_state.State, cast_state.GoAsked),
+  spell spell: Spell,
+  struck struck: List(cast_state.Struck),
+  rolls rolls: List(Int),
+) -> #(Int, List(Int)) {
+  let #(state, asked) = go
   let assert Ok(live) = dict.get(state.casts, asked.cast_id)
     as "the cast is live while its go is asked"
   let subject = prerequisite_support.holding(held: [], second_unit: None)
@@ -830,6 +849,7 @@ fn rolls_the_go_takes(spell spell: Spell, rolls rolls: List(Int)) -> Int {
       phase: 0,
       spent: None,
       subject:,
+      told: cast_gate.heal_told(_, primary_target: live.primary_target, struck:),
       rolls:,
     )
   let aimed =
@@ -837,7 +857,7 @@ fn rolls_the_go_takes(spell spell: Spell, rolls rolls: List(Int)) -> Int {
       applied:,
       caster: support.caster(),
       live:,
-      struck: [],
+      struck:,
       gates_passed: dict.new(),
       phase: 0,
       restricting: [],
@@ -846,7 +866,240 @@ fn rolls_the_go_takes(spell spell: Spell, rolls rolls: List(Int)) -> Int {
       },
       rolls: left,
     )
-  list.length(rolls) - list.length(aimed.rolls_left)
+  #(
+    list.length(rolls) - list.length(aimed.rolls_left),
+    list.filter_map(applied.passed, fn(planned) {
+      case planned.kind {
+        spell_plan.HealEffect(heal: row) -> Ok(row.effect_id.value)
+        spell_plan.ProxyEffect(..)
+        | spell_plan.GainEffect(..)
+        | spell_plan.LastingEffect(..)
+        | spell_plan.RemoveEffect(..)
+        | spell_plan.ModifierEffect(..)
+        | spell_plan.ForcedMoveEffect(..)
+        | spell_plan.StruckMoveEffect(..)
+        | spell_plan.CooldownEffect(..)
+        | spell_plan.StealthEffect(..)
+        | spell_plan.RemoveStealthEffect(..)
+        | spell_plan.ProcEffect(..)
+        | spell_plan.ControlEffect(..)
+        | spell_plan.DespawnEffect(..)
+        | spell_plan.UnitStateEffect(..)
+        | spell_plan.DelayEffect(..)
+        | spell_plan.QuestAdvanceEffect(..) -> Error(Nil)
+      }
+    }),
+  )
+}
+
+/// The player in the caster's sight that the spell is pressed at.
+const ally = 40
+
+/// The first go of `spell`, pressed at the ally as Mind Over Body is (a beneficial Targeted
+/// kind, Spell4TargetMechanics row 4): the cast and the go it asks.
+fn live_go_at_the_ally(
+  spell spell: Spell,
+) -> #(cast_state.State, cast_state.GoAsked) {
+  let spell =
+    Spell(
+      ..spell,
+      targeting: spell_tables.client_spell(spell4_id: 32_820).targeting,
+    )
+  let caster =
+    cast_state.Caster(
+      ..support.caster(),
+      players_in_sight: dict.from_list([
+        #(
+          ally,
+          PlayerAddress(
+            connection: ConnectionId(ally),
+            unit_id: ally,
+            stay: map_support.stay(count: ally),
+          ),
+        ),
+      ]),
+    )
+  let assert Ok(#(state, raw)) =
+    cast.take(
+      cast: cast_state.new(),
+      message: cast_state.Pressed,
+      body: support.press_body(
+        client_cast_id: 9,
+        bag_index: 8,
+        target: ally,
+        press: 1,
+      ),
+      caster:,
+      plans: support.with_spells(plans: support.plans(), spells: [spell]),
+      target_of: fn(unit_id) {
+        case unit_id == ally {
+          True -> activate.AnotherPlayer
+          False -> activate.Unseen
+        }
+      },
+      now: support.at(ms: 1000),
+    )
+    as "the press at the ally in sight is taken"
+  let assert [asked] = support.goes_asked(effects: raw)
+    as "the press of a spell with no cast time asks for its go at once"
+  #(state, asked)
+}
+
+/// A round whose one unit is the ally, who answered the heal rows `effect_ids`.
+fn ally_answered(effect_ids effect_ids: List(Int)) -> List(cast_state.Struck) {
+  [
+    cast_state.Hit(
+      unit_id: ally,
+      unit: cast_state.HitOtherPlayer(
+        heals: list.map(effect_ids, fn(effect_id) {
+          strike_tell.HealLanded(
+            effect_id: Spell4EffectsId(effect_id),
+            vital: effect_kind.Health,
+            split: heal_split.Split(
+              amount: 121,
+              shield: 0,
+              health: 100,
+              overheal: 21,
+            ),
+          )
+        }),
+      ),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    ),
+  ]
+}
+
+/// One go at the ally: why, the aim and condition of row 1, the rows the ally answered, the
+/// rolls given, how many rolls the go is counted to take and the heal rows that pass their
+/// caster gates.
+type RollRow {
+  RollRow(
+    why: String,
+    aim: spell_plan.Aim,
+    condition: spell_plan.Condition,
+    answered: List(Int),
+    rolls: List(Int),
+    counted: Int,
+    passed: List(Int),
+  )
+}
+
+pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 1 heals the ally or the caster and the ally, and row 2 the caster, each behind
+  // Prerequisite 4585's type 37 condition (comparison 6 on 50: a roll of 50 passes, 51
+  // fails). The strike drew the ally row's rolls once when it gated the row it told, so an
+  // answered row takes none at the go, and the ally takes none for the target gate of a row
+  // that reaches the caster as well.
+  let heal = fn(id, aim, condition) {
+    support.heal_row(
+      id:,
+      vital: effect_kind.Health,
+      aim:,
+      delay_ms: 0,
+      condition:,
+      formula: support.mind_over_body_formula(),
+    )
+  }
+  let caster_gate = spell_plan.GatedOnCaster([chance_gate()])
+  let both_gates =
+    spell_plan.GatedOnCasterAndTarget(
+      caster: [chance_gate()],
+      target: chance_gate(),
+    )
+  let primary = spell_plan.AimsAtPrimaryTarget
+  let caster_and_primary = spell_plan.AimsAtCasterAndPrimaryTarget
+  list.each(
+    [
+      RollRow(
+        "no answer, the ally row behind a caster gate: both rows draw their rolls, 50 then 51, so the caster's row fails",
+        primary,
+        caster_gate,
+        [],
+        [50, 51],
+        2,
+        [1],
+      ),
+      RollRow(
+        "the ally answered row 1: it draws none, so the roll 50 reaches the caster's row, which passes",
+        primary,
+        caster_gate,
+        [1],
+        [50, 51],
+        1,
+        [1, 2],
+      ),
+      RollRow(
+        "no answer, the ally row behind a caster gate and a target gate: a roll for the caster gate and one for the ally's target gate, then the caster's row",
+        primary,
+        both_gates,
+        [],
+        [50, 50, 50],
+        3,
+        [1, 2],
+      ),
+      RollRow(
+        "the ally answered row 1, behind both gates: its target gate is not checked again either, so only the caster's row draws",
+        primary,
+        both_gates,
+        [1],
+        [50, 51],
+        1,
+        [1, 2],
+      ),
+      RollRow(
+        "no answer, row 1 aimed at the caster and the ally behind both gates: the caster gate once, the target gate for the caster and for the ally, then the caster's row",
+        caster_and_primary,
+        both_gates,
+        [],
+        [50, 50, 50, 50],
+        4,
+        [1, 2],
+      ),
+      RollRow(
+        "the ally answered row 1, aimed at the caster as well: its caster gate and the target gate for the caster are checked at the go, the target gate for the ally is not",
+        caster_and_primary,
+        both_gates,
+        [1],
+        [50, 50, 50],
+        3,
+        [1, 2],
+      ),
+    ],
+    fn(row) {
+      let spell =
+        support.with_effects(
+          spell: Spell(..support.exempt(), cast_time_ms: 0),
+          kinds: [
+            spell_plan.HealEffect(heal(1, row.aim, row.condition)),
+            spell_plan.HealEffect(heal(2, spell_plan.AimsAtCaster, caster_gate)),
+          ],
+        )
+      let go = live_go_at_the_ally(spell:)
+      let struck = case row.answered {
+        [] -> []
+        _ -> ally_answered(effect_ids: row.answered)
+      }
+      assert cast_gate.rolls_needed(
+          cast: go.0,
+          caster: support.caster().unit_id,
+          cast_id: { go.1 }.cast_id,
+          phase: { go.1 }.phase,
+          struck:,
+        )
+        == row.counted
+        as { row.why <> ": the rolls the go is counted to take" }
+      assert rolls_taken(go:, spell:, struck:, rolls: row.rolls)
+        == #(row.counted, row.passed)
+        as {
+          row.why
+          <> ": the rolls the go takes and the rows that pass their caster gates"
+        }
+    },
+  )
 }
 
 pub fn rolls_needed_counts_no_roll_for_the_target_gate_of_a_modifier_with_no_life_test() -> Nil {

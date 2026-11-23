@@ -36,14 +36,10 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source, Change}
-import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
-import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
-import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{
   type SpellEffectInfo, SpellEffectInfo,
 }
-import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
@@ -71,7 +67,7 @@ fn heal_of(
   delay_ms delay_ms: Int,
   condition condition: spell_plan.Condition,
 ) -> spell_plan.Heal {
-  heal_row(
+  support.heal_row(
     id:,
     vital: effect_kind.Shield,
     aim: AimsAtCaster,
@@ -86,27 +82,6 @@ fn heal_of(
   )
 }
 
-/// A heal with this row id, vital, aim, delay, condition and formula, in every phase.
-fn heal_row(
-  id id: Int,
-  vital vital: effect_kind.Vital,
-  aim aim: spell_plan.Aim,
-  delay_ms delay_ms: Int,
-  condition condition: spell_plan.Condition,
-  formula formula: damage.Formula,
-) -> spell_plan.Heal {
-  spell_plan.Heal(
-    effect_id: Spell4EffectsId(id),
-    vital:,
-    phase_flags: -1,
-    aim:,
-    condition:,
-    tag: spend.always,
-    formula:,
-    delay_ms:,
-  )
-}
-
 /// A Health heal of Mind Over Body's formula (Spell4Effects 62019: 0.3281 of Support Power
 /// and 17.51 a level, multiplier 1, no flat part), with this row id, delay and aim.
 fn health_heal(
@@ -114,18 +89,13 @@ fn health_heal(
   delay_ms delay_ms: Int,
   aim aim: spell_plan.Aim,
 ) -> spell_plan.Heal {
-  heal_row(
+  support.heal_row(
     id:,
     vital: effect_kind.Health,
     aim:,
     delay_ms:,
     condition: Always,
-    formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
-      Parameter(kind: 13, value: 0.3281),
-      Parameter(kind: 10, value: 17.51),
-      Parameter(kind: 0, value: 0.0),
-      Parameter(kind: 0, value: 0.0),
-    ]),
+    formula: support.mind_over_body_formula(),
   )
 }
 
@@ -216,30 +186,6 @@ fn listed(effects effects: List(Effect)) -> List(SpellEffectInfo) {
   list.flat_map(support.go_targets(effects:), fn(target) { target.effects })
 }
 
-fn heal_description(
-  amount amount: Int,
-  kind kind: damage_type.DamageType,
-  overkill overkill: Int,
-) -> spell_effect_result.SpellEffectResult {
-  spell_effect_result.Damage(
-    SpellEffectDamage(
-      description: SpellDamageDescription(
-        raw_damage: amount,
-        scaled_raw_damage: amount,
-        absorbed: 0,
-        shield_absorbed: 0,
-        health_damage_with_overkill: amount,
-        overkill:,
-        glance: 0,
-        killed: 0,
-        combat_result: combat_result.Hit,
-        damage_type: kind,
-        hits: [],
-      ),
-    ),
-  )
-}
-
 // ---- what the go lists ----
 
 pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_test() -> Nil {
@@ -264,7 +210,7 @@ pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_te
         instance_id: 1,
         delay_ms: 10,
         lifetime_ms: 0,
-        result: heal_description(
+        result: support.heal_result(
           amount: 60,
           kind: damage_type.HealShields,
           overkill: 0,
@@ -835,7 +781,7 @@ pub fn a_self_heal_go_describes_the_heal_and_starts_the_change_test() -> Nil {
         instance_id: 1,
         delay_ms: 20,
         lifetime_ms: 0,
-        result: heal_description(
+        result: support.heal_result(
           amount: 121,
           kind: damage_type.Heal,
           overkill: 0,
@@ -883,19 +829,19 @@ pub fn a_heal_past_full_health_reports_the_overheal_test() -> Nil {
   }
   assert described(726)
     == [
-      heal_description(amount: 121, kind: damage_type.Heal, overkill: 111),
+      support.heal_result(amount: 121, kind: damage_type.Heal, overkill: 111),
     ]
     as "10 below the maximum: the whole 121 is the health change and 121 - 10 = 111 is the overheal the client logs (0x140563dc0 reads that word as nOverheal)"
   assert described(736)
     == [
-      heal_description(amount: 121, kind: damage_type.Heal, overkill: 121),
+      support.heal_result(amount: 121, kind: damage_type.Heal, overkill: 121),
     ]
     as "at full health the overheal is the whole amount, and the health change is still 121"
 }
 
 /// A Health heal of a flat `amount` (a formula of base `amount` alone), aimed at the caster.
 fn flat_health_heal(amount amount: Float) -> spell_plan.Heal {
-  heal_row(
+  support.heal_row(
     id: 62_019,
     vital: effect_kind.Health,
     aim: AimsAtCaster,
@@ -943,7 +889,7 @@ pub fn a_heal_multiplier_changes_the_amount_and_overheal_the_go_tells_the_client
       at: 1000,
     )
   assert list.map(listed(effects:), fn(info) { info.result })
-    == [heal_description(amount: 60, kind: damage_type.Heal, overkill: 30)]
+    == [support.heal_result(amount: 60, kind: damage_type.Heal, overkill: 30)]
     as "40 x 1.5 = 60 is the amount the client is shown, and 60 - 30 of health room = 30 is the overheal"
 }
 
@@ -979,7 +925,7 @@ pub fn a_shield_conversion_leaves_the_health_less_room_and_the_go_tells_the_over
       at: 1000,
     )
   assert list.map(listed(effects:), fn(info) { info.result })
-    == [heal_description(amount: 100, kind: damage_type.Heal, overkill: 70)]
+    == [support.heal_result(amount: 100, kind: damage_type.Heal, overkill: 70)]
     as "the shield takes 20 and the health 10 of the 100, so 70 is over"
 }
 
@@ -988,7 +934,7 @@ pub fn a_shield_heal_at_full_shield_reports_the_overshield_test() -> Nil {
   // 0.125 of the maximum shield (the formula of the type 118 row 210834, without its
   // tick): 0.125 x 450 = 56.25, which is 56.
   let eighth =
-    heal_row(
+    support.heal_row(
       id: 228_914,
       vital: effect_kind.Shield,
       aim: AimsAtCaster,
@@ -1023,12 +969,20 @@ pub fn a_shield_heal_at_full_shield_reports_the_overshield_test() -> Nil {
   }
   assert described(450)
     == [
-      heal_description(amount: 56, kind: damage_type.HealShields, overkill: 56),
+      support.heal_result(
+        amount: 56,
+        kind: damage_type.HealShields,
+        overkill: 56,
+      ),
     ]
     as "at full shield the whole 56 is overshield, type HealShields (5)"
   assert described(430)
     == [
-      heal_description(amount: 56, kind: damage_type.HealShields, overkill: 36),
+      support.heal_result(
+        amount: 56,
+        kind: damage_type.HealShields,
+        overkill: 36,
+      ),
     ]
     as "20 below the maximum: 56 - 20 = 36 of it is over"
 }

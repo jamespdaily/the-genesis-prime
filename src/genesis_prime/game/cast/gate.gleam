@@ -21,14 +21,17 @@
 //// - **A go's rolls** are one for each type 37 condition among the gates of the
 ////   Proxies that start a child, of the gains that may be given and of the lasting
 ////   effects of the phase, and, for a row behind a target apply prerequisite, one set for
-////   each unit the row reaches (`rolls_needed`); the connection draws that many from its
+////   each unit the row reaches (`rolls_needed`), except the heal rows the strike told a
+////   player that answered them: the strike drew those rolls once (`heal_told`,
+////   `heal_answered`); the connection draws that many from its
 ////   seed before it calls `cast.went`, and none when there is no such condition, so no other
 ////   roll of the connection moves.
 
 import genesis_prime/game/cast/state.{
   type Caster, type Effect, type GainVerdict, type GateDecision, type Live,
   type State, type Struck, type TargetVerdict, CannotTell, Deflected, Gain,
-  GateFails, Given, Hit, HitCreature, Immune, Log, NotApplied, Starts, Withheld,
+  GateFails, Given, Hit, HitCreature, HitOtherPlayer, Immune, Log, NotApplied,
+  Starts, Withheld,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting
@@ -37,6 +40,7 @@ import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Proxy, type Spell}
+import genesis_prime/game/strike_tell
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/bool
@@ -152,11 +156,25 @@ fn effect_rolls_needed(
         units_reached: reached(row.aim),
       )
     spell_plan.HealEffect(heal: row) ->
-      caster_rolls
-      + target_rolls_needed(
-        condition: row.condition,
-        units_reached: reached(row.aim),
-      )
+      case heal_told(kind:, primary_target:, struck:) {
+        True -> 0
+        False ->
+          caster_rolls
+          + target_rolls_needed(
+            condition: row.condition,
+            units_reached: list.length(
+              list.filter(
+                spell_plan.units_aimed_at(
+                  aim: row.aim,
+                  caster:,
+                  primary_target:,
+                  area: hit_units(struck:),
+                ),
+                fn(unit_id) { !heal_answered(kind:, struck:, unit_id:) },
+              ),
+            ),
+          )
+      }
     spell_plan.QuestAdvanceEffect(quest_advance: row) ->
       caster_rolls
       + target_rolls_needed(
@@ -170,6 +188,58 @@ fn effect_rolls_needed(
     | spell_plan.ProcEffect(..)
     | spell_plan.DelayEffect(..)
     | spell_plan.ControlEffect(..) -> caster_rolls
+  }
+}
+
+/// The heals the player `unit_id` applied to itself, as its answer to the strike tells them,
+/// or `Error(Nil)` when the round holds no answer of that player.
+pub fn player_answer(
+  struck struck: List(Struck),
+  unit_id unit_id: Int,
+) -> Result(List(strike_tell.HealLanded), Nil) {
+  list.find_map(struck, fn(one) {
+    case one {
+      Hit(unit_id: hit, unit: HitOtherPlayer(heals:), ..) if hit == unit_id ->
+        Ok(heals)
+      Hit(..) | Immune(..) | Deflected(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether the heal row `kind` is one the strike tells a player it reaches (an instant row
+/// that aims at the primary target) and `unit_id` is a player the round holds the answer of.
+/// The strike gated the row once for that player, with its own rolls
+/// (`genesis_prime/game/strike`), and the go lists what the answer holds, so the go
+/// checks no target gate of the row for that player and draws no roll for it.
+pub fn heal_answered(
+  kind kind: spell_plan.Kind,
+  struck struck: List(Struck),
+  unit_id unit_id: Int,
+) -> Bool {
+  case spell_plan.as_heal(kind:) {
+    Ok(spell_plan.Heal(aim:, delay_ms: 0, ..)) ->
+      spell_plan.reaches_primary_target(aim:)
+      && result.is_ok(player_answer(struck:, unit_id:))
+    Ok(spell_plan.Heal(..)) | Ok(spell_plan.TickingHeal(..)) | Error(Nil) ->
+      False
+  }
+}
+
+/// Whether the heal row `kind` aims at the primary target alone and the round holds the
+/// primary target's answer: the strike told the row, and the go keeps nothing of it but
+/// what the answer lists, so it checks none of its caster gates and draws no roll for them
+/// (`heal_answered` for the target gate). A row aimed at the caster as well keeps its caster
+/// gate, which gates the caster's part of the row.
+pub fn heal_told(
+  kind kind: spell_plan.Kind,
+  primary_target primary_target: Int,
+  struck struck: List(Struck),
+) -> Bool {
+  case spell_plan.as_heal(kind:) {
+    Ok(spell_plan.Heal(aim: spell_plan.AimsAtPrimaryTarget, ..)) ->
+      heal_answered(kind:, struck:, unit_id: primary_target)
+    Ok(spell_plan.Heal(..)) | Ok(spell_plan.TickingHeal(..)) | Error(Nil) ->
+      False
   }
 }
 

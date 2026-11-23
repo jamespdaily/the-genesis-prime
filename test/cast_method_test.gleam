@@ -507,18 +507,7 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
 
 /// The rounds the strike rule closed among these effects, as it tells the cast rule.
 fn closed_rounds(effects effects: List(strike.Effect)) -> List(strike.Effect) {
-  list.filter(effects, fn(effect) {
-    case effect {
-      strike.Went(..) -> True
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> False
-    }
-  })
+  strike_support.only(effects:, kinds: [strike_support.RoundClosed])
 }
 
 pub fn electrocute_pulses_6_times_and_finishes_with_its_last_pulse_test() -> Nil {
