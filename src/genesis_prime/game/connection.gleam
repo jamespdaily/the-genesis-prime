@@ -161,6 +161,7 @@ import genesis_prime/game/connection/experience as connection_experience
 import genesis_prime/game/connection/interaction as connection_interaction
 import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/item_spend as connection_item_spend
+import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/level_up as connection_level_up
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/limited_action_set as connection_limited_action_set
@@ -1297,7 +1298,7 @@ fn answered_by_status(
 /// was sent for an earlier stay, before a camp or the Holocrypt, and reaches a
 /// later one whose client holds none of the earlier units and whose creatures
 /// and viewers are others, or it reaches no stay at all. A dropped strike finds
-/// no answer, and the creature's deadline leaves the player out.
+/// no answer, and the caster's deadline leaves the player out.
 fn stay_sent(
   session session: Session,
   now now: Now,
@@ -1315,6 +1316,10 @@ fn stay_sent(
           connection_life.foe_taken(session:, now:, holder:, entered:, fight:)
         client_connection.SentByTarget(answered:) ->
           connection_casting.target_taken(session:, now:, entered:, answered:)
+        client_connection.SentByStriker(strike:) ->
+          connection_landing.struck(session:, now:, entered:, strike:)
+        // The healed player's answer: no round of this connection waits for it yet.
+        client_connection.SentByHealed(..) -> Continue(session, [])
         client_connection.SentByKill(credit:) ->
           case
             connection_experience.credited(session:, now:, entered:, credit:)

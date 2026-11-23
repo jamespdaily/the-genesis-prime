@@ -1445,5 +1445,9 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Strikes",
       missing: "the order of the units a tick of a periodic Proxy aimed at the area finds when its area row picks at random: the client names the order and ranks nothing, so the server seeds it by the cast and the tick; the units of such a tick are those inside the area over the picture at the tick, since the client runs no Proxy",
     ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A healed player's answer to a heal told to it is dropped by the connection it is told to, which holds no round that waits for it.",
+    ),
   ]
 }

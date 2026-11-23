@@ -16,6 +16,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/effect_kind
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/crowd_control_state
@@ -976,8 +977,9 @@ pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_rel
 
 /// What other processes send the tests' player for a stay, in an order the
 /// player takes each of: the map's `SeenBy` of connection 3, a peer's 0x262 of
-/// unit 9, a creature's threat, its strike on the player's unit `unit_id`, and its
-/// release.
+/// unit 9, a creature's threat, its strike on the player's unit `unit_id`, a heal
+/// strike of the player of connection 3 (answered by a tell, which is its effect),
+/// and the creature's release.
 fn stay_messages(
   unit_id unit_id: Int,
 ) -> List(#(String, client_connection.StaySent)) {
@@ -1004,6 +1006,16 @@ fn stay_messages(
       client_connection.SentByFoe(strike_tell.Threatened(unit_id: 7, life: 3)),
     ),
     #("a creature's strike", strike),
+    #(
+      "a player's heal strike",
+      game_connection_support.a_player_strike(
+        from: 3,
+        stay: game_connection_support.viewer_stay(3),
+        cast_id: 100,
+        outgoing: 1.0,
+        heals: [#(effect_kind.Health, 40)],
+      ),
+    ),
     #(
       "a creature's release",
       client_connection.SentByFoe(strike_tell.Released(unit_id: 7)),
