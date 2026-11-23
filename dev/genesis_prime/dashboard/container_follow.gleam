@@ -194,19 +194,15 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       }
       state
     }
-    read_poll.PageLeft(last:, ended:) -> {
+    read_poll.PageLeft(last:) -> {
       let state = case last {
         True -> dropped(state)
         False -> state
       }
-      case ended {
-        True ->
-          follow.tell(
-            watcher: state.settings.watcher,
-            event: SubscriberDropped(state.settings.source),
-          )
-        False -> Nil
-      }
+      follow.tell(
+        watcher: state.settings.watcher,
+        event: SubscriberDropped(state.settings.source),
+      )
       state
     }
     read_poll.ReadAnswered(answer:) -> shown(state, answer)

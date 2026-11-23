@@ -54,6 +54,15 @@ pub fn inside(path path: String) -> String {
 @external(erlang, "dashboard_support_ffi", "free_port")
 pub fn free_port() -> Int
 
+/// The local addresses of this VM's TCP sockets on `port`: what the dashboard's
+/// listener and its connections are bound to.
+@external(erlang, "dashboard_support_ffi", "bound_addresses")
+pub fn bound_addresses(port: Int) -> List(String)
+
+/// Whether a connection to the loopback address on `port` is accepted.
+@external(erlang, "dashboard_support_ffi", "accepts")
+pub fn accepts(port: Int) -> Bool
+
 /// Holds the factory of page runtimes: a start asked of it waits in its
 /// mailbox. Gives the process held.
 @external(erlang, "dashboard_support_ffi", "suspend")

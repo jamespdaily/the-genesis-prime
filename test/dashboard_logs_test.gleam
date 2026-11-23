@@ -1,10 +1,8 @@
-//// The Logs page, read as the HTML text its runtime renders and as the page
-//// list and routes that serve it. Expected values are the page's rules: a
-//// line is text in the role its level gives (never markup), a log that is not
-//// there or cannot be read says so with its path or reason, each entry is one
-//// keyed element so a new line is one change and not a rewrite of the ring,
-//// and the page has a document and a runtime route of its own under the key
-//// prefix.
+//// The Logs page, read as the HTML text its runtime renders. Expected values
+//// are the page's rules: a line is text in the role its level gives (never
+//// markup), a log that is not there or cannot be read says so with its path or
+//// reason, and each entry is one keyed element so a new line is one change and
+//// not a rewrite of the ring.
 
 import genesis_prime/dashboard/follow.{
   type Followed, Followed, NotThere, Unreadable,

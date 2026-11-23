@@ -1,6 +1,6 @@
 -module(dashboard_support_ffi).
--export([free_port/0, open/2, close/1, suspend/1, resume/1,
-         kill/1, queued_calls/1]).
+-export([free_port/0, bound_addresses/1, accepts/1, open/2, close/1, suspend/1,
+         resume/1, kill/1, queued_calls/1]).
 
 %% A loopback port the system chose: listens on port 0 and closes the socket
 %% again, so nothing listens on the port that is returned. The dashboard's
@@ -11,6 +11,31 @@ free_port() ->
     {ok, Port} = inet:port(Listen),
     ok = gen_tcp:close(Listen),
     Port.
+
+%% The local addresses, as text, of this VM's TCP sockets whose local port is
+%% `Port`: the listening socket and the connections it accepted. A socket
+%% bound to every address would show `0.0.0.0`.
+-spec bound_addresses(inet:port_number()) -> [binary()].
+bound_addresses(Port) ->
+    lists:usort([
+        list_to_binary(inet:ntoa(Address))
+     || Socket <- erlang:ports(),
+        erlang:port_info(Socket, name) =:= {name, "tcp_inet"},
+        {ok, {Address, LocalPort}} <- [inet:sockname(Socket)],
+        LocalPort =:= Port
+    ]).
+
+%% Whether a connection to the loopback address and port is accepted. A local
+%% connection to an address nothing listens on is refused at once.
+-spec accepts(inet:port_number()) -> boolean().
+accepts(Port) ->
+    case gen_tcp:connect({127, 0, 0, 1}, Port, [binary, {active, false}], infinity) of
+        {ok, Socket} ->
+            ok = gen_tcp:close(Socket),
+            true;
+        {error, _} ->
+            false
+    end.
 
 %% Connects to the loopback port, sends the request bytes and reads the answer's
 %% head and as much body as its content-length says. The socket stays open for

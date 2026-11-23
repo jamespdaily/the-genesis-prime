@@ -1,13 +1,11 @@
-//// The follower of one log file, in two kinds of run. The real reader is run
-//// on planted files in a folder of the test's own, one change of the file at a
-//// time (the rule: an offset and an inode, since `tail -F` through a port
-//// outlives its port). The follower's own rules are run with a reader the test
-//// answers, so each read, its cursor and its answer are messages the test
-//// sends and no test waits on a clock: the interval is a day, and a tick is
-//// `follow.read_now`. Expected values are the follower's rules: it reads only
-//// while a page is subscribed, hands each subscriber the newest lines at once,
-//// sends one update for one read, shows a read that failed with its reason
-//// and keeps the lines, and drops a subscriber that ends.
+//// The follower of one log file, run with the real reader on planted files in
+//// a folder of the test's own, one change of the file at a time (the rule: an
+//// offset and an inode, since `tail -F` through a port outlives its port). No
+//// test waits on a clock: the interval is a day, and a tick is
+//// `follow.read_now`. Expected values are the follower's rules: a file that is
+//// not there, grows by whole lines, is cut shorter, is replaced, is deleted,
+//// is a directory, cannot be read or is empty is shown as that, with the lines
+//// kept where the file is gone or unreadable.
 
 import dashboard_support
 import dashboard_timer_support as timers

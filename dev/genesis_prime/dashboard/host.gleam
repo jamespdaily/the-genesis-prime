@@ -119,8 +119,8 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       option.map(state.latest, process.send(subscriber, _))
       state
     }
-    read_poll.PageLeft(last: True, ..) -> State(..state, latest: None)
-    read_poll.PageLeft(last: False, ..) | read_poll.Nothing -> state
+    read_poll.PageLeft(last: True) -> State(..state, latest: None)
+    read_poll.PageLeft(last: False) | read_poll.Nothing -> state
     read_poll.ReadAnswered(answer:) -> shown(state, Ran(answer))
     read_poll.ReadTimedOut ->
       shown(

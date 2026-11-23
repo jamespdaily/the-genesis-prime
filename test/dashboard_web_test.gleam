@@ -1,8 +1,7 @@
 //// The dashboard's web layer over plain requests and responses. Expected
 //// values are the security rule: the key rides in the path and is never a
-//// cookie, a stranger learns only that the port is open, no answer is cached,
-//// leaves a referrer or can be framed, and nothing but the authenticated
-//// websocket changes anything.
+//// cookie, a stranger learns only that the port is open, and no answer is
+//// cached, leaves a referrer or can be framed.
 
 import dashboard_support
 import genesis_prime/dashboard/access
@@ -27,7 +26,18 @@ fn with_origin(path: String) -> Request(String) {
   )
 }
 
-pub fn the_key_rides_in_the_path_and_no_cookie_is_ever_set_test() -> Nil {
+/// The answer carries the headers that forbid caching, a referrer and framing.
+fn assert_private(reply: response.Response(BitArray), what: String) -> Nil {
+  assert response.get_header(reply, "cache-control") == Ok("no-store") as what
+  assert response.get_header(reply, "referrer-policy") == Ok("no-referrer")
+    as what
+  assert response.get_header(reply, "content-security-policy")
+    == Ok("frame-ancestors 'none'")
+    as what
+  assert response.get_header(reply, "x-frame-options") == Ok("DENY") as what
+}
+
+pub fn the_key_rides_in_the_path_and_no_answer_sets_a_cookie_or_can_be_cached_or_framed_test() -> Nil {
   use <- owned_test.run(5000)
   let context =
     dashboard_support.context(files: dashboard_support.planted_files())
@@ -43,6 +53,7 @@ pub fn the_key_rides_in_the_path_and_no_cookie_is_ever_set_test() -> Nil {
     )
   assert page.status == 200
   assert string.contains(result_text(page.body), "lustre-server-component")
+  assert_private(page, "the entry page")
 
   // Every route lives under the prefix: with it the route answers (the
   // websocket upgrades), without it the one refusal. No answer sets a cookie.
@@ -60,6 +71,7 @@ pub fn the_key_rides_in_the_path_and_no_cookie_is_ever_set_test() -> Nil {
         assert answered.status == 200 as route.path
         assert response.get_header(answered, "set-cookie") == Error(Nil)
           as route.path
+        assert_private(answered, route.path)
         assert dashboard_support.answer(context, outside) == web.refusal()
           as route.path
       }
@@ -78,6 +90,7 @@ pub fn the_key_rides_in_the_path_and_no_cookie_is_ever_set_test() -> Nil {
     let reply = dashboard_support.answer(context, dashboard_support.get(row.1))
     assert reply == web.refusal() as row.0
     assert response.get_header(reply, "set-cookie") == Error(Nil) as row.0
+    assert_private(reply, row.0)
   })
 }
 

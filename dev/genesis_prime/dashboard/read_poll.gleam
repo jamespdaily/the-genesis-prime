@@ -5,17 +5,16 @@
 //// is handed and what an answer means.
 ////
 //// ```text
-//// page runtime ──Join/Leave──► process ──start──► reader (a process of its own)
+//// page runtime ───Join/Ended──► process ──start──► reader (a process of its own)
 ////      ▲                         │  ▲                       │
 ////      └──── what it shows ──────┘  └──── ReadEnded(id) ────┘
 //// timer ──Tick(chain)──► process      timer ──ReadDeadline(id)──► process
 //// ```
 ////
 //// - The pages, their monitors and the one timer chain are `subscribers`'.
-//// - The first page to join starts a read, unless one runs; a tick, or a read
-////   asked for by a test, starts one when a page is subscribed and none runs.
-////   A tick while a read runs starts no second read and is reported as
-////   `ReadBusy`.
+//// - The first page to join starts a read, unless one runs; a tick starts one
+////   when a page is subscribed and none runs. A tick while a read runs starts
+////   no second read and is reported as `ReadBusy`.
 //// - A read is ended by its answer or by its deadline, whichever comes first;
 ////   the other is then dropped (a deadline timer carries the read's number, and
 ////   an answer of a read that is no longer the one in flight is refused).
@@ -36,15 +35,14 @@ const initialiser_ms = 1000
 /// How long the supervisor waits for a process to stop.
 const shutdown_ms = 1000
 
-/// What the process is told, and `answer` is what a read gives. Pages and tests
-/// send these through this module's functions.
+/// What the process is told, and `answer` is what a read gives. Pages join
+/// through `subscribe`; the timer, the reader and the deadline timer send the
+/// rest.
 pub opaque type Message(item, answer) {
   Pages(request: subscribers.Request(item))
   Tick(chain: Int)
-  ReadNow
   ReadEnded(read: Int, answer: answer)
   ReadDeadline(read: Int)
-  DeadlineNow
 }
 
 /// The read in flight, the timer of its deadline, and whether its answer is
@@ -69,15 +67,15 @@ pub type Happened(item, answer) {
   /// A page joined, the first or a later one; it is to be handed what the
   /// process has to show.
   PageJoined(subscriber: Subject(item))
-  /// A page left (`last`: the last one, so the process drops what it shows) or
-  /// ended (`ended`: it did not ask to leave).
-  PageLeft(last: Bool, ended: Bool)
+  /// A page ended (`last`: it was the last one, so the process drops what it
+  /// shows).
+  PageLeft(last: Bool)
   /// The read in flight answered and its answer is wanted.
   ReadAnswered(answer: answer)
   /// The read in flight passed its deadline and its answer would have been
   /// wanted.
   ReadTimedOut
-  /// A tick, or a read asked for, came while a read runs.
+  /// A tick came while a read runs.
   ReadBusy
   /// Nothing for the process to do.
   Nothing
@@ -125,7 +123,6 @@ pub fn handle(
         Ok(armed) -> polled(Poll(..poll, subscribers: armed), start)
         Error(Nil) -> #(poll, Nothing)
       }
-    ReadNow -> polled(poll, start)
     ReadEnded(read:, answer:) ->
       case poll.running {
         Some(Running(id:, ..)) if id == read ->
@@ -138,7 +135,6 @@ pub fn handle(
           ended(poll:, start:, how: ReadTimedOut)
         Some(_) | None -> #(poll, Nothing)
       }
-    DeadlineNow -> ended(poll:, start:, how: ReadTimedOut)
   }
 }
 
@@ -158,7 +154,7 @@ fn paged(
       }
       #(poll, PageJoined(subscriber:))
     }
-    subscribers.PageLeft(last:, ended:) -> {
+    subscribers.PageLeft(last:) -> {
       let running = case last {
         True ->
           option.map(poll.running, fn(running) {
@@ -166,7 +162,7 @@ fn paged(
           })
         False -> poll.running
       }
-      #(Poll(..poll, running:), PageLeft(last:, ended:))
+      #(Poll(..poll, running:), PageLeft(last:))
     }
   }
 }

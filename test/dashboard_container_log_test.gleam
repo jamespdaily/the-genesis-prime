@@ -1,11 +1,6 @@
-//// What a container's log read is made of: podman's output split into lines
-//// and its own words, the cursor that keeps a line from showing twice, the
-//// container's id that tells a continued container from a replaced one, and the
-//// one reason each failure of podman gives. The rules are pure and run on rows
-//// of the texts podman printed (`test/fixture/otp_log`, and the measured error
-//// texts); the follower's rules run with a reader the test answers, and the
-//// real reader runs the planted fake `podman` of the play service's tests. No
-//// test waits on a clock: the interval is a day and a tick is a message.
+//// The containers whose logs the dashboard follows. The expected values are
+//// the play service's scripts: the two container names are the ones
+//// `dev/play_service/lib.sh` sets, and the other sources are not containers.
 
 import genesis_prime/dashboard/container_log
 import genesis_prime/dashboard/log_lines.{DatabaseLog, ServerLog}

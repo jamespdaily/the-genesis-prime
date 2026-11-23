@@ -315,7 +315,7 @@ fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
       process.send(subscriber, followed(state))
       state
     }
-    subscribers.PageLeft(last:, ended:) -> {
+    subscribers.PageLeft(last:) -> {
       let state = case last {
         True ->
           State(
@@ -326,14 +326,10 @@ fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
           )
         False -> state
       }
-      case ended {
-        True ->
-          tell(
-            watcher: state.settings.watcher,
-            event: SubscriberDropped(state.settings.source),
-          )
-        False -> Nil
-      }
+      tell(
+        watcher: state.settings.watcher,
+        event: SubscriberDropped(state.settings.source),
+      )
       state
     }
   }
