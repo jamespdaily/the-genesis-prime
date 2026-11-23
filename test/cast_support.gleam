@@ -18,6 +18,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/cost as cast_cost
+import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -27,6 +28,7 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_advance
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, AtFirstGo, GlobalCooldown, KeepsStealth,
   NoWeaponNeeded, Normal, Spell, StealthRow,
@@ -1091,6 +1093,73 @@ pub fn pressed_in(
   answered_with_no_targets(state:, effects:, at: ms)
 }
 
+/// The unit id of the one creature a press made by `pressed_counting` has in its picture.
+pub const creature_in_sight_unit_id = 1000
+
+/// A creature of the picture, which a press of a Targeted spell may name.
+pub fn a_creature() -> activate.Target {
+  activate.Usable(
+    creature_id: 26_462,
+    creature: activate.Creature(
+      columns: [],
+      cast_time_ms: 0,
+      min_range: 0.0,
+      max_range: 5.0,
+      flags: 0,
+    ),
+    checklist_index: 0,
+    link: activate.NoLink,
+    body: activate.Body(place: caster().place, radius: 0.5),
+    alive: True,
+    in_combat: False,
+    held: [],
+    unit_states: [],
+    withheld: None,
+  )
+}
+
+/// What each unit is to a caster who sees one creature, `creature_in_sight_unit_id`, and
+/// nothing else.
+pub fn creature_in_sight(unit_id: Int) -> activate.Target {
+  case unit_id == creature_in_sight_unit_id {
+    True -> a_creature()
+    False -> activate.Unseen
+  }
+}
+
+/// The target unit id the client sends in a press of the ability at the bag index, for a
+/// test that is not about the press's target. A spell that is not Targeted is sent with
+/// none. A Targeted spell is sent with a unit, because the client refuses the press with 91
+/// before sending when it has none (`CheckCast 0x1403ae8c0`, mask 0x12a): the caster's own
+/// unit id when the spell's mechanics flags let the caster be its own target (the player
+/// has themselves selected; picker `0x14055bdc0`, kinds 1, 3, 5 and 8 take the selected
+/// target; `opcode.0x9d.target_checks`: refused 32 otherwise), else the creature in sight.
+pub fn target_the_client_sends(
+  caster caster: Caster,
+  plans plans: Plans,
+  bag_index bag_index: Int,
+) -> Int {
+  case cast_press.ability_at(caster:, plans:, bag_index:) {
+    Ok(spell) ->
+      case spell.targeting.kind {
+        target_mechanic.Targeted ->
+          case
+            spell_effect.has_flag(
+              flags: spell.targeting.mechanics_flags,
+              bit: 2,
+            )
+          {
+            True -> caster.unit_id
+            False -> creature_in_sight_unit_id
+          }
+        target_mechanic.Caster
+        | target_mechanic.Ground
+        | target_mechanic.Unread(..) -> 0
+      }
+    Error(Nil) -> 0
+  }
+}
+
 /// A press of the bag index by the default caster at the time, its go answered with
 /// no unit struck.
 pub fn press(
@@ -1208,7 +1277,7 @@ pub fn pressed_counting(
 ) -> #(State, List(Effect), Int) {
   let assert Ok(taken) =
     cast.take(
-      target_of: nothing_shown,
+      target_of: creature_in_sight,
       cast: state,
       message: cast_state.Pressed,
       body: press_body(client_cast_id: 9, bag_index:, target:, press: 1),

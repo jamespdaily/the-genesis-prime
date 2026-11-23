@@ -37,7 +37,7 @@ import genesis_prime/step.{ConnectionId, LogWarning}
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/dict.{type Dict}
 import gleam/list
-import gleam/option.{None}
+import gleam/option
 import map_support
 import owned_test
 import spell_tables
@@ -124,34 +124,12 @@ fn esper_seeing(players players: List(Int)) -> Caster {
   )
 }
 
-/// A creature of the picture, which a press of these kinds does not target.
-fn a_creature() -> activate.Target {
-  activate.Usable(
-    creature_id: 26_462,
-    creature: activate.Creature(
-      columns: [],
-      cast_time_ms: 0,
-      min_range: 0.0,
-      max_range: 5.0,
-      flags: 0,
-    ),
-    checklist_index: 0,
-    link: activate.NoLink,
-    body: activate.Body(place: support.caster().place, radius: 0.5),
-    alive: True,
-    in_combat: False,
-    held: [],
-    unit_states: [],
-    withheld: None,
-  )
-}
-
 /// What each unit is to the caster: the ally a player, the creature a creature, any other
 /// unseen.
 fn picture(unit_id: Int) -> activate.Target {
   case unit_id == ally, unit_id == creature {
     True, _ -> activate.AnotherPlayer
-    False, True -> a_creature()
+    False, True -> support.a_creature()
     False, False -> activate.Unseen
   }
 }
