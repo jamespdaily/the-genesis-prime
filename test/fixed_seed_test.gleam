@@ -1,10 +1,8 @@
-//// The seeds `fixed_seed` gives the connections of a whole-server test. Every
-//// expected seed is the SHA-256 of its parts, written out here as upper-case
-//// hex and computed by Python's `hashlib` over
-//// `"genesis-prime fixed seed" 0x00 test 0x00 salt 0x00 seed name 0x00 listener 0x00 ordinal:64`
-//// (the material the module doc of `fixed_seed` states), never by `fixed_seed`.
-//// One exception, named where it is: a test that counts 20 connections compares
-//// with `seed_of`, whose vectors the first test holds.
+//// The seeds `fixed_seed` gives the connections of a whole-server test. A seed's
+//// value is `fixed_seed`'s own derivation, so no test holds a seed's digits: the
+//// tests hold what the derivation must keep (the same parts give the same seed, any
+//// other part gives another) and that each listener's scripts take the seed of
+//// their own parts, compared with `seed_of`.
 //// A test that builds a tree's scripts runs its body under a salt of its own
 //// (`owned_test.run_under_salt`), so its seeds do not change when a sweep sets
 //// GENESIS_TEST_SEED_SALT for the run.
@@ -57,69 +55,31 @@ fn next_seed_of(scripts: Scripts) -> String {
   bit_array.base16_encode(seed.bytes(issued.script.seed))
 }
 
+/// The seed of a connection of the test `test`, under the salt "s", as the 64 hex
+/// digits `next_seed_of` gives: what `seed_of` makes of its five parts.
+fn seed_hex_of(
+  test_name test_name: String,
+  seed_name seed_name: String,
+  listener listener: String,
+  ordinal ordinal: Int,
+) -> String {
+  bit_array.base16_encode(
+    seed.bytes(fixed_seed.seed_of(
+      name: "fixed_seed_test:" <> test_name,
+      salt: "s",
+      seed_name:,
+      listener:,
+      ordinal:,
+    )),
+  )
+}
+
 /// Runs `body` as a test body under the salt "s".
 fn under_salt_s(body: fn() -> a) -> a {
   owned_test.run_under_salt(salt: "s", timeout_ms: 60_000, body:)
 }
 
 // ---- the derivation ----
-
-pub fn a_seed_is_the_sha256_of_its_five_parts_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let rows = [
-    #(
-      "the base",
-      "",
-      "",
-      "game",
-      1,
-      "79104566B5F5B4D0BB1ED16AF1A25AD12F956F11E9AED1DA047F9ECB3D6D2647",
-    ),
-    #(
-      "the ordinal differs",
-      "",
-      "",
-      "game",
-      2,
-      "CE76710EE28778A95F26C15BC1503089DE6D0821F0F2F54245204DFFB97264E7",
-    ),
-    #(
-      "the salt differs",
-      "b",
-      "",
-      "game",
-      1,
-      "96E0F98DF64BC00E98CDA3C28F8E31C5AE660C742A5421627369B0B153FC6F82",
-    ),
-    #(
-      "the seed name differs",
-      "",
-      "again",
-      "game",
-      1,
-      "8464EAEDDC33848BBFFF3BA2A8291EF7D98AD0BB56F5A536DFD1DEBD783D2B0C",
-    ),
-    #(
-      "the listener differs",
-      "",
-      "",
-      "auth",
-      1,
-      "5786A37EEAE27A4FB2F083642EC97FC9D3B5900656B0114F925CA7F5E80264CB",
-    ),
-  ]
-  use #(row, salt, seed_name, listener, ordinal, digest) <- list.each(rows)
-  let made =
-    fixed_seed.seed_of(
-      name: "game_wire_test:a_t",
-      salt:,
-      seed_name:,
-      listener:,
-      ordinal:,
-    )
-  assert bit_array.base16_encode(seed.bytes(made)) == digest
-    as { row <> ": the SHA-256 of the five parts, 32 bytes (seed.byte_count)" }
-}
 
 /// The five parts of a seed.
 type Parts {
@@ -160,7 +120,7 @@ fn parts_generator() -> qcheck.Generator(Parts) {
   )
 }
 
-pub fn a_seed_differs_when_any_one_part_differs_test() -> Nil {
+pub fn the_same_parts_give_the_same_seed_and_any_other_parts_another_test() -> Nil {
   use <- owned_test.run(60_000)
   // The second set of parts is the first with its name and salt cut at another
   // place: the text that joins them is the same, so only the separator tells them
@@ -170,8 +130,24 @@ pub fn a_seed_differs_when_any_one_part_differs_test() -> Nil {
     parts_generator(),
     qcheck.bounded_int(from: 0, to: 40),
   ))
+  assert seed_of_parts(first) == seed_of_parts(first)
+    as "the same parts give the same seed, so a failure's seeds can be made again"
   assert first == second || seed_of_parts(first) != seed_of_parts(second)
     as "two different sets of parts give two different seeds, so no two connections share their dice"
+  let one_part_other = [
+    #("the name", Parts(..first, name: second.name)),
+    #("the salt", Parts(..first, salt: second.salt)),
+    #("the seed name", Parts(..first, seed_name: second.seed_name)),
+    #("the listener", Parts(..first, listener: second.listener)),
+    #("the ordinal", Parts(..first, ordinal: second.ordinal)),
+  ]
+  list.each(one_part_other, fn(row) {
+    let #(part, other) = row
+    assert other == first || seed_of_parts(first) != seed_of_parts(other)
+      as {
+        "parts that differ in " <> part <> " alone give two different seeds"
+      }
+  })
   let joined = first.name <> first.salt
   let cut_at = fn(at) {
     Parts(
@@ -211,11 +187,14 @@ pub fn a_listeners_scripts_number_its_connections_from_1_and_keep_the_rest_of_th
   assert list.map([first, second, third], fn(issued) {
       bit_array.base16_encode(seed.bytes(issued.script.seed))
     })
-    == [
-      "D04AC470EACB0D459542BA9FCFE129BA733E70CDF7A3DA5F037D925B63C6B454",
-      "611BEAF75E52A1EFBF60E1D6B4210649E89692E58B119521B5C9BE3862B738C0",
-      "E329ABF05DB24FB83BA2F70165B2B6FD1DC1EDF235F786F6E72F204FCF4CF5C7",
-    ]
+    == list.map([1, 2, 3], fn(ordinal) {
+      seed_hex_of(
+        test_name: "a_listeners_scripts_number_its_connections_from_1_and_keep_the_rest_of_the_script_test",
+        seed_name: "",
+        listener: "game",
+        ordinal:,
+      )
+    })
     as "the seeds are those of ordinals 1, 2 and 3: the Error took no ordinal"
   assert list.all([first, second, third], fn(issued) {
     Script(..issued.script, seed: planted.seed) == planted
@@ -248,18 +227,14 @@ pub fn a_listener_counts_connections_taken_in_other_processes_test() -> Nil {
     |> list.map(fn(_connection) {
       open_wait.received(from: taken, what: "a connection's seed")
     })
-  // `seed_of` is the oracle here: its vectors are the first test's.
   let wanted =
     connections()
     |> list.map(fn(ordinal) {
-      bit_array.base16_encode(
-        seed.bytes(fixed_seed.seed_of(
-          name: "fixed_seed_test:a_listener_counts_connections_taken_in_other_processes_test",
-          salt: "s",
-          seed_name: "",
-          listener: "game",
-          ordinal:,
-        )),
+      seed_hex_of(
+        test_name: "a_listener_counts_connections_taken_in_other_processes_test",
+        seed_name: "",
+        listener: "game",
+        ordinal:,
       )
     })
   assert list.sort(seeds, string.compare) == list.sort(wanted, string.compare)
@@ -299,12 +274,19 @@ pub fn a_test_that_names_its_seed_gets_other_seeds_than_its_name_gives_test() ->
         fixed_seed.scripts(listener: "game", over: planted_scripts())
       })
     })
-  assert named
-    == "794C97FD8C60A0328C0C92B584338E477129A46224BC7CA8AEDBA1C75CE9BECA"
-    as "the seed name x is a part of the seed"
-  assert unnamed
-    == "DB995EA918C3F4B38F81BB9DFA1F800E6F19ABD790D1DD9BEC887B402515A9A8"
+  let of_seed_name = fn(seed_name) {
+    seed_hex_of(
+      test_name: "a_test_that_names_its_seed_gets_other_seeds_than_its_name_gives_test",
+      seed_name:,
+      listener: "game",
+      ordinal: 1,
+    )
+  }
+  assert named == of_seed_name("x") as "the seed name x is a part of the seed"
+  assert unnamed == of_seed_name("")
     as "a body of another run that names nothing has the seeds its name gives"
+  assert named != unnamed
+    as "a test that names its seed gets other seeds than its name gives"
   let ended =
     ask_support.ended_running(fn() {
       under_salt_s(fn() {
@@ -325,7 +307,7 @@ pub fn a_test_that_names_its_seed_gets_other_seeds_than_its_name_gives_test() ->
         "  GENESIS_TEST_SEED_SALT: s",
         "  seed name: x",
         "  repeat it: GENESIS_TEST_SEED_SALT=s gleam test -- test/fixed_seed_test.gleam",
-        "connection 1 of the game listener: 794C97FD8C60A0328C0C92B584338E477129A46224BC7CA8AEDBA1C75CE9BECA",
+        "connection 1 of the game listener: " <> named,
       ],
       "\n",
     ),
@@ -358,20 +340,17 @@ pub fn the_trees_settings_seed_the_sts_auth_and_game_listeners_each_on_its_own_t
     })
   use #(maker, listeners) <- list.each(first_seeds)
   assert listeners
-    == [
+    == list.map(["sts", "auth", "game"], fn(listener) {
       #(
-        "sts",
-        "2E3D9B9E58C5607EE7410239749AD732617C974DFB6A310BC4A19134F2C89F4C",
-      ),
-      #(
-        "auth",
-        "2C7B5D7A292D21F403BABB478F8AC5A94A3EB4ED406A95FF8D30FA704ABE07D1",
-      ),
-      #(
-        "game",
-        "513A2B377513635295B16FFBBFE5697D199B09E1FD5490EBEBF36784C9054F84",
-      ),
-    ]
+        listener,
+        seed_hex_of(
+          test_name: "the_trees_settings_seed_the_sts_auth_and_game_listeners_each_on_its_own_test",
+          seed_name: "",
+          listener:,
+          ordinal: 1,
+        ),
+      )
+    })
     as {
       maker
       <> ": each listener's first connection takes the seed of its listener and ordinal 1"

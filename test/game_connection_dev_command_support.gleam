@@ -229,20 +229,6 @@ pub fn joined_world_870(
   departures_support.joined_at(state:, joining:, world: 870)
 }
 
-/// The connection after the player said this text on Say at this system time, as
-/// a FILETIME.
-pub fn said_at(
-  state state: game_connection.State,
-  text text: String,
-  filetime filetime: Int,
-) -> #(game_connection.State, ConnectionStep(Request)) {
-  support.feed_at(
-    state:,
-    filetime:,
-    event: OwnEvent(step.Read(support.chat_line_message(4, text))),
-  )
-}
-
 /// The tests' player of this level in the world, its connection made with the
 /// development commands on, holding these quest rows, its burst taken.
 pub fn in_world_holding_quests(
