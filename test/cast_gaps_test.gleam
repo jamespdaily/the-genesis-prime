@@ -134,7 +134,7 @@ fn limits() -> List(Limit) {
     Limit(
       cast_heal.gaps(),
       "Casting",
-      ["creature", "another player", "delay"],
+      ["creature", "another player", "delay", "caster gate"],
       "a heal aimed at a creature, or at another player with a delay or a period, lands nothing, and a row aimed at the caster and another player is listed on that player only while its caster gate passes",
     ),
     Limit(

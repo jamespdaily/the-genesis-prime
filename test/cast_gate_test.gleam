@@ -972,12 +972,28 @@ fn ally_answered(effect_ids effect_ids: List(Int)) -> List(cast_state.Struck) {
   ]
 }
 
+/// One go at the ally: why, the aim and condition of row 1, the rows the ally answered, the
+/// rolls given, how many rolls the go is counted to take and the heal rows that pass their
+/// caster gates.
+type RollRow {
+  RollRow(
+    why: String,
+    aim: spell_plan.Aim,
+    condition: spell_plan.Condition,
+    answered: List(Int),
+    rolls: List(Int),
+    counted: Int,
+    passed: List(Int),
+  )
+}
+
 pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_test() -> Nil {
   use <- owned_test.run(5000)
-  // Row 1 heals the primary target, the ally, and row 2 the caster, each behind Prerequisite
-  // 4585's type 37 condition (comparison 6 on 50: a roll of 50 passes, 51 fails). The strike
-  // drew the ally row's rolls once when it gated the row it told, so an answered row takes
-  // none at the go.
+  // Row 1 heals the ally or the caster and the ally, and row 2 the caster, each behind
+  // Prerequisite 4585's type 37 condition (comparison 6 on 50: a roll of 50 passes, 51
+  // fails). The strike drew the ally row's rolls once when it gated the row it told, so an
+  // answered row takes none at the go, and the ally takes none for the target gate of a row
+  // that reaches the caster as well.
   let heal = fn(id, aim, condition) {
     support.heal_row(
       id:,
@@ -994,57 +1010,78 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
       caster: [chance_gate()],
       target: chance_gate(),
     )
-  let at_the_ally = fn(condition) {
-    support.with_effects(
-      spell: Spell(..support.exempt(), cast_time_ms: 0),
-      kinds: [
-        spell_plan.HealEffect(heal(1, spell_plan.AimsAtPrimaryTarget, condition)),
-        spell_plan.HealEffect(heal(2, spell_plan.AimsAtCaster, caster_gate)),
-      ],
-    )
-  }
+  let primary = spell_plan.AimsAtPrimaryTarget
+  let caster_and_primary = spell_plan.AimsAtCasterAndPrimaryTarget
   list.each(
     [
-      #(
+      RollRow(
         "no answer, the ally row behind a caster gate: both rows draw their rolls, 50 then 51, so the caster's row fails",
+        primary,
         caster_gate,
         [],
+        [50, 51],
         2,
         [1],
       ),
-      #(
+      RollRow(
         "the ally answered row 1: it draws none, so the roll 50 reaches the caster's row, which passes",
+        primary,
         caster_gate,
         [1],
+        [50, 51],
         1,
         [1, 2],
       ),
-      #(
+      RollRow(
         "no answer, the ally row behind a caster gate and a target gate: a roll for the caster gate and one for the ally's target gate, then the caster's row",
+        primary,
         both_gates,
         [],
+        [50, 50, 50],
         3,
         [1, 2],
       ),
-      #(
+      RollRow(
         "the ally answered row 1, behind both gates: its target gate is not checked again either, so only the caster's row draws",
+        primary,
         both_gates,
         [1],
+        [50, 51],
         1,
+        [1, 2],
+      ),
+      RollRow(
+        "no answer, row 1 aimed at the caster and the ally behind both gates: the caster gate once, the target gate for the caster and for the ally, then the caster's row",
+        caster_and_primary,
+        both_gates,
+        [],
+        [50, 50, 50, 50],
+        4,
+        [1, 2],
+      ),
+      RollRow(
+        "the ally answered row 1, aimed at the caster as well: its caster gate and the target gate for the caster are checked at the go, the target gate for the ally is not",
+        caster_and_primary,
+        both_gates,
+        [1],
+        [50, 50, 50],
+        3,
         [1, 2],
       ),
     ],
     fn(row) {
-      let #(why, condition, answered, counted, passed) = row
-      let spell = at_the_ally(condition)
+      let spell =
+        support.with_effects(
+          spell: Spell(..support.exempt(), cast_time_ms: 0),
+          kinds: [
+            spell_plan.HealEffect(heal(1, row.aim, row.condition)),
+            spell_plan.HealEffect(heal(2, spell_plan.AimsAtCaster, caster_gate)),
+          ],
+        )
       let go = live_go_at_the_ally(spell:)
-      let struck = case answered {
+      let struck = case row.answered {
         [] -> []
-        _ -> ally_answered(effect_ids: answered)
-      }
-      let rolls = case counted {
-        3 -> [50, 50, 50]
-        _ -> [50, 51]
+        _ -> ally_answered(effect_ids: row.answered)
       }
       assert cast_gate.rolls_needed(
           cast: go.0,
@@ -1053,11 +1090,12 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
           phase: { go.1 }.phase,
           struck:,
         )
-        == counted
-        as { why <> ": the rolls the go is counted to take" }
-      assert rolls_taken(go:, spell:, struck:, rolls:) == #(counted, passed)
+        == row.counted
+        as { row.why <> ": the rolls the go is counted to take" }
+      assert rolls_taken(go:, spell:, struck:, rolls: row.rolls)
+        == #(row.counted, row.passed)
         as {
-          why
+          row.why
           <> ": the rolls the go takes and the rows that pass their caster gates"
         }
     },
