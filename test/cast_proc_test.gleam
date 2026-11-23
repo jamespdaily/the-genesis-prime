@@ -26,7 +26,6 @@
 //// Skipped where the client's tables are not on the machine, but for the tests that plant the
 //// holder.
 
-import attacker_support
 import cast_support as support
 import character_support
 import client_tables
@@ -48,7 +47,7 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
   type Plans, type ProcRow, type Spell, AliveOrDead, Always, AnySpell, AtHolder,
   BrokenByDamage, Died, EnteredStealth, InWindow, KeepsStealth, KeptOnDamage,
-  LeftCombat, LeftStealth, ProcRow, RemoveStealthRow, Spell, StealthRow,
+  LeftCombat, LeftStealth, ProcRow, RemoveStealthRow, Spell,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
@@ -59,7 +58,6 @@ import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_cast_confirmed
-import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
@@ -121,16 +119,7 @@ fn toggled(
   caster caster: Caster,
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: support.real_plans(),
-      state:,
-      caster:,
-      bag_index: 3,
-      target: 0,
-      at: ms,
-    )
-  answered(caster:, state:, effects:, at: ms)
+  support.press_as(plans: support.real_plans(), state:, caster:, bag: 3, at: ms)
 }
 
 /// A press of the Stalker's first ability, Shred, with its goes answered.
@@ -139,16 +128,7 @@ fn shredded(
   caster caster: Caster,
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: support.real_plans(),
-      state:,
-      caster:,
-      bag_index: 0,
-      target: 0,
-      at: ms,
-    )
-  answered(caster:, state:, effects:, at: ms)
+  support.press_as(plans: support.real_plans(), state:, caster:, bag: 0, at: ms)
 }
 
 // ---- the inputs, each followed by the pass that matches the procs ----
@@ -350,17 +330,12 @@ fn started_of(
 
 /// The effect rows the goes of the effects list on the caster, unit 7, in order.
 fn listed_on_the_caster(effects effects: List(Effect)) -> List(Int) {
-  list.flat_map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      list.filter(go.targets, fn(target) { target.unit_id == 7 })
-      |> list.flat_map(fn(target) {
-        list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-      })
-    },
-  )
+  list.flat_map(support.goes_in(effects:), fn(go) {
+    list.filter(go.targets, fn(target) { target.unit_id == 7 })
+    |> list.flat_map(fn(target) {
+      list.map(target.effects, fn(effect) { effect.spell4_effects_id })
+    })
+  })
 }
 
 fn is_strike(effect effect: Effect) -> Bool {
@@ -483,31 +458,7 @@ fn planted_press(
   bag bag: Int,
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  let caster = planted_caster()
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster:,
-      bag_index: bag,
-      target: 0,
-      at: ms,
-    )
-  answered(caster:, state:, effects:, at: ms)
-}
-
-fn stealth_row(
-  id id: Int,
-  breaks breaks: spell_plan.Breaks,
-) -> spell_plan.StealthRow {
-  StealthRow(
-    effect_id: Spell4EffectsId(id),
-    phase_flags: -1,
-    breaks:,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
-    condition: Always,
-    tag: spend.always,
-  )
+  support.press_as(plans:, state:, caster: planted_caster(), bag:, at: ms)
 }
 
 /// The spell of base 1 that holds a stealth damage does not end, as 95774 does.
@@ -518,7 +469,10 @@ fn stealthing() -> Spell {
       stealth_change: KeepsStealth,
     ),
     kinds: [
-      spell_plan.StealthEffect(stealth_row(id: 95_774, breaks: KeptOnDamage)),
+      spell_plan.StealthEffect(support.stealth_row(
+        id: 95_774,
+        breaks: KeptOnDamage,
+      )),
     ],
   )
 }
@@ -865,7 +819,10 @@ fn broken_by_damage_spell() -> Spell {
       stealth_change: KeepsStealth,
     ),
     kinds: [
-      spell_plan.StealthEffect(stealth_row(id: 83_834, breaks: BrokenByDamage)),
+      spell_plan.StealthEffect(support.stealth_row(
+        id: 83_834,
+        breaks: BrokenByDamage,
+      )),
     ],
   )
 }
@@ -1310,7 +1267,10 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
           stealth_change: KeepsStealth,
         ),
         kinds: [
-          spell_plan.StealthEffect(stealth_row(id: 95_775, breaks: KeptOnDamage)),
+          spell_plan.StealthEffect(support.stealth_row(
+            id: 95_775,
+            breaks: KeptOnDamage,
+          )),
         ],
       ),
       kinds: [
@@ -1655,18 +1615,11 @@ fn blow(
   hit.Description(
     spell4_effects_id: 1,
     delay_ms: 0,
-    damage: SpellDamageDescription(
-      raw_damage: 8,
-      scaled_raw_damage: 8,
-      absorbed: 0,
-      shield_absorbed: 0,
-      health_damage_with_overkill: 8,
-      overkill: 0,
-      glance: 0,
+    damage: support.landed_damage(
+      amount: 8,
       killed:,
       combat_result: result,
       damage_type: damage_type.Tech,
-      hits: [],
     ),
   )
 }
@@ -2039,7 +1992,7 @@ fn landed_tick(
   asked asked: cast_state.TickAsked,
   killed killed: Int,
 ) -> cast_state.Struck {
-  cast_state.Hit(
+  support.hit_with(
     unit_id: asked.unit_id,
     unit: cast_state.HitCreature(life: asked.life, struck_at_ms: 0),
     descriptions: [
@@ -2049,7 +2002,6 @@ fn landed_tick(
       ),
     ],
     controls: [],
-    armor_removed: 0,
     ticking: [],
   )
 }
@@ -2254,21 +2206,7 @@ fn ticking_heal(id id: Int) -> spell_plan.Heal {
 
 /// The caster of level 5 and 400 Support Rating with this much of its 736 health.
 fn healer(health health: Int) -> Caster {
-  cast_state.Caster(
-    ..support.caster(),
-    stats: damage.Attacker(
-      ..attacker_support.fresh(),
-      level: 5,
-      assault_rating: 0.0,
-      support_rating: 400.0,
-    ),
-    vitals: damage.Vitals(
-      health:,
-      max_health: 736,
-      shield: 250,
-      max_shield: 450,
-    ),
-  )
+  support.healing_caster(health:)
 }
 
 /// The steps of a press at 1000 ms of a spell of these heal rows, by a holder of these
@@ -2418,17 +2356,6 @@ pub fn a_bit_4_hit_proc_casts_at_the_struck_creature_test() -> Nil {
   assert starts_at(spell4_id: 250_202, effects:) == [7]
 }
 
-/// The spell of any tree of the client's plans.
-fn real_spell(spell4_id spell4_id: Int) -> Spell {
-  let assert Ok(spell) =
-    list.flat_map(dict.values(support.real_plans()), fn(ability) {
-      spell_plan.tree(spell: ability, started: fn(_) { True })
-    })
-    |> list.find(fn(spell) { spell.spell4_id.value == spell4_id })
-    as "a tree of the plans holds the spell"
-  spell
-}
-
 pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_creature_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
@@ -2436,7 +2363,7 @@ pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_c
   // 79220: the creature is under the holder's cast of Spell4 79220.
   let assert [stalker_damage] =
     spell_plan.payloads(
-      spell: real_spell(spell4_id: 79_229),
+      spell: support.real_spell(spell4_id: 79_229),
       as_kind: spell_plan.as_proc,
     )
     as "79229 holds the one Proc row 208200"
@@ -2939,7 +2866,10 @@ pub fn the_old_triggers_keep_their_order_after_the_inputs_events_test() -> Nil {
     support.with_effects(
       spell: Spell(..hitter(school: 2), stealth_change: KeepsStealth),
       kinds: [
-        spell_plan.StealthEffect(stealth_row(id: 250_902, breaks: KeptOnDamage)),
+        spell_plan.StealthEffect(support.stealth_row(
+          id: 250_902,
+          breaks: KeptOnDamage,
+        )),
       ],
     )
   let holder =
@@ -3607,7 +3537,10 @@ pub fn proc_events_in_order_test() -> Nil {
         kinds: [spell_plan.HealEffect(heal(id: 1, delay_ms: 0))],
       ),
       kinds: [
-        spell_plan.StealthEffect(stealth_row(id: 250_902, breaks: KeptOnDamage)),
+        spell_plan.StealthEffect(support.stealth_row(
+          id: 250_902,
+          breaks: KeptOnDamage,
+        )),
       ],
     )
   let acting_holder =

@@ -389,13 +389,7 @@ fn slowing_row() -> spell_plan.PropertyModifier {
 }
 
 fn slowing_modifier() -> Modifier {
-  Change(
-    property: UnitProperty2Id(100),
-    mode: 2,
-    multiplier: 0.5,
-    flat: 0.0,
-    per_level: 0.0,
-  )
+  support.slowing_change()
 }
 
 /// The same row with no delay, so its start is in the go's own step.
@@ -409,16 +403,7 @@ fn immediate_row(effect_id effect_id: Int) -> spell_plan.PropertyModifier {
 
 /// The creature 21 in its life 3, struck at the monotonic time 1000.
 fn creature_struck() -> List(cast_state.Struck) {
-  [
-    cast_state.Hit(
-      unit_id: creature,
-      unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
-      descriptions: [],
-      controls: [],
-      armor_removed: 0,
-      ticking: [],
-    ),
-  ]
+  [support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)]
 }
 
 fn pressed_striking(
@@ -428,16 +413,7 @@ fn pressed_striking(
   struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(cast_state.State, List(Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster: support.caster(),
-      bag_index: bag,
-      target: 0,
-      at: ms,
-    )
-  support.answered_by(state:, effects:, at: ms, struck:)
+  support.pressed_striking_in(plans:, state:, bag_index: bag, struck:, at: ms)
 }
 
 fn striking_plans(row: spell_plan.PropertyModifier) -> Plans {

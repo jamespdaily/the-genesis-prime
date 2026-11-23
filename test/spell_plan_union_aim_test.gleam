@@ -30,7 +30,6 @@ import genesis_prime/game/spell_plan.{
   AimsAtPrimaryTargetAndArea, Applied,
 }
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
-import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
 import gleam/int
 import gleam/list
@@ -41,17 +40,8 @@ import planted_table.{Integer}
 import spell_tables
 import unitest
 
-fn effect_row_in(
-  tables tables: store.Tables,
-  id id: Int,
-) -> spell4_effects.Spell4Effects {
-  let assert Ok(row) = spell4_effects.get(tables:, id: Spell4EffectsId(id))
-    as "the fixture holds the client's row"
-  row
-}
-
 fn client_row(id id: Int) -> spell4_effects.Spell4Effects {
-  effect_row_in(tables: fixture_tables.shared(), id:)
+  spell_tables.effect_row_in(tables: fixture_tables.shared(), id:)
 }
 
 fn read_client_row(
@@ -540,7 +530,7 @@ fn proxy_read_with(
     tables:,
     sources: spell_plan.sources_of(tables:),
     place:,
-    effect: effect_row_in(tables:, id:),
+    effect: spell_tables.effect_row_in(tables:, id:),
   )
 }
 

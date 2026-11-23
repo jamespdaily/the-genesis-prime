@@ -23,30 +23,22 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Spell, CastGate, NoCasterCast, NoRow, RequirementWaiver,
 }
-import genesis_prime/table/id.{Spell4BaseId}
+import genesis_prime/table/id
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import prerequisite_support as support
+import spell_tables
 import unitest
-
-/// The ability of a Spell4Base in the client's plans.
-fn real(base base: Int) -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_plan.plans(client_tables.shared()),
-      base: Spell4BaseId(base),
-    )
-    as { "the plans hold Spell4Base " <> int.to_string(base) }
-  spell
-}
 
 /// The spell of the Spell4 id among the spells the ability's tree reaches.
 fn in_tree(base base: Int, spell4_id spell4_id: Int) -> Spell {
   let assert Ok(spell) =
-    spell_plan.tree(spell: real(base:), started: fn(_) { True })
+    spell_plan.tree(spell: spell_tables.client_ability(base:), started: fn(_) {
+      True
+    })
     |> list.find(fn(member) { member.spell4_id.value == spell4_id })
     as { "the tree holds Spell4 " <> int.to_string(spell4_id) }
   spell
@@ -80,16 +72,16 @@ fn expected(id id: Int) -> prerequisite.Prerequisite {
 pub fn the_four_innates_that_hold_a_cast_condition_gate_their_press_on_it_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  assert real(base: 30_828).caster_cast
+  assert spell_tables.client_ability(base: 30_828).caster_cast
     == CastGate(prerequisite: expected(id: 29_568))
     as "Warrior Stance: Onslaught 46867: CasterCast 29568"
-  assert real(base: 38_012).caster_cast
+  assert spell_tables.client_ability(base: 38_012).caster_cast
     == CastGate(prerequisite: expected(id: 903))
     as "Esper Spectral Form 58586: 903, in combat"
-  assert real(base: 30_075).caster_cast
+  assert spell_tables.client_ability(base: 30_075).caster_cast
     == CastGate(prerequisite: expected(id: 39_321))
     as "Stalker Stealth 46073: 39321, which nests 12939"
-  assert real(base: 31_213).caster_cast
+  assert spell_tables.client_ability(base: 31_213).caster_cast
     == CastGate(prerequisite: expected(id: 29_484))
     as "Spellslinger Spell Surge 47273: 29484, which nests 20117"
 }
@@ -97,7 +89,7 @@ pub fn the_four_innates_that_hold_a_cast_condition_gate_their_press_on_it_test()
 pub fn rampages_cast_prerequisite_is_a_waiver_and_no_gate_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  assert real(base: 37_968).caster_cast
+  assert spell_tables.client_ability(base: 37_968).caster_cast
     == RequirementWaiver(prerequisite: expected(id: 19_750))
     as "Rampage 58524: propertyFlags 0x4100006 has bit 2 and casterInnateRequirement0 is 6"
 }
@@ -116,7 +108,7 @@ pub fn the_engineers_and_the_medics_innates_hold_no_cast_condition_test() -> Nil
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   list.each([31_779, 46_615], fn(base) {
-    let spell = real(base:)
+    let spell = spell_tables.client_ability(base:)
     assert spell.caster_cast == NoCasterCast
       && spell.target_cast == None
       && spell.caster_persistence == None

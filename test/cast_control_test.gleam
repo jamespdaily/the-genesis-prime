@@ -339,12 +339,11 @@ fn creature_20_took(
   controls controls: List(strike_tell.ControlLanded),
 ) -> List(cast_state.Struck) {
   [
-    cast_state.Hit(
+    support.hit_with(
       unit_id: 20,
       unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls:,
-      armor_removed: 0,
       ticking: [],
     ),
   ]

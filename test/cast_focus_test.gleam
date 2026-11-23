@@ -20,10 +20,9 @@ import channel_support.{type Scene}
 import class_resource_support
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/class_resource.{type Payment, Payment}
-import genesis_prime/game/spell_plan.{type Spell, Spell}
+import genesis_prime/game/spell_plan.{type Spell}
 import gleam/dict
 import gleam/list
-import gleam/option.{None}
 import gleam/string
 import owned_test
 import spell_tables
@@ -260,14 +259,7 @@ pub fn a_focus_cost_is_reserved_at_the_accept_and_paid_at_the_first_go_and_an_in
 /// The same caster's second press of a spell that leaves the caster free, which the
 /// first press's reservation is checked against.
 fn free(spell spell: Spell) -> Spell {
-  Spell(
-    ..spell,
-    free_while_live: True,
-    global_cooldown: spell_plan.GlobalCooldown(
-      refused_while_running: False,
-      starts_for_ms: None,
-    ),
-  )
+  support.free_while_live(spell:)
 }
 
 fn second_press_results(focus focus: Float) -> #(List(Int), List(Int)) {
@@ -308,17 +300,9 @@ fn holding_both(
   slot_points slot_points: Float,
   focus focus: Float,
 ) -> class_resource.Resources {
-  class_resource.new(
-    resource: class_resource.Resource(
-      ..class_resource_support.resource_of(class_id),
-      start: slot_points,
-    ),
-    properties: class_resource_support.properties_of(
-      class_id:,
-      changes: [#(5, focus)],
-      level: 1,
-    ),
-  )
+  support.holding_changing(class_id:, value: slot_points, changes: [
+    #(5, focus),
+  ])
 }
 
 fn both_scene(

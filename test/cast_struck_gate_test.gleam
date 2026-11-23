@@ -30,11 +30,9 @@ import genesis_prime/game/spend
 import genesis_prime/game/strike.{Aimed, Selection}
 import genesis_prime/game/strike_tell.{Answered, Landed, Refused}
 import genesis_prime/game/unit_properties
-import genesis_prime/message/spell_go
 import genesis_prime/step.{Now}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import gleam/dict
-import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -54,18 +52,6 @@ const own_id = 9
 
 fn at(ms ms: Int) -> step.Now {
   Now(monotonic_ms: ms, filetime: 0)
-}
-
-/// A Fluff effect that lasts until removed, aimed as given, behind no gate of the caster's.
-fn marker_row(id id: Int, aim aim: spell_plan.Aim) -> spell_plan.Lasting {
-  spell_plan.Lasting(
-    effect_id: Spell4EffectsId(id),
-    phase_flags: -1,
-    aim:,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
-    condition: spell_plan.Always,
-    tag: spend.always,
-  )
 }
 
 /// The struck gate of the row `id`: the target apply prerequisite 5001 (a type 28
@@ -94,9 +80,12 @@ fn spell_gated_at(gated_aim gated_aim: spell_plan.Aim) -> Spell {
       struck_gates: [gate_of(id: gated_id, aim: gated_aim)],
     ),
     kinds: [
-      spell_plan.LastingEffect(marker_row(id: gated_id, aim: gated_aim)),
-      spell_plan.LastingEffect(marker_row(id: ungated_id, aim: AimsAtArea)),
-      spell_plan.LastingEffect(marker_row(id: own_id, aim: AimsAtCaster)),
+      spell_plan.LastingEffect(support.marker_row(id: gated_id, aim: gated_aim)),
+      spell_plan.LastingEffect(support.marker_row(
+        id: ungated_id,
+        aim: AimsAtArea,
+      )),
+      spell_plan.LastingEffect(support.marker_row(id: own_id, aim: AimsAtCaster)),
     ],
   )
 }
@@ -109,17 +98,7 @@ fn spell_ungated() -> Spell {
 /// The effect ids each unit's entry of the go lists, by unit, in unit order; a struck unit
 /// is an entry of the go whatever the rows do, so a unit that lists no effect is left out.
 fn listed(effects effects: List(cast_state.Effect)) -> List(#(Int, List(Int))) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  list.map(decoded.targets, fn(info) {
-    #(
-      info.unit_id,
-      list.map(info.effects, fn(effect) { effect.spell4_effects_id })
-        |> list.sort(int.compare),
-    )
-  })
-  |> list.filter(fn(entry) { entry.1 != [] })
-  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  list.filter(support.listed_by_unit(effects:), fn(entry) { entry.1 != [] })
 }
 
 /// The cast pressed on the spell at `target`: its state and the go it asks for.

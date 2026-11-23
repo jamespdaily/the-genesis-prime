@@ -56,7 +56,6 @@ import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
-import gleam/dict
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -134,43 +133,12 @@ fn state_go(
   struck_at_ms struck_at_ms: Int,
   went_at_ms went_at_ms: Int,
 ) -> List(cast_state.Effect) {
-  let assert [#(first, _), ..] = units
-  let #(state, pressed) =
-    cast_support.pressed_raw_in(
-      plans: cast_support.plans_starting_on_each_struck(
-        started: cast_support.with_effects(
-          spell: cast_support.child(spell4_id: 30_600, base: 21_614),
-          kinds: [spell_plan.UnitStateEffect(row)],
-        ),
-      ),
-      state: cast_state.new(),
-      caster: cast_support.caster(),
-      bag_index: 11,
-      target: first,
-      at: struck_at_ms,
-    )
-  let struck =
-    list.map(units, fn(unit) {
-      cast_state.Hit(
-        unit_id: unit.0,
-        unit: cast_state.HitCreature(life: unit.1, struck_at_ms:),
-        descriptions: [],
-        controls: [],
-        armor_removed: 0,
-        ticking: [],
-      )
-    })
-  let #(_, answered) =
-    cast_support.answered_each(
-      caster: cast_support.caster(),
-      state:,
-      effects: pressed,
-      at: went_at_ms,
-      struck_of: fn(_) { struck },
-      rolls: [],
-      poses: dict.new(),
-    )
-  list.append(pressed, answered)
+  world_watch_support.effects_of_a_go_on_creatures(
+    kind: spell_plan.UnitStateEffect(row),
+    units:,
+    struck_at_ms:,
+    went_at_ms:,
+  )
 }
 
 /// What the caster's connection does with the go's effects, as the connection and the
@@ -190,22 +158,17 @@ fn carried_out(
         went_at_ms:,
         rows:,
       ) -> {
-        let assert Ok(Nil) =
-          server.tell_creature(
-            creatures: world.creatures,
-            to: step.Creature(
-              map: world_watch_support.ship,
-              incarnation: run.incarnation,
-              unit_id:,
-              life:,
-            ),
-            request: client_connection.TellUnitStates(
-              rows:,
-              struck_at_ms:,
-              went_at_ms:,
-            ),
-          )
-          as "the creature is found by its address and told"
+        world_watch_support.told_creature(
+          world:,
+          run:,
+          unit_id:,
+          life:,
+          request: client_connection.TellUnitStates(
+            rows:,
+            struck_at_ms:,
+            went_at_ms:,
+          ),
+        )
         Ok(unit_id)
       }
       cast_state.Send(..)
@@ -237,10 +200,8 @@ fn carried_out(
 /// and whose go comes 250 ms later, so a hold that ran from the round's opening would end
 /// early. Returns the units the connection told.
 fn state_go_on(watched watched: Watched) -> List(Int) {
-  let struck_at_ms = world_watch_support.clock_ms(time: watched.time)
-  driven_time.advance(time: watched.time, ms: 250)
-  let went_at_ms = world_watch_support.clock_ms(time: watched.time)
-  assert went_at_ms == struck_at_ms + 250
+  let #(struck_at_ms, went_at_ms) =
+    world_watch_support.times_of_a_go_after_250_ms(watched:)
   let told =
     carried_out(
       world: watched.world,

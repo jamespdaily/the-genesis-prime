@@ -23,14 +23,12 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Plans, type Spell, ForceRemove}
+import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
-import genesis_prime/message/spell_go
-import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{
   Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
@@ -88,25 +86,6 @@ fn spell_of(
   )
 }
 
-/// The units each go names, with the effects it lists on each.
-fn targets_of(effects effects: List(Effect)) -> List(SpellTargetInfo) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  decoded.targets
-}
-
-fn listed(effects effects: List(Effect)) -> List(Int) {
-  list.flat_map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(decoded) = spell_go.decode(frame.body)
-      list.flat_map(decoded.targets, fn(target) {
-        list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-      })
-    },
-  )
-}
-
 // ---- a Scale row ----
 
 pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test() -> Nil {
@@ -137,7 +116,7 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
       bag: bag_of_base_3,
       at: 1000,
     )
-  let assert [info] = targets_of(effects:)
+  let assert [info] = support.go_targets(effects:)
   assert info.unit_id == 7 as "the caster is the unit the row aims at"
   assert info.instance_count == 1
     as "one application is a count of 1 (opcode.0x7f4.instance_count)"
@@ -239,7 +218,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
         ticking: [],
       ),
     ])
-  assert list.map(targets_of(effects:), fn(info) {
+  assert list.map(support.go_targets(effects:), fn(info) {
       #(
         info.unit_id,
         list.map(info.effects, fn(effect) { effect.spell4_effects_id }),
@@ -287,7 +266,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_listed_only_for_a_cast
       bag: bag_of_base_3,
       at: 1000,
     )
-  assert listed(effects: in_a_listed_world) == [99_073]
+  assert support.listed_effect_ids(effects: in_a_listed_world) == [99_073]
     as "Prerequisite.prerequisiteTypeId.109: the caster is in world 1535, which gate 11311 names, so the row lands on it"
   let #(_, in_another_world) =
     support.press_as(
@@ -297,7 +276,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_listed_only_for_a_cast
       bag: bag_of_base_3,
       at: 1000,
     )
-  assert listed(effects: in_another_world) == []
+  assert support.listed_effect_ids(effects: in_another_world) == []
     as "the caster is in world 3460, which gate 11311 does not name, so the row is not applied"
   assert list.filter(support.logs(effects: in_another_world), fn(line) {
       string.contains(line.1, "99073")
@@ -364,7 +343,7 @@ pub fn the_innate_passives_go_lists_its_conversion_on_the_caster_and_starts_it_w
   use <- owned_test.run(60_000)
   let #(_, effects) =
     passive_started(plans: support.plans_of([passive()]), at: 1000)
-  assert listed(effects:) == [99_074]
+  assert support.listed_effect_ids(effects:) == [99_074]
     as "the planted row 99074 is listed on the caster"
   let assert [#(source, modifier)] = support.property_starts(effects:)
   assert source.effect_id == Spell4EffectsId(99_074)
@@ -419,7 +398,7 @@ fn hazmat_suit() -> Plans {
 fn swaps_of(
   effects effects: List(Effect),
 ) -> List(#(Int, List(#(Int, Int, Int)))) {
-  list.map(targets_of(effects:), fn(info) {
+  list.map(support.go_targets(effects:), fn(info) {
     #(
       info.unit_id,
       list.map(info.effects, fn(effect) {
@@ -439,7 +418,7 @@ pub fn a_go_lists_an_item_visual_swap_row_on_the_caster_with_its_delay_and_lifet
     ])
   let #(_, effects) =
     support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
-  let assert [info] = targets_of(effects:)
+  let assert [info] = support.go_targets(effects:)
   assert info.unit_id == 7
     as "the caster is the unit the row aims at (targetFlags 1)"
   assert info.instance_count == 1
@@ -620,17 +599,14 @@ fn remover(
   base base: Int,
   selector selector: lasting.Selector,
 ) -> Spell {
-  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
-    spell_plan.RemoveEffect(ForceRemove(
-      effect_id: Spell4EffectsId(99_202),
-      phase_flags: -1,
-      aim: spell_plan.AimsAtCaster,
-      selector:,
-      count: 1,
-      condition: spell_plan.Always,
-      tag: spend.always,
-    )),
-  ])
+  support.removing(
+    spell4_id:,
+    base:,
+    effect_id: 99_202,
+    selector:,
+    count: 1,
+    condition: spell_plan.Always,
+  )
 }
 
 pub fn a_force_remove_takes_off_a_flags_2_item_visual_swap_node_test() -> Nil {

@@ -2278,6 +2278,34 @@ fn doubling_physical_damage(
   doubled
 }
 
+pub fn a_beast_without_deflect_keeps_no_deflect_after_its_properties_change_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: spawn_support.warfare_woods,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    )
+  let ordinary = spawn_support.beast_at(number: 1, place:)
+  let never = spawn_support.beast_without_deflect_at(number: 1, place:)
+  assert never.combat.defence.deflect_chance == 0.0
+    as "the Beast that never deflects starts with a deflect chance of 0"
+  assert spawn.values_of(
+      spawn: ordinary,
+      properties: doubling_physical_damage(beast: ordinary),
+    ).combat.defence.deflect_chance
+    >. 0.0
+    as "an ordinary Beast's deflect chance is worked out again from its properties, to the client row's, above 0"
+  assert spawn.values_of(
+      spawn: never,
+      properties: doubling_physical_damage(beast: never),
+    ).combat.defence.deflect_chance
+    == 0.0
+    as "a property change works the never-deflecting Beast's deflect chance out again, and it is still 0"
+}
+
 /// The selection of the Beast of spawn 1 with these auto-attacks in turn in its kind.
 fn autos_selection(spell4_ids spell4_ids: List(Int)) -> spawn.Selection {
   spawn.select(

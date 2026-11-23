@@ -98,16 +98,6 @@ fn proxies_of(ability: Spell, effect_id: Int) -> List(Proxy) {
   })
 }
 
-fn planted(base: Int) -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_tables.fixture_plans(),
-      base: Spell4BaseId(base),
-    )
-    as "the planted class holds the ability"
-  spell
-}
-
 /// Relentless Strikes (Spell4Base 18309).
 const relentless_strikes = 18_309
 
@@ -141,7 +131,9 @@ fn relentless_strikes_gains_are_on_the_proxy(ability: Spell) -> Nil {
 
 pub fn relentless_strikes_proxies_to_53865_carry_its_gains_and_the_child_none_test() -> Nil {
   use <- owned_test.run(60_000)
-  relentless_strikes_gains_are_on_the_proxy(planted(relentless_strikes))
+  relentless_strikes_gains_are_on_the_proxy(spell_tables.planted_ability(
+    base: relentless_strikes,
+  ))
 }
 
 // ---- 16 ----
@@ -158,7 +150,9 @@ fn telekinetic_strikes_gain_is_on_the_proxy(ability: Spell) -> Nil {
 
 pub fn telekinetic_strikes_proxy_to_30900_carries_its_psi_point_test() -> Nil {
   use <- owned_test.run(60_000)
-  telekinetic_strikes_gain_is_on_the_proxy(planted(telekinetic_strike))
+  telekinetic_strikes_gain_is_on_the_proxy(spell_tables.planted_ability(
+    base: telekinetic_strike,
+  ))
 }
 
 pub fn the_clients_tables_give_the_same_gains_test() -> Nil {
@@ -288,7 +282,8 @@ pub fn a_gain_aimed_other_than_at_the_caster_or_of_an_unread_vital_fails_the_loa
 
 pub fn a_proxy_whose_data_bits_06_names_a_prerequisite_is_kept_behind_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert [proxy, ..] = proxies_of(planted(relentless_strikes), 177_873)
+  let assert [proxy, ..] =
+    proxies_of(spell_tables.planted_ability(base: relentless_strikes), 177_873)
     as "53865's Proxy 177873 to 60947"
   assert caster_gates(proxy) == Ok([24_582])
     as "dataBits06 24582 gates the Proxy against the caster (Spell4Effects.effectType.26.dataBits06): it starts only when the prerequisite passes"
@@ -412,18 +407,6 @@ fn is_gift(gift: Gift, expected: Gift) -> Bool {
   }
 }
 
-fn planned_on(
-  tables tables: table_store.Tables,
-  spell4_id spell4_id: Int,
-) -> Result(Spell, spell_plan.PlanError) {
-  spell_plan.spell_alone(
-    tables:,
-    sources: spell_plan.sources_of(tables:),
-    spell4_id:,
-    chain: [],
-  )
-}
-
 fn cell(number: Int) -> planted_table.Cell {
   planted_table.Integer(number)
 }
@@ -456,7 +439,7 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
     fn(row) {
       let #(spell4_id, effect_id, expected, why) = row
       let assert Ok(spell) =
-        planned_on(tables: fixture_tables.shared(), spell4_id:)
+        spell_tables.planned_alone(tables: fixture_tables.shared(), spell4_id:)
         as why
       let assert Ok(gift) = list.key_find(gifts_of(spell), effect_id) as why
       assert is_gift(gift, expected) as why
@@ -470,7 +453,9 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
       table: "Spell4Effects",
       id: 88_371,
       with: [#("dataBits02", cell(0)), #("dataBits05", cell(1_065_353_216))],
-      body: fn(edited) { planned_on(tables: edited, spell4_id: 34_776) },
+      body: fn(edited) {
+        spell_tables.planned_alone(tables: edited, spell4_id: 34_776)
+      },
     )
     as "Rations with a share of 1.0 plans"
   assert list.key_find(gifts_of(whole), 88_371) == Ok(FocusShare(1.0))
@@ -484,7 +469,9 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
       table: "Spell4Effects",
       id: 88_371,
       with: [#("dataBits02", cell(0)), #("dataBits05", cell(1_120_403_456))],
-      body: fn(edited) { planned_on(tables: edited, spell4_id: 34_776) },
+      body: fn(edited) {
+        spell_tables.planned_alone(tables: edited, spell4_id: 34_776)
+      },
     )
   let assert Error(error) = refused as "a share of 100.0 is refused"
   let text = spell_plan.describe(error:)
@@ -502,7 +489,7 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
       #("dataBits05", cell(1_028_443_341)),
     ],
   )
-  assert planned_on(tables: edited, spell4_id: 42_596)
+  assert spell_tables.planned_alone(tables: edited, spell4_id: 42_596)
     == Error(spell_plan.GainShareNotRead(
       spell4_id: 42_596,
       effect_id: 228_362,
@@ -515,7 +502,8 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
 pub fn recharge_plans_four_focus_shares_behind_the_actuator_counts_and_its_vital_18_rows_in_row_order_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
-  let assert Ok(recharge) = planned_on(tables:, spell4_id: 42_596)
+  let assert Ok(recharge) =
+    spell_tables.planned_alone(tables:, spell4_id: 42_596)
     as "Recharge plans"
   let first = gifts_of(recharge)
   assert list.map(first, fn(gain) { gain.0 })
@@ -533,7 +521,7 @@ pub fn recharge_plans_four_focus_shares_behind_the_actuator_counts_and_its_vital
   assert gates_of(recharge)
     == [Some(43_658), Some(43_659), Some(43_660), Some(29_891), None]
     as "each share is behind the Prerequisite that counts the Actuators: 43658 to 43660 (type 73 of vital 6 equal to 1, 2, 3) and 29891 (at least 4)"
-  let assert Ok(tier) = planned_on(tables:, spell4_id: 59_885)
+  let assert Ok(tier) = spell_tables.planned_alone(tables:, spell4_id: 59_885)
     as "tier 59885 plans"
   assert list.map(gifts_of(tier), fn(gain) { gain.0 })
     == [228_368, 228_376, 228_384, 228_392, 228_400, 228_405]
@@ -561,7 +549,7 @@ pub fn each_recharge_tier_gives_the_actuator_count_times_its_per_actuator_share_
     [42_596, 59_882, 59_883, 59_884, 59_885, 59_886, 59_887, 59_888, 59_889],
     fn(spell4_id) {
       let assert Ok(spell) =
-        planned_on(tables: fixture_tables.shared(), spell4_id:)
+        spell_tables.planned_alone(tables: fixture_tables.shared(), spell4_id:)
         as "the tier plans"
       let shares =
         list.filter_map(gifts_of(spell), fn(gain) {
@@ -592,7 +580,8 @@ pub fn a_gain_of_a_class_vital_plans_as_that_vital_for_4_12_13_14_18_and_19_and_
       id: 228_362,
       with: [#("dataBits00", cell(vital))],
     )
-    let assert Ok(spell) = planned_on(tables: edited, spell4_id: 42_596)
+    let assert Ok(spell) =
+      spell_tables.planned_alone(tables: edited, spell4_id: 42_596)
       as { "vital " <> int.to_string(vital) <> " plans" }
     assert list.key_find(gifts_of(spell), 228_362)
       == Ok(ClassVitalPoints(vital:, points: -4))
@@ -601,7 +590,10 @@ pub fn a_gain_of_a_class_vital_plans_as_that_vital_for_4_12_13_14_18_and_19_and_
   // The Spellslinger's vital 19 (Class.vitalEnumResource04) as the client holds it: row 68677
   // of 34629 gives +100.
   let assert Ok(boost) =
-    planned_on(tables: fixture_tables.shared(), spell4_id: 34_629)
+    spell_tables.planned_alone(
+      tables: fixture_tables.shared(),
+      spell4_id: 34_629,
+    )
     as "34629 plans"
   assert list.key_find(gifts_of(boost), 68_677)
     == Ok(ClassVitalPoints(vital: 19, points: 100))
@@ -611,7 +603,8 @@ pub fn a_gain_of_a_class_vital_plans_as_that_vital_for_4_12_13_14_18_and_19_and_
     id: 228_362,
     with: [#("dataBits00", cell(7))],
   )
-  let assert Error(refused) = planned_on(tables: edited, spell4_id: 42_596)
+  let assert Error(refused) =
+    spell_tables.planned_alone(tables: edited, spell4_id: 42_596)
     as "vital 7 is not read"
   assert refused
     == spell_plan.GainVitalNotRead(

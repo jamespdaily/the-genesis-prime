@@ -43,7 +43,6 @@ import genesis_prime/game/spend
 import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
-import genesis_prime/message/spell_started
 import genesis_prime/step.{type TimerId, ConnectionId, LogDebug}
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
@@ -67,15 +66,6 @@ const bag_of_base_3 = 11
 /// Prerequisite 903, type 28 comparison 1: the caster in combat.
 fn in_combat() -> Prerequisite {
   prerequisites.single(id: 903, condition: #(28, 1, 0, 0))
-}
-
-fn unread() -> Prerequisite {
-  prerequisites.single(id: 41_834, condition: #(
-    prerequisites.unread_type(),
-    1,
-    10_518,
-    1,
-  ))
 }
 
 fn persisted(
@@ -108,23 +98,9 @@ fn failed(effects effects: List(Effect)) -> List(#(Int, Int, Int, Int)) {
 /// The Spell4 id and the cast id of each 0x7ff the effects write (a child's start; a
 /// press is confirmed by a 0x7fd, `cast_support.pressed_id`).
 fn started(effects effects: List(Effect)) -> List(#(Int, Int)) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(start) = spell_started.decode(frame.body)
-          as "a 0x7ff the rule wrote decodes"
-        Ok(#(start.spell4_id, start.cast_id))
-      }
-      False -> Error(Nil)
-    }
+  list.map(support.started_in(effects:), fn(start) {
+    #(start.spell4_id, start.cast_id)
   })
-}
-
-fn cast_id_of(spell4_id spell4_id: Int, effects effects: List(Effect)) -> Int {
-  let assert Ok(#(_, cast_id)) =
-    list.find(started(effects:), fn(start) { start.0 == spell4_id })
-    as "the effects start a cast of the spell"
-  cast_id
 }
 
 fn finished_ids(effects effects: List(Effect)) -> List(Int) {
@@ -155,7 +131,7 @@ pub fn a_step_that_leaves_spell_power_at_24_ends_the_spell_surge_buff_and_at_25_
       bag: 0,
       at: 1000,
     )
-  let buff = cast_id_of(spell4_id: 47_439, effects: pressed)
+  let buff = support.started_cast_id(spell4_id: 47_439, effects: pressed)
   let #(unchanged, nothing) =
     persisted(state:, caster: spellslinger(power: 25.0), at: 1100)
   assert nothing == [] && unchanged == state
@@ -311,7 +287,7 @@ pub fn a_persistence_of_a_type_not_read_keeps_the_cast_with_one_debug_line_for_t
   let plans =
     support.plans_of([
       casting_for_a_second(
-        caster_persistence: Some(unread()),
+        caster_persistence: Some(prerequisites.unread_row()),
         target_persistence: None,
       ),
     ])
@@ -1052,7 +1028,7 @@ pub fn a_periodic_proxys_persistence_checks_the_caster_as_second_unit_even_when_
         struck: support.hits([99]),
         rolls: [],
       )
-    let cast_id = cast_id_of(spell4_id: 7022, effects:)
+    let cast_id = support.started_cast_id(spell4_id: 7022, effects:)
     let assert Ok(holder) = cast_state.holder_of(cast: state, cast_id:)
       as "the struck unit's child is a cast of its own"
     assert holder.primary_target == 99

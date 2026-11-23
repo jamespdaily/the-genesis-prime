@@ -34,7 +34,6 @@ import genesis_prime/game/damage
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/message/spell_started
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/int
 import gleam/list
@@ -62,44 +61,18 @@ fn pressed(
   bag_index bag_index: Int,
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: support.real_plans(),
-      state:,
-      caster:,
-      bag_index:,
-      target: 0,
-      at: ms,
-    )
-  support.answered_as(caster:, state:, effects:, at: ms, struck: [], rolls: [])
+  support.press_as(
+    plans: support.real_plans(),
+    state:,
+    caster:,
+    bag: bag_index,
+    at: ms,
+  )
 }
 
 /// The Spell4 ids of the casts the effects start, in order.
 fn started_spells(effects effects: List(Effect)) -> List(Int) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(start) = spell_started.decode(frame.body)
-          as "a 0x7ff the rule wrote decodes"
-        Ok(start.spell4_id)
-      }
-      False -> Error(Nil)
-    }
-  })
-}
-
-/// The Spell4Effects ids every go of the effects lists, in order.
-fn listed(effects effects: List(Effect)) -> List(Int) {
-  list.filter(support.writes(effects:), fn(frame) {
-    frame.message_id == spell_go.message_id
-  })
-  |> list.flat_map(fn(frame) {
-    let assert Ok(go) = spell_go.decode(frame.body)
-      as "a go the rule wrote decodes"
-    list.flat_map(go.targets, fn(target) {
-      list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-    })
-  })
+  list.map(support.started_in(effects:), fn(start) { start.spell4_id })
 }
 
 pub fn a_stalkers_press_of_bag_index_3_casts_nano_skin_and_the_go_and_finish_follow_test() -> Nil {
@@ -243,7 +216,9 @@ pub fn the_unread_rows_of_a_pressed_innate_are_listed_nowhere_and_write_no_line_
   let unread = [#(warrior, [192_556, 192_608, 192_609, 210_834])]
   list.each(unread, fn(pressed) {
     let #(effects, rows) = pressed
-    assert list.all(rows, fn(row) { !list.contains(listed(effects:), row) })
+    assert list.all(rows, fn(row) {
+      !list.contains(support.listed_effect_ids(effects:), row)
+    })
       as "Spell4Effects 192556, 192608 and 192609 (type 90) of the Warrior's are not read (effect_kind.kind_of), and 210834 (type 118, tickTime 1000) is held and not applied: no go lists one"
     assert support.frames_of(message_id: 0x07FD, effects:) != []
       as "each press was taken"
@@ -261,14 +236,14 @@ pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let warrior =
     innate_pressed(bag: [18_309, 37_968, 38_017, 30_828], in_combat: False)
-  assert listed(effects: warrior) |> list.sort(int.compare)
+  assert support.listed_effect_ids(effects: warrior) |> list.sort(int.compare)
     == [109_482, 127_652, 173_869, 173_911, 173_912]
     as "Spell4.46867's own go lists its type 73 row 173869, aimed at the caster; Proxy 127637 starts 42908 after 1 ms, whose go lists its three type 11 properties 127652, 173911 and 173912 and its type 18 row 109482 (Spell4Effects spellId=42908)"
   assert started_spells(effects: warrior) == [42_908]
     as "Proxies 147848 to 60915 and 210822 to 79875 are behind Prerequisites 24548 and 37438 (type 50, comparison 1: a live cast of an AMP's spell), which a caster with none fails"
   let esper =
     innate_pressed(bag: [19_102, 19_019, 19_022, 38_012], in_combat: True)
-  assert listed(effects: esper) == [178_144, 199_192]
+  assert support.listed_effect_ids(effects: esper) == [178_144, 199_192]
     as "Spell4.58586 holds Proxies 166935, 178143 and 204548 and the type 29 row 178144, aimed at the caster, which its own go lists; its children list the type 52 row 199192 of 76766, aimed at the primary target of a child made on the caster (Spell4Effects spellId=76766)"
   assert started_spells(effects: esper)
     == [70_369, 76_766, 32_822, 32_822, 32_822, 32_822, 32_822]
@@ -286,7 +261,8 @@ pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
         ),
       ),
     )
-  assert listed(effects: medic) == [228_911, 228_912, 228_914]
+  assert support.listed_effect_ids(effects: medic)
+    == [228_911, 228_912, 228_914]
     as "Spell4.69450's type 11 rows 228911 and 228912 (properties 35 and 36, for 8 s, aimed at the caster) and its type 118 row 228914 are listed"
   let assert [go, ..] =
     support.frames_of(message_id: spell_go.message_id, effects: medic)
