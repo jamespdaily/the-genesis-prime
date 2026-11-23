@@ -627,7 +627,16 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
   assert connection_support.refusal_results(taken: pressed) == []
     as "the press at the other player is accepted"
   assert primary_targets(taken: pressed) == [9]
-    as "opcode.0x9a: the 0x7fd names the other player as the primary target (a cast the client pressed has no 0x7ff)"
+    as "opcode.0x9a: the caster's client takes the primary target from the 0x7fd, which names the other player (the caster is sent no 0x7ff, opcode.0x7ff.after_confirm)"
+  assert list.map(
+      connection_support.cast_starts(connection_support.news_told(
+        taken: pressed,
+        viewer: 3,
+      )),
+      fn(started) { started.primary_target_unit_id },
+    )
+    == [9]
+    as "opcode.0x7ff: the other player's client is told the cast and takes the cast's primary target from the 0x7ff, which names that player (Unit.GetBuffs reads it)"
   let #(state, _) =
     connection_support.feed(
       state:,

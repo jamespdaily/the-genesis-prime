@@ -293,7 +293,7 @@
 ////   - A map that dies ends every connection in it; no stealth copy outlives it.
 ////
 //// What a connection does with them is its own (genesis_prime/game/connection):
-//// told `SeenBy(v, stay)`, it sends v its 0x262 at its current place, then its
+//// told `SeenBy(v, stay, unit_id)`, it sends v its 0x262 at its current place, then its
 //// 0x638s as it moves; told `UnseenBy(v)`, its 0x355; on its camp, its 0x355
 //// to every viewer before its `Leave`. A viewer's connection writes only what
 //// its client can take, from the units it has shown and the ones the map reported

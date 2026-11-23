@@ -3593,23 +3593,10 @@ fn spell_of(
       id: row.spell4_base_id_base_spell,
     )),
   )
-  use targeting <- result.try(
-    target_mechanic.targeting_of(
-      tables:,
-      base_id: Spell4BaseId(row.spell4_base_id_base_spell),
-    )
-    |> result.map_error(fn(missing) {
-      case missing {
-        target_mechanic.NoMechanicsRow(missing: target_mechanic.NoBaseRow(id:)) ->
-          NoRow(table: "Spell4Base", id:)
-        target_mechanic.NoMechanicsRow(missing: target_mechanic.NoTargetMechanicsRow(
-          id:,
-        )) -> NoRow(table: "Spell4TargetMechanics", id:)
-        target_mechanic.NoValidTargetsRow(id:) ->
-          NoRow(table: "Spell4ValidTargets", id:)
-      }
-    }),
-  )
+  use targeting <- result.try(targeting_read(
+    tables:,
+    base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+  ))
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
   let rows = prerequisite.table_rows(tables:)
   let arcs = prerequisite.table_arcs(tables:)
@@ -7026,20 +7013,11 @@ fn periodic_proxy_finds_foes(
     spell4.get(tables:, id: Spell4Id(named))
     |> result.replace_error(NoRow(table: "Spell4", id: named)),
   )
-  use rows <- result.try(
-    target_mechanic.rows_of_base(
-      tables:,
-      base_id: Spell4BaseId(row.spell4_base_id_base_spell),
-    )
-    |> result.map_error(fn(missing) {
-      case missing {
-        target_mechanic.NoBaseRow(id:) -> NoRow(table: "Spell4Base", id:)
-        target_mechanic.NoTargetMechanicsRow(id:) ->
-          NoRow(table: "Spell4TargetMechanics", id:)
-      }
-    }),
-  )
-  case target_mechanic.is_beneficial(flags: { rows.1 }.flags) {
+  use targeting <- result.try(targeting_read(
+    tables:,
+    base_id: Spell4BaseId(row.spell4_base_id_base_spell),
+  ))
+  case target_mechanic.is_beneficial(flags: targeting.mechanics_flags) {
     True ->
       Error(PeriodicProxyAtAlliesNotRead(
         spell4_id:,
@@ -7048,6 +7026,18 @@ fn periodic_proxy_finds_foes(
       ))
     False -> Ok(Nil)
   }
+}
+
+/// The targeting of the spell whose Spell4Base is `base_id`, or the table row that is missing.
+fn targeting_read(
+  tables tables: table_store.Tables,
+  base_id base_id: Spell4BaseId,
+) -> Result(target_mechanic.Targeting, PlanError) {
+  target_mechanic.targeting_of(tables:, base_id:)
+  |> result.map_error(fn(error) {
+    let #(table, id) = target_mechanic.missing_targeting_row(error:)
+    NoRow(table:, id:)
+  })
 }
 
 /// Whether the spell holds two Proxies with no tickTime that name different tiers

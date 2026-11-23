@@ -537,6 +537,40 @@ type Way {
   ByTheAnswerOfTheGo
 }
 
+/// The effects of the first go `effects` ask, answered once as a round that struck nobody. A
+/// press the answer makes asks its own go, which stays unanswered: a rule that wrongly
+/// accepts a repeat with no cooldown shows as a second start, where answering every go
+/// would press again without end.
+fn first_go_answered(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let assert [cast_state.Strike(asked:), ..] =
+    list.filter(effects, fn(effect) {
+      case effect {
+        cast_state.Strike(..) -> True
+        _ -> False
+      }
+    })
+    as "the key-down asked a go"
+  cast.went(
+    cast: state,
+    caster:,
+    now: support.at(ms:),
+    cast_id: asked.cast_id,
+    phase: asked.phase,
+    spell: Error(Nil),
+    struck: [],
+    poses: dict.new(),
+    indexes: dict.new(),
+    units: dict.new(),
+    rolls: [],
+    gates_passed: dict.new(),
+  )
+}
+
 pub fn a_repeat_whose_target_left_sight_is_refused_91_and_ends_the_hold_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(
@@ -585,22 +619,10 @@ pub fn a_repeat_whose_target_left_sight_is_refused_91_and_ends_the_hold_test() -
           support.fired_raw_as(caster: gone, state:, timer: repeat, at: 3000)
         }
         ByTheAnswerOfTheGo ->
-          support.answered_as(
-            caster: gone,
-            state:,
-            effects: down,
-            at: 1000,
-            struck: [],
-            rolls: [],
-          )
+          first_go_answered(caster: gone, state:, effects: down, at: 1000)
       }
       assert refused_as(effects: reached) == [#(0, 91)] as row.why
-      assert list.length(started_at(effects: reached))
-        == case row.by {
-          ByTheRepeatTimer -> 0
-          ByTheAnswerOfTheGo -> 1
-        }
-        as row.why
+      assert started_at(effects: reached) == [] as row.why
       assert option.is_none(state.holding) as row.why
     },
   )

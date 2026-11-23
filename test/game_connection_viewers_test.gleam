@@ -2298,4 +2298,31 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
       assert player_address.in_sight(viewers:, picture:) == expected as why
     },
   )
+  // A viewer's stay is the one its latest SeenBy named: the connection that saw the player
+  // in one stay and sees it again in a later one is told in the later stay, which is the
+  // stay `in_sight` addresses it by.
+  let later_stay = map_support.stay(count: 30)
+  let state =
+    game_connection_support.watched_by(game_connection_support.in_world(), [3])
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(3),
+        stay: later_stay,
+        unit_id: game_connection_support.viewer_unit_id(3),
+      )),
+    )
+  let #(_, moved) =
+    game_connection_support.read(
+      state,
+      game_connection_support.moves_message([
+        game_client.position_command(x: 1.0, y: 2.0, z: 3.0),
+      ]),
+    )
+  assert list.map(game_connection_support.peer_tells_for(moved), fn(sent) {
+      #(sent.0, sent.1)
+    })
+    == [#(3, later_stay)]
+    as "a player seen again by a connection in a new stay is told its moves in the new stay, not the first"
 }

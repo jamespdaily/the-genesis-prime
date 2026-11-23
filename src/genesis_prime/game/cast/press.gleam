@@ -192,7 +192,9 @@ fn press_at_player_unbuilt(
 pub fn aimed_at_the_caster(
   press press: AimedPress,
 ) -> Result(#(State, List(Effect)), Refusal) {
-  case spell_effect.has_flag(flags: press.aim.mechanics_flags, bit: 2) {
+  case
+    spell_effect.has_flag(flags: press.aim.targeting.mechanics_flags, bit: 2)
+  {
     False ->
       press_refused(press:, result: cast_result.CasterCannotBePrimaryTarget)
     True ->
@@ -214,7 +216,7 @@ pub fn aimed_at_a_player(
     press.spell.target_death != spell_plan.AliveOrDead
     || press.aim.target_combat == shortcut_spell.OutOfCombatOnly
   case
-    spell_effect.has_flag(flags: press.aim.valid_targets, bit: 1),
+    spell_effect.has_flag(flags: press.aim.targeting.valid_targets, bit: 1),
     tests_life_or_combat
   {
     True, _ -> press_refused(press:, result: cast_result.TargetCannotBePlayer)
@@ -299,7 +301,7 @@ pub fn unit_state_refusal(
     unit_state.cast_refusal(
       held: press.unit_states,
       beneficial: target_mechanic.is_beneficial(
-        flags: press.aim.mechanics_flags,
+        flags: press.aim.targeting.mechanics_flags,
       ),
     )
   {

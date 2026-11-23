@@ -140,7 +140,7 @@ import genesis_prime/game/ticking
 import genesis_prime/gap
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
-  Spell4EffectsId, Spell4ValidTargetsId, TelegraphDamageId,
+  Spell4EffectsId, TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
@@ -148,7 +148,6 @@ import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_telegraph
-import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/telegraph_damage
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -505,7 +504,7 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
       Ok(area) -> Ok(area)
       Error(Nil) -> area_of(tables:, effects:, links:, spell:)
     })
-    use Nil <- result.map(start_checked(tables:, area:, start:))
+    use Nil <- result.map(start_checked(area:, start:))
     dict.insert(areas, id, area)
   })
 }
@@ -521,7 +520,7 @@ pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
     let id = spell.spell4_id.value
     area_of(tables:, effects:, links:, spell:)
     |> result.try(fn(area) {
-      start_checked(tables:, area:, start:) |> result.replace(area)
+      start_checked(area:, start:) |> result.replace(area)
     })
     |> result.try(fn(_) {
       case until_removed_damage_row_of(tables:, effects:, id:) {
@@ -574,7 +573,6 @@ fn spells_of_tree(spell: Spell) -> List(#(Spell, Start)) {
 /// Whether a spell with an area row, started as `start`, strikes where its hit is drawn
 /// (`start_placed`) and, pressed, is cast at what its hit row is placed on (`targeting_given`).
 fn start_checked(
-  tables tables: table_store.Tables,
   area area: SpellArea,
   start start: Start,
 ) -> Result(Nil, AreaError) {
@@ -593,7 +591,7 @@ fn start_checked(
             spell4_id: area.spell4_id.value,
             start:,
           ))
-        True -> targeting_given(tables:, area:, start:)
+        True -> targeting_given(area:, start:)
       }
   }
 }
@@ -641,17 +639,17 @@ fn is_zero(number: Float) -> Bool {
 }
 
 /// The refusal of a pressed spell whose hit row is placed on the cast's target but whose target
-/// mechanic is not cast at the caster: the press names the caster as the primary target
-/// (`cast` `press_of`) and does not read the player's target or a spot (0x9b), so the hit would
-/// land on the caster. A spell with no hit row and every other start are built.
+/// mechanic is not cast at the caster. The area build does not know whom a press names, and
+/// a press at a creature or at the caster names the caster as the primary target (`cast`
+/// `press_of`), so a Targeted spell would hit the caster; every such spell is refused. A
+/// spell with no hit row and every other start are built.
 fn targeting_given(
-  tables tables: table_store.Tables,
   area area: SpellArea,
   start start: Start,
 ) -> Result(Nil, AreaError) {
   case start, placed_on_the_target(area:) {
     spell_plan.Pressed, True -> {
-      use kind <- result.try(target_kind_of(tables:, spell: area.spell))
+      let kind = area.spell.targeting.kind
       case target_mechanic.takes_caster(kind) {
         True -> Ok(Nil)
         False ->
@@ -682,22 +680,6 @@ fn shapes_of_any_go(area area: SpellArea) -> List(Placement) {
     case inside {
       Some(InsideShapes(placements:)) -> placements
       Some(InsideRow) | None -> []
-    }
-  })
-}
-
-/// The kind of the target mechanic the spell's Spell4Base names.
-fn target_kind_of(
-  tables tables: table_store.Tables,
-  spell spell: Spell,
-) -> Result(target_mechanic.Kind, AreaError) {
-  target_mechanic.rows_of_base(tables:, base_id: spell.spell4_base_id)
-  |> result.map(fn(rows) { target_mechanic.of_row(rows.1) })
-  |> result.map_error(fn(missing) {
-    case missing {
-      target_mechanic.NoBaseRow(id:) -> NoRow(table: "Spell4Base", id:)
-      target_mechanic.NoTargetMechanicsRow(id:) ->
-        NoRow(table: "Spell4TargetMechanics", id:)
     }
   })
 }
@@ -734,7 +716,7 @@ fn area_of(
   )
   use read <- result.try(area_row_of(tables:, id:, row:))
   use Nil <- result.try(case read {
-    Some(..) -> valid_targets_checked(tables:, id:, base:)
+    Some(..) -> valid_targets_checked(id:, targeting: spell.targeting)
     None -> Ok(Nil)
   })
   let area_row = case read {
@@ -790,23 +772,13 @@ fn area_of(
 /// A spell with an area row whose base names valid targets takes only the alive:
 /// bitmask 0 (a spell with no area selects nobody, so its valid targets are not read).
 fn valid_targets_checked(
-  tables tables: table_store.Tables,
   id id: Int,
-  base base: spell4_base.Spell4Base,
+  targeting targeting: target_mechanic.Targeting,
 ) -> Result(Nil, AreaError) {
-  case base.spell4_valid_target_id {
+  case targeting.valid_targets {
     0 -> Ok(Nil)
-    valid_id -> {
-      use valid <- result.try(
-        spell4_valid_targets.get(tables:, id: Spell4ValidTargetsId(valid_id))
-        |> result.replace_error(NoRow(table: "Spell4ValidTargets", id: valid_id)),
-      )
-      case valid.target_bitmask {
-        0 -> Ok(Nil)
-        bitmask ->
-          Error(ValidTargetsNotAlive(spell4_id: id, target_bitmask: bitmask))
-      }
-    }
+    bitmask ->
+      Error(ValidTargetsNotAlive(spell4_id: id, target_bitmask: bitmask))
   }
 }
 

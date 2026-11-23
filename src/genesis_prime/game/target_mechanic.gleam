@@ -79,6 +79,17 @@ pub fn targeting_of(
   use #(base, mechanics) <- result.try(
     rows_of_base(tables:, base_id:) |> result.map_error(NoMechanicsRow),
   )
+  targeting_of_rows(tables:, base:, mechanics:)
+}
+
+/// The targeting of a spell from its Spell4Base row and the Spell4TargetMechanics row that
+/// row names; the only row it can find missing is the Spell4ValidTargets row
+/// (`NoValidTargetsRow`).
+pub fn targeting_of_rows(
+  tables tables: table_store.Tables,
+  base base: Spell4Base,
+  mechanics mechanics: Spell4TargetMechanics,
+) -> Result(Targeting, TargetingError) {
   use valid_targets <- result.map(case base.spell4_valid_target_id {
     0 -> Ok(0)
     valid_id ->
@@ -91,6 +102,19 @@ pub fn targeting_of(
     mechanics_flags: mechanics.flags,
     valid_targets:,
   )
+}
+
+/// The table and id of the row a spell's targeting could not be read for: the one place
+/// that says which table each missing row belongs to.
+pub fn missing_targeting_row(error error: TargetingError) -> #(String, Int) {
+  case error {
+    NoMechanicsRow(missing: NoBaseRow(id:)) -> #("Spell4Base", id)
+    NoMechanicsRow(missing: NoTargetMechanicsRow(id:)) -> #(
+      "Spell4TargetMechanics",
+      id,
+    )
+    NoValidTargetsRow(id:) -> #("Spell4ValidTargets", id)
+  }
 }
 
 /// The row of the two a spell's target mechanic is read from that the tables lack.
