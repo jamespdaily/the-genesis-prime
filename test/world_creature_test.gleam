@@ -161,22 +161,7 @@ fn heard(message: Message, cast_id: Int) -> Result(Heard, Nil) {
 /// The connection's player moves to `x` in the world, a tell the map takes in
 /// the order it takes its other inputs.
 fn move_to(run run: MapProcess, connection connection: Int, x x: Float) -> Nil {
-  let _sent =
-    service.tell_subject(
-      run.subject,
-      map.Moved(
-        connection: ConnectionId(connection),
-        place: place_support.at(
-          world_id: 3460,
-          world_zone_id: spawn_support.warfare_woods,
-          x:,
-          y: 0.0,
-          z: 0.0,
-        ),
-        seq: 1,
-      ),
-    )
-  Nil
+  moved_round(run:, connection:, x:, z: 0.0, seq: 1)
 }
 
 /// A world with no stored spawn, whose creatures stop on the short times and
@@ -2047,41 +2032,12 @@ fn quest_go(
   struck_at_ms struck_at_ms: Int,
   went_at_ms went_at_ms: Int,
 ) -> List(cast_state.Effect) {
-  let #(state, pressed) =
-    cast_support.pressed_raw_in(
-      plans: cast_support.plans_starting_on_each_struck(
-        started: cast_support.with_effects(
-          spell: cast_support.child(spell4_id: 30_600, base: 21_614),
-          kinds: [spell_plan.DespawnEffect(row)],
-        ),
-      ),
-      state: cast_state.new(),
-      caster: cast_support.caster(),
-      bag_index: 11,
-      target: unit_id,
-      at: struck_at_ms,
-    )
-  let struck = [
-    cast_state.Hit(
-      unit_id:,
-      unit: cast_state.HitCreature(life:, struck_at_ms:),
-      descriptions: [],
-      controls: [],
-      armor_removed: 0,
-      ticking: [],
-    ),
-  ]
-  let #(_, answered) =
-    cast_support.answered_each(
-      caster: cast_support.caster(),
-      state:,
-      effects: pressed,
-      at: went_at_ms,
-      struck_of: fn(_) { struck },
-      rolls: [],
-      poses: dict.new(),
-    )
-  list.append(pressed, answered)
+  world_watch_support.effects_of_a_go_on_creatures(
+    kind: spell_plan.DespawnEffect(row),
+    units: [#(unit_id, life)],
+    struck_at_ms:,
+    went_at_ms:,
+  )
 }
 
 /// What the caster's connection did with one effect of a go.
@@ -2110,22 +2066,17 @@ fn carried_out(
         went_at_ms:,
         delay_ms:,
       ) -> {
-        let assert Ok(Nil) =
-          server.tell_creature(
-            creatures: world.creatures,
-            to: step.Creature(
-              map: world_watch_support.ship,
-              incarnation: run.incarnation,
-              unit_id:,
-              life:,
-            ),
-            request: client_connection.TellDespawn(
-              delay_ms:,
-              struck_at_ms:,
-              went_at_ms:,
-            ),
-          )
-          as "the creature is found by its address and told"
+        world_watch_support.told_creature(
+          world:,
+          run:,
+          unit_id:,
+          life:,
+          request: client_connection.TellDespawn(
+            delay_ms:,
+            struck_at_ms:,
+            went_at_ms:,
+          ),
+        )
         [Told(unit_id:)]
       }
       cast_state.Tell(..)
@@ -2159,10 +2110,8 @@ fn quest_go_on(
   watched watched: world_watch_support.Watched,
   row row: spell_plan.Despawn,
 ) -> List(Done) {
-  let struck_at_ms = world_watch_support.clock_ms(time: watched.time)
-  driven_time.advance(time: watched.time, ms: 250)
-  let went_at_ms = world_watch_support.clock_ms(time: watched.time)
-  assert went_at_ms == struck_at_ms + 250
+  let #(struck_at_ms, went_at_ms) =
+    world_watch_support.times_of_a_go_after_250_ms(watched:)
   let done =
     carried_out(
       world: watched.world,

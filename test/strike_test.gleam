@@ -30,7 +30,7 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls, Worked}
-import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
+import genesis_prime/game/shown.{ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
 import genesis_prime/game/spend
@@ -46,10 +46,7 @@ import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
-import genesis_prime/world_map/creature_life.{
-  type Attackable, Attackable, Hostile,
-}
-import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -93,6 +90,8 @@ fn selection(
     controls: [],
     ticking: [],
     gates: [],
+    players: [],
+    heals: [],
   )
 }
 
@@ -141,7 +140,8 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
   list.filter(effects, fn(effect) {
     case effect {
       strike.TellStrike(..) -> True
-      strike.StartTimer(..)
+      strike.TellPlayerStrike(..)
+      | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
       | strike.Ticked(..)
@@ -161,6 +161,7 @@ fn went(
       strike.Went(asked:, struck:, ..) ->
         Ok(#(asked.cast_id, asked.phase, struck))
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Ticked(..)
@@ -175,6 +176,7 @@ fn timers(effects effects: List(Effect)) -> List(strike.Effect) {
     case effect {
       strike.StartTimer(..) | strike.CancelTimer(..) -> True
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.Went(..)
       | strike.Ticked(..)
       | strike.Released(..)
@@ -222,7 +224,8 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
           tell: strike_tell.Strike(striker: strike_tell.CreatureStriker(..), ..),
           ..,
         ) -> panic as "a player's strike carries a player striker"
-        strike.StartTimer(..)
+        strike.TellPlayerStrike(..)
+        | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
         | strike.Ticked(..)
@@ -306,6 +309,8 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         controls: [],
         ticking: [],
         gates: [],
+        players: [],
+        heals: [],
       ),
       attacker: Attacker(..strike_support.attacker(), stats: novice),
       formulas: rating_support.formulas(),
@@ -356,7 +361,8 @@ fn offences_told(effects effects: List(Effect)) -> List(#(Int, Offence)) {
     case effect {
       strike.TellStrike(tell: strike_tell.Strike(offence:, ..), unit_id:, ..) ->
         Ok(#(unit_id, offence))
-      strike.StartTimer(..)
+      strike.TellPlayerStrike(..)
+      | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
       | strike.Ticked(..)
@@ -840,8 +846,10 @@ pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test()
         strike.Ticked(..) -> "ticked"
         strike.Released(unit_id:, ..) -> "released " <> unit_label(unit_id)
         strike.CancelTimer(..) -> "cancel"
-        strike.TellStrike(..) | strike.StartTimer(..) | strike.Log(..) ->
-          "other"
+        strike.TellStrike(..)
+        | strike.TellPlayerStrike(..)
+        | strike.StartTimer(..)
+        | strike.Log(..) -> "other"
       }
     })
     == ["cancel", "went", "released ten"]
@@ -897,6 +905,7 @@ fn effect_label(effect: Effect) -> String {
     strike.CancelTimer(..) -> "cancel"
     strike.StartTimer(..) -> "start"
     strike.TellStrike(..) -> "tell"
+    strike.TellPlayerStrike(..) -> "player tell"
     strike.Log(..) -> "log"
   }
 }
@@ -942,6 +951,7 @@ pub fn the_news_held_for_a_unit_is_dropped_when_the_unit_is_forgotten_test() -> 
       case effect {
         strike.Released(unit_id:, ..) -> Ok(unit_id)
         strike.TellStrike(..)
+        | strike.TellPlayerStrike(..)
         | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
@@ -960,61 +970,41 @@ fn unit_label(unit_id: Int) -> String {
   }
 }
 
-fn creature_at(
-  x x: Float,
-  z z: Float,
-  alive alive: Bool,
-  attackable attackable: Attackable,
-) -> shown.Shown {
-  creature_facing(x:, z:, alive:, attackable:, faced_yaw: option.None)
-}
-
-/// The same creature held to the yaw `faced_yaw` by its owner's news, or facing as its place
-/// does with none.
-fn creature_facing(
-  x x: Float,
-  z z: Float,
-  alive alive: Bool,
-  attackable attackable: Attackable,
-  faced_yaw faced_yaw: Option(Float),
-) -> shown.Shown {
-  ShownCreature(
-    creature_id: Creature2Id(73_464),
-    faction_id: 0,
-    checklist_index: 0,
-    path: creature_path.Standing(at: place_support.at(
-      world_id: 3460,
-      world_zone_id: 5967,
-      x:,
-      y: 0.0,
-      z:,
-    )),
-    life: 4,
-    alive:,
-    hit_radius: 3.0,
-    attackable:,
-    hostile_to: Hostile(exile: False, dominion: False),
-    in_combat: False,
-    held: [],
-    unit_states: [],
-    face: option.None,
-    faced_yaw:,
-    fights: True,
-  )
-}
-
 fn picture() -> shown.Picture {
   let both = Attackable(exile: True, dominion: True)
   dict.from_list([
-    #(21, creature_at(x: 0.0, z: -3.0, alive: True, attackable: both)),
-    #(22, creature_at(x: 0.0, z: -5.0, alive: True, attackable: both)),
-    #(23, creature_at(x: 0.0, z: -6.5, alive: True, attackable: both)),
-    #(24, creature_at(x: 0.0, z: 4.0, alive: True, attackable: both)),
-    #(25, creature_at(x: 0.0, z: -8.0, alive: True, attackable: both)),
-    #(26, creature_at(x: 0.0, z: -4.0, alive: False, attackable: both)),
+    #(
+      21,
+      strike_support.creature_at(x: 0.0, z: -3.0, alive: True, attackable: both),
+    ),
+    #(
+      22,
+      strike_support.creature_at(x: 0.0, z: -5.0, alive: True, attackable: both),
+    ),
+    #(
+      23,
+      strike_support.creature_at(x: 0.0, z: -6.5, alive: True, attackable: both),
+    ),
+    #(
+      24,
+      strike_support.creature_at(x: 0.0, z: 4.0, alive: True, attackable: both),
+    ),
+    #(
+      25,
+      strike_support.creature_at(x: 0.0, z: -8.0, alive: True, attackable: both),
+    ),
+    #(
+      26,
+      strike_support.creature_at(
+        x: 0.0,
+        z: -4.0,
+        alive: False,
+        attackable: both,
+      ),
+    ),
     #(
       27,
-      creature_at(
+      strike_support.creature_at(
         x: 0.0,
         z: -4.0,
         alive: True,
@@ -1022,7 +1012,15 @@ fn picture() -> shown.Picture {
       ),
     ),
     #(28, ShownPlayer(at: option.None)),
-    #(20, creature_at(x: 40.0, z: 40.0, alive: True, attackable: both)),
+    #(
+      20,
+      strike_support.creature_at(
+        x: 40.0,
+        z: 40.0,
+        alive: True,
+        attackable: both,
+      ),
+    ),
   ])
 }
 
@@ -1220,7 +1218,7 @@ pub fn a_despawn_row_selects_no_player_and_no_static_object_test() -> Nil {
     dict.from_list([
       #(
         20,
-        creature_at(
+        strike_support.creature_at(
           x: 0.0,
           z: -3.0,
           alive: True,
@@ -1275,7 +1273,7 @@ pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
 
 /// A foe at (x, z), alive and attackable by an Exile.
 fn foe_at(x x: Float, z z: Float) -> shown.Shown {
-  creature_at(
+  strike_support.creature_at(
     x:,
     z:,
     alive: True,
@@ -2171,7 +2169,8 @@ pub fn a_state_aimed_at_the_area_does_not_reach_a_primary_target_outside_it_but_
     list.filter_map(tells(effects:), fn(effect) {
       case effect {
         strike.TellStrike(unit_id:, ..) -> Ok(unit_id)
-        strike.StartTimer(..)
+        strike.TellPlayerStrike(..)
+        | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
         | strike.Ticked(..)
@@ -2211,6 +2210,8 @@ fn offence_of_caster_with(
         controls: [],
         ticking: [],
         gates: [],
+        players: [],
+        heals: [],
       ),
       attacker: Attacker(..strike_support.attacker(), properties:),
       formulas: rating_support.formulas(),
@@ -2364,6 +2365,7 @@ fn tick_tells(
         ),
       ) -> Ok(#(unit_id, life, key, rolls, offence.blows))
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
@@ -2382,6 +2384,7 @@ fn ticked(
     case effect {
       strike.Ticked(asked:, struck:) -> Ok(#(asked, struck))
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
@@ -2638,14 +2641,14 @@ pub fn a_tick_of_a_field_selects_the_units_inside_its_box_and_range_around_the_p
       pose: Pose(at: Point(x: 30.0, z: 0.0), yaw: 3.1415927),
     )
   let friendly =
-    creature_at(
+    strike_support.creature_at(
       x: 0.0,
       z: -6.0,
       alive: True,
       attackable: Attackable(exile: False, dominion: True),
     )
   let dead =
-    creature_at(
+    strike_support.creature_at(
       x: 0.0,
       z: -7.0,
       alive: False,
@@ -2703,7 +2706,7 @@ pub fn a_tick_of_a_fixed_at_target_area_on_another_unit_stays_where_the_unit_sto
     dict.from_list([
       #(
         21,
-        creature_at(
+        strike_support.creature_at(
           x: 20.0,
           z: -20.0,
           alive: True,
@@ -2772,7 +2775,7 @@ pub fn a_tick_of_a_fixed_at_target_area_on_another_unit_stays_where_the_unit_sto
     dict.from_list([
       #(
         21,
-        creature_facing(
+        strike_support.creature_facing(
           x: unit_21_at.0,
           z: unit_21_at.1,
           alive: True,

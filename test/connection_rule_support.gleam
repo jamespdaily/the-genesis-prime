@@ -176,6 +176,25 @@ pub fn timers_started(step: ConnectionStep(request)) -> List(step.TimerId) {
   })
 }
 
+/// The timers a step cancels, in order.
+pub fn timers_cancelled(step: ConnectionStep(request)) -> List(step.TimerId) {
+  list.filter_map(effects_of(step), fn(effect) {
+    case effect {
+      OwnEffect(CancelTimer(timer:)) -> Ok(timer)
+      OwnEffect(Write(..))
+      | OwnEffect(StartTimer(..))
+      | OwnEffect(step.Tell(..))
+      | OwnEffect(step.TellWatched(..))
+      | OwnEffect(step.JoinGroup(..))
+      | OwnEffect(step.LeaveGroup(..))
+      | Watch(..)
+      | Unwatch(..)
+      | Log(..)
+      | Stop -> Error(Nil)
+    }
+  })
+}
+
 /// The timers a service step starts and cancels, in order: a start carries its delay
 /// as `Some(after_ms)`, a cancel `None`.
 pub fn service_timers(

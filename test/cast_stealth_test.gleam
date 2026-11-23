@@ -40,7 +40,6 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_go
-import genesis_prime/message/spell_started
 import genesis_prime/message/spell_target_info
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
@@ -92,17 +91,14 @@ fn cancelling(
   base base: Int,
   of cancelled: Int,
 ) -> Spell {
-  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
-    spell_plan.RemoveEffect(spell_plan.ForceRemove(
-      effect_id: Spell4EffectsId(83_832),
-      phase_flags: -1,
-      aim: spell_plan.AimsAtCaster,
-      selector: lasting.Spell(Spell4Id(cancelled)),
-      count: 1,
-      condition: Always,
-      tag: spend.always,
-    )),
-  ])
+  support.removing(
+    spell4_id:,
+    base:,
+    effect_id: 83_832,
+    selector: lasting.Spell(Spell4Id(cancelled)),
+    count: 1,
+    condition: Always,
+  )
 }
 
 /// The spell of base 1: Spell4 38784's Stealth row 83834, broken by damage.
@@ -194,29 +190,14 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
 fn children_started_with_ids(
   effects effects: List(Effect),
 ) -> List(#(Int, Int)) {
-  list.map(
-    support.frames_of(message_id: spell_started.message_id, effects:),
-    fn(frame) {
-      let assert Ok(decoded) = spell_started.decode(frame.body)
-        as "a 0x7ff the rule wrote decodes"
-      #(decoded.spell4_id, decoded.cast_id)
-    },
-  )
+  list.map(support.started_in(effects:), fn(started) {
+    #(started.spell4_id, started.cast_id)
+  })
 }
 
 /// The Spell4 ids of the casts the step started with a 0x7ff, in order.
 fn children_started(effects effects: List(Effect)) -> List(Int) {
   list.map(children_started_with_ids(effects:), fn(started) { started.0 })
-}
-
-/// The cast id of the child of the Spell4 that the step started.
-fn child_of(spell4_id spell4_id: Int, effects effects: List(Effect)) -> Int {
-  let assert Ok(started) =
-    list.find(children_started_with_ids(effects:), fn(started) {
-      started.0 == spell4_id
-    })
-    as "the step started a cast of the Spell4"
-  started.1
 }
 
 /// The effect rows a go of the cast lists on the caster, unit 7.
@@ -353,7 +334,7 @@ pub fn a_press_of_the_toggle_when_not_stealthed_starts_38784_whose_go_lists_8383
   let #(state, effects) = toggled()
   assert children_started(effects:) == [38_784]
     as "7050 (type 116, comparison 2) passes and 8127 (comparison 1) fails: only 38784 starts"
-  let on = child_of(spell4_id: 38_784, effects:)
+  let on = support.started_cast_id(spell4_id: 38_784, effects:)
   let listed = listed_on_the_caster(cast_id: on, effects:)
   assert list.contains(listed, 83_834)
     as "83834 is the Stealth row 38784 lists on the caster, behind 16152"
@@ -392,7 +373,7 @@ pub fn the_stealth_change_is_the_last_effect_of_38784s_go_test() -> Nil {
 pub fn a_press_of_the_toggle_when_stealthed_takes_38784_off_and_ends_the_stealth_after_it_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, entered) = toggled()
-  let on = child_of(spell4_id: 38_784, effects: entered)
+  let on = support.started_cast_id(spell4_id: 38_784, effects: entered)
   // The toggle's own cooldown of 25 s would refuse this press, but 159128 cleared it
   // out of combat (Spell4.46073); 4000 ms is past the 1000 ms global cooldown.
   let #(state, inputs) =

@@ -1318,8 +1318,8 @@ fn stay_sent(
           connection_casting.target_taken(session:, now:, entered:, answered:)
         client_connection.SentByStriker(strike:) ->
           connection_landing.struck(session:, now:, entered:, strike:)
-        // The healed player's answer: no round of this connection waits for one, so it is dropped.
-        client_connection.SentByHealed(..) -> Continue(session, [])
+        client_connection.SentByHealed(answered:) ->
+          connection_casting.player_taken(session:, now:, entered:, answered:)
         client_connection.SentByKill(credit:) ->
           case
             connection_experience.credited(session:, now:, entered:, credit:)

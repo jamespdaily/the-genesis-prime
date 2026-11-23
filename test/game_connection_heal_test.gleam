@@ -28,6 +28,8 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
+import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/damage_type
@@ -44,10 +46,12 @@ import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, OwnEvent, TimerFired,
 }
+import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{None, Some}
+import map_support
 import owned_test
 import planted_table
 import spawn_support
@@ -563,12 +567,10 @@ fn primary_targets(taken taken: ConnectionStep(Request)) -> List(Int) {
   )
 }
 
-pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
-  // Mind Over Body (Spell4Base 19030, an Esper's at level 6) is the Targeted kind
-  // (Spell4TargetMechanics row 4). The other player is the unit 9 that the map's SeenBy of
-  // connection 3 names and that connection's 0x262 creates in the picture.
+/// An Esper of level 6 (Mind Over Body is an Esper's at level 6, Spell4Base 19030) that has
+/// the map's notice of connection 3's player, the unit 9, and the bag index of Mind Over
+/// Body.
+fn esper_with_the_notice_of_the_ally() -> #(game_connection.State, Int) {
   let tables = client_tables.shared()
   let settings = Settings(..connection_support.settings(), tables:)
   let #(state, _) =
@@ -585,23 +587,6 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
       level: 6,
       ability: 19_030,
     )
-  let press = fn(state, ms, target) {
-    connection_support.at(
-      state:,
-      ms:,
-      event: OwnEvent(
-        step.Read(connection_support.world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id: ms,
-            bag_index:,
-            target:,
-            press: 1,
-          ),
-        )),
-      ),
-    )
-  }
   let #(state, _) =
     connection_support.feed(
       state:,
@@ -611,6 +596,44 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
         unit_id: 9,
       )),
     )
+  #(state, bag_index)
+}
+
+/// A 0x9a of the bag index at `target` with the client's cast id `ms`, at the monotonic
+/// time `ms`.
+fn pressed_at(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  ms ms: Int,
+  target target: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  connection_support.at(
+    state:,
+    ms:,
+    event: OwnEvent(
+      step.Read(connection_support.world_message(
+        message_id: 0x009A,
+        body: cast_support.press_body(
+          client_cast_id: ms,
+          bag_index:,
+          target:,
+          press: 1,
+        ),
+      )),
+    ),
+  )
+}
+
+pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Mind Over Body is the Targeted kind (Spell4TargetMechanics row 4). The other player is
+  // the unit 9 that the map's SeenBy of connection 3 names and that connection's 0x262
+  // creates in the picture.
+  let #(state, bag_index) = esper_with_the_notice_of_the_ally()
+  let press = fn(state, ms, target) {
+    pressed_at(state:, bag_index:, ms:, target:)
+  }
   let #(state, early) = press(state, 1000, 9)
   assert list.map(
       connection_support.refusal_results(taken: early),
@@ -651,4 +674,146 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
     )
     == [91]
     as "the map told the connection the player no longer sees it: the unit has no address, so the press is refused 91"
+}
+
+/// The unit ids the step's 0x7f4 frames name as targets, in order.
+fn go_targets(taken taken: ConnectionStep(Request)) -> List(Int) {
+  list.flat_map(
+    connection_support.decoded(
+      connection_support.heard(taken, connection_support.keyed()),
+      spell_go.message_id,
+      spell_go.decode,
+    ),
+    fn(go) { list.map(go.targets, fn(target) { target.unit_id }) },
+  )
+}
+
+/// The cast rule's timers the press started, each fired in turn at its due time on the
+/// state the one before left: the go's first.
+fn fired_when_due(
+  state state: game_connection.State,
+  pressed pressed: ConnectionStep(Request),
+  pressed_at_ms pressed_at_ms: Int,
+) -> #(game_connection.State, List(ConnectionStep(Request))) {
+  list.fold(
+    connection_support.cast_timers(steps: [pressed], ms: pressed_at_ms),
+    #(state, []),
+    fn(so_far, due) {
+      let #(state, taken) = so_far
+      let #(state, more) =
+        connection_support.fired_at(state:, timer: due.1, ms: due.0)
+      #(state, list.append(taken, [more]))
+    },
+  )
+}
+
+/// What the heal row of Mind Over Body pressed at the unit 9 is answered with.
+fn heals_landed() -> strike_tell.PlayerOutcome {
+  strike_tell.HealsLanded(heals: [
+    strike_tell.HealLanded(
+      effect_id: Spell4EffectsId(62_019),
+      vital: effect_kind.Health,
+      split: heal_split.Split(amount: 121, shield: 0, health: 100, overheal: 21),
+    ),
+  ])
+}
+
+/// The Esper after its press of Mind Over Body at the unit 9, at 2000 ms, with the unit in
+/// its picture (its 0x262 has come): the state and the press's step.
+fn esper_that_pressed_at_the_ally() -> #(
+  game_connection.State,
+  ConnectionStep(Request),
+) {
+  let #(state, bag_index) = esper_with_the_notice_of_the_ally()
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.event_of(connection_support.Appears),
+    )
+  pressed_at(state:, bag_index:, ms: 2000, target: 9)
+}
+
+pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answer_closes_the_round_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let #(state, pressed) = esper_that_pressed_at_the_ally()
+  let #(waiting, gone) = fired_when_due(state:, pressed:, pressed_at_ms: 2000)
+  let assert [#(address, stay, tell)] =
+    list.flat_map(gone, connection_support.player_strikes)
+    as "the go tells one heal strike in all, to one connection"
+  assert address == step.Connection(ConnectionId(3))
+    && stay == connection_support.viewer_stay(3)
+    as "the strike is told to connection 3 for the stay its notice named"
+  assert tell.key.unit_id == 9
+    && tell.from == ConnectionId(1)
+    && tell.stay == connection_support.own_stay()
+    as "from the caster's connection and stay, which the answer comes back for, naming the unit 9"
+  assert list.map(tell.heals, fn(heal) { heal.effect_id })
+    == [Spell4EffectsId(62_019)]
+    as "Mind Over Body's one heal row, Spell4Effects 62019"
+  assert list.flat_map(gone, go_targets) == []
+    as "the go is not written while the player's place waits for its answer"
+  assert list.contains(
+    list.flat_map(gone, support.timers_started),
+    strike.strike_timer,
+  )
+    as "the strike timer covers the wait"
+  let answer =
+    connection_support.an_answer_from_a_player(
+      cast_id: tell.key.cast_id,
+      unit_id: 9,
+      outcome: heals_landed(),
+    )
+  let #(_, answered) =
+    connection_support.feed(
+      state: waiting,
+      event: connection_support.for_stay(
+        stay: connection_support.own_stay(),
+        sent: answer,
+      ),
+    )
+  assert go_targets(taken: answered) == [9]
+    as "the answer reaches the strike rule: the go is written and names the player"
+  assert list.contains(support.timers_cancelled(answered), strike.strike_timer)
+    as "and the strike timer is cancelled, the round having closed"
+  // An answer for another stay of the caster is dropped by the stay fence: the round stays
+  // open and its timer, processed, writes the go without the player.
+  let #(still_waiting, fenced) =
+    connection_support.feed(
+      state: waiting,
+      event: connection_support.for_stay(
+        stay: map_support.stay(count: 2),
+        sent: answer,
+      ),
+    )
+  assert connection_support.written_ids(fenced) == []
+    as "an answer for a stay before the caster's is dropped: nothing is written"
+  let #(_, due) =
+    connection_support.fired_at(
+      state: still_waiting,
+      timer: strike.strike_timer,
+      ms: 10_000,
+    )
+  assert go_targets(taken: due) == []
+    && list.contains(connection_support.written_ids(due), spell_go.message_id)
+    as "the round was still open: its timer writes the go with the player left out"
+  // The press was accepted while the map's notice stood; the player leaves the caster's
+  // sight before the go timer fires, so the go reads no address for it.
+  let #(unseen, pressed) = esper_that_pressed_at_the_ally()
+  let #(unseen, _) =
+    connection_support.feed(
+      state: unseen,
+      event: connection_support.sent_by_the_map(
+        map.UnseenBy(by: ConnectionId(3)),
+      ),
+    )
+  let #(_, gone) = fired_when_due(state: unseen, pressed:, pressed_at_ms: 2000)
+  assert list.flat_map(gone, connection_support.player_strikes) == []
+    as "the player left the caster's sight before the go: nobody is told"
+  assert list.flat_map(gone, go_targets) == []
+    && list.contains(
+      list.flat_map(gone, connection_support.written_ids),
+      spell_go.message_id,
+    )
+    as "and the go is written at once, without the unit"
 }

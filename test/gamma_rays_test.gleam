@@ -59,6 +59,7 @@ fn gamma_caster(x x: Float, z z: Float, yaw yaw: Float) -> Attacker {
     stats: attacker_support.fresh(),
     vitals: attacker_support.novice_vitals(),
     properties: properties_support.fresh(level: 1),
+    players_in_sight: dict.new(),
   )
 }
 

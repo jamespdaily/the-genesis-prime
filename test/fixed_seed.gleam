@@ -22,9 +22,8 @@
 //// - The salt is `GENESIS_TEST_SEED_SALT`, empty when unset. `dev/repeat_tests.py`
 ////   gives each of its runs a salt of its own, so a test that depends on a roll
 ////   still fails in the pull request's repeat job; a person tries one with
-////   `GENESIS_TEST_SEED_SALT=any_word gleam test -- test/FILE.gleam` (a sweep of
-////   `game_wire_test` takes about 45 seconds a salt), and runs the failing salt again
-////   to see the same dice.
+////   `GENESIS_TEST_SEED_SALT=any_word gleam test -- test/FILE.gleam`, and
+////   runs the failing salt again to see the same dice.
 //// - A test that needs other rolls than its name gives calls `name_the_seed` at the
 ////   top of its body, with its reason in a comment beside the call.
 //// - Renaming a test changes its seeds; so does connecting its clients in another

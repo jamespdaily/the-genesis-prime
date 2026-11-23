@@ -20,7 +20,7 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
   type Proxy, type Spell, GatedOnCasterAndTarget,
 }
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
@@ -36,13 +36,7 @@ import unitest
 const impale_base = 23_161
 
 fn impale() -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_plan.plans(client_tables.shared()),
-      base: Spell4BaseId(impale_base),
-    )
-    as "the client's plans hold Impale"
-  spell
+  spell_tables.client_ability(base: impale_base)
 }
 
 /// Every Proxy in the tree of every level-1 ability and innate.

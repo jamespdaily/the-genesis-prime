@@ -34,7 +34,7 @@ import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/spell_threshold_closed
 import genesis_prime/message/spell_threshold_index
 import genesis_prime/message/spell_threshold_opened
-import genesis_prime/step.{type TimerId, ConnectionId, LogDebug}
+import genesis_prime/step.{type TimerId, LogDebug}
 import gleam/int
 import gleam/list
 import gleam/string
@@ -195,13 +195,7 @@ fn result_value(result: CastResult) -> String {
 fn started_by_viewer(
   effects effects: List(cast_state.Effect),
 ) -> List(#(Int, Int, Int)) {
-  list.filter_map(support.tells(effects:), fn(told) {
-    case told {
-      #(ConnectionId(2), CastStarted(start:)) ->
-        Ok(#(start.spell4_id, start.root_spell4_id, start.parent_spell4_id))
-      _ -> Error(Nil)
-    }
-  })
+  support.started_told_to(effects:, connection: 2)
 }
 
 fn timers_of(effects effects: List(cast_state.Effect)) -> List(TimerId) {
@@ -466,6 +460,8 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
       controls: [],
       ticking: [],
       gates: [],
+      players: [],
+      heals: [],
     )
   let #(round, begun) =
     strike.begin(
@@ -515,6 +511,7 @@ fn closed_rounds(effects effects: List(strike.Effect)) -> List(strike.Effect) {
     case effect {
       strike.Went(..) -> True
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Ticked(..)
@@ -574,10 +571,10 @@ pub fn a_0x801_for_a_live_channel_cancels_its_pulses_and_finish_and_ends_it_for_
       )
       as "opcode.0x801: 6 and 11 with the bit 1 are what the client sends for a cast that ends"
     assert list.sort(support.cancelled_timers(effects:), fn(first, second) {
-        int.compare(timer_number(first), timer_number(second))
+        int.compare(support.timer_number(first), support.timer_number(second))
       })
       == list.sort(timers_of(effects: pressed), fn(first, second) {
-        int.compare(timer_number(first), timer_number(second))
+        int.compare(support.timer_number(first), support.timer_number(second))
       })
       as "the three pulses and the finish are cancelled"
     assert support.ids(frames: support.writes(effects:)) == [0x07FE]
@@ -586,11 +583,6 @@ pub fn a_0x801_for_a_live_channel_cancels_its_pulses_and_finish_and_ends_it_for_
       == [CastFinished(cast_id: id), CastFinished(cast_id: id)]
       as "the audience is told too"
   })
-}
-
-fn timer_number(timer: TimerId) -> Int {
-  let step.TimerId(number) = timer
-  number
 }
 
 // ------------------------------------------------------------------ cooldowns
@@ -1095,10 +1087,10 @@ pub fn leaving_the_world_with_a_threshold_open_cancels_every_timer_and_writes_no
     press(state: cast_state.new(), bag_index: support.shred, at: 1000)
   let #(state, left) = cast_tick.left(cast: state)
   assert list.sort(support.cancelled_timers(effects: left), fn(first, second) {
-      int.compare(timer_number(first), timer_number(second))
+      int.compare(support.timer_number(first), support.timer_number(second))
     })
     == list.sort(timers_of(effects: shred), fn(first, second) {
-      int.compare(timer_number(first), timer_number(second))
+      int.compare(support.timer_number(first), support.timer_number(second))
     })
     as "the threshold's time and the child's phases are all cancelled"
   assert support.writes(effects: left) == []

@@ -16,8 +16,6 @@ import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{type Plans, Spell}
 import genesis_prime/message/spell_effect_info.{type SpellEffectInfo}
-import genesis_prime/message/spell_go
-import genesis_prime/message/spell_started
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/list
 import owned_test
@@ -36,15 +34,8 @@ fn real_plans() -> Plans {
 /// The 0x7ff starts in the effects, each as (cast id, Spell4 id): the casts a Proxy
 /// started.
 fn starts(effects: List(Effect)) -> List(#(Int, Int)) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(start) = spell_started.decode(frame.body)
-          as "a 0x7ff the rule wrote decodes"
-        Ok(#(start.cast_id, start.spell4_id))
-      }
-      False -> Error(Nil)
-    }
+  list.map(support.started_in(effects:), fn(start) {
+    #(start.cast_id, start.spell4_id)
   })
 }
 
@@ -68,12 +59,7 @@ fn started_ids_of(
 
 /// The effect infos of every go frame in the effects.
 fn listed_effects(effects: List(Effect)) -> List(SpellEffectInfo) {
-  list.filter(support.writes(effects:), fn(frame) {
-    frame.message_id == spell_go.message_id
-  })
-  |> list.flat_map(fn(frame) {
-    let assert Ok(go) = spell_go.decode(frame.body)
-      as "a go the rule wrote decodes"
+  list.flat_map(support.goes_in(effects:), fn(go) {
     list.flat_map(go.targets, fn(target) { target.effects })
   })
 }

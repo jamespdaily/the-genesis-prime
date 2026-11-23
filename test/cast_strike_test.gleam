@@ -20,7 +20,6 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/miss_reason
-import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
@@ -119,18 +118,11 @@ fn tech_hit(
   Description(
     spell4_effects_id: 96_125,
     delay_ms: 166,
-    damage: SpellDamageDescription(
-      raw_damage: 14,
-      scaled_raw_damage: 14,
-      absorbed: 0,
-      shield_absorbed: 0,
-      health_damage_with_overkill: 14,
-      overkill: 0,
-      glance: 0,
+    damage: support.landed_damage(
+      amount: 14,
       killed: 0,
       combat_result:,
       damage_type: damage_type.Tech,
-      hits: [],
     ),
   )
 }

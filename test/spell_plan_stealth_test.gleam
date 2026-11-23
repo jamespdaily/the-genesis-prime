@@ -57,21 +57,11 @@ fn blank(id id: Int) -> Spell4Effects {
   )
 }
 
-fn plans_spell(base base: Int) -> spell_plan.Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_tables.fixture_plans(),
-      base: Spell4BaseId(base),
-    )
-    as "the planted plans hold the ability"
-  spell
-}
-
 // ---- the rows of the plan, whole ----
 
 pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_the_rows_hold_them_test() -> Nil {
   use <- owned_test.run(60_000)
-  let toggle = plans_spell(base: toggle_base)
+  let toggle = spell_tables.planted_ability(base: toggle_base)
   assert toggle.stealth_change == KeepsStealth
     as "46073 holds spellCastStealthChange 2 (Spell4.spellCastStealthChange)"
   let assert [on, cancel] =
@@ -113,7 +103,8 @@ pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_t
     == []
   assert spell_plan.payloads(spell: cancel, as_kind: spell_plan.as_stealth)
     == []
-  assert plans_spell(base: impale_base).stealth_change == EndsStealthAfterLastGo
+  assert spell_tables.planted_ability(base: impale_base).stealth_change
+    == EndsStealthAfterLastGo
     as "Impale 38779 holds 1, and 1 ends stealth after the cast's last go"
 }
 

@@ -21,7 +21,6 @@
 ////   later go of a cast heals again; the description is written the same for every
 ////   viewer.
 
-import attacker_support
 import cast_support as support
 import channel_support
 import genesis_prime/client_connection.{CastWent}
@@ -135,21 +134,7 @@ fn health_heal(
 /// 33 + 87.55 = 120.55, which is 121 (the stat part is rounded alone, `0x140565600`; one
 /// rounding of 120.36 would give 120).
 fn healing_caster(health health: Int) -> Caster {
-  cast_state.Caster(
-    ..struck_caster(),
-    stats: damage.Attacker(
-      ..attacker_support.fresh(),
-      level: 5,
-      assault_rating: 0.0,
-      support_rating: 400.0,
-    ),
-    vitals: damage.Vitals(
-      health:,
-      max_health: 736,
-      shield: 250,
-      max_shield: 450,
-    ),
-  )
+  support.healing_caster(health:)
 }
 
 /// The planted base 3's spell with these heals.
@@ -228,9 +213,7 @@ fn timeline(
 
 /// The effect infos of the unit the go's 0x7f4 lists first.
 fn listed(effects effects: List(Effect)) -> List(SpellEffectInfo) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  list.flat_map(decoded.targets, fn(target) { target.effects })
+  list.flat_map(support.go_targets(effects:), fn(target) { target.effects })
 }
 
 fn heal_description(
@@ -1124,7 +1107,7 @@ pub fn a_heal_aimed_at_another_unit_lands_nothing_test() -> Nil {
   let assert [#(LogDebug, line)] = support.logs(effects: on_struck)
     as "one debug line says why"
   assert string.contains(line, "62019")
-    && string.contains(line, "the server heals no other unit")
+    && string.contains(line, "lands nothing here")
     && !string.contains(line, "#")
     as "it names the row and says what is missing, with no issue named"
 }

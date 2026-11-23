@@ -25,16 +25,18 @@ import cast_support as support
 import class_resource_support
 import genesis_prime/game/activate
 import genesis_prime/game/cast
+import genesis_prime/game/cast/heal as cast_heal
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Spell}
+import genesis_prime/game/strike_tell
 import genesis_prime/game/target_mechanic.{Targeted, Targeting}
 import genesis_prime/message/cast_result
-import genesis_prime/message/spell_cast_confirmed
-import genesis_prime/message/spell_cast_refused
-import genesis_prime/message/spell_go
 import genesis_prime/step.{ConnectionId, LogWarning}
-import genesis_prime/table/id.{Spell4BaseId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option
@@ -79,10 +81,7 @@ fn plans() -> Plans {
 }
 
 fn ability(base base: Int) -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(plans: plans(), base: Spell4BaseId(base))
-    as "the plans hold the ability"
-  spell
+  support.ability_in(plans: plans(), base:)
 }
 
 /// What the map's `SeenBy` of the player of that unit would give.
@@ -143,17 +142,36 @@ fn pressed(
   target target: Int,
   at ms: Int,
 ) -> #(State, List(Effect)) {
+  taken(
+    plans:,
+    state:,
+    caster:,
+    message: cast_state.Pressed,
+    body: support.press_body(client_cast_id: 9, bag_index:, target:, press: 1),
+    at: ms,
+  )
+}
+
+/// The message taken by the rule on the picture, which stops the test when the rule refuses it.
+fn taken(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  message message: cast_state.Message,
+  body body: BitArray,
+  at ms: Int,
+) -> #(State, List(Effect)) {
   let assert Ok(taken) =
     cast.take(
       cast: state,
-      message: cast_state.Pressed,
-      body: support.press_body(client_cast_id: 9, bag_index:, target:, press: 1),
+      message:,
+      body:,
       caster:,
       plans:,
       target_of: picture,
       now: support.at(ms:),
     )
-    as "the press fits the message"
+    as "the message fits"
   taken
 }
 
@@ -167,18 +185,14 @@ fn key_at(
   held held: Int,
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  let assert Ok(taken) =
-    cast.take(
-      cast: state,
-      message: cast_state.KeyHeld,
-      body: support.hold_body(bag_index:, target:, held:),
-      caster:,
-      plans:,
-      target_of: picture,
-      now: support.at(ms:),
-    )
-    as "the key fits the message"
-  taken
+  taken(
+    plans:,
+    state:,
+    caster:,
+    message: cast_state.KeyHeld,
+    body: support.hold_body(bag_index:, target:, held:),
+    at: ms,
+  )
 }
 
 /// The primary target each cast the effects start names in its 0x7ff, in order.
@@ -190,40 +204,16 @@ fn started_at(effects effects: List(Effect)) -> List(Int) {
 
 /// The primary target each 0x7fd the effects write names, in order.
 fn confirmed_at(effects effects: List(Effect)) -> List(Int) {
-  list.map(
-    support.frames_of(message_id: spell_cast_confirmed.message_id, effects:),
-    fn(frame) {
-      let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
-        as "a 0x7fd the rule wrote decodes"
-      confirmed.primary_target_unit_id
-    },
-  )
+  list.map(support.confirmed_in(effects:), fn(confirmed) {
+    confirmed.primary_target_unit_id
+  })
 }
 
 /// The client cast id and result of each 0x7fc the effects write, in order.
 fn refused_as(effects effects: List(Effect)) -> List(#(Int, Int)) {
-  list.map(
-    support.frames_of(message_id: spell_cast_refused.message_id, effects:),
-    fn(frame) {
-      let assert Ok(refused) = spell_cast_refused.decode(frame.body)
-        as "a 0x7fc the rule wrote decodes"
-      #(refused.client_cast_id, cast_result.to_value(refused.result))
-    },
-  )
-}
-
-/// The Spell4 effect ids the effects' 0x7f4 lists, for every unit.
-fn listed(effects effects: List(Effect)) -> List(Int) {
-  list.flat_map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      list.flat_map(go.targets, fn(target) {
-        list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-      })
-    },
-  )
+  list.map(support.refused_in(effects:), fn(refused) {
+    #(refused.client_cast_id, cast_result.to_value(refused.result))
+  })
 }
 
 /// A planted spell of the base given, cast as Mind Over Body is (a beneficial Targeted
@@ -266,11 +256,58 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
       struck_of: fn(_) { [] },
     )
   let after = list.flat_map(steps, fn(step) { step.1 })
-  assert listed(effects: after) == []
+  assert support.listed_effect_ids(effects: after) == []
     as "Spell4Effects 62019 aims at the primary target, which is the ally: the go lists no heal"
   assert support.caster_change_starts(effects: list.append(pressed, after))
     == []
     as "no heal is carried for the caster: a heal on another unit lands nothing until the target applies it"
+  // The ally's connection applied the heal and the go's round names it as a player another
+  // player healed.
+  let healed =
+    cast_state.Hit(
+      unit_id: ally,
+      unit: cast_state.HitOtherPlayer(heals: [
+        strike_tell.HealLanded(
+          effect_id: Spell4EffectsId(62_019),
+          vital: effect_kind.Health,
+          split: heal_split.Split(
+            amount: 121,
+            shield: 0,
+            health: 100,
+            overheal: 21,
+          ),
+        ),
+      ]),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  let #(_, answered_steps) =
+    support.run_timers_each(
+      caster:,
+      state:,
+      effects: pressed,
+      from_ms: 1000,
+      struck_of: fn(_) { [healed] },
+    )
+  let answered = list.flat_map(answered_steps, fn(step) { step.1 })
+  assert targets_named(effects: answered) == [ally]
+    as "the go's 0x7f4 names the ally it healed"
+  assert support.listed_effect_ids(effects: answered) == []
+    as "and lists no effect on it: the heal's description is not built yet, so the ally has none"
+  assert support.caster_change_starts(effects: list.append(pressed, answered))
+    == []
+    as "the ally's heal is carried for the ally alone: still none for the caster"
+  assert cast_heal.ticking_struck(struck: [healed]) == []
+    as "a player another player healed arms no periodic row"
+  assert cast_proc.hit_events(spell: mind_over_body(), struck: [healed]) == []
+    as "and raises no proc event for the healer"
+}
+
+/// The unit ids the effects' 0x7f4 names as targets, in order.
+fn targets_named(effects effects: List(Effect)) -> List(Int) {
+  list.map(support.go_targets(effects:), fn(target) { target.unit_id })
 }
 
 // ---- the kind of the spell ----

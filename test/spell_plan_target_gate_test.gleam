@@ -29,7 +29,6 @@ import genesis_prime/game/spell_plan.{
   type Condition, type Spell, GatedOnCasterAndTarget, GatedOnTarget,
 }
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
-import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/string
@@ -39,20 +38,7 @@ import spell_tables
 
 /// The plan of one client spell, alone.
 fn plan_of(spell4_id spell4_id: Int) -> Result(Spell, spell_plan.PlanError) {
-  plan_in(tables: fixture_tables.shared(), spell4_id:)
-}
-
-/// The plan of one spell, alone, on these tables.
-fn plan_in(
-  tables tables: store.Tables,
-  spell4_id spell4_id: Int,
-) -> Result(Spell, spell_plan.PlanError) {
-  spell_plan.spell_alone(
-    tables:,
-    sources: spell_plan.sources_of(tables:),
-    spell4_id:,
-    chain: [],
-  )
+  spell_tables.planned_alone(tables: fixture_tables.shared(), spell4_id:)
 }
 
 /// The condition of the lasting row of this id in the spell.
@@ -208,7 +194,8 @@ pub fn caster_gate_with_undecoded_type_is_refused_on_a_lasting_row_test() -> Nil
   )
   assert !prerequisite.is_read(type_id: 12)
     as "Prerequisite 18863 holds types 47 and 12, and the server has not decoded 12"
-  let assert Error(error) = plan_in(tables:, spell4_id: 30_458)
+  let assert Error(error) =
+    spell_tables.planned_alone(tables:, spell4_id: 30_458)
     as "a lasting row behind an undecoded caster apply prerequisite is refused at load: no go can check it, and a go that cannot tell applies nothing"
   assert error
     == spell_plan.ApplyPrerequisiteNotRead(
@@ -241,7 +228,7 @@ pub fn stealth_on_the_caster_behind_a_target_gate_reads_with_its_gate_test() -> 
       #("dataBits02", planted_table.Integer(0)),
     ],
   )
-  let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
+  let assert Ok(spell) = spell_tables.planned_alone(tables:, spell4_id: 30_458)
     as "a stealth row aimed at the caster behind a decoded target prerequisite plans"
   let assert Ok(row) =
     list.find(
@@ -273,7 +260,7 @@ pub fn gain_on_the_caster_behind_a_target_gate_reads_with_its_gate_test() -> Nil
       #("durationTime", planted_table.Integer(0)),
     ],
   )
-  let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
+  let assert Ok(spell) = spell_tables.planned_alone(tables:, spell4_id: 30_458)
     as "a gain aimed at the caster behind a decoded target prerequisite plans"
   let assert Ok(gain) =
     list.find(
@@ -316,7 +303,7 @@ pub fn remove_past_the_caster_behind_a_creature_state_gate_is_left_to_the_creatu
     id: 13_148,
     with: in_combat_gate,
   )
-  let assert Ok(spell) = plan_in(tables:, spell4_id: 38_841)
+  let assert Ok(spell) = spell_tables.planned_alone(tables:, spell4_id: 38_841)
     as "a remove past the caster behind a gate that reads the unit's own state plans"
   assert remove_condition(spell:, effect_id: 144_869) == spell_plan.Always
     as "the cast rule checks no gate of the row: the creature the strike names does"
@@ -348,7 +335,7 @@ pub fn gate_mixing_creature_state_with_cast_state_stays_refused_test() -> Nil {
     #("objectId1", planted_table.Integer(0)),
     #("value1", planted_table.Integer(0)),
   ])
-  assert plan_in(tables:, spell4_id: 38_841)
+  assert spell_tables.planned_alone(tables:, spell4_id: 38_841)
     == Error(spell_plan.TargetPrerequisiteReadsStruckUnit(
       spell4_id: 38_841,
       effect_id: 144_869,
@@ -366,7 +353,7 @@ pub fn row_aimed_at_the_caster_keeps_a_creature_state_gate_with_the_caster_test(
     id: 15_912,
     with: in_combat_gate,
   )
-  let assert Ok(spell) = plan_in(tables:, spell4_id: 30_458)
+  let assert Ok(spell) = spell_tables.planned_alone(tables:, spell4_id: 30_458)
     as "a row aimed at the caster behind a gate on the unit's own state plans"
   let assert GatedOnTarget(prerequisite:) =
     lasting_condition(spell:, effect_id: 55_576)

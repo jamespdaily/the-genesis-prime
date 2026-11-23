@@ -2,7 +2,7 @@
 //// which is the database Jim plays on: a character of another account is
 //// refused and left as it is, seating twice makes no second account, and a
 //// refusal adds nothing. Its whole path against a server is proven in
-//// `game_wire_test`. Expected values come from these places.
+//// `game_wire_sitting_bot_test`. Expected values come from these places.
 //// - The tool's contract, its module doc: `--near` names the character.
 //// - A character with no saved place is world 0 (genesis_prime/add_character).
 

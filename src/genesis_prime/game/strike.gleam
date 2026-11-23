@@ -19,6 +19,10 @@
 ////   ◀── Answered(key, Landed(.., gates_passed) | Immune(.., gates_passed) | Deflected(gates_passed) | Refused) ◀──┘
 ////   answered: the unit's place in the round is filled, with the effect ids its gates passed
 ////   the round closes: all answered, or the deadline passed, and every earlier round of k closed
+////   a heal aimed at the primary target when it is a player in sight (caster's connection C, healed T):
+////     TellPlayerStrike(T, PlayerStrike(key, C, stay, outgoing, heals)) ──▶ T applies each row, answers
+////   ◀── PlayerAnswered(key, HealsLanded(splits) | PlayerDead) ◀── T
+////   player_answered: the player's place in the round is filled, as a creature's is
 ////     the timer's effects (cancel, start) first, since the go may begin a round of its own
 ////     Went(asked, struck, gates_passed) ─▶ the connection calls cast.went(k, phase, struck, gates_passed)
 ////     Released(unit, news) for the health news held for the round's units
@@ -81,6 +85,18 @@
 ////   - a gated go row aimed at the primary target applies when the creature deflected and
 ////     passed the gate, and does not when it refused or timed out;
 ////   - a gate that reads something the subject does not hold fails (`prerequisite.NotRead`).
+//// - **A heal aimed at the primary target when it is a player in sight**
+////   (`Selection.players`, `Selection.heals`; `Spell4Effects.effectType.10` and `.118`,
+////   targetFlags bit 2, no tickTime, no delay) is gated once, here, with the strike's own gate
+////   and roll bytes taken after the states', then told in one `TellPlayerStrike` to that
+////   player's connection with the rows that passed, in the plan's order, each with the amount
+////   the caster's formula gives (`damage.amount_on_caster`) and the caster's
+////   HealingMultiplierOutgoing. The healed player's connection applies them
+////   (genesis_prime/game/connection/landing) and answers, and the player's place fills with
+////   what it applied, listed in the go with no description (`gaps`). A row a gate fails or
+////   cannot tell is left out with a debug line; a player no row reaches has no place and no
+////   tell. A target gate on such a row is read from what the caster holds of the player
+////   (`gaps`).
 //// - **One round for each go and for each tick.** The key of a strike is (cast,
 ////   occasion, unit): the occasion is the go's phase or the tick's row and number
 ////   (genesis_prime/game/strike_tell `Occasion`). A go's round holds a place for each
@@ -100,8 +116,10 @@
 //// - **The deadline** is 1 second for each round. One strike timer for the connection
 ////   is set to the earliest open deadline and set again only after it fired or the round
 ////   it waited for closed: the shell refuses to start a timer that is running.
-//// - **An answer for a round that is closed** is dropped, and a creature's 0x937 shows
-////   its health with no number: the client never saw the hit.
+//// - **An answer for a round that is closed**, or for a place already filled, is dropped,
+////   a healed player's answer too (`player_answered`), and a creature's 0x937 shows its
+////   health with no number: the client never saw the hit. An answer taken before the round's
+////   timer is processed is listed, whatever the clock says.
 //// - **The caster's 0x801 while a round is open** ends the cast; the round closes as
 ////   always and `cast.went` finds no live cast, so nothing is written and the hits stand.
 //// - **The caster's offence** is its blows (each effect's value by the client's formula,
@@ -127,14 +145,18 @@ import genesis_prime/game/cast/state.{
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/forced_move
+import genesis_prime/game/heal_split
 import genesis_prime/game/hit
+import genesis_prime/game/player_address.{type PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
 import genesis_prime/game/spell_area.{type Areas}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{type Answered, type Tell}
+import genesis_prime/game/strike_tell.{
+  type Answered, type PlayerAnswered, type Tell,
+}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/gap
 import genesis_prime/step.{
@@ -165,7 +187,9 @@ const bytes_per_unit = hit.roll_bytes
 /// damage formulas read (`stats`), its health and shield as they are when the go or
 /// the tick is asked (`vitals`) and its properties, whose BaseCritChance,
 /// CriticalHitSeverityMultiplier and BaseAvoidReduceChance values, a modifier's
-/// included, are the bases of its hit chances (`offence_of`).
+/// included, are the bases of its hit chances (`offence_of`), and the players in its
+/// sight the map named, by unit id (genesis_prime/game/player_address), which a heal is
+/// told to.
 pub type Attacker {
   Attacker(
     unit_id: Int,
@@ -179,6 +203,7 @@ pub type Attacker {
     stats: damage.Attacker,
     vitals: damage.Vitals,
     properties: Properties,
+    players_in_sight: Dict(Int, PlayerAddress),
   )
 }
 
@@ -194,7 +219,10 @@ pub type Aimed {
 /// both by the aim of their row, and the gates of its rows that the struck creature
 /// checks (`gates`: damage, state and go rows alike, each told to the units its aim
 /// names). A spell with no damage effect, no state and no gate in the phase selects units
-/// and tells none of them.
+/// and tells none of them. The primary target is also a player in sight (`players`: none or
+/// the one address) when the phase has instant heal rows aimed at it (`heals`, the phase's
+/// rows when `players` is not empty, else none): a player is not among the units, since
+/// the picture gives it no life a creature's strike is told for.
 pub type Selection {
   Selection(
     asked: GoAsked,
@@ -204,6 +232,8 @@ pub type Selection {
     ticking: List(spell_area.TickingDamage),
     controls: List(spell_plan.CrowdControl),
     gates: List(spell_plan.StruckGate),
+    players: List(PlayerAddress),
+    heals: List(spell_area.InstantHeal),
   )
 }
 
@@ -220,6 +250,10 @@ pub type Effect {
   /// (genesis_prime/world_map/creature_registry `tell`): the connection builds the
   /// address from the caster's map and run and the unit and life here.
   TellStrike(unit_id: Int, life: Int, tell: Tell)
+  /// Tell the heal rows to a player's connection, for the stay its notice named
+  /// (genesis_prime/game/strike_tell `PlayerStrike`); the answer comes back to this
+  /// connection (`player_answered`).
+  TellPlayerStrike(address: PlayerAddress, strike: strike_tell.PlayerStrike)
   StartTimer(timer: TimerId, after_ms: Int)
   CancelTimer(timer: TimerId)
   /// A round closed: the connection answers the cast rule with `cast.went`.
@@ -260,7 +294,8 @@ pub type Round {
 /// A selected unit's place in a round.
 pub type Place {
   /// The creature, in its life `life`, has not answered; a hit that lands carries the
-  /// periodic rows that reach it (`ticking`).
+  /// periodic rows that reach it (`ticking`). A player a heal was told to waits with no
+  /// life and no rows.
   Waiting(unit_id: Int, life: Int, ticking: List(spell_area.TickingDamage))
   /// The creature answered, or the unit needed no strike: the strike's outcome as a hit,
   /// and the effect ids of the gates the creature passed (`[]` when none).
@@ -298,6 +333,8 @@ pub fn select(
       ticking: [],
       controls: [],
       gates: [],
+      players: [],
+      heals: [],
     )
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
@@ -340,6 +377,13 @@ pub fn select(
         True -> list.append(from_area, [asked.primary_target])
         False -> from_area
       }
+      let players = case
+        phase.heals,
+        dict.get(attacker.players_in_sight, asked.primary_target)
+      {
+        [_, ..], Ok(address) -> [address]
+        [], Ok(_) | _, Error(Nil) -> []
+      }
       Selection(
         asked:,
         units: list.filter_map(with_primary, fn(unit_id) {
@@ -351,6 +395,11 @@ pub fn select(
         ticking: phase.ticking,
         controls: phase.controls,
         gates: phase.gates,
+        players:,
+        heals: case players {
+          [] -> []
+          [_, ..] -> phase.heals
+        },
       )
     }
   }
@@ -483,11 +532,20 @@ fn area_selection(
 /// gate the creature checks (`Selection.gates`) takes no roll but still tells its unit a
 /// strike, so a phase of such gates alone takes the 12 bytes.
 pub fn entropy_needed(selection selection: Selection) -> Int {
-  let Selection(asked: _, units:, area: _, blows:, ticking:, controls:, gates:) =
-    selection
-  case blows, ticking, controls, gates {
-    [], [], [], [] -> 0
-    _, _, _, _ ->
+  let Selection(
+    asked: _,
+    units:,
+    area: _,
+    blows:,
+    ticking:,
+    controls:,
+    gates:,
+    players: _,
+    heals:,
+  ) = selection
+  case blows, ticking, controls, gates, heals {
+    [], [], [], [], [] -> 0
+    _, _, _, _, _ ->
       list.length(units)
       * bytes_per_unit
       + rolls_needed(selection:)
@@ -499,7 +557,8 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
 }
 
 /// The rolls the gates of the selection's rows may take, counted for every selected unit
-/// a row may reach (`cast_gate.strike_rolls_needed`).
+/// a row may reach, and for the player the heal rows are told to
+/// (`cast_gate.strike_rolls_needed`).
 fn rolls_needed(selection selection: Selection) -> Int {
   let conditions =
     list.flatten([
@@ -508,11 +567,15 @@ fn rolls_needed(selection selection: Selection) -> Int {
       list.map(selection.controls, fn(row) { row.condition }),
     ])
   let units = list.length(selection.units)
-  int.sum(
+  let players = list.length(selection.players)
+  int.sum(list.append(
     list.map(conditions, fn(condition) {
       cast_gate.strike_rolls_needed(condition:, units:)
     }),
-  )
+    list.map(selection.heals, fn(row) {
+      cast_gate.strike_rolls_needed(condition: row.condition, units: players)
+    }),
+  ))
 }
 
 /// The state rows of the selection that throw their creature, in row order.
@@ -609,12 +672,66 @@ pub fn begin(
           }
       }
     })
+  let #(player_places, player_tells) =
+    players_told(selection:, attacker:, reach:)
   opened(
     strike:,
     asked: ForGo(asked: selection.asked),
-    places: list.reverse(places),
-    tells: list.append(reach.logs, list.reverse(tells)),
+    places: list.append(list.reverse(places), player_places),
+    tells: list.flatten([reach.logs, list.reverse(tells), player_tells]),
     now:,
+  )
+}
+
+/// The player a go tells its heal rows to: a place that waits for its answer and the tell
+/// of the rows that reach it, in the plan's order, each with the amount its formula gives
+/// for the caster as it is now. A player no row reaches past its gates has no place and no
+/// tell, and is not in the go.
+fn players_told(
+  selection selection: Selection,
+  attacker attacker: Attacker,
+  reach reach: Reach,
+) -> #(List(Place), List(Effect)) {
+  let told =
+    list.filter_map(selection.players, fn(address) {
+      let unit_id = address.unit_id
+      case rows_reaching_unit(rows: reach.heals, unit_id:) {
+        [] -> Error(Nil)
+        rows ->
+          Ok(#(
+            Waiting(unit_id:, life: 0, ticking: []),
+            TellPlayerStrike(
+              address:,
+              strike: strike_tell.PlayerStrike(
+                key: strike_tell.Key(
+                  cast_id: selection.asked.cast_id,
+                  occasion: strike_tell.AtGo(phase: selection.asked.phase),
+                  unit_id:,
+                ),
+                from: attacker.connection,
+                stay: attacker.stay,
+                outgoing: heal_split.scaling_of(properties: attacker.properties).outgoing,
+                heals: list.map(rows, fn(row) {
+                  strike_tell.HealTell(
+                    effect_id: row.effect_id,
+                    vital: row.vital,
+                    amount: damage.amount_on_caster(
+                      formula: row.formula,
+                      caster: damage.OnCaster(
+                        attacker: attacker.stats,
+                        vitals: attacker.vitals,
+                      ),
+                    ),
+                  )
+                }),
+              ),
+            ),
+          ))
+      }
+    })
+  #(
+    list.map(told, fn(entry) { entry.0 }),
+    list.map(told, fn(entry) { entry.1 }),
   )
 }
 
@@ -625,16 +742,17 @@ type Reach {
     blows: List(#(spell_area.DamageEffect, List(Int))),
     ticking: List(#(spell_area.TickingDamage, List(Int))),
     controls: List(#(spell_plan.CrowdControl, List(Int))),
+    heals: List(#(spell_area.InstantHeal, List(Int))),
     logs: List(Effect),
   )
 }
 
 /// The units each row of the go reaches past its gates, checked row by row (the damage
-/// rows, the periodic rows, then the states) and for each row its caster side once, then
+/// rows, the periodic rows, the states, then the heals) and for each row its caster side once, then
 /// each unit its aim names in selection order; each check takes the rolls of its type 37
 /// conditions in turn from the seed bytes after the units' own (`cast_gate.strike_rolls_needed`).
 /// A damage row names every selected unit, as its blow is told to each; a periodic row and
-/// a state name the units their aim names.
+/// a state name the units their aim names; a heal row names the player the go tells it to.
 fn reach_of(
   selection selection: Selection,
   attacker attacker: Attacker,
@@ -677,7 +795,7 @@ fn reach_of(
       gate:,
       rolls:,
     )
-  let #(controls, control_logs, _) =
+  let #(controls, control_logs, rolls) =
     gated(
       rows: selection.controls,
       condition: fn(row: spell_plan.CrowdControl) { row.condition },
@@ -688,11 +806,24 @@ fn reach_of(
       gate:,
       rolls:,
     )
+  let players = list.map(selection.players, fn(address) { address.unit_id })
+  let #(heals, heal_logs, _) =
+    gated(
+      rows: selection.heals,
+      condition: fn(row: spell_area.InstantHeal) { row.condition },
+      what: fn(row: spell_area.InstantHeal) {
+        "heal effect " <> int.to_string(row.effect_id.value)
+      },
+      units: fn(_) { players },
+      gate:,
+      rolls:,
+    )
   Reach(
     blows:,
     ticking:,
     controls:,
-    logs: list.flatten([blow_logs, ticking_logs, control_logs]),
+    heals:,
+    logs: list.flatten([blow_logs, ticking_logs, control_logs, heal_logs]),
   )
 }
 
@@ -1126,7 +1257,62 @@ pub fn answered(
   answer answer: Answered,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  let key = answer.key
+  filed(
+    strike:,
+    key: answer.key,
+    now:,
+    place_of: fn(unit_id, life, ticking, struck_at_ms) {
+      filled(unit_id:, life:, ticking:, struck_at_ms:, outcome: answer.outcome)
+    },
+  )
+}
+
+/// A healed player's answer to the heal strike of its key: the player's place in its round
+/// is filled with the rows it applied, or left out when the player was dead; an answer for a
+/// round that is closed or a place that is filled is dropped, as a creature's is, and the
+/// round closes only when its timer is processed or every place is in, so an answer taken
+/// before the timer is listed whatever the clock says. A place is found by the key's unit
+/// id alone: the key is the echo of the tell, and each unit has its own id, so the answer
+/// of a player cannot fill a creature's place.
+pub fn player_answered(
+  strike strike: State,
+  answer answer: PlayerAnswered,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  filed(
+    strike:,
+    key: answer.key,
+    now:,
+    place_of: fn(unit_id, _life, _ticking, _struck_at_ms) {
+      case answer.outcome {
+        strike_tell.HealsLanded(heals:) ->
+          Answered(
+            struck: cast_state.Hit(
+              unit_id:,
+              unit: cast_state.HitOtherPlayer(heals:),
+              descriptions: [],
+              controls: [],
+              armor_removed: 0,
+              ticking: [],
+            ),
+            gates_passed: [],
+          )
+        strike_tell.PlayerDead -> LeftOut(unit_id:)
+      }
+    },
+  )
+}
+
+/// The answer of the strike of `key` filed in its round: the waiting place of the key's
+/// unit becomes the place `place_of` makes of it (its unit id, life, periodic rows and the
+/// time the round struck), and the round closes when it is complete. A key whose round is
+/// closed or whose place is not waiting is dropped.
+fn filed(
+  strike strike: State,
+  key key: strike_tell.Key,
+  now now: Now,
+  place_of place_of: fn(Int, Int, List(spell_area.TickingDamage), Int) -> Place,
+) -> #(State, List(Effect)) {
   let found =
     list.any(strike.rounds, fn(round) {
       is_round_of(round:, key:)
@@ -1143,7 +1329,7 @@ pub fn answered(
             place:,
             unit_id: key.unit_id,
             struck_at_ms: round.struck_at_ms,
-            outcome: answer.outcome,
+            place_of:,
           )
         }),
       )
@@ -1182,16 +1368,16 @@ fn is_waiting(place place: Place, unit_id unit_id: Int) -> Bool {
   }
 }
 
-/// The place, filled with the outcome when it is the one waiting for this unit.
+/// The place, filled by `place_of` when it is the one waiting for this unit.
 fn fill(
   place place: Place,
   unit_id unit_id: Int,
   struck_at_ms struck_at_ms: Int,
-  outcome outcome: strike_tell.Outcome,
+  place_of place_of: fn(Int, Int, List(spell_area.TickingDamage), Int) -> Place,
 ) -> Place {
   case place {
     Waiting(unit_id: waiting, life:, ticking:) if waiting == unit_id ->
-      filled(unit_id:, life:, ticking:, struck_at_ms:, outcome:)
+      place_of(unit_id, life, ticking, struck_at_ms)
     Waiting(..) | Answered(..) | LeftOut(..) -> place
   }
 }
@@ -1435,8 +1621,8 @@ fn timer_effects(state state: State, now now: Now) -> #(State, List(Effect)) {
 }
 
 /// What a strike does not do that the client's does, in the areas its entries fall in:
-/// the order of news at a watcher's connection (Strikes) and a healed player's answer
-/// (Casting).
+/// the order of news at a watcher's connection (Strikes), and the heal a go lists for a
+/// player and the gates a heal told to a player reads (Casting).
 pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
@@ -1449,7 +1635,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A healed player's answer to a heal told to it is dropped by the connection it is told to, which holds no round that waits for it.",
+      missing: "The go lists a player a heal was told to with no description of what the heal applied, so the caster's client shows no floater and no log line for it.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A target gate on a heal row told to another player is read from what the caster holds of that player; a condition about the player's own state is not read, and the row is left out of the tell with a debug line.",
     ),
   ]
 }

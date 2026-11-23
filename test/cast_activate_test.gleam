@@ -31,14 +31,11 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/objective_link
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
-import genesis_prime/message/client_side_interaction_result.{
-  ClientSideInteractionResult,
-}
+
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/interaction_result.{type InteractionResult}
 import genesis_prime/message/spell_cast_confirmed
@@ -76,16 +73,7 @@ const clients_cast_id = 9
 
 /// The caster stands at a place of exactly representable numbers, so a gap of 3.0 is exact.
 fn standing() -> cast_state.Caster {
-  cast_state.Caster(
-    ..support.caster(),
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 4096.0,
-      y: 0.0,
-      z: 512.0,
-    ),
-  )
+  support.standing_at(caster: support.caster(), x: 4096.0, y: 0.0, z: 512.0)
 }
 
 // Hit radii of exactly representable size: the player's and the object's.
@@ -98,10 +86,7 @@ fn the_activations() -> activate.Activations {
 }
 
 fn mollusk() -> activate.Creature {
-  let assert Ok(row) =
-    creature2.get(tables: fixture_tables.shared(), id: Creature2Id(the_mollusk))
-    as "Creature2 26462 is a root of the fixture"
-  activate.creature_of(row:)
+  support.creature_of(creature_id: the_mollusk)
 }
 
 /// An object `east` units east of the caster (and `up` above it) of this creature.
@@ -432,13 +417,6 @@ const a_jabbit_cave = 33_885
 
 const a_gated_creature = 46_497
 
-fn creature_of_row(creature_id creature_id: Int) -> activate.Creature {
-  let assert Ok(row) =
-    creature2.get(tables: fixture_tables.shared(), id: Creature2Id(creature_id))
-    as "the creature is a root of the fixture"
-  activate.creature_of(row:)
-}
-
 /// The right-click of a unit of this creature, `east` of the caster at 1000 ms, and the
 /// timers of the cast run from 1000 ms on the clock the test drives: the written effects of
 /// the click, and each timer's time (`from_ms` plus its delay) with its effects.
@@ -468,14 +446,7 @@ fn used(
 
 /// The phase of each 0x7f4 the effects write.
 fn go_phases(effects effects: List(Effect)) -> List(Int) {
-  list.map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      go.phase
-    },
-  )
+  list.map(support.goes_in(effects:), fn(go) { go.phase })
 }
 
 pub fn an_activate_cast_of_a_channel_stays_a_channel_test() -> Nil {
@@ -488,7 +459,7 @@ pub fn an_activate_cast_of_a_channel_stays_a_channel_test() -> Nil {
   // initial delay plus each pulse time, 0 and 2999 ms.
   let #(clicked, steps) =
     used(
-      creature: creature_of_row(creature_id: a_scanning_crystal),
+      creature: support.creature_of(creature_id: a_scanning_crystal),
       creature_id: a_scanning_crystal,
     )
   assert support.written_ids(effects: clicked) == [0x07FD, 0x07F4]
@@ -531,7 +502,7 @@ pub fn an_activate_cast_time_of_0_takes_the_spells_cast_time_test() -> Nil {
   // spell's castTime.
   let #(clicked, steps) =
     used(
-      creature: creature_of_row(creature_id: the_teleporter),
+      creature: support.creature_of(creature_id: the_teleporter),
       creature_id: the_teleporter,
     )
   assert support.written_ids(effects: clicked) == [0x07FD]
@@ -550,7 +521,7 @@ pub fn a_creatures_activate_cast_time_wins_over_the_spells_test() -> Nil {
   // Spell4 46055 behind no prerequisite, whose castTime is 4000.
   let #(clicked, steps) =
     used(
-      creature: creature_of_row(creature_id: a_jabbit_cave),
+      creature: support.creature_of(creature_id: a_jabbit_cave),
       creature_id: a_jabbit_cave,
     )
   assert support.written_ids(effects: clicked) == [0x07FD]
@@ -573,7 +544,7 @@ pub fn a_channel_activation_stopped_before_its_last_go_counts_nothing_test() -> 
       unit_id: its_unit,
       target: object_of(
         creature_id: a_scanning_crystal,
-        creature: creature_of_row(creature_id: a_scanning_crystal),
+        creature: support.creature_of(creature_id: a_scanning_crystal),
         checklist_index: 0,
         link: activate.NoLink,
         east: 1.0,
@@ -617,7 +588,7 @@ pub fn a_creatures_activate_cast_time_does_not_time_the_default_spell_test() -> 
       unit_id: its_unit,
       target: object_of(
         creature_id: a_gated_creature,
-        creature: creature_of_row(creature_id: a_gated_creature),
+        creature: support.creature_of(creature_id: a_gated_creature),
         checklist_index: 0,
         link: activate.NoLink,
         east: 0.5,
@@ -910,7 +881,7 @@ fn canister_holding(
   let target =
     usable_in_state(
       creature_id: a_fuel_canister,
-      creature: creature_of_row(creature_id: a_fuel_canister),
+      creature: support.creature_of(creature_id: a_fuel_canister),
       checklist_index: 0,
       link: activate.NoLink,
       east:,
@@ -1115,16 +1086,6 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     as "Spell.CodeEnumCastMethod: a castMethod 5 spell pressed through 0x9a is still refused 285: only an activate cast opens the interaction"
 }
 
-/// Condition types below 301 the server does not read, lowest first.
-fn unread_types() -> List(Int) {
-  int.range(from: 300, to: 0, with: [], run: fn(unread, type_id) {
-    case prerequisite.is_read(type_id:) {
-      True -> unread
-      False -> [type_id, ..unread]
-    }
-  })
-}
-
 /// Activations of two creatures' prerequisites, each of one condition of an unread type.
 fn behind_unread_types(
   first first: Int,
@@ -1161,7 +1122,7 @@ fn behind(prerequisite_id prerequisite_id: Int) -> Target {
 
 pub fn activate_logs_each_unread_prerequisite_type_once_test() -> Nil {
   use <- owned_test.run(10_000)
-  let assert [first_type, second_type, ..] = unread_types()
+  let assert [first_type, second_type, ..] = prerequisite_support.unread_types()
     as "the client's Prerequisite types include some the server does not read"
   let activations = behind_unread_types(first: first_type, second: second_type)
   let click = fn(state, target, at) {
@@ -1544,21 +1505,13 @@ fn answered(
   word word: Int,
   at ms: Int,
 ) -> Result(#(State, List(Effect)), cast_state.Refusal) {
-  let assert Ok(body) =
-    client_side_interaction_result.encode(ClientSideInteractionResult(
-      cast_id:,
-      result:,
-      spell4_base_id_plus_one: word,
-    ))
-    as "the answer fits the message"
-  cast.take(
-    target_of: support.nothing_shown,
-    cast: state,
-    message: cast_state.Answered,
-    body:,
+  support.interaction_answered(
+    state:,
+    cast_id:,
+    result:,
+    word:,
     caster: standing(),
-    plans: support.plans(),
-    now: support.at(ms:),
+    at: ms,
   )
 }
 

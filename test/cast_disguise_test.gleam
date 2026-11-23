@@ -21,16 +21,13 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/look.{type Disguise, Disguise}
+import genesis_prime/game/look.{type Disguise}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source}
-import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/spell_go
-import genesis_prime/table/id.{
-  ItemDisplayId, ItemSlotId, Spell4EffectsId, Spell4Id,
-}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -52,12 +49,6 @@ fn faction_gate(id id: Int, faction faction: Int) -> prerequisite.Prerequisite {
   ])
 }
 
-fn disguise_of(display display: Int) -> Disguise {
-  Disguise(shown: [
-    WornVisual(slot: ItemSlotId(64), display: ItemDisplayId(display)),
-  ])
-}
-
 /// A DisguiseOutfit row of the ExoSuit's kind: slot 64, this display, 10,250 ms from this
 /// delay, behind this condition.
 fn suit_row(
@@ -69,7 +60,7 @@ fn suit_row(
   spell_plan.PropertyModifier(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
-    change: spell_plan.LookChange(disguise: disguise_of(display:)),
+    change: spell_plan.LookChange(disguise: support.disguise_of(display:)),
     row: LastingRow(delay_ms: delay, duration_ms: 10_250, until_removed: False),
     condition:,
     tag: spend.always,
@@ -154,7 +145,7 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
     == [
       #(
         support.source_of(cast_id: id, effect_id: 112_543),
-        disguise_of(display: 4807),
+        support.disguise_of(display: 4807),
       ),
     ]
     as "its look change starts in the go's own step, with ItemDisplay 4807"
@@ -172,7 +163,7 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
     == [
       #(
         support.source_of(cast_id: other_id, effect_id: 178_142),
-        disguise_of(display: 7221),
+        support.disguise_of(display: 7221),
       ),
     ]
 }

@@ -40,8 +40,6 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, GlobalCooldown, ShowsCastBar, Spell,
 }
-import genesis_prime/message/spell_go
-import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/int
@@ -81,17 +79,7 @@ fn started(base base: Int) -> #(State, List(Effect)) {
 
 /// The Spell4Effects ids every go of the effects lists, in id order.
 fn listed(effects effects: List(Effect)) -> List(Int) {
-  list.filter(support.writes(effects:), fn(frame) {
-    frame.message_id == spell_go.message_id
-  })
-  |> list.flat_map(fn(frame) {
-    let assert Ok(go) = spell_go.decode(frame.body)
-      as "a go the rule wrote decodes"
-    list.flat_map(go.targets, fn(target) {
-      list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-    })
-  })
-  |> list.sort(int.compare)
+  list.sort(support.listed_effect_ids(effects:), int.compare)
 }
 
 fn lines(effects effects: List(Effect)) -> List(String) {
@@ -339,16 +327,7 @@ pub fn a_player_saved_dead_starts_the_passive_at_entry_test() -> Nil {
 
 /// The ids of the casts the effects start, in order.
 fn started_ids(effects effects: List(Effect)) -> List(Int) {
-  list.filter_map(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(start) = spell_started.decode(frame.body)
-          as "a 0x7ff the rule wrote decodes"
-        Ok(start.cast_id)
-      }
-      False -> Error(Nil)
-    }
-  })
+  list.map(support.started_in(effects:), fn(start) { start.cast_id })
 }
 
 pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_with_its_0x7fe_test() -> Nil {

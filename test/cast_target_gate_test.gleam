@@ -38,7 +38,7 @@ import cast_support as support
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
-import genesis_prime/game/cast/state.{type Caster, type Effect, type Struck} as cast_state
+import genesis_prime/game/cast/state.{type Effect, type Struck} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
@@ -47,15 +47,10 @@ import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AimsAtArea, AimsAtCaster, GatedOnTarget,
 }
 import genesis_prime/game/spend
-import genesis_prime/game/start_place
 import genesis_prime/game/unit_properties
-import genesis_prime/message/spell_go
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{
-  Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
-}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
-import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/string
@@ -74,29 +69,12 @@ const bag_of_base_3 = 11
 /// The effect ids each unit's entry of the go lists, by unit, in unit order. A struck
 /// unit is an entry of the go whatever the rows do, so a unit that lists no effect is left out.
 fn listed(effects effects: List(Effect)) -> List(#(Int, List(Int))) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  list.map(decoded.targets, fn(info) {
-    #(
-      info.unit_id,
-      list.map(info.effects, fn(effect) { effect.spell4_effects_id })
-        |> list.sort(int.compare),
-    )
-  })
-  |> list.filter(fn(entry) { entry.1 != [] })
-  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  list.filter(support.listed_by_unit(effects:), fn(entry) { entry.1 != [] })
 }
 
 /// A Fluff effect aimed at the area that lasts until removed.
 fn marker_row(id id: Int) -> spell_plan.Lasting {
-  spell_plan.Lasting(
-    effect_id: Spell4EffectsId(id),
-    phase_flags: -1,
-    aim: AimsAtArea,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
-    condition: spell_plan.Always,
-    tag: spend.always,
-  )
+  support.marker_row(id:, aim: AimsAtArea)
 }
 
 // ---- a remove ----
@@ -504,20 +482,6 @@ pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> N
 
 // ---- a positional gate ----
 
-/// The caster, unit 7, standing at x and z.
-fn caster_at(x x: Float, z z: Float) -> Caster {
-  let caster = support.caster()
-  cast_state.Caster(
-    ..caster,
-    place: start_place.moved(
-      place: caster.place,
-      x:,
-      y: start_place.y(caster.place),
-      z:,
-    ),
-  )
-}
-
 pub fn struck_unit_with_no_pose_leaves_a_positional_gate_unread_test() -> Nil {
   use <- owned_test.run(60_000)
   let behind =
@@ -537,7 +501,7 @@ pub fn struck_unit_with_no_pose_leaves_a_positional_gate_unread_test() -> Nil {
       ),
     ])
   let plans = support.plans_of([spell])
-  let caster = caster_at(x: 0.0, z: 5.0)
+  let caster = support.caster_at(x: 0.0, z: 5.0)
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
@@ -688,13 +652,7 @@ pub fn heal_and_modifier_behind_target_gate_reach_only_passing_units_test() -> N
 }
 
 fn unit_properties_change() -> unit_properties.Modifier {
-  unit_properties.Change(
-    property: UnitProperty2Id(100),
-    mode: 2,
-    multiplier: 0.5,
-    flat: 0.0,
-    per_level: 0.0,
-  )
+  support.slowing_change()
 }
 
 // ---- the order the reach stage takes rolls in across kinds ----

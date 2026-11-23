@@ -2,6 +2,7 @@
 //// may change or add to (`fixture_rows`), and `with_loaded`, which loads the tables
 //// the plan reads from them so that a test can take a row away or add one.
 
+import client_tables
 import database_support
 import fixture_tables
 import genesis_prime/game/area
@@ -623,6 +624,33 @@ pub fn planned_with_row(row row: List(Cell)) -> spell_plan.Spell {
   spell
 }
 
+/// The error of the build of Telekinetic Strike's plan with this planted effect row, which
+/// stops the test when the build succeeds.
+pub fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
+  let assert Error(error) = planned_strike(rows: rows_with_effect(effect: row))
+    as "the build fails"
+  error
+}
+
+/// The payloads of one kind in Telekinetic Strike's plan with this planted effect row, which
+/// stops the test when the build fails.
+pub fn planned_payloads(
+  row row: List(Cell),
+  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
+) -> List(payload) {
+  spell_plan.payloads(spell: planned_with_row(row:), as_kind:)
+}
+
+/// The payloads of one kind in Telekinetic Strike's plan built from these planted rows, which
+/// stops the test when the build fails.
+pub fn payloads_of_rows(
+  rows rows: Rows,
+  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
+) -> List(payload) {
+  let assert Ok(spell) = planned_strike(rows:) as "the plan builds"
+  spell_plan.payloads(spell:, as_kind:)
+}
+
 /// The lasting row of the planted effect id, which the plan holds or not. A planted row takes an
 /// id no client row holds, since it would replace the client's row.
 pub fn lasting_row_of(
@@ -890,6 +918,28 @@ pub fn effect_row_with(
   )
 }
 
+/// A Spell4Effects row of Telekinetic Strike's planted spell like `effect_row_with`, whose
+/// columns hold `defaults` besides, each unless `columns` sets the same column.
+pub fn effect_row_over(
+  id id: Int,
+  effect_type effect_type: Int,
+  target_flags target_flags: Int,
+  defaults defaults: List(#(String, Cell)),
+  columns columns: List(#(String, Cell)),
+) -> List(Cell) {
+  effect_row_with(
+    id:,
+    effect_type:,
+    target_flags:,
+    columns: list.append(
+      list.filter(defaults, fn(default) {
+        !list.any(columns, fn(given) { given.0 == default.0 })
+      }),
+      columns,
+    ),
+  )
+}
+
 /// A planted Spell4 row with one column set.
 pub fn with_column(
   row row: List(Cell),
@@ -945,6 +995,90 @@ pub fn rows_with_spell_columns(
   )
 }
 
+/// The plan of one spell alone on these tables, or why it fails.
+pub fn planned_alone(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(spell_plan.Spell, spell_plan.PlanError) {
+  spell_plan.spell_alone(
+    tables:,
+    sources: spell_plan.sources_of(tables:),
+    spell4_id:,
+    chain: [],
+  )
+}
+
+/// The client's Spell4Effects row in these tables.
+pub fn effect_row_in(
+  tables tables: table_store.Tables,
+  id id: Int,
+) -> spell4_effects.Spell4Effects {
+  let assert Ok(row) = spell4_effects.get(tables:, id: id.Spell4EffectsId(id))
+    as "the tables hold the client's row"
+  row
+}
+
+/// What the plan reads of this effect row in the pressed place.
+pub fn read_pressed(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
+  read_row(effect:, place: pressed)
+}
+
+/// The rows with the row of the table and id changed in these columns, which stops the test
+/// when the fixture lacks the row or a column (`fixture_tables.change`).
+pub fn changed_rows(
+  rows rows: fixture_tables.Rows,
+  table table: String,
+  id id: Int,
+  with changes: List(#(String, Cell)),
+) -> fixture_tables.Rows {
+  let assert Ok(rows) = fixture_tables.change(rows:, table:, id:, with: changes)
+    as "the fixture holds the row and its columns"
+  rows
+}
+
+/// The planted rows with the effect row built by `effect_of` planted, its
+/// `prerequisiteIdTargetApply` the planted prerequisite 99907 whose one condition is of
+/// this type (operand 1, value 0, object 48404).
+pub fn rows_gated_on_target_apply(
+  condition_type condition_type: Int,
+  effect_of effect_of: fn(List(#(String, Cell))) -> List(Cell),
+) -> Rows {
+  let rows =
+    rows_with_effect(
+      effect: effect_of([#("prerequisiteIdTargetApply", Integer(99_907))]),
+    )
+  Rows(
+    ..rows,
+    prerequisites: sorted_by_id([
+      prerequisite_row(id: 99_907, flags: 0, conditions: [
+        #(condition_type, 1, 0, 48_404),
+      ]),
+      ..rows.prerequisites
+    ]),
+  )
+}
+
+/// The ability of a Spell4Base in the plans of the fixture's rows.
+pub fn planted_ability(base base: Int) -> spell_plan.Spell {
+  let assert Ok(spell) =
+    spell_plan.in_plans(plans: fixture_plans(), base: id.Spell4BaseId(base))
+    as "the fixture's plans hold the ability"
+  spell
+}
+
+/// The ability of a Spell4Base in the plans built afresh from the client's whole tables.
+pub fn client_ability(base base: Int) -> spell_plan.Spell {
+  let assert Ok(spell) =
+    spell_plan.in_plans(
+      plans: spell_plan.plans(client_tables.shared()),
+      base: id.Spell4BaseId(base),
+    )
+    as { "the client's plans hold Spell4Base " <> int.to_string(base) }
+  spell
+}
+
 /// The plans the client's rows build, built once.
 pub fn fixture_plans() -> spell_plan.Plans {
   database_support.once("spell_tables_fixture_plans", fn() {
@@ -977,6 +1111,38 @@ pub fn fixture_strike() -> spell_plan.Spell {
     )
     as "the plans hold Telekinetic Strike"
   spell
+}
+
+/// A spell of the client's rows that no level-1 ability's tree holds, planned on its own
+/// (`spell_plan.spell_alone`) and set in an area with no row and no damage effect: the
+/// spells the tests below read hold no damage row, and what they ask is only what a phase
+/// of the plan selects.
+pub fn area_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
+  area_alone_on(tables: fixture_tables.shared(), spell4_id:)
+}
+
+/// The same area on other tables, such as the fixture's with one row changed.
+pub fn area_alone_on(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> spell_area.SpellArea {
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id:,
+      chain: [],
+    )
+    as "the spell plans on its own from the client's rows"
+  spell_area.SpellArea(
+    spell4_id: Spell4Id(spell4_id),
+    row: None,
+    inside_by_go: [Some(area.InsideRow)],
+    anchor: area.FollowsTarget,
+    damage: [],
+    ticking: [],
+    spell:,
+  )
 }
 
 /// The areas the client's rows build, built once.
