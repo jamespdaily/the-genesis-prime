@@ -5458,7 +5458,7 @@ fn removed_by_go(
       let unit_id = entry.unit_id
       let removals =
         lasting.removals(
-          holds: cast_tick.holds_on(cast:, unit_id:),
+          holds: cast_state.holds_on(cast:, unit_id:),
           selector: row.selector,
           count: row.count,
           unit_id:,

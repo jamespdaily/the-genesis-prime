@@ -595,7 +595,7 @@ pub fn surged(
       case
         list.contains(caster.book, alternate.spell4_base_id)
         && list.any(
-          cast_tick.holds_on(cast:, unit_id: caster.unit_id),
+          cast_state.holds_on(cast:, unit_id: caster.unit_id),
           fn(hold) { hold.spell4_id == caster.surge_spell },
         )
       {

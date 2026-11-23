@@ -105,7 +105,7 @@ fn held_by_caster_on(
     )
   })
   |> list.append(
-    list.map(holds_on(cast:, unit_id:), fn(hold) {
+    list.map(cast_state.holds_on(cast:, unit_id:), fn(hold) {
       lasting.Held(
         spell4_id: hold.spell4_id,
         caster: caster.unit_id,
@@ -1537,26 +1537,6 @@ pub fn node_of(
   )
 }
 
-/// What the live and lingering casts hold on the unit, as removals, stacking and
-/// prerequisites read it.
-pub fn holds_on(cast cast: State, unit_id unit_id: Int) -> List(lasting.Hold) {
-  list.filter_map(cast_state.holders(cast:), fn(entry) {
-    let #(cast_id, holder) = entry
-    dict.get(holder.nodes, unit_id)
-    |> result.map(fn(node) {
-      lasting.Hold(
-        cast_id:,
-        spell4_id: holder.spell.spell4_id,
-        base: holder.spell.spell4_base_id,
-        groups: holder.spell.groups,
-        stack: holder.spell.stack,
-        started_ms: holder.started_ms,
-        node:,
-      )
-    })
-  })
-}
-
 /// Whether the client keeps a cast that has no target left, so its end must be
 /// written (`opcode.0x811`: cast methods 1, 3, 8 and 10).
 pub fn keeps_without_target(method method: spell_plan.CastMethod) -> Bool {
@@ -1744,7 +1724,7 @@ fn focus_vital(caster caster: Caster) -> #(Int, prerequisite.Vital) {
 /// What the live and lingering casts hold on the caster's own unit, as a
 /// prerequisite reads it.
 fn nodes_held(cast cast: State, caster caster: Caster) -> List(lasting.Held) {
-  list.map(holds_on(cast:, unit_id: caster.unit_id), fn(hold) {
+  list.map(cast_state.holds_on(cast:, unit_id: caster.unit_id), fn(hold) {
     lasting.Held(
       spell4_id: hold.spell4_id,
       caster: caster.unit_id,

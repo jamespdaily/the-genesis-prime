@@ -1051,14 +1051,12 @@ fn pushed_by(
     return: so_far,
   )
   let #(cast, effects) = so_far
-  let holds =
-    list.filter(cast_tick.holds_on(cast:, unit_id: node.unit_id), fn(hold) {
-      hold.cast_id != cast_id
-    })
+  let #(holds, kept) =
+    cast_control.others_on(cast:, cast_id:, unit_id: node.unit_id)
   let removals =
     lasting.pushed_off(
       holds:,
-      kept: cast_control.kept_casts_on(cast:, cast_id:, unit_id: node.unit_id),
+      kept:,
       spell4_id: live.spell.spell4_id,
       stack: live.spell.stack,
       unit_id: node.unit_id,
