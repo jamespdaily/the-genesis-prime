@@ -2952,15 +2952,16 @@ pub fn an_esper_walks_out_of_the_sight_of_the_ally_it_pressed_phantasmal_armor_a
   assert pool > 0 as "opcode.0x938: the Medic holds the Esper's pool"
   // The Esper walks out of the Medic's sight, and the Medic's client reads its removal.
   walk_to(game: first, z: 1040.0, clock: 1)
-  let #(_, second_have) =
+  let #(removal_read, second_have) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
       list.contains(game_client.removals_in(frames:), esper)
     })
   let #(after_removal, second_have) =
     game_client.read_until_pong(game: second, have: second_have, number: 1)
-  assert finished_casts_in(frames: list.append(medic_read, after_removal)) == []
+  let until_pong = list.flatten([medic_read, removal_read, after_removal])
+  assert finished_casts_in(frames: until_pong) == []
     as "opcode.0x7fe: the removal of the caster's unit leaves the cast of a 0x100 spell and its buff on the Medic"
-  assert absorptions_in(frames: after_removal, unit: medic) == []
+  assert absorptions_in(frames: until_pong, unit: medic) == [pool]
     as "opcode.0x938: and the Medic's absorption is not told to change"
   // The cast's node on the Medic ends 10 000 ms after the go: the Esper's connection tells
   // the Medic's the end, which writes the absorption's end and the cast's 0x7fe.
