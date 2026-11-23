@@ -35,6 +35,8 @@ import genesis_prime/game/spell_plan.{type Plans, type Spell, Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/target_mechanic.{Targeted, Targeting}
 import genesis_prime/message/cast_result
+import genesis_prime/message/damage_type
+import genesis_prime/message/spell_effect_result
 import genesis_prime/step.{ConnectionId, LogWarning}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict.{type Dict}
@@ -42,6 +44,7 @@ import gleam/list
 import gleam/option
 import map_support
 import owned_test
+import prerequisite_support
 import spell_tables
 
 const mind_over_body_base = 19_030
@@ -294,8 +297,20 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
   let answered = list.flat_map(answered_steps, fn(step) { step.1 })
   assert targets_named(effects: answered) == [ally]
     as "the go's 0x7f4 names the ally it healed"
-  assert support.listed_effect_ids(effects: answered) == []
-    as "and lists no effect on it: the heal's description is not built yet, so the ally has none"
+  assert support.listed_on(effects: answered, unit_id: ally)
+    == [
+      #(
+        62_019,
+        support.heal_result(amount: 121, kind: damage_type.Heal, overkill: 21),
+      ),
+    ]
+    as "and lists Spell4Effects 62019 on it with the heal the ally applied: a Heal of 121 with 21 overheal, which the client logs as a heal of 121 and an overheal of 21 while the ally's health rose by 100 (`spell.heal_result_log`)"
+  assert support.listed_effect_ids(effects: answered) == [62_019]
+    as "and lists nothing else"
+  assert support.started_timers(effects: answered) == []
+    as "the ally's heal arms no timer: the ally applied it itself"
+  assert list.contains(support.written_ids(effects: answered), 0x07FE)
+    as "the go's step writes the cast's 0x7fe, since the listed heal gives the caster's node no life"
   assert support.caster_change_starts(effects: list.append(pressed, answered))
     == []
     as "the ally's heal is carried for the ally alone: still none for the caster"
@@ -308,6 +323,392 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
 /// The unit ids the effects' 0x7f4 names as targets, in order.
 fn targets_named(effects effects: List(Effect)) -> List(Int) {
   list.map(support.go_targets(effects:), fn(target) { target.unit_id })
+}
+
+/// What the ally's connection answered for one row: the row's id, the vital it raised and
+/// the split of its amount.
+fn landed(
+  effect_id effect_id: Int,
+  vital vital: effect_kind.Vital,
+  split split: heal_split.Split,
+) -> strike_tell.HealLanded {
+  strike_tell.HealLanded(effect_id: Spell4EffectsId(effect_id), vital:, split:)
+}
+
+/// A round whose one unit is the ally, who answered these heals.
+fn ally_answered(
+  heals heals: List(strike_tell.HealLanded),
+) -> List(cast_state.Struck) {
+  [
+    cast_state.Hit(
+      unit_id: ally,
+      unit: cast_state.HitOtherPlayer(heals:),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    ),
+  ]
+}
+
+/// A Health heal row of Mind Over Body's formula, aimed as given, behind this condition.
+fn health_row(
+  id id: Int,
+  aim aim: spell_plan.Aim,
+  condition condition: spell_plan.Condition,
+) -> spell_plan.Heal {
+  support.heal_row(
+    id:,
+    vital: effect_kind.Health,
+    aim:,
+    delay_ms: 0,
+    condition:,
+    formula: support.mind_over_body_formula(),
+  )
+}
+
+/// The caster of 500 health of 736 and 400 Support Rating at level 5 (Mind Over Body's
+/// formula gives it 121, `cast_heal_test`), who sees the ally.
+fn healing_ally_in_sight() -> Caster {
+  cast_state.Caster(
+    ..support.healing_caster(health: 500),
+    players_in_sight: sight(players: [ally]),
+  )
+}
+
+/// A press of a planted Targeted spell of these heal rows at `target`, whose go is answered
+/// with the round given: the press's effects and those of the go.
+fn healer_pressed_at(
+  rows rows: List(spell_plan.Heal),
+  target target: Int,
+  struck struck: List(cast_state.Struck),
+) -> #(List(Effect), List(Effect)) {
+  let spell =
+    support.with_effects(
+      spell: targeted(spell4_id: 5001, base: 3, cooldown_ms: 0),
+      kinds: list.map(rows, spell_plan.HealEffect),
+    )
+  let plans = support.with_spells(plans: plans(), spells: [spell])
+  let caster = healing_ally_in_sight()
+  let #(state, pressed) =
+    pressed(
+      plans:,
+      state: cast_state.new(),
+      caster:,
+      bag_index: bag_of_base_3,
+      target:,
+      at: 1000,
+    )
+  let #(_, answered) =
+    support.answered_each(
+      caster:,
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(_) { struck },
+      rolls: [],
+      poses: dict.new(),
+    )
+  #(pressed, answered)
+}
+
+/// One go at an ally whose heals were answered: the rows the spell holds, what the ally
+/// answered, and what the go lists on the ally and on the caster and how many heals it
+/// carries for the caster.
+type Listing {
+  Listing(
+    why: String,
+    rows: List(spell_plan.Heal),
+    answered: List(strike_tell.HealLanded),
+    on_ally: List(#(Int, spell_effect_result.SpellEffectResult)),
+    on_caster: List(#(Int, spell_effect_result.SpellEffectResult)),
+    caster_heals: Int,
+  )
+}
+
+pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_answers_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let primary = spell_plan.AimsAtPrimaryTarget
+  let health = effect_kind.Health
+  list.each(
+    [
+      Listing(
+        why: "one health row answered with 77 of which 50 rose: the go lists the answer's 77 and 27 overheal, not the 121 the caster's own formula gives (round(0.3281 x 400) + 17.51 x 5 = 121), and heals the caster of nothing (Design: what the target applied is authoritative)",
+        rows: [
+          health_row(id: 62_019, aim: primary, condition: spell_plan.Always),
+        ],
+        answered: [
+          landed(
+            effect_id: 62_019,
+            vital: health,
+            split: heal_split.Split(
+              amount: 77,
+              shield: 0,
+              health: 50,
+              overheal: 27,
+            ),
+          ),
+        ],
+        on_ally: [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 77,
+              kind: damage_type.Heal,
+              overkill: 27,
+            ),
+          ),
+        ],
+        on_caster: [],
+        caster_heals: 0,
+      ),
+      Listing(
+        why: "an ally at full health took none of 121: the overheal is the whole amount, which the client logs as nOverheal (`spell.heal_result_log`)",
+        rows: [
+          health_row(id: 62_019, aim: primary, condition: spell_plan.Always),
+        ],
+        answered: [
+          landed(
+            effect_id: 62_019,
+            vital: health,
+            split: heal_split.Split(
+              amount: 121,
+              shield: 0,
+              health: 0,
+              overheal: 121,
+            ),
+          ),
+        ],
+        on_ally: [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 121,
+              kind: damage_type.Heal,
+              overkill: 121,
+            ),
+          ),
+        ],
+        on_caster: [],
+        caster_heals: 0,
+      ),
+      Listing(
+        why: "a shield row and a health row answered in that order are listed in that order, the shield one as HealShields (5) and the health one as Heal (4), each with its own overheal",
+        rows: [
+          support.heal_row(
+            id: 70_001,
+            vital: effect_kind.Shield,
+            aim: primary,
+            delay_ms: 0,
+            condition: spell_plan.Always,
+            formula: support.mind_over_body_formula(),
+          ),
+          health_row(id: 70_002, aim: primary, condition: spell_plan.Always),
+        ],
+        answered: [
+          landed(
+            effect_id: 70_001,
+            vital: effect_kind.Shield,
+            split: heal_split.Split(
+              amount: 56,
+              shield: 50,
+              health: 0,
+              overheal: 6,
+            ),
+          ),
+          landed(
+            effect_id: 70_002,
+            vital: health,
+            split: heal_split.Split(
+              amount: 121,
+              shield: 0,
+              health: 100,
+              overheal: 21,
+            ),
+          ),
+        ],
+        on_ally: [
+          #(
+            70_001,
+            support.heal_result(
+              amount: 56,
+              kind: damage_type.HealShields,
+              overkill: 6,
+            ),
+          ),
+          #(
+            70_002,
+            support.heal_result(
+              amount: 121,
+              kind: damage_type.Heal,
+              overkill: 21,
+            ),
+          ),
+        ],
+        on_caster: [],
+        caster_heals: 0,
+      ),
+      Listing(
+        why: "a row aimed at the caster and the ally (targetFlags 3): the caster's entry is worked out from the caster's own stats and vitals (121, with no overheal in 236 of room) and carried for the caster once, and the ally's entry is the answer's, which the caster's change does not reach",
+        rows: [
+          health_row(
+            id: 62_019,
+            aim: spell_plan.AimsAtCasterAndPrimaryTarget,
+            condition: spell_plan.Always,
+          ),
+        ],
+        answered: [
+          landed(
+            effect_id: 62_019,
+            vital: health,
+            split: heal_split.Split(
+              amount: 121,
+              shield: 0,
+              health: 100,
+              overheal: 21,
+            ),
+          ),
+        ],
+        on_ally: [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 121,
+              kind: damage_type.Heal,
+              overkill: 21,
+            ),
+          ),
+        ],
+        on_caster: [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 121,
+              kind: damage_type.Heal,
+              overkill: 0,
+            ),
+          ),
+        ],
+        caster_heals: 1,
+      ),
+    ],
+    fn(row) {
+      let #(pressed, went) =
+        healer_pressed_at(
+          rows: row.rows,
+          target: ally,
+          struck: ally_answered(heals: row.answered),
+        )
+      assert support.listed_on(effects: went, unit_id: ally) == row.on_ally
+        as row.why
+      assert support.listed_on(
+          effects: went,
+          unit_id: healing_ally_in_sight().unit_id,
+        )
+        == row.on_caster
+        as { row.why <> ": the caster's entry" }
+      assert list.length(
+          support.caster_change_starts(effects: list.append(pressed, went)),
+        )
+        == row.caster_heals
+        as { row.why <> ": the heals carried for the caster" }
+    },
+  )
+}
+
+pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters_gates_say_at_the_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Mind Over Body's tiers 5 to 9 hold two heal rows at the primary target, the first
+  // behind Prerequisite 36008 (type 50, comparison 2: the caster is not under Spell4
+  // 77237) and the second behind 36007 (comparison 1: it is). The caster holds nothing
+  // of 77237 when the go is written, though it held it when the strike gated, so row A
+  // (36007's shape) fails here and row B (36008's) passes.
+  let primary = spell_plan.AimsAtPrimaryTarget
+  let under =
+    prerequisite_support.single(id: 36_007, condition: #(50, 1, 0, 77_237))
+  let not_under =
+    prerequisite_support.single(id: 36_008, condition: #(50, 2, 0, 77_237))
+  let rows = [
+    health_row(
+      id: 130_852,
+      aim: primary,
+      condition: spell_plan.GatedOnCaster(gates: [under]),
+    ),
+    health_row(
+      id: 130_899,
+      aim: primary,
+      condition: spell_plan.GatedOnCaster(gates: [not_under]),
+    ),
+  ]
+  let heal_of_row = fn(effect_id) {
+    landed(
+      effect_id:,
+      vital: effect_kind.Health,
+      split: heal_split.Split(amount: 121, shield: 0, health: 100, overheal: 21),
+    )
+  }
+  list.each(
+    [
+      #(
+        "the answer holds A only: A is listed though its gate fails now, and B is not though its gate passes now",
+        ally,
+        [heal_of_row(130_852)],
+        [130_852],
+        0,
+      ),
+      #(
+        "the answer holds B only: B is listed, and A is not though its gate passed when the strike gated it",
+        ally,
+        [heal_of_row(130_899)],
+        [130_899],
+        0,
+      ),
+      #(
+        "no ally and no answer (the caster presses at itself): the go keeps its gates, so B alone lands on the caster, once",
+        7,
+        [],
+        [130_899],
+        1,
+      ),
+    ],
+    fn(row) {
+      let #(why, target, answered, listed, caster_heals) = row
+      let #(pressed, went) =
+        healer_pressed_at(rows:, target:, struck: case target == ally {
+          True -> ally_answered(heals: answered)
+          False -> []
+        })
+      assert list.map(
+          support.listed_on(effects: went, unit_id: target),
+          fn(entry) { entry.0 },
+        )
+        == listed
+        as why
+      assert list.length(
+          support.caster_change_starts(effects: list.append(pressed, went)),
+        )
+        == caster_heals
+        as { why <> ": the heals carried for the caster" }
+    },
+  )
+  // A row aimed at the caster and the ally keeps its caster gate at the go, which gates the
+  // caster's part, so when that gate fails now the whole row is left out and the ally's heal,
+  // which the ally applied, is unlisted (the gap `cast_heal.gaps` states).
+  let flips =
+    health_row(
+      id: 130_852,
+      aim: spell_plan.AimsAtCasterAndPrimaryTarget,
+      condition: spell_plan.GatedOnCaster(gates: [under]),
+    )
+  let #(pressed, went) =
+    healer_pressed_at(
+      rows: [flips],
+      target: ally,
+      struck: ally_answered(heals: [heal_of_row(130_852)]),
+    )
+  assert support.listed_effect_ids(effects: went) == []
+    && support.caster_change_starts(effects: list.append(pressed, went)) == []
+    as "a row aimed at the caster and the ally whose caster gate fails at the go is left out whole, though the ally applied its heal"
 }
 
 // ---- the kind of the spell ----

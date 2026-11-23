@@ -135,7 +135,7 @@ fn limits() -> List(Limit) {
       cast_heal.gaps(),
       "Casting",
       ["creature", "another player", "delay"],
-      "a heal aimed at a creature, or at another player with a delay or a period, lands nothing",
+      "a heal aimed at a creature, or at another player with a delay or a period, lands nothing, and a row aimed at the caster and another player is listed on that player only while its caster gate passes",
     ),
     Limit(
       cast_control.gaps(),
@@ -154,12 +154,6 @@ fn limits() -> List(Limit) {
       "Casting",
       ["round", "closed"],
       "a heal told to a player is applied also after the caster's round has closed",
-    ),
-    Limit(
-      strike.gaps(),
-      "Casting",
-      ["lists", "description"],
-      "the go lists a player a heal was told to with no description of what it applied",
     ),
     Limit(
       strike.gaps(),
@@ -218,6 +212,10 @@ pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Ni
     assert list.contains(gaps.registry(), entry)
       as { limit.limit <> ": the registry prints it" }
   })
+  assert list.all(gaps.registry(), fn(entry) {
+    !string.contains(entry.missing, "no description of what the heal applied")
+  })
+    as "the go lists the heal a player applied with its description, so no entry says the go lists a told player without one"
 }
 
 /// A press at a creature is refused for a held invulnerable or immune-to-beneficial state

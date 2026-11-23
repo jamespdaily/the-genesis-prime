@@ -7,24 +7,29 @@
 import bot_frames
 import cast_support
 import character_tables
+import client_tables
 import driven_time
 import fixture_tables
 import game_client
+import game_connection_support as connection_support
 import game_wire_support.{
   type TwoEntered, TwoEntered, beast_health_in, beast_place,
   enters_and_sees_the_beasts, finishes, health_in, index_where, location_4_items,
   new_player_at_level, refusals, send_play, two_players_enter,
-  two_players_enter_after, two_players_enter_one_map, walk_to,
+  two_players_enter_after, two_players_enter_one_map, unit_of, walk_to,
   world_with_a_beast_ahead, world_with_beasts, world_with_spawns,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
+import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
+import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_damage
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
@@ -40,6 +45,8 @@ import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/server
+import genesis_prime/table/game_formula
+import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attack, Combat}
 import genesis_prime/world_map/spawn
@@ -54,6 +61,8 @@ import owned_test
 import planted_table
 import pog
 import spawn_support
+import unitest
+import world_entry_support
 
 /// As `two_players_enter_one_map`, the first player being of the class given, the
 /// server holding the fixture's rows (the starting abilities' own trees) and its game
@@ -2216,5 +2225,221 @@ pub fn a_warrior_turns_augmented_blade_on_for_two_stacks_and_off_and_the_client_
     && starts_of_spell(frames: at_6501, spell4_id: 79_757) == []
     as "no third removal and no stack follows"
   game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The 0x7f4 among `frames`, decoded.
+fn gos_in(frames frames: List(Frame)) -> List(spell_go.SpellGo) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == spell_go.message_id {
+      True -> {
+        let assert Ok(go) = spell_go.decode(frame.body) as "a 0x7f4 decodes"
+        Ok(go)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The value the property `property_id` holds in the player's own 0x262 among `frames`, 0 where
+/// it sets none (the UnitProperty2 default of the properties read here).
+fn own_property_in(
+  frames frames: List(Frame),
+  property_id property_id: Int,
+) -> Float {
+  result.unwrap(
+    game_client.property_of(
+      unit: game_client.unit_create_player_in(frames:),
+      property_id:,
+    ),
+    0.0,
+  )
+}
+
+/// An Esper of level 9 (Mind Over Body is an Esper's from level 6, Spell4Base 19030) presses
+/// Mind Over Body at a Medic of level 9 that entered 300 health below its maximum, on the
+/// client's real tables. Spell4 32820 (castTime 1250) holds one heal row at the primary
+/// target, Spell4Effects 62019 (effectType 10, targetFlags 2, formula 0.3281 of the Support
+/// Power and 17.51 a level, the stat part rounded alone, `0x140565600`): the Medic's
+/// connection applies it and answers the Esper's, whose go lists the heal with what the Medic
+/// took (opcode.0x7f4.target_info, `spell.heal_result_log`). The Esper's Support Power is its
+/// property 36 (Support Rating) times GameFormula 1266's second value, read from its own
+/// 0x262 and the tables; the Medic's maximum health is its own 0x262's (the client's Max
+/// Health, property 7, cut to a whole number).
+///
+/// The Medic regenerates 2.5% of its maximum every 500 ms out of combat (a server choice,
+/// `player_life`), so by the go, 1250 ms on, it has regenerated twice and its room is less
+/// than the heal: the heal is partly overheal, and the room is read from the health the
+/// Medic's client was last told before the heal.
+pub fn an_esper_pressing_mind_over_body_at_an_ally_heals_it_and_the_go_lists_the_heal_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let missing = 300
+  // The Medic's saved health is set before it plays, below the maximum a Medic of level 9
+  // has on the same tables.
+  let #(_, medic_entry) =
+    world_entry_support.entry(
+      tables:,
+      character: world_entry_support.character(class: 4, faction: 166, level: 9),
+    )
+  let saved =
+    casting.caster_of(tables:, entered: medic_entry).vitals.max_health - missing
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    second_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    two_players_enter_after(
+      started:,
+      first_class: 3,
+      level: 9,
+      first_acts: fn(_, have) {
+        let pool = pog.named_connection(started.settings.pool.pool_name)
+        let assert Ok(_) =
+          pog.query("update character set health = $1 where name = 'Ann Qu'")
+          |> pog.parameter(pog.int(saved))
+          |> pog.execute(pool)
+          as "the Medic's row holds the health it saved"
+        #([], have)
+      },
+    )
+  let esper = 1
+  let medic = unit_of(seen_second)
+  let medic_sheet =
+    game_client.sheet(
+      unit: game_client.unit_create_player_in(frames: second_burst),
+      tables:,
+    )
+  assert medic == 2 && medic_sheet.max_health == saved + missing
+    as "the Medic is the second unit and its own 0x262 gives the maximum health its saved health is 300 below"
+  assert health_in(frames: second_burst) == saved
+    as "opcode.0x262: the Medic enters with the health it saved"
+  assert own_property_in(frames: second_burst, property_id: 111) == 0.0
+    as "UnitProperty2 row 111 (HealToShieldConversion) has the default 0 and the Medic's 0x262 sets none, so the Medic's heal all goes to its health"
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the client's tables hold GameFormula row 1266"
+  let support_power =
+    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
+  let amount =
+    float.round(int.to_float(float.round(0.3281 *. support_power)) +. 157.59)
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 9,
+      ability: 19_030,
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: medic,
+  )
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  driven_time.advance(time:, ms: 1250)
+  // The answer crosses from the Medic's process, so the go is waited for by itself and
+  // never by a pong alone.
+  let #(went, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      gos_in(frames:) != []
+    })
+  let #(rest, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let esper_frames = list.flatten([pressed, went, rest])
+  let #(medic_read, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      gos_in(frames:) != []
+      && game_client.own_health_of(
+        events: game_client.fight_in(frames:),
+        unit: medic,
+      )
+      != []
+    })
+  let #(medic_rest, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let medic_frames = list.append(medic_read, medic_rest)
+  let medic_events = game_client.fight_in(frames: medic_frames)
+  let medic_healths =
+    game_client.own_health_of(events: medic_events, unit: medic)
+  let assert Ok(after) = list.last(medic_healths)
+    as "the Medic's client is written its health after the heal"
+  let before =
+    list.reverse(medic_healths)
+    |> list.drop(1)
+    |> list.first
+    |> result.unwrap(saved)
+  let room = medic_sheet.max_health - before
+  assert after == medic_sheet.max_health && room > 0 && room < amount
+    as "opcode.0x92f: the heal takes the Medic's health to its maximum from what it had after its regeneration, and that room is less than the heal, so the Medic could not take the heal whole"
+  assert game_client.shield_of(events: medic_events, unit: medic) == []
+    as "opcode.0x938: the Medic's shield is untouched"
+  assert refusals(frames: esper_frames) == []
+    as "opcode.0x7fc: the press at the Medic in sight is accepted"
+  let assert [confirmed] =
+    connection_support.decoded(
+      esper_frames,
+      spell_cast_confirmed.message_id,
+      spell_cast_confirmed.decode,
+    )
+    as "the Esper's client is answered the press once"
+  assert confirmed.primary_target_unit_id == medic
+    as "opcode.0x9a: Mind Over Body is the Targeted kind (Spell4TargetMechanics row 4), so the 0x7fd names the Medic as the cast's primary target"
+  let assert [started_cast] =
+    connection_support.decoded(
+      medic_frames,
+      spell_started.message_id,
+      spell_started.decode,
+    )
+    as "the Medic's client is told the cast once"
+  assert started_cast.primary_target_unit_id == medic
+    && started_cast.caster_unit_id == esper
+    as "opcode.0x7ff: the Medic's client reads the Esper's cast with the Medic itself as its primary target"
+  let assert [go] = gos_in(frames: esper_frames)
+    as "the Esper's client reads one 0x7f4"
+  let assert [target] = go.targets
+    as "the go names one unit, the Medic: none of the Esper's own is listed"
+  assert target.unit_id == medic
+  assert list.map(target.effects, fn(effect) {
+      #(effect.spell4_effects_id, effect.result)
+    })
+    == [
+      #(
+        62_019,
+        cast_support.heal_result(
+          amount:,
+          kind: damage_type.Heal,
+          overkill: amount - room,
+        ),
+      ),
+    ]
+    as "Spell4Effects 62019 is listed on the Medic with the heal it applied: a Heal of the amount, the part the Medic's room could not take as the overheal, which the client logs as a heal of the amount and that overheal (`spell.heal_result_log`)"
+  assert gos_in(frames: medic_frames) == [go]
+    as "the Medic's client reads the very 0x7f4 the Esper's client reads"
+  let esper_events = game_client.fight_in(frames: esper_frames)
+  assert game_client.own_health_of(events: esper_events, unit: esper) == []
+    as "the Esper's own health is not raised: the caster is not the target"
+  assert list.last(game_client.health_of(events: esper_events, unit: medic))
+    == Ok(medic_sheet.max_health)
+    as "opcode.0x937: the Esper's client, a viewer of the Medic, is told its health after the heal"
+  assert list.length(esper_frames)
+    - 1
+    - index_where(frames: list.reverse(esper_frames), found: fn(frame) {
+      frame.message_id == 0x0937
+    })
+    > index_where(frames: esper_frames, found: fn(frame) {
+      frame.message_id == spell_go.message_id
+    })
+    as "the Esper's connection holds the Medic's health news while the Medic's place waits and writes it after the go"
+  game_client.close(game: first)
+  game_client.close(game: second)
   login_support.stop(started)
 }

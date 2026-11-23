@@ -104,20 +104,20 @@ import genesis_prime/game/cast/state.{
   Aimed, AimedPress, AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled,
   CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
   Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
-  CooldownModifierStarts, Deflected, Finish, ForcedMoveStart, Frames, GateFails,
-  Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune,
-  Item, ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed, Live, Log,
-  ModifierEnd, ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits,
-  NoItemSpell, NodesEnd, NotBuilt, NotDecoded, NotSentByClient, OnCaster,
-  OnPlayer, Passive, Plain, PressNotBuilt, PressRefused, Pressed, PressedAt,
-  ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton, Reached, Refuse,
-  RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
-  ShortcutCast, Stage, StartChild, StartHeld, Started, StartedMoving, Starts,
-  State, StateEnd, StealthChanged, Strike, TargetModifierStart, Tell, Threshold,
-  Tick, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer,
-  UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
-  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WithCast,
-  WithNothing, WithUse, WrongAnswerSpell,
+  CooldownModifierStarts, Deflected, Described, Finish, ForcedMoveStart, Frames,
+  GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast,
+  Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed,
+  Live, Log, ModifierEnd, ModifierStart, NoClientCastId, NoInteraction,
+  NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
+  NotSentByClient, OnCaster, OnPlayer, Passive, Plain, PressNotBuilt,
+  PressRefused, Pressed, PressedAt, ProcDue, QuestAdvanceDue, QuestAdvanced,
+  QuestButton, Reached, Refuse, RepeatHeld, Resolution, ResourceMoved,
+  RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, StartChild, StartHeld,
+  Started, StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
+  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell, UnbuiltShortcut,
+  UnbuiltSpell, UnknownAnswer, UnknownCancel, UnreadItemPrerequisite,
+  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UsedUnit,
+  WindowEnd, WithCast, WithNothing, WithUse, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -4432,6 +4432,11 @@ fn go(
           phase:,
           spent: live.spent,
           subject:,
+          told: cast_gate.heal_told(
+            _,
+            primary_target: live.primary_target,
+            struck:,
+          ),
           rolls:,
         )
       let #(cast, restricting) =
@@ -5016,7 +5021,7 @@ fn reach_units(
   gates_passed gates_passed: Dict(Int, List(Int)),
   target_verdict target_verdict: TargetVerdict,
 ) -> Walk {
-  let #(entries, logs, rolls) =
+  let standing =
     cast_gate.rows_with_units(
       rows: [row],
       aim: fn(_) { aim },
@@ -5025,6 +5030,12 @@ fn reach_units(
       struck:,
     )
     |> list.filter(stands)
+  let answered = fn(entry: #(row, Int)) {
+    cast_gate.heal_answered(kind: planned.kind, struck:, unit_id: entry.1)
+  }
+  let #(checked, logs, rolls) =
+    standing
+    |> list.filter(fn(entry) { !answered(entry) })
     |> cast_gate.passing_struck_gates(
       effect_id: fn(_) { planned.effect_id },
       spell: live.spell,
@@ -5037,6 +5048,10 @@ fn reach_units(
       target_verdict:,
       rolls: walk.rolls,
     )
+  let entries =
+    list.filter(standing, fn(entry) {
+      answered(entry) || list.any(checked, fn(reached) { reached.1 == entry.1 })
+    })
   Walk(
     reached: list.append(
       walk.reached,
@@ -5050,13 +5065,14 @@ fn reach_units(
 }
 
 /// What the reach stage made of each effect it reached beside its unit, and the debug lines
-/// of the heals it left: a heal on the caster is worked out (`cast_heal.healed_on`) and a
-/// cooldown row is told whether it is kept for the cooldowns that start later
+/// of the heals it left: a heal on the caster is worked out and a heal on a player that
+/// answered it is described from its answer (`cast_heal.healed_on`), and a cooldown row is told whether it is kept for the cooldowns that start later
 /// (`cast_control.cooldown_kept`); any other effect stands as it is.
 fn products_made(
   reached reached: List(Reached),
   caster caster: Caster,
   passed_in passed_in: Option(Float),
+  struck struck: List(Struck),
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
 ) -> #(List(Reached), List(Effect)) {
   let made =
@@ -5069,6 +5085,7 @@ fn products_made(
               unit_id: entry.unit_id,
               caster:,
               passed_in:,
+              struck:,
             )
           #(Reached(..entry, product:), logs)
         }
@@ -5134,6 +5151,7 @@ pub fn aimed_at(
       reached: walk.reached,
       caster:,
       passed_in: cast_state.passed_in_of(live:),
+      struck:,
       longer_of_delay_and_duration: live.spell.longer_of_delay_and_duration,
     )
   let rolls = walk.rolls
@@ -5232,10 +5250,10 @@ pub fn aimed_at(
 /// What the effects a go reached are listed as on their units, in the order the client's
 /// list shows them: a Stealth row, a Proc row, a Fluff row, a property modifier, a forced
 /// move on the caster, a struck move, a cooldown row, a SpellForceRemove row and a heal that
-/// lands on the caster, each kind's rows in the order they were reached. This is not the
-/// plan's rank order, so the kind's place is named here. An effect the go does not list (a
-/// Proxy, a gain, a RemoveStealth, a crowd-control state, a periodic or another unit's
-/// heal) is left out.
+/// lands on the caster or that a player applied to itself, each kind's rows in the order they
+/// were reached. This is not the plan's rank order, so the kind's place is named here. An
+/// effect the go does not list (a Proxy, a gain, a RemoveStealth, a crowd-control state, a
+/// periodic heal, a heal on a creature or on a player that did not apply it) is left out.
 fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
   reached
   |> list.filter_map(fn(entry) {
@@ -5271,7 +5289,9 @@ fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
         without_row(5, row.delay_ms, None)
       spell_plan.CooldownEffect(modifier: row), _ -> by_row(6, row.row)
       spell_plan.RemoveEffect(..), _ -> without_row(7, 0, None)
-      spell_plan.HealEffect(..), Healing(healed:) ->
+      spell_plan.HealEffect(..), Healing(healed:)
+      | spell_plan.HealEffect(..), Described(healed:)
+      ->
         without_row(
           8,
           healed.delay_ms,

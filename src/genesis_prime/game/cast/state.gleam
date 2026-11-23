@@ -1699,6 +1699,9 @@ pub type Product {
   Plain
   /// A heal that lands on the caster, worked out at the go.
   Healing(healed: Healed)
+  /// A heal another player applied to itself, which the go lists with its description and
+  /// never arms (`cast_heal.healed_on`).
+  Described(healed: Healed)
   /// Whether a cooldown row is kept for the cooldowns that start after it takes effect
   /// (`cast_control.cooldown_kept`).
   CooldownKept(kept: Bool)

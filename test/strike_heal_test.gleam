@@ -292,19 +292,22 @@ type Told {
 }
 
 fn told(effects effects: List(Effect)) -> List(Told) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      strike.TellStrike(unit_id:, ..) -> Ok(ToldCreature(unit_id:))
-      strike.TellPlayerStrike(address:, strike:) ->
-        Ok(ToldPlayer(address:, strike:))
-      strike.StartTimer(after_ms:, ..) -> Ok(Started(after_ms:))
-      strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
-  })
+  list.map(
+    strike_support.only(effects:, kinds: [
+      strike_support.CreatureTold,
+      strike_support.PlayerTold,
+      strike_support.TimerStarted,
+    ]),
+    fn(effect) {
+      case effect {
+        strike.TellStrike(unit_id:, ..) -> ToldCreature(unit_id:)
+        strike.TellPlayerStrike(address:, strike:) ->
+          ToldPlayer(address:, strike:)
+        strike.StartTimer(after_ms:, ..) -> Started(after_ms:)
+        _ -> panic as "only the tells and the started timers were kept"
+      }
+    },
+  )
 }
 
 /// The strike the caster's connection 2 in its first stay tells the player 9 for the
@@ -397,8 +400,8 @@ type Input {
     outcome: PlayerOutcome,
     at_ms: Int,
   )
-  /// The creature 10 answers that its strike landed.
-  CreatureLands(at_ms: Int)
+  /// A creature's answer that its strike landed, under a key that names the unit `unit_id`.
+  CreatureLands(unit_id: Int, at_ms: Int)
   TimerProcessed(at_ms: Int)
 }
 
@@ -498,14 +501,14 @@ fn run(row row: AnswerRow) -> List(List(Effect)) {
             ),
             now: at(ms: at_ms),
           )
-        CreatureLands(at_ms:) ->
+        CreatureLands(unit_id:, at_ms:) ->
           strike.answered(
             strike: state,
             answer: strike_tell.Answered(
               key: strike_tell.Key(
                 cast_id: 5,
                 occasion: strike_tell.AtGo(phase: 0),
-                unit_id: 10,
+                unit_id:,
               ),
               outcome: strike_tell.Landed(
                 descriptions: [],
@@ -529,7 +532,7 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
   list.each(
     [
       AnswerRow(
-        "the heals landed close the round: the timer is cancelled and the go lists the player with what it applied and no description",
+        "the heals landed close the round: the timer is cancelled and the go lists the player with the heals it applied",
         [],
         [says(outcome: HealsLanded([first_heal(), second_heal()]), at_ms: 1100)],
         [
@@ -547,7 +550,7 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
         [10],
         [
           says(outcome: HealsLanded([first_heal()]), at_ms: 1100),
-          CreatureLands(at_ms: 1200),
+          CreatureLands(unit_id: 10, at_ms: 1200),
         ],
         [
           [],
@@ -563,7 +566,7 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
         [
           says(outcome: HealsLanded([first_heal()]), at_ms: 1100),
           says(outcome: HealsLanded([second_heal()]), at_ms: 1150),
-          CreatureLands(at_ms: 1200),
+          CreatureLands(unit_id: 10, at_ms: 1200),
         ],
         [
           [],
@@ -599,7 +602,7 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
             outcome: HealsLanded([first_heal()]),
             at_ms: 1100,
           ),
-          CreatureLands(at_ms: 1200),
+          CreatureLands(unit_id: 10, at_ms: 1200),
           TimerProcessed(at_ms: 2000),
         ],
         [
@@ -611,6 +614,24 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
             strike.Went(
               asked: go(primary_target: 9, spell4_id: mind_over_body),
               struck: [creature_hit()],
+              gates_passed: dict.new(),
+            ),
+          ],
+        ],
+      ),
+      AnswerRow(
+        "a creature's answer under the player's unit finds no place that waits for a creature: it is dropped, and the timer leaves the player out",
+        [],
+        [
+          CreatureLands(unit_id: 9, at_ms: 1100),
+          TimerProcessed(at_ms: 2000),
+        ],
+        [
+          [],
+          [
+            strike.Went(
+              asked: go(primary_target: 9, spell4_id: mind_over_body),
+              struck: [],
               gates_passed: dict.new(),
             ),
           ],

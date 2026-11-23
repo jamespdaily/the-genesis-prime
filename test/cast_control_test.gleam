@@ -1369,6 +1369,7 @@ pub fn a_controls_row_aimed_at_the_caster_and_past_it_appears_in_both_readers_te
       phase: 0,
       spent: None,
       subject: prerequisite_support.holding(held: [], second_unit: None),
+      told: fn(_) { False },
       rolls: [],
     )
   assert cast_state.passed_of(applied:, as_kind: spell_plan.as_control) == [row]

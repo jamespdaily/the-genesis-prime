@@ -200,26 +200,13 @@ fn begun(
 
 /// Each strike told: the unit, the damage rows' effect ids and the states' effect ids.
 fn told(effects effects: List(Effect)) -> List(#(Int, List(Int), List(Int))) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      strike.TellStrike(
-        unit_id:,
-        tell: strike_tell.Strike(offence:, controls:, ..),
-        ..,
-      ) ->
-        Ok(#(
-          unit_id,
-          list.map(offence.blows, fn(blow) { blow.spell4_effects_id }),
-          list.map(controls, fn(control) { control.effect_id }),
-        ))
-      strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
+  list.map(strike_support.creatures_told(effects:), fn(told) {
+    let #(unit_id, _life, strike_tell.Strike(offence:, controls:, ..)) = told
+    #(
+      unit_id,
+      list.map(offence.blows, fn(blow) { blow.spell4_effects_id }),
+      list.map(controls, fn(control) { control.effect_id }),
+    )
   })
 }
 
@@ -229,18 +216,7 @@ fn told_units(effects effects: List(Effect)) -> List(Int) {
 
 /// The structs of the round that closed in these effects.
 fn went(effects effects: List(Effect)) -> List(cast_state.Struck) {
-  list.flat_map(effects, fn(effect) {
-    case effect {
-      strike.Went(struck:, ..) -> struck
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> []
-    }
-  })
+  list.flat_map(strike_support.rounds_closed(effects:), fn(closed) { closed.1 })
 }
 
 fn struck_ids(struck struck: List(cast_state.Struck)) -> List(Int) {
@@ -254,32 +230,14 @@ fn struck_ids(struck struck: List(cast_state.Struck)) -> List(Int) {
 }
 
 fn logs(effects effects: List(Effect)) -> List(#(step.LogLevel, String)) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      strike.Log(level:, text:) -> Ok(#(level, text))
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..) -> Error(Nil)
-    }
-  })
+  strike_support.lines_logged(effects:)
 }
 
 fn timers(effects effects: List(Effect)) -> List(Effect) {
-  list.filter(effects, fn(effect) {
-    case effect {
-      strike.StartTimer(..) | strike.CancelTimer(..) -> True
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> False
-    }
-  })
+  strike_support.only(effects:, kinds: [
+    strike_support.TimerStarted,
+    strike_support.TimerCancelled,
+  ])
 }
 
 fn answer(
@@ -476,35 +434,14 @@ fn heal_selection(heals heals: List(spell_area.InstantHeal)) -> Selection {
 
 /// The Spell4Effects ids of the heal rows each heal strike told carries.
 fn told_heals(effects effects: List(Effect)) -> List(List(Int)) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      strike.TellPlayerStrike(strike:, ..) ->
-        Ok(list.map(strike.heals, fn(heal) { heal.effect_id.value }))
-      strike.TellStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Went(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> Error(Nil)
-    }
+  list.map(strike_support.players_told(effects:), fn(told) {
+    list.map({ told.1 }.heals, fn(heal) { heal.effect_id.value })
   })
 }
 
 /// Whether a round closed in these effects.
 fn closed(effects effects: List(Effect)) -> Bool {
-  list.any(effects, fn(effect) {
-    case effect {
-      strike.Went(..) -> True
-      strike.TellStrike(..)
-      | strike.TellPlayerStrike(..)
-      | strike.StartTimer(..)
-      | strike.CancelTimer(..)
-      | strike.Ticked(..)
-      | strike.Released(..)
-      | strike.Log(..) -> False
-    }
-  })
+  strike_support.rounds_closed(effects:) != []
 }
 
 type HealRow {
@@ -639,21 +576,8 @@ pub fn control_behind_target_gate_is_told_only_to_passing_units_test() -> Nil {
     )
   assert told(effects:) == [#(11, [], [122_821])]
     as "only unit 11, which carries no cast of group 465, is told the state"
-  let assert [
-    strike.TellStrike(tell: strike_tell.Strike(controls: [state], ..), ..),
-  ] =
-    list.filter(effects, fn(effect) {
-      case effect {
-        strike.TellStrike(..) -> True
-        strike.TellPlayerStrike(..)
-        | strike.StartTimer(..)
-        | strike.CancelTimer(..)
-        | strike.Went(..)
-        | strike.Ticked(..)
-        | strike.Released(..)
-        | strike.Log(..) -> False
-      }
-    })
+  let assert [#(_, _, strike_tell.Strike(controls: [state], ..))] =
+    strike_support.creatures_told(effects:)
   assert state.instance_id
     == crowd_control.instance_id(caster_unit_id: 7, count: 1)
     as "the caster's count advances for a state told only, so unit 11's is the first"
@@ -875,23 +799,18 @@ pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test()
   assert told(effects:) == [#(10, [], [99_347, 115_034]), #(11, [], [99_347])]
     as "the caster gate takes the first roll (1, passes), unit 10 the second (5, passes) and unit 11 the third (50, fails)"
   let rolls =
-    list.filter_map(effects, fn(effect) {
-      case effect {
-        strike.TellStrike(
-          tell: strike_tell.Strike(
-            striker: strike_tell.PlayerStriker(rolls:, ..),
-            ..,
-          ),
-          ..,
+    list.filter_map(strike_support.creatures_told(effects:), fn(told) {
+      case told {
+        #(
+          _,
+          _,
+          strike_tell.Strike(striker: strike_tell.PlayerStriker(rolls:, ..), ..),
         ) -> Ok(rolls)
-        strike.TellStrike(..)
-        | strike.TellPlayerStrike(..)
-        | strike.StartTimer(..)
-        | strike.CancelTimer(..)
-        | strike.Went(..)
-        | strike.Ticked(..)
-        | strike.Released(..)
-        | strike.Log(..) -> Error(Nil)
+        #(
+          _,
+          _,
+          strike_tell.Strike(striker: strike_tell.CreatureStriker(..), ..),
+        ) -> Error(Nil)
       }
     })
   assert rolls

@@ -93,7 +93,7 @@
 ////   the caster's formula gives (`damage.amount_on_caster`) and the caster's
 ////   HealingMultiplierOutgoing. The healed player's connection applies them
 ////   (genesis_prime/game/connection/landing) and answers, and the player's place fills with
-////   what it applied, listed in the go with no description (`gaps`). A row a gate fails or
+////   what it applied, listed in the go with the description of each heal (`cast_heal.healed_on`). A row a gate fails or
 ////   cannot tell is left out with a debug line; a player no row reaches has no place and no
 ////   tell. A target gate on such a row is read from what the caster holds of the player
 ////   (`gaps`).
@@ -293,15 +293,22 @@ pub type Round {
 
 /// A selected unit's place in a round.
 pub type Place {
-  /// The creature, in its life `life`, has not answered; a hit that lands carries the
-  /// periodic rows that reach it (`ticking`). A player a heal was told to waits with no
-  /// life and no rows.
-  Waiting(unit_id: Int, life: Int, ticking: List(spell_area.TickingDamage))
+  /// The unit has not answered the strike it was told.
+  Waiting(unit_id: Int, awaits: Awaited)
   /// The creature answered, or the unit needed no strike: the strike's outcome as a hit,
   /// and the effect ids of the gates the creature passed (`[]` when none).
   Answered(struck: Struck, gates_passed: List(Int))
   /// The creature refused, or the deadline passed: the unit is left out of the go.
   LeftOut(unit_id: Int)
+}
+
+/// What a waiting place waits for: the answer of a creature or of a player.
+pub type Awaited {
+  /// A creature in its life `life`; a hit that lands carries the periodic rows that reach it
+  /// (`ticking`).
+  AwaitedCreature(life: Int, ticking: List(spell_area.TickingDamage))
+  /// A player a heal was told to, which has no life and no rows here.
+  AwaitedPlayer
 }
 
 /// A player that has struck nothing.
@@ -644,7 +651,13 @@ pub fn begin(
         _, _, _, _ ->
           case rolls_at(entropy:, index:) {
             Ok(rolls) -> #(
-              [Waiting(unit_id:, life: aimed.life, ticking:), ..places],
+              [
+                Waiting(
+                  unit_id:,
+                  awaits: AwaitedCreature(life: aimed.life, ticking:),
+                ),
+                ..places
+              ],
               [
                 TellStrike(
                   unit_id:,
@@ -699,7 +712,7 @@ fn players_told(
         [] -> Error(Nil)
         rows ->
           Ok(#(
-            Waiting(unit_id:, life: 0, ticking: []),
+            Waiting(unit_id:, awaits: AwaitedPlayer),
             TellPlayerStrike(
               address:,
               strike: strike_tell.PlayerStrike(
@@ -1048,7 +1061,10 @@ pub fn begin_tick(
     )
   let #(place, tells) = case rolls_at(entropy:, index: 0) {
     Ok(rolls) -> #(
-      Waiting(unit_id: asked.unit_id, life: asked.life, ticking: []),
+      Waiting(
+        unit_id: asked.unit_id,
+        awaits: AwaitedCreature(life: asked.life, ticking: []),
+      ),
       [
         TellStrike(
           unit_id: asked.unit_id,
@@ -1261,9 +1277,9 @@ pub fn answered(
     strike:,
     key: answer.key,
     now:,
-    place_of: fn(unit_id, life, ticking, struck_at_ms) {
+    answering: ByCreature(place_of: fn(unit_id, life, ticking, struck_at_ms) {
       filled(unit_id:, life:, ticking:, struck_at_ms:, outcome: answer.outcome)
-    },
+    }),
   )
 }
 
@@ -1271,9 +1287,8 @@ pub fn answered(
 /// is filled with the rows it applied, or left out when the player was dead; an answer for a
 /// round that is closed or a place that is filled is dropped, as a creature's is, and the
 /// round closes only when its timer is processed or every place is in, so an answer taken
-/// before the timer is listed whatever the clock says. A place is found by the key's unit
-/// id alone: the key is the echo of the tell, and each unit has its own id, so the answer
-/// of a player cannot fill a creature's place.
+/// before the timer is listed whatever the clock says. The answer fills only a place that
+/// waits for a player, so it cannot fill a creature's.
 pub fn player_answered(
   strike strike: State,
   answer answer: PlayerAnswered,
@@ -1283,7 +1298,7 @@ pub fn player_answered(
     strike:,
     key: answer.key,
     now:,
-    place_of: fn(unit_id, _life, _ticking, _struck_at_ms) {
+    answering: ByPlayer(place_of: fn(unit_id) {
       case answer.outcome {
         strike_tell.HealsLanded(heals:) ->
           Answered(
@@ -1299,24 +1314,39 @@ pub fn player_answered(
           )
         strike_tell.PlayerDead -> LeftOut(unit_id:)
       }
-    },
+    }),
   )
 }
 
+/// Who answers a strike, and the place its answer makes of the waiting place it fills.
+type Answering {
+  /// A creature: the place from its unit id, life and periodic rows and the time the round
+  /// struck.
+  ByCreature(
+    place_of: fn(Int, Int, List(spell_area.TickingDamage), Int) -> Place,
+  )
+  /// A player a heal was told to: the place from its unit id.
+  ByPlayer(place_of: fn(Int) -> Place)
+}
+
 /// The answer of the strike of `key` filed in its round: the waiting place of the key's
-/// unit becomes the place `place_of` makes of it (its unit id, life, periodic rows and the
-/// time the round struck), and the round closes when it is complete. A key whose round is
-/// closed or whose place is not waiting is dropped.
+/// unit, when it waits for this kind of answer, becomes the place `answering` makes of it,
+/// and the round closes when it is complete. A key whose round is closed or whose place is
+/// not waiting for this kind of answer is dropped.
 fn filed(
   strike strike: State,
   key key: strike_tell.Key,
   now now: Now,
-  place_of place_of: fn(Int, Int, List(spell_area.TickingDamage), Int) -> Place,
+  answering answering: Answering,
 ) -> #(State, List(Effect)) {
   let found =
     list.any(strike.rounds, fn(round) {
       is_round_of(round:, key:)
-      && list.any(round.places, is_waiting(place: _, unit_id: key.unit_id))
+      && list.any(round.places, is_waiting(
+        place: _,
+        unit_id: key.unit_id,
+        answering:,
+      ))
     })
   use <- bool.guard(when: !found, return: #(strike, []))
   let rounds =
@@ -1329,7 +1359,7 @@ fn filed(
             place:,
             unit_id: key.unit_id,
             struck_at_ms: round.struck_at_ms,
-            place_of:,
+            answering:,
           )
         }),
       )
@@ -1360,25 +1390,49 @@ fn cast_id_of(asked: Asked) -> Int {
   }
 }
 
-/// Whether the place waits for this unit's answer.
-fn is_waiting(place place: Place, unit_id unit_id: Int) -> Bool {
-  case place {
-    Waiting(unit_id: waiting, ..) -> waiting == unit_id
-    Answered(..) | LeftOut(..) -> False
+/// Whether the place waits for this unit's answer of this kind.
+fn is_waiting(
+  place place: Place,
+  unit_id unit_id: Int,
+  answering answering: Answering,
+) -> Bool {
+  case place, answering {
+    Waiting(unit_id: waiting, awaits: AwaitedCreature(..)), ByCreature(..)
+    | Waiting(unit_id: waiting, awaits: AwaitedPlayer), ByPlayer(..)
+    -> waiting == unit_id
+    Waiting(..), ByCreature(..)
+    | Waiting(..), ByPlayer(..)
+    | Answered(..), ByCreature(..)
+    | Answered(..), ByPlayer(..)
+    | LeftOut(..), ByCreature(..)
+    | LeftOut(..), ByPlayer(..)
+    -> False
   }
 }
 
-/// The place, filled by `place_of` when it is the one waiting for this unit.
+/// The place, filled as `answering` fills it when it is the one waiting for this unit's
+/// answer of this kind.
 fn fill(
   place place: Place,
   unit_id unit_id: Int,
   struck_at_ms struck_at_ms: Int,
-  place_of place_of: fn(Int, Int, List(spell_area.TickingDamage), Int) -> Place,
+  answering answering: Answering,
 ) -> Place {
-  case place {
-    Waiting(unit_id: waiting, life:, ticking:) if waiting == unit_id ->
-      place_of(unit_id, life, ticking, struck_at_ms)
-    Waiting(..) | Answered(..) | LeftOut(..) -> place
+  case place, answering {
+    Waiting(unit_id: waiting, awaits: AwaitedCreature(life:, ticking:)),
+      ByCreature(place_of:)
+      if waiting == unit_id
+    -> place_of(unit_id, life, ticking, struck_at_ms)
+    Waiting(unit_id: waiting, awaits: AwaitedPlayer), ByPlayer(place_of:)
+      if waiting == unit_id
+    -> place_of(unit_id)
+    Waiting(..), ByCreature(..)
+    | Waiting(..), ByPlayer(..)
+    | Answered(..), ByCreature(..)
+    | Answered(..), ByPlayer(..)
+    | LeftOut(..), ByCreature(..)
+    | LeftOut(..), ByPlayer(..)
+    -> place
   }
 }
 
@@ -1632,10 +1686,6 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Strikes",
       missing: "the order of the units a tick of a periodic Proxy aimed at the area finds when its area row picks at random: the client names the order and ranks nothing, so the server seeds it by the cast and the tick; the units of such a tick are those inside the area over the picture at the tick, since the client runs no Proxy",
-    ),
-    gap.Entry(
-      area: "Casting",
-      missing: "The go lists a player a heal was told to with no description of what the heal applied, so the caster's client shows no floater and no log line for it.",
     ),
     gap.Entry(
       area: "Casting",

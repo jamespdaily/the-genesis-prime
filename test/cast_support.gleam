@@ -25,6 +25,7 @@ import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as c
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
@@ -58,6 +59,7 @@ import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription, SpellDamageDescription,
 }
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
+import genesis_prime/message/spell_effect_damage
 import genesis_prime/message/spell_effect_info.{
   type SpellEffectInfo, SpellEffectInfo,
 }
@@ -2802,6 +2804,79 @@ pub fn confirmed_in(
 pub fn go_targets(effects effects: List(Effect)) -> List(SpellTargetInfo) {
   let assert [go] = goes_in(effects:) as "the effects write one 0x7f4"
   go.targets
+}
+
+/// A heal with this row id, vital, aim, delay, condition and formula, in every phase.
+pub fn heal_row(
+  id id: Int,
+  vital vital: effect_kind.Vital,
+  aim aim: spell_plan.Aim,
+  delay_ms delay_ms: Int,
+  condition condition: spell_plan.Condition,
+  formula formula: damage.Formula,
+) -> spell_plan.Heal {
+  spell_plan.Heal(
+    effect_id: Spell4EffectsId(id),
+    vital:,
+    phase_flags: -1,
+    aim:,
+    condition:,
+    tag: spend.always,
+    formula:,
+    delay_ms:,
+  )
+}
+
+/// The formula of Mind Over Body's heal row (Spell4Effects 62019, parameters 13 x 0.3281 and
+/// 10 x 17.51): 0.3281 of the Support Rating and 17.51 a level, multiplier 1, no flat part.
+pub fn mind_over_body_formula() -> damage.Formula {
+  damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+    damage.Parameter(kind: 13, value: 0.3281),
+    damage.Parameter(kind: 10, value: 17.51),
+    damage.Parameter(kind: 0, value: 0.0),
+    damage.Parameter(kind: 0, value: 0.0),
+  ])
+}
+
+/// The effects the one 0x7f4 the effects write lists on the unit `unit_id`, each as its
+/// Spell4Effects id and its result, in the order listed; none when the unit is not a target.
+pub fn listed_on(
+  effects effects: List(Effect),
+  unit_id unit_id: Int,
+) -> List(#(Int, spell_effect_result.SpellEffectResult)) {
+  list.filter(go_targets(effects:), fn(target) { target.unit_id == unit_id })
+  |> list.flat_map(fn(target) {
+    list.map(target.effects, fn(effect) {
+      #(effect.spell4_effects_id, effect.result)
+    })
+  })
+}
+
+/// The result of a go's effect that lists a heal of `kind` the client logs as a heal of
+/// `amount` with `overkill` overheal (`spell.heal_result_log`): a Hit with the amount as the
+/// raw, the scaled raw and the health change, and nothing absorbed, glanced or killed.
+pub fn heal_result(
+  amount amount: Int,
+  kind kind: damage_type.DamageType,
+  overkill overkill: Int,
+) -> spell_effect_result.SpellEffectResult {
+  spell_effect_result.Damage(
+    spell_effect_damage.SpellEffectDamage(
+      description: SpellDamageDescription(
+        raw_damage: amount,
+        scaled_raw_damage: amount,
+        absorbed: 0,
+        shield_absorbed: 0,
+        health_damage_with_overkill: amount,
+        overkill:,
+        glance: 0,
+        killed: 0,
+        combat_result: combat_result.Hit,
+        damage_type: kind,
+        hits: [],
+      ),
+    ),
+  )
 }
 
 /// The effect id of each effect of each target of each 0x7f4 the effects write, in order.

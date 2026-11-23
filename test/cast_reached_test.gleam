@@ -118,6 +118,7 @@ fn reached_by_the_first_go_of(spell spell: Spell) -> List(cast_state.Reached) {
       phase: 0,
       spent: None,
       subject: prerequisite_support.holding(held: [], second_unit: None),
+      told: fn(_) { False },
       rolls: [],
     )
   cast.aimed_at(
