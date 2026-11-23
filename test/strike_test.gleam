@@ -1656,6 +1656,8 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast_state.Gain(..)
         | cast_state.CasterChangeStarts(..)
         | cast_state.CasterChangeEnds(..)
+        | cast_state.OtherPlayerChangeStarts(..)
+        | cast_state.OtherPlayerChangeEnds(..)
         | cast_state.TargetChangeStarts(..)
         | cast_state.TargetChangeEnds(..)
         | cast_state.ForcedMoveStarts(..)

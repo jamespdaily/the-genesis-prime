@@ -2731,3 +2731,164 @@ pub fn an_esper_pressing_bolster_at_an_ally_heals_it_on_each_tick_and_the_caster
   game_client.close(game: second)
   login_support.stop(started)
 }
+
+/// The absorption each 0x938 of stat 22 among `frames` gives `unit`, in order.
+fn absorptions_in(frames frames: List(Frame), unit unit: Int) -> List(Int) {
+  list.filter_map(game_client.fight_in(frames:), fn(event) {
+    case event {
+      game_client.AbsorptionIs(unit_id:, absorption:) if unit_id == unit ->
+        Ok(absorption)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// An Esper of level 6 (Phantasmal Armor is an Esper's from level 6: SpellLevel 773, class 3,
+/// characterLevel 6, Spell4 32823, Spell4Base 19033) presses it at a Medic of level 6 in sight, on the
+/// client's real tables. Spell4 32823 (castTime 0, propertyFlags 257, durationTime 10 000
+/// of its rows) holds one Absorption row, Spell4Effects 62024 (effectType 29, targetFlags 2,
+/// mask 7, 10 000 ms, formula 1.9389 of the Support Power and 103.41 a level, the stat part
+/// rounded alone, `0x140565600`; a tier 1 spell holds no modifier row, which the cast rule's
+/// tests read with the real rows of tiers 5 to 9). The Esper's connection tells the Medic's
+/// connection the pool at the go and its end after 10 000 ms; the Medic's client reads the
+/// 0x938 of its own absorption (stat 22), and the Esper's, a viewer of the Medic, reads the
+/// same stat of the Medic's unit from the Medic's news (`opcode.0x938`). The buff the go's
+/// 0x7f4 lists ends with the cast's 0x7fe, which no client timer ends
+/// (`cast.target_node_end`). The pool is round(round(1.9389 x Support Power) + 103.41 x 6),
+/// the Support Power being the Esper's property 36 (Support Rating) times GameFormula 1266's
+/// second value, read from its own 0x262. The Medic's pool and the Esper's go come from two
+/// senders, so each is waited for by itself and never by its order against the other; the
+/// clock is the test's.
+pub fn an_esper_presses_phantasmal_armor_at_a_player_in_sight_and_that_player_reads_the_buff_the_absorb_and_the_end_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) = two_players_enter(started:, first_class: 3, level: 6)
+  let esper = 1
+  let medic = unit_of(seen_second)
+  assert medic == 2 as "the Medic is the second unit"
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the client's tables hold GameFormula row 1266"
+  let support_power =
+    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
+  let amount =
+    float.round(
+      int.to_float(float.round(1.9388999938964844 *. support_power)) +. 620.46,
+    )
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 6,
+      ability: 19_033,
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: medic,
+  )
+  // The cast also starts the Interrupt Armor child on the Esper (Spell4 76766, a cast of its
+  // own), whose start and go a client may read before or after the pressed cast's own, so the
+  // pressed cast's go is the one that lists Spell4Effects 62024, and its start the one of
+  // Spell4 32823.
+  let pressed_gos = fn(frames) {
+    list.filter(gos_in(frames:), fn(go) {
+      list.any(go.targets, fn(target) {
+        list.any(target.effects, fn(effect) {
+          effect.spell4_effects_id == 62_024
+        })
+      })
+    })
+  }
+  // The Medic's client is written the cast and its go, and its own absorption.
+  let #(medic_read, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      pressed_gos(frames) != [] && absorptions_in(frames:, unit: medic) != []
+    })
+  let #(esper_read, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      pressed_gos(frames) != [] && absorptions_in(frames:, unit: medic) != []
+    })
+  assert refusals(frames: esper_read) == []
+    as "opcode.0x7fc: the press at the Medic in sight is accepted"
+  let assert [started_cast] =
+    list.filter(
+      connection_support.decoded(
+        medic_read,
+        spell_started.message_id,
+        spell_started.decode,
+      ),
+      fn(start) { start.spell4_id == 32_823 },
+    )
+    as "the Medic's client is told the pressed cast once"
+  assert started_cast.caster_unit_id == esper
+    && started_cast.primary_target_unit_id == medic
+    && started_cast.spell4_id == 32_823
+    as "opcode.0x7ff: the Medic's client reads the Esper's cast of Spell4 32823 with the Medic as its primary target"
+  let assert [go] = pressed_gos(medic_read)
+    as "the Medic's client reads the cast's 0x7f4 once"
+  assert go.cast_id == started_cast.cast_id
+    as "and it is the go of the cast the Medic was told the start of"
+  let assert [target] = go.targets
+    as "the go names one unit, the Medic: the pressed spell's row aims at the primary target alone"
+  assert target.unit_id == medic
+  assert list.map(target.effects, fn(effect) {
+      #(effect.spell4_effects_id, effect.delay_ms)
+    })
+    == [#(62_024, 0)]
+    as "opcode.0x7f4.target_info: Spell4Effects 62024 is listed on the Medic with delay 0, which makes the Medic's client show the buff"
+  assert pressed_gos(esper_read) == [go]
+    as "the Esper's client reads the same 0x7f4"
+  assert absorptions_in(frames: medic_read, unit: medic) == [amount]
+    as "opcode.0x938: the Medic's client is told its absorption, the pool the Esper's formula gives"
+  assert absorptions_in(frames: esper_read, unit: medic) == [amount]
+    as "opcode.0x938: the Esper's client, a viewer of the Medic, reads the same stat of the Medic's unit from its news"
+  assert !list.contains(
+      finished_casts_in(frames: medic_read),
+      started_cast.cast_id,
+    )
+    && !list.contains(
+      finished_casts_in(frames: esper_read),
+      started_cast.cast_id,
+    )
+    as "opcode.0x7fe: no client's buff ends before its time, and the cast is not finished while its node lives"
+  // The node ends 10 000 ms after the go: the Esper's connection tells the end and the
+  // 0x7fe goes to both clients.
+  driven_time.advance(time:, ms: 10_000)
+  let ended = fn(frames) {
+    list.contains(finished_casts_in(frames:), started_cast.cast_id)
+    && absorptions_in(frames:, unit: medic) == [0]
+  }
+  let #(medic_ended, _) =
+    game_client.read_until(game: second, have: second_have, found: ended)
+  let #(esper_ended, _) =
+    game_client.read_until(game: first, have: first_have, found: ended)
+  assert list.count(finished_casts_in(frames: medic_ended), fn(id) {
+      id == started_cast.cast_id
+    })
+    == 1
+    as "opcode.0x7fe: the Medic's client reads the cast end once, which ends its buff"
+  assert absorptions_in(frames: medic_ended, unit: medic) == [0]
+    as "opcode.0x938: the Medic's absorption returns to 0 with the cast's node"
+  assert list.count(finished_casts_in(frames: esper_ended), fn(id) {
+      id == started_cast.cast_id
+    })
+    == 1
+    as "the Esper's client reads the same end"
+  assert absorptions_in(frames: esper_ended, unit: medic) == [0]
+    as "and the Medic's absorption at 0 from its news"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}

@@ -12,7 +12,7 @@
 ////   delay 0: `ForcedMoveStarts(unit_id, life, struck_at_ms, move)` in the go's step
 ////   else:    `Due.ForcedMoveStart(on, move, struck_at_ms)`, a cast timer at go + delay_time,
 ////            which fires `ForcedMoveStarts`; the end of the cast's node on that creature cancels it
-////            (`creatures_ended`), as it cancels a modifier's start
+////            (`ended_where`), as it cancels a modifier's start
 //// casting (the connection) carries out `ForcedMoveStarts`:
 ////   `client_connection.draw(link, draw_bytes)` ─▶ `draws_of` the two fractions,
 ////   the player's place now and race radius ─▶ `Reference`

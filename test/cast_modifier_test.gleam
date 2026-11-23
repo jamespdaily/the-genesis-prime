@@ -733,8 +733,9 @@ pub fn pushed_off_node_ends_creature_modifier_test() -> Nil {
 
 pub fn modifier_on_another_player_is_left_out_test() -> Nil {
   use <- owned_test.run(5000)
-  // A row aimed at a player other than the caster changes nothing until a modifier on
-  // another player is built (#570).
+  // A row aimed at a player the round struck that the press did not name changes nothing: a
+  // modifier lands on another player only when it is the player the press named
+  // (`cast_gate.modifier_applies`, `cast_player_change_test`).
   let struck = [
     cast_state.Hit(
       unit_id: other_player,

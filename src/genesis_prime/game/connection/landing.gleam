@@ -36,8 +36,9 @@
 ////
 //// - **A change is taken only from a caster T sees**: C is among T's viewers with the stay
 ////   the tell names, and T is alive. The caster addresses a tell from the players in its
-////   own sight, and sight is symmetric, so after T lost sight of C no end tell can reach T
-////   (`UnseenBy` is that end).
+////   own sight, and sight is symmetric. An end is taken from the caster that holds the source
+////   whether or not T still sees it: a change of a spell with propertyFlags 0x100 stays
+////   after T lost sight of C, and C's end tell addressed from the go's address ends it.
 //// - **A source of a spell with propertyFlags 0x100 survives `UnseenBy`** and ends by the
 ////   caster's end tell or the caster's unit gone: the client's removal of the caster's unit
 ////   keeps the casts that flag marks (fact `cast.target_node_end`).
@@ -263,7 +264,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A caster that dies while the player sees it sends no end of its own: the player holds the change until the caster's end tell.",
+      missing: "When a caster walks out of a player's sight, the player's own connection finishes the casts it was shown of that caster, which ends the buff icon of a spell with propertyFlags 0x100 at once, while its value (the absorb, the modifier) lasts until the caster's end tell: the client keeps such a cast's buff (`cast.target_node_end`).",
     ),
     gap.Entry(
       area: "Casting",

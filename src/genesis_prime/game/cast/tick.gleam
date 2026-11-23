@@ -29,10 +29,10 @@ import genesis_prime/game/cast/state.{
   ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, Deflected,
   FindProxyTickUnits, Finish, ForcedMoveStart, Go, Heal, Healed, HeldChange, Hit,
   HitOtherPlayer, Immune, Lingering, Live, Look, ModifierEnd, ModifierStart,
-  NodesEnd, NotBuilt, ProcDue, ProxyTickAsked, QuestAdvanceDue, Refuse,
-  RepeatHeld, RestrictionEnd, Send, StartChild, StartHeld, Starts, State,
-  StateEnd, StrikeWithBlow, TargetChangeEnds, TargetModifierStart, Tell,
-  TellHeal, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
+  NodesEnd, NotBuilt, PlayerChangeEnd, ProcDue, ProxyTickAsked, QuestAdvanceDue,
+  Refuse, RepeatHeld, RestrictionEnd, Send, StartChild, StartHeld, Starts, State,
+  StateEnd, StrikeWithBlow, TargetModifierStart, Tell, TellHeal, Tick, TickAsked,
+  TickStrike, TickingOn, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -305,6 +305,7 @@ fn tick_timers_cancelled(
       | ModifierStart(..)
       | TargetModifierStart(..)
       | ForcedMoveStart(..)
+      | PlayerChangeEnd(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
@@ -1149,6 +1150,7 @@ pub fn cancel_nodes_end(
       | ModifierStart(..)
       | TargetModifierStart(..)
       | ForcedMoveStart(..)
+      | PlayerChangeEnd(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
@@ -1165,16 +1167,14 @@ pub fn cancel_nodes_end(
 }
 
 /// The player left the world with casts live: every timer is cancelled and nothing is
-/// written; each property modifier the casts hold on a creature is told ended
-/// (`TargetChangeEnds`), the creature's own, in cast id order.
+/// written; each change the casts hold on a creature or another player is told ended
+/// (`unit_end_told`), in cast id order.
 pub fn left(cast cast: State) -> #(State, List(Effect)) {
-  let on_creatures =
-    dict.to_list(cast.on_creatures)
+  let on_units =
+    dict.to_list(cast.on_units)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.flat_map(fn(entry) {
-      list.map(entry.1, fn(on) {
-        TargetChangeEnds(unit_id: on.unit_id, life: on.life, source: on.source)
-      })
+      list.map(entry.1, fn(on) { cast_state.unit_end_told(on:) })
     })
   #(
     State(
@@ -1190,12 +1190,12 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       stealth: dict.new(),
       procs: dict.new(),
       passive: None,
-      on_creatures: dict.new(),
+      on_units: dict.new(),
       restrictions: dict.new(),
     ),
     list.append(
       list.map(dict.keys(cast.timers), fn(timer) { CancelTimer(timer:) }),
-      on_creatures,
+      on_units,
     ),
   )
 }
@@ -1285,6 +1285,7 @@ fn pending_heals(
       ModifierStart(..)
       | TargetModifierStart(..)
       | ForcedMoveStart(..)
+      | PlayerChangeEnd(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)
@@ -1319,6 +1320,7 @@ pub fn pending_heals_cancelled(
       | ModifierStart(change: Look(..), ..)
       | TargetModifierStart(..)
       | ForcedMoveStart(..)
+      | PlayerChangeEnd(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)

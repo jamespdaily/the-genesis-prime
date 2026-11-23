@@ -53,6 +53,7 @@ import genesis_prime/message/client_side_interaction_result.{
 }
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
+import genesis_prime/message/float32
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
@@ -165,6 +166,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     free_while_live: False,
     ignores_casting: False,
     longer_of_delay_and_duration: False,
+    outlives_caster: False,
     aura_ms: None,
     weapon: NoWeaponNeeded,
     caster_death: spell_plan.CannotBeDead,
@@ -539,6 +541,8 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -570,6 +574,8 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -603,6 +609,8 @@ pub fn quest_advances(
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -632,6 +640,8 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -666,6 +676,8 @@ pub fn caster_change_ends(
       | cast_state.CasterChangeStarts(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
@@ -698,6 +710,8 @@ pub fn caster_change_starts(
       | cast_state.Log(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
@@ -755,6 +769,8 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -803,6 +819,8 @@ pub fn throws(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -833,6 +851,8 @@ pub fn despawns(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -863,6 +883,8 @@ pub fn unit_states_told(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.QuestAdvanced(..)
@@ -1376,6 +1398,8 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -1424,6 +1448,8 @@ pub fn activations(
       | cast_state.Log(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -1518,6 +1544,8 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -1548,6 +1576,8 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -1578,6 +1608,8 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast_state.GoAsked) {
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -1608,6 +1640,8 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -1638,6 +1672,8 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -1936,6 +1972,8 @@ pub fn answered_finding(
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -2692,6 +2730,8 @@ pub fn tick_strikes(
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
@@ -3322,4 +3362,65 @@ pub fn started_count(
   spell4_id spell4_id: Int,
 ) -> Int {
   list.count(started_in(effects:), fn(start) { start.spell4_id == spell4_id })
+}
+
+/// Phantasmal Armor's Absorption row as the client holds it (`table_rows -- Spell4Effects
+/// 62024 130470`): effectType 29, mask 7 (dataBits04), a formula of 1.0 times `support_factor`
+/// of the Support Power (parameter kind 13: 1.9388999938964844 in tier 1's row 62024,
+/// 2.605299949645996 in tier 9's row 130470) and 103.41000366210938 a level (kind 10),
+/// durationTime 10000, delayTime 0, phaseFlags 1, no gate; the aim is the one given (the
+/// rows' own targetFlags is 2, the primary target).
+pub fn armor_absorb_row(
+  id id: Int,
+  support_factor support_factor: Float,
+  aim aim: spell_plan.Aim,
+) -> spell_plan.PropertyModifier {
+  spell_plan.PropertyModifier(
+    effect_id: Spell4EffectsId(id),
+    phase_flags: 1,
+    change: spell_plan.AbsorbChange(spell_plan.Absorption(
+      formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+        damage.Parameter(kind: 13, value: support_factor),
+        damage.Parameter(kind: 10, value: 103.41000366210938),
+        damage.Parameter(kind: 0, value: 0.0),
+        damage.Parameter(kind: 0, value: 0.0),
+      ]),
+      mask: 7,
+      aim:,
+    )),
+    row: LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+    condition: spell_plan.Always,
+    tag: spend.always,
+    armor: None,
+  )
+}
+
+/// Phantasmal Armor's damage-reduction row, Spell4Effects 130474 (`table_rows --
+/// Spell4Effects 130474`): effectType 11 on UnitProperty2 161, mode 3, multiplier
+/// dataBits02 1062836634 (0.86f), flat 0, targetFlags 2 (a `StruckChange` aimed at the
+/// primary target), durationTime 10000, delayTime 0, phaseFlags -1, no gate.
+pub fn armor_modifier_row(
+  id id: Int,
+  aim aim: spell_plan.Aim,
+) -> spell_plan.PropertyModifier {
+  let assert Ok(multiplier) = float32.of_column(1_062_836_634)
+    as "dataBits02 of row 130474 is a finite float"
+  spell_plan.PropertyModifier(
+    effect_id: Spell4EffectsId(id),
+    phase_flags: -1,
+    change: spell_plan.StruckChange(
+      modifier: unit_properties.Change(
+        property: UnitProperty2Id(161),
+        mode: 3,
+        multiplier:,
+        flat: 0.0,
+        per_level: 0.0,
+      ),
+      aim:,
+    ),
+    row: LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+    condition: spell_plan.Always,
+    tag: spend.always,
+    armor: None,
+  )
 }

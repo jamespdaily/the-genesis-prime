@@ -22,6 +22,7 @@ import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
 import gleam/result
 import owned_test
+import qcheck
 
 /// The source of cast `cast_id`'s first row.
 fn source(cast_id cast_id: Int) -> Source {
@@ -105,15 +106,6 @@ pub fn a_source_started_twice_is_held_once_and_each_casters_sources_keep_their_s
       == holder
       as reason
   })
-  let #(held, _) =
-    held_after(starts: [
-      Start(1, EndsWhenUnseen, 1),
-      Start(2, EndsWhenUnseen, 2),
-      Start(1, EndsWhenUnseen, 3),
-    ])
-  assert cast_ids(held_changes.released_by(held:, by: ConnectionId(1)).1)
-    == [1, 3]
-    as "a caster's sources come in the order they started, whatever the other caster started between"
 }
 
 pub fn ending_a_source_gives_the_caster_that_held_it_and_a_source_not_held_gives_nothing_test() -> Nil {
@@ -227,4 +219,86 @@ pub fn ending_every_source_of_a_caster_takes_that_casters_alone_in_start_order_t
     assert cast_ids(held_changes.all(held:)) == remaining as reason
     assert connection_numbers(held:) == casters as reason
   })
+}
+
+/// A release, as a number the property draws: 0 a caster's connection ending, 1 a caster out
+/// of sight, 2 a caster's unit gone.
+fn released_as(
+  held held: Held,
+  kind kind: Int,
+  caster caster: Int,
+) -> #(Held, List(Source)) {
+  case kind {
+    0 -> held_changes.released_by(held:, by: ConnectionId(caster))
+    1 -> held_changes.released_unseen(held:, by: ConnectionId(caster))
+    _ -> held_changes.released_with_unit(held:, unit_id: 100 + caster)
+  }
+}
+
+pub fn a_source_is_held_once_by_its_first_caster_and_every_release_takes_that_casters_sources_in_start_order_and_loses_none_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The module's doc comment: a source is held once, by the caster that started it first, and
+  // a release gives the sources in the order they started. The model below is that sentence:
+  // the first start of each cast id, in start order, with its caster and how it keeps.
+  qcheck.given(
+    qcheck.tuple3(
+      qcheck.list_from(qcheck.tuple3(
+        qcheck.bounded_int(from: 1, to: 3),
+        qcheck.bool(),
+        qcheck.bounded_int(from: 1, to: 6),
+      )),
+      qcheck.bounded_int(from: 0, to: 2),
+      qcheck.bounded_int(from: 1, to: 3),
+    ),
+    fn(drawn) {
+      let #(drawn_starts, kind, caster) = drawn
+      let starts =
+        list.map(drawn_starts, fn(start) {
+          let #(by, kept, cast_id) = start
+          Start(
+            by,
+            case kept {
+              True -> KeptWhenUnseen
+              False -> EndsWhenUnseen
+            },
+            cast_id,
+          )
+        })
+      let #(held, flags) = held_after(starts:)
+      let model =
+        list.fold(starts, [], fn(first_starts: List(Start), start: Start) {
+          case
+            list.any(first_starts, fn(first: Start) {
+              first.cast_id == start.cast_id
+            })
+          {
+            True -> first_starts
+            False -> list.append(first_starts, [start])
+          }
+        })
+      assert cast_ids(held_changes.all(held:))
+        == list.map(model, fn(start: Start) { start.cast_id })
+        as "each source is held once, in the order of its first start"
+      assert list.count(flags, fn(started) { started }) == list.length(model)
+        as "a start is new exactly once for each source"
+      let #(after, taken) = released_as(held:, kind:, caster:)
+      let taken_by_the_model =
+        list.filter(model, fn(start: Start) {
+          start.caster == caster
+          && case kind {
+            1 -> start.sight == EndsWhenUnseen
+            _ -> True
+          }
+        })
+        |> list.map(fn(start) { start.cast_id })
+      assert cast_ids(taken) == taken_by_the_model
+        as "a release takes the sources of its caster that it ends, in start order"
+      assert cast_ids(held_changes.all(held: after))
+        == list.filter(
+          list.map(model, fn(start: Start) { start.cast_id }),
+          fn(cast_id) { !list.contains(taken_by_the_model, cast_id) },
+        )
+        as "and keeps every other source, in start order"
+    },
+  )
 }

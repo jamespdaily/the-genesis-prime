@@ -138,6 +138,36 @@ fn limits() -> List(Limit) {
       "a heal aimed at a creature, or at another player with a delay, lands nothing, a periodic one at another player in sight ticks on it, and a row aimed at the caster and another player is listed on that player only while its caster gate passes",
     ),
     Limit(
+      cast.gaps(),
+      "Casting",
+      ["delay", "lasts until removed"],
+      "a row aimed at another player with a delay or lasting until removed lands nothing",
+    ),
+    Limit(
+      cast.gaps(),
+      "Casting",
+      ["dead player", "refuses"],
+      "a row aimed at a dead player is listed and told, and the player refuses it",
+    ),
+    Limit(
+      cast.gaps(),
+      "Casting",
+      ["Interrupt Armor", "child"],
+      "a child a Proxy starts on the caster for a row aimed at the primary target lands nothing, and Phantasmal Armor's Interrupt Armor child lands on its caster",
+    ),
+    Limit(
+      cast.gaps(),
+      "Casting",
+      ["target apply prerequisite", "picture"],
+      "a target gate on an absorb or modifier row aimed at another player reads what the caster's picture shows of it",
+    ),
+    Limit(
+      cast.gaps(),
+      "Casting",
+      ["oneself", "damage reduction"],
+      "a press at oneself lands no type 11 row aimed at the primary target",
+    ),
+    Limit(
       cast_control.gaps(),
       "Casting",
       ["stack", "different casters"],
@@ -176,8 +206,8 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["caster that dies", "end tell"],
-      "a caster that dies in sight sends no end of its own: the held change waits for its end tell",
+      ["0x100", "buff"],
+      "at sight loss the player's own connection ends the buff icon of a 0x100 cast that its value outlives",
     ),
     Limit(
       strike.gaps(),

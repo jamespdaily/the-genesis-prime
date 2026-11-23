@@ -50,6 +50,13 @@ pub type Sight {
   KeptWhenUnseen
 }
 
+/// How a change keeps when its caster leaves the sight of the unit that holds it, for a
+/// spell the client keeps (`outlives_caster`: Spell4 propertyFlags 0x100) or does not.
+pub fn sight_of(outlives_caster outlives_caster: Bool) -> Sight {
+  use <- bool.guard(when: outlives_caster, return: KeptWhenUnseen)
+  EndsWhenUnseen
+}
+
 /// What a caster's connection tells the connection of another player, for the stay of
 /// that player (genesis_prime/client_connection `TellPlayerChange`).
 pub type PlayerChange {
@@ -98,7 +105,9 @@ pub fn started(
 }
 
 /// The source `source` held for the connection `by`, whose unit is not known and whose
-/// change ends with the connection: as `started`.
+/// change ends with the connection: as `started`. The entry's sight is stored as
+/// `EndsWhenUnseen` and nothing reads it: a source held this way (a creature's) is taken only
+/// by `released_by` and `released`.
 pub fn started_by_connection(
   held held: Held,
   by by: ConnectionId,

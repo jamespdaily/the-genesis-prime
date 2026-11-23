@@ -30,11 +30,14 @@ import genesis_prime/client_connection.{
   PropertiesChanged, TellPeer,
 }
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/landing as connection_landing
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/held_changes.{
   type Change, type PlayerChange, type Sight, EndsWhenUnseen, KeptWhenUnseen,
   PlayerChangeEnds, PlayerChangeStarts,
 }
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
+import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
@@ -47,7 +50,9 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import genesis_prime/world_map/map
 import gleam/list
+import gleam/option.{Some}
 import owned_test
+import world_entry_support
 
 /// UnitProperty2 161's default, 1.0, and the value row 203798 gives it, 0.86f.
 const one_bits = 0x3F800000
@@ -270,29 +275,33 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
   let seen_by_two_and_three =
     support.watched_by(state: support.in_world(), viewers: [2, 3])
   let dead = support.killed(seen_by_two_and_three).0
-  // The player, and the change told it.
+  // The player, the caster whose change is told and whose unseen notice follows, and the
+  // change told it.
   let rows = [
     #(
       "a caster that is not among the viewers",
       seen_by_two_and_three,
+      4,
       armored(4, support.viewer_stay(4)),
       pooled(4, support.viewer_stay(4)),
     ),
     #(
       "a caster whose stay is not the one the map named for it",
       seen_by_two_and_three,
+      3,
       armored(3, support.viewer_stay(9)),
       pooled(3, support.viewer_stay(9)),
     ),
     #(
       "a dead player",
       dead,
+      3,
       armored(3, support.viewer_stay(3)),
       pooled(3, support.viewer_stay(3)),
     ),
   ]
   list.each(rows, fn(row) {
-    let #(reason, state, armor_tell, pool_tell) = row
+    let #(reason, state, caster, armor_tell, pool_tell) = row
     let #(state, armor_taken) = support.feed(state:, event: tell(armor_tell))
     let #(state, pool_taken) = support.feed(state:, event: tell(pool_tell))
     assert rule_support.effects_of(armor_taken) == [] as reason
@@ -301,7 +310,7 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
     let #(_, unseen) =
       support.feed(
         state:,
-        event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(3))),
+        event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(caster))),
       )
     assert seen(steps: [unseen]) == Seen(properties: [], absorptions: [])
       as reason
@@ -610,5 +619,72 @@ pub fn a_second_tell_of_the_same_source_replaces_what_the_ally_holds_test() -> N
         )),
       )
     assert seen(steps: [ended_by]) == ended as reason
+  })
+}
+
+pub fn the_allys_ledger_clears_every_caster_at_its_death_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let armor_of_three =
+    held(caster: 3, source: armor_source(cast_id: 100), change: armor())
+  let pool_of_three =
+    Hold(
+      ..held(
+        caster: 3,
+        source: pool_source(cast_id: 101),
+        change: pool(amount: 300),
+      ),
+      sight: KeptWhenUnseen,
+    )
+  let pool_of_two =
+    held(
+      caster: 2,
+      source: pool_source(cast_id: 102),
+      change: pool(amount: 200),
+    )
+  // What the player holds: after its death its ledger holds no source of any caster, a
+  // caster that keeps its change when unseen included, so no later notice of a caster ends
+  // a change the death already ended, and no caster is counted as one that holds a change.
+  let rows = [
+    #("changes of two casters, one of them kept when unseen", [
+      armor_of_three,
+      pool_of_three,
+      pool_of_two,
+    ]),
+    #("a player that holds nothing", []),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, holds) = row
+    let held_by_a_player_in_the_world =
+      world_entry.Entered(
+        ..world_entry_support.entered_after(clock_origin_ms: 600),
+        held: list.fold(holds, held_changes.new(), fn(ledger, hold) {
+          held_changes.started(
+            held: ledger,
+            by: ConnectionId(hold.caster),
+            unit_id: support.viewer_unit_id(hold.caster),
+            source: hold.source,
+            sight: hold.sight,
+          ).0
+        }),
+      )
+    assert list.length(held_changes.all(
+        held: held_by_a_player_in_the_world.held,
+      ))
+      == list.length(holds)
+      as { reason <> ": the ledger holds each source before the death" }
+    let #(session, _) =
+      connection_landing.ended_at_death(
+        session: support.session_in(status: connection_state.InWorld(
+          holder: support.holder(),
+          entered: held_by_a_player_in_the_world,
+        )),
+        now: step.Now(monotonic_ms: 0, filetime: 0),
+      )
+    let assert Some(after) = connection_state.entered_of(session.status)
+      as "the player is still in the world"
+    assert held_changes.all(held: after.held) == []
+      as { reason <> ": the death clears every source" }
+    assert held_changes.connections(held: after.held) == []
+      as { reason <> ": and no caster holds a change on the player" }
   })
 }

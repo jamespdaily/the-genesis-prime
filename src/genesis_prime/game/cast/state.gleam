@@ -212,6 +212,23 @@ pub type Effect {
   /// (`player_life.absorb_ended`), and an owner that holds nothing for the source changes
   /// nothing. A source names one cast and one Spell4Effects row, so at most one owner holds it.
   CasterChangeEnds(source: unit_properties.Source)
+  /// An absorb pool or a property modifier of the caster's spell starts on another player
+  /// the press named, at the go: the connection tells that player's connection for the
+  /// stay `address` names (genesis_prime/game/held_changes `PlayerChangeStarts`), which
+  /// applies it as its own cast's change of that kind is applied and holds it for the
+  /// caster. `sight` says whether it outlives the caster's sight.
+  OtherPlayerChangeStarts(
+    address: PlayerAddress,
+    source: unit_properties.Source,
+    change: held_changes.Change,
+    sight: held_changes.Sight,
+  )
+  /// The change of `source` the caster's spell put on another player ends: the node's end,
+  /// a removal of the cast, its push off, the caster's death or its leaving. The connection
+  /// tells that player's connection for the stay `address` names
+  /// (genesis_prime/game/held_changes `PlayerChangeEnds`), which takes it off when it holds
+  /// the source for the caster.
+  OtherPlayerChangeEnds(address: PlayerAddress, source: unit_properties.Source)
   /// A property modifier of the caster's spell starts on the creature `unit_id` whose
   /// life the go struck, at the monotonic time `struck_at_ms` the go struck it
   /// (`HitCreature`): the connection tells the creature
@@ -447,6 +464,56 @@ pub type OnCreature {
   OnCreature(unit_id: Int, life: Int, source: unit_properties.Source)
 }
 
+/// A change a cast holds on a unit other than its caster, kept until an end of the cast's
+/// node on that unit (`State.on_units`): a creature's property modifier, or an absorb pool
+/// or property modifier on another player. A change on a player keeps the address the go
+/// told it by, which its end is told by whether or not the caster still sees the player,
+/// and the spell, stack and time of the go, which a later cast of the same stack that finds
+/// no node of this one to push off ends it by (`lasting.stack_pushed_off`).
+pub type OnUnit {
+  HeldOnCreature(creature: OnCreature)
+  HeldOnPlayer(
+    source: unit_properties.Source,
+    address: PlayerAddress,
+    sight: held_changes.Sight,
+    spell4_id: Spell4Id,
+    stack: lasting.Stack,
+    started_ms: Int,
+  )
+}
+
+/// The unit a held change is on.
+pub fn held_unit_id(on on: OnUnit) -> Int {
+  case on {
+    HeldOnCreature(creature:) -> creature.unit_id
+    HeldOnPlayer(address:, ..) -> address.unit_id
+  }
+}
+
+/// The source of a held change.
+pub fn held_source(on on: OnUnit) -> unit_properties.Source {
+  case on {
+    HeldOnCreature(creature:) -> creature.source
+    HeldOnPlayer(source:, ..) -> source
+  }
+}
+
+/// What ends a held change: `TargetChangeEnds` for a creature's, `OtherPlayerChangeEnds`
+/// for a player's. Every end of a node, and the caster's leaving, maps its entries through
+/// this one function.
+pub fn unit_end_told(on on: OnUnit) -> Effect {
+  case on {
+    HeldOnCreature(creature:) ->
+      TargetChangeEnds(
+        unit_id: creature.unit_id,
+        life: creature.life,
+        source: creature.source,
+      )
+    HeldOnPlayer(source:, address:, ..) ->
+      OtherPlayerChangeEnds(address:, source:)
+  }
+}
+
 /// Why the client's message is refused: it ends the connection, because the
 /// client's own code never sends it.
 pub type Refusal {
@@ -515,6 +582,10 @@ pub type Due {
   ForcedMoveStart(on: OnCreature, move: forced_move.Move, struck_at_ms: Int)
   /// The property modifier `source` ends, after its duration.
   ModifierEnd(source: unit_properties.Source)
+  /// The change of `source` the cast holds on the other player `unit_id` ends, after its
+  /// delay and duration: a change that outlives the caster's sight has no node of the cast
+  /// to end it once the caster has lost sight of the player.
+  PlayerChangeEnd(unit_id: Int, source: unit_properties.Source)
   /// The crowd-control state the caster holds on itself from the effect `source` names
   /// ends, after its delay and duration: the client never ends a state itself, so the
   /// server sends the 0x880 (`cast_control.restriction_ended`).
@@ -1077,12 +1148,12 @@ pub type State {
     /// The persistence columns already logged as not read or not checked on this
     /// connection, by Spell4 id and result (282 or 283): one debug line for each.
     persistence_logged: Set(#(Int, Int)),
-    /// The property modifiers the caster's casts started on creatures and have not
-    /// ended, by cast id, in the order they started: the node's end by time
+    /// The changes the caster's casts hold on creatures and on other players and have
+    /// not ended, by cast id, in the order they started: the node's end by time
     /// (`NodesEnd`), a type 80 removal, a push off by the stack rule, the caster's
-    /// death and its leaving each tell `TargetChangeEnds` for those of the cast and
-    /// unit they end.
-    on_creatures: Dict(Int, List(OnCreature)),
+    /// death and its leaving each tell the end of those of the cast and unit they end
+    /// (`unit_end_told`).
+    on_units: Dict(Int, List(OnUnit)),
     /// The crowd-control states the caster's casts hold on the caster itself (a CCStateSet
     /// row aimed at the caster, `spell_plan.restrictions_in_phase`), by cast id and effect
     /// id: a press of a spell whose caster conditions mask a held state is refused
@@ -1155,7 +1226,7 @@ pub fn new() -> State {
     pending: [],
     passive: None,
     persistence_logged: set.new(),
-    on_creatures: dict.new(),
+    on_units: dict.new(),
     restrictions: dict.new(),
     restrictions_told: 0,
     item_press_watermark: None,
@@ -1591,7 +1662,7 @@ pub type Aside {
     timers: List(#(TimerId, Due)),
     stealth: List(#(unit_properties.Source, spell_plan.Breaks)),
     procs: List(#(unit_properties.Source, HeldProc)),
-    on_creatures: List(OnCreature),
+    on_units: List(OnUnit),
   )
 }
 
@@ -1778,7 +1849,8 @@ pub fn source_of(due due: Due) -> Option(unit_properties.Source) {
     | CooldownModifierStarts(source:, ..)
     | CooldownModifierEnds(source:) -> Some(source)
     TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) -> Some(on.source)
-    Go(..)
+    PlayerChangeEnd(..)
+    | Go(..)
     | Finish(..)
     | StartChild(..)
     | NodesEnd(..)
@@ -1812,6 +1884,8 @@ pub fn without_cancels(
       | Gain(..)
       | CasterChangeStarts(..)
       | CasterChangeEnds(..)
+      | OtherPlayerChangeStarts(..)
+      | OtherPlayerChangeEnds(..)
       | TargetChangeStarts(..)
       | ForcedMoveStarts(..)
       | CreatureDespawns(..)
@@ -1839,6 +1913,7 @@ pub fn is_quest_advance(due due: Due) -> Bool {
     | ModifierStart(..)
     | TargetModifierStart(..)
     | ForcedMoveStart(..)
+    | PlayerChangeEnd(..)
     | ModifierEnd(..)
     | RestrictionEnd(..)
     | CooldownModifierStarts(..)

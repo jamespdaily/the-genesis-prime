@@ -108,6 +108,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_use
 
+import genesis_prime/game/held_changes
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/objective_link
@@ -1321,6 +1322,35 @@ fn carried_out(
       -> connection_look.started(session:, source:, disguise:)
       cast_state.CasterChangeEnds(source:), _ ->
         connection_landing.ended(session:, now:, source:)
+      cast_state.OtherPlayerChangeStarts(address:, source:, change:, sight:),
+        Some(entered)
+      -> #(session, [
+        tells_the_player(
+          address:,
+          change: held_changes.PlayerChangeStarts(
+            from: client_connection.connection(session.link),
+            from_stay: entered.stay,
+            source:,
+            change:,
+            sight:,
+          ),
+        ),
+      ])
+      cast_state.OtherPlayerChangeEnds(address:, source:), Some(_) -> #(
+        session,
+        [
+          tells_the_player(
+            address:,
+            change: held_changes.PlayerChangeEnds(
+              from: client_connection.connection(session.link),
+              source:,
+            ),
+          ),
+        ],
+      )
+      cast_state.OtherPlayerChangeStarts(..), None
+      | cast_state.OtherPlayerChangeEnds(..), None
+      -> #(session, [])
       cast_state.StealthChanged(stealthed:), Some(entered) -> #(
         session,
         list.flatten([
@@ -1538,6 +1568,19 @@ const proc_word_bytes = 4
 
 /// The tell `request` to the creature `unit_id` of `life`, in the run of the player's
 /// map, through the creature registry with no watch, as a strike's tell goes.
+/// The change `change` told to the connection of the player `address` names, for the stay
+/// it names, through the registry as a strike's tell goes: the player's connection applies
+/// it and holds it for this connection.
+fn tells_the_player(
+  address address: player_address.PlayerAddress,
+  change change: held_changes.PlayerChange,
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Connection(connection: address.connection),
+    request: client_connection.TellPlayerChange(stay: address.stay, change:),
+  ))
+}
+
 fn tells_the_creature(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,

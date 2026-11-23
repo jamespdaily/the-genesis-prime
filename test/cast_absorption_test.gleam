@@ -394,6 +394,8 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
       | cast_state.CasterChangeStarts(change: cast_state.Heal(..), ..)
       | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.Send(..)
       | cast_state.Tell(..)
       | cast_state.StartTimer(..)

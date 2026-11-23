@@ -1045,6 +1045,8 @@ fn count_logs(effects effects: List(cast_state.Effect)) -> Int {
       | cast_state.Gain(..)
       | cast_state.CasterChangeStarts(..)
       | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeStarts(..)
+      | cast_state.OtherPlayerChangeEnds(..)
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)

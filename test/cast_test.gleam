@@ -775,6 +775,8 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
         | cast_state.Gain(..)
         | cast_state.CasterChangeStarts(..)
         | cast_state.CasterChangeEnds(..)
+        | cast_state.OtherPlayerChangeStarts(..)
+        | cast_state.OtherPlayerChangeEnds(..)
         | cast_state.TargetChangeStarts(..)
         | cast_state.TargetChangeEnds(..)
         | cast_state.ForcedMoveStarts(..)
