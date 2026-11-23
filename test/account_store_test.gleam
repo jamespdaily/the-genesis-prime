@@ -33,6 +33,7 @@ import genesis_prime/add_character/sql as add_character_sql
 import genesis_prime/game/character_name
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/login/guid
+import genesis_prime/migration
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, type ActionSlotRow, type ActiveQuest, type QuestRow, Account,
@@ -7238,5 +7239,42 @@ pub fn the_action_slot_migration_makes_the_table_with_its_named_checks_and_casca
   )
   assert stored_rows(store:, character_id: id) == []
     as "deleting the character deletes its slot rows"
+  account_store_support.stop(store)
+}
+
+/// Asks the store's probe, as the server's readiness ask does, and waits for
+/// what it found.
+fn probed(store: Store) -> worker.Probed {
+  let #(sent, probed) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      worker.probe(store: store.name, reply:)
+    })
+  let assert ToWorker(_) = sent as "the probe started a worker"
+  probed
+}
+
+pub fn a_database_with_no_migration_record_table_is_read_as_no_record_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  execute(store.pool, "drop table schema_migration")
+  assert probed(store) == worker.Reached(recorded: migration.NoRecord)
+    as "Postgres answers a read of a missing table with undefined_table (42P01), which the probe reads as no record, not as a database that is away"
+  account_store_support.stop(store)
+}
+
+pub fn a_migration_record_of_another_shape_is_read_as_unreadable_with_its_reason_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  // The table has a column of another name, so the read fails in Postgres with
+  // undefined_column (42703), not undefined_table.
+  execute(
+    store.pool,
+    "alter table schema_migration rename column sha256 to hash",
+  )
+  let assert worker.Reached(recorded: migration.Unreadable(reason:)) =
+    probed(store)
+    as "the database answered, so the probe reached it, and the record could not be read"
+  assert string.contains(reason, "undefined_column (42703)")
+    as "the reason is Postgres's own name and code for the failure"
   account_store_support.stop(store)
 }
