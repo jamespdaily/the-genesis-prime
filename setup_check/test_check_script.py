@@ -79,7 +79,7 @@ NOT_TEST_RUNS = ("glinter", "squirrel", "genesis_prime/table_generator")
 GLEAM_STUB = """#!/bin/sh
 as=${PLANT_AS:-gleam}
 echo "$as $*" >>"$PLANT_LOG"
-echo "$as $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA GENESIS_TEST_SKIP_REAL_START=$GENESIS_TEST_SKIP_REAL_START GENESIS_TEST_SKIP_CLIENT_ROWS=$GENESIS_TEST_SKIP_CLIENT_ROWS" >>"$PLANT_LOG.environment"
+echo "$as $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL GENESIS_TEST_SKIP_WORLD_DATA=$GENESIS_TEST_SKIP_WORLD_DATA GENESIS_TEST_SKIP_REAL_START=$GENESIS_TEST_SKIP_REAL_START GENESIS_TEST_SKIP_CLIENT_ROWS=$GENESIS_TEST_SKIP_CLIENT_ROWS GENESIS_TEST_SKIP_REAL_TABLES=$GENESIS_TEST_SKIP_REAL_TABLES" >>"$PLANT_LOG.environment"
 if [ -n "$PLANT_RENDEZVOUS" ]; then
   rendezvous="$PLANT_LOG.rendezvous"
   mkdir -p "$rendezvous"
@@ -102,7 +102,8 @@ if [ -n "$PLANT_RENDEZVOUS" ]; then
     "run -m squirrel check") touch "$rendezvous/squirrel" ;;
     "test -- --tag world_data") touch "$rendezvous/world_data" ;;
     "test -- --tag real_start") touch "$rendezvous/real_start" ;;
-    "test -- --workers "*) await glinter table_generator squirrel world_data real_start ;;
+    "test -- --tag real_tables") touch "$rendezvous/real_tables" ;;
+    "test -- --workers "*) await glinter table_generator squirrel world_data real_start real_tables ;;
   esac
 fi
 case "$1" in
@@ -150,10 +151,15 @@ if [ "$1" = test ]; then
   # The run keeps the literal allocator's highest carriers size in the file it is
   # given, as test/genesis_prime_test.gleam does; PLANT_LITERAL_PEAK is that many
   # bytes, and "none" writes no file.
-  # PLANT_WORLD_DATA_LITERAL_PEAK is the same for the world-data run alone.
+  # PLANT_<TAG>_LITERAL_PEAK (PLANT_WORLD_DATA_LITERAL_PEAK) is the same for the run of
+  # that tag alone.
   peak="${PLANT_LITERAL_PEAK:-100000000}"
   case "$*" in
-    *"--tag world_data"*) peak="${PLANT_WORLD_DATA_LITERAL_PEAK:-$peak}" ;;
+    *"--tag "*)
+      arguments="$*"
+      tag=$(echo "${arguments##*--tag }" | cut -d' ' -f1 | tr a-z A-Z)
+      peak=$(printenv "PLANT_${tag}_LITERAL_PEAK" || echo "$peak")
+      ;;
   esac
   if [ -n "$GENESIS_LITERAL_PEAK_FILE" ] && [ "$peak" != none ]; then
     echo "$peak" >"$GENESIS_LITERAL_PEAK_FILE"
@@ -791,7 +797,7 @@ class ClientSuiteTest(unittest.TestCase):
         run = shared_run("tokens-on", client=True)
         self.assertEqual(run.done.returncode, 0, run.output)
         runs = [line for line in run.environment.splitlines() if line.startswith("built test")]
-        self.assertIn("built test -- --tag client_rows GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA= GENESIS_TEST_SKIP_REAL_START= GENESIS_TEST_SKIP_CLIENT_ROWS=", runs)
+        self.assertIn("built test -- --tag client_rows GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA= GENESIS_TEST_SKIP_REAL_START= GENESIS_TEST_SKIP_CLIENT_ROWS= GENESIS_TEST_SKIP_REAL_TABLES=", runs)
         self.assertIn("GENESIS_TEST_SKIP_CLIENT_ROWS=1", next(line for line in runs if "--workers" in line))
 
     def test_without_the_client_the_client_rows_test_never_starts(self):
@@ -1030,7 +1036,7 @@ def scope_line(output: str) -> str:
 
 # The full check's parts, in the order ./check prints them after branch-current.
 EVERY_PART = [
-    "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "real-start", "world-data", "literal-area",
+    "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "real-start", "real-tables", "world-data", "literal-area",
     "migrations", "squirrel", "client-suite", "fact-checker",
 ]
 QUICK_PARTS = ["format", "gleam-build", "glinter", "fact-checker"]
@@ -1277,8 +1283,8 @@ class SerialTestsTest(unittest.TestCase):
 
     def test_the_run_of_the_other_tests_skips_the_serial_ones(self):
         runs = [line for line in shared_run("full").environment.splitlines() if line.startswith("built test")]
-        self.assertEqual(runs[0], "%s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1" % FIRST_RUN)
-        self.assertEqual(runs[1], "%s GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA= GENESIS_TEST_SKIP_REAL_START= GENESIS_TEST_SKIP_CLIENT_ROWS=" % SERIAL_RUN)
+        self.assertEqual(runs[0], "%s GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_REAL_TABLES=1" % FIRST_RUN)
+        self.assertEqual(runs[1], "%s GENESIS_TEST_SKIP_SERIAL= GENESIS_TEST_SKIP_WORLD_DATA= GENESIS_TEST_SKIP_REAL_START= GENESIS_TEST_SKIP_CLIENT_ROWS= GENESIS_TEST_SKIP_REAL_TABLES=" % SERIAL_RUN)
 
     def test_a_failure_in_the_serial_run_fails_the_gleam_test_part(self):
         def plant(case):
@@ -1406,45 +1412,57 @@ class LiteralAreaTest(unittest.TestCase):
             ["%s peak_file=given" % FIRST_RUN, "%s peak_file=" % SERIAL_RUN],
         )
 
-    def world_data_at(self, test_run_peak: int, world_data_peak) -> Run:
+    def part_at(self, part: str, test_run_peak: int, part_peak) -> Run:
+        """A run in which the part's run (and only it) peaks at part_peak, the others at the first run's."""
+        variable = "PLANT_%s_LITERAL_PEAK" % part.replace("-", "_").upper()
         return shared_run(
-            "literal-world-%s-%s" % (test_run_peak, world_data_peak), client=True,
-            PLANT_LITERAL_PEAK=str(test_run_peak), PLANT_WORLD_DATA_LITERAL_PEAK=str(world_data_peak), **WORLD_DATA)
+            "literal-%s-%s-%s" % (part, test_run_peak, part_peak), client=True,
+            PLANT_LITERAL_PEAK=str(test_run_peak), **{variable: str(part_peak)}, **WORLD_DATA)
 
-    def test_the_world_data_runs_peak_is_measured_in_its_own_region_and_printed_beside_the_first_runs(self):
-        first, world = self.limit() // 2, self.limit() // 3
-        run = self.world_data_at(first, world)
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertIn("literal area: peak %d MiB of 1024 MiB" % (first // 2**20), run.done.stdout)
-        self.assertIn("literal area of the world-data run: peak %d MiB of 1024 MiB" % (world // 2**20), run.done.stdout)
+    def test_the_runs_that_hold_the_whole_client_tables_or_the_world_database_record_a_peak(self):
+        # Each such VM holds the persistent terms of the tables and what the tests derive from
+        # them, in a literal region the first run's peak does not include.
+        self.assertTrue({"real-tables", "world-data"} <= set(parts_with_a_peak()), parts_with_a_peak())
 
-    def test_a_world_data_run_over_the_limit_warns_naming_the_run_though_the_first_run_is_under_it(self):
-        run = self.world_data_at(self.limit() // 2, self.limit() + 1)
-        self.assert_part_ok(run)
-        (warning,) = self.warnings(run)
-        self.assertTrue(warning.startswith("check WARNING: literal area of the world-data run over %d%% of its region" % literal_limit_percent()), warning)
+    def test_a_tagged_runs_peak_is_measured_in_its_own_region_and_printed_beside_the_first_runs(self):
+        for part in parts_with_a_peak():
+            with self.subTest(part=part):
+                first, own = self.limit() // 2, self.limit() // 3
+                run = self.part_at(part, first, own)
+                self.assertEqual(run.done.returncode, 0, run.output)
+                self.assertIn("literal area: peak %d MiB of 1024 MiB" % (first // 2**20), run.done.stdout)
+                self.assertIn("literal area of the %s run: peak %d MiB of 1024 MiB" % (part, own // 2**20), run.done.stdout)
 
-    def test_a_first_run_over_the_limit_warns_though_the_world_data_run_is_under_it(self):
-        run = self.world_data_at(self.limit() + 1, self.limit() // 2)
+    def test_a_tagged_run_over_the_limit_warns_naming_the_run_though_the_first_run_is_under_it(self):
+        for part in parts_with_a_peak():
+            with self.subTest(part=part):
+                run = self.part_at(part, self.limit() // 2, self.limit() + 1)
+                self.assert_part_ok(run)
+                (warning,) = self.warnings(run)
+                self.assertTrue(warning.startswith("check WARNING: literal area of the %s run over %d%% of its region" % (part, literal_limit_percent())), warning)
+
+    def test_a_first_run_over_the_limit_warns_though_the_tagged_runs_are_under_it(self):
+        under = {"PLANT_%s_LITERAL_PEAK" % tag.upper(): str(self.limit() // 2) for part, tag in tagged_parts() if part in parts_with_a_peak()}
+        run = shared_run("literal-first-over", client=True, PLANT_LITERAL_PEAK=str(self.limit() + 1), **under, **WORLD_DATA)
         self.assert_part_ok(run)
         (warning,) = self.warnings(run)
         self.assertTrue(warning.startswith("check WARNING: literal area over %d%% of its region" % literal_limit_percent()), warning)
 
-    def test_a_world_data_run_that_wrote_no_peak_warns_naming_the_run(self):
-        run = self.world_data_at(self.limit() // 2, "none")
-        self.assert_part_ok(run)
-        (warning,) = self.warnings(run)
-        self.assertTrue(warning.startswith("check WARNING: no literal area peak recorded: the world-data run wrote none"), warning)
+    def test_a_tagged_run_that_wrote_no_peak_warns_naming_the_run(self):
+        for part in parts_with_a_peak():
+            with self.subTest(part=part):
+                run = self.part_at(part, self.limit() // 2, "none")
+                self.assert_part_ok(run)
+                (warning,) = self.warnings(run)
+                self.assertTrue(warning.startswith("check WARNING: no literal area peak recorded: the %s run wrote none" % part), warning)
 
-    def test_the_first_run_and_the_world_data_run_are_given_the_file_and_the_serial_run_is_not(self):
+    def test_the_first_run_and_the_runs_of_the_parts_with_a_peak_are_given_the_file_and_no_other_run_is(self):
         run = shared_run("world-data-on", client=True, **WORLD_DATA)
         peak_log = sorted(line for line in run.peak.splitlines() if line.startswith("built test"))
-        self.assertEqual(peak_log, sorted([
-            "%s peak_file=given" % FIRST_RUN,
-            "%s peak_file=" % SERIAL_RUN,
-            "built test -- --tag client_rows peak_file=",
-            "built test -- --tag real_start peak_file=",
-            "built test -- --tag world_data peak_file=given"]))
+        self.assertEqual(peak_log, sorted(
+            ["%s peak_file=given" % FIRST_RUN, "%s peak_file=" % SERIAL_RUN, "built test -- --tag client_rows peak_file="]
+            + ["built test -- --tag %s peak_file=%s" % (tag, "given" if part in parts_with_a_peak() else "")
+               for part, tag in tagged_parts()]))
 
     def test_the_part_is_skipped_when_the_build_it_needs_failed(self):
         def plant(case):
@@ -1514,7 +1532,7 @@ class ParallelPartsTest(unittest.TestCase):
 
         run = shared_run("build-fails-all", prepare=plant)
         self.assertNotIn("built run -m squirrel check", run.commands)
-        for part in ("glinter", "generated-tables", "gleam-test", "real-start", "world-data", "literal-area", "squirrel"):
+        for part in ("glinter", "generated-tables", "gleam-test", "real-start", "real-tables", "world-data", "literal-area", "squirrel"):
             with self.subTest(part=part):
                 self.assertRegex(run.output, r"(?m)^  %s +skipped \(a part it needs failed: gleam-build\)" % part)
 
@@ -1551,6 +1569,7 @@ class BuiltCodeTest(unittest.TestCase):
                 SERIAL_RUN,
                 "built test -- --tag client_rows",
                 "built test -- --tag real_start",
+                "built test -- --tag real_tables",
                 "built test -- --tag world_data",
             ]))
 
@@ -1629,56 +1648,112 @@ class RunBuiltOnRealErlangTest(unittest.TestCase):
         self.assertEqual(self.run_built("glinter", "fail").returncode, 7)
 
 
-@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
-class WorldDataPartTest(unittest.TestCase):
-    """The world-data test (tagged world_data, about a minute alone) is a part of its own:
-    one run of the tests started with `--tag world_data` where the test can run, the test run
-    that has the other tests skips it, and a failure fails the world-data part and
-    no other."""
+def tagged_parts() -> list[tuple[str, str]]:
+    """The parts that run the tests of one tag alone, as (part, tag), as the check lists them."""
+    found = re.findall(r'(?m)^tagged_parts="([^"]*)"$', CHECK.read_text())
+    assert len(found) == 1, found
+    return [(part, part.replace("-", "_")) for part in found[0].split()]
 
-    def test_where_it_can_run_the_part_runs_the_tagged_test_alone_and_the_other_run_skips_it(self):
+
+def parts_with_a_peak() -> list[str]:
+    """The tagged parts whose VM records a literal area peak, as the check lists them."""
+    found = re.findall(r'(?m)^tagged_parts_with_a_peak="([^"]*)"$', CHECK.read_text())
+    assert len(found) == 1, found
+    return found[0].split()
+
+
+@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
+class TaggedPartTest(unittest.TestCase):
+    """The tests that need a VM of their own or the client's whole tables are parts of the
+    full check beside gleam-test, one per tag: one run of the tests started with
+    `--tag TAG` where the part can run, the test runs that have the other tests skip that
+    tag, a failure fails that part and no other, and the fast check runs none of them.
+    Each rule is run over every part the check lists in `tagged_parts`."""
+
+    def check_the_part_runs_its_tag_alone_and_the_other_runs_skip_it(self, part: str, tag: str) -> None:
         run = shared_run("world-data-on", client=True, **WORLD_DATA)
         self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(run.output, r"(?m)^  world-data +ok\b")
+        self.assertRegex(run.output, r"(?m)^  %s +ok\b" % part)
         runs = {line.split(" GENESIS_TEST_SKIP_SERIAL")[0]: line for line in run.environment.splitlines() if line.startswith("built test")}
-        self.assertEqual(sorted(runs), sorted([
-            FIRST_RUN, SERIAL_RUN, "built test -- --tag client_rows", "built test -- --tag real_start",
-            "built test -- --tag world_data"]))
-        self.assertIn("GENESIS_TEST_SKIP_WORLD_DATA=1", runs[FIRST_RUN])
-        for tagged in (SERIAL_RUN, "built test -- --tag world_data"):
-            self.assertIn("GENESIS_TEST_SKIP_WORLD_DATA= ", runs[tagged])
+        own_run = "built test -- --tag " + tag
+        variable = "GENESIS_TEST_SKIP_" + tag.upper()
+        self.assertIn(variable + "=1", runs[FIRST_RUN])
+        for tagged in (SERIAL_RUN, own_run):
+            self.assertIn(variable + "=", runs[tagged])
+            self.assertNotIn(variable + "=1", runs[tagged])
 
-    def test_without_the_client_the_part_is_skipped_and_its_run_never_starts(self):
+    def check_the_fast_check_does_not_run_the_part(self, part: str, tag: str) -> None:
+        self.assertIn("built test -- --tag " + tag, shared_run("world-data-on", client=True, **WORLD_DATA).commands, "the full check runs the part")
+        for name, run in (("fast", shared_run("fast", "fast")), ("light", scoped_run("light-only", plant_light_changes))):
+            with self.subTest(scope=name):
+                self.assertFalse([c for c in run.commands if tag in c], run.commands)
+                self.assertNotIn(part, parts_reported(run.output))
+
+    def test_real_tables_part_runs_the_tagged_tests_and_gleam_test_skips_them(self):
+        self.check_the_part_runs_its_tag_alone_and_the_other_runs_skip_it("real-tables", "real_tables")
+
+    def test_real_tables_part_is_not_in_the_fast_check(self):
+        self.check_the_fast_check_does_not_run_the_part("real-tables", "real_tables")
+
+    def test_every_tagged_part_runs_its_tag_alone_and_the_other_runs_skip_it(self):
+        for part, tag in tagged_parts():
+            with self.subTest(part=part):
+                self.check_the_part_runs_its_tag_alone_and_the_other_runs_skip_it(part, tag)
+
+    def test_the_full_check_runs_the_first_run_the_serial_run_the_client_rows_and_one_run_per_tagged_part(self):
+        run = shared_run("world-data-on", client=True, **WORLD_DATA)
+        runs = [line.split(" GENESIS_TEST_SKIP_SERIAL")[0] for line in run.environment.splitlines() if line.startswith("built test")]
+        self.assertEqual(sorted(runs), sorted(
+            [FIRST_RUN, SERIAL_RUN, "built test -- --tag client_rows"] + ["built test -- --tag " + tag for _, tag in tagged_parts()]))
+
+    def test_every_tagged_part_is_a_part_of_the_full_check(self):
+        for part, _ in tagged_parts():
+            self.assertIn(part, EVERY_PART)
+
+    def test_the_fast_check_does_not_run_a_tagged_part(self):
+        for part, tag in tagged_parts():
+            with self.subTest(part=part):
+                self.check_the_fast_check_does_not_run_the_part(part, tag)
+
+    def test_without_the_client_a_tagged_part_is_skipped_and_its_run_never_starts(self):
         run = shared_run("full")
-        self.assertRegex(run.output, r"(?m)^  world-data +skipped \(")
-        self.assertFalse([c for c in run.commands if "--tag world_data" in c], run.commands)
+        for part, tag in tagged_parts():
+            with self.subTest(part=part):
+                self.assertRegex(run.output, r"(?m)^  %s +skipped \(" % part)
+                self.assertFalse([c for c in run.commands if "--tag " + tag in c], run.commands)
 
-    def test_without_the_world_database_variable_the_part_is_skipped(self):
-        run = shared_run("world-data-no-variable", client=True)
-        self.assertRegex(run.output, r"(?m)^  world-data +skipped \(")
-        self.assertFalse([c for c in run.commands if "--tag world_data" in c], run.commands)
+    def test_without_the_world_database_only_the_world_data_part_is_skipped(self):
+        run = shared_run("tokens-on", client=True)
+        for part, tag in tagged_parts():
+            with self.subTest(part=part):
+                if part == "world-data":
+                    self.assertRegex(run.output, r"(?m)^  %s +skipped \(" % part)
+                    self.assertFalse([c for c in run.commands if "--tag " + tag in c], run.commands)
+                else:
+                    self.assertRegex(run.output, r"(?m)^  %s +ok\b" % part)
+                    self.assertIn("built test -- --tag " + tag, run.commands)
 
-    def test_a_failing_world_data_run_fails_that_part_and_no_other(self):
-        def plant(case):
-            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
-                'if [ "$1" = test ] &&', 'if [ "$*" = "test -- --tag world_data" ]; then exit 1; fi\nif [ "$1" = test ] &&'))
+    def test_a_failing_tagged_run_fails_that_part_and_no_other(self):
+        for part, tag in tagged_parts():
+            with self.subTest(part=part):
+                def plant(case):
+                    executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
+                        'if [ "$1" = test ] &&', 'if [ "$*" = "test -- --tag %s" ]; then exit 1; fi\nif [ "$1" = test ] &&' % tag))
 
-        run = shared_run("world-data-fails", client=True, prepare=plant, **WORLD_DATA)
-        self.assertNotEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(failed_line(self, run.output), r"^check FAILED: world-data$")
+                run = shared_run("%s-fails" % part, client=True, prepare=plant, **WORLD_DATA)
+                self.assertNotEqual(run.done.returncode, 0, run.output)
+                self.assertRegex(failed_line(self, run.output), r"^check FAILED: %s$" % part)
 
-    def test_a_failure_of_the_other_tests_does_not_fail_the_world_data_part(self):
+    def test_a_failure_of_the_other_tests_does_not_fail_a_tagged_part(self):
         def plant(case):
             executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
                 'if [ "$1" = test ] &&', 'case "$*" in "test -- --tag serial"*) exit 1 ;; esac\nif [ "$1" = test ] &&'))
 
-        run = shared_run("serial-fails-with-world-data", client=True, prepare=plant, **WORLD_DATA)
-        self.assertRegex(run.output, r"(?m)^  world-data +ok\b")
+        run = shared_run("serial-fails-with-tagged-parts", client=True, prepare=plant, **WORLD_DATA)
+        for part, _ in tagged_parts():
+            with self.subTest(part=part):
+                self.assertRegex(run.output, r"(?m)^  %s +ok\b" % part)
         self.assertRegex(failed_line(self, run.output), r"^check FAILED: gleam-test$")
-
-    def test_the_fast_check_does_not_run_it(self):
-        self.assertFalse([c for c in shared_run("fast", "fast").commands if "world_data" in c])
-
 
 
 def plant_table_rows(case: PlantedCheckCase, run: str, rows: list[tuple[str, str, str, str]]) -> None:
@@ -1686,54 +1761,6 @@ def plant_table_rows(case: PlantedCheckCase, run: str, rows: list[tuple[str, str
     (status, module, test, duration as unitest prints it)."""
     text = "".join("| %-6s | %s | %s | %-8s |\n" % row for row in rows)
     Path(str(case.log) + ".table." + run).write_text(text)
-
-
-@unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
-class RealStartPartTest(unittest.TestCase):
-    """The boot test (tagged real_start, most of a minute) is a part of its own beside
-    gleam-test: one run of the tests started with `--tag real_start` where the client's
-    tables are, the test runs that have the other tests skip it, and a failure fails the
-    real-start part and no other."""
-
-    def test_with_the_client_the_part_runs_the_tagged_test_alone_and_the_other_runs_skip_it(self):
-        run = shared_run("world-data-on", client=True, **WORLD_DATA)
-        self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(run.output, r"(?m)^  real-start +ok\b")
-        runs = {line.split(" GENESIS_TEST_SKIP_SERIAL")[0]: line for line in run.environment.splitlines() if line.startswith("built test")}
-        self.assertIn("GENESIS_TEST_SKIP_REAL_START=1", runs[FIRST_RUN])
-        for tagged in (SERIAL_RUN, "built test -- --tag real_start"):
-            self.assertIn("GENESIS_TEST_SKIP_REAL_START= ", runs[tagged])
-
-    def test_the_part_does_not_need_the_world_database(self):
-        run = shared_run("tokens-on", client=True)
-        self.assertRegex(run.output, r"(?m)^  real-start +ok\b")
-        self.assertIn("built test -- --tag real_start", run.commands)
-
-    def test_without_the_client_the_part_is_skipped_and_its_run_never_starts(self):
-        run = shared_run("full")
-        self.assertRegex(run.output, r"(?m)^  real-start +skipped \(")
-        self.assertFalse([c for c in run.commands if "--tag real_start" in c], run.commands)
-
-    def test_a_failing_boot_test_run_fails_that_part_and_no_other(self):
-        def plant(case):
-            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
-                'if [ "$1" = test ] &&', 'if [ "$*" = "test -- --tag real_start" ]; then exit 1; fi\nif [ "$1" = test ] &&'))
-
-        run = shared_run("real-start-fails", client=True, prepare=plant)
-        self.assertNotEqual(run.done.returncode, 0, run.output)
-        self.assertRegex(failed_line(self, run.output), r"^check FAILED: real-start$")
-
-    def test_a_failure_of_the_other_tests_does_not_fail_the_real_start_part(self):
-        def plant(case):
-            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
-                'if [ "$1" = test ] &&', 'case "$*" in "test -- --tag serial"*) exit 1 ;; esac\nif [ "$1" = test ] &&'))
-
-        run = shared_run("serial-fails-with-real-start", client=True, prepare=plant)
-        self.assertRegex(run.output, r"(?m)^  real-start +ok\b")
-        self.assertRegex(failed_line(self, run.output), r"^check FAILED: gleam-test$")
-
-    def test_the_fast_check_does_not_run_it(self):
-        self.assertFalse([c for c in shared_run("fast", "fast").commands if "real_start" in c])
 
 
 # The modules a planted gleam-test part reports: twelve modules of 1 to 12 s in the run with

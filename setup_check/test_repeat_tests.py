@@ -66,9 +66,9 @@ ticket=1
 until (set -C; : >"$dir/ticket.$ticket") 2>/dev/null; do ticket=$((ticket + 1)); done
 touch "$dir/alive.$$"
 alive() { ls "$dir" | grep -c '^alive\\.'; }
-printf 'start %s seed %s file %s alive %s skip %s%s%s%s salt %s\\n' "$ticket" "$seed" "$file" "$(alive)" \\
+printf 'start %s seed %s file %s alive %s skip %s%s%s%s%s salt %s\\n' "$ticket" "$seed" "$file" "$(alive)" \\
   "$GENESIS_TEST_SKIP_SERIAL" "$GENESIS_TEST_SKIP_WORLD_DATA" "$GENESIS_TEST_SKIP_REAL_START" \\
-  "$GENESIS_TEST_SKIP_CLIENT_ROWS" "$GENESIS_TEST_SEED_SALT" >>"$dir/starts.log"
+  "$GENESIS_TEST_SKIP_CLIENT_ROWS" "$GENESIS_TEST_SKIP_REAL_TABLES" "$GENESIS_TEST_SEED_SALT" >>"$dir/starts.log"
 if [ -n "$PLANT_AT_ONCE" ] && [ "$ticket" -le "$PLANT_AT_ONCE" ]; then
   touch "$dir/arrived.$ticket"
   arrived() { ls "$dir" | grep -c '^arrived\\.'; }
@@ -293,7 +293,7 @@ class RepeatTestsTest(PlantedRepeatCase):
             and any(isinstance(target, ast.Name) and target.id == "SKIP_VARIABLES" for target in node.targets)
         )
         self.assertEqual(list(listed), checked_variables)
-        self.assertEqual({row["skip"] for row in rows}, {"1111"})
+        self.assertEqual({row["skip"] for row in rows}, {"11111"})
 
     def test_each_run_gets_its_own_salt_and_a_failing_run_prints_the_command_that_repeats_it(self):
         self.commit("change a test file", change=["test/changed_test.gleam"])

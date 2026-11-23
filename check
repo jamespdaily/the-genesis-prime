@@ -68,18 +68,19 @@
 #                  once (default 2; each group also runs its tests at once),
 #                  then the tests tagged serial, one at a time; the test tagged
 #                  world_data is left to the world-data part, the test tagged
-#                  real_start to the real-start part, the test tagged
+#                  real_start to the real-start part, the tests tagged
+#                  real_tables to the real-tables part, the test tagged
 #                  client_rows to the client-suite part. A test that returns
 #                  after more than half its deadline prints a `check WARNING: test`
 #                  line (test/owned_test.gleam), which the summary repeats from this
-#                  part's log and the world-data part's and the real-start part's;
+#                  part's log and the world-data, real-start and real-tables parts';
 #                  it never fails the part. Each test is also listed in
 #                  $work/gleam-test.running while it runs (GENESIS_TEST_PROGRESS_FILE,
-#                  test/test_progress.gleam); the real-start, world-data and
+#                  test/test_progress.gleam); the real-start, real-tables, world-data and
 #                  client-suite parts' tests are in files of their own. When a hang
 #                  stops the check, the summary names under each hung part the tests
 #                  that had started and not ended, with the seconds each had run.
-#                  No tag but serial, world_data, real_start and client_rows is
+#                  No tag but serial, world_data, real_start, real_tables and client_rows is
 #                  skipped, so the first run also runs the tests tagged code_rule
 #                  (the tests of test/code_rule) and registry (each one comparing a
 #                  hand-kept list with a registry of the whole server: the tables
@@ -100,6 +101,12 @@
 #                  VM of its own beside gleam-test; skipped where its node cannot run:
 #                  GENESIS_NO_CLIENT=1 (the test needs the client's tables)
 #                                                       (after gleam-build)
+#   real-tables    the tests tagged real_tables, the tests that read the client's whole
+#                  tables (several minutes of test time), in a VM of its own beside
+#                  gleam-test, which records its literal area peak as the world-data
+#                  part does; skipped where GENESIS_NO_CLIENT=1 (the tests need the
+#                  client's tables)
+#                                                       (after gleam-build)
 #   world-data     the tests tagged world_data, the whole world database's
 #                  spawn counts, in a VM of its own beside gleam-test (about a
 #                  minute alone); skipped where the test cannot run:
@@ -113,9 +120,9 @@
 #                  nothing, or when ERL_FLAGS, ERL_AFLAGS, ERL_ZFLAGS or
 #                  ELIXIR_ERL_OPTIONS sets +MIscs (the share is of the default
 #                  region), it is `ok` and the summary prints a `check WARNING`
-#                  line. Prints the peak and its share, for the world-data run
-#                  too (a VM with a region of its own)
-#                                                       (after gleam-test and world-data)
+#                  line. Prints the peak and its share, for the real-tables and
+#                  world-data runs too (each a VM with a region of its own)
+#                                                       (after gleam-test, real-tables and world-data)
 #   migrations     a fresh database with a unique name, every
 #                  priv/migrations/*.sql applied in name order and recorded in
 #                  schema_migration by dev/apply_migrations.sh, each file and
@@ -147,8 +154,8 @@
 # gleam compiles reads an empty .app file and dies at start (the first gleam-test run
 # of CI run 42349388041). So after gleam-build the parts start the built code
 # themselves (run_built: the same erl command gleam starts, without the compile) and
-# run beside each other: glinter, generated-tables, gleam-test, real-start, world-data and
-# squirrel, and literal-area follows the two test runs. Every other part runs beside
+# run beside each other: glinter, generated-tables, gleam-test, real-start, real-tables,
+# world-data and squirrel, and literal-area follows the two test runs. Every other part runs beside
 # the chain.
 #
 # The committed message codec equals what the schema generates: the test
@@ -246,7 +253,7 @@ fast_parts="format gleam-build glinter fact-checker"
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
-  full) parts="format gleam-build glinter generated-tables gleam-test real-start world-data literal-area migrations squirrel client-suite fact-checker" ;;
+  full) parts="format gleam-build glinter generated-tables gleam-test real-start real-tables world-data literal-area migrations squirrel client-suite fact-checker" ;;
   fast) parts="$fast_parts" ;;
 esac
 
@@ -596,8 +603,10 @@ wait_for_status() {
 # world_data, which takes about a minute alone, is the world-data part's: the first
 # run skips it too (GENESIS_TEST_SKIP_WORLD_DATA); so is the test tagged real_start,
 # which boots the real server in a node of its own and takes most of a minute, the
-# real-start part's (GENESIS_TEST_SKIP_REAL_START); and the test tagged client_rows,
-# which reads the client's whole tables, is the client-suite part's
+# real-start part's (GENESIS_TEST_SKIP_REAL_START); the tests tagged real_tables, which
+# read the client's whole tables and take minutes together, are the real-tables part's
+# (GENESIS_TEST_SKIP_REAL_TABLES); and the test tagged client_rows, which reads the
+# client's committed rows against the client's tables, is the client-suite part's
 # (GENESIS_TEST_SKIP_CLIENT_ROWS).
 #
 # Both runs print unitest's table of each test's duration (--reporter table, without
@@ -610,21 +619,59 @@ wait_for_status() {
 gleam_test() {
   local status=0
   if [ -n "$test_workers" ]; then
-    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 \
+    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_REAL_TABLES=1 \
       run_built genesis_prime_test --workers "$test_workers" --reporter table --no-color || status=1
   else
-    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 \
+    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_REAL_TABLES=1 \
       run_built genesis_prime_test --reporter table --no-color || status=1
   fi
   GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" run_built genesis_prime_test --tag serial --reporter table --no-color || status=1
   return $status
 }
 
-# real_start_test: the boot test alone, in a VM of its own beside the first test run.
-# The VM holds the few terms of one test (the server runs in a node of its own), so it
-# has no literal peak file.
-real_start_test() {
-  GENESIS_TEST_PROGRESS_FILE="$work/real-start.running" run_built genesis_prime_test --tag real_start
+# The parts that run the tests of one tag alone, in a VM of their own beside the first
+# test run: a part's tag is its name with `_` for `-` (real-start runs real_start). Each
+# is skipped where it cannot run (tagged_part_wanted), and gleam-test's runs skip its tag
+# (GENESIS_TEST_SKIP_ plus the tag in capitals). A VM has a literal region of its own that
+# the first run's peak does not include, so the parts in tagged_parts_with_a_peak keep
+# the allocator's highest carriers size in $work/literal-peak-PART for literal-area to
+# compare; the real-start VM holds the few terms of one test (the server runs in a node
+# of its own), so it keeps none.
+tagged_parts="real-start real-tables world-data"
+tagged_parts_with_a_peak="real-tables world-data"
+
+# in_list WORD LIST: succeeds when WORD is one of the words of LIST.
+in_list() {
+  case " $2 " in
+    *" $1 "*) return 0 ;;
+  esac
+  return 1
+}
+
+# tagged_part_needs PART: what the part needs to run, as the reason a skip states.
+tagged_part_needs() {
+  case "$1" in
+    world-data) echo "the client's tables and GENESIS_WORLD_DATA (GENESIS_NO_CLIENT=1 or GENESIS_WORLD_DATA unset here)" ;;
+    *) echo "the client's tables (GENESIS_NO_CLIENT=1 here)" ;;
+  esac
+}
+
+# tagged_part_wanted PART: succeeds where the part's tests can run: they need the client's
+# tables, as their own guards say, and the world-data test also Jim's world database
+# (GENESIS_WORLD_DATA).
+tagged_part_wanted() {
+  [ "${GENESIS_NO_CLIENT:-}" != 1 ] || return 1
+  [ "$1" != world-data ] || [ -n "${GENESIS_WORLD_DATA:-}" ]
+}
+
+# tagged_part_test PART: the tests of the part's tag alone.
+tagged_part_test() {
+  local part=$1
+  if in_list "$part" "$tagged_parts_with_a_peak"; then
+    GENESIS_TEST_PROGRESS_FILE="$work/$part.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-$part" run_built genesis_prime_test --tag "${part//-/_}"
+  else
+    GENESIS_TEST_PROGRESS_FILE="$work/$part.running" run_built genesis_prime_test --tag "${part//-/_}"
+  fi
 }
 
 # running_tests PART: prints the tests the part's run had started and not ended, from
@@ -669,13 +716,6 @@ test_module_times() {
     awk '{ printf "    %6.1f s  %s\n", $1 / 1000, $2 }'
 }
 
-# world_data_test: the world-data test alone, in a VM of its own beside the first
-# test run, with its own literal peak file: its VM has a literal region of its own,
-# the test alone holds 60.4% of it, and the first run's peak does not include it.
-world_data_test() {
-  GENESIS_TEST_PROGRESS_FILE="$work/world-data.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" run_built genesis_prime_test --tag world_data
-}
-
 # literal_peak_report FILE RUN LABEL: prints the peak the run RUN recorded in FILE as
 # LABEL, then a `check WARNING` line (which the summary repeats) when it is over
 # literal_limit_percent of the region, or when the run recorded none. It returns 0
@@ -703,6 +743,7 @@ literal_peak_report() {
 # prints that start with `literal area` are the measures and the lines that start
 # with `check WARNING` are the warnings, which the check prints under the parts.
 literal_area_check() {
+  local part
   case "${ERL_FLAGS:-} ${ERL_AFLAGS:-} ${ERL_ZFLAGS:-} ${ELIXIR_ERL_OPTIONS:-}" in
     *+MIscs*)
       echo "check WARNING: +MIscs set in ERL_FLAGS, ERL_AFLAGS, ERL_ZFLAGS or ELIXIR_ERL_OPTIONS: the limit is a share of the default 1 GiB literal region, so the area was not measured against it; unset it"
@@ -710,9 +751,11 @@ literal_area_check() {
       ;;
   esac
   literal_peak_report "$work/literal-peak" "test run" "literal area"
-  if [ ! -f "$work/world-data.skipped" ]; then
-    literal_peak_report "$work/literal-peak-world-data" "world-data run" "literal area of the world-data run"
-  fi
+  for part in $tagged_parts_with_a_peak; do
+    if [ ! -f "$work/$part.skipped" ]; then
+      literal_peak_report "$work/literal-peak-$part" "$part run" "literal area of the $part run"
+    fi
+  done
   return 0
 }
 
@@ -747,24 +790,12 @@ squirrel_after_migrations() {
   fi
 }
 
-# real_start_wanted: succeeds where the boot test can run: its node needs the client's
-# tables, as the test's own guard says.
-real_start_wanted() {
-  [ "${GENESIS_NO_CLIENT:-}" != 1 ]
-}
-
-# world_data_wanted: succeeds where the world-data test can run: it needs the client's
-# tables and Jim's world database (GENESIS_WORLD_DATA), as its own guards say.
-world_data_wanted() {
-  [ "${GENESIS_NO_CLIENT:-}" != 1 ] && [ -n "${GENESIS_WORLD_DATA:-}" ]
-}
-
 # gleam_chain: the gleam parts. gleam-build compiles; after it no part compiles again
 # (see the note above), so the parts that read the build start it with run_built and
 # run beside each other (glinter, generated-tables, the tests, the boot test, the
 # world-data test, squirrel), and literal-area follows the two test runs.
 gleam_chain() {
-  local pids=() world_data_pid=""
+  local pids=() peak_pids=() part
   if step gleam-build gleam build --warnings-as-errors; then
     ( step glinter run_built glinter ) &
     pids+=("$!")
@@ -772,29 +803,26 @@ gleam_chain() {
     pids+=("$!")
     ( squirrel_after_migrations ) &
     pids+=("$!")
-    if world_data_wanted; then
-      ( step world-data world_data_test ) &
-      world_data_pid=$!
-      pids+=("$world_data_pid")
-    else
-      skip world-data "the world-data test needs the client's tables and GENESIS_WORLD_DATA (GENESIS_NO_CLIENT=1 or GENESIS_WORLD_DATA unset here)"
-    fi
-    if real_start_wanted; then
-      ( step real-start real_start_test ) &
-      pids+=("$!")
-    else
-      skip real-start "the boot test needs the client's tables (GENESIS_NO_CLIENT=1 here)"
-    fi
+    for part in $tagged_parts; do
+      if tagged_part_wanted "$part"; then
+        ( step "$part" tagged_part_test "$part" ) &
+        pids+=("$!")
+        in_list "$part" "$tagged_parts_with_a_peak" && peak_pids+=("$!")
+      else
+        skip "$part" "the tests tagged ${part//-/_} need $(tagged_part_needs "$part")"
+      fi
+    done
     step gleam-test gleam_test
-    [ -n "$world_data_pid" ] && wait "$world_data_pid"
+    [ "${#peak_pids[@]}" -gt 0 ] && wait "${peak_pids[@]}"
     step literal-area literal_area_check
     wait "${pids[@]}"
   else
     skip glinter "a part it needs failed: gleam-build"
     skip generated-tables "a part it needs failed: gleam-build"
     skip gleam-test "a part it needs failed: gleam-build"
-    skip real-start "a part it needs failed: gleam-build"
-    skip world-data "a part it needs failed: gleam-build"
+    for part in $tagged_parts; do
+      skip "$part" "a part it needs failed: gleam-build"
+    done
     skip literal-area "a part it needs failed: gleam-build"
     skip squirrel "a part it needs failed: gleam-build"
   fi
@@ -853,11 +881,9 @@ for part in $parts; do
     failed="$failed $part"
     if [ "$hung" = yes ] && [ -f "$work/$part.started" ]; then
       printf '  %-18s FAILED  hung: still running at three times its budget\n' "$part"
-      case "$part" in
-        gleam-test | real-start | world-data | client-suite)
-          running_tests "$part" | sed 's/^/                       still running: /'
-          ;;
-      esac
+      if [ "$part" = gleam-test ] || [ "$part" = client-suite ] || in_list "$part" "$tagged_parts"; then
+        running_tests "$part" | sed 's/^/                       still running: /'
+      fi
       hung_names="${hung_names:+$hung_names, }$part"
       continue
     elif [ "$hung" = yes ]; then
@@ -911,7 +937,7 @@ if [ -f "$work/literal-area.log" ]; then
 fi
 # A test's warning follows the dots the reporter printed on its line, so it is
 # cut out of the line rather than matched at its start.
-for part in gleam-test real-start world-data; do
+for part in gleam-test $tagged_parts; do
   if [ -f "$work/$part.log" ]; then
     grep -ho 'check WARNING: test .*' "$work/$part.log"
   fi

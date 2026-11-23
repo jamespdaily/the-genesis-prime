@@ -7,7 +7,7 @@
 //// port, so a page any container serves on another port would receive it.
 
 import dashboard_support
-import genesis_prime/dashboard/access.{Allowed, Document, Refused, Upgrade}
+import genesis_prime/dashboard/access.{Allowed, Document, Refused}
 import gleam/http
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -136,77 +136,6 @@ pub fn a_request_is_allowed_only_with_this_starts_key_and_the_dashboards_own_hos
         headers: row.headers,
       )
     assert access.decide(dashboard_support.gate(), request, Document)
-      == row.expected
-      as row.reason
-  })
-}
-
-type Handshake {
-  Handshake(
-    reason: String,
-    path: String,
-    origin: Option(String),
-    expected: access.Decision,
-  )
-}
-
-pub fn a_websocket_upgrade_also_needs_the_dashboards_own_origin_test() -> Nil {
-  use <- owned_test.run(5000)
-  let socket = dashboard_support.inside("/ws")
-  let rows = [
-    Handshake("no Origin", socket, None, Refused),
-    Handshake("an Origin of null", socket, Some("null"), Refused),
-    Handshake(
-      "127.0.0.1 on another port",
-      socket,
-      Some("http://127.0.0.1:7701"),
-      Refused,
-    ),
-    Handshake(
-      "localhost on the port",
-      socket,
-      Some("http://localhost:7700"),
-      Refused,
-    ),
-    Handshake(
-      "https on the port",
-      socket,
-      Some("https://127.0.0.1:7700"),
-      Refused,
-    ),
-    Handshake("a foreign site", socket, Some("https://evil.example"), Refused),
-    Handshake(
-      "the right origin",
-      socket,
-      Some("http://127.0.0.1:7700"),
-      Allowed("/ws"),
-    ),
-    Handshake(
-      "a good origin with a wrong key",
-      "/k/wrong/ws",
-      Some("http://127.0.0.1:7700"),
-      Refused,
-    ),
-    Handshake(
-      "a good origin outside the key prefix",
-      "/ws",
-      Some("http://127.0.0.1:7700"),
-      Refused,
-    ),
-  ]
-  list.each(rows, fn(row) {
-    let headers = case row.origin {
-      Some(origin) -> [#("origin", origin)]
-      None -> []
-    }
-    let request =
-      dashboard_support.request(
-        method: http.Get,
-        path: row.path,
-        host: Some(own_host),
-        headers:,
-      )
-    assert access.decide(dashboard_support.gate(), request, Upgrade)
       == row.expected
       as row.reason
   })

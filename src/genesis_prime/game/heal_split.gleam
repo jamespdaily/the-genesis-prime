@@ -11,6 +11,11 @@
 //// - A health heal of a player whose HealToShieldConversion (111) is not 0 gives the
 ////   shield int(amount x property), up to the shield's room, and the health the rest
 ////   (`0x1405d8350`). The client shows that shield part as a second, HealShields event.
+//// - The shield part of a health heal is also capped at the amount: the client lowers the
+////   amount by int(amount x property) without that cap, so a share above 1 (modifiers add,
+////   and Great Aegis with Reserve Power reaches 1.2) would wrap its unsigned health
+////   figure. The cap is the server's guess from texts 530923 and 708902, which call the
+////   share a part "of incoming healing".
 //// - The overheal is the amount less what the shield and the health took, never below 0
 ////   (`spell.heal_result_log`).
 
@@ -75,6 +80,7 @@ pub fn split(
       let shield =
         float.truncate(int.to_float(amount) *. scaling.to_shield)
         |> int.min(shield_room)
+        |> int.min(amount)
         |> int.max(0)
       let health = int.min(amount - shield, health_room)
       Split(amount:, shield:, health:, overheal: amount - shield - health)
