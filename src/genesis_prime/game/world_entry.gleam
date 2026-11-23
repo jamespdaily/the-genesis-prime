@@ -424,6 +424,13 @@ pub type Entered {
     viewers: Dict(ConnectionId, player_address.Viewer),
     shown: shown.Picture,
     casts_written: Dict(Int, Int),
+    /// The casts the client holds with no caster: the caster's unit was removed while the
+    /// player held a source of the cast that outlives its caster's sight
+    /// (genesis_prime/game/held_changes `kept_casts_of_unit`), so the client keeps the cast
+    /// and its buff on the player. Kept apart from `casts_written`, which the caster's own
+    /// frames write for; the cast's 0x7fe is written when the last source ends
+    /// (genesis_prime/game/connection/landing).
+    casts_orphaned: Set(Int),
     gone: Set(Int),
     movement: movement.State,
     readiness: Readiness,
@@ -1102,6 +1109,7 @@ pub fn joined(
               viewers: dict.new(),
               shown: dict.new(),
               casts_written: dict.new(),
+              casts_orphaned: set.new(),
               gone: set.new(),
               movement:,
               readiness: readiness_of(entry:),
