@@ -1762,7 +1762,11 @@ pub fn stalker_bag_index_of(base base: Int) -> Int {
 
 /// The healths the step's 0x92f frames carry, in order.
 pub fn healths(taken taken: ConnectionStep(Request)) -> List(Int) {
-  decoded(heard(taken, keyed()), player_health.message_id, player_health.decode)
+  decoded(
+    heard(taken:, cipher: keyed()),
+    player_health.message_id,
+    player_health.decode,
+  )
   |> list.map(fn(told) { told.health })
 }
 
