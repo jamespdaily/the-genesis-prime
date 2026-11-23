@@ -1079,6 +1079,16 @@ pub fn client_ability(base base: Int) -> spell_plan.Spell {
   spell
 }
 
+/// The spell of the Spell4 id among the spells the tree of the client's ability of the
+/// Spell4Base reaches.
+pub fn in_tree(base base: Int, spell4_id spell4_id: Int) -> spell_plan.Spell {
+  let assert Ok(spell) =
+    spell_plan.tree(spell: client_ability(base:), started: fn(_) { True })
+    |> list.find(fn(member) { member.spell4_id.value == spell4_id })
+    as { "the tree holds Spell4 " <> int.to_string(spell4_id) }
+  spell
+}
+
 /// The plans the client's rows build, built once.
 pub fn fixture_plans() -> spell_plan.Plans {
   database_support.once("spell_tables_fixture_plans", fn() {

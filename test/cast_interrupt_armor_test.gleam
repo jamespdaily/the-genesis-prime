@@ -37,15 +37,9 @@ const bag_of_base_3 = 11
 
 const bag_of_base_1 = 8
 
-/// Row 199192 as the client holds it: +1 for 5000 ms, kept at the end.
+/// Row 199192 as the client holds it, aimed at the caster.
 fn spectral_form_row() -> spell_plan.PropertyModifier {
-  support.interrupt_armor_row(
-    id: 199_192,
-    aim: AimsAtCaster,
-    points: 1,
-    takes_back: False,
-    row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
-  )
+  support.spectral_form_row(aim: AimsAtCaster)
 }
 
 // ---- what a go lists and how long the cast lasts ----

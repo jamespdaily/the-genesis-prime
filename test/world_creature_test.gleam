@@ -54,7 +54,6 @@ import genesis_prime/message/float32
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
-import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
 import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
@@ -2646,18 +2645,11 @@ fn hit_answer(
         hit.Description(
           spell4_effects_id:,
           delay_ms: 0,
-          damage: spell_damage_description.SpellDamageDescription(
-            raw_damage: 21,
-            scaled_raw_damage: 21,
-            absorbed: 0,
-            shield_absorbed: 0,
-            health_damage_with_overkill: 21,
-            overkill: 0,
-            glance: 0,
+          damage: cast_support.landed_damage(
+            amount: 21,
             killed: 0,
             combat_result: combat_result.Hit,
             damage_type: damage_type.Physical,
-            hits: [],
           ),
         ),
       ],

@@ -109,10 +109,7 @@ fn modifier_of(
 
 /// The Spell4Effects row of this id as the client holds it.
 fn client_effect(id id: Int) -> Spell4Effects {
-  let assert Ok(row) =
-    spell4_effects.get(tables: fixture_tables.shared(), id: Spell4EffectsId(id))
-    as "the client's rows hold the row"
-  row
+  spell_tables.effect_row_in(tables: fixture_tables.shared(), id:)
 }
 
 /// Row 178144 as the client holds it: Spectral Form's absorption.

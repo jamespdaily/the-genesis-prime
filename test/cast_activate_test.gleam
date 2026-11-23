@@ -309,14 +309,9 @@ pub fn activate_starts_with_activate_bit_and_creature_cast_time_test() -> Nil {
 fn go_targets(
   effects effects: List(Effect),
 ) -> List(#(Int, List(spell_effect_info.SpellEffectInfo))) {
-  list.flat_map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      list.map(go.targets, fn(target) { #(target.unit_id, target.effects) })
-    },
-  )
+  list.flat_map(support.goes_in(effects:), fn(go) {
+    list.map(go.targets, fn(target) { #(target.unit_id, target.effects) })
+  })
 }
 
 fn flattened(steps steps: List(#(Int, List(Effect)))) -> List(Effect) {

@@ -39,8 +39,6 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/game/spend
 import genesis_prime/message/cast_result
-import genesis_prime/message/spell_go
-import genesis_prime/message/spell_target_info
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/list
@@ -209,27 +207,7 @@ fn listed_on_the_caster(
   cast_id cast_id: Int,
   effects effects: List(Effect),
 ) -> List(Int) {
-  list.flat_map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      case go.cast_id == cast_id {
-        True -> effect_rows_on_the_caster(targets: go.targets)
-        False -> []
-      }
-    },
-  )
-}
-
-/// The effect rows a go's target info lists on the caster, unit 7.
-fn effect_rows_on_the_caster(
-  targets targets: List(spell_target_info.SpellTargetInfo),
-) -> List(Int) {
-  list.filter(targets, fn(target) { target.unit_id == 7 })
-  |> list.flat_map(fn(target) {
-    list.map(target.effects, fn(effect) { effect.spell4_effects_id })
-  })
+  support.listed_on_unit_by_cast(effects:, cast_id:, unit_id: 7)
 }
 
 /// The position of the first line of this text in a trace.
