@@ -49,12 +49,22 @@
 ////   (0x0355), each chat line it reads (0x01C8), each answer to its own lines
 ////   (0x01C2, 0x01D3, 0x01D9), and each line that shows no sender name, where the
 ////   client would send 0x0597 to ask for it (chat.name_lookup).
+//// - It prints a line for each cast message it is told, from its entry on (0x07FC, 0x07FD, 0x07FF,
+////   0x07FE), each go (0x07F4) and tick (0x07F8) with the heal or hit of each
+////   effect (its amount, overheal, absorbed and shield absorbed), each unit
+////   taken off a cast (0x0811), its own health (0x092F), each stat that
+////   changes (0x0938: level, shield, interrupt armor, absorption) and each
+////   property change (0x093A), which is how a buff sets and restores them. A line
+////   names the spell and caster as the cast's own 0x07FF gave them
+////   (`genesis_prime/sitting_bot/effects`). The bot sends no press: a person
+////   presses at it. The bot is faction 167, so a spell that is refused between
+////   factions (99) never reaches it; a person of that faction presses at it.
 //// - It ends after `--minutes` (30 when not given), on SIGTERM, or when the
 ////   server closes its connection. It prints the node's process id when it starts
 ////   (`stop with: kill <pid>`): SIGTERM must go to that pid, since `gleam run`
 ////   does not pass a signal on to the node it starts. When it ends it closes its
 ////   own connection, so the player sees its unit go, and prints how many lines
-////   it sent, answers it got, lines it heard and units it was shown. The Erlang runtime cannot catch Ctrl-C (SIGINT) as
+////   it sent, answers it got, lines it heard, units it was shown and effects it was told. The Erlang runtime cannot catch Ctrl-C (SIGINT) as
 ////   a signal: it opens the VM's break menu, whose `a` ends the node with the
 ////   connection closed by the operating system, so the player sees the bot
 ////   leave, and no summary is printed.
@@ -74,6 +84,7 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/whisper_failed
+import genesis_prime/sitting_bot/effects.{type Book, type Effect}
 import genesis_prime/sitting_bot/follow.{type Following}
 import genesis_prime/sitting_bot/sql
 import genesis_prime/step/runtime
@@ -470,6 +481,9 @@ pub type Event {
   LineRefused(chat_message_id: Int, channel_type: Int, result: Int)
   /// 0x01D9: the answer to a whisper that found no one.
   WhisperFailed(chat_message_id: Int, target: String)
+  /// A cast, heal, absorb, buff or vital of the bot's the server told
+  /// (`genesis_prime/sitting_bot/effects`).
+  EffectReceived(effect: Effect)
   /// The server ended the connection.
   ServerEnded(reason: String)
 }
@@ -482,6 +496,7 @@ pub type Tally {
     lines_heard: Int,
     units_seen: Int,
     moves_seen: Int,
+    effects_seen: Int,
   )
 }
 
@@ -493,6 +508,7 @@ fn nothing_yet() -> Tally {
     lines_heard: 0,
     units_seen: 0,
     moves_seen: 0,
+    effects_seen: 0,
   )
 }
 
@@ -512,6 +528,10 @@ fn note(tally tally: Tally, event event: Event) -> #(Tally, Bool) {
       let moves_seen = tally.moves_seen + 1
       #(Tally(..tally, moves_seen:), moves_seen == 1 || moves_seen % 20 == 0)
     }
+    EffectReceived(..) -> #(
+      Tally(..tally, effects_seen: tally.effects_seen + 1),
+      True,
+    )
     UnitRemoved(..) | NameLookupNeeded(..) | ServerEnded(..) -> #(tally, True)
   }
 }
@@ -557,6 +577,7 @@ fn describe(event: Event) -> String {
       <> " to "
       <> target
       <> " failed"
+    EffectReceived(effect:) -> effects.describe(effect)
     ServerEnded(reason:) -> "the server ended the connection: " <> reason
   }
 }
@@ -595,6 +616,8 @@ fn summary(tally: Tally) -> String {
   <> int.to_string(tally.lines_heard)
   <> ", units seen "
   <> int.to_string(tally.units_seen)
+  <> ", effects seen "
+  <> int.to_string(tally.effects_seen)
 }
 
 /// The events a message of the server is: none for a message the bot does not
@@ -680,6 +703,7 @@ type Sitting {
     following: Option(Following),
     done: Done,
     tally: Tally,
+    book: Book,
     started_ms: Int,
     ends_ms: Int,
     report: fn(Event) -> Nil,
@@ -714,8 +738,8 @@ pub fn sit(
     as "0xF2 encodes"
   game_client.send_world(game:, message_id: 0x00F2, body: zone_body)
   let started_ms = runtime.now().monotonic_ms
-  let tally =
-    keep_sitting(Sitting(
+  let sitting =
+    Sitting(
       game:,
       have:,
       chatter: game_client.chatter(game:),
@@ -729,10 +753,15 @@ pub fn sit(
       },
       done: Done(moves: 0, lines: 0, whispers: 0),
       tally: nothing_yet(),
+      book: effects.new_book(),
       started_ms:,
       ends_ms: started_ms + for_ms,
       report:,
-    ))
+    )
+  let tally =
+    keep_sitting(
+      list.fold(burst, sitting, fn(sitting, frame) { told(sitting:, frame:) }),
+    )
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
   tally
@@ -863,6 +892,15 @@ fn read(sitting: Sitting, frame: Frame) -> Sitting {
   list.fold(events_of(frame), sitting, fn(sitting, event) {
     note_and_report(sitting:, event:)
   })
+  |> told(frame:)
+}
+
+/// Takes the casts, heals, buffs and vitals a message of the server tells.
+fn told(sitting sitting: Sitting, frame frame: Frame) -> Sitting {
+  let #(book, received) = effects.read(book: sitting.book, frame:)
+  list.fold(received, Sitting(..sitting, book:), fn(sitting, effect) {
+    note_and_report(sitting:, event: EffectReceived(effect:))
+  })
 }
 
 fn note_and_report(sitting sitting: Sitting, event event: Event) -> Sitting {
@@ -897,6 +935,7 @@ fn followed(
     | LineAccepted(..)
     | LineRefused(..)
     | WhisperFailed(..)
+    | EffectReceived(..)
     | ServerEnded(..) -> following
   }
 }
