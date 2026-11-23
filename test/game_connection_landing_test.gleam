@@ -30,6 +30,7 @@ import genesis_prime/step.{type ConnectionStep, ConnectionId, OwnEffect}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
 import owned_test
+import strike_support
 
 /// The 0x938 shield stats the step writes to the player's own client, in order.
 fn shields_written(taken taken: ConnectionStep(Request)) -> List(Int) {
@@ -170,4 +171,66 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
       ),
     ]
     as "the second strike heals nothing on the life the first left, and is answered to its own caster for its own stay"
+  // A strike keyed by a tick of a periodic row is applied and answered as a go's: the rule
+  // reads nothing of the occasion, so the answer echoes the tick's key.
+  let tick_key =
+    Key(
+      cast_id: 102,
+      occasion: strike_tell.AtTick(
+        effect_id: Spell4EffectsId(80_077),
+        go: 1,
+        tick: 3,
+      ),
+      unit_id: support.own_unit_id,
+    )
+  let #(hurt, _) =
+    support.feed(
+      state: support.watched_by(support.in_world(), [2]),
+      event: support.a_beast_strike(support.own_unit_id),
+    )
+  let #(_, ticked) =
+    support.feed(
+      state: hurt,
+      event: support.for_stay(
+        stay: support.own_stay(),
+        sent: client_connection.SentByStriker(
+          strike: strike_tell.PlayerStrike(
+            ..strike_support.heal_strike(
+              from: ConnectionId(5),
+              stay: support.viewer_stay(5),
+              cast_id: 102,
+              unit_id: support.own_unit_id,
+              outgoing: 1.0,
+              heals: [],
+            ),
+            key: tick_key,
+            heals: [
+              strike_tell.HealTell(
+                effect_id: Spell4EffectsId(80_077),
+                vital: effect_kind.Health,
+                amount: 40,
+              ),
+            ],
+          ),
+        ),
+      ),
+    )
+  assert support.player_answers(ticked)
+    == [
+      #(
+        5,
+        support.viewer_stay(5),
+        PlayerAnswered(
+          key: tick_key,
+          outcome: HealsLanded(heals: [
+            HealLanded(
+              effect_id: Spell4EffectsId(80_077),
+              vital: effect_kind.Health,
+              split: Split(amount: 40, shield: 0, health: 1, overheal: 39),
+            ),
+          ]),
+        ),
+      ),
+    ]
+    as "a heal told for a tick is applied (the Beast's strike leaves the health at 735 of 736: room for 1, overheal 39, as the header works the 40) and answered to its caster under the tick's own key"
 }

@@ -134,8 +134,8 @@ fn limits() -> List(Limit) {
     Limit(
       cast_heal.gaps(),
       "Casting",
-      ["creature", "another player", "delay", "caster gate"],
-      "a heal aimed at a creature, or at another player with a delay or a period, lands nothing, and a row aimed at the caster and another player is listed on that player only while its caster gate passes",
+      ["creature", "another player", "delay", "caster gate", "in sight"],
+      "a heal aimed at a creature, or at another player with a delay, lands nothing, a periodic one at another player in sight ticks on it, and a row aimed at the caster and another player is listed on that player only while its caster gate passes",
     ),
     Limit(
       cast_control.gaps(),
@@ -160,6 +160,12 @@ fn limits() -> List(Limit) {
       "Casting",
       ["target gate", "another player", "not read"],
       "a target gate on a heal row told to another player reads what the caster holds of it, not the player's own state",
+    ),
+    Limit(
+      strike.gaps(),
+      "Casting",
+      ["periodic", "another player", "first tick"],
+      "a periodic heal on another player ends at the first tick with no answer, a dead player or a player gone from the caster's picture, and does not resume",
     ),
     Limit(
       heal_split.gaps(),

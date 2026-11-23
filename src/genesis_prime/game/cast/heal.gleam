@@ -18,9 +18,12 @@
 ////   taken off the caster, a persistence that stops holding and the caster's death drop a
 ////   pending heal with its timer; a later go of the cast heals again and cancels no
 ////   earlier heal. A periodic heal (a tickTime) heals the caster at each tick, after
-////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster lands nothing
-////   here: another player is healed by the answer to the strike its go told its
-////   connection (genesis_prime/game/strike `TellPlayerStrike`), an instant row only, and a
+////   the tick's 0x7f8 (`ticking_heals`). A periodic heal on another player in the caster's
+////   sight ticks on that player: each tick tells its connection the row
+////   (genesis_prime/game/strike `begin_tick`) and writes the 0x7f8 of what the player
+////   applied (`cast_tick.tick_outcome`). A heal on a unit other than the caster lands
+////   nothing here: another player is healed by the answer to the strike its go or its
+////   tick told its connection (genesis_prime/game/strike `TellPlayerStrike`), and a
 ////   creature is not healed. When the round holds that player's answer, the go lists each
 ////   row the answer names on the player with the description of the answer's split (the
 ////   amount the player applied and what its vitals could not take as the overheal), never
@@ -52,6 +55,7 @@ import genesis_prime/message/spell_damage_description.{
 }
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option}
@@ -83,15 +87,17 @@ pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
   })
 }
 
-/// The periodic heal rows among the effects a go reached, each on the caster ticking on
-/// it; one aimed at another unit is left with the debug line of `healed_on`.
+/// The periodic heal rows among the effects a go reached, each ticking on the unit it
+/// reaches when that unit is the caster or another player in the caster's sight, whose
+/// connection applies the tick (genesis_prime/game/strike `begin_tick`); a row that reaches
+/// any other unit is left with the debug line of `healed_on`.
 pub fn ticking_heals(
   reached reached: List(Reached),
   caster caster: Caster,
   passed_in passed_in: Option(Float),
 ) -> List(TickingOn) {
   list.filter_map(reached, fn(entry) {
-    case entry.effect.kind, entry.unit_id == caster.unit_id {
+    case entry.effect.kind, ticks_on(caster:, unit_id: entry.unit_id) {
       spell_plan.HealEffect(heal: spell_plan.TickingHeal(
         effect_id:,
         vital:,
@@ -102,7 +108,7 @@ pub fn ticking_heals(
         True
       ->
         Ok(TickingOn(
-          unit_id: caster.unit_id,
+          unit_id: entry.unit_id,
           life: 0,
           effect_id:,
           schedule:,
@@ -128,6 +134,12 @@ pub fn ticking_heals(
       -> Error(Nil)
     }
   })
+}
+
+/// Whether a periodic heal reaching the unit ticks on it: the caster, or another player in
+/// the caster's sight.
+fn ticks_on(caster caster: Caster, unit_id unit_id: Int) -> Bool {
+  unit_id == caster.unit_id || dict.has_key(caster.players_in_sight, unit_id)
 }
 
 /// What a heal row reaching `unit_id` comes to: for a heal applied at once (a periodic
@@ -171,22 +183,27 @@ pub fn healed_on(
     spell_plan.TickingHeal(..), True -> #(Plain, [])
     spell_plan.Heal(effect_id:, ..), False ->
       case answered(struck:, unit_id:, effect_id:) {
-        Ok(landed) -> #(
-          Described(healed: Healed(
-            effect_id:,
-            vital: landed.vital,
-            delay_ms: 0,
-            amount: landed.split.amount,
-            split: landed.split,
-          )),
-          [],
-        )
+        Ok(landed) -> #(Described(healed: applied(landed:)), [])
         Error(Nil) -> #(Plain, [not_landed_log(effect_id:, unit_id:)])
       }
-    spell_plan.TickingHeal(effect_id:, ..), False -> #(Plain, [
-      not_landed_log(effect_id:, unit_id:),
-    ])
+    spell_plan.TickingHeal(effect_id:, ..), False ->
+      case ticks_on(caster:, unit_id:) {
+        True -> #(Plain, [])
+        False -> #(Plain, [not_landed_log(effect_id:, unit_id:)])
+      }
   }
+}
+
+/// The heal a player applied, as its answer's split gives it: the amount it took and the
+/// overheal its vitals had no room for.
+pub fn applied(landed landed: strike_tell.HealLanded) -> Healed {
+  Healed(
+    effect_id: landed.effect_id,
+    vital: landed.vital,
+    delay_ms: 0,
+    amount: landed.split.amount,
+    split: landed.split,
+  )
 }
 
 /// What the player `unit_id` answered for the heal row `effect_id`, when the round holds
@@ -333,7 +350,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Casting",
-      missing: "A heal aimed at a creature, or at another player with a delay or a period, lands nothing, with a debug line, because the server heals the caster by its own rule and another player only by its answer to an instant row. A row aimed at the caster and at another player keeps its caster gate at the go, so the player's heal, which it applied, is listed only while that gate still passes.",
+      missing: "A heal aimed at a creature, or at another player with a delay, lands nothing, with a debug line, because the server heals the caster by its own rule and another player only by its answer to an instant row at the go or a periodic row at each tick. A periodic heal on another player in the caster's sight ticks on it; one on a player not in sight lands nothing. A row aimed at the caster and at another player keeps its caster gate at the go, so the player's heal, which it applied, is listed only while that gate still passes.",
     ),
   ]
 }

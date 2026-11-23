@@ -339,10 +339,10 @@ pub type GoAsked {
   )
 }
 
-/// A tick of a periodic damage row that waits for its unit's answer: which cast, spell
-/// and row, the unit in the life the go struck, which go of the cast on the unit started
-/// the schedule (counted from 1: a later go starts it again), which tick of that
-/// schedule, and the row's damage, which the tick strikes with alone.
+/// A tick of a periodic damage or heal row that waits for its unit's answer: which cast,
+/// spell and row, the unit (a creature in the life the go struck, or a player, whose life is
+/// 0), which go of the cast on the unit started the schedule (counted from 1: a later go
+/// starts it again), which tick of that schedule, and what the tick asks of the unit.
 pub type TickAsked {
   TickAsked(
     cast_id: Int,
@@ -352,7 +352,19 @@ pub type TickAsked {
     life: Int,
     go: Int,
     tick: Int,
-    blow: spell_area.DamageEffect,
+    what: TickAsk,
+  )
+}
+
+/// What a tick asks of the unit it lands on: a creature is struck with the row's blow
+/// alone, and a player is told the heal row, whose amount the caster's connection works out
+/// when it asks (genesis_prime/game/strike `begin_tick`).
+pub type TickAsk {
+  StrikeWithBlow(blow: spell_area.DamageEffect)
+  TellHeal(
+    vital: effect_kind.Vital,
+    formula: damage.Formula,
+    passed_in: Option(Float),
   )
 }
 

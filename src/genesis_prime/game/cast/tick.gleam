@@ -28,11 +28,11 @@ import genesis_prime/game/cast/state.{
   type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
   Deflected, FindProxyTickUnits, Finish, ForcedMoveStart, Go, Heal, Healed, Hit,
-  Immune, Lingering, Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt,
-  ProcDue, Property, ProxyTickAsked, QuestAdvanceDue, Refuse, RepeatHeld,
-  RestrictionEnd, Send, StartChild, StartHeld, Starts, State, StateEnd,
-  TargetChangeEnds, TargetModifierStart, Tell, Tick, TickAsked, TickStrike,
-  TickingOn, UnitSide, WindowEnd,
+  HitOtherPlayer, Immune, Lingering, Live, Look, ModifierEnd, ModifierStart,
+  NodesEnd, NotBuilt, ProcDue, Property, ProxyTickAsked, QuestAdvanceDue, Refuse,
+  RepeatHeld, RestrictionEnd, Send, StartChild, StartHeld, Starts, State,
+  StateEnd, StrikeWithBlow, TargetChangeEnds, TargetModifierStart, Tell,
+  TellHeal, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -449,7 +449,8 @@ fn by_tick_key(first: TickKey, second: TickKey) -> order.Order {
 }
 
 /// Tick `tick` of the row `key` of the cast fires (`ticks_due`), with the caster as the
-/// heal ticks before it left it. The row is stored with the tick counted before a Proxy's
+/// heal ticks before it left it. A damage tick, and a heal tick on a player other than the
+/// caster, ask their unit (`TickStrike`) and hold a round open until the answer. The row is stored with the tick counted before a Proxy's
 /// child starts, so the child's own go finds the holder as the tick left it.
 fn tick_landed(
   cast cast: State,
@@ -464,29 +465,34 @@ fn tick_landed(
   case dict.get(holder.ticking, key) {
     Error(Nil) -> #(cast, caster, [])
     Ok(row) -> {
+      let asking = fn(what) {
+        #(
+          cast_state.round_opened(row:, tick:),
+          caster,
+          [
+            TickStrike(asked: TickAsked(
+              cast_id:,
+              spell4_id: holder.spell.spell4_id,
+              effect_id: cast_state.key_effect(key:),
+              unit_id: cast_state.key_unit(key:),
+              life: cast_state.ticking_life(row:),
+              go: cast_state.ticking_go(row:),
+              tick:,
+              what:,
+            )),
+          ],
+          None,
+        )
+      }
       let #(row, caster, landed, proxy) =
         cast_state.on_tick_kind(
           kind: cast_state.ticking_kind(row:),
-          damage: fn(blow) {
-            #(
-              cast_state.round_opened(row:, tick:),
-              caster,
-              [
-                TickStrike(asked: TickAsked(
-                  cast_id:,
-                  spell4_id: holder.spell.spell4_id,
-                  effect_id: cast_state.key_effect(key:),
-                  unit_id: cast_state.key_unit(key:),
-                  life: cast_state.ticking_life(row:),
-                  go: cast_state.ticking_go(row:),
-                  tick:,
-                  blow:,
-                )),
-              ],
-              None,
-            )
-          },
+          damage: fn(blow) { asking(StrikeWithBlow(blow:)) },
           heal: fn(vital, formula, passed_in) {
+            use <- bool.lazy_guard(
+              when: cast_state.key_unit(key:) != caster.unit_id,
+              return: fn() { asking(TellHeal(vital:, formula:, passed_in:)) },
+            )
             let #(caster, healed) =
               healed_by_tick(
                 caster:,
@@ -746,7 +752,9 @@ fn tick_effects(
   ]
 }
 
-/// What a closed tick round of the row does: a hit writes its 0x7f8 to the audience,
+/// What a closed tick round of the row does: a heal a player applied writes its 0x7f8 to the
+/// audience, the description being what the player applied (`cast_heal.applied`), and heals
+/// nothing here; a hit writes its 0x7f8 to the audience,
 /// whichever go's schedule asked it, since the unit took the damage and its health news
 /// goes out, and one that kills drops the unit's ticks; a deflect or an immunity writes
 /// nothing; no answer for a round of the row's current schedule (the unit is gone, or
@@ -764,6 +772,20 @@ pub fn tick_outcome(
 ) -> #(State, List(Effect)) {
   let cast_id = asked.cast_id
   case struck, cast_state.ticking_go(row:) == asked.go {
+    Some(Hit(unit: HitOtherPlayer(heals:), ..)), _ -> #(
+      cast,
+      tick_effects(
+        tick: SpellEffectTick(
+          cast_id:,
+          spell4_effects_id: asked.effect_id.value,
+          unit_id: asked.unit_id,
+          descriptions: list.map(heals, fn(landed) {
+            cast_heal.heal_description(healed: cast_heal.applied(landed:))
+          }),
+        ),
+        audience:,
+      ),
+    )
     Some(Hit(descriptions:, ..)), _ -> {
       let written =
         tick_effects(
