@@ -2,8 +2,8 @@ name: toolchain
 description: >-
   The Erlang, Gleam and rebar of .tool-versions, the patched OTP (restored from
   the cache, or built and saved) and the Gleam build cache (restored, or
-  looked up only), for the check job and for the job that warms the caches
-  when the check is skipped.
+  looked up only), for the part jobs and for the job that warms the caches
+  when the parts are skipped.
 
 inputs:
   gleam-lookup-only:
