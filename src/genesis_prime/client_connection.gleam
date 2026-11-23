@@ -29,7 +29,8 @@ import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/forced_move
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type Tell as StrikeTell,
+  type Answered, type Fight, type PlayerAnswered, type PlayerStrike,
+  type Tell as StrikeTell,
 }
 import genesis_prime/game/unit_casts.{type CastView}
 import genesis_prime/game/unit_properties.{type Modifier, type Source}
@@ -188,6 +189,16 @@ pub type Request {
   /// connection while it keeps one. Told through the creature registry, which drops it
   /// when no creature of that address and life is there, and never asked.
   TellCastView(connection: ConnectionId, change: ViewChange)
+  /// What a `Tell` effect sends the connection of another player (genesis_prime/step
+  /// `Connection`) whose cast heals this connection's player: the heal rows it applies
+  /// to its own life (genesis_prime/game/connection/landing). `stay` is the healed
+  /// player's stay, which fences the tell; the strike holds the caster's. Never asked,
+  /// and never told to a map.
+  TellPlayerStrike(stay: Stay, strike: PlayerStrike)
+  /// What a `Tell` effect sends the connection of the player whose `TellPlayerStrike`
+  /// this connection's player took: the answer. `stay` is the caster's stay, which the
+  /// strike named, and fences the answer. Never asked, and never told to a map.
+  TellPlayerAnswer(stay: Stay, answered: PlayerAnswered)
 }
 
 /// What a cast holds on a creature, as `TellCastView` carries it.
@@ -427,6 +438,14 @@ pub type StaySent {
   /// strike its caster told in this stay, which the strike rule takes into the
   /// round it belongs to (genesis_prime/game/strike).
   SentByTarget(answered: Answered)
+  /// What the connection of another player tells this one whose player its cast heals:
+  /// the heal rows to apply, which the landing rule takes
+  /// (genesis_prime/game/connection/landing).
+  SentByStriker(strike: PlayerStrike)
+  /// What the connection of a player this connection's player healed answers: the
+  /// answer to a strike its caster told in this stay, which the strike rule takes into
+  /// the round it belongs to (genesis_prime/game/strike).
+  SentByHealed(answered: PlayerAnswered)
   /// What a creature that this connection's player killed with its blow sends it:
   /// the credit for the kill, told in the stay of the strike that killed it, which
   /// the experience rule turns into experience (genesis_prime/game/experience).

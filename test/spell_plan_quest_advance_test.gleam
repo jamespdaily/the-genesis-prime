@@ -49,12 +49,6 @@ fn row(
   )
 }
 
-fn read(
-  effect effect: spell4_effects.Spell4Effects,
-) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
-  spell_tables.read_row(effect:, place: spell_tables.pressed)
-}
-
 pub fn a_type_42_row_plans_its_quest_index_amount_delay_and_gate_test() -> Nil {
   use <- owned_test.run(60_000)
   let railgun = spell_tables.client_spell(spell4_id: 24_501)
@@ -108,7 +102,7 @@ pub fn a_type_42_row_plans_its_quest_index_amount_delay_and_gate_test() -> Nil {
     as "107313: quest 8262 index 2 amount 2 after 1500 ms"
   // No client row of the fixture names a single go in a type 42 row, so the row is made.
   let assert Ok(Applied(spell_plan.ReadEffects(effects: [planned]))) =
-    read(effect: row(target_flags: 1, phase_flags: -65_534))
+    spell_tables.read_pressed(effect: row(target_flags: 1, phase_flags: -65_534))
     as "a row of phaseFlags 0xffff0002 is planned"
   assert planned.phase_flags == -65_534
     as "bit 1 of the flags names go 1, as the plan reads the column for every kind"
@@ -169,7 +163,10 @@ pub fn a_type_42_row_is_read_by_its_aim_test() -> Nil {
     ],
     fn(aim) {
       let reading =
-        read(effect: row(target_flags: aim.target_flags, phase_flags: -1))
+        spell_tables.read_pressed(effect: row(
+          target_flags: aim.target_flags,
+          phase_flags: -1,
+        ))
       case aim.planned {
         Ok(expected) -> {
           let assert Ok(reading) = reading as aim.why
@@ -267,13 +264,14 @@ pub fn a_type_42_row_with_an_unread_column_is_left_out_by_name_test() -> Nil {
       ),
     ],
     fn(column) {
-      assert read(effect: column.effect) == Ok(LeftOut(why: column.left_out))
+      assert spell_tables.read_pressed(effect: column.effect)
+        == Ok(LeftOut(why: column.left_out))
         as column.why
     },
   )
   // A row the quest columns of which name nothing is planned: a pair names no objective.
   let assert Ok(Applied(..)) =
-    read(
+    spell_tables.read_pressed(
       effect: spell4_effects.Spell4Effects(
         ..base,
         data_bits00: 1,

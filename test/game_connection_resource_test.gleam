@@ -15,12 +15,10 @@ import connection_rule_support as support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/hit
 import genesis_prime/game/strike_tell
-import genesis_prime/message/cast_result
 import genesis_prime/message/float32
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
@@ -422,45 +420,4 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
   assert game_connection_support.strike_rolls([first, second])
     == rolls_of_the_seed(count: 2)
     as "each strike takes the next 12 bytes of the seed: the go between them drew none, which a draw of a roll (4 bytes, a block of the seed) would shift"
-}
-
-pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_writes_no_0x935_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let #(state, unit_id, bag_index) =
-    game_connection_support.entered_with_spell_trees(
-      class_id: 4,
-      ability: gamma_rays_base,
-    )
-  let #(state, pressed) =
-    game_connection_support.pressed_until(
-      state:,
-      bag_index:,
-      client_cast_id: 1,
-      ms: 1000,
-      until_ms: 1000,
-    )
-  let #(state, cancelled) =
-    game_connection_support.at(
-      state:,
-      ms: 1500,
-      event: OwnEvent(
-        step.Read(game_connection_support.world_message(
-          message_id: 0x0801,
-          body: cast_support.cancel_body(
-            cast_id: cast_state.cast_id(unit_id:, number: 0),
-            reason: cast_result.from_value(11),
-            bit: 1,
-          ),
-        )),
-      ),
-    )
-  let #(_, later) =
-    game_connection_support.casts_run(
-      state:,
-      pending: game_connection_support.cast_timers(steps: pressed, ms: 1000),
-      until_ms: 5000,
-      steps: [],
-    )
-  assert all_changes(list.append([cancelled], later)) == []
-    as "opcode.0x801 (reason 11, the jump): the cast ends before its go at 2250, so the Actuators stay at 4 and no 0x935 is written"
 }

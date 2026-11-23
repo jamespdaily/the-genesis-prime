@@ -4,11 +4,7 @@
 ////   a vital's part is at most its room, and the parts and the overheal add up to the
 ////   amount (`spell.heal_result_log`: the overheal is what the shield and the health did
 ////   not take).
-//// - The shield's share of a health heal is int(amount x HealToShieldConversion) up to
-////   the shield's room (`0x1405d8350`); the client does not cap it at the amount, so a
-////   share above 1 (Great Aegis 1.0 with Reserve Power 0.2 reaches 1.2) is the server's
-////   own cap, a guess from the texts 530923 and 708902 that call the share a part "of
-////   incoming healing".
+////   Shares run from 0 to 2, so the property covers a share above 1.
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split.{Scaling}

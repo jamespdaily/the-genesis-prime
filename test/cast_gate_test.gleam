@@ -33,8 +33,6 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
-import genesis_prime/message/spell_started
-import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int
@@ -107,25 +105,7 @@ fn pressed(
 }
 
 fn children_started(effects: List(cast_state.Effect)) -> Int {
-  list.count(support.writes(effects:), fn(frame) {
-    case frame.message_id == spell_started.message_id {
-      True -> {
-        let assert Ok(started) = spell_started.decode(frame.body)
-          as "0x7ff decodes"
-        started.spell4_id == child_spell4_id
-      }
-      False -> False
-    }
-  })
-}
-
-fn debug_lines(effects: List(cast_state.Effect)) -> List(String) {
-  list.filter_map(support.logs(effects:), fn(line) {
-    case line.0 == LogDebug {
-      True -> Ok(line.1)
-      False -> Error(Nil)
-    }
-  })
+  support.started_count(effects:, spell4_id: child_spell4_id)
 }
 
 fn in_combat() -> cast_state.Caster {
@@ -150,7 +130,8 @@ pub fn a_caster_gate_that_passes_starts_the_child_at_the_go_test() -> Nil {
   let effects = pressed(spell:, caster: in_combat(), rolls: [])
   assert children_started(effects) == 1
     as "Prerequisite 903 is type 28, comparison 1: the caster is in combat, so the gate passes and the Proxy starts its child"
-  assert debug_lines(effects) == [] as "a gate that passes leaves no line"
+  assert support.debug_lines(effects) == []
+    as "a gate that passes leaves no line"
 }
 
 pub fn a_caster_gate_that_fails_does_not_start_the_child_and_says_nothing_test() -> Nil {
@@ -167,7 +148,7 @@ pub fn a_caster_gate_that_fails_does_not_start_the_child_and_says_nothing_test()
   let effects = pressed(spell:, caster: support.caster(), rolls: [])
   assert children_started(effects) == 0
     as "Prerequisite 903 is comparison 1 of type 28 and the caster is out of combat: the gate fails"
-  assert debug_lines(effects) == []
+  assert support.debug_lines(effects) == []
     as "a gate that fails is the client's answer, not a gap"
 }
 
@@ -209,7 +190,7 @@ pub fn a_gate_of_a_type_the_server_does_not_read_starts_nothing_and_leaves_one_d
   let effects = pressed(spell:, caster: in_combat(), rolls: [])
   assert children_started(effects) == 0
     as "Prerequisite 4301 holds a type the server does not read: the client would decide it, the server cannot, so the Proxy does not start"
-  let lines = debug_lines(effects)
+  let lines = support.debug_lines(effects)
   assert list.length(lines) == 1
   assert list.all(lines, fn(line) {
     string.contains(line, "Spell4 99")
@@ -569,7 +550,8 @@ pub fn a_gain_behind_a_vital_the_server_does_not_hold_is_not_given_and_leaves_a_
   let effects = pressed(spell: unheld, caster: support.caster(), rolls: [])
   assert support.gains(effects:) == []
     as "Vital 9 (Resource4) is a slot the caster's class does not hold, so no rule of the server holds it: the prerequisite is not read and no gain is given"
-  assert list.length(debug_lines(effects)) == 1 as "and one debug line says so"
+  assert list.length(support.debug_lines(effects)) == 1
+    as "and one debug line says so"
 }
 
 // ---- the order within a go ----
@@ -638,7 +620,7 @@ pub fn a_gain_behind_a_resource_slot_the_class_does_not_hold_is_not_given_and_le
     let effects = pressed(spell:, caster: support.caster(), rolls: [])
     assert support.gains(effects:) == []
       as "0x1403b3320: Vitals 5 to 11 read the caster's resource slots 0 to 6; a slot the class does not hold is not read, not 0 of 0, so even 'equal to 0' gives no gain"
-    assert list.length(debug_lines(effects)) == 1
+    assert list.length(support.debug_lines(effects)) == 1
       as "and one debug line says so"
   })
 }
@@ -659,7 +641,8 @@ pub fn a_gain_behind_the_units_difficulty_is_not_given_to_a_player_and_leaves_a_
   let effects = pressed(spell:, caster: support.caster(), rolls: [])
   assert support.gains(effects:) == []
     as "0x14049eeb0: type 179 reads the unit's difficulty, which only a creature's side supplies; a player's subject holds none, so the prerequisite is not read"
-  assert list.length(debug_lines(effects)) == 1 as "and one debug line says so"
+  assert list.length(support.debug_lines(effects)) == 1
+    as "and one debug line says so"
 }
 
 // ---- the one list of effects: the order the gates walk it in ----

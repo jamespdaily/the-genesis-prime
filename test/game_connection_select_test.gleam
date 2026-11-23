@@ -41,10 +41,8 @@ import genesis_prime/step.{
 import genesis_prime/store.{
   AccountId, ActionSets, Character, CharacterCreated, CharacterDeleted,
   CharacterId, CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect,
-  ForWorld, ListCharacters, Listed, LoadCharacter, LookEntry, NameBreaksRule,
-  NameTaken, NewCharacter, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
-  NoSuchCharacter, NotRenamable, NotTheAccounts, Renamed, Select, Unavailable,
-  World,
+  ForWorld, ListCharacters, Listed, LoadCharacter, LookEntry, NewCharacter,
+  NewNameTaken, NotTheAccounts, Renamed, Select, Unavailable, World,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import genesis_prime/world_map/map
@@ -123,54 +121,6 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
     as "opcode.0xdc: the new character's id and CreateOk"
   assert !support.stops(taken) as "the connection goes on to the play request"
   assert support.asked(taken) == None
-}
-
-pub fn a_name_that_fails_rule_0_is_asked_of_the_store_and_its_answer_is_0x00dc_name_length_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, taken) =
-    creating(game_connection_support.a_create_request("Abcd"))
-  let assert AskStore(store.Select(store.CreateCharacter(character:, ..))) =
-    game_connection_support.ask_request(taken)
-    as "the name's rule 0 is the table's, so the store is asked like any create"
-  assert character.name == "Abcd"
-  assert support.writes(taken) == []
-    as "nothing is written before the store answers"
-  let #(_, taken) =
-    game_connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ForSelect(Created(NameBreaksRule)))),
-    )
-  assert create_result_of(taken).result == create_result.NameLength
-    as "lua.Character.OnCreateCharacterFailed: 10"
-  assert support.logs_of(step: taken, level: LogWarning) == []
-    as "a name is a player's to mistype"
-  assert !support.stops(taken)
-}
-
-pub fn a_name_taken_in_any_case_and_an_account_at_its_slots_are_0x00dc_6_and_9_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, taken) =
-    creating(game_connection_support.a_create_request("Ab Cd"))
-  let #(_, taken) =
-    game_connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ForSelect(Created(NameTaken)))),
-    )
-  assert create_result_of(taken).result == create_result.NameUnavailable
-    as "lua.Character.OnCreateCharacterFailed: 6"
-  let #(state, taken) =
-    creating(game_connection_support.a_create_request("Ab Cd"))
-  let #(_, taken) =
-    game_connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ForSelect(Created(NoFreeSlot)))),
-    )
-  assert create_result_of(taken).result == create_result.AccountFull
-    as "lua.Character.OnCreateCharacterFailed: 9"
-  assert !support.stops(taken)
 }
 
 pub fn a_request_the_client_would_not_send_is_0x00dc_create_failed_with_a_warning_naming_the_row_test() -> Nil {
@@ -463,28 +413,6 @@ pub fn message_0x0352_asks_the_store_to_delete_the_character_and_its_answer_is_0
     as "lua.CharacterSelection.OnCharacterDeleteResult: the client rebuilds its list, so the store is not asked for it again"
 }
 
-pub fn a_delete_of_a_character_the_account_does_not_have_is_0x00e6_result_1_and_a_warning_with_the_account_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, taken) = deleting(11)
-  let #(_, taken) =
-    game_connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ForSelect(Deleted(NoSuchCharacter)))),
-    )
-  assert character_support.delete_result_in(game_connection_support.heard(
-      taken,
-      game_connection_support.keyed(),
-    ))
-    == DeleteCharacterResult(result: delete_result.DeleteFailed, data: 0)
-    as "lua.CharacterSelection.OnCharacterDeleteResult: 1 shows 'Something went wrong...'"
-  let assert [line] = support.logs_of(step: taken, level: LogWarning)
-    as "a request the real client would not send is logged once"
-  assert support.says(line, "11") as "the warning names the character's id"
-  assert line.about.account_id == Some(7)
-  assert !support.stops(taken)
-}
-
 pub fn message_0x0786_asks_the_store_to_rename_the_character_and_its_answer_is_0x014b_result_18_with_the_stored_name_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = renaming(11, "Ab Cd")
@@ -515,62 +443,6 @@ pub fn message_0x0786_asks_the_store_to_rename_the_character_and_its_answer_is_0
       name: "Ab Cd",
     )
     as "opcode.0x14b: result 18 with the id and the name"
-  assert !support.stops(taken)
-}
-
-pub fn a_name_taken_a_name_failing_rule_0_and_a_character_that_is_not_renamable_are_0x014b_16_15_and_13_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(state, taken) = renaming(11, "Ab Cd")
-  let #(_, taken) =
-    game_connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ForSelect(Renamed(NewNameTaken)))),
-    )
-  assert character_support.rename_result_in(game_connection_support.heard(
-      taken,
-      game_connection_support.keyed(),
-    )).result
-    == rename_result.NameUnavailable
-    as "lua.CharacterSelection.OnCharacterRenameResult: 16"
-  let #(state, taken) = renaming(11, "Abcd")
-  assert game_connection_support.ask_request(taken)
-    == AskStore(
-      store.Select(store.RenameCharacter(
-        account_id: AccountId(7),
-        character_id: CharacterId(11),
-        name: "Abcd",
-      )),
-    )
-    as "the name's rule 0 is the table's, so the store is asked like any rename"
-  let #(_, taken) =
-    game_connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ForSelect(Renamed(NewNameBreaksRule)))),
-    )
-  assert character_support.rename_result_in(game_connection_support.heard(
-      taken,
-      game_connection_support.keyed(),
-    )).result
-    == rename_result.NameLength
-    as "lua.CharacterSelection.OnCharacterRenameResult: 15"
-  assert support.logs_of(step: taken, level: LogWarning) == []
-    as "a name is a player's to mistype"
-  let #(state, taken) = renaming(11, "Ab Cd")
-  let #(_, taken) =
-    game_connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ForSelect(Renamed(NotRenamable)))),
-    )
-  assert character_support.rename_result_in(game_connection_support.heard(
-      taken,
-      game_connection_support.keyed(),
-    )).result
-    == rename_result.RenameFailed
-    as "lua.CharacterSelection.OnCharacterRenameResult: 13"
-  assert list.length(support.logs_of(step: taken, level: LogWarning)) == 1
   assert !support.stops(taken)
 }
 

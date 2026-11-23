@@ -1,7 +1,7 @@
 ---
 name: reviewer
-description: Reviews one step's diff for bugs, reuse and the issue check, and posts its findings on the step's issue. Use for a step's design or result review; one standing in for Codex runs on Opus.
-model: sonnet
+description: Reviews one step's diff for bugs, reuse and the issue check, and posts its findings on the step's issue. Use for a step's result review, or a design or shape review when Codex cannot run.
+model: opus
 tools: Bash, Read, Write, Monitor, TaskStop
 skills:
   - writing-code

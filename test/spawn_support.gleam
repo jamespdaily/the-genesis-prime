@@ -26,7 +26,7 @@ import genesis_prime/game/strike_tell
 import genesis_prime/game/telegraph_entries
 import genesis_prime/game/vendor
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id, Spell4Id}
+import genesis_prime/table/id.{type UnitProperty2Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/terrain
 import genesis_prime/world_map/creature_faction
@@ -215,14 +215,23 @@ pub fn beast_at(number number: Int, place place: Place) -> Spawn {
 }
 
 /// A Beast standing at `place` that never deflects, so no roll of a caster's seed
-/// changes what a hit does to it: every hit lands for the damage the formula gives.
+/// changes what a hit does to it: every hit lands for the damage the formula gives. Its
+/// BaseAvoidChance (101) and Rating_AvoidIncrease (33) are 0, so a deflect chance worked
+/// out again from changed properties (`spawn.values_of`) is 0 too, as its stated one is.
 pub fn beast_without_deflect_at(
   number number: Int,
   place place: Place,
 ) -> Spawn {
   let beast = beast_at(number:, place:)
+  let never_avoids = fn(entry: #(UnitProperty2Id, Float)) {
+    case entry.0.value {
+      101 | 33 -> #(entry.0, 0.0)
+      _ -> entry
+    }
+  }
   Spawn(
     ..beast,
+    bases: list.map(beast.bases, never_avoids),
     combat: Combat(
       ..beast.combat,
       defence: Defence(..beast.combat.defence, deflect_chance: 0.0),

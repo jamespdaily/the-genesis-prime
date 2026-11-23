@@ -35,7 +35,6 @@ import genesis_prime/game/spend
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
-import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -55,40 +54,22 @@ fn cooldown_row(
   target_flags target_flags: Int,
   columns columns: List(#(String, Cell)),
 ) -> List(Cell) {
-  let defaults = [
-    #("ID", Integer(id)),
-    #("spellId", Integer(strike)),
-    #("effectType", Integer(73)),
-    #("targetFlags", Integer(target_flags)),
-    #("phaseFlags", Integer(-1)),
-    #("orderIndex", Integer(9)),
-    #("dataBits00", Integer(0)),
-    #("dataBits01", Integer(20_684)),
-    #("dataBits02", Integer(0)),
-    #("dataBits03", Integer(0)),
-  ]
-  planted_table.row(
-    spell4_effects.schema,
-    list.append(
-      list.filter(defaults, fn(default) {
-        !list.any(columns, fn(given) { given.0 == default.0 })
-      }),
-      columns,
-    ),
+  spell_tables.effect_row_over(
+    id:,
+    effect_type: 73,
+    target_flags:,
+    defaults: [
+      #("dataBits00", Integer(0)),
+      #("dataBits01", Integer(20_684)),
+      #("dataBits02", Integer(0)),
+      #("dataBits03", Integer(0)),
+    ],
+    columns:,
   )
 }
 
 fn modifiers_of(row row: List(Cell)) -> List(spell_plan.CooldownModifier) {
-  let assert Ok(spell) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier)
-}
-
-fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
-  let assert Error(error) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-    as "the build fails"
-  error
+  spell_tables.planned_payloads(row:, as_kind: spell_plan.as_cooldown_modifier)
 }
 
 fn selector_of(row row: List(Cell)) -> cooldown.Selector {
@@ -185,20 +166,20 @@ pub fn each_operation_decodes_with_its_float_test() -> Nil {
 pub fn a_float_that_is_infinite_or_not_a_number_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   // 0x7F800000 is +infinity, 0xFF800000 is -infinity and 0x7FC00000 is not a number.
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: cooldown_row(id: 99_078, target_flags: 1, columns: [
         #("dataBits03", Integer(0x7F800000)),
       ]),
     )
     == spell_plan.CooldownNumberNotFinite(spell4_id: strike, effect_id: 99_078)
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: cooldown_row(id: 99_079, target_flags: 1, columns: [
         #("dataBits02", Integer(2)),
         #("dataBits03", Integer(-8_388_608)),
       ]),
     )
     == spell_plan.CooldownNumberNotFinite(spell4_id: strike, effect_id: 99_079)
-  assert plan_error(
+  assert spell_tables.plan_error(
       row: cooldown_row(id: 99_080, target_flags: 1, columns: [
         #("dataBits03", Integer(0x7FC00000)),
       ]),

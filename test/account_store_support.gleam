@@ -166,6 +166,16 @@ pub fn ask(store store: Store, request request: store.Request) -> store.Answer {
   answer
 }
 
+/// Asks the store's probe, as the server's readiness ask does, and waits for what it found.
+pub fn probed(store store: Store) -> worker.Probed {
+  let #(sent, probed) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      worker.probe(store: store.name, reply:)
+    })
+  let assert ToWorker(_) = sent as "the probe started a worker"
+  probed
+}
+
 /// The items the store loads for the character, in the order it sends them.
 pub fn held_by(
   store store: Store,

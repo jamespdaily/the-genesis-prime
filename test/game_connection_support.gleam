@@ -24,6 +24,7 @@ import genesis_prime/game/ability_book
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
+import genesis_prime/game/effect_kind
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Worked}
 import genesis_prime/game/loadout
 import genesis_prime/game/objective
@@ -92,7 +93,7 @@ import genesis_prime/store.{
   SavePlace, Unavailable,
 }
 import genesis_prime/table/id.{
-  ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
+  ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
@@ -1479,6 +1480,8 @@ pub fn mapped_logging(
     | client_connection.TellDespawn(..)
     | client_connection.TellUnitStates(..)
     | client_connection.TellCastView(..)
+    | client_connection.TellPlayerStrike(..)
+    | client_connection.TellPlayerAnswer(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -2568,6 +2571,54 @@ pub fn a_strike_of(
       ),
     ),
   )
+}
+
+/// A heal strike of the caster's connection `from` on the tests' player, as the
+/// connection takes it for its first stay: the cast `cast_id`, the caster's stay `stay`
+/// (which the answer is told for) and the heal rows `heals` in order, each healing the
+/// vital by the amount before any multiplier, with the caster's HealingMultiplierOutgoing
+/// `outgoing`. The row `index` is Spell4Effects 62019 + `index`, which the answer echoes.
+pub fn a_player_strike(
+  from from: Int,
+  stay stay: Stay,
+  cast_id cast_id: Int,
+  outgoing outgoing: Float,
+  heals heals: List(#(effect_kind.Vital, Int)),
+) -> client_connection.StaySent {
+  client_connection.SentByStriker(strike: strike_tell.PlayerStrike(
+    key: strike_tell.Key(
+      cast_id:,
+      occasion: strike_tell.AtGo(phase: 0),
+      unit_id: own_unit_id,
+    ),
+    from: ConnectionId(from),
+    stay:,
+    outgoing:,
+    heals: list.index_map(heals, fn(heal, index) {
+      strike_tell.HealTell(
+        effect_id: Spell4EffectsId(62_019 + index),
+        vital: heal.0,
+        amount: heal.1,
+      )
+    }),
+  ))
+}
+
+/// The answers a step tells the connections of casters: the caster's connection, the
+/// stay the answer is told for and the answer, in the order told.
+pub fn player_answers(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, Stay, strike_tell.PlayerAnswered)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Connection(ConnectionId(caster)),
+        request: client_connection.TellPlayerAnswer(stay:, answered:),
+      )) -> Ok(#(caster, stay, answered))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
 }
 
 /// A creature's strike of one blow of `damage` of the damage type `damage_type` (1 Physical,

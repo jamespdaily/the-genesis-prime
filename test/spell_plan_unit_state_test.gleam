@@ -43,30 +43,17 @@ fn state_row(
   target_flags target_flags: Int,
   columns columns: List(#(String, Cell)),
 ) -> List(Cell) {
-  let defaults = [
-    #("ID", Integer(id)),
-    #("spellId", Integer(strike)),
-    #("effectType", Integer(15)),
-    #("targetFlags", Integer(target_flags)),
-    #("dataBits00", Integer(6)),
-    #("durationTime", Integer(8500)),
-    #("phaseFlags", Integer(-1)),
-    #("orderIndex", Integer(9)),
-  ]
-  planted_table.row(
-    spell4_effects.schema,
-    list.append(
-      list.filter(defaults, fn(default) {
-        !list.any(columns, fn(given) { given.0 == default.0 })
-      }),
-      columns,
-    ),
+  spell_tables.effect_row_over(
+    id:,
+    effect_type: 15,
+    target_flags:,
+    defaults: [#("dataBits00", Integer(6)), #("durationTime", Integer(8500))],
+    columns:,
   )
 }
 
 fn unit_states_of(rows rows: spell_tables.Rows) -> List(spell_plan.UnitState) {
-  let assert Ok(spell) = spell_tables.planned_strike(rows:)
-  spell_plan.payloads(spell:, as_kind: spell_plan.as_unit_state)
+  spell_tables.payloads_of_rows(rows:, as_kind: spell_plan.as_unit_state)
 }
 
 /// What the plan makes of a row of the type in memory, in a place that hits no foes: every
@@ -285,20 +272,9 @@ fn gated_rows(
   condition_type condition_type: Int,
   target_flags target_flags: Int,
 ) -> spell_tables.Rows {
-  let rows =
-    spell_tables.rows_with_effect(
-      effect: state_row(id: 99_103, target_flags:, columns: [
-        #("prerequisiteIdTargetApply", Integer(99_907)),
-      ]),
-    )
-  spell_tables.Rows(
-    ..rows,
-    prerequisites: spell_tables.sorted_by_id([
-      spell_tables.prerequisite_row(id: 99_907, flags: 0, conditions: [
-        #(condition_type, 1, 0, 48_404),
-      ]),
-      ..rows.prerequisites
-    ]),
+  spell_tables.rows_gated_on_target_apply(
+    condition_type:,
+    effect_of: fn(columns) { state_row(id: 99_103, target_flags:, columns:) },
   )
 }
 

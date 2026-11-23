@@ -38,12 +38,10 @@
 import cast_support as support
 import fixture_tables
 import game_client
-import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{type Spell4BaseId, Spell4BaseId}
 import genesis_prime/table/loader/store
 import gleam/dict
@@ -123,13 +121,7 @@ fn stacked(
 
 /// What the viewer 2 is told started, as (spell, root, parent), in order.
 fn started(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
-  list.filter_map(support.tells(effects:), fn(tell) {
-    case tell {
-      #(ConnectionId(2), CastStarted(start:)) ->
-        Ok(#(start.spell4_id, start.root_spell4_id, start.parent_spell4_id))
-      _ -> Error(Nil)
-    }
-  })
+  support.started_told_to(effects:, connection: 2)
 }
 
 /// The press of the bag index at 5000 ms, past every global cooldown of the stack presses.
@@ -139,16 +131,7 @@ fn press_at_5000(
   caster caster: Caster,
   bag bag: Int,
 ) -> List(Effect) {
-  let #(_, effects) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster:,
-      bag_index: bag,
-      target: 0,
-      at: 5000,
-    )
-  effects
+  support.pressed_effects(plans:, state:, caster:, bag_index: bag, at: 5000)
 }
 
 pub fn threshold_press_casts_the_first_passing_proxy_test() -> Nil {
