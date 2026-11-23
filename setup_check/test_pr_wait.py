@@ -7,12 +7,15 @@ The script runs on a planted `gh`. The planted gh answers
   `gh pr checks N --json name,bucket --jq ...` with one line `bucket name` per check: the
                                                 names in PLANT_FAILING (a comma-separated line,
                                                 bucket fail) and the one pending check named
-                                                by PLANT_PENDING (bucket pending), and the exit
-                                                status PLANT_JSON_STATUS (default 0).
-PLANT_VIEW_OUTPUT, PLANT_VIEW_STATUS, PLANT_WATCH_STATUS, PLANT_PENDING and PLANT_JSON_STATUS
-are comma-separated lists with one item per call, the last item repeated (plant_support.NEXT_LINE
+                                                by PLANT_PENDING (bucket pending), the gate job
+                                                `check` as a passing check unless PLANT_GATE is 0
+                                                for that call (default 1), and the exit status
+                                                PLANT_JSON_STATUS (default 0).
+PLANT_VIEW_OUTPUT, PLANT_VIEW_STATUS, PLANT_WATCH_STATUS, PLANT_PENDING, PLANT_GATE and
+PLANT_JSON_STATUS are comma-separated lists with one item per call, the last item repeated (plant_support.NEXT_LINE
 reads them from files); a call that fails prints nothing. Every call is kept in PLANT_DIR/calls.
-Every test sets PR_WAIT_RETRY_SECONDS to 0, so none sleeps.
+Every test sets PR_WAIT_RETRY_SECONDS, PR_WAIT_POLL_SECONDS and PR_WAIT_GATE_POLL_SECONDS to 0, so
+none sleeps.
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_pr_wait.py'
 """
@@ -52,10 +55,12 @@ echo "$*" >> "$PLANT_DIR/calls"
       *--json*)
         status=$(next_line json_status json_status_asked)
         pending=$(next_line pending pending_asked)
+        gate=$(next_line gate gate_asked)
         if [ "${status:-0}" = 0 ]; then
           IFS=',' read -ra failing <<< "${PLANT_FAILING-}"
           for name in "${failing[@]}"; do echo "fail ${name# }"; done
           [ -n "$pending" ] && echo "pending $pending"
+          [ "${gate:-1}" = 0 ] || [ "$pending" = check ] || echo "pass check"
         fi
         exit "${status:-0}" ;;
     esac ;;
@@ -71,6 +76,7 @@ PER_CALL = {
     "PLANT_WATCH_STATUS": ("watch_status", "0"),
     "PLANT_JSON_STATUS": ("json_status", "0"),
     "PLANT_PENDING": ("pending", ""),
+    "PLANT_GATE": ("gate", "1"),
 }
 
 
@@ -85,7 +91,8 @@ class PullRequestWaitTest(unittest.TestCase):
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
             for variable, (name, default) in PER_CALL.items():
                 (root / name).write_text("\n".join(plant.pop(variable, default).split(",")) + "\n")
-            environment = {"PATH": f"{stub.parent}:{os.environ['PATH']}", "PLANT_DIR": str(root), "PR_WAIT_RETRY_SECONDS": "0", **plant}
+            environment = {"PATH": f"{stub.parent}:{os.environ['PATH']}", "PLANT_DIR": str(root), "PR_WAIT_RETRY_SECONDS": "0",
+                           "PR_WAIT_POLL_SECONDS": "0", "PR_WAIT_GATE_POLL_SECONDS": "0", **plant}
             done = subprocess.run(["bash", str(SCRIPT), "7"], capture_output=True, text=True, env=environment)
             calls = root / "calls"
             done.calls = calls.read_text().splitlines() if calls.exists() else []
@@ -128,18 +135,33 @@ class PullRequestWaitTest(unittest.TestCase):
         self.assertIn("no check failed", done.stderr)
 
     def test_a_watch_that_ends_while_a_check_is_still_pending_watches_again_and_ends_with_the_checks_outcome(self):
-        done = self.wait(PLANT_WATCH_STATUS="1,0", PLANT_PENDING="check")
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(len(self.watches(done)), 2, done.calls)
+        rows = [
+            ("a check is pending when the first watch ends", dict(PLANT_WATCH_STATUS="1,0", PLANT_PENDING="check,"), 2, 2),
+            # The gate job `check` is created about a second after the last part job ends: a watch
+            # that ends in that second sees every check passed and none named `check`.
+            ("every check passed but none is named `check` yet", dict(PLANT_GATE="0,0,1"), 1, 3),
+        ]
+        for why, plant, watched, listed in rows:
+            with self.subTest(why):
+                done = self.wait(**plant)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(len(self.watches(done)), watched, done.calls)
+                self.assertEqual(len(self.calls_starting(done, "pr checks 7 --json")), listed, done.calls)
+
+    def test_a_wait_whose_gate_job_never_appears_ends_as_an_error(self):
+        done = self.wait(PLANT_GATE="0")
+        self.assertEqual(done.returncode, 3, done.stderr)
+        self.assertIn("no check named check appeared", done.stderr)
+        self.assertEqual(len(self.calls_starting(done, "pr checks 7 --json")), 20, done.calls)
 
     def test_a_github_call_that_fails_once_is_asked_again_and_the_wait_goes_on(self):
         rows = [
             ("the check count", dict(PLANT_VIEW_STATUS="1,0", PLANT_VIEW_OUTPUT=",1"), "pr view", 2, 1),
             (
                 "the buckets after a watch that ended while a check is pending",
-                dict(PLANT_WATCH_STATUS="1,0", PLANT_JSON_STATUS="1,0", PLANT_PENDING="check"),
+                dict(PLANT_WATCH_STATUS="1,0", PLANT_JSON_STATUS="1,0", PLANT_PENDING="check,check,"),
                 "pr checks 7 --json",
-                2,
+                3,
                 2,
             ),
         ]

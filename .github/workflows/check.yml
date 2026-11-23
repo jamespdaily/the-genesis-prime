@@ -16,12 +16,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # On a push to main: whether the commit holds the files a passed run of the check
-  # and tools jobs tested (the merge commit of a pull request that was current with
-  # main does, and each job records the tree it tested as a notice). Then those two
-  # jobs skip and warm-caches runs instead: a second run of the same files only adds
-  # the chance of a flaky failure. Any error here leaves `tested` empty, and both
-  # jobs run.
+  # On a push to main: whether the commit holds the files a passed run of the gate (the
+  # job named check) and tools tested (the merge commit of a pull request that was
+  # current with main does, and each job records the tree it tested as a notice). Then
+  # the part jobs, the gate and tools skip and warm-caches runs instead: a second run of
+  # the same files only adds the chance of a flaky failure. Any error here leaves
+  # `tested` empty, and every job runs.
   tested:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
 
   # The tests of the tools that gate a merge (the check script, the setup check,
   # the table extractor). None needs the client, the database or the patched OTP, so
-  # this job runs beside check instead of after it.
+  # this job runs beside the part jobs instead of after them.
   tools:
     name: tools
     needs: tested
@@ -65,30 +65,69 @@ jobs:
         run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
       - run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 
-  check:
-    name: check
-    needs: tested
+  # On a pull request: whether the files it changes are all in the light set of ./check
+  # (guidance and untested tools), which only the parts of ./check fast read. The checkout
+  # is the merge commit of the head into the base, so its first parent is the base and the
+  # files changed against it are the pull request's. Any error here leaves `light` empty,
+  # and every leg runs.
+  scope:
+    name: scope
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      light: ${{ steps.scope.outputs.light }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: scope
+        run: |
+          status=0
+          ./check scope HEAD^1 || status=$?
+          if [ "$status" = 0 ]; then
+            echo "light=true" >> "$GITHUB_OUTPUT"
+          elif [ "$status" != 1 ]; then
+            exit "$status"
+          fi
+
+  # One leg per part of ./check, each on a runner of its own (`./check part NAME`; gleam-test
+  # in shards of the test modules, `./check part gleam-test K/N`). Every leg sets itself up
+  # the same way, so the setup is stated once; a leg that needs no client, database or build
+  # pays for them beside its own work, which costs no wall time. A change in the light set
+  # runs the `fast` legs only: the steps of the others are skipped, so their jobs end
+  # `success` and the gate never accepts a skipped job. A network step is run again once
+  # when it fails, and a second failure fails the leg. The build is saved by the gleam-build
+  # leg only. A run of a push to main whose tree a passed pull request tested runs none.
+  part:
+    name: ${{ matrix.name }}
+    needs: [tested, scope]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
-    # A cold run builds the patched OTP in 146 seconds on the runner and the
-    # whole cold job takes 3 minutes 11 seconds (run 40316762854). With the client's
-    # data, ./check took 181 s on a normal runner and 359 s on a slow one (the world-data
-    # test alone past 300 s); by 2026-11-18 the tests alone took 467 s and 617 s on two
-    # runs, and its hang limit is 1200 s (see GENESIS_CHECK_BUDGET_SECONDS below);
-    # 30 minutes covers the cold setup, that limit and the steps after it.
+    # A cold run builds the patched OTP in 146 seconds on the runner and the whole cold
+    # setup takes 3 minutes 11 seconds (run 40316762854); the longest part's hang limit is
+    # 1200 s (GENESIS_CHECK_BUDGET_SECONDS below); 30 minutes covers the cold setup, that
+    # limit and the steps after it.
     timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: format, fast: true}
+          - {name: gleam-build, fast: true}
+          - {name: glinter, fast: true}
+          - {name: fact-checker, fast: true}
+          - {name: generated-tables}
+          - {name: gleam-test 1/3}
+          - {name: gleam-test 2/3}
+          - {name: gleam-test 3/3}
+          - {name: real-start}
+          - {name: real-tables}
+          - {name: world-data}
+          - {name: migrations}
+          - {name: squirrel}
+          - {name: client-suite}
     env:
       # The client's data is in the private repository dev/client_data.sh publishes to,
       # read with the secret CLIENT_DATA_KEY. A run without the secret (a fork's pull
@@ -96,26 +135,65 @@ jobs:
       # required either way, from GENESIS_OTP_DIR (set by the toolchain action), and first
       # on PATH for ./check.
       GENESIS_NO_CLIENT: ${{ secrets.CLIENT_DATA_KEY == '' && '1' || '' }}
-      # The wall time ./check warns over, and a third of its hang limit (the only time
-      # limit that fails the run): the tests alone took 617 s on the slowest run seen
-      # (2026-11-18), so 400 warns on a slow runner and the hang limit of 1200 s is about
-      # twice that run.
+      # The wall time a part warns over, and a third of its hang limit (the only time
+      # limit that fails the run).
       GENESIS_CHECK_BUDGET_SECONDS: "400"
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ matrix.fast || needs.scope.outputs.light != 'true' }}
         with:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: ${{ matrix.fast || needs.scope.outputs.light != 'true' }}
         with:
           python-version: "3.13"
       - id: toolchain
+        if: ${{ matrix.fast || needs.scope.outputs.light != 'true' }}
         uses: ./.github/actions/toolchain
+      # The database every part reads, on the runner's Docker; pulled again once when the
+      # registry fails.
+      - name: Start Postgres
+        id: postgres
+        if: ${{ matrix.fast || needs.scope.outputs.light != 'true' }}
+        continue-on-error: true
+        run: |
+          docker rm -f postgres 2> /dev/null || true
+          docker run -d --name postgres -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust \
+            --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 15 \
+            postgres:18
+          for _ in $(seq 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' postgres)" = healthy ] && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Start Postgres again
+        if: ${{ steps.postgres.outcome == 'failure' }}
+        run: |
+          docker rm -f postgres 2> /dev/null || true
+          docker run -d --name postgres -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust \
+            --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 15 \
+            postgres:18
+          for _ in $(seq 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' postgres)" = healthy ] && exit 0
+            sleep 1
+          done
+          exit 1
       # The client's data is never cached: a fork's pull request can restore caches.
       - name: Fetch the client's data
-        if: ${{ env.GENESIS_NO_CLIENT != '1' }}
+        id: client_data
+        if: ${{ env.GENESIS_NO_CLIENT != '1' && (matrix.fast || needs.scope.outputs.light != 'true') }}
+        continue-on-error: true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/genesis-client-data
+          ssh-key: ${{ secrets.CLIENT_DATA_KEY }}
+          path: client-data
+          persist-credentials: false
+      - name: Fetch the client's data again
+        if: ${{ steps.client_data.outcome == 'failure' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/genesis-client-data
@@ -126,7 +204,7 @@ jobs:
       # of the files it is made with. Variables name the client's exe and the world data, as
       # env.sh does on a development machine; there is no Ghidra here.
       - name: Unpack the client's data
-        if: ${{ env.GENESIS_NO_CLIENT != '1' }}
+        if: ${{ env.GENESIS_NO_CLIENT != '1' && (matrix.fast || needs.scope.outputs.light != 'true') }}
         run: |
           dev/client_data.sh unpack client-data
           rm -rf client-data
@@ -137,17 +215,25 @@ jobs:
           } >> "$GITHUB_ENV"
       # The client scripts' tests and the fact checker's name rule disassemble WildStar64.exe.
       - name: Install llvm-objdump
-        if: ${{ env.GENESIS_NO_CLIENT != '1' }}
+        id: llvm
+        if: ${{ env.GENESIS_NO_CLIENT != '1' && (matrix.fast || needs.scope.outputs.light != 'true') }}
+        continue-on-error: true
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends llvm-18
           echo "GENESIS_LLVM_OBJDUMP=/usr/lib/llvm-18/bin/llvm-objdump" >> "$GITHUB_ENV"
-      - name: Record the tree tested
-        run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
-      - run: ./check
+      - name: Install llvm-objdump again
+        if: ${{ steps.llvm.outcome == 'failure' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends llvm-18
+          echo "GENESIS_LLVM_OBJDUMP=/usr/lib/llvm-18/bin/llvm-objdump" >> "$GITHUB_ENV"
+      - name: Check the part
+        if: ${{ matrix.fast || needs.scope.outputs.light != 'true' }}
+        run: ./check part ${{ matrix.name }}
       # Saved after the check (also a failed one) when the key was new.
       - name: Save the Gleam build
-        if: ${{ always() && steps.toolchain.outputs.gleam-cache-hit != 'true' }}
+        if: ${{ always() && matrix.name == 'gleam-build' && steps.toolchain.outputs.gleam-cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -155,6 +241,28 @@ jobs:
             !build/test_folder
             !build/apply_migrations_*
           key: ${{ steps.toolchain.outputs.gleam-cache-key }}
+
+  # The one check branch protection requires of the parts: it passes only when every leg
+  # of `part` and `tools` succeeded (dev/ci_gate.py), and records the tree it tested as a
+  # notice unless the change was light (then main's push runs every part). It
+  # runs when a leg fails, and it fails when the run is cancelled. The leg jobs are
+  # named after their parts, so none is named check, tools or repeat.
+  check:
+    name: check
+    needs: [tested, scope, tools, part]
+    if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: dev/ci_gate.py
+          sparse-checkout-cone-mode: false
+      - name: Pass only when every leg passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 -I dev/ci_gate.py "$(git rev-parse 'HEAD^{tree}')"
 
   # The test files a pull request adds or changes, run many times at once (see
   # dev/repeat_tests.py), so a test that depends on timing fails in the pull request

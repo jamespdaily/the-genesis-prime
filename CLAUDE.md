@@ -7,7 +7,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - **Evidence:** the client's code and tables, then recordings; a retail record or Jim's world database only where the client lacks the data or the rule.
 - **Rule:** a pure function: state and input in, new state and effects (actions to carry out) out. Every game and connection decision is a rule.
 - **Shell:** the process that carries out its rule's effects in order and turns all it sees into that rule's inputs; it decides nothing.
-- **Full check:** `./check`; its header lists the parts and when each runs. CI runs every part with the client's data.
+- **Full check:** `./check`; its header lists the parts and when each runs. CI runs each part as its own job with the client's data, and only the fast parts for a change that touches only guidance and untested tools.
 - **Coverage measure:** what the client's tables require, against what the server handles.
 
 ## Authority
