@@ -28,6 +28,7 @@ import genesis_prime/coverage/gaps
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/effect_kind
+import genesis_prime/game/held_changes
 import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
@@ -170,8 +171,9 @@ pub fn union_property_modifier_changes_the_caster_and_the_target_creature_test()
   // (`spell_area.PhaseStrike.strikes_primary_target`), and a change on a creature starts
   // only on a creature the go struck.
   let #(state, effects) = started_on_20(started: spell, struck: [20])
-  let assert [#(started_by, cast_state.Property(modifier: _))] =
-    support.caster_change_starts(effects:)
+  let assert [
+    #(started_by, cast_state.HeldChange(held_changes.Property(modifier: _))),
+  ] = support.caster_change_starts(effects:)
     as "the caster's own property changes once"
   assert started_by.effect_id == Spell4EffectsId(9717)
   let assert [
@@ -205,8 +207,7 @@ pub fn union_heal_reaches_each_unit_once_and_heals_only_the_caster_test() -> Nil
   assert list.count(support.caster_change_starts(effects:), fn(start) {
       case start.1 {
         cast_state.Heal(..) -> True
-        cast_state.Property(..) | cast_state.Absorb(..) | cast_state.Look(..) ->
-          False
+        cast_state.HeldChange(..) | cast_state.Look(..) -> False
       }
     })
     == 1
@@ -386,8 +387,7 @@ fn heals_of(
         Ok(#(start.0, start.1))
       }
       cast_state.Heal(vital: effect_kind.Shield, ..)
-      | cast_state.Property(..)
-      | cast_state.Absorb(..)
+      | cast_state.HeldChange(..)
       | cast_state.Look(..) -> Error(Nil)
     }
   })
@@ -399,12 +399,13 @@ fn absorbs_of(
 ) -> List(#(Int, Int, Int)) {
   list.filter_map(starts, fn(start) {
     case start.2 {
-      cast_state.Absorb(amount:, ..) -> {
+      cast_state.HeldChange(held_changes.Absorb(amount:, ..)) -> {
         assert amount > 0 as "an absorb pool holds at least a point"
         Ok(#(start.0, start.1, amount))
       }
-      cast_state.Property(..) | cast_state.Heal(..) | cast_state.Look(..) ->
-        Error(Nil)
+      cast_state.HeldChange(held_changes.Property(..))
+      | cast_state.Heal(..)
+      | cast_state.Look(..) -> Error(Nil)
     }
   })
 }

@@ -90,15 +90,14 @@ import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
 import genesis_prime/game/connection/item_spend as connection_item_spend
+import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/projector as connection_projector
-import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
@@ -1307,33 +1306,21 @@ fn carried_out(
       cast_state.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
       cast_state.CasterChangeStarts(
         source:,
-        change: cast_state.Property(modifier:),
+        change: cast_state.HeldChange(change:),
       ),
         _
-      -> connection_properties.started(session:, now:, source:, modifier:)
+      -> connection_landing.started(session:, now:, source:, change:)
       cast_state.CasterChangeStarts(
         change: cast_state.Heal(vital:, amount:),
         ..,
       ),
         _
       -> connection_healing.healed(session:, now:, vital:, amount:)
-      cast_state.CasterChangeStarts(
-        source:,
-        change: cast_state.Absorb(amount:, mask:),
-      ),
-        _
-      -> connection_absorption.started(session:, now:, source:, amount:, mask:)
       cast_state.CasterChangeStarts(source:, change: cast_state.Look(disguise:)),
         _
       -> connection_look.started(session:, source:, disguise:)
-      cast_state.CasterChangeEnds(source:), _ -> {
-        let #(session, properties) =
-          connection_properties.ended(session:, now:, source:)
-        let #(session, look) = connection_look.ended(session:, source:)
-        let #(session, absorption) =
-          connection_absorption.ended(session:, now:, source:)
-        #(session, list.flatten([properties, look, absorption]))
-      }
+      cast_state.CasterChangeEnds(source:), _ ->
+        connection_landing.ended(session:, now:, source:)
       cast_state.StealthChanged(stealthed:), Some(entered) -> #(
         session,
         list.flatten([

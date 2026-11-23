@@ -27,6 +27,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
+import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/look.{type Disguise, Disguise}
@@ -725,9 +726,11 @@ pub fn property_starts(
 ) -> List(#(unit_properties.Source, unit_properties.Modifier)) {
   list.filter_map(caster_change_starts(effects:), fn(start) {
     case start.1 {
-      cast_state.Property(modifier:) -> Ok(#(start.0, modifier))
-      cast_state.Heal(..) | cast_state.Look(..) | cast_state.Absorb(..) ->
-        Error(Nil)
+      cast_state.HeldChange(held_changes.Property(modifier:)) ->
+        Ok(#(start.0, modifier))
+      cast_state.Heal(..)
+      | cast_state.Look(..)
+      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
     }
   })
 }

@@ -161,13 +161,13 @@ import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Aside, type Caster, type Due, type Effect,
-  type Holder, type Live, type State, type Struck, Absorb, Activated, Aside,
-  CancelTimer, CasterChangeEnding, CasterChangeEnds, CasterChangeStarts,
-  ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
+  type Holder, type Live, type State, type Struck, Activated, Aside, CancelTimer,
+  CasterChangeEnding, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
+  CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
   CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
   FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
-  HeldProc, Hit, HitCreature, HitOtherPlayer, HitPlayer, Immune, Log, Look,
-  ModifierEnd, ModifierStart, NodesEnd, Pay, ProcDue, Property, QuestAdvanceDue,
+  HeldChange, HeldProc, Hit, HitCreature, HitOtherPlayer, HitPlayer, Immune, Log,
+  Look, ModifierEnd, ModifierStart, NodesEnd, Pay, ProcDue, QuestAdvanceDue,
   QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast, StartChild,
   StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
   TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell, Tick,
@@ -226,8 +226,7 @@ pub fn heals_landed(
           proc.Event(trigger: spell_plan.ReceivesHeal, other_unit: None, spell:),
         ]
       }
-      CasterChangeStarts(change: Property(..), ..)
-      | CasterChangeStarts(change: Absorb(..), ..)
+      CasterChangeStarts(change: HeldChange(..), ..)
       | CasterChangeStarts(change: Look(..), ..) -> []
       Send(..)
       | Tell(..)

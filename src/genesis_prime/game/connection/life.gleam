@@ -71,6 +71,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting as connection_casting
+import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
@@ -269,7 +270,9 @@ pub fn carried(
                     now:,
                   ),
                 )
-              #(session, list.append(written, more), to_the_holocrypt)
+              let #(session, held) =
+                connection_landing.ended_at_death(session:, now:)
+              #(session, list.flatten([written, more, held]), to_the_holocrypt)
             }
             player_life.CombatLeft -> {
               let #(session, more) =

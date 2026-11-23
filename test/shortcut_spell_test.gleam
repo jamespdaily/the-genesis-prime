@@ -19,6 +19,7 @@ import fixture_tables
 import genesis_prime/game/activate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/effect_kind
+import genesis_prime/game/held_changes
 import genesis_prime/game/item_property
 import genesis_prime/game/shortcut_spell.{Aimed, CannotBePlanned, Planned}
 import genesis_prime/game/spell_plan
@@ -264,7 +265,7 @@ pub fn the_six_healing_potions_and_brace_for_impact_are_played_on_the_user_and_g
       Heal, [cast_state.Heal(vital: effect_kind.Health, amount:)] -> {
         assert amount > 0 as "the potion heals the user"
       }
-      Absorb, [cast_state.Absorb(amount:, ..)] -> {
+      Absorb, [cast_state.HeldChange(held_changes.Absorb(amount:, ..))] -> {
         assert amount > 0 as "the gadget gives the user an absorb pool"
       }
       _, _ ->

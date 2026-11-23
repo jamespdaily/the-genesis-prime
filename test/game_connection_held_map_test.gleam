@@ -41,7 +41,9 @@ import genesis_prime/game/departures
 import genesis_prime/game/effect_kind
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/heal_split.{Split}
+import genesis_prime/game/held_changes
 import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
+import genesis_prime/game/unit_properties
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
@@ -66,7 +68,9 @@ import genesis_prime/step.{
   TimerId, WatchEnded, WatchId,
 }
 import genesis_prime/store.{HeldItem, ItemsSaved, NewStack}
-import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id}
+import genesis_prime/table/id.{
+  Creature2Id, Faction2Id, Item2Id, Spell4EffectsId, UnitProperty2Id,
+}
 import genesis_prime/world_map/map.{Join, Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -339,6 +343,41 @@ pub fn a_creature_strike_during_a_turn_in_is_taken_after_the_answer_test() -> Ni
     as "the player's health falls from 736 by the 1 the strike takes after its shield"
 }
 
+/// What caster `from` tells the player of Spell4Effects 203798's modifier on property 161
+/// (multiplier 0.86f, `table_rows -- Spell4Effects 203798`), or the end of it.
+fn a_change_told(
+  from from: Int,
+  ends ends: Bool,
+) -> step.Event(
+  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+) {
+  let source =
+    unit_properties.Source(cast_id: 100, effect_id: Spell4EffectsId(203_798))
+  let assert Ok(multiplier) = float32.of_column(1_062_836_634)
+    as "dataBits02 of row 203798 is a finite float"
+  connection_support.for_stay(
+    stay: connection_support.own_stay(),
+    sent: client_connection.SentByCaster(change: case ends {
+      True ->
+        held_changes.PlayerChangeEnds(from: step.ConnectionId(from), source:)
+      False ->
+        held_changes.PlayerChangeStarts(
+          from: step.ConnectionId(from),
+          from_stay: connection_support.viewer_stay(from),
+          source:,
+          change: held_changes.Property(unit_properties.Change(
+            property: UnitProperty2Id(161),
+            mode: 3,
+            multiplier:,
+            flat: 0.0,
+            per_level: 0.0,
+          )),
+          sight: held_changes.EndsWhenUnseen,
+        )
+    }),
+  )
+}
+
 pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = selling()
@@ -373,11 +412,43 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
     )
   assert connection_support.player_answers(held) == []
     as "a heal another player told is held with the rest: it is not applied nor answered before the store has answered"
+  // Caster 3 comes into sight, tells a change and ends it, all while the store works.
+  let #(state, held_change) =
+    list.fold(
+      [
+        connection_support.sent_by_the_map(map.SeenBy(
+          by: step.ConnectionId(3),
+          stay: connection_support.viewer_stay(3),
+          unit_id: connection_support.viewer_unit_id(3),
+        )),
+        a_change_told(from: 3, ends: False),
+        a_change_told(from: 3, ends: True),
+      ],
+      #(state, []),
+      fn(so_far, event) {
+        let #(state, taken) = so_far
+        let #(state, one) = connection_support.feed(state:, event:)
+        #(state, list.append(taken, [one]))
+      },
+    )
+  assert list.all(held_change, fn(taken) {
+    connection_support.written_ids(taken) == []
+  })
+    as "a change another player told is held with the rest: nothing is written before the store has answered"
   let #(_, answered) =
     connection_support.answer(state:, taken:, outcome: sale_saved())
   assert connection_support.written_ids(answered)
-    == list.append(sale_frames, [0x01AC, 0x01AC, 0x0938, 0x092F, 0x0938, 0x092F])
-    as "the sale's frames, then one experience for each kill, the Beast's strike (shield, health) and last the heal's (shield, health)"
+    == list.append(sale_frames, [
+      0x01AC,
+      0x01AC,
+      0x0938,
+      0x092F,
+      0x0938,
+      0x092F,
+      0x093A,
+      0x093A,
+    ])
+    as "the sale's frames, then one experience for each kill, the Beast's strike (shield, health), the heal's (shield, health), and last the held change's start and its end (a 0x93a each: the player ends holding nothing)"
   assert kill_sources(taken: answered) == [8, 7]
     as "the kill of unit 8 came first, so its experience is written first"
   let assert [#(3, _, PlayerAnswered(outcome: HealsLanded(heals:), ..))] =

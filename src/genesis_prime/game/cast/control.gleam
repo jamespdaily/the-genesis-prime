@@ -141,11 +141,11 @@ import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Caster, type CasterChange, type Due,
   type Effect, type HeldRestriction, type Live, type OnCreature, type Reached,
-  type Restricting, type State, type Struck, Absorb, Applied, CasterChangeStarts,
+  type Restricting, type State, type Struck, Applied, CasterChangeStarts,
   ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureControlsEnd,
   CreatureDespawns, CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart,
-  ForcedMoveStarts, Go, HeldRestriction, Hit, Immune, Look, ModifierEnd,
-  ModifierStart, NodesEnd, OnCreature, ProcDue, Property, QuestAdvanceDue,
+  ForcedMoveStarts, Go, HeldChange, HeldRestriction, Hit, Immune, Look,
+  ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue, QuestAdvanceDue,
   RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld, State,
   StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
   Tick, WindowEnd,
@@ -153,6 +153,7 @@ import genesis_prime/game/cast/state.{
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/forced_move
+import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_effect
@@ -643,7 +644,7 @@ pub fn modifiers_armed(
             cast:,
             row:,
             source:,
-            change: Property(modifier:),
+            change: HeldChange(held_changes.Property(modifier:)),
           )
         spell_plan.LookChange(disguise:) ->
           caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
@@ -654,13 +655,13 @@ pub fn modifiers_armed(
             cast:,
             row:,
             source:,
-            change: Absorb(
+            change: HeldChange(held_changes.Absorb(
               amount: damage.amount_on_caster(
                 formula: absorption.formula,
                 caster: cast_heal.on_caster_of(caster:, passed_in:),
               ),
               mask: absorption.mask,
-            ),
+            )),
           )
       }
       #(cast, list.append(effects, more))

@@ -130,6 +130,7 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/faction_level
@@ -228,18 +229,28 @@ pub fn map_sent(
           ),
         ],
       )
-    map.UnseenBy(by:) ->
+    map.UnseenBy(by:) -> {
+      let #(session, ended) =
+        connection_landing.caster_unseen(
+          session: connection_casting.with_cast(
+            session: viewers_changed(session:, change: dict.delete(_, by)),
+            cast: cast_state.audience_left(cast: entered.cast, viewer: by),
+          ),
+          now:,
+          by:,
+        )
       Continue(
-        connection_casting.with_cast(
-          session: viewers_changed(session:, change: dict.delete(_, by)),
-          cast: cast_state.audience_left(cast: entered.cast, viewer: by),
-        ),
-        connection_state.news_to_connection(
-          entered:,
-          connection: by,
-          news: client_connection.Removed,
+        session,
+        list.append(
+          connection_state.news_to_connection(
+            entered:,
+            connection: by,
+            news: client_connection.Removed,
+          ),
+          ended,
         ),
       )
+    }
     map.Gone(unit_id:) -> {
       let #(life, by_life) = player_life.released(life: entered.life, unit_id:)
       let session =
@@ -256,6 +267,9 @@ pub fn map_sent(
       }
       let #(session, released, _) =
         connection_life.carried(session:, now:, effects: by_life)
+      let #(session, held_ended) =
+        connection_landing.caster_removed(session:, now:, unit_id:)
+      let released = list.append(held_ended, released)
       use <- bool.guard(when: !shown, return: Continue(session, released))
       Continue(
         session,
