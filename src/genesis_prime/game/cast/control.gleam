@@ -740,7 +740,9 @@ pub fn modifiers_armed(
                 spell:,
                 now_ms:,
               )
-            Ok(_), None | Error(Nil), _ ->
+            Ok(_), None ->
+              panic as "a property change without armor is aimed at the caster alone (spell_plan.modifier_aim), and the caster is not among the other players in its sight"
+            Error(Nil), _ ->
               caster_modifier_armed(
                 cast:,
                 row:,
@@ -902,30 +904,9 @@ fn kept_pushed_off(
     HeldOnCreature(..) -> #(cast, [])
     HeldOnPlayer(address:, spell4_id:, stack:, ..) -> {
       let unit_id = address.unit_id
-      let kept = kept_casts_on(cast:, cast_id:, unit_id:)
-      let with_a_node =
-        list.filter_map(cast_state.holders(cast:), fn(entry) {
-          let #(held_cast_id, holder) = entry
-          case held_cast_id != cast_id && dict.has_key(holder.nodes, unit_id) {
-            True ->
-              Ok(lasting.StackedCast(
-                cast_id: held_cast_id,
-                spell4_id: holder.spell.spell4_id,
-                stack: holder.spell.stack,
-                started_ms: holder.started_ms,
-              ))
-            False -> Error(Nil)
-          }
-        })
+      let #(holds, kept) = others_on(cast:, cast_id:, unit_id:)
       list.fold(
-        lasting.stack_pushed_off(
-          casts: list.append(with_a_node, kept),
-          spell4_id:,
-          stack:,
-        )
-          |> list.filter(fn(pushed) {
-            list.any(kept, fn(held) { held.cast_id == pushed })
-          }),
+        lasting.kept_pushed_off(holds:, kept:, spell4_id:, stack:, unit_id:),
         #(cast, []),
         fn(so_far, old_cast_id) {
           let #(cast, effects) = so_far
@@ -943,41 +924,42 @@ fn kept_pushed_off(
   }
 }
 
-/// The casts of the caster other than `cast_id` that hold a change on the player `unit_id`
-/// and no node on it, as the stack rule reads them.
-pub fn kept_casts_on(
+/// What the caster's casts other than `cast_id` hold on the player `unit_id`, as the stack rule
+/// reads it: their live and lingering nodes there, and the casts that hold a change there and
+/// no node (`lasting.pushed_off`, `lasting.kept_pushed_off`).
+pub fn others_on(
   cast cast: State,
   cast_id cast_id: Int,
   unit_id unit_id: Int,
-) -> List(lasting.StackedCast) {
-  let with_a_node =
-    list.filter_map(cast_state.holders(cast:), fn(entry) {
-      case dict.has_key({ entry.1 }.nodes, unit_id) {
-        True -> Ok(entry.0)
-        False -> Error(Nil)
-      }
+) -> #(List(lasting.Hold), List(lasting.StackedCast)) {
+  let holds =
+    list.filter(cast_state.holds_on(cast:, unit_id:), fn(hold) {
+      hold.cast_id != cast_id
     })
-  list.filter_map(dict.to_list(cast.on_units), fn(entry) {
-    let #(held_cast_id, entries) = entry
-    use <- bool.guard(
-      when: held_cast_id == cast_id || list.contains(with_a_node, held_cast_id),
-      return: Error(Nil),
-    )
-    list.find_map(entries, fn(held) {
-      case held {
-        HeldOnPlayer(address:, spell4_id:, stack:, started_ms:, ..)
-          if address.unit_id == unit_id
-        ->
-          Ok(lasting.StackedCast(
-            cast_id: held_cast_id,
-            spell4_id:,
-            stack:,
-            started_ms:,
-          ))
-        HeldOnPlayer(..) | HeldOnCreature(..) -> Error(Nil)
-      }
+  let kept =
+    list.filter_map(dict.to_list(cast.on_units), fn(entry) {
+      let #(held_cast_id, entries) = entry
+      use <- bool.guard(
+        when: held_cast_id == cast_id
+          || list.any(holds, fn(hold) { hold.cast_id == held_cast_id }),
+        return: Error(Nil),
+      )
+      list.find_map(entries, fn(held) {
+        case held {
+          HeldOnPlayer(address:, spell4_id:, stack:, started_ms:, ..)
+            if address.unit_id == unit_id
+          ->
+            Ok(lasting.StackedCast(
+              cast_id: held_cast_id,
+              spell4_id:,
+              stack:,
+              started_ms:,
+            ))
+          HeldOnPlayer(..) | HeldOnCreature(..) -> Error(Nil)
+        }
+      })
     })
-  })
+  #(holds, kept)
 }
 
 /// The end timer of the change `source` holds on the player `unit_id` fired: the change

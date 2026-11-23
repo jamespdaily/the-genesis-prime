@@ -2404,7 +2404,7 @@ pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_c
     )
   assert starts_at(spell4_id: 79_221, effects: marked) == []
     as "79220 is not in group 463, so its own hit fires nothing"
-  assert list.map(cast_tick.holds_on(cast: state, unit_id: 31), fn(hold) {
+  assert list.map(cast_state.holds_on(cast: state, unit_id: 31), fn(hold) {
       hold.spell4_id.value
     })
     == [79_220]

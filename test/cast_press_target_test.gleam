@@ -1224,6 +1224,80 @@ pub fn a_heal_tick_with_no_answer_ends_the_ally_ticks_and_its_node_like_a_creatu
     )
   assert support.writes(effects: late) == [] && ticks_told(effects: late) == 0
     as "the tick whose round closes after the removal writes and tells nothing"
+  // Bolster tier 9 (Spell4 52142) holds the heal row 123122 and the Proxy 229005 that casts
+  // Spell4 87531, each ticking every 1000 ms (`table_rows -- Spell4Effects 123122 229005`). The
+  // ally who answers no heal tick takes the cast's node with it, and the Proxy row of the same
+  // cast ticks on that node, so it goes with it (`tick.ticks_dropped`: every path that drops
+  // a node calls it): the child of tick 2 starts in the step that asks the heal, before the
+  // missing answer, and no later tick starts one.
+  let bolster =
+    Spell(
+      ..spell_tables.client_spell(spell4_id: 52_142),
+      spell4_base_id: Spell4BaseId(3),
+    )
+  let caster =
+    cast_state.Caster(
+      ..esper_seeing(players: [ally]),
+      abilities: support.caster().abilities,
+      book: support.caster().book,
+    )
+  let #(state, pressed) =
+    pressed(
+      plans: support.with_spells(plans: plans(), spells: [bolster]),
+      state: cast_state.new(),
+      caster:,
+      bag_index: bag_of_base_3,
+      target: ally,
+      at: 1000,
+    )
+  let #(state, went) =
+    support.answered_each(
+      caster:,
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(_) { [] },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let #(state, fired) =
+    support.run_timers_posed(
+      caster:,
+      state:,
+      effects: went,
+      from_ms: 1000,
+      struck_at: fn(_, _) { [] },
+      poses: dict.new(),
+      until_ms: Some(3000),
+    )
+  assert support.tick_timers_on(state:, unit_id: ally) == 2
+    as "both rows of Bolster tick on the ally"
+  let assert Ok(second) = list.last(fired) as "the second tick has fired"
+  let assert [asked] = support.tick_strikes(effects: second.effects)
+    as "the second tick asks the ally for its heal"
+  let #(state, closed) =
+    cast.ticked(
+      cast: state,
+      caster:,
+      now: support.at(ms: 3000),
+      asked:,
+      struck: None,
+    )
+  assert support.tick_timers(state:) == 0
+    as "the heal tick's missing answer drops the Proxy row's timer with the heal row's"
+  assert list.length(
+      list.filter(
+        list.append(
+          list.flat_map(fired, fn(step) {
+            support.started_in(effects: step.effects)
+          }),
+          support.started_in(effects: closed),
+        ),
+        fn(start) { start.spell4_id == 87_531 },
+      ),
+    )
+    == 2
+    as "the child started at ticks 1 and 2 and none after the answer"
 }
 
 // ---- the kind of the spell ----

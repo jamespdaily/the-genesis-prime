@@ -819,3 +819,44 @@ pub fn a_target_flags_6_proxy_is_read_on_the_units_of_the_area_alone_test() -> N
   assert targets == [spell_plan.OnEachStruck]
     as "the units of the area alone, the primary-target bit not read"
 }
+
+pub fn no_periodic_proxy_aimed_at_the_primary_target_holds_a_target_apply_prerequisite_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let reading_of = reader_of(tables:)
+  // The tick of such a row reads the caster's gates alone (`tick.proxy_tick_refusal`), so the
+  // tick may start its child on the player a bag press named only while no row asks the
+  // target gate of that player (`table_rows -- Spell4Effects 229005`: Bolster's, which holds
+  // none).
+  let on_the_primary_target =
+    list.filter(spell4_effects.all(tables), fn(row) {
+      row.effect_type == 26
+      && row.tick_time > 0
+      && spell_plan.proxy_named(tables:, effect: row) != 0
+    })
+    |> list.filter_map(fn(row) {
+      case reading_of(row) {
+        Ok(Applied(ReadProxy(
+          targets: [spell_plan.OnPrimaryTarget],
+          condition:,
+          period: Some(_),
+        ))) -> Ok(#(row.id, condition))
+        _ -> Error(Nil)
+      }
+    })
+  assert on_the_primary_target != []
+    as "the client holds a periodic Proxy aimed at the primary target (Bolster's 229005)"
+  list.each(on_the_primary_target, fn(found) {
+    assert case found.1 {
+      spell_plan.Always | spell_plan.GatedOnCaster(..) -> True
+      spell_plan.GatedOnTarget(..) | spell_plan.GatedOnCasterAndTarget(..) ->
+        False
+    }
+      as {
+        "row "
+        <> int.to_string(found.0)
+        <> " is a periodic Proxy aimed at the primary target that holds a target apply prerequisite, which its tick does not read"
+      }
+  })
+}

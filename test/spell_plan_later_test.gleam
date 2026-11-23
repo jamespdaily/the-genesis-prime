@@ -900,4 +900,55 @@ pub fn the_proxies_of_the_three_targeted_root_abilities_start_the_five_counted_c
     proxy.target == spell_plan.OnEachStruck
   })
     as "no Proxy of the three abilities' trees is aimed at each struck unit"
+  // The periodic one is Bolster tier 9's Spell4Effects 229005: tickTime 1000, durationTime
+  // 8000, casting 87531 (`table_rows -- Spell4Effects 229005`).
+  let periodic =
+    list.filter(on_the_press_target, fn(proxy) { option.is_some(proxy.period) })
+  assert list.map(periodic, fn(proxy) {
+      #(proxy.effect_id.value, proxy.spell.spell4_id.value)
+    })
+    == [#(229_005, 87_531)]
+    as "exactly one of the 26 rows ticks: 229005, which casts 87531"
+  let assert [Some(spell_plan.Periodic(schedule:, ..))] =
+    list.map(periodic, fn(proxy) { proxy.period })
+    as "the periodic row has a schedule"
+  assert schedule.tick_ms == 1000 && schedule.duration_ms == 8000
+    as "every 1000 ms for 8000"
+  // No child holds a Proxy row of its own, so no grandchild is started on a player the press
+  // named, and `start_placed` reads a Proxy aimed at the primary target as on the caster
+  // safely: the one child with a hit row, 54912's TelegraphDamage 1392, is a circle with no
+  // offset, which the stricter reading of a spell started on a struck unit builds too
+  // (`table_rows -- TelegraphDamage 1392`).
+  let child_spells =
+    list.unique(list.map(on_the_press_target, fn(proxy) { proxy.spell }))
+  assert list.all(child_spells, fn(child) {
+    spell_plan.payloads(spell: child, as_kind: spell_plan.as_proxy) == []
+  })
+    as "none of the five children holds a Proxy row"
+  let links = spell_area.telegraph_links_by_spell(tables:)
+  let with_a_hit_row =
+    list.filter_map(child_spells, fn(child) {
+      let assert Ok(shapes) =
+        spell_area.hit_shapes_of(
+          tables:,
+          links:,
+          id: child.spell4_id.value,
+          reading: spell_area.PlayerReading,
+        )
+        as "each child's hit rows are built for a player"
+      case shapes {
+        [] -> Error(Nil)
+        [_, ..] -> Ok(#(child.spell4_id.value, shapes))
+      }
+    })
+  assert list.map(with_a_hit_row, fn(found) { found.0 }) == [54_912]
+    as "only 54912 has a hit row"
+  list.each(with_a_hit_row, fn(found) {
+    assert spell_area.start_placed(
+      anchor: area.FixedAtTarget,
+      start: spell_plan.Proxied(target: spell_plan.OnEachStruck),
+      shapes: found.1,
+    )
+      as "its hit shapes are built even where a struck unit's yaw is not known"
+  })
 }

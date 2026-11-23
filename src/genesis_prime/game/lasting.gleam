@@ -416,7 +416,7 @@ pub type StackedCast {
 /// lingering holds on that unit, each a `NodeOff` of the casts `stack_pushed_off` names.
 /// `kept` are the caster's casts that hold a change on the unit and no node there: they count
 /// against the cap with the holds, and a cast of them that the rule names is ended by the
-/// change it holds, not here.
+/// change it holds (`kept_pushed_off`), not here.
 pub fn pushed_off(
   holds holds: List(Hold),
   kept kept: List(StackedCast),
@@ -426,6 +426,39 @@ pub fn pushed_off(
 ) -> List(Removal) {
   let on_the_unit =
     list.filter(holds, fn(hold) { hold.node.unit_id == unit_id })
+  named_by_the_stack(on_the_unit:, kept:, spell4_id:, stack:)
+  |> list.filter(fn(cast_id) {
+    list.any(on_the_unit, fn(hold) { hold.cast_id == cast_id })
+  })
+  |> list.map(fn(cast_id) { NodeOff(cast_id:, unit_id:) })
+}
+
+/// The casts a new cast of `spell4_id` with `stack` pushes off the unit that hold a change
+/// and no node there: the casts of `kept` that the stack rule names over `holds` and `kept`
+/// together, which the holds of `pushed_off` count too. The two functions split one set of
+/// casts between them, so no cast is pushed off twice or left on.
+pub fn kept_pushed_off(
+  holds holds: List(Hold),
+  kept kept: List(StackedCast),
+  spell4_id spell4_id: Spell4Id,
+  stack stack: Stack,
+  unit_id unit_id: Int,
+) -> List(Int) {
+  let on_the_unit =
+    list.filter(holds, fn(hold) { hold.node.unit_id == unit_id })
+  named_by_the_stack(on_the_unit:, kept:, spell4_id:, stack:)
+  |> list.filter(fn(cast_id) {
+    list.any(kept, fn(held) { held.cast_id == cast_id })
+  })
+}
+
+/// The casts the stack rule names over the casts with a node and the kept casts together.
+fn named_by_the_stack(
+  on_the_unit on_the_unit: List(Hold),
+  kept kept: List(StackedCast),
+  spell4_id spell4_id: Spell4Id,
+  stack stack: Stack,
+) -> List(Int) {
   list.append(
     list.map(on_the_unit, fn(hold) {
       StackedCast(
@@ -438,10 +471,6 @@ pub fn pushed_off(
     kept,
   )
   |> stack_pushed_off(spell4_id:, stack:)
-  |> list.filter(fn(cast_id) {
-    list.any(on_the_unit, fn(hold) { hold.cast_id == cast_id })
-  })
-  |> list.map(fn(cast_id) { NodeOff(cast_id:, unit_id:) })
 }
 
 /// The casts a new cast of `spell4_id` with `stack` pushes off a unit, from `casts`, the

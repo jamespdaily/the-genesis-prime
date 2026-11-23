@@ -1347,3 +1347,81 @@ pub fn a_proxy_aimed_at_the_primary_target_of_a_quest_button_cast_at_a_creature_
     == [the_caster]
     as "its Proxy aimed at the primary target starts the child on the caster"
 }
+
+/// One quest-button cast of a spell holding a copy of a row aimed at the primary target: the
+/// row copied, the spell it is set in, the unit the button is pressed at, and the effect ids
+/// the cast starts on the caster.
+type Aimed {
+  Aimed(
+    why: String,
+    row: Int,
+    spell4_id: Int,
+    target: Int,
+    on_the_caster: List(Int),
+  )
+}
+
+pub fn a_quest_button_cast_at_a_creature_names_no_player_so_a_row_aimed_at_the_primary_target_writes_no_line_about_sight_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects 199192 (Spell4 76766) is Interrupt Armor, 229006 (Spell4 87531) a 3000 ms
+  // absorb and 64386 (Spell4 33263) a property modifier, each aimed at the primary target
+  // (targetFlags 2) (`table_rows -- Spell4Effects 199192 229006 64386`). Only a bag press
+  // names a player (`press.at_a_unit`), so these rows of a quest button's cast at creature 915
+  // land on no player and write no line about the sight of one; the same modifier row in a
+  // spell on the caster (Spell4 25306) starts on the caster.
+  let at_a_creature = fn(why, row) {
+    Aimed(why:, row:, spell4_id: 25_207, target: 915, on_the_caster: [])
+  }
+  let rows = [
+    at_a_creature(
+      "an Interrupt Armor row aimed at the primary target of a cast at a creature",
+      199_192,
+    ),
+    at_a_creature(
+      "an absorb row aimed at the primary target of a cast at a creature",
+      229_006,
+    ),
+    at_a_creature(
+      "a StruckChange row aimed at the primary target of a cast at a creature",
+      64_386,
+    ),
+    Aimed(
+      why: "the control: the StruckChange row of a cast whose primary target is the caster lands on the caster",
+      row: 64_386,
+      spell4_id: the_self_spell,
+      target: 0,
+      on_the_caster: [249_999],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    use tables <- fixture_tables.added(
+      table: "Spell4Effects",
+      copy_of: row.row,
+      id: 249_999,
+      with: [#("spellId", Integer(row.spell4_id))],
+    )
+    let scene =
+      Scene(..nothing_shown(), units: [unit(id: 915, of: 26_145, at: 10.0)])
+    let #(state, pressed) =
+      press_at_with(
+        shortcuts: shortcut_spell.shortcuts(tables:),
+        scene:,
+        state: cast_state.new(),
+        spell4_id: row.spell4_id,
+        target: row.target,
+        at: 1000,
+      )
+    let #(_, effects) = played(state:, pressed:, at: 1000)
+    assert list.filter(support.debug_lines(effects:), string.contains(
+        _,
+        "sight",
+      ))
+      == []
+      as { row.why <> ": no line says a player is not in the caster's sight" }
+    assert list.map(support.caster_change_starts(effects:), fn(start) {
+        start.0.effect_id.value
+      })
+      == row.on_the_caster
+      as { row.why <> ": the changes started on the caster" }
+  })
+}

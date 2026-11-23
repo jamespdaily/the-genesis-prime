@@ -536,6 +536,107 @@ pub fn the_cast_ids_listed_are_the_ones_pushed_off_in_age_order_test() -> Nil {
     == [10, 20, 30]
 }
 
+/// A cast of the property below: its spell, stack group, cap and age.
+fn drawn_cast() -> qcheck.Generator(#(Int, Int, Int, Int)) {
+  qcheck.tuple4(
+    qcheck.bounded_int(from: 1, to: 3),
+    qcheck.bounded_int(from: 0, to: 2),
+    qcheck.bounded_int(from: 0, to: 3),
+    qcheck.bounded_int(from: 0, to: 5000),
+  )
+}
+
+pub fn the_casts_the_stack_rule_names_are_each_taken_off_by_their_node_or_ended_by_their_kept_change_and_never_by_both_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Jim's decision on stacking (`lasting.stack_pushed_off`): a caster's casts of one group on a
+  // unit count together against the cap, whether a node or a change kept after the caster lost
+  // sight of the player holds them. The two paths that end a pushed cast, the node's
+  // (`lasting.pushed_off`) and the kept change's (`lasting.kept_pushed_off`), must split the
+  // casts the rule names over both sets between them: each named cast by one path, none by both.
+  qcheck.given(
+    qcheck.tuple3(
+      qcheck.list_from(drawn_cast()),
+      qcheck.list_from(drawn_cast()),
+      qcheck.tuple3(
+        qcheck.bounded_int(from: 1, to: 3),
+        qcheck.bounded_int(from: 0, to: 2),
+        qcheck.bounded_int(from: 0, to: 3),
+      ),
+    ),
+    fn(drawn) {
+      let #(with_a_node, kept, new_cast) = drawn
+      let #(spell, group, cap) = new_cast
+      let spell4_id = Spell4Id(spell)
+      let stack = Stack(group_id: group, cap:)
+      let holds =
+        list.index_map(with_a_node, fn(cast, index) {
+          stacked(
+            cast_id: 10 + index,
+            started: cast.3,
+            spell: cast.0,
+            group: cast.1,
+            cap: cast.2,
+          )
+        })
+      let kept_casts =
+        list.index_map(kept, fn(cast, index) {
+          lasting.StackedCast(
+            cast_id: 1000 + index,
+            spell4_id: Spell4Id(cast.0),
+            stack: Stack(group_id: cast.1, cap: cast.2),
+            started_ms: cast.3,
+          )
+        })
+      let by_node =
+        list.map(
+          lasting.pushed_off(
+            holds:,
+            kept: kept_casts,
+            spell4_id:,
+            stack:,
+            unit_id: 7,
+          ),
+          fn(removal) {
+            case removal {
+              NodeOff(cast_id:, ..) | StackOff(cast_id:, ..) -> cast_id
+            }
+          },
+        )
+      let by_change =
+        lasting.kept_pushed_off(
+          holds:,
+          kept: kept_casts,
+          spell4_id:,
+          stack:,
+          unit_id: 7,
+        )
+      let named =
+        lasting.stack_pushed_off(
+          casts: list.append(
+            list.map(holds, fn(hold) {
+              lasting.StackedCast(
+                cast_id: hold.cast_id,
+                spell4_id: hold.spell4_id,
+                stack: hold.stack,
+                started_ms: hold.started_ms,
+              )
+            }),
+            kept_casts,
+          ),
+          spell4_id:,
+          stack:,
+        )
+      assert list.all(by_node, fn(cast_id) {
+        !list.contains(by_change, cast_id)
+      })
+        as "no cast is taken off by its node and ended by its change"
+      assert list.sort(list.append(by_node, by_change), int.compare)
+        == list.sort(named, int.compare)
+        as "every cast the rule names over both sets is taken off by one of the paths, and each path takes only those"
+    },
+  )
+}
+
 // ---- a crowd-control state's own end ----
 //
 // A state ends when its creature says (`cc_state.end`), so its time is kept apart from the

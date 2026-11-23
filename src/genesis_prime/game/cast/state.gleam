@@ -1547,6 +1547,26 @@ pub fn holders(cast cast: State) -> List(#(Int, Holder)) {
   })
 }
 
+/// What the live and lingering casts hold on the unit `unit_id`, as removals, stacking and
+/// prerequisites read it: one hold for each cast with a node on that unit, in cast id order.
+pub fn holds_on(cast cast: State, unit_id unit_id: Int) -> List(lasting.Hold) {
+  list.filter_map(holders(cast:), fn(entry) {
+    let #(cast_id, holder) = entry
+    dict.get(holder.nodes, unit_id)
+    |> result.map(fn(node) {
+      lasting.Hold(
+        cast_id:,
+        spell4_id: holder.spell.spell4_id,
+        base: holder.spell.spell4_base_id,
+        groups: holder.spell.groups,
+        stack: holder.spell.stack,
+        started_ms: holder.started_ms,
+        node:,
+      )
+    })
+  })
+}
+
 /// Every cast of the unit `caster_unit_id`, live or lingering, as a unit create sees it:
 /// the cast bar when it is the current cast and the units it holds a node on, in unit id
 /// order, with the effects of each node that a create lists. `unit_casts.listed` picks the
