@@ -191,6 +191,10 @@ fn run_salted(
   // counted and erased, whatever ended it: its return or a crash.
   process.kill(worker)
   wait_until_dead(worker)
+  // wait_until_dead's own monitor can end before this one's DOWN arrives: Erlang
+  // does not order two monitors' DOWN signals. A flushed demonitor drops it and
+  // guarantees none comes later, so a run leaves its owner's mailbox as it was.
+  process.demonitor_process(monitor)
   let left_behind = owned_key.left_behind(worker)
   owned_key.erase_left(worker)
   let seeds = case outcome {
