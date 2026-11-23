@@ -7,7 +7,7 @@
 ////   (`server_table.entries`), and is said only when the server serves.
 //// - The opening's expected values are the client's own: Quest2 10513's three
 ////   places, 10527's hoverboard, finish line and projector, and 10518's first
-////   beast, which `game_wire_test`'s tutorial test gives in its chain ("Quest2's
+////   beast, which `game_wire_quest_test`'s tutorial test gives in its chain ("Quest2's
 ////   chain from 10513"): 10513 and 10527 end in state 3 and 10518 begins in state 1
 ////   (opcode.0x35c.add_unaccepted); a press is confirmed (opcode.0x7fd) and the kill
 ////   marks the unit dead (opcode.0x88c); the kill makes 10518's first objective count
