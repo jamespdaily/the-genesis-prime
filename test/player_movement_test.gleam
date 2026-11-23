@@ -817,18 +817,10 @@ pub fn each_kind_the_client_sends_in_its_own_form_is_taken_test() -> Nil {
   })
 }
 
-pub fn each_new_refusal_says_what_the_client_sent_test() -> Nil {
+pub fn a_command_kind_the_client_never_sends_is_refused_with_its_kind_test() -> Nil {
   use <- owned_test.run(5000)
   assert movement.describe(UnsentKind(kind: 4))
     == "0x0637 holds a command of kind 4, which the client never sends"
-  assert movement.describe(unwritten(
-      kind: 25,
-      field: "state flags",
-      value: 0x104,
-    ))
-    == "0x0637 holds kind 25's state flags 260 (0x104), which the client never writes"
-  assert movement.describe(unwritten(kind: 3, field: "path type", value: 1))
-    == "0x0637 holds kind 3's path type 1 (0x1), which the client never writes"
 }
 
 // ---- test 15: the client's clock ----

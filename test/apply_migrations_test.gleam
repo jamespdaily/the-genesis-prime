@@ -419,76 +419,31 @@ pub fn a_database_that_did_not_run_the_first_four_is_not_adopted_test() -> Nil {
     as "nothing was recorded"
 }
 
-/// The charges column of character_item (migration 0040): the item's charges as the client
-/// reads them, an integer that is null for a row saved before the column, with no default
-/// (so a statement that makes an item must write it), a check that holds it at 0 or more,
-/// and a comment.
-pub fn the_charges_column_is_nullable_with_a_check_and_a_comment_test() -> Nil {
+/// The columns migrations 0040 and 0045 add to character_item carry a comment that says
+/// what the column is, with no change-log words. Their types and checks are the
+/// migrations' own; the store tests write and read each column and refuse a negative value.
+pub fn the_item_columns_the_migrations_add_carry_a_comment_without_change_log_words_test() -> Nil {
   use <- owned_test.run(60_000)
   let shared = database_support.shared()
   let database = database_support.new_database(on: shared)
-  let read = fn(query) {
+  list.each(["charges", "expires_at_unix_ms"], fn(column) {
     let assert Ok(printed) =
       database_support.psql(with: shared.settings, database:, arguments: [
         "-At",
         "-c",
-        query,
+        "select col_description('character_item'::regclass, ordinal_position) from information_schema.columns where table_name = 'character_item' and column_name = '"
+          <> column
+          <> "'",
       ])
       as "the catalogue reads"
-    string.trim(printed)
-  }
-  assert read(
-      "select data_type || '|' || is_nullable || '|' || coalesce(column_default, 'none') from information_schema.columns where table_name = 'character_item' and column_name = 'charges'",
+    let comment = string.trim(printed)
+    assert comment != "" as { column <> " has a comment" }
+    assert list.all(
+      ["no longer", "used to", "not yet", "for now", "so far"],
+      fn(word) { !string.contains(string.lowercase(comment), word) },
     )
-    == "integer|YES|none"
-    as "an integer, nullable, with no default"
-  assert read(
-      "select col_description('character_item'::regclass, ordinal_position) from information_schema.columns where table_name = 'character_item' and column_name = 'charges'",
-    )
-    != ""
-    as "the column has a comment"
-  assert read(
-      "select pg_get_constraintdef(oid) from pg_constraint where conname = 'character_item_charges_not_negative' and conrelid = 'character_item'::regclass",
-    )
-    == "CHECK (((charges IS NULL) OR (charges >= 0)))"
-    as "a check holds the column at 0 or more, or null"
-}
-
-/// The expires_at_unix_ms column of character_item (migration 0045): the Unix milliseconds a
-/// timed item runs out, a bigint that is null for an item that does not, with no default, a
-/// check that holds it at 0 or more, and a comment without change-log words.
-pub fn the_expiry_moment_column_is_nullable_with_a_check_and_a_comment_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let shared = database_support.shared()
-  let database = database_support.new_database(on: shared)
-  let read = fn(query) {
-    let assert Ok(printed) =
-      database_support.psql(with: shared.settings, database:, arguments: [
-        "-At",
-        "-c",
-        query,
-      ])
-      as "the catalogue reads"
-    string.trim(printed)
-  }
-  assert read(
-      "select data_type || '|' || is_nullable || '|' || coalesce(column_default, 'none') from information_schema.columns where table_name = 'character_item' and column_name = 'expires_at_unix_ms'",
-    )
-    == "bigint|YES|none"
-    as "a bigint, nullable, with no default"
-  let comment =
-    read(
-      "select col_description('character_item'::regclass, ordinal_position) from information_schema.columns where table_name = 'character_item' and column_name = 'expires_at_unix_ms'",
-    )
-  assert comment != "" as "the column has a comment"
-  assert list.all(
-    ["no longer", "used to", "not yet", "for now", "so far"],
-    fn(word) { !string.contains(string.lowercase(comment), word) },
-  )
-    as "the comment says what the column is, with no change-log words"
-  assert read(
-      "select pg_get_constraintdef(oid) from pg_constraint where conname = 'character_item_expires_at_not_negative' and conrelid = 'character_item'::regclass",
-    )
-    == "CHECK (((expires_at_unix_ms IS NULL) OR (expires_at_unix_ms >= 0)))"
-    as "a check holds the column at 0 or more, or null"
+      as {
+        column <> "'s comment says what the column is, with no change-log words"
+      }
+  })
 }

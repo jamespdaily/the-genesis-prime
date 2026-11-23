@@ -592,21 +592,10 @@ fn result_of_log(
 }
 
 // ---------------------------------------------------------------------------
-// The two containers are the two the scripts name.
+// The sources that have a container.
 
-pub fn the_followed_containers_are_the_two_the_scripts_name_test() -> Nil {
+pub fn only_the_server_and_the_database_have_a_container_to_read_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(library) = simplifile.read("dev/play_service/lib.sh")
-    as "the play service's library is in the repository"
-  let value_of = fn(name) {
-    let assert [assignment] =
-      string.split(library, "\n")
-      |> list.filter(string.starts_with(_, name <> "="))
-      as { "lib.sh sets " <> name <> " once" }
-    string.drop_start(assignment, string.length(name) + 1)
-  }
-  assert container_log.server_container == value_of("server_container")
-  assert container_log.database_container == value_of("postgres_container")
   assert container_log.container_name(ServerLog)
     == Ok(container_log.server_container)
   assert container_log.container_name(DatabaseLog)

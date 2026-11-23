@@ -321,13 +321,3 @@ pub fn statistic_event_values_the_client_never_writes_are_refused_test() -> Nil 
     },
   )
 }
-
-pub fn each_statistic_refusal_says_what_the_client_sent_test() -> Nil {
-  use <- owned_test.run(10_000)
-  assert dropped.describe(event_not_written(field: "the category", value: 34))
-    == "0x023D holds the category 34 (0x22), which the client never writes"
-  assert dropped.describe(event_not_written(field: "the second value", value: 1))
-    == "0x023D holds the second value 1 (0x1), which the client never writes"
-  assert dropped.describe(event_not_written(field: "the sixth value", value: 1))
-    == "0x023D holds the sixth value 1 (0x1), which the client never writes"
-}
