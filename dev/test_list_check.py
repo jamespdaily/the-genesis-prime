@@ -12,8 +12,9 @@ backticked name that ends in `_test` (Gleam, optionally `module.` first) or star
 with `test_` (Python).
 A test is defined by an added line `pub fn NAME(` or `def NAME(` in
 `git diff BASE HEAD`, or gains a row when the diff adds lines inside an existing
-`pub fn NAME(` (the hunk's header names the function, as git finds it for a Gleam file;
-a hunk between that function's end and the next one counts for it too, so a reviewer reads the rows).
+`pub fn NAME(`: an added line of HEAD's file that falls between the function's first line and
+the next top-level `fn`, `pub fn`, `const` or `type` line (git's hunk headers cut long names, so
+the lines are read from HEAD, not from the header).
 A name that is a test module's file name is skipped.
 A name not defined in the diff is looked up in HEAD's tree, so a listed test
 that already existed is told apart from a missing one.
@@ -40,8 +41,8 @@ from pathlib import Path
 
 LISTED = re.compile(r"`(?:[a-z0-9_]+\.)*([a-z0-9_]+_test|test_[a-z0-9_]+)`")
 DEFINED = re.compile(r"^\+\s*(?:pub fn|def)\s+([a-z0-9_]+)\s*\(", re.MULTILINE)
-# A -U0 hunk inside an existing function, whose header names it, followed by an added line.
-ROW_ADDED = re.compile(r"^@@ [^@]* @@ \s*(?:pub fn|def)\s+([a-z0-9_]+)\s*\(.*\n\+", re.MULTILINE)
+HUNK = re.compile(r"^@@ [^@]* \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+TOP_LEVEL = re.compile(r"^(pub fn|fn|pub const|const|pub type|type) ")
 ROW_WORD = re.compile(r"\brows?\b", re.IGNORECASE)
 
 
@@ -101,6 +102,28 @@ def existing(base: str, source: str) -> int:
     return 1 if found else 0
 
 
+def added_lines(base: str, head: str, path: str) -> set[int]:
+    """The line numbers at head of the lines the diff adds to path."""
+    lines: set[int] = set()
+    for match in HUNK.finditer(run("git", "diff", "-U0", base, head, "--", path)):
+        start, count = int(match.group(1)), int(match.group(2) or "1")
+        lines.update(range(start, start + count))
+    return lines
+
+
+def rows_added(base: str, head: str, name: str) -> bool:
+    """True when the diff adds a line inside an existing function called name at head."""
+    for path in defined_at(head, name):
+        text = run("git", "show", f"{head}:{path}").splitlines()
+        first = next((n for n, line in enumerate(text, 1) if re.match(rf"\s*(pub fn|def) {name}\(", line)), None)
+        if first is None:
+            continue
+        end = next((n for n, line in enumerate(text, 1) if n > first and TOP_LEVEL.match(line)), len(text) + 1)
+        if any(first < line < end for line in added_lines(base, head, path)):
+            return True
+    return False
+
+
 def main() -> int:
     if len(sys.argv) == 4 and sys.argv[1] == "--existing":
         return existing(sys.argv[2], sys.argv[3])
@@ -115,7 +138,7 @@ def main() -> int:
     listed = listed_names(text, head)
     diff = run("git", "diff", "-U0", base, head)
     defined = set(DEFINED.findall(diff))
-    rows = set(ROW_ADDED.findall(diff)) - defined
+    rows = {name for name in listed if name not in defined and rows_added(base, head, name)}
     for name in listed:
         if name in rows:
             print(f"{name}: rows added to an existing test")
