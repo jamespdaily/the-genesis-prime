@@ -134,6 +134,22 @@ pub fn the_drop_save_carries_the_health_the_player_has_now_test() -> Nil {
     )
 }
 
+pub fn a_save_while_dead_keeps_0_and_the_place_of_the_body_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let zero =
+    game_connection_support.save_asked_keeping(
+      sequence: 1,
+      place: game_connection_support.entry_place(),
+      health: Some(0),
+    )
+  assert game_connection_support.ask_request(timer_fired(dead())) == zero
+    as "the 60 s save of a dead player keeps 0 and the place where the body lies, so it comes back dead (death.enter_dead)"
+  assert game_connection_support.ask_request(camp_finished(dead())) == zero
+    as "and so does the camp's"
+  assert game_connection_support.ask_request(dropped(dead())) == zero
+    as "and the drop's"
+}
+
 pub fn a_save_the_database_refused_for_the_health_is_an_error_and_the_player_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) =
@@ -272,4 +288,9 @@ pub fn wake_here_after_an_entry_with_less_health_comes_back_at_full_health_test(
       ),
     ]
     as "death.server_choices: full health, not the saved one"
+}
+
+/// The tests' player, dead and seen by connection 2.
+fn dead() -> game_connection.State {
+  game_connection_support.dead_in_world().0
 }
