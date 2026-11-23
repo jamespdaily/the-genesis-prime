@@ -1,11 +1,10 @@
 //// The repository as the code-rule tests read it: its Gleam source, its
-//// tracked paths and its guidance files.
+//// tracked paths and the client's fact file.
 
 import code_rule/source.{type SourceFile, SourceFile}
 import database_support
 import gleam/dict
 import gleam/list
-import gleam/result
 import gleam/string
 import simplifile
 import tom
@@ -51,12 +50,6 @@ pub fn erlang_sources(under directories: List(String)) -> List(SourceFile) {
   tracked_sources(suffix: ".erl", under: directories)
 }
 
-/// Every tracked `.sh` file under the directories, sorted by path, which
-/// must hold at least one.
-pub fn shell_sources(under directories: List(String)) -> List(SourceFile) {
-  tracked_sources(suffix: ".sh", under: directories)
-}
-
 fn tracked_sources(
   suffix suffix: String,
   under directories: List(String),
@@ -77,36 +70,6 @@ fn tracked_sources(
     })
   let assert [_, ..] = files as { "no tracked " <> suffix <> " file found" }
   files
-}
-
-/// The guidance files as (path, text): CLAUDE.md, every skill's SKILL.md and
-/// the reference files beside it (each `.md` file in the skill's folder), and
-/// every agent file.
-pub fn guidance() -> List(#(String, String)) {
-  let skills = directory_entries(".claude/skills")
-  let skill_files =
-    list.flat_map(skills, fn(skill) {
-      let folder = ".claude/skills/" <> skill <> "/"
-      directory_entries(folder)
-      |> list.filter(string.ends_with(_, ".md"))
-      |> list.map(fn(file) { folder <> file })
-    })
-  let agent_files =
-    directory_entries(".claude/agents")
-    |> list.filter(string.ends_with(_, ".md"))
-    |> list.map(fn(agent) { ".claude/agents/" <> agent })
-  let paths = ["CLAUDE.md", ..list.append(skill_files, agent_files)]
-  list.map(paths, fn(path) {
-    let assert Ok(text) = simplifile.read(path)
-      as "a guidance file could not be read"
-    #(path, text)
-  })
-}
-
-fn directory_entries(directory: String) -> List(String) {
-  simplifile.read_directory(directory)
-  |> result.unwrap([])
-  |> list.sort(string.compare)
 }
 
 /// Every key of the client's fact file, read once for the run: the first caller

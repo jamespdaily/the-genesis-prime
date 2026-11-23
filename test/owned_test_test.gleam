@@ -200,13 +200,12 @@ pub fn a_crashed_bodys_failure_names_the_seeds_its_listeners_were_given_test() -
     }
 }
 
-pub fn a_body_that_returns_leaves_no_seed_line_in_its_owners_mailbox_test() -> Nil {
+pub fn a_run_leaves_its_owners_mailbox_as_it_was_test() -> Nil {
   use <- owned_test.run(60_000)
-  // A run leaves its own end in its owner's mailbox (the monitor's message), so
-  // the count a body that takes no script adds is the one to compare with.
   let before = mailbox_support.queued(process.self())
   owned_test.run_under_salt(salt: "s", timeout_ms: 10_000, body: fn() { Nil })
-  let after_a_body_that_took_no_script = mailbox_support.queued(process.self())
+  assert mailbox_support.queued(process.self()) == before
+    as "a body that returns leaves nothing in the mailbox of the process that ran it, its end included"
   let scripts =
     owned_test.run_under_salt(salt: "s", timeout_ms: 10_000, body: fn() {
       let scripts = fixed_seed.scripts(listener: "game", over: system_scripts())
@@ -214,8 +213,7 @@ pub fn a_body_that_returns_leaves_no_seed_line_in_its_owners_mailbox_test() -> N
       scripts
     })
   let after_a_body_that_took_one = mailbox_support.queued(process.self())
-  assert after_a_body_that_took_one - after_a_body_that_took_no_script
-    == after_a_body_that_took_no_script - before
+  assert after_a_body_that_took_one == before
     as "a seed issued inside the body adds no message to the mailbox of the process that ran it"
   let assert Ok(_) = scripts()
     as "a script issued after the body returned is still handed out"

@@ -11,7 +11,10 @@ after its leading `#`, `*` and spaces, starts with "test list". A listed test is
 backticked name that ends in `_test` (Gleam, optionally `module.` first) or starts
 with `test_` (Python).
 A test is defined by an added line `pub fn NAME(` or `def NAME(` in
-`git diff BASE HEAD`. A name that is a test module's file name is skipped.
+`git diff BASE HEAD`, or gains a row when the diff adds lines inside an existing
+`pub fn NAME(` (the hunk's header names the function, as git finds it for a Gleam file;
+a hunk between that function's end and the next one counts for it too, so a reviewer reads the rows).
+A name that is a test module's file name is skipped.
 A name not defined in the diff is looked up in HEAD's tree, so a listed test
 that already existed is told apart from a missing one.
 
@@ -22,8 +25,11 @@ use.
 
 `--existing BASE LIST` runs before the build: LIST is an issue number (its test list as above)
 or the path of a draft file (the whole file), and each backticked listed test already defined at BASE
-is printed as `NAME: already at FILE, write it plainly` (a list backticks only the tests its step adds).
-Exit 1 when one is printed, 0 when none is, 2 when the list names no test.
+is printed as `NAME: already at FILE, write it plainly` (a list backticks only the tests its step adds),
+unless a line of the list that names it also says "row": a new row of an existing table test, printed as
+`NAME: a new row of FILE`. A test list is sized by the decisions a step adds, and a decision that fits an
+existing table test is a row there, not a new function (Jim, 2026-11-22).
+Exit 1 when a test is printed as already there, 0 when none is, 2 when the list names no test.
 """
 
 import json
@@ -34,6 +40,9 @@ from pathlib import Path
 
 LISTED = re.compile(r"`(?:[a-z0-9_]+\.)*([a-z0-9_]+_test|test_[a-z0-9_]+)`")
 DEFINED = re.compile(r"^\+\s*(?:pub fn|def)\s+([a-z0-9_]+)\s*\(", re.MULTILINE)
+# A -U0 hunk inside an existing function, whose header names it, followed by an added line.
+ROW_ADDED = re.compile(r"^@@ [^@]* @@ \s*(?:pub fn|def)\s+([a-z0-9_]+)\s*\(.*\n\+", re.MULTILINE)
+ROW_WORD = re.compile(r"\brows?\b", re.IGNORECASE)
 
 
 def run(*args: str) -> str:
@@ -81,7 +90,11 @@ def existing(base: str, source: str) -> int:
     found = 0
     for name in listed_names(text, base):
         where = defined_at(base, name)
-        if where:
+        if not where:
+            continue
+        if any(f"`{name}`" in line and ROW_WORD.search(line) for line in text.splitlines()):
+            print(f"{name}: a new row of {where[0]}")
+        else:
             print(f"{name}: already at {where[0]}, write it plainly")
             found += 1
     print(f"{found} listed tests already exist at {base}")
@@ -100,12 +113,17 @@ def main() -> int:
         print(f"issue {issue} holds no test list naming a test")
         return 2
     listed = listed_names(text, head)
-    defined = set(DEFINED.findall(run("git", "diff", base, head)))
-    missing = [name for name in listed if name not in defined]
+    diff = run("git", "diff", "-U0", base, head)
+    defined = set(DEFINED.findall(diff))
+    rows = set(ROW_ADDED.findall(diff)) - defined
+    for name in listed:
+        if name in rows:
+            print(f"{name}: rows added to an existing test")
+    missing = [name for name in listed if name not in defined and name not in rows]
     for name in missing:
         where = defined_at(head, name)
         print(f"{name}: not in the diff" + (f", already at {where[0]}" if where else ", missing"))
-    print(f"{len(listed) - len(missing)} of {len(listed)} listed tests defined in the diff")
+    print(f"{len(listed) - len(missing)} of {len(listed)} listed tests defined or given rows in the diff")
     return 1 if missing else 0
 
 
