@@ -315,6 +315,7 @@ fn held_press(
 ) -> List(List(Effect)) {
   let assert Ok(#(state, down)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: cast_state.new(),
       message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: press_bag, target: 0, held: 1),

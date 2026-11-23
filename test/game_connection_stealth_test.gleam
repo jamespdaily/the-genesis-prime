@@ -392,6 +392,7 @@ fn create_flags_sent_to_a_new_viewer(
     support.sent_by_the_map(SeenBy(
       by: step.ConnectionId(2),
       stay: support.viewer_stay(2),
+      unit_id: support.viewer_unit_id(2),
     ))
   let #(_, taken) =
     support.feed(state, case second_stay {

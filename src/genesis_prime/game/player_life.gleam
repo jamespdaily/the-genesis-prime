@@ -24,6 +24,13 @@
 //// Released(C) ─────────────────▶ fighters - C; the last one:                  ─▶ 0x89a(P, 0) to P and its viewers
 ////                                                                              CombatLeft (the cast rule's `combat_left`)
 //// the map's Gone(C) ───────────▶ the same as Released(C), and C joins gone
+////
+//// another player's connection H
+//// SentByStriker(PlayerStrike(key, H, stay_H, outgoing, heals))
+////                             ─▶ dead: PlayerDead, no row
+////                                alive: each heal row in order on P's life (`heals_taken`)
+////                                                                          ─▶ the same 0x938, 0x92f and viewers' news as P's own heal
+////                                Tell(Connection(H), TellPlayerAnswer(stay_H, PlayerAnswered(key, outcome)))
 //// ```
 ////
 //// Health and shield regenerate on two timers this rule asks for as effects, as the
@@ -217,6 +224,10 @@
 //// | a pool starts for a dead P | no pool, nothing is written | `a_pool_started_on_a_dead_player_is_not_held_test` |
 //// | C's killing strike reaches P mid-cast | each live cast ends with 0x7fe to P and the viewers told its start, its timers cancelled; a round that closes later has no go | `a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_to_it_and_every_viewer_told_its_start_test`, `a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test` |
 //// | the map's notice, a peer's news or a creature's threat, release or strike sent for P's earlier stay arrives after the Holocrypt's join, a camp and a new entry, or a join to a restarted run that gives the same unit id | dropped: it names the earlier stay | `messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`, `messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test` |
+//// | a heal another player told (`PlayerStrike`) reaches P after P died | refused `PlayerDead`: no row is applied, so no partial heal, and nothing is written | `heal_rows_told_by_another_player_are_applied_in_order_each_on_the_life_the_one_before_left_test` |
+//// | two players' heals reach P in one millisecond | taken in arrival order, each on the life the other left, each answered to its own caster | `a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_to_the_caster_for_its_stay_before_the_news_test` |
+//// | a heal another player told reaches P during an ask (a save, a purchase, a turn-in) | held and applied when the ask returns, possibly after the caster's round closed | `map_messages_held_while_the_store_works_are_taken_in_arrival_order_test` |
+//// | a heal another player told is held when P's connection ends | dropped with the rest of what is held: no row is applied and no answer is told | `a_connection_that_ends_while_holding_map_messages_takes_none_test` |
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/damage
@@ -1305,35 +1316,96 @@ fn shield_gained(
 /// out by genesis_prime/game/heal_split `split` from the player's own `properties`, which
 /// is the one function the cast rule's go also tells the client its amount and overheal
 /// by: the amount times HealingMultiplierOutgoing (162) and HealingMultiplierIncoming
-/// (163), both the player's own because it heals only itself (a heal of another unit
-/// takes the healer's outgoing value and the target's incoming one, which no rule here works out),
-/// and for a health heal the share HealToShieldConversion (111) gives the shield
-/// (`0x1405d8350`). Each vital rises by its part, capped at its maximum
-/// (`Spell4Effects.effectType.10`, `.118`), and is written to the player's client and
-/// told to its viewers as a tick's is; the shield is told first. A heal that moves
-/// nothing, on a full vital or a dead player, is not told, and the shield's clock is left
-/// as it was: only a blow restarts the reboot (text 531855).
+/// (163), both the player's own because it heals only itself, and for a health heal the
+/// share HealToShieldConversion (111) gives the shield (`0x1405d8350`). Each vital rises
+/// by its part, capped at its maximum (`Spell4Effects.effectType.10`, `.118`), and is
+/// written to the player's client and told to its viewers as a tick's is; the shield is
+/// told first. A heal that moves nothing, on a full vital or a dead player, is not told,
+/// and the shield's clock is left as it was: only a blow restarts the reboot (text
+/// 531855).
 pub fn healed(
   life life: Life,
   vital vital: effect_kind.Vital,
   amount amount: Int,
   properties properties: Properties,
 ) -> #(Life, List(Effect)) {
+  let #(life, _, effects) =
+    healed_by(
+      life:,
+      vital:,
+      amount:,
+      outgoing: heal_split.scaling_of(properties:).outgoing,
+      properties:,
+    )
+  #(life, effects)
+}
+
+/// A heal of `vital` by the formula's `amount` that a healer with HealingMultiplierOutgoing
+/// `outgoing` gives the player: the player's own HealingMultiplierIncoming (163) and
+/// HealToShieldConversion (111) from its `properties` (`heal_split.scaling_between`),
+/// its room, the life raised and told as `healed` does, and the split of the amount.
+pub fn healed_by(
+  life life: Life,
+  vital vital: effect_kind.Vital,
+  amount amount: Int,
+  outgoing outgoing: Float,
+  properties properties: Properties,
+) -> #(Life, heal_split.Split, List(Effect)) {
   let split =
     heal_split.split(
       vital:,
       amount:,
-      scaling: heal_split.scaling_of(properties:),
+      scaling: heal_split.scaling_between(outgoing:, properties:),
       health_room: life.max_health - life.health,
       shield_room: life.max_shield - life.shield,
     )
   use <- bool.guard(
     when: life.state == Dead || split.amount <= 0,
-    return: #(life, []),
+    return: #(life, split, []),
   )
   let #(life, shield_effects) = shield_raised(life:, amount: split.shield)
   let #(life, health_effects) = health_raised(life:, amount: split.health)
-  #(life, list.append(shield_effects, health_effects))
+  #(life, split, list.append(shield_effects, health_effects))
+}
+
+/// The heal rows another player's connection told this player, applied in the order told,
+/// each on the life the one before left: the life, the answer, and the news of each row
+/// that moved a vital. A dead player takes no row and answers `PlayerDead`.
+pub fn heals_taken(
+  life life: Life,
+  properties properties: Properties,
+  strike strike: strike_tell.PlayerStrike,
+) -> #(Life, strike_tell.PlayerOutcome, List(Effect)) {
+  case life.state {
+    Dead -> #(life, strike_tell.PlayerDead, [])
+    Alive -> {
+      let #(life, landed, effects) =
+        list.fold(strike.heals, #(life, [], []), fn(so_far, row) {
+          let #(life, landed, effects) = so_far
+          let #(life, split, more) =
+            healed_by(
+              life:,
+              vital: row.vital,
+              amount: row.amount,
+              outgoing: strike.outgoing,
+              properties:,
+            )
+          #(
+            life,
+            [
+              strike_tell.HealLanded(
+                effect_id: row.effect_id,
+                vital: row.vital,
+                split:,
+              ),
+              ..landed
+            ],
+            list.append(effects, more),
+          )
+        })
+      #(life, strike_tell.HealsLanded(heals: list.reverse(landed)), effects)
+    }
+  }
 }
 
 /// The shield raised by `amount`, capped at its maximum, and told; nothing when it moves

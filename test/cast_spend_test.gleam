@@ -420,6 +420,7 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
   let take = fn(state, message, body, at) {
     let assert Ok(taken) =
       cast.take(
+        target_of: support.nothing_shown,
         cast: state,
         message:,
         body:,
@@ -491,6 +492,7 @@ pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
   let take = fn(state, body, at) {
     let assert Ok(taken) =
       cast.take(
+        target_of: support.nothing_shown,
         cast: state,
         message: cast_state.Pressed,
         body:,

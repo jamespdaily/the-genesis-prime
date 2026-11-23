@@ -20,6 +20,12 @@
 ////   Tell(Creature(..), TellStrikeAnswered(Answered(key, outcome))) ─▶ the creature's round
 ////   SentByFoe(Released(unit))              ◀─ the creature took the player off its threat list
 ////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
+////
+//// caster's connection C                                     healed player's connection T
+////   Tell(Connection(T), TellPlayerStrike(stay_T, PlayerStrike(key, C, stay_C, outgoing, heals)))
+////                                                            ─▶ each heal row on T's life, in order
+////   SentByHealed(PlayerAnswered(key, outcome)) ◀─ Tell(Connection(C), TellPlayerAnswer(stay_C, ..)),
+////                                                 then T's own news
 //// ```
 ////
 //// - **The key** names one strike: the cast, the occasion (a go's phase, or a tick of
@@ -57,16 +63,22 @@
 ////   no states: a go row that needs no gate sends none. No call, process or timer is added:
 ////   the check is the creature's own step of the strike it was told, and the round's one
 ////   deadline covers it.
+//// - **A strike told to another player carries heals only** (`PlayerStrike`): the rows that
+////   passed the caster's gates and the caster's outgoing heal multiplier, and the healed
+////   player's connection applies them to its own life and answers each row's split
+////   (genesis_prime/game/connection/landing). It carries no deadline, so a late one is applied.
 //// - **A player's strike carries its place and move sequence number**, so a
 ////   creature it puts on a fight finds it, ordered with the moves its connection
 ////   tells (genesis_prime/world_map/creature_fight).
 
 import genesis_prime/game/crowd_control
+import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
+import genesis_prime/game/heal_split
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/step.{type Address}
+import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/option.{type Option}
@@ -221,6 +233,51 @@ pub type Outcome {
 /// The struck unit's answer to the strike of `key`.
 pub type Answered {
   Answered(key: Key, outcome: Outcome)
+}
+
+/// One heal row a caster tells another player: the row's Spell4Effects id, the vital it
+/// heals and the formula's amount from the caster's stats, before any multiplier.
+pub type HealTell {
+  HealTell(effect_id: Spell4EffectsId, vital: effect_kind.Vital, amount: Int)
+}
+
+/// What a caster's connection tells the connection of another player its cast heals:
+/// the strike's key, the caster's connection and the caster's stay, which the answer is
+/// told for, the caster's HealingMultiplierOutgoing (162) and the heal rows that passed
+/// the caster's gates, in the plan's rank order. It carries heals only, so no blow, state
+/// or gate can reach a player.
+pub type PlayerStrike {
+  PlayerStrike(
+    key: Key,
+    from: ConnectionId,
+    stay: Stay,
+    outgoing: Float,
+    heals: List(HealTell),
+  )
+}
+
+/// One heal row as the healed player applied it: the row, the vital and the split of the
+/// amount the player's own multipliers and room gave.
+pub type HealLanded {
+  HealLanded(
+    effect_id: Spell4EffectsId,
+    vital: effect_kind.Vital,
+    split: heal_split.Split,
+  )
+}
+
+/// What a player answers a `PlayerStrike` with.
+pub type PlayerOutcome {
+  /// Every heal row was applied in the order told, each on the life the one before
+  /// left; the list is the rows in that order.
+  HealsLanded(heals: List(HealLanded))
+  /// The player is dead and took no row.
+  PlayerDead
+}
+
+/// The healed player's answer to the strike of `key`.
+pub type PlayerAnswered {
+  PlayerAnswered(key: Key, outcome: PlayerOutcome)
 }
 
 /// What a creature that fights a player tells the player's connection, for the
