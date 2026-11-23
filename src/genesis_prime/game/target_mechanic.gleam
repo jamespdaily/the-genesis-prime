@@ -167,6 +167,33 @@ pub fn is_beneficial(flags flags: Int) -> Bool {
   int.bitwise_and(flags, 1) == 1
 }
 
+/// The bits of a spell's Spell4ValidTargets.targetBitmask (`Spell4ValidTargets.targetBitmask`),
+/// the one place they are named: the press (`cast/press_target`) and the area
+/// (`spell_area`) read them.
+///
+/// Bit 1: the press refuses a player target (102, `0x1403b2240`).
+pub const valid_refuses_player = 1
+
+/// Bit 2: the press skips the faction test of the cast (`0x1403ad540`).
+pub const valid_skips_faction_test = 2
+
+/// Bit 4: only a player is a valid target (a creature is an NPC, which the check at
+/// `0x1403b2240` refuses).
+pub const valid_players_only = 4
+
+/// Bit 8: the area may strike the dead (`FillSpellAoeConstraints` `0x1405698c0`, record word 6).
+pub const valid_may_be_dead = 8
+
+/// Bit 16: only a member of the caster's group is a valid target (`CheckCastTarget`
+/// `0x1403b0880` line 66, `UnitsShareGroup` `0x140561e60`).
+pub const valid_same_group_only = 16
+
+/// Bit 32: the area picks a creature cluster only (record word 7).
+pub const valid_creature_cluster = 32
+
+/// Bit 64: the area strikes units in combat only (record word 8).
+pub const valid_in_combat_only = 64
+
 /// Whether a spell of the kind is cast at the caster, whatever the player has targeted.
 pub fn takes_caster(kind: Kind) -> Bool {
   case kind {

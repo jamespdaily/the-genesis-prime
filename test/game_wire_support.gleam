@@ -427,6 +427,25 @@ pub fn two_players_enter_after(
   first_acts first_acts: fn(game_client.Game, BitArray) ->
     #(List(Frame), BitArray),
 ) -> TwoEntered {
+  two_players_enter_saved(
+    started:,
+    first_class:,
+    level:,
+    saved_health: None,
+    first_acts:,
+  )
+}
+
+/// As `two_players_enter_after`, both characters saved with `saved_health` when it is given
+/// (below the level's maximum, so a heal is a real change) before either plays.
+pub fn two_players_enter_saved(
+  started started: login_support.Started,
+  first_class first_class: Int,
+  level level: Int,
+  saved_health saved_health: Option(Int),
+  first_acts first_acts: fn(game_client.Game, BitArray) ->
+    #(List(Frame), BitArray),
+) -> TwoEntered {
   let #(first, first_character) =
     new_player_at_level(
       started:,
@@ -443,6 +462,18 @@ pub fn two_players_enter_after(
       class_id: 4,
       level:,
     )
+  case saved_health {
+    Some(health) -> {
+      let pool = pog.named_connection(started.settings.pool.pool_name)
+      let assert Ok(_) =
+        pog.query("update character set health = $1")
+        |> pog.parameter(pog.int(health))
+        |> pog.execute(pool)
+        as "both characters' rows hold the health they saved"
+      Nil
+    }
+    None -> Nil
+  }
   send_play(game: first, character_id: first_character)
   let #(first_burst, first_have) =
     game_client.read_entry_kept(game: first, have: <<>>)

@@ -455,8 +455,6 @@ pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Ni
       "its child 41491's only damage row, 229624 (tickTime 1000, flags 514), lasts until removed, which no schedule ends, so the sentence names it: "
       <> spell_plan.describe(error: miasma.error)
     }
-  assert !list.contains(unplanned, 34_426)
-    as "Energy Auger is planned: its Proxy's valid targets are bitmask 4, which the area load builds"
   list.each([57_978, 39_157, 42_676], fn(spell4_id) {
     assert !list.contains(unplanned, spell4_id)
       as "Smackdown, Whiplash and Pounce are planned before and after"

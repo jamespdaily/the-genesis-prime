@@ -16,13 +16,17 @@
 
 import attacker_support
 import cast_support
+import client_tables
+import genesis_prime/game/area
 import genesis_prime/game/cast/state.{GoAsked} as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
+import genesis_prime/game/player_state
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, Selection,
 }
@@ -39,11 +43,13 @@ import gleam/list
 import gleam/option.{None, Some}
 import map_support
 import owned_test
+import place_support
 import player_state_support
 import properties_support
 import rating_support
 import spell_tables
 import strike_support
+import unitest
 
 const mind_over_body = 32_820
 
@@ -251,6 +257,222 @@ pub fn a_go_selects_a_player_primary_target_only_when_it_is_in_sight_and_the_pha
   )
 }
 
+// ---- the allies of a friendly area ----
+
+/// A player of the picture at (`x`, `z`) in the caster's world and zone, Friendly to it, whom a
+/// caster at the origin facing -z has `z` metres behind it when `z` is positive.
+fn player_at(x x: Float, z z: Float) -> shown.Shown {
+  shown.ShownPlayer(
+    state: player_state.PlayerState(
+      ..player_state_support.a_player(),
+      place: Some(place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x:,
+        y: 0.0,
+        z:,
+      )),
+    ),
+  )
+}
+
+/// The fixture's areas with the row of Emission's area (58841: Spell4AoeTargetConstraints 662,
+/// 0 to 15 m, 4 targets, Closest) taking `count` units in `order`.
+fn emission_areas(
+  order order: area.Order,
+  count count: Int,
+) -> spell_area.Areas {
+  let areas = spell_tables.fixture_areas()
+  let assert Ok(emission) = dict.get(areas, 58_841)
+    as "Emission is in the fixture's areas"
+  let assert Some(row) = emission.row as "Emission has an area row"
+  dict.insert(
+    areas,
+    58_841,
+    spell_area.SpellArea(
+      ..emission,
+      row: Some(area.Row(..row, order:, target_count: count)),
+    ),
+  )
+}
+
+type AllyRow {
+  AllyRow(
+    reason: String,
+    order: area.Order,
+    count: Int,
+    picture: List(#(Int, shown.Shown)),
+    sight: List(Int),
+    players: List(Int),
+  )
+}
+
+/// A friendly area selects the allies inside it (`Spell4AoeTargetConstraints.targetSelection`
+/// and `.targetCount`; the client selects none itself, `Spell4AoeTargetConstraints.client_use`,
+/// and its texts 361096 and 508644 say "yourself and N allies"): Emission's cone 3063 (shape 8,
+/// 1 to 15 m over 50 degrees, ahead of the caster) capped by its row, nearest or furthest first,
+/// from the players the caster has an address for, and never a creature or the caster. A foe's
+/// area (Kick's) selects no player.
+pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a_hostile_one_selects_no_player_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let three = [
+    #(31, player_at(x: 0.0, z: -10.0)),
+    #(32, player_at(x: 0.0, z: -4.0)),
+    #(33, player_at(x: 0.0, z: -7.0)),
+  ]
+  list.each(
+    [
+      AllyRow(
+        "three allies inside, count 2, nearest first: the two nearest, in order of distance",
+        area.Nearest,
+        2,
+        three,
+        [31, 32, 33],
+        [32, 33],
+      ),
+      AllyRow(
+        "the same, furthest first: the two furthest, furthest first",
+        area.Furthest,
+        2,
+        three,
+        [31, 32, 33],
+        [31, 33],
+      ),
+      AllyRow(
+        "an ally 40 m away and one 6 m behind the caster, outside the cone, are not selected",
+        area.Nearest,
+        4,
+        [
+          #(32, player_at(x: 0.0, z: -4.0)),
+          #(34, player_at(x: 0.0, z: -40.0)),
+          #(35, player_at(x: 0.0, z: 6.0)),
+        ],
+        [32, 34, 35],
+        [32],
+      ),
+      AllyRow(
+        "the nearest ally has no address in the caster's sight: there is nothing to tell it, so the count of 1 goes to the next",
+        area.Nearest,
+        1,
+        [
+          #(32, player_at(x: 0.0, z: -4.0)),
+          #(36, player_at(x: 0.0, z: -3.0)),
+        ],
+        [32],
+        [32],
+      ),
+      AllyRow(
+        "a creature inside the cone is not selected, and the caster, shown as a player, is never one of the units of its area",
+        area.Nearest,
+        4,
+        [
+          #(7, player_at(x: 0.0, z: -2.0)),
+          #(
+            20,
+            strike_support.creature_at(
+              x: 0.0,
+              z: -5.0,
+              alive: True,
+              attackable: Attackable(exile: True, dominion: True),
+            ),
+          ),
+          #(32, player_at(x: 0.0, z: -4.0)),
+        ],
+        [7, 32],
+        [32],
+      ),
+    ],
+    fn(row) {
+      let selection =
+        strike.select(
+          asked: go(primary_target: 7, spell4_id: 58_841),
+          attacker: healer(
+            sight: list.map(row.sight, fn(unit_id) { ally(unit_id:) }),
+          ),
+          picture: dict.from_list(row.picture),
+          areas: emission_areas(order: row.order, count: row.count),
+          now_ms: 1000,
+        )
+      assert list.map(selection.players, fn(address) { address.unit_id })
+        == row.players
+        as row.reason
+      assert selection.units == []
+        as "no creature is selected by a friendly area, and a player is no creature a strike is told to"
+    },
+  )
+  let kick =
+    strike.select(
+      asked: go(primary_target: 7, spell4_id: 58_591),
+      attacker: healer(sight: [ally(unit_id: 32)]),
+      picture: dict.from_list([
+        #(32, player_at(x: 0.0, z: -4.0)),
+        #(
+          20,
+          strike_support.creature_at(
+            x: 0.0,
+            z: -5.0,
+            alive: True,
+            attackable: Attackable(exile: True, dominion: True),
+          ),
+        ),
+      ]),
+      areas: spell_tables.fixture_areas(),
+      now_ms: 1000,
+    )
+  assert kick.players == []
+    as "Kick's area is a foe's: it selects creatures only, never the player in its cone"
+  assert list.map(kick.units, fn(aimed) { aimed.unit_id }) == [20]
+    as "the control: the same picture gives Kick's area the creature 20, so the case above is a friendly area's choice"
+}
+
+/// Affinity's Spell4 39063 (Spell4Effects 207513, a Proxy at the area that starts the child
+/// 79079 on each unit the area strikes, 250 ms after the go) is beneficial and holds no foe row,
+/// so its area finds allies (Closest, 1 target, 0 to 35 m, 360 degrees): a foe creature inside
+/// it is not struck, so the child starts on no creature, where a spell that hits foes starts it
+/// on each one. The control is the same area read as a foe's.
+pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let affinity = 39_063
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(friendly) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(affinity))
+    as "Affinity is in the areas"
+  assert friendly.finds_allies as "Affinity's area finds allies"
+  let assert Ok(phase) =
+    spell_area.phase(spell: friendly, phase: 0, spent: None)
+    as "Affinity has a first phase"
+  assert phase.selects_area
+    as "the Proxy that starts its child on each struck unit makes the phase select the area"
+  let selected_by = fn(area) {
+    strike.select(
+      asked: go(primary_target: 7, spell4_id: affinity),
+      attacker: healer(sight: []),
+      picture: dict.from_list([
+        #(
+          20,
+          strike_support.creature_at(
+            x: 0.0,
+            z: -10.0,
+            alive: True,
+            attackable: Attackable(exile: True, dominion: True),
+          ),
+        ),
+      ]),
+      areas: dict.from_list([#(affinity, area)]),
+      now_ms: 1000,
+    )
+  }
+  assert selected_by(friendly).units == []
+    as "a foe creature 10 m away is not struck by a friendly area, so no child starts on it"
+  assert list.map(
+      selected_by(spell_area.SpellArea(..friendly, finds_allies: False)).units,
+      fn(aimed) { aimed.unit_id },
+    )
+    == [20]
+    as "the control: read as a foe's area it strikes the creature 20, so the case above is the friendly area's choice"
+}
+
 /// A selection of the player 9 for the heal rows `heals`, with the creatures `units` in
 /// the area, each struck by one damage row.
 fn selection_of(
@@ -398,6 +620,133 @@ pub fn a_go_at_a_player_tells_its_connection_each_row_once_with_the_casters_outg
       assert told(effects:) == expected as reason
     },
   )
+  // A heal row aimed at the caster and the area, whose area found the allies 11 and 12
+  // (Emission's row 141384 is of this aim), is told to each ally in selection order, after
+  // the creatures' strikes, and each ally's place is its own: the round stays open until
+  // both have answered. An ally whose gate fails has no tell and no place.
+  let area_row =
+    spell_area.InstantHeal(..health_row, aim: spell_plan.AimsAtCasterAndArea)
+  let allies = fn(unit_ids: List(Int)) {
+    Selection(
+      ..selection_of(units: [10], heals: [area_row]),
+      players: list.map(unit_ids, fn(unit_id) { ally(unit_id:) }),
+      area: [10, ..unit_ids],
+    )
+  }
+  let heal_strike_on = fn(unit_id) {
+    strike_support.heal_strike(
+      from: ConnectionId(2),
+      stay: map_support.stay(count: 1),
+      cast_id: 5,
+      unit_id:,
+      outgoing: 1.25,
+      heals: [#(effect_kind.Health, 121)],
+    )
+  }
+  let refuses_unit_12 = fn(_, side, _, rolls) {
+    case side {
+      cast_state.UnitSide(unit_id: 12) -> #(cast_state.GateFails, rolls)
+      cast_state.UnitSide(..) | cast_state.CasterSide -> #(
+        cast_state.Starts,
+        rolls,
+      )
+    }
+  }
+  let #(state, effects) =
+    begun(state: strike.new(), selection: allies([11, 12]))
+  assert told(effects:)
+    == [
+      ToldCreature(unit_id: 10),
+      ToldPlayer(address: ally(unit_id: 11), strike: heal_strike_on(11)),
+      ToldPlayer(address: ally(unit_id: 12), strike: heal_strike_on(12)),
+      Started(after_ms: 1000),
+    ]
+    as "two allies the area found: one strike each, in selection order, after the creature's"
+  let answer = fn(state, unit_id) {
+    strike.player_answered(
+      strike: state,
+      answer: PlayerAnswered(
+        key: strike_tell.Key(
+          cast_id: 5,
+          occasion: strike_tell.AtGo(phase: 0),
+          unit_id:,
+        ),
+        outcome: HealsLanded([first_heal()]),
+      ),
+      now: at(ms: 1100),
+    )
+  }
+  let #(state, _) =
+    strike.answered(
+      strike: state,
+      answer: strike_tell.Answered(
+        key: strike_tell.Key(
+          cast_id: 5,
+          occasion: strike_tell.AtGo(phase: 0),
+          unit_id: 10,
+        ),
+        outcome: strike_tell.Landed(
+          descriptions: [],
+          controls: [],
+          armor_removed: 0,
+          gates_passed: [],
+        ),
+      ),
+      now: at(ms: 1050),
+    )
+  let #(state, after_first) = answer(state, 11)
+  assert after_first == []
+    as "the round waits for the second ally: it holds a place of its own"
+  let #(_, after_second) = answer(state, 12)
+  assert after_second
+    == closed_with(struck: [
+      creature_hit(),
+      hit_of(unit_id: 11, heals: [first_heal()]),
+      hit_of(unit_id: 12, heals: [first_heal()]),
+    ])
+    as "the go lists the creature, then each ally in selection order"
+  let #(state, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection: allies([11, 12]),
+      attacker: healer(sight: [ally(unit_id: 11), ally(unit_id: 12)]),
+      formulas: rating_support.formulas(),
+      entropy: zeros(units: [10]),
+      gate: refuses_unit_12,
+      now: at(ms: 1000),
+    )
+  assert told(effects:)
+    == [
+      ToldCreature(unit_id: 10),
+      ToldPlayer(address: ally(unit_id: 11), strike: heal_strike_on(11)),
+      Started(after_ms: 1000),
+    ]
+    as "the ally whose gate fails is told nothing"
+  let #(state, _) =
+    strike.answered(
+      strike: state,
+      answer: strike_tell.Answered(
+        key: strike_tell.Key(
+          cast_id: 5,
+          occasion: strike_tell.AtGo(phase: 0),
+          unit_id: 10,
+        ),
+        outcome: strike_tell.Landed(
+          descriptions: [],
+          controls: [],
+          armor_removed: 0,
+          gates_passed: [],
+        ),
+      ),
+      now: at(ms: 1050),
+    )
+  let #(_, closed) = answer(state, 11)
+  assert closed
+    == closed_with(struck: [
+      creature_hit(),
+      hit_of(unit_id: 11, heals: [first_heal()]),
+    ])
+    as "the round closes at the one ally's answer: the refused ally has no place to wait for"
 }
 
 // ---- the player's answer ----
@@ -438,8 +787,16 @@ fn says(outcome outcome: PlayerOutcome, at_ms at_ms: Int) -> Input {
 
 /// The player 9's place in the go's list, as it is struck.
 fn player_hit(heals heals: List(strike_tell.HealLanded)) -> cast_state.Struck {
+  hit_of(unit_id: 9, heals:)
+}
+
+/// The player `unit_id`'s place in the go's list, as it is struck.
+fn hit_of(
+  unit_id unit_id: Int,
+  heals heals: List(strike_tell.HealLanded),
+) -> cast_state.Struck {
   cast_state.Hit(
-    unit_id: 9,
+    unit_id:,
     unit: cast_state.HitOtherPlayer(heals:),
     descriptions: [],
     controls: [],

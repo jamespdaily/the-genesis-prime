@@ -672,6 +672,146 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
         as { row.why <> ": the heals carried for the caster" }
     },
   )
+  // A row aimed at the caster and the area (targetFlags 5) whose area found two allies, pressed
+  // with no named target (the caster is its own target). The caster's part is its own, worked
+  // out from its stats; each ally's is its answer's, in the answers' order, and an ally whose
+  // answer was PlayerDead has no entry in the round. The row's target gate (a prerequisite the
+  // allies fail now) is not checked for an ally that answered: the strike gated the row for
+  // it once.
+  let other_ally = 42
+  let heal_of = fn(amount, health, overheal) {
+    landed(
+      effect_id: 62_019,
+      vital: effect_kind.Health,
+      split: heal_split.Split(amount:, shield: 0, health:, overheal:),
+    )
+  }
+  let answered_by = fn(unit_id, heals) {
+    cast_state.Hit(
+      unit_id:,
+      unit: cast_state.HitOtherPlayer(heals:),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  }
+  let not_held =
+    prerequisite_support.single(id: 36_007, condition: #(50, 1, 0, 77_237))
+  let area_rows = fn(condition) {
+    [
+      health_row(id: 62_019, aim: spell_plan.AimsAtCasterAndArea, condition:),
+    ]
+  }
+  let caster_entry = [
+    #(
+      62_019,
+      support.heal_result(amount: 121, kind: damage_type.Heal, overkill: 0),
+    ),
+  ]
+  list.each(
+    [
+      #(
+        "two allies answered: each is listed with its answer's split, in the answers' order, and the caster's own heal is carried once",
+        area_rows(spell_plan.Always),
+        [
+          answered_by(ally, [heal_of(77, 50, 27)]),
+          answered_by(other_ally, [heal_of(121, 100, 21)]),
+        ],
+        [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 77,
+              kind: damage_type.Heal,
+              overkill: 27,
+            ),
+          ),
+        ],
+        [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 121,
+              kind: damage_type.Heal,
+              overkill: 21,
+            ),
+          ),
+        ],
+        caster_entry,
+      ),
+      #(
+        "the second ally answered PlayerDead, which the round does not hold: only the first is listed",
+        area_rows(spell_plan.Always),
+        [answered_by(ally, [heal_of(77, 50, 27)])],
+        [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 77,
+              kind: damage_type.Heal,
+              overkill: 27,
+            ),
+          ),
+        ],
+        [],
+        caster_entry,
+      ),
+      #(
+        "a target gate the allies fail now is not checked for the answered allies: both are listed, and the caster, whom it gates, is not healed",
+        area_rows(spell_plan.GatedOnTarget(prerequisite: not_held)),
+        [
+          answered_by(ally, [heal_of(77, 50, 27)]),
+          answered_by(other_ally, [heal_of(121, 100, 21)]),
+        ],
+        [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 77,
+              kind: damage_type.Heal,
+              overkill: 27,
+            ),
+          ),
+        ],
+        [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 121,
+              kind: damage_type.Heal,
+              overkill: 21,
+            ),
+          ),
+        ],
+        [],
+      ),
+    ],
+    fn(row) {
+      let #(why, rows, struck, on_ally, on_other_ally, on_caster) = row
+      let #(pressed, went) =
+        healer_pressed_at(
+          rows:,
+          target: healing_ally_in_sight().unit_id,
+          struck:,
+        )
+      assert support.listed_on(effects: went, unit_id: ally) == on_ally as why
+      assert support.listed_on(effects: went, unit_id: other_ally)
+        == on_other_ally
+        as why
+      assert support.listed_on(
+          effects: went,
+          unit_id: healing_ally_in_sight().unit_id,
+        )
+        == on_caster
+        as { why <> ": the caster's entry" }
+      assert list.length(
+          support.caster_change_starts(effects: list.append(pressed, went)),
+        )
+        == list.length(on_caster)
+        as { why <> ": the heals carried for the caster" }
+    },
+  )
 }
 
 pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters_gates_say_at_the_go_test() -> Nil {

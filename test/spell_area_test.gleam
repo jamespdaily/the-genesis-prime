@@ -2014,6 +2014,35 @@ pub fn a_phase_computes_its_area_flags_from_the_effects_n_leaves_test() -> Nil {
 
 // ---- the heal rows a go tells a player ----
 
+/// The first phase of `spell4_id` with the row `row` of Spell4Effects changed as `changes`
+/// say, in an area that finds the caster's allies when `finds_allies` is true (Emission's does:
+/// its mechanic is beneficial, it hits no foes and its area row orders Closest).
+fn edited_phase(
+  spell4_id spell4_id: Int,
+  row row: Int,
+  changes changes: List(#(String, planted_table.Cell)),
+  finds_allies finds_allies: Bool,
+) -> spell_area.PhaseStrike {
+  fixture_tables.changed(
+    table: "Spell4Effects",
+    id: row,
+    with: changes,
+    body: fn(tables) {
+      let assert Ok(phase) =
+        spell_area.phase(
+          spell: spell_area.SpellArea(
+            ..spell_tables.area_alone_on(tables:, spell4_id:),
+            finds_allies:,
+          ),
+          phase: 0,
+          spent: None,
+        )
+        as "the spell has a first phase"
+      phase
+    },
+  )
+}
+
 /// The Spell4Effects ids of the heal rows the first phase of `spell4_id` tells a player,
 /// and whether the phase strikes the primary target, with the row 62019 (Mind Over Body's
 /// heal) changed as `changes` say.
@@ -2021,23 +2050,11 @@ fn told_heals(
   spell4_id spell4_id: Int,
   changes changes: List(#(String, planted_table.Cell)),
 ) -> #(List(Int), Bool) {
-  fixture_tables.changed(
-    table: "Spell4Effects",
-    id: 62_019,
-    with: changes,
-    body: fn(tables) {
-      let assert Ok(phase) =
-        spell_area.phase(
-          spell: spell_tables.area_alone_on(tables:, spell4_id:),
-          phase: 0,
-          spent: None,
-        )
-        as "the spell has a first phase"
-      #(
-        list.map(phase.heals, fn(heal) { heal.effect_id.value }),
-        phase.strikes_primary_target,
-      )
-    },
+  let phase =
+    edited_phase(spell4_id:, row: 62_019, changes:, finds_allies: False)
+  #(
+    list.map(phase.heals, fn(heal) { heal.effect_id.value }),
+    phase.strikes_primary_target,
   )
 }
 
@@ -2094,6 +2111,97 @@ pub fn a_phase_tells_a_player_only_the_instant_heal_rows_aimed_at_the_primary_ta
   )
   assert !{ told_heals(spell4_id: 32_820, changes: []).1 }
     as "a heal does not make the phase strike a creature primary target: the heal is told through the phase's heals, and a creature takes none"
+  // Emission 58841 (a Medic's channel) holds the instant heal row 141384, targetFlags 5,
+  // in a spell whose mechanic is beneficial (Spell4TargetMechanics flags 9) and whose area
+  // row 662 orders Closest, so its area finds allies. The delay of 300 ms is Purify's
+  // and the tickTime 1000 with durationTime 8000 Astral Infusion's shape; no client row of
+  // such a spell is both.
+  list.each(
+    [
+      #(
+        "an instant heal aimed at the caster and the area (flags 5, Emission's row 141384) is told and selects the area",
+        [],
+        [141_384],
+        True,
+      ),
+      #(
+        "an instant heal aimed at the area alone (flags 4) is told and selects the area",
+        [#("targetFlags", Integer(4))],
+        [141_384],
+        True,
+      ),
+      #(
+        "an instant heal aimed at the primary target and the area (flags 6) is told and selects the area",
+        [#("targetFlags", Integer(6))],
+        [141_384],
+        True,
+      ),
+      #(
+        "an instant heal aimed at the caster alone (flags 1) is no one else's: not told, no area",
+        [#("targetFlags", Integer(1))],
+        [],
+        False,
+      ),
+      #(
+        "a heal with a delay of 300 ms aimed at the area is not told and selects nothing",
+        [#("targetFlags", Integer(4)), #("delayTime", Integer(300))],
+        [],
+        False,
+      ),
+      #(
+        "a periodic heal (tickTime 1000) aimed at the area is not told and selects nothing",
+        [
+          #("targetFlags", Integer(4)),
+          #("tickTime", Integer(1000)),
+          #("durationTime", Integer(8000)),
+        ],
+        [],
+        False,
+      ),
+    ],
+    fn(row) {
+      let #(reason, changes, told, selects_area) = row
+      let phase =
+        edited_phase(
+          spell4_id: 58_841,
+          row: 141_384,
+          changes:,
+          finds_allies: True,
+        )
+      assert list.map(phase.heals, fn(heal) { heal.effect_id.value }) == told
+        as reason
+      assert phase.selects_area == selects_area as reason
+    },
+  )
+}
+
+/// An area finds players by its spell's valid targets bits (`Spell4ValidTargets.targetBitmask`):
+/// bits 0, 2, 4, 128 and 256 and a mask of none find any player, bit 1 refuses a player target
+/// (the client's check answers 102, `0x1403b2240`), and bit 16 takes only a unit of the caster's
+/// group (`UnitsShareGroup` 0x140561e60), which no player of the server has (every player's
+/// group id is 0, `player_unit`), so such an area finds no other player.
+pub fn an_area_finds_players_by_its_valid_targets_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(0, True, "no valid targets row"),
+      #(2, True, "bit 2"),
+      #(4, True, "bit 4: players only"),
+      #(128, True, "bit 128, which no client code reads"),
+      #(256, True, "bit 256"),
+      #(1, False, "bit 1: the client refuses a player target"),
+      #(
+        16,
+        False,
+        "bit 16: only the caster's group, which holds no other player",
+      ),
+      #(276, False, "256, 16 and 4: the group bit decides"),
+    ],
+    fn(row) {
+      let #(valid_targets, finds, reason) = row
+      assert spell_area.finds_players(valid_targets:) == finds as reason
+    },
+  )
 }
 
 // ---- the kit's crowd-control rows ----
@@ -2378,6 +2486,7 @@ pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() 
       damage: [],
       ticking: [],
       spell:,
+      finds_allies: False,
     )
   let assert Ok(phase) =
     spell_area.phase(spell: knockback, phase: 0, spent: None)

@@ -11,6 +11,7 @@
 
 import fixture_tables
 import genesis_prime/game/area.{Candidate, Point, Pose}
+import genesis_prime/game/faction_level
 import genesis_prime/game/held_state
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/shown.{
@@ -857,4 +858,65 @@ pub fn a_shown_players_state_is_set_by_the_news_a_viewer_takes_and_no_other_unit
     shown.pose_of(picture: faced, unit_id: 1, now_ms: 0, viewer: a_viewer())
   assert float.loosely_equals(pose.yaw, quarter_turn, tolerating: 0.000001)
     as "a creature faces the player's x and z, whatever its height (unit.ground_lift: the range y is the movement y)"
+}
+
+/// A player of the picture standing `x` metres east of the origin, at the disposition given.
+fn player_at(
+  x x: Float,
+  disposition disposition: faction_level.Disposition,
+  alive alive: Bool,
+) -> shown.Shown {
+  ShownPlayer(
+    state: PlayerState(
+      ..player_state_support.a_player(),
+      alive:,
+      disposition:,
+      place: option.Some(standing(x:, z: -1.0)),
+    ),
+  )
+}
+
+/// An ally is a player whose disposition toward the caster is Friendly
+/// (`GetUnitDispositionTo` 0x14045a950: the faction levels 8 to 10) and that is alive, since an
+/// area whose valid targets hold no bit 8 strikes only the living
+/// (`Spell4ValidTargets.targetBitmask`); the caster is never one of the others its area finds,
+/// a creature is no ally, and a player with no position command yet has no place to measure
+/// from.
+pub fn only_alive_friendly_players_with_a_place_other_than_the_caster_are_ally_candidates_test() -> Nil {
+  use <- owned_test.run(5000)
+  let friendly = faction_level.Friendly
+  let picture =
+    dict.from_list([
+      #(1, player_at(x: 1.0, disposition: friendly, alive: True)),
+      #(2, player_at(x: 2.0, disposition: friendly, alive: False)),
+      #(3, player_at(x: 3.0, disposition: faction_level.Neutral, alive: True)),
+      #(4, player_at(x: 4.0, disposition: faction_level.Hostile, alive: True)),
+      #(5, player_at(x: 5.0, disposition: friendly, alive: True)),
+      #(
+        6,
+        ShownPlayer(
+          state: PlayerState(
+            ..player_state_support.a_player(),
+            place: option.None,
+          ),
+        ),
+      ),
+      #(7, creature(x: 7.0, attackable: not_exiles, alive: True)),
+      #(9, player_at(x: 9.0, disposition: friendly, alive: True)),
+      #(1, player_at(x: 1.0, disposition: friendly, alive: True)),
+    ])
+  assert shown.ally_candidates(picture:, caster_unit_id: 5)
+    == [
+      Candidate(
+        unit_id: 1,
+        at: Point(x: 1.0, z: -1.0),
+        hit_radius: place_support.player_hit_radius,
+      ),
+      Candidate(
+        unit_id: 9,
+        at: Point(x: 9.0, z: -1.0),
+        hit_radius: place_support.player_hit_radius,
+      ),
+    ]
+    as "unit 2 is dead, 3 is Neutral and 4 Hostile to the caster, 5 is the caster, 6 has no place yet, 7 is a creature; unit 1, in the picture twice, is one candidate"
 }

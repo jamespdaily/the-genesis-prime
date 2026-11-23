@@ -999,16 +999,21 @@ pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil
     as "Kick's one damage effect, aimed at the area"
 }
 
-/// Kick's area (58591) with its spell's valid targets bitmask replaced.
-fn kick_areas_with_valid_targets(
-  valid_targets valid_targets: Int,
+/// The fixture's areas with Kick's area (58591) changed by `change`.
+fn kick_areas_changed(
+  change change: fn(spell_area.SpellArea) -> spell_area.SpellArea,
 ) -> spell_area.Areas {
   let areas = spell_tables.fixture_areas()
   let assert Ok(kick) = dict.get(areas, 58_591)
     as "Kick is in the fixture's areas"
-  dict.insert(
-    areas,
-    58_591,
+  dict.insert(areas, 58_591, change(kick))
+}
+
+/// Kick's area (58591) with its spell's valid targets bitmask replaced.
+fn kick_areas_with_valid_targets(
+  valid_targets valid_targets: Int,
+) -> spell_area.Areas {
+  kick_areas_changed(change: fn(kick) {
     spell_area.SpellArea(
       ..kick,
       spell: spell_plan.Spell(
@@ -1018,8 +1023,8 @@ fn kick_areas_with_valid_targets(
           valid_targets:,
         ),
       ),
-    ),
-  )
+    )
+  })
 }
 
 pub fn a_creature_inside_kicks_cone_is_not_selected_by_a_spell_whose_valid_targets_name_party_members_test() -> Nil {
@@ -1048,18 +1053,13 @@ fn kick_areas_ordered(
   order order: area.Order,
   target_count target_count: Int,
 ) -> spell_area.Areas {
-  let areas = spell_tables.fixture_areas()
-  let assert Ok(kick) = dict.get(areas, 58_591)
-    as "Kick is in the fixture's areas"
-  let assert Some(row) = kick.row as "Kick has an area row"
-  dict.insert(
-    areas,
-    58_591,
+  kick_areas_changed(change: fn(kick) {
+    let assert Some(row) = kick.row as "Kick has an area row"
     spell_area.SpellArea(
       ..kick,
       row: Some(area.Row(..row, order:, target_count:)),
-    ),
-  )
+    )
+  })
 }
 
 fn selected_units(selection selection: Selection) -> List(Int) {
@@ -2873,23 +2873,18 @@ pub fn a_tick_of_a_fixed_at_target_area_on_another_unit_stays_where_the_unit_sto
   // The same at a go: Kick's area (58591) with the box as its hit shape, the anchor changed,
   // struck at unit 21 as the cast's primary target.
   let go_selected = fn(anchor) {
-    let kick_areas = spell_tables.fixture_areas()
-    let assert Ok(kick) = dict.get(kick_areas, 58_591)
-      as "Kick is in the fixture's areas"
     strike.select(
       asked: GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 21),
       attacker: strike_support.attacker(),
       picture: facing_picture(#(0.0, -20.0), Some(quarter_turn)),
-      areas: dict.insert(
-        kick_areas,
-        58_591,
+      areas: kick_areas_changed(change: fn(kick) {
         spell_area.SpellArea(
           ..kick,
           anchor:,
           row: Some(circle(max_range: 20.0, order: area.Nearest)),
           inside_by_go: [Some(ahead)],
-        ),
-      ),
+        )
+      }),
       now_ms: 0,
     ).area
   }

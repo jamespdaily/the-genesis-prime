@@ -39,15 +39,18 @@ import client_tables
 import fixture_tables
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
-  AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtCasterAndPrimaryTarget,
-  AimsAtPrimaryTarget, Always, Applied, Heal, Lasting, LeftOut, TickingHeal,
+  AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtCasterAndArea,
+  AimsAtCasterAndPrimaryTarget, AimsAtPrimaryTarget, Always, Applied, Heal,
+  Lasting, LeftOut, TickingHeal,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/target_mechanic
 import genesis_prime/game/ticking
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
@@ -55,9 +58,11 @@ import genesis_prime/table/spell_level
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/result
 import gleam/set
 import owned_test
+import planted_table.{Integer}
 import spell_tables
 import unitest
 
@@ -869,4 +874,261 @@ pub fn no_heal_row_of_the_clients_tables_holds_a_type_37_prerequisite_test() -> 
     |> list.map(fn(row) { row.id })
     == []
     as "a heal row with a chance gate would take a roll again at the go after the strike took one"
+}
+
+// ---- the area of a friendly spell ----
+
+/// Whether the area finds allies for a spell of a target mechanic of these `flags` (the
+/// Spell4TargetMechanics row's `flags`: bit 0 beneficial) whose own rows are `effects`, with an
+/// area row of `target_selection` (0 for none).
+fn finds_allies(
+  flags flags: Int,
+  effects effects: List(Spell4Effects),
+  target_selection target_selection: Int,
+) -> Bool {
+  spell_plan.area_finds_allies(
+    mechanics_flags: flags,
+    effects:,
+    target_selection:,
+  )
+}
+
+/// A spell's area finds the caster's allies when its mechanic is beneficial (flags bit 0,
+/// `FillSpellRecord` 0x140568540 puts it in the record's bit 26), none of its damage or
+/// crowd-control rows aims past the caster, and its area row orders by distance or at random
+/// (targetSelection 1, 2 and 3, which the strike builds). Rows: the mechanics Crisis Wave (row 7,
+/// flags 9) and Triage (row 28, flags 41) hold, a hostile one (Impale's and Crush's flags 16:
+/// 27 planned abilities hit foes through a Proxy child with no damage row in their own spell),
+/// a spell with a damage row aimed at the area, and the orders by health (4 and 5).
+pub fn a_spells_area_finds_allies_when_its_mechanic_is_beneficial_it_hits_no_foes_and_its_order_is_built_test() -> Nil {
+  use <- owned_test.run(5000)
+  let damage_at_the_area =
+    spell_tables.blank_effect(id: 1, spell: 1, effect_type: 8, target_flags: 4)
+  let state_at_the_primary_target =
+    spell_tables.blank_effect(id: 2, spell: 1, effect_type: 4, target_flags: 2)
+  let heal_at_the_area =
+    spell_tables.blank_effect(id: 3, spell: 1, effect_type: 10, target_flags: 5)
+  let cases = [
+    #(
+      9,
+      [heal_at_the_area],
+      1,
+      True,
+      "Crisis Wave's mechanic with a Closest area",
+    ),
+    #(41, [], 2, True, "Triage's mechanic with a Furthest area"),
+    #(9, [], 3, True, "a Random area"),
+    #(
+      16,
+      [],
+      1,
+      False,
+      "a hostile mechanic (Impale, Crush) with no foe row of its own",
+    ),
+    #(
+      9,
+      [damage_at_the_area],
+      1,
+      False,
+      "a damage row aimed at the area hits foes",
+    ),
+    #(
+      9,
+      [state_at_the_primary_target],
+      1,
+      False,
+      "a crowd-control row aimed at the primary target hits foes",
+    ),
+    #(9, [], 5, False, "an area ordered by missing health is not built"),
+    #(9, [], 4, False, "an area ordered by lowest health is not built"),
+    #(9, [], 0, False, "a spell with no area row finds nobody"),
+  ]
+  list.each(cases, fn(one) {
+    let #(flags, effects, target_selection, expected, reason) = one
+    assert finds_allies(flags:, effects:, target_selection:) == expected
+      as reason
+  })
+}
+
+/// The heal rows of the tree of the ability whose Spell4 is `spell4_id` and of its alternate
+/// (the spell cast under Spell Surge), by row id, with their aim.
+fn tree_heals(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> List(#(Int, spell_plan.Aim)) {
+  let assert Ok(row) = spell4.get(tables:, id: Spell4Id(spell4_id))
+    as "the ability's Spell4 row is there"
+  let assert Ok(ability) =
+    spell_plan.in_plans(
+      plans: spell_plan.plans_with_later(tables:),
+      base: Spell4BaseId(row.spell4_base_id_base_spell),
+    )
+    as "the plans hold the ability"
+  let alternate = case ability.alternate {
+    Some(alternate) ->
+      spell_plan.tree(spell: alternate, started: fn(_) { True })
+    None -> []
+  }
+  list.append(
+    spell_plan.tree(spell: ability, started: fn(_) { True }),
+    alternate,
+  )
+  |> list.flat_map(fn(spell) {
+    list.filter_map(spell.effects, fn(planned) {
+      spell_plan.as_heal(kind: planned.kind)
+      |> result.map(fn(heal) { #(heal.effect_id.value, heal.aim) })
+    })
+  })
+}
+
+/// The five abilities whose area is a friendly one of an order the strike builds (Catharsis,
+/// Dual Shock, Flash, Emission, Sustain) read their instant heal rows aimed at the caster and
+/// the area as aimed at both (`Spell4Effects` 99016, 89663 in Dual Shock's child 40409, 94498,
+/// 141384, and Sustain's 99203 and 99208 and those of its Surge alternate, 99236 and 99238: all
+/// targetFlags 5, delay 0, no tickTime).
+/// Flash's Proxy row 180600 (flags 5) keeps its reading, a child on the caster. Crisis Wave
+/// 41382 has an area ordered by health (targetSelection 5): it stays planned and its heal row
+/// aims at the caster alone, since a phase that selects from such an area refuses the load
+/// (`spell_area` `SelectionNeedsHealth`).
+pub fn the_five_abilities_with_a_friendly_area_of_a_built_order_read_their_area_heals_and_the_order_five_ones_stay_as_they_were_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  list.each(
+    [
+      #(33_270, [99_016]),
+      #(70_975, [89_663]),
+      #(41_926, [94_498]),
+      #(58_841, [141_384]),
+      #(43_326, [99_203, 99_208, 99_236, 99_238]),
+    ],
+    fn(one) {
+      let #(spell4_id, row_ids) = one
+      let heals = tree_heals(tables:, spell4_id:)
+      list.each(row_ids, fn(row_id) {
+        assert list.key_find(heals, row_id) == Ok(AimsAtCasterAndArea)
+          as {
+            "the heal row "
+            <> int.to_string(row_id)
+            <> " of Spell4 "
+            <> int.to_string(spell4_id)
+            <> " is aimed at the caster and the area"
+          }
+      })
+    },
+  )
+  let crisis_wave = tree_heals(tables:, spell4_id: 41_382)
+  assert crisis_wave != []
+    as "Crisis Wave is planned: its area is ordered by health, which no phase of it selects from"
+  assert list.all(crisis_wave, fn(heal) { heal.1 == AimsAtCaster })
+    as "Crisis Wave's heal rows aim at the caster alone"
+  let sources = spell_plan.sources_of(tables:)
+  let assert Ok(proxy_row) =
+    list.find(spell_plan.effects_of(sources:, spell4_id: 41_926), fn(effect) {
+      effect.id == 180_600
+    })
+    as "Flash's Proxy row 180600 is among its spell's rows"
+  let place_of =
+    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  assert spell_plan.read_row(
+      tables:,
+      sources:,
+      place: place_of(41_926),
+      effect: proxy_row,
+    )
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
+    as "Flash's Proxy row 180600 (flags 5) is read as it was before an area found allies: left out for its tiers (`spell_plan.gaps` \"Spell areas\"), so a Proxy's allies are not read"
+}
+
+/// Energize's heal row aimed at the caster and the area with no delay: the instant row the
+/// strike tells another player (`spell_plan.telling_of`).
+fn instant_heal_at_the_area() -> Spell4Effects {
+  Spell4Effects(..heal_aimed_at(flags: 5), delay_time: 0)
+}
+
+/// A friendly area's heal row is read for the allies only when the strike can check its target
+/// apply prerequisite for another player: it knows an ally by its place alone
+/// (`prerequisite.of_struck`), so a gate on the casts held on the unit (types 15, 59, 129) or on
+/// its own state (type 1, the level) cannot be told for an ally and the row keeps the caster's
+/// own heal, as it did before the area found allies, while a gate on who the unit is (type 39,
+/// a player) or no gate lets it reach them. Each row is Energize's heal row aimed at the caster
+/// and the area (flags 5) in a place that finds allies, behind a Prerequisite of one condition
+/// planted for the case: no client row of a friendly area holds a gate the strike can tell.
+pub fn a_friendly_area_heal_behind_a_gate_the_strike_cannot_check_for_an_ally_keeps_the_casters_own_heal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let place = spell_plan.RowPlace(..spell_tables.pressed, finds_allies: True)
+  let aim_of_row_behind = fn(condition_type, comparison, value) {
+    use tables <- fixture_tables.added(
+      table: "Prerequisite",
+      copy_of: 3,
+      id: 99_907,
+      with: [
+        #("prerequisiteTypeId0", Integer(condition_type)),
+        #("prerequisiteComparisonId0", Integer(comparison)),
+        #("value0", Integer(value)),
+      ],
+    )
+    let effect =
+      Spell4Effects(
+        ..instant_heal_at_the_area(),
+        prerequisite_id_target_apply: 99_907,
+      )
+    let assert Ok(reading) =
+      spell_plan.read_row(
+        tables:,
+        sources: spell_plan.sources_of(tables:),
+        place:,
+        effect:,
+      )
+    let assert [heal] =
+      list.filter_map(spell_tables.planned_kinds(reading:), spell_plan.as_heal)
+      as "the row is read as one heal"
+    heal.aim
+  }
+  let cases = [
+    #(15, 2, 35_023, AimsAtCaster, "the casts held on the unit (type 15)"),
+    #(59, 1, 0, AimsAtCaster, "the stack count on the unit (type 59)"),
+    #(1, 1, 5, AimsAtCaster, "the unit's own level (type 1)"),
+    #(39, 1, 1, AimsAtCasterAndArea, "whether the unit is a player (type 39)"),
+  ]
+  list.each(cases, fn(one) {
+    let #(condition_type, comparison, value, expected, reason) = one
+    assert aim_of_row_behind(condition_type, comparison, value) == expected
+      as { "a heal row at the caster and the area behind a gate on " <> reason }
+  })
+  let assert Ok(plain) =
+    spell_tables.read_row(effect: instant_heal_at_the_area(), place:)
+  let assert [heal] =
+    list.filter_map(
+      spell_tables.planned_kinds(reading: plain),
+      spell_plan.as_heal,
+    )
+  assert heal.aim == AimsAtCasterAndArea
+    as "a row behind no gate reaches the allies"
+}
+
+/// The six healing potions' heal row 69976 (flags 5, behind the type 15 gate of Spell4 35023:
+/// "no live cast of Spell4 35023 has the unit as a target") is read as the caster's own heal in
+/// the potion's place, which finds allies (mechanic 7, an area of order 1), so the potions
+/// are planned.
+pub fn a_healing_potions_area_heal_is_read_as_the_casters_own_heal_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let place_of =
+    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  let place = place_of(35_008)
+  assert place.finds_allies as "the potion's area finds allies"
+  let assert Ok(row) =
+    list.find(spell_plan.effects_of(sources:, spell4_id: 35_008), fn(effect) {
+      effect.id == 69_976
+    })
+    as "row 69976 is among Spell4 35008's rows"
+  let assert Ok(reading) =
+    spell_plan.read_row(tables:, sources:, place:, effect: row)
+    as "the potion's heal row is read, not refused"
+  let assert [heal] =
+    list.filter_map(spell_tables.planned_kinds(reading:), spell_plan.as_heal)
+  assert heal.aim == AimsAtCaster as "the potion heals the caster alone"
 }

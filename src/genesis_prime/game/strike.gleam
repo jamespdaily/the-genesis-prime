@@ -19,7 +19,8 @@
 ////   ◀── Answered(key, Landed(.., gates_passed) | Immune(.., gates_passed) | Deflected(gates_passed) | Refused) ◀──┘
 ////   answered: the unit's place in the round is filled, with the effect ids its gates passed
 ////   the round closes: all answered, or the deadline passed, and every earlier round of k closed
-////   a heal aimed at the primary target when it is a player in sight (caster's connection C, healed T):
+////   a heal aimed at the primary target when it is a player in sight, or at the allies a friendly
+////   area selected (caster's connection C, healed T):
 ////     TellPlayerStrike(T, PlayerStrike(key, C, stay, outgoing, heals)) ──▶ T applies each row, answers
 ////   ◀── PlayerAnswered(key, HealsLanded(splits) | PlayerDead) ◀── T
 ////   player_answered: the player's place in the round is filled, as a creature's is
@@ -88,10 +89,11 @@
 ////   - a gated go row aimed at the primary target applies when the creature deflected and
 ////     passed the gate, and does not when it refused or timed out;
 ////   - a gate that reads something the subject does not hold fails (`prerequisite.NotRead`).
-//// - **A heal aimed at the primary target when it is a player in sight**
-////   (`Selection.players`, `Selection.heals`; `Spell4Effects.effectType.10` and `.118`,
-////   targetFlags bit 2, no tickTime, no delay) is gated once, here, with the strike's own gate
-////   and roll bytes taken after the states', then told in one `TellPlayerStrike` to that
+//// - **A heal aimed at the primary target when it is a player in sight, or at the area of a
+////   spell whose area finds the caster's allies** (`Selection.players`, `Selection.heals`;
+////   `Spell4Effects.effectType.10` and `.118`, targetFlags bit 2 or 4, no tickTime, no delay)
+////   is gated once for each player its aim names, here, with the strike's own gate
+////   and roll bytes taken after the states', then told in one `TellPlayerStrike` to each
 ////   player's connection with the rows that passed, in the plan's order, each with the amount
 ////   the caster's formula gives (`damage.amount_on_caster`) and the caster's
 ////   HealingMultiplierOutgoing. The healed player's connection applies them
@@ -224,10 +226,11 @@ pub type Aimed {
 /// both by the aim of their row, and the gates of its rows that the struck creature
 /// checks (`gates`: damage, state and go rows alike, each told to the units its aim
 /// names). A spell with no damage effect, no state and no gate in the phase selects units
-/// and tells none of them. The primary target is also a player in sight (`players`: none or
-/// the one address) when the phase has instant heal rows aimed at it (`heals`, the phase's
-/// rows when `players` is not empty, else none): a player is not among the units, since
-/// the picture gives it no life a creature's strike is told for.
+/// and tells none of them. The players the heal rows are told to (`players`) are the primary
+/// target when it is a player in sight and an instant heal row aims at it, then the allies
+/// a friendly area selected when a row aims at the area (`heals`, the phase's rows when
+/// `players` is not empty, else none): a player is not among the units, since the picture
+/// gives it no life a creature's strike is told for, and the allies are among `area`.
 pub type Selection {
   Selection(
     asked: GoAsked,
@@ -389,13 +392,16 @@ pub fn select(
         True -> list.append(from_area, [asked.primary_target])
         False -> from_area
       }
-      let players = case
-        phase.heals,
-        dict.get(attacker.players_in_sight, asked.primary_target)
-      {
-        [_, ..], Ok(address) -> [address]
-        [], Ok(_) | _, Error(Nil) -> []
-      }
+      let players =
+        players_of_heals(
+          attacker:,
+          asked:,
+          heals: phase.heals,
+          allies: case spell_area_found.finds_allies {
+            True -> from_area
+            False -> []
+          },
+        )
       Selection(
         asked:,
         units: list.filter_map(with_primary, fn(unit_id) {
@@ -414,6 +420,46 @@ pub fn select(
         },
       )
     }
+  }
+}
+
+/// The players a go tells its heal rows to, with the player the cast names first: the
+/// primary target when it is a player in sight and a row aims at it, and the allies the area
+/// selected (`allies`, in selection order) when a row aims at the area, each once. A player
+/// the caster has no address for is left out; none when the phase has no heal row.
+fn players_of_heals(
+  attacker attacker: Attacker,
+  asked asked: GoAsked,
+  heals heals: List(spell_area.InstantHeal),
+  allies allies: List(Int),
+) -> List(PlayerAddress) {
+  let primary = case
+    list.any(heals, fn(heal) {
+      spell_plan.reaches_primary_target(aim: heal.aim)
+    }),
+    dict.get(attacker.players_in_sight, asked.primary_target)
+  {
+    True, Ok(address) -> [address]
+    True, Error(Nil) | False, _ -> []
+  }
+  let in_the_area = case
+    list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
+  {
+    True ->
+      list.filter_map(allies, fn(unit_id) {
+        dict.get(attacker.players_in_sight, unit_id)
+      })
+    False -> []
+  }
+  case primary {
+    [] -> in_the_area
+    [_, ..] ->
+      list.append(
+        primary,
+        list.filter(in_the_area, fn(address) {
+          address.unit_id != asked.primary_target
+        }),
+      )
   }
 }
 
@@ -506,7 +552,9 @@ fn proxy_tick_seed(asked asked: ProxyTickAsked) -> Int {
 }
 
 /// The units of the area at go `phase`, none for a go whose phase no hit row names
-/// (`spell_area.inside`).
+/// (`spell_area.inside`). An area that finds the caster's allies selects the players the
+/// caster has an address for, which its valid targets allow (`spell_area.finds_players`); any
+/// other area selects creatures, which they allow (`spell_area.strikes_creatures`).
 fn area_selection(
   attacker attacker: Attacker,
   picture picture: Picture,
@@ -517,26 +565,35 @@ fn area_selection(
   seed seed: Int,
   now_ms now_ms: Int,
 ) -> List(Int) {
-  case
-    spell_area.inside(spell: area, phase:),
-    spell_area.strikes_creatures(
-      valid_targets: area.spell.targeting.valid_targets,
-    )
-  {
-    None, _ | _, False -> []
-    Some(inside), True ->
-      area.select_ordered(
-        candidates: shown.candidates(
-          picture:,
-          faction: attacker.faction,
-          caster_unit_id: attacker.unit_id,
-          now_ms:,
-        ),
-        centre:,
-        row:,
-        inside:,
-        seed:,
-      )
+  let valid_targets = area.spell.targeting.valid_targets
+  let candidates = case area.finds_allies {
+    True ->
+      case spell_area.finds_players(valid_targets:) {
+        True ->
+          list.filter(
+            shown.ally_candidates(picture:, caster_unit_id: attacker.unit_id),
+            fn(candidate) {
+              dict.has_key(attacker.players_in_sight, candidate.unit_id)
+            },
+          )
+        False -> []
+      }
+    False ->
+      case spell_area.strikes_creatures(valid_targets:) {
+        True ->
+          shown.candidates(
+            picture:,
+            faction: attacker.faction,
+            caster_unit_id: attacker.unit_id,
+            now_ms:,
+          )
+        False -> []
+      }
+  }
+  case spell_area.inside(spell: area, phase:) {
+    None -> []
+    Some(inside) ->
+      area.select_ordered(candidates:, centre:, row:, inside:, seed:)
   }
 }
 
@@ -863,7 +920,16 @@ fn reach_of(
       what: fn(row: spell_area.InstantHeal) {
         "heal effect " <> int.to_string(row.effect_id.value)
       },
-      units: fn(_) { players },
+      units: fn(row: spell_area.InstantHeal) {
+        let named =
+          spell_plan.units_aimed_at(
+            aim: row.aim,
+            caster: attacker.unit_id,
+            primary_target: selection.asked.primary_target,
+            area: selection.area,
+          )
+        list.filter(players, fn(unit_id) { list.contains(named, unit_id) })
+      },
       gate:,
       rolls:,
     )

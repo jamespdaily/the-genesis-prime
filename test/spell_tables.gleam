@@ -493,6 +493,7 @@ pub const pressed =
     spends_all: False,
     hits_foes: False,
     throws_target: False,
+    finds_allies: False,
   )
 
 /// The place of a spell no Proxy starts on each struck unit, that spends nothing and that
@@ -503,6 +504,7 @@ pub const pressed_hitting_foes =
     spends_all: False,
     hits_foes: True,
     throws_target: False,
+    finds_allies: False,
   )
 
 /// The place of a spell the Proxy effect `proxy_effect_id` of Spell4 `spell4_id` starts on
@@ -516,6 +518,7 @@ pub fn started_on_each_struck(
     spends_all: False,
     hits_foes: False,
     throws_target: False,
+    finds_allies: False,
   )
 }
 
@@ -719,6 +722,7 @@ fn only_effect_area(
         planned.effect_id == id.Spell4EffectsId(99_097)
       }),
     ),
+    finds_allies: False,
   )
 }
 
@@ -1152,6 +1156,7 @@ pub fn area_alone_on(
     damage: [],
     ticking: [],
     spell:,
+    finds_allies: False,
   )
 }
 

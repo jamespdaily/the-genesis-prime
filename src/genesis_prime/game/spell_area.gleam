@@ -46,7 +46,12 @@
 //// - **An instant heal row aimed at the primary target** (`PhaseStrike.heals`, from
 ////   `Spell4Effects.targetFlags` bit 2 with no delay and no tickTime) is a row a go tells the
 ////   player that is the primary target; a row with a delay or a tickTime, and one aimed at the
-////   caster or the area alone, is not in it.
+////   caster alone, is not in it.
+//// - **An instant heal row aimed at the area of a spell whose area finds the caster's allies**
+////   (`SpellArea.finds_allies`, `spell_plan.spell_finds_allies`: a beneficial mechanic, no foe
+////   row, an area ordered Closest, Furthest or Random) is in `heals` too, and makes the phase
+////   select the area: the strike selects the other Friendly players inside it
+////   (`shown.ally_candidates`) and tells each the row.
 //// - **A periodic damage row** (a tickTime) strikes the units of its go once for each
 ////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
@@ -199,8 +204,9 @@ pub type TickingDamage {
   TickingDamage(damage: DamageEffect, schedule: ticking.Schedule)
 }
 
-/// An instant heal row of a phase aimed at the cast's primary target: the row a go tells
-/// the player that is its primary target, which heals itself by its own rule
+/// An instant heal row of a phase aimed at the cast's primary target or, in an area that
+/// finds the caster's allies, at the area: the row a go tells the player that is its primary
+/// target or each ally the area selected, who heals itself by its own rule
 /// (genesis_prime/game/strike `player_answered`). A row with a delay or a period is not one.
 pub type InstantHeal {
   InstantHeal(
@@ -238,12 +244,14 @@ pub type PhaseStrike {
     /// and nothing else still strikes.
     gates: List(spell_plan.StruckGate),
     /// Whether the phase selects units from the area: a damage effect (periodic or
-    /// not), a crowd-control state or a property change of struck units aimed at the area, or a
+    /// not), a crowd-control state or a property change of struck units aimed at the area, a
     /// Proxy that starts its spell on each struck unit (genesis_prime/game/spell_plan
-    /// `OnEachStruck`).
+    /// `OnEachStruck`), or, in an area that finds the caster's allies, an instant heal aimed at
+    /// the area (`heals`).
     selects_area: Bool,
     /// The instant heal rows of the phase aimed at the cast's primary target, which a go
-    /// tells the player that is its primary target.
+    /// tells the player that is its primary target, and, in an area that finds the caster's
+    /// allies, those aimed at the area, which a go tells each ally the area selected.
     heals: List(InstantHeal),
     /// Whether the phase strikes the cast's own target: a damage effect (periodic or
     /// not), a crowd-control state or a property change of struck units aimed at it. A heal
@@ -281,6 +289,9 @@ pub type SpellArea {
     /// The spell as the plan holds it, whose Proxies aimed at each struck unit
     /// make a phase select the area.
     spell: Spell,
+    /// Whether the area finds the caster's allies rather than foes
+    /// (`spell_plan.spell_finds_allies`).
+    finds_allies: Bool,
   )
 }
 
@@ -785,6 +796,11 @@ fn area_of(
       damage:,
       ticking:,
       spell:,
+      finds_allies: spell_plan.spell_finds_allies(
+        tables:,
+        row:,
+        effects: result.unwrap(dict.get(effects, id), []),
+      ),
     )
   // A phase that selects units at some n, every effect chosen being the widest, or ticks on
   // the units of the area, must have an area row, and one that selects units in an order the
@@ -805,14 +821,18 @@ fn area_of(
 }
 
 /// Valid-target bits the area record holds and the strike does not read: the area may strike
-/// the dead (8), picks a creature cluster only (32), or strikes units in combat only (64)
+/// the dead, picks a creature cluster only, or strikes units in combat only
 /// (`FillSpellAoeConstraints` 0x1405698c0, record words 6 to 8).
-const unbuilt_valid_target_bits = 0x68
+const unbuilt_valid_target_bits = [
+  target_mechanic.valid_may_be_dead,
+  target_mechanic.valid_creature_cluster,
+  target_mechanic.valid_in_combat_only,
+]
 
-/// Valid-target bits that take no creature: only a player (4, a creature is an NPC, which the
-/// client's check at 0x1403b2240 refuses) or only the caster's party members (16, a creature
-/// is never in a group: `UnitsShareGroup` 0x140561e60).
-const players_only_valid_target_bits = 0x14
+/// Whether the valid-target bits hold any of `bits`.
+fn holds_any(valid_targets valid_targets: Int, bits bits: List(Int)) -> Bool {
+  list.any(bits, fn(bit) { spell_effect.has_flag(flags: valid_targets, bit:) })
+}
 
 /// A spell with an area row whose base names valid targets is built when the mask holds none
 /// of bits 8, 32 and 64. Bits 1, 2, 4, 16 and 256 act where a press is checked
@@ -825,17 +845,31 @@ fn valid_targets_checked(
   targeting targeting: target_mechanic.Targeting,
 ) -> Result(Nil, AreaError) {
   let bitmask = targeting.valid_targets
-  case int.bitwise_and(bitmask, unbuilt_valid_target_bits) {
-    0 -> Ok(Nil)
-    _ -> Error(ValidTargetsNotBuilt(spell4_id: id, target_bitmask: bitmask))
+  case holds_any(valid_targets: bitmask, bits: unbuilt_valid_target_bits) {
+    False -> Ok(Nil)
+    True -> Error(ValidTargetsNotBuilt(spell4_id: id, target_bitmask: bitmask))
   }
+}
+
+/// Whether an area whose spell has these valid targets can select another player: not when
+/// the mask refuses a player target (bit 1: the client answers 102, `0x1403b2240`) or takes
+/// only the caster's group (bit 16, `UnitsShareGroup` 0x140561e60), since no player of the
+/// server has a group id but 0 (`player_unit`), so such an area finds the caster alone.
+pub fn finds_players(valid_targets valid_targets: Int) -> Bool {
+  !holds_any(valid_targets:, bits: [
+    target_mechanic.valid_refuses_player,
+    target_mechanic.valid_same_group_only,
+  ])
 }
 
 /// Whether an area whose spell has these valid targets can select a creature: not when the
 /// mask names only players (bit 4) or only the caster's party members (bit 16), since the
 /// server stands no creature as either.
 pub fn strikes_creatures(valid_targets valid_targets: Int) -> Bool {
-  int.bitwise_and(valid_targets, players_only_valid_target_bits) == 0
+  !holds_any(valid_targets:, bits: [
+    target_mechanic.valid_players_only,
+    target_mechanic.valid_same_group_only,
+  ])
 }
 
 /// What an area row's `targetSelection` reads as.
@@ -1411,8 +1445,8 @@ fn phase_of(
     || list.any(controls, fn(control) { reaches(control.aim) })
     || list.any(changes, reaches)
   }
-  PhaseStrike(
-    heals: list.filter_map(
+  let heals =
+    list.filter_map(
       spell_plan.in_phase(
         spell: spell.spell,
         phase:,
@@ -1423,7 +1457,14 @@ fn phase_of(
         case heal, spell_plan.telling_of(heal:) {
           spell_plan.Heal(effect_id:, vital:, aim:, condition:, formula:, ..),
             spell_plan.ToldAtGo
-          -> Ok(InstantHeal(effect_id:, vital:, aim:, condition:, formula:))
+          ->
+            // A row that aims at the area alone is told to the allies the area finds, so only
+            // an area that finds them has it.
+            case spell_plan.reaches_primary_target(aim:) || spell.finds_allies {
+              True ->
+                Ok(InstantHeal(effect_id:, vital:, aim:, condition:, formula:))
+              False -> Error(Nil)
+            }
           spell_plan.Heal(..), spell_plan.ToldAtEachTick
           | spell_plan.Heal(..), spell_plan.NotTold
           | spell_plan.TickingHeal(..), spell_plan.ToldAtGo
@@ -1432,7 +1473,9 @@ fn phase_of(
           -> Error(Nil)
         }
       },
-    ),
+    )
+  PhaseStrike(
+    heals:,
     damage: list.filter(firing, fn(effect) {
       spell_plan.reaches_past_caster(aim: effect.aim)
     }),
@@ -1444,7 +1487,11 @@ fn phase_of(
     selects_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) })
       || list.any(proxies, fn(proxy) {
       proxy.target == spell_plan.OnEachStruck && proxy.period == None
-    }),
+    })
+      || {
+      spell.finds_allies
+      && list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
+    },
     strikes_primary_target: strikes(fn(aim) {
       spell_plan.reaches_primary_target(aim:)
     }),
@@ -1688,7 +1735,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player area orders",
-      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; an area that finds the caster's allies (an instant heal aimed at it, ordered Closest, Furthest or Random) selects the other Friendly players the caster has in sight and never the caster, so a row aimed at the area alone heals no caster though the texts say \"yourself or an ally\" (Triage, 195454), and an area whose valid targets hold bit 16 (the caster's party only) finds nobody, since every player has the group id 0; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+    ),
+    gap.Entry(
+      area: "Player area valid targets",
+      missing: "a row aimed at the cast's primary target strikes that unit whatever bits 4 (only players) and 16 (only the caster's party) of the spell's valid targets say, where the area's own selection honours them (the primary target joins the selected units after the area's, `strike.select`)",
     ),
     gap.Entry(
       area: "Spell valid targets",

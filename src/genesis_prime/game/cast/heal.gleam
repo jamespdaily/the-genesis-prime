@@ -344,7 +344,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Casting",
-      missing: "A heal aimed at a creature, or at another player with a delay, lands nothing, with a debug line, because the server heals the caster by its own rule and another player only by its answer to an instant row at the go or a periodic row at each tick. A periodic heal on another player in the caster's sight ticks on it; one on a player not in sight lands nothing. A row aimed at the caster and at another player keeps its caster gate at the go, so the player's heal, which it applied, is listed only while that gate still passes.",
+      missing: "A heal aimed at a creature, or at another player with a delay, lands nothing, with a debug line, because the server heals the caster by its own rule and another player only by its answer to an instant row at the go (the primary target and the allies a friendly area finds) or a periodic row at each tick. A periodic heal on another player in the caster's sight ticks on it; one on a player not in sight lands nothing. A row aimed at the caster and at another player keeps its caster gate at the go, so the player's heal, which it applied, is listed only while that gate still passes.",
     ),
   ]
 }

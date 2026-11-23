@@ -471,6 +471,7 @@ fn delays_checked(
       spends_all: False,
       hits_foes: True,
       throws_target: False,
+      finds_allies: False,
     )
   list.filter(effects, fn(effect) {
     effect_kind.kind_of(effect.effect_type) == effect_kind.NpcExecutionDelay

@@ -22,8 +22,8 @@
 ////   not refused here: each of its rows is counted by its own columns. A row a Proxy or Proc
 ////   names is counted on the child's rows.
 //// - The place of a row is worked out from the rows given: the spells a Proxy among them
-////   starts on each struck unit, whether a spell's costs spend every point held, and whether
-////   a spell's own rows hit foes.
+////   starts on each struck unit, whether a spell's costs spend every point held, whether
+////   a spell's own rows hit foes and whether its area finds the caster's allies.
 //// - An item's cast plays a row when the plan reads it and it is no Activate row (the
 ////   right-click of a unit), holds no suspend prerequisite (a Prerequisite the server does
 ////   not read gates when the row works).
@@ -54,12 +54,22 @@ pub fn places(
   let spends = spends_all_by_spell(tables:, effects:)
   let hitting = spell_plan.spells_that_hit_foes(effects:)
   let throwing = spell_plan.spells_that_throw_target(effects:)
+  let by_spell = list.group(effects, fn(effect) { effect.spell_id })
   fn(spell4_id) {
     spell_plan.RowPlace(
       struck_by: option.from_result(dict.get(struck, spell4_id)),
       spends_all: result.unwrap(dict.get(spends, spell4_id), False),
       hits_foes: set.contains(hitting, spell4_id),
       throws_target: set.contains(throwing, spell4_id),
+      finds_allies: case spell4.get(tables:, id: Spell4Id(spell4_id)) {
+        Ok(row) ->
+          spell_plan.spell_finds_allies(
+            tables:,
+            row:,
+            effects: result.unwrap(dict.get(by_spell, spell4_id), []),
+          )
+        Error(Nil) -> False
+      },
     )
   }
 }
