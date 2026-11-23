@@ -242,6 +242,13 @@ pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Ni
     assert list.contains(gaps.registry(), entry)
       as { limit.limit <> ": the registry prints it" }
   })
+  assert list.all(connection_landing.gaps(), fn(entry) {
+    list.any(limits(), fn(limit) {
+      limit.entries == connection_landing.gaps()
+      && list.all(limit.words, string.contains(entry.missing, _))
+    })
+  })
+    as "each gap the landing module states has a row above, held changes and heals alike"
   assert list.all(gaps.registry(), fn(entry) {
     !string.contains(entry.missing, "no description of what the heal applied")
   })
