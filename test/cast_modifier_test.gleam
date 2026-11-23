@@ -14,20 +14,26 @@
 ////   again from that go.
 
 import cast_support as support
+import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
+import genesis_prime/game/held_changes
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/player_address
 import genesis_prime/game/spell_plan.{type Plans, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Modifier, Change}
+import genesis_prime/message/float32
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import map_support
 import owned_test
 import prerequisite_support
 
@@ -356,6 +362,351 @@ pub fn a_caster_that_leaves_ends_no_modifier_test() -> Nil {
   let #(_, left) = cast_tick.left(cast: state)
   assert support.caster_change_ends(effects: left) == []
     as "the connection's properties go with the player's Entered"
+}
+
+// ---- a press at oneself of a type 11 row aimed at the primary target ----
+//
+// Phantasmal Armor tier 9 is Spell4 54806 (`table_rows -- Spell4 54806`): its Absorption row
+// 130470 and its UnitPropertyModifier row 130474 are each targetFlags 2 (the primary
+// target), 10 000 ms with no delay, and the modifier is property 161 (the magic damage a
+// unit takes), mode 3, multiplier 0.86f (dataBits02 1062836634), flat 0. Pressed at oneself
+// both rows are the caster's own.
+
+const armor_pool_id = support.armor_absorb_id
+
+const armor_modifier_id = support.armor_modifier_id
+
+const armor_ally = 40
+
+fn armor_spell() -> spell_plan.Spell {
+  support.armor_spell(rows: support.armor_rows())
+}
+
+fn armor_plans() -> Plans {
+  support.plans_of([armor_spell()])
+}
+
+/// The modifier of row 130474 as the caster's own change.
+fn armor_modifier_change() -> cast_state.CasterChange {
+  let assert Ok(multiplier) = float32.of_column(1_062_836_634)
+    as "dataBits02 of row 130474 is a finite float"
+  cast_state.HeldChange(
+    held_changes.Property(Change(
+      property: UnitProperty2Id(161),
+      mode: 3,
+      multiplier:,
+      flat: 0.0,
+      per_level: 0.0,
+    )),
+  )
+}
+
+/// What one path of a press of the armor comes to: the effect ids of the caster's own
+/// changes started, of the changes told to another player (with the cast's own effects),
+/// the effect ids told ended with the time each was told, and whether the path cancels
+/// every timer the press started.
+type Armored {
+  Armored(
+    starts: List(Int),
+    told_to_a_player: List(Int),
+    ends: List(#(Int, Int)),
+    cancels_every_timer: Bool,
+  )
+}
+
+/// How the press of the armor goes on.
+type ArmorPath {
+  JustPressedAtOneself
+  PressedAtAPlayer
+  TimeRuns
+  NodeTakenOff
+  CasterDies
+  CasterLeaves
+}
+
+fn effect_ids(sources: List(unit_properties.Source)) -> List(Int) {
+  list.map(sources, fn(source) { source.effect_id.value })
+}
+
+fn started_ids(effects effects: List(Effect)) -> List(Int) {
+  effect_ids(
+    list.map(support.caster_change_starts(effects:), fn(start) { start.0 }),
+  )
+}
+
+fn ended_at(ms ms: Int, effects effects: List(Effect)) -> List(#(Int, Int)) {
+  list.map(effect_ids(support.caster_change_ends(effects:)), fn(effect_id) {
+    #(ms, effect_id)
+  })
+}
+
+/// The plans with the armor and a second ability that removes the armor's node from the
+/// caster by a type 80 effect.
+fn armor_and_its_removal() -> Plans {
+  support.plans_of([
+    armor_spell(),
+    support.with_effects(spell: support.child(spell4_id: 301, base: 1), kinds: [
+      spell_plan.RemoveEffect(spell_plan.ForceRemove(
+        effect_id: Spell4EffectsId(196_521),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        selector: lasting.Spell(Spell4Id(54_806)),
+        count: 1,
+        condition: Always,
+        tag: spend.always,
+      )),
+    ]),
+  ])
+}
+
+fn armored(path path: ArmorPath) -> Armored {
+  let #(state, first) = pressed_at_oneself(state: cast_state.new(), at: 1000)
+  let timers_started =
+    support.timer_numbers(
+      timers: list.map(support.started_timers(effects: first), fn(started) {
+        started.0
+      }),
+    )
+  let cancelled = fn(effects) {
+    support.timer_numbers(timers: support.cancelled_timers(effects:))
+    == timers_started
+  }
+  case path {
+    JustPressedAtOneself ->
+      Armored(
+        starts: started_ids(effects: first),
+        told_to_a_player: told_ids(effects: first),
+        ends: [],
+        cancels_every_timer: False,
+      )
+    PressedAtAPlayer -> {
+      let #(_, at_a_player) = pressed_at_a_player(at: 1000)
+      Armored(
+        starts: started_ids(effects: at_a_player),
+        told_to_a_player: told_ids(effects: at_a_player),
+        ends: [],
+        cancels_every_timer: False,
+      )
+    }
+    TimeRuns -> {
+      let #(_, fired) =
+        support.run_timers(state:, effects: first, from_ms: 1000)
+      Armored(
+        starts: list.flat_map(fired, fn(step) { started_ids(effects: step.1) }),
+        told_to_a_player: [],
+        ends: list.flat_map(fired, fn(step) {
+          ended_at(ms: step.0, effects: step.1)
+        }),
+        cancels_every_timer: False,
+      )
+    }
+    NodeTakenOff -> {
+      let #(_, removal) =
+        support.press(
+          plans: armor_and_its_removal(),
+          state:,
+          bag: bag_of_base_1,
+          at: 2000,
+        )
+      Armored(
+        starts: [],
+        told_to_a_player: [],
+        ends: ended_at(ms: 2000, effects: removal),
+        cancels_every_timer: cancelled(removal),
+      )
+    }
+    CasterDies -> {
+      let #(_, died) =
+        cast.died(
+          cast: state,
+          caster: support.dead_caster(),
+          now: support.at(ms: 1100),
+        )
+      Armored(
+        starts: [],
+        told_to_a_player: [],
+        ends: ended_at(ms: 1100, effects: died),
+        cancels_every_timer: False,
+      )
+    }
+    CasterLeaves -> {
+      let #(_, left) = cast_tick.left(cast: state)
+      Armored(
+        starts: [],
+        told_to_a_player: [],
+        ends: ended_at(ms: 0, effects: left),
+        cancels_every_timer: cancelled(left),
+      )
+    }
+  }
+}
+
+/// The effect ids of the changes told to another player.
+fn told_ids(effects effects: List(Effect)) -> List(Int) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast_state.OtherPlayerChangeStarts(source:, ..) ->
+        Ok(source.effect_id.value)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// A press of the armor at the caster itself (the unit 7 of the default caster: a Targeted
+/// spell whose mechanics let the caster be its own target) and its go, answered by a round
+/// that struck nobody.
+fn pressed_at_oneself(
+  state state: cast_state.State,
+  at ms: Int,
+) -> #(cast_state.State, List(Effect)) {
+  support.pressed_in(
+    plans: armor_plans(),
+    state:,
+    caster: support.caster(),
+    bag_index: bag_of_base_3,
+    target: 7,
+    at: ms,
+  )
+}
+
+/// A press of the armor at the player `armor_ally`, whom the caster sees, and its go.
+fn pressed_at_a_player(at ms: Int) -> #(cast_state.State, List(Effect)) {
+  let caster =
+    cast_state.Caster(
+      ..support.caster(),
+      players_in_sight: dict.from_list([
+        #(
+          armor_ally,
+          player_address.PlayerAddress(
+            connection: step.ConnectionId(2),
+            unit_id: armor_ally,
+            stay: map_support.stay(count: 2),
+          ),
+        ),
+      ]),
+    )
+  let assert Ok(#(state, effects)) =
+    cast.take(
+      cast: cast_state.new(),
+      message: cast_state.Pressed,
+      body: support.press_body(
+        client_cast_id: 9,
+        bag_index: bag_of_base_3,
+        target: armor_ally,
+        press: 1,
+      ),
+      caster:,
+      plans: armor_plans(),
+      target_of: fn(unit_id) {
+        case unit_id == armor_ally {
+          True -> activate.AnotherPlayer
+          False -> activate.Unseen
+        }
+      },
+      now: support.at(ms:),
+    )
+    as "the press at the player in sight is taken"
+  support.answered_each(
+    caster:,
+    state:,
+    effects:,
+    at: ms,
+    struck_of: fn(_) { [] },
+    rolls: [],
+    poses: dict.new(),
+  )
+}
+
+pub fn a_press_at_oneself_of_a_type_11_row_aimed_at_the_primary_target_changes_the_caster_and_ends_by_each_path_test() -> Nil {
+  use <- owned_test.run(5000)
+  let both = [armor_pool_id, armor_modifier_id]
+  // Each path of the press and what it comes to. Each change ends once, in the order of
+  // the spell's rows, by the one path that ends it: its own timer, the removal of the cast's
+  // node, the caster's death; a caster that leaves tells none (the connection's properties
+  // go with the player's own entry).
+  let rows = [
+    #(
+      "a go starts the pool and the modifier as the caster's own changes and tells another player none",
+      JustPressedAtOneself,
+      Armored(
+        starts: both,
+        told_to_a_player: [],
+        ends: [],
+        cancels_every_timer: False,
+      ),
+    ),
+    #(
+      "the same press at a player in sight tells the player both and starts none of the caster's own",
+      PressedAtAPlayer,
+      Armored(
+        starts: [],
+        told_to_a_player: both,
+        ends: [],
+        cancels_every_timer: False,
+      ),
+    ),
+    #(
+      "time ends each change once at the go plus 10 000, starting none, and the node's end in that millisecond tells nothing more",
+      TimeRuns,
+      Armored(
+        starts: [],
+        told_to_a_player: [],
+        ends: [#(11_000, armor_pool_id), #(11_000, armor_modifier_id)],
+        cancels_every_timer: False,
+      ),
+    ),
+    #(
+      "a type 80 removal of the cast's node on the caster ends both and cancels the timers",
+      NodeTakenOff,
+      Armored(
+        starts: [],
+        told_to_a_player: [],
+        ends: [#(2000, armor_pool_id), #(2000, armor_modifier_id)],
+        cancels_every_timer: True,
+      ),
+    ),
+    #(
+      "the caster's death ends both",
+      CasterDies,
+      Armored(
+        starts: [],
+        told_to_a_player: [],
+        ends: [#(1100, armor_pool_id), #(1100, armor_modifier_id)],
+        cancels_every_timer: False,
+      ),
+    ),
+    #(
+      "the caster leaving ends none and cancels the timers",
+      CasterLeaves,
+      Armored(
+        starts: [],
+        told_to_a_player: [],
+        ends: [],
+        cancels_every_timer: True,
+      ),
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, path, expected) = row
+    assert armored(path:) == expected as reason
+  })
+  let #(_, first) = pressed_at_oneself(state: cast_state.new(), at: 1000)
+  assert support.listed_by_unit(effects: first)
+    == [#(7, [armor_pool_id, armor_modifier_id])]
+    as "the go lists both rows on the caster's unit"
+  assert list.filter_map(
+      support.caster_change_starts(effects: first),
+      fn(start) {
+        case start.0.effect_id.value == armor_modifier_id {
+          True -> Ok(start.1)
+          False -> Error(Nil)
+        }
+      },
+    )
+    == [armor_modifier_change()]
+    as "the modifier is the row's property 161 by 0.86f"
+  assert support.target_changes(effects: first) == []
+    as "no change is told to a creature"
 }
 
 // ---- a modifier aimed at the units the go struck ----

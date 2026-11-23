@@ -5987,7 +5987,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A property modifier aimed at the primary target (targetFlags 2) changes the creatures the go hit and the player the press named, so in a spell a Proxy starts on the caster it changes no unit: Mental Boon's Nimble (property 39, Dash Regeneration) is not given, and Phantasmal Armor's Interrupt Armor child (Spell4 76766, a type 52 row aimed at the child's primary target) lands on its caster instead of the player the armor was pressed at.",
+      missing: "A property modifier aimed at the primary target (targetFlags 2) changes the creatures the go hit and the player the press named, so in a spell a Proxy starts on the caster it changes no unit: a child has no press target. Mental Boon's Nimble (property 39, Dash Regeneration) is not given, and Phantasmal Armor's Interrupt Armor child (Spell4 76766, a type 52 row aimed at the child's primary target) lands on its caster instead of the player the armor was pressed at, because the Proxy's target choice (`spell_plan.target_of`) starts a child aimed at the primary target (targetFlags 2) on the caster whoever the press named.",
     ),
     gap.Entry(
       area: "Casting",
@@ -6000,10 +6000,6 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Casting",
       missing: "A target apply prerequisite on an absorb or a type 11 row aimed at another player reads what the caster's picture shows of that player, not the player's own state.",
-    ),
-    gap.Entry(
-      area: "Casting",
-      missing: "A press of a spell at oneself lands none of its type 11 rows aimed at the primary target: Phantasmal Armor pressed at oneself gives its absorb and no damage reduction, because the five modifier rows are not read as the caster's own.",
     ),
   ]
 }

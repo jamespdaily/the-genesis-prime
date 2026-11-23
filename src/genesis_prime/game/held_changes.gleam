@@ -20,6 +20,8 @@
 //// - **A source of a spell with propertyFlags 0x100 outlives its caster's sight**: the
 ////   client's removal of a caster's unit finishes the casts it made, and so ends their buffs
 ////   on other units, unless that flag keeps the cast (fact `cast.target_node_end`).
+////   `kept_casts_of_unit` names those casts when the unit leaves, and `holds_cast` says
+////   when the last source of one has ended, which is when the client is written its end.
 ////
 
 import genesis_prime/game/unit_properties.{type Source}
@@ -177,6 +179,22 @@ fn released_where(
 ) -> #(Held, List(Source)) {
   let #(taken, kept) = list.partition(held.entries, which)
   #(Held(entries: kept), list.map(taken, fn(entry) { entry.source }))
+}
+
+/// The casts of the unit `unit_id` with a source that outlives its caster's sight
+/// (`KeptWhenUnseen`), each once, in the order their first source started: the casts the
+/// client keeps with their buffs when the unit is removed.
+pub fn kept_casts_of_unit(held held: Held, unit_id unit_id: Int) -> List(Int) {
+  list.filter(held.entries, fn(entry) {
+    entry.unit_id == Some(unit_id) && entry.sight == KeptWhenUnseen
+  })
+  |> list.map(fn(entry) { entry.source.cast_id })
+  |> list.unique
+}
+
+/// Whether any source of the cast `cast_id` is held.
+pub fn holds_cast(held held: Held, cast_id cast_id: Int) -> Bool {
+  list.any(held.entries, fn(entry) { entry.source.cast_id == cast_id })
 }
 
 /// Every source held, in the order they started.

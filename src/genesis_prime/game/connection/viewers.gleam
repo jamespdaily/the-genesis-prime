@@ -134,6 +134,7 @@ import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/faction_level
+import genesis_prime/game/held_changes
 import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
@@ -274,7 +275,7 @@ pub fn map_sent(
       Continue(
         session,
         list.flatten([
-          finishes_of_forgotten_casts(session:, entered:, unit_id:),
+          finishes_of_forgotten_casts(session:, entered:, unit_id:, keeping: []),
           [
             connection_state.to_client(
               session,
@@ -577,16 +578,31 @@ pub fn viewer_takes(
     }
     client_connection.Removed -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let kept =
+        list.filter(written_casts_of(entered:, unit_id:), fn(cast_id) {
+          list.contains(
+            held_changes.kept_casts_of_unit(held: entered.held, unit_id:),
+            cast_id,
+          )
+        })
       let #(forgotten, ended) =
         cast_loses_unit(
-          session: unit_forgotten(session:, unit_id:),
+          session: casts_orphaned(
+            session: unit_forgotten(session:, unit_id:),
+            cast_ids: kept,
+          ),
           now:,
           unit_id:,
         )
       Continue(
         forgotten,
         list.flatten([
-          finishes_of_forgotten_casts(session:, entered:, unit_id:),
+          finishes_of_forgotten_casts(
+            session:,
+            entered:,
+            unit_id:,
+            keeping: kept,
+          ),
           [
             connection_state.to_client(
               session,
@@ -1163,21 +1179,49 @@ fn written_cast_frames(
   )
 }
 
-/// 0x7fe for each cast of the unit that this client was sent the start of and no
-/// finish, in cast id order, written before the unit's 0x355: the client keeps a
-/// cast that never gets its 0x7fe live (`cast.no_answer`), and a cast id used
-/// again restarts it (`opcode.0x7ff`).
-fn finishes_of_forgotten_casts(
-  session session: Session,
+/// The cast ids of the unit this client was sent the start of and no finish, in cast id
+/// order.
+fn written_casts_of(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
-) -> List(Effect(ConnectionEffect(Request))) {
+) -> List(Int) {
   dict.to_list(entered.casts_written)
   |> list.filter(fn(written) { written.1 == unit_id })
   |> list.map(fn(written) { written.0 })
   |> list.sort(int.compare)
+}
+
+/// 0x7fe for each cast of the unit that this client was sent the start of and no
+/// finish, in cast id order, written before the unit's 0x355: the client keeps a
+/// cast that never gets its 0x7fe live (`cast.no_answer`), and a cast id used
+/// again restarts it (`opcode.0x7ff`). A cast in `keeping` is not finished: the client
+/// keeps a cast of a spell with propertyFlags 0x100 and its buff on another unit when
+/// its caster's unit is removed (`cast.target_node_end`), and the player's connection
+/// finishes it when the last change it holds from it ends
+/// (genesis_prime/game/connection/landing).
+fn finishes_of_forgotten_casts(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  keeping keeping: List(Int),
+) -> List(Effect(ConnectionEffect(Request))) {
+  written_casts_of(entered:, unit_id:)
+  |> list.filter(fn(cast_id) { !list.contains(keeping, cast_id) })
   |> list.map(fn(cast_id) {
     connection_state.to_client(session, cast_frame.finished_frame(cast_id:))
+  })
+}
+
+/// The session with the casts `cast_ids` marked as held by the client with no caster.
+fn casts_orphaned(
+  session session: Session,
+  cast_ids cast_ids: List(Int),
+) -> Session {
+  connection_state.with_entered(session:, change: fn(entered) {
+    world_entry.Entered(
+      ..entered,
+      casts_orphaned: list.fold(cast_ids, entered.casts_orphaned, set.insert),
+    )
   })
 }
 

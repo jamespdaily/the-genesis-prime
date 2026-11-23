@@ -3364,6 +3364,48 @@ pub fn started_count(
   list.count(started_in(effects:), fn(start) { start.spell4_id == spell4_id })
 }
 
+/// Phantasmal Armor tier 9's Absorption row and its UnitPropertyModifier row
+/// (`table_rows -- Spell4Effects 130470 130474`).
+pub const armor_absorb_id = 130_470
+
+pub const armor_modifier_id = 130_474
+
+/// Phantasmal Armor tier 9 as its rows plan it, holding these rows, which no level-1
+/// ability's tree holds, so the committed fixture has no row of it: a Targeted spell (Mind
+/// Over Body's mechanics, Spell4TargetMechanics row 4) that goes at once, in the stack group
+/// 387 with a cap of 1, of the planted base 3.
+pub fn armor_spell(
+  rows rows: List(spell_plan.PropertyModifier),
+) -> spell_plan.Spell {
+  spell_plan.Spell(
+    ..with_effects(
+      spell: spell_plan.Spell(
+        ..child(spell4_id: 54_806, base: 3),
+        targeting: spell_tables.client_spell(spell4_id: 32_820).targeting,
+        cooldown_ms: 0,
+      ),
+      kinds: list.map(rows, spell_plan.ModifierEffect),
+    ),
+    outlives_caster: True,
+    stack: lasting.Stack(group_id: 387, cap: 1),
+  )
+}
+
+/// The two rows of the armor, each aimed at the primary target.
+pub fn armor_rows() -> List(spell_plan.PropertyModifier) {
+  [
+    armor_absorb_row(
+      id: armor_absorb_id,
+      support_factor: 2.605299949645996,
+      aim: spell_plan.AimsAtPrimaryTarget,
+    ),
+    armor_modifier_row(
+      id: armor_modifier_id,
+      aim: spell_plan.AimsAtPrimaryTarget,
+    ),
+  ]
+}
+
 /// Phantasmal Armor's Absorption row as the client holds it (`table_rows -- Spell4Effects
 /// 62024 130470`): effectType 29, mask 7 (dataBits04), a formula of 1.0 times `support_factor`
 /// of the Support Power (parameter kind 13: 1.9388999938964844 in tier 1's row 62024,

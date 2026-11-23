@@ -41,7 +41,11 @@
 ////   after T lost sight of C, and C's end tell addressed from the go's address ends it.
 //// - **A source of a spell with propertyFlags 0x100 survives `UnseenBy`** and ends by the
 ////   caster's end tell or the caster's unit gone: the client's removal of the caster's unit
-////   keeps the casts that flag marks (fact `cast.target_node_end`).
+////   keeps the casts that flag marks, with their buffs on other units (fact
+////   `cast.target_node_end`). The viewers' `Removed` therefore does not finish such a cast
+////   (genesis_prime/game/connection/viewers), and this module writes its 0x7fe, once, when
+////   the last source of it ends, by any of the ends above (`orphans_finished`): the caster's
+////   own frames no longer reach the client.
 //// - **A source told again goes to the player's own function again**: an absorb pool is
 ////   refilled, a property modifier already held changes nothing
 ////   (genesis_prime/game/unit_properties `apply`).
@@ -52,6 +56,7 @@
 //// Gaps for the coverage measure: `gaps()`.
 
 import genesis_prime/client_connection.{type Request, Continue}
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/look as connection_look
@@ -66,9 +71,12 @@ import genesis_prime/gap
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, OwnEffect,
 }
+import gleam/bool
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 
 /// The heal rows of `strike` applied to the player `entered`, and the answer told to
 /// the caster's connection for the stay the strike names, before the player's own news.
@@ -175,7 +183,8 @@ pub fn changed(
               world_entry.Entered(..entered, held:)
             })
           let #(session, effects) = ended(session:, now:, source:)
-          Continue(session, effects)
+          let #(session, finished) = orphans_finished(session:)
+          Continue(session, list.append(effects, finished))
         }
         Ok(_) | Error(Nil) -> Continue(session, [])
       }
@@ -234,11 +243,52 @@ fn released_ended(
         connection_state.with_entered(session:, change: fn(entered) {
           world_entry.Entered(..entered, held:)
         })
-      list.fold(sources, #(session, []), fn(so_far, source) {
-        let #(session, done) = so_far
-        let #(session, more) = ended(session:, now:, source:)
-        #(session, list.append(done, more))
-      })
+      let #(session, effects) =
+        list.fold(sources, #(session, []), fn(so_far, source) {
+          let #(session, done) = so_far
+          let #(session, more) = ended(session:, now:, source:)
+          #(session, list.append(done, more))
+        })
+      let #(session, finished) = orphans_finished(session:)
+      #(session, list.append(effects, finished))
+    }
+  }
+}
+
+/// The 0x7fe of each cast the client holds with no caster (`Entered.casts_orphaned`) of
+/// which the player holds no source any more, in cast id order, written after the write of
+/// the source that ended last: with the caster's unit removed, no frame of the caster
+/// reaches the client, so the player's connection ends the cast (`cast.target_node_end`).
+fn orphans_finished(
+  session session: Session,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case connection_state.entered_of(session.status) {
+    None -> #(session, [])
+    Some(entered) -> {
+      let #(done, still) =
+        set.to_list(entered.casts_orphaned)
+        |> list.sort(int.compare)
+        |> list.partition(fn(cast_id) {
+          !held_changes.holds_cast(held: entered.held, cast_id:)
+        })
+      use <- bool.guard(when: done == [], return: #(session, []))
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(
+            ..entered,
+            casts_orphaned: set.from_list(still),
+            casts_written: dict.drop(entered.casts_written, done),
+          )
+        })
+      #(
+        session,
+        list.map(done, fn(cast_id) {
+          connection_state.to_client(
+            session,
+            cast_frame.finished_frame(cast_id:),
+          )
+        }),
+      )
     }
   }
 }
@@ -264,7 +314,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "When a caster walks out of a player's sight, the player's own connection finishes the casts it was shown of that caster, which ends the buff icon of a spell with propertyFlags 0x100 at once, while its value (the absorb, the modifier) lasts until the caster's end tell: the client keeps such a cast's buff (`cast.target_node_end`).",
+      missing: "The buff icon of a kept cast (a spell with propertyFlags 0x100) that holds a change on a player from another player ends in the client of each viewer of that player other than the player, which is written the cast's 0x7fe when the caster leaves its sight, while the change lasts, because only the player's own connection learns the end of a kept change; and a kept cast that holds a change on two players the player sees ends in the player's client with the player's own end, because the player cannot know the other node.",
     ),
     gap.Entry(
       area: "Casting",

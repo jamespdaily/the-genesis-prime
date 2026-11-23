@@ -162,12 +162,6 @@ fn limits() -> List(Limit) {
       "a target gate on an absorb or modifier row aimed at another player reads what the caster's picture shows of it",
     ),
     Limit(
-      cast.gaps(),
-      "Casting",
-      ["oneself", "damage reduction"],
-      "a press at oneself lands no type 11 row aimed at the primary target",
-    ),
-    Limit(
       cast_control.gaps(),
       "Casting",
       ["stack", "different casters"],
@@ -206,8 +200,8 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["0x100", "buff"],
-      "at sight loss the player's own connection ends the buff icon of a 0x100 cast that its value outlives",
+      ["another player", "icon", "kept"],
+      "a viewer of the ally other than the ally loses the buff icon of a kept cast when the caster leaves its sight, and a cast that holds a change on two players the ally sees ends in the ally's client with the ally's end",
     ),
     Limit(
       strike.gaps(),

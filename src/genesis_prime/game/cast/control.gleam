@@ -55,6 +55,10 @@
 ////   the player, the change stays, and its timer ends it, told from the go's address. A
 ////   later cast of the same stack group that no node of an earlier cast holds a change for
 ////   ends that cast's change first (`kept_pushed_off`).
+//// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
+////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
+////   five modifier rows (Spell4Effects 130474 and 203798 to 203801). The same row of a child
+////   a Proxy started has no press target and is not put on the caster.
 //// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
 ////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
 ////   the caster): each is aimed at the creatures the go
@@ -316,10 +320,10 @@ fn ended_where(
 ) -> #(State, List(Effect)) {
   let #(cast, cancels) =
     cast_state.cancel_timers(cast:, matching: fn(due) {
-      case target_start_of(due:) {
-        Ok(waiting) ->
-          waiting.source.cast_id == cast_id && unit_ids(waiting.unit_id)
-        Error(Nil) -> False
+      case held_timer_of(due:) {
+        Ok(WaitingStart(on:)) ->
+          on.source.cast_id == cast_id && unit_ids(on.unit_id)
+        Ok(PlayerEnd(..)) | Error(Nil) -> False
       }
     })
   let #(ended, kept) =
@@ -334,13 +338,13 @@ fn ended_where(
   }
   let #(cast, end_cancels) =
     cast_state.cancel_timers(State(..cast, on_units:), matching: fn(due) {
-      case player_end_of(due:) {
-        Ok(#(unit_id, source)) ->
+      case held_timer_of(due:) {
+        Ok(PlayerEnd(unit_id:, source:)) ->
           list.any(ended, fn(on) {
             cast_state.held_unit_id(on:) == unit_id
             && cast_state.held_source(on:) == source
           })
-        Error(Nil) -> False
+        Ok(WaitingStart(..)) | Error(Nil) -> False
       }
     })
   #(
@@ -704,6 +708,13 @@ pub fn modifiers_armed(
                 spell:,
                 now_ms:,
               )
+            Error(Nil) if entry.unit_id == caster.unit_id ->
+              caster_modifier_armed(
+                cast:,
+                row:,
+                source:,
+                change: HeldChange(held_changes.Property(modifier:)),
+              )
             Error(Nil) ->
               creature_modifier_armed(
                 cast:,
@@ -832,11 +843,12 @@ fn player_change_armed(
   let #(cast, pushed) = kept_pushed_off(cast:, cast_id:, on:)
   let #(cast, cancels) =
     cast_state.cancel_timers(cast:, matching: fn(due) {
-      player_end_of(due:) == Ok(#(address.unit_id, source))
+      held_timer_of(due:) == Ok(PlayerEnd(unit_id: address.unit_id, source:))
     })
   let cast = held_on(cast:, cast_id:, on:)
   let #(cast, ending) = case row.row.until_removed {
-    True -> #(cast, [])
+    True ->
+      panic as "a row that lasts until removed is refused on a player (cast_gate.player_row), so it has no end of its own to arm"
     False -> {
       let #(cast, _, start) =
         cast_state.armed(
@@ -861,8 +873,9 @@ fn player_change_armed(
 /// The changes of the caster's earlier casts on the player `on` names that the stack rule of
 /// its spell pushes off, as a node pushed off ends the changes it holds
 /// (`lasting.stack_pushed_off`): a change a cast kept after the caster lost sight of the
-/// player is held by no node, so the push off of nodes cannot find it. A change on a creature
-/// pushes none off.
+/// player is held by no node, so the push off of nodes cannot find it. The push off of a
+/// cast with a live node on the player is that path's alone (`lasting.pushed_off`). A
+/// change on a creature pushes none off.
 fn kept_pushed_off(
   cast cast: State,
   cast_id cast_id: Int,
@@ -895,16 +908,26 @@ fn kept_pushed_off(
   }
 }
 
-/// The casts of the caster other than `cast_id` that hold a change on the player `unit_id`,
-/// as the stack rule reads them.
+/// The casts of the caster other than `cast_id` that hold a change on the player `unit_id`
+/// and no node on it, as the stack rule reads them.
 fn kept_casts_on(
   cast cast: State,
   cast_id cast_id: Int,
   unit_id unit_id: Int,
 ) -> List(lasting.StackedCast) {
+  let with_a_node =
+    list.filter_map(cast_state.holders(cast:), fn(entry) {
+      case dict.has_key({ entry.1 }.nodes, unit_id) {
+        True -> Ok(entry.0)
+        False -> Error(Nil)
+      }
+    })
   list.filter_map(dict.to_list(cast.on_units), fn(entry) {
     let #(held_cast_id, entries) = entry
-    use <- bool.guard(when: held_cast_id == cast_id, return: Error(Nil))
+    use <- bool.guard(
+      when: held_cast_id == cast_id || list.contains(with_a_node, held_cast_id),
+      return: Error(Nil),
+    )
     list.find_map(entries, fn(held) {
       case held {
         HeldOnPlayer(address:, spell4_id:, stack:, started_ms:, ..)
@@ -1151,52 +1174,37 @@ fn target_start_cancelled(
   on on: OnCreature,
 ) -> #(State, List(Effect)) {
   cast_state.cancel_timers(cast:, matching: fn(due) {
-    case target_start_of(due:) {
-      Ok(waiting) ->
+    case held_timer_of(due:) {
+      Ok(WaitingStart(on: waiting)) ->
         waiting.unit_id == on.unit_id && waiting.source == on.source
-      Error(Nil) -> False
+      Ok(PlayerEnd(..)) | Error(Nil) -> False
     }
   })
 }
 
-/// The modifier or throw on a creature a timer waits to start, none for any other timer.
-fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
-  case due {
-    TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) -> Ok(on)
-    PlayerChangeEnd(..)
-    | Go(..)
-    | Finish(..)
-    | StartChild(..)
-    | NodesEnd(..)
-    | StateEnd(..)
-    | ModifierStart(..)
-    | ModifierEnd(..)
-    | RestrictionEnd(..)
-    | CooldownModifierStarts(..)
-    | CooldownModifierEnds(..)
-    | ProcDue(..)
-    | QuestAdvanceDue(..)
-    | StartHeld
-    | RepeatHeld
-    | WindowEnd(..)
-    | ChargeLevel(..)
-    | Tick(..) -> Error(Nil)
-  }
+/// A timer that waits on a change held on a unit other than the caster.
+type HeldTimer {
+  /// The start of a modifier or throw on a creature, after its delay.
+  WaitingStart(on: OnCreature)
+  /// The end of a change on a player, after the row's duration. It is not one of
+  /// `cast_state.source_of`'s timers: an absorb aimed at the caster and the primary target
+  /// gives the caster's change and the player's the same source, so the caster's node
+  /// ending (`effects_ended`) would cancel the player's end timer.
+  PlayerEnd(unit_id: Int, source: unit_properties.Source)
 }
 
-/// The unit and source of the change on a player whose end a timer waits for, none for
-/// any other timer.
-fn player_end_of(due due: Due) -> Result(#(Int, unit_properties.Source), Nil) {
+/// The change a timer waits on, none for any other timer.
+fn held_timer_of(due due: Due) -> Result(HeldTimer, Nil) {
   case due {
-    PlayerChangeEnd(unit_id:, source:) -> Ok(#(unit_id, source))
+    TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) ->
+      Ok(WaitingStart(on:))
+    PlayerChangeEnd(unit_id:, source:) -> Ok(PlayerEnd(unit_id:, source:))
     Go(..)
     | Finish(..)
     | StartChild(..)
     | NodesEnd(..)
     | StateEnd(..)
     | ModifierStart(..)
-    | TargetModifierStart(..)
-    | ForcedMoveStart(..)
     | ModifierEnd(..)
     | RestrictionEnd(..)
     | CooldownModifierStarts(..)
@@ -1252,12 +1260,16 @@ fn caster_modifier_armed(
 }
 
 /// The modifier rows of a spell that change the caster: the rows aimed at struck units
-/// are the creature's (`units_ended`).
+/// are the creature's (`units_ended`), except a struck-unit row whose aim names the primary
+/// target, which a press at oneself puts on the caster.
 pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
   spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
   |> list.filter(fn(row) {
     case row.change {
-      spell_plan.StruckChange(..) -> False
+      spell_plan.StruckChange(..) ->
+        spell_plan.reaches_primary_target(aim: spell_plan.modifier_aim(
+          modifier: row,
+        ))
       spell_plan.PropertyChange(..)
       | spell_plan.LookChange(..)
       | spell_plan.AbsorbChange(..) -> True

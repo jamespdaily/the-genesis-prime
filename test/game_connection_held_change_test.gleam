@@ -26,8 +26,8 @@
 import connection_rule_support as rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type News, type Request, Absorption,
-  PropertiesChanged, TellPeer,
+  type Answer, type Message, type News, type Request, Absorption, Appeared,
+  CastFinished, CastStarted, PropertiesChanged, Removed, TellPeer,
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/landing as connection_landing
@@ -36,9 +36,12 @@ import genesis_prime/game/held_changes.{
   type Change, type PlayerChange, type Sight, EndsWhenUnseen, KeptWhenUnseen,
   PlayerChangeEnds, PlayerChangeStarts,
 }
+import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
+import genesis_prime/message/spell_finished
+import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
@@ -687,4 +690,406 @@ pub fn the_allys_ledger_clears_every_caster_at_its_death_test() -> Nil {
     assert held_changes.connections(held: after.held) == []
       as { reason <> ": and no caster holds a change on the player" }
   })
+}
+
+/// A frame the player's client is written, as the tests below tell them apart: the 0x7fe
+/// of a cast, or any other frame by its opcode.
+type Wrote {
+  Finished(cast_id: Int)
+  Wrote(opcode: Int)
+}
+
+/// The 0x7fe, 0x355, 0x262, 0x93a and 0x938 frames the steps write, in order, each step's
+/// frames in a list of their own.
+fn wrote(steps steps: List(ConnectionStep(Request))) -> List(List(Wrote)) {
+  list.map(steps, fn(taken) {
+    list.filter_map(support.heard(taken, support.keyed()), fn(frame) {
+      case frame.message_id {
+        0x07FE -> {
+          let assert Ok(finished) = spell_finished.decode(frame.body)
+            as "a 0x7fe the connection wrote decodes"
+          Ok(Finished(cast_id: finished.cast_id))
+        }
+        0x0355 | 0x0262 | 0x093A | 0x0938 -> Ok(Wrote(opcode: frame.message_id))
+        _ -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// The cast ids of the 0x7fe frames the steps write, in order.
+fn finished_in(steps steps: List(ConnectionStep(Request))) -> List(Int) {
+  list.flat_map(wrote(steps:), fn(frames) {
+    list.filter_map(frames, fn(frame) {
+      case frame {
+        Finished(cast_id:) -> Ok(cast_id)
+        Wrote(..) -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// News of the unit of the viewer connection `caster`, as that connection sends it.
+fn from_caster(
+  caster caster: Int,
+  news news: News,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  support.sent_by_a_peer(support.news_of(
+    unit_id: support.viewer_unit_id(caster),
+    news:,
+  ))
+}
+
+/// The state with the unit of each caster shown (its 0x262 written) and the casts listed
+/// for it started, as its connection tells them: the client holds those casts.
+fn showing_casts(
+  state state: game_connection.State,
+  casters casters: List(#(Int, List(Int))),
+) -> game_connection.State {
+  let unit = fn(caster) {
+    UnitCreatePlayer(
+      ..support.another_unit(),
+      unit_id: support.viewer_unit_id(caster),
+    )
+  }
+  list.fold(casters, state, fn(state, shown) {
+    let #(caster, cast_ids) = shown
+    let #(state, _) =
+      support.feed(
+        state:,
+        event: from_caster(caster:, news: Appeared(unit: unit(caster))),
+      )
+    list.fold(cast_ids, state, fn(state, cast_id) {
+      support.feed(
+        state:,
+        event: from_caster(
+          caster:,
+          news: CastStarted(start: support.spell_started_of(
+            cast_id:,
+            caster: support.viewer_unit_id(caster),
+          )),
+        ),
+      ).0
+    })
+  })
+}
+
+/// The armor and the pool of Phantasmal Armor's cast `cast_id` held from caster 3, each
+/// with the sight `sight`.
+fn armor_and_pool(cast_id cast_id: Int, sight sight: Sight) -> List(Hold) {
+  [
+    Hold(caster: 3, source: armor_source(cast_id:), change: armor(), sight:),
+    Hold(
+      caster: 3,
+      source: pool_source(cast_id:),
+      change: pool(amount: 300),
+      sight:,
+    ),
+  ]
+}
+
+/// How the caster's unit leaves the ally's client: its own connection's removal news, or
+/// the map saying its unit is gone.
+type Departure {
+  Removal
+  UnitGoneFromTheMap
+}
+
+fn departed(
+  caster caster: Int,
+  departure departure: Departure,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  case departure {
+    Removal -> from_caster(caster:, news: Removed)
+    UnitGoneFromTheMap ->
+      support.sent_by_the_map(map.Gone(unit_id: support.viewer_unit_id(caster)))
+  }
+}
+
+fn ending(hold hold: Hold) -> Event(ConnectionEvent(Message, Answer)) {
+  tell(PlayerChangeEnds(from: ConnectionId(hold.caster), source: hold.source))
+}
+
+pub fn a_caster_leaving_the_sight_of_a_player_that_holds_its_kept_change_is_not_finished_on_the_players_client_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Client fact `cast.target_node_end`: the removal of a caster's unit keeps the casts of a
+  // spell with propertyFlags 0x100 and finishes the others, so the viewer writes the
+  // 0x7fe of the casts the client does not keep, before the 0x355. Each row: what the
+  // player holds, the casters shown and the casts of each its client was sent the start
+  // of, how the caster 3 (or the one named) leaves, what the player's client is written
+  // (0x7fe, 0x355, 0x93a and 0x938 only), and the 0x7fe the ends of the held sources then
+  // write.
+  let rows = [
+    #(
+      "a removal with the cast held kept writes the 0x355 and no 0x7fe of it",
+      list.take(armor_and_pool(cast_id: 100, sight: KeptWhenUnseen), 1),
+      [#(3, [100])],
+      #(3, Removal),
+      [Wrote(0x0355)],
+      [100],
+    ),
+    #(
+      "a removal with the cast held ending with sight writes its 0x7fe, then the 0x355",
+      list.take(armor_and_pool(cast_id: 100, sight: EndsWhenUnseen), 1),
+      [#(3, [100])],
+      #(3, Removal),
+      [Finished(100), Wrote(0x0355)],
+      [],
+    ),
+    #(
+      "of two written casts the one held kept stays and the other is finished",
+      list.take(armor_and_pool(cast_id: 100, sight: KeptWhenUnseen), 1),
+      [#(3, [100, 101])],
+      #(3, Removal),
+      [Finished(101), Wrote(0x0355)],
+      [100],
+    ),
+    #(
+      "a kept source of a cast the client was never sent writes the 0x355 only, and its end no 0x7fe",
+      list.take(armor_and_pool(cast_id: 100, sight: KeptWhenUnseen), 1),
+      [#(3, [])],
+      #(3, Removal),
+      [Wrote(0x0355)],
+      [],
+    ),
+    #(
+      "the unit gone while shown ends the sources, so its cast is finished once, before the 0x355",
+      armor_and_pool(cast_id: 100, sight: KeptWhenUnseen),
+      [#(3, [100])],
+      #(3, UnitGoneFromTheMap),
+      [Finished(100), Wrote(0x0355), Wrote(0x093A), Wrote(0x0938)],
+      [],
+    ),
+    #(
+      "a removal of one caster reads only that caster's casts: another caster's kept cast does not hold it",
+      list.take(armor_and_pool(cast_id: 100, sight: KeptWhenUnseen), 1),
+      [#(3, [100]), #(2, [200])],
+      #(2, Removal),
+      [Finished(200), Wrote(0x0355)],
+      [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, holds, casters, departure, written, after_ends) = row
+    let state = showing_casts(state: holding(holds:), casters:)
+    let #(state, departed) =
+      support.feed(
+        state:,
+        event: departed(caster: departure.0, departure: departure.1),
+      )
+    let #(_, ended) =
+      feed_all(state:, events: list.map(holds, fn(hold) { ending(hold:) }))
+    let writes = wrote(steps: [departed])
+    assert writes == [written] as reason
+    assert finished_in(steps: ended) == after_ends as reason
+  })
+}
+
+/// What reaches the ally after the point a row starts from.
+type Reaches {
+  /// The end tell of the source of a hold.
+  End(hold: Hold)
+  /// The caster's unit is seen again (its 0x262).
+  CasterSeenAgain
+  /// The caster's unit is seen again with the cast `cast_id` in its 0x262's list.
+  CasterSeenListing(cast_id: Int)
+  /// The caster's finish of cast 100 reaches the ally.
+  CasterFinishes
+  /// The map says the caster no longer sees the ally.
+  MapUnseen
+  /// The map says the caster's unit is gone.
+  MapGone
+  /// The caster's connection sends the removal of its unit.
+  CasterRemoved
+}
+
+pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_casts_0x7fe_once_after_its_last_source_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert [armor_hold, pool_hold] =
+    armor_and_pool(cast_id: 100, sight: KeptWhenUnseen)
+    as "Phantasmal Armor's cast holds its armor and its pool"
+  // Client fact `cast.target_node_end`: with the cast kept and its caster gone, only a
+  // 0x7fe from the server ends the buff on the ally; the ally writes it once, after the
+  // write of the last source's own end. Each row: what reaches the ally in
+  // order, and the frames it writes for each (0x7fe, 0x93a, 0x938, 0x262 and 0x355 only).
+  let rows = [
+    #(
+      "the pool's end writes its own stat only, the armor's end then its own entry and the cast's 0x7fe",
+      [CasterRemoved, End(pool_hold), End(armor_hold)],
+      [[Wrote(0x0355)], [Wrote(0x0938)], [Wrote(0x093A), Finished(100)]],
+    ),
+    #(
+      "a second end of either source writes nothing",
+      [
+        CasterRemoved,
+        End(pool_hold),
+        End(armor_hold),
+        End(armor_hold),
+        End(pool_hold),
+      ],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0938)],
+        [Wrote(0x093A), Finished(100)],
+        [],
+        [],
+      ],
+    ),
+    #(
+      "the caster seen again before the end: the end of the last source writes the 0x7fe",
+      [CasterRemoved, CasterSeenAgain, End(armor_hold), End(pool_hold)],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0262)],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+      ],
+    ),
+    #(
+      "a later notice of the caster after the end writes no second 0x7fe",
+      [
+        CasterRemoved,
+        End(pool_hold),
+        End(armor_hold),
+        MapUnseen,
+        MapGone,
+      ],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0938)],
+        [Wrote(0x093A), Finished(100)],
+        [],
+        [],
+      ],
+    ),
+    #(
+      "the caster seen again with the cast listed: the end writes the 0x7fe and the caster's later finish writes none",
+      [
+        CasterRemoved,
+        CasterSeenListing(cast_id: 100),
+        End(armor_hold),
+        End(pool_hold),
+        CasterFinishes,
+      ],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0262)],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+        [],
+      ],
+    ),
+    #(
+      "the caster's lingering finish after its removal writes nothing and the end writes the 0x7fe later",
+      [CasterRemoved, CasterFinishes, End(armor_hold), End(pool_hold)],
+      [
+        [Wrote(0x0355)],
+        [],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+      ],
+    ),
+    #(
+      "the map's unseen notice of the caster keeps the kept sources, and the end writes the 0x7fe",
+      [CasterRemoved, MapUnseen, End(armor_hold), End(pool_hold)],
+      [
+        [Wrote(0x0355)],
+        [],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+      ],
+    ),
+    #(
+      "the caster's unit gone ends both sources and writes the 0x7fe once, with no second 0x355",
+      [CasterRemoved, MapGone, End(armor_hold)],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x093A), Wrote(0x0938), Finished(100)],
+        [],
+      ],
+    ),
+    #(
+      "the ends before the caster's removal write no 0x7fe, and the removal writes it once",
+      [End(pool_hold), End(armor_hold), CasterRemoved],
+      [[Wrote(0x0938)], [Wrote(0x093A)], [Finished(100), Wrote(0x0355)]],
+    ),
+    #(
+      "the caster shown, the end of the last source writes no 0x7fe and the caster's finish writes it once",
+      [End(pool_hold), End(armor_hold), CasterFinishes, CasterFinishes],
+      [[Wrote(0x0938)], [Wrote(0x093A)], [Finished(100)], []],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, events, expected) = row
+    let state =
+      showing_casts(state: holding(holds: [armor_hold, pool_hold]), casters: [
+        #(3, [100]),
+      ])
+    let events =
+      list.map(events, fn(event) {
+        case event {
+          End(hold:) -> ending(hold:)
+          CasterSeenAgain ->
+            from_caster(
+              caster: 3,
+              news: Appeared(
+                unit: UnitCreatePlayer(
+                  ..support.another_unit(),
+                  unit_id: support.viewer_unit_id(3),
+                ),
+              ),
+            )
+          CasterSeenListing(cast_id:) ->
+            from_caster(
+              caster: 3,
+              news: Appeared(unit: support.another_unit_casting(
+                casts: [
+                  support.listed_cast(
+                    cast_id:,
+                    caster: support.viewer_unit_id(3),
+                  ),
+                ],
+                cast_id: 0,
+              )),
+            )
+          CasterFinishes ->
+            from_caster(caster: 3, news: CastFinished(cast_id: 100))
+          MapUnseen ->
+            support.sent_by_the_map(map.UnseenBy(by: ConnectionId(3)))
+          MapGone ->
+            support.sent_by_the_map(
+              map.Gone(unit_id: support.viewer_unit_id(3)),
+            )
+          CasterRemoved -> from_caster(caster: 3, news: Removed)
+        }
+      })
+    let #(_, taken) = feed_all(state:, events:)
+    assert wrote(steps: taken) == expected as reason
+  })
+}
+
+pub fn the_death_of_an_ally_whose_kept_change_lost_its_caster_ends_its_sources_in_start_order_and_writes_the_casts_0x7fe_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert [armor_hold, pool_hold] =
+    armor_and_pool(cast_id: 100, sight: KeptWhenUnseen)
+    as "Phantasmal Armor's cast holds its armor and its pool"
+  let state =
+    showing_casts(
+      state: support.feed(
+        state: holding(holds: [armor_hold, pool_hold]),
+        event: support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+      ).0,
+      casters: [#(3, [100])],
+    )
+  let #(state, _) =
+    support.feed(state:, event: from_caster(caster: 3, news: Removed))
+  let #(_, killed) = support.feed(state:, event: support.a_killing_strike())
+  let frames = list.flatten(wrote(steps: [killed]))
+  assert list.filter(frames, fn(frame) { frame == Finished(100) })
+    == [Finished(100)]
+    as "the cast is finished once"
+  assert list.drop_while(frames, fn(frame) { frame != Wrote(0x093A) })
+    |> list.take(2)
+    == [Wrote(0x093A), Finished(100)]
+    as "the armor's end is written, then the cast's 0x7fe after the last source"
 }

@@ -1840,7 +1840,9 @@ pub type StrikeGate =
 
 /// The source an effect timer is for: a property modifier's, a shield heal's (a start is
 /// the only timer a heal has), a cooldown effect's or a state the caster holds. Effect
-/// ids are unique, so a source names one row.
+/// ids are unique, so a source names one row. The end timer of a change on another player
+/// is not one of these: an absorb aimed at the caster and the primary target gives the
+/// caster's change and the player's the same source.
 pub fn source_of(due due: Due) -> Option(unit_properties.Source) {
   case due {
     ModifierStart(source:, ..)

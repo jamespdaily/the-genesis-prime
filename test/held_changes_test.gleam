@@ -302,3 +302,105 @@ pub fn a_source_is_held_once_by_its_first_caster_and_every_release_takes_that_ca
     },
   )
 }
+
+/// A source of cast `cast_id` for the row `row`: the armor's absorb and the pool are two
+/// rows of one cast.
+fn row_source(cast_id cast_id: Int, row row: Int) -> Source {
+  Source(cast_id:, effect_id: Spell4EffectsId(row))
+}
+
+/// A start of the source of row `row` of cast `cast_id`, held for the caster of unit
+/// `unit_id`, and the release that follows it, when any.
+type HeldRow {
+  HeldRow(unit_id: Int, cast_id: Int, row: Int, sight: Sight)
+}
+
+pub fn the_casts_a_player_holds_kept_from_a_caster_unit_and_whether_it_holds_a_cast_are_read_from_its_ledger_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Rows: the sources held in start order, the sources released after, the unit asked
+  // about, the kept casts of it, and the cast ids that are held with the casts asked.
+  // The 0x100 rule (fact `cast.target_node_end`): only a source of a spell with
+  // propertyFlags 0x100 is kept, and a cast is held while any of its sources is.
+  let rows = [
+    #(
+      "the armor and the pool of one cast, both kept, give the cast once",
+      [
+        HeldRow(101, 100, 1, KeptWhenUnseen),
+        HeldRow(101, 100, 2, KeptWhenUnseen),
+      ],
+      [],
+      101,
+      [100],
+      [#(100, True)],
+    ),
+    #(
+      "a source that ends with sight gives no kept cast",
+      [
+        HeldRow(101, 100, 1, KeptWhenUnseen),
+        HeldRow(101, 101, 1, EndsWhenUnseen),
+      ],
+      [],
+      101,
+      [100],
+      [#(100, True)],
+    ),
+    #(
+      "a kept source of another unit gives nothing for this one",
+      [HeldRow(102, 100, 1, KeptWhenUnseen)],
+      [],
+      101,
+      [],
+      [#(100, True)],
+    ),
+    #("nothing held gives no kept cast and holds no cast", [], [], 101, [], [
+      #(100, False),
+    ]),
+    #(
+      "a cast is held until its last source is released",
+      [
+        HeldRow(101, 100, 1, KeptWhenUnseen),
+        HeldRow(101, 100, 2, KeptWhenUnseen),
+      ],
+      [row_source(cast_id: 100, row: 2)],
+      101,
+      [100],
+      [#(100, True)],
+    ),
+    #(
+      "a cast whose every source is released is not held and is no longer kept",
+      [
+        HeldRow(101, 100, 1, KeptWhenUnseen),
+        HeldRow(101, 100, 2, KeptWhenUnseen),
+      ],
+      [row_source(cast_id: 100, row: 2), row_source(cast_id: 100, row: 1)],
+      101,
+      [],
+      [#(100, False)],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, starts, releases, unit_id, kept, holding) = row
+    let held =
+      list.fold(starts, held_changes.new(), fn(held, start: HeldRow) {
+        let #(held, _) =
+          held_changes.started(
+            held:,
+            by: ConnectionId(start.unit_id - 100),
+            unit_id: start.unit_id,
+            source: row_source(cast_id: start.cast_id, row: start.row),
+            sight: start.sight,
+          )
+        held
+      })
+    let held =
+      list.fold(releases, held, fn(held, source) {
+        let assert Ok(#(held, _)) = held_changes.released(held:, source:)
+        held
+      })
+    assert held_changes.kept_casts_of_unit(held:, unit_id:) == kept as reason
+    list.each(holding, fn(asked) {
+      assert held_changes.holds_cast(held:, cast_id: asked.0) == asked.1
+        as reason
+    })
+  })
+}
