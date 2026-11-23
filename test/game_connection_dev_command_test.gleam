@@ -23,6 +23,7 @@
 import character_support
 import character_tables
 import connection_rule_support as rule_support
+import departures_support
 import experience_support
 import game_client
 import game_connection_dev_command_support as dev_support
@@ -837,6 +838,16 @@ pub fn a_refused_command_writes_only_its_line_and_asks_tells_logs_and_changes_no
         why: "the client refuses a quest it has no row for",
       ),
       Refused(
+        state: dev_support.in_world_holding_quests(level: 1, quests: [
+          quest_support.completed(quest_support.one_time, at: now_seconds),
+        ]),
+        text: "!quest " <> int.to_string(quest_support.one_time) <> " done",
+        line: "quest "
+          <> int.to_string(quest_support.one_time)
+          <> " is already done",
+        why: "a quest with no period that was completed is not completed again",
+      ),
+      Refused(
         state: camp_player(),
         text: "!currency 8 1",
         line: "!currency 8 is no currency type the client keeps (1 to 7 and 9 to 14)",
@@ -844,7 +855,8 @@ pub fn a_refused_command_writes_only_its_line_and_asks_tells_logs_and_changes_no
       ),
     ],
     fn(row) {
-      let before = dev_support.saved_place(state: row.state)
+      let place_before = dev_support.saved_place(state: row.state)
+      let quests_before = dev_support.saved_quests(state: row.state)
       let #(state, taken) = dev_support.said(state: row.state, text: row.text)
       assert support.written_ids(taken) == [0x01C2, 0x01C8] as row.why
       assert support.system_lines(taken) == [row.line] as row.why
@@ -852,7 +864,10 @@ pub fn a_refused_command_writes_only_its_line_and_asks_tells_logs_and_changes_no
       assert support.told_the_map(taken) == [] as "the map is told nothing"
       assert rule_support.logs(taken) == []
         as "a refused command is its System line, with no log"
-      assert dev_support.saved_place(state:) == before as "nothing changed"
+      assert dev_support.saved_place(state:) == place_before
+        as "the place is as it was"
+      assert dev_support.saved_quests(state:) == quests_before
+        as "the quest log is as it was"
     },
   )
 }
@@ -1034,6 +1049,16 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
         as "the credits are kept"
     },
   )
+}
+
+pub fn an_old_map_that_is_gone_lets_the_join_go_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, leaving) = leaving_world_22()
+  let #(_, joining) =
+    support.answer(state:, taken: leaving, outcome: step.NotRunning)
+  let #(map_id, _, _) = departures_support.join_of(taken: joining)
+  assert map_id == MapId(world_id: 870, instance: 0)
+    as "a map that is gone has nothing to leave: the join goes on"
 }
 
 type Ending {

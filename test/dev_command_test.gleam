@@ -29,10 +29,13 @@ import genesis_prime/message/bit_stream
 import genesis_prime/table/id.{Creature2Id, CurrencyTypeId, Item2Id, Quest2Id}
 import gleam/bool
 import gleam/float
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import owned_test
+import planted_table.{Float, Integer}
 import qcheck
 
 fn parsed(text: String) -> Result(dev_command.Command, dev_command.Refusal) {
@@ -233,6 +236,9 @@ pub fn go_takes_a_place_by_coordinates_or_by_a_world_location2_row_test() -> Nil
       #("!go 1.5", Error(GoTakesAPlace), "a fraction as the row"),
       #("!go 22 1189 - 2 3", Error(GoTakesAPlace), "a sign alone"),
       #("!go 22 1189 --1 2 3", Error(GoTakesAPlace), "two signs"),
+      #("!go -22 1189 1 2 3", Error(GoTakesAPlace), "a sign on the world id"),
+      #("!go 22 -1189 1 2 3", Error(GoTakesAPlace), "a sign on the zone id"),
+      #("!go -8300", Error(GoTakesAPlace), "a sign on a row's id"),
     ],
     fn(row) {
       assert parsed(row.0) == row.1 as row.2
@@ -249,6 +255,8 @@ fn refused(text: String) -> Result(dev_command.Command, dev_command.Refusal) {
 pub fn a_line_the_grammar_or_the_tables_refuse_is_refused_and_answered_with_what_was_wrong_test() -> Nil {
   use <- owned_test.run(60_000)
   let column_limit = 9_223_372_036_854_775_807
+  let huge_digits = string.repeat("9", times: 400)
+  let assert Ok(huge) = int.parse(huge_digits)
   list.each(
     [
       #(
@@ -262,6 +270,15 @@ pub fn a_line_the_grammar_or_the_tables_refuse_is_refused_and_answered_with_what
         UnknownCommand,
         "unknown command",
         "the word is read as typed, in lower case",
+      ),
+      #("!summons 75048", UnknownCommand, "unknown command", "a longer word"),
+      #("!summo 75048", UnknownCommand, "unknown command", "a shorter word"),
+      #("!!summon 75048", UnknownCommand, "unknown command", "two bangs"),
+      #(
+        "!summon x 3",
+        SummonTakesACreature2Id,
+        "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3",
+        "a creature that is no number is the usage refusal whatever the level is",
       ),
       #(
         "!summon 7x",
@@ -286,6 +303,12 @@ pub fn a_line_the_grammar_or_the_tables_refuse_is_refused_and_answered_with_what
         ExperienceTakesAWholeNumber,
         "!xp takes one whole number, a total experience, as !xp 2860",
         "a letter in the number",
+      ),
+      #(
+        "!level 0",
+        LevelOutOfRange(level: 0, highest: 50),
+        "!level 0 is outside the levels 1 to 50",
+        "level 0 is below the first level",
       ),
       #(
         "!level 51",
@@ -397,6 +420,24 @@ pub fn a_line_the_grammar_or_the_tables_refuse_is_refused_and_answered_with_what
         "no WorldLocation2 row has the id",
       ),
       #(
+        "!go 99999 999999 40000 0 0",
+        WorldHasNoRow(world_id: 99_999),
+        "!go: World 99999 is not in the client's tables",
+        "the world is refused before the zone, and the zone before the position",
+      ),
+      #(
+        "!go 22 999999 40000 0 0",
+        WorldZoneHasNoRow(world_zone_id: 999_999),
+        "!go: WorldZone 999999 is not in the client's tables",
+        "the zone is refused before the position",
+      ),
+      #(
+        "!go 22 1189 " <> huge_digits <> " 2 3",
+        PositionOutsideTheBox(axis: AxisX, coordinate: huge),
+        "!go: x " <> huge_digits <> " is outside -32768 to 32768",
+        "a coordinate of any length parses and the box refuses it as a whole number, with no conversion to a float",
+      ),
+      #(
         "!go 22 1189 0 -2049 0",
         PositionOutsideTheBox(axis: AxisY, coordinate: -2049),
         "!go: y -2049 is outside -2048 to 2048",
@@ -409,6 +450,59 @@ pub fn a_line_the_grammar_or_the_tables_refuse_is_refused_and_answered_with_what
       assert dev_command.describe(refusal:) == description as reason
     },
   )
+}
+
+/// The first id of the WorldLocation2 rows the named-place test adds, above every row of the fixture.
+const planted_first = 59_001
+
+pub fn a_named_place_is_checked_as_a_coordinate_one_is_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let planted = [
+    #([], Ok(Nil), "a row whose world, zone and position the tables hold"),
+    #(
+      [#("worldId", Integer(0))],
+      Error(WorldHasNoRow(world_id: 0)),
+      "a row in world 0, which `start_place.of_row` refuses, is refused as World 0 is",
+    ),
+    #(
+      [#("worldZoneId", Integer(999_999))],
+      Error(WorldZoneHasNoRow(world_zone_id: 999_999)),
+      "a row whose zone has no WorldZone row",
+    ),
+    #(
+      [#("worldId", Integer(99_999))],
+      Error(WorldHasNoRow(world_id: 99_999)),
+      "a row whose world has no World row",
+    ),
+    #(
+      [#("position0", Float(40_000.0))],
+      Error(PositionOutsideTheBox(axis: AxisX, coordinate: 40_000)),
+      "a row at x 40000, outside the box",
+    ),
+  ]
+  let rows =
+    list.index_fold(planted, fixture_tables.rows(), fn(rows, row, index) {
+      let assert Ok(rows) =
+        fixture_tables.add(
+          rows:,
+          table: "WorldLocation2",
+          copy_of: 8300,
+          id: planted_first + index,
+          with: row.0,
+        )
+        as "row 8300 is committed and its columns are the table's"
+      rows
+    })
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  list.index_fold(planted, Nil, fn(_, row, index) {
+    let command =
+      Go(destination: Named(world_location2_id: planted_first + index))
+    let expected = case row.1 {
+      Ok(Nil) -> Ok(command)
+      Error(refusal) -> Error(refusal)
+    }
+    assert dev_command.checked(command:, tables:) == expected as row.2
+  })
 }
 
 pub fn every_edge_of_the_position_box_is_accepted_and_one_beyond_it_is_refused_test() -> Nil {
