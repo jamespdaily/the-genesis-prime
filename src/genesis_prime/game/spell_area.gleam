@@ -68,6 +68,12 @@
 ////   (`SelectionNeedsHealth`), and a player's is read as no area (`SpellArea.row` `None`),
 ////   refused (`SelectionNeedsHealth`) only for a phase that selects units from it, since the
 ////   client's texts name allies for those rows and the server finds none.
+//// - **Valid targets** (`Spell4ValidTargets.targetBitmask`, `FillSpellRecord` 0x140568540,
+////   `FillSpellAoeConstraints` 0x1405698c0): bits 1, 2 and 256 act at a press, not in an area,
+////   and 256 (no pet) excludes no unit of the strike; bits 4 (players only) and 16 (party
+////   members only) select no creature (`strikes_creatures`, `strike.select`); bit 128, which
+////   no client code reads, is read as clear, a guess; bits 8, 32 and 64 are refused
+////   (`ValidTargetsNotBuilt`).
 //// - **Two readings** read a spell's rows: a player's ability (`PlayerReading`: the shapes of
 ////   the level-1 trees) and a creature's special (`CreatureReading`: also rings, crosses,
 ////   pies and unhalved boxes), so a player's strike refuses shapes 1, 3, 5 and 6.
@@ -100,7 +106,7 @@
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1 to 5 (4 and 5 are refused by `SelectionNeedsHealth` for a
 ////   creature and for a player's phase that selects units from the area); a valid-targets
-////   bitmask other than 0 on a spell with an area row; a hit row placed on anything but the
+////   bitmask holding bit 8, 32 or 64 on a spell with an area row; a hit row placed on anything but the
 ////   caster, the cast's target and the
 ////   held position (`targetTypeFlags` other than 0, 1, 2 and 8; for a creature other than 0 to
 ////   2: `TelegraphOnStruckUnits` for bit 4, else `TelegraphNotOnCaster`); a spell's hit rows
@@ -292,8 +298,9 @@ pub type AreaError {
   /// or 5, MissingMostHealth), which the units a strike chooses from do not hold: a creature's
   /// row, or a player's whose phase selects units from the area.
   SelectionNeedsHealth(spell4_id: Int, target_selection: Int)
-  /// A spell's valid targets hold a bit: it would strike the dead or more.
-  ValidTargetsNotAlive(spell4_id: Int, target_bitmask: Int)
+  /// A spell's valid targets hold a bit of the area record the strike does not read: the area
+  /// may strike the dead (8), picks a creature cluster only (32) or units in combat only (64).
+  ValidTargetsNotBuilt(spell4_id: Int, target_bitmask: Int)
   /// A hit row is placed on what the reading does not build: for a player's ability anything
   /// but the caster, the cast's target and the position the cast holds (`targetTypeFlags` other
   /// than 0, 1, 2 and 8); for a creature's special the ground (bit 8) or two units at once (3, 9).
@@ -375,12 +382,12 @@ pub fn describe(error error: AreaError) -> String {
       <> " has an area row that selects in order "
       <> int.to_string(target_selection)
       <> ", by a unit's health, which the units a strike chooses from do not hold"
-    ValidTargetsNotAlive(spell4_id:, target_bitmask:) ->
+    ValidTargetsNotBuilt(spell4_id:, target_bitmask:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " has valid targets of bitmask "
       <> int.to_string(target_bitmask)
-      <> ", and only 0 (the alive) is built"
+      <> ", which holds a bit of 8 (the dead), 32 (a creature cluster only) or 64 (units in combat only) that the strike does not read"
     TelegraphNotOnCaster(spell4_id:, telegraph_id:, target_type_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -569,7 +576,7 @@ fn plan_error_of(
       spell_plan.AreaDataFault(spell4_id:, reason: describe(error:))
     SelectionNotBuilt(..)
     | SelectionNeedsHealth(..)
-    | ValidTargetsNotAlive(..)
+    | ValidTargetsNotBuilt(..)
     | TelegraphNotOnCaster(..)
     | TargetingNotBuilt(..)
     | HitRowOffTheStrikeCentre(..)
@@ -797,17 +804,38 @@ fn area_of(
   Ok(area)
 }
 
-/// A spell with an area row whose base names valid targets takes only the alive:
-/// bitmask 0 (a spell with no area selects nobody, so its valid targets are not read).
+/// Valid-target bits the area record holds and the strike does not read: the area may strike
+/// the dead (8), picks a creature cluster only (32), or strikes units in combat only (64)
+/// (`FillSpellAoeConstraints` 0x1405698c0, record words 6 to 8).
+const unbuilt_valid_target_bits = 0x68
+
+/// Valid-target bits that take no creature: only a player (4, a creature is an NPC, which the
+/// client's check at 0x1403b2240 refuses) or only the caster's party members (16, a creature
+/// is never in a group: `UnitsShareGroup` 0x140561e60).
+const players_only_valid_target_bits = 0x14
+
+/// A spell with an area row whose base names valid targets is built when the mask holds none
+/// of bits 8, 32 and 64. Bits 1, 2, 4, 16 and 256 act where a press is checked
+/// (`press_target`) or on which units an area can select (`strikes_creatures`). Bit 128 is
+/// copied to the area record's word 9 and read by no client code (0x1405ecf20 names words 6
+/// to 8 only); the server reads it as clear, a guess. A spell with no area selects nobody,
+/// so its valid targets are not read.
 fn valid_targets_checked(
   id id: Int,
   targeting targeting: target_mechanic.Targeting,
 ) -> Result(Nil, AreaError) {
-  case targeting.valid_targets {
+  let bitmask = targeting.valid_targets
+  case int.bitwise_and(bitmask, unbuilt_valid_target_bits) {
     0 -> Ok(Nil)
-    bitmask ->
-      Error(ValidTargetsNotAlive(spell4_id: id, target_bitmask: bitmask))
+    _ -> Error(ValidTargetsNotBuilt(spell4_id: id, target_bitmask: bitmask))
   }
+}
+
+/// Whether an area whose spell has these valid targets can select a creature: not when the
+/// mask names only players (bit 4) or only the caster's party members (bit 16), since the
+/// server stands no creature as either.
+pub fn strikes_creatures(valid_targets valid_targets: Int) -> Bool {
+  int.bitwise_and(valid_targets, players_only_valid_target_bits) == 0
 }
 
 /// What an area row's `targetSelection` reads as.
@@ -1661,6 +1689,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Player area orders",
       missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+    ),
+    gap.Entry(
+      area: "Spell valid targets",
+      missing: "a spell with an area row whose valid targets (Spell4ValidTargets targetBitmask) hold bit 8 (strike the dead), 32 (a creature cluster only) or 64 (units in combat only) is refused with its ability, since a strike picks the alive and the server holds no creature cluster; bit 128, which the client copies and no code reads, is read as clear, a guess; an area whose valid targets hold bit 4 (players only) or 16 (party members only) selects no creature, so a row aimed at that area alone lands on nobody, since the units a strike chooses from are creatures; bit 256 (not a pet) excludes no unit, since the server stands no unit as a pet",
     ),
     gap.Entry(
       area: "Creature area orders and shapes",

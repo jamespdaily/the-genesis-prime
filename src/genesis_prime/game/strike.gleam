@@ -517,9 +517,14 @@ fn area_selection(
   seed seed: Int,
   now_ms now_ms: Int,
 ) -> List(Int) {
-  case spell_area.inside(spell: area, phase:) {
-    None -> []
-    Some(inside) ->
+  case
+    spell_area.inside(spell: area, phase:),
+    spell_area.strikes_creatures(
+      valid_targets: area.spell.targeting.valid_targets,
+    )
+  {
+    None, _ | _, False -> []
+    Some(inside), True ->
       area.select_ordered(
         candidates: shown.candidates(
           picture:,

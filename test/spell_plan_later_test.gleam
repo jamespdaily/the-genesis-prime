@@ -36,6 +36,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import owned_test
 import planted_table.{type Cell, Float, Integer}
@@ -454,8 +455,8 @@ pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Ni
       "its child 41491's only damage row, 229624 (tickTime 1000, flags 514), lasts until removed, which no schedule ends, so the sentence names it: "
       <> spell_plan.describe(error: miasma.error)
     }
-  assert list.contains(unplanned, 34_426)
-    as "Energy Auger stays listed: its valid targets are bitmask 4"
+  assert !list.contains(unplanned, 34_426)
+    as "Energy Auger is planned: its Proxy's valid targets are bitmask 4, which the area load builds"
   list.each([57_978, 39_157, 42_676], fn(spell4_id) {
     assert !list.contains(unplanned, spell4_id)
       as "Smackdown, Whiplash and Pounce are planned before and after"
@@ -650,7 +651,49 @@ pub fn every_row_of_the_abilities_with_a_timed_caster_proxy_is_read_but_the_rows
   Nil
 }
 
-pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and_the_three_with_another_gate_stay_refused_test() -> Nil {
+pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_two_ordered_by_health_stay_listed_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  let plans = spell_plan.plans_with_later(tables:)
+  // Each ability's valid targets held a bit the load refused: Defense Grid 54475, Emergency
+  // Reserves 32358, Volatile Injection 41756, Empowering Probes 41533 and Extricate 42241
+  // (Spell4ValidTargets row 3, bitmask 16), Recursive Matrix 42572 (row 13, 128), Energy
+  // Auger 34426 (row 5, 4), Triage 29888 and Regenerative Pulse 39646 (row 12, 256).
+  let planned = [
+    54_475, 32_358, 41_756, 42_572, 34_426, 29_888, 41_533, 42_241, 39_646,
+  ]
+  list.each(planned, fn(spell4_id) {
+    assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
+      as {
+        int.to_string(spell4_id)
+        <> " is built, so it is not listed unplanned ("
+        <> int.to_string(list.length(left_out))
+        <> " abilities remain listed)"
+      }
+    assert result.is_ok(spell_plan.in_plans(
+      plans:,
+      base: base_of(tables:, spell4_id:),
+    ))
+      as { "the plans hold the ability of Spell4 " <> int.to_string(spell4_id) }
+  })
+  // Sentinel 54395 (Guard to the party member missing the most health) and Warden 33392
+  // (the most injured ally) select their units in order 5, the gate the valid targets hid.
+  list.each([54_395, 33_392], fn(spell4_id) {
+    let assert Ok(one) =
+      list.find(left_out, fn(one) { one.spell4_id == spell4_id })
+      as "the ability is refused for the area ordered by health"
+    let sentence = spell_plan.describe(error: one.error)
+    assert string.contains(sentence, "order 5")
+      as { "the sentence names its next gate: " <> sentence }
+    assert !string.contains(sentence, "valid targets")
+      as { "the valid targets are not the refusal: " <> sentence }
+  })
+}
+
+pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and_the_one_with_another_gate_stays_refused_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -659,15 +702,10 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and
   // Mental Boon 33257, Mending Probes 41333, Astral Infusion 35870, Runes of Protection
   // 39092 and Flash 41926 held a Proxy aimed by flags 5 in a spell that hits no foes and no
   // other refusal; the tables name the Surge alternates 39327 and 54717
-  // (`Spell4.spell4IdMechanicAlternateSpell`). 41533 (valid targets of bitmask 16), 42572
-  // (bitmask 128) and 78081 (an area ordered by health) are refused for their own gates
-  // (`Spell4.validTargets`, `spell_area` order 5).
+  // (`Spell4.spell4IdMechanicAlternateSpell`). 78081 (an area ordered by health) is refused
+  // for its own gate (`spell_area` order 5).
   let freed = [33_257, 41_333, 35_870, 39_092, 41_926]
-  let still_refused = [
-    #(41_533, "bitmask 16"),
-    #(42_572, "bitmask 128"),
-    #(78_081, "selects in order 5"),
-  ]
+  let still_refused = [#(78_081, "selects in order 5")]
   list.each(freed, fn(spell4_id) {
     assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
       as {

@@ -43,6 +43,7 @@ import genesis_prime/game/strike.{
 import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused,
 }
+import genesis_prime/game/target_mechanic
 import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -999,6 +1000,50 @@ pub fn the_caster_selects_the_foes_inside_kicks_cone_nearest_first_test() -> Nil
     as "Kick's cone is 1 to 7 m over 100 degrees ahead: units 21, 22 and 23, and 25, which is 8 m ahead, past the cone by less than its hit radius of 3 (a unit's radius counts for every shape); 24 is behind, 26 is dead, 27 is Friendly to Exiles and 28 is a player (Spell4.58591.area)"
   assert list.length(chosen.blows) == 1
     as "Kick's one damage effect, aimed at the area"
+}
+
+/// Kick's area (58591) with its spell's valid targets bitmask replaced.
+fn kick_areas_with_valid_targets(
+  valid_targets valid_targets: Int,
+) -> spell_area.Areas {
+  let areas = spell_tables.fixture_areas()
+  let assert Ok(kick) = dict.get(areas, 58_591)
+    as "Kick is in the fixture's areas"
+  dict.insert(
+    areas,
+    58_591,
+    spell_area.SpellArea(
+      ..kick,
+      spell: spell_plan.Spell(
+        ..kick.spell,
+        targeting: target_mechanic.Targeting(
+          ..kick.spell.targeting,
+          valid_targets:,
+        ),
+      ),
+    ),
+  )
+}
+
+pub fn a_creature_inside_kicks_cone_is_not_selected_by_a_spell_whose_valid_targets_name_party_members_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let select = fn(valid_targets) {
+    strike.select(
+      asked: asked(cast_id: 5, phase: 0),
+      attacker: strike_support.attacker(),
+      picture: picture(),
+      areas: kick_areas_with_valid_targets(valid_targets:),
+      now_ms: 0,
+    )
+  }
+  let party_only = select(16)
+  assert party_only.units == []
+    as "valid targets bit 16 names the caster's party members (0x1403b0880 line 66, UnitsShareGroup 0x140561e60), and a creature is never in a group: units 21, 22, 23 and 25 are not selected"
+  assert party_only.area == []
+    as "the area holds no unit, so the damage effect aimed at the area strikes nobody"
+  assert selected_units(selection: select(256)) == [21, 22, 23, 25]
+    as "the control: bit 256 excludes only a pet, so the same cone selects the same four creatures, and the case above fails for the bit and not for the picture"
+  Nil
 }
 
 /// Kick's area (58591) with its row's order and count replaced.
