@@ -2962,7 +2962,9 @@ pub fn an_esper_presses_phantasmal_armor_at_a_player_in_sight_and_that_player_re
   }
   let #(medic_read, second_have) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
-      child_starts(frames) != [] && child_gos(frames) != []
+      child_starts(frames) != []
+      && child_gos(frames) != []
+      && armors_in(frames:, unit: medic) != []
     })
   let assert [child_start] = child_starts(medic_read)
     as "the Medic's client is told the child once"
@@ -2981,11 +2983,6 @@ pub fn an_esper_presses_phantasmal_armor_at_a_player_in_sight_and_that_player_re
   // The Medic's own armor is written by its own connection when the Esper's connection
   // tells it the change, so it is waited for by itself, not by its order against the child's
   // frames.
-  let #(armor_read, second_have) =
-    game_client.read_until(game: second, have: second_have, found: fn(frames) {
-      armors_in(frames:, unit: medic) != []
-    })
-  let medic_read = list.append(medic_read, armor_read)
   let #(esper_read, first_have) =
     game_client.read_until(game: first, have: first_have, found: fn(frames) {
       child_gos(frames) != [] && armors_in(frames:, unit: medic) != []
