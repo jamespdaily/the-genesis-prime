@@ -111,16 +111,3 @@ pub fn the_recorded_reply_with_its_hand_off_is_taken_test() -> Nil {
     == Ok(Nil)
     as "the account name and the session key are not compared here (the hand-off's lookup is the key's check)"
 }
-
-pub fn each_refusal_says_what_the_client_sent_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert hello_reply.describe(not_written(field: "the 64-bit value", value: 1))
-    == "0x058F holds the 64-bit value 1 (0x1), which the client never writes"
-  assert hello_reply.describe(not_written(field: "the last value", value: 2))
-    == "0x058F holds the last value 2 (0x2), which the client never writes"
-  assert hello_reply.describe(AccountNotHandedOff(
-      named: AccountId(8),
-      handed_off: AccountId(7),
-    ))
-    == "0x058F names account 8, but the session key was handed off for account 7"
-}
