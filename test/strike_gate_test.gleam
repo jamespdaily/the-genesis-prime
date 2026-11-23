@@ -37,14 +37,18 @@ import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast/state.{type Caster, GoAsked} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
+import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/prerequisite.{NonPlayer}
 import genesis_prime/game/spell_area.{
   type DamageEffect, type TickingDamage, Once, TickingDamage,
 }
 import genesis_prime/game/spell_plan.{
-  type Condition, type CrowdControl, AimsAtArea, GatedOnTarget,
+  type Condition, type CrowdControl, AimsAtArea, AimsAtPrimaryTarget,
+  GatedOnTarget,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/start_place
@@ -53,13 +57,14 @@ import genesis_prime/game/strike.{
 }
 import genesis_prime/game/strike_tell.{Answered, Landed, Refused}
 import genesis_prime/game/ticking
-import genesis_prime/step.{LogDebug, Now}
+import genesis_prime/step.{ConnectionId, LogDebug, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/list
 import gleam/option.{None}
 import gleam/string
+import map_support
 import owned_test
 import prerequisite_support
 import rating_support
@@ -153,6 +158,8 @@ fn selection(
     ticking:,
     controls:,
     gates: [],
+    players: [],
+    heals: [],
   )
 }
 
@@ -205,7 +212,8 @@ fn told(effects effects: List(Effect)) -> List(#(Int, List(Int), List(Int))) {
           list.map(offence.blows, fn(blow) { blow.spell4_effects_id }),
           list.map(controls, fn(control) { control.effect_id }),
         ))
-      strike.StartTimer(..)
+      strike.TellPlayerStrike(..)
+      | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
       | strike.Ticked(..)
@@ -225,6 +233,7 @@ fn went(effects effects: List(Effect)) -> List(cast_state.Struck) {
     case effect {
       strike.Went(struck:, ..) -> struck
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Ticked(..)
@@ -249,6 +258,7 @@ fn logs(effects effects: List(Effect)) -> List(#(step.LogLevel, String)) {
     case effect {
       strike.Log(level:, text:) -> Ok(#(level, text))
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Went(..)
@@ -263,6 +273,7 @@ fn timers(effects effects: List(Effect)) -> List(Effect) {
     case effect {
       strike.StartTimer(..) | strike.CancelTimer(..) -> True
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.Went(..)
       | strike.Ticked(..)
       | strike.Released(..)
@@ -405,6 +416,108 @@ fn poses_of_unit_10() -> dict.Dict(Int, Pose) {
   dict.from_list([#(10, prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0))])
 }
 
+// ---- the heal rows a go tells a player ----
+
+/// The player 9 on connection 3, which a heal row is told to.
+fn ally() -> PlayerAddress {
+  PlayerAddress(
+    connection: ConnectionId(3),
+    unit_id: 9,
+    stay: map_support.stay(count: 2),
+  )
+}
+
+/// Mind Over Body's real row 62019 as an instant heal of the primary target, behind the
+/// real prerequisites `caster_apply` and `target_apply` (0 for none): no tier of the spell
+/// that holds a gate is in the fixture, so the row is edited to hold one of the file's real
+/// gates (3286 and 860, type 37 rolls).
+fn heal_row(
+  caster_apply caster_apply: Int,
+  target_apply target_apply: Int,
+) -> spell_area.InstantHeal {
+  let assert Ok(condition) =
+    spell_plan.row_condition_of(
+      tables: fixture_tables.shared(),
+      effect: spell4_effects.Spell4Effects(
+        ..effect_row(id: 62_019),
+        prerequisite_id_caster_apply: caster_apply,
+        prerequisite_id_target_apply: target_apply,
+      ),
+      aim: AimsAtPrimaryTarget,
+    )
+    as "a heal row behind real prerequisites is read"
+  spell_area.InstantHeal(
+    effect_id: Spell4EffectsId(62_019),
+    vital: effect_kind.Health,
+    aim: AimsAtPrimaryTarget,
+    condition:,
+    formula: damage.Formula(multiplier: 1.0, base: 10.0, parameters: []),
+  )
+}
+
+/// The same row with another id and no gate.
+fn ungated_heal_row(effect_id effect_id: Int) -> spell_area.InstantHeal {
+  spell_area.InstantHeal(
+    ..heal_row(caster_apply: 0, target_apply: 0),
+    effect_id: Spell4EffectsId(effect_id),
+  )
+}
+
+/// The go of the player 9 as the primary target, struck with these heal rows and no creature.
+fn heal_selection(heals heals: List(spell_area.InstantHeal)) -> Selection {
+  let alone = selection(units: [], blows: [], ticking: [], controls: [])
+  Selection(
+    ..alone,
+    asked: GoAsked(..alone.asked, primary_target: 9),
+    players: [ally()],
+    heals:,
+  )
+}
+
+/// The Spell4Effects ids of the heal rows each heal strike told carries.
+fn told_heals(effects effects: List(Effect)) -> List(List(Int)) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      strike.TellPlayerStrike(strike:, ..) ->
+        Ok(list.map(strike.heals, fn(heal) { heal.effect_id.value }))
+      strike.TellStrike(..)
+      | strike.StartTimer(..)
+      | strike.CancelTimer(..)
+      | strike.Went(..)
+      | strike.Ticked(..)
+      | strike.Released(..)
+      | strike.Log(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether a round closed in these effects.
+fn closed(effects effects: List(Effect)) -> Bool {
+  list.any(effects, fn(effect) {
+    case effect {
+      strike.Went(..) -> True
+      strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
+      | strike.StartTimer(..)
+      | strike.CancelTimer(..)
+      | strike.Ticked(..)
+      | strike.Released(..)
+      | strike.Log(..) -> False
+    }
+  })
+}
+
+type HealRow {
+  HealRow(
+    reason: String,
+    heals: List(spell_area.InstantHeal),
+    gate_rolls: List(Int),
+    told: List(List(Int)),
+    timer_started: Bool,
+    logs: Int,
+  )
+}
+
 // ---- tests ----
 
 pub fn damage_row_behind_target_gate_strikes_only_passing_units_test() -> Nil {
@@ -532,7 +645,8 @@ pub fn control_behind_target_gate_is_told_only_to_passing_units_test() -> Nil {
     list.filter(effects, fn(effect) {
       case effect {
         strike.TellStrike(..) -> True
-        strike.StartTimer(..)
+        strike.TellPlayerStrike(..)
+        | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
         | strike.Ticked(..)
@@ -620,6 +734,112 @@ pub fn unit_whose_every_row_fails_is_named_by_the_go_without_a_tell_test() -> Ni
   Nil
 }
 
+pub fn a_heal_row_reaches_a_player_only_past_its_gates_and_the_rows_around_it_still_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 62019 behind caster apply 3286 (a type 37 roll, at most 60 passes) or target apply
+  // 860 (a type 37 roll, at most 10 passes), or behind 5734 (a type 108 condition, which
+  // reads the unit's place: the player has none in the caster's picture, so it is unread).
+  let behind =
+    prerequisite_support.prerequisite_of_arcs(
+      row: prerequisite_support.row(id: 5734, flags: 0, conditions: [
+        #(108, 1, 53, 0),
+      ]),
+      arcs: [prerequisite_support.behind_arc()],
+    )
+  let unread_heal =
+    spell_area.InstantHeal(
+      ..heal_row(caster_apply: 0, target_apply: 0),
+      condition: GatedOnTarget(prerequisite: behind),
+    )
+  list.each(
+    [
+      HealRow(
+        "the caster gate passes on a roll of 1: the row is told, the round waits for the answer",
+        [heal_row(caster_apply: 3286, target_apply: 0)],
+        [word_for(roll: 1)],
+        [[62_019]],
+        True,
+        0,
+      ),
+      HealRow(
+        "the caster gate fails on a roll of 100: no tell, no place, no timer, and the go names no one",
+        [heal_row(caster_apply: 3286, target_apply: 0)],
+        [word_for(roll: 100)],
+        [],
+        False,
+        0,
+      ),
+      HealRow(
+        "the target gate fails for the player on a roll of 50: the same",
+        [heal_row(caster_apply: 0, target_apply: 860)],
+        [word_for(roll: 50)],
+        [],
+        False,
+        0,
+      ),
+      HealRow(
+        "a target gate the server cannot read (the player has no place) leaves that row out with one debug line, and the ungated row beside it is told",
+        [unread_heal, ungated_heal_row(effect_id: 62_020)],
+        [],
+        [[62_020]],
+        True,
+        1,
+      ),
+      HealRow(
+        "two rows where the first fails its gate: the tell holds the second alone",
+        [
+          heal_row(caster_apply: 3286, target_apply: 0),
+          ungated_heal_row(effect_id: 62_020),
+        ],
+        [word_for(roll: 100)],
+        [[62_020]],
+        True,
+        0,
+      ),
+    ],
+    fn(row) {
+      let chosen = heal_selection(heals: row.heals)
+      let #(_, effects) =
+        begun(
+          selection: chosen,
+          gate: gate_of(caster: support.caster(), creatures: []),
+          entropy: entropy(rolls: [], gate: row.gate_rolls),
+        )
+      assert told_heals(effects:) == row.told as row.reason
+      assert timers(effects:)
+        == case row.timer_started {
+          True -> [
+            strike.StartTimer(timer: strike.strike_timer, after_ms: 1000),
+          ]
+          False -> []
+        }
+        as row.reason
+      assert list.length(logs(effects:)) == row.logs as row.reason
+      assert closed(effects:) == list.is_empty(row.told)
+        as "a go that told nobody closes at once, and one that told the player waits for its answer"
+      assert struck_ids(struck: went(effects:)) == []
+        as "the player is never named before it answers"
+    },
+  )
+  let #(_, unread) =
+    begun(
+      selection: heal_selection(heals: [
+        spell_area.InstantHeal(
+          ..heal_row(caster_apply: 0, target_apply: 0),
+          condition: GatedOnTarget(prerequisite: behind),
+        ),
+      ]),
+      gate: gate_of(caster: support.caster(), creatures: []),
+      entropy: entropy(rolls: [], gate: []),
+    )
+  let assert [#(LogDebug, text)] = logs(effects: unread)
+    as "one debug line says the row on the player is behind a prerequisite the server cannot tell"
+  assert string.contains(text, "heal effect 62019")
+  assert string.contains(text, "unit 9")
+  assert string.contains(text, "5734")
+  assert string.contains(text, "type 108")
+}
+
 pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test() -> Nil {
   use <- owned_test.run(5000)
   // Row 99347's caster gate 3286 takes one roll (at most 60 passes), and row 115034's
@@ -665,6 +885,7 @@ pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test()
           ..,
         ) -> Ok(rolls)
         strike.TellStrike(..)
+        | strike.TellPlayerStrike(..)
         | strike.StartTimer(..)
         | strike.CancelTimer(..)
         | strike.Went(..)
@@ -679,6 +900,39 @@ pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test()
       Rolls(crit: 0.5, deflect: 0.0, glance: 0.75),
     ]
     as "each unit's hit rolls are read at the offsets they have with no gate"
+  // A player primary target with a heal row behind caster apply 3286 and target apply 860:
+  // it adds one caster roll and one target roll for the player after the states', takes no
+  // hit-roll bytes, and its rolls are the fourth and fifth words.
+  let healing =
+    Selection(
+      ..chosen,
+      asked: GoAsked(..chosen.asked, primary_target: 9),
+      players: [ally()],
+      heals: [heal_row(caster_apply: 3286, target_apply: 860)],
+    )
+  assert strike.entropy_needed(selection: healing)
+    == 2 * 12 + 5 * prerequisite.roll_bytes
+    as "12 bytes for each of the two creatures, then the rolls of the states (one for the caster gate and one for each unit) and the heal row's one caster roll and one target roll for the player: none of the player's is a hit roll"
+  let #(_, with_heal) =
+    begun(
+      selection: healing,
+      gate: gate_of(caster: support.caster(), creatures: []),
+      entropy: entropy(
+        rolls: [#(1_073_741_824, 0, 0), #(2_147_483_648, 0, 3_221_225_472)],
+        gate: [
+          word_for(roll: 1),
+          word_for(roll: 5),
+          word_for(roll: 50),
+          word_for(roll: 1),
+          word_for(roll: 50),
+        ],
+      ),
+    )
+  assert told(effects: with_heal)
+    == [#(10, [], [99_347, 115_034]), #(11, [], [99_347])]
+    as "the states take the first three rolls as before"
+  assert told_heals(effects: with_heal) == []
+    as "the heal row takes the rolls after the states': the caster roll 1 passes and the player's roll 50 fails the target gate 860 (read before the states', it would have been given the rolls 1 and 5 and told)"
 }
 
 pub fn a_gate_unread_at_run_time_drops_the_row_for_that_unit_with_a_debug_line_test() -> Nil {

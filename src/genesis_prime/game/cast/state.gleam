@@ -421,6 +421,9 @@ pub type HitUnit {
   HitCreature(life: Int, struck_at_ms: Int)
   /// A player a creature's attack struck (genesis_prime/world_map/creature_fight).
   HitPlayer
+  /// A player another player's cast healed (genesis_prime/game/strike `player_answered`):
+  /// the heal rows it applied itself, each with the split of its amount (`HealLanded`).
+  HitOtherPlayer(heals: List(strike_tell.HealLanded))
 }
 
 /// A property modifier a cast started on a creature: the creature's unit, the life

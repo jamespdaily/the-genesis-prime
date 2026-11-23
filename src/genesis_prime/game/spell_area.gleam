@@ -43,6 +43,10 @@
 ////   only the effects and Proxies whose tag holds for the points the cast spent above
 ////   its base cost, then works out `selects_area`, `strikes_primary_target` and
 ////   `ticks_on_area` from what is left. A cast with no spend keeps every effect.
+//// - **An instant heal row aimed at the primary target** (`PhaseStrike.heals`, from
+////   `Spell4Effects.targetFlags` bit 2 with no delay and no tickTime) is a row a go tells the
+////   player that is the primary target; a row with a delay or a tickTime, and one aimed at the
+////   caster or the area alone, is not in it.
 //// - **A periodic damage row** (a tickTime) strikes the units of its go once for each
 ////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
@@ -189,6 +193,19 @@ pub type TickingDamage {
   TickingDamage(damage: DamageEffect, schedule: ticking.Schedule)
 }
 
+/// An instant heal row of a phase aimed at the cast's primary target: the row a go tells
+/// the player that is its primary target, which heals itself by its own rule
+/// (genesis_prime/game/strike `player_answered`). A row with a delay or a period is not one.
+pub type InstantHeal {
+  InstantHeal(
+    effect_id: Spell4EffectsId,
+    vital: effect_kind.Vital,
+    aim: Aim,
+    condition: spell_plan.Condition,
+    formula: Formula,
+  )
+}
+
 /// A damage row as the area reads it: one that strikes once at its go, or one that
 /// strikes once for each tick.
 pub type RowDamage {
@@ -219,8 +236,13 @@ pub type PhaseStrike {
     /// Proxy that starts its spell on each struck unit (genesis_prime/game/spell_plan
     /// `OnEachStruck`).
     selects_area: Bool,
+    /// The instant heal rows of the phase aimed at the cast's primary target, which a go
+    /// tells the player that is its primary target.
+    heals: List(InstantHeal),
     /// Whether the phase strikes the cast's own target: a damage effect (periodic or
-    /// not), a crowd-control state or a property change of struck units aimed at it.
+    /// not), a crowd-control state or a property change of struck units aimed at it. A heal
+    /// is not counted: a go tells a player its heals through `heals`, and a creature is
+    /// not the target of a heal.
     strikes_primary_target: Bool,
     /// Whether the phase arms a periodic Proxy aimed at the area, which finds the units
     /// inside the area at each of its ticks and strikes nobody at the go.
@@ -1356,6 +1378,33 @@ fn phase_of(
     || list.any(changes, reaches)
   }
   PhaseStrike(
+    heals: list.filter_map(
+      spell_plan.in_phase(
+        spell: spell.spell,
+        phase:,
+        spent:,
+        as_kind: spell_plan.as_heal,
+      ),
+      fn(heal) {
+        case heal {
+          spell_plan.Heal(
+            effect_id:,
+            vital:,
+            aim:,
+            condition:,
+            formula:,
+            delay_ms: 0,
+            ..,
+          ) ->
+            case spell_plan.reaches_primary_target(aim:) {
+              True ->
+                Ok(InstantHeal(effect_id:, vital:, aim:, condition:, formula:))
+              False -> Error(Nil)
+            }
+          spell_plan.Heal(..) | spell_plan.TickingHeal(..) -> Error(Nil)
+        }
+      },
+    ),
     damage: list.filter(firing, fn(effect) {
       spell_plan.reaches_past_caster(aim: effect.aim)
     }),

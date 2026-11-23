@@ -1124,7 +1124,7 @@ pub fn a_heal_aimed_at_another_unit_lands_nothing_test() -> Nil {
   let assert [#(LogDebug, line)] = support.logs(effects: on_struck)
     as "one debug line says why"
   assert string.contains(line, "62019")
-    && string.contains(line, "the server heals no other unit")
+    && string.contains(line, "lands nothing here")
     && !string.contains(line, "#")
     as "it names the row and says what is missing, with no issue named"
 }

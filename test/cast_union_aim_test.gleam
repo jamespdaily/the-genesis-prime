@@ -230,7 +230,7 @@ pub fn union_heal_reaches_each_unit_once_and_heals_only_the_caster_test() -> Nil
     as "one debug line says the creature 20 is not healed"
   assert string.contains(line, "123870")
     && string.contains(line, "unit 20")
-    && string.contains(line, "the server heals no other unit")
+    && string.contains(line, "lands nothing here")
     as "it names the row, the unit and what is missing"
   assert support.child_go_listing(effects:) == [#(7, [123_870]), #(21, [])]
     as "the go lists the heal on the caster alone: the creature 20 lands nothing, and struck unit 21 lists none because the area bit is not read in a spell that hits no foes (#834)"

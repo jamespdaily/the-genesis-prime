@@ -166,8 +166,8 @@ import genesis_prime/game/cast/state.{
   ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
   CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
   FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
-  HeldProc, Hit, HitCreature, HitPlayer, Immune, Log, Look, ModifierEnd,
-  ModifierStart, NodesEnd, Pay, ProcDue, Property, QuestAdvanceDue,
+  HeldProc, Hit, HitCreature, HitOtherPlayer, HitPlayer, Immune, Log, Look,
+  ModifierEnd, ModifierStart, NodesEnd, Pay, ProcDue, Property, QuestAdvanceDue,
   QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast, StartChild,
   StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
   TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell, Tick,
@@ -300,7 +300,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
 /// hits and a spell that only selects a unit (no description) raises none; then a taunt
 /// landed for each Taunt state the creature took, a guarded creature's included. A
 /// deflected unit raises a deflect and no hit, and an immune one no hit, and a player
-/// a creature's attack hit is not the holder's strike (a guess for each description
+/// a creature's attack hit, or another player healed, is not the holder's strike (a guess for each description
 /// counting, for a deflect, an immunity, a finisher critical and a taunt: no client code
 /// reads a Proc row, `Spell4Effects.effectType.14.client_evaluation`).
 pub fn hit_events(
@@ -326,7 +326,10 @@ pub fn hit_events(
       Immune(unit_id:, unit: HitCreature(..), controls:, ..) ->
         taunts_landed(unit_id:, controls:, on:)
       Deflected(unit_id:) -> [on(unit_id, spell_plan.FoeDeflects)]
-      Hit(unit: HitPlayer, ..) | Immune(unit: HitPlayer, ..) -> []
+      Hit(unit: HitPlayer, ..)
+      | Immune(unit: HitPlayer, ..)
+      | Hit(unit: HitOtherPlayer(..), ..)
+      | Immune(unit: HitOtherPlayer(..), ..) -> []
     }
   })
 }

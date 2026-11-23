@@ -122,7 +122,7 @@ import genesis_prime/game/shown
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_surge
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell.{type Answered}
+import genesis_prime/game/strike_tell.{type Answered, type PlayerAnswered}
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_state
 import genesis_prime/game/world_entry
@@ -717,6 +717,30 @@ pub fn target_taken(
 ) -> client_connection.Handled(Session) {
   let #(updated, effects) =
     strike.answered(strike: entered.strike, answer: answered, now:)
+  round_carried(session:, now:, updated:, effects:)
+}
+
+/// A healed player's answer to a heal this player told in this stay (`stay_sent`): filed
+/// as a creature's is, so the round that closes is the cast rule's `went`
+/// (genesis_prime/game/strike `player_answered`).
+pub fn player_taken(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  answered answered: PlayerAnswered,
+) -> client_connection.Handled(Session) {
+  let #(updated, effects) =
+    strike.player_answered(strike: entered.strike, answer: answered, now:)
+  round_carried(session:, now:, updated:, effects:)
+}
+
+/// The strike state an answer left and the effects it asked for, carried out in order.
+fn round_carried(
+  session session: Session,
+  now now: Now,
+  updated updated: strike.State,
+  effects effects: List(strike.Effect),
+) -> client_connection.Handled(Session) {
   let #(session, written) =
     carry_strike(
       session: with_strike(session:, strike: updated),
@@ -1659,7 +1683,11 @@ fn strike_begins(
     )
   let #(link, entropy) =
     client_connection.draw(session.link, strike.entropy_needed(selection:))
-  let unit_ids = list.map(selection.units, fn(aimed) { aimed.unit_id })
+  let unit_ids =
+    list.append(
+      list.map(selection.units, fn(aimed) { aimed.unit_id }),
+      list.map(selection.players, fn(address) { address.unit_id }),
+    )
   let gate =
     cast_tick.strike_gate(
       cast: entered.cast,
@@ -1789,6 +1817,10 @@ fn attacker_of(
     stats: stats_of(tables: session.settings.tables, entered:),
     vitals: player_life.vitals(life: entered.life),
     properties: entered.properties,
+    players_in_sight: player_address.in_sight(
+      viewers: entered.viewers,
+      picture: entered.shown,
+    ),
   )
 }
 
@@ -1838,6 +1870,15 @@ fn strike_carried_out(
             life:,
           ),
           request: client_connection.TellStrike(tell:),
+        )),
+      ])
+      strike.TellPlayerStrike(address:, strike:), Some(_) -> #(session, [
+        OwnEffect(step.Tell(
+          to: step.Connection(connection: address.connection),
+          request: client_connection.TellPlayerStrike(
+            stay: address.stay,
+            strike:,
+          ),
         )),
       ])
       strike.StartTimer(timer:, after_ms:), Some(_) -> #(session, [

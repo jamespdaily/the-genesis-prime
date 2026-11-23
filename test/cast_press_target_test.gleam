@@ -25,16 +25,21 @@ import cast_support as support
 import class_resource_support
 import genesis_prime/game/activate
 import genesis_prime/game/cast
+import genesis_prime/game/cast/heal as cast_heal
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Spell}
+import genesis_prime/game/strike_tell
 import genesis_prime/game/target_mechanic.{Targeted, Targeting}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_go
 import genesis_prime/step.{ConnectionId, LogWarning}
-import genesis_prime/table/id.{Spell4BaseId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option
@@ -271,6 +276,60 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
   assert support.caster_change_starts(effects: list.append(pressed, after))
     == []
     as "no heal is carried for the caster: a heal on another unit lands nothing until the target applies it"
+  // The ally's connection applied the heal and the go's round names it as a player another
+  // player healed.
+  let healed =
+    cast_state.Hit(
+      unit_id: ally,
+      unit: cast_state.HitOtherPlayer(heals: [
+        strike_tell.HealLanded(
+          effect_id: Spell4EffectsId(62_019),
+          vital: effect_kind.Health,
+          split: heal_split.Split(
+            amount: 121,
+            shield: 0,
+            health: 100,
+            overheal: 21,
+          ),
+        ),
+      ]),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  let #(_, answered_steps) =
+    support.run_timers_each(
+      caster:,
+      state:,
+      effects: pressed,
+      from_ms: 1000,
+      struck_of: fn(_) { [healed] },
+    )
+  let answered = list.flat_map(answered_steps, fn(step) { step.1 })
+  assert targets_named(effects: answered) == [ally]
+    as "the go's 0x7f4 names the ally it healed"
+  assert listed(effects: answered) == []
+    as "and lists no effect on it: the heal's description is not built yet, so the ally has none"
+  assert support.caster_change_starts(effects: list.append(pressed, answered))
+    == []
+    as "the ally's heal is carried for the ally alone: still none for the caster"
+  assert cast_heal.ticking_struck(struck: [healed]) == []
+    as "a player another player healed arms no periodic row"
+  assert cast_proc.hit_events(spell: mind_over_body(), struck: [healed]) == []
+    as "and raises no proc event for the healer"
+}
+
+/// The unit ids the effects' 0x7f4 names as targets, in order.
+fn targets_named(effects effects: List(Effect)) -> List(Int) {
+  list.flat_map(
+    support.frames_of(message_id: spell_go.message_id, effects:),
+    fn(frame) {
+      let assert Ok(go) = spell_go.decode(frame.body)
+        as "a 0x7f4 the rule wrote decodes"
+      list.map(go.targets, fn(target) { target.unit_id })
+    },
+  )
 }
 
 // ---- the kind of the spell ----

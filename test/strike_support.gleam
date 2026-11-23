@@ -5,13 +5,21 @@ import attacker_support
 import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/damage
-import genesis_prime/game/shown.{Exile}
+import genesis_prime/game/effect_kind
+import genesis_prime/game/shown.{Exile, ShownCreature}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
 import genesis_prime/game/spend
 import genesis_prime/game/strike.{type Attacker, Attacker}
+import genesis_prime/game/strike_tell
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
+import genesis_prime/world_map/creature_life.{type Attackable, Hostile}
+import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/stay.{type Stay}
+import gleam/dict
+import gleam/list
+import gleam/option.{type Option}
 import map_support
 import place_support
 import properties_support
@@ -36,6 +44,39 @@ pub fn attacker() -> Attacker {
     stats: attacker_support.fresh(),
     vitals: attacker_support.novice_vitals(),
     properties: properties_support.fresh(level: 1),
+    players_in_sight: dict.new(),
+  )
+}
+
+/// The heal strike of the caster's connection `from` on the unit `unit_id`, for the cast
+/// `cast_id`'s first phase: the caster's stay `stay` (which the answer is told for), the
+/// caster's HealingMultiplierOutgoing `outgoing` and the heal rows `heals` in order, each
+/// healing the vital by the amount before any multiplier. The row `index` is
+/// Spell4Effects 62019 + `index`, which the answer echoes.
+pub fn heal_strike(
+  from from: step.ConnectionId,
+  stay stay: Stay,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+  outgoing outgoing: Float,
+  heals heals: List(#(effect_kind.Vital, Int)),
+) -> strike_tell.PlayerStrike {
+  strike_tell.PlayerStrike(
+    key: strike_tell.Key(
+      cast_id:,
+      occasion: strike_tell.AtGo(phase: 0),
+      unit_id:,
+    ),
+    from:,
+    stay:,
+    outgoing:,
+    heals: list.index_map(heals, fn(heal, index) {
+      strike_tell.HealTell(
+        effect_id: Spell4EffectsId(62_019 + index),
+        vital: heal.0,
+        amount: heal.1,
+      )
+    }),
   )
 }
 
@@ -64,4 +105,49 @@ pub fn damage_effect() -> spell_area.DamageEffect {
 /// tests that are behind no apply prerequisite.
 pub fn passes_all() -> cast_state.StrikeGate {
   fn(_, _, _, rolls) { #(cast_state.Starts, rolls) }
+}
+
+/// A standing creature of Creature2 73464 at `x`, `z` in world 3460, a foe of nobody or
+/// both factions by `attackable`.
+pub fn creature_at(
+  x x: Float,
+  z z: Float,
+  alive alive: Bool,
+  attackable attackable: Attackable,
+) -> shown.Shown {
+  creature_facing(x:, z:, alive:, attackable:, faced_yaw: option.None)
+}
+
+/// The same creature held to the yaw `faced_yaw` by its owner's news, or facing as its place
+/// does with none.
+pub fn creature_facing(
+  x x: Float,
+  z z: Float,
+  alive alive: Bool,
+  attackable attackable: Attackable,
+  faced_yaw faced_yaw: Option(Float),
+) -> shown.Shown {
+  ShownCreature(
+    creature_id: Creature2Id(73_464),
+    faction_id: 0,
+    checklist_index: 0,
+    path: creature_path.Standing(at: place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x:,
+      y: 0.0,
+      z:,
+    )),
+    life: 4,
+    alive:,
+    hit_radius: 3.0,
+    attackable:,
+    hostile_to: Hostile(exile: False, dominion: False),
+    in_combat: False,
+    held: [],
+    unit_states: [],
+    face: option.None,
+    faced_yaw:,
+    fights: True,
+  )
 }

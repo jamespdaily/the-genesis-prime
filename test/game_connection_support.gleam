@@ -93,7 +93,7 @@ import genesis_prime/store.{
   SavePlace, Unavailable,
 }
 import genesis_prime/table/id.{
-  ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4EffectsId, Spell4Id,
+  ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
 }
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
@@ -117,6 +117,7 @@ import planted_table
 import projector_support
 import server_proxy_support
 import spawn_support
+import strike_support
 import tutorial_support
 import world_entry_support
 import zone_welcome_support
@@ -2585,23 +2586,56 @@ pub fn a_player_strike(
   outgoing outgoing: Float,
   heals heals: List(#(effect_kind.Vital, Int)),
 ) -> client_connection.StaySent {
-  client_connection.SentByStriker(strike: strike_tell.PlayerStrike(
+  client_connection.SentByStriker(strike: strike_support.heal_strike(
+    from: ConnectionId(from),
+    stay:,
+    cast_id:,
+    unit_id: own_unit_id,
+    outgoing:,
+    heals:,
+  ))
+}
+
+/// The healed player's answer a caster's connection takes for its stay: `outcome` to the
+/// heal strike of the cast `cast_id`'s first phase on the unit `unit_id`.
+pub fn an_answer_from_a_player(
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+  outcome outcome: strike_tell.PlayerOutcome,
+) -> client_connection.StaySent {
+  client_connection.SentByHealed(answered: strike_tell.PlayerAnswered(
     key: strike_tell.Key(
       cast_id:,
       occasion: strike_tell.AtGo(phase: 0),
-      unit_id: own_unit_id,
+      unit_id:,
     ),
-    from: ConnectionId(from),
-    stay:,
-    outgoing:,
-    heals: list.index_map(heals, fn(heal, index) {
-      strike_tell.HealTell(
-        effect_id: Spell4EffectsId(62_019 + index),
-        vital: heal.0,
-        amount: heal.1,
-      )
-    }),
+    outcome:,
   ))
+}
+
+/// What a step tells other processes: the address and the request, in the order told.
+pub fn tells(taken: ConnectionStep(Request)) -> List(#(step.Address, Request)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to:, request:)) -> Ok(#(to, request))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The heal strikes a step tells the connections of players: the address, the stay the
+/// strike is told for and the strike, in the order told.
+pub fn player_strikes(
+  taken: ConnectionStep(Request),
+) -> List(#(step.Address, Stay, strike_tell.PlayerStrike)) {
+  list.filter_map(tells(taken), fn(told) {
+    case told.1 {
+      client_connection.TellPlayerStrike(stay:, strike:) ->
+        Ok(#(told.0, stay, strike))
+      _ -> Error(Nil)
+    }
+  })
 }
 
 /// The answers a step tells the connections of casters: the caster's connection, the
@@ -2609,14 +2643,13 @@ pub fn a_player_strike(
 pub fn player_answers(
   taken: ConnectionStep(Request),
 ) -> List(#(Int, Stay, strike_tell.PlayerAnswered)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Connection(ConnectionId(caster)),
-        request: client_connection.TellPlayerAnswer(stay:, answered:),
-      )) -> Ok(#(caster, stay, answered))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
+  list.filter_map(tells(taken), fn(told) {
+    case told {
+      #(
+        step.Connection(ConnectionId(caster)),
+        client_connection.TellPlayerAnswer(stay:, answered:),
+      ) -> Ok(#(caster, stay, answered))
+      #(_, _) -> Error(Nil)
     }
   })
 }

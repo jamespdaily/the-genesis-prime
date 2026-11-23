@@ -466,6 +466,8 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
       controls: [],
       ticking: [],
       gates: [],
+      players: [],
+      heals: [],
     )
   let #(round, begun) =
     strike.begin(
@@ -515,6 +517,7 @@ fn closed_rounds(effects effects: List(strike.Effect)) -> List(strike.Effect) {
     case effect {
       strike.Went(..) -> True
       strike.TellStrike(..)
+      | strike.TellPlayerStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
       | strike.Ticked(..)
