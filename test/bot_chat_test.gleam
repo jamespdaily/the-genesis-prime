@@ -1,7 +1,7 @@
 //// The scripted client's chat (`game_client`): the line it reads from a 0x1c8 by
 //// its strSender and text, and the count of lines that would send it to ask a
 //// name (0x597). Saying a line and reading its accept are proven on the whole
-//// server (`game_wire_test`). Expected values come from `opcode.0x1c8` (the
+//// server (`game_wire_chat_test`). Expected values come from `opcode.0x1c8` (the
 //// channel, strSender and text a 0x1c8 carries) and `chat.name_lookup` (no chat
 //// line makes the client ask for a name the line already carries).
 

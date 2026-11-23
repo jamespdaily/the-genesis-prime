@@ -15,8 +15,8 @@ CharacterCustomization	9	Human male look row	character_creation_test
 CharacterCustomization	10	Human male look row	character_select_test
 CharacterCustomization	603	Human female look row	appearance_test
 CharacterCustomization	604	Human female look row	appearance_test
-WorldLocation2	51739	Exile objective circle	game_wire_test
-WorldLocation2	52898	Dominion objective circle	game_wire_test
+WorldLocation2	51739	Exile objective circle	game_wire_quest_test
+WorldLocation2	52898	Dominion objective circle	game_wire_quest_test
 WorldZone	1755	deepest zone chain	top_zone_test
 WorldZone	147	zone whose parent row is missing	top_zone_test
 Creature2	73464	Virtual Battle Beast	spawn_test
@@ -429,7 +429,7 @@ QuestObjective	8781	objective 0 of quest 5855	game_wire_checklist_test
 QuestObjective	8782	type 14 checklist, TargetGroup 2766, count 5	checklist_index_test, game_wire_checklist_test
 TargetGroup	14425	type 1 group of Creature2 73500	checklist_index_test
 TargetGroup	14368	type 1 group of Creature2 73422	checklist_index_test, objective_checklist_test
-TargetGroup	14369	type 1 group of Creature2 73662, the targets of the type 18 objective 21332 of quest 10525	game_wire_test
+TargetGroup	14369	type 1 group of Creature2 73662, the targets of the type 18 objective 21332 of quest 10525	game_wire_quest_test
 TargetGroup	2766	type 1 group of Creature2 26016	checklist_index_test, game_wire_checklist_test
 Creature2	73500	Primal Manifestation, three spawns in World 3460, no activate spell	checklist_index_test
 Creature2	73422	creature of the type 18 objectives 21319 and 21378	checklist_index_test, objective_checklist_test
@@ -439,41 +439,41 @@ Quest2	7153	quest whose only objective is a type 14 checklist of Creature2 34758
 QuestObjective	13230	type 14 objective of TargetGroup 4233, count 10	cast_activate_test, cast_activate_unit_test
 TargetGroup	4233	type 1 group of Creature2 34758	cast_activate_test, cast_activate_unit_test
 QuestObjective	21290	type 8 objective of TargetGroup 14356, count 3, marker 51740	objective_spawn_test
-QuestObjective	21296	type 2 objective of Creature2 73499, count 1, marker 51744	objective_spawn_test, game_wire_test
+QuestObjective	21296	type 2 objective of Creature2 73499, count 1, marker 51744	objective_spawn_test, game_wire_quest_test
 QuestObjective	21310	second type 2 objective of Creature2 73499 at marker 51744, count 1	objective_spawn_test
 QuestObjective	21316	type 2 objective of Creature2 74862, count 2, markers 52902 and 52903	objective_spawn_test
 QuestObjective	21317	type 8 objective of TargetGroup 14402, count 3, marker 53015	objective_spawn_test
-WorldLocation2	51744	objective circle of radius 27 in World 3460	objective_spawn_test, game_wire_test
+WorldLocation2	51744	objective circle of radius 27 in World 3460	objective_spawn_test, game_wire_quest_test
 WorldLocation2	51740	objective circle of radius 38 in World 3460	objective_spawn_test
 WorldLocation2	53015	objective circle of radius 38 in World 3460	objective_spawn_test
 WorldLocation2	52902	objective circle of radius 1 in World 3460	objective_spawn_test
 WorldLocation2	52903	objective circle of radius 1 in World 3460	objective_spawn_test
 TargetGroup	14356	type 1 group of Creature2 73492 and 73567	objective_spawn_test
 TargetGroup	14402	type 1 group of Creature2 73473 and 73566	objective_spawn_test
-Creature2	73499	the boss of objectives 21296 and 21310	objective_spawn_test, game_wire_test
+Creature2	73499	the boss of objectives 21296 and 21310	objective_spawn_test, game_wire_quest_test
 Creature2	73492	member of TargetGroup 14356	objective_spawn_test
 Creature2	73567	member of TargetGroup 14356	objective_spawn_test
 Creature2	73473	member of TargetGroup 14402	objective_spawn_test
 Creature2	73566	member of TargetGroup 14402	objective_spawn_test
 Creature2	74862	turret of objective 21316	objective_spawn_test
-Quest2	10518	the quest holding objective 21290 at its index 5	game_wire_test
-Quest2	10513	quest of the first tutorial circle (21271), a circle pair (21279, optional 21280) and later objectives	objective_place_test, game_wire_test
+Quest2	10518	the quest holding objective 21290 at its index 5	game_wire_creature_test, game_wire_quest_test, game_wire_support
+Quest2	10513	quest of the first tutorial circle (21271), a circle pair (21279, optional 21280) and later objectives	objective_place_test, game_wire_quest_test
 Quest2	10527	quest whose objective index 3 is the finish line (21323)	objective_place_test
 Quest2	7426	quest whose objective 0 (13674) has a marker with a vertical limit of 35	objective_place_test
 Quest2	7413	quest whose objective 0 (13907) has a marker with a vertical limit of 8	objective_place_test
-WorldLocation2	51735	marker of objective 21271 (circle 1)	objective_place_test, game_wire_test
+WorldLocation2	51735	marker of objective 21271 (circle 1)	objective_place_test, game_wire_quest_test
 WorldLocation2	51736	marker of objectives 21279 and 21280 (circle 2)	objective_place_test
 WorldLocation2	51734	marker of the finish line objective 21323	objective_place_test
 WorldLocation2	28530	marker of objective 13674, which has a vertical limit of 35	objective_place_test
 WorldLocation2	44761	marker of objective 13907, which has a vertical limit of 8	objective_place_test
 Quest2	7667	quest whose objective 1 (14205) is a type 22 place with count 10 and marker 30725	objective_place_test
 WorldLocation2	30725	marker of objective 14205, a type 22 objective with count 10	objective_place_test
-Creature2	73463	a tutorial mine whose prerequisiteIdAnimState 41818 names the exile objective of quest 10518 and the dominion one of quest 10524	objective_test, game_wire_test
+Creature2	73463	a tutorial mine whose prerequisiteIdAnimState 41818 names the exile objective of quest 10518 and the dominion one of quest 10524	objective_test, game_wire_creature_test, game_wire_quest_test
 Creature2	12321	a creature whose prerequisiteIdAnimState 12379 names the type 32 objective 4722 of quest 3655	objective_test
 Creature2	4989	a creature whose questAnim columns name quest 2020 objective index 1 (type 5)	objective_test
 Creature2	7952	a creature whose questAnim columns name quest 2731 objective index 0 (type 4)	objective_test
 Creature2	13814	a creature whose questAnim columns link it, faction 219, friendly to both factions	spawn_test
-Quest2	10518	exile tutorial quest whose objective 1 is the type 5 objective of the mine 73463	objective_test, game_wire_test
+Quest2	10518	exile tutorial quest whose objective 1 is the type 5 objective of the mine 73463	objective_test, game_wire_creature_test, game_wire_quest_test, game_wire_support
 Quest2	10524	dominion tutorial quest whose objective 1 is the type 5 objective of the mine 73463	objective_test
 Quest2	3655	quest whose objective 0 is the type 32 objective 4722	objective_test
 Quest2	2731	quest whose objective 0 is the type 4 objective 3422	objective_test
@@ -549,22 +549,22 @@ Creature2	40502	Meloth, third creature of TargetGroup 4793	game_connection_objec
 Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective
 QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective
 Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective
-Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective, game_wire_test
-QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective, game_wire_test
-Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective, game_wire_test
+Creature2	11070	Trapped Survivor, a quest creature that walks a path: activate spell 1817, linked to quest 3480 by Prerequisite 2672	game_connection_objective, game_wire_quest_test
+QuestObjective	4470	type 12 objective of quest 3480, Creature2 11070, count 3	game_connection_objective, game_wire_quest_test
+Quest2	3480	quest whose objective 0 is a use of Creature2 11070	game_connection_objective, game_wire_quest_test
 Prerequisite	2672	anim state of Creature2 11070: type 43 on quests 3479 and 3480	game_connection_objective
-Quest2	3886	Northern Wilds quest: use 13630, use three 13623, turn in at 11066	game_wire_test
-QuestObjective	5053	type 12 objective of quest 3886, Creature2 13630	game_wire_test
-QuestObjective	5052	type 14 objective of quest 3886, TargetGroup 1460	game_wire_test
-QuestObjective	4565	type 8 objective of quest 3480, TargetGroup 1463	game_wire_test
-TargetGroup	1460	group of Creature2 13623, the checklist of objective 5052	game_wire_test
-TargetGroup	1463	kill group of objective 4565	game_wire_test
-Creature2	11061	giver of quest 3480	game_wire_test
-Creature2	13630	activate target of objective 5053	game_wire_test
-Creature2	13623	checklist target of objective 5052	game_wire_test
-Quest2Reward	2192	reward choice of quest 3886	game_wire_test
-Quest2Reward	2430	reward choice of quest 3886	game_wire_test
-Quest2Reward	4767	reward choice of quest 3886	game_wire_test
+Quest2	3886	Northern Wilds quest: use 13630, use three 13623, turn in at 11066	game_wire_quest_test
+QuestObjective	5053	type 12 objective of quest 3886, Creature2 13630	game_wire_quest_test
+QuestObjective	5052	type 14 objective of quest 3886, TargetGroup 1460	game_wire_quest_test
+QuestObjective	4565	type 8 objective of quest 3480, TargetGroup 1463	game_wire_quest_test
+TargetGroup	1460	group of Creature2 13623, the checklist of objective 5052	game_wire_quest_test
+TargetGroup	1463	kill group of objective 4565	game_wire_quest_test
+Creature2	11061	giver of quest 3480	game_wire_quest_test
+Creature2	13630	activate target of objective 5053	game_wire_quest_test
+Creature2	13623	checklist target of objective 5052	game_wire_quest_test
+Quest2Reward	2192	reward choice of quest 3886	game_wire_quest_test
+Quest2Reward	2430	reward choice of quest 3886	game_wire_quest_test
+Quest2Reward	4767	reward choice of quest 3886	game_wire_quest_test
 Creature2	8047	a creature whose activate spell is a channel with activateSpellCastTime 0	cast_activate_test, game_connection_activate_test
 Spell4	5725	the channel Creature2 8047 casts (castTime 3000, channel 0, 3000, 2999)	cast_activate_test, game_connection_activate_test
 Spell4Base	5020	the base of Spell4 5725 (castMethod 1)	cast_activate_test, game_connection_activate_test
@@ -660,14 +660,14 @@ Creature2	52905	creature of TargetGroup 8374	objective_test, quest_log_test, gam
 TargetGroup	8008	reward pane group of objective 16479	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16480	type 8 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
 QuestObjective	16579	type 22 objective of quest 9122	objective_test, quest_log_test, game_connection_objective_test
-Creature2	73667	a tutorial mine whose prerequisiteIdAnimState 41828 names objective index 2 of quest 10518 (21340, marker 51663) and of quest 10524 (21314, marker 52900)	objective_spawn_test, game_wire_test
-Creature2	73668	a tutorial mine whose prerequisiteIdAnimState 41829 names objective index 3 of quest 10518 (21318, marker 51664) and of quest 10524 (21315, marker 52901)	objective_spawn_test, game_wire_test
-WorldLocation2	51662	Exile marker of the mine 73463 (objective 21287) in World 3460	objective_spawn_test, game_wire_test
-WorldLocation2	51663	Exile marker of objective 21340 in World 3460	objective_spawn_test, game_wire_test
-WorldLocation2	51664	Exile marker of objective 21318 in World 3460	objective_spawn_test, game_wire_test
-WorldLocation2	52899	Dominion marker of the mine 73463 (objective 21313) in World 3460	objective_spawn_test, game_wire_test
-WorldLocation2	52900	Dominion marker of objective 21314 in World 3460	objective_spawn_test, game_wire_test
-WorldLocation2	52901	Dominion marker of objective 21315 in World 3460	objective_spawn_test, game_wire_test
+Creature2	73667	a tutorial mine whose prerequisiteIdAnimState 41828 names objective index 2 of quest 10518 (21340, marker 51663) and of quest 10524 (21314, marker 52900)	objective_spawn_test, game_wire_creature_test, game_wire_quest_test
+Creature2	73668	a tutorial mine whose prerequisiteIdAnimState 41829 names objective index 3 of quest 10518 (21318, marker 51664) and of quest 10524 (21315, marker 52901)	objective_spawn_test, game_wire_creature_test, game_wire_quest_test
+WorldLocation2	51662	Exile marker of the mine 73463 (objective 21287) in World 3460	objective_spawn_test, game_wire_creature_test
+WorldLocation2	51663	Exile marker of objective 21340 in World 3460	objective_spawn_test, game_wire_creature_test
+WorldLocation2	51664	Exile marker of objective 21318 in World 3460	objective_spawn_test, game_wire_creature_test
+WorldLocation2	52899	Dominion marker of the mine 73463 (objective 21313) in World 3460	objective_spawn_test, game_wire_creature_test, game_wire_quest_test
+WorldLocation2	52900	Dominion marker of objective 21314 in World 3460	objective_spawn_test, game_wire_creature_test, game_wire_quest_test
+WorldLocation2	52901	Dominion marker of objective 21315 in World 3460	objective_spawn_test, game_wire_creature_test, game_wire_quest_test
 WorldLocation2	9181	marker of objective 4813 in World 426	objective_spawn_test
 WorldLocation2	9182	marker of objective 4813 in World 426	objective_spawn_test
 WorldLocation2	9962	marker of objective 4813 in World 426	objective_spawn_test
@@ -821,17 +821,17 @@ WorldLocation2	51658	Exile Docking Bay landing, zone 5998	projector_test, game_c
 WorldLocation2	51657	Dominion Docking Bay landing, zone 5999	projector_test, game_connection_projector_test, content_load_test
 Quest2	10540	Exile mission quest, objective 1 is the Mission Projector's zone objective 21373	projector_test, game_connection_projector_test, content_load_test
 Quest2	10541	Dominion mission quest, objective 1 is 21376	projector_test, game_connection_projector_test, content_load_test
-Creature2	73419	the tutorial hoverboard, whose activate spell 86744 casts the ride 85563 that restricts the caster	cast_activate_test, game_connection_tutorial_test, game_wire_test
-Creature2	73662	creature of the type 18 objective 21332 of quest 10525	game_wire_test
-Creature2	73663	creature of the type 3 objective 21333 of quest 10525	game_wire_test
-Creature2	73664	creature of the type 3 objective 21334 of quest 10525	game_wire_test
-Creature2	73498	creature of the type 12 objective 21293 of quest 10519	game_wire_test
-Creature2	74745	creature of the type 12 objective 21345 of quest 10519	game_wire_test
-Creature2	74746	creature of the type 12 objective 21346 of quest 10519	game_wire_test
-Creature2	73604	a Simple unit (type 10) that is the type 3 talk target of objective 21326 of quest 10528	interaction_talk_target_test, game_wire_test
-WorldLocation2	51737	marker of objective 21272 (circle 3) of quest 10513	game_wire_test
-WorldLocation2	51703	marker of objective 21321 of quest 10527	game_wire_test
-WorldLocation2	51674	marker of objective 21295 of quest 10520	game_wire_test
+Creature2	73419	the tutorial hoverboard, whose activate spell 86744 casts the ride 85563 that restricts the caster	cast_activate_test, game_connection_tutorial_test, game_wire_quest_test
+Creature2	73662	creature of the type 18 objective 21332 of quest 10525	game_wire_quest_test
+Creature2	73663	creature of the type 3 objective 21333 of quest 10525	game_wire_quest_test
+Creature2	73664	creature of the type 3 objective 21334 of quest 10525	game_wire_quest_test
+Creature2	73498	creature of the type 12 objective 21293 of quest 10519	game_wire_quest_test
+Creature2	74745	creature of the type 12 objective 21345 of quest 10519	game_wire_quest_test
+Creature2	74746	creature of the type 12 objective 21346 of quest 10519	game_wire_quest_test
+Creature2	73604	a Simple unit (type 10) that is the type 3 talk target of objective 21326 of quest 10528	interaction_talk_target_test, game_wire_quest_test
+WorldLocation2	51737	marker of objective 21272 (circle 3) of quest 10513	game_wire_quest_test
+WorldLocation2	51703	marker of objective 21321 of quest 10527	game_wire_quest_test
+WorldLocation2	51674	marker of objective 21295 of quest 10520	game_wire_quest_test
 Creature2	12545	a Simple unit (type 10) that gives and receives quest 3689, faction 219, uiFlags 559	interaction_test, quest_accept_test, quest_turn_in_test
 Quest2	3689	the quest of the Simple unit 12545, which it gives and receives	quest_accept_test, quest_turn_in_test, interaction_test
 Quest2	6647	quest whose objective 11555 is a type 11 cast of Spell4 35436, whose Spell4Effects 212028 is a Knockdown (dataBits00 8) on another unit held until removed, with no prerequisite; the plan drops that row and the spell plans without it, until the issue "A crowd-control state that lasts until removed ends when its spell ends" ends the state with its spell	cast_shortcut_test
@@ -919,8 +919,8 @@ Quest2	6296	quest of a kill, a use of a creature and a hidden scripted objective
 Creature2	45639	Lucy Lazarin, the receiver of quest 6296	objective_hidden_test
 Spell4	27656	a spell with a crowd control row (Spell4Effects 49004, type 4) aimed at the area behind a target gate of types 4 and 38	spell_plan_target_gate_test
 Spell4	29856	a spell with a ForcedMove row (Spell4Effects 53184) aimed at the area behind a target gate of type 4	cast_struck_gate_test
-Creature2	27768	Bramble Trap, the used object of quest 6296 (objective 9659, type 12)	game_wire_test
-Creature2	28112	Trapped Mordesh, the captive that stands at a Bramble Trap of quest 6296	game_wire_test
+Creature2	27768	Bramble Trap, the used object of quest 6296 (objective 9659, type 12)	game_wire_quest_test
+Creature2	28112	Trapped Mordesh, the captive that stands at a Bramble Trap of quest 6296	game_wire_quest_test
 Quest2	6837	quest holding the held objective 12547 (migration 0034)	content_load_test
 Quest2	9150	quest holding the held objective 16521 (migration 0034)	content_load_test
 Quest2	9151	quest holding the held objective 16522 (migration 0034)	content_load_test
@@ -1250,10 +1250,10 @@ SpellLevel	1270	Spellslinger ability after level 1	ability_book_test, experience
 SpellLevel	1144	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1148	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1155	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
-SpellLevel	931	Warrior Flash Bang, level 14 (class 1)	game_wire_test
-SpellLevel	938	Warrior Plasma Wall, level 10 (class 1)	game_wire_test
-SpellLevel	632	Medic Nullifier, level 8 (class 4)	game_wire_test, cast_lasting_test
-SpellLevel	1119	Medic Restrictor, level 12 (class 4)	game_wire_test
+SpellLevel	931	Warrior Flash Bang, level 14 (class 1)	game_wire_cast_test
+SpellLevel	938	Warrior Plasma Wall, level 10 (class 1)	game_wire_ability_test, game_wire_cast_test, game_wire_creature_test, game_wire_item_test
+SpellLevel	632	Medic Nullifier, level 8 (class 4)	game_wire_cast_test, cast_lasting_test
+SpellLevel	1119	Medic Restrictor, level 12 (class 4)	game_wire_cast_test
 Spell4Base	53378	Level Up (castMethod 0)	level_up_test
 Spell4	77398	Level Up tier 1	level_up_test, spell_plan_full_screen_test
 Spell4	77407	Level Up tier 2	level_up_test, spell_plan_full_screen_test
@@ -1521,7 +1521,7 @@ Creature2	50717	Dead Crash Survivor, uiFlags 0x1AF (bit 8)	spawn_test, map_ring_
 Creature2	40115	Road Warrior, flags 0x6093 with an activate spell, uiFlags 0x12F (bit 8)	spawn_test
 Creature2	37723	a kill objective names it (QuestObjective 13958), uiFlags without bit 8	spawn_test
 QuestObjective	13958	type 2, kills Creature2 37723	spawn_test
-Spell4	36201	Malgrave Adventure - Explorer Route Music: one type 17 row 74798 aimed at the primary target with a delay of 1 and flags 2 (held until removed)	cast_frame_test, game_wire_test
+Spell4	36201	Malgrave Adventure - Explorer Route Music: one type 17 row 74798 aimed at the primary target with a delay of 1 and flags 2 (held until removed)	cast_frame_test, game_wire_cast_test
 SpellLevel	1224	Recharge, a Medic's level 14 ability: four Focus shares by the Actuators held and a gain of vital 18	spell_plan_gain_test, cast_gain_test, game_connection_focus_test
 SpellLevel	1267	Meditate, an Esper's level 24 channel of a Focus share	spell_plan_gain_test, cast_gain_test
 Spell4	59882	Recharge tier of 42596: Actuator shares of a per-Actuator Focus share, tiers 59885 to 59889 with a gain of 2 of vital 18 after the cost of 4	spell_plan_gain_test, cast_gain_test
@@ -1545,4 +1545,4 @@ Spell4	35870	Astral Infusion, a Spellslinger level 9 absorb and ticking heal on 
 Spell4	54717	Astral Infusion Surge alternate	cast_union_aim_test
 SpellLevel	1049	Mental Boon, an Esper level 18 ability	game_connection_heal_test
 SpellLevel	1021	Medic Triage, level 9, refused for valid targets of bitmask 256	experience_book_test, game_connection_dev_command_test
-SpellLevel	922	Warrior Augmented Blade, level 24 (class 1)	game_wire_test, spell_plan_later_test, cast_persistence_test, spell_plan_periodic_proxy_test, ticking_test
+SpellLevel	922	Warrior Augmented Blade, level 24 (class 1)	game_wire_cast_test, spell_plan_later_test, cast_persistence_test, spell_plan_periodic_proxy_test, ticking_test
