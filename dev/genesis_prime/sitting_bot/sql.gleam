@@ -52,6 +52,45 @@ where account.login_name = $1
   |> pog.execute(db)
 }
 
+/// A row you get from running the `character_faction` query
+/// defined in `./dev/genesis_prime/sitting_bot/sql/character_faction.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type CharacterFactionRow {
+  CharacterFactionRow(faction_id: Int)
+}
+
+/// The faction of the character with this name, found as the name's unique index
+/// finds it (any case, under the ICU root collation: migration 0005). No character
+/// of the name gives no row.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn character_faction(
+  db: pog.Connection,
+  arg_1: String,
+) -> Result(pog.Returned(CharacterFactionRow), pog.QueryError) {
+  let decoder = {
+    use faction_id <- decode.field(0, decode.int)
+    decode.success(CharacterFactionRow(faction_id:))
+  }
+
+  "-- The faction of the character with this name, found as the name's unique index
+-- finds it (any case, under the ICU root collation: migration 0005). No character
+-- of the name gives no row.
+select faction_id
+from character
+where lower(name collate \"und-x-icu\") = lower($1 collate \"und-x-icu\");
+"
+  |> pog.query
+  |> pog.parameter(pog.text(arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `character_place` query
 /// defined in `./dev/genesis_prime/sitting_bot/sql/character_place.sql`.
 ///
@@ -108,6 +147,126 @@ where lower(name collate \"und-x-icu\") = lower($1 collate \"und-x-icu\");
 "
   |> pog.query
   |> pog.parameter(pog.text(arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// Takes every action bar slot saved for the character with this id ($1), of the
+/// account with this login name ($2), so it shows its new class's bar.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn delete_bot_action_slots(
+  db: pog.Connection,
+  character_id: Int,
+  account_login_name: String,
+) -> Result(pog.Returned(Nil), pog.QueryError) {
+  let decoder = decode.map(decode.dynamic, fn(_) { Nil })
+
+  "-- Takes every action bar slot saved for the character with this id ($1), of the
+-- account with this login name ($2), so it shows its new class's bar.
+delete from character_action_slot
+where character_id = $1
+  and character_id in (
+    select character_id
+    from character
+    join account using (account_id)
+    where account.login_name = $2
+  );
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.parameter(pog.text(account_login_name))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// Takes every item from the character with this id ($1), of the account with
+/// this login name ($2), so the set of its new class can be given in their place.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn delete_bot_items(
+  db: pog.Connection,
+  character_id: Int,
+  account_login_name: String,
+) -> Result(pog.Returned(Nil), pog.QueryError) {
+  let decoder = decode.map(decode.dynamic, fn(_) { Nil })
+
+  "-- Takes every item from the character with this id ($1), of the account with
+-- this login name ($2), so the set of its new class can be given in their place.
+delete from character_item
+where character_id = $1
+  and character_id in (
+    select character_id
+    from character
+    join account using (account_id)
+    where account.login_name = $2
+  );
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.parameter(pog.text(account_login_name))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `equip_bot_character` query
+/// defined in `./dev/genesis_prime/sitting_bot/sql/equip_bot_character.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type EquipBotCharacterRow {
+  EquipBotCharacterRow(character_id: Int)
+}
+
+/// Makes the character with this id ($1), of the account with this login name
+/// ($5), a character of class $2 and faction $3 at level $4: it holds no saved
+/// experience, so its level is the one given, and no saved health, so it enters
+/// at full health. Only a character of that account is changed: no character of
+/// that id of that account gives no row.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn equip_bot_character(
+  db: pog.Connection,
+  character_id: Int,
+  arg_2: Int,
+  arg_3: Int,
+  arg_4: Int,
+  arg_5: String,
+) -> Result(pog.Returned(EquipBotCharacterRow), pog.QueryError) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    decode.success(EquipBotCharacterRow(character_id:))
+  }
+
+  "-- Makes the character with this id ($1), of the account with this login name
+-- ($5), a character of class $2 and faction $3 at level $4: it holds no saved
+-- experience, so its level is the one given, and no saved health, so it enters
+-- at full health. Only a character of that account is changed: no character of
+-- that id of that account gives no row.
+update character
+set
+  class_id = $2,
+  faction_id = $3,
+  level = $4,
+  experience = null,
+  health = null
+where character_id = $1
+  and account_id in (select account_id from account where login_name = $5)
+returning character_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.parameter(pog.int(arg_2))
+  |> pog.parameter(pog.int(arg_3))
+  |> pog.parameter(pog.int(arg_4))
+  |> pog.parameter(pog.text(arg_5))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

@@ -22,6 +22,7 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/sitting_bot
 import gleam/erlang/process
 import gleam/list
+import gleam/option
 import login_support
 import open_wait
 import owned_test
@@ -76,6 +77,7 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
             walk: sitting_bot.client_circle,
             chat_every_ms: 300,
             whisper_every_ms: 600,
+            press: option.None,
           ),
           // Past the test's deadline: only the stop can end the bot inside it.
           for_ms: 300_000,
@@ -167,6 +169,7 @@ pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_test() -> Nil 
             walk: sitting_bot.Follow(delay_ms: 200),
             chat_every_ms: 600_000,
             whisper_every_ms: 600_000,
+            press: option.None,
           ),
           for_ms: 60_000,
           report: fn(_event) { Nil },

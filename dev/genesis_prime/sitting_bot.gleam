@@ -3,7 +3,7 @@
 //// character appear in the same map, move, talk and leave.
 ////
 //// ```
-//// gleam run -m genesis_prime/sitting_bot -- --near "<character name>" [--minutes N] [--walk follow|circle]
+//// gleam run -m genesis_prime/sitting_bot -- --near "<character name>" [--minutes N] [--walk follow|circle] [--as "<bot character name>"] [--press "<ability name or Spell4Base id>" --at "<character name>" [--press-every SECONDS]]
 //// ```
 ////
 //// ```
@@ -13,6 +13,9 @@
 ////                                │  every 10 s, a whisper every 30 s, read what
 ////                                ▼  the server writes, print one line each
 ////                          stdout, and a summary when it leaves
+////
+////  --press: the faction of --at ─▶ ability.resolve ─▶ ability.equip (class, level,
+////  faction, Novice set) ─▶ every --press-every s, 0x009A at --at's unit while in sight
 //// ```
 ////
 //// The database is the one the server uses, from PGHOST, PGPORT, PGUSER,
@@ -29,7 +32,9 @@
 ////   row 466). Before it logs in, its saved place is put at
 ////   the named character's own, in the same world and zone. Only a character of
 ////   the account `sitting-bot` is taken for the bot's or moved: a character of
-////   that name that another account has refuses the run.
+////   that name that another account has refuses the run. `--as` gives the bot
+////   another character name and so another account (`sitting-bot-` and the name
+////   in lower case with hyphens), which is how a second bot runs beside the first.
 //// - It logs in and enters the world as the load player does
 ////   (`genesis_prime/load_player`), reports the zone it stands in (0xF2) as the
 ////   client does when its terrain loads, and walks. `--walk follow` (the
@@ -56,15 +61,35 @@
 ////   changes (0x0938: level, shield, interrupt armor, absorption) and each
 ////   property change (0x093A), which is how a buff sets and restores them. A line
 ////   names the spell and caster as the cast's own 0x07FF gave them
-////   (`genesis_prime/sitting_bot/effects`). The bot sends no press: a person
-////   presses at it. The bot is faction 167, so a spell that is refused between
-////   factions (99) never reaches it; a person of that faction presses at it.
+////   (`genesis_prime/sitting_bot/effects`). Without `--press` the bot presses
+////   nothing and stays as its last run left its class, level and faction (a new
+////   bot is class 1, faction 167), so a person presses at it; a spell refused
+////   between factions (99) never reaches it.
+//// - `--press` and `--at` come together. Before the bot is seated, the faction of
+////   the `--at` character is read, and the ability is found among what each class
+////   holds at that faction (`genesis_prime/sitting_bot/ability`: a name in en-US.bin
+////   in any case, or a Spell4Base id; a name two classes or bases hold is refused
+////   with the choices listed). The bot's character is then made that class at the
+////   level that gives the ability, in that faction, with that class's Novice set
+////   and no saved bar, and it enters the world reading the bag index the server
+////   gives the ability (the 0x0111 messages of the entry, opcode.0x9a). The tables
+////   and the language file are read from `GENESIS_TABLE_DIR` and
+////   `GENESIS_CLIENT_FILES_DIR` (about 7 s). `--at` naming the bot is refused.
+//// - Every `--press-every` seconds (20 when not given) after the start, while the
+////   `--at` character's unit is in sight (shown by 0x0262, not yet removed by
+////   0x0355), it sends a press (0x009A) naming that unit, with its own cast ids
+////   from 2 counting up (0x140c1e71c), and prints "sent press"; a press due while
+////   the character is not in sight prints "press skipped" and sends nothing. What
+////   the server answers prints as the cast lines above (a refusal 0x07FC with its
+////   result number). Gap: the bot sends no facing, so a Targeted spell with an arc
+////   of less than 360 degrees is refused 101 when it stands on its target's point.
 //// - It ends after `--minutes` (30 when not given), on SIGTERM, or when the
 ////   server closes its connection. It prints the node's process id when it starts
 ////   (`stop with: kill <pid>`): SIGTERM must go to that pid, since `gleam run`
 ////   does not pass a signal on to the node it starts. When it ends it closes its
 ////   own connection, so the player sees its unit go, and prints how many lines
-////   it sent, answers it got, lines it heard, units it was shown and effects it was told. The Erlang runtime cannot catch Ctrl-C (SIGINT) as
+////   it sent, answers it got, lines it heard, units it was shown, effects it was
+////   told and presses it sent. The Erlang runtime cannot catch Ctrl-C (SIGINT) as
 ////   a signal: it opens the VM's break menu, whose `a` ends the node with the
 ////   connection closed by the operating system, so the player sees the bot
 ////   leave, and no summary is printed.
@@ -84,6 +109,7 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/whisper_failed
+import genesis_prime/sitting_bot/ability
 import genesis_prime/sitting_bot/effects.{type Book, type Effect}
 import genesis_prime/sitting_bot/follow.{type Following}
 import genesis_prime/sitting_bot/sql
@@ -106,9 +132,22 @@ import pog
 // ---- what the bot is run with ----
 
 /// What the tool is given: the name of the character to sit near, how long to
-/// sit and how to walk.
+/// sit, how to walk, the bot's own character name, and the ability to press at
+/// a named player with how often.
 type Options {
-  Options(near: String, minutes: Int, walk: Walk)
+  Options(
+    near: String,
+    minutes: Int,
+    walk: Walk,
+    bot_name: String,
+    press: Option(PressOptions),
+  )
+}
+
+/// `--press` and `--at`: the ability's name or Spell4Base id, the player it is
+/// pressed at, and the seconds between presses.
+type PressOptions {
+  PressOptions(ability: String, at: String, every_s: Int)
 }
 
 /// How the bot walks.
@@ -132,54 +171,121 @@ type Usage {
   MissingNear
   NotMinutes(text: String)
   NotAWalk(text: String)
+  NotSeconds(text: String)
+  MissingValue(flag: String)
+  PressNeedsAt
+  AtNeedsPress
+  AtIsTheBot(name: String)
   UnknownArgument(text: String)
 }
 
 /// How long the bot sits when it is not told, in minutes.
 const default_minutes = 30
 
+/// How long the bot waits between presses when it is not told, in seconds.
+const default_press_every_s = 20
+
+/// The arguments read so far.
+type Raw {
+  Raw(
+    near: Option(String),
+    minutes: Int,
+    walk: Walk,
+    bot_name: String,
+    ability: Option(String),
+    at: Option(String),
+    press_every_s: Int,
+  )
+}
+
 /// The options the arguments make: `--near <name>` and, optionally, `--minutes
-/// <N>` for N of 1 or more and `--walk follow` or `--walk circle` (follow when
-/// not given).
+/// <N>` for N of 1 or more, `--walk follow` or `--walk circle` (follow when
+/// not given), `--as <character name>` for the bot's own character, and `--press
+/// <ability>` with `--at <name>`, which come together, and `--press-every <N>`
+/// seconds for N of 1 or more.
 fn parse_arguments(arguments: List(String)) -> Result(Options, Usage) {
-  parse(arguments:, near: None, minutes: default_minutes, walk: client_follow)
+  parse(
+    arguments:,
+    raw: Raw(
+      near: None,
+      minutes: default_minutes,
+      walk: client_follow,
+      bot_name: default_character_name,
+      ability: None,
+      at: None,
+      press_every_s: default_press_every_s,
+    ),
+  )
 }
 
 fn parse(
   arguments arguments: List(String),
-  near near: Option(String),
-  minutes minutes: Int,
-  walk walk: Walk,
+  raw raw: Raw,
 ) -> Result(Options, Usage) {
   case arguments {
-    [] ->
-      case near {
-        Some(near) -> Ok(Options(near:, minutes:, walk:))
-        None -> Error(MissingNear)
-      }
+    [] -> finished(raw:)
     ["--near", name, ..rest] if name != "" ->
-      parse(arguments: rest, near: Some(name), minutes:, walk:)
+      parse(arguments: rest, raw: Raw(..raw, near: Some(name)))
     ["--near", ..] -> Error(MissingNear)
     ["--minutes", text, ..rest] ->
       case int.parse(text) {
         Ok(minutes) if minutes >= 1 ->
-          parse(arguments: rest, near:, minutes:, walk:)
+          parse(arguments: rest, raw: Raw(..raw, minutes:))
         Ok(_) | Error(Nil) -> Error(NotMinutes(text:))
       }
     ["--minutes"] -> Error(NotMinutes(text: ""))
     ["--walk", "follow", ..rest] ->
-      parse(arguments: rest, near:, minutes:, walk: client_follow)
+      parse(arguments: rest, raw: Raw(..raw, walk: client_follow))
     ["--walk", "circle", ..rest] ->
-      parse(arguments: rest, near:, minutes:, walk: client_circle)
+      parse(arguments: rest, raw: Raw(..raw, walk: client_circle))
     ["--walk", text, ..] -> Error(NotAWalk(text:))
     ["--walk"] -> Error(NotAWalk(text: ""))
+    ["--as", name, ..rest] if name != "" ->
+      parse(arguments: rest, raw: Raw(..raw, bot_name: name))
+    ["--as", ..] -> Error(MissingValue(flag: "--as"))
+    ["--press", ability, ..rest] if ability != "" ->
+      parse(arguments: rest, raw: Raw(..raw, ability: Some(ability)))
+    ["--press", ..] -> Error(MissingValue(flag: "--press"))
+    ["--at", name, ..rest] if name != "" ->
+      parse(arguments: rest, raw: Raw(..raw, at: Some(name)))
+    ["--at", ..] -> Error(MissingValue(flag: "--at"))
+    ["--press-every", text, ..rest] ->
+      case int.parse(text) {
+        Ok(press_every_s) if press_every_s >= 1 ->
+          parse(arguments: rest, raw: Raw(..raw, press_every_s:))
+        Ok(_) | Error(Nil) -> Error(NotSeconds(text:))
+      }
+    ["--press-every"] -> Error(NotSeconds(text: ""))
     [other, ..] -> Error(UnknownArgument(text: other))
   }
 }
 
+/// The options the arguments read make, or what is wrong with them.
+fn finished(raw raw: Raw) -> Result(Options, Usage) {
+  use near <- result.try(option.to_result(raw.near, MissingNear))
+  use press <- result.map(case raw.ability, raw.at {
+    None, None -> Ok(None)
+    Some(_), None -> Error(PressNeedsAt)
+    None, Some(_) -> Error(AtNeedsPress)
+    Some(ability), Some(at) ->
+      case string.lowercase(at) == string.lowercase(raw.bot_name) {
+        True -> Error(AtIsTheBot(name: at))
+        False ->
+          Ok(Some(PressOptions(ability:, at:, every_s: raw.press_every_s)))
+      }
+  })
+  Options(
+    near:,
+    minutes: raw.minutes,
+    walk: raw.walk,
+    bot_name: raw.bot_name,
+    press:,
+  )
+}
+
 fn describe_usage(usage: Usage) -> String {
   let how =
-    "usage: gleam run -m genesis_prime/sitting_bot -- --near \"<character name>\" [--minutes N] [--walk follow|circle]"
+    "usage: gleam run -m genesis_prime/sitting_bot -- --near \"<character name>\" [--minutes N] [--walk follow|circle] [--as \"<bot character name>\"] [--press \"<ability name or Spell4Base id>\" --at \"<character name>\" [--press-every SECONDS]]"
   case usage {
     MissingNear -> "no character to sit near is named\n" <> how
     NotMinutes(text:) ->
@@ -189,6 +295,17 @@ fn describe_usage(usage: Usage) -> String {
       <> how
     NotAWalk(text:) ->
       "--walk takes follow or circle, not \"" <> text <> "\"\n" <> how
+    NotSeconds(text:) ->
+      "--press-every takes a whole number of seconds of 1 or more, not \""
+      <> text
+      <> "\"\n"
+      <> how
+    MissingValue(flag:) -> flag <> " takes a value\n" <> how
+    PressNeedsAt ->
+      "--press takes --at, the character it is pressed at\n" <> how
+    AtNeedsPress -> "--at takes --press, the ability pressed at it\n" <> how
+    AtIsTheBot(name:) ->
+      "--at names the bot's own character, " <> name <> "\n" <> how
     UnknownArgument(text:) ->
       "not an argument of the tool: " <> text <> "\n" <> how
   }
@@ -201,9 +318,9 @@ pub type Place {
   Place(world_id: Int, world_zone_id: Int, x: Float, y: Float, z: Float)
 }
 
-/// The bot's character and the place it was put at.
+/// The bot's character, the account it logs in with and the place it was put at.
 pub type Seat {
-  Seat(character_id: Int, place: Place)
+  Seat(character_id: Int, account: Account, place: Place)
 }
 
 /// Why the bot was not seated.
@@ -216,18 +333,23 @@ pub type SeatFailure {
   Database(failure: dev_database.Failure)
 }
 
-/// The bot's character's name, which names no other: character names are unique.
-const character_name = "Sitting Bot"
+/// The bot's character's name when `--as` gives none, which names no other:
+/// character names are unique.
+const default_character_name = "Sitting Bot"
 
-/// The bot's account. Its password is kept in the open: the account exists only
-/// in a developer's database, and the tool is no way to anything else.
-fn account() -> Account {
-  Account(
-    login_name: "sitting-bot",
-    password: "sitting-bot",
-    seed: 1,
-    character_name:,
-  )
+/// The account of the bot's character with the name: `sitting-bot` for the
+/// default name, else `sitting-bot-` and the name in lower case with its spaces
+/// as hyphens, so a second bot is a second account. The password is kept in the
+/// open: the account exists only in a developer's database, and the tool is no
+/// way to anything else.
+fn account_of(character_name character_name: String) -> Account {
+  let login_name = case character_name == default_character_name {
+    True -> "sitting-bot"
+    False ->
+      "sitting-bot-"
+      <> string.replace(string.lowercase(character_name), " ", "-")
+  }
+  Account(login_name:, password: "sitting-bot", seed: 1, character_name:)
 }
 
 /// Puts the bot's character at the named character's saved place, in its world
@@ -239,8 +361,19 @@ pub fn seat(
   pool pool: pog.Connection,
   near name: String,
 ) -> Result(Seat, SeatFailure) {
+  seat_as(pool:, near: name, character_name: default_character_name)
+}
+
+/// `seat` for the bot whose character has this name (`--as`), on the account
+/// that name gives.
+fn seat_as(
+  pool pool: pog.Connection,
+  near name: String,
+  character_name character_name: String,
+) -> Result(Seat, SeatFailure) {
+  let bot = account_of(character_name:)
   use place <- result.try(place_of(pool:, name:))
-  use character_id <- result.try(bot_character(pool:))
+  use character_id <- result.try(bot_character(pool:, bot:))
   use rows <- result.try(
     sql.seat_character(
       pool,
@@ -250,12 +383,12 @@ pub fn seat(
       place.x,
       place.y,
       place.z,
-      account().login_name,
+      bot.login_name,
     )
     |> result.map_error(database),
   )
   case rows.rows {
-    [_] -> Ok(Seat(character_id:, place:))
+    [_] -> Ok(Seat(character_id:, account: bot, place:))
     _ ->
       Error(
         Database(failure: dev_database.NotChanged(
@@ -298,8 +431,11 @@ fn place_of(
 /// another waits at the lock and finds the character the other made. A
 /// "Sitting Bot" that another account holds breaks the name's unique index, the
 /// transaction is undone and nothing is made.
-fn bot_character(pool pool: pog.Connection) -> Result(Int, SeatFailure) {
-  let bot = account()
+fn bot_character(
+  pool pool: pog.Connection,
+  bot bot: Account,
+) -> Result(Int, SeatFailure) {
+  let character_name = bot.character_name
   let add_account.Credentials(salt:, verifier:, game_account_id:) =
     add_account.credentials(login_name: bot.login_name, password: bot.password)
   let read =
@@ -344,19 +480,32 @@ fn bot_character(pool pool: pog.Connection) -> Result(Int, SeatFailure) {
 
 // ---- what the bot sends, and when ----
 
-/// How the bot walks and how often it does each other duty, in milliseconds.
+/// How the bot walks and how often it does each other duty, in milliseconds,
+/// and the press it makes, if any.
 pub type Schedule {
-  Schedule(walk: Walk, chat_every_ms: Int, whisper_every_ms: Int)
+  Schedule(
+    walk: Walk,
+    chat_every_ms: Int,
+    whisper_every_ms: Int,
+    press: Option(Press),
+  )
 }
 
-/// The walk, a chat line every 10 s and a whisper every 30 s.
+/// An ability the bot presses at a named player, every `every_ms` while that
+/// player is in sight: the Spell4Base id of the ability the bot holds and the
+/// player's name.
+pub type Press {
+  Press(spell4_base_id: Int, at: String, every_ms: Int)
+}
+
+/// The walk, a chat line every 10 s and a whisper every 30 s, and no press.
 pub fn client_schedule(walk walk: Walk) -> Schedule {
-  Schedule(walk:, chat_every_ms: 10_000, whisper_every_ms: 30_000)
+  Schedule(walk:, chat_every_ms: 10_000, whisper_every_ms: 30_000, press: None)
 }
 
 /// How many of each duty the bot has done.
 type Done {
-  Done(moves: Int, lines: Int, whispers: Int)
+  Done(moves: Int, lines: Int, whispers: Int, presses: Int)
 }
 
 /// A chat line to send: its channel and its text.
@@ -372,6 +521,8 @@ type Duty {
   Chat(line: Line)
   /// The bot's `number`th whisper, counting from 1.
   Whisper(number: Int)
+  /// The bot's `number`th press, counting from 1.
+  PressAt(number: Int)
 }
 
 /// The channels the chat lines go on, in turn.
@@ -396,15 +547,21 @@ fn chat_line(number: Int) -> Line {
 }
 
 /// The next duty and the time it is due, in milliseconds from the start: the
-/// first move of a circle is due at 0, the first chat line and the first whisper
-/// after one of their own intervals. Duties due together go chat, whisper, move.
+/// first move of a circle is due at 0, the first chat line, the first whisper and
+/// the first press after one of their own intervals. Duties due together go chat,
+/// whisper, press, move.
 /// A follow walk has no move duty: its moves are replays (`follow`).
 fn next_duty(schedule schedule: Schedule, done done: Done) -> #(Int, Duty) {
   let line = done.lines + 1
   let whisper = done.whispers + 1
+  let presses = done.presses + 1
   let talks = [
     #(line * schedule.chat_every_ms, Chat(line: chat_line(line))),
     #(whisper * schedule.whisper_every_ms, Whisper(number: whisper)),
+    ..case schedule.press {
+      Some(press) -> [#(presses * press.every_ms, PressAt(number: presses))]
+      None -> []
+    }
   ]
   let candidates = case schedule.walk {
     Circle(move_every_ms:) ->
@@ -428,6 +585,7 @@ fn after(done done: Done, duty duty: Duty) -> Done {
     Move(..) -> Done(..done, moves: done.moves + 1)
     Chat(..) -> Done(..done, lines: done.lines + 1)
     Whisper(..) -> Done(..done, whispers: done.whispers + 1)
+    PressAt(..) -> Done(..done, presses: done.presses + 1)
   }
 }
 
@@ -484,6 +642,17 @@ pub type Event {
   /// A cast, heal, absorb, buff or vital of the bot's the server told
   /// (`genesis_prime/sitting_bot/effects`).
   EffectReceived(effect: Effect)
+  /// A press the bot sent: its cast id, the bag index and Spell4Base id of the
+  /// ability, and the unit it names.
+  PressSent(
+    client_cast_id: Int,
+    bag_index: Int,
+    spell4_base_id: Int,
+    target_unit_id: Int,
+    target_name: String,
+  )
+  /// A press that was due and sent nothing, since the player is not in sight.
+  PressSkipped(target_name: String)
   /// The server ended the connection.
   ServerEnded(reason: String)
 }
@@ -497,6 +666,7 @@ pub type Tally {
     units_seen: Int,
     moves_seen: Int,
     effects_seen: Int,
+    presses_sent: Int,
   )
 }
 
@@ -509,6 +679,7 @@ fn nothing_yet() -> Tally {
     units_seen: 0,
     moves_seen: 0,
     effects_seen: 0,
+    presses_sent: 0,
   )
 }
 
@@ -532,7 +703,14 @@ fn note(tally tally: Tally, event event: Event) -> #(Tally, Bool) {
       Tally(..tally, effects_seen: tally.effects_seen + 1),
       True,
     )
-    UnitRemoved(..) | NameLookupNeeded(..) | ServerEnded(..) -> #(tally, True)
+    PressSent(..) -> #(
+      Tally(..tally, presses_sent: tally.presses_sent + 1),
+      True,
+    )
+    UnitRemoved(..)
+    | NameLookupNeeded(..)
+    | PressSkipped(..)
+    | ServerEnded(..) -> #(tally, True)
   }
 }
 
@@ -578,6 +756,25 @@ fn describe(event: Event) -> String {
       <> target
       <> " failed"
     EffectReceived(effect:) -> effects.describe(effect)
+    PressSent(
+      client_cast_id:,
+      bag_index:,
+      spell4_base_id:,
+      target_unit_id:,
+      target_name:,
+    ) ->
+      "sent press 0x009A: cast id "
+      <> int.to_string(client_cast_id)
+      <> " bag index "
+      <> int.to_string(bag_index)
+      <> " spell4 base "
+      <> int.to_string(spell4_base_id)
+      <> " at unit "
+      <> int.to_string(target_unit_id)
+      <> " "
+      <> target_name
+    PressSkipped(target_name:) ->
+      "press skipped: " <> target_name <> " is not in sight"
     ServerEnded(reason:) -> "the server ended the connection: " <> reason
   }
 }
@@ -618,6 +815,8 @@ fn summary(tally: Tally) -> String {
   <> int.to_string(tally.units_seen)
   <> ", effects seen "
   <> int.to_string(tally.effects_seen)
+  <> ", presses sent "
+  <> int.to_string(tally.presses_sent)
 }
 
 /// The events a message of the server is: none for a message the bot does not
@@ -701,6 +900,8 @@ type Sitting {
     near: String,
     schedule: Schedule,
     following: Option(Following),
+    bag_index: Option(Int),
+    target_unit_id: Option(Int),
     done: Done,
     tally: Tally,
     book: Book,
@@ -729,10 +930,10 @@ pub fn sit(
   for_ms for_ms: Int,
   report report: fn(Event) -> Nil,
 ) -> Tally {
-  let #(game, auth) = load_player.log_in(account: account(), ports:)
+  let #(game, auth) = load_player.log_in(account: seat.account, ports:)
   load_player.list_characters(game)
   let #(burst, have) =
-    load_player.enter_world(game:, character_id: seat.character_id)
+    load_player.play_into_world(game:, character_id: seat.character_id)
   let assert Ok(zone_body) =
     terrain_loaded.encode(TerrainLoaded(world_zone_id: seat.place.world_zone_id))
     as "0xF2 encodes"
@@ -751,7 +952,9 @@ pub fn sit(
         Follow(delay_ms:) -> Some(follow.new(near:, delay_ms:))
         Circle(..) -> None
       },
-      done: Done(moves: 0, lines: 0, whispers: 0),
+      bag_index: option.map(schedule.press, bag_index_of(burst:, press: _)),
+      target_unit_id: None,
+      done: Done(moves: 0, lines: 0, whispers: 0, presses: 0),
       tally: nothing_yet(),
       book: effects.new_book(),
       started_ms:,
@@ -765,6 +968,23 @@ pub fn sit(
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
   tally
+}
+
+/// The bag index the entry's 0x0111 messages give the ability to press: the
+/// slot a press names (opcode.0x9a), found by the ability's Spell4Base id among
+/// the abilities and the innate.
+fn bag_index_of(burst burst: List(Frame), press press: Press) -> Int {
+  let held = game_client.loadout_in(frames: burst)
+  let innate = case held.innate {
+    Some(slot) -> [slot]
+    None -> []
+  }
+  let assert Ok(#(bag_index, _)) =
+    list.find(list.append(held.abilities, innate), fn(slot) {
+      slot.1 == press.spell4_base_id
+    })
+    as "the entry's ability bag holds the ability the bot was seated to press"
+  bag_index
 }
 
 fn keep_sitting(sitting: Sitting) -> Tally {
@@ -867,6 +1087,11 @@ fn perform(sitting sitting: Sitting, duty duty: Duty) -> Sitting {
         ),
       )
     }
+    PressAt(..) -> {
+      let assert Some(press) = sitting.schedule.press
+        as "a press is due only when the schedule has one"
+      press_at(sitting:, press:)
+    }
     Whisper(number:) -> {
       let text = "bot whisper " <> int.to_string(number)
       let #(chatter, chat_message_id) =
@@ -884,6 +1109,36 @@ fn perform(sitting sitting: Sitting, duty duty: Duty) -> Sitting {
         ),
       )
     }
+  }
+}
+
+/// Presses the ability at the named player's unit, or reports that the player is
+/// not in sight. The client's cast ids start at 2 and count up (0x140c1e71c).
+fn press_at(sitting sitting: Sitting, press press: Press) -> Sitting {
+  let assert Some(bag_index) = sitting.bag_index
+    as "a bot that presses found its ability's bag index at its entry"
+  case sitting.target_unit_id {
+    Some(target_unit_id) -> {
+      let client_cast_id = sitting.tally.presses_sent + 2
+      game_client.press_ability(
+        game: sitting.game,
+        client_cast_id:,
+        bag_index:,
+        target: target_unit_id,
+      )
+      note_and_report(
+        sitting:,
+        event: PressSent(
+          client_cast_id:,
+          bag_index:,
+          spell4_base_id: press.spell4_base_id,
+          target_unit_id:,
+          target_name: press.at,
+        ),
+      )
+    }
+    None ->
+      note_and_report(sitting:, event: PressSkipped(target_name: press.at))
   }
 }
 
@@ -914,7 +1169,41 @@ fn note_and_report(sitting sitting: Sitting, event event: Event) -> Sitting {
     ..sitting,
     tally:,
     following: option.map(sitting.following, followed(_, event:, elapsed_ms:)),
+    target_unit_id: pressed_at(sitting:, event:),
   )
+}
+
+/// The unit the bot presses at after the event: the named player's unit when it
+/// is shown (in any case, as names are unique in any case) and none when it is
+/// removed.
+fn pressed_at(sitting sitting: Sitting, event event: Event) -> Option(Int) {
+  case sitting.schedule.press {
+    None -> sitting.target_unit_id
+    Some(press) ->
+      case event {
+        UnitShown(unit_id:, name:) ->
+          case string.lowercase(name) == string.lowercase(press.at) {
+            True -> Some(unit_id)
+            False -> sitting.target_unit_id
+          }
+        UnitRemoved(unit_id:) ->
+          case Some(unit_id) == sitting.target_unit_id {
+            True -> None
+            False -> sitting.target_unit_id
+          }
+        LineSent(..)
+        | UnitMoved(..)
+        | LineHeard(..)
+        | NameLookupNeeded(..)
+        | LineAccepted(..)
+        | LineRefused(..)
+        | WhisperFailed(..)
+        | EffectReceived(..)
+        | PressSent(..)
+        | PressSkipped(..)
+        | ServerEnded(..) -> sitting.target_unit_id
+      }
+  }
 }
 
 /// What the follow walk takes from an event: the named character's unit shown,
@@ -936,6 +1225,8 @@ fn followed(
     | LineRefused(..)
     | WhisperFailed(..)
     | EffectReceived(..)
+    | PressSent(..)
+    | PressSkipped(..)
     | ServerEnded(..) -> following
   }
 }
@@ -968,6 +1259,13 @@ fn os_pid() -> String
 type Failure {
   BadArguments(usage: Usage)
   NotSeated(failure: SeatFailure)
+  /// The tables or the language file the ability is found in could not be read.
+  TablesNotLoaded(failure: ability.LoadFailure)
+  /// No character is named as the player to press at.
+  NoSuchTarget(name: String)
+  NoOneAbility(refusal: ability.Refusal)
+  /// The bot's character could not be made a holder of the ability.
+  NotEquipped(failure: dev_database.Failure)
 }
 
 /// The client's own ports, on this machine: the play server listens on them
@@ -988,12 +1286,15 @@ fn run() -> Result(String, Failure) {
     dev_database.connect()
     |> result.map_error(fn(failure) { NotSeated(Database(failure:)) }),
   )
+  use equipment <- result.try(equipment_of(pool:, options:))
   use seat <- result.try(
-    seat(pool:, near: options.near) |> result.map_error(NotSeated),
+    seat_as(pool:, near: options.near, character_name: options.bot_name)
+    |> result.map_error(NotSeated),
   )
+  use press <- result.try(equip(pool:, seat:, equipment:))
   print(
     "seated "
-    <> character_name
+    <> options.bot_name
     <> " in world "
     <> int.to_string(seat.place.world_id)
     <> " zone "
@@ -1014,11 +1315,99 @@ fn run() -> Result(String, Failure) {
       ports: local_ports(),
       seat:,
       near: options.near,
-      schedule: client_schedule(walk: options.walk),
+      schedule: Schedule(..client_schedule(walk: options.walk), press:),
       for_ms: options.minutes * 60_000,
       report: fn(event) { print(describe(event)) },
     )
   Ok(summary(tally))
+}
+
+/// What a press needs the bot to hold: the tables, the ability and the faction
+/// of the player pressed at.
+type Equipment {
+  NoEquipment
+  Equipment(
+    known: ability.Known,
+    choice: ability.Choice,
+    faction_id: Int,
+    options: PressOptions,
+  )
+}
+
+/// Finds the ability to press at the faction of the player pressed at, before
+/// anything is changed, so a refusal leaves the bot as it was.
+fn equipment_of(
+  pool pool: pog.Connection,
+  options options: Options,
+) -> Result(Equipment, Failure) {
+  case options.press {
+    None -> Ok(NoEquipment)
+    Some(press) -> {
+      use known <- result.try(
+        ability.load() |> result.map_error(TablesNotLoaded),
+      )
+      use faction <- result.try(
+        ability.faction_of(pool:, name: press.at)
+        |> result.map_error(fn(failure) { NotSeated(Database(failure:)) }),
+      )
+      use faction_id <- result.try(result.replace_error(
+        faction,
+        NoSuchTarget(name: press.at),
+      ))
+      use choice <- result.map(
+        ability.resolve(known:, wanted: press.ability, faction_id:)
+        |> result.map_error(NoOneAbility),
+      )
+      Equipment(known:, choice:, faction_id:, options: press)
+    }
+  }
+}
+
+/// Makes the seated bot a holder of the ability, when one is to be pressed, and
+/// gives the press the bot makes.
+fn equip(
+  pool pool: pog.Connection,
+  seat seat: Seat,
+  equipment equipment: Equipment,
+) -> Result(Option(Press), Failure) {
+  case equipment {
+    NoEquipment -> Ok(None)
+    Equipment(known:, choice:, faction_id:, options:) -> {
+      use Nil <- result.map(
+        ability.equip(
+          pool:,
+          known:,
+          character_id: seat.character_id,
+          login_name: seat.account.login_name,
+          choice:,
+          faction_id:,
+        )
+        |> result.map_error(NotEquipped),
+      )
+      print(
+        "equipped as class "
+        <> int.to_string(choice.class_id)
+        <> " level "
+        <> int.to_string(choice.level)
+        <> " faction "
+        <> int.to_string(faction_id)
+        <> " to press "
+        <> choice.name
+        <> " (Spell4Base "
+        <> int.to_string(choice.spell4_base_id)
+        <> ") at "
+        <> options.at
+        <> " every "
+        <> int.to_string(options.every_s)
+        <> " s",
+      )
+      Some(Press(
+        spell4_base_id: choice.spell4_base_id,
+        at: options.at,
+        every_ms: options.every_s * 1000,
+      ))
+    }
+  }
 }
 
 /// Prints a line with the local time.
@@ -1048,5 +1437,13 @@ fn describe_failure(failure: Failure) -> String {
       name <> " has no saved place: play it into the world once, so it has one"
     NotSeated(failure: Database(failure:)) ->
       dev_database.describe(failure:, change: "seat the sitting bot")
+    TablesNotLoaded(failure:) -> ability.describe_load_failure(failure)
+    NoSuchTarget(name:) ->
+      "no character is named "
+      <> name
+      <> ": the bot presses at a character that exists"
+    NoOneAbility(refusal:) -> ability.describe_refusal(refusal)
+    NotEquipped(failure:) ->
+      dev_database.describe(failure:, change: "equip the sitting bot")
   }
 }

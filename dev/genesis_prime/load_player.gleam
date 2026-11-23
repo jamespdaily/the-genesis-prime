@@ -311,19 +311,31 @@ fn create_character(game game: game_client.Game, name name: String) -> Int {
 }
 
 /// Plays the character into the world, and the messages that put it there,
-/// with the bytes the server wrote after them.
-pub fn enter_world(
+/// with the bytes the server wrote after them. The messages are the ones of a
+/// character that holds the Novice set of a level-1 class: 11 items
+/// (`game_client.world_entry_ids`).
+fn enter_world(
+  game game: game_client.Game,
+  character_id character_id: Int,
+) -> #(List(Frame), BitArray) {
+  let #(burst, have) = play_into_world(game:, character_id:)
+  assert list.map(burst, fn(frame) { frame.message_id })
+    == game_client.world_entry_ids
+    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
+  #(burst, have)
+}
+
+/// Plays the character into the world as `enter_world` does and gives the
+/// messages as the server wrote them, whatever number of items the character
+/// holds: a character above level 1 holds the abilities its level has reached.
+pub fn play_into_world(
   game game: game_client.Game,
   character_id character_id: Int,
 ) -> #(List(Frame), BitArray) {
   let assert Ok(play_body) = play_character.encode(PlayCharacter(character_id:))
     as "0x07DD encodes"
   game_client.send(game:, message_id: 0x07DD, body: play_body)
-  let #(burst, have) = game_client.read_entry_kept(game:, have: <<>>)
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
-    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
-  #(burst, have)
+  game_client.read_entry_kept(game:, have: <<>>)
 }
 
 /// Where a walking player is: when it sent its last 0x0637, and how many it has

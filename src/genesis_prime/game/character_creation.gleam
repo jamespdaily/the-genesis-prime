@@ -196,7 +196,7 @@ pub fn check_row(
 /// armor pieces and shield, each at the bag index of its slot, and its weapon in
 /// slot 16, all equipped (location 0), a stack of 1 each
 /// (`opcode.0x111.equipped_set`, `Item2.novice_set`).
-fn novice_items(
+pub fn novice_items(
   tables tables: table_store.Tables,
   class_id class_id: ClassId,
   faction_id faction_id: Int,
