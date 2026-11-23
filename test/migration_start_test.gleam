@@ -2,10 +2,11 @@
 //// it was built with refuses to start. Expected values come from these places.
 //// - The card's test: a database missing the newest migration makes the
 ////   server refuse to start, exit non-zero and name it, and the same database
-////   fully migrated starts; the same for an applied migration whose file was
-////   edited, a recorded migration with no file, a database with no record of
-////   its migrations, and a record the server cannot read (a table of another
-////   shape).
+////   fully migrated starts. Each other kind of refusal (an applied migration
+////   edited, a recorded migration with no file, no record, a record that cannot
+////   be read) is decided by `genesis_prime/migration` and tested in
+////   `migration_test`; the reading of the record is tested in
+////   `account_store_test`. A node here is one way the node ends.
 //// - A database that is down when the server starts is logged as unreachable
 ////   and asked again; once it answers, it is checked as at start: all present
 ////   prints the ready line then, and a missing migration ends the node with
@@ -13,8 +14,7 @@
 //// - A node that ends because `main` stopped ends with status 1
 ////   (`genesis_prime/application`, `sigterm_test`), and prints its ready line
 ////   only when the server can serve (`genesis_prime/readiness`).
-//// - The newest migration is the last file of `priv/migrations` in name order;
-////   `0003_character_look` and the others are files of that folder.
+//// - The newest migration is the last file of `priv/migrations` in name order.
 //// Each test starts a node of its own (`serving_node`) on a database of its
 //// own.
 
@@ -90,44 +90,6 @@ pub fn the_same_database_fully_migrated_starts_the_server_test() -> Nil {
   serving_node.terminate(node)
   assert serving_node.await_exit(node) == 0
     as "SIGTERM ends the node with status 0"
-}
-
-pub fn an_applied_migration_edited_after_it_ran_refuses_the_server_and_names_it_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use node <- with_node_after(
-    change: "update schema_migration set sha256 = repeat('0', 64) where name = '0003_character_look'",
-  )
-  assert_refused(node, reason: "0003_character_look was edited after it ran")
-}
-
-pub fn a_recorded_migration_with_no_file_refuses_the_server_and_names_it_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use node <- with_node_after(
-    change: "insert into schema_migration (name, sha256) values ('9999_no_such_file', repeat('1', 64))",
-  )
-  assert_refused(
-    node,
-    reason: "ran the migration 9999_no_such_file, which has no file",
-  )
-}
-
-pub fn a_database_with_no_record_of_its_migrations_refuses_the_server_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use node <- with_node_after(change: "drop table schema_migration")
-  assert_refused(node, reason: "predates migration records")
-}
-
-pub fn a_record_the_server_cannot_read_refuses_the_server_naming_the_error_test() -> Nil {
-  use <- owned_test.run(120_000)
-  // The table has a column of another name, so the read fails in Postgres with
-  // undefined_column (42703), not undefined_table.
-  use node <- with_node_after(
-    change: "alter table schema_migration rename column sha256 to hash",
-  )
-  assert_refused(
-    node,
-    reason: "schema_migration could not be read: undefined_column",
-  )
 }
 
 /// Starts a node on a database that does not exist yet, waits for it to log
