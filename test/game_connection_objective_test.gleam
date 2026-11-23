@@ -146,15 +146,12 @@ fn progress_frame(
   index index: Int,
   progress progress: Int,
 ) -> #(Int, BitArray) {
-  #(
-    0x0361,
-    message_support.packed([#(15, quest), #(32, index), #(32, progress)]),
-  )
+  message_support.quest_progress_frame(quest:, index:, progress:)
 }
 
 /// A 0x35c of the client's reader with objective id 0.
 fn state_frame(quest quest: Int, state state: Int) -> #(Int, BitArray) {
-  #(0x035C, message_support.packed([#(15, quest), #(32, state), #(32, 0)]))
+  message_support.quest_state_frame(quest:, state:)
 }
 
 fn as_pairs(frames frames: List(Frame)) -> List(#(Int, BitArray)) {

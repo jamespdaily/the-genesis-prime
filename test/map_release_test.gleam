@@ -44,7 +44,6 @@ import gleam/string
 import map_spawn_support as spawns
 import map_support
 import owned_test
-import place_support
 import spawn_support
 
 /// The Bramble Trap's creature and the Trapped Mordesh's.
@@ -63,13 +62,7 @@ const release_ms = 30_000
 
 /// A place in Warfare Woods `x` along, `y` up, at z 0.
 fn standing(x x: Float, y y: Float) -> Place {
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: spawn_support.warfare_woods,
-    x:,
-    y:,
-    z: 0.0,
-  )
+  spawns.standing(x:, y:)
 }
 
 /// Spawn `number`, a creature `creature` stands at `place` in.

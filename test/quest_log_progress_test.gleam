@@ -38,7 +38,6 @@
 //// is no client fact: a kill is an equal share, stored floor(1000 x kills / count)
 //// (Jim's decision on the step's issue), so count kills finish it.
 
-import character_tables
 import genesis_prime/game/objective_kind
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/store.{type QuestRow}
@@ -66,19 +65,12 @@ const one_kill = 1857
 const counted_kill = 4705
 
 fn quest(id id: Int) -> quest_log.Quest {
-  let assert Ok(quest) =
-    quest_log.quest_of(tables: character_tables.shared(), id:)
-    as "the fixture holds the quest's rows"
-  quest
+  quest_support.quest_of(id:)
 }
 
 /// The saved row of the quest, as the place save writes it.
 fn saved(log log: QuestLog, quest_id quest_id: Int) -> QuestRow {
-  let assert Ok(row) =
-    quest_log.rows(log:, now_ms: 0)
-    |> list.find(fn(row) { row.quest_id == quest_id })
-    as "the log holds the quest"
-  row
+  quest_support.saved_row(log:, quest_id:)
 }
 
 fn done_mask_of(row row: QuestRow) -> Int {

@@ -4,21 +4,18 @@
 //// (float32 bits of position0 to position2, worldId, worldZoneId) and the expected links
 //// the client's Prerequisite rows of each projector.
 
-import cast_support
 import character_tables
+import departures_support
 import genesis_prime/content/refusal.{type Refusal, RowId}
 import genesis_prime/game/activate.{type Link, ClosedLink, OpenLink}
-import genesis_prime/game/cast/press as cast_press
-import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/objective_link
 import genesis_prime/game/projector.{NotAProjector, NotOffered, Row}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import gleam/list
 import gleam/string
 import owned_test
+import place_support
 import projector_support
 import quest_support
 
@@ -41,22 +38,7 @@ const dominion = 166
 /// The link of a creature's right-click for a player holding this log, as the rule that
 /// reads it gives it (`objective_link.of`).
 fn link_of(quests quests: QuestLog, creature_id creature_id: Int) -> Link {
-  let tables = character_tables.shared()
-  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
-    as "the creature is a root of the fixture"
-  objective_link.of(
-    tables:,
-    activations: activate.activations(tables:),
-    subject: cast_press.subject_for_use(
-      cast: cast_state.new(),
-      caster: cast_state.Caster(..cast_support.caster(), quests:),
-      unit_id: 5000,
-      checklist_index: 0,
-    ),
-    quests:,
-    row:,
-    checklist_index: 0,
-  )
+  departures_support.link_of(quests:, creature_id:)
 }
 
 fn landing_of(
@@ -80,12 +62,7 @@ fn assert_place(
   z z: Float,
   reason reason: String,
 ) -> Nil {
-  let assert Ok(place) = landing as reason
-  assert start_place.world_id(place) == 3460 as reason
-  assert start_place.world_zone_id(place) == zone as reason
-  assert start_place.x(place) == x as reason
-  assert start_place.y(place) == y as reason
-  assert start_place.z(place) == z as reason
+  place_support.assert_landed(landing:, world: 3460, zone:, x:, y:, z:, reason:)
 }
 
 /// The Exile's Combat Simulation quest (Quest2 10527) with the objectives before its

@@ -4,10 +4,14 @@
 
 import character_tables
 import game_connection_support as connection_support
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor.{type Vendors, ItemRow, VendorRow}
+import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
+import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/creature_path
@@ -167,4 +171,66 @@ pub fn at_the_vendor_for_a_player_at(
       kind: 0x31,
     )
   state
+}
+
+/// Dorian Walker's vendor window, open on his unit.
+pub fn walkers_window() -> option.Option(vendor.Opened) {
+  let assert Ok(walkers) =
+    vendor.get(
+      vendors: stocking(creature_ids: [74_812]),
+      creature_id: id.Creature2Id(74_812),
+    )
+    as "the vendors of the test hold Dorian Walker"
+  option.Some(vendor.Opened(unit_id: walker_unit, vendor: walkers))
+}
+
+/// The credits held as the currencies the rule reads.
+pub fn credits(total total: Int) -> Currencies {
+  currency.with_amount(
+    currencies: currency.from_held(held: []),
+    currency_type_id: currency.credits_type,
+    total:,
+  )
+}
+
+/// A stack of Item2 `item2_id` in the inventory (location 1).
+pub fn in_bag(
+  guid guid: Int,
+  item2_id item2_id: Int,
+  index index: Int,
+  count count: Int,
+) -> HeldItem {
+  HeldItem(
+    item_guid: guid,
+    item2_id: id.Item2Id(item2_id),
+    location: 1,
+    bag_index: index,
+    stack_count: count,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: option.None,
+    ),
+  )
+}
+
+/// The codes of the 0x106s among the effects.
+pub fn codes(effects effects: List(Effect)) -> List(Int) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Refuse(code:) -> Ok(code)
+      Send(..) | Log(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The frames among the effects.
+pub fn frames(effects effects: List(Effect)) -> List(Frame) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Send(frame:) -> Ok(frame)
+      Log(..) | Refuse(..) -> Error(Nil)
+    }
+  })
 }

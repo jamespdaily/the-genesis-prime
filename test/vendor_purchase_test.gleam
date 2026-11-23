@@ -35,7 +35,6 @@ import character_tables
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
-import genesis_prime/connection/frame
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction.{Player}
 import genesis_prime/game/player_life.{type Life}
@@ -80,17 +79,6 @@ const position_14838 = 2
 
 const position_20791 = 3
 
-/// Dorian Walker's vendor window, open on his unit.
-fn walkers_window() -> Option(vendor.Opened) {
-  let assert Ok(walkers) =
-    vendor.get(
-      vendors: vendor_support.stocking(creature_ids: [74_812]),
-      creature_id: id.Creature2Id(74_812),
-    )
-    as "the vendors of the test hold Dorian Walker"
-  Some(vendor.Opened(unit_id: vendor_support.walker_unit, vendor: walkers))
-}
-
 fn body(unique_id unique_id: Int, quantity quantity: Int) -> BitArray {
   let assert Ok(body) =
     vendor_purchase_message.encode(vendor_purchase_message.VendorPurchase(
@@ -99,36 +87,6 @@ fn body(unique_id unique_id: Int, quantity quantity: Int) -> BitArray {
     ))
     as "two 32-bit values fit the message"
   body
-}
-
-fn credits(total total: Int) -> Currencies {
-  currency.with_amount(
-    currencies: currency.from_held(held: []),
-    currency_type_id: currency.credits_type,
-    total:,
-  )
-}
-
-/// A stack of Item2 `item2_id` in the inventory.
-fn in_bag(
-  guid guid: Int,
-  item2_id item2_id: Int,
-  index index: Int,
-  count count: Int,
-) -> HeldItem {
-  HeldItem(
-    item_guid: guid,
-    item2_id: Item2Id(item2_id),
-    location: 1,
-    bag_index: index,
-    stack_count: count,
-    words: store.ItemWords(
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
-    ),
-  )
 }
 
 /// Everything a buy reads, at the open window, the walker in reach and the player alive;
@@ -152,8 +110,8 @@ fn scene(unique_id unique_id: Int, quantity quantity: Int) -> Scene {
   Scene(
     body: body(unique_id:, quantity:),
     items: [],
-    credits: credits(total: 100_000),
-    opened: walkers_window(),
+    credits: vendor_support.credits(total: 100_000),
+    opened: vendor_support.walkers_window(),
     life: player_life_support.alive(),
     gap: 1.0,
     vendors: vendor_support.stocking(creature_ids: [74_812]),
@@ -196,16 +154,6 @@ fn refused(scene scene: Scene) -> List(Effect) {
   let assert Ok(Refused(effects:, ..)) = taken(scene:)
     as "the buy breaks a check, so it is answered and nothing is asked"
   effects
-}
-
-/// The codes of the 0x106s among the effects.
-fn codes(effects effects: List(Effect)) -> List(Int) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Refuse(code:) -> Ok(code)
-      Send(..) | Log(..) -> Error(Nil)
-    }
-  })
 }
 
 /// The level of the one log line and the code of the one 0x106 among the effects of a
@@ -299,16 +247,6 @@ fn refused_back(scene scene: Scene) -> #(List(Effect), set.Set(String)) {
   #(effects, logged)
 }
 
-/// The frames among the effects.
-fn frames(effects effects: List(Effect)) -> List(frame.Frame) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Send(frame:) -> Ok(frame)
-      Log(..) | Refuse(..) -> Error(Nil)
-    }
-  })
-}
-
 pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_items_test() -> Nil {
   use <- owned_test.run(10_000)
   // Item2 14838 at the 67 the window shows (`item_price_test`), one lot of 1 item, with
@@ -316,7 +254,7 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
   let scene =
     Scene(
       ..scene(unique_id: position_14838, quantity: 1),
-      credits: credits(total: 100),
+      credits: vendor_support.credits(total: 100),
     )
   assert asked(scene:)
     == Purchase(
@@ -405,8 +343,8 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
   // The server's choice, stated in the module's doc: 14838 stacks to 50. Slot 1 holds a
   // full stack, slot 3 holds 48 and slot 0 is empty; 5 are bought.
   let items = [
-    in_bag(guid: 11, item2_id: 14_838, index: 1, count: 50),
-    in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48),
+    vendor_support.in_bag(guid: 11, item2_id: 14_838, index: 1, count: 50),
+    vendor_support.in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48),
   ]
   let purchase =
     asked(scene: Scene(..scene(unique_id: position_14838, quantity: 5), items:))
@@ -476,14 +414,14 @@ pub fn a_buy_over_the_credits_held_is_refused_with_not_enough_cash_test() -> Nil
   let short =
     Scene(
       ..scene(unique_id: position_14838, quantity: 1),
-      credits: credits(total: 66),
+      credits: vendor_support.credits(total: 66),
     )
-  assert codes(effects: refused(scene: short)) == [20]
+  assert vendor_support.codes(effects: refused(scene: short)) == [20]
     as "enum 20, Vendor_NotEnoughCash (Vendor.lua l.1490)"
   let exact =
     Scene(
       ..scene(unique_id: position_14838, quantity: 1),
-      credits: credits(total: 67),
+      credits: vendor_support.credits(total: 67),
     )
   assert asked(scene: exact).cost == 67
     as "the credits held may equal the price"
@@ -492,17 +430,21 @@ pub fn a_buy_over_the_credits_held_is_refused_with_not_enough_cash_test() -> Nil
 pub fn an_id_the_vendor_does_not_sell_is_refused_with_unknown_item_test() -> Nil {
   use <- owned_test.run(10_000)
   // The stock has positions 1 to 3.
-  assert codes(effects: refused(scene: scene(unique_id: 4, quantity: 1)))
+  assert vendor_support.codes(
+      effects: refused(scene: scene(unique_id: 4, quantity: 1)),
+    )
     == [14]
     as "enum 14, Vendor_UnknownItem: position 4 is not in the window"
-  assert codes(effects: refused(scene: scene(unique_id: 0, quantity: 1)))
+  assert vendor_support.codes(
+      effects: refused(scene: scene(unique_id: 0, quantity: 1)),
+    )
     == [14]
     as "no item has the unique id 0"
 }
 
 pub fn a_quantity_of_0_is_refused_with_no_quantity_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert codes(
+  assert vendor_support.codes(
       effects: refused(scene: scene(unique_id: position_12078, quantity: 0)),
     )
     == [24]
@@ -514,23 +456,28 @@ pub fn a_buy_that_does_not_fit_the_inventory_is_refused_with_inventory_full_test
   // The 16 usable slots (no bag worn) each hold a full stack of 14838.
   let full =
     list.index_map(list.repeat(Nil, 16), fn(_, index) {
-      in_bag(guid: 100 + index, item2_id: 14_838, index:, count: 50)
+      vendor_support.in_bag(
+        guid: 100 + index,
+        item2_id: 14_838,
+        index:,
+        count: 50,
+      )
     })
-  assert codes(effects: refused(
+  assert vendor_support.codes(effects: refused(
       scene: Scene(..scene(unique_id: position_14838, quantity: 1), items: full),
     ))
     == [27]
     as "enum 27, Item_InventoryFull: no slot has room, so the store is not asked"
   // One slot with room for 1 more takes one item but not two.
   let room = [
-    in_bag(guid: 99, item2_id: 14_838, index: 15, count: 49),
+    vendor_support.in_bag(guid: 99, item2_id: 14_838, index: 15, count: 49),
     ..list.take(full, 15)
   ]
   assert asked(
       scene: Scene(..scene(unique_id: position_14838, quantity: 1), items: room),
     ).grow
     == [StackGrowth(item_guid: 99, held_count: 49, new_count: 50)]
-  assert codes(effects: refused(
+  assert vendor_support.codes(effects: refused(
       scene: Scene(..scene(unique_id: position_14838, quantity: 2), items: room),
     ))
     == [27]
@@ -588,13 +535,15 @@ pub fn a_body_the_client_reader_refuses_ends_the_connection_test() -> Nil {
 /// The purchase of 5 items of 14838 into a stack of 48 and an empty slot, which the
 /// answer tests answer.
 fn two_places() -> #(vendor_purchase.Purchase, List(HeldItem)) {
-  let items = [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48)]
+  let items = [
+    vendor_support.in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48),
+  ]
   #(
     asked(
       scene: Scene(
         ..scene(unique_id: position_14838, quantity: 5),
         items:,
-        credits: credits(total: 1000),
+        credits: vendor_support.credits(total: 1000),
       ),
     ),
     items,
@@ -604,14 +553,15 @@ fn two_places() -> #(vendor_purchase.Purchase, List(HeldItem)) {
 pub fn a_saved_buy_sends_the_new_total_then_the_items_with_reason_vendor_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(purchase, items) = two_places()
-  let bag = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
+  let bag =
+    vendor_support.in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
   let made = HeldItem(..bag, words: store.ItemWords(..bag.words, charges: 7))
   let listed = held_back()
   let #(held, held_credits, buyback, effects) =
     vendor_purchase.answered(
       purchase:,
       items:,
-      currencies: credits(total: 1000),
+      currencies: vendor_support.credits(total: 1000),
       buyback: listed,
       answer: Bought(amount: 665, made: [made]),
       now_unix_ms: 0,
@@ -621,7 +571,10 @@ pub fn a_saved_buy_sends_the_new_total_then_the_items_with_reason_vendor_test() 
   assert currency.credits(currencies: held_credits) == 665
     as "the credits the store left: 1000 less 5 x 67"
   assert list.sort(held, fn(a, b) { int.compare(a.item_guid, b.item_guid) })
-    == [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 50), made]
+    == [
+      vendor_support.in_bag(guid: 12, item2_id: 14_838, index: 3, count: 50),
+      made,
+    ]
     as "the grown stack holds 50 and the new stack is held with the guid the store gave"
   let sent =
     list.filter_map(effects, fn(effect) {
@@ -672,7 +625,7 @@ pub fn a_buy_the_store_did_not_save_sends_db_failure_and_keeps_credits_and_items
         vendor_purchase.answered(
           purchase:,
           items:,
-          currencies: credits(total: 1000),
+          currencies: vendor_support.credits(total: 1000),
           buyback: listed,
           answer:,
           now_unix_ms: 0,
@@ -719,9 +672,15 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
   // the inventory holds a stack of 48 (limit 50) and an empty slot is at index 0.
   // `opcode.0xbb`: the client sends 0xBB under the conditions of 0xBE and the server takes
   // the entry's price (`lua.Vendor.buyback_price`: what the sale paid), not the stock price.
-  let items = [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48)]
+  let items = [
+    vendor_support.in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48),
+  ]
   let scene =
-    Scene(..buying_back(buyback_id: 2), items:, credits: credits(total: 100))
+    Scene(
+      ..buying_back(buyback_id: 2),
+      items:,
+      credits: vendor_support.credits(total: 100),
+    )
   let purchase = asked_back(scene:)
   assert purchase
     == Purchase(
@@ -780,12 +739,13 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
     as "the store is asked as for a buy: the entry's price off the total, the items added"
   // The store's answer: the new total, the grown stack's 0x17F, the new stack's 0x111, both
   // with the reason 16 (Item.CodeEnumItemUpdateReason Buyback), then the 0xBD naming the entry.
-  let made = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 1)
+  let made =
+    vendor_support.in_bag(guid: 500, item2_id: 14_838, index: 0, count: 1)
   let #(held, held_credits, buyback, effects) =
     vendor_purchase.answered(
       purchase:,
       items:,
-      currencies: credits(total: 100),
+      currencies: vendor_support.credits(total: 100),
       buyback: scene.buyback,
       answer: Bought(amount: 60, made: [made]),
       now_unix_ms: 0,
@@ -793,7 +753,10 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
   assert currency.credits(currencies: held_credits) == 60
     as "the credits the store left: 100 less the entry's 40"
   assert list.sort(held, fn(a, b) { int.compare(a.item_guid, b.item_guid) })
-    == [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 50), made]
+    == [
+      vendor_support.in_bag(guid: 12, item2_id: 14_838, index: 3, count: 50),
+      made,
+    ]
     as "the items are held as the answer says"
   assert buyback
     == Buyback(next_id: 4, entries: [
@@ -812,7 +775,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       ),
     ])
     as "entry 2 leaves the list and nothing else changes, not even the next id"
-  let assert [total, grown, added, removed] = frames(effects:)
+  let assert [total, grown, added, removed] = vendor_support.frames(effects:)
     as "a 0x919, a 0x17F for the grown stack, a 0x111 for the new one, then a 0xBD"
   assert total.message_id == currency_changed.message_id
   assert currency_changed.decode(total.body)
@@ -839,7 +802,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
     vendor_purchase.answered(
       purchase:,
       items:,
-      currencies: credits(total: 100),
+      currencies: vendor_support.credits(total: 100),
       buyback: scene.buyback,
       answer: ItemsNotSaved,
       now_unix_ms: 0,
@@ -945,7 +908,9 @@ pub fn a_bought_item_is_made_with_its_rows_charges_test() -> Nil {
       quantity: 1,
       max_charges: 1,
       max_stack: None,
-      held: [in_bag(guid: 30, item2_id: 20_791, index: 0, count: 5)],
+      held: [
+        vendor_support.in_bag(guid: 30, item2_id: 20_791, index: 0, count: 5),
+      ],
       made: [],
       grown: 1,
     ),
@@ -1049,7 +1014,7 @@ pub fn items_a_purchase_makes_are_unbound_test() -> Nil {
     #("one of a bind-on-equip row", [], [0], 0),
     #(
       "a lot of a bind-on-equip row into an existing stack",
-      [in_bag(guid: 30, item2_id: 14_838, index: 0, count: 5)],
+      [vendor_support.in_bag(guid: 30, item2_id: 14_838, index: 0, count: 5)],
       [],
       1,
     ),
@@ -1110,14 +1075,19 @@ pub fn a_buy_back_of_an_id_not_in_the_list_is_refused_with_unknown_item_test() -
   let #(effects, logged) = refused_back(scene: buying_back(buyback_id: 4))
   assert logged_code(effects:) == #(LogWarning, 14)
     as "enum 14, Vendor_UnknownItem, with a warning the first time"
-  assert frames(effects:) == [] as "no 0xBD: nothing left the list"
+  assert vendor_support.frames(effects:) == []
+    as "no 0xBD: nothing left the list"
   let again = refused_back(scene: Scene(..buying_back(buyback_id: 4), logged:))
   assert logged_code(effects: again.0) == #(LogDebug, 14)
     as "a debug line the second time"
-  assert codes(effects: refused_back(scene: buying_back(buyback_id: 1)).0)
+  assert vendor_support.codes(
+      effects: refused_back(scene: buying_back(buyback_id: 1)).0,
+    )
     == [14]
     as "an entry already bought back is no longer on the list"
-  assert codes(effects: refused_back(scene: buying_back(buyback_id: 0)).0)
+  assert vendor_support.codes(
+      effects: refused_back(scene: buying_back(buyback_id: 0)).0,
+    )
     == [14]
     as "no entry has the id 0"
   let empty =
@@ -1125,25 +1095,38 @@ pub fn a_buy_back_of_an_id_not_in_the_list_is_refused_with_unknown_item_test() -
       ..buying_back(buyback_id: 2),
       buyback: Buyback(next_id: 1, entries: []),
     )
-  assert codes(effects: refused_back(scene: empty).0) == [14]
+  assert vendor_support.codes(effects: refused_back(scene: empty).0) == [14]
     as "an empty list holds no id"
 }
 
 pub fn a_buy_back_over_the_credits_held_or_the_room_left_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   // Entry 2 costs 40: 39 held is one short, 40 held is enough.
-  let short = Scene(..buying_back(buyback_id: 2), credits: credits(total: 39))
-  assert codes(effects: refused_back(scene: short).0) == [20]
+  let short =
+    Scene(
+      ..buying_back(buyback_id: 2),
+      credits: vendor_support.credits(total: 39),
+    )
+  assert vendor_support.codes(effects: refused_back(scene: short).0) == [20]
     as "enum 20, Vendor_NotEnoughCash, against the entry's price"
-  let exact = Scene(..buying_back(buyback_id: 2), credits: credits(total: 40))
+  let exact =
+    Scene(
+      ..buying_back(buyback_id: 2),
+      credits: vendor_support.credits(total: 40),
+    )
   assert asked_back(scene: exact).cost == 40
     as "the credits held may equal the entry's price"
   // The 16 usable slots each hold a full stack of 14838: the 3 items have no place.
   let full =
     list.index_map(list.repeat(Nil, 16), fn(_, index) {
-      in_bag(guid: 100 + index, item2_id: 14_838, index:, count: 50)
+      vendor_support.in_bag(
+        guid: 100 + index,
+        item2_id: 14_838,
+        index:,
+        count: 50,
+      )
     })
-  assert codes(
+  assert vendor_support.codes(
       effects: refused_back(
         scene: Scene(..buying_back(buyback_id: 2), items: full),
       ).0,
@@ -1189,7 +1172,7 @@ fn sold_elsewhere() -> Buyback {
 /// The credits and the 80 Glory a player holds for the entries sold in Glory.
 fn credits_and_glory() -> Currencies {
   currency.with_amount(
-    currencies: credits(total: 100),
+    currencies: vendor_support.credits(total: 100),
     currency_type_id: 7,
     total: 80,
   )
@@ -1262,7 +1245,8 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
       item2_id: Item2Id(16_053),
     ))
     as "the store is asked to take the 60 off the 80 Glory held"
-  let made = in_bag(guid: 500, item2_id: 16_053, index: 0, count: 1)
+  let made =
+    vendor_support.in_bag(guid: 500, item2_id: 16_053, index: 0, count: 1)
   let #(_, held_currencies, buyback, effects) =
     vendor_purchase.answered(
       purchase:,
@@ -1278,7 +1262,7 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
     as "the credits are as they were"
   assert list.map(buyback.entries, fn(entry) { entry.buyback_id }) == [6]
     as "entry 5 leaves the list"
-  let assert [total, _, removed] = frames(effects:)
+  let assert [total, _, removed] = vendor_support.frames(effects:)
     as "a 0x919, a 0x111 for the new stack, then a 0xBD"
   assert total.message_id == currency_changed.message_id
   assert currency_changed.decode(total.body)
@@ -1297,24 +1281,25 @@ pub fn a_buy_back_over_the_amount_held_of_its_currency_is_refused_with_not_enoug
     Scene(
       ..buying_back(buyback_id: 5),
       credits: currency.with_amount(
-        currencies: credits(total: 100_000),
+        currencies: vendor_support.credits(total: 100_000),
         currency_type_id: 7,
         total: glory,
       ),
       buyback: sold_elsewhere(),
     )
   }
-  assert codes(effects: refused_back(scene: with_glory(59)).0) == [20]
+  assert vendor_support.codes(effects: refused_back(scene: with_glory(59)).0)
+    == [20]
     as "enum 20, Vendor_NotEnoughCash: the credits held do not pay for an entry in Glory"
   assert asked_back(scene: with_glory(60)).cost == 60
     as "the Glory held may equal the entry's price"
   let none_held =
     Scene(
       ..buying_back(buyback_id: 5),
-      credits: credits(total: 100_000),
+      credits: vendor_support.credits(total: 100_000),
       buyback: sold_elsewhere(),
     )
-  assert codes(effects: refused_back(scene: none_held).0) == [20]
+  assert vendor_support.codes(effects: refused_back(scene: none_held).0) == [20]
     as "a currency with no held row is 0 held"
 }
 
@@ -1323,12 +1308,14 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
   // The entry names no place (`opcode.0xba.price`), so item 13176 sold from its worn place
   // (location 0) comes back as a new stack in the first empty inventory slot, here index 1
   // beside a stack at index 0. Wearing it again is left to the player.
-  let items = [in_bag(guid: 12, item2_id: 20_791, index: 0, count: 5)]
+  let items = [
+    vendor_support.in_bag(guid: 12, item2_id: 20_791, index: 0, count: 5),
+  ]
   let scene =
     Scene(
       ..buying_back(buyback_id: 6),
       items:,
-      credits: credits(total: 100),
+      credits: vendor_support.credits(total: 100),
       buyback: sold_elsewhere(),
     )
   let purchase = asked_back(scene:)
@@ -1350,19 +1337,21 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
       ),
     ]
     as "a new stack in the bags: the entry holds no worn place"
-  let made = in_bag(guid: 500, item2_id: 13_176, index: 1, count: 1)
+  let made =
+    vendor_support.in_bag(guid: 500, item2_id: 13_176, index: 1, count: 1)
   let #(held, held_credits, _, effects) =
     vendor_purchase.answered(
       purchase:,
       items:,
-      currencies: credits(total: 100),
+      currencies: vendor_support.credits(total: 100),
       buyback: scene.buyback,
       answer: Bought(amount: 22, made: [made]),
       now_unix_ms: 0,
     )
   assert list.contains(held, made) as "the item is held again, in the bags"
   assert currency.credits(currencies: held_credits) == 22
-  let assert [_, added, _] = frames(effects:) as "a 0x919, a 0x111 and a 0xBD"
+  let assert [_, added, _] = vendor_support.frames(effects:)
+    as "a 0x919, a 0x111 and a 0xBD"
   let assert Ok(item_added.ItemAdded(held_item:)) =
     item_added.decode(added.body)
     as "0x111 decodes"
@@ -1395,7 +1384,7 @@ const bracer_entropy = <<
 /// The frame of a 0x111 among the effects, decoded.
 fn added_item(effects effects: List(Effect)) -> item_added.ItemAdded {
   let assert [added] =
-    list.filter(frames(effects:), fn(frame) {
+    list.filter(vendor_support.frames(effects:), fn(frame) {
       frame.message_id == item_added.message_id
     })
     as "one 0x111"
@@ -1475,7 +1464,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
     vendor_purchase.answered(
       purchase:,
       items: [],
-      currencies: credits(total: 100),
+      currencies: vendor_support.credits(total: 100),
       buyback: scene.buyback,
       answer: Bought(amount: 60, made: [made]),
       now_unix_ms: 0,
@@ -1537,7 +1526,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
     vendor_purchase.answered(
       purchase: rolled,
       items: [],
-      currencies: credits(total: 100_000),
+      currencies: vendor_support.credits(total: 100_000),
       buyback: held_back(),
       answer: Bought(amount: 0, made: [made]),
       now_unix_ms: 0,
@@ -1584,7 +1573,7 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
     vendor_purchase.answered(
       purchase: rolled,
       items: [],
-      currencies: credits(total: 100_000),
+      currencies: vendor_support.credits(total: 100_000),
       buyback: held_back(),
       answer: Bought(amount: 0, made: [made]),
       now_unix_ms: 0,
@@ -1599,41 +1588,48 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
 pub fn a_buy_sends_no_gain_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(purchase, items) = two_places()
-  let made = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
+  let made =
+    vendor_support.in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
   let #(_, _, _, bought) =
     vendor_purchase.answered(
       purchase:,
       items:,
-      currencies: credits(total: 1000),
+      currencies: vendor_support.credits(total: 1000),
       buyback: held_back(),
       answer: Bought(amount: 665, made: [made]),
       now_unix_ms: 0,
     )
-  assert list.map(frames(effects: bought), fn(frame) { frame.message_id })
+  assert list.map(vendor_support.frames(effects: bought), fn(frame) {
+      frame.message_id
+    })
     |> list.contains(currency_changed.message_id)
     as "a buy sets the new total with a 0x919"
-  assert !list.any(frames(effects: bought), fn(frame) {
+  assert !list.any(vendor_support.frames(effects: bought), fn(frame) {
     frame.message_id == currency_gained.message_id
   })
     as "opcode.0xdd: a buy is a spend, so no gain line"
   let back = buying_back(buyback_id: 2)
   let back_purchase =
-    asked_back(scene: Scene(..back, credits: credits(total: 100)))
+    asked_back(
+      scene: Scene(..back, credits: vendor_support.credits(total: 100)),
+    )
   let #(_, _, _, bought_back) =
     vendor_purchase.answered(
       purchase: back_purchase,
       items: [],
-      currencies: credits(total: 100),
+      currencies: vendor_support.credits(total: 100),
       buyback: back.buyback,
       answer: Bought(amount: 60, made: [
-        in_bag(guid: 501, item2_id: 14_838, index: 0, count: 1),
+        vendor_support.in_bag(guid: 501, item2_id: 14_838, index: 0, count: 1),
       ]),
       now_unix_ms: 0,
     )
-  assert list.map(frames(effects: bought_back), fn(frame) { frame.message_id })
+  assert list.map(vendor_support.frames(effects: bought_back), fn(frame) {
+      frame.message_id
+    })
     |> list.contains(currency_changed.message_id)
     as "a buy back sets the new total with a 0x919"
-  assert !list.any(frames(effects: bought_back), fn(frame) {
+  assert !list.any(vendor_support.frames(effects: bought_back), fn(frame) {
     frame.message_id == currency_gained.message_id
   })
     as "opcode.0xdd: a buy back is a spend, so no gain line"
@@ -1672,7 +1668,7 @@ fn made_stack(
 /// A bag with every one of the 16 slots held by a full stack of Item2 14838.
 fn full_bag() -> List(HeldItem) {
   list.index_map(list.repeat(Nil, 16), fn(_, index) {
-    in_bag(guid: index + 1, item2_id: 14_838, index:, count: 50)
+    vendor_support.in_bag(guid: index + 1, item2_id: 14_838, index:, count: 50)
   })
 }
 
@@ -1799,7 +1795,14 @@ pub fn a_given_item_is_a_purchase_of_no_cost_that_places_like_a_buy_test() -> Ni
         given_as(
           item2_id: 14_838,
           count: 5,
-          items: [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48)],
+          items: [
+            vendor_support.in_bag(
+              guid: 12,
+              item2_id: 14_838,
+              index: 3,
+              count: 48,
+            ),
+          ],
           credits: no_credits,
           now_unix_ms: 0,
         ),
@@ -1872,7 +1875,7 @@ pub fn a_given_item_is_a_purchase_of_no_cost_that_places_like_a_buy_test() -> Ni
           item2_id: 90_021,
           count: 1,
           items: [],
-          credits: credits(total: 700),
+          credits: vendor_support.credits(total: 700),
           now_unix_ms: 0,
         ),
         Ok(given_purchase(
@@ -1899,23 +1902,26 @@ pub fn a_given_item_is_a_purchase_of_no_cost_that_places_like_a_buy_test() -> Ni
 
 pub fn a_given_items_answer_sends_the_stack_frames_with_reason_4_then_one_system_line_and_no_credit_frame_test() -> Nil {
   use <- owned_test.run(10_000)
-  let items = [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48)]
+  let items = [
+    vendor_support.in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48),
+  ]
   let assert Ok(purchase) =
     given_as(
       item2_id: 14_838,
       count: 5,
       items:,
-      credits: credits(total: 700),
+      credits: vendor_support.credits(total: 700),
       now_unix_ms: 0,
     )
     as "the items fit"
-  let bag = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
+  let bag =
+    vendor_support.in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
   let made = HeldItem(..bag, words: store.ItemWords(..bag.words, charges: 1))
   let answered = fn(answer) {
     vendor_purchase.answered(
       purchase:,
       items:,
-      currencies: credits(total: 700),
+      currencies: vendor_support.credits(total: 700),
       buyback: held_back(),
       answer:,
       now_unix_ms: 0,
@@ -1929,9 +1935,12 @@ pub fn a_given_items_answer_sends_the_stack_frames_with_reason_4_then_one_system
   assert currency.credits(currencies: held_credits) == 700
     as "no credit was taken"
   assert list.sort(held, fn(a, b) { int.compare(a.item_guid, b.item_guid) })
-    == [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 50), made]
+    == [
+      vendor_support.in_bag(guid: 12, item2_id: 14_838, index: 3, count: 50),
+      made,
+    ]
     as "the grown stack holds 50 and the new stack has the guid the store gave"
-  let assert [grown, added, told] = frames(effects:)
+  let assert [grown, added, told] = vendor_support.frames(effects:)
     as "a 0x17F for the grown stack, a 0x111 for the new one and one system line: no 0x919"
   assert item_count_changed.decode(grown.body)
     == Ok(ItemCountChanged(item_guid: 12, count: 50, reason: 4))

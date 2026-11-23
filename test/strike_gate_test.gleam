@@ -68,15 +68,13 @@ import map_support
 import owned_test
 import prerequisite_support
 import rating_support
+import spell_tables
 import strike_support
 
 // ---- the client's rows ----
 
 fn effect_row(id id: Int) -> spell4_effects.Spell4Effects {
-  let assert Ok(row) =
-    spell4_effects.get(tables: fixture_tables.shared(), id: Spell4EffectsId(id))
-    as "the fixture holds the row"
-  row
+  spell_tables.effect_row_in(tables: fixture_tables.shared(), id:)
 }
 
 /// The client's damage row 38307: behind the type 38 target gate 3476.
@@ -234,10 +232,7 @@ fn logs(effects effects: List(Effect)) -> List(#(step.LogLevel, String)) {
 }
 
 fn timers(effects effects: List(Effect)) -> List(Effect) {
-  strike_support.only(effects:, kinds: [
-    strike_support.TimerStarted,
-    strike_support.TimerCancelled,
-  ])
+  strike_support.timers(effects:)
 }
 
 fn answer(

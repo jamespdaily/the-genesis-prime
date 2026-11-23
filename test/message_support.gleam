@@ -122,3 +122,20 @@ pub fn choice_body(
     as "a unit id, a 7-bit choice and a 32-bit value fit the message"
   body
 }
+
+/// A 0x361 as the client's reader takes it: the quest, the objective index and its progress.
+pub fn quest_progress_frame(
+  quest quest: Int,
+  index index: Int,
+  progress progress: Int,
+) -> #(Int, BitArray) {
+  #(0x0361, packed([#(15, quest), #(32, index), #(32, progress)]))
+}
+
+/// A 0x35c as the client's reader takes it, with objective id 0: the quest and its state.
+pub fn quest_state_frame(
+  quest quest: Int,
+  state state: Int,
+) -> #(Int, BitArray) {
+  #(0x035C, packed([#(15, quest), #(32, state), #(32, 0)]))
+}

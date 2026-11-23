@@ -23,6 +23,7 @@
 ////   server writes no 0x933.
 
 import connection_rule_support as support
+import departures_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
@@ -31,7 +32,6 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/routing
-import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
@@ -67,16 +67,6 @@ const with_a_big_radius = 5002
 
 const clients_cast_id = 9
 
-/// The place `east` units east of where the tests' player stands (`entry_place`): the same
-/// height and zone, so the gap between two units' edges is the distance less their radii.
-fn east_of_the_player(east east: Float) -> Place {
-  connection_support.standing_at(
-    x: 29.128599166870117 +. east,
-    y: -853.87158203125,
-    z: -560.18798828125,
-  )
-}
-
 /// A Seaspine Mollusk (Creature2 26462) as unit `unit_id`, `east` units east of the player,
 /// shown with the display row.
 fn mollusk(
@@ -88,7 +78,7 @@ fn mollusk(
     object: StaticObject(
       ..spawn_support.holoring(
         number: unit_id,
-        place: east_of_the_player(east:),
+        place: departures_support.east_of_the_player(east:),
       ),
       creature_id: Creature2Id(26_462),
       display_info_id: display,
@@ -204,7 +194,7 @@ fn terminal() -> Created {
     object: StaticObject(
       ..spawn_support.holoring(
         number: nearby,
-        place: east_of_the_player(east: 3.0),
+        place: departures_support.east_of_the_player(east: 3.0),
       ),
       creature_id: Creature2Id(73_605),
       display_info_id: mollusk_display,
@@ -535,7 +525,7 @@ fn crystal() -> Created {
     object: StaticObject(
       ..spawn_support.holoring(
         number: nearby,
-        place: east_of_the_player(east: 1.0),
+        place: departures_support.east_of_the_player(east: 1.0),
       ),
       creature_id: Creature2Id(8047),
       display_info_id: mollusk_display,
@@ -672,7 +662,7 @@ fn varonia_cazalon() -> Created {
     object: StaticObject(
       ..spawn_support.holoring(
         number: nearby,
-        place: east_of_the_player(east: 1.0),
+        place: departures_support.east_of_the_player(east: 1.0),
       ),
       creature_id: Creature2Id(32_852),
       display_info_id: mollusk_display,

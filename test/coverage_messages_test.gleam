@@ -19,16 +19,12 @@
 
 import coverage_support
 import dropped_support.{type Recorded, Recorded}
-import genesis_prime/connection/cipher
-import genesis_prime/connection/encrypted_frame
-import genesis_prime/connection/frame.{Frame}
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{
   Handled, HandledWithGap, Measured, TypeLine,
 }
 import genesis_prime/coverage/sent_message
 import genesis_prime/game/connection as game_connection
-import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/unhandled_ranking
 import genesis_prime/wire_recording.{Accepted, Client, Read}
 import gleam/int
@@ -60,35 +56,13 @@ fn named(message_id message_id: Int) -> String {
   "0x" <> string.pad_start(int.to_base16(message_id), 4, "0")
 }
 
-/// A message the client sends in its wrapper, under the base key.
-fn sent(id id: Int, body body: BitArray) -> BitArray {
-  let assert Ok(bytes) =
-    encrypted_frame.wrap(
-      encrypted_frame.ClientWrapper,
-      Frame(message_id: id, body:),
-      cipher.base(),
-    )
-    as "the frame is within the size limit"
-  bytes
-}
-
-/// A message the client sends inside a 0x038C, as it sends world messages.
-fn carried(id id: Int, body body: BitArray) -> BitArray {
-  let assert Ok(inner) = frame.encode(message_id: id, body:)
-    as "the frame is within the size limit"
-  let assert Ok(carrier) =
-    world_message.encode(WorldMessage(send_kind: 3, inner_frame: inner))
-    as "the carrier encodes"
-  sent(id: 0x038C, body: carrier)
-}
-
 /// What the client sent, each recorded body of the thirteen ids, as it sends it:
 /// 0x0241 on its own and the rest inside 0x038C.
 fn as_sent(recorded: Recorded) -> BitArray {
   let Recorded(message_id:, body:, ..) = recorded
   case message_id {
-    0x0241 -> sent(id: message_id, body:)
-    _ -> carried(id: message_id, body:)
+    0x0241 -> wire.sent(id: message_id, body:)
+    _ -> wire.carried(id: message_id, body:)
   }
 }
 
@@ -158,7 +132,7 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
     )
   let reads =
     list.append(list.map(dropped_support.recorded(), as_sent), [
-      carried(id: 0x0072, body: <<>>),
+      wire.carried(id: 0x0072, body: <<>>),
     ])
   wire.write(
     folder:,

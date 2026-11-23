@@ -37,24 +37,19 @@
 
 import character_tables
 import fixture_tables
-import game_connection_support as connection_support
 import genesis_prime/game/interaction
-import genesis_prime/game/prerequisite.{Factions}
 import genesis_prime/game/quest.{
   type Asker, type Taken, Acceptable, Asker, SendState,
 }
 import genesis_prime/game/quest_log
-import genesis_prime/game/shown
 import genesis_prime/message/interaction_request.{InteractionRequest}
-import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_abandon.{QuestAbandon}
-import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_ignore.{QuestIgnore}
 import genesis_prime/message/quest_mention.{QuestMention}
 import genesis_prime/message/quest_track.{QuestTrack}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{type HeldItem, type QuestRow, HeldItem}
-import genesis_prime/table/id.{Item2Id, Quest2Id, RaceId}
+import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import gleam/dict
@@ -65,32 +60,12 @@ import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Integer}
-import prerequisite_support
+import quest_request_support
 import quest_support
 import vendor_support
 
-const exile = 167
-
 fn tables() -> table_store.Tables {
   character_tables.shared()
-}
-
-/// A level 20 Exile of race 3, class 5 and path 1 whose log holds these rows.
-fn asker(log log: List(QuestRow)) -> Asker {
-  Asker(
-    player: prerequisite_support.player(),
-    factions: Factions(current: exile, base: exile),
-    log: quest_support.log_of(rows: log),
-    checker: prerequisite_support.empty_checker(),
-  )
-}
-
-fn standing() -> interaction.Player {
-  interaction.Player(
-    race_id: RaceId(3),
-    faction: shown.Exile,
-    place: connection_support.entry_place(),
-  )
 }
 
 fn item(location location: Int) -> HeldItem {
@@ -120,7 +95,7 @@ fn took(
       message:,
       body:,
       asker:,
-      standing: standing(),
+      standing: quest_request_support.standing(),
       picture: dict.new(),
       tables: tables(),
       now_ms: 0,
@@ -308,7 +283,7 @@ pub fn abandon_follows_the_client_rule_test() -> Nil {
     #("an Ignored quest", 1806, [quest_support.known(1806, 7)], False),
   ]
   use #(what, quest_id, rows, allowed) <- list.each(cases)
-  let held = asker(log: rows)
+  let held = quest_request_support.asker(log: rows)
   let taken =
     took(message: quest.Abandon, body: abandon_body(quest_id:), asker: held)
   case allowed {
@@ -325,9 +300,12 @@ pub fn abandon_keeps_the_quest_abandoned_and_acceptable_test() -> Nil {
   use <- owned_test.run(10_000)
   let started = quest_support.accepted(quest_id: 2417, progress: [])
   let held =
-    quest_support.with_items(asker(log: [started]), items: [
-      item(location: 1),
-    ])
+    quest_support.with_items(
+      quest_request_support.asker(log: [started]),
+      items: [
+        item(location: 1),
+      ],
+    )
   let target = fn(asker: Asker) {
     let assert Ok(row) = quest2.get(tables: tables(), id: Quest2Id(2417))
       as "the fixture holds quest 2417"
@@ -361,7 +339,11 @@ pub fn abandon_keeps_the_quest_abandoned_and_acceptable_test() -> Nil {
   let accepted_again =
     took(
       message: quest.Accept,
-      body: accept_body(location: 1, bag_index: 0, quest_id: 2417),
+      body: quest_request_support.accept_body(
+        location: 1,
+        bag_index: 0,
+        quest_id: 2417,
+      ),
       asker: again,
     )
   assert accepted_again.effects
@@ -373,20 +355,6 @@ pub fn abandon_keeps_the_quest_abandoned_and_acceptable_test() -> Nil {
     )
     == 2
     as "a quest with no objective is achieved at once (0x1405fbc40), so the entry is the active one"
-}
-
-fn accept_body(
-  location location: Int,
-  bag_index bag_index: Int,
-  quest_id quest_id: Int,
-) -> BitArray {
-  let assert Ok(body) =
-    quest_accept.encode(QuestAccept(
-      item: ItemPlace(location:, bag_index:),
-      quest_id:,
-    ))
-    as "the request fits its fields"
-  body
 }
 
 pub fn mention_stores_mentioned_for_both_bits_test() -> Nil {
@@ -414,7 +382,7 @@ pub fn mention_stores_mentioned_for_both_bits_test() -> Nil {
     took(
       message: quest.Mention,
       body: mention_body(quest_id: 1872, mentioned: bit),
-      asker: asker(log: rows),
+      asker: quest_request_support.asker(log: rows),
     )
   assert result.effects == [] as { what <> " sends no answer (opcode.0x360)" }
   assert quest_log.rows(log: result.log, now_ms: 0) == after
@@ -435,7 +403,7 @@ pub fn mention_stores_mentioned_for_both_bits_test() -> Nil {
     #("a withdrawal of an Accepted quest", 0, [accepted(1872, progress: [])]),
   ]
   use #(what, bit, rows) <- list.each(refused)
-  let held = asker(log: rows)
+  let held = quest_request_support.asker(log: rows)
   let result =
     took(
       message: quest.Mention,
@@ -456,7 +424,8 @@ pub fn withdrawal_is_taken_only_for_a_quest_with_the_communicator_flag_test() ->
     #("Abandoned", 6),
   ]
   use #(name, state) <- list.each(states)
-  let held = asker(log: [quest_support.known(1806, state)])
+  let held =
+    quest_request_support.asker(log: [quest_support.known(1806, state)])
   let result =
     took(
       message: quest.Mention,
@@ -518,7 +487,7 @@ pub fn track_sets_the_tracked_flag_without_an_answer_test() -> Nil {
     took(
       message: quest.Track,
       body: track_body(quest_id: 1806, tracked: bit),
-      asker: asker(log: [row]),
+      asker: quest_request_support.asker(log: [row]),
     )
   assert result.effects == [] as { what <> " sends no answer (opcode.0x364)" }
   assert quest_log.rows(log: result.log, now_ms: 0) == [after]
@@ -530,7 +499,7 @@ pub fn track_sets_the_tracked_flag_without_an_answer_test() -> Nil {
     #("a Completed quest", [quest_support.completed(1806, at: 1000)]),
   ]
   use #(what, rows) <- list.each(outside)
-  let held = asker(log: rows)
+  let held = quest_request_support.asker(log: rows)
   assert_declined(
     taken: took(
       message: quest.Track,
@@ -556,7 +525,7 @@ pub fn ignore_answers_ignored_and_stop_ignoring_answers_mentioned_test() -> Nil 
     took(
       message: quest.Ignore,
       body: ignore_body(quest_id: 1806, ignored: bit),
-      asker: asker(log: [row]),
+      asker: quest_request_support.asker(log: [row]),
     )
   assert result.effects == [SendState(quest_id: 1806, state:, objective_id: 0)]
     as {
@@ -580,7 +549,7 @@ pub fn ignore_answers_ignored_and_stop_ignoring_answers_mentioned_test() -> Nil 
     #("stopping to ignore a quest the log lacks", 0, []),
   ]
   use #(what, bit, rows) <- list.each(refused)
-  let held = asker(log: rows)
+  let held = quest_request_support.asker(log: rows)
   assert_declined(
     taken: took(
       message: quest.Ignore,
@@ -608,7 +577,7 @@ fn talked_to_walker_again(
   rows rows: List(QuestRow),
   logged logged: set.Set(String),
 ) -> interaction.Taken {
-  let held = asker(log: rows)
+  let held = quest_request_support.asker(log: rows)
   let assert Ok(body) =
     interaction_request.encode(InteractionRequest(unit_id: 40, kind: 37))
     as "a unit id and a 7-bit kind fit the message"
@@ -616,7 +585,7 @@ fn talked_to_walker_again(
     interaction.take(
       message: interaction.Requested,
       body:,
-      player: standing(),
+      player: quest_request_support.standing(),
       picture: vendor_support.picture_with_walker(gap: 1.0),
       tables:,
       vendors: vendor_support.stocking(creature_ids: []),

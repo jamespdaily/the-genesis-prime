@@ -38,7 +38,7 @@ import genesis_prime/message/quest_periodic_reset.{
 }
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, CancelTimer, OwnEffect, OwnEvent,
-  StartTimer, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId,
+  TimerFired, TimerId, WatchEnded, WatchId,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -86,13 +86,7 @@ fn fired(
 
 /// The timers the step starts with their waits, in order.
 fn started(taken taken: ConnectionStep(Request)) -> List(#(step.TimerId, Int)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(StartTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
+  game_connection_support.timers_started(taken:)
 }
 
 /// The 0x362 messages the step writes, decoded.

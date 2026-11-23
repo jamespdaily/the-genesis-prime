@@ -193,23 +193,13 @@ fn engineer(body body: fn(game_connection.State, Int) -> a) -> a {
   )
 }
 
-fn at(
-  state state: game_connection.State,
-  ms ms: Int,
-  event event: step.Event(
-    step.ConnectionEvent(client_connection.Message, client_connection.Answer),
-  ),
-) -> #(game_connection.State, ConnectionStep(Request)) {
-  game_connection.step(state, support.input_at_ms(ms:, event:))
-}
-
 fn pressed_at(
   state state: game_connection.State,
   bag_index bag_index: Int,
   client_cast_id client_cast_id: Int,
   ms ms: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  at(
+  connection_support.at(
     state:,
     ms:,
     event: OwnEvent(
@@ -230,7 +220,7 @@ fn threatened_at(
   state state: game_connection.State,
   ms ms: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  at(
+  connection_support.at(
     state:,
     ms:,
     event: connection_support.foe(strike_tell.Threatened(unit_id: 9, life: 3)),
@@ -282,7 +272,8 @@ pub fn a_cast_timer_that_starts_a_held_press_in_combat_ends_its_cast_after_the_t
   let assert [timer] =
     list.filter(support.timers_started(held), cast_state.owns)
     as "its start waits on a timer of the cast rule"
-  let #(_, taken) = at(state:, ms: 2250, event: OwnEvent(TimerFired(timer:)))
+  let #(_, taken) =
+    connection_support.at(state:, ms: 2250, event: OwnEvent(TimerFired(timer:)))
   assert ids(taken:) == list.append(press_written, failed_then_finished)
     as "the timer starts the held press (its own 0x7fd and go), and the check after the timer ends it"
 }

@@ -16,22 +16,19 @@
 ////   terminal by the names of the terminal, its spell and the choice objective
 ////   (Northern Wilds, Everstar Grove, Levian Bay, Crimson Isle).
 
-import cast_support
 import character_tables
+import departures_support
 import fixture_tables
 import genesis_prime/game/activate.{type Link, ClosedLink, OpenLink}
-import genesis_prime/game/cast/press as cast_press
-import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/departures.{NotATerminal, TravelClosed}
-import genesis_prime/game/objective_link
 import genesis_prime/game/quest_log.{type QuestLog}
-import genesis_prime/game/start_place.{type Place}
-import genesis_prime/table/creature2
+import genesis_prime/game/start_place
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import place_support
 import planted_table.{Integer}
 import quest_support
 
@@ -74,39 +71,7 @@ fn dominion_after_the_talk() -> QuestLog {
 /// The link of a creature's right-click for a player holding this log, as the rule that
 /// reads it gives it (`objective_link.of`).
 fn link_of(quests quests: QuestLog, creature_id creature_id: Int) -> Link {
-  let tables = character_tables.shared()
-  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
-    as "the creature is a root of the fixture"
-  objective_link.of(
-    tables:,
-    activations: activate.activations(tables:),
-    subject: cast_press.subject_for_use(
-      cast: cast_state.new(),
-      caster: cast_state.Caster(..cast_support.caster(), quests:),
-      unit_id: 5000,
-      checklist_index: 0,
-    ),
-    quests:,
-    row:,
-    checklist_index: 0,
-  )
-}
-
-fn assert_place(
-  landing landing: Result(Place, departures.Refusal),
-  world world: Int,
-  zone zone: Int,
-  x x: Float,
-  y y: Float,
-  z z: Float,
-  reason reason: String,
-) -> Nil {
-  let assert Ok(place) = landing as reason
-  assert start_place.world_id(place) == world as reason
-  assert start_place.world_zone_id(place) == zone as reason
-  assert start_place.x(place) == x as reason
-  assert start_place.y(place) == y as reason
-  assert start_place.z(place) == z as reason
+  departures_support.link_of(quests:, creature_id:)
 }
 
 pub fn each_terminal_lands_at_its_row_test() -> Nil {
@@ -114,7 +79,7 @@ pub fn each_terminal_lands_at_its_row_test() -> Nil {
   let tables = character_tables.shared()
   let exile = exile_after_the_talk()
   let dominion = dominion_after_the_talk()
-  assert_place(
+  place_support.assert_landed(
     landing: departures.landing(
       tables:,
       quests: exile,
@@ -127,7 +92,7 @@ pub fn each_terminal_lands_at_its_row_test() -> Nil {
     z: -5165.10009765625,
     reason: "WorldLocation2 42074, the Northern Wilds landing",
   )
-  assert_place(
+  place_support.assert_landed(
     landing: departures.landing(
       tables:,
       quests: exile,
@@ -140,7 +105,7 @@ pub fn each_terminal_lands_at_its_row_test() -> Nil {
     z: -2275.0791015625,
     reason: "WorldLocation2 41641, the Everstar Grove landing",
   )
-  assert_place(
+  place_support.assert_landed(
     landing: departures.landing(
       tables:,
       quests: dominion,
@@ -153,7 +118,7 @@ pub fn each_terminal_lands_at_its_row_test() -> Nil {
     z: -6053.263671875,
     reason: "WorldLocation2 42148, the Levian Bay landing",
   )
-  assert_place(
+  place_support.assert_landed(
     landing: departures.landing(
       tables:,
       quests: dominion,

@@ -336,3 +336,20 @@ pub fn logged(
     as "the saved rows are ones the client takes"
   log
 }
+
+/// The quest `id` as the fixture's tables hold it.
+pub fn quest_of(id id: Int) -> quest_log.Quest {
+  let assert Ok(quest) =
+    quest_log.quest_of(tables: character_tables.shared(), id:)
+    as "the fixture holds the quest's rows"
+  quest
+}
+
+/// The saved row of the quest, as the place save writes it.
+pub fn saved_row(log log: QuestLog, quest_id quest_id: Int) -> QuestRow {
+  let assert Ok(row) =
+    quest_log.rows(log:, now_ms: 0)
+    |> list.find(fn(row) { row.quest_id == quest_id })
+    as "the log holds the quest"
+  row
+}

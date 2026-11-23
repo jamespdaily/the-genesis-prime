@@ -3,11 +3,18 @@
 //// front of a terminal, and the client's 0x97 and 0x805 that press it and answer its
 //// window.
 
+import cast_support
+import character_tables
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, AskMap, FromMap}
+import genesis_prime/game/activate.{type Link}
+import genesis_prime/game/cast/press as cast_press
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/departures
+import genesis_prime/game/objective_link
+import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_side_interaction_result.{
@@ -19,6 +26,7 @@ import genesis_prime/step.{
   type ConnectionStep, type TimerId, OwnEffect, OwnEvent, StartTimer, TimerFired,
 }
 import genesis_prime/store.{type QuestRow}
+import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/map.{Join, ObjectsSeen}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
@@ -38,7 +46,7 @@ pub const clients_cast_id = 9
 const display = 25_703
 
 /// The place `east` units east of where the tests' player stands.
-fn east_of_the_player(east east: Float) -> Place {
+pub fn east_of_the_player(east east: Float) -> Place {
   connection_support.standing_at(
     x: 29.128599166870117 +. east,
     y: -853.87158203125,
@@ -246,5 +254,26 @@ pub fn joined_at(
     state:,
     taken: joining,
     outcome: step.Answer(FromMap(answer)),
+  )
+}
+
+/// The link of a creature's right-click for a player holding this log, as the rule that
+/// reads it gives it (`objective_link.of`).
+pub fn link_of(quests quests: QuestLog, creature_id creature_id: Int) -> Link {
+  let tables = character_tables.shared()
+  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
+    as "the creature is a root of the fixture"
+  objective_link.of(
+    tables:,
+    activations: activate.activations(tables:),
+    subject: cast_press.subject_for_use(
+      cast: cast_state.new(),
+      caster: cast_state.Caster(..cast_support.caster(), quests:),
+      unit_id: 5000,
+      checklist_index: 0,
+    ),
+    quests:,
+    row:,
+    checklist_index: 0,
   )
 }
