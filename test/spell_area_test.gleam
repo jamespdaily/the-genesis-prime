@@ -39,10 +39,12 @@ import genesis_prime/game/telegraph_window
 import genesis_prime/game/ticking
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{
-  Spell4BaseId, Spell4EffectsId, Spell4Id, TelegraphDamageId,
+  Spell4AoeTargetConstraintsId, Spell4BaseId, Spell4EffectsId, Spell4Id,
+  TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/telegraph_damage
@@ -137,6 +139,7 @@ fn real_shapes(spell4_id spell4_id: Int) -> List(#(area.Shape, Float, Float)) {
 
 pub fn gamma_rays_centre_spell_strikes_through_its_own_row_and_each_side_spell_through_its_own_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   assert real_shapes(spell4_id: 29_874)
     == [#(Rectangle(width: 0.8999999761581421, length: 19.0), 1.0, 0.0)]
@@ -163,6 +166,7 @@ pub fn gamma_rays_centre_spell_strikes_through_its_own_row_and_each_side_spell_t
 
 pub fn every_pulse_of_electrocutes_channel_strikes_through_its_one_damage_effect_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   let assert Ok(electrocute) =
@@ -190,6 +194,7 @@ pub fn every_pulse_of_electrocutes_channel_strikes_through_its_one_damage_effect
 
 pub fn a_channel_of_the_level_1_abilities_has_a_phase_for_each_pulse_and_none_after_the_last_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   // Spell4 41276: (3000 - 500 + 500) / 500 pulses, the recording's phases 0 to 5.
@@ -371,6 +376,7 @@ pub fn a_cast_whose_phase_the_client_does_not_compare_holds_every_hit_row_at_eac
 
 pub fn every_phase_of_every_planned_spell_that_selects_the_area_has_hit_shapes_when_the_spell_has_hit_rows_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   // A go that selects units from the area but whose hit rows name no phase would strike nobody
   // without a word: a spell whose rows name none of its gos must not select the area at one.
@@ -397,6 +403,7 @@ pub fn every_phase_of_every_planned_spell_that_selects_the_area_has_hit_shapes_w
 
 pub fn the_window_the_client_draws_a_row_in_holds_the_go_its_phase_names_for_every_planned_phased_spell_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   // A player's cast reads a hit row by its phase alone (a marked guess). It agrees with the
   // rule a creature's cast uses, phase and the row's time window, while every row that names a
@@ -1010,6 +1017,7 @@ pub fn a_player_hit_row_placed_by_flag_8_is_anchored_at_the_cast_start_and_a_fla
 
 pub fn the_anchor_of_a_planned_spell_is_read_from_its_hit_rows_on_the_clients_rows_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   // Rows by `table_rows -- Spell4Telegraph spell4Id=<id>` and `-- TelegraphDamage <id>`.
@@ -1668,6 +1676,7 @@ pub fn a_vital_kind_row_that_lasts_until_removed_is_still_left_out_test() -> Nil
 
 pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and_a_cone_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   let assert Ok(kicked) =
@@ -1792,6 +1801,7 @@ pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_fixtures_
 
 pub fn every_threshold_stage_spell_and_its_proxies_have_an_area_on_the_clients_tables_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   assert area_rows_held(areas:, spells: stage_spells_that_strike)
@@ -1933,6 +1943,7 @@ fn kit_controls() -> List(
 
 pub fn each_kit_crowd_control_row_decodes_as_a_stun_or_a_knockdown_with_its_time_and_aim_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   list.each(kit_controls(), fn(kit) {
@@ -1958,6 +1969,7 @@ pub fn each_kit_crowd_control_row_decodes_as_a_stun_or_a_knockdown_with_its_time
 
 pub fn gates_stun_and_staggers_stun_select_their_area_and_strike_though_they_carry_no_damage_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   list.each([30_436, 38_780], fn(spell4_id) {
@@ -1974,6 +1986,7 @@ pub fn gates_stun_and_staggers_stun_select_their_area_and_strike_though_they_car
 
 pub fn crushs_knockdown_aimed_at_both_selects_the_area_and_strikes_the_primary_target_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   let assert Ok(area) = spell_area.of_spell(areas:, spell4_id: Spell4Id(42_297))
@@ -2114,6 +2127,7 @@ pub fn an_absorb_and_an_armor_row_aimed_at_the_target_strike_nobody_test() -> Ni
 
 pub fn a_periodic_damage_row_strikes_with_its_schedule_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   // Spell 38514 (Atomic Surge) is no level-1 ability, and no level-1 tree spell holds a
   // periodic damage row, so the area load never holds it: its row goes through the load's
@@ -2181,6 +2195,7 @@ pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() 
   // Generic Knockback - 10 m 36010 holds one row, 73826 (`table_rows -- Spell4Effects
   // 73826`): a ForcedMove of targetFlags 2 and phaseFlags -1, no damage, crowd control
   // or property row. Only a throw asks for the unit it moves.
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let assert Ok(spell) =
@@ -2448,8 +2463,10 @@ pub fn a_players_phase_that_selects_the_area_by_health_is_refused_by_name_test()
 
 pub fn the_clients_rows_hold_collapse_by_furthest_and_the_heals_by_health_and_no_go_of_them_selects_by_health_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
-  let areas = spell_area.areas(tables: client_tables.shared())
+  let tables = client_tables.shared()
+  let areas = spell_area.areas(tables:)
   let area_of = fn(spell4_id) {
     let assert Ok(found) =
       spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
@@ -2479,8 +2496,25 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_heals_by_health_and_no
     as "Collapse pulls the 3 furthest foes inside 10 m (text 320951)"
   assert selects_at_any_go(collapse)
     as "Collapse's go selects units from its area"
-  list.each([36_897, 41_382, 39_223, 39_068], fn(spell4_id) {
-    let found = area_of(spell4_id)
+  // The spells whose area row orders by health (targetSelection 4 or 5, which the spell_area
+  // module documents), whichever spells the client's rows give.
+  let ordered_by_health =
+    list.filter(dict.values(areas), fn(found) {
+      let assert Ok(row) = spell4.get(tables:, id: found.spell4_id)
+        as "the spell of an area has its Spell4 row"
+      case
+        spell4_aoe_target_constraints.get(
+          tables:,
+          id: Spell4AoeTargetConstraintsId(row.spell4_aoe_target_constraints_id),
+        )
+      {
+        Ok(constraints) -> list.contains([4, 5], constraints.target_selection)
+        Error(Nil) -> False
+      }
+    })
+  assert ordered_by_health != []
+    as "the abilities the orders free include spells whose area row orders by health"
+  list.each(ordered_by_health, fn(found) {
     assert found.row == None
       as "a row ordered by health picks allies, which the server does not find, so it is no area"
     assert !selects_at_any_go(found)
@@ -2589,6 +2623,7 @@ pub fn a_periodic_area_proxy_with_no_area_row_fails_the_load_and_one_ordered_by_
 
 pub fn a_spell_that_holds_a_proxy_naming_its_spell_in_data_bits01_beside_a_random_row_or_a_hit_on_the_target_is_planned_and_an_ally_one_is_refused_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let plans = spell_plan.plans_with_later(tables:)
@@ -2697,6 +2732,7 @@ pub fn discharge_strikes_its_damage_row_141368_at_each_of_its_three_pulses_and_a
 
 pub fn blade_dance_strikes_its_five_damage_rows_together_at_each_of_its_five_pulses_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   // Spell4 33009 (castMethod 1, spellChannelFlags 0, 5 pulses of 500 ms; text 244913 "every
   // 0.5s") holds the damage row 79030 and the tier rows 219327 to 219330, all phaseFlags 1

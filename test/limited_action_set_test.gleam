@@ -30,6 +30,8 @@ import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{ActionSets}
+import genesis_prime/table/action_slot_prereq
+import genesis_prime/table/character_creation
 import genesis_prime/table/id.{ClassId, PrerequisiteId, Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -60,6 +62,7 @@ const opening_levels = [
 
 pub fn the_slots_open_at_the_levels_the_client_tables_give_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   let unlocks = limited_action_set.unlocks(tables:)
@@ -80,7 +83,15 @@ pub fn the_slots_open_at_the_levels_the_client_tables_give_test() -> Nil {
   })
   // The real rows keep one condition and hold type 0 in the next two, so the cut at the
   // first type 0 is what the slots 0 to 7 are read through.
-  list.each([8235, 22_215, 8236, 8237, 8238, 8239, 8240, 8241], fn(row_id) {
+  let opened =
+    list.filter(action_slot_prereq.all(tables), fn(slot) {
+      list.any(opening_levels, fn(opening) { opening.0 == slot.slot_index })
+    })
+  assert list.map(opened, fn(slot) { slot.slot_index })
+    == list.map(opening_levels, fn(opening) { opening.0 })
+    as "ActionSlotPrereq holds one row for each of the slots 0 to 7"
+  list.each(opened, fn(slot) {
+    let row_id = slot.prerequisite_id_unlock
     let assert Ok(row) =
       prerequisite_table.get(tables:, id: PrerequisiteId(row_id))
       as "the table holds the slot's prerequisite"
@@ -91,6 +102,13 @@ pub fn the_slots_open_at_the_levels_the_client_tables_give_test() -> Nil {
         <> " holds type 0 after its first condition"
       }
     assert prerequisite.condition_types(row:) == [177]
+      as {
+        "Prerequisite "
+        <> int.to_string(row_id)
+        <> " of slot "
+        <> int.to_string(slot.slot_index)
+        <> " keeps one condition, of type 177"
+      }
   })
 }
 
@@ -536,132 +554,159 @@ pub fn tier_changes_and_amps_in_a_save_are_dropped_and_the_bar_is_kept_test() ->
     as "it says how many were not applied"
 }
 
-pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_every_level_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  let unlocks = limited_action_set.unlocks(tables:)
-  let level_1_slots = limited_action_set.open_slots(unlocks:, level: 1)
-  list.each([1, 2, 3, 4, 5, 7], fn(class_id) {
-    list.each([166, 167], fn(faction_id) {
-      let assert Ok(held) =
-        loadout.of(tables:, class_id: ClassId(class_id), faction_id:)
-        as "every class has a loadout in both factions"
-      let name =
+/// The CharacterCreation start enum of the Novice (PreTutorial) rows, the ones the
+/// loadouts are built from (`Item2.novice_set`).
+const novice_start = 4
+
+/// The Novice loadouts of every class and faction the client's CharacterCreation rows
+/// let a player start in (an enabled row that is not costume-only, of the Novice
+/// start), one for each pair, as `#(class_id, faction_id, loadout)`. The pairs come
+/// from the rows, not from the loadouts, so a pair with no loadout fails here.
+fn novice_loadouts(
+  tables tables: table_store.Tables,
+) -> List(#(Int, Int, loadout.Loadout)) {
+  let pairs =
+    character_creation.all(tables)
+    |> list.filter(fn(row) {
+      row.character_creation_start_enum == novice_start
+      && row.enabled
+      && !row.costume_only
+    })
+    |> list.map(fn(row) { #(row.class_id, row.faction_id) })
+    |> list.unique
+  assert pairs != [] as "the client's CharacterCreation holds Novice starts"
+  list.map(pairs, fn(pair) {
+    let #(class_id, faction_id) = pair
+    let assert Ok(held) =
+      loadout.of(tables:, class_id: ClassId(class_id), faction_id:)
+      as {
         "class "
         <> int.to_string(class_id)
         <> ", faction "
         <> int.to_string(faction_id)
-      let entry_bar =
-        support.ids_of(bar: limited_action_set.bar_of(
+        <> ": a player can start as this pair, so it has a loadout"
+      }
+    #(class_id, faction_id, held)
+  })
+}
+
+pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_every_level_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let unlocks = limited_action_set.unlocks(tables:)
+  let level_1_slots = limited_action_set.open_slots(unlocks:, level: 1)
+  list.each(novice_loadouts(tables:), fn(found) {
+    let #(class_id, faction_id, held) = found
+    let name =
+      "class "
+      <> int.to_string(class_id)
+      <> ", faction "
+      <> int.to_string(faction_id)
+    let entry_bar =
+      support.ids_of(bar: limited_action_set.bar_of(
+        saved: limited_action_set.none(),
+        set: limited_action_set.first_set(),
+        class_bar: held.abilities,
+      ))
+    let filled =
+      list.index_map(entry_bar, fn(id, slot) { #(slot, id) })
+      |> list.filter(fn(placed) { placed.1 != 0 })
+      |> list.map(fn(placed) { placed.0 })
+    assert list.all(filled, fn(slot) { list.contains(level_1_slots, slot) })
+      as { name <> ": the entry bar fills only slots open at level 1" }
+    assert list.length(filled) == 3
+      as {
+        name
+        <> ": three level 1 abilities (SpellLevel rows of characterLevel 1)"
+      }
+    list.each(support.levels(from: 1, to: 50), fn(level) {
+      let player =
+        Player(
+          level:,
+          book: ability_book.book(tables:, loadout: held, level:),
+          dead: False,
+          in_combat: False,
+        )
+      let assert Ok(#(saved, effects)) =
+        limited_action_set.take(
+          unlocks:,
+          player:,
           saved: limited_action_set.none(),
+          class_bar: held.abilities,
+          body: support.body(ids: entry_bar, set: 0),
+        )
+        as "the body is one the client's reader accepts"
+      assert support.the_action_set(frames: support.frames_of(effects:)).result
+        == 1
+        as {
+          name
+          <> ", level "
+          <> int.to_string(level)
+          <> ": a Save of the bar as it is, which the stock builder sends, is never refused"
+        }
+      assert support.ids_of(bar: limited_action_set.bar_of(
+          saved:,
           set: limited_action_set.first_set(),
           class_bar: held.abilities,
         ))
-      let filled =
-        list.index_map(entry_bar, fn(id, slot) { #(slot, id) })
-        |> list.filter(fn(placed) { placed.1 != 0 })
-        |> list.map(fn(placed) { placed.0 })
-      assert list.all(filled, fn(slot) { list.contains(level_1_slots, slot) })
-        as { name <> ": the entry bar fills only slots open at level 1" }
-      assert list.length(filled) == 3
-        as {
-          name
-          <> ": three level 1 abilities (SpellLevel rows of characterLevel 1)"
-        }
-      list.each(support.levels(from: 1, to: 50), fn(level) {
-        let player =
-          Player(
-            level:,
-            book: ability_book.book(tables:, loadout: held, level:),
-            dead: False,
-            in_combat: False,
-          )
-        let assert Ok(#(saved, effects)) =
-          limited_action_set.take(
-            unlocks:,
-            player:,
-            saved: limited_action_set.none(),
-            class_bar: held.abilities,
-            body: support.body(ids: entry_bar, set: 0),
-          )
-          as "the body is one the client's reader accepts"
-        assert support.the_action_set(frames: support.frames_of(effects:)).result
-          == 1
-          as {
-            name
-            <> ", level "
-            <> int.to_string(level)
-            <> ": a Save of the bar as it is, which the stock builder sends, is never refused"
-          }
-        assert support.ids_of(bar: limited_action_set.bar_of(
-            saved:,
-            set: limited_action_set.first_set(),
-            class_bar: held.abilities,
-          ))
-          == entry_bar
-      })
+        == entry_bar
     })
   })
 }
 
 pub fn every_ability_the_book_offers_the_bar_is_a_class_ability_of_its_own_class_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  list.each([1, 2, 3, 4, 5, 7], fn(class_id) {
-    list.each([166, 167], fn(faction_id) {
-      let assert Ok(held) =
-        loadout.of(tables:, class_id: ClassId(class_id), faction_id:)
-        as "every class has a loadout in both factions"
-      let book = ability_book.book(tables:, loadout: held, level: 50)
-      let innate = case held.innate {
-        Some(innate) -> [innate.active_base]
-        None -> []
-      }
-      let abilities =
-        list.append(
-          held.abilities,
-          list.map(held.later, fn(unlock) { unlock.base }),
-        )
-      let counts =
-        "class "
-        <> int.to_string(class_id)
-        <> ", faction "
-        <> int.to_string(faction_id)
-        <> ": "
-        <> int.to_string(list.length(abilities))
-        <> " bag abilities, "
-        <> int.to_string(
-          list.length(book) - list.length(abilities) - list.length(innate),
-        )
-        <> " alternates"
-      list.each(book, fn(base) {
-        let assert Ok(row) = spell4_base.get(tables:, id: base)
-          as {
-            counts
-            <> ": Spell4Base "
-            <> int.to_string(base.value)
-            <> " has a row"
-          }
-        assert row.spell4_spell_types_id_spell_type == 5
-          as {
-            counts
-            <> ": Spell4Base "
-            <> int.to_string(base.value)
-            <> " is a Class - Ability spell (Spell4SpellTypes 5), which the client's slot check takes in slots 0 to 7"
-          }
-      })
-      list.each(abilities, fn(base) {
-        let assert Ok(row) = spell4_base.get(tables:, id: base) as counts
-        assert row.class_id_player == class_id
-          as {
-            counts
-            <> ": Spell4Base "
-            <> int.to_string(base.value)
-            <> " is of the class"
-          }
-      })
+  list.each(novice_loadouts(tables:), fn(found) {
+    let #(class_id, faction_id, held) = found
+    let book = ability_book.book(tables:, loadout: held, level: 50)
+    let innate = case held.innate {
+      Some(innate) -> [innate.active_base]
+      None -> []
+    }
+    let abilities =
+      list.append(
+        held.abilities,
+        list.map(held.later, fn(unlock) { unlock.base }),
+      )
+    let counts =
+      "class "
+      <> int.to_string(class_id)
+      <> ", faction "
+      <> int.to_string(faction_id)
+      <> ": "
+      <> int.to_string(list.length(abilities))
+      <> " bag abilities, "
+      <> int.to_string(
+        list.length(book) - list.length(abilities) - list.length(innate),
+      )
+      <> " alternates"
+    list.each(book, fn(base) {
+      let assert Ok(row) = spell4_base.get(tables:, id: base)
+        as {
+          counts <> ": Spell4Base " <> int.to_string(base.value) <> " has a row"
+        }
+      assert row.spell4_spell_types_id_spell_type == 5
+        as {
+          counts
+          <> ": Spell4Base "
+          <> int.to_string(base.value)
+          <> " is a Class - Ability spell (Spell4SpellTypes 5), which the client's slot check takes in slots 0 to 7"
+        }
+    })
+    list.each(abilities, fn(base) {
+      let assert Ok(row) = spell4_base.get(tables:, id: base) as counts
+      assert row.class_id_player == class_id
+        as {
+          counts
+          <> ": Spell4Base "
+          <> int.to_string(base.value)
+          <> " is of the class"
+        }
     })
   })
 }
