@@ -555,15 +555,7 @@ pub fn a_spell_outlives_its_caster_when_its_propertyflags_hold_0x100_test() -> N
   // (`cast.target_node_end`: the record flag `0x108 & 0x10`, built from propertyFlags 0x100
   // by `FillSpellRecord 0x140568540`). The columns are the table's own
   // (`table_rows -- Spell4 32823 32821 32893`): 257 and 8448 hold the bit, 0x4000002 does not.
-  // The fixture holds no row of Phantasmal Armor, so row 32823 is a copy of Bolster's with
-  // its own propertyFlags 257.
-  assert fixture_tables.added(
-    table: "Spell4",
-    copy_of: 32_821,
-    id: 32_823,
-    with: [#("propertyFlags", Integer(257))],
-    body: outlives_on(_, spell4_id: 32_823),
-  )
+  assert outlives_on(tables: fixture_tables.shared(), spell4_id: 32_823)
     as "Phantasmal Armor tier 1 (propertyFlags 257) outlives its caster"
   assert outlives_on(tables: fixture_tables.shared(), spell4_id: 32_821)
     as "Bolster (propertyFlags 8448 = 0x2100) outlives its caster"

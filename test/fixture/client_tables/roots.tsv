@@ -1546,3 +1546,8 @@ Spell4	54717	Astral Infusion Surge alternate	cast_union_aim_test
 SpellLevel	1049	Mental Boon, an Esper level 18 ability	game_connection_heal_test
 SpellLevel	1021	Medic Triage, level 9, refused for valid targets of bitmask 256	experience_book_test, game_connection_dev_command_test
 SpellLevel	922	Warrior Augmented Blade, level 24 (class 1)	game_wire_cast_test, spell_plan_later_test, cast_persistence_test, spell_plan_periodic_proxy_test, ticking_test
+Spell4	32823	Phantasmal Armor - Tier 1, whose Spell4Effects 83947 is a Proxy aimed at the primary target that starts the Interrupt Armor child 76766	spell_plan_union_aim_test, cast_player_change_test
+Spell4	54904	Mind Over Body - Tier 9, whose Spell4Effects 130872 is a Proxy aimed at the primary target with a delay of 25 ms that starts 54912	cast_player_change_test
+Spell4	54912	Mind Over Body - Tier 9 child, which lists a Fluff row on the unit it starts on	cast_player_change_test
+Spell4	77864	Phantasmal Armor - Tier 9 child, whose absorb and outfit rows are gated on the target of the live cast of 54806	cast_player_change_test
+Spell4	87531	Bolster - Tier 9 child of the periodic Proxy 229005, whose Spell4Effects 229006 is a 3000 ms absorb aimed at the primary target	cast_player_change_test

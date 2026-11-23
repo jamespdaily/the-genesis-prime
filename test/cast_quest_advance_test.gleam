@@ -36,6 +36,7 @@ import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{None}
 import gleam/set
+import gleam/string
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -751,4 +752,38 @@ pub fn a_childs_rows_count_with_the_use_or_cast_of_the_cast_that_started_it_test
       assert advanced(effects:) == [#([advance(quest: 3769)], with)] as why
     },
   )
+}
+
+pub fn an_activation_spell_holding_a_proxy_aimed_at_the_primary_target_is_refused_so_no_child_starts_on_the_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The Seaspine Mollusk (Creature2 26462) casts Spell4 1817 when it is clicked, with the
+  // creature's unit as the cast's primary target. Spell4Effects 999104 is a copy of Proxy
+  // 83947 (targetFlags 2, Spell4 76766) set in it. The activate cast strikes no one, so a row
+  // aimed at the target or an area cannot be planned for it and the click is refused 285: an
+  // activation's primary target is never a player a Proxy aimed at the primary target could
+  // start a child on, and no child starts on the creature.
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 83_947,
+    id: 999_104,
+    with: [#("spellId", Integer(1817))],
+  )
+  let effects =
+    right_clicked(
+      tables:,
+      creature_id: 26_462,
+      caster: standing_with(quests: []),
+    )
+  assert support.refusal_results(effects:)
+    == [cast_result.to_value(cast_result.IllegalSpellCast)]
+    as "the click is refused as not built"
+  assert list.any(support.warning_lines(effects:), fn(line) {
+    string.contains(
+      line,
+      "the effect 999104 of the spell 1817 aims at the target",
+    )
+  })
+    as "and the warning names the row"
+  assert support.started_in(effects:) == []
+    as "no cast starts, so no child starts on the creature"
 }

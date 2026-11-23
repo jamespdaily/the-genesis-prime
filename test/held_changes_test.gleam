@@ -310,7 +310,7 @@ fn row_source(cast_id cast_id: Int, row row: Int) -> Source {
 }
 
 /// A start of the source of row `row` of cast `cast_id`, held for the caster of unit
-/// `unit_id`, and the release that follows it, when any.
+/// `unit_id` with the sight `sight`.
 type HeldRow {
   HeldRow(unit_id: Int, cast_id: Int, row: Int, sight: Sight)
 }

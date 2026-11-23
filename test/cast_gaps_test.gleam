@@ -152,8 +152,14 @@ fn limits() -> List(Limit) {
     Limit(
       cast.gaps(),
       "Casting",
-      ["Interrupt Armor", "child"],
-      "a child a Proxy starts on the caster for a row aimed at the primary target lands nothing, and Phantasmal Armor's Interrupt Armor child lands on its caster",
+      ["Mental Boon's Nimble", "has no press target"],
+      "a child a Proxy starts on the caster (a primary target that is the caster, a creature or a proc's unit) lands none of its rows aimed at the primary target",
+    ),
+    Limit(
+      cast.gaps(),
+      "Casting",
+      ["periodic Proxy aimed at the primary target", "lands on the caster"],
+      "a periodic Proxy aimed at the primary target ticks on the caster, so Bolster's absorb lands on the caster",
     ),
     Limit(
       cast.gaps(),

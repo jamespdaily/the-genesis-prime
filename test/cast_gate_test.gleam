@@ -1416,6 +1416,66 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
       [],
     ),
     #(
+      "an Interrupt Armor row aimed at the primary target lands on the player the press named when the caster sees it (Spell4Effects 199192)",
+      support.interrupt_armor_row(aim: primary),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [ally],
+    ),
+    #(
+      "the same Interrupt Armor row with the player out of the caster's sight: it does not",
+      support.interrupt_armor_row(aim: primary),
+      at_ally,
+      ally,
+      [],
+      [],
+      [],
+    ),
+    #(
+      "the same Interrupt Armor row with a delay lands nothing on a player, as an absorb row does not",
+      spell_plan.PropertyModifier(
+        ..support.interrupt_armor_row(aim: primary),
+        row: one_second,
+      ),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [],
+    ),
+    #(
+      "the same Interrupt Armor row that lasts until removed lands nothing on a player",
+      spell_plan.PropertyModifier(
+        ..support.interrupt_armor_row(aim: primary),
+        row: until_removed,
+      ),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [],
+    ),
+    #(
+      "an Interrupt Armor row aimed at the caster lands on the caster alone, whoever the press named",
+      support.interrupt_armor_row(aim: spell_plan.AimsAtCaster),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [7],
+    ),
+    #(
+      "an Interrupt Armor row aimed at the primary target of a child a Proxy started on the caster (no press target) lands on the caster alone",
+      support.interrupt_armor_row(aim: primary),
+      option.None,
+      7,
+      [ally],
+      [],
+      [7],
+    ),
+    #(
       "a row with a delay lands nothing on a player (stated gap: no ability row has one)",
       spell_plan.PropertyModifier(..absorb_aimed(aim: primary), row: one_second),
       at_ally,
@@ -1450,4 +1510,12 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
       == lands
       as reason
   })
+  assert cast_gate.modifier_refusal(
+      row: support.interrupt_armor_row(aim: primary),
+      unit_id: ally,
+      caster: seeing(players: []),
+      press_target: at_ally,
+    )
+    == option.Some("the player is not in the caster's sight")
+    as "an Interrupt Armor row aimed at the player the press named, out of the caster's sight, is refused with that reason"
 }

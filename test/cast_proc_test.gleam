@@ -3948,3 +3948,47 @@ pub fn damage_breaks_stealth_only_on_a_lowered_blow_as_before_test() -> Nil {
   assert starts_of(spell4_id: 250_202, effects: lowered) == 1
     as "a blow that lowered something ends the stealth, and the proc of leaving it fires"
 }
+
+pub fn a_proxy_aimed_at_the_primary_target_of_a_proc_cast_at_another_unit_starts_its_child_on_the_caster_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A proc cast at the unit a hit struck has that creature as its primary target (`cast`
+  // `proc_started`), but only a bag press names a player for a Proxy aimed at the primary
+  // target (`spell_plan.OnPrimaryTarget`) to start its child on: the child of the proc's spell
+  // starts on the holder, unit 7, as a child of a Proxy aimed at the caster does.
+  let child = cast_of_proc(spell4_id: 250_202)
+  let fired =
+    spell_plan.with_proxies(spell: cast_of_proc(spell4_id: 250_201), proxies: [
+      spell_plan.Proxy(
+        period: None,
+        effect_id: Spell4EffectsId(90_002),
+        delay_ms: 0,
+        phase_flags: -1,
+        condition: Always,
+        tag: spend.always,
+        target: spell_plan.OnPrimaryTarget,
+        spell: child,
+        gains: [],
+      ),
+    ])
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      ProcRow(
+        ..proc(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: fired,
+          window_ms: 500,
+          count: 1,
+        ),
+        aim: spell_plan.AtOtherUnit,
+      ),
+    ])
+  let plans = support.plans_of([holder, hitter(school: 2)])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let #(_, effects) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  assert started_of(spell4_id: 250_201, effects:).primary_target_unit_id == 31
+    as "the proc's spell is cast at the creature the hit struck"
+  assert started_of(spell4_id: 250_202, effects:).primary_target_unit_id == 7
+    as "its Proxy aimed at the primary target starts the child on the holder, not on the creature"
+}

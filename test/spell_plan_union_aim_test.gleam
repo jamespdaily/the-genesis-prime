@@ -448,6 +448,40 @@ fn proxy_targets_aimed_by(
   }
 }
 
+pub fn a_proxy_aimed_at_the_primary_target_is_planned_on_the_press_target_and_a_proxy_aimed_at_the_caster_and_the_primary_target_stays_on_the_caster_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.targetFlags: 1 the caster, 2 the primary target, 4 the area. The client
+  // starts no Proxy (`Spell4Effects.effectType.26`); the server starts a flags 2 Proxy's
+  // child on the player the press named. Proxy 83947 (Spell4 32823, flags 2) and 90024
+  // (Spell4 40529, flags 3) are the client's rows; the hits-foes cell is a synthetic one of
+  // 196408. The primary-target bit of 3, 6 and 7 is not read for a Proxy.
+  [
+    #(
+      "83947 as read: flags 2, the spell hits no foes",
+      proxy_targets_aimed_by(id: 83_947, flags: 2, place: spell_tables.pressed),
+      Ok([spell_plan.OnPrimaryTarget]),
+    ),
+    #(
+      "196408 with flags 2 (synthetic), the spell hits foes",
+      proxy_targets_aimed_by(
+        id: 196_408,
+        flags: 2,
+        place: spell_tables.pressed_hitting_foes,
+      ),
+      Ok([spell_plan.OnPrimaryTarget]),
+    ),
+    #(
+      "90024 as read: flags 3, the primary-target bit is not read",
+      proxy_targets_aimed_by(id: 90_024, flags: 3, place: spell_tables.pressed),
+      Ok([spell_plan.OnCaster]),
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, read, expected) = row
+    assert read == expected as name
+  })
+}
+
 pub fn a_proxy_aimed_by_5_or_7_in_a_spell_that_hits_no_foes_starts_its_child_on_the_caster_alone_test() -> Nil {
   use <- owned_test.run(60_000)
   // Spell4Effects.targetFlags: 1 the caster, 2 the primary target, 4 the area. Proxies

@@ -619,6 +619,12 @@ fn names_caster_and_area(aim aim: Aim) -> Bool {
 pub type ProxyTarget {
   /// The caster of the spell whose Proxy fired.
   OnCaster
+  /// The player the caster's bag press named as the cast's primary target, and the caster
+  /// for any other cast (a press at oneself or at a creature, a quest button, an activation,
+  /// a proc's spell): a Proxy whose effect aims at the primary target alone
+  /// (`Spell4Effects.targetFlags` 2). The client starts no Proxy, so the choice is the
+  /// server's.
+  OnPrimaryTarget
   /// Each unit in the area: a Proxy whose effect aims at the area
   /// (`Spell4Effects.targetFlags` 4, or 6 whose primary-target bit is not read), which starts
   /// one child for each Hit unit of the go (genesis_prime/game/cast `went`), or, with a
@@ -3573,7 +3579,7 @@ fn proxy_of(
     threshold_costs: [],
     struck_by: case target {
       OnEachStruck -> Some(StruckBy(spell4_id:, proxy_effect_id: effect.id))
-      OnCaster -> None
+      OnCaster | OnPrimaryTarget -> None
     },
     pressed: False,
   ))
@@ -3588,7 +3594,10 @@ fn proxy_of(
         result.is_ok(as_gain(kind: planned.kind))
         && spell_effect.has_flag(flags: planned.phase_flags, bit: 1)
       })
-    OnEachStruck, Some(_) | OnCaster, _ -> #([], child.effects)
+    OnEachStruck, Some(_) | OnCaster, _ | OnPrimaryTarget, _ -> #(
+      [],
+      child.effects,
+    )
   }
   Proxy(
     effect_id: Spell4EffectsId(effect.id),
@@ -6756,10 +6765,13 @@ fn weapon_of(weapon_slot: Int) -> WeaponSlot {
 }
 
 /// The units a Proxy starts its child on (`Spell4Effects.targetFlags`): each struck unit
-/// for an aim at the area (`aim_of`: 4 or 6), the caster for one at the caster or the
-/// primary target (1, 2, 3), and both for one that holds the caster's bit and the area's
-/// (5, 7). In a spell that hits no foes the area's bit is left out (`aim_in_place`), so 5 and
-/// 7 start the child on the caster alone. Another value is refused.
+/// for an aim at the area (`aim_of`: 4 or 6), the player the press named for an aim at the
+/// primary target alone (2), the caster for one that holds the caster's bit (1, 3), and both
+/// the caster and each struck unit for one that holds the caster's bit and the area's (5, 7).
+/// In a spell that hits no foes the area's bit is left out (`aim_in_place`), so 5 and 7 start
+/// the child on the caster alone. The primary-target bit of 3, 6 and 7 is not read for a
+/// Proxy: the client starts no Proxy (`Spell4Effects.effectType.26`), and no Proxy row of a
+/// Targeted beneficial root has them. Another value is refused.
 fn target_of(
   place place: RowPlace,
   spell4_id spell4_id: Int,
@@ -6776,12 +6788,11 @@ fn target_of(
   let aim = aim_in_place(place:, aim:)
   [
     #(OnCaster, reaches_caster(aim:)),
-    #(OnCaster, !reaches_area(aim:) && !reaches_caster(aim:)),
+    #(OnPrimaryTarget, aim == AimsAtPrimaryTarget),
     #(OnEachStruck, reaches_area(aim:)),
   ]
   |> list.filter(fn(target) { target.1 })
   |> list.map(fn(target) { target.0 })
-  |> list.unique
   |> Ok
 }
 
@@ -7866,7 +7877,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Periodic Proxies",
-      missing: "a Proxy with a tickTime aimed at the area casts its spell on the foes the connection finds inside the area at each tick, and one that names a beneficial spell (Spell4TargetMechanics flags bit 0 set) is refused with its ability until the allies in the area can be found; the primary-target bit of targetFlags 6 is not read, a server choice, since the client runs no Proxy; a periodic Proxy behind a caster gate or a target gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none; a periodic Proxy's row persistence (prerequisiteIdCasterPersistence) ends its whole cast when it fails, with the spell column's 0x7f9 (282) and 0x7fe, a guess since the client reads no effect row's persistence and no retail recording shows which message ends it; the check runs from the cast's start, so a cast still in its cast time ends on it before the row applies; a persistence of a type the server does not read (12, 40 and 56) keeps the cast with one debug line for the spell: of the 11 rows that hold one, the plan reads the 7 timed rows 70009, 70293, 119557, 167327, 202752, 209177 and 231058 (Spell4Effects ids) and the 4 that last until removed (92627, 192138, 192615, 231002); the prerequisiteIdTargetPersistence of a periodic Proxy is read by no rule, and the plan reads the 14 rows that hold one and are not for allies, the 3 timed rows 119557, 167327 and 231058 and 11 that last until removed",
+      missing: "a Proxy with a tickTime aimed at the area casts its spell on the foes the connection finds inside the area at each tick, and one that names a beneficial spell (Spell4TargetMechanics flags bit 0 set) is refused with its ability until the allies in the area can be found; the primary-target bit of targetFlags 3, 6 and 7 is not read for a Proxy, a server choice, since the client runs no Proxy and no Proxy row of a Targeted beneficial root has them; a periodic Proxy behind a caster gate or a target gate that needs a roll (type 37) starts no child at a tick, since a tick draws no roll, and the dataBits03 to dataBits05 of a Proxy are read by no rule, since the client reads none; a periodic Proxy's row persistence (prerequisiteIdCasterPersistence) ends its whole cast when it fails, with the spell column's 0x7f9 (282) and 0x7fe, a guess since the client reads no effect row's persistence and no retail recording shows which message ends it; the check runs from the cast's start, so a cast still in its cast time ends on it before the row applies; a persistence of a type the server does not read (12, 40 and 56) keeps the cast with one debug line for the spell: of the 11 rows that hold one, the plan reads the 7 timed rows 70009, 70293, 119557, 167327, 202752, 209177 and 231058 (Spell4Effects ids) and the 4 that last until removed (92627, 192138, 192615, 231002); the prerequisiteIdTargetPersistence of a periodic Proxy is read by no rule, and the plan reads the 14 rows that hold one and are not for allies, the 3 timed rows 119557, 167327 and 231058 and 11 that last until removed",
     ),
     gap.Entry(
       area: "Auras",
