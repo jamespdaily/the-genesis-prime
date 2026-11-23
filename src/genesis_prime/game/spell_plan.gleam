@@ -1344,6 +1344,36 @@ pub type Heal {
   )
 }
 
+/// When a heal row is told to the player at the cast's primary target, so that player's
+/// connection applies it and answers: at the go, at each tick of its schedule, or never.
+pub type Telling {
+  ToldAtGo
+  ToldAtEachTick
+  NotTold
+}
+
+/// When the heal `heal` is told to another player: an instant row with no delay that
+/// aims at the primary target is told at the go, a periodic row that aims at it is told at
+/// each tick, and a delayed instant row or one that aims at the caster alone is not told
+/// (the caster's own part of a row is the caster's). The go's strike, the go's gate and the
+/// tick ask this one question, so a row is never gated or rolled for by one and told by
+/// another.
+pub fn telling_of(heal heal: Heal) -> Telling {
+  case heal {
+    Heal(aim:, delay_ms: 0, ..) ->
+      case reaches_primary_target(aim:) {
+        True -> ToldAtGo
+        False -> NotTold
+      }
+    TickingHeal(aim:, ..) ->
+      case reaches_primary_target(aim:) {
+        True -> ToldAtEachTick
+        False -> NotTold
+      }
+    Heal(..) -> NotTold
+  }
+}
+
 /// A SpellForceRemove effect (`Spell4Effects.effectType.80`) of a spell: it takes
 /// `count` stacks of the casts `selector` names off the unit it aims at, in the
 /// phases of `phase_flags`, when its `condition` holds (as a Fluff effect's does), and

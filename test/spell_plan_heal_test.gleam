@@ -45,13 +45,18 @@ import genesis_prime/game/spell_plan.{
   AimsAtPrimaryTarget, Always, Applied, Heal, Lasting, LeftOut, TickingHeal,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/target_mechanic
 import genesis_prime/game/ticking
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/prerequisite
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
+import genesis_prime/table/spell_level
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/set
 import owned_test
 import spell_tables
 import unitest
@@ -646,6 +651,59 @@ pub fn a_heal_row_on_each_struck_unit_is_refused_test() -> Nil {
     as "a row that names the caster and the primary target also names the struck unit, so the load fails as it does for flags 2"
 }
 
+/// Which of a heal row's planned shapes is told to another player, by the row's delay,
+/// period and aim (`spell_plan.telling_of`): the rows are Mind Over Body's 62019 with the
+/// columns that differ (Bolster's 80077 is the periodic shape: tickTime 1000, durationTime
+/// 8000, targetFlags 2). Row 62019's delay of 20 ms is edited in: no client row is both.
+pub fn a_heal_row_is_told_at_the_go_at_each_tick_or_not_at_all_by_its_delay_period_and_aim_test() -> Nil {
+  use <- owned_test.run(5000)
+  let periodic = fn(row: Spell4Effects) {
+    Spell4Effects(..row, tick_time: 1000, duration_time: 8000)
+  }
+  let cases = [
+    #(
+      mind_over_body_row(),
+      spell_plan.ToldAtGo,
+      "an instant row aimed at the primary target is told at the go (62019 as the client holds it)",
+    ),
+    #(
+      Spell4Effects(..mind_over_body_row(), target_flags: 3),
+      spell_plan.ToldAtGo,
+      "an instant row aimed at the caster and the primary target is told at the go",
+    ),
+    #(
+      Spell4Effects(..mind_over_body_row(), target_flags: 1),
+      spell_plan.NotTold,
+      "an instant row aimed at the caster alone is the caster's own",
+    ),
+    #(
+      Spell4Effects(..mind_over_body_row(), delay_time: 20),
+      spell_plan.NotTold,
+      "an instant row with a delay lands after the go, which the go's tell does not carry",
+    ),
+    #(
+      periodic(mind_over_body_row()),
+      spell_plan.ToldAtEachTick,
+      "a periodic row aimed at the primary target is told at each tick (Bolster's 80077 shape)",
+    ),
+    #(
+      periodic(Spell4Effects(..mind_over_body_row(), target_flags: 3)),
+      spell_plan.ToldAtEachTick,
+      "a periodic row aimed at the caster and the primary target is told at each tick",
+    ),
+    #(
+      periodic(Spell4Effects(..mind_over_body_row(), target_flags: 1)),
+      spell_plan.NotTold,
+      "a periodic row aimed at the caster alone is the caster's own tick",
+    ),
+  ]
+  list.each(cases, fn(one) {
+    let #(row, telling, reason) = one
+    let assert [heal] = heals_of(effects: [row])
+    assert spell_plan.telling_of(heal:) == telling as reason
+  })
+}
+
 // ---- the client's tables ----
 
 pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdowns_overload_test() -> Nil {
@@ -685,4 +743,128 @@ pub fn the_plans_hold_energizes_shield_heal_the_warriors_ticking_row_and_meltdow
     )
     as "Spell4Effects spellId=60796: 147229, a ShieldOverload aimed at the area, is a lasting row"
   Nil
+}
+
+/// Whether the Prerequisite `id` holds a type 37 (chance) condition, in its own conditions
+/// or in a row nested through a type 11 condition (`Prerequisite.prerequisiteTypeId.11`
+/// names the nested row in its objectId); `seen` stops a row that nests itself.
+fn holds_a_chance(
+  rows rows: dict.Dict(Int, prerequisite.Prerequisite),
+  id id: Int,
+  seen seen: set.Set(Int),
+) -> Bool {
+  case set.contains(seen, id), dict.get(rows, id) {
+    True, _ | _, Error(Nil) -> False
+    False, Ok(row) ->
+      list.any(
+        [
+          #(row.prerequisite_type_id0, row.object_id0),
+          #(row.prerequisite_type_id1, row.object_id1),
+          #(row.prerequisite_type_id2, row.object_id2),
+        ],
+        fn(condition) {
+          case condition.0 {
+            37 -> True
+            11 ->
+              holds_a_chance(rows:, id: condition.1, seen: set.insert(seen, id))
+            _ -> False
+          }
+        },
+      )
+  }
+}
+
+pub fn every_periodic_heal_row_of_an_ability_pressed_at_a_player_is_read_as_a_ticking_heal_at_the_primary_target_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  // An ability is the Spell4Base of a SpellLevel row's spell, and it is pressed at a
+  // player when its Spell4TargetMechanics row is a kind the client's picker sends a
+  // target for (`0x14055bdc0`) and is beneficial (flags bit 0).
+  let pressed_at_a_player =
+    spell_level.all(tables)
+    |> list.filter_map(fn(level) {
+      spell4.get(tables:, id: id.Spell4Id(level.spell4_id))
+    })
+    |> list.map(fn(spell) { spell.spell4_base_id_base_spell })
+    |> list.unique
+    |> list.filter(fn(base) {
+      let assert Ok(targeting) =
+        target_mechanic.targeting_of(tables:, base_id: Spell4BaseId(base))
+        as "every ability's base has its target rows"
+      targeting.kind == target_mechanic.Targeted
+      && target_mechanic.is_beneficial(flags: targeting.mechanics_flags)
+    })
+  let tier_spells =
+    list.filter(spell4.all(tables), fn(spell) {
+      list.contains(pressed_at_a_player, spell.spell4_base_id_base_spell)
+    })
+    |> list.map(fn(spell) { spell.id })
+    |> set.from_list
+  let periodic_heals =
+    list.filter(spell4_effects.all(tables), fn(row) {
+      set.contains(tier_spells, row.spell_id)
+      && list.contains([10, 118], row.effect_type)
+      && row.tick_time > 0
+      && effect_kind.is_row_read(
+        effect_type: row.effect_type,
+        target_flags: row.target_flags,
+      )
+    })
+  assert periodic_heals != []
+    as "Bolster's rows (Spell4Effects 80077) are periodic heals of an ability pressed at a player, so the table is not empty"
+  let sources = spell_plan.sources_of(tables:)
+  list.each(periodic_heals, fn(row) {
+    let name = "row " <> int.to_string(row.id) <> ": "
+    assert row.prerequisite_id_caster_apply == 0
+      && row.prerequisite_id_target_apply == 0
+      as { name <> "no prerequisite, so no gate is read at a tick" }
+    let assert Ok(reading) =
+      spell_plan.read_row(
+        tables:,
+        sources:,
+        place: spell_tables.pressed,
+        effect: row,
+      )
+      as { name <> "the plan reads the row" }
+    let assert [heal] =
+      list.filter_map(spell_tables.planned_kinds(reading:), spell_plan.as_heal)
+      as { name <> "the plan holds the row once" }
+    let assert TickingHeal(aim:, ..) = heal
+      as { name <> "a row with a tickTime is a ticking heal" }
+    assert spell_plan.reaches_primary_target(aim:)
+      as { name <> "the heal reaches the primary target" }
+    assert spell_plan.telling_of(heal:) == spell_plan.ToldAtEachTick
+      as { name <> "the ally is told at each tick" }
+  })
+}
+
+pub fn no_heal_row_of_the_clients_tables_holds_a_type_37_prerequisite_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let rows =
+    prerequisite.all(tables)
+    |> list.map(fn(row) { #(row.id, row) })
+    |> dict.from_list
+  let heals =
+    list.filter(spell4_effects.all(tables), fn(row) {
+      list.contains([10, 118], row.effect_type)
+    })
+  assert heals != [] as "the client's tables hold heal rows"
+  assert list.filter(heals, fn(row) {
+      holds_a_chance(
+        rows:,
+        id: row.prerequisite_id_caster_apply,
+        seen: set.new(),
+      )
+      || holds_a_chance(
+        rows:,
+        id: row.prerequisite_id_target_apply,
+        seen: set.new(),
+      )
+    })
+    |> list.map(fn(row) { row.id })
+    == []
+    as "a heal row with a chance gate would take a roll again at the go after the strike took one"
 }

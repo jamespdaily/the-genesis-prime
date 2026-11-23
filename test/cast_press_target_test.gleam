@@ -620,11 +620,11 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
 
 pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters_gates_say_at_the_go_test() -> Nil {
   use <- owned_test.run(5000)
-  // Mind Over Body's tiers 5 to 9 hold two heal rows at the primary target, the first
-  // behind Prerequisite 36008 (type 50, comparison 2: the caster is not under Spell4
-  // 77237) and the second behind 36007 (comparison 1: it is). The caster holds nothing
-  // of 77237 when the go is written, though it held it when the strike gated, so row A
-  // (36007's shape) fails here and row B (36008's) passes.
+  // Mind Over Body's tier 5 (Spell4 54900) holds two heal rows at the primary target:
+  // 130852 behind Prerequisite 36008 (type 50, comparison 2: the caster is not under Spell4
+  // 77237) and 130899 behind 36007 (comparison 1: it is) (`table_rows -- Spell4Effects
+  // 130852 130899`). The caster holds nothing of 77237 when the go is written, though it
+  // held it when the strike gated, so row 130852 passes here and row 130899 fails.
   let primary = spell_plan.AimsAtPrimaryTarget
   let under =
     prerequisite_support.single(id: 36_007, condition: #(50, 1, 0, 77_237))
@@ -634,12 +634,12 @@ pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters
     health_row(
       id: 130_852,
       aim: primary,
-      condition: spell_plan.GatedOnCaster(gates: [under]),
+      condition: spell_plan.GatedOnCaster(gates: [not_under]),
     ),
     health_row(
       id: 130_899,
       aim: primary,
-      condition: spell_plan.GatedOnCaster(gates: [not_under]),
+      condition: spell_plan.GatedOnCaster(gates: [under]),
     ),
   ]
   let heal_of_row = fn(effect_id) {
@@ -652,24 +652,24 @@ pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters
   list.each(
     [
       #(
-        "the answer holds A only: A is listed though its gate fails now, and B is not though its gate passes now",
-        ally,
-        [heal_of_row(130_852)],
-        [130_852],
-        0,
-      ),
-      #(
-        "the answer holds B only: B is listed, and A is not though its gate passed when the strike gated it",
+        "the answer holds 130899 only: it is listed though its gate fails now, and 130852 is not though its gate passes now",
         ally,
         [heal_of_row(130_899)],
         [130_899],
         0,
       ),
       #(
-        "no ally and no answer (the caster presses at itself): the go keeps its gates, so B alone lands on the caster, once",
+        "the answer holds 130852 only: it is listed, and 130899 is not though its gate passed when the strike gated it",
+        ally,
+        [heal_of_row(130_852)],
+        [130_852],
+        0,
+      ),
+      #(
+        "no ally and no answer (the caster presses at itself): the go keeps its gates, so 130852 alone lands on the caster, once",
         7,
         [],
-        [130_899],
+        [130_852],
         1,
       ),
     ],
@@ -698,7 +698,7 @@ pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters
   // which the ally applied, is unlisted (the gap `cast_heal.gaps` states).
   let flips =
     health_row(
-      id: 130_852,
+      id: 130_899,
       aim: spell_plan.AimsAtCasterAndPrimaryTarget,
       condition: spell_plan.GatedOnCaster(gates: [under]),
     )
@@ -706,7 +706,7 @@ pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters
     healer_pressed_at(
       rows: [flips],
       target: ally,
-      struck: ally_answered(heals: [heal_of_row(130_852)]),
+      struck: ally_answered(heals: [heal_of_row(130_899)]),
     )
   assert support.listed_effect_ids(effects: went) == []
     && support.caster_change_starts(effects: list.append(pressed, went)) == []

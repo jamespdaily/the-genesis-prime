@@ -206,8 +206,8 @@ pub fn player_answer(
   })
 }
 
-/// Whether the heal row `kind` is one the strike tells a player it reaches (an instant row
-/// that aims at the primary target) and `unit_id` is a player the round holds the answer of.
+/// Whether the heal row `kind` is one the strike tells a player at the go
+/// (`spell_plan.telling_of`) and `unit_id` is a player the round holds the answer of.
 /// The strike gated the row once for that player, with its own rolls
 /// (`genesis_prime/game/strike`), and the go lists what the answer holds, so the go
 /// checks no target gate of the row for that player and draws no roll for it.
@@ -216,12 +216,9 @@ pub fn heal_answered(
   struck struck: List(Struck),
   unit_id unit_id: Int,
 ) -> Bool {
-  case spell_plan.as_heal(kind:) {
-    Ok(spell_plan.Heal(aim:, delay_ms: 0, ..)) ->
-      spell_plan.reaches_primary_target(aim:)
-      && result.is_ok(player_answer(struck:, unit_id:))
-    Ok(spell_plan.Heal(..)) | Ok(spell_plan.TickingHeal(..)) | Error(Nil) ->
-      False
+  case result.map(spell_plan.as_heal(kind:), spell_plan.telling_of) {
+    Ok(spell_plan.ToldAtGo) -> result.is_ok(player_answer(struck:, unit_id:))
+    Ok(spell_plan.ToldAtEachTick) | Ok(spell_plan.NotTold) | Error(Nil) -> False
   }
 }
 
