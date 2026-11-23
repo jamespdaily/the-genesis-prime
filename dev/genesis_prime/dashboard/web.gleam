@@ -78,7 +78,7 @@ pub fn routes(pages: List(Page)) -> List(Route) {
 
 /// The route listed for this method and this path inside the key prefix. The
 /// match is on the whole path, so no other spelling of a path finds a route.
-pub fn find_route(
+fn find_route(
   routes routes: List(Route),
   method method: Method,
   path path: String,

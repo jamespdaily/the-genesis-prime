@@ -110,7 +110,7 @@ fn path_of(container: String) -> String {
 
 /// A read: inspects the container, then reads its log as the container's id and
 /// the tracking say, each call under `call_deadline_ms`. It waits for both calls.
-pub fn read_container(
+fn read_container(
   podman podman: String,
   container container: String,
   call_deadline_ms call_deadline_ms: Int,
@@ -171,13 +171,6 @@ fn initial(settings: Settings) -> fn(Subject(Message)) -> State {
       answered: False,
     )
   }
-}
-
-/// Starts a follower linked to the caller.
-pub fn start(
-  settings settings: Settings,
-) -> Result(actor.Started(Subject(Message)), actor.StartError) {
-  read_poll.start(initial(settings), handle)
 }
 
 /// The follower as a child of a supervisor, registered under `name` so that a

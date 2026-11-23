@@ -222,19 +222,11 @@ fn ended(
   }
 }
 
-/// A process whose messages are `Message(item, answer)`: `initial` makes its
-/// state from its own subject, and `handle` is its message handler, which asks
-/// `handle` above what each message did.
-pub fn start(
-  initial initial: fn(Subject(Message(item, answer))) -> state,
-  handle handle: fn(state, Message(item, answer)) ->
-    actor.Next(state, Message(item, answer)),
-) -> Result(actor.Started(Subject(Message(item, answer))), actor.StartError) {
-  actor.start(builder(initial, handle))
-}
-
-/// The same as a child of a supervisor, registered under `name` so that a
-/// restarted process is reached by the same subject.
+/// A process whose messages are `Message(item, answer)`, as a child of a
+/// supervisor registered under `name` so that a restarted process is reached by
+/// the same subject: `initial` makes its state from its own subject, and
+/// `handle` is its message handler, which asks `handle` above what each message
+/// did.
 pub fn supervised(
   initial initial: fn(Subject(Message(item, answer))) -> state,
   handle handle: fn(state, Message(item, answer)) ->
@@ -273,30 +265,4 @@ pub fn subscribe(
   subscriber subscriber: Subject(item),
 ) -> Nil {
   process.send(poll, Pages(subscribers.Join(subscriber:)))
-}
-
-/// Takes a page's subscription back.
-pub fn unsubscribe(
-  poll poll: Subject(Message(item, answer)),
-  subscriber subscriber: Subject(item),
-) -> Nil {
-  process.send(poll, Pages(subscribers.Leave(subscriber:)))
-}
-
-/// A tick without the timer: reads now when a page is subscribed and no read
-/// runs.
-pub fn read_now(poll poll: Subject(Message(item, answer))) -> Nil {
-  process.send(poll, ReadNow)
-}
-
-/// The deadline of the read in flight, now: the read is ended as if its time had
-/// come. Nothing happens when no read runs.
-pub fn deadline_now(poll poll: Subject(Message(item, answer))) -> Nil {
-  process.send(poll, DeadlineNow)
-}
-
-/// How many pages are subscribed, as of the process's handling of everything
-/// sent to it before this. Waits as long as the process takes.
-pub fn subscriber_count(poll poll: Subject(Message(item, answer))) -> Int {
-  process.call_forever(poll, fn(reply) { Pages(subscribers.Count(reply:)) })
 }

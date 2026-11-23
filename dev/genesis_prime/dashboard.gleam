@@ -133,7 +133,7 @@ type SettingsError {
 
 /// What the start says: lines for the log, which never hold the key, and the
 /// one line to print, which holds the entry URL.
-pub type Report {
+type Report {
   Report(log_lines: List(String), print_line: String)
 }
 
@@ -377,7 +377,7 @@ fn stop_tree(owner owner: Pid, tree tree: Pid) -> Nil {
 }
 
 /// What the start says about a dashboard with this gate.
-pub fn start_report(gate gate: Gate) -> Report {
+fn start_report(gate gate: Gate) -> Report {
   Report(
     log_lines: [
       "dashboard: serving on "
