@@ -492,6 +492,7 @@ pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
   let take = fn(state, message, body, at) {
     let assert Ok(taken) =
       cast.take(
+        target_of: support.nothing_shown,
         cast: state,
         message:,
         body:,

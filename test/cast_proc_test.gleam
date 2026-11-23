@@ -2720,6 +2720,7 @@ pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_
     as "the second go asks for its targets"
   let assert Ok(#(state, _)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: state,
       message: cast_state.Cancelled,
       body: support.cancel_body(
@@ -2781,6 +2782,7 @@ pub fn a_hit_answered_after_the_client_ended_a_cast_that_holds_no_node_still_fir
     as "the press asks for the targets of its one go"
   let assert Ok(#(state, _)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: state,
       message: cast_state.Cancelled,
       body: support.cancel_body(

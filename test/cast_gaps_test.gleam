@@ -38,6 +38,12 @@ fn limits() -> List(Limit) {
     Limit(
       cast_press.gaps(),
       "Casting",
+      ["press of an ability at another player", "accepted without"],
+      "a press at another player is accepted without the target's life, combat, crowd-control state, range, faction and group",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
       ["prerequisite type the server does not read"],
       "a prerequisite type the server does not read refuses a press",
     ),

@@ -83,18 +83,20 @@ import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
-  type AimedPress, type Caster, type Effect, type Interaction, type Refusal,
-  type Resolution, type Role, type State, type Threshold, type Unbuilt,
-  type Verdict, Activation, AnswerSucceeded, AwaitingAnswer, Base, CancelTimer,
-  CannotTell, ChargeLevel, Child, CooldownModifierEnds, CooldownModifierStarts,
-  DroppedControls, DroppedDespawns, DroppedSignals, DroppedUnitStates, Finish,
-  ForcedMoveStart, GateFails, Go, Hold, HoldForCast, Holding, Log, ModifierEnd,
-  ModifierStart, NoInteraction, NodesEnd, NotBuilt, Passive, ProcDue,
-  QuestAdvanceDue, Refuse, RepeatHeld, Resolution, RestrictionEnd, Shortcut,
-  Stage, StartChild, StartHeld, Starts, State, StateEnd, TargetModifierStart,
-  Tick, UnbuiltItemSpell, UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell,
-  Unheld, Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite,
-  UnreadPrerequisite, UnreadShortcutPick, UnreadSpend, WindowEnd,
+  type AimedPress, type Caster, type Effect, type Interaction, type PressRefusal,
+  type PressTarget, type Refusal, type Resolution, type Role, type State,
+  type Threshold, type Unbuilt, type Verdict, Activation, AnswerSucceeded,
+  AwaitingAnswer, Base, CancelTimer, CannotTell, ChargeLevel, Child,
+  CooldownModifierEnds, CooldownModifierStarts, DroppedControls, DroppedDespawns,
+  DroppedSignals, DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go,
+  Hold, HoldForCast, Holding, Log, ModifierEnd, ModifierStart, NoInteraction,
+  NodesEnd, NotBuilt, OnCaster, OnPlayer, Passive, PressNotBuilt, PressRefused,
+  ProcDue, QuestAdvanceDue, Refuse, RepeatHeld, Resolution, RestrictionEnd,
+  Shortcut, Stage, StartChild, StartHeld, Starts, State, StateEnd,
+  TargetModifierStart, Tick, UnbuiltItemSpell, UnbuiltPlayerTarget,
+  UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid, UnreadItemPrerequisite,
+  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UnreadSpend,
+  WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
@@ -124,7 +126,8 @@ import gleam/string
 /// press and of the activate cast's timing.
 pub fn gaps() -> List(gap.Entry) {
   [
-    "A spell cast at another player's unit is refused, because the server holds no other player's life, combat, faction or race to test it by, so an effect a player casts on another player does not land on that player.",
+    "A quest button's, item's or right-click's spell cast at another player's unit is refused, because the server holds no other player's life, combat, faction or race to test it by, so an effect a player casts on another player does not land on that player.",
+    "A press of an ability at another player is accepted without the target's life, combat, crowd-control state, range, faction and group, which the client tests before it sends the press, because the server's picture of another player holds only a ground point.",
     "A spell whose cast condition, caster requirement's waiver or creature pick is of a prerequisite type the server does not read is refused.",
     "A spell the server cannot plan, whose cast method is not built, or whose innate cost is in a vital the server does not hold or is spent by an EMM id it does not read, is refused.",
     "A crowd-control state on another unit that lasts until removed is dropped from a cast, because no rule of the server ends it when its spell ends.",
@@ -189,7 +192,9 @@ fn press_at_player_unbuilt(
 pub fn aimed_at_the_caster(
   press press: AimedPress,
 ) -> Result(#(State, List(Effect)), Refusal) {
-  case spell_effect.has_flag(flags: press.aim.mechanics_flags, bit: 2) {
+  case
+    spell_effect.has_flag(flags: press.aim.targeting.mechanics_flags, bit: 2)
+  {
     False ->
       press_refused(press:, result: cast_result.CasterCannotBePrimaryTarget)
     True ->
@@ -211,7 +216,7 @@ pub fn aimed_at_a_player(
     press.spell.target_death != spell_plan.AliveOrDead
     || press.aim.target_combat == shortcut_spell.OutOfCombatOnly
   case
-    spell_effect.has_flag(flags: press.aim.valid_targets, bit: 1),
+    spell_effect.has_flag(flags: press.aim.targeting.valid_targets, bit: 1),
     tests_life_or_combat
   {
     True, _ -> press_refused(press:, result: cast_result.TargetCannotBePlayer)
@@ -296,7 +301,7 @@ pub fn unit_state_refusal(
     unit_state.cast_refusal(
       held: press.unit_states,
       beneficial: target_mechanic.is_beneficial(
-        flags: press.aim.mechanics_flags,
+        flags: press.aim.targeting.mechanics_flags,
       ),
     )
   {
@@ -619,6 +624,72 @@ pub fn ability_at(
   |> result.try(fn(base) { spell_plan.in_plans(plans:, base:) })
 }
 
+/// The primary target of a press of `spell` at the unit its message names, judged by the
+/// spell's targeting kind as the client judges it before it sends the press
+/// (`opcode.0x9a`, picker `0x14055bdc0`, `opcode.0x9d.target_checks`), or why the press is
+/// refused. A spell of the Caster kind is cast at the caster whatever the message names. A
+/// Targeted spell is refused 91 when the message names no unit or one the picture does not
+/// show, and refused 32 when it names the caster unless the spell's mechanics flags let the
+/// caster be its own target. At another player it is refused 102 when the spell's valid
+/// targets refuse a player, and 285 as not built when the spell is not beneficial; else
+/// the cast is on that player. A creature, a spell cast on the ground and a kind the server
+/// does not read keep the caster as the primary target. `target_of` says what a unit is to
+/// the caster's picture. Whether the player is still in the caster's sight when the cast
+/// starts is the funnel's (`cast.press_resolved`).
+pub fn at_a_unit(
+  spell spell: Spell,
+  named named: Int,
+  caster_unit_id caster_unit_id: Int,
+  target_of target_of: fn(Int) -> activate.Target,
+) -> Result(PressTarget, PressRefusal) {
+  let targeting = spell.targeting
+  case targeting.kind {
+    target_mechanic.Caster
+    | target_mechanic.Ground
+    | target_mechanic.Unread(..) -> Ok(OnCaster)
+    target_mechanic.Targeted ->
+      case named == 0, named == caster_unit_id {
+        True, _ -> Error(PressRefused(result: cast_result.NoTarget))
+        False, True ->
+          case spell_effect.has_flag(flags: targeting.mechanics_flags, bit: 2) {
+            True -> Ok(OnCaster)
+            False ->
+              Error(PressRefused(
+                result: cast_result.CasterCannotBePrimaryTarget,
+              ))
+          }
+        False, False ->
+          case target_of(named) {
+            activate.Unseen -> Error(PressRefused(result: cast_result.NoTarget))
+            activate.Usable(..) -> Ok(OnCaster)
+            activate.AnotherPlayer -> at_another_player(targeting:, named:)
+          }
+      }
+  }
+}
+
+/// A Targeted spell pressed at another player: refused 102 when the spell refuses a
+/// player (Spell4ValidTargets bit 0), refused 285 as not built when it is not beneficial
+/// (Spell4TargetMechanics flags bit 0: a hostile cast at a player is the fight between
+/// players, whose flag the server does not hold), else cast on that player.
+fn at_another_player(
+  targeting targeting: target_mechanic.Targeting,
+  named named: Int,
+) -> Result(PressTarget, PressRefusal) {
+  case
+    spell_effect.has_flag(flags: targeting.valid_targets, bit: 1),
+    target_mechanic.is_beneficial(flags: targeting.mechanics_flags)
+  {
+    True, _ -> Error(PressRefused(result: cast_result.TargetCannotBePlayer))
+    False, False ->
+      Error(PressNotBuilt(
+        result: cast_result.IllegalSpellCast,
+        why: "is pressed at another player and is not beneficial, which the server does not build because it holds no player's fight state",
+      ))
+    False, True -> Ok(OnPlayer(unit_id: named))
+  }
+}
+
 /// The ability becomes the one held: a second key down of the ability already held
 /// is the same hold, and the newest ability's key replaces the held one, whose
 /// cast under way ends by itself (the server's choice: the client sends each key
@@ -627,18 +698,23 @@ pub fn ability_at(
 pub fn key_down(
   cast cast: State,
   ability ability: Spell,
+  target target: PressTarget,
 ) -> #(State, List(Effect)) {
   case cast.holding {
-    Some(Holding(ability: held, ..)) if held.spell4_id == ability.spell4_id -> #(
-      cast,
-      [],
-    )
+    Some(Holding(ability: held, ..) as holding)
+      if held.spell4_id == ability.spell4_id
+    -> #(State(..cast, holding: Some(Holding(..holding, target:))), [])
     Some(_) | None -> {
       let #(cast, cancels) = stop_holding(cast:)
       #(
         State(
           ..cast,
-          holding: Some(Holding(ability:, repeat_timer: None, last_cast: None)),
+          holding: Some(Holding(
+            ability:,
+            target:,
+            repeat_timer: None,
+            last_cast: None,
+          )),
         ),
         cancels,
       )
@@ -761,6 +837,7 @@ pub fn resolved(
             bag_spell:,
             stage: None,
             proxied: True,
+            primary_target: OnCaster,
             logs:,
           )
         None ->
@@ -770,6 +847,7 @@ pub fn resolved(
             bag_spell:,
             stage: None,
             proxied: False,
+            primary_target: OnCaster,
             logs:,
           )
       })
@@ -826,6 +904,7 @@ pub fn resolved_by_threshold(
           bag_spell:,
           stage: None,
           proxied: False,
+          primary_target: OnCaster,
           logs: [],
         ),
       )
@@ -841,6 +920,7 @@ pub fn resolved_by_threshold(
             False -> Some(threshold.index)
           },
           proxied: False,
+          primary_target: OnCaster,
           logs: [],
         )
       })

@@ -28,9 +28,7 @@ import genesis_prime/game/objective_kind
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/target_mechanic
-import genesis_prime/table/id.{
-  Spell4ConditionsId, Spell4Id, Spell4ValidTargetsId,
-}
+import genesis_prime/table/id.{Spell4ConditionsId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
@@ -38,7 +36,6 @@ import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_target_mechanics
-import genesis_prime/table/spell4_valid_targets
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{None, Some}
@@ -228,7 +225,7 @@ fn planned(
           {
             Error(error) -> CannotBePlanned(why: spell_plan.describe(error:))
             Ok(spell) ->
-              case target_mechanic.takes_caster(aim.target_mechanic) {
+              case target_mechanic.takes_caster(aim.targeting.kind) {
                 True -> Planned(spell:)
                 False -> Aimed(spell:, aim:)
               }
@@ -240,16 +237,12 @@ fn planned(
 /// What a spell's rows say of whom it is cast at.
 pub type Aim {
   Aim(
-    /// The kind of the spell's Spell4TargetMechanics row; an aimed spell is not a
-    /// `Caster` kind.
-    target_mechanic: target_mechanic.Kind,
+    /// The spell's target mechanic kind, mechanics flags (bit 1 lets the caster be its
+    /// own target) and valid-targets bitmask (bit 0 refuses a player); an aimed spell's
+    /// kind is not `Caster`.
+    targeting: target_mechanic.Targeting,
     /// Spell4Base.targetGroupIdCastGroup, 0 for none.
     cast_group_id: Int,
-    /// Spell4TargetMechanics.flags: bit 1 lets the caster be its own target.
-    mechanics_flags: Int,
-    /// Spell4ValidTargets.targetBitmask, 0 when the spell names no row: bit 0 refuses a
-    /// player.
-    valid_targets: Int,
     /// What the target's Spell4Conditions row says of its combat.
     target_combat: TargetCombat,
     /// The Spell4 row's range limits.
@@ -318,13 +311,10 @@ fn aim_of(
   row row: spell4.Spell4,
 ) -> Result(Aim, AimError) {
   use #(base, mechanics) <- result.try(mechanics_of(tables:, row:))
-  use valid_targets <- result.try(case base.spell4_valid_target_id {
-    0 -> Ok(0)
-    valid_id ->
-      spell4_valid_targets.get(tables:, id: Spell4ValidTargetsId(valid_id))
-      |> result.map(fn(valid) { valid.target_bitmask })
-      |> result.replace_error(NoValidTargetsRow)
-  })
+  use targeting <- result.try(
+    target_mechanic.targeting_of_rows(tables:, base:, mechanics:)
+    |> result.replace_error(NoValidTargetsRow),
+  )
   use target_combat <- result.map(case row.spell4_conditions_id_target {
     0 -> Ok(CombatAllowed)
     conditions_id ->
@@ -333,10 +323,8 @@ fn aim_of(
       |> result.try(fn(conditions) { combat_of(conditions:) })
   })
   Aim(
-    target_mechanic: target_mechanic.of_row(mechanics),
+    targeting:,
     cast_group_id: base.target_group_id_cast_group,
-    mechanics_flags: mechanics.flags,
-    valid_targets:,
     target_combat:,
     limits: activate.Limits(
       min: row.target_min_range,

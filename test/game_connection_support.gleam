@@ -1415,6 +1415,7 @@ pub fn created_for(
         event: sent_by_the_map(SeenBy(
           by: ConnectionId(viewer),
           stay: viewer_stay(viewer),
+          unit_id: viewer_unit_id(viewer),
         )),
       ).1,
     )
@@ -1536,6 +1537,12 @@ pub fn own_stay() -> Stay {
 /// its `viewer`th, so each viewer's is its own.
 pub fn viewer_stay(viewer: Int) -> Stay {
   map_support.stay(count: viewer)
+}
+
+/// The unit id the map gave the player of connection `viewer`, as the map's `SeenBy` names
+/// it: the viewer's number past 100, which no other unit of the tests holds.
+pub fn viewer_unit_id(viewer: Int) -> Int {
+  100 + viewer
 }
 
 /// News of the unit `unit_id` as its owner sends it to the tests' player.
@@ -1684,6 +1691,7 @@ pub fn watched_by(
       event: sent_by_the_map(SeenBy(
         by: ConnectionId(viewer),
         stay: viewer_stay(viewer),
+        unit_id: viewer_unit_id(viewer),
       )),
     ).0
   })

@@ -173,6 +173,7 @@ pub fn a_held_key_of_bag_index_3_holds_the_innate_as_any_key_test() -> Nil {
   let caster = stalker(in_combat: True)
   let assert Ok(#(state, effects)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: cast_state.new(),
       message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: 3, target: 0, held: 1),

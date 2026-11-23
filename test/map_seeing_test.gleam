@@ -176,27 +176,65 @@ fn notices(
   })
 }
 
+/// The unit id a join's `Joined` answer gives the player, which a notice of that player
+/// names.
+fn joined_unit_id(taken: ServiceStep(map.Outgoing)) -> Int {
+  let assert [unit_id] =
+    list.filter_map(support.replies(taken), fn(reply) {
+      case reply.1 {
+        Joined(unit:, ..) -> Ok(unit.unit_id)
+        map.NotJoined(..)
+        | map.Summoned(..)
+        | map.NotSummoned(..)
+        | map.Left
+        | Noticed(..)
+        | map.Watched(..)
+        | map.Unwatched(..)
+        | map.Retire
+        | map.Approached(..)
+        | map.Withdrew(..)
+        | map.PlayerDied(..) -> Error(Nil)
+      }
+    })
+    as "a join is answered with one Joined"
+  unit_id
+}
+
 pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_watchers_stay_test() -> Nil {
   use <- owned_test.run(5000)
   // The map keeps the stay each Join named (genesis_prime/world_map/stay), and a
   // message for a stay is dropped by any other: so each notice names its
   // receiver's join's stay, and SeenBy the watcher's, which the receiver names
-  // in every news it sends the watcher.
-  let #(_, taken) = two_players(10.0)
-  assert notices(taken)
+  // in every news it sends the watcher. SeenBy also names the unit the map gave the
+  // watcher at its join, which is the address the cast rule names the player by.
+  let #(state, first_join) =
+    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
+  let #(state, second_join) =
+    join(state:, connection: 2, place: at(10.0), elapsed_ms: 200)
+  let first_unit = joined_unit_id(first_join)
+  let second_unit = joined_unit_id(second_join)
+  assert first_unit != second_unit as "each player has its own unit"
+  assert notices(second_join)
     == [
       #(
         1,
         map_support.stay(count: 1),
-        SeenBy(by: ConnectionId(2), stay: map_support.stay(count: 2)),
+        SeenBy(
+          by: ConnectionId(2),
+          stay: map_support.stay(count: 2),
+          unit_id: second_unit,
+        ),
       ),
       #(
         2,
         map_support.stay(count: 2),
-        SeenBy(by: ConnectionId(1), stay: map_support.stay(count: 1)),
+        SeenBy(
+          by: ConnectionId(1),
+          stay: map_support.stay(count: 1),
+          unit_id: first_unit,
+        ),
       ),
     ]
-  let #(state, _) = two_players(10.0)
   let #(_, left) = leave(state:, connection: 2, elapsed_ms: 300)
   assert notices(left)
     == [#(1, map_support.stay(count: 1), UnseenBy(by: ConnectionId(2)))]
@@ -205,7 +243,10 @@ pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_wat
 
 pub fn a_second_join_keeps_the_new_joins_stay_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, _) = two_players(10.0)
+  let #(state, first_join) =
+    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
+  let #(state, second_join) =
+    join(state:, connection: 2, place: at(10.0), elapsed_ms: 200)
   let #(_, again) =
     join_for(state:, connection: 1, place: at(0.0), elapsed_ms: 300, stay: 7)
   assert notices(again)
@@ -213,15 +254,23 @@ pub fn a_second_join_keeps_the_new_joins_stay_test() -> Nil {
       #(
         1,
         map_support.stay(count: 7),
-        SeenBy(by: ConnectionId(2), stay: map_support.stay(count: 2)),
+        SeenBy(
+          by: ConnectionId(2),
+          stay: map_support.stay(count: 2),
+          unit_id: joined_unit_id(second_join),
+        ),
       ),
       #(
         2,
         map_support.stay(count: 2),
-        SeenBy(by: ConnectionId(1), stay: map_support.stay(count: 7)),
+        SeenBy(
+          by: ConnectionId(1),
+          stay: map_support.stay(count: 7),
+          unit_id: joined_unit_id(first_join),
+        ),
       ),
     ]
-    as "the connection's newest join names the stay it takes messages for"
+    as "the connection's newest join names the stay it takes messages for, and the unit it kept"
 }
 
 /// The end of the connection `connection`'s watch: the watch the join opened as

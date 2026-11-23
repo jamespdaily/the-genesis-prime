@@ -17,6 +17,8 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/effect_kind
+import genesis_prime/game/player_address.{PlayerAddress, Viewer}
+import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/crowd_control_state
@@ -67,6 +69,7 @@ import genesis_prime/world_map/map.{
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option
@@ -328,6 +331,7 @@ pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test(
       game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
+        unit_id: game_connection_support.viewer_unit_id(2),
       )),
       game_connection_support.sent_by_the_map(UnseenBy(by: ConnectionId(2))),
     ],
@@ -483,6 +487,7 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
       game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
+        unit_id: game_connection_support.viewer_unit_id(2),
       )),
     )
   let assert [#(2, PeerNews(news: Appeared(unit: created), ..))] =
@@ -551,6 +556,7 @@ pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test
         game_connection_support.sent_by_the_map(SeenBy(
           by: ConnectionId(2),
           stay: game_connection_support.viewer_stay(2),
+          unit_id: game_connection_support.viewer_unit_id(2),
         )),
       )
     let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
@@ -585,6 +591,7 @@ pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_
       game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
+        unit_id: game_connection_support.viewer_unit_id(2),
       )),
     )
   let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
@@ -830,6 +837,7 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
         game_connection_support.sent_by_the_map(SeenBy(
           by: ConnectionId(2),
           stay: game_connection_support.viewer_stay(2),
+          unit_id: game_connection_support.viewer_unit_id(2),
         )),
       ))
     unit.tail.server_time_estimate_start
@@ -897,6 +905,7 @@ pub fn a_viewer_set_is_empty_after_a_camp_and_a_new_join_and_comes_back_only_by_
         game_connection_support.sent_by_the_map(SeenBy(
           by: ConnectionId(4),
           stay: game_connection_support.viewer_stay(4),
+          unit_id: game_connection_support.viewer_unit_id(4),
         )),
       ),
     )
@@ -992,6 +1001,7 @@ fn stay_messages(
       SentByMap(SeenBy(
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
+        unit_id: game_connection_support.viewer_unit_id(3),
       )),
     ),
     #(
@@ -1750,6 +1760,7 @@ fn created_at(
       event: game_connection_support.sent_by_the_map(SeenBy(
         by: ConnectionId(viewer),
         stay: game_connection_support.viewer_stay(viewer),
+        unit_id: game_connection_support.viewer_unit_id(viewer),
       )),
     )
   let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
@@ -1827,6 +1838,7 @@ fn discharge_told_on(
             SeenBy(
               by: ConnectionId(3),
               stay: game_connection_support.viewer_stay(3),
+              unit_id: game_connection_support.viewer_unit_id(3),
             )
           Goes(..) -> UnseenBy(by: ConnectionId(3))
         }
@@ -2222,4 +2234,107 @@ pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> 
       assert game_connection_support.written_ids(taken) == finished as name
     },
   )
+}
+
+/// The map's notice that the player of connection `viewer` sees the tests' player, as the
+/// unit `unit_id`.
+fn seen_by(viewer viewer: Int, unit_id unit_id: Int) -> map.Notice {
+  SeenBy(
+    by: ConnectionId(viewer),
+    stay: game_connection_support.viewer_stay(viewer),
+    unit_id:,
+  )
+}
+
+pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let player = shown.ShownPlayer(at: option.None)
+  // Each row: the notices the map sent, the units the picture shows, and the units the
+  // cast rule may name, which are the notices' own connections, unit ids and stays.
+  list.each(
+    [
+      #(
+        "a shown player whose connection the map named is addressed by that notice's connection, unit id and stay",
+        [seen_by(viewer: 3, unit_id: 40)],
+        [40],
+        [40],
+      ),
+      #(
+        "a shown player no notice named has no address: there is no connection to tell",
+        [],
+        [40],
+        [],
+      ),
+      #(
+        "a notice for a unit the picture does not show gives none: the client was not sent the unit",
+        [seen_by(viewer: 3, unit_id: 40)],
+        [],
+        [],
+      ),
+      #(
+        "of two shown players only the one a notice named is addressed, by its own notice",
+        [seen_by(viewer: 4, unit_id: 41)],
+        [40, 41],
+        [41],
+      ),
+      #(
+        "two notices name two connections, each addressed by its own unit",
+        [seen_by(viewer: 3, unit_id: 40), seen_by(viewer: 4, unit_id: 41)],
+        [40, 41],
+        [40, 41],
+      ),
+    ],
+    fn(row) {
+      let #(why, notices, shown_units, expected_units) = row
+      let viewers =
+        list.map(notices, fn(notice) {
+          let assert SeenBy(by:, stay:, unit_id:) = notice
+            as "the rows hold SeenBy notices"
+          #(by, Viewer(stay:, unit_id:))
+        })
+        |> dict.from_list
+      let picture =
+        list.map(shown_units, fn(unit_id) { #(unit_id, player) })
+        |> dict.from_list
+      let expected =
+        list.filter_map(notices, fn(notice) {
+          let assert SeenBy(by:, stay:, unit_id:) = notice
+            as "the rows hold SeenBy notices"
+          case list.contains(expected_units, unit_id) {
+            True ->
+              Ok(#(unit_id, PlayerAddress(connection: by, unit_id:, stay:)))
+            False -> Error(Nil)
+          }
+        })
+        |> dict.from_list
+      assert player_address.in_sight(viewers:, picture:) == expected as why
+    },
+  )
+  // A viewer's stay is the one its latest SeenBy named: the connection that saw the player
+  // in one stay and sees it again in a later one is told in the later stay, which is the
+  // stay `in_sight` addresses it by.
+  let later_stay = map_support.stay(count: 30)
+  let state =
+    game_connection_support.watched_by(game_connection_support.in_world(), [3])
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(3),
+        stay: later_stay,
+        unit_id: game_connection_support.viewer_unit_id(3),
+      )),
+    )
+  let #(_, moved) =
+    game_connection_support.read(
+      state,
+      game_connection_support.moves_message([
+        game_client.position_command(x: 1.0, y: 2.0, z: 3.0),
+      ]),
+    )
+  assert list.map(game_connection_support.peer_tells_for(moved), fn(sent) {
+      #(sent.0, sent.1)
+    })
+    == [#(3, later_stay)]
+    as "a player seen again by a connection in a new stay is told its moves in the new stay, not the first"
 }

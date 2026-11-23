@@ -280,7 +280,11 @@ fn second_press_results(focus focus: Float) -> #(List(Int), List(Int)) {
       state:,
       caster: scene.caster,
       bag_index: scene.bag_index,
-      target: 0,
+      target: support.target_the_client_sends(
+        caster: scene.caster,
+        plans: scene.plans,
+        bag_index: scene.bag_index,
+      ),
       at: channel_support.pressed_at_ms + 100,
     )
   #(

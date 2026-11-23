@@ -29,17 +29,23 @@ import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/strike_tell
+import genesis_prime/message/cast_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/message/player_health
+import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
 import genesis_prime/message/unit_float_stat_changed
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
-import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
+import genesis_prime/step.{
+  type ConnectionStep, ConnectionId, OwnEvent, TimerFired,
+}
 import genesis_prime/table/loader/store as store_tables
+import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -536,4 +542,113 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
     )
   assert risen == 1 + ticks * heal
     as "twelve rises in all, from the 1 health the Esper entered with"
+}
+
+/// The primary target each 0x7fd and each 0x7ff the step writes names: the 0x7fds first.
+fn primary_targets(taken taken: ConnectionStep(Request)) -> List(Int) {
+  let frames = connection_support.heard(taken, connection_support.keyed())
+  list.append(
+    connection_support.decoded(
+      frames,
+      spell_cast_confirmed.message_id,
+      spell_cast_confirmed.decode,
+    )
+      |> list.map(fn(confirmed) { confirmed.primary_target_unit_id }),
+    connection_support.decoded(
+      frames,
+      spell_started.message_id,
+      spell_started.decode,
+    )
+      |> list.map(fn(started) { started.primary_target_unit_id }),
+  )
+}
+
+pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Mind Over Body (Spell4Base 19030, an Esper's at level 6) is the Targeted kind
+  // (Spell4TargetMechanics row 4). The other player is the unit 9 that the map's SeenBy of
+  // connection 3 names and that connection's 0x262 creates in the picture.
+  let tables = client_tables.shared()
+  let settings = Settings(..connection_support.settings(), tables:)
+  let #(state, _) =
+    connection_support.entered_at_level(
+      settings:,
+      class_id: 3,
+      level: 6,
+      saved_health: None,
+    )
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 6,
+      ability: 19_030,
+    )
+  let press = fn(state, ms, target) {
+    connection_support.at(
+      state:,
+      ms:,
+      event: OwnEvent(
+        step.Read(connection_support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: ms,
+            bag_index:,
+            target:,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  }
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(map.SeenBy(
+        by: ConnectionId(3),
+        stay: connection_support.viewer_stay(3),
+        unit_id: 9,
+      )),
+    )
+  let #(state, early) = press(state, 1000, 9)
+  assert list.map(
+      connection_support.refusal_results(taken: early),
+      cast_result.to_value,
+    )
+    == [91]
+    as "the picture does not show the unit 9 yet: the map's notice alone is no unit the client holds"
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.event_of(connection_support.Appears),
+    )
+  let #(state, pressed) = press(state, 2000, 9)
+  assert connection_support.refusal_results(taken: pressed) == []
+    as "the press at the other player is accepted"
+  assert primary_targets(taken: pressed) == [9]
+    as "opcode.0x9a: the caster's client takes the primary target from the 0x7fd, which names the other player (the caster is sent no 0x7ff, opcode.0x7ff.after_confirm)"
+  assert list.map(
+      connection_support.cast_starts(connection_support.news_told(
+        taken: pressed,
+        viewer: 3,
+      )),
+      fn(started) { started.primary_target_unit_id },
+    )
+    == [9]
+    as "opcode.0x7ff: the other player's client is told the cast and takes the cast's primary target from the 0x7ff, which names that player (Unit.GetBuffs reads it)"
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(
+        map.UnseenBy(by: ConnectionId(3)),
+      ),
+    )
+  let #(_, unseen) = press(state, 30_000, 9)
+  assert list.map(
+      connection_support.refusal_results(taken: unseen),
+      cast_result.to_value,
+    )
+    == [91]
+    as "the map told the connection the player no longer sees it: the unit has no address, so the press is refused 91"
 }

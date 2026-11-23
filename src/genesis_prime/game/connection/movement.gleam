@@ -357,7 +357,7 @@ pub fn sends_the_move_to_the_viewers(
     list.map(moves, fn(news) {
       OwnEffect(step.Tell(
         to: step.Connection(viewer.0),
-        request: TellPeer(stay: viewer.1, news:),
+        request: TellPeer(stay: { viewer.1 }.stay, news:),
       ))
     })
   })
