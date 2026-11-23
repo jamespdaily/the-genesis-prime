@@ -179,6 +179,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
       cast_group_id: 0,
       unread: None,
       pets: spell_plan.PetBits(must_be_pet: False, must_be_master: False),
+      facing: spell_plan.FacesAnywhere,
     ),
     global_cooldown: GlobalCooldown(
       refused_while_running: False,

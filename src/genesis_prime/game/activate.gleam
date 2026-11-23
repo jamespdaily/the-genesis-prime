@@ -525,11 +525,7 @@ fn planned_rows(
         spell:,
         effects:,
         dropped:,
-        limits: Limits(
-          min: row.target_min_range,
-          max: row.target_max_range,
-          vertical: row.target_vertical_range,
-        ),
+        limits: spell_plan.limits_of(row:),
         cast_group_id: case
           spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
         {

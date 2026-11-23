@@ -1040,3 +1040,56 @@ fn each_anchor_by_each_primary() -> Nil {
       as reason
   })
 }
+
+/// A unit at the origin faces (-sin yaw, -cos yaw), so yaw 0 faces -z (`bearing`'s
+/// evidence); the client passes a target whose angle off the facing is at most half the
+/// spell's target angle (`0x1400a7a40`, constants read from the client's bytes: the arc is
+/// halved, in radians), and gives the angle of half a turn for a target on the unit's own
+/// point (the client's normalising of a zero length gives not-a-number, which its clamp
+/// turns into -1).
+pub fn a_target_is_faced_within_half_the_arc_off_the_facing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let quarter_turn = maths.pi() /. 2.0
+  [
+    #(0.0, 0.0, -10.0, 90.0, True, "straight ahead: yaw 0 faces -z"),
+    #(0.0, -3.0, -10.0, 90.0, True, "16.7 degrees off a 45 degree half arc"),
+    #(0.0, 7.0, -10.0, 90.0, True, "35.0 degrees off a 45 degree half arc"),
+    #(0.0, 11.0, -10.0, 90.0, False, "47.7 degrees off a 45 degree half arc"),
+    #(0.0, 10.0, 0.0, 90.0, False, "90 degrees off a 45 degree half arc"),
+    #(0.0, 0.0, 10.0, 90.0, False, "directly behind, 180 degrees off"),
+    #(0.0, -11.0, -10.0, 90.0, False, "47.7 degrees off to the other side"),
+    #(
+      0.0,
+      0.0,
+      10.0,
+      330.0,
+      False,
+      "behind, 180 degrees off a 165 degree half arc",
+    ),
+    #(0.0, 0.0, 10.0, 360.0, True, "an arc of 360 reaches every direction"),
+    #(0.0, 0.0, 10.0, 0.0, True, "an arc of 0 is no test"),
+    #(quarter_turn, -10.0, 0.0, 90.0, True, "yaw a quarter turn faces -x"),
+    #(quarter_turn, 0.0, -10.0, 90.0, False, "yaw a quarter turn: -z is 90 off"),
+    #(0.0, 0.0, 0.0, 90.0, False, "on the unit's own point: half a turn off"),
+    #(
+      0.0,
+      0.0,
+      0.0,
+      360.0,
+      True,
+      "on the unit's own point inside an arc of 360",
+    ),
+    #(0.0, 0.0, 0.0, 0.0, True, "on the unit's own point with no arc test"),
+  ]
+  |> list.each(fn(row) {
+    let #(yaw, x, z, arc_degrees, expected, reason) = row
+    assert area.faces(
+        from: Point(x: 0.0, z: 0.0),
+        target: Point(x:, z:),
+        yaw:,
+        arc_degrees:,
+      )
+      == expected
+      as reason
+  })
+}

@@ -28,6 +28,16 @@ pub fn a_player() -> PlayerState {
 /// A player `east` metres east of the live character's place and `up` metres above it, which
 /// is where `cast_support.caster()` stands, otherwise as `a_player` is.
 pub fn beside_the_caster(east east: Float, up up: Float) -> PlayerState {
+  around_the_caster(east:, south: 0.0, up:)
+}
+
+/// A player `east` metres east, `south` metres south (towards +z, behind a character that has
+/// never turned) and `up` metres above the live character's place, otherwise as `a_player` is.
+pub fn around_the_caster(
+  east east: Float,
+  south south: Float,
+  up up: Float,
+) -> PlayerState {
   let live = place_support.live_character_place()
   PlayerState(
     ..a_player(),
@@ -36,7 +46,7 @@ pub fn beside_the_caster(east east: Float, up up: Float) -> PlayerState {
       world_zone_id: 6009,
       x: start_place.x(live) +. east,
       y: start_place.y(live) +. up,
-      z: start_place.z(live),
+      z: start_place.z(live) +. south,
     )),
   )
 }

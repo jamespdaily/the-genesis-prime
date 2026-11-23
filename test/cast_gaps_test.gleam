@@ -39,13 +39,13 @@ fn limits() -> List(Limit) {
       cast_press.gaps(),
       "Casting",
       ["press of an ability at another player", "refused as not built"],
-      "a spell with a cast group, a target vital, a required zone or an unread target condition bit pressed at another player is refused as not built",
+      "a spell with a cast group, a target vital, a required zone, an unread target condition bit or value or a target angle a movement flag can waive, pressed at another player, is refused as not built",
     ),
     Limit(
       cast_press.gaps(),
       "Casting",
       ["press of an ability at another player", "line of sight"],
-      "a press at another player is never refused for terrain or line of sight (101, 166)",
+      "a press at another player is never refused for line of sight or terrain (166)",
     ),
     Limit(
       cast_press.gaps(),

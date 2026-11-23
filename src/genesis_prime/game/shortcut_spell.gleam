@@ -24,7 +24,6 @@
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/item_property
 import genesis_prime/game/objective_kind
-import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{Spell4ConditionsId, Spell4Id}
@@ -317,11 +316,7 @@ fn aim_of(
     targeting:,
     cast_group_id: base.target_group_id_cast_group,
     target_combat:,
-    limits: spell_plan.Limits(
-      min: row.target_min_range,
-      max: row.target_max_range,
-      vertical: row.target_vertical_range,
-    ),
+    limits: spell_plan.limits_of(row:),
   )
 }
 
@@ -332,11 +327,13 @@ fn combat_of(
   conditions conditions: spell4_conditions.Spell4Conditions,
 ) -> Result(spell_plan.TargetCombat, AimError) {
   case
-    spell_effect.has_flag(flags: conditions.condition_mask, bit: 2),
-    spell_effect.has_flag(flags: conditions.condition_value, bit: 2)
+    spell_plan.target_combat_of(
+      mask: conditions.condition_mask,
+      value: conditions.condition_value,
+    )
   {
-    False, _ -> Ok(spell_plan.CombatAllowed)
-    True, False -> Ok(spell_plan.OutOfCombatOnly)
-    True, True -> Error(AsksForTargetInCombat)
+    spell_plan.MustBeInCombat -> Error(AsksForTargetInCombat)
+    spell_plan.CombatAllowed -> Ok(spell_plan.CombatAllowed)
+    spell_plan.OutOfCombatOnly -> Ok(spell_plan.OutOfCombatOnly)
   }
 }

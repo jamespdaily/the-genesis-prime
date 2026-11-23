@@ -229,6 +229,27 @@ pub fn bearing(
   }
 }
 
+/// Whether a target stands within half of `arc_degrees` to either side of the facing `yaw`
+/// of a unit at `from`, on the ground plane (`0x1400a7a40`, the test the client runs of a
+/// spell's target angle before it sends the cast). An arc of 0 passes everyone. A target on
+/// the unit's own point is at the angle of half a turn, which no arc below 360 reaches.
+pub fn faces(
+  from from: Point,
+  target target: Point,
+  yaw yaw: Float,
+  arc_degrees arc_degrees: Float,
+) -> Bool {
+  let half_arc = maths.degrees_to_radians(arc_degrees) *. 0.5
+  let dx = target.x -. from.x
+  let dz = target.z -. from.z
+  case arc_degrees == 0.0, dx *. dx +. dz *. dz == 0.0 {
+    True, _ -> True
+    False, True -> half_arc >=. maths.pi()
+    False, False ->
+      float.absolute_value(bearing(from:, target:, yaw:)) <=. half_arc
+  }
+}
+
 fn wrapped(angle: Float) -> Float {
   let two_pi = 2.0 *. maths.pi()
   case angle >. maths.pi() {

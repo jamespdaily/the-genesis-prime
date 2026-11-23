@@ -126,8 +126,8 @@ import gleam/string
 pub fn gaps() -> List(gap.Entry) {
   [
     "A quest button's, item's or right-click's spell cast at another player's unit is refused, because the server judges only an ability's press by the target's state, and an effect a player casts on another player does not land on that player.",
-    "A press of an ability at another player whose spell has a cast group, a target vital requirement, a required zone or a target condition bit the server does not read is refused as not built, because what the client tests of a player for them is not decoded.",
-    "A press of an ability at another player is never refused for terrain or line of sight (results 101 and 166), because the server holds no collision geometry.",
+    "A press of an ability at another player whose spell has a cast group, a target vital requirement, a required zone, a target condition bit or value the server does not read, or a target angle the client skips while a movement flag of the caster is clear (Spell4.propertyFlags bit 18) is refused as not built, because what the client tests of a player for them, or what sets that flag, is not decoded.",
+    "A press of an ability at another player is never refused for line of sight or terrain (result 166), because the server holds no collision geometry.",
     "A press of an ability at another player is not judged for an invulnerable or immune state (96, 92), a taxi ride (120) or a duel, because the server gives a player none of them.",
     "A press of an ability at another player whose spell needs the target to be the caster's pet or master is refused 255 or 256, because the server gives no player an owned unit, and that the client's lists are the 0x262's owned unit ids is not traced.",
     "A PvP flag or group that changes while a player is in sight reaches no viewer, so a press at that player is judged by the flag and group its 0x262 gave.",
@@ -220,7 +220,9 @@ pub fn aimed_at_a_player(
     press.spell.target_death != spell_plan.AliveOrDead
     || press.aim.target_combat == spell_plan.OutOfCombatOnly
   case
-    spell_effect.has_flag(flags: press.aim.targeting.valid_targets, bit: 1),
+    press_target.refuses_a_player(
+      valid_targets: press.aim.targeting.valid_targets,
+    ),
     tests_life_or_combat
   {
     True, _ -> press_refused(press:, result: cast_result.TargetCannotBePlayer)

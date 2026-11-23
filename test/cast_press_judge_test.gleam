@@ -23,9 +23,10 @@ import genesis_prime/game/faction_level.{
 import genesis_prime/game/held_state.{type HeldState, HeldState}
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/spell_plan.{
-  type Spell, type TargetAim, Limits, MustBeDead, MustBeInCombat,
+  type Spell, type TargetAim, FacesWithin, Limits, MustBeDead, MustBeInCombat,
   OutOfCombatOnly, PetBits, Spell, TargetAim,
 }
+import genesis_prime/game/start_place
 import genesis_prime/game/target_mechanic.{Targeted, Targeting}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state
@@ -182,6 +183,32 @@ fn ranged(min min: Float, vertical vertical: Float) -> Spell {
   with_aim(mind_over_body(), fn(aim) {
     TargetAim(..aim, limits: Limits(min:, max: 35.0, vertical:))
   })
+}
+
+/// Mind Over Body with a facing arc of `arc_degrees` and the range limits `min`, `max`.
+fn facing(arc_degrees arc_degrees: Float) -> Spell {
+  with_aim(mind_over_body(), fn(aim) {
+    TargetAim(..aim, facing: FacesWithin(arc_degrees:))
+  })
+}
+
+/// Mind Over Body with a maximum range of `max`.
+fn reaching(max max: Float) -> Spell {
+  with_aim(mind_over_body(), fn(aim) {
+    TargetAim(..aim, limits: Limits(min: 0.0, max:, vertical: -1.0))
+  })
+}
+
+/// The caster turned to face `yaw` radians, as its last rotation command left it.
+fn caster_facing(yaw yaw: Float) -> Caster {
+  let caster = caster()
+  cast_state.Caster(
+    ..caster,
+    place: start_place.turned(
+      place: caster.place,
+      facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
+    ),
+  )
 }
 
 fn masked(mask mask: Int) -> Spell {
@@ -407,6 +434,101 @@ pub fn each_check_of_a_press_at_another_player_gives_the_clients_result_test() -
       ..row("no place known for the target: 91", Refuses(91)),
       target: PlayerState(..ally(), place: None),
     ),
+    Row(
+      ..row(
+        "a spell with maximum 0 gets no allowance: an edge gap of 0.1 (centres 2.5) is 105",
+        Refuses(105),
+      ),
+      spell: reaching(max: 0.0),
+      target: ally_at(metres: 2.5),
+    ),
+    Row(
+      ..row(
+        "a spell with maximum 0 reaches a target whose edges touch (centres 2.39)",
+        Passes,
+      ),
+      spell: reaching(max: 0.0),
+      target: ally_at(metres: 2.39),
+    ),
+    Row(
+      ..row(
+        "a target angle of 90 passes a target straight ahead (the facing of a character that has never turned is -z)",
+        Passes,
+      ),
+      spell: facing(arc_degrees: 90.0),
+      target: player_state_support.around_the_caster(
+        east: 0.0,
+        south: -10.0,
+        up: 0.0,
+      ),
+    ),
+    Row(
+      ..row(
+        "a target angle of 90 passes a target 26.6 degrees off the facing (half arc 45)",
+        Passes,
+      ),
+      spell: facing(arc_degrees: 90.0),
+      target: player_state_support.around_the_caster(
+        east: 5.0,
+        south: -10.0,
+        up: 0.0,
+      ),
+    ),
+    Row(
+      ..row(
+        "a target angle of 90 refuses a target at the side: 101",
+        Refuses(101),
+      ),
+      spell: facing(arc_degrees: 90.0),
+      target: ally_at(metres: 10.0),
+    ),
+    Row(
+      ..row("a target angle of 90 refuses a target behind: 101", Refuses(101)),
+      spell: facing(arc_degrees: 90.0),
+      target: player_state_support.around_the_caster(
+        east: 0.0,
+        south: 10.0,
+        up: 0.0,
+      ),
+    ),
+    Row(
+      ..row(
+        "a target angle of 90 refuses a target on the caster's own point: 101",
+        Refuses(101),
+      ),
+      spell: facing(arc_degrees: 90.0),
+      target: player_state_support.around_the_caster(
+        east: 0.0,
+        south: 0.0,
+        up: 0.0,
+      ),
+    ),
+    Row(
+      ..row(
+        "a target angle of 200 passes the side (90 degrees off a half arc of 100)",
+        Passes,
+      ),
+      spell: facing(arc_degrees: 200.0),
+      target: ally_at(metres: 10.0),
+    ),
+    Row(
+      ..row(
+        "the caster's facing counts: turned a quarter turn to -x, a target 10 m east is behind it",
+        Refuses(101),
+      ),
+      spell: facing(arc_degrees: 90.0),
+      caster: caster_facing(yaw: 1.5707963267948966),
+      target: ally_at(metres: 10.0),
+    ),
+    Row(
+      ..row(
+        "turned a quarter turn to -x, a target 10 m west is straight ahead",
+        Passes,
+      ),
+      spell: facing(arc_degrees: 90.0),
+      caster: caster_facing(yaw: 1.5707963267948966),
+      target: ally_at(metres: -10.0),
+    ),
   ])
 }
 
@@ -504,6 +626,18 @@ pub fn the_checks_at_another_player_run_in_the_clients_order_test() -> Nil {
       ),
       spell: ranged(min: 8.0, vertical: 3.0),
       target: ally_beside(east: 0.0, up: 6.0),
+    ),
+    Row(
+      ..row(
+        "the range before the facing: too far and behind is 105",
+        Refuses(105),
+      ),
+      spell: facing(arc_degrees: 90.0),
+      target: player_state_support.around_the_caster(
+        east: 0.0,
+        south: 40.0,
+        up: 0.0,
+      ),
     ),
     Row(
       ..row(

@@ -78,6 +78,8 @@ pub type CastResult {
   TargetMustBeDead
   /// The value 108, the fact file's `Spell.CodeEnumCastResult`.
   TargetCannotBeInCombat
+  /// The value 109, the fact file's `opcode.0x9d.target_checks`.
+  TargetMustBeInCombat
   /// The value 146, the fact file's `Spell.CodeEnumCastResult.146`.
   ClientSideInteractionFail
   /// The value 151, the fact file's `0x1405648a0`.
@@ -90,6 +92,10 @@ pub type CastResult {
   SpellNoCharges
   /// The value 183, the fact file's `Spell.CodeEnumCastResult`.
   TargetRangeVertical
+  /// The value 255, the fact file's `opcode.0x9d.target_checks`.
+  TargetMustBeCastersPet
+  /// The value 256, the fact file's `opcode.0x9d.target_checks`.
+  TargetMustBeCastersMaster
   /// The value 281, the fact file's `0x1405648a0`.
   PrereqTargetCast
   /// The value 282, the fact file's `0x1405648a0`.
@@ -98,6 +104,8 @@ pub type CastResult {
   PrereqTargetPersistence
   /// The value 285, the fact file's `Spell.CodeEnumCastResult`.
   IllegalSpellCast
+  /// The value 286, the fact file's `opcode.0x9d.target_checks`.
+  TargetNotInSameGroup
   /// The value 302, the fact file's `0x1403b2c40`.
   CasterCannotBeAbilityRestriction
   /// The value 303, the fact file's `0x1403b2c40`.
@@ -110,6 +118,10 @@ pub type CastResult {
   TargetBeneficialInvulnerability
   /// The value 317, the fact file's `Spell.CodeEnumCastResult`.
   Queued
+  /// The value 322, the fact file's `opcode.0x9d.target_checks`.
+  TargetMustBePvpFlagged
+  /// The value 323, the fact file's `opcode.0x9d.target_checks`.
+  CasterMustBePvpFlagged
   /// A value the schema does not name.
   Other(Int)
 }
@@ -153,22 +165,28 @@ pub fn to_value(value: CastResult) -> Int {
     TargetCannotBeDead -> 106
     TargetMustBeDead -> 107
     TargetCannotBeInCombat -> 108
+    TargetMustBeInCombat -> 109
     ClientSideInteractionFail -> 146
     PrereqCasterCast -> 151
     CasterNeedsLos -> 166
     WeaponSlot -> 169
     SpellNoCharges -> 182
     TargetRangeVertical -> 183
+    TargetMustBeCastersPet -> 255
+    TargetMustBeCastersMaster -> 256
     PrereqTargetCast -> 281
     PrereqCasterPersistence -> 282
     PrereqTargetPersistence -> 283
     IllegalSpellCast -> 285
+    TargetNotInSameGroup -> 286
     CasterCannotBeAbilityRestriction -> 302
     TargetCannotBeAbilityRestriction -> 303
     TargetHostileInvulnerability -> 306
     TargetInvulnerableToOther -> 307
     TargetBeneficialInvulnerability -> 308
     Queued -> 317
+    TargetMustBePvpFlagged -> 322
+    CasterMustBePvpFlagged -> 323
     Other(number) -> number
   }
 }
@@ -212,22 +230,28 @@ pub fn from_value(number: Int) -> CastResult {
     106 -> TargetCannotBeDead
     107 -> TargetMustBeDead
     108 -> TargetCannotBeInCombat
+    109 -> TargetMustBeInCombat
     146 -> ClientSideInteractionFail
     151 -> PrereqCasterCast
     166 -> CasterNeedsLos
     169 -> WeaponSlot
     182 -> SpellNoCharges
     183 -> TargetRangeVertical
+    255 -> TargetMustBeCastersPet
+    256 -> TargetMustBeCastersMaster
     281 -> PrereqTargetCast
     282 -> PrereqCasterPersistence
     283 -> PrereqTargetPersistence
     285 -> IllegalSpellCast
+    286 -> TargetNotInSameGroup
     302 -> CasterCannotBeAbilityRestriction
     303 -> TargetCannotBeAbilityRestriction
     306 -> TargetHostileInvulnerability
     307 -> TargetInvulnerableToOther
     308 -> TargetBeneficialInvulnerability
     317 -> Queued
+    322 -> TargetMustBePvpFlagged
+    323 -> CasterMustBePvpFlagged
     other -> Other(other)
   }
 }

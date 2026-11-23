@@ -6,7 +6,7 @@
 //// press ─▶ faction_precheck (99)                          before the caster checks
 ////       ─▶ cast_press.verdict (the caster's own checks)
 ////       ─▶ judge: 286 ─▶ 255, 256 ─▶ unread ─▶ 106, 107 ─▶ 108, 109 ─▶ crowd control ─▶ 102
-////                 ─▶ cast group ─▶ 99, 322, 323 ─▶ 104, 105, 183
+////                 ─▶ cast group ─▶ 99, 322, 323 ─▶ 104, 105, 183 ─▶ 101
 //// ```
 ////
 //// - **The first faction test** runs before the caster checks (`CheckCastTargetFaction`
@@ -21,7 +21,7 @@
 ////   gives no player an owned unit; the target's life 106, 107 and combat 108, 109; the
 ////   crowd-control states the spell's mask names (`0x1403b2c40`); 102 for valid-target bit 0;
 ////   the faction test again for a cast between players (`CheckCastPlayerTargetFaction`
-////   `0x1403b4560`); the range, edge to edge.
+////   `0x1403b4560`); the range, edge to edge; the facing arc (101, `0x1400a7a40`).
 //// - **A held key has no client check** (`AbilityPressHold` `0x1403bd3d0` sends the message
 ////   without one), so the answer to a 0x4db is the server's own: the same order, as the result
 ////   the client gives a 0x9a (the server's choice).
@@ -29,13 +29,15 @@
 ////   picture of a moving player is its last position command's place, up to about two movement
 ////   send intervals old (`range_allowance_metres`).
 //// - **Not judged** (listed in `cast_press.gaps`): a spell with a cast group, a target vital
-////   requirement, a required zone or an unread target condition bit is refused as not built;
-////   line of sight and terrain (101, 166); invulnerable and immune states (96, 92), a taxi
+////   requirement, a required zone, an unread target condition bit or a target angle that a
+////   movement flag of the caster can waive is refused as not built; line of sight and
+////   terrain (166); invulnerable and immune states (96, 92), a taxi
 ////   ride (120) and a duel; the creature word 0x18 of a tradeskill node target (181); and an
 ////   unnamed game word at `0x7258` that can waive 323 for a PvP-flagged friendly target (read
 ////   as clear).
 
 import genesis_prime/game/activate
+import genesis_prime/game/area
 import genesis_prime/game/cast/state.{
   type Caster, type Verdict, NotBuilt, Refuse,
 }
@@ -45,6 +47,8 @@ import genesis_prime/game/held_state
 import genesis_prime/game/player_state.{type PlayerState}
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/target_mechanic
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import gleam/bool
@@ -58,8 +62,6 @@ const range_allowance_metres = 2.0
 
 /// The Spell4TargetMechanics.flags and Spell4ValidTargets.targetBitmask values the checks
 /// test (the fact file's `Spell4TargetMechanics.flags` and `Spell4ValidTargets.targetBitmask`).
-const mechanics_beneficial = 1
-
 const mechanics_friendly_passes = 8
 
 const mechanics_hostile_passes = 16
@@ -70,28 +72,10 @@ const valid_skips_faction_test = 2
 
 const valid_same_group_only = 16
 
-/// Spell4CastResult values the cast results schema does not name
-/// (`table_rows -- Spell4CastResult 109 255 256 286 322 323`).
-const target_must_be_in_combat = 109
-
-const target_must_be_casters_pet = 255
-
-const target_must_be_casters_master = 256
-
-const target_not_in_same_group = 286
-
-const target_must_be_pvp_flagged = 322
-
-const caster_must_be_pvp_flagged = 323
-
 /// Whether the target is in the caster's group: both group ids are non-zero and equal
 /// (`UnitsShareGroup` `0x140561e60`).
 fn shares_group(caster caster: Caster, target target: PlayerState) -> Bool {
   caster.group_id != 0 && caster.group_id == target.group_id
-}
-
-fn refused(value value: Int) -> Option(Verdict) {
-  Some(Refuse(result: cast_result.from_value(value)))
 }
 
 fn refused_as(result result: cast_result.CastResult) -> Option(Verdict) {
@@ -120,7 +104,7 @@ pub fn faction_precheck(
         False ->
           case target.disposition {
             Hostile -> !has(flags:, bit: mechanics_hostile_passes)
-            Neutral -> has(flags:, bit: mechanics_beneficial)
+            Neutral -> target_mechanic.is_beneficial(flags:)
             Friendly -> False
           }
       }
@@ -180,15 +164,15 @@ fn group_refusal(
       || shares_group(caster:, target:),
     return: None,
   )
-  refused(value: target_not_in_same_group)
+  refused_as(result: cast_result.TargetNotInSameGroup)
 }
 
 /// 255 and 256: a spell that needs the target to be the caster's pet or master, which no
 /// player is, as the server gives no player an owned unit (`0x1403b0880`).
 fn pet_refusal(aim aim: spell_plan.TargetAim) -> Option(Verdict) {
   case aim.pets.must_be_pet, aim.pets.must_be_master {
-    True, _ -> refused(value: target_must_be_casters_pet)
-    False, True -> refused(value: target_must_be_casters_master)
+    True, _ -> refused_as(result: cast_result.TargetMustBeCastersPet)
+    False, True -> refused_as(result: cast_result.TargetMustBeCastersMaster)
     False, False -> None
   }
 }
@@ -227,8 +211,7 @@ pub fn combat_refusal(
 ) -> Option(cast_result.CastResult) {
   case combat, in_combat {
     spell_plan.OutOfCombatOnly, True -> Some(cast_result.TargetCannotBeInCombat)
-    spell_plan.MustBeInCombat, False ->
-      Some(cast_result.from_value(target_must_be_in_combat))
+    spell_plan.MustBeInCombat, False -> Some(cast_result.TargetMustBeInCombat)
     spell_plan.OutOfCombatOnly, False
     | spell_plan.MustBeInCombat, True
     | spell_plan.CombatAllowed, _
@@ -249,10 +232,16 @@ pub fn held_refusal(
   })
 }
 
-/// 102: valid-target bit 0 refuses a player (`0x1403b2240`).
+/// Whether a spell with these valid-target bits refuses every player: bit 0 (102,
+/// `0x1403b2240`).
+pub fn refuses_a_player(valid_targets valid_targets: Int) -> Bool {
+  has(flags: valid_targets, bit: valid_refuses_player)
+}
+
+/// 102 for a spell that refuses a player.
 fn type_refusal(spell spell: Spell) -> Option(Verdict) {
   use <- bool.guard(
-    when: !has(flags: spell.targeting.valid_targets, bit: valid_refuses_player),
+    when: !refuses_a_player(valid_targets: spell.targeting.valid_targets),
     return: None,
   )
   refused_as(result: cast_result.TargetCannotBePlayer)
@@ -288,7 +277,7 @@ fn second_faction_refusal(
   case target.disposition {
     Friendly ->
       case target.pvp_flagged && !caster.pvp_flagged {
-        True -> refused(value: caster_must_be_pvp_flagged)
+        True -> refused_as(result: cast_result.CasterMustBePvpFlagged)
         False ->
           case skips || has(flags:, bit: mechanics_friendly_passes) {
             True -> None
@@ -298,18 +287,19 @@ fn second_faction_refusal(
     Hostile | Neutral ->
       case shares_group(caster:, target:) {
         True ->
-          case has(flags:, bit: mechanics_beneficial) {
+          case target_mechanic.is_beneficial(flags:) {
             True -> None
             False -> refused_as(result: cast_result.TargetFaction)
           }
         False ->
           case target.pvp_flagged, caster.pvp_flagged {
-            False, _ -> refused(value: target_must_be_pvp_flagged)
-            True, False -> refused(value: caster_must_be_pvp_flagged)
+            False, _ -> refused_as(result: cast_result.TargetMustBePvpFlagged)
+            True, False ->
+              refused_as(result: cast_result.CasterMustBePvpFlagged)
             True, True ->
               case
                 !skips
-                && has(flags:, bit: mechanics_beneficial)
+                && target_mechanic.is_beneficial(flags:)
                 && !has(flags:, bit: mechanics_hostile_passes)
               {
                 True -> refused_as(result: cast_result.TargetFaction)
@@ -321,8 +311,11 @@ fn second_faction_refusal(
 }
 
 /// 104, 105 and 183: the range edge to edge, from the place and hit radius of each player,
-/// with the server's allowance beyond the maximum (`0x1403b2240`); 91 for a target whose
-/// place the picture does not hold.
+/// with the server's allowance beyond a non-zero maximum, as the client's own margin is
+/// added only to one (`0x1403b2240`); then 101 for a target outside the spell's facing arc.
+/// 91 for a target whose place the picture does not hold is the server's choice: the
+/// client's 91 is its test for a cast with no target unit at all, and a unit the picture
+/// shows without a place has none to measure.
 fn range_refusal(
   aim aim: spell_plan.TargetAim,
   caster caster: Caster,
@@ -335,16 +328,47 @@ fn range_refusal(
         activate.range_of(
           limits: spell_plan.Limits(
             ..aim.limits,
-            max: aim.limits.max +. range_allowance_metres,
+            max: allowed_maximum(maximum: aim.limits.max),
           ),
           caster: activate.Body(place: caster.place, radius: caster.hit_radius),
           target: activate.Body(place:, radius: target.hit_radius),
         )
       {
-        activate.Within -> None
+        activate.Within -> facing_refusal(aim:, caster:, place:)
         activate.TooClose -> refused_as(result: cast_result.TargetRangeMin)
         activate.TooFar -> refused_as(result: cast_result.TargetRangeMax)
         activate.TooHigh -> refused_as(result: cast_result.TargetRangeVertical)
+      }
+  }
+}
+
+/// The maximum range a press is held to: the spell's with the server's allowance, or 0 for
+/// a spell whose maximum is 0.
+fn allowed_maximum(maximum maximum: Float) -> Float {
+  use <- bool.guard(when: maximum == 0.0, return: maximum)
+  maximum +. range_allowance_metres
+}
+
+/// 101: the target stands outside the arc the spell's target angle allows off the caster's
+/// facing (`0x1403b2240` calling `0x1400a7a40`, after the range).
+fn facing_refusal(
+  aim aim: spell_plan.TargetAim,
+  caster caster: Caster,
+  place place: Place,
+) -> Option(Verdict) {
+  case aim.facing {
+    spell_plan.FacesAnywhere -> None
+    spell_plan.FacesWithin(arc_degrees:) ->
+      case
+        area.faces(
+          from: area.point_of(place: caster.place),
+          target: area.point_of(place:),
+          yaw: start_place.facing(caster.place).yaw,
+          arc_degrees:,
+        )
+      {
+        True -> None
+        False -> refused_as(result: cast_result.TargetOrientation)
       }
   }
 }

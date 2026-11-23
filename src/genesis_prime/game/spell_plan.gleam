@@ -356,8 +356,8 @@ import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
   type Spell4Id, type UnitProperty2Id, CCStateAdditionalDataId, ItemDisplayId,
   PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
-  Spell4GroupListId, Spell4Id, Spell4StackGroupId, SpellCoolDownId,
-  UnitProperty2Id,
+  Spell4GroupListId, Spell4Id, Spell4StackGroupId, Spell4TargetAngleId,
+  SpellCoolDownId, UnitProperty2Id,
 }
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
@@ -371,6 +371,7 @@ import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
 import genesis_prime/table/spell4_stack_group
+import genesis_prime/table/spell4_target_angle
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
@@ -3689,6 +3690,16 @@ fn spell_of(
     tables:,
     id: row.spell4_cc_conditions_id_target,
   ))
+  use target_angle <- result.try(
+    spell4_target_angle.get(
+      tables:,
+      id: Spell4TargetAngleId(base.spell4_target_angle_id),
+    )
+    |> result.replace_error(NoRow(
+      table: "Spell4TargetAngle",
+      id: base.spell4_target_angle_id,
+    )),
+  )
   let caster_death = caster_death_of(conditions: caster_conditions)
   let target_death = caster_death_of(conditions: target_conditions)
   let assert Ok(#(_, mechanics)) =
@@ -3699,11 +3710,7 @@ fn spell_of(
     as "targeting_read found the Spell4Base and Spell4TargetMechanics rows"
   let target_aim =
     target_aim_of(rows: TargetRows(
-      limits: Limits(
-        min: row.target_min_range,
-        max: row.target_max_range,
-        vertical: row.target_vertical_range,
-      ),
+      limits: limits_of(row:),
       conditions_mask: case target_conditions {
         Some(condition) -> condition.condition_mask
         None -> 0
@@ -3717,6 +3724,8 @@ fn spell_of(
       cast_group_id: base.target_group_id_cast_group,
       targeting_flags: base.targeting_flags,
       target_type: mechanics.target_type,
+      property_flags: row.property_flags,
+      target_angle_degrees: target_angle.target_angle,
     ))
   use costs <- result.try(costs_of(
     row:,
@@ -7312,6 +7321,15 @@ pub type Limits {
   Limits(min: Float, max: Float, vertical: Float)
 }
 
+/// The limits of a Spell4 row.
+pub fn limits_of(row row: spell4.Spell4) -> Limits {
+  Limits(
+    min: row.target_min_range,
+    max: row.target_max_range,
+    vertical: row.target_vertical_range,
+  )
+}
+
 /// What the target's combat has to be for a press (bit 1 of the target condition row,
 /// `0x1403b2240`).
 pub type TargetCombat {
@@ -7321,6 +7339,16 @@ pub type TargetCombat {
   OutOfCombatOnly
   /// A target out of combat is refused 109.
   MustBeInCombat
+}
+
+/// How far off the caster's facing a target may stand for a press (`Spell4TargetAngle`,
+/// refused 101 beyond it, `0x1403b2240` calling `0x1400a7a40`).
+pub type TargetFacing {
+  /// An angle of 0: no test.
+  FacesAnywhere
+  /// The target must stand within half the angle, in degrees, to either side of the facing
+  /// (the ground plane only).
+  FacesWithin(arc_degrees: Float)
 }
 
 /// Whether the spell needs the target to be the caster's pet (bit 2 of
@@ -7343,6 +7371,7 @@ pub type TargetAim {
     /// `target_mask_read`.
     unread: Option(String),
     pets: PetBits,
+    facing: TargetFacing,
   )
 }
 
@@ -7362,41 +7391,59 @@ pub type TargetRows {
     targeting_flags: Int,
     /// Spell4TargetMechanics.targetType.
     target_type: Int,
+    /// Spell4.propertyFlags.
+    property_flags: Int,
+    /// Spell4TargetAngle.targetAngle of the Spell4Base row's angle, in degrees.
+    target_angle_degrees: Float,
   )
 }
 
 /// The aim of a spell's target rows: the limits as the row gives them, the combat test of
 /// bit 1 of the target condition mask (a clear value bit is 108, a set one 109), the cast
-/// group, the pet bits (not for a spell of target type 2, 3, 4, 7 or 8, `0x1403b0880`) and
-/// the first thing the server does not read: a target vital requirement, a required zone,
-/// or a condition bit outside `target_mask_read`.
+/// group, the pet bits (not for the target types `target_mechanic.tests_pet_bits` names,
+/// `0x1403b0880`), the facing (a target angle of 0 is none) and the first thing the server
+/// does not read, in the client's order: a required zone, a target vital requirement, a
+/// condition bit outside `target_mask_read`, a value that needs the target seated, piloting
+/// or on a taxi (value bits 5 to 7), or a target angle that the client skips while a
+/// movement flag of the caster is clear (Spell4.propertyFlags bit 18, `0x1403b2240`).
 pub fn target_aim_of(rows rows: TargetRows) -> TargetAim {
-  let combat = case
-    spell_effect.has_flag(flags: rows.conditions_mask, bit: 2),
-    spell_effect.has_flag(flags: rows.conditions_value, bit: 2)
-  {
-    False, _ -> CombatAllowed
-    True, False -> OutOfCombatOnly
-    True, True -> MustBeInCombat
-  }
-  let tests_pets = !list.contains([2, 3, 4, 7, 8], rows.target_type)
+  let tests_pets = target_mechanic.tests_pet_bits(target_type: rows.target_type)
+  let has_angle = rows.target_angle_degrees != 0.0
   TargetAim(
     limits: rows.limits,
-    combat:,
+    combat: target_combat_of(
+      mask: rows.conditions_mask,
+      value: rows.conditions_value,
+    ),
     cast_group_id: rows.cast_group_id,
     unread: case
-      rows.begin_innate_requirement != 0,
       rows.zone_required != 0,
+      rows.begin_innate_requirement != 0,
       int.bitwise_and(rows.conditions_mask, int.bitwise_not(target_mask_read))
-      != 0
+      != 0,
+      int.bitwise_and(
+        int.bitwise_and(rows.conditions_mask, rows.conditions_value),
+        target_state_bits,
+      )
+      != 0,
+      has_angle
+      && spell_effect.has_flag(flags: rows.property_flags, bit: 0x40000)
     {
-      True, _, _ ->
-        Some("a target vital requirement (Spell4.targetBeginInnateRequirement)")
-      False, True, _ ->
+      True, _, _, _, _ ->
         Some("a required zone (Spell4Base.worldZoneIdZoneRequired)")
-      False, False, True ->
+      False, True, _, _, _ ->
+        Some("a target vital requirement (Spell4.targetBeginInnateRequirement)")
+      False, False, True, _, _ ->
         Some("a target condition bit the plan does not read (target_mask_read)")
-      False, False, False -> None
+      False, False, False, True, _ ->
+        Some(
+          "a target condition that needs the target seated, piloting or on a taxi (value bits 5 to 7)",
+        )
+      False, False, False, False, True ->
+        Some(
+          "a target angle the client skips while a movement flag of the caster is clear (Spell4.propertyFlags bit 18)",
+        )
+      False, False, False, False, False -> None
     },
     pets: PetBits(
       must_be_pet: tests_pets
@@ -7404,8 +7451,29 @@ pub fn target_aim_of(rows rows: TargetRows) -> TargetAim {
       must_be_master: tests_pets
         && spell_effect.has_flag(flags: rows.targeting_flags, bit: 8),
     ),
+    facing: case has_angle {
+      True -> FacesWithin(arc_degrees: rows.target_angle_degrees)
+      False -> FacesAnywhere
+    },
   )
 }
+
+/// The combat test of a target condition row: bit 1 of the mask tests it, and a clear bit 1
+/// of the value is out of combat (108), a set one in combat (109) (`0x1403b2240`).
+pub fn target_combat_of(mask mask: Int, value value: Int) -> TargetCombat {
+  case
+    spell_effect.has_flag(flags: mask, bit: 2),
+    spell_effect.has_flag(flags: value, bit: 2)
+  {
+    False, _ -> CombatAllowed
+    True, False -> OutOfCombatOnly
+    True, True -> MustBeInCombat
+  }
+}
+
+/// Spell4Conditions value bits 5, 6 and 7: the target seated or piloting (116, 117), or on
+/// a taxi (120, 121), states the server never gives a shown player.
+const target_state_bits = 224
 
 /// The mask bits of a target condition row that the activate cast accounts for, in the
 /// order CheckCastUnitTargetRange tests them (`0x1403b2240`), each by what the server
