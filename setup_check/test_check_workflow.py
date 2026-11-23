@@ -90,7 +90,7 @@ class CheckWorkflowTest(unittest.TestCase):
     def test_the_gate_job_is_named_check_needs_the_part_job_and_runs_when_a_part_fails(self):
         gate = job("check")
         self.assertEqual(field(gate, "name"), "check")
-        self.assertEqual(field(gate, "needs"), "[tested, part]")
+        self.assertEqual(field(gate, "needs"), "[tested, scope, tools, part]")
         self.assertIn("!cancelled()", field(gate, "if"))
         self.assertEqual(field(gate, "if"), field(job("part"), "if"), "the gate is skipped only when the part job is")
         self.assertIn("python3 -I dev/ci_gate.py", gate)
@@ -112,7 +112,7 @@ class CheckWorkflowTest(unittest.TestCase):
         self.assertIn("pull_request", field(scope, "if"), "a push to main has no changed files to read, so every leg runs")
         self.assertIn("./check scope HEAD^1", scope)
         self.assertEqual(field(job("part"), "needs"), "[tested, scope]")
-        self.assertNotIn("scope", field(job("check"), "needs"), "a scope job that failed leaves every leg to run")
+        self.assertIn("scope", field(job("check"), "needs"), "the gate reads the light verdict, to record no tree for a light run")
         every_step = steps(job("part"))
         for step in every_step:
             label = field(step, "name") or field(step, "uses") or field(step, "run")

@@ -243,12 +243,13 @@ jobs:
           key: ${{ steps.toolchain.outputs.gleam-cache-key }}
 
   # The one check branch protection requires of the parts: it passes only when every leg
-  # of `part` succeeded (dev/ci_gate.py), and records the tree it tested as a notice. It
+  # of `part` and `tools` succeeded (dev/ci_gate.py), and records the tree it tested as a
+  # notice unless the change was light (then main's push runs every part). It
   # runs when a leg fails, and it fails when the run is cancelled. The leg jobs are
   # named after their parts, so none is named check, tools or repeat.
   check:
     name: check
-    needs: [tested, part]
+    needs: [tested, scope, tools, part]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 3

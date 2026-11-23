@@ -44,6 +44,9 @@ class CiGateTest(unittest.TestCase):
             (jobs(part="skipped"), 1, "part: skipped", "a skipped part job is a part not run, not a pass"),
             (jobs(tested="skipped", part="failure"), 1, "part: failure", "`tested` skipped does not hide a failed part"),
             (jobs(tested="success"), 1, "no job", "only `tested` present: no part job was waited for"),
+            (jobs(tools="failure", part="success"), 1, "tools: failure", "a red `tools`, which tests the light set and the scope mode, fails the gate"),
+            (jobs(scope="failure", tools="success", part="success"), 0, "", "a failed scope job leaves every leg to run, so it is ignored"),
+            (jobs(scope="skipped", tools="success", part="success"), 0, "", "scope is skipped on a push and is ignored"),
             ({}, 1, "no job", "an empty list: nothing was waited for"),
             ("this is not json", 2, "not JSON", "text that is not JSON is the gate's own error"),
             ("[1, 2]", 2, "not a JSON object", "a list is not the needs context"),
@@ -53,6 +56,14 @@ class CiGateTest(unittest.TestCase):
                 done = gate(needs)
                 self.assertEqual(done.returncode, status, done.stdout + done.stderr)
                 self.assertIn(line, done.stdout + done.stderr)
+
+    def test_a_light_run_passes_without_recording_its_tree_as_tested(self):
+        light = {"scope": {"result": "success", "outputs": {"light": "true"}}, **jobs(tools="success", part="success")}
+        done = gate(light)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertNotIn("tested tree", done.stdout, "a light run ran only the fast parts: main's push must run every part")
+        full = {"scope": {"result": "success", "outputs": {"light": "false"}}, **jobs(tools="success", part="success")}
+        self.assertIn(NOTICE, gate(full).stdout.splitlines(), "a run that ran every part records its tree")
 
     def test_the_gate_writes_the_tested_tree_notice_only_after_every_job_succeeded(self):
         passed = gate(jobs(part="success"))
