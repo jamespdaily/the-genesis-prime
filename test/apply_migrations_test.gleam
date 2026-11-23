@@ -447,3 +447,21 @@ pub fn the_item_columns_the_migrations_add_carry_a_comment_without_change_log_wo
       }
   })
 }
+
+/// A column that is null for the rows saved before it existed has no default, so a
+/// statement that makes a row must write it. Every nullable column the migrations leave
+/// in the schema is read from the catalogue.
+pub fn a_nullable_column_has_no_default_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let shared = database_support.shared()
+  let database = database_support.new_database(on: shared)
+  let assert Ok(printed) =
+    database_support.psql(with: shared.settings, database:, arguments: [
+      "-At",
+      "-c",
+      "select table_name || '.' || column_name from information_schema.columns where table_schema = 'public' and is_nullable = 'YES' and column_default is not null order by 1",
+    ])
+    as "the catalogue reads"
+  assert string.trim(printed) == ""
+    as { "nullable columns with a default: " <> string.trim(printed) }
+}

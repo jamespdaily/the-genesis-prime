@@ -1977,6 +1977,8 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
   use <- owned_test.run(60_000)
   use <- unitest.tag("registry")
   let store = account_store_support.start_store(pool_size: 2)
+  assert worker.mapped_constraints() != []
+    as "the worker maps at least one constraint, so the check below reads the catalogue"
   list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(

@@ -16,6 +16,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import qcheck
+import simplifile
 
 const cap = 4096
 
@@ -378,6 +379,38 @@ pub fn a_line_has_the_level_its_words_give_test() -> Nil {
     let #(source, text, expected) = row
     assert log_lines.level(source, text) == expected as text
   })
+}
+
+pub fn the_followed_files_are_the_files_the_scripts_write_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(library) = simplifile.read("dev/play_service/lib.sh")
+  let assert Ok(installer) = simplifile.read("dev/play_service/install.sh")
+
+  // `log_file=$home/NAME` in lib.sh.
+  let assert Ok(log_name) = after_prefix(library, "log_file=$home/")
+  assert Ok(log_name) == log_lines.file_name(UpdaterLog)
+
+  // `<key>StandardOutPath</key><string>$home/NAME</string>` in install.sh,
+  // and the same name for standard error.
+  let assert Ok(out_name) =
+    after_prefix(installer, "<key>StandardOutPath</key><string>$home/")
+  let assert Ok(error_name) =
+    after_prefix(installer, "<key>StandardErrorPath</key><string>$home/")
+  assert Ok(out_name) == log_lines.file_name(LaunchdLog)
+  assert error_name == out_name as "launchd's two keys name one file"
+}
+
+/// The text after the first line's `prefix` up to the end of the line or the
+/// next `<`.
+fn after_prefix(text: String, prefix: String) -> Result(String, Nil) {
+  case string.split_once(text, prefix) {
+    Error(Nil) -> Error(Nil)
+    Ok(#(_, rest)) -> {
+      let assert [line, ..] = string.split(rest, "\n")
+      let assert [name, ..] = string.split(line, "<")
+      Ok(string.trim(name))
+    }
+  }
 }
 
 /// The bytes the property draws from: lines end often, and each of the other

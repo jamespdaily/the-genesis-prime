@@ -817,7 +817,7 @@ pub fn each_kind_the_client_sends_in_its_own_form_is_taken_test() -> Nil {
   })
 }
 
-pub fn a_command_kind_the_client_never_sends_is_refused_with_its_kind_test() -> Nil {
+pub fn the_sentence_describing_an_unsent_kinds_refusal_names_the_kind_test() -> Nil {
   use <- owned_test.run(5000)
   assert movement.describe(UnsentKind(kind: 4))
     == "0x0637 holds a command of kind 4, which the client never sends"
