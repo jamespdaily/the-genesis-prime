@@ -45,8 +45,8 @@
 # check-passed-commit in the worktree's own git directory (git rev-parse
 # --absolute-git-dir). A failed run, a dirty tree or a git that cannot say writes
 # nothing, and the file it replaced is removed when the run starts, so it names only a
-# commit a later run passed. The PreToolUse hook dev/hooks/push_needs_fast_check.py
-# reads it and refuses the push of a step branch whose HEAD is another commit.
+# commit a later run passed. Nothing reads it since the push hooks were removed
+# (2026-11-23).
 #
 # Then the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
