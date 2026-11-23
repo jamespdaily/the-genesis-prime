@@ -29,7 +29,7 @@ import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
   SelectionNeedsHealth, SelectionNotBuilt, ShapeNotBuilt, TargetingNotBuilt,
   TelegraphNotOnCaster, TelegraphOnStruckUnits, TickingNoTick,
-  TickingUntilRemoved, ValidTargetsNotAlive,
+  TickingUntilRemoved, ValidTargetsNotBuilt,
 }
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan
@@ -575,15 +575,108 @@ pub fn a_client_damage_row_with_target_flags_2_and_readable_parameters_is_read_t
     as "a finite multiplier, targetFlags 2 and the parameter types 12, 13 and 10 are read by the area load, and so by the measure"
 }
 
-pub fn a_spell_whose_valid_targets_hold_a_bit_fails_the_load_test() -> Nil {
+pub fn a_players_area_builds_the_valid_target_bits_the_server_reads_and_refuses_8_32_and_64_test() -> Nil {
   use <- owned_test.run(60_000)
-  // No level-1 tree spell names a Spell4ValidTargets row with a bit.
-  let assert Error(ValidTargetsNotAlive(target_bitmask: 0x8, ..)) =
-    area_tables.built(
-      kick: area_tables.Kick(..area_tables.kick(), target_bitmask: 0x8),
-    )
-    as "Spell4ValidTargets.targetBitmask: 0x8 would strike the dead; only 0 is built, and Kick's row 1 is the row the edit changes"
-  Nil
+  // Each row is Kick's row 1 (bitmask 0) with `targetBitmask` edited: no level-1 tree spell
+  // with an area row names a row with a bit. Bits 8, 32 and 64 are the area record's words
+  // 6 to 8 (`0x1405698c0`: strike the dead, a creature cluster only, units in combat only),
+  // which the strike does not read; one such bit among read ones refuses the whole mask.
+  let cases = [
+    #(
+      1,
+      True,
+      "bit 1 is refused at a press (102, 0x1403b2240), no area meaning",
+    ),
+    #(
+      2,
+      True,
+      "bit 2 skips the faction test's refusals at a press (0x1403ad540)",
+    ),
+    #(4, True, "bit 4 refuses a non-player unit at a press (103, 0x1403b2240)"),
+    #(
+      16,
+      True,
+      "bit 16 refuses a unit outside the caster's group (286, 0x1403b0880)",
+    ),
+    #(
+      128,
+      True,
+      "bit 128 is copied to the area record's word 9 and read nowhere (0x1405698c0)",
+    ),
+    #(256, True, "bit 256 refuses a pet at a press (305, 0x1403b2240)"),
+    #(276, True, "256 + 16 + 4 holds read bits only"),
+    #(8, False, "bit 8 strikes the dead, which the strike does not"),
+    #(
+      32,
+      False,
+      "bit 32 picks a creature cluster only, which the server does not hold",
+    ),
+    #(
+      64,
+      False,
+      "bit 64 strikes units in combat only, which the area does not read",
+    ),
+    #(
+      267,
+      False,
+      "256 + 8 + 2 + 1: one unbuilt bit among read ones refuses the whole mask",
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(bitmask, builds, reason) = case_
+    let built =
+      area_tables.built(
+        kick: area_tables.Kick(..area_tables.kick(), target_bitmask: bitmask),
+      )
+    case builds {
+      True -> {
+        assert result.is_ok(built)
+          as { "bitmask " <> int.to_string(bitmask) <> " builds: " <> reason }
+      }
+      False -> {
+        assert built
+          == Error(ValidTargetsNotBuilt(
+            spell4_id: 58_591,
+            target_bitmask: bitmask,
+          ))
+          as {
+            "bitmask " <> int.to_string(bitmask) <> " is refused: " <> reason
+          }
+      }
+    }
+  })
+}
+
+pub fn an_area_selects_no_creature_when_its_valid_targets_name_party_members_or_players_only_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cases = [
+    #(0, True, "the alive: a creature is selected"),
+    #(1, True, "bit 1 refuses a player at a press and bars no creature"),
+    #(2, True, "bit 2 bars no creature"),
+    #(128, True, "bit 128 is read as clear"),
+    #(
+      256,
+      True,
+      "bit 256 excludes a pet, and the server stands no creature as one",
+    ),
+    #(
+      4,
+      False,
+      "bit 4 takes only a player: a creature is an NPC, which 0x1403b2240 refuses (103)",
+    ),
+    #(
+      16,
+      False,
+      "bit 16 takes the caster's party members: a creature is never in a group (UnitsShareGroup 0x140561e60)",
+    ),
+    #(20, False, "4 + 16 selects no creature"),
+    #(276, False, "256 + 16 + 4 selects no creature"),
+  ]
+  list.each(cases, fn(case_) {
+    let #(valid_targets, selects, reason) = case_
+    assert spell_area.strikes_creatures(valid_targets:) == selects
+      as { "bitmask " <> int.to_string(valid_targets) <> ": " <> reason }
+  })
 }
 
 pub fn a_hit_row_placed_on_another_unit_than_the_caster_fails_the_load_test() -> Nil {
@@ -2490,8 +2583,8 @@ pub fn a_players_row_builds_orders_2_and_3_reads_4_and_5_as_no_area_and_refuses_
     #(
       5,
       1,
-      16,
-      Error(ValidTargetsNotAlive(spell4_id: 58_591, target_bitmask: 16)),
+      8,
+      Error(ValidTargetsNotBuilt(spell4_id: 58_591, target_bitmask: 8)),
       "the valid targets of a row read as no area are still refused",
     ),
   ]
