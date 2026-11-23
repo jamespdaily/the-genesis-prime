@@ -2542,8 +2542,15 @@ fn emission_pressed_with_an_ally(south south: Float) -> EmissionRound {
     float.round(
       int.to_float(float.round(0.0784 *. support_power)) +. 3.41 *. 6.0,
     )
-  let assert [go, ..] = gos_in(frames: caster_frames)
-    as "the caster's client reads the first pulse's 0x7f4, the only one that holds the heal (phaseFlags 1)"
+  let assert Ok(go) =
+    list.find(gos_in(frames: caster_frames), fn(go) {
+      list.any(go.targets, fn(target) {
+        list.any(target.effects, fn(effect) {
+          effect.spell4_effects_id == 141_384
+        })
+      })
+    })
+    as "the caster's client reads the 0x7f4 that holds the heal row 141384 (phaseFlags 1: the first pulse alone)"
   let healths = fn(frames, unit) {
     game_client.own_health_of(events: game_client.fight_in(frames:), unit:)
   }
