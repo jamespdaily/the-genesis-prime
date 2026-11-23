@@ -776,6 +776,7 @@ fn holds_a_chance(
 
 pub fn every_periodic_heal_row_of_an_ability_pressed_at_a_player_is_read_as_a_ticking_heal_at_the_primary_target_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   // An ability is the Spell4Base of a SpellLevel row's spell, and it is pressed at a
@@ -841,6 +842,7 @@ pub fn every_periodic_heal_row_of_an_ability_pressed_at_a_player_is_read_as_a_ti
 
 pub fn no_heal_row_of_the_clients_tables_holds_a_type_37_prerequisite_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let rows =

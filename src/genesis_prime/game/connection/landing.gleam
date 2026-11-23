@@ -64,7 +64,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Casting",
-      missing: "A heal told to a player raises neither the healer's LandsHeal nor the healed player's ReceivesHeal event, because the tell carries no spell identity. The client's tables hold no such proc in the spells of an ability or a class and 37 proc rows in 36 spells that an AMP (20), an item on equip (10), an item on activate (1) or a set bonus (6) gives (36 LandsHeal, 1 ReceivesHeal); the server starts no AMP, on-equip or set-bonus spell, and only an item's on-activate spell.",
+      missing: "A heal told to a player raises neither the healer's LandsHeal nor the healed player's ReceivesHeal event, because the tell carries no spell identity. The client's tables hold such procs in the spells of three abilities (23414, 25595 and 47091: 21 ReceivesHeal rows in their Proxy children) and 38 proc rows in 37 spells that an AMP, an item on equip, an item on activate (70104 and 211223) or a set bonus gives; the server starts no AMP, on-equip or set-bonus spell, and only an item's on-activate spell.",
     ),
     gap.Entry(
       area: "Casting",
