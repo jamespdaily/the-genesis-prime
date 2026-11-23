@@ -45,8 +45,7 @@ import genesis_prime/game/cooldown.{
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
-import genesis_prime/message/spell_go
-import genesis_prime/step.{type TimerId, TimerId}
+import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list
@@ -115,17 +114,14 @@ fn plans_holding(rows rows: List(spell_plan.CooldownModifier)) -> Plans {
 /// A removal of the base 1 spell's casts from the caster, as a type 80 row aimed at the
 /// caster does (`Spell4Effects.effectType.80`).
 fn remover() -> Spell {
-  support.with_effects(spell: support.child(spell4_id: 2, base: 2), kinds: [
-    spell_plan.RemoveEffect(spell_plan.ForceRemove(
-      effect_id: Spell4EffectsId(196_521),
-      phase_flags: -1,
-      aim: spell_plan.AimsAtCaster,
-      selector: lasting.Spell(Spell4Id(1)),
-      count: 1,
-      condition: Always,
-      tag: spend.always,
-    )),
-  ])
+  support.removing(
+    spell4_id: 2,
+    base: 2,
+    effect_id: 196_521,
+    selector: lasting.Spell(Spell4Id(1)),
+    count: 1,
+    condition: Always,
+  )
 }
 
 /// What a press of the spell at this bag index meets.
@@ -179,33 +175,12 @@ fn held_or_accepted(
   }
 }
 
-/// The effects the go's target info of each unit lists, with each one's delay, and the
-/// unit.
-fn listed(effects effects: List(Effect)) -> List(#(Int, List(#(Int, Int)))) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  list.map(decoded.targets, fn(info) {
-    #(
-      info.unit_id,
-      list.map(info.effects, fn(effect) {
-        #(effect.spell4_effects_id, effect.delay_ms)
-      })
-        |> list.sort(fn(first, second) { int.compare(first.0, second.0) }),
-    )
-  })
-}
-
 fn delays_of(effects effects: List(Effect)) -> List(Int) {
   list.map(support.started_timers(effects:), fn(started) { started.1 })
 }
 
-fn number_of(timer timer: TimerId) -> Int {
-  let TimerId(number) = timer
-  number
-}
-
 fn numbers_of(timers timers: List(TimerId)) -> List(Int) {
-  list.map(timers, number_of) |> list.sort(int.compare)
+  list.map(timers, support.timer_number) |> list.sort(int.compare)
 }
 
 /// The timers a step started, in numbers.
@@ -240,7 +215,7 @@ pub fn charged_shot_released_at_once_ends_the_cooldown_its_go_started_test() -> 
   let #(state, _) =
     charged(plans: charged_plans(), state: cast_state.new(), at: 1000)
   let #(state, release) = charged(plans: charged_plans(), state:, at: 1100)
-  assert listed(effects: release) == [#(7, [#(80_977, 0)])]
+  assert support.listed_with_delays(effects: release) == [#(7, [#(80_977, 0)])]
     as "the index-0 stage 34720's go lists 80977 in the caster's target info (opcode.0x7f4.target_info)"
   // The global cooldown of the first press, 1000 ms from 1000, has passed at 2000.
   let #(_, again) = charged(plans: charged_plans(), state:, at: 2000)
@@ -273,7 +248,7 @@ pub fn charged_shot_released_at_index_1_leaves_four_seconds_of_its_cooldown_test
   let assert [#(level_1, 1000)] = support.started_timers(effects: pressed)
   let #(state, _) = support.fired(state:, timer: level_1, at: 2000)
   let #(state, release) = charged(plans:, state:, at: 2500)
-  assert listed(effects: release) == [#(7, [#(80_979, 0)])]
+  assert support.listed_with_delays(effects: release) == [#(7, [#(80_979, 0)])]
     as "Spell4Thresholds 123: a release after 1000 ms casts 34722, whose go lists 80979"
   // The go at 2500 starts 10000 ms and 80979 leaves 10000 x 0.4 = 4000: the end is 6500.
   let #(_, early) = charged(plans:, state:, at: 2500 + 3400)
@@ -417,7 +392,8 @@ pub fn impale_childs_go_lists_180712_and_changes_no_running_cooldown_test() -> N
   let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
   let #(state, child) =
     support.press(plans:, state:, bag: bag_of_holder, at: 2500)
-  assert listed(effects: child) == [#(7, [#(180_712, 0), #(231_992, 0)])]
+  assert support.listed_with_delays(effects: child)
+    == [#(7, [#(180_712, 0), #(231_992, 0)])]
     as "the go lists the rows on the caster, and the client applies them to its own charge recharges"
   assert meets(plans:, state:, at: 6600) == Held(wait_ms: 400)
     as "Punish (base 32336) has spellCoolDown 0, so no server cooldown holds that base and the slow spell's 7000 end stays"
@@ -485,7 +461,7 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
         struck: [],
         rolls: [roll],
       )
-    listed(effects:)
+    support.listed_with_delays(effects:)
   }
   assert went(50) == [#(7, [#(180_712, 0), #(231_992, 0)])]
     as "a roll of 50 passes comparison 6 on 50"

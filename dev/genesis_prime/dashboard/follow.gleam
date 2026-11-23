@@ -28,8 +28,7 @@
 ////   changed nothing sends nothing.
 //// - A read that failed sends the same lines with the reason; the cursor of the
 ////   last good read is kept, and the next tick tries again.
-//// - A subscriber that ends is dropped by the follower's own monitor of it, and
-////   the follower tells its watcher, if it has one.
+//// - A subscriber that ends is dropped by the follower's own monitor of it.
 //// - The reader runs in the follower's process, one read of at most
 ////   `read_limit_bytes`; a file system that hangs holds the follower, and with
 ////   it the pages that wait for lines.
@@ -108,16 +107,9 @@ pub type Followed {
   )
 }
 
-/// What a follower tells its watcher: a read was made, or a subscriber that had
-/// ended was dropped.
-pub type Event {
-  ReadMade(source: Source)
-  SubscriberDropped(source: Source)
-}
-
 /// What a follower follows and how: the log, its file, the reader, how often
 /// it reads and the arm of that timer (`subscribers.send_after`, or a test's
-/// own), and who is told of its reads and drops.
+/// own).
 pub type Settings {
   Settings(
     source: Source,
@@ -125,7 +117,6 @@ pub type Settings {
     reader: Reader,
     interval_ms: Int,
     arm: subscribers.Arm(Message),
-    watcher: Option(Subject(Event)),
   )
 }
 
@@ -302,8 +293,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
 
 /// What a page's request did: a page that joined is sent the newest lines at
 /// once, and the first one reads the file first; the last page to leave drops
-/// the lines and unreads the file, so the next page reads its tail; a page that
-/// ended is told to the watcher.
+/// the lines and unreads the file, so the next page reads its tail.
 fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
   case handled {
     subscribers.Unchanged -> state
@@ -315,8 +305,8 @@ fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
       process.send(subscriber, followed(state))
       state
     }
-    subscribers.PageLeft(last:) -> {
-      let state = case last {
+    subscribers.PageLeft(last:) ->
+      case last {
         True ->
           State(
             ..state,
@@ -326,22 +316,7 @@ fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
           )
         False -> state
       }
-      tell(
-        watcher: state.settings.watcher,
-        event: SubscriberDropped(state.settings.source),
-      )
-      state
-    }
   }
-}
-
-/// Tells the watcher of a follower, if it has one.
-pub fn tell(
-  watcher watcher: Option(Subject(Event)),
-  event event: Event,
-) -> Nil {
-  option.map(watcher, process.send(_, event))
-  Nil
 }
 
 /// Reads when a page is subscribed, and sends every subscriber the lines when
@@ -374,7 +349,6 @@ fn followed(state: State) -> Followed {
 /// One read of the file: its bytes go to the lines, after the change of the
 /// file the reader saw; a failed read keeps the lines and the cursor.
 fn read(state: State) -> State {
-  tell(watcher: state.settings.watcher, event: ReadMade(state.settings.source))
   case state.settings.reader(state.settings.path, state.cursor) {
     Ok(fetched) -> {
       let lines = case fetched.mark {

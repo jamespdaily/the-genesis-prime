@@ -29,7 +29,6 @@ import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as c
 import genesis_prime/game/class_resource
 import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_plan.{type Spell, Spell}
-import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId}
@@ -42,20 +41,6 @@ import spell_tables
 
 // The planted base 3 is bag index 11 (`cast_support.abilities`).
 const bag_of_base_3 = 11
-
-/// The effect ids each unit's entry of the go lists, by unit, in unit order.
-fn listed(effects effects: List(Effect)) -> List(#(Int, List(Int))) {
-  let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
-  let assert Ok(decoded) = spell_go.decode(go.body)
-  list.map(decoded.targets, fn(info) {
-    #(
-      info.unit_id,
-      list.map(info.effects, fn(effect) { effect.spell4_effects_id })
-        |> list.sort(int.compare),
-    )
-  })
-  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-}
 
 /// The client's spell with the rows the cast rule reads, as a spell of its own base.
 fn client_spell(spell4_id spell4_id: Int) -> Spell {
@@ -314,7 +299,8 @@ pub fn union_forced_move_moves_the_caster_and_the_struck_creature_test() -> Nil 
       ),
     ]
     as "the creature the go hit is thrown once"
-  let assert [#(7, caster_effects), #(21, struck_effects)] = listed(effects:)
+  let assert [#(7, caster_effects), #(21, struck_effects)] =
+    support.listed_by_unit(effects:)
   assert list.contains(caster_effects, 49_023)
     as "the caster takes the row too: its own part is listed on it"
   assert struck_effects == [49_023]

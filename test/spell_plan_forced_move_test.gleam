@@ -30,10 +30,6 @@ import planted_table.{type Cell, Integer}
 import spell_tables
 import unitest
 
-/// Telekinetic Strike's Spell4 and base, whose tree the planted rows hold
-/// (`spell_tables`).
-const strike = 32_893
-
 /// A type 3 row of a planted spell aimed by `target_flags`, in every phase, as Gate's
 /// 67776 is but for its phase, with these columns beside its id, spell and type.
 fn forced_move_row(
@@ -41,29 +37,17 @@ fn forced_move_row(
   target_flags target_flags: Int,
   columns columns: List(#(String, Cell)),
 ) -> List(Cell) {
-  let defaults = [
-    #("ID", Integer(id)),
-    #("spellId", Integer(strike)),
-    #("effectType", Integer(3)),
-    #("targetFlags", Integer(target_flags)),
-    #("phaseFlags", Integer(-1)),
-    #("orderIndex", Integer(9)),
-  ]
-  planted_table.row(
-    spell4_effects.schema,
-    list.append(
-      list.filter(defaults, fn(default) {
-        !list.any(columns, fn(given) { given.0 == default.0 })
-      }),
-      columns,
-    ),
+  spell_tables.effect_row_over(
+    id:,
+    effect_type: 3,
+    target_flags:,
+    defaults: [],
+    columns:,
   )
 }
 
 fn forced_moves_of(row row: List(Cell)) -> List(spell_plan.ForcedMove) {
-  let assert Ok(spell) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell_plan.payloads(spell:, as_kind: spell_plan.as_forced_move)
+  spell_tables.planned_payloads(row:, as_kind: spell_plan.as_forced_move)
 }
 
 // ---- the rows of the plan ----

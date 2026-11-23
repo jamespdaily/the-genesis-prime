@@ -35,7 +35,7 @@ import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
-import genesis_prime/step.{type TimerId, LogDebug}
+import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/loader/store
 import gleam/dict
@@ -45,7 +45,6 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import owned_test
-import place_support
 import prerequisite_support as prerequisites
 import spell_tables
 import unitest
@@ -130,13 +129,7 @@ fn holder(proxies proxies: List(Proxy)) -> Spell {
 /// Mind Burst (Spell4 32809), which spends every Psi Point held: bag index 2 of the planted
 /// Esper.
 fn mind_burst() -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_tables.fixture_plans(),
-      base: Spell4BaseId(19_019),
-    )
-    as "the fixture's plans hold Mind Burst"
-  spell
+  spell_tables.planted_ability(base: 19_019)
 }
 
 fn in_combat() -> Caster {
@@ -172,15 +165,6 @@ fn ran(
     from_ms: press_ms,
     until_ms:,
   )
-}
-
-fn debug_lines(effects effects: List(Effect)) -> List(String) {
-  list.filter_map(support.logs(effects:), fn(line) {
-    case line.0 == LogDebug {
-      True -> Ok(line.1)
-      False -> Error(Nil)
-    }
-  })
 }
 
 pub fn a_go_arms_a_periodic_proxys_first_tick_one_tick_time_after_its_delay_and_the_nodes_end_at_its_life_test() -> Nil {
@@ -439,7 +423,8 @@ pub fn a_caster_gate_is_read_again_at_each_tick_and_a_failing_tick_starts_no_chi
     ))
     == [2000, 4000]
     as "the gate (in combat) passes at ticks 1 and 3 and fails at tick 2, which starts no child; the ticks go on"
-  assert list.flat_map(steps, fn(step) { debug_lines(effects: step.1) }) == []
+  assert list.flat_map(steps, fn(step) { support.debug_lines(effects: step.1) })
+    == []
     as "a gate that fails is the client's answer, not a gap"
   let chance = prerequisites.single(id: 4585, condition: #(37, 6, 0, 50))
   let rolling =
@@ -474,7 +459,8 @@ pub fn a_caster_gate_is_read_again_at_each_tick_and_a_failing_tick_starts_no_chi
     ran(caster: support.caster(), pressed: #(state, go), until_ms: 3000)
   assert support.starts_of(steps:, spell4_id: child_spell4_id) == []
     as "a type 37 gate needs a roll and a tick draws none: no child"
-  let lines = list.flat_map(steps, fn(step) { debug_lines(effects: step.1) })
+  let lines =
+    list.flat_map(steps, fn(step) { support.debug_lines(effects: step.1) })
   assert list.length(lines) == 2
   assert list.all(lines, fn(line) {
     string.contains(line, "Spell4 71371")
@@ -523,7 +509,8 @@ pub fn a_periodic_proxy_whose_caster_gate_fails_at_the_go_still_arms_its_ticks_a
     ))
     == [press_ms + 2000, press_ms + 3000]
     as "tick 1 reads the gate failing and starts no child; ticks 2 and 3 read it passing and start one each"
-  assert list.flat_map(steps, fn(step) { debug_lines(effects: step.1) }) == []
+  assert list.flat_map(steps, fn(step) { support.debug_lines(effects: step.1) })
+    == []
     as "a gate that fails is the client's answer, not a gap"
 }
 
@@ -802,7 +789,8 @@ pub fn a_tick_whose_child_the_cast_rule_refuses_logs_and_the_ticks_go_on_test() 
     ran(caster: support.caster(), pressed: #(state, effects), until_ms: 20_000)
   assert support.starts_of(steps:, spell4_id: child_spell4_id) == []
     as "no child is cast for a caster the spell refuses"
-  let lines = list.flat_map(steps, fn(step) { debug_lines(effects: step.1) })
+  let lines =
+    list.flat_map(steps, fn(step) { support.debug_lines(effects: step.1) })
   assert list.length(lines) == 3
     as "each of the three ticks, which go on, leaves one debug line"
   assert list.all(lines, fn(line) {
@@ -1126,15 +1114,11 @@ fn pose_of(caster caster: Caster) -> area.Pose {
 
 /// The caster standing 50 m from where `support.caster()` stands.
 fn moved_caster() -> Caster {
-  cast_state.Caster(
-    ..support.caster(),
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 4655.65,
-      y: -7.571,
-      z: 494.996,
-    ),
+  support.standing_at(
+    caster: support.caster(),
+    x: 4655.65,
+    y: -7.571,
+    z: 494.996,
   )
 }
 
@@ -1685,7 +1669,7 @@ pub fn a_periodic_area_proxys_gates_are_read_at_the_tick_the_casters_before_the_
         == started
         as { what <> ": " <> reason }
       assert list.length(
-          list.flat_map(all, fn(step) { debug_lines(effects: step.1) }),
+          list.flat_map(all, fn(step) { support.debug_lines(effects: step.1) }),
         )
         == lines
         as { what <> ": " <> reason }

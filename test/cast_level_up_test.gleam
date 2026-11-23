@@ -24,8 +24,6 @@ import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
-import genesis_prime/message/spell_go
-import genesis_prime/message/spell_started
 import genesis_prime/step.{ConnectionId}
 import gleam/dict
 import gleam/int
@@ -63,30 +61,6 @@ fn started(
   support.answered_with_no_targets(state:, effects:, at: ms)
 }
 
-fn started_ids(
-  effects effects: List(Effect),
-) -> List(spell_started.SpellStarted) {
-  list.map(
-    support.frames_of(message_id: spell_started.message_id, effects:),
-    fn(frame) {
-      let assert Ok(start) = spell_started.decode(frame.body)
-        as "a 0x7ff the rule wrote decodes"
-      start
-    },
-  )
-}
-
-fn goes(effects effects: List(Effect)) -> List(spell_go.SpellGo) {
-  list.map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      go
-    },
-  )
-}
-
 pub fn a_fanfare_cast_starts_goes_at_once_and_ends_after_the_effects_life_with_no_cooldown_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each([2, 4, 12, 50], fn(level) {
@@ -98,14 +72,14 @@ pub fn a_fanfare_cast_starts_goes_at_once_and_ends_after_the_effects_life_with_n
         name
         <> "the start, then the go at once, no 0x7fd (a press's answer) and no 0x804"
       }
-    let assert [start] = started_ids(effects:)
+    let assert [start] = support.started_in(effects:)
     assert start.spell4_id == spell4_id && start.root_spell4_id == spell4_id
       as { name <> "the tier's Spell4 is spell and root (opcode.0x7ff)" }
     assert start.parent_spell4_id == 0
       && start.caster_unit_id == caster_unit
       && start.primary_target_unit_id == caster_unit
       as { name <> "no parent, the caster its own primary target" }
-    let assert [go] = goes(effects:)
+    let assert [go] = support.goes_in(effects:)
     assert go.cast_id == start.cast_id
       as { name <> "the go is the start's cast" }
     let assert [info] = go.targets
@@ -174,8 +148,8 @@ pub fn two_fanfares_in_one_second_are_two_casts_that_end_on_their_own_timers_tes
       "a second request " <> int.to_string(gap) <> " ms after the first: "
     let #(state, first) = started(state: cast_state.new(), level: 4, at: 1000)
     let #(state, second) = started(state:, level: 5, at: 1000 + gap)
-    let assert [first_start] = started_ids(effects: first)
-    let assert [second_start] = started_ids(effects: second)
+    let assert [first_start] = support.started_in(effects: first)
+    let assert [second_start] = support.started_in(effects: second)
     assert first_start.cast_id != second_start.cast_id
       as { name <> "two cast ids" }
     assert support.ids(frames: support.writes(effects: second))

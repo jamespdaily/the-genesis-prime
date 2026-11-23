@@ -43,7 +43,6 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
-import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -64,17 +63,6 @@ fn passive() -> Spell {
       base: Spell4BaseId(29_131),
     )
     as "the plans hold the Stalker's innate passive"
-  spell
-}
-
-/// Every spell of every tree the real plans hold, by Spell4 id.
-fn spell_named(spell4_id spell4_id: Int) -> Spell {
-  let assert Ok(spell) =
-    list.flat_map(dict.values(cast_support.real_plans()), fn(ability) {
-      spell_plan.tree(spell: ability, started: fn(_) { True })
-    })
-    |> list.find(fn(spell) { spell.spell4_id.value == spell4_id })
-    as "a tree of the plans holds the spell"
   spell
 }
 
@@ -210,7 +198,7 @@ pub fn a_proc_of_kind_16_is_in_its_spells_proc_list_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let assert [takes_damage] =
     spell_plan.payloads(
-      spell: spell_named(spell4_id: 38_784),
+      spell: cast_support.real_spell(spell4_id: 38_784),
       as_kind: spell_plan.as_proc,
     )
     as "38784 'Stealth - On' holds the one Proc row 178239, kind 16"
@@ -231,14 +219,14 @@ pub fn a_procs_spell_is_planned_as_its_tree_and_the_tree_walks_it_test() -> Nil 
   assert set.is_subset(set.from_list([60_724, 60_769, 79_932, 63_366]), of: ids)
     as "dataBits01 of each Proc row is a spell of the passive's tree, with the Proxy child 60724 it already held"
   assert list.length(spell_plan.payloads(
-      spell: spell_named(spell4_id: 60_769),
+      spell: cast_support.real_spell(spell4_id: 60_769),
       as_kind: spell_plan.as_remove,
     ))
     == 1
     as "60769's one row, 147136, is a SpellForceRemove (type 80)"
   assert list.map(
       spell_plan.payloads(
-        spell: spell_named(spell4_id: 79_932),
+        spell: cast_support.real_spell(spell4_id: 79_932),
         as_kind: spell_plan.as_modifier,
       ),
       fn(row) { row.effect_id.value },
@@ -248,7 +236,7 @@ pub fn a_procs_spell_is_planned_as_its_tree_and_the_tree_walks_it_test() -> Nil 
     as "79932's four UnitPropertyModifier rows (Spell4.79932)"
   assert list.map(
       spell_plan.payloads(
-        spell: spell_named(spell4_id: 63_366),
+        spell: cast_support.real_spell(spell4_id: 63_366),
         as_kind: spell_plan.as_cooldown_modifier,
       ),
       fn(row) { row.effect_id.value },
@@ -685,7 +673,7 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
   use <- unitest.guard(client_tables.present())
   let assert [stalker_damage] =
     spell_plan.payloads(
-      spell: spell_named(spell4_id: 79_229),
+      spell: cast_support.real_spell(spell4_id: 79_229),
       as_kind: spell_plan.as_proc,
     )
     as "Spell4 79229 'Stalker Proc Damage Tier 1' holds the one Proc row 208200"
@@ -703,7 +691,7 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
   assert prerequisite.id(gate).value == 37_038
   assert stalker_damage.holder_gate == None
   assert spell_plan.payloads(
-      spell: spell_named(spell4_id: 52_371),
+      spell: cast_support.real_spell(spell4_id: 52_371),
       as_kind: spell_plan.as_proc,
     )
     == []

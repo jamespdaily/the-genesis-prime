@@ -156,29 +156,8 @@ fn plans_with(spell spell: Spell) -> Plans {
 
 // ---- the units ----
 
-/// The caster, unit 7, standing at x and z, facing yaw 0.
-fn caster_at(x x: Float, z z: Float) -> Caster {
-  let caster = support.caster()
-  cast_state.Caster(
-    ..caster,
-    place: start_place.moved(
-      place: caster.place,
-      x:,
-      y: start_place.y(caster.place),
-      z:,
-    ),
-  )
-}
-
 fn hit(unit_id unit_id: Int) -> cast_state.Struck {
-  cast_state.Hit(
-    unit_id:,
-    unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
-    descriptions: [],
-    controls: [],
-    armor_removed: 0,
-    ticking: [],
-  )
+  support.creature_hit(unit_id:, life: 1, struck_at_ms: 0)
 }
 
 /// The child casts a step started, each as (Spell4 id, primary target unit id).
@@ -205,7 +184,7 @@ fn stealthed_or_not(plans plans: Plans, stealthed stealthed: Bool) -> State {
       support.pressed_in(
         plans:,
         state: cast_state.new(),
-        caster: caster_at(x: 0.0, z: 5.0),
+        caster: support.caster_at(x: 0.0, z: 5.0),
         bag_index: bag_of_base_1,
         target: 0,
         at: 1000,
@@ -273,7 +252,7 @@ fn impale_strikes(
   caster_at caster_position: #(Float, Float),
   creatures creatures: List(#(Int, Pose)),
 ) -> List(#(Int, Int)) {
-  let caster = caster_at(x: caster_position.0, z: caster_position.1)
+  let caster = support.caster_at(x: caster_position.0, z: caster_position.1)
   children_started(effects: press_closing(
     spell: spell_with(proxies: impales_proxies()),
     stealthed:,
@@ -371,7 +350,7 @@ pub fn a_creatures_own_yaw_turns_the_arc_test() -> Nil {
 
 pub fn a_hit_unit_the_picture_no_longer_shows_starts_no_child_and_the_others_still_decide_test() -> Nil {
   use <- owned_test.run(60_000)
-  let caster = caster_at(x: 0.0, z: 5.0)
+  let caster = support.caster_at(x: 0.0, z: 5.0)
   let effects =
     press_closing(
       spell: spell_with(proxies: impales_proxies()),
@@ -403,7 +382,7 @@ pub fn a_hit_unit_the_picture_no_longer_shows_starts_no_child_and_the_others_sti
 
 pub fn the_pose_given_at_the_close_decides_not_anything_held_at_the_press_test() -> Nil {
   use <- owned_test.run(60_000)
-  let caster = caster_at(x: 0.0, z: 5.0)
+  let caster = support.caster_at(x: 0.0, z: 5.0)
   let strike = fn(creature) {
     children_started(
       effects: press_closing(
@@ -426,8 +405,8 @@ pub fn the_pose_given_at_the_close_decides_not_anything_held_at_the_press_test()
 
 pub fn a_caster_moved_behind_between_the_press_and_the_close_is_judged_where_it_stands_at_the_close_test() -> Nil {
   use <- owned_test.run(60_000)
-  let in_front = caster_at(x: 0.0, z: -5.0)
-  let behind = caster_at(x: 0.0, z: 5.0)
+  let in_front = support.caster_at(x: 0.0, z: -5.0)
+  let behind = support.caster_at(x: 0.0, z: 5.0)
   assert children_started(
       effects: press_closing(
         spell: spell_with(proxies: impales_proxies()),
@@ -471,8 +450,8 @@ pub fn a_failing_caster_gate_starts_no_child_wherever_the_units_stand_test() -> 
       effects: press_closing(
         spell: spell_with(proxies: only_83818),
         stealthed: False,
-        pressed_by: caster_at(x: 0.0, z: -5.0),
-        closed_by: caster_at(x: 0.0, z: -5.0),
+        pressed_by: support.caster_at(x: 0.0, z: -5.0),
+        closed_by: support.caster_at(x: 0.0, z: -5.0),
         units: [creature_20()],
         hit_units: [20],
       ),
@@ -480,7 +459,7 @@ pub fn a_failing_caster_gate_starts_no_child_wherever_the_units_stand_test() -> 
     == [#(39_426, 20)]
     as "the control: an unstealthed caster in front passes 38587 and 5735, so the child starts"
   list.each([#(0.0, -5.0), #(0.0, 5.0), #(5.0, 0.0)], fn(position) {
-    let caster = caster_at(x: position.0, z: position.1)
+    let caster = support.caster_at(x: position.0, z: position.1)
     assert children_started(
         effects: press_closing(
           spell: spell_with(proxies: only_83818),
@@ -518,8 +497,8 @@ pub fn a_proxy_on_the_caster_checks_its_target_gate_against_the_caster_on_itself
         on_caster(2, 101, 2),
       ]),
       stealthed: False,
-      pressed_by: caster_at(x: 0.0, z: 5.0),
-      closed_by: caster_at(x: 0.0, z: 5.0),
+      pressed_by: support.caster_at(x: 0.0, z: 5.0),
+      closed_by: support.caster_at(x: 0.0, z: 5.0),
       units: [],
       hit_units: [],
     )
@@ -531,7 +510,7 @@ pub fn a_proxy_on_the_caster_reads_the_casters_own_yaw_test() -> Nil {
   use <- owned_test.run(60_000)
   // At yaw 3.0 row 53 runs from -1.3633235 to 1.0801380: the direction -pi of a unit on
   // its own point is outside it.
-  let caster = caster_at(x: 0.0, z: 5.0)
+  let caster = support.caster_at(x: 0.0, z: 5.0)
   let turned =
     cast_state.Caster(
       ..caster,
@@ -581,8 +560,8 @@ pub fn a_proxy_target_gate_names_the_struck_unit_test() -> Nil {
         proxy(effect: 1, child: 100, caster_gates: [], target_gate: gate),
       ]),
       stealthed: False,
-      pressed_by: caster_at(x: 0.0, z: 5.0),
-      closed_by: caster_at(x: 0.0, z: 5.0),
+      pressed_by: support.caster_at(x: 0.0, z: 5.0),
+      closed_by: support.caster_at(x: 0.0, z: 5.0),
       units: [
         #(20, at_origin),
         #(21, at_origin),
@@ -637,7 +616,7 @@ pub fn cripples_second_hit_needs_the_casters_own_group_464_cast_test() -> Nil {
       proxy(effect: 144_336, child: 39_060, caster_gates: [], target_gate: gate),
     ])
   let at_origin = prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0)
-  let caster = caster_at(x: 0.0, z: 5.0)
+  let caster = support.caster_at(x: 0.0, z: 5.0)
   // The caster's first spell has these spell groups and a lasting row aimed at the units its
   // go strikes: its go strikes unit 20, so a node of its cast lingers on unit 20 for a
   // minute. Then the Whiplash press closes a round that struck units 20 and 21.
@@ -734,7 +713,7 @@ pub fn the_caster_gates_of_a_target_gated_proxy_take_their_rolls_in_order_and_th
       ),
     ])
   let plans = plans_with(spell:)
-  let caster = caster_at(x: 0.0, z: 5.0)
+  let caster = support.caster_at(x: 0.0, z: 5.0)
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,

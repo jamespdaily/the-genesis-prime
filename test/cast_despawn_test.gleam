@@ -52,14 +52,7 @@ fn despawner(rows rows: List(spell_plan.Despawn)) -> Spell {
 
 /// A creature the round hit in `life` at the monotonic time 900, before the go at 1000.
 fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
-  cast_state.Hit(
-    unit_id:,
-    unit: cast_state.HitCreature(life:, struck_at_ms: 900),
-    descriptions: [],
-    controls: [],
-    armor_removed: 0,
-    ticking: [],
-  )
+  support.creature_hit(unit_id:, life:, struck_at_ms: 900)
 }
 
 /// The press of the spell at 1000 aimed at `target`, and the go its round answers at 1000.
@@ -68,18 +61,13 @@ fn went(
   target target: Int,
   struck struck: List(cast_state.Struck),
 ) -> #(State, List(cast_state.Effect)) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: support.plans_with(spell:),
-      state: cast_state.new(),
-      caster: support.caster(),
-      bag_index: bag_of_base_3,
-      target:,
-      at: 1000,
-    )
-  let #(state, answered) =
-    support.answered_by(state:, effects:, at: 1000, struck:)
-  #(state, list.append(effects, answered))
+  support.pressed_and_answered(
+    spell:,
+    bag_index: bag_of_base_3,
+    target:,
+    struck:,
+    at: 1000,
+  )
 }
 
 fn removed(

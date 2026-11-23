@@ -70,7 +70,6 @@ import gleam/http/response.{type Response}
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/option.{type Option, None}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
@@ -99,7 +98,6 @@ pub type Settings {
     podman_path: String,
     container_interval_ms: Int,
     container_call_deadline_ms: Int,
-    log_watcher: Option(Subject(follow.Event)),
   )
 }
 
@@ -164,7 +162,6 @@ fn settings_from_environment() -> Result(Settings, SettingsError) {
     podman_path: result.unwrap(script.find_on_path("podman"), "podman"),
     container_interval_ms: container_follow.interval_ms,
     container_call_deadline_ms: container_follow.call_deadline_ms,
-    log_watcher: None,
   ))
 }
 
@@ -238,7 +235,6 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       reader: follow.file_reader(),
       interval_ms: settings.log_interval_ms,
       arm: subscribers.send_after,
-      watcher: settings.log_watcher,
     )
   }
   let container_follower = fn(source) {
@@ -256,7 +252,6 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
         call_deadline_ms: settings.container_call_deadline_ms,
       ),
       arm: subscribers.send_after,
-      watcher: settings.log_watcher,
     )
   }
   let start_tree = fn() {

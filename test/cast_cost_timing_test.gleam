@@ -62,21 +62,7 @@ fn esper_holding(points points: Int) -> cast_state.Caster {
 /// Gamma Rays as a cast that leaves the caster free and starts no cooldown, so a
 /// second press meets only its cost.
 fn free_gamma_rays() -> Spell {
-  Spell(
-    ..support.ability(base: 16_322),
-    free_while_live: True,
-    global_cooldown: spell_plan.GlobalCooldown(
-      refused_while_running: False,
-      starts_for_ms: None,
-    ),
-  )
-}
-
-/// The go timer a press started, with its wait.
-fn go_timer(effects effects: List(Effect)) -> #(TimerId, Int) {
-  let assert [first, ..] = support.started_timers(effects:)
-    as "a cast with a cast time starts a timer for its go"
-  first
+  support.free_while_live(spell: support.ability(base: 16_322))
 }
 
 /// Discharge with the cost of 3 of slot 1 its row does not hold, so a channel's first
@@ -124,7 +110,7 @@ pub fn gamma_rays_pays_its_actuators_at_its_go_and_not_at_the_press_test() -> Ni
     as "Spell4.29874 costs 2 of 4 Actuators: accepted"
   assert support.payments(effects: pressed) == []
     as "Spell4.innateCost0.timing: no cost is taken at the accept, so no 0x935"
-  let #(timer, after_ms) = go_timer(effects: pressed)
+  let #(timer, after_ms) = support.first_timer(effects: pressed)
   assert after_ms == 1250 as "Spell4.29874 castTime 1250"
   let #(_, going) = went(state:, caster:, timer:, at: 2250)
   assert support.payments(effects: going) == [Payment(slot: 1, amount: 2)]
@@ -284,7 +270,7 @@ pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_pays_nothing_and_frees_its
       target: 0,
       at: 1000,
     )
-  let #(go, _) = go_timer(effects: pressed)
+  let #(go, _) = support.first_timer(effects: pressed)
   let assert Ok(#(state, cancelled)) =
     support.cancelled_in(
       plans:,
@@ -332,7 +318,7 @@ pub fn a_caster_that_dies_before_the_go_pays_nothing_for_a_channel_test() -> Nil
     )
   assert support.payments(effects: list.append(pressed, died)) == []
     as "death before the first pulse: nothing was paid, at the press or at the death"
-  let #(pulse, _) = go_timer(effects: pressed)
+  let #(pulse, _) = support.first_timer(effects: pressed)
   let #(_, after) = went(state:, caster:, timer: pulse, at: 1410)
   assert support.payments(effects: after) == []
     as "a pulse timer that fires after the death finds no live cast and pays nothing"
@@ -352,7 +338,7 @@ pub fn a_caster_that_leaves_before_the_go_pays_nothing_test() -> Nil {
     )
   let #(state, left) = cast_tick.left(cast: state)
   assert support.payments(effects: list.append(pressed, left)) == []
-  let #(timer, _) = go_timer(effects: pressed)
+  let #(timer, _) = support.first_timer(effects: pressed)
   let #(_, going) = went(state:, caster:, timer:, at: 2250)
   assert support.payments(effects: going) == []
     as "a go that finds no live cast has no go and takes nothing"
@@ -370,7 +356,7 @@ pub fn a_cast_cancelled_while_the_round_of_its_go_is_open_still_pays_for_the_hit
       target: 0,
       at: 1000,
     )
-  let #(timer, _) = go_timer(effects: pressed)
+  let #(timer, _) = support.first_timer(effects: pressed)
   let #(state, raw) =
     cast.timer_fired(cast: state, timer:, caster:, now: support.at(ms: 2250))
   let assert [cast_state.Pay(payments:), cast_state.Strike(asked:)] = raw
@@ -483,26 +469,13 @@ pub fn an_instant_spell_pays_at_its_accept_before_it_writes_anything_test() -> N
 /// Mind Burst with the cast time of 1250 ms its row does not hold, so its go comes
 /// after its accept.
 fn slow_mind_burst() -> Spell {
-  let assert Ok(spell) =
-    spell_plan.in_plans(
-      plans: spell_tables.fixture_plans(),
-      base: id.Spell4BaseId(19_019),
-    )
-    as "the planted Esper holds Mind Burst with its spend"
-  Spell(..spell, cast_time_ms: 1250)
+  Spell(..spell_tables.planted_ability(base: 19_019), cast_time_ms: 1250)
 }
 
 /// The slow Mind Burst as a cast that leaves the caster free and starts no cooldown,
 /// so a second press meets only its cost.
 fn free_burst() -> Spell {
-  Spell(
-    ..slow_mind_burst(),
-    free_while_live: True,
-    global_cooldown: spell_plan.GlobalCooldown(
-      refused_while_running: False,
-      starts_for_ms: None,
-    ),
-  )
+  support.free_while_live(spell: slow_mind_burst())
 }
 
 /// The slow Mind Burst with a cost of `amount` of slot 1 in place of its spend.
@@ -528,7 +501,7 @@ pub fn a_mind_burst_fixes_n_at_its_accept_and_its_go_pays_the_points_n_was_fixed
     )
   assert support.refusal_results(effects: pressed) == []
   assert support.payments(effects: pressed) == []
-  let #(timer, _) = go_timer(effects: pressed)
+  let #(timer, _) = support.first_timer(effects: pressed)
   let #(_, raw) =
     cast.timer_fired(
       cast: state,
@@ -581,7 +554,7 @@ pub fn a_spend_of_every_point_takes_what_is_held_less_what_a_live_cast_has_reser
     )
   assert support.refusal_results(effects: burst) == []
     as "0x1403b3320 checks the base cost of 1 against the 2 points not reserved"
-  let #(timer, _) = go_timer(effects: burst)
+  let #(timer, _) = support.first_timer(effects: burst)
   let #(_, raw) =
     cast.timer_fired(cast: state, timer:, caster:, now: support.at(ms: 2350))
   let assert [cast_state.Pay(payments:), cast_state.Strike(asked:)] = raw
@@ -607,7 +580,7 @@ pub fn a_spend_of_every_point_leaves_nothing_for_a_second_press_test() -> Nil {
     )
   }
   let #(state, first) = take(cast_state.new(), 1000)
-  let #(timer, _) = go_timer(effects: first)
+  let #(timer, _) = support.first_timer(effects: first)
   let #(state, second) = take(state, 1100)
   assert support.refusal_results(effects: second) == [51]
     as "the first cast reserved all 4 points: the second meets 0 against the base cost of 1, refused 51 (0x1403b3320)"
@@ -648,7 +621,7 @@ pub fn the_esper_empty_runs_for_points_a_live_cast_has_reserved_and_the_go_pays_
   let #(resources, emptied) =
     class_resource.timer_fired(resources:, timer: class_resource.empty_timer)
   assert emptied == [class_resource.Changed(slot: 1, value: 0.0)]
-  let #(timer, _) = go_timer(effects: pressed)
+  let #(timer, _) = support.first_timer(effects: pressed)
   let #(_, going) =
     went(state:, caster: support.caster_holding(resources:), timer:, at: 2250)
   let #(paid, _) =
@@ -692,7 +665,7 @@ pub fn the_warriors_drain_runs_down_points_a_live_cast_has_reserved_and_the_go_p
   let #(resources, _) =
     class_resource.timer_fired(resources:, timer: class_resource.drain_timer)
   assert class_resource.value(resources:, slot: 1) == 0.0
-  let #(timer, _) = go_timer(effects: pressed)
+  let #(timer, _) = support.first_timer(effects: pressed)
   let #(_, going) =
     went(state:, caster: support.caster_holding(resources:), timer:, at: 2250)
   let #(paid, _) =
@@ -715,7 +688,7 @@ pub fn the_medic_refill_starts_at_the_payment_and_not_at_the_press_test() -> Nil
     )
   assert support.payments(effects: pressed) == []
     as "the accept changes no slot, so no timer of the class resource starts"
-  let #(timer, _) = go_timer(effects: pressed)
+  let #(timer, _) = support.first_timer(effects: pressed)
   let #(_, going) = went(state:, caster:, timer:, at: 2250)
   let #(_, effects) =
     class_resource.pay(
@@ -756,7 +729,7 @@ pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
       target: 0,
       at: 1000,
     )
-  let #(timer, _) = go_timer(effects: pressed)
+  let #(timer, _) = support.first_timer(effects: pressed)
   let #(_, going) = went(state:, caster:, timer:, at: 2250)
   let resources = cast_cost.after_payments(caster:, effects: going).resources
   assert class_resource.value(resources:, slot: 1) == 3.0
