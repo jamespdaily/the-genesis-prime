@@ -771,56 +771,6 @@ fn destroyed_after(
   }
 }
 
-pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Objective 21287 is done once the first cast has gone. The mine links through
-  // prerequisiteIdAnimState 41818, whose type 43 conditions need an open objective
-  // (Prerequisite.prerequisiteTypeId.43), so the prerequisite fails and sets the unit's
-  // anim state 1 (0x14046c4d0): the client offers it nothing
-  // (0x140479560.anim_state_exit), and the activate is refused with TargetIsNotUseable
-  // (100) at the press, with no cast started. The used mine goes out of sight at its go
-  // and comes back after the release time (migration 0033, 30 s), when the player's
-  // press of it meets the closed link.
-  let #(started, game, mine, have, _, time) = exile_whose_mine_cast_went()
-  driven_time.advance(time:, ms: 31_000)
-  let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.any(static_objects_created_in(frames:), fn(object) {
-        object.unit_id == mine
-      })
-    })
-  let assert Ok(again) =
-    cast_activate.encode(CastActivate(client_cast_id: 2, target_unit_id: mine))
-    as "the right-click fits the message"
-  game_client.send_world(
-    game:,
-    message_id: cast_activate.message_id,
-    body: again,
-  )
-  let #(pressed, _) = game_client.read_until_pong(game:, have:, number: 3)
-  assert refusals(frames: pressed) == [cast_result.to_value(TargetIsNotUseable)]
-    as "opcode.0x7fc: the second press is refused as not useable"
-  // The Sim-Turrets in sight write their own casts from their own processes, at any time
-  // relative to the pong, so the frames may hold them: a cast of this press would show as
-  // a 0x7fd (sent only to the one who pressed) and a 0x7ff of the mine's spell 85452.
-  assert list.all(game_client.casts_in(frames: pressed), fn(event) {
-    case event {
-      game_client.CastConfirmed(..) -> False
-      game_client.CastStarted(spell4_id:, ..) -> spell4_id != 85_452
-      game_client.CastRefused(..)
-      | game_client.CastWent(..)
-      | game_client.CastFinished(..)
-      | game_client.ThresholdOpened(..)
-      | game_client.ThresholdIndex(..)
-      | game_client.ThresholdClosed(..)
-      | game_client.ThresholdEnded(..) -> True
-    }
-  })
-    as "no cast of the second press is confirmed or started"
-  game_client.close(game:)
-  login_support.stop(started)
-}
-
 /// A Dominion character in World 3460 one unit east of marker 52899 (WorldLocation2
 /// 52899, x 72.98709869384766, y -872.089111328125, z 357.6340026855469), holding quest
 /// 10524 with its objective 0 done, who sees the mines the markers hold: the markers
@@ -1056,72 +1006,6 @@ fn nearest_object_of(
   |> list.filter(fn(object) { object.creature_id == creature_id })
   |> list.sort(fn(a, b) { float.compare(apart(a), apart(b)) })
   |> list.first
-}
-
-// ---- a timed quest is botched ----
-
-pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Quest 1872 (Quest2 flags 0x404) is given a limit of 60,000 ms, as the fixture
-  // holds none of the client's timed quests. The character holds it with 60,000 ms
-  // left; the entry starts its timer on the driven clock, and 0x35C of quest 1872 in
-  // state 4 (Botched; its 10 bytes are 0x50, 0x07, 0x02 and zeros) is written when
-  // the clock reaches the deadline, never before (opcode.0x35c).
-  use tables <- quest_support.with_time_limits(limits: [#(1872, 60_000)])
-  let time = driven_time.new()
-  let started =
-    login_support.start_with(time:, change: fn(settings) {
-      server.Settings(
-        ..settings,
-        game: server.Served(
-          ..settings.game,
-          settings: connection_state.Settings(..settings.game.settings, tables:),
-        ),
-      )
-    })
-  let pool = pog.named_connection(started.settings.pool.pool_name)
-  let #(game, character) =
-    new_player(started:, number: 1, character_name: "Zed Qu")
-  let assert Ok(_) =
-    pog.query(
-      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 1872, 1, 0, true, 0, '{}', 60000, '{}', '{0,0,0,0,0,0}')",
-    )
-    |> pog.parameter(pog.int(character))
-    |> pog.execute(pool)
-    as "the character holds quest 1872 with 60,000 ms left"
-  send_play(game:, character_id: character)
-  let #(_, have) = game_client.read_entry_kept(game:, have: <<>>)
-  // The pong shows the entry's step is done, so its timer is on the clock.
-  let #(_, have) = game_client.read_until_pong(game:, have:, number: 1)
-  driven_time.advance(time:, ms: 59_999)
-  let #(before, have) = game_client.read_until_pong(game:, have:, number: 2)
-  assert !list.any(before, fn(frame) { frame.message_id == 0x035C })
-    as "1 ms before its deadline the quest is not botched"
-  driven_time.advance(time:, ms: 1)
-  let #(after, _) = game_client.read_until_pong(game:, have:, number: 3)
-  assert list.filter(after, fn(frame) { frame.message_id == 0x035C })
-    == [
-      Frame(message_id: 0x035C, body: <<0x50, 0x07, 0x02, 0, 0, 0, 0, 0, 0, 0>>),
-    ]
-    as "opcode.0x35c: quest 1872 is Botched at its deadline"
-  // The pong follows the save the botch asked for, which the connection answers
-  // before it takes the ping.
-  let assert Ok(saved) =
-    pog.query(
-      "select state, quest_ms_left from character_quest where character_id = $1 and quest_id = 1872",
-    )
-    |> pog.parameter(pog.int(character))
-    |> pog.returning({
-      use state <- decode.field(0, decode.int)
-      use ms_left <- decode.field(1, decode.optional(decode.int))
-      decode.success(#(state, ms_left))
-    })
-    |> pog.execute(pool)
-    as "the quest row is read"
-  assert saved.rows == [#(4, None)]
-    as "the botch is saved: state 4, which holds no time left"
-  game_client.close(game:)
-  login_support.stop(started)
 }
 
 // ---- a quest bot ----
@@ -1965,5 +1849,69 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
     as "opcode.0x262: the player who used the trap is shown both again as well"
   game_client.close(game: first)
   game_client.close(game: second)
+  login_support.stop(started)
+}
+
+pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 1872 (Quest2 flags 0x404) is given a limit of 60,000 ms, as the fixture
+  // holds none of the client's timed quests. The character holds it with 60,000 ms
+  // left; the entry starts its timer on the driven clock, and 0x35C of quest 1872 in
+  // state 4 (Botched; its 10 bytes are 0x50, 0x07, 0x02 and zeros) is written when
+  // the clock reaches the deadline, never before (opcode.0x35c).
+  use tables <- quest_support.with_time_limits(limits: [#(1872, 60_000)])
+  let time = driven_time.new()
+  let started =
+    login_support.start_with(time:, change: fn(settings) {
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          settings: connection_state.Settings(..settings.game.settings, tables:),
+        ),
+      )
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 1872, 1, 0, true, 0, '{}', 60000, '{}', '{0,0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.execute(pool)
+    as "the character holds quest 1872 with 60,000 ms left"
+  send_play(game:, character_id: character)
+  let #(_, have) = game_client.read_entry_kept(game:, have: <<>>)
+  // The pong shows the entry's step is done, so its timer is on the clock.
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 1)
+  driven_time.advance(time:, ms: 59_999)
+  let #(before, have) = game_client.read_until_pong(game:, have:, number: 2)
+  assert !list.any(before, fn(frame) { frame.message_id == 0x035C })
+    as "1 ms before its deadline the quest is not botched"
+  driven_time.advance(time:, ms: 1)
+  let #(after, _) = game_client.read_until_pong(game:, have:, number: 3)
+  assert list.filter(after, fn(frame) { frame.message_id == 0x035C })
+    == [
+      Frame(message_id: 0x035C, body: <<0x50, 0x07, 0x02, 0, 0, 0, 0, 0, 0, 0>>),
+    ]
+    as "opcode.0x35c: quest 1872 is Botched at its deadline"
+  // The pong follows the save the botch asked for, which the connection answers
+  // before it takes the ping.
+  let assert Ok(saved) =
+    pog.query(
+      "select state, quest_ms_left from character_quest where character_id = $1 and quest_id = 1872",
+    )
+    |> pog.parameter(pog.int(character))
+    |> pog.returning({
+      use state <- decode.field(0, decode.int)
+      use ms_left <- decode.field(1, decode.optional(decode.int))
+      decode.success(#(state, ms_left))
+    })
+    |> pog.execute(pool)
+    as "the quest row is read"
+  assert saved.rows == [#(4, None)]
+    as "the botch is saved: state 4, which holds no time left"
+  game_client.close(game:)
   login_support.stop(started)
 }

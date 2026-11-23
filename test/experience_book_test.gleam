@@ -12,7 +12,7 @@
 //// - `XpPerLevel.minXpForLevel`: level 4 from 2860, level 5 from 4320 and level 6 from 6280;
 ////   a quest of the tests' tables gives 1055 experience (`game_connection_quest_turn_in_test`).
 //// - `SpellLevel.spell4Id.no_prerequisite`: the rows and bases of `ability_book_test`; the
-////   Medic's Triage (1021, Spell4Base 16336, Spell4 29888) has no plan
+////   Spellslinger's Runic Healing (1155, Spell4Base 23012, Spell4 38507) has no plan
 ////   (`spell_plan.unplanned`), the others named here do, Fissure (614, Spell4Base 26038) and
 ////   Leap (921, 18359) among them.
 //// - `opcode.0x7fc`: a press of a bag slot whose base has no plan is refused with result 4,
@@ -264,24 +264,25 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
   // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191, Mending Probes), 25579 at slot
   // 7 (1194, Crisis Wave: its area row is ordered by health, read as no area, and its heal
   // reaches the caster) and 38210 at slot 8 (1221, Emission), each with a plan: Mending
-  // Probes' Proxy 92693 reads as the caster alone. The 8 to 9 gives 16336 (SpellLevel 1021,
-  // Triage, Spell4 29888), which has none: its valid targets are bitmask 256.
+  // Probes' Proxy 92693 reads as the caster alone. The Spellslinger's 5 to 6 gives 23012
+  // (SpellLevel 1155, Runic Healing, Spell4 38507), which has none: its Spell4 row 70180 holds
+  // a VitalModifier of vital 9, which the plan does not read.
   let assert Ok(unplanned) =
     spell_plan.unplanned(
       tables: character_tables.shared(),
       area_checked: spell_area.checker,
     )
     as "the plans build"
-  let assert Ok(triage) =
-    list.find(unplanned, fn(one) { one.spell4_id == 29_888 })
-    as "Triage 29888 has no plan"
+  let assert Ok(runic_healing) =
+    list.find(unplanned, fn(one) { one.spell4_id == 38_507 })
+    as "Runic Healing 38507 has no plan"
   assert !list.any(unplanned, fn(one) { one.spell4_id == 41_333 })
     as "Mending Probes 41333 is planned: its Proxy 92693 reads as the caster alone"
   assert string.contains(
-    spell_plan.describe(error: triage.error),
-    "valid targets of bitmask 256",
+    spell_plan.describe(error: runic_healing.error),
+    "VitalModifier effect 177687 of vital 9",
   )
-    as "the plan refuses Spell4 29888 for its valid targets"
+    as "the plan refuses Spell4 38507 for its vital modifier"
   assert !list.any(unplanned, fn(one) { one.spell4_id == 41_382 })
     as "Crisis Wave 41382 is planned: its area row is ordered by health, which is read as no area, and its heal reaches the caster"
   let #(state, taken) = support.level_up(class_id: 4, from: 5, to: 6)
@@ -304,17 +305,17 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
     assert list.contains(connection_support.written_ids(pressed), 0x07FD)
       as "opcode.0x7fd: the press starts its cast"
   })
-  let #(state, taken) = support.level_up(class_id: 4, from: 8, to: 9)
-  let assert [triage_added] =
+  let #(state, taken) = support.level_up(class_id: 7, from: 5, to: 6)
+  let assert [runic_healing_added] =
     list.filter(support.added_in(frames: support.written(taken:)), fn(added) {
-      added.base == 16_336
+      added.base == 23_012
     })
-    as "the 8 to 9 rise grants Triage, Spell4Base 16336"
+    as "the 5 to 6 rise grants Runic Healing, Spell4Base 23012"
   assert connection_support.refusal_results(taken: support.pressed(
       state:,
-      bag_index: triage_added.bag_index,
+      bag_index: runic_healing_added.bag_index,
       ms: 1000,
     ))
     == [SpellUnknown]
-    as "opcode.0x7fc: Triage is granted, since the table says the player holds it, and its press has no plan, so it is refused unknown"
+    as "opcode.0x7fc: Runic Healing is granted, since the table says the player holds it, and its press has no plan, so it is refused unknown"
 }
