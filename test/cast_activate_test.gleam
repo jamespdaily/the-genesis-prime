@@ -1552,6 +1552,7 @@ fn answered(
     ))
     as "the answer fits the message"
   cast.take(
+    target_of: support.nothing_shown,
     cast: state,
     message: cast_state.Answered,
     body:,

@@ -101,14 +101,15 @@
 
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
-  type Answer, type Message, type PeerNews, type Request, AskHandOff, AskMap,
-  AskMapRun, AskSessions, AskStore, ChangeEnds, ChangeStarts, ControlsEnd,
-  ForStay, FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
-  SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellCastView,
-  TellChat, TellDespawn, TellLifeChanged, TellMoved, TellPeer, TellReady,
-  TellReleased, TellStealthChanged, TellStrike, TellStrikeAnswered,
-  TellTargetChange, TellTargetMoved, TellThrown, TellUnitStates,
-  TellVisibilityChanged, ViewEnds, ViewSet,
+  type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
+  AskSessions, AskStore, ChangeEnds, ChangeStarts, ControlsEnd, ForStay,
+  FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
+  SentByHealed, SentByKill, SentByMap, SentByPeer, SentBySessions, SentByStriker,
+  SentByTarget, TellCastView, TellChat, TellDespawn, TellLifeChanged, TellMoved,
+  TellPeer, TellPlayerAnswer, TellPlayerStrike, TellReady, TellReleased,
+  TellStealthChanged, TellStrike, TellStrikeAnswered, TellTargetChange,
+  TellTargetMoved, TellThrown, TellUnitStates, TellVisibilityChanged, ViewEnds,
+  ViewSet,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -140,7 +141,6 @@ import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_source
-import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
@@ -373,7 +373,9 @@ fn directory(settings: Settings) -> Directory {
       | TellThrown(..)
       | TellDespawn(..)
       | TellUnitStates(..)
-      | TellCastView(..) -> Error(Nil)
+      | TellCastView(..)
+      | TellPlayerStrike(..)
+      | TellPlayerAnswer(..) -> Error(Nil)
     }
   }
 }
@@ -486,6 +488,8 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellDespawn(..)
     | TellUnitStates(..)
     | TellCastView(..)
+    | TellPlayerStrike(..)
+    | TellPlayerAnswer(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -551,6 +555,8 @@ pub fn tell_the_run(
     | TellDespawn(..)
     | TellUnitStates(..)
     | TellCastView(..)
+    | TellPlayerStrike(..)
+    | TellPlayerAnswer(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -635,6 +641,8 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
       Ok(creature.CastViewEnds(by: connection, cast_id:))
     TellPeer(..)
     | TellChat(..)
+    | TellPlayerStrike(..)
+    | TellPlayerAnswer(..)
     | TellMoved(..)
     | TellReady(..)
     | TellStealthChanged(..)
@@ -652,8 +660,10 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
-/// registry as `SentByPeer` for the viewer's stay (`ForStay`), and a chat tell
-/// (`TellChat`) as `SentByChat`, by the
+/// registry as `SentByPeer` for the viewer's stay (`ForStay`), a caster's heal rows
+/// (`TellPlayerStrike`) as `SentByStriker` and the healed player's answer
+/// (`TellPlayerAnswer`) as `SentByHealed`, each for the stay the request names, and a
+/// chat tell (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). A strike
 /// (`TellStrike`), a fighter's move (`TellTargetMoved`), the answer to a
 /// creature's strike (`TellStrikeAnswered`) and a modifier's start or end
@@ -666,14 +676,16 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
 fn connection_deliver(
   settings: Settings,
 ) -> fn(step.Address, Request) -> Result(Nil, Nil) {
-  let reach =
-    connection_reach(settings, fn(sent: #(Stay, PeerNews)) {
-      Ok(ForStay(stay: sent.0, sent: SentByPeer(news: sent.1)))
-    })
+  let reach = connection_reach(settings, fn(message: Message) { Ok(message) })
   let chat_reach = connection_reach(settings, fn(tell) { Ok(SentByChat(tell)) })
   fn(to: step.Address, request: Request) {
     case request, to {
-      TellPeer(stay:, news:), _ -> reach.send(to, #(stay, news))
+      TellPeer(stay:, news:), _ ->
+        reach.send(to, ForStay(stay:, sent: SentByPeer(news:)))
+      TellPlayerStrike(stay:, strike:), _ ->
+        reach.send(to, ForStay(stay:, sent: SentByStriker(strike:)))
+      TellPlayerAnswer(stay:, answered:), _ ->
+        reach.send(to, ForStay(stay:, sent: SentByHealed(answered:)))
       TellChat(tell:), _ -> chat_reach.send(to, tell)
       TellStrike(..) as request, step.Creature(..)
       | TellTargetMoved(..) as request, step.Creature(..)
@@ -706,7 +718,7 @@ fn connection_deliver(
       -> {
         runtime.log(
           LogError,
-          "a rule sent a connection something other than news of a player's unit",
+          "a rule sent a connection something other than news of a player's unit or a heal strike or its answer",
           step.no_one,
         )
         Error(Nil)

@@ -25,7 +25,7 @@
 ////                           ─▶ Tell(v, LookChanged(..)) ─▶ shown? 0x933 {owner, ..} ─▶ viewer's client
 ////
 //// a viewer comes to see the owner mid-disguise
-////   map: SeenBy(v2, stay) ─▶ Tell(v2, Appeared(0x262 with slot 64 = 4807)) ─▶ not shown? 0x262 ─▶ drawn in the suit
+////   map: SeenBy(v2, stay, unit_id) ─▶ Tell(v2, Appeared(0x262 with slot 64 = 4807)) ─▶ not shown? 0x262 ─▶ drawn in the suit
 //// ```
 ////
 //// - **The player and its viewers are told the same visuals**, the slots whose shown

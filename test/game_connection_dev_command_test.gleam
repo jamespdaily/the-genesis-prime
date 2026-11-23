@@ -1115,6 +1115,7 @@ pub fn what_other_processes_send_while_leaving_or_entering_is_dropped_test() -> 
     support.sent_by_the_map(map.SeenBy(
       by: ConnectionId(4),
       stay: support.viewer_stay(4),
+      unit_id: support.viewer_unit_id(4),
     ))
   let #(_, taken) =
     support.feed(state: commanded_in_world_22(viewers: []), event: seen_by)

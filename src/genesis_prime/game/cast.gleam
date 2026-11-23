@@ -97,18 +97,19 @@ import genesis_prime/game/cast/state.{
   type AimedPress, type Applied, type Caster, type Effect, type Fact,
   type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
   type Lingering, type Listed, type Live, type Message, type Paid,
-  type PressedFrom, type ProxyTickAsked, type Reached, type Refusal,
-  type Resolution, type Restricting, type Role, type State, type Struck,
-  type TargetVerdict, type TickAsked, type Used, type UsedUnit, Accept,
-  Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
-  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
-  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
-  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
-  Deflected, Finish, ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing,
-  Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace,
-  ItemPress, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
-  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
-  NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, Pressed, PressedAt,
+  type PressRefusal, type PressTarget, type PressedFrom, type ProxyTickAsked,
+  type Reached, type Refusal, type Resolution, type Restricting, type Role,
+  type State, type Struck, type TargetVerdict, type TickAsked, type Used,
+  type UsedUnit, Accept, Activated, Activating, Activation, ActivationStart,
+  Aimed, AimedPress, AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled,
+  CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
+  Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
+  CooldownModifierStarts, Deflected, Finish, ForcedMoveStart, Frames, GateFails,
+  Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune,
+  Item, ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed, Live, Log,
+  ModifierEnd, ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits,
+  NoItemSpell, NodesEnd, NotBuilt, NotDecoded, NotSentByClient, OnCaster,
+  OnPlayer, Passive, Plain, PressNotBuilt, PressRefused, Pressed, PressedAt,
   ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton, Reached, Refuse,
   RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
   ShortcutCast, Stage, StartChild, StartHeld, Started, StartedMoving, Starts,
@@ -159,19 +160,22 @@ import gleam/set.{type Set}
 
 /// The caster's 0x9a, 0x4DB or 0x801, decoded and decided: the new state and what
 /// the connection must do, or the refusal that ends the connection. `now` is the
-/// time of the input; the plans give each ability's tree.
+/// time of the input; the plans give each ability's tree, and `target_of` says what the
+/// unit a press names is to the caster's connection (its picture), which the spell's
+/// targeting kind judges (genesis_prime/game/cast/press `at_a_unit`).
 pub fn take(
   cast cast: State,
   message message: Message,
   body body: BitArray,
   caster caster: Caster,
   plans plans: Plans,
+  target_of target_of: fn(Int) -> activate.Target,
   now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let now_ms = now.monotonic_ms
   case message {
-    Pressed -> pressed(cast:, body:, caster:, plans:, now:)
-    KeyHeld -> key_held(cast:, body:, caster:, plans:, now:)
+    Pressed -> pressed(cast:, body:, caster:, plans:, target_of:, now:)
+    KeyHeld -> key_held(cast:, body:, caster:, plans:, target_of:, now:)
     Cancelled ->
       cancelled(cast:, body:, caster:, now:)
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
@@ -2088,6 +2092,7 @@ fn pressed(
   body body: BitArray,
   caster caster: Caster,
   plans plans: Plans,
+  target_of target_of: fn(Int) -> activate.Target,
   now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
   use press <- result.try(
@@ -2140,13 +2145,33 @@ fn pressed(
             ]),
           )
         Ok(resolution) ->
-          Ok(press_of(
-            cast:,
-            caster:,
-            now_ms: now.monotonic_ms,
-            client_cast_id: Some(press.client_cast_id),
-            resolution:,
-          ))
+          Ok(
+            case
+              cast_press.at_a_unit(
+                spell: resolution.ability,
+                named: press.target_unit_id,
+                caster_unit_id: caster.unit_id,
+                target_of:,
+              )
+            {
+              Ok(primary_target) ->
+                press_of(
+                  cast:,
+                  caster:,
+                  now_ms: now.monotonic_ms,
+                  client_cast_id: Some(press.client_cast_id),
+                  resolution: Resolution(..resolution, primary_target:),
+                )
+              Error(refusal) ->
+                refused_press(
+                  cast:,
+                  client_cast_id: Some(press.client_cast_id),
+                  spell: resolution.ability,
+                  ability: resolution.ability,
+                  refusal:,
+                )
+            },
+          )
       }
     }
   }
@@ -2162,6 +2187,7 @@ fn key_held(
   body body: BitArray,
   caster caster: Caster,
   plans plans: Plans,
+  target_of target_of: fn(Int) -> activate.Target,
   now now: Now,
 ) -> Result(#(State, List(Effect)), Refusal) {
   use change <- result.try(
@@ -2186,10 +2212,48 @@ fn key_held(
             <> ", which holds no ability, comes up",
         ),
       ])
-      Ok(ability), True -> cast_press.key_down(cast:, ability:)
+      Ok(ability), True ->
+        key_down_at(
+          cast:,
+          caster:,
+          ability:,
+          named: change.target_unit_id,
+          target_of:,
+        )
       Ok(ability), False -> key_up(cast:, caster:, ability:, now_ms:)
     },
   )
+}
+
+/// The ability's key goes down at the unit the message names: the hold starts with the
+/// primary target the spell's targeting kind makes of it, which each repeat presses at,
+/// or the key is refused with the client cast id 0 and no hold starts.
+fn key_down_at(
+  cast cast: State,
+  caster caster: Caster,
+  ability ability: Spell,
+  named named: Int,
+  target_of target_of: fn(Int) -> activate.Target,
+) -> #(State, List(Effect)) {
+  let swapped = cast_press.surged(cast:, caster:, ability:)
+  case
+    cast_press.at_a_unit(
+      spell: swapped,
+      named:,
+      caster_unit_id: caster.unit_id,
+      target_of:,
+    )
+  {
+    Ok(target) -> cast_press.key_down(cast:, ability:, target:)
+    Error(refusal) ->
+      refused_press(
+        cast:,
+        client_cast_id: None,
+        spell: swapped,
+        ability:,
+        refusal:,
+      )
+  }
 }
 
 /// The ability's key comes up: its repeats stop, and the cast under way is left to
@@ -2248,9 +2312,9 @@ fn continued(
   let #(cast, effects) = taken
   let caster = cast_cost.after_payments(caster:, effects:)
   case cast.holding {
-    Some(Holding(ability:, repeat_timer: None, last_cast:)) -> {
+    Some(Holding(ability:, target:, repeat_timer: None, last_cast:)) -> {
       let #(cast, more) =
-        repeated(cast:, caster:, now_ms:, ability:, last_cast:)
+        repeated(cast:, caster:, now_ms:, ability:, target:, last_cast:)
       #(cast, list.append(effects, more))
     }
     Some(Holding(repeat_timer: Some(_), ..)) | None -> taken
@@ -2265,6 +2329,7 @@ fn repeated(
   caster caster: Caster,
   now_ms now_ms: Int,
   ability plain: Spell,
+  target target: PressTarget,
   last_cast last_cast: Option(Int),
 ) -> #(State, List(Effect)) {
   let ability = cast_press.surged(cast:, caster:, ability: plain)
@@ -2273,7 +2338,13 @@ fn repeated(
   {
     Error(Nil) -> cast_press.no_stage_left(cast:, ability:)
     Ok(resolution) ->
-      next_cast(cast:, caster:, now_ms:, resolution:, last_cast:)
+      next_cast(
+        cast:,
+        caster:,
+        now_ms:,
+        resolution: Resolution(..resolution, primary_target: target),
+        last_cast:,
+      )
   }
 }
 
@@ -2344,10 +2415,13 @@ fn press_of(
   #(cast, list.append(resolution.logs, effects))
 }
 
-/// A resolved press: the 285 refusal of a spell with no threshold time that no Proxy
-/// replaced (the client tests the resolved spell, `0x1403c0144`, fact `cast.proxy_press`),
-/// else the verdict on the spell. A Proxy of such a press is cast as the press itself
-/// (`Base` of the Proxy's spell), so a Proxy with a threshold of its own opens it.
+/// A resolved press: the 91 refusal of a press at a player the caster no longer has in
+/// sight, the 285 refusal of a spell with no threshold time that no Proxy replaced (the
+/// client tests the resolved spell, `0x1403c0144`, fact `cast.proxy_press`), else the
+/// verdict on the spell. Every start of a bag cast passes here, so a repeat, a queued
+/// press and a press released from a wait are judged by the players in sight of the
+/// input that starts them. A Proxy of such a press is cast as the press itself (`Base` of
+/// the Proxy's spell), so a Proxy with a threshold of its own opens it.
 fn press_resolved(
   cast cast: State,
   caster caster: Caster,
@@ -2365,15 +2439,21 @@ fn press_resolved(
       result:,
     )
   }
+  let target_unseen = case resolution.primary_target {
+    OnPlayer(unit_id:) -> !dict.has_key(caster.players_in_sight, unit_id)
+    OnCaster -> False
+  }
   let judged = case
+    target_unseen,
     resolution.stage == None
     && spell_plan.lacks_threshold_time(
       method: spell.method,
       threshold_ms: spell.threshold_ms,
     )
   {
-    True -> Refuse(result: cast_result.IllegalSpellCast)
-    False ->
+    True, _ -> Refuse(result: cast_result.NoTarget)
+    False, True -> Refuse(result: cast_result.IllegalSpellCast)
+    False, False ->
       cast_press.verdict(
         cast:,
         caster:,
@@ -2382,6 +2462,10 @@ fn press_resolved(
         is_release:,
         target_subject: None,
       )
+  }
+  let primary_target = case resolution.primary_target {
+    OnCaster -> caster.unit_id
+    OnPlayer(unit_id:) -> unit_id
   }
   case judged {
     Accept(paid:) -> {
@@ -2408,7 +2492,7 @@ fn press_resolved(
             spell:,
             root: resolution.ability.spell4_id,
             parent: None,
-            primary_target: caster.unit_id,
+            primary_target:,
             client_cast_id:,
             role: Base(
               ability: case resolution.proxied {
@@ -2428,7 +2512,7 @@ fn press_resolved(
             spell:,
             root: resolution.ability.spell4_id,
             parent: Some(resolution.ability.spell4_id),
-            primary_target: caster.unit_id,
+            primary_target:,
             client_cast_id:,
             role: Stage(ability: resolution.ability, index:),
             spent: paid.spent,
@@ -2438,48 +2522,21 @@ fn press_resolved(
       #(cast, list.append(taken, started))
     }
     Refuse(result:) ->
-      cast_press.refused_hold(
+      refused_press(
         cast:,
         client_cast_id:,
+        spell:,
         ability: resolution.ability,
-        effects: [
-          refusal(result),
-        ],
+        refusal: PressRefused(result:),
       )
     NotBuilt(result:, why:) ->
-      case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
-        True ->
-          cast_press.refused_hold(
-            cast:,
-            client_cast_id:,
-            ability: resolution.ability,
-            effects: [refusal(result)],
-          )
-        False ->
-          cast_press.refused_hold(
-            cast: State(
-              ..cast,
-              logged: set.insert(
-                cast.logged,
-                UnbuiltSpell(spell.spell4_id.value),
-              ),
-            ),
-            client_cast_id:,
-            ability: resolution.ability,
-            effects: [
-              Log(
-                level: LogWarning,
-                text: "the ability with Spell4 "
-                  <> int.to_string(spell.spell4_id.value)
-                  <> " "
-                  <> why
-                  <> ": it is refused with "
-                  <> int.to_string(cast_result.to_value(result)),
-              ),
-              refusal(result),
-            ],
-          )
-      }
+      refused_press(
+        cast:,
+        client_cast_id:,
+        spell:,
+        ability: resolution.ability,
+        refusal: PressNotBuilt(result:, why:),
+      )
     Hold(..) | HoldForCast if is_release && held -> #(cast, [
       refusal(cast_result.SpellAlreadyCasting),
     ])
@@ -2508,6 +2565,62 @@ fn press_resolved(
           ),
           [],
         )
+      }
+  }
+}
+
+/// A press refused before it starts a cast, written as the client's 0x7fc for the client's
+/// cast id (0 for a held key's) and, for a press the server does not build, logged once
+/// for the spell. A refused repeat of a held key ends the hold.
+fn refused_press(
+  cast cast: State,
+  client_cast_id client_cast_id: Option(Int),
+  spell spell: Spell,
+  ability ability: Spell,
+  refusal refusal: PressRefusal,
+) -> #(State, List(Effect)) {
+  let refused = fn(result) {
+    cast_frame.refused(
+      client_cast_id: option.unwrap(client_cast_id, 0),
+      spell4_id: spell.spell4_id.value,
+      result:,
+    )
+  }
+  case refusal {
+    PressRefused(result:) ->
+      cast_press.refused_hold(cast:, client_cast_id:, ability:, effects: [
+        refused(result),
+      ])
+    PressNotBuilt(result:, why:) ->
+      case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
+        True ->
+          cast_press.refused_hold(cast:, client_cast_id:, ability:, effects: [
+            refused(result),
+          ])
+        False ->
+          cast_press.refused_hold(
+            cast: State(
+              ..cast,
+              logged: set.insert(
+                cast.logged,
+                UnbuiltSpell(spell.spell4_id.value),
+              ),
+            ),
+            client_cast_id:,
+            ability:,
+            effects: [
+              Log(
+                level: LogWarning,
+                text: "the ability with Spell4 "
+                  <> int.to_string(spell.spell4_id.value)
+                  <> " "
+                  <> why
+                  <> ": it is refused with "
+                  <> int.to_string(cast_result.to_value(result)),
+              ),
+              refused(result),
+            ],
+          )
       }
   }
 }

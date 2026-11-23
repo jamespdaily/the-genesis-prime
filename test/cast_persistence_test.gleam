@@ -831,6 +831,7 @@ pub fn a_held_key_whose_cast_the_persistence_ended_casts_again_at_once_test() ->
   let fighting = support.caster_in_combat(in_combat: True)
   let assert Ok(#(state, down)) =
     cast.take(
+      target_of: support.nothing_shown,
       cast: cast_state.new(),
       message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: bag_of_base_3, target: 0, held: 1),

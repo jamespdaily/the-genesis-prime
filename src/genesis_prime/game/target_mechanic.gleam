@@ -14,11 +14,15 @@
 //// - This module imports only the generated tables and their store, so any game module can
 ////   name a kind.
 
-import genesis_prime/table/id.{type Spell4BaseId, Spell4TargetMechanicsId}
+import genesis_prime/table/id.{
+  type Spell4BaseId, Spell4TargetMechanicsId, Spell4ValidTargetsId,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_base.{type Spell4Base}
 import genesis_prime/table/spell4_target_mechanics.{type Spell4TargetMechanics}
+import genesis_prime/table/spell4_valid_targets
 import gleam/int
+import gleam/result
 
 /// Whom a spell of a target mechanic is cast at.
 pub type Kind {
@@ -45,6 +49,72 @@ pub fn kind_of(target_type target_type: Int) -> Kind {
 /// The kind of a Spell4TargetMechanics row.
 pub fn of_row(row: Spell4TargetMechanics) -> Kind {
   kind_of(target_type: row.target_type)
+}
+
+/// What a spell's target rows say of whom it may be cast at: the kind of its
+/// Spell4TargetMechanics row, that row's `flags` (bit 0 beneficial, bit 1 the caster may
+/// be its own primary target) and the `targetBitmask` of its Spell4ValidTargets row, 0 for a
+/// spell that names none (bit 0 refuses a player).
+pub type Targeting {
+  Targeting(kind: Kind, mechanics_flags: Int, valid_targets: Int)
+}
+
+/// The targeting of a spell that is cast at its caster and refuses nothing.
+pub const at_the_caster =
+  Targeting(kind: Caster, mechanics_flags: 0, valid_targets: 0)
+
+/// A row a spell's targeting is read from that the tables lack.
+pub type TargetingError {
+  /// The Spell4Base row or its Spell4TargetMechanics row.
+  NoMechanicsRow(missing: MissingRow)
+  /// The Spell4ValidTargets row the Spell4Base row names.
+  NoValidTargetsRow(id: Int)
+}
+
+/// The targeting of the spell whose Spell4Base is `base_id`, or the row the tables lack.
+pub fn targeting_of(
+  tables tables: table_store.Tables,
+  base_id base_id: Spell4BaseId,
+) -> Result(Targeting, TargetingError) {
+  use #(base, mechanics) <- result.try(
+    rows_of_base(tables:, base_id:) |> result.map_error(NoMechanicsRow),
+  )
+  targeting_of_rows(tables:, base:, mechanics:)
+}
+
+/// The targeting of a spell from its Spell4Base row and the Spell4TargetMechanics row that
+/// row names; the only row it can find missing is the Spell4ValidTargets row
+/// (`NoValidTargetsRow`).
+pub fn targeting_of_rows(
+  tables tables: table_store.Tables,
+  base base: Spell4Base,
+  mechanics mechanics: Spell4TargetMechanics,
+) -> Result(Targeting, TargetingError) {
+  use valid_targets <- result.map(case base.spell4_valid_target_id {
+    0 -> Ok(0)
+    valid_id ->
+      spell4_valid_targets.get(tables:, id: Spell4ValidTargetsId(valid_id))
+      |> result.map(fn(valid) { valid.target_bitmask })
+      |> result.replace_error(NoValidTargetsRow(id: valid_id))
+  })
+  Targeting(
+    kind: of_row(mechanics),
+    mechanics_flags: mechanics.flags,
+    valid_targets:,
+  )
+}
+
+/// The table and id of the row a spell's targeting could not be read for: the one place
+/// that says which table each missing row belongs to.
+pub fn missing_targeting_row(error error: TargetingError) -> #(String, Int) {
+  case error {
+    NoMechanicsRow(missing: NoBaseRow(id:)) -> #("Spell4Base", id)
+    NoMechanicsRow(missing: NoTargetMechanicsRow(id:)) -> #(
+      "Spell4TargetMechanics",
+      id,
+    )
+    NoValidTargetsRow(id:) -> #("Spell4ValidTargets", id)
+  }
 }
 
 /// The row of the two a spell's target mechanic is read from that the tables lack.

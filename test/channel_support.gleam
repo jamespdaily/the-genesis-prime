@@ -212,7 +212,11 @@ pub fn pressed(scene scene: Scene) -> #(State, List(Effect), Int) {
     state: cast_state.new(),
     caster: scene.caster,
     bag_index: scene.bag_index,
-    target: 0,
+    target: support.target_the_client_sends(
+      caster: scene.caster,
+      plans: scene.plans,
+      bag_index: scene.bag_index,
+    ),
     at: pressed_at_ms,
   )
 }

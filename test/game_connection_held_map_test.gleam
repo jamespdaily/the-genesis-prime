@@ -38,7 +38,10 @@ import genesis_prime/client_connection.{
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/departures
+import genesis_prime/game/effect_kind
 import genesis_prime/game/experience.{Credit}
+import genesis_prime/game/heal_split.{Split}
+import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
@@ -349,13 +352,43 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
       state:,
       event: kill_of(unit_id: 7, stay: connection_support.own_stay()),
     )
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    )
+  let #(state, held) =
+    connection_support.feed(
+      state:,
+      event: connection_support.for_stay(
+        stay: connection_support.own_stay(),
+        sent: connection_support.a_player_strike(
+          from: 3,
+          stay: connection_support.viewer_stay(3),
+          cast_id: 100,
+          outgoing: 1.0,
+          heals: [#(effect_kind.Shield, 10), #(effect_kind.Health, 40)],
+        ),
+      ),
+    )
+  assert connection_support.player_answers(held) == []
+    as "a heal another player told is held with the rest: it is not applied nor answered before the store has answered"
   let #(_, answered) =
     connection_support.answer(state:, taken:, outcome: sale_saved())
   assert connection_support.written_ids(answered)
-    == list.append(sale_frames, [0x01AC, 0x01AC])
-    as "the sale's frames, then one experience for each kill"
+    == list.append(sale_frames, [0x01AC, 0x01AC, 0x0938, 0x092F, 0x0938, 0x092F])
+    as "the sale's frames, then one experience for each kill, the Beast's strike (shield, health) and last the heal's (shield, health)"
   assert kill_sources(taken: answered) == [8, 7]
     as "the kill of unit 8 came first, so its experience is written first"
+  let assert [#(3, _, PlayerAnswered(outcome: HealsLanded(heals:), ..))] =
+    connection_support.player_answers(answered)
+    as "the heal is answered once, to its caster, when taken"
+  assert list.map(heals, fn(heal) { heal.split })
+    == [
+      Split(amount: 10, shield: 2, health: 0, overheal: 8),
+      Split(amount: 40, shield: 0, health: 1, overheal: 39),
+    ]
+    as "taken after the Beast's strike, so on the 448 shield and 735 health it left"
 }
 
 pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {

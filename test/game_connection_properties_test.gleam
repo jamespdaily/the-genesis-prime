@@ -227,6 +227,7 @@ fn arriving(
     support.sent_by_the_map(SeenBy(
       by: ConnectionId(viewer),
       stay: support.viewer_stay(viewer),
+      unit_id: support.viewer_unit_id(viewer),
     )),
   ).1
 }
@@ -267,6 +268,7 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
       event: support.sent_by_the_map(SeenBy(
         by: ConnectionId(6),
         stay: support.viewer_stay(6),
+        unit_id: support.viewer_unit_id(6),
       )),
     )
   let assert [#(6, PeerNews(news: Appeared(unit: mid_buff), ..))] =

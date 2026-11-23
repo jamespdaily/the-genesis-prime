@@ -502,6 +502,7 @@ pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_a
   let key = fn(state, caster, held, ms) {
     let assert Ok(#(state, effects)) =
       cast.take(
+        target_of: support.nothing_shown,
         cast: state,
         message: cast_state.KeyHeld,
         body: support.hold_body(bag_index: gated_bag, target: 0, held:),

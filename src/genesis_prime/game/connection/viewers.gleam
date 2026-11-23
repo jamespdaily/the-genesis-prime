@@ -4,7 +4,7 @@
 ////
 //// - **Other players' units.** The map decides who sees whom
 ////   (genesis_prime/world_map/map) and tells the connection of each player in
-////   it, as the message `SentByMap`, who sees its player (`SeenBy(by, stay)` when
+////   it, as the message `SentByMap`, who sees its player (`SeenBy(by, stay, unit_id)` when
 ////   a player comes to see it, `UnseenBy(by)` when one stops), and `Gone(unit)`
 ////   when a player's connection has ended. The connection keeps
 ////   the connections that see its player as its viewers, each with its player's
@@ -15,7 +15,7 @@
 ////
 ////   ```
 ////   owner's connection (player in the world)                       viewer's connection             client
-////   SeenBy(v, stay) from the map ─▶ Tell(v, Appeared(0x262 at its place)) ─▶ writes 0x262 if not shown ─▶ the unit is created
+////   SeenBy(v, stay, unit) from the map ─▶ Tell(v, Appeared(0x262 at its place)) ─▶ writes 0x262 if not shown ─▶ the unit is created
 ////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Moving(0x638)) ─▶ writes 0x638 if shown ─▶ the unit moves
 ////   UnseenBy(v)                ─▶ Tell(v, Removed)                    ─▶ writes 0x355 if shown   ─▶ the unit is removed
 ////   its camp (0xC0)            ─▶ Tell(each viewer, Removed), then Leave
@@ -135,6 +135,7 @@ import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/faction_level
 import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
+import genesis_prime/game/player_address
 import genesis_prime/game/player_life
 import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
@@ -168,7 +169,6 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -182,8 +182,8 @@ import gleam/set
 /// (`SeenBy`, `UnseenBy`), a unit whose owner ended (`Gone`), and the static
 /// objects its player sees (`ObjectsSeen`) and stops seeing (`ObjectsUnseen`),
 /// written as `viewer_takes` writes a unit's 0x262 and 0x355. A connection
-/// sends everything about its own unit itself: told `SeenBy(by, stay)` it keeps
-/// `by` with its stay, puts `by` in the audience of the casts its 0x262 lists (not when `by`
+/// sends everything about its own unit itself: told `SeenBy(by, stay, unit_id)` it keeps
+/// `by` with its stay and unit id, puts `by` in the audience of the casts its 0x262 lists (not when `by`
 /// already sees the player: it drops the second 0x262, so it was listed none) and sends it
 /// that 0x262 at its current place, with its health now and the cast it holds the bar of;
 /// told `UnseenBy(by)`
@@ -200,10 +200,14 @@ pub fn map_sent(
   notice notice: map.Notice,
 ) -> client_connection.Handled(Session) {
   case notice {
-    map.SeenBy(by:, stay:) ->
+    map.SeenBy(by:, stay:, unit_id:) ->
       Continue(
         connection_casting.with_cast(
-          session: viewers_changed(session:, change: dict.insert(_, by, stay)),
+          session: viewers_changed(session:, change: dict.insert(
+            _,
+            by,
+            player_address.Viewer(stay:, unit_id:),
+          )),
           cast: case dict.has_key(entered.viewers, by) {
             // A viewer that already sees the player drops the second create, so it
             // was listed no cast by it and is joined to none.
@@ -1286,7 +1290,8 @@ fn stat_above_zero(stat_id stat_id: Int, value value: Int) -> List(UnitStat) {
 /// The session with the player's viewers changed by `change`.
 fn viewers_changed(
   session session: Session,
-  change change: fn(Dict(ConnectionId, Stay)) -> Dict(ConnectionId, Stay),
+  change change: fn(Dict(ConnectionId, player_address.Viewer)) ->
+    Dict(ConnectionId, player_address.Viewer),
 ) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, viewers: change(entered.viewers))

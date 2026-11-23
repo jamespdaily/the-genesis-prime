@@ -533,6 +533,7 @@ fn interaction_answered(
     ))
     as "the answer fits the message"
   cast.take(
+    target_of: support.nothing_shown,
     cast: state,
     message: cast_state.Answered,
     body:,
@@ -1214,7 +1215,7 @@ pub fn a_caster_target_kind_plans_with_no_aim_and_a_targeted_kind_keeps_its_aim_
     let assert Ok(shortcut_spell.Aimed(aim:, ..)) =
       shortcut_spell.planned_of(shortcuts: shortcuts(), spell4_id:)
       as "Spells 30832 (targetType 3) and 25207 (5) take a target: they keep their aim"
-    assert aim.target_mechanic == target_mechanic.Targeted
+    assert aim.targeting.kind == target_mechanic.Targeted
   })
 }
 
