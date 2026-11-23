@@ -891,6 +891,8 @@ type Reaches {
   End(hold: Hold)
   /// The caster's unit is seen again (its 0x262).
   CasterSeenAgain
+  /// The caster's unit is seen again with the cast `cast_id` in its 0x262's list.
+  CasterSeenListing(cast_id: Int)
   /// The caster's finish of cast 100 reaches the ally.
   CasterFinishes
   /// The map says the caster no longer sees the ally.
@@ -901,13 +903,6 @@ type Reaches {
   CasterRemoved
 }
 
-/// Where a row starts: the caster 3's unit shown with its cast 100 written, with
-/// its removal already read (the ally's client holds the cast with no caster), or before it.
-type Point {
-  AfterTheRemoval
-  BeforeTheRemoval
-}
-
 pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_casts_0x7fe_once_after_its_last_source_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert [armor_hold, pool_hold] =
@@ -915,71 +910,121 @@ pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_c
     as "Phantasmal Armor's cast holds its armor and its pool"
   // Client fact `cast.target_node_end`: with the cast kept and its caster gone, only a
   // 0x7fe from the server ends the buff on the ally; the ally writes it once, after the
-  // write of the last source's own end. Each row: where it starts, what reaches the ally in
+  // write of the last source's own end. Each row: what reaches the ally in
   // order, and the frames it writes for each (0x7fe, 0x93a, 0x938, 0x262 and 0x355 only).
   let rows = [
     #(
       "the pool's end writes its own stat only, the armor's end then its own entry and the cast's 0x7fe",
-      AfterTheRemoval,
-      [End(pool_hold), End(armor_hold)],
-      [[Wrote(0x0938)], [Wrote(0x093A), Finished(100)]],
+      [CasterRemoved, End(pool_hold), End(armor_hold)],
+      [[Wrote(0x0355)], [Wrote(0x0938)], [Wrote(0x093A), Finished(100)]],
     ),
     #(
       "a second end of either source writes nothing",
-      AfterTheRemoval,
-      [End(pool_hold), End(armor_hold), End(armor_hold), End(pool_hold)],
-      [[Wrote(0x0938)], [Wrote(0x093A), Finished(100)], [], []],
+      [
+        CasterRemoved,
+        End(pool_hold),
+        End(armor_hold),
+        End(armor_hold),
+        End(pool_hold),
+      ],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0938)],
+        [Wrote(0x093A), Finished(100)],
+        [],
+        [],
+      ],
     ),
     #(
       "the caster seen again before the end: the end of the last source writes the 0x7fe",
-      AfterTheRemoval,
-      [CasterSeenAgain, End(armor_hold), End(pool_hold)],
-      [[Wrote(0x0262)], [Wrote(0x093A)], [Wrote(0x0938), Finished(100)]],
+      [CasterRemoved, CasterSeenAgain, End(armor_hold), End(pool_hold)],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0262)],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+      ],
+    ),
+    #(
+      "a later notice of the caster after the end writes no second 0x7fe",
+      [
+        CasterRemoved,
+        End(pool_hold),
+        End(armor_hold),
+        MapUnseen,
+        MapGone,
+      ],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0938)],
+        [Wrote(0x093A), Finished(100)],
+        [],
+        [],
+      ],
+    ),
+    #(
+      "the caster seen again with the cast listed: the end writes the 0x7fe and the caster's later finish writes none",
+      [
+        CasterRemoved,
+        CasterSeenListing(cast_id: 100),
+        End(armor_hold),
+        End(pool_hold),
+        CasterFinishes,
+      ],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x0262)],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+        [],
+      ],
     ),
     #(
       "the caster's lingering finish after its removal writes nothing and the end writes the 0x7fe later",
-      AfterTheRemoval,
-      [CasterFinishes, End(armor_hold), End(pool_hold)],
-      [[], [Wrote(0x093A)], [Wrote(0x0938), Finished(100)]],
+      [CasterRemoved, CasterFinishes, End(armor_hold), End(pool_hold)],
+      [
+        [Wrote(0x0355)],
+        [],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+      ],
     ),
     #(
       "the map's unseen notice of the caster keeps the kept sources, and the end writes the 0x7fe",
-      AfterTheRemoval,
-      [MapUnseen, End(armor_hold), End(pool_hold)],
-      [[], [Wrote(0x093A)], [Wrote(0x0938), Finished(100)]],
+      [CasterRemoved, MapUnseen, End(armor_hold), End(pool_hold)],
+      [
+        [Wrote(0x0355)],
+        [],
+        [Wrote(0x093A)],
+        [Wrote(0x0938), Finished(100)],
+      ],
     ),
     #(
-      "the caster's unit gone ends both sources and writes the 0x7fe once, with no 0x355",
-      AfterTheRemoval,
-      [MapGone, End(armor_hold)],
-      [[Wrote(0x093A), Wrote(0x0938), Finished(100)], []],
+      "the caster's unit gone ends both sources and writes the 0x7fe once, with no second 0x355",
+      [CasterRemoved, MapGone, End(armor_hold)],
+      [
+        [Wrote(0x0355)],
+        [Wrote(0x093A), Wrote(0x0938), Finished(100)],
+        [],
+      ],
     ),
     #(
       "the ends before the caster's removal write no 0x7fe, and the removal writes it once",
-      BeforeTheRemoval,
       [End(pool_hold), End(armor_hold), CasterRemoved],
       [[Wrote(0x0938)], [Wrote(0x093A)], [Finished(100), Wrote(0x0355)]],
     ),
     #(
       "the caster shown, the end of the last source writes no 0x7fe and the caster's finish writes it once",
-      BeforeTheRemoval,
       [End(pool_hold), End(armor_hold), CasterFinishes, CasterFinishes],
       [[Wrote(0x0938)], [Wrote(0x093A)], [Finished(100)], []],
     ),
   ]
   list.each(rows, fn(row) {
-    let #(reason, start, events, expected) = row
-    let threatened =
-      support.feed(
-        state: holding(holds: [armor_hold, pool_hold]),
-        event: support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
-      ).0
-    let shown = showing_casts(state: threatened, casters: [#(3, [100])])
-    let state = case start {
-      AfterTheRemoval ->
-        support.feed(state: shown, event: from_caster(caster: 3, news: Removed)).0
-      BeforeTheRemoval -> shown
-    }
+    let #(reason, events, expected) = row
+    let state =
+      showing_casts(state: holding(holds: [armor_hold, pool_hold]), casters: [
+        #(3, [100]),
+      ])
     let events =
       list.map(events, fn(event) {
         case event {
@@ -993,6 +1038,19 @@ pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_c
                   unit_id: support.viewer_unit_id(3),
                 ),
               ),
+            )
+          CasterSeenListing(cast_id:) ->
+            from_caster(
+              caster: 3,
+              news: Appeared(unit: support.another_unit_casting(
+                casts: [
+                  support.listed_cast(
+                    cast_id:,
+                    caster: support.viewer_unit_id(3),
+                  ),
+                ],
+                cast_id: 0,
+              )),
             )
           CasterFinishes ->
             from_caster(caster: 3, news: CastFinished(cast_id: 100))
