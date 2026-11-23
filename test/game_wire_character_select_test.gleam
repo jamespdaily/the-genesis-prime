@@ -972,3 +972,39 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
   game_client.close(game:)
   login_support.stop(started)
 }
+
+pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_the_list_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let other =
+    login_support.insert_account(
+      pool:,
+      login_name: "login-2",
+      salt: <<1>>,
+      verifier: <<1>>,
+      game_account_id: support.guid_of(0x22),
+    )
+  let theirs =
+    character_support.insert(
+      pool:,
+      account: AccountId(other),
+      name: "Abe Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: theirs)
+  let assert [refused, _tier, _entitlements, level, listed] =
+    game_client.read(game:, count: 5)
+    as "opcode.0x162.after_create: 0x0162, then 0x097F, 0x0968, 0x0036 and 0x0117"
+  assert refused.message_id == 0x0162
+  assert level.message_id == 0x0036
+  assert listed.message_id == 0x0117
+  let assert Ok(listing) = character_list.decode(listed.body)
+  assert listing.characters == []
+    as "the account has no characters: the read is scoped by its id, so another account's character is not played, nor listed"
+  game_client.close(game:)
+  login_support.stop(started)
+}
