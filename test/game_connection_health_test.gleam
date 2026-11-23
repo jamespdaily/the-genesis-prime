@@ -1,7 +1,7 @@
 //// The game connection's rule (`genesis_prime/game/connection`), run as the
 //// pure function it is: inputs in, new state and effects out. These tests cover
-//// the health a player leaves with: each save carries it, and the next entry is
-//// at it (a dead entry and the save of a dead player are the death test's).
+//// the health a player leaves with: each save carries it, a save while dead
+//// carries 0, and the next entry is at it (a dead entry is the death test's).
 ////
 //// Expected values come from these places.
 //// - A level-1 player's full health is 736 (`player.level1_base_health`), and
@@ -11,6 +11,8 @@
 //// - The client shows stat 0 of the player's 0x262 as the unit's health and
 ////   Base Health, property 7, as its maximum (`opcode.0x262`,
 ////   `vector.opcode.0x262.health`).
+//// - A save while dead keeps 0, the health the client creates a unit dead at
+////   (`0x140457bc5`, `death.enter_dead`).
 //// - A saved health at or below the maximum enters at itself and an entry with
 ////   none saved is at full health: the server's choice, since the client holds
 ////   no saved health (`player_life_test` holds the rule).
@@ -45,6 +47,11 @@ fn struck() -> game_connection.State {
     game_connection_support.in_world(),
     game_connection_support.a_beast_strike(game_connection_support.own_unit_id),
   ).0
+}
+
+/// The tests' player, dead and seen by connection 2.
+fn dead() -> game_connection.State {
+  game_connection_support.dead_in_world().0
 }
 
 /// The step after the 60 s timer fired.
@@ -288,9 +295,4 @@ pub fn wake_here_after_an_entry_with_less_health_comes_back_at_full_health_test(
       ),
     ]
     as "death.server_choices: full health, not the saved one"
-}
-
-/// The tests' player, dead and seen by connection 2.
-fn dead() -> game_connection.State {
-  game_connection_support.dead_in_world().0
 }

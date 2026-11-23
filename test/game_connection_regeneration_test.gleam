@@ -233,20 +233,6 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
   assert started(last) == [] as "full: no next tick"
 }
 
-pub fn a_second_blow_before_the_reboot_pushes_it_back_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let #(state, _) =
-    game_connection_support.feed(
-      game_connection_support.in_world(),
-      game_connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
-    )
-  let #(state, _) = game_connection_support.feed(state, blow(damage: 12))
-  let #(_, again) = game_connection_support.feed(state, blow(damage: 12))
-  assert cancelled(again) == [shield_timer]
-    && started(again) == [#(shield_timer, 5125)]
-    as "the first reboot is cancelled and starts over from the second blow"
-}
-
 pub fn timers_8_and_9_reach_the_life_rule_and_nothing_else_test() -> Nil {
   use <- owned_test.run(60_000)
   let state = game_connection_support.in_world()

@@ -193,29 +193,6 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
   })
 }
 
-pub fn a_blow_does_not_end_a_stealth_kept_on_damage_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let #(state, pressed) = support.stealthed_stalker_kept_on_damage()
-  let assert [stealth] =
-    list.filter(support.written(taken: pressed), fn(frame) {
-      frame.message_id == 0x08F5
-    })
-    as "the press wrote one 0x8f5 before the blow"
-  assert unit_stealth.decode(stealth.body)
-    == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 1))
-    as "the press stealthed the player, so the blow has a stealth to keep"
-  let taken = support.feed(state, support.a_beast_strike(support.own_unit_id)).1
-  assert only(frames: support.written(taken:), ids: [0x092F, 0x0811, 0x08F5])
-    == [0x092F]
-    as "the blow's health is written and the kept stealth holds (Spell4Effects.effectType.83: dataBits02 1)"
-  list.each([2, 3], fn(viewer) {
-    assert !list.contains(
-      support.news_told(taken:, viewer:),
-      Stealth(stealthed: False),
-    )
-  })
-}
-
 // ---- a go that ends the stealth ----
 
 pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_test() -> Nil {

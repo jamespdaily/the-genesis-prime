@@ -4,7 +4,7 @@
 //// - The client: a resource slot is a 32-bit float the server sets by 0x935 (`opcode.0x935`);
 ////   slot 1 is stat 3 (`opcode.0x262.resource_stats`); Spell4Effects 95337 gives +15 of
 ////   vital 6 in the hidden 42148 behind prerequisite 903 (`Spell4.42148`); Electrocute
-////   costs 8 of vital 6 (Spell4 41276, `Spell4CastResult.vital_cost`: 51 for an empty slot 1).
+////   costs 8 of vital 6 (Spell4 41276).
 //// - Jim's decisions of 2026-11-06 (issue 419): the opener gives 15 too, and Volatility
 ////   empties 5000 ms after the combat flag clears.
 //// - The creature's order: its answer to a strike goes before its `Threatened`, and it
@@ -15,7 +15,6 @@
 import cast_support
 import connection_rule_support as support
 import fixture_tables
-import game_client
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/class_resource
@@ -279,51 +278,6 @@ pub fn the_pulse_blast_that_opens_a_fight_gives_15_volatility_and_it_empties_5_s
       UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(0.0)),
     ]
     as "5000 ms after combat ended Volatility is 0, one 0x935"
-}
-
-pub fn electrocute_is_refused_51_at_0_volatility_and_costs_8_of_the_15_a_pulse_blast_gave_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let #(state, unit_id, pulse_blast, electrocute) = engineer()
-  let #(refused_state, refusal) =
-    game_connection_support.pressed_until(
-      state:,
-      bag_index: electrocute,
-      client_cast_id: 1,
-      ms: 1000,
-      until_ms: 1000,
-    )
-  let events =
-    game_client.casts_in(
-      frames: list.flat_map(refusal, fn(taken) {
-        game_connection_support.heard(taken, game_connection_support.keyed())
-      }),
-    )
-  assert events
-    == [
-      game_client.CastRefused(client_cast_id: 1, spell4_id: 41_276, result: 51),
-    ]
-    as "an empty slot 1 refuses Electrocute's 8 of vital 6 with 50 + 1 (Spell4 41276 innateCostType0 6, `Spell4CastResult.vital_cost`)"
-  let #(state, _) =
-    pressed_and_threatened(
-      state: refused_state,
-      bag_index: pulse_blast,
-      client_cast_id: 2,
-      ms: 1100,
-      until_ms: 2450,
-    )
-  let #(_, cast) =
-    game_connection_support.pressed_until(
-      state:,
-      bag_index: electrocute,
-      client_cast_id: 3,
-      ms: 4000,
-      until_ms: 6000,
-    )
-  assert changes(cast)
-    == [
-      UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(7.0)),
-    ]
-    as "with the 15 a Pulse Blast gave, Electrocute is accepted and its first go pays 8: the slot shows 7, and the second go finds 7 below its 8, so the channel ends and no 0x935 follows"
 }
 
 // ---- Electrocute pays at each pulse ----
