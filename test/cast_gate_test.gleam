@@ -46,6 +46,7 @@ import gleam/option.{None}
 import gleam/string
 import map_support
 import owned_test
+import player_state_support
 import prerequisite_support
 import spell_tables
 
@@ -891,6 +892,7 @@ fn live_go_at_the_ally(
   let caster =
     cast_state.Caster(
       ..support.caster(),
+      other_players: player_state_support.in_range_of_the_caster(units: [ally]),
       players_in_sight: dict.from_list([
         #(
           ally,
@@ -1200,6 +1202,7 @@ fn address_of(unit_id unit_id: Int) -> PlayerAddress {
 fn seeing(players players: List(Int)) -> cast_state.Caster {
   cast_state.Caster(
     ..support.caster(),
+    other_players: player_state_support.in_range_of_the_caster(units: players),
     players_in_sight: dict.from_list(
       list.map(players, fn(unit_id) { #(unit_id, address_of(unit_id:)) }),
     ),

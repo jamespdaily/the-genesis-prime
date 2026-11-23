@@ -30,17 +30,23 @@ import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
+import genesis_prime/game/start_place
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/message/player_health
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
+import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_float_stat_changed
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
@@ -817,4 +823,143 @@ pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answ
       spell_go.message_id,
     )
     as "and the go is written at once, without the unit"
+}
+
+/// The client cast id and result of each 0x7fc the step writes, in order.
+fn refusals(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
+  list.map(
+    connection_support.decoded(
+      connection_support.heard(taken, connection_support.keyed()),
+      spell_cast_refused.message_id,
+      spell_cast_refused.decode,
+    ),
+    fn(refused) {
+      #(refused.client_cast_id, cast_result.to_value(refused.result))
+    },
+  )
+}
+
+/// A news of the unit 9, as its owner's connection sends it to the Esper.
+fn news_from_the_ally(
+  state state: game_connection.State,
+  news news: client_connection.News,
+) -> game_connection.State {
+  connection_support.feed(
+    state:,
+    event: connection_support.sent_by_a_peer(connection_support.news_of(
+      unit_id: 9,
+      news:,
+    )),
+  ).0
+}
+
+/// A 0x4db key down of the bag index at `target`, at the time `ms`.
+fn key_down_at(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  ms ms: Int,
+  target target: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  connection_support.at(
+    state:,
+    ms:,
+    event: OwnEvent(
+      step.Read(connection_support.world_message(
+        message_id: 0x04DB,
+        body: cast_support.hold_body(bag_index:, target:, held: 1),
+      )),
+    ),
+  )
+}
+
+pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_refused_on_the_wire_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // The Esper presses Mind Over Body (Spell4TargetMechanics row 4: flags 11; target
+  // conditions mask 129 value 0; range 0 to 35) at the unit 9, whose 0x262 the connection
+  // has taken. The picture is the connection's copy of the news the unit's owner sent.
+  let #(state, bag_index) = esper_with_the_notice_of_the_ally()
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.event_of(connection_support.Appears),
+    )
+  let dead = news_from_the_ally(state:, news: client_connection.Died)
+  let #(_, refused) = pressed_at(state: dead, bag_index:, ms: 1000, target: 9)
+  assert refusals(taken: refused) == [#(1000, 106)]
+    as "a Died news: the ally is dead in the picture, so the press is refused 106 (0x1403b2240)"
+  assert connection_support.written_ids(refused) == [0x07FC]
+    && connection_support.peer_tells(refused) == []
+    as "the refusal is the one 0x7fc: no 0x7ff is written and no connection is told"
+  let back = news_from_the_ally(state: dead, news: client_connection.CameBack)
+  let #(_, started) = pressed_at(state: back, bag_index:, ms: 2000, target: 9)
+  assert connection_support.refusal_results(taken: started) == []
+    && primary_targets(taken: started) == [9]
+    as "a CameBack news: the ally lives again and the cast starts on it"
+  let #(x, y, z) = {
+    let place = connection_support.entry_place()
+    #(start_place.x(place), start_place.y(place), start_place.z(place))
+  }
+  let walked =
+    news_from_the_ally(
+      state:,
+      news: client_connection.Moving(server_time_ms: 7, commands: [
+        relayed_movement.Position(UnitPositionCommand(
+          x: float32.to_bits(x +. 60.0),
+          y: float32.to_bits(y),
+          z: float32.to_bits(z),
+          blends: 1,
+        )),
+      ]),
+    )
+  let #(_, keyed) = key_down_at(state: walked, bag_index:, ms: 3000, target: 9)
+  assert refusals(taken: keyed) == [#(0, 105)]
+    as "a Moving news that puts the ally 60 m away: the key down is refused 105, with the client cast id 0 a 0x4db has (opcode.0x4db)"
+  assert connection_support.written_ids(keyed) == [0x07FC]
+    && connection_support.peer_tells(keyed) == []
+    as "no 0x7ff is written and no connection is told"
+  // The other faction: the unit 10 of connection 4 is an Exile (167) to the Dominion Esper
+  // (Faction2Relationship 684: level 0, Hostile), and Mind Over Body lacks mechanics flag 4.
+  let exile = connection_support.another_unit()
+  let exile =
+    UnitCreatePlayer(
+      ..exile,
+      unit_id: 10,
+      tail: UnitCreateTail(..exile.tail, faction_id: 167),
+    )
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(map.SeenBy(
+        by: ConnectionId(4),
+        stay: connection_support.viewer_stay(4),
+        unit_id: 10,
+      )),
+    )
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_a_peer(connection_support.news_of(
+        unit_id: 10,
+        news: client_connection.Appeared(unit: exile),
+      )),
+    )
+  let #(_, hostile) = pressed_at(state:, bag_index:, ms: 4000, target: 10)
+  assert refusals(taken: hostile) == [#(4000, 99)]
+    as "an ally of the other faction: refused 99 (0x1403ad540)"
+  assert connection_support.written_ids(hostile) == [0x07FC]
+    && connection_support.peer_tells(hostile) == []
+    as "no 0x7ff is written and no connection is told"
+  // The unit leaves sight: nothing of it is held.
+  let #(gone, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_a_peer(connection_support.news_of(
+        unit_id: 10,
+        news: client_connection.Removed,
+      )),
+    )
+  let #(_, removed) = pressed_at(state: gone, bag_index:, ms: 5000, target: 10)
+  assert refusals(taken: removed) == [#(5000, 91)]
+    as "a Removed news: the unit is gone from the picture and from the caster's players, so the press is refused 91"
 }

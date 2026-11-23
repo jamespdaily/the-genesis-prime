@@ -123,7 +123,6 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/area
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
@@ -139,6 +138,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
 import genesis_prime/game/player_life
+import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
@@ -164,7 +164,7 @@ import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,
 }
 import genesis_prime/table/creature2_display_info
-import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id}
+import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
@@ -358,20 +358,75 @@ pub fn map_sent(
   }
 }
 
-/// The ground point of the last of the position commands, as the player's client holds it:
-/// x and z of the command, none when there is no command or a float is not finite.
-fn player_point(
+/// The place of the last of the position commands, as the player's client holds it: x, y and
+/// z of the command in `world_place`'s world and zone, none when there is no command or a
+/// float is not finite.
+fn player_place(
   commands commands: List(UnitPositionCommand),
-) -> Option(area.Point) {
+  world_place world_place: Place,
+) -> Option(Place) {
   case list.last(commands) {
-    Ok(UnitPositionCommand(x:, z:, ..)) ->
+    Ok(UnitPositionCommand(x:, y:, z:, ..)) ->
       option.from_result({
         use x <- result.try(result.try(float32.bits(number: x), float32.value))
+        use y <- result.try(result.try(float32.bits(number: y), float32.value))
         use z <- result.try(result.try(float32.bits(number: z), float32.value))
-        Ok(area.Point(x:, z:))
+        Ok(start_place.moved(place: world_place, x:, y:, z:))
       })
     Error(Nil) -> None
   }
+}
+
+/// What a press judges of a player whose 0x262 the viewer takes, as the viewer's client
+/// reads it (genesis_prime/game/player_state): alive when its health stat is above 0, out of
+/// combat and holding no state, the last position command's place in the viewer's world,
+/// the Race row's hit radius, the viewer's faction's disposition toward its faction, bit 0 of
+/// its PvP flags and its group id.
+pub fn player_appeared(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+  unit unit: UnitCreatePlayer,
+) -> PlayerState {
+  PlayerState(
+    alive: result.unwrap(
+      unit_fields.stat(tail: unit.tail, stat_id: unit_fields.health_stat),
+      0,
+    )
+      > 0,
+    in_combat: False,
+    held: [],
+    place: player_place(
+      commands: list.filter_map(unit.tail.movement_commands, fn(command) {
+        case command {
+          start_movement.Position(position) -> Ok(position)
+          start_movement.Rotation(_)
+          | start_movement.Time(_)
+          | start_movement.Platform(_)
+          | start_movement.TimedPath(_)
+          | start_movement.Path(_)
+          | start_movement.Velocity(_)
+          | start_movement.VelocityDefault(_)
+          | start_movement.MoveAsked(_)
+          | start_movement.MoveDefault(_)
+          | start_movement.FaceUnit(_)
+          | start_movement.FacePoint(_)
+          | start_movement.RotationDefault(_)
+          | start_movement.StateFlags(_)
+          | start_movement.StateDefault(_)
+          | start_movement.Mode(_) -> Error(Nil)
+        }
+      }),
+      world_place: movement.place(entered.movement),
+    ),
+    hit_radius: hit_radius.of_playing(tables:, race_id: RaceId(unit.race_id)),
+    disposition: faction_level.disposition(
+      levels: faction_level.of(tables:),
+      from: entered.unit.tail.faction_id,
+      to: unit.tail.faction_id,
+    ),
+    pvp_flagged: int.bitwise_and(unit.pvp_flags, 1) == 1,
+    group_id: unit.group_id,
+  )
 }
 
 /// What a viewer writes of news of a unit, from the units this connection has
@@ -455,28 +510,10 @@ pub fn viewer_takes(
         shown_changed(session:, change: dict.insert(
           _,
           unit_id,
-          ShownPlayer(at: player_point(
-            commands: unit.tail.movement_commands
-            |> list.filter_map(fn(command) {
-              case command {
-                start_movement.Position(position) -> Ok(position)
-                start_movement.Rotation(_)
-                | start_movement.Time(_)
-                | start_movement.Platform(_)
-                | start_movement.TimedPath(_)
-                | start_movement.Path(_)
-                | start_movement.Velocity(_)
-                | start_movement.VelocityDefault(_)
-                | start_movement.MoveAsked(_)
-                | start_movement.MoveDefault(_)
-                | start_movement.FaceUnit(_)
-                | start_movement.FacePoint(_)
-                | start_movement.RotationDefault(_)
-                | start_movement.StateFlags(_)
-                | start_movement.StateDefault(_)
-                | start_movement.Mode(_) -> Error(Nil)
-              }
-            }),
+          ShownPlayer(state: player_appeared(
+            tables: session.settings.tables,
+            entered:,
+            unit:,
           )),
         )),
         [
@@ -556,12 +593,17 @@ pub fn viewer_takes(
             | relayed_movement.Mode(..) -> Error(Nil)
           }
         })
-      let session = case player_point(commands: positions) {
-        Some(at) ->
+      let session = case
+        player_place(
+          commands: positions,
+          world_place: movement.place(entered.movement),
+        )
+      {
+        Some(place) ->
           shown_changed(session:, change: shown.with_player_at(
             picture: _,
             unit_id:,
-            at:,
+            place:,
           ))
         None -> session
       }

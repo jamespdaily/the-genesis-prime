@@ -11,6 +11,8 @@
 
 import fixture_tables
 import genesis_prime/game/area.{Candidate, Point, Pose}
+import genesis_prime/game/held_state
+import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
 }
@@ -28,8 +30,14 @@ import gleam/list
 import gleam/option
 import owned_test
 import place_support
+import player_state_support
 
 /// The viewer of the pose tests: unit 500, standing at the origin.
+/// A place in the live character's world at ground height 0.0.
+fn standing(x x: Float, z z: Float) -> start_place.Place {
+  place_support.at(world_id: 3460, world_zone_id: 6009, x:, y: 0.0, z:)
+}
+
 fn a_viewer() -> shown.Viewer {
   shown.Viewer(
     unit_id: 500,
@@ -99,7 +107,7 @@ fn picture() -> shown.Picture {
   dict.from_list([
     #(1, creature(x: 1.0, attackable: both, alive: True)),
     #(2, creature(x: 2.0, attackable: both, alive: False)),
-    #(3, ShownPlayer(at: option.None)),
+    #(3, ShownPlayer(state: player_state_support.a_player())),
     #(4, creature(x: 4.0, attackable: not_exiles, alive: True)),
     #(5, creature(x: 5.0, attackable: both, alive: True)),
     #(7, creature(x: 7.0, attackable: both, alive: True)),
@@ -225,8 +233,8 @@ pub fn combat_news_marks_only_a_shown_creature_in_combat_test() -> Nil {
     == with_object
     as "a static object has no fight state"
   assert shown.with_in_combat(picture: with_object, unit_id: 3, in_combat: True)
-    == with_object
-    as "another player's unit is left as it was"
+    != with_object
+    as "another player's unit is marked in combat too (a_shown_players_state_is_set_by_the_news_a_viewer_takes_and_no_other_units_test)"
   assert shown.with_in_combat(
       picture: with_object,
       unit_id: 99,
@@ -359,7 +367,7 @@ pub fn in_group_tests_the_shown_unit_against_the_group_test() -> Nil {
     dict.from_list([
       #(900, ShownCreature(..from, creature_id: Creature2Id(41_604))),
       #(902, ShownCreature(..from, creature_id: Creature2Id(32_668))),
-      #(904, ShownPlayer(at: option.None)),
+      #(904, ShownPlayer(state: player_state_support.a_player())),
     ])
   assert shown.in_group(tables:, picture:, group: 5506, unit_id: 900)
     as "unit 900 is of Creature2 41604, which the group lists"
@@ -376,7 +384,7 @@ pub fn a_unit_that_is_not_a_shown_creature_has_no_pose_test() -> Nil {
   let picture =
     dict.from_list([
       #(1, facing_creature(x: 10.0, z: -20.0)),
-      #(2, ShownPlayer(at: option.None)),
+      #(2, ShownPlayer(state: player_state_support.a_player())),
       #(3, an_object()),
     ])
   assert shown.pose_of(picture:, unit_id: 2, now_ms: 0, viewer: a_viewer())
@@ -405,20 +413,21 @@ pub fn a_died_news_clears_a_creatures_held_states_and_only_its_own_test() -> Nil
       instance_id: 28_673,
     )
   let assert Ok(ShownCreature(held:, ..)) = dict.get(holding, 1)
-  assert held == [shown.HeldState(crowd_control_state.Stun, 28_673)]
+  assert held == [held_state.HeldState(crowd_control_state.Stun, 28_673)]
     as "a 0x87f gives the creature the state under its instance id"
   let dead = shown.with_alive(picture: holding, unit_id: 1, alive: False)
   let assert Ok(ShownCreature(held: after, ..)) = dict.get(dead, 1)
   assert after == []
     as "a Died news (opcode.0x88c, SetUnitDead) ends the creature's states with its life"
+  let with_object = dict.insert(picture(), 8, an_object())
   assert shown.with_held_applied(
-      picture: picture(),
-      unit_id: 3,
+      picture: with_object,
+      unit_id: 8,
       state: crowd_control_state.Stun,
       instance_id: 1,
     )
-    == picture()
-    as "another player's unit holds no state in the picture"
+    == with_object
+    as "a static object has no crowd-control state"
 }
 
 pub fn a_unit_state_is_held_ended_by_its_number_and_cleared_at_death_test() -> Nil {
@@ -524,7 +533,7 @@ pub fn a_creature_that_faces_another_player_is_posed_toward_that_player_where_th
     dict.insert(
       faced_creature(face: creature_turn.Unit(unit_id: 501)),
       501,
-      ShownPlayer(at: option.None),
+      ShownPlayer(state: player_state_support.a_player()),
     )
   assert shown.pose_of(
       picture: before,
@@ -538,7 +547,7 @@ pub fn a_creature_that_faces_another_player_is_posed_toward_that_player_where_th
     shown.with_player_at(
       picture: before,
       unit_id: 501,
-      at: Point(x: 10.0, z: 0.0),
+      place: standing(x: 10.0, z: 0.0),
     )
   let assert Ok(pose) =
     shown.pose_of(picture:, unit_id: 1, now_ms: 0, viewer: a_viewer())
@@ -549,7 +558,11 @@ pub fn a_creature_that_faces_another_player_is_posed_toward_that_player_where_th
   )
     as "the creature faces A, as B's client shows it"
   let moved =
-    shown.with_player_at(picture:, unit_id: 501, at: Point(x: -10.0, z: 0.0))
+    shown.with_player_at(
+      picture:,
+      unit_id: 501,
+      place: standing(x: -10.0, z: 0.0),
+    )
   let assert Ok(pose) =
     shown.pose_of(picture: moved, unit_id: 1, now_ms: 0, viewer: a_viewer())
   assert float.loosely_equals(pose.yaw, quarter_turn, tolerating: 0.000001)
@@ -566,13 +579,17 @@ pub fn a_creature_whose_target_stands_on_it_keeps_the_yaw_it_showed_last_test() 
       picture: dict.insert(
         faced_creature(face: creature_turn.Unit(unit_id: 501)),
         501,
-        ShownPlayer(at: option.None),
+        ShownPlayer(state: player_state_support.a_player()),
       ),
       unit_id: 501,
-      at: Point(x: 10.0, z: 0.0),
+      place: standing(x: 10.0, z: 0.0),
     )
   let onto = fn(picture) {
-    shown.with_player_at(picture:, unit_id: 501, at: Point(x: 0.0, z: 0.0))
+    shown.with_player_at(
+      picture:,
+      unit_id: 501,
+      place: standing(x: 0.0, z: 0.0),
+    )
   }
   let resolved =
     onto(shown.with_resolved(picture:, now_ms: 0, viewer: a_viewer()))
@@ -685,4 +702,159 @@ pub fn a_creature_that_faces_a_point_or_a_fixed_way_is_posed_so_and_a_turning_pa
     )
   let assert Ok(ShownCreature(face: cleared, ..)) = dict.get(turned, 1)
   assert cleared == option.None as "a path that turns it replaces the face"
+}
+
+/// The picture of the player's unit 3 after `change`, which is its state; the creature at 1
+/// and the object at 8 are as they were.
+fn player_after(
+  change: fn(shown.Picture, Int) -> shown.Picture,
+) -> PlayerState {
+  let before = dict.insert(picture(), 8, an_object())
+  let after = change(before, 3)
+  assert dict.get(after, 1) == dict.get(before, 1)
+    as "a change to the player leaves the creature as it was"
+  assert dict.get(after, 8) == dict.get(before, 8)
+    as "a change to the player leaves the object as it was"
+  let assert Ok(ShownPlayer(state:)) = dict.get(after, 3)
+    as "the player is still a shown player"
+  state
+}
+
+/// The picture after `change` at the unit: unchanged when the unit is the player's arm's
+/// no business.
+fn unchanged_at(
+  unit_id unit_id: Int,
+  change change: fn(shown.Picture, Int) -> shown.Picture,
+) -> Bool {
+  let before = dict.insert(picture(), 8, an_object())
+  change(before, unit_id) == before
+}
+
+pub fn a_shown_players_state_is_set_by_the_news_a_viewer_takes_and_no_other_units_test() -> Nil {
+  use <- owned_test.run(5000)
+  let defaults = player_state_support.a_player()
+  let stunned = fn(picture, unit_id) {
+    shown.with_held_applied(
+      picture:,
+      unit_id:,
+      state: crowd_control_state.Stun,
+      instance_id: 28_673,
+    )
+  }
+  let silenced = fn(picture, unit_id) {
+    shown.with_held_applied(
+      picture: stunned(picture, unit_id),
+      unit_id:,
+      state: crowd_control_state.Silence,
+      instance_id: 28_674,
+    )
+  }
+  let first = standing(x: 10.0, z: 0.0)
+  let second =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: -10.0,
+      y: 4.5,
+      z: 0.0,
+    )
+  // A death news: the picture marks the player dead and, as a creature's does, ends its states.
+  assert player_after(fn(picture, unit_id) {
+      shown.with_alive(picture:, unit_id:, alive: False)
+    })
+    == PlayerState(..defaults, alive: False)
+    as "a Died news marks the player dead (opcode.0x88c)"
+  assert player_after(fn(picture, unit_id) {
+      shown.with_alive(
+        picture: stunned(picture, unit_id),
+        unit_id:,
+        alive: False,
+      )
+    })
+    == PlayerState(..defaults, alive: False, held: [])
+    as "a death clears the player's held states, as a creature's does"
+  assert player_after(fn(picture, unit_id) {
+      shown.with_alive(
+        picture: shown.with_alive(picture:, unit_id:, alive: False),
+        unit_id:,
+        alive: True,
+      )
+    })
+    == defaults
+    as "a CameBack news marks the player alive again"
+  assert player_after(fn(picture, unit_id) {
+      shown.with_in_combat(picture:, unit_id:, in_combat: True)
+    })
+    == PlayerState(..defaults, in_combat: True)
+    as "a CombatState news marks the player in combat"
+  assert player_after(fn(picture, unit_id) {
+      shown.with_in_combat(
+        picture: shown.with_in_combat(picture:, unit_id:, in_combat: True),
+        unit_id:,
+        in_combat: False,
+      )
+    })
+    == defaults
+    as "and out of it"
+  assert player_after(silenced).held
+    == [
+      held_state.HeldState(crowd_control_state.Stun, 28_673),
+      held_state.HeldState(crowd_control_state.Silence, 28_674),
+    ]
+    as "a 0x87f adds the state under its instance id, after the ones held"
+  assert player_after(fn(picture, unit_id) {
+      shown.with_held_ended(
+        picture: silenced(picture, unit_id),
+        unit_id:,
+        instance_id: 28_673,
+      )
+    }).held
+    == [held_state.HeldState(crowd_control_state.Silence, 28_674)]
+    as "a 0x880 ends the state of its instance id and leaves the other"
+  assert player_after(fn(picture, unit_id) {
+      shown.with_player_at(picture:, unit_id:, place: first)
+    })
+    == PlayerState(..defaults, place: option.Some(first))
+    as "a position command puts the player at its x, y and z"
+  assert player_after(fn(picture, unit_id) {
+      shown.with_player_at(
+        picture: shown.with_player_at(picture:, unit_id:, place: first),
+        unit_id:,
+        place: second,
+      )
+    })
+    == PlayerState(..defaults, place: option.Some(second))
+    as "a later position command replaces the place, height included"
+  // Every other unit is as it was by the player's arm.
+  assert list.all([8, 1, 99], fn(unit_id) {
+    unchanged_at(unit_id:, change: fn(picture, unit_id) {
+      shown.with_player_at(picture:, unit_id:, place: first)
+    })
+  })
+    as "a position command of another unit changes no creature, no object and no unshown unit"
+  assert unchanged_at(unit_id: 8, change: fn(picture, unit_id) {
+      shown.with_alive(picture:, unit_id:, alive: False)
+    })
+    && unchanged_at(unit_id: 8, change: fn(picture, unit_id) {
+      shown.with_in_combat(picture:, unit_id:, in_combat: True)
+    })
+    && unchanged_at(unit_id: 8, change: stunned)
+    as "a death, a combat state and a held state change no object"
+  assert unchanged_at(unit_id: 99, change: fn(picture, unit_id) {
+      shown.with_alive(picture:, unit_id:, alive: False)
+    })
+    && unchanged_at(unit_id: 99, change: stunned)
+    as "and no unit the picture does not show"
+  // The ground point the creatures that face the player read is still its x and z.
+  let faced =
+    dict.insert(
+      faced_creature(face: creature_turn.Unit(unit_id: 501)),
+      501,
+      ShownPlayer(state: defaults),
+    )
+    |> shown.with_player_at(unit_id: 501, place: second)
+  let assert Ok(pose) =
+    shown.pose_of(picture: faced, unit_id: 1, now_ms: 0, viewer: a_viewer())
+  assert float.loosely_equals(pose.yaw, quarter_turn, tolerating: 0.000001)
+    as "a creature faces the player's x and z, whatever its height (unit.ground_lift: the range y is the movement y)"
 }

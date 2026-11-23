@@ -30,8 +30,10 @@ import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/effect_kind
+import genesis_prime/game/faction_level
 import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
+import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
@@ -57,6 +59,7 @@ import gleam/option.{None, Some}
 import gleam/string
 import map_support
 import owned_test
+import player_state_support
 import prerequisite_support
 import spell_tables
 
@@ -115,20 +118,45 @@ fn sight(players players: List(Int)) -> Dict(Int, PlayerAddress) {
   )
 }
 
-/// The default caster, who sees these players.
+/// A player in sight at the defaults: alive, out of combat, Friendly, 10 m east.
+fn an_ally() -> PlayerState {
+  player_state_support.beside_the_caster(east: 10.0, up: 0.0)
+}
+
+/// The default caster, who sees these players, each at the defaults (`an_ally`).
 fn seeing(players players: List(Int)) -> Caster {
-  cast_state.Caster(..support.caster(), players_in_sight: sight(players:))
+  seeing_states(
+    players: list.map(players, fn(unit_id) { #(unit_id, an_ally()) }),
+  )
+}
+
+/// The default caster, who sees these players in these states.
+fn seeing_states(players players: List(#(Int, PlayerState))) -> Caster {
+  cast_state.Caster(
+    ..support.caster(),
+    players_in_sight: sight(players: list.map(players, fn(entry) { entry.0 })),
+    other_players: dict.from_list(players),
+  )
 }
 
 /// The Esper with Mind Over Body at bag index 0 and Telekinetic Strike at 1, holding the
-/// Focus Mind Over Body costs (22, `Spell4 32820`), who sees these players.
+/// Focus Mind Over Body costs (22, `Spell4 32820`), who sees these players at the defaults.
 fn esper_seeing(players players: List(Int)) -> Caster {
+  esper_of(caster: seeing(players:))
+}
+
+/// The same Esper, who sees these players in these states.
+fn esper_seeing_states(players players: List(#(Int, PlayerState))) -> Caster {
+  esper_of(caster: seeing_states(players:))
+}
+
+fn esper_of(caster caster: Caster) -> Caster {
   let bag = [
     Spell4BaseId(mind_over_body_base),
     Spell4BaseId(telekinetic_strike_base),
   ]
   cast_state.Caster(
-    ..seeing(players:),
+    ..caster,
     abilities: bag,
     book: bag,
     resources: class_resource_support.resources_with(
@@ -242,6 +270,8 @@ fn targeted(
   Spell(
     ..support.child(spell4_id:, base:),
     targeting: mind_over_body().targeting,
+    target_death: mind_over_body().target_death,
+    target_aim: mind_over_body().target_aim,
     cooldown_ms:,
   )
 }
@@ -388,6 +418,7 @@ fn healing_ally_in_sight() -> Caster {
   cast_state.Caster(
     ..support.healing_caster(health: 500),
     players_in_sight: sight(players: [ally]),
+    other_players: dict.from_list([#(ally, an_ally())]),
   )
 }
 
@@ -768,7 +799,11 @@ fn periodic_row(
 
 /// The caster of the scenes, who has lost sight of every player.
 fn blind() -> Caster {
-  cast_state.Caster(..healing_ally_in_sight(), players_in_sight: dict.new())
+  cast_state.Caster(
+    ..healing_ally_in_sight(),
+    players_in_sight: dict.new(),
+    other_players: dict.new(),
+  )
 }
 
 /// One go of a periodic heal and what it arms: the caster the go is written for, the unit
@@ -1279,11 +1314,11 @@ pub fn a_bag_press_takes_its_primary_target_by_the_kind_of_its_spell_test() -> N
         StartsOn(ally),
       ),
       Press(
-        "Spell4TargetMechanics row 3: flags 16 are not beneficial (Spatial Shift), and a hostile cast at a player is the PvP the server does not build, so it is refused 285",
+        "Spell4TargetMechanics row 3: flags 16 (Spatial Shift) lack flag 3, so a cast at a Friendly player is refused 99 (0x1403ad540), as a hostile spell at an ally",
         mind_over_body_with(flags: 16, valid_targets: 0),
         ally,
         [ally],
-        Refused(285),
+        Refused(99),
       ),
       Press(
         "Spell4ValidTargets row 9: bitmask 1 refuses a player, so the press is refused 102 (before the faction test)",
@@ -1336,34 +1371,296 @@ pub fn a_bag_press_takes_its_primary_target_by_the_kind_of_its_spell_test() -> N
       }
     },
   )
-}
-
-pub fn a_hostile_press_at_another_player_is_refused_as_not_built_and_logged_once_test() -> Nil {
-  use <- owned_test.run(5000)
-  let hostile = mind_over_body_with(flags: 16, valid_targets: 0)
-  let plans = dict.insert(plans(), mind_over_body_base, hostile)
-  let caster = esper_seeing(players: [ally])
-  let #(state, first) =
+  // The client tests the spell's valid targets (102) after the caster's own checks
+  // (`0x1403b2240` after `CheckCastCaster`): a press of a spell that refuses a player, made
+  // during the global cooldown, is the cooldown's result.
+  let refusing =
+    support.with_spells(plans: plans(), spells: [
+      Spell(
+        ..support.child(spell4_id: 5002, base: 2),
+        global_cooldown: spell_plan.GlobalCooldown(
+          refused_while_running: True,
+          starts_for_ms: Some(1000),
+        ),
+      ),
+      Spell(
+        ..targeted(spell4_id: 5001, base: 3, cooldown_ms: 0),
+        targeting: Targeting(
+          kind: Targeted,
+          mechanics_flags: 11,
+          valid_targets: 1,
+        ),
+        global_cooldown: spell_plan.GlobalCooldown(
+          refused_while_running: True,
+          starts_for_ms: None,
+        ),
+      ),
+    ])
+  let caster = seeing(players: [ally])
+  let #(state, _) =
     pressed(
-      plans:,
+      plans: refusing,
       state: cast_state.new(),
       caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let #(_, during) =
+    pressed(
+      plans: refusing,
+      state:,
+      caster:,
+      bag_index: bag_of_base_3,
+      target: ally,
+      at: 1100,
+    )
+  assert refused_as(effects: during) == [#(9, 14)]
+    as "a global cooldown of 1000 ms started at 1000 refuses the press 14, not 102"
+}
+
+pub fn a_hostile_press_at_another_player_is_refused_by_the_factions_test() -> Nil {
+  use <- owned_test.run(5000)
+  let other_faction =
+    PlayerState(..an_ally(), disposition: faction_level.Hostile)
+  list.each(
+    [
+      #(
+        "flags 16 (flag 4 only) at the same faction: 0x1403ad540 refuses a Friendly target without flag 3, 99",
+        16,
+        an_ally(),
+        99,
+      ),
+      #(
+        "flags 16 at the other faction: the first pass lets flag 4 through and nobody is flagged, 322 (0x1403b4560)",
+        16,
+        other_faction,
+        322,
+      ),
+      #(
+        "flags 17 (flags 0 and 4) at the other faction: 322",
+        17,
+        other_faction,
+        322,
+      ),
+      #("flags 17 at the same faction: 99", 17, an_ally(), 99),
+    ],
+    fn(row) {
+      let #(why, flags, target, result) = row
+      let plans =
+        dict.insert(
+          plans(),
+          mind_over_body_base,
+          mind_over_body_with(flags:, valid_targets: 0),
+        )
+      let caster = esper_seeing_states(players: [#(ally, target)])
+      let #(state, first) =
+        pressed(
+          plans:,
+          state: cast_state.new(),
+          caster:,
+          bag_index: 0,
+          target: ally,
+          at: 1000,
+        )
+      let #(_, second) =
+        pressed(plans:, state:, caster:, bag_index: 0, target: ally, at: 2000)
+      assert refused_as(effects: first) == [#(9, result)]
+        && refused_as(effects: second) == [#(9, result)]
+        as why
+      assert support.logs(effects: first) == []
+        && support.logs(effects: second) == []
+        as "a refusal the server judged is not logged as not built"
+    },
+  )
+}
+
+// ---- the state the connection pictures of the target ----
+
+/// What a press at the ally comes to.
+type Judged {
+  StartsOnTheAlly
+  RefusedWith(result: Int)
+}
+
+/// A press (a 0x9a with the client cast id 9, or a 0x4db key down) of Mind Over Body at the
+/// ally, who is in the state given.
+type Pictured {
+  Pictured(why: String, ally: PlayerState, judged: Judged)
+}
+
+pub fn a_bag_press_at_another_player_is_refused_by_the_state_the_connection_pictures_of_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let hostile = faction_level.Hostile
+  list.each(
+    [
+      Pictured(
+        "the control row: a live ally in range of the same faction, not flagged, starts the cast",
+        an_ally(),
+        StartsOnTheAlly,
+      ),
+      Pictured(
+        "0x1403b2240: Mind Over Body's conditions (value 0) refuse a dead ally 106",
+        PlayerState(..an_ally(), alive: False),
+        RefusedWith(106),
+      ),
+      Pictured(
+        "an ally 40 m away (edge to edge 37.6, beyond the 35 m maximum and the server's 2 m allowance) is refused 105",
+        player_state_support.beside_the_caster(east: 40.0, up: 0.0),
+        RefusedWith(105),
+      ),
+      Pictured(
+        "an ally 37 m away (edge to edge 34.6) starts the cast",
+        player_state_support.beside_the_caster(east: 37.0, up: 0.0),
+        StartsOnTheAlly,
+      ),
+      Pictured(
+        "an ally of the other faction is refused 99 (0x1403ad540: Mind Over Body lacks flag 4), before its life and range are tested",
+        PlayerState(
+          ..player_state_support.beside_the_caster(east: 60.0, up: 0.0),
+          alive: False,
+          disposition: hostile,
+        ),
+        RefusedWith(99),
+      ),
+    ],
+    fn(row) {
+      let caster = esper_seeing_states(players: [#(ally, row.ally)])
+      let #(state, pressed) =
+        pressed(
+          plans: plans(),
+          state: cast_state.new(),
+          caster:,
+          bag_index: 0,
+          target: ally,
+          at: 1000,
+        )
+      let #(held, key_down) =
+        key_at(
+          plans: plans(),
+          state: cast_state.new(),
+          caster:,
+          bag_index: 0,
+          target: ally,
+          held: 1,
+          at: 1000,
+        )
+      case row.judged {
+        StartsOnTheAlly -> {
+          assert confirmed_at(effects: pressed) == [ally] as row.why
+          assert started_at(effects: key_down) == [ally] as row.why
+        }
+        RefusedWith(result:) -> {
+          assert refused_as(effects: pressed) == [#(9, result)] as row.why
+          assert state == cast_state.new()
+            as "a refused press starts no cast and no cooldown"
+          assert refused_as(effects: key_down) == [#(0, result)]
+            as "opcode.0x4db: the key down has no client check, so the 0x7fc answers it, with the client cast id 0"
+          assert option.is_none(held.holding) && held == cast_state.new()
+            as "a refused key down starts no hold"
+          assert support.logs(effects: pressed) == []
+            && support.logs(effects: key_down) == []
+            as "a refusal the server judged is not logged as not built"
+        }
+      }
+    },
+  )
+  // The caster's own checks come first (`CheckCast` `0x1403ae8c0`): the target block is
+  // reached only when the caster passes or the answer is 317, queued. The spell of base 3 is
+  // judged as Mind Over Body is; the spell of base 2 starts a global cooldown of 1000 ms.
+  let dead_ally = [#(ally, PlayerState(..an_ally(), alive: False))]
+  let caster = seeing_states(players: dead_ally)
+  let cooldown_plans =
+    support.with_spells(plans: plans(), spells: [
+      Spell(
+        ..support.child(spell4_id: 5002, base: 2),
+        global_cooldown: spell_plan.GlobalCooldown(
+          refused_while_running: True,
+          starts_for_ms: Some(1000),
+        ),
+      ),
+      Spell(
+        ..targeted(spell4_id: 5001, base: 3, cooldown_ms: 0),
+        global_cooldown: spell_plan.GlobalCooldown(
+          refused_while_running: True,
+          starts_for_ms: None,
+        ),
+      ),
+    ])
+  let #(after_blocker, _) =
+    pressed(
+      plans: cooldown_plans,
+      state: cast_state.new(),
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let at_the_dead_ally = fn(state, caster, ms) {
+    pressed(
+      plans: cooldown_plans,
+      state:,
+      caster:,
+      bag_index: bag_of_base_3,
+      target: ally,
+      at: ms,
+    )
+  }
+  let #(_, during_cooldown) = at_the_dead_ally(after_blocker, caster, 1100)
+  assert refused_as(effects: during_cooldown) == [#(9, 14)]
+    as "a global cooldown with more than 500 ms left is 14, not the dead ally's 106"
+  let #(_, dead_caster) =
+    at_the_dead_ally(
+      cast_state.new(),
+      cast_state.Caster(..caster, dead: True),
+      1000,
+    )
+  assert refused_as(effects: dead_caster) == [#(9, 57)]
+    as "a dead caster is refused with its own result, not the ally's"
+  let #(queued, within_window) = at_the_dead_ally(after_blocker, caster, 1700)
+  assert refused_as(effects: within_window) == [#(9, 106)]
+    as "a cooldown with 500 ms or less left queues the press (317), and the client goes on to the target checks: 106 at once"
+  assert option.is_none(queued.held)
+    as "the refused press is not held for the cooldown"
+  // A press of a spell the server does not build the target rows of is refused 285 and
+  // logged once for the spell.
+  let unread =
+    Spell(
+      ..mind_over_body(),
+      target_aim: spell_plan.TargetAim(
+        ..mind_over_body().target_aim,
+        unread: Some("a target vital requirement"),
+      ),
+    )
+  let unread_plans = dict.insert(plans(), mind_over_body_base, unread)
+  let seen = esper_seeing(players: [ally])
+  let #(state, first) =
+    pressed(
+      plans: unread_plans,
+      state: cast_state.new(),
+      caster: seen,
       bag_index: 0,
       target: ally,
       at: 1000,
     )
   let #(_, second) =
-    pressed(plans:, state:, caster:, bag_index: 0, target: ally, at: 2000)
+    pressed(
+      plans: unread_plans,
+      state:,
+      caster: seen,
+      bag_index: 0,
+      target: ally,
+      at: 2000,
+    )
+  assert refused_as(effects: first) == [#(9, 285)]
+    && refused_as(effects: second) == [#(9, 285)]
+    as "each press of a spell with an unread target row is refused 285"
   assert list.length(
       list.filter(support.logs(effects: first), fn(log) { log.0 == LogWarning }),
     )
     == 1
     as "the first refusal is logged once for the spell"
-  assert support.logs(effects: second) == []
-    as "the second press of the spell is refused again and not logged again"
-  assert refused_as(effects: first) == [#(9, 285)]
-    && refused_as(effects: second) == [#(9, 285)]
-    as "each press is refused 285"
+  assert support.logs(effects: second) == [] as "and not again"
 }
 
 // ---- the held key ----
@@ -1438,9 +1735,10 @@ pub fn a_held_key_down_at_another_player_starts_each_cast_at_that_player_test() 
 
 // ---- a repeat whose target left ----
 
-/// A way the hold's next cast is reached.
+/// A way the hold's next cast is reached, with the caster's picture when it is and the
+/// result the repeat is refused with.
 type Reach {
-  Reach(why: String, cooldown_ms: Int, by: Way)
+  Reach(why: String, cooldown_ms: Int, by: Way, later: Caster, result: Int)
 }
 
 type Way {
@@ -1484,17 +1782,37 @@ fn first_go_answered(
 
 pub fn a_repeat_whose_target_left_sight_is_refused_91_and_ends_the_hold_test() -> Nil {
   use <- owned_test.run(5000)
+  let dead = PlayerState(..an_ally(), alive: False)
+  let far = player_state_support.beside_the_caster(east: 60.0, up: 0.0)
   list.each(
     [
       Reach(
         "the cooldown's repeat timer: the caster has lost the ally when the timer fires",
         2000,
         ByTheRepeatTimer,
+        seeing(players: []),
+        91,
       ),
       Reach(
         "the answer of the go (cast.went runs continued): a spell with no cooldown presses again as the answer closes the cast, and the ally is gone",
         0,
         ByTheAnswerOfTheGo,
+        seeing(players: []),
+        91,
+      ),
+      Reach(
+        "the ally died between the two presses: the repeat is judged by the picture of the input that releases it, 106",
+        2000,
+        ByTheRepeatTimer,
+        seeing_states(players: [#(ally, dead)]),
+        106,
+      ),
+      Reach(
+        "the ally walked 60 m away between the two presses: the repeat is refused 105",
+        2000,
+        ByTheRepeatTimer,
+        seeing_states(players: [#(ally, far)]),
+        105,
       ),
     ],
     fn(row) {
@@ -1503,7 +1821,6 @@ pub fn a_repeat_whose_target_left_sight_is_refused_91_and_ends_the_hold_test() -
           targeted(spell4_id: 5001, base: 3, cooldown_ms: row.cooldown_ms),
         ])
       let seen = seeing(players: [ally])
-      let gone = seeing(players: [])
       let #(state, down) =
         key_at(
           plans:,
@@ -1527,12 +1844,17 @@ pub fn a_repeat_whose_target_left_sight_is_refused_91_and_ends_the_hold_test() -
             )
           let assert [#(repeat, _)] = support.started_timers(effects: answered)
             as row.why
-          support.fired_raw_as(caster: gone, state:, timer: repeat, at: 3000)
+          support.fired_raw_as(
+            caster: row.later,
+            state:,
+            timer: repeat,
+            at: 3000,
+          )
         }
         ByTheAnswerOfTheGo ->
-          first_go_answered(caster: gone, state:, effects: down, at: 1000)
+          first_go_answered(caster: row.later, state:, effects: down, at: 1000)
       }
-      assert refused_as(effects: reached) == [#(0, 91)] as row.why
+      assert refused_as(effects: reached) == [#(0, row.result)] as row.why
       assert started_at(effects: reached) == [] as row.why
       assert option.is_none(state.holding) as row.why
     },
@@ -1554,19 +1876,26 @@ pub fn a_queued_press_is_judged_by_its_target_when_it_is_released_test() -> Nil 
       blocker,
       targeted(spell4_id: 5001, base: 3, cooldown_ms: 0),
     ])
+  let far = player_state_support.beside_the_caster(east: 60.0, up: 0.0)
   list.each(
     [
       #(
         "the ally is still in sight when the cast clears: the held press starts on it",
-        [ally],
+        seeing(players: [ally]),
         [ally],
         [],
       ),
       #(
         "the ally has left sight when the cast clears: the held press is refused 91 with the client's cast id",
-        [],
+        seeing(players: []),
         [],
         [#(9, 91)],
+      ),
+      #(
+        "the ally walked 60 m away while the press waited: the release is refused 105 with the client's cast id",
+        seeing_states(players: [#(ally, far)]),
+        [],
+        [#(9, 105)],
       ),
     ],
     fn(row) {
@@ -1595,7 +1924,6 @@ pub fn a_queued_press_is_judged_by_its_target_when_it_is_released_test() -> Nil 
         )
       assert support.writes(effects: held) == []
         as "a press with 500 ms or less of the current cast left is held and writes nothing (cast.press_queue)"
-      let at_release = seeing(players: at_release)
       let #(state, fired) =
         support.fired_raw_as(caster: at_release, state:, timer: go, at: 2000)
       let #(_, released) =

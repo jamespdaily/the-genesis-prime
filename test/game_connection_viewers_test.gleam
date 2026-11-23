@@ -16,7 +16,9 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/viewers
 import genesis_prime/game/effect_kind
+import genesis_prime/game/faction_level
 import genesis_prime/game/player_address.{PlayerAddress, Viewer}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -69,19 +71,22 @@ import genesis_prime/world_map/map.{
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option
+import gleam/option.{Some}
 import gleam/result
 import map_support
 import owned_test
 import place_support
 import planted_table
+import player_state_support
 import quest_support
 import server_proxy_support
 import simple_unit_support
 import spawn_support
+import world_entry_support
 
 // ---- other players' units ----
 //
@@ -2248,7 +2253,7 @@ fn seen_by(viewer viewer: Int, unit_id unit_id: Int) -> map.Notice {
 
 pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_it_test() -> Nil {
   use <- owned_test.run(5000)
-  let player = shown.ShownPlayer(at: option.None)
+  let player = shown.ShownPlayer(state: player_state_support.a_player())
   // Each row: the notices the map sent, the units the picture shows, and the units the
   // cast rule may name, which are the notices' own connections, unit ids and stays.
   list.each(
@@ -2337,4 +2342,225 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
     })
     == [#(3, later_stay)]
     as "a player seen again by a connection in a new stay is told its moves in the new stay, not the first"
+}
+
+// ---- what a press judges of a player in sight ----
+
+/// The unit 9 as its owner's 0x262 gives it: faction `faction`, health stat `health`, PvP
+/// flags and group as sent, standing at `place`.
+fn player_with(
+  faction faction: Int,
+  health health: Int,
+  pvp_flags pvp_flags: Int,
+  group_id group_id: Int,
+  place place: Place,
+) -> UnitCreatePlayer {
+  let #(position, rotation) = player_unit.standing(place)
+  let unit = game_connection_support.another_unit()
+  UnitCreatePlayer(
+    ..unit,
+    group_id:,
+    pvp_flags:,
+    tail: UnitCreateTail(
+      ..unit.tail,
+      faction_id: faction,
+      stats: [
+        unit_fields.integer_stat(
+          stat_id: unit_fields.health_stat,
+          value: health,
+        ),
+      ],
+      movement_commands: [
+        start_movement.Position(position),
+        start_movement.Rotation(rotation),
+      ],
+    ),
+  )
+}
+
+pub fn a_player_that_comes_into_sight_is_shown_with_what_a_press_judges_of_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let entered_as = fn(faction) {
+    world_entry_support.entry(
+      tables:,
+      character: world_entry_support.character(class: 3, faction:, level: 1),
+    ).1
+  }
+  let dominion = entered_as(166)
+  let exile = entered_as(167)
+  let there =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 100.0,
+      y: 12.5,
+      z: -40.0,
+    )
+  let shown_to = fn(entered, unit) {
+    viewers.player_appeared(tables:, entered:, unit:)
+  }
+  let seen =
+    shown_to(
+      dominion,
+      player_with(
+        faction: 166,
+        health: 5000,
+        pvp_flags: 0,
+        group_id: 0,
+        place: there,
+      ),
+    )
+  // opcode.0x262: a unit made with health stat 0 is dead (`death.enter_dead`).
+  assert seen.alive as "a health stat above 0 is a living player"
+  assert !shown_to(
+    dominion,
+    player_with(
+      faction: 166,
+      health: 0,
+      pvp_flags: 0,
+      group_id: 0,
+      place: there,
+    ),
+  ).alive
+    as "a health stat of 0 is a player that lies dead"
+  assert !seen.in_combat && seen.held == []
+    as "a player comes into sight out of combat and holding no state"
+  assert seen.hit_radius == place_support.player_hit_radius
+    as "unit.hit_radius: a player's radius is its Race row's (display id 0), 1.2 as a 32-bit float"
+  // GetUnitDispositionTo `0x14045a950`: the viewer's faction toward the player's, by
+  // Faction2Relationship 684 (Dominion 166 and Exile 167: level 0) and a faction toward
+  // itself (level 10).
+  assert seen.disposition == faction_level.Friendly
+    as "a Dominion viewer sees a Dominion player Friendly"
+  assert shown_to(
+      dominion,
+      player_with(
+        faction: 167,
+        health: 5000,
+        pvp_flags: 0,
+        group_id: 0,
+        place: there,
+      ),
+    ).disposition
+    == faction_level.Hostile
+    as "a Dominion viewer sees an Exile player Hostile"
+  assert shown_to(
+      exile,
+      player_with(
+        faction: 166,
+        health: 5000,
+        pvp_flags: 0,
+        group_id: 0,
+        place: there,
+      ),
+    ).disposition
+    == faction_level.Hostile
+    as "and an Exile viewer a Dominion player"
+  assert shown_to(
+      exile,
+      player_with(
+        faction: 167,
+        health: 5000,
+        pvp_flags: 0,
+        group_id: 0,
+        place: there,
+      ),
+    ).disposition
+    == faction_level.Friendly
+    as "and an Exile viewer an Exile player Friendly"
+  // 0x1403b48b0: bit 0 of the 0x262's PvP flags is the flag; the group is the 0x262's.
+  assert !seen.pvp_flagged && seen.group_id == 0
+    as "the server sends PvP flags 0 and group 0, so nobody is flagged and nobody grouped"
+  let marked =
+    shown_to(
+      dominion,
+      player_with(
+        faction: 166,
+        health: 5000,
+        pvp_flags: 1,
+        group_id: 77,
+        place: there,
+      ),
+    )
+  assert marked.pvp_flagged && marked.group_id == 77
+    as "bit 0 of the flags and the group id are kept as sent"
+  assert !shown_to(
+    dominion,
+    player_with(
+      faction: 166,
+      health: 5000,
+      pvp_flags: 2,
+      group_id: 0,
+      place: there,
+    ),
+  ).pvp_flagged
+    as "a flag word with bit 0 clear is not flagged"
+  let assert Some(place) = seen.place
+    as "the 0x262's position command gives the player a place"
+  assert start_place.x(place) == 100.0
+    && start_place.y(place) == 12.5
+    && start_place.z(place) == -40.0
+    as "the place keeps the command's height (unit.ground_lift: the range y is the movement y)"
+  assert start_place.world_id(place) == 3460
+    as "the place is in the viewer's world"
+  assert written_for_news(news: [
+      client_connection.Health(health: 0, dead: True),
+      client_connection.CameBack,
+      client_connection.Died,
+      client_connection.CombatState(in_combat: True),
+      client_connection.CrowdControlApplied(
+        state: crowd_control_state.Stun,
+        instance_id: 5,
+      ),
+      client_connection.CrowdControlEnded(
+        state: crowd_control_state.Stun,
+        cast_id: 6,
+        instance_id: 5,
+      ),
+      client_connection.Moving(
+        server_time_ms: 7,
+        commands: game_connection_support.moved_unit_commands(),
+      ),
+      client_connection.Removed,
+    ])
+    == [
+      [0x0937],
+      [0x088C],
+      [0x088C],
+      [0x089A],
+      [0x087F],
+      [0x0880],
+      [0x0638],
+      [0x0355],
+    ]
+    as "each news writes the frames it wrote before the picture held a player's state: Health 0x937, CameBack and Died 0x88c, CombatState 0x89a, 0x87f, 0x880, 0x638 and 0x355"
+}
+
+/// The ids of the messages the viewer writes for each news of the unit 9 in turn, once the
+/// unit's 0x262 has come.
+fn written_for_news(
+  news news: List(client_connection.News),
+) -> List(List(Int)) {
+  let #(shown, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.event_of(Appears),
+    )
+  let #(_, written) =
+    list.fold(news, #(shown, []), fn(held, news) {
+      let #(state, written) = held
+      let #(state, taken) =
+        game_connection_support.feed(
+          state,
+          game_connection_support.sent_by_a_peer(
+            game_connection_support.news_of(unit_id: 9, news:),
+          ),
+        )
+      #(
+        state,
+        list.append(written, [game_connection_support.written_ids(taken)]),
+      )
+    })
+  written
 }

@@ -46,6 +46,18 @@ pub fn kind_of(target_type target_type: Int) -> Kind {
   }
 }
 
+/// Whether the client tests a spell of this target mechanic type for the target being the
+/// caster's pet or master (`Spell4Base.targetingFlags` bits 2 and 3, results 255 and 256):
+/// not for types 2, 3, 4, 7 and 8 (`CheckCastTarget` `0x1403b0880`, which skips them when
+/// `(type - 2) <= 2` or `(type - 7) <= 1`). The kinds cannot say it: each of 2 and 7 shares
+/// its kind with a type that is tested.
+pub fn tests_pet_bits(target_type target_type: Int) -> Bool {
+  case target_type {
+    2 | 3 | 4 | 7 | 8 -> False
+    _ -> True
+  }
+}
+
 /// The kind of a Spell4TargetMechanics row.
 pub fn of_row(row: Spell4TargetMechanics) -> Kind {
   kind_of(target_type: row.target_type)

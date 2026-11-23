@@ -71,6 +71,7 @@ import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
 import genesis_prime/table/spell4_stack_group
+import genesis_prime/table/spell4_target_angle
 import genesis_prime/table/spell4_target_mechanics
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
@@ -129,6 +130,8 @@ import genesis_prime/table/xp_per_level
 ///   starts, the stages of a RapidTap or ChargeRelease one, and whether its caster
 ///   may be dead (genesis_prime/game/spell_plan).
 /// - Spell4CCConditions: the crowd-control states that refuse a press of a spell
+///   (genesis_prime/game/spell_plan).
+/// - Spell4TargetAngle: how far off the caster's facing a press at a player may stand
 ///   (genesis_prime/game/spell_plan).
 /// - CCStates: the states whose flags stop a creature moving
 ///   (genesis_prime/game/crowd_control `stopping_mask`).
@@ -234,6 +237,7 @@ pub fn entries() -> List(store.Entry) {
     spell4_effects.entry(),
     spell4_group_list.entry(),
     spell4_stack_group.entry(),
+    spell4_target_angle.entry(),
     spell4_target_mechanics.entry(),
     spell4_telegraph.entry(),
     spell4_thresholds.entry(),

@@ -32,12 +32,16 @@
 ////   (`creature.facing`: kind 4 paths move a creature without turning it).
 //// - **A creature that faces a unit standing on its own ground point** keeps the yaw it showed
 ////   at the last news or move before (`with_resolved`, `ShownCreature.faced_yaw`).
-//// - **Another player's unit** keeps the ground point its last position command gave
-////   (`with_player_at`), for the creatures that face it.
+//// - **Another player's unit** keeps what a press at it judges (genesis_prime/game/player_state):
+////   its life, combat, crowd-control states and the place its last position command gave
+////   (`with_player_at`), changed by the news the viewer takes; the creatures that face it
+////   read that place's ground point.
 //// - **A creature's life** is the number of the map's watch it was started under,
 ////   which is part of its address (genesis_prime/step `Creature`).
 
 import genesis_prime/game/area.{type Candidate, type Point, type Pose, Candidate}
+import genesis_prime/game/held_state.{type HeldState}
+import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/prerequisite.{
   type FirstUnit, NonPlayer, OtherPlayer, TheChecker,
 }
@@ -66,10 +70,11 @@ pub type PlayerFaction {
 
 /// A unit the client shows.
 pub type Shown {
-  /// Another player's unit, which no area strikes, and the ground point its last position
-  /// command put it at (none before one), which the yaw of a creature that faces it reads
+  /// Another player's unit, which no area strikes, with what a press at it judges of it
+  /// (genesis_prime/game/player_state). Its place is where its last position command put
+  /// it (none before one), whose ground point the yaw of a creature that faces it reads
   /// (`pose_of`).
-  ShownPlayer(at: Option(Point))
+  ShownPlayer(state: PlayerState)
   /// A static object the map told of (genesis_prime/world_map/static_object),
   /// which has no fight state, so no area strikes it. It holds what the
   /// client's range check of a right-click reads of it (`opcode.0x97.range`).
@@ -135,11 +140,6 @@ pub type Shown {
     /// path that turns the creature; a fixed rotation sets its own yaw.
     faced_yaw: Option(Float),
   )
-}
-
-/// A crowd-control state a shown creature holds, with the instance id its 0x87f gave.
-pub type HeldState {
-  HeldState(state: CrowdControlState, instance_id: Int)
 }
 
 /// A unit state a shown creature holds (genesis_prime/game/unit_state), with the `number`
@@ -384,7 +384,8 @@ pub fn pose_of(
         Some(creature_turn.Unit(unit_id: faced)) ->
           case faced == viewer.unit_id, dict.get(picture, faced) {
             True, _ -> Ok(Toward(area.point_of(place: viewer.place)))
-            False, Ok(ShownPlayer(at: Some(point))) -> Ok(Toward(point))
+            False, Ok(ShownPlayer(state: PlayerState(place: Some(place), ..)))
+            -> Ok(Toward(area.point_of(place:)))
             False, _ -> Error(Nil)
           }
       }
@@ -581,28 +582,51 @@ pub fn with_face(
   }
 }
 
-/// The picture with the player's unit at `at` by a position command of its movement; a unit
-/// that is not a shown player is as it was.
+/// The picture with the player's unit at `place` by a position command of its movement; a
+/// unit that is not a shown player is as it was.
 pub fn with_player_at(
   picture picture: Picture,
   unit_id unit_id: Int,
-  at at: Point,
+  place place: Place,
+) -> Picture {
+  with_player_state(picture:, unit_id:, change: fn(state) {
+    PlayerState(..state, place: Some(place))
+  })
+}
+
+/// The picture with the shown player's state changed; a unit that is not a shown player is
+/// as it was.
+fn with_player_state(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  change change: fn(PlayerState) -> PlayerState,
 ) -> Picture {
   case dict.get(picture, unit_id) {
-    Ok(ShownPlayer(..)) ->
-      dict.insert(picture, unit_id, ShownPlayer(at: Some(at)))
+    Ok(ShownPlayer(state:)) ->
+      dict.insert(picture, unit_id, ShownPlayer(state: change(state)))
     Ok(ShownCreature(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
-/// The picture with the creature marked alive or dead by its owner's news, a dead
-/// creature holding no crowd-control or unit state; a unit that is not a shown creature is as it was.
+/// The picture with the creature or player marked alive or dead by its owner's news, a dead
+/// unit holding no crowd-control or unit state; an object or a unit not shown is as it was.
 pub fn with_alive(
   picture picture: Picture,
   unit_id unit_id: Int,
   alive alive: Bool,
 ) -> Picture {
   case dict.get(picture, unit_id) {
+    Ok(ShownPlayer(state:)) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownPlayer(
+          state: PlayerState(..state, alive:, held: case alive {
+            True -> state.held
+            False -> []
+          }),
+        ),
+      )
     Ok(ShownCreature(..) as creature) ->
       dict.insert(
         picture,
@@ -620,12 +644,12 @@ pub fn with_alive(
           },
         ),
       )
-    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
-/// The picture with the creature holding the state its owner's news gave, under the
-/// 0x87f's instance id; a unit that is not a shown creature is as it was.
+/// The picture with the creature or player holding the state its owner's news gave, under
+/// the 0x87f's instance id; an object or a unit not shown is as it was.
 pub fn with_held_applied(
   picture picture: Picture,
   unit_id unit_id: Int,
@@ -633,16 +657,23 @@ pub fn with_held_applied(
   instance_id instance_id: Int,
 ) -> Picture {
   case dict.get(picture, unit_id) {
+    Ok(ShownPlayer(..)) ->
+      with_player_state(picture:, unit_id:, change: fn(player) {
+        PlayerState(
+          ..player,
+          held: held_state.applied(held: player.held, state:, instance_id:),
+        )
+      })
     Ok(ShownCreature(held:, ..) as creature) ->
       dict.insert(
         picture,
         unit_id,
         ShownCreature(
           ..creature,
-          held: list.append(held, [HeldState(state:, instance_id:)]),
+          held: held_state.applied(held:, state:, instance_id:),
         ),
       )
-    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
@@ -694,30 +725,34 @@ pub fn with_unit_state_ended(
   }
 }
 
-/// The picture with the creature no longer holding the state of that instance id (the
-/// 0x880 names one instance), the creature's other instances kept; a unit that is not a
-/// shown creature is as it was.
+/// The picture with the creature or player no longer holding the state of that instance id
+/// (the 0x880 names one instance), its other instances kept; an object or a unit not shown
+/// is as it was.
 pub fn with_held_ended(
   picture picture: Picture,
   unit_id unit_id: Int,
   instance_id instance_id: Int,
 ) -> Picture {
   case dict.get(picture, unit_id) {
+    Ok(ShownPlayer(..)) ->
+      with_player_state(picture:, unit_id:, change: fn(player) {
+        PlayerState(
+          ..player,
+          held: held_state.ended(held: player.held, instance_id:),
+        )
+      })
     Ok(ShownCreature(held:, ..) as creature) ->
       dict.insert(
         picture,
         unit_id,
-        ShownCreature(
-          ..creature,
-          held: list.filter(held, fn(one) { one.instance_id != instance_id }),
-        ),
+        ShownCreature(..creature, held: held_state.ended(held:, instance_id:)),
       )
-    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
-/// The picture with the creature marked in combat or out of it by its owner's news; a
-/// unit that is not a shown creature is as it was.
+/// The picture with the creature or player marked in combat or out of it by its owner's
+/// news; an object or a unit not shown is as it was.
 pub fn with_in_combat(
   picture picture: Picture,
   unit_id unit_id: Int,
@@ -726,6 +761,10 @@ pub fn with_in_combat(
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
       dict.insert(picture, unit_id, ShownCreature(..creature, in_combat:))
-    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownPlayer(..)) ->
+      with_player_state(picture:, unit_id:, change: fn(player) {
+        PlayerState(..player, in_combat:)
+      })
+    Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
