@@ -27,7 +27,8 @@ import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, Selection,
 }
 import genesis_prime/game/strike_tell.{
-  type PlayerOutcome, HealLanded, HealsLanded, PlayerAnswered, PlayerDead,
+  type PlayerAnswered, type PlayerOutcome, HealLanded, HealsLanded,
+  PlayerAnswered, PlayerDead,
 }
 import genesis_prime/game/unit_properties
 import genesis_prime/step.{ConnectionId, Now}
@@ -35,7 +36,7 @@ import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import genesis_prime/world_map/creature_life.{Attackable}
 import gleam/dict
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import map_support
 import owned_test
 import properties_support
@@ -108,6 +109,15 @@ fn at(ms ms: Int) -> step.Now {
 /// The caster of level 5 and 400 Support Rating, with the healing multiplier outgoing 162
 /// at 1.25 and `sight` its players in sight by unit id.
 fn healer(sight sight: List(PlayerAddress)) -> Attacker {
+  healer_with(sight:, support_rating: 400.0, outgoing: 1.25)
+}
+
+/// The same with this Support Rating and this healing multiplier outgoing.
+fn healer_with(
+  sight sight: List(PlayerAddress),
+  support_rating support_rating: Float,
+  outgoing outgoing: Float,
+) -> Attacker {
   let properties =
     properties_support.with_modifier(
       properties: properties_support.fresh(level: 1),
@@ -115,7 +125,7 @@ fn healer(sight sight: List(PlayerAddress)) -> Attacker {
       modifier: unit_properties.Change(
         property: UnitProperty2Id(162),
         mode: 1,
-        multiplier: 1.25,
+        multiplier: outgoing,
         flat: 0.0,
         per_level: 0.0,
       ),
@@ -126,7 +136,7 @@ fn healer(sight sight: List(PlayerAddress)) -> Attacker {
       ..attacker_support.fresh(),
       level: 5,
       assault_rating: 0.0,
-      support_rating: 400.0,
+      support_rating:,
     ),
     properties:,
     players_in_sight: dict.from_list(
@@ -669,4 +679,324 @@ pub fn a_players_answer_fills_its_place_and_the_go_lists_the_player_with_what_it
       assert observed == row.effects as row.reason
     },
   )
+}
+
+// ---- a tick of a periodic heal on a player ----
+
+/// Bolster's heal row (Spell4Effects 80077: type 10, targetFlags 2, tickTime 1000,
+/// parameters 13 x 0.1977 and 10 x 10.54, `table_rows -- Spell4Effects 80077`) as the
+/// tick of cast 5's first go asks for it, `tick` being the tick, for the unit 9.
+fn heal_tick_asked(
+  effect_id effect_id: Int,
+  tick tick: Int,
+  unit_id unit_id: Int,
+) -> cast_state.TickAsked {
+  cast_state.TickAsked(
+    cast_id: 5,
+    spell4_id: Spell4Id(32_821),
+    effect_id: Spell4EffectsId(effect_id),
+    unit_id:,
+    life: 0,
+    go: 1,
+    tick:,
+    what: cast_state.TellHeal(
+      vital: effect_kind.Health,
+      formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+        damage.Parameter(kind: 13, value: 0.1977),
+        damage.Parameter(kind: 10, value: 10.54),
+        damage.Parameter(kind: 0, value: 0.0),
+        damage.Parameter(kind: 0, value: 0.0),
+      ]),
+      passed_in: None,
+    ),
+  )
+}
+
+/// A tick of the heal begun at `now_ms` for this caster, with no seed bytes: a heal tick
+/// draws none.
+fn heal_tick_begun(
+  state state: strike.State,
+  asked asked: cast_state.TickAsked,
+  attacker attacker: Attacker,
+  now_ms now_ms: Int,
+) -> #(strike.State, List(Effect)) {
+  strike.begin_tick(
+    strike: state,
+    asked:,
+    attacker:,
+    formulas: rating_support.formulas(),
+    entropy: <<>>,
+    now: at(ms: now_ms),
+  )
+}
+
+/// The strike the caster's connection 2 in its first stay tells the player 9 for tick
+/// `tick` of the row `effect_id`, in cast 5's first go, with this outgoing multiplier and
+/// this amount.
+fn tick_strike_of(
+  effect_id effect_id: Int,
+  tick tick: Int,
+  outgoing outgoing: Float,
+  amount amount: Int,
+) -> strike_tell.PlayerStrike {
+  strike_tell.PlayerStrike(
+    key: strike_tell.Key(
+      cast_id: 5,
+      occasion: strike_tell.AtTick(
+        effect_id: Spell4EffectsId(effect_id),
+        go: 1,
+        tick:,
+      ),
+      unit_id: 9,
+    ),
+    from: ConnectionId(2),
+    stay: map_support.stay(count: 1),
+    outgoing:,
+    heals: [
+      strike_tell.HealTell(
+        effect_id: Spell4EffectsId(effect_id),
+        vital: effect_kind.Health,
+        amount:,
+      ),
+    ],
+  )
+}
+
+pub fn a_heal_tick_on_a_player_in_sight_tells_its_connection_the_row_with_the_amount_of_that_tick_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Bolster's row at level 5: round(0.1977 x 100) + 10.54 x 5 = 20 + 52.7 = 72.7, which is
+  // 73 (the stat part is rounded alone, `0x140565600`; Support Power is a quarter of the
+  // 400 Support Rating); at 800 Support Rating the power is 200: 40 + 52.7 = 92.7, which is 93.
+  let tick_one = heal_tick_asked(effect_id: 80_077, tick: 1, unit_id: 9)
+  let tick_two = heal_tick_asked(effect_id: 80_077, tick: 2, unit_id: 9)
+  let second_row = heal_tick_asked(effect_id: 80_078, tick: 1, unit_id: 9)
+  let sees = [ally(unit_id: 9)]
+  // Each row is the tells of its begun ticks, in order, and the timers its steps start.
+  list.each(
+    [
+      #(
+        "one tick: one tell of the row 80077 for its go and tick, the caster's stay and outgoing 1.25 and the amount 73, a 1000 ms timer, and no strike of a creature",
+        healer(sight: sees),
+        [tick_one],
+        [
+          ToldPlayer(
+            address: ally(unit_id: 9),
+            strike: tick_strike_of(
+              effect_id: 80_077,
+              tick: 1,
+              outgoing: 1.25,
+              amount: 73,
+            ),
+          ),
+          Started(after_ms: 1000),
+        ],
+      ),
+      #(
+        "the caster's Support Rating is 800 at the tick: the tell carries 93, the amount of that tick and not of the go",
+        healer_with(sight: sees, support_rating: 800.0, outgoing: 1.25),
+        [tick_one],
+        [
+          ToldPlayer(
+            address: ally(unit_id: 9),
+            strike: tick_strike_of(
+              effect_id: 80_077,
+              tick: 1,
+              outgoing: 1.25,
+              amount: 93,
+            ),
+          ),
+          Started(after_ms: 1000),
+        ],
+      ),
+      #(
+        "the caster's outgoing multiplier is 1.5 at the tick: the tell carries 1.5",
+        healer_with(sight: sees, support_rating: 400.0, outgoing: 1.5),
+        [tick_one],
+        [
+          ToldPlayer(
+            address: ally(unit_id: 9),
+            strike: tick_strike_of(
+              effect_id: 80_077,
+              tick: 1,
+              outgoing: 1.5,
+              amount: 73,
+            ),
+          ),
+          Started(after_ms: 1000),
+        ],
+      ),
+      #(
+        "two rows due together are two tells, each keyed by its own row, and the timer is started once",
+        healer(sight: sees),
+        [tick_one, second_row],
+        [
+          ToldPlayer(
+            address: ally(unit_id: 9),
+            strike: tick_strike_of(
+              effect_id: 80_077,
+              tick: 1,
+              outgoing: 1.25,
+              amount: 73,
+            ),
+          ),
+          Started(after_ms: 1000),
+          ToldPlayer(
+            address: ally(unit_id: 9),
+            strike: tick_strike_of(
+              effect_id: 80_078,
+              tick: 1,
+              outgoing: 1.25,
+              amount: 73,
+            ),
+          ),
+        ],
+      ),
+      #(
+        "the second tick of the schedule is its own tell, keyed by its tick",
+        healer(sight: sees),
+        [tick_two],
+        [
+          ToldPlayer(
+            address: ally(unit_id: 9),
+            strike: tick_strike_of(
+              effect_id: 80_077,
+              tick: 2,
+              outgoing: 1.25,
+              amount: 73,
+            ),
+          ),
+          Started(after_ms: 1000),
+        ],
+      ),
+    ],
+    fn(row) {
+      let #(reason, attacker, asks, expected) = row
+      let #(_, effects) =
+        list.fold(asks, #(strike.new(), []), fn(so_far, asked) {
+          let #(state, effects) = so_far
+          let #(state, more) =
+            heal_tick_begun(state:, asked:, attacker:, now_ms: 2000)
+          #(state, list.append(effects, more))
+        })
+      assert told(effects:) == expected as reason
+    },
+  )
+  assert strike.tick_entropy_needed(asked: tick_one) == 0
+    as "a heal tick draws no seed bytes: it rolls nothing"
+}
+
+/// The first heal tick begun for the player 9 in sight, with its round open at 2000 ms.
+fn heal_tick_open(
+  sight sight: List(PlayerAddress),
+) -> #(strike.State, List(Effect)) {
+  heal_tick_begun(
+    state: strike.new(),
+    asked: heal_tick_asked(effect_id: 80_077, tick: 1, unit_id: 9),
+    attacker: healer(sight:),
+    now_ms: 2000,
+  )
+}
+
+fn applied_heal() -> strike_tell.HealLanded {
+  HealLanded(
+    effect_id: Spell4EffectsId(80_077),
+    vital: effect_kind.Health,
+    split: Split(amount: 73, shield: 0, health: 60, overheal: 13),
+  )
+}
+
+/// The tick answer of the player 9 for tick 1 of the row 80077 in the first go.
+fn tick_answer(outcome outcome: PlayerOutcome) -> PlayerAnswered {
+  PlayerAnswered(
+    key: strike_tell.Key(
+      cast_id: 5,
+      occasion: strike_tell.AtTick(
+        effect_id: Spell4EffectsId(80_077),
+        go: 1,
+        tick: 1,
+      ),
+      unit_id: 9,
+    ),
+    outcome:,
+  )
+}
+
+pub fn a_players_answer_to_a_heal_tick_closes_the_tick_round_and_a_player_gone_dead_or_silent_leaves_it_empty_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let asked = heal_tick_asked(effect_id: 80_077, tick: 1, unit_id: 9)
+  let healed =
+    Some(
+      cast_state.Hit(
+        unit_id: 9,
+        unit: cast_state.HitOtherPlayer(heals: [applied_heal()]),
+        descriptions: [],
+        controls: [],
+        armor_removed: 0,
+        ticking: [],
+      ),
+    )
+  let #(state, begun) = heal_tick_open(sight: [ally(unit_id: 9)])
+  assert told(effects: begun)
+    == [
+      ToldPlayer(
+        address: ally(unit_id: 9),
+        strike: tick_strike_of(
+          effect_id: 80_077,
+          tick: 1,
+          outgoing: 1.25,
+          amount: 73,
+        ),
+      ),
+      Started(after_ms: 1000),
+    ]
+    as "the tick's round waits for the ally with one 1000 ms deadline"
+  let #(_, answered) =
+    strike.player_answered(
+      strike: state,
+      answer: tick_answer(outcome: HealsLanded([applied_heal()])),
+      now: at(ms: 2100),
+    )
+  assert answered
+    == [
+      strike.CancelTimer(timer: strike.strike_timer),
+      strike.Ticked(asked:, struck: healed),
+    ]
+    as "the ally's HealsLanded fills the place and closes the round with the ally's hit and the heals it applied"
+  let #(_, dead) =
+    strike.player_answered(
+      strike: state,
+      answer: tick_answer(outcome: PlayerDead),
+      now: at(ms: 2100),
+    )
+  assert strike_support.ticks_closed(effects: dead) == [#(asked, None)]
+    as "a dead ally leaves the round empty"
+  let #(_, silent) = strike.timer_fired(strike: state, now: at(ms: 3000))
+  assert strike_support.ticks_closed(effects: silent) == [#(asked, None)]
+    as "no answer by the 1 s deadline leaves the round empty"
+  let #(_, late) =
+    strike.player_answered(
+      strike: state,
+      answer: tick_answer(outcome: HealsLanded([applied_heal()])),
+      now: at(ms: 3500),
+    )
+  assert strike_support.ticks_closed(effects: late) == [#(asked, healed)]
+    as "an answer taken before the timer is processed is listed, whatever the clock says"
+  let #(closed, _) = strike.timer_fired(strike: state, now: at(ms: 3000))
+  let #(_, after) =
+    strike.player_answered(
+      strike: closed,
+      answer: tick_answer(outcome: HealsLanded([applied_heal()])),
+      now: at(ms: 3100),
+    )
+  assert after == [] as "an answer after the round closed is dropped"
+  let #(_, gone) = heal_tick_open(sight: [])
+  assert told(effects: gone) == []
+    as "an ally no longer in the caster's picture at the tick is told nothing and no timer is started"
+  assert strike_support.ticks_closed(effects: gone) == [#(asked, None)]
+    as "and its round closes at once with nobody"
+  assert list.map(strike_support.lines_logged(effects: gone), fn(line) {
+      line.0
+    })
+    == [step.LogDebug]
+    as "with one debug line"
 }

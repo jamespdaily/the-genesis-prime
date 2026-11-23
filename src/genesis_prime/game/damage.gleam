@@ -432,6 +432,22 @@ pub type OnCaster {
   OnCaster(attacker: Attacker, vitals: Vitals)
 }
 
+/// What the formula reads of a caster that is also the target, from its stats and vitals:
+/// the passed-in value is the cast's own when it has one (an item's), else the stats' own.
+pub fn on_caster_with(
+  stats stats: Attacker,
+  vitals vitals: Vitals,
+  passed_in passed_in: Option(Float),
+) -> OnCaster {
+  OnCaster(
+    attacker: Attacker(
+      ..stats,
+      passed_in: option.unwrap(passed_in, stats.passed_in),
+    ),
+    vitals:,
+  )
+}
+
 /// A unit's health and shield as the formula's flat kinds read them.
 pub type Vitals {
   Vitals(health: Int, max_health: Int, shield: Int, max_shield: Int)

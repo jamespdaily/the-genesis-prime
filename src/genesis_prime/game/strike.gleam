@@ -34,6 +34,9 @@
 ////   ◀──────────────────────────── Answered(key, Landed | Deflected | Refused) ◀─────────┘
 ////   the round closes as a go's does
 ////     Ticked(asked, struck) ─▶ the connection calls cast.ticked(asked, struck)
+//// a tick of a periodic heal on a player in sight (no seed bytes drawn):
+////   begin_tick: TellPlayerStrike(T, PlayerStrike(key AtTick, from, stay, outgoing, the row's heal))
+////   ◀── PlayerAnswered(key, HealsLanded | PlayerDead) ◀── T; the round closes as above
 ////     Released(unit, news) for the health news held for the unit
 //// cast rule tick timer ─▶ Effect FindProxyTickUnits(ProxyTickAsked k, row, phase, start pose)
 ////   select_proxy_tick(asked, attacker, picture, areas) ─▶ the unit ids inside the area now
@@ -144,6 +147,7 @@ import genesis_prime/game/cast/state.{
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit
@@ -162,6 +166,7 @@ import genesis_prime/gap
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
 }
+import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
@@ -592,8 +597,14 @@ fn throwing_rows(
   list.filter(selection.controls, fn(row) { option.is_some(row.move) })
 }
 
-/// The seed bytes a tick's strike takes: one unit's rolls.
-pub const tick_entropy_needed = bytes_per_unit
+/// The seed bytes a tick takes: one unit's rolls for a blow, none for a heal, which a
+/// periodic heal row never rolls (no heal row has a chance gate).
+pub fn tick_entropy_needed(asked asked: TickAsked) -> Int {
+  case asked.what {
+    cast_state.StrikeWithBlow(..) -> bytes_per_unit
+    cast_state.TellHeal(..) -> 0
+  }
+}
 
 /// A selection begins its round: the rows of the phase that reach each unit past their
 /// apply prerequisites (`gate`), a strike told to each unit one of them reaches with
@@ -725,16 +736,12 @@ fn players_told(
                 stay: attacker.stay,
                 outgoing: heal_split.scaling_of(properties: attacker.properties).outgoing,
                 heals: list.map(rows, fn(row) {
-                  strike_tell.HealTell(
+                  heal_tell(
                     effect_id: row.effect_id,
                     vital: row.vital,
-                    amount: damage.amount_on_caster(
-                      formula: row.formula,
-                      caster: damage.OnCaster(
-                        attacker: attacker.stats,
-                        vitals: attacker.vitals,
-                      ),
-                    ),
+                    formula: row.formula,
+                    passed_in: None,
+                    attacker:,
                   )
                 }),
               ),
@@ -745,6 +752,30 @@ fn players_told(
   #(
     list.map(told, fn(entry) { entry.0 }),
     list.map(told, fn(entry) { entry.1 }),
+  )
+}
+
+/// The tell of one heal row: the row, its vital and the amount its formula gives for the
+/// caster as it is now, with the item's passed-in value when the cast has one. The go and
+/// each tick tell their rows by this one function.
+fn heal_tell(
+  effect_id effect_id: Spell4EffectsId,
+  vital vital: effect_kind.Vital,
+  formula formula: damage.Formula,
+  passed_in passed_in: Option(Float),
+  attacker attacker: Attacker,
+) -> strike_tell.HealTell {
+  strike_tell.HealTell(
+    effect_id:,
+    vital:,
+    amount: damage.amount_on_caster(
+      formula:,
+      caster: damage.on_caster_with(
+        stats: attacker.stats,
+        vitals: attacker.vitals,
+        passed_in:,
+      ),
+    ),
   )
 }
 
@@ -1037,10 +1068,13 @@ fn gates_told(
   })
 }
 
-/// A tick of a periodic row begins its round of one unit: a strike told to the unit
-/// with `entropy`'s rolls and the row's damage alone, keyed by the tick and the go whose
-/// schedule it is (`strike_tell.AtTick`), its deadline 1 second on, and the round closed in order
-/// with the cast's other rounds as a go's is.
+/// A tick of a periodic row begins its round of one unit, keyed by the tick and the go whose
+/// schedule it is (`strike_tell.AtTick`), its deadline 1 second on, and closed in order with
+/// the cast's other rounds as a go's is. A damage row strikes the creature with `entropy`'s
+/// rolls and the row's damage alone. A heal row is told to the player's connection with the
+/// amount of the formula for the caster as it is now and its outgoing multiplier now, which
+/// applies it and answers (`player_answered`); a player no longer in the caster's sight is
+/// told nothing and its place is empty at once, so its ticks end (`cast_tick.tick_outcome`).
 pub fn begin_tick(
   strike strike: State,
   asked asked: TickAsked,
@@ -1059,28 +1093,68 @@ pub fn begin_tick(
       ),
       unit_id: asked.unit_id,
     )
-  let #(place, tells) = case rolls_at(entropy:, index: 0) {
-    Ok(rolls) -> #(
-      Waiting(
-        unit_id: asked.unit_id,
-        awaits: AwaitedCreature(life: asked.life, ticking: []),
-      ),
-      [
-        TellStrike(
-          unit_id: asked.unit_id,
-          life: asked.life,
-          tell: tell_of(
-            key:,
-            attacker:,
-            rolls:,
-            offence: offence_of(blows: [asked.blow], attacker:, formulas:),
-            controls: [],
-            gates: [],
+  let #(place, tells) = case asked.what {
+    cast_state.StrikeWithBlow(blow:) ->
+      case rolls_at(entropy:, index: 0) {
+        Ok(rolls) -> #(
+          Waiting(
+            unit_id: asked.unit_id,
+            awaits: AwaitedCreature(life: asked.life, ticking: []),
           ),
-        ),
-      ],
-    )
-    Error(Nil) -> #(LeftOut(unit_id: asked.unit_id), [no_seed_bytes])
+          [
+            TellStrike(
+              unit_id: asked.unit_id,
+              life: asked.life,
+              tell: tell_of(
+                key:,
+                attacker:,
+                rolls:,
+                offence: offence_of(blows: [blow], attacker:, formulas:),
+                controls: [],
+                gates: [],
+              ),
+            ),
+          ],
+        )
+        Error(Nil) -> #(LeftOut(unit_id: asked.unit_id), [no_seed_bytes])
+      }
+    cast_state.TellHeal(vital:, formula:, passed_in:) ->
+      case dict.get(attacker.players_in_sight, asked.unit_id) {
+        Ok(address) -> #(
+          Waiting(unit_id: asked.unit_id, awaits: AwaitedPlayer),
+          [
+            TellPlayerStrike(
+              address:,
+              strike: strike_tell.PlayerStrike(
+                key:,
+                from: attacker.connection,
+                stay: attacker.stay,
+                outgoing: heal_split.scaling_of(properties: attacker.properties).outgoing,
+                heals: [
+                  heal_tell(
+                    effect_id: asked.effect_id,
+                    vital:,
+                    formula:,
+                    passed_in:,
+                    attacker:,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        )
+        Error(Nil) -> #(LeftOut(unit_id: asked.unit_id), [
+          debug(
+            "the heal tick "
+            <> int.to_string(asked.tick)
+            <> " of the effect "
+            <> int.to_string(asked.effect_id.value)
+            <> " is aimed at the unit "
+            <> int.to_string(asked.unit_id)
+            <> ", which is no longer a player in the caster's sight, so it is told nothing and the unit's ticks end",
+          ),
+        ])
+      }
   }
   opened(strike:, asked: ForTick(asked:), places: [place], tells:, now:)
 }
@@ -1686,6 +1760,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Strikes",
       missing: "the order of the units a tick of a periodic Proxy aimed at the area finds when its area row picks at random: the client names the order and ranks nothing, so the server seeds it by the cast and the tick; the units of such a tick are those inside the area over the picture at the tick, since the client runs no Proxy",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A periodic heal on another player ends at the first tick with no answer, a dead player or a player gone from the caster's picture, and does not resume; a heal applied after its round closed still lands, unlisted.",
     ),
     gap.Entry(
       area: "Casting",

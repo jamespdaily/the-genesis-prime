@@ -28,8 +28,10 @@ import genesis_prime/game/cast/state.{type GoAsked, GoAsked} as cast_state
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls, Worked}
+import genesis_prime/game/player_address
 import genesis_prime/game/shown.{ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
@@ -51,6 +53,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import map_support
 import owned_test
 import place_support
 import properties_support
@@ -2262,7 +2265,7 @@ fn tick_asked(go go: Int, tick tick: Int) -> cast_state.TickAsked {
     life: 3,
     go:,
     tick:,
-    blow: surge_blow(),
+    what: cast_state.StrikeWithBlow(blow: surge_blow()),
   )
 }
 
@@ -2447,6 +2450,80 @@ pub fn a_tick_while_the_last_is_open_closes_in_order_test() -> Nil {
   assert list.map(ticked(effects: earlier), fn(closed) { { closed.0 }.tick })
     == [1, 2]
     as "both close at once, tick 1 first"
+  // A heal tick of an ally whose answer is in waits for the cast's earlier go round, which
+  // a creature has not answered, and closes after it.
+  let ally =
+    player_address.PlayerAddress(
+      connection: ConnectionId(3),
+      unit_id: 9,
+      stay: map_support.stay(count: 2),
+    )
+  let #(state, _) =
+    begun(
+      state: strike.new(),
+      selection: selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10],
+        damaging: True,
+      ),
+      now_ms: 1000,
+    )
+  let #(state, _) =
+    strike.begin_tick(
+      strike: state,
+      asked: cast_state.TickAsked(
+        ..tick_asked(go: 1, tick: 1),
+        unit_id: 9,
+        life: 0,
+        what: cast_state.TellHeal(
+          vital: effect_kind.Health,
+          formula: damage.Formula(multiplier: 1.0, base: 50.0, parameters: []),
+          passed_in: None,
+        ),
+      ),
+      attacker: Attacker(
+        ..strike_support.attacker(),
+        players_in_sight: dict.from_list([#(9, ally)]),
+      ),
+      formulas: rating_support.formulas(),
+      entropy: <<>>,
+      now: at(ms: 1500),
+    )
+  let #(state, healed) =
+    strike.player_answered(
+      strike: state,
+      answer: strike_tell.PlayerAnswered(
+        key: Key(
+          cast_id: 5,
+          occasion: strike_tell.AtTick(
+            effect_id: Spell4EffectsId(96_125),
+            go: 1,
+            tick: 1,
+          ),
+          unit_id: 9,
+        ),
+        outcome: strike_tell.HealsLanded(heals: []),
+      ),
+      now: at(ms: 1600),
+    )
+  assert went(effects: healed) == [] && ticked(effects: healed) == []
+    as "the ally's heal tick has its answer but waits for the go before it, which the creature has not answered"
+  let #(_, after) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
+      outcome: landed(),
+      now_ms: 1700,
+    )
+  assert list.map(
+      strike_support.only(effects: after, kinds: [
+        strike_support.RoundClosed,
+        strike_support.TickClosed,
+      ]),
+      strike_support.kind_of,
+    )
+    == [strike_support.RoundClosed, strike_support.TickClosed]
+    as "the go closes first and the ally's heal tick after it"
 }
 
 pub fn a_tick_left_out_at_the_deadline_test() -> Nil {

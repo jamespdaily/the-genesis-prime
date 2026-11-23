@@ -23,6 +23,7 @@
 
 import cast_support as support
 import class_resource_support
+import genesis_prime/client_connection.{CastTicked}
 import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/heal as cast_heal
@@ -32,16 +33,28 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Spell}
+import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
 import genesis_prime/game/target_mechanic.{Targeted, Targeting}
+import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
+import genesis_prime/message/spell_damage_description.{
+  type SpellDamageDescription,
+}
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_effect_tick.{
+  type SpellEffectTick, SpellEffectTick,
+}
+import genesis_prime/message/spell_finished
 import genesis_prime/step.{ConnectionId, LogWarning}
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
-import gleam/option
+import gleam/option.{None, Some}
+import gleam/string
 import map_support
 import owned_test
 import prerequisite_support
@@ -385,25 +398,37 @@ fn healer_pressed_at(
   target target: Int,
   struck struck: List(cast_state.Struck),
 ) -> #(List(Effect), List(Effect)) {
+  let #(_, pressed, went) =
+    healer_scene(rows:, at_go: healing_ally_in_sight(), target:, struck:)
+  #(pressed, went)
+}
+
+/// The same, with the state the go leaves and the caster the go is written for, who may
+/// have lost sight of the target since the press (the press is the caster who sees the ally).
+fn healer_scene(
+  rows rows: List(spell_plan.Heal),
+  at_go at_go: Caster,
+  target target: Int,
+  struck struck: List(cast_state.Struck),
+) -> #(State, List(Effect), List(Effect)) {
   let spell =
     support.with_effects(
       spell: targeted(spell4_id: 5001, base: 3, cooldown_ms: 0),
       kinds: list.map(rows, spell_plan.HealEffect),
     )
   let plans = support.with_spells(plans: plans(), spells: [spell])
-  let caster = healing_ally_in_sight()
   let #(state, pressed) =
     pressed(
       plans:,
       state: cast_state.new(),
-      caster:,
+      caster: healing_ally_in_sight(),
       bag_index: bag_of_base_3,
       target:,
       at: 1000,
     )
-  let #(_, answered) =
+  let #(state, answered) =
     support.answered_each(
-      caster:,
+      caster: at_go,
       state:,
       effects: pressed,
       at: 1000,
@@ -411,7 +436,7 @@ fn healer_pressed_at(
       rolls: [],
       poses: dict.new(),
     )
-  #(pressed, answered)
+  #(state, pressed, answered)
 }
 
 /// One go at an ally whose heals were answered: the rows the spell holds, what the ally
@@ -711,6 +736,459 @@ pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters
   assert support.listed_effect_ids(effects: went) == []
     && support.caster_change_starts(effects: list.append(pressed, went)) == []
     as "a row aimed at the caster and the ally whose caster gate fails at the go is left out whole, though the ally applied its heal"
+}
+
+// ---- a periodic heal pressed at an ally ----
+
+/// A periodic heal row of Bolster's shape (Spell4Effects 80077: type 10, targetFlags 2, no
+/// delay, tickTime 1000, durationTime 8000, no prerequisite) cut to three ticks, aimed as
+/// given and of this vital, with Mind Over Body's formula.
+fn periodic_row(
+  id id: Int,
+  vital vital: effect_kind.Vital,
+  aim aim: spell_plan.Aim,
+  condition condition: spell_plan.Condition,
+) -> spell_plan.Heal {
+  spell_plan.TickingHeal(
+    effect_id: Spell4EffectsId(id),
+    vital:,
+    phase_flags: -1,
+    aim:,
+    condition:,
+    tag: spend.always,
+    formula: support.mind_over_body_formula(),
+    schedule: Schedule(
+      delay_ms: 0,
+      tick_ms: 1000,
+      duration_ms: 3000,
+      count: Ticks(3),
+    ),
+  )
+}
+
+/// The caster of the scenes, who has lost sight of every player.
+fn blind() -> Caster {
+  cast_state.Caster(..healing_ally_in_sight(), players_in_sight: dict.new())
+}
+
+/// One go of a periodic heal and what it arms: the caster the go is written for, the unit
+/// the press named, the ticks armed on the ally and on the caster, the units the go lists
+/// with their rows, the delays of the timers it starts, and whether a debug line says a
+/// heal lands nothing.
+type Arming {
+  Arming(
+    why: String,
+    rows: List(spell_plan.Heal),
+    at_go: Caster,
+    target: Int,
+    ticks_on_ally: Int,
+    ticks_on_caster: Int,
+    listed: List(#(Int, List(Int))),
+    delays: List(Int),
+    lands_nothing_logged: Bool,
+  )
+}
+
+pub fn a_periodic_heal_pressed_at_an_ally_ticks_on_the_ally_and_on_the_caster_only_where_its_aim_names_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let primary = spell_plan.AimsAtPrimaryTarget
+  let health = effect_kind.Health
+  let not_under =
+    prerequisite_support.single(id: 36_007, condition: #(50, 1, 0, 77_237))
+  list.each(
+    [
+      Arming(
+        why: "the row at the primary target, the ally in sight: the go lists the row on the ally, arms its first tick 1000 ms on and ends its node at the row's 3000 ms (the cast's 0x7fe waits for it), and says nothing about a heal that lands nothing",
+        rows: [
+          periodic_row(
+            id: 80_077,
+            vital: health,
+            aim: primary,
+            condition: spell_plan.Always,
+          ),
+        ],
+        at_go: healing_ally_in_sight(),
+        target: ally,
+        ticks_on_ally: 1,
+        ticks_on_caster: 0,
+        listed: [#(ally, [80_077])],
+        delays: [1000, 3000],
+        lands_nothing_logged: False,
+      ),
+      Arming(
+        why: "the ally left the caster's sight between the press and the go: nothing is armed and the debug line says the row lands nothing (the control)",
+        rows: [
+          periodic_row(
+            id: 80_077,
+            vital: health,
+            aim: primary,
+            condition: spell_plan.Always,
+          ),
+        ],
+        at_go: blind(),
+        target: ally,
+        ticks_on_ally: 0,
+        ticks_on_caster: 0,
+        listed: [],
+        delays: [],
+        lands_nothing_logged: True,
+      ),
+      Arming(
+        why: "a row aimed at the caster and the primary target (targetFlags 3): two schedules, the ally's and the caster's own, and one node-end timer for the cast",
+        rows: [
+          periodic_row(
+            id: 80_077,
+            vital: health,
+            aim: spell_plan.AimsAtCasterAndPrimaryTarget,
+            condition: spell_plan.Always,
+          ),
+        ],
+        at_go: healing_ally_in_sight(),
+        target: ally,
+        ticks_on_ally: 1,
+        ticks_on_caster: 1,
+        listed: [#(7, [80_077]), #(ally, [80_077])],
+        delays: [1000, 1000, 3000],
+        lands_nothing_logged: False,
+      ),
+      Arming(
+        why: "the press at the caster itself: its own schedule alone (the control)",
+        rows: [
+          periodic_row(
+            id: 80_077,
+            vital: health,
+            aim: primary,
+            condition: spell_plan.Always,
+          ),
+        ],
+        at_go: healing_ally_in_sight(),
+        target: 7,
+        ticks_on_ally: 0,
+        ticks_on_caster: 1,
+        listed: [#(7, [80_077])],
+        delays: [1000, 3000],
+        lands_nothing_logged: False,
+      ),
+      Arming(
+        why: "the row's caster gate fails at the go (type 50, comparison 1: the caster is under Spell4 77237 and holds nothing of it): nobody is armed",
+        rows: [
+          periodic_row(
+            id: 80_077,
+            vital: health,
+            aim: primary,
+            condition: spell_plan.GatedOnCaster(gates: [not_under]),
+          ),
+        ],
+        at_go: healing_ally_in_sight(),
+        target: ally,
+        ticks_on_ally: 0,
+        ticks_on_caster: 0,
+        listed: [],
+        delays: [],
+        lands_nothing_logged: False,
+      ),
+    ],
+    fn(row) {
+      let #(state, pressed, went) =
+        healer_scene(
+          rows: row.rows,
+          at_go: row.at_go,
+          target: row.target,
+          struck: [],
+        )
+      assert support.tick_timers_on(state:, unit_id: ally) == row.ticks_on_ally
+        as { row.why <> ": the ticks on the ally" }
+      assert support.tick_timers_on(state:, unit_id: 7) == row.ticks_on_caster
+        as { row.why <> ": the ticks on the caster" }
+      assert list.sort(support.listed_by_unit(effects: went), fn(first, second) {
+          int.compare(first.0, second.0)
+        })
+        == row.listed
+        as { row.why <> ": the units the go lists" }
+      assert list.sort(support.delays_of(effects: went), int.compare)
+        == row.delays
+        as { row.why <> ": the timers the go starts" }
+      assert support.caster_change_starts(effects: list.append(pressed, went))
+        == []
+        as { row.why <> ": no heal is carried out at the go" }
+      assert list.any(support.logs(effects: went), fn(line) {
+          string.contains(line.1, "lands nothing here")
+        })
+        == row.lands_nothing_logged
+        as { row.why <> ": the debug line of a heal that lands nothing" }
+    },
+  )
+}
+
+/// One periodic row pressed at the ally and run to its first tick (1000 ms after the go):
+/// the state, the cast id and the effects of the tick's step.
+fn first_tick_at_ally(row row: spell_plan.Heal) -> #(State, Int, List(Effect)) {
+  let #(state, pressed, went) =
+    healer_scene(
+      rows: [row],
+      at_go: healing_ally_in_sight(),
+      target: ally,
+      struck: [],
+    )
+  let #(state, fired) =
+    support.run_timers_posed(
+      caster: healing_ally_in_sight(),
+      state:,
+      effects: went,
+      from_ms: 1000,
+      struck_at: fn(_, _) { [] },
+      poses: dict.new(),
+      until_ms: Some(2000),
+    )
+  let assert [tick] = fired as "one timer is due by 2000 ms: the first tick"
+  assert tick.at_ms == 2000 as "the first tick is 1000 ms after the go"
+  #(state, support.pressed_id(effects: pressed), tick.effects)
+}
+
+/// The 0x7f8 the effects write, decoded.
+fn ticks_written(effects effects: List(Effect)) -> List(SpellEffectTick) {
+  support.frames_of(message_id: spell_effect_tick.message_id, effects:)
+  |> list.map(fn(frame) {
+    let assert Ok(tick) = spell_effect_tick.decode(frame.body)
+    tick
+  })
+}
+
+/// The viewers told a tick in the effects.
+fn ticks_told(effects effects: List(Effect)) -> Int {
+  list.count(support.tells(effects:), fn(tell) {
+    case tell.1 {
+      CastTicked(..) -> True
+      _ -> False
+    }
+  })
+}
+
+/// The round of the tick the ally answered with these heals.
+fn tick_answered(
+  heals heals: List(strike_tell.HealLanded),
+) -> option.Option(cast_state.Struck) {
+  Some(
+    cast_state.Hit(
+      unit_id: ally,
+      unit: cast_state.HitOtherPlayer(heals:),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    ),
+  )
+}
+
+/// The description the client reads of a heal of `kind` that took `amount` with `overkill`
+/// over.
+fn heal_described(
+  amount amount: Int,
+  overkill overkill: Int,
+  kind kind: damage_type.DamageType,
+) -> SpellDamageDescription {
+  spell_damage_description.SpellDamageDescription(
+    ..support.landed_damage(
+      amount:,
+      killed: 0,
+      combat_result: combat_result.Hit,
+      damage_type: kind,
+    ),
+    overkill:,
+  )
+}
+
+/// A tick of the ally's heal as the cast asks for it and the answer of the ally.
+type TickRow {
+  TickRow(
+    why: String,
+    vital: effect_kind.Vital,
+    answered: strike_tell.HealLanded,
+    described: SpellDamageDescription,
+  )
+}
+
+pub fn a_tick_on_an_ally_asks_for_it_and_the_0x7f8_lists_what_the_ally_applied_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      TickRow(
+        why: "a health row answered with Split(77, 0, 50, 27): the 0x7f8 lists the answer's 77 and 27 overheal as a Heal (4), not the 121 the caster's own formula gives for the row",
+        vital: effect_kind.Health,
+        answered: landed(
+          effect_id: 80_077,
+          vital: effect_kind.Health,
+          split: heal_split.Split(
+            amount: 77,
+            shield: 0,
+            health: 50,
+            overheal: 27,
+          ),
+        ),
+        described: heal_described(
+          amount: 77,
+          overkill: 27,
+          kind: damage_type.Heal,
+        ),
+      ),
+      TickRow(
+        why: "a full ally took none of 121: the whole amount is the overheal",
+        vital: effect_kind.Health,
+        answered: landed(
+          effect_id: 80_077,
+          vital: effect_kind.Health,
+          split: heal_split.Split(
+            amount: 121,
+            shield: 0,
+            health: 0,
+            overheal: 121,
+          ),
+        ),
+        described: heal_described(
+          amount: 121,
+          overkill: 121,
+          kind: damage_type.Heal,
+        ),
+      ),
+      TickRow(
+        why: "a shield row (type 118) answered with a shield split: a HealShields (5) with the split's amount and overheal",
+        vital: effect_kind.Shield,
+        answered: landed(
+          effect_id: 80_077,
+          vital: effect_kind.Shield,
+          split: heal_split.Split(
+            amount: 56,
+            shield: 50,
+            health: 0,
+            overheal: 6,
+          ),
+        ),
+        described: heal_described(
+          amount: 56,
+          overkill: 6,
+          kind: damage_type.HealShields,
+        ),
+      ),
+    ],
+    fn(row) {
+      let heal =
+        periodic_row(
+          id: 80_077,
+          vital: row.vital,
+          aim: spell_plan.AimsAtPrimaryTarget,
+          condition: spell_plan.Always,
+        )
+      let #(state, cast_id, tick) = first_tick_at_ally(row: heal)
+      assert support.tick_strikes(effects: tick)
+        == [
+          cast_state.TickAsked(
+            cast_id:,
+            spell4_id: Spell4Id(5001),
+            effect_id: Spell4EffectsId(80_077),
+            unit_id: ally,
+            life: 0,
+            go: 1,
+            tick: 1,
+            what: cast_state.TellHeal(
+              vital: row.vital,
+              formula: support.mind_over_body_formula(),
+              passed_in: None,
+            ),
+          ),
+        ]
+        as {
+          row.why
+          <> ": the tick asks for the ally with the row's vital and formula"
+        }
+      assert ticks_written(effects: tick) == []
+        && support.caster_change_starts(effects: tick) == []
+        as {
+          row.why <> ": nothing is written or healed before the ally answers"
+        }
+      assert support.delays_of(effects: tick) == [1000]
+        as { row.why <> ": the next tick is armed" }
+      let assert [asked] = support.tick_strikes(effects: tick)
+      let #(_, closed) =
+        cast.ticked(
+          cast: state,
+          caster: healing_ally_in_sight(),
+          now: support.at(ms: 2000),
+          asked:,
+          struck: tick_answered(heals: [row.answered]),
+        )
+      assert ticks_written(effects: closed)
+        == [
+          SpellEffectTick(
+            cast_id:,
+            spell4_effects_id: 80_077,
+            unit_id: ally,
+            descriptions: [row.described],
+          ),
+        ]
+        as { row.why <> ": one 0x7f8 to the caster naming the ally" }
+      assert ticks_told(effects: closed) == 2
+        as { row.why <> ": and told to each viewer of the cast" }
+      assert support.caster_change_starts(effects: closed) == []
+        as { row.why <> ": the caster is healed of nothing" }
+    },
+  )
+}
+
+pub fn a_heal_tick_with_no_answer_ends_the_ally_ticks_and_its_node_like_a_creatures_test() -> Nil {
+  use <- owned_test.run(5000)
+  let heal =
+    periodic_row(
+      id: 80_077,
+      vital: effect_kind.Health,
+      aim: spell_plan.AimsAtPrimaryTarget,
+      condition: spell_plan.Always,
+    )
+  let #(state, _, tick) = first_tick_at_ally(row: heal)
+  let assert [asked] = support.tick_strikes(effects: tick)
+  let #(left_out, closed) =
+    cast.ticked(
+      cast: state,
+      caster: healing_ally_in_sight(),
+      now: support.at(ms: 3000),
+      asked:,
+      struck: None,
+    )
+  assert list.map(support.writes(effects: closed), fn(frame) {
+      frame.message_id
+    })
+    == [spell_finished.message_id]
+    as "a tick with no answer writes no 0x7f8, and the node it held ends with the cast's 0x7fe in that step, as for a creature"
+  assert support.tick_timers_on(state: left_out, unit_id: ally) == 0
+    as "the ally's later ticks are cancelled"
+  assert list.length(support.cancelled_timers(effects: closed)) == 2
+    as "the next tick's timer and the node's end"
+  // The ally the client stopped showing (its 0x355): its node and next tick are dropped,
+  // and the tick whose round closes afterwards writes nothing.
+  let #(removed, _) =
+    cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 2100)
+  assert support.tick_timers_on(state: removed, unit_id: ally) == 0
+    as "a removed ally's next tick is dropped"
+  let #(_, late) =
+    cast.ticked(
+      cast: removed,
+      caster: healing_ally_in_sight(),
+      now: support.at(ms: 2200),
+      asked:,
+      struck: tick_answered(heals: [
+        landed(
+          effect_id: 80_077,
+          vital: effect_kind.Health,
+          split: heal_split.Split(
+            amount: 77,
+            shield: 0,
+            health: 50,
+            overheal: 27,
+          ),
+        ),
+      ]),
+    )
+  assert support.writes(effects: late) == [] && ticks_told(effects: late) == 0
+    as "the tick whose round closes after the removal writes and tells nothing"
 }
 
 // ---- the kind of the spell ----

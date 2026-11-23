@@ -33,6 +33,8 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_effect_damage
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_effect_tick
+import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_target_info
@@ -2439,6 +2441,292 @@ pub fn an_esper_pressing_mind_over_body_at_an_ally_heals_it_and_the_go_lists_the
       frame.message_id == spell_go.message_id
     })
     as "the Esper's connection holds the Medic's health news while the Medic's place waits and writes it after the go"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+/// The 0x7f8 among `frames`, decoded, in order.
+fn ticks_in(
+  frames frames: List(Frame),
+) -> List(spell_effect_tick.SpellEffectTick) {
+  connection_support.decoded(
+    frames,
+    spell_effect_tick.message_id,
+    spell_effect_tick.decode,
+  )
+}
+
+/// An Esper of level 9 (Bolster is an Esper's from level 7, Spell4Base 19031) presses
+/// Bolster at a Medic of level 9 that entered below its maximum, on the client's real
+/// tables. Spell4 32821 (castTime 0) holds one periodic heal row at the primary target,
+/// Spell4Effects 80077 (effectType 10, targetFlags 2, tickTime 1000, durationTime 8000,
+/// formula 0.1977 of the Support Power and 10.54 a level, the stat part rounded alone,
+/// `0x140565600`): each tick tells the Medic's connection the row, the Medic applies it and
+/// answers, and the Esper's client reads a 0x7f8 naming the Medic with the heal the Medic
+/// applied (`opcode.0x7f8`, `spell.heal_result_log`).
+///
+/// The Medic regenerates 2.5% of its maximum, r, every 500 ms out of combat (a server
+/// choice, `player_life`), and the Esper presses 250 ms after the clock starts so that no
+/// regeneration falls at a tick: the ticks are at 1250 ms and each 1000 ms on, the
+/// regenerations at each 500 ms, so the room tick k reads is the missing health less 2k
+/// regenerations and the k - 1 earlier ticks. The Medic enters 8 r + 3 a + a / 2 below its
+/// maximum, a being the tick's amount: ticks 1 to 3 are taken whole, tick 4 finds a / 2 of
+/// room and is partly overheal, and ticks 5 to 8 find the Medic full and are wholly
+/// overheal. Each tick's overheal is checked against the health the Medic's client was
+/// last told before it, and the Medic's next 0x92f is that health and what the tick took.
+pub fn an_esper_pressing_bolster_at_an_ally_heals_it_on_each_tick_and_the_caster_reads_each_0x7f8_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let #(_, medic_entry) =
+    world_entry_support.entry(
+      tables:,
+      character: world_entry_support.character(class: 4, faction: 166, level: 9),
+    )
+  let #(_, esper_entry) =
+    world_entry_support.entry(
+      tables:,
+      character: world_entry_support.character(class: 3, faction: 166, level: 9),
+    )
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the client's tables hold GameFormula row 1266"
+  // Spell4Effects 80077 at level 9: round(0.1977 x Support Power) + 10.54 x 9, the Support
+  // Power being the Support Rating times GameFormula 1266's second value.
+  let amount_of = fn(support_rating) {
+    float.round(
+      int.to_float(float.round(
+        0.1977 *. { support_rating *. power.datafloat01 },
+      ))
+      +. 94.86,
+    )
+  }
+  let max_health =
+    casting.caster_of(tables:, entered: medic_entry).vitals.max_health
+  let regeneration =
+    float.truncate(
+      int.to_float(max_health) *. spawn_support.numbers.health_regen_fraction,
+    )
+  let planned_amount =
+    amount_of(
+      casting.caster_of(tables:, entered: esper_entry).stats.support_rating,
+    )
+  let missing = 8 * regeneration + 3 * planned_amount + planned_amount / 2
+  let saved = max_health - missing
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    second_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    two_players_enter_after(
+      started:,
+      first_class: 3,
+      level: 9,
+      first_acts: fn(_, have) {
+        let pool = pog.named_connection(started.settings.pool.pool_name)
+        let assert Ok(_) =
+          pog.query("update character set health = $1 where name = 'Ann Qu'")
+          |> pog.parameter(pog.int(saved))
+          |> pog.execute(pool)
+          as "the Medic's row holds the health it saved"
+        #([], have)
+      },
+    )
+  let esper = 1
+  let medic = unit_of(seen_second)
+  let medic_sheet =
+    game_client.sheet(
+      unit: game_client.unit_create_player_in(frames: second_burst),
+      tables:,
+    )
+  assert medic == 2 && medic_sheet.max_health == saved + missing
+    as "the Medic is the second unit and its own 0x262 gives the maximum health its saved health is the missing health below"
+  assert health_in(frames: second_burst) == saved
+    as "opcode.0x262: the Medic enters with the health it saved"
+  let amount = amount_of(own_property_in(frames: first_burst, property_id: 36))
+  assert amount == planned_amount
+    as "the Esper's own 0x262 gives the Support Rating the Medic's missing health was sized by"
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 9,
+      ability: 19_031,
+    )
+  driven_time.advance(time:, ms: 250)
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: medic,
+  )
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: the press at the Medic in sight is accepted (a Focus cost of 70 is held)"
+  let assert [go] =
+    list.filter(gos_in(frames: pressed), fn(go) { go.targets != [] })
+    as "the cast has no cast time: the Esper's client reads the one 0x7f4 that names a unit at the press (Bolster's Proxy child 216947 casts on the Esper and lists none)"
+  let assert [target] = go.targets
+    as "the go names one unit, the Medic: none of the Esper's own is listed"
+  assert target.unit_id == medic
+  assert list.map(target.effects, fn(effect) { effect.spell4_effects_id })
+    == [80_077]
+    as "Spell4Effects 80077 is listed on the Medic"
+  assert list.all(target.effects, fn(effect) {
+    case effect.result {
+      spell_effect_result.Damage(..) -> False
+      _ -> True
+    }
+  })
+    as "the go lists the periodic row with no description: the ticks carry the heals"
+  assert ticks_in(frames: pressed) == [] as "opcode.0x7f8: no tick at the press"
+  // The clock stands 1 ms short of the first tick: nothing is written.
+  driven_time.advance(time:, ms: 999)
+  let #(before_first, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  assert ticks_in(frames: before_first) == []
+    as "Spell4Effects 80077: tickTime 1000, so no 0x7f8 before 1000 ms"
+  let #(medic_before, second_have) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let medic_health_before =
+    game_client.own_health_of(
+      events: game_client.fight_in(frames: medic_before),
+      unit: medic,
+    )
+  // Each tick: the clock steps, the Esper's client is read until its tick count grows (the
+  // answer crosses from the Medic's process), then the Medic's client up to a pong, which
+  // follows the news the Medic wrote when it applied the heal.
+  let #(steps, first_have, _) =
+    list.fold(
+      [1, 2, 3, 4, 5, 6, 7, 8],
+      #([], first_have, second_have),
+      fn(so_far, tick) {
+        let #(done, first_have, second_have) = so_far
+        driven_time.advance(time:, ms: case tick {
+          1 -> 1
+          _ -> 1000
+        })
+        let #(seen, first_have) =
+          game_client.read_until(
+            game: first,
+            have: first_have,
+            found: fn(frames) { ticks_in(frames:) != [] },
+          )
+        let #(medic_frames, second_have) =
+          game_client.read_until_pong(
+            game: second,
+            have: second_have,
+            number: tick + 1,
+          )
+        #(list.append(done, [#(seen, medic_frames)]), first_have, second_have)
+      },
+    )
+  let #(rest, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 3)
+  let esper_frames =
+    list.append(list.flat_map(steps, fn(step) { step.0 }), rest)
+  let ticks = ticks_in(frames: esper_frames)
+  assert list.map(ticks, fn(tick) { #(tick.spell4_effects_id, tick.unit_id) })
+    == list.repeat(#(80_077, medic), 8)
+    as "Spell4Effects 80077: one 0x7f8 for each of the 8 ticks of its 8000 ms, each naming the Medic, and none after the eighth"
+  assert list.all(steps, fn(step) { list.length(ticks_in(frames: step.0)) == 1 })
+    as "one 0x7f8 for each 1000 ms step"
+  let descriptions =
+    list.map(ticks, fn(tick) {
+      let assert [description] = tick.descriptions
+        as "a tick on another player carries the one heal the player applied"
+      description
+    })
+  assert list.all(descriptions, fn(description) {
+    description.damage_type == damage_type.Heal
+    && description.combat_result == combat_result.Hit
+    && description.raw_damage == amount
+    && description.scaled_raw_damage == amount
+    && description.health_damage_with_overkill == amount
+    && description.killed == 0
+  })
+    as "each tick is a Hit of damage type Heal (4) of the amount the formula gives for the Esper: round(0.1977 x Support Power) + 10.54 x 9"
+  let overheals =
+    list.map(descriptions, fn(description) { description.overkill })
+  let writes_of = fn(frames) {
+    game_client.own_health_of(
+      events: game_client.fight_in(frames:),
+      unit: medic,
+    )
+  }
+  assert medic_health_before == [saved + regeneration, saved + 2 * regeneration]
+    as "opcode.0x92f: the Medic regenerated twice before the first tick, 2.5% of its maximum each time"
+  assert list.take(overheals, 3) == [0, 0, 0]
+    && list.drop(overheals, 4) == list.repeat(amount, 4)
+    as "ticks 1 to 3 find room for the whole heal and ticks 5 to 8 find the Medic full"
+  assert list.take(list.drop(overheals, 3), 1) == [amount - amount / 2]
+    as "tick 4 finds half of the heal's room: the rest is overheal"
+  // The health the Medic's client was told before each tick, and what the tick wrote: the
+  // news up to the step's pong, the tick's own 0x92f last when the tick took any.
+  let medic_told =
+    list.index_fold(
+      list.zip(steps, overheals),
+      [saved, ..medic_health_before],
+      fn(told, step_and_overheal, index) {
+        let #(step, overheal) = step_and_overheal
+        let tick = index + 1
+        let told = list.append(told, writes_of(step.1))
+        let taken = amount - overheal
+        let tick_name = "tick " <> int.to_string(tick)
+        case list.reverse(told) {
+          [written, before, ..] if taken > 0 -> {
+            assert written == before + taken
+              as {
+                "opcode.0x92f: "
+                <> tick_name
+                <> " raises the health the Medic's client was last told by what it took"
+              }
+            assert overheal == amount - int.min(amount, max_health - before)
+              as {
+                "opcode.0x7f8: "
+                <> tick_name
+                <> " takes what the Medic's room allows and the rest is overheal"
+              }
+          }
+          [before, ..] -> {
+            assert before == max_health && overheal == amount
+              as {
+                "a tick that takes nothing finds the Medic at its maximum and is wholly overheal: "
+                <> tick_name
+              }
+          }
+          [] -> panic as "the Medic's client was told its health"
+        }
+        told
+      },
+    )
+  assert list.last(medic_told) == Ok(max_health)
+    && medic_told == list.sort(medic_told, int.compare)
+    as "the Medic's health only rises, to its maximum"
+  assert list.filter(esper_frames, fn(frame) {
+      frame.message_id == spell_finished.message_id
+    })
+    |> list.length
+    == 1
+    as "opcode.0x7fe: the cast ends once"
+  assert list.map(esper_frames, fn(frame) { frame.message_id })
+    |> list.filter(fn(id) {
+      id == spell_finished.message_id || id == spell_effect_tick.message_id
+    })
+    |> list.last
+    == Ok(spell_finished.message_id)
+    as "the cast's 0x7fe follows the eighth tick"
+  let esper_events = game_client.fight_in(frames: esper_frames)
+  assert game_client.own_health_of(events: esper_events, unit: esper) == []
+    as "the Esper's own health is untouched: the caster is not the target"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)

@@ -1731,7 +1731,7 @@ fn tick_strike_begins(
   asked asked: cast_state.TickAsked,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let #(link, entropy) =
-    client_connection.draw(session.link, strike.tick_entropy_needed)
+    client_connection.draw(session.link, strike.tick_entropy_needed(asked:))
   let #(updated, effects) =
     strike.begin_tick(
       strike: entered.strike,
