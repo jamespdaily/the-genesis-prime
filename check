@@ -6,6 +6,24 @@
 #                         loop while editing and the gate before a push; the tests
 #                         tagged code_rule and registry run in the full check's
 #                         gleam-test part, so in CI, not here
+#        ./check part NAME [K/N]
+#                         one part of the full check alone (NAME is any part below
+#                         but literal-area) with the parts it needs: gleam-build for
+#                         each part that starts the built code (for client-suite
+#                         only where the client is, since only its client rows test
+#                         reads the build), and migrations for squirrel. K/N is for
+#                         gleam-test only and required there: the Kth of N shards of
+#                         the test modules (below). A bad name or shard prints the
+#                         usage and exits 2 before anything runs.
+#
+# A part run starts as the full check does (the watchdog, then the whole setup check,
+# which when it fails runs nothing else), decides no scope and runs no branch-current:
+# the caller named the part. It prints `scope: part NAME ...`, the summary's row of
+# the part and of each part it needs, then the seeds, the `literal area` lines of the
+# runs it made (gleam-test K/N its first run, real-tables and world-data their own, no
+# other part any), the ten slowest modules, the warnings and `check passed (part NAME),
+# wall time Ns, budget Ns`, or `check FAILED: PART` naming what failed. The budget and
+# the hang limit are the full check's.
 #
 # The wall time counts from the start of this script, setup check included. The
 # budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 157; ./check fast has
@@ -39,14 +57,6 @@
 # skipped and the output says so; so is a shallow history (CI's pushes to main),
 # where the count of commits HEAD lacks can include commits it holds.
 # ./check fast does not run it.
-#
-# A run that passes (./check fast or the full check, light scope included) on a clean
-# working tree, with HEAD the commit it started on, writes that commit to
-# check-passed-commit in the worktree's own git directory (git rev-parse
-# --absolute-git-dir). A failed run, a dirty tree or a git that cannot say writes
-# nothing, and the file it replaced is removed when the run starts, so it names only a
-# commit a later run passed. Nothing reads it since the push hooks were removed
-# (2026-11-23).
 #
 # Then the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
@@ -95,6 +105,18 @@
 #                  side, so that is the module's test time, not the span it took.
 #                  A failed part's log is printed without the table's passed and
 #                  skipped rows
+#                  `./check part gleam-test K/N` runs shard K of N: unitest has no
+#                  shard option, so the run is given a folder (GENESIS_TEST_DIRECTORY,
+#                  read by test/genesis_prime_test.gleam) of symlinks, build/chosen_tests/
+#                  shard-K-of-N/test, to the .gleam files under test/ the shard owns, at
+#                  their own paths below test (support files too: unitest finds a test in
+#                  any file). Both runs use it, the first and the serial one. The modules of
+#                  heavy_modules (below) are placed first, biggest first, each on the
+#                  shard with the least seconds so far (a tie to the lower number); every
+#                  other file goes to shard h mod N + 1 with h = (31 * h + byte) mod 1000003
+#                  over its path below test without `.gleam`, so a file keeps its shard when
+#                  others are added or removed. A shard whose first run ran no test fails
+#                  the part; the full check's gleam-test is not sharded.
 #                                                       (after gleam-build)
 #   real-start     the test tagged real_start, the real server's boot with a bot
 #                  playing the opening of the tutorial (most of a minute alone), in a
@@ -168,33 +190,65 @@ cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 # The clock starts here, before the setup check.
 started=$(date +%s)
 
+# The parts of the full check, in the order it lists them.
+full_parts="format gleam-build glinter generated-tables gleam-test real-start real-tables world-data literal-area migrations squirrel client-suite fact-checker"
+
+# The parts that start the code gleam-build built (run_built), in the order the chain starts them.
+built_parts="glinter generated-tables squirrel real-start real-tables world-data gleam-test"
+
+# in_list WORD LIST: succeeds when WORD is one of the words of LIST.
+in_list() {
+  case " $2 " in
+    *" $1 "*) return 0 ;;
+  esac
+  return 1
+}
+
+# prerequisites_of PART: the parts PART needs, which a part run starts with it: gleam-build
+# for each part that starts the built code, migrations for squirrel (the database it checks),
+# and for client-suite gleam-build only where the client is, since only its client rows test
+# reads the build.
+prerequisites_of() {
+  local needs=""
+  in_list "$1" "$built_parts" && needs="gleam-build"
+  case "$1" in
+    squirrel) needs="$needs migrations" ;;
+    client-suite) [ "${GENESIS_NO_CLIENT:-}" = 1 ] || needs="gleam-build" ;;
+  esac
+  echo "$needs"
+}
+
+usage() {
+  echo "usage: ./check [fast]"
+  echo "       ./check part NAME [K/N]    one of: ${full_parts/ literal-area/}; K/N only for gleam-test, which needs it"
+  exit 2
+}
+
 mode=${1:-full}
 case "$mode" in
   full | fast) ;;
-  *)
-    echo "usage: ./check [fast]"
-    exit 2
+  part)
+    part_name=${2:-}
+    part_shard=${3:-}
+    [ -z "${4:-}" ] || usage
+    in_list "$part_name" "$full_parts" && [ "$part_name" != literal-area ] || usage
+    if [ "$part_name" = gleam-test ]; then
+      shard_number=${part_shard%%/*}
+      shard_count=${part_shard#*/}
+      case "$part_shard" in
+        *[0-9]/[0-9]*) ;;
+        *) usage ;;
+      esac
+      case "$shard_number$shard_count" in
+        *[!0-9]*) usage ;;
+      esac
+      [ "$shard_number" -ge 1 ] && [ "$shard_number" -le "$shard_count" ] || usage
+    else
+      [ -z "$part_shard" ] || usage
+    fi
     ;;
+  *) usage ;;
 esac
-
-# The record of a passed run: the file's path in the worktree's own git directory, and
-# the commit the run started on. The file a run replaces is removed at once, so it
-# never outlives a commit a later run did not pass.
-git_directory=$(git rev-parse --absolute-git-dir 2>/dev/null)
-passed_record=${git_directory:+$git_directory/check-passed-commit}
-start_commit=$(git rev-parse HEAD 2>/dev/null)
-[ -z "$passed_record" ] || rm -f "$passed_record"
-
-# record_passed_commit: writes start_commit to the record when HEAD is still it and the
-# working tree holds no change and no file git does not ignore.
-record_passed_commit() {
-  [ -n "$start_commit" ] && [ -n "$passed_record" ] || return 0
-  [ "$(git rev-parse HEAD 2>/dev/null)" = "$start_commit" ] || return 0
-  local changes
-  changes=$(git status --porcelain 2>/dev/null) || return 0
-  [ -z "$changes" ] || return 0
-  echo "$start_commit" >"$passed_record"
-}
 
 # The wall time the check may take, in seconds: the slowest of 3 full checks on the
 # idle development Mac, with the parts beside each other and 2 test workers, was
@@ -253,8 +307,16 @@ fast_parts="format gleam-build glinter fact-checker"
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
-  full) parts="format gleam-build glinter generated-tables gleam-test real-start real-tables world-data literal-area migrations squirrel client-suite fact-checker" ;;
-  fast) parts="$fast_parts" ;;
+  full) parts=$full_parts ;;
+  fast) parts=$fast_parts ;;
+  part)
+    needed="$part_name $(prerequisites_of "$part_name")"
+    parts=""
+    for part in $full_parts; do
+      in_list "$part" "$needed" && parts="${parts:+$parts }$part"
+    done
+    scope_label=" (part $part_name${part_shard:+ $part_shard})"
+    ;;
 esac
 
 # The light set: the paths whose change no part beyond the fast parts reads. Each
@@ -422,9 +484,13 @@ on_hung() {
 }
 trap on_hung USR1
 
-# stop_everything_quickly PID: kills PID and everything it started, at once.
+# stop_everything_quickly PID: kills PID and everything it started, at once. PID is
+# frozen first: a PID still starting a process (the watchdog's sleep) would otherwise start
+# it between the snapshot and the kill, and that process, left without its parent, would
+# keep the check's output open until it ended.
 stop_everything_quickly() {
   local pids
+  kill -STOP "$1" 2>/dev/null
   pids=$(descendants_of "$1")
   kill -KILL $1 $pids 2>/dev/null
   return 0
@@ -496,6 +562,8 @@ if [ "$mode" = full ]; then
   else
     echo "scope: every part, because $scope_why"
   fi
+elif [ "$mode" = part ]; then
+  echo "scope: part $part_name, so only it and the parts it needs run ($parts)"
 fi
 
 # The watchdog: USR1 to this shell when the hang limit is reached.
@@ -616,16 +684,121 @@ wait_for_status() {
 # $work/literal-peak (GENESIS_LITERAL_PEAK_FILE, read by test/genesis_prime_test.gleam),
 # which the literal-area part compares with its limit. The serial run is left
 # out: it runs a few tests alone, in a VM of its own.
+#
+# A shard (part gleam-test K/N) gives both runs its folder of symlinks
+# (GENESIS_TEST_DIRECTORY) and fails when its first run ran no test, because a folder
+# that came out empty must not pass. The serial run may run none: a shard holds a serial
+# test only by chance.
+
+# heavy_modules: the test modules a shard places first, as `module:seconds`, with the
+# seconds of each module's tests in CI run 45126989760, the check of a branch that holds
+# the split of game_wire_test (the summary's ten slowest modules, all from the one run so the
+# seconds share a scale). The tail of the other modules has no measure and goes by hash. The
+# ten split 203.4, 181.6 and 224.0 seconds over three shards.
+heavy_modules="table_value_test:102.5 account_store_test:78.9 apply_migrations_test:66.7 game_wire_quest_test:58.1 objective_test:56.9 migration_start_test:56.7 sigterm_test:56.7 spell_area_test:45.8 spell_plan_lasting_test:44.2 limited_action_set_test:42.5"
+
+# shard_files NUMBER COUNT: prints the path below test of each .gleam file under test/ that
+# shard NUMBER of COUNT owns, one a line. A heavy module goes to the shard the biggest-first
+# rule gives (equal seconds by name, so the order of heavy_modules does not matter); any other file to h mod COUNT + 1, h = (31 * h + byte) mod 1000003 over the path
+# without `.gleam`, kept below 2^53 so every awk computes the same.
+shard_files() {
+  (cd test && find . -type f -name '*.gleam' | sed 's|^\./||' | LC_ALL=C sort) |
+    LC_ALL=C awk -v number="$1" -v count="$2" -v heavy="$heavy_modules" '
+      BEGIN {
+        for (i = 32; i < 127; i++) byte[sprintf("%c", i)] = i
+        entries = split(heavy, entry, " ")
+        for (i = 1; i <= entries; i++) {
+          split(entry[i], pair, ":")
+          name[i] = pair[1]
+          seconds[i] = pair[2] + 0
+        }
+        for (i = 2; i <= entries; i++) {
+          for (j = i; j > 1 && (seconds[j] > seconds[j - 1] || (seconds[j] == seconds[j - 1] && name[j] < name[j - 1])); j--) {
+            swap = name[j]; name[j] = name[j - 1]; name[j - 1] = swap
+            swap = seconds[j]; seconds[j] = seconds[j - 1]; seconds[j - 1] = swap
+          }
+        }
+        for (shard = 1; shard <= count; shard++) load[shard] = 0
+        for (i = 1; i <= entries; i++) {
+          least = 1
+          for (shard = 2; shard <= count; shard++) if (load[shard] < load[least]) least = shard
+          owner[name[i]] = least
+          load[least] += seconds[i]
+        }
+      }
+      {
+        module = $0
+        sub(/\.gleam$/, "", module)
+        if (module in owner) {
+          shard = owner[module]
+        } else {
+          hash = 0
+          for (i = 1; i <= length(module); i++) hash = (hash * 31 + byte[substr(module, i, 1)]) % 1000003
+          shard = hash % count + 1
+        }
+        if (shard == number) print $0
+      }'
+}
+
+# shard_directory NUMBER COUNT: makes build/chosen_tests/shard-NUMBER-of-COUNT/test, empty
+# first, holding a symlink to each file shard_files names, at the same path below test, so
+# module names stay the same. The folder's path is left in shard_folder.
+shard_directory() {
+  local root="build/chosen_tests/shard-$1-of-$2" files relative
+  shard_folder="$root/test"
+  files=$(shard_files "$1" "$2") || return 1
+  rm -rf "$root"
+  mkdir -p "$shard_folder" || return 1
+  while IFS= read -r relative; do
+    [ -n "$relative" ] || continue
+    case "$relative" in
+      */*) mkdir -p "$shard_folder/${relative%/*}" || return 1 ;;
+    esac
+    ln -s "$PWD/test/$relative" "$shard_folder/$relative" || return 1
+  done <<<"$files"
+}
+
+# test_run NAME [VARIABLE=VALUE...] -- ARGUMENTS...: one run of the built tests, in a shell
+# of its own so its variables reach no other run: its tests are listed in $work/NAME.running
+# (GENESIS_TEST_PROGRESS_FILE) and each VARIABLE=VALUE is set for it.
+test_run() {
+  local name=$1
+  shift
+  (
+    export GENESIS_TEST_PROGRESS_FILE="$work/$name.running"
+    while [ "$1" != -- ]; do
+      export "$1"
+      shift
+    done
+    shift
+    run_built genesis_prime_test "$@"
+  )
+}
+
+# ran_a_test LOG: succeeds when unitest's summary in LOG counts more than 0 passed tests.
+ran_a_test() {
+  local passed
+  passed=$(sed -n 's/^\([0-9][0-9]*\) passed.*/\1/p' "$1" | tail -1)
+  [ -n "$passed" ] && [ "$passed" -gt 0 ]
+}
+
 gleam_test() {
-  local status=0
-  if [ -n "$test_workers" ]; then
-    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_REAL_TABLES=1 \
-      run_built genesis_prime_test --workers "$test_workers" --reporter table --no-color || status=1
+  local status=0 first_run=(--reporter table --no-color) shard=()
+  local first_settings=(GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_REAL_TABLES=1)
+  [ -z "$test_workers" ] || first_run=(--workers "$test_workers" --reporter table --no-color)
+  if [ -n "${shard_count:-}" ]; then
+    shard_directory "$shard_number" "$shard_count" || return 1
+    shard=(GENESIS_TEST_DIRECTORY="$shard_folder")
+    test_run gleam-test "${first_settings[@]}" "${shard[@]}" -- "${first_run[@]}" | tee "$work/gleam-test.first"
+    [ "${PIPESTATUS[0]}" = 0 ] || status=1
+    if ! ran_a_test "$work/gleam-test.first"; then
+      echo "no test ran in shard $shard_number/$shard_count: its first run counted no passed test"
+      status=1
+    fi
   else
-    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_REAL_TABLES=1 \
-      run_built genesis_prime_test --reporter table --no-color || status=1
+    test_run gleam-test "${first_settings[@]}" -- "${first_run[@]}" || status=1
   fi
-  GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" run_built genesis_prime_test --tag serial --reporter table --no-color || status=1
+  test_run gleam-test "${shard[@]}" -- --tag serial --reporter table --no-color || status=1
   return $status
 }
 
@@ -639,14 +812,6 @@ gleam_test() {
 # of its own), so it keeps none.
 tagged_parts="real-start real-tables world-data"
 tagged_parts_with_a_peak="real-tables world-data"
-
-# in_list WORD LIST: succeeds when WORD is one of the words of LIST.
-in_list() {
-  case " $2 " in
-    *" $1 "*) return 0 ;;
-  esac
-  return 1
-}
 
 # tagged_part_needs PART: what the part needs to run, as the reason a skip states.
 tagged_part_needs() {
@@ -666,12 +831,11 @@ tagged_part_wanted() {
 
 # tagged_part_test PART: the tests of the part's tag alone.
 tagged_part_test() {
-  local part=$1
+  local part=$1 settings=()
   if in_list "$part" "$tagged_parts_with_a_peak"; then
-    GENESIS_TEST_PROGRESS_FILE="$work/$part.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-$part" run_built genesis_prime_test --tag "${part//-/_}"
-  else
-    GENESIS_TEST_PROGRESS_FILE="$work/$part.running" run_built genesis_prime_test --tag "${part//-/_}"
+    settings=(GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-$part")
   fi
+  test_run "$part" "${settings[@]}" -- --tag "${part//-/_}"
 }
 
 # running_tests PART: prints the tests the part's run had started and not ended, from
@@ -736,24 +900,25 @@ literal_peak_report() {
   return 0
 }
 
-# literal_area_check: reports the first test run's highest carriers size, and the
-# world-data run's (each is a VM with a region of its own), against
-# literal_limit_percent of the region. It warns, and never fails, when one is over
+# literal_area_check: reports the highest carriers size of each run in literal_runs, the
+# first test run (`test`) and the parts' own runs (each a VM with a region of its own),
+# against literal_limit_percent of the region. It warns, and never fails, when one is over
 # it, when a run that ran has none to compare, or when +MIscs is set. The lines it
 # prints that start with `literal area` are the measures and the lines that start
 # with `check WARNING` are the warnings, which the check prints under the parts.
 literal_area_check() {
-  local part
+  local run
   case "${ERL_FLAGS:-} ${ERL_AFLAGS:-} ${ERL_ZFLAGS:-} ${ELIXIR_ERL_OPTIONS:-}" in
     *+MIscs*)
       echo "check WARNING: +MIscs set in ERL_FLAGS, ERL_AFLAGS, ERL_ZFLAGS or ELIXIR_ERL_OPTIONS: the limit is a share of the default 1 GiB literal region, so the area was not measured against it; unset it"
       return 0
       ;;
   esac
-  literal_peak_report "$work/literal-peak" "test run" "literal area"
-  for part in $tagged_parts_with_a_peak; do
-    if [ ! -f "$work/$part.skipped" ]; then
-      literal_peak_report "$work/literal-peak-$part" "$part run" "literal area of the $part run"
+  for run in $literal_runs; do
+    if [ "$run" = test ]; then
+      literal_peak_report "$work/literal-peak" "test run" "literal area"
+    elif [ ! -f "$work/$run.skipped" ]; then
+      literal_peak_report "$work/literal-peak-$run" "$run run" "literal area of the $run run"
     fi
   done
   return 0
@@ -768,7 +933,7 @@ client_suite() {
   if [ "${GENESIS_NO_CLIENT:-}" != 1 ]; then
     python3.13 -I "$client_scripts/client_files.py" tokens --check || status=1
     if wait_for_status gleam-build; then
-      GENESIS_TEST_PROGRESS_FILE="$work/client-suite.running" run_built genesis_prime_test --tag client_rows || status=1
+      test_run client-suite -- --tag client_rows || status=1
     else
       echo "the committed client rows were not checked: gleam-build failed"
       status=1
@@ -790,51 +955,55 @@ squirrel_after_migrations() {
   fi
 }
 
-# gleam_chain: the gleam parts. gleam-build compiles; after it no part compiles again
-# (see the note above), so the parts that read the build start it with run_built and
-# run beside each other (glinter, generated-tables, the tests, the boot test, the
-# world-data test, squirrel), and literal-area follows the two test runs.
-gleam_chain() {
-  local pids=() peak_pids=() part
-  if step gleam-build gleam build --warnings-as-errors; then
-    ( step glinter run_built glinter ) &
-    pids+=("$!")
-    ( step generated-tables run_built genesis_prime/table_generator check ) &
-    pids+=("$!")
-    ( squirrel_after_migrations ) &
-    pids+=("$!")
-    for part in $tagged_parts; do
-      if tagged_part_wanted "$part"; then
-        ( step "$part" tagged_part_test "$part" ) &
-        pids+=("$!")
-        in_list "$part" "$tagged_parts_with_a_peak" && peak_pids+=("$!")
-      else
-        skip "$part" "the tests tagged ${part//-/_} need $(tagged_part_needs "$part")"
+# start_built_part PART: starts the part on the built code beside the others, or records
+# why it did not run, and remembers its process id (built_chain's pids and peak_pids).
+start_built_part() {
+  case "$1" in
+    glinter) ( step glinter run_built glinter ) & ;;
+    generated-tables)
+      if [ "${GENESIS_NO_CLIENT:-}" = 1 ]; then
+        skip generated-tables "the tables are compared with the client's tables (GENESIS_NO_CLIENT=1 here)"
+        return
       fi
-    done
-    step gleam-test gleam_test
-    [ "${#peak_pids[@]}" -gt 0 ] && wait "${peak_pids[@]}"
-    step literal-area literal_area_check
-    wait "${pids[@]}"
-  else
-    skip glinter "a part it needs failed: gleam-build"
-    skip generated-tables "a part it needs failed: gleam-build"
-    skip gleam-test "a part it needs failed: gleam-build"
-    for part in $tagged_parts; do
-      skip "$part" "a part it needs failed: gleam-build"
-    done
-    skip literal-area "a part it needs failed: gleam-build"
-    skip squirrel "a part it needs failed: gleam-build"
+      ( step generated-tables run_built genesis_prime/table_generator check ) &
+      ;;
+    squirrel) ( squirrel_after_migrations ) & ;;
+    real-start | real-tables | world-data)
+      if ! tagged_part_wanted "$1"; then
+        skip "$1" "the tests tagged ${1//-/_} need $(tagged_part_needs "$1")"
+        return
+      fi
+      ( step "$1" tagged_part_test "$1" ) &
+      ;;
+  esac
+  pids+=("$!")
+  if in_list "$1" "$tagged_parts_with_a_peak"; then
+    peak_pids+=("$!")
   fi
 }
 
-# fast_chain: after gleam-build, glinter, started on the built code.
-fast_chain() {
-  if step gleam-build gleam build --warnings-as-errors; then
-    step glinter run_built glinter
-  else
-    skip glinter "a part it needs failed: gleam-build"
+# built_chain: gleam-build, which compiles; after it no part compiles again (see the note
+# above), so each part of chain_parts that reads the build starts with run_built and runs
+# beside the others, the tests (gleam-test) in this shell, and literal-area follows the test
+# runs when there are runs to report (literal_runs).
+built_chain() {
+  local pids=() peak_pids=() part
+  if ! step gleam-build gleam build --warnings-as-errors; then
+    for part in $chain_parts; do
+      skip "$part" "a part it needs failed: gleam-build"
+    done
+    [ -z "$literal_runs" ] || skip literal-area "a part it needs failed: gleam-build"
+    return
   fi
+  for part in $chain_parts; do
+    [ "$part" = gleam-test ] || start_built_part "$part"
+  done
+  if in_list gleam-test "$chain_parts"; then
+    step gleam-test gleam_test
+  fi
+  [ "${#peak_pids[@]}" -eq 0 ] || wait "${peak_pids[@]}"
+  [ -z "$literal_runs" ] || step literal-area literal_area_check
+  [ "${#pids[@]}" -eq 0 ] || wait "${pids[@]}"
 }
 
 facts_with_the_client_named() {
@@ -856,19 +1025,32 @@ print(check_support.client_exe())')
   return "$status"
 }
 
-in_background step format gleam format --check src test dev
+# The parts that start on the built code, and the runs whose literal area is reported: the
+# first test run and the tagged parts' own runs in the full check, the runs a part run makes.
+chain_parts=""
+for part in $built_parts; do
+  in_list "$part" "$parts" && chain_parts="${chain_parts:+$chain_parts }$part"
+done
 case "$mode" in
-  full)
-    in_background gleam_chain
-    in_background step migrations prepare_database
-    in_background step client-suite client_suite
-    in_background step fact-checker facts_with_the_client_named
+  full) literal_runs="test $tagged_parts_with_a_peak" ;;
+  part)
+    literal_runs=""
+    [ "$part_name" != gleam-test ] || literal_runs="test"
+    ! in_list "$part_name" "$tagged_parts_with_a_peak" || literal_runs="$part_name"
     ;;
-  fast)
-    in_background fast_chain
-    in_background step fact-checker facts_with_the_client_named
-    ;;
+  *) literal_runs="" ;;
 esac
+
+# includes_part PART: succeeds when the run includes the part.
+includes_part() {
+  in_list "$1" "$parts"
+}
+
+includes_part format && in_background step format gleam format --check src test dev
+includes_part gleam-build && in_background built_chain
+includes_part migrations && in_background step migrations prepare_database
+includes_part client-suite && in_background step client-suite client_suite
+includes_part fact-checker && in_background step fact-checker facts_with_the_client_named
 wait "${part_pids[@]}"
 
 failed=""
@@ -954,5 +1136,4 @@ if [ -n "$failed" ] || [ "$hung" = yes ]; then
   echo "wall time ${elapsed}s, budget ${budget}s"
   exit 1
 fi
-record_passed_commit
 echo "check passed${scope_label:-}, wall time ${elapsed}s, budget ${budget}s"
