@@ -373,25 +373,95 @@ pub fn rows_with_units(
 }
 
 /// Whether a modifier row takes effect on `unit_id`, one of the units its aim names.
-/// - A property, look, absorb or Interrupt Armor change lands on the caster alone: the
-///   server gives no other unit a property, a look, a pool or armor. A part of the aim past
-///   the caster (the primary target when it is another unit, the units the round hit) is
-///   left out here with no log line; the plan refuses the row where that part would be the
-///   unit a Proxy's child is started on (`spell_plan.not_on_a_struck_unit`), and the
-///   client's absorb and Interrupt Armor rows with flags 3 or 7 are in no such child.
-/// - A property modifier aimed at struck units (`StruckChange`) lands on a creature the go
-///   hit; a player it names is left out.
+/// - A property, look or Interrupt Armor change lands on the caster alone: the server gives
+///   no other unit a property, a look or armor. A part of the aim past the caster is left
+///   out here with no log line; the plan refuses the row where that part would be the unit
+///   a Proxy's child is started on (`spell_plan.not_on_a_struck_unit`).
+/// - An absorb lands on the caster, and a property modifier aimed at struck units
+///   (`StruckChange`) on a creature the go hit.
+/// - An absorb or a `StruckChange` row whose aim names the primary target also lands on the
+///   player the press named when that is another player in the caster's sight, at once and
+///   with an end of its own (`player_row`); `press_target` is that player, none for a child a
+///   Proxy started, whose primary target is the plan's stand-in. A player the round hit that
+///   the press did not name is left out.
 pub fn modifier_applies(
   row row: spell_plan.PropertyModifier,
   unit_id unit_id: Int,
   caster caster: Caster,
   struck struck: List(Struck),
+  press_target press_target: Option(Int),
 ) -> Bool {
+  let on_the_player =
+    player_row(row:, unit_id:, caster:, press_target:) == Lands
   case row.change {
-    spell_plan.StruckChange(..) -> result.is_ok(creature_hit(struck:, unit_id:))
-    spell_plan.PropertyChange(..)
-    | spell_plan.LookChange(..)
-    | spell_plan.AbsorbChange(..) -> unit_id == caster.unit_id
+    spell_plan.StruckChange(..) ->
+      result.is_ok(creature_hit(struck:, unit_id:)) || on_the_player
+    spell_plan.AbsorbChange(..) -> unit_id == caster.unit_id || on_the_player
+    spell_plan.PropertyChange(..) | spell_plan.LookChange(..) ->
+      unit_id == caster.unit_id
+  }
+}
+
+/// What a modifier row does on a unit that is the player the press named.
+type PlayerRow {
+  /// The row lands on the player.
+  Lands
+  /// The row names the player but does not land, for the reason given.
+  Refused(why: String)
+  /// The unit is not the press target, the row's aim does not name the primary target, or the
+  /// row is a change only the caster takes.
+  NotPlayerRow
+}
+
+fn player_row(
+  row row: spell_plan.PropertyModifier,
+  unit_id unit_id: Int,
+  caster caster: Caster,
+  press_target press_target: Option(Int),
+) -> PlayerRow {
+  let names_the_player =
+    press_target == Some(unit_id)
+    && unit_id != caster.unit_id
+    && spell_plan.reaches_primary_target(aim: spell_plan.modifier_aim(
+      modifier: row,
+    ))
+  let changes_a_player = case row.change {
+    spell_plan.StruckChange(..) | spell_plan.AbsorbChange(..) -> True
+    spell_plan.PropertyChange(..) | spell_plan.LookChange(..) -> False
+  }
+  use <- bool.guard(
+    when: !names_the_player || !changes_a_player,
+    return: NotPlayerRow,
+  )
+  case
+    dict.has_key(caster.players_in_sight, unit_id),
+    row.row.delay_ms > 0,
+    row.row.until_removed
+  {
+    False, _, _ -> Refused(why: "the player is not in the caster's sight")
+    True, True, _ ->
+      Refused(
+        why: "the row has a delay, which a change on another player does not take",
+      )
+    True, False, True ->
+      Refused(
+        why: "the row lasts until removed, which a change on another player does not take",
+      )
+    True, False, False -> Lands
+  }
+}
+
+/// Why a modifier row that names the player the press named is not applied to it: none when
+/// the row lands or does not name that player.
+pub fn modifier_refusal(
+  row row: spell_plan.PropertyModifier,
+  unit_id unit_id: Int,
+  caster caster: Caster,
+  press_target press_target: Option(Int),
+) -> Option(String) {
+  case player_row(row:, unit_id:, caster:, press_target:) {
+    Refused(why:) -> Some(why)
+    Lands | NotPlayerRow -> None
   }
 }
 

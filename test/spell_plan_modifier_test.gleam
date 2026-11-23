@@ -22,6 +22,7 @@
 ////   an infinity or not a number, fail the load.
 
 import client_tables
+import fixture_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
@@ -31,6 +32,7 @@ import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
+import genesis_prime/table/loader/store
 import gleam/list
 import gleam/option.{None}
 import gleam/result
@@ -531,4 +533,40 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
     ))
   assert crit.row
     == LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False)
+}
+
+/// Whether the plan of the Spell4 `spell4_id` on `tables` says its changes outlive their
+/// caster's sight.
+fn outlives_on(tables tables: store.Tables, spell4_id spell4_id: Int) -> Bool {
+  let assert Ok(spell) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id:,
+      chain: [],
+    )
+    as "the spell plans alone"
+  spell.outlives_caster
+}
+
+pub fn a_spell_outlives_its_caster_when_its_propertyflags_hold_0x100_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The client keeps a cast whose caster is removed when Spell4.propertyFlags has 0x100
+  // (`cast.target_node_end`: the record flag `0x108 & 0x10`, built from propertyFlags 0x100
+  // by `FillSpellRecord 0x140568540`). The columns are the table's own
+  // (`table_rows -- Spell4 32823 32821 32893`): 257 and 8448 hold the bit, 0x4000002 does not.
+  // The fixture holds no row of Phantasmal Armor, so row 32823 is a copy of Bolster's with
+  // its own propertyFlags 257.
+  assert fixture_tables.added(
+    table: "Spell4",
+    copy_of: 32_821,
+    id: 32_823,
+    with: [#("propertyFlags", Integer(257))],
+    body: outlives_on(_, spell4_id: 32_823),
+  )
+    as "Phantasmal Armor tier 1 (propertyFlags 257) outlives its caster"
+  assert outlives_on(tables: fixture_tables.shared(), spell4_id: 32_821)
+    as "Bolster (propertyFlags 8448 = 0x2100) outlives its caster"
+  assert !outlives_on(tables: fixture_tables.shared(), spell4_id: strike)
+    as "Telekinetic Strike (propertyFlags 0x4000002) does not"
 }

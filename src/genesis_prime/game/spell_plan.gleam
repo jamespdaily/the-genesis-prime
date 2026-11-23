@@ -712,6 +712,10 @@ pub type Spell {
     /// rather than their sum: Spell4.propertyFlags 0x2000, the spell record's flag
     /// 0x10000000 (`opcode.0x7f4.effect_time`, `0x140568540`).
     longer_of_delay_and_duration: Bool,
+    /// Whether the client keeps a cast of the spell when its caster's unit is removed, so a
+    /// change the cast put on another unit outlives the caster's sight: the spell record's
+    /// flag 0x10, built from Spell4.propertyFlags 0x100 (`cast.target_node_end`).
+    outlives_caster: Bool,
     /// How long an aura cast lasts from its start, in milliseconds: the spellDuration of a
     /// castMethod 10 spell when above 0, `None` for a spell that is no aura and for an
     /// aura that never runs out (spellDuration -1). A node of the cast that holds an
@@ -3858,6 +3862,10 @@ fn spell_of(
       longer_of_delay_and_duration: spell_effect.has_flag(
         flags: row.property_flags,
         bit: 0x2000,
+      ),
+      outlives_caster: spell_effect.has_flag(
+        flags: row.property_flags,
+        bit: 0x100,
       ),
       aura_ms: aura_of(method:, spell_duration: row.spell_duration),
       weapon: weapon_of(base.weapon_slot),

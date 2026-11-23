@@ -90,13 +90,13 @@ import genesis_prime/game/cast/state.{
   CooldownModifierEnds, CooldownModifierStarts, DroppedControls, DroppedDespawns,
   DroppedSignals, DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go,
   Hold, HoldForCast, Holding, Log, ModifierEnd, ModifierStart, NoInteraction,
-  NodesEnd, NotBuilt, OnCaster, OnPlayer, Passive, PressNotBuilt, PressRefused,
-  ProcDue, QuestAdvanceDue, Refuse, RepeatHeld, Resolution, RestrictionEnd,
-  Shortcut, Stage, StartChild, StartHeld, Starts, State, StateEnd,
-  TargetModifierStart, Tick, UnbuiltItemSpell, UnbuiltPlayerTarget,
-  UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid, UnreadItemPrerequisite,
-  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UnreadSpend,
-  WindowEnd,
+  NodesEnd, NotBuilt, OnCaster, OnPlayer, Passive, PlayerChangeEnd,
+  PressNotBuilt, PressRefused, ProcDue, QuestAdvanceDue, Refuse, RepeatHeld,
+  Resolution, RestrictionEnd, Shortcut, Stage, StartChild, StartHeld, Starts,
+  State, StateEnd, TargetModifierStart, Tick, UnbuiltItemSpell,
+  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UnreadSpend, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
@@ -1134,6 +1134,7 @@ pub fn stop_pending(
       | ModifierStart(..)
       | TargetModifierStart(..)
       | ForcedMoveStart(..)
+      | PlayerChangeEnd(..)
       | ModifierEnd(..)
       | RestrictionEnd(..)
       | CooldownModifierStarts(..)

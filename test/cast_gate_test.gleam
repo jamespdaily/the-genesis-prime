@@ -31,7 +31,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/lasting
-import genesis_prime/game/player_address.{PlayerAddress}
+import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
@@ -299,6 +299,8 @@ fn live_go_of(spell spell: Spell) -> #(cast_state.State, cast_state.GoAsked) {
         | cast_state.Gain(..)
         | cast_state.CasterChangeStarts(..)
         | cast_state.CasterChangeEnds(..)
+        | cast_state.OtherPlayerChangeStarts(..)
+        | cast_state.OtherPlayerChangeEnds(..)
         | cast_state.TargetChangeStarts(..)
         | cast_state.TargetChangeEnds(..)
         | cast_state.ForcedMoveStarts(..)
@@ -1176,4 +1178,240 @@ pub fn a_periodic_proxy_aimed_at_the_area_is_armed_though_the_round_struck_nobod
       assert armed(proxy, struck) == expected as reason
     },
   )
+}
+
+// ---- a modifier row on another player ----
+
+/// A player the caster sees that the press does not name, and a creature; the caster is the
+/// default caster's unit 7.
+const bystander = 41
+
+const creature = 21
+
+fn address_of(unit_id unit_id: Int) -> PlayerAddress {
+  PlayerAddress(
+    connection: ConnectionId(unit_id),
+    unit_id:,
+    stay: map_support.stay(count: unit_id),
+  )
+}
+
+/// The default caster, who sees these players.
+fn seeing(players players: List(Int)) -> cast_state.Caster {
+  cast_state.Caster(
+    ..support.caster(),
+    players_in_sight: dict.from_list(
+      list.map(players, fn(unit_id) { #(unit_id, address_of(unit_id:)) }),
+    ),
+  )
+}
+
+/// A player another player's heal answer hit.
+fn healed_player(unit_id unit_id: Int) -> cast_state.Struck {
+  cast_state.Hit(
+    unit_id:,
+    unit: cast_state.HitOtherPlayer(heals: []),
+    descriptions: [],
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// Phantasmal Armor's absorb row, 130470, with the aim given.
+fn absorb_aimed(aim aim: spell_plan.Aim) -> spell_plan.PropertyModifier {
+  support.armor_absorb_row(id: 130_470, support_factor: 2.605299949645996, aim:)
+}
+
+/// Phantasmal Armor's modifier row, 130474, with the aim given.
+fn modifier_aimed(aim aim: spell_plan.Aim) -> spell_plan.PropertyModifier {
+  support.armor_modifier_row(id: 130_474, aim:)
+}
+
+/// The units a row lands on, in the order its aim names them: each unit the aim names, with
+/// `primary_target` as the primary target and the units the round hit as the area, that
+/// `modifier_applies` accepts.
+fn landing_on(
+  row row: spell_plan.PropertyModifier,
+  caster caster: cast_state.Caster,
+  primary_target primary_target: Int,
+  press_target press_target: option.Option(Int),
+  struck struck: List(cast_state.Struck),
+) -> List(Int) {
+  cast_gate.rows_with_units(
+    rows: [row],
+    aim: spell_plan.modifier_aim,
+    caster:,
+    primary_target:,
+    struck:,
+  )
+  |> list.filter(fn(entry) {
+    cast_gate.modifier_applies(
+      row: entry.0,
+      unit_id: entry.1,
+      caster:,
+      struck:,
+      press_target:,
+    )
+  })
+  |> list.map(fn(entry) { entry.1 })
+}
+
+pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_caster_sees_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let primary = spell_plan.AimsAtPrimaryTarget
+  let one_second =
+    lasting.LastingRow(
+      delay_ms: 1000,
+      duration_ms: 10_000,
+      until_removed: False,
+    )
+  let until_removed =
+    lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  let at_ally = option.Some(ally)
+  // Rows 130470 and 130474 are Phantasmal Armor's, each targetFlags 2: an `AbsorbChange` and a
+  // `StruckChange` aimed at the primary target (`table_rows -- Spell4Effects 130470 130474`).
+  // Each row: why, the row, the press target the rule is given, the row's primary target,
+  // the players the caster sees, what the round struck, and the units the row lands on.
+  let rows = [
+    #(
+      "an absorb aimed at the primary target lands on the player the press named when the caster sees it",
+      absorb_aimed(aim: primary),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [ally],
+    ),
+    #(
+      "the same player out of the caster's sight: it does not",
+      absorb_aimed(aim: primary),
+      at_ally,
+      ally,
+      [],
+      [],
+      [],
+    ),
+    #(
+      "a StruckChange row aimed at the primary target lands on the player the press named",
+      modifier_aimed(aim: primary),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [ally],
+    ),
+    #(
+      "a StruckChange row aimed at the primary target and the area, the player also in the area, lands once",
+      modifier_aimed(aim: spell_plan.AimsAtPrimaryTargetAndArea),
+      at_ally,
+      ally,
+      [ally],
+      [healed_player(unit_id: ally)],
+      [ally],
+    ),
+    #(
+      "a StruckChange row aimed at the area alone does not land on a player the press did not name that a heal's answer hit (friendly areas are not built)",
+      modifier_aimed(aim: spell_plan.AimsAtArea),
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      [],
+    ),
+    #(
+      "a property change aimed at the caster lands on the caster alone, whoever the press named",
+      spell_plan.PropertyModifier(
+        ..modifier_aimed(aim: primary),
+        change: spell_plan.PropertyChange(support.slowing_change()),
+      ),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [7],
+    ),
+    #(
+      "a disguise lands on the caster alone: no sender builds it for another player",
+      spell_plan.PropertyModifier(
+        ..modifier_aimed(aim: primary),
+        change: spell_plan.LookChange(support.disguise_of(display: 1)),
+      ),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [7],
+    ),
+    #(
+      "a child a Proxy started has no press target: a row aimed at its primary target does not land on a player",
+      absorb_aimed(aim: primary),
+      option.None,
+      ally,
+      [ally],
+      [],
+      [],
+    ),
+    #(
+      "an absorb aimed at the caster and the primary target lands on both",
+      absorb_aimed(aim: spell_plan.AimsAtCasterAndPrimaryTarget),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [7, ally],
+    ),
+    #(
+      "a StruckChange row aimed at the area lands on the creature the round hit, as before",
+      modifier_aimed(aim: spell_plan.AimsAtArea),
+      at_ally,
+      ally,
+      [ally],
+      [support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)],
+      [creature],
+    ),
+    #(
+      "an absorb aimed at the primary target of a press at oneself lands on the caster, as before",
+      absorb_aimed(aim: primary),
+      option.Some(7),
+      7,
+      [ally],
+      [],
+      [7],
+    ),
+    #(
+      "a row with a delay lands nothing on a player (stated gap: no ability row has one)",
+      spell_plan.PropertyModifier(..absorb_aimed(aim: primary), row: one_second),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [],
+    ),
+    #(
+      "a row that lasts until removed lands nothing on a player (stated gap: it would need an end of its own)",
+      spell_plan.PropertyModifier(
+        ..absorb_aimed(aim: primary),
+        row: until_removed,
+      ),
+      at_ally,
+      ally,
+      [ally],
+      [],
+      [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, planned, press_target, primary_target, sees, struck, lands) =
+      row
+    assert landing_on(
+        row: planned,
+        caster: seeing(players: sees),
+        primary_target:,
+        press_target:,
+        struck:,
+      )
+      == lands
+      as reason
+  })
 }

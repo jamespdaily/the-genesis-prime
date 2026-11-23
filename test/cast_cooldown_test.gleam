@@ -428,6 +428,8 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
         | cast_state.Gain(..)
         | cast_state.CasterChangeStarts(..)
         | cast_state.CasterChangeEnds(..)
+        | cast_state.OtherPlayerChangeStarts(..)
+        | cast_state.OtherPlayerChangeEnds(..)
         | cast_state.TargetChangeStarts(..)
         | cast_state.TargetChangeEnds(..)
         | cast_state.ForcedMoveStarts(..)

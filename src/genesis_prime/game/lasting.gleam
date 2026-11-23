@@ -396,28 +396,58 @@ fn oldest_first(
   })
 }
 
+/// A cast of one caster on one unit as the stack rule reads it: the cast, its spell, its
+/// stack and when it started (its age: cast ids wrap, so they do not give it).
+pub type StackedCast {
+  StackedCast(cast_id: Int, spell4_id: Spell4Id, stack: Stack, started_ms: Int)
+}
+
 /// The holds a new cast of `spell4_id` with `stack` pushes off the unit `unit_id`
 /// when it gives the unit a node with life, from `holds`, the caster's own live and
-/// lingering holds on that unit: with a cap of 1 or more, the holds of the same
-/// stack group beyond the cap less one, oldest `started_ms` first, each a
-/// `NodeOff`; with a cap of 0, those of the same spell. This is Jim's decision, the
-/// server's rule: the client reads a stack group only at load and in tooltips, and the
-/// rows give the cap but no rule for a cast at it (`Spell4.spell4StackGroupId`,
-/// `Spell4StackGroup.stackCap`).
+/// lingering holds on that unit, each a `NodeOff` of the casts `stack_pushed_off` names.
 pub fn pushed_off(
   holds holds: List(Hold),
   spell4_id spell4_id: Spell4Id,
   stack stack: Stack,
   unit_id unit_id: Int,
 ) -> List(Removal) {
+  list.filter(holds, fn(hold) { hold.node.unit_id == unit_id })
+  |> list.map(fn(hold) {
+    StackedCast(
+      cast_id: hold.cast_id,
+      spell4_id: hold.spell4_id,
+      stack: hold.stack,
+      started_ms: hold.started_ms,
+    )
+  })
+  |> stack_pushed_off(spell4_id:, stack:)
+  |> list.map(fn(cast_id) { NodeOff(cast_id:, unit_id:) })
+}
+
+/// The casts a new cast of `spell4_id` with `stack` pushes off a unit, from `casts`, the
+/// caster's own casts on it: with a cap of 1 or more, those of the same stack group beyond
+/// the cap less one, oldest `started_ms` first; with a cap of 0, those of the same spell.
+/// This is Jim's decision, the server's rule: the client reads a stack group only at load
+/// and in tooltips, and the rows give the cap but no rule for a cast at it
+/// (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`).
+pub fn stack_pushed_off(
+  casts casts: List(StackedCast),
+  spell4_id spell4_id: Spell4Id,
+  stack stack: Stack,
+) -> List(Int) {
   let #(matching, room) = case stack.cap >= 1 && stack.group_id != 0 {
     True -> #(
-      fn(hold: Hold) { hold.stack.group_id == stack.group_id },
+      fn(cast: StackedCast) { cast.stack.group_id == stack.group_id },
       stack.cap - 1,
     )
-    False -> #(fn(hold: Hold) { hold.spell4_id == spell4_id }, 0)
+    False -> #(fn(cast: StackedCast) { cast.spell4_id == spell4_id }, 0)
   }
-  let same = oldest_first(holds:, unit_id:, matching:)
+  let same =
+    list.filter(casts, matching)
+    |> list.sort(fn(first, second) {
+      int.compare(first.started_ms, second.started_ms)
+      |> order.break_tie(int.compare(first.cast_id, second.cast_id))
+    })
   list.take(same, int.max(0, list.length(same) - room))
-  |> list.map(fn(hold) { NodeOff(cast_id: hold.cast_id, unit_id:) })
+  |> list.map(fn(cast) { cast.cast_id })
 }

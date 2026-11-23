@@ -109,15 +109,16 @@ import genesis_prime/game/cast/state.{
   Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed,
   Live, Log, ModifierEnd, ModifierStart, NoClientCastId, NoInteraction,
   NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
-  NotSentByClient, OnCaster, OnPlayer, Passive, Plain, PressNotBuilt,
-  PressRefused, Pressed, PressedAt, ProcDue, QuestAdvanceDue, QuestAdvanced,
-  QuestButton, Reached, Refuse, RepeatHeld, Resolution, ResourceMoved,
-  RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, StartChild, StartHeld,
-  Started, StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
-  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell, UnbuiltShortcut,
-  UnbuiltSpell, UnknownAnswer, UnknownCancel, UnreadItemPrerequisite,
-  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UsedUnit,
-  WindowEnd, WithCast, WithNothing, WithUse, WrongAnswerSpell,
+  NotSentByClient, OnCaster, OnPlayer, Passive, Plain, PlayerChangeEnd,
+  PressNotBuilt, PressRefused, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
+  QuestAdvanced, QuestButton, Reached, Refuse, RepeatHeld, Resolution,
+  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, StartChild,
+  StartHeld, Started, StartedMoving, Starts, State, StateEnd, StealthChanged,
+  Strike, TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell,
+  UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
+  WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -2970,6 +2971,8 @@ fn fire(
           CasterChangeStarts(source:, change:),
         ])
         ModifierEnd(source:) -> #(cast, [CasterChangeEnds(source:)])
+        PlayerChangeEnd(unit_id:, source:) ->
+          cast_control.player_change_ended(cast:, unit_id:, source:)
         RestrictionEnd(source:) ->
           cast_control.restriction_ended(cast:, source:)
         TargetModifierStart(on:, modifier:, struck_at_ms:) ->
@@ -3244,8 +3247,8 @@ fn nodes_ended(
               spell: holder.spell,
               unit_ids: cast_state.sorted_units(ended),
             )
-          let #(cast, on_creatures) =
-            cast_control.creature_modifiers_ended(
+          let #(cast, on_units) =
+            cast_control.units_ended(
               cast:,
               cast_id:,
               unit_ids: cast_state.sorted_units(ended),
@@ -3266,7 +3269,7 @@ fn nodes_ended(
               started,
               healed,
               modifiers,
-              on_creatures,
+              on_units,
               left,
             ]),
           )
@@ -3634,8 +3637,7 @@ fn persistence_end(
       let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
       let #(cast, ended) =
         cast_proc.effects_ended(cast:, cast_id:, spell: live.spell)
-      let #(cast, on_creatures) =
-        cast_control.creature_modifiers_all_ended(cast:, cast_id:)
+      let #(cast, on_units) = cast_control.all_units_ended(cast:, cast_id:)
       let #(cast, finished) = case cast_press.open_charge_of(cast:, cast_id:) {
         Some(threshold) ->
           close_threshold(cast:, ability: threshold.ability, now_ms:)
@@ -3649,7 +3651,7 @@ fn persistence_end(
           ticks,
           nodes,
           ended,
-          on_creatures,
+          on_units,
           finished,
         ]),
       )
@@ -3674,15 +3676,14 @@ fn lingering_ended(
   let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
   let #(cast, ended) =
     cast_proc.effects_ended(cast:, cast_id:, spell: lingering.spell)
-  let #(cast, on_creatures) =
-    cast_control.creature_modifiers_all_ended(cast:, cast_id:)
+  let #(cast, on_units) = cast_control.all_units_ended(cast:, cast_id:)
   #(
     cast_proc.passive_cleared(cast:, cast_id:),
     list.flatten([
       ticks,
       nodes,
       ended,
-      on_creatures,
+      on_units,
       cast_tick.finished_effects(cast_id:, audience: lingering.audience),
     ]),
   )
@@ -4276,6 +4277,7 @@ fn close_threshold(
             | ModifierStart(..)
             | TargetModifierStart(..)
             | ForcedMoveStart(..)
+            | PlayerChangeEnd(..)
             | ModifierEnd(..)
             | RestrictionEnd(..)
             | CooldownModifierStarts(..)
@@ -4574,6 +4576,8 @@ fn go(
           passed_in: cast_state.passed_in_of(live:),
           aimed:,
           struck:,
+          spell:,
+          now_ms:,
         )
       let #(cast, throwing) =
         cast_control.struck_moves_armed(
@@ -4895,31 +4899,51 @@ fn reached_by(
             gates_passed:,
             target_verdict:,
           )
-        spell_plan.ModifierEffect(modifier: row) ->
-          reach_units(
-            walk:,
-            planned:,
-            row:,
-            aim: spell_plan.modifier_aim(modifier: row),
-            stands: fn(entry) {
-              cast_gate.modifier_applies(
-                row: entry.0,
-                unit_id: entry.1,
+        spell_plan.ModifierEffect(modifier: row) -> {
+          let press_target = press_target_of(live:)
+          let what =
+            "the "
+            <> cast_control.modifier_kind_named(row:)
+            <> " effect "
+            <> int.to_string(row.effect_id.value)
+          let walk =
+            reach_units(
+              walk:,
+              planned:,
+              row:,
+              aim: spell_plan.modifier_aim(modifier: row),
+              stands: fn(entry) {
+                cast_gate.modifier_applies(
+                  row: entry.0,
+                  unit_id: entry.1,
+                  caster:,
+                  struck:,
+                  press_target:,
+                )
+              },
+              condition: row.condition,
+              what:,
+              caster:,
+              live:,
+              struck:,
+              gates_passed:,
+              target_verdict:,
+            )
+          Walk(
+            ..walk,
+            logs: list.append(
+              walk.logs,
+              player_modifier_refusals(
+                row:,
+                what:,
                 caster:,
+                live:,
                 struck:,
-              )
-            },
-            condition: row.condition,
-            what: "the "
-              <> cast_control.modifier_kind_named(row:)
-              <> " effect "
-              <> int.to_string(row.effect_id.value),
-            caster:,
-            live:,
-            struck:,
-            gates_passed:,
-            target_verdict:,
+                press_target:,
+              ),
+            ),
           )
+        }
         spell_plan.StruckMoveEffect(struck_move: row) ->
           reach_units(
             walk:,
@@ -5002,6 +5026,54 @@ fn reached_by(
       }
     },
   )
+}
+
+/// The player a press named, for the rows of a cast the player pressed: the cast's primary
+/// target; none for a child a Proxy started, whose primary target is the plan's stand-in.
+fn press_target_of(live live: Live) -> Option(Int) {
+  case live.parent {
+    None -> Some(live.primary_target)
+    Some(_) -> None
+  }
+}
+
+/// A debug line for each unit that is the player the press named and that the modifier row
+/// aims at but does not land on: it is not in the caster's sight at the go, or the row has a
+/// delay or lasts until removed, which a change on another player does not take.
+fn player_modifier_refusals(
+  row row: spell_plan.PropertyModifier,
+  what what: String,
+  caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
+  press_target press_target: Option(Int),
+) -> List(Effect) {
+  cast_gate.rows_with_units(
+    rows: [row],
+    aim: spell_plan.modifier_aim,
+    caster:,
+    primary_target: live.primary_target,
+    struck:,
+  )
+  |> list.filter_map(fn(entry) {
+    cast_gate.modifier_refusal(
+      row: entry.0,
+      unit_id: entry.1,
+      caster:,
+      press_target:,
+    )
+    |> option.to_result(Nil)
+    |> result.map(fn(why) {
+      Log(
+        level: LogDebug,
+        text: what
+          <> " on unit "
+          <> int.to_string(entry.1)
+          <> " is not applied: "
+          <> why,
+      )
+    })
+  })
 }
 
 /// The walk after one row: an entry for the row on each unit its aim names that `stands`,
@@ -5915,7 +5987,23 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A property modifier aimed at the primary target (targetFlags 2) changes only a creature the go struck, so in a spell a Proxy starts on the caster it changes no unit: Mental Boon's Nimble (property 39, Dash Regeneration) is not given.",
+      missing: "A property modifier aimed at the primary target (targetFlags 2) changes the creatures the go hit and the player the press named, so in a spell a Proxy starts on the caster it changes no unit: Mental Boon's Nimble (property 39, Dash Regeneration) is not given, and Phantasmal Armor's Interrupt Armor child (Spell4 76766, a type 52 row aimed at the child's primary target) lands on its caster instead of the player the armor was pressed at.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "An absorb or a type 11 row aimed at another player lands nothing when it has a delay or lasts until removed: no ability row has either, and each would need a start timer or an end of its own.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A row aimed at a dead player the caster's picture still shows is listed in the go and told to that player, which refuses it: nothing asks the player first.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A target apply prerequisite on an absorb or a type 11 row aimed at another player reads what the caster's picture shows of that player, not the player's own state.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A press of a spell at oneself lands none of its type 11 rows aimed at the primary target: Phantasmal Armor pressed at oneself gives its absorb and no damage reduction, because the five modifier rows are not read as the caster's own.",
     ),
   ]
 }

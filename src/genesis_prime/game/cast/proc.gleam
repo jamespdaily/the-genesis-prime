@@ -167,7 +167,8 @@ import genesis_prime/game/cast/state.{
   CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
   FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
   HeldChange, HeldProc, Hit, HitCreature, HitOtherPlayer, HitPlayer, Immune, Log,
-  Look, ModifierEnd, ModifierStart, NodesEnd, Pay, ProcDue, QuestAdvanceDue,
+  Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerChangeEnds,
+  OtherPlayerChangeStarts, Pay, PlayerChangeEnd, ProcDue, QuestAdvanceDue,
   QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast, StartChild,
   StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
   TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell, Tick,
@@ -239,6 +240,8 @@ pub fn heals_landed(
       | Pay(..)
       | Gain(..)
       | CasterChangeEnds(..)
+      | OtherPlayerChangeStarts(..)
+      | OtherPlayerChangeEnds(..)
       | TargetChangeStarts(..)
       | TargetChangeEnds(..)
       | CreatureControlsEnd(..)
@@ -277,6 +280,8 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
       | Gain(..)
       | CasterChangeStarts(..)
       | CasterChangeEnds(..)
+      | OtherPlayerChangeStarts(..)
+      | OtherPlayerChangeEnds(..)
       | TargetChangeStarts(..)
       | TargetChangeEnds(..)
       | CreatureControlsEnd(..)
@@ -578,6 +583,7 @@ pub fn unit_removed(
         | ModifierStart(..)
         | TargetModifierStart(..)
         | ForcedMoveStart(..)
+        | PlayerChangeEnd(..)
         | ModifierEnd(..)
         | RestrictionEnd(..)
         | CooldownModifierStarts(..)
@@ -599,14 +605,13 @@ pub fn unit_removed(
     let #(cast_id, holder) = entry
     let nodes = dict.delete(holder.nodes, unit_id)
     let #(cast, ticks) = cast_tick.ticks_dropped(cast:, cast_id:, unit_id:)
-    let #(cast, on_creatures) =
-      cast_control.creature_modifiers_ended(cast:, cast_id:, unit_ids: [unit_id])
+    let #(cast, on_units) = cast_control.unit_unseen(cast:, cast_id:, unit_id:)
     let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
     let ends = case holder.lingering && dict.is_empty(nodes) {
       True -> cast_tick.finished_effects(cast_id:, audience: holder.audience)
       False -> []
     }
-    #(cast, list.flatten([effects, ticks, on_creatures, left, ends]))
+    #(cast, list.flatten([effects, ticks, on_units, left, ends]))
   })
 }
 
@@ -634,6 +639,7 @@ pub fn proc_fires_dropped(
             | CooldownModifierEnds(..)
             | TargetModifierStart(..)
             | ForcedMoveStart(..)
+            | PlayerChangeEnd(..)
             | StartChild(..)
             | StateEnd(..)
             | QuestAdvanceDue(..)
@@ -683,7 +689,7 @@ pub fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
             timers: dict.from_list(rest),
             stealth: others,
             procs: other_procs,
-            on_creatures: dict.delete(cast.on_creatures, id),
+            on_units: dict.delete(cast.on_units, id),
           ),
           Some(Aside(
             id:,
@@ -692,7 +698,7 @@ pub fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
             timers:,
             stealth:,
             procs:,
-            on_creatures: dict.get(cast.on_creatures, id) |> result.unwrap([]),
+            on_units: dict.get(cast.on_units, id) |> result.unwrap([]),
           )),
         )
       }
@@ -704,12 +710,12 @@ pub fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
 pub fn passive_restored(cast cast: State, aside aside: Option(Aside)) -> State {
   case aside {
     None -> cast
-    Some(Aside(id:, live:, lingering:, timers:, stealth:, procs:, on_creatures:)) ->
+    Some(Aside(id:, live:, lingering:, timers:, stealth:, procs:, on_units:)) ->
       State(
         ..cast,
-        on_creatures: case on_creatures {
-          [] -> cast.on_creatures
-          [_, ..] -> dict.insert(cast.on_creatures, id, on_creatures)
+        on_units: case on_units {
+          [] -> cast.on_units
+          [_, ..] -> dict.insert(cast.on_units, id, on_units)
         },
         casts: case live {
           Some(live) -> dict.insert(cast.casts, id, live)
@@ -747,6 +753,7 @@ fn belongs_to_passive(
     | CooldownModifierEnds(source:) -> source.cast_id == id
     TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) ->
       on.source.cast_id == id
+    PlayerChangeEnd(source:, ..) -> source.cast_id == id
     StartChild(root:, ..) -> Some(root) == spell4_id
     StateEnd(..)
     | QuestAdvanceDue(..)
@@ -810,6 +817,7 @@ pub fn modifiers_pending(cast cast: State) -> List(Effect) {
         ModifierStart(..)
         | TargetModifierStart(..)
         | ForcedMoveStart(..)
+        | PlayerChangeEnd(..)
         | ProcDue(..)
         | RestrictionEnd(..)
         | CooldownModifierStarts(..)
@@ -913,6 +921,7 @@ pub fn effects_ended(
         | ModifierStart(..)
         | TargetModifierStart(..)
         | ForcedMoveStart(..)
+        | PlayerChangeEnd(..)
         | ModifierEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
@@ -1111,19 +1120,14 @@ fn node_off(
         caster_modifiers_ended(cast:, cast_id:, spell: holder.spell, unit_ids: [
           unit_id,
         ])
-      let #(cast, on_creatures) =
-        cast_control.creature_modifiers_ended(cast:, cast_id:, unit_ids: [
-          unit_id,
-        ])
+      let #(cast, on_units) =
+        cast_control.units_ended(cast:, cast_id:, unit_ids: [unit_id])
       let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
       let ends = case holder.lingering && emptied && kept {
         True -> cast_tick.finished_effects(cast_id:, audience: holder.audience)
         False -> []
       }
-      #(
-        cast,
-        list.flatten([ticks, removed, modifiers, on_creatures, left, ends]),
-      )
+      #(cast, list.flatten([ticks, removed, modifiers, on_units, left, ends]))
     }
   }
 }

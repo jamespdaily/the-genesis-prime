@@ -3467,3 +3467,31 @@ pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
     ),
   )
 }
+
+/// A connection's session in `status`, on the tests' settings, as its first input finds
+/// it: for a test that gives a function of the connection's rule a session directly.
+pub fn session_in(status status: state.Status) -> state.Session {
+  let settings = settings()
+  state.Session(
+    settings:,
+    link: client_connection.link(
+      connection: ConnectionId(1),
+      peer: support.peer,
+      seed: <<1>>,
+      bucket: settings.rate,
+      now: step.Now(monotonic_ms: 0, filetime: 0),
+    ),
+    pending: <<>>,
+    cipher: cipher.base(),
+    unhandled_logged: set.new(),
+    unrelayed_logged: set.new(),
+    unhandled_channels_logged: set.new(),
+    unknown_zones_logged: set.new(),
+    interaction_logged: set.new(),
+    next_whisper: 1,
+    move_seq: 0,
+    last_stay: stay.none_yet(),
+    held: [],
+    status:,
+  )
+}

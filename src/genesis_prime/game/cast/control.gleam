@@ -33,22 +33,35 @@
 ////   time the go struck them (`HitCreature`), listed on each like a Fluff effect and
 ////   giving its node the row's life. The cast owns the time and the creature the values:
 ////   the rule tells the creature `TargetChangeStarts` at the go plus the row's delay, in
-////   the go's own step when there is none, and keeps what it started in `on_creatures`.
+////   the go's own step when there is none, and keeps what it started in `on_units`.
 ////   It has no end timer of its own: it ends, as `TargetChangeEnds` told once, when the
 ////   cast's node on that creature ends by time, is taken off by a type 80 removal or a
 ////   push off by the stack rule, when the creature leaves the caster's sight, when the
 ////   cast's persistence stops holding, when the caster dies (but for the innate passive's
 ////   cast) and when the player leaves; a start still waiting for its delay is cancelled
 ////   with it and told nothing. A later go of the cast on the same creature starts it
-////   again from that go. A row aimed at another player is left out, and casters'
-////   modifiers on one creature do not stack.
+////   again from that go. Casters' modifiers on one creature do not stack.
+//// - **A go's changes on another player** (an absorb, or a type 11 row aimed at the primary
+////   target, that the press named a player in the caster's sight for, with no delay and a
+////   lifetime): each is listed on that player like a Fluff effect, gives its node the row's
+////   life, and is told to the player's connection at the go as `OtherPlayerChangeStarts`
+////   (genesis_prime/game/held_changes `PlayerChangeStarts`; an absorb's pool is worked out
+////   at the go from the caster as for the caster's own). The player applies it as its own
+////   cast's change of that kind is applied. The cast keeps it in `on_units` with the address
+////   it told, and tells it ended, as `OtherPlayerChangeEnds`, once, on every path the
+////   creature's modifier ends by (`ended_where`), and also on a timer of its own after the
+////   row's duration (`PlayerChangeEnd`), since a spell whose Spell4 propertyFlags hold
+////   0x100 outlives its caster's sight: the node is dropped when the caster loses sight of
+////   the player, the change stays, and its timer ends it, told from the go's address. A
+////   later cast of the same stack group that no node of an earlier cast holds a change for
+////   ends that cast's change first (`kept_pushed_off`).
 //// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
 ////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
 ////   the caster): each is aimed at the creatures the go
 ////   hit, in the life and at the time the go struck them. The rule tells
 ////   `ForcedMoveStarts` at the go's own step when the row has no delay, and else arms a
 ////   `ForcedMoveStart` timer for the go plus the row's delay; the end of the cast's node
-////   on that creature cancels a timer still waiting (`creatures_ended`), as it cancels a
+////   on that creature cancels a timer still waiting (`ended_where`), as it cancels a
 ////   modifier's start. The connection carries `ForcedMoveStarts` out
 ////   (genesis_prime/game/connection/casting): it draws the throw's two fractions from its
 ////   seed then, so a delayed throw draws at its own time, and tells the creature. A
@@ -140,14 +153,15 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Caster, type CasterChange, type Due,
-  type Effect, type HeldRestriction, type Live, type OnCreature, type Reached,
-  type Restricting, type State, type Struck, Applied, CasterChangeStarts,
-  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureControlsEnd,
-  CreatureDespawns, CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart,
-  ForcedMoveStarts, Go, HeldChange, HeldRestriction, Hit, Immune, Look,
-  ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue, QuestAdvanceDue,
-  RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld, State,
-  StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
+  type Effect, type HeldRestriction, type Live, type OnCreature, type OnUnit,
+  type Reached, type Restricting, type State, type Struck, Applied,
+  CasterChangeStarts, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
+  CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
+  Finish, ForcedMoveStart, ForcedMoveStarts, Go, HeldChange, HeldOnCreature,
+  HeldOnPlayer, HeldRestriction, Hit, Immune, Look, ModifierEnd, ModifierStart,
+  NodesEnd, OnCreature, OtherPlayerChangeStarts, PlayerChangeEnd, ProcDue,
+  QuestAdvanceDue, RepeatHeld, Restricting, RestrictionEnd, Send, StartChild,
+  StartHeld, State, StateEnd, TargetChangeStarts, TargetModifierStart, Tell,
   Tick, WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
@@ -155,6 +169,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
+import genesis_prime/game/player_address.{type PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
@@ -172,7 +187,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The delay of a property modifier on a creature ran out: it starts on the creature
-/// (`TargetChangeStarts`) and the cast keeps it in `on_creatures` until an end of its
+/// (`TargetChangeStarts`) and the cast keeps it in `on_units` until an end of its
 /// node; a cast that has ended since starts nothing.
 pub fn target_modifier_started(
   cast cast: State,
@@ -188,43 +203,70 @@ pub fn target_modifier_started(
   use <- bool.guard(when: !held, return: #(cast, []))
   // A later go of the cast strikes the same creature again: its start replaces the
   // earlier one, which the creature replaces by source too.
-  let started =
-    dict.get(cast.on_creatures, cast_id)
-    |> result.unwrap([])
-    |> list.filter(fn(kept) {
-      kept.unit_id != on.unit_id || kept.source != on.source
-    })
-  #(
-    State(
-      ..cast,
-      on_creatures: dict.insert(
-        cast.on_creatures,
-        cast_id,
-        list.append(started, [on]),
-      ),
+  #(held_on(cast:, cast_id:, on: HeldOnCreature(creature: on)), [
+    TargetChangeStarts(
+      unit_id: on.unit_id,
+      life: on.life,
+      struck_at_ms:,
+      source: on.source,
+      modifier:,
     ),
-    [
-      TargetChangeStarts(
-        unit_id: on.unit_id,
-        life: on.life,
-        struck_at_ms:,
-        source: on.source,
-        modifier:,
-      ),
-    ],
+  ])
+}
+
+/// The cast `cast_id` holds the change `on` names, in place of one it held for the same
+/// unit and source.
+fn held_on(cast cast: State, cast_id cast_id: Int, on on: OnUnit) -> State {
+  let kept =
+    dict.get(cast.on_units, cast_id)
+    |> result.unwrap([])
+    |> list.filter(fn(held) {
+      cast_state.held_unit_id(on: held) != cast_state.held_unit_id(on:)
+      || cast_state.held_source(on: held) != cast_state.held_source(on:)
+    })
+  State(
+    ..cast,
+    on_units: dict.insert(cast.on_units, cast_id, list.append(kept, [on])),
   )
 }
 
-/// The property modifiers the cast `cast_id` holds on the creatures `ending` names end:
-/// each that started is told ended once and forgotten, and each that still waits for
-/// its delay has its timer cancelled and is told nothing. A modifier already ended is
-/// not told again.
-pub fn creature_modifiers_ended(
+/// The changes the cast `cast_id` holds on the units `unit_ids` end: each that started is
+/// told ended once and forgotten (`unit_end_told`), each that still waits for its delay
+/// has its timer cancelled and is told nothing, and the end timer of a change on a player
+/// is cancelled. A change already ended is not told again.
+pub fn units_ended(
   cast cast: State,
   cast_id cast_id: Int,
   unit_ids unit_ids: List(Int),
 ) -> #(State, List(Effect)) {
-  creatures_ended(cast:, cast_id:, ending: list.contains(unit_ids, _))
+  ended_where(
+    cast:,
+    cast_id:,
+    unit_ids: list.contains(unit_ids, _),
+    ending: fn(_) { True },
+  )
+}
+
+/// The changes the cast `cast_id` holds on the unit `unit_id` end, as `units_ended` has
+/// them, except a change on a player whose spell outlives its caster's sight: the caster's
+/// removal of the unit does not end it, so it waits for its end timer.
+pub fn unit_unseen(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+) -> #(State, List(Effect)) {
+  ended_where(
+    cast:,
+    cast_id:,
+    unit_ids: fn(id) { id == unit_id },
+    ending: fn(on) {
+      case on {
+        HeldOnCreature(..) -> True
+        HeldOnPlayer(sight: held_changes.EndsWhenUnseen, ..) -> True
+        HeldOnPlayer(sight: held_changes.KeptWhenUnseen, ..) -> False
+      }
+    },
+  )
 }
 
 /// The casts of `holds` that `removals` take off a creature while their node holds the
@@ -253,44 +295,61 @@ pub fn creature_controls_ended(
   })
 }
 
-/// Every property modifier the cast `cast_id` holds on a creature ends, as a persistence
-/// that stops holding destroys all its nodes.
-pub fn creature_modifiers_all_ended(
+/// Every change the cast `cast_id` holds on a unit ends, as a persistence that stops
+/// holding destroys all its nodes.
+pub fn all_units_ended(
   cast cast: State,
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
-  creatures_ended(cast:, cast_id:, ending: fn(_) { True })
+  ended_where(cast:, cast_id:, unit_ids: fn(_) { True }, ending: fn(_) { True })
 }
 
-fn creatures_ended(
+/// The funnel of every end: a waiting start of a creature on a unit `unit_ids` names has
+/// its timer cancelled and tells nothing; each held change on such a unit that `ending`
+/// accepts is forgotten and told ended, and the end timer of a change on a player is
+/// cancelled with it.
+fn ended_where(
   cast cast: State,
   cast_id cast_id: Int,
-  ending ending: fn(Int) -> Bool,
+  unit_ids unit_ids: fn(Int) -> Bool,
+  ending ending: fn(OnUnit) -> Bool,
 ) -> #(State, List(Effect)) {
   let #(cast, cancels) =
     cast_state.cancel_timers(cast:, matching: fn(due) {
       case target_start_of(due:) {
         Ok(waiting) ->
-          waiting.source.cast_id == cast_id && ending(waiting.unit_id)
+          waiting.source.cast_id == cast_id && unit_ids(waiting.unit_id)
         Error(Nil) -> False
       }
     })
   let #(ended, kept) =
-    dict.get(cast.on_creatures, cast_id)
+    dict.get(cast.on_units, cast_id)
     |> result.unwrap([])
-    |> list.partition(fn(on) { ending(on.unit_id) })
-  let on_creatures = case kept {
-    [] -> dict.delete(cast.on_creatures, cast_id)
-    [_, ..] -> dict.insert(cast.on_creatures, cast_id, kept)
+    |> list.partition(fn(on) {
+      unit_ids(cast_state.held_unit_id(on:)) && ending(on)
+    })
+  let on_units = case kept {
+    [] -> dict.delete(cast.on_units, cast_id)
+    [_, ..] -> dict.insert(cast.on_units, cast_id, kept)
   }
+  let #(cast, end_cancels) =
+    cast_state.cancel_timers(State(..cast, on_units:), matching: fn(due) {
+      case player_end_of(due:) {
+        Ok(#(unit_id, source)) ->
+          list.any(ended, fn(on) {
+            cast_state.held_unit_id(on:) == unit_id
+            && cast_state.held_source(on:) == source
+          })
+        Error(Nil) -> False
+      }
+    })
   #(
-    State(..cast, on_creatures:),
-    list.append(
+    cast,
+    list.flatten([
       cancels,
-      list.map(ended, fn(on) {
-        TargetChangeEnds(unit_id: on.unit_id, life: on.life, source: on.source)
-      }),
-    ),
+      end_cancels,
+      list.map(ended, fn(on) { cast_state.unit_end_told(on:) }),
+    ]),
   )
 }
 
@@ -618,6 +677,8 @@ pub fn modifiers_armed(
   passed_in passed_in: Option(Float),
   aimed aimed: Aimed,
   struck struck: List(Struck),
+  spell spell: Spell,
+  now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   list.fold(
     cast_state.rows_reached(
@@ -629,16 +690,30 @@ pub fn modifiers_armed(
       let #(cast, effects) = so_far
       let #(entry, row) = found
       let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+      let player = dict.get(caster.players_in_sight, entry.unit_id)
       let #(cast, more) = case row.change {
         spell_plan.StruckChange(modifier:, ..) ->
-          creature_modifier_armed(
-            cast:,
-            cast_id:,
-            row:,
-            modifier:,
-            unit_id: entry.unit_id,
-            struck:,
-          )
+          case player {
+            Ok(address) ->
+              player_change_armed(
+                cast:,
+                cast_id:,
+                row:,
+                address:,
+                change: held_changes.Property(modifier:),
+                spell:,
+                now_ms:,
+              )
+            Error(Nil) ->
+              creature_modifier_armed(
+                cast:,
+                cast_id:,
+                row:,
+                modifier:,
+                unit_id: entry.unit_id,
+                struck:,
+              )
+          }
         spell_plan.PropertyChange(modifier:) ->
           caster_modifier_armed(
             cast:,
@@ -648,21 +723,37 @@ pub fn modifiers_armed(
           )
         spell_plan.LookChange(disguise:) ->
           caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
-        spell_plan.AbsorbChange(absorption:) ->
+        spell_plan.AbsorbChange(absorption:) -> {
           // An absorb's pool is worked out at the go from the caster as it stood before
           // the go's own effects, as a shield heal's amount is (`cast_heal.healed_on`).
-          caster_modifier_armed(
-            cast:,
-            row:,
-            source:,
-            change: HeldChange(held_changes.Absorb(
+          let pool =
+            held_changes.Absorb(
               amount: damage.amount_on_caster(
                 formula: absorption.formula,
                 caster: cast_heal.on_caster_of(caster:, passed_in:),
               ),
               mask: absorption.mask,
-            )),
-          )
+            )
+          case player {
+            Ok(address) ->
+              player_change_armed(
+                cast:,
+                cast_id:,
+                row:,
+                address:,
+                change: pool,
+                spell:,
+                now_ms:,
+              )
+            Error(Nil) ->
+              caster_modifier_armed(
+                cast:,
+                row:,
+                source:,
+                change: HeldChange(pool),
+              )
+          }
+        }
       }
       #(cast, list.append(effects, more))
     },
@@ -672,7 +763,7 @@ pub fn modifiers_armed(
 /// A property modifier on a creature the go struck, armed from this go: the modifier
 /// of an earlier go on the same creature is armed again; a row with no delay starts in
 /// this step and any other on a timer of its delay. It has no timer of its end: it ends
-/// with the cast's node on the creature (`creature_modifiers_ended`).
+/// with the cast's node on the creature (`units_ended`).
 fn creature_modifier_armed(
   cast cast: State,
   cast_id cast_id: Int,
@@ -709,6 +800,142 @@ fn creature_modifier_armed(
       }
     }
   }
+}
+
+/// A change on the player the press named, armed from this go: the cast tells the player's
+/// connection the change at once (`OtherPlayerChangeStarts`) and keeps it in `on_units` with
+/// the address it was told by, ending it with the cast's node on the player or, for a change
+/// that outlives the caster's sight, on a timer of its own after the row's duration
+/// (`PlayerChangeEnd`). A change of the same source told before is told again and its end
+/// timer replaced; the changes of an earlier cast of the same stack that no node holds any
+/// more end first (`kept_pushed_off`).
+fn player_change_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.PropertyModifier,
+  address address: PlayerAddress,
+  change change: held_changes.Change,
+  spell spell: Spell,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+  let sight = held_changes.sight_of(outlives_caster: spell.outlives_caster)
+  let on =
+    HeldOnPlayer(
+      source:,
+      address:,
+      sight:,
+      spell4_id: spell.spell4_id,
+      stack: spell.stack,
+      started_ms: now_ms,
+    )
+  let #(cast, pushed) = kept_pushed_off(cast:, cast_id:, on:)
+  let #(cast, cancels) =
+    cast_state.cancel_timers(cast:, matching: fn(due) {
+      player_end_of(due:) == Ok(#(address.unit_id, source))
+    })
+  let cast = held_on(cast:, cast_id:, on:)
+  let #(cast, ending) = case row.row.until_removed {
+    True -> #(cast, [])
+    False -> {
+      let #(cast, _, start) =
+        cast_state.armed(
+          cast:,
+          due: PlayerChangeEnd(unit_id: address.unit_id, source:),
+          after_ms: row.row.delay_ms + row.row.duration_ms,
+        )
+      #(cast, [start])
+    }
+  }
+  #(
+    cast,
+    list.flatten([
+      pushed,
+      cancels,
+      [OtherPlayerChangeStarts(address:, source:, change:, sight:)],
+      ending,
+    ]),
+  )
+}
+
+/// The changes of the caster's earlier casts on the player `on` names that the stack rule of
+/// its spell pushes off, as a node pushed off ends the changes it holds
+/// (`lasting.stack_pushed_off`): a change a cast kept after the caster lost sight of the
+/// player is held by no node, so the push off of nodes cannot find it. A change on a creature
+/// pushes none off.
+fn kept_pushed_off(
+  cast cast: State,
+  cast_id cast_id: Int,
+  on on: OnUnit,
+) -> #(State, List(Effect)) {
+  case on {
+    HeldOnCreature(..) -> #(cast, [])
+    HeldOnPlayer(address:, spell4_id:, stack:, ..) -> {
+      let unit_id = address.unit_id
+      list.fold(
+        lasting.stack_pushed_off(
+          casts: kept_casts_on(cast:, cast_id:, unit_id:),
+          spell4_id:,
+          stack:,
+        ),
+        #(cast, []),
+        fn(so_far, old_cast_id) {
+          let #(cast, effects) = so_far
+          let #(cast, ended) =
+            ended_where(
+              cast:,
+              cast_id: old_cast_id,
+              unit_ids: fn(id) { id == unit_id },
+              ending: fn(_) { True },
+            )
+          #(cast, list.append(effects, ended))
+        },
+      )
+    }
+  }
+}
+
+/// The casts of the caster other than `cast_id` that hold a change on the player `unit_id`,
+/// as the stack rule reads them.
+fn kept_casts_on(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_id unit_id: Int,
+) -> List(lasting.StackedCast) {
+  list.filter_map(dict.to_list(cast.on_units), fn(entry) {
+    let #(held_cast_id, entries) = entry
+    use <- bool.guard(when: held_cast_id == cast_id, return: Error(Nil))
+    list.find_map(entries, fn(held) {
+      case held {
+        HeldOnPlayer(address:, spell4_id:, stack:, started_ms:, ..)
+          if address.unit_id == unit_id
+        ->
+          Ok(lasting.StackedCast(
+            cast_id: held_cast_id,
+            spell4_id:,
+            stack:,
+            started_ms:,
+          ))
+        HeldOnPlayer(..) | HeldOnCreature(..) -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// The end timer of the change `source` holds on the player `unit_id` fired: the change
+/// ends, told once; a change that ended before, by the node's end or any other path, is not
+/// told again.
+pub fn player_change_ended(
+  cast cast: State,
+  unit_id unit_id: Int,
+  source source: unit_properties.Source,
+) -> #(State, List(Effect)) {
+  ended_where(
+    cast:,
+    cast_id: source.cast_id,
+    unit_ids: fn(id) { id == unit_id },
+    ending: fn(on) { cast_state.held_source(on:) == source },
+  )
 }
 
 /// The creatures a go throws: each struck move among the effects the go `reached` (a struck
@@ -936,12 +1163,40 @@ fn target_start_cancelled(
 fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
   case due {
     TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) -> Ok(on)
+    PlayerChangeEnd(..)
+    | Go(..)
+    | Finish(..)
+    | StartChild(..)
+    | NodesEnd(..)
+    | StateEnd(..)
+    | ModifierStart(..)
+    | ModifierEnd(..)
+    | RestrictionEnd(..)
+    | CooldownModifierStarts(..)
+    | CooldownModifierEnds(..)
+    | ProcDue(..)
+    | QuestAdvanceDue(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..)
+    | Tick(..) -> Error(Nil)
+  }
+}
+
+/// The unit and source of the change on a player whose end a timer waits for, none for
+/// any other timer.
+fn player_end_of(due due: Due) -> Result(#(Int, unit_properties.Source), Nil) {
+  case due {
+    PlayerChangeEnd(unit_id:, source:) -> Ok(#(unit_id, source))
     Go(..)
     | Finish(..)
     | StartChild(..)
     | NodesEnd(..)
     | StateEnd(..)
     | ModifierStart(..)
+    | TargetModifierStart(..)
+    | ForcedMoveStart(..)
     | ModifierEnd(..)
     | RestrictionEnd(..)
     | CooldownModifierStarts(..)
@@ -997,7 +1252,7 @@ fn caster_modifier_armed(
 }
 
 /// The modifier rows of a spell that change the caster: the rows aimed at struck units
-/// are the creature's (`creature_modifiers_ended`).
+/// are the creature's (`units_ended`).
 pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
   spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
   |> list.filter(fn(row) {

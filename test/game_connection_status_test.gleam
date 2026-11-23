@@ -4,18 +4,15 @@
 //// reaches, whose record of what the connection already did an answer's handler reads back.
 
 import cast_support
-import connection_rule_support
 import game_connection_support as support
-import genesis_prime/client_connection
-import genesis_prime/connection/cipher
 import genesis_prime/game/activate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
 import genesis_prime/game/connection/state.{
-  type Session, type Status, AwaitingHelloReply, Buying, Camped, ClaimingSession,
+  type Status, AwaitingHelloReply, Buying, Camped, ClaimingSession,
   EnteringWorld, FromCharacterSelect, Granting, InCharacterSelect, InWorld,
   Leaving, LeavingMap, MovingItem, Playing, ResumeSelect, ResumeWorld,
-  SavingPlace, Selling, Session, SpendingCharge, Summoning, TakingSessionKey,
+  SavingPlace, Selling, SpendingCharge, Summoning, TakingSessionKey,
   ToCharacterSelect, TurningIn, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/dev_command
@@ -29,43 +26,14 @@ import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/store.{AccountId, HeldItem}
 import genesis_prime/table/id.{Item2Id}
-import genesis_prime/world_map/stay
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set
 import owned_test
 import quest_support
 import world_entry_support
-
-fn session_in(status status: Status) -> Session {
-  let settings = support.settings()
-  Session(
-    settings:,
-    link: client_connection.link(
-      connection: ConnectionId(1),
-      peer: connection_rule_support.peer,
-      seed: <<1>>,
-      bucket: settings.rate,
-      now: Now(monotonic_ms: 0, filetime: 0),
-    ),
-    pending: <<>>,
-    cipher: cipher.base(),
-    unhandled_logged: set.new(),
-    unrelayed_logged: set.new(),
-    unhandled_channels_logged: set.new(),
-    unknown_zones_logged: set.new(),
-    interaction_logged: set.new(),
-    next_whisper: 1,
-    move_seq: 0,
-    last_stay: stay.none_yet(),
-    held: [],
-    status:,
-  )
-}
 
 fn an_item() -> store.HeldItem {
   HeldItem(
@@ -321,7 +289,7 @@ pub fn a_record_written_to_the_player_is_kept_in_each_status_that_holds_one_test
   use <- owned_test.run(10_000)
   let entered = world_entry_support.entered_after(clock_origin_ms: 600)
   list.each(rows(entered:), fn(row) {
-    let session = session_in(status: row.status)
+    let session = support.session_in(status: row.status)
     let written =
       connection_state.with_entered_in_any_status(session:, change: telling)
     assert option.is_some(connection_state.entered_of(row.status))
