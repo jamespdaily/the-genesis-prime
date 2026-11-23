@@ -146,8 +146,8 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["LandsHeal", "ReceivesHeal"],
-      "a heal told to a player raises neither the healer's LandsHeal nor the healed player's ReceivesHeal",
+      ["LandsHeal", "ReceivesHeal", "23414"],
+      "a heal told to a player raises neither the healer's LandsHeal nor the healed player's ReceivesHeal, and three abilities hold ReceivesHeal procs that would fire",
     ),
     Limit(
       connection_landing.gaps(),

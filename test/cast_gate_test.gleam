@@ -868,27 +868,8 @@ fn rolls_taken(
     )
   #(
     list.length(rolls) - list.length(aimed.rolls_left),
-    list.filter_map(applied.passed, fn(planned) {
-      case planned.kind {
-        spell_plan.HealEffect(heal: row) -> Ok(row.effect_id.value)
-        spell_plan.ProxyEffect(..)
-        | spell_plan.GainEffect(..)
-        | spell_plan.LastingEffect(..)
-        | spell_plan.RemoveEffect(..)
-        | spell_plan.ModifierEffect(..)
-        | spell_plan.ForcedMoveEffect(..)
-        | spell_plan.StruckMoveEffect(..)
-        | spell_plan.CooldownEffect(..)
-        | spell_plan.StealthEffect(..)
-        | spell_plan.RemoveStealthEffect(..)
-        | spell_plan.ProcEffect(..)
-        | spell_plan.ControlEffect(..)
-        | spell_plan.DespawnEffect(..)
-        | spell_plan.UnitStateEffect(..)
-        | spell_plan.DelayEffect(..)
-        | spell_plan.QuestAdvanceEffect(..) -> Error(Nil)
-      }
-    }),
+    cast_state.passed_of(applied:, as_kind: spell_plan.as_heal)
+      |> list.map(fn(row) { row.effect_id.value }),
   )
 }
 

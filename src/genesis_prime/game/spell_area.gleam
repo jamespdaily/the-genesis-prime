@@ -1386,22 +1386,16 @@ fn phase_of(
         as_kind: spell_plan.as_heal,
       ),
       fn(heal) {
-        case heal {
-          spell_plan.Heal(
-            effect_id:,
-            vital:,
-            aim:,
-            condition:,
-            formula:,
-            delay_ms: 0,
-            ..,
-          ) ->
-            case spell_plan.reaches_primary_target(aim:) {
-              True ->
-                Ok(InstantHeal(effect_id:, vital:, aim:, condition:, formula:))
-              False -> Error(Nil)
-            }
-          spell_plan.Heal(..) | spell_plan.TickingHeal(..) -> Error(Nil)
+        case heal, spell_plan.telling_of(heal:) {
+          spell_plan.Heal(effect_id:, vital:, aim:, condition:, formula:, ..),
+            spell_plan.ToldAtGo
+          -> Ok(InstantHeal(effect_id:, vital:, aim:, condition:, formula:))
+          spell_plan.Heal(..), spell_plan.ToldAtEachTick
+          | spell_plan.Heal(..), spell_plan.NotTold
+          | spell_plan.TickingHeal(..), spell_plan.ToldAtGo
+          | spell_plan.TickingHeal(..), spell_plan.ToldAtEachTick
+          | spell_plan.TickingHeal(..), spell_plan.NotTold
+          -> Error(Nil)
         }
       },
     ),
