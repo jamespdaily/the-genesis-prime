@@ -294,7 +294,7 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
   let answered = list.flat_map(answered_steps, fn(step) { step.1 })
   assert targets_named(effects: answered) == [ally]
     as "the go's 0x7f4 names the ally it healed"
-  assert listed(effects: answered) == []
+  assert support.listed_effect_ids(effects: answered) == []
     as "and lists no effect on it: the heal's description is not built yet, so the ally has none"
   assert support.caster_change_starts(effects: list.append(pressed, answered))
     == []
@@ -307,14 +307,7 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
 
 /// The unit ids the effects' 0x7f4 names as targets, in order.
 fn targets_named(effects effects: List(Effect)) -> List(Int) {
-  list.flat_map(
-    support.frames_of(message_id: spell_go.message_id, effects:),
-    fn(frame) {
-      let assert Ok(go) = spell_go.decode(frame.body)
-        as "a 0x7f4 the rule wrote decodes"
-      list.map(go.targets, fn(target) { target.unit_id })
-    },
-  )
+  list.map(support.go_targets(effects:), fn(target) { target.unit_id })
 }
 
 // ---- the kind of the spell ----
