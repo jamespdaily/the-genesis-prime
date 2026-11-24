@@ -770,7 +770,9 @@ pub fn standing_timers_cancelled(
 }
 
 /// Whether a timer belongs to a standing spell's own tree: one of its cast `id`, a modifier
-/// or cooldown effect of that cast, or the start of a child whose root is its spell.
+/// or cooldown effect of that cast, or the start of a child whose root is its spell. A child
+/// is matched by its root alone, so a cast that is not standing and has the same root spell
+/// would have its children taken as the standing spell's.
 fn belongs_to_standing(
   due due: Due,
   id id: Int,

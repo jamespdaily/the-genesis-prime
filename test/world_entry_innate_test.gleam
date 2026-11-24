@@ -19,6 +19,7 @@
 import cast_support
 import client_tables
 import fixture_tables
+import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
 import genesis_prime/game/world_entry
@@ -29,10 +30,12 @@ import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/step.{LogWarning}
 
+import gleam/bit_array
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import owned_test
 import planted_table
 import unitest
@@ -336,4 +339,78 @@ pub fn the_wanted_list_holds_the_innate_passive_of_the_loadout_and_leaves_out_a_
       ),
     ]
     as "and is one warning"
+}
+
+/// Each frame the passive's start writes, its go answered, as the message id in hex, a
+/// colon and the body's hex: the class's entry names the passive, and the first caster of
+/// the cast tests casts it.
+fn passive_frames(class_id class_id: Int) -> List(String) {
+  let #(_, entered) =
+    world_entry_support.entry(
+      tables: client_tables.shared(),
+      character: world_entry_support.character(
+        class: class_id,
+        faction: 166,
+        level: 1,
+      ),
+    )
+  let #(wanted, _) =
+    casting.standing_wanted(entered:, plans: cast_support.real_plans())
+  let caster = cast_support.caster()
+  let #(state, effects) =
+    cast.standing_changed(
+      cast: cast_state.new(),
+      caster:,
+      wanted:,
+      now: cast_support.at(ms: 1000),
+    )
+  let #(_, effects) =
+    cast_support.answered_as(
+      caster:,
+      state:,
+      effects:,
+      at: 1000,
+      struck: [],
+      rolls: [],
+    )
+  list.map(cast_support.writes(effects:), fn(frame) {
+    int.to_base16(frame.message_id)
+    <> ":"
+    <> string.lowercase(bit_array.base16_encode(frame.body))
+  })
+}
+
+pub fn the_entry_starts_the_passive_of_classes_1_2_and_5_with_the_frames_the_single_passive_cast_wrote_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // The expected frames are what the server wrote for these casters and plans before the
+  // standing set existed (the cast rule's `passive_started` of the same Spell4Base, its go
+  // answered with no unit struck), captured from that code. The Engineer's passive also
+  // starts and ends a child cast; the Warrior's and the Stalker's start one cast.
+  let expected = [
+    #(1, [
+      "7FF:003800807eaff8bd0200c00100000000c0010000c04cfb639168913c70dfdffd10000000000040",
+      "7F4:0038008066da1f8b448be481fbfeee87020e00000000000200a420c832010000000000000000000000e8b18c0000000000000000000000007c5335000000000000000000000080df541100000000000000000000000019370500000000000000000000000000000000",
+    ]),
+    #(2, [
+      "7FF:00380080c8af20bf0200c00100000000c0010000c04cfb639168913c70dfdffd10000000000040",
+      "7F4:0038008066da1f8b448be481fbfeee87020e000000000002008480423301000000000000000000000088ab95000000000000000000000000e46a35000000000000000000000000dcbf1100000000000000000000000000000000",
+      "7FF:01380080d9b420bf82fcca0100000000c0010000c04cfb639168913c70dfdffd10000000000040",
+      "7F4:0138008066da1f8b448be481fbfeee87000000000000",
+      "7FE:01380080",
+    ]),
+    #(5, [
+      "7FF:0038008001b004c00200c00100000000c0010000c04cfb639168913c70dfdffd10000000000040",
+      "7F4:0038008066da1f8b448be481fbfeee87020e00000000000200a4e0d547010000000000000000000000e0f59100000000000000000000000040db340000000000000000000000809d8a1100000000000000000000004007670500000000000000000000000000000000",
+    ]),
+  ]
+  list.each(expected, fn(row) {
+    let #(class_id, frames) = row
+    assert passive_frames(class_id:) == frames
+      as {
+        "class "
+        <> int.to_string(class_id)
+        <> ": the passive's frames are the bytes the single passive cast wrote"
+      }
+  })
 }

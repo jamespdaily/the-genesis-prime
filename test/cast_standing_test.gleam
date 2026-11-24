@@ -170,3 +170,38 @@ pub fn standing_changed_ends_a_lingering_spell_no_longer_wanted_with_its_0x7fe_a
     as "the cast is no longer live, and no later cast takes it for a standing one"
   assert dict.values(state.standing) == [second]
 }
+
+pub fn ending_a_standing_spell_that_holds_stealth_writes_the_stealth_change_and_records_the_event_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let caster = support.caster()
+  let hiding =
+    support.stealthing(spell4_id: first, base: first, rows: [
+      support.stealth_row(id: 100_010, breaks: spell_plan.KeptOnDamage),
+    ])
+  let #(state, started) =
+    standing(cast: cast_state.new(), caster:, wanted: [hiding], at: 1000)
+  assert list.contains(started, cast_state.StealthChanged(stealthed: True))
+    as "the setup: the standing spell's go puts the caster in stealth"
+  assert cast_state.stealthed(cast: state)
+  let #(ended, effects) =
+    cast.standing_changed(
+      cast: state,
+      caster:,
+      wanted: [],
+      now: support.at(ms: 2000),
+    )
+  assert !cast_state.stealthed(cast: ended)
+    as "the cast's end drops its stealth source"
+  assert list.filter(effects, fn(effect) {
+      effect == cast_state.StealthChanged(stealthed: False)
+    })
+    == [cast_state.StealthChanged(stealthed: False)]
+    as "the caster is told the stealth is gone, once, as every other end tells it"
+  assert list.length(
+      list.filter(ended.pending, fn(event) {
+        event.trigger == spell_plan.LeftStealth
+      }),
+    )
+    == 1
+    as "and the event of leaving stealth is recorded for the procs that wait for it"
+}
