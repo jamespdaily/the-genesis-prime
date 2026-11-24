@@ -29,14 +29,15 @@
 import client_shape_rows
 import genesis_prime/game/area.{
   type Candidate, type Inside, type Placement, type Point, type Pose, type Row,
-  AnotherUnit, Box, Candidate, Circle, Cone, FixedAtCaster, FixedAtTarget,
-  FollowsCaster, FollowsTarget, InsideRow, InsideShapes, Placement, Point, Pose,
-  Rectangle, Row, TheCaster,
+  AnotherUnit, Box, Candidate, Centre, Circle, Cone, FixedAtCaster,
+  FixedAtTarget, FollowsCaster, FollowsTarget, InsideRow, InsideShapes,
+  Placement, Point, Pose, Rectangle, Row, TheCaster,
 }
 import genesis_prime/game/start_place
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/order
 import gleam_community/maths
 import owned_test
@@ -1053,12 +1054,14 @@ pub fn an_anchor_fixed_at_the_start_never_follows_the_caster_and_a_following_one
           caster:,
           started_at:,
           primary:,
+          stood_at: None,
         )
         == area.centre_of(
           anchor: FixedAtCaster,
           caster: other_caster,
           started_at:,
           primary:,
+          stood_at: None,
         )
         as "a row fixed at the start (0x1405a4e60 stores the pose once) does not move with the caster"
       assert area.centre_of(
@@ -1066,12 +1069,14 @@ pub fn an_anchor_fixed_at_the_start_never_follows_the_caster_and_a_following_one
           caster:,
           started_at:,
           primary:,
+          stood_at: None,
         )
         == area.centre_of(
           anchor: FollowsCaster,
           caster:,
           started_at: other_start,
           primary:,
+          stood_at: None,
         )
         as "a row that follows its unit (0x14054b1b0.follows_caster) never reads the start"
     },
@@ -1079,64 +1084,97 @@ pub fn an_anchor_fixed_at_the_start_never_follows_the_caster_and_a_following_one
   each_anchor_by_each_primary()
 }
 
-/// The centre of each of the four anchors for each kind of primary target.
+/// The centre of each of the four anchors for each kind of primary target, and whether it is the
+/// caster's: an anchor on the caster, or a primary target that is the caster, centres the area
+/// on the caster.
 fn each_anchor_by_each_primary() -> Nil {
   let caster = Pose(at: Point(x: 10.0, z: 20.0), yaw: 1.0)
   let started_at = Pose(at: Point(x: -3.0, z: 4.0), yaw: -0.5)
   let unit = Pose(at: Point(x: 7.0, z: 8.0), yaw: 0.0)
+  let stood = Pose(at: Point(x: 5.0, z: 6.0), yaw: 2.0)
   [
     #(
       FollowsCaster,
       TheCaster,
-      caster,
+      None,
+      Centre(pose: caster, on_the_caster: True),
       "a row drawn on the caster each frame is centred where it stands now",
     ),
     #(
       FollowsCaster,
       AnotherUnit(pose: unit),
-      caster,
+      None,
+      Centre(pose: caster, on_the_caster: True),
       "the caster's row is the caster's whoever the primary target is",
     ),
     #(
       FixedAtCaster,
       TheCaster,
-      started_at,
+      None,
+      Centre(pose: started_at, on_the_caster: True),
       "a row drawn at the 0x7ff's entry stays at the start pose",
     ),
     #(
       FixedAtCaster,
       AnotherUnit(pose: unit),
-      started_at,
+      None,
+      Centre(pose: started_at, on_the_caster: True),
       "a fixed row of a child cast on a struck unit is at the caster's start, not on the unit",
     ),
     #(
       FollowsTarget,
       TheCaster,
-      caster,
+      None,
+      Centre(pose: caster, on_the_caster: True),
       "the primary target is the caster: its place now",
     ),
     #(
       FollowsTarget,
       AnotherUnit(pose: unit),
-      unit,
+      None,
+      Centre(pose: unit, on_the_caster: False),
       "a row on another primary target is on that unit",
     ),
     #(
       FixedAtTarget,
       TheCaster,
-      started_at,
+      None,
+      Centre(pose: started_at, on_the_caster: True),
       "the primary target is the caster: its start pose",
     ),
     #(
       FixedAtTarget,
       AnotherUnit(pose: unit),
-      unit,
+      None,
+      Centre(pose: unit, on_the_caster: False),
       "another primary target: the place the picture shows it at",
+    ),
+    #(
+      FixedAtTarget,
+      AnotherUnit(pose: unit),
+      Some(stood),
+      Centre(pose: stood, on_the_caster: False),
+      "another primary target the cast went at: the pose it stood in then, whatever the picture shows now",
+    ),
+    #(
+      FollowsTarget,
+      AnotherUnit(pose: unit),
+      Some(stood),
+      Centre(pose: unit, on_the_caster: False),
+      "a row that follows its target ignores the pose it stood in at the go",
+    ),
+    #(
+      FixedAtTarget,
+      TheCaster,
+      Some(stood),
+      Centre(pose: started_at, on_the_caster: True),
+      "the caster as the primary target ignores the pose a target stood in",
     ),
   ]
   |> list.each(fn(row) {
-    let #(anchor, primary, expected, reason) = row
-    assert area.centre_of(anchor:, caster:, started_at:, primary:) == expected
+    let #(anchor, primary, stood_at, expected, reason) = row
+    assert area.centre_of(anchor:, caster:, started_at:, primary:, stood_at:)
+      == expected
       as reason
   })
 }

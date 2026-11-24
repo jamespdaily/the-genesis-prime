@@ -105,7 +105,7 @@
 ////   caster is one more candidate of the area, ranked by the health its vitals miss: at
 ////   distance 0 with no shape test when the area is centred on it (`area.select_ordered_with_caster`),
 ////   and tested with the area's own shape from where it stands when the area is centred on
-////   an ally a child cast was started on (`area.centred_on_the_caster`); it is told nothing, its
+////   an ally a child cast was started on (`area.Centre.on_the_caster`); it is told nothing, its
 ////   place is answered at once with the rows that passed its gates (`cast_state.HitCaster`),
 ////   and the go applies them itself. A row a gate fails or
 ////   cannot tell is left out with a debug line; a player no row reaches has no place and no
@@ -491,18 +491,13 @@ fn players_of_the_phase(
   }
 }
 
-/// Where a cast's area is centred: the pose, and whether it is centred on the caster.
-type Centre {
-  Centre(pose: Pose, on_the_caster: Bool)
-}
-
 /// Where a cast's area is centred (`area.centre_of`): on the pose the cast started at, the
 /// caster now, or the primary target, which is the caster or another unit the picture shows,
 /// at the place and facing the picture gives it (`shown.strike_centre_of`: a player's place
 /// has no facing). An area fixed at its target stays at `primary_pose`, the pose, facing
 /// included, the target stood in when the cast went, when there is one. A primary target the
 /// picture does not show gives no centre. The area is centred on the caster for an anchor on
-/// the caster and for a primary target that is the caster (`area.centred_on_the_caster`).
+/// the caster and for a primary target that is the caster (`area.Centre.on_the_caster`).
 fn centre_of_cast(
   anchor anchor: area.Anchor,
   attacker attacker: Attacker,
@@ -511,7 +506,7 @@ fn centre_of_cast(
   started_at started_at: Pose,
   primary_pose primary_pose: Option(Pose),
   now_ms now_ms: Int,
-) -> Result(Centre, Nil) {
+) -> Result(area.Centre, Nil) {
   use primary <- result.map(case primary_target == attacker.unit_id {
     True -> Ok(area.TheCaster)
     False ->
@@ -523,19 +518,12 @@ fn centre_of_cast(
       )
       |> result.map(fn(pose) { area.AnotherUnit(pose:) })
   })
-  let primary = case anchor, primary, primary_pose {
-    area.FixedAtTarget, area.AnotherUnit(..), Some(pose) ->
-      area.AnotherUnit(pose:)
-    area.FixedAtTarget, area.AnotherUnit(..), None
-    | area.FixedAtTarget, area.TheCaster, _
-    | area.FollowsCaster, _, _
-    | area.FixedAtCaster, _, _
-    | area.FollowsTarget, _, _
-    -> primary
-  }
-  Centre(
-    pose: area.centre_of(anchor:, caster: attacker.pose, started_at:, primary:),
-    on_the_caster: area.centred_on_the_caster(anchor:, primary:),
+  area.centre_of(
+    anchor:,
+    caster: attacker.pose,
+    started_at:,
+    primary:,
+    stood_at: primary_pose,
   )
 }
 
@@ -600,7 +588,7 @@ fn area_selection(
   area area: spell_area.SpellArea,
   phase phase: Int,
   row row: area.Row,
-  centre centre: Centre,
+  centre centre: area.Centre,
   seed seed: Int,
   caster_candidate caster_candidate: Option(area.Candidate),
   now_ms now_ms: Int,
