@@ -77,13 +77,15 @@ pub fn of_item(
   of_level(tables:, level: level_of_item(tables:, item2_id:))
 }
 
-/// The level of an item's spell: Item2.powerLevel. The item's row is in the tables, as the
-/// use check read it.
+/// The level of an item's spell: Item2.powerLevel. The item's row is in the tables: the use
+/// check read it, and a worn item's row is one the gear read. Every item whose spell holds a
+/// type 18 row has Item2.flags bit 20, the power-level override, so the row's own powerLevel
+/// stands (the server sends 0 in 0x111 `field_27`, still open).
 pub fn level_of_item(
   tables tables: table_store.Tables,
   item2_id item2_id: Item2Id,
 ) -> Int {
   let assert Ok(row) = item2.get(tables:, id: item2_id)
-    as "the item's Item2 row is in the tables: the use check read it"
+    as "the item's Item2 row is in the tables: the use check and the gear read it"
   row.power_level
 }

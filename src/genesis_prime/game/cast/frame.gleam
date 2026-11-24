@@ -578,7 +578,9 @@ fn single_target_go(
 /// The 0x7ff and the 0x7f4 that start the cast of `view` for a viewer that was not told it by
 /// its caster, from the changes the view's holder holds of it at `now_ms`: the cast is the
 /// caster's, aimed at the holder, who stands at `place`, and the go lists the holder's effects
-/// as a create's entry lists them (`unit_casts.targets_of`).
+/// as a create's entry lists them (`unit_casts.targets_of`). Its item level is 0, as the
+/// client's own cast built from a unit create has none (`ApplyUnitCreateCasts` 0x140458fe0), and
+/// no cast of an item holds a change on another player in the client's tables.
 pub fn held_start(
   view view: unit_casts.CastView,
   place place: Place,

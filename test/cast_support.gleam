@@ -466,7 +466,17 @@ pub fn standing_started(
 ) -> #(State, List(Effect)) {
   let assert Ok(spell) = spell_plan.in_plans(plans:, base:)
     as "the plans hold the spell that stands"
-  cast.standing_changed(cast:, caster:, wanted: [spell], now:)
+  cast.standing_changed(
+    cast:,
+    caster:,
+    wanted: without_item(spells: [spell]),
+    now:,
+  )
+}
+
+/// The spells as standing spells that come from no item, as the innate passive does.
+pub fn without_item(spells spells: List(Spell)) -> List(cast_state.Standing) {
+  list.map(spells, fn(spell) { cast_state.Standing(spell:, from: None) })
 }
 
 /// The effect id of the row `row` of the planted standing spell `spell4_id` (250000 to

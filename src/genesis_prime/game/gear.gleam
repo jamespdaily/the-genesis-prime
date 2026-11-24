@@ -14,11 +14,12 @@
 ////   (`opcode.0x262.worn_visuals`).
 //// - **An item the reader refuses is worn and shown and gives no properties**; it is
 ////   listed in `unread` with its reason, which the connection logs once.
-//// - **The equip spells** are those the worn items' specials name, in the order the items are
-////   worn (bag index), an exact repeat listed once. No other rule decides between items that
-////   name one spell: the 19 spells several items name are each named by items of one ItemSlot
-////   (Item2Type 53 is ItemSlot 43; types 3, 10 and 17 ItemSlot 3; types 45, 46, 48, 51, 79
-////   and 204 ItemSlot 20), so two worn items never name one spell at once. A second shield's
+//// - **The equip spells** are those the worn items' specials name, each with its item, in the
+////   order the items are worn (bag index), an exact repeat listed once. No other rule decides
+////   between items that name one spell: the 19 spells several items name are each named by
+////   items of one ItemSlot (Item2Type 53 is ItemSlot 43; types 3, 10 and 17 ItemSlot 3; types
+////   45, 46, 48, 51, 79 and 204 ItemSlot 20), so two worn items never name one spell at once;
+////   were two worn, each would stand as a cast of its own, at its own level. A second shield's
 ////   spell is listed beside its first's, though its properties are not given; the client's move
 ////   check lets one shield be worn, so no worn set holds two.
 //// - **A second shield gives nothing**: its properties would share the first's, so it is
@@ -69,7 +70,7 @@ const weapon_bag_index = 16
 /// are drawn, in slot order, the item held in the primary weapon slot, if any, each
 /// worn item whose properties the reader refuses, with the reason, each worn item
 /// whose visual the tables cannot give, with the reason, and the equip spells of the worn
-/// items (`equip_spell`) in worn order, each once.
+/// items (`equip_spell`) in worn order, each with its item, once.
 pub type Gear {
   Gear(
     properties: ItemProperties,
@@ -77,8 +78,14 @@ pub type Gear {
     weapon: Option(Item2Id),
     unread: List(#(Item2Id, ItemPropertyError)),
     undrawn: List(#(Item2Id, WornVisualError)),
-    equip_spells: List(Int),
+    equip_spells: List(EquipSpell),
   )
+}
+
+/// A worn item's equip spell and the item that gives it, whose level the standing cast of the
+/// spell tells (`connection/casting.standing_changed`).
+pub type EquipSpell {
+  EquipSpell(spell4_id: Int, item2_id: Item2Id)
 }
 
 /// The gear of the items held at location 0 among `items`, for a wearer of this level:
@@ -137,6 +144,9 @@ pub fn of_items(
   let equip_spells =
     list.filter_map(worn, fn(item) {
       equip_spell.of_item(tables:, item2_id: item.item2_id.value)
+      |> option.map(fn(spell4_id) {
+        EquipSpell(spell4_id:, item2_id: item.item2_id)
+      })
       |> option.to_result(Nil)
     })
     |> list.unique

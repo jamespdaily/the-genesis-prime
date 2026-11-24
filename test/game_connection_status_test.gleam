@@ -166,7 +166,7 @@ fn rows(entered entered: world_entry.Entered) -> List(Row) {
             client_cast_id: 1,
             caster: cast_support.caster(),
             spell: cast_support.exempt(),
-            role: cast_state.Passive,
+            role: cast_state.Passive(from: None),
             primary_target: 0,
             dropped: activate.Dropped(
               signals: [],

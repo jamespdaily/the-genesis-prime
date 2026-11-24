@@ -39,9 +39,11 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/movement
+import genesis_prime/game/player_address
 import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
@@ -70,6 +72,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import map_support
 import owned_test
 import place_support
 import prerequisite_support
@@ -3913,4 +3916,112 @@ pub fn a_proxy_aimed_at_the_primary_target_of_a_proc_cast_at_another_unit_starts
     as "the proc's spell is cast at the creature the hit struck"
   assert started_of(spell4_id: 250_202, effects:).primary_target_unit_id == 7
     as "its Proxy aimed at the primary target starts the child on the holder, not on the creature"
+}
+
+// ---- a proc held on an ally by an item's cast ----
+
+/// A cast pressed from an item (Item2 91747: power level 5, value 6.5) that lingers on its
+/// caster, whose Proc row 86457 is held on the ally 40 (Healing Salve's allies' row, Spell4
+/// 39386, casting Spell4 39127), and the caster that sees the ally.
+fn item_cast_holding_a_proc_on_an_ally() -> #(State, Caster) {
+  let source =
+    unit_properties.Source(
+      cast_id: 2_147_500_000,
+      effect_id: Spell4EffectsId(86_457),
+    )
+  let address =
+    player_address.PlayerAddress(
+      connection: ConnectionId(2),
+      unit_id: 40,
+      stay: map_support.stay(count: 2),
+    )
+  let row =
+    support.held_proc_row(
+      id: 86_457,
+      holder: spell_plan.HeldByAreaAllies,
+      row: LastingRow(delay_ms: 0, duration_ms: 12_000, until_removed: False),
+    )
+  let spell = support.standing_spell(39_386)
+  let state =
+    cast_state.State(
+      ..cast_state.new(),
+      lingering: dict.from_list([
+        #(
+          source.cast_id,
+          cast_state.Lingering(
+            spell:,
+            root: spell.spell4_id,
+            audience: support.caster().audience,
+            started_ms: 1000,
+            primary_target: 7,
+            nodes: dict.new(),
+            ticking: dict.new(),
+            handed_down: Some(cast_state.Item(item_level: 5, passed_in: 6.5)),
+          ),
+        ),
+      ]),
+      procs: dict.from_list([
+        #(
+          cast_state.ProcHold(source:, holder: Some(40)),
+          cast_state.HeldProc(row:, fires_ms: []),
+        ),
+      ]),
+      on_units: dict.from_list([
+        #(source.cast_id, [
+          cast_state.HeldOnPlayer(
+            source:,
+            address:,
+            sight: held_changes.KeptWhenUnseen,
+            spell4_id: spell.spell4_id,
+            stack: row.spell.stack,
+            started_ms: 1000,
+          ),
+        ]),
+      ]),
+    )
+  let caster =
+    cast_state.Caster(
+      ..support.caster(),
+      players_in_sight: dict.from_list([#(40, address)]),
+    )
+  #(state, caster)
+}
+
+pub fn a_proc_held_on_an_ally_by_an_items_cast_fires_a_child_that_reads_no_item_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The choice pinned: an entry held on an ally hands down no item. The client's tables hold no
+  // such case: every Proc row in the equip spells' trees aims at the caster (targetFlags 1), and
+  // the item-use Proc rows aimed at the primary target or the area allies are rows the server
+  // does not read. A later change that carries the item's value to the ally's entry breaks this
+  // test on purpose.
+  let #(state, caster) = item_cast_holding_a_proc_on_an_ally()
+  let blow =
+    event_proc.Event(
+      trigger: spell_plan.TakesDamage,
+      other_unit: Some(31),
+      spell: Some(attack(groups: [])),
+      holder: None,
+    )
+  let state = cast.ally_events_raised(cast: state, unit_id: 40, events: [blow])
+  let #(state, fired) =
+    cast.procs_fire(
+      cast: state,
+      caster:,
+      now: support.at(ms: 2000),
+      poses: dict.new(),
+      indexes: dict.new(),
+      units: dict.new(),
+      draws: [0],
+      rolls: [],
+    )
+  let assert [child] =
+    list.filter(support.started_in(effects: fired), fn(start) {
+      start.spell4_id == support.salve_proc_spell4_id
+    })
+    as "the entry held on the ally fires its child"
+  assert child.caster_item_level == 0
+    as "the child tells no item level: opcode.0x7ff.caster_item_level 0 is the client's none"
+  let assert [live] = dict.values(state.casts)
+  assert live.pressed == None
+    as "and holds no item value, though the cast that holds the entry was pressed from an item"
 }

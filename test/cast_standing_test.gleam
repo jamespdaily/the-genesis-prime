@@ -18,6 +18,7 @@ import genesis_prime/step.{ConnectionId, LogWarning}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/set
 import owned_test
 
@@ -36,8 +37,18 @@ fn standing(
   at ms: Int,
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
-    cast.standing_changed(cast:, caster:, wanted:, now: support.at(ms:))
+    cast.standing_changed(
+      cast:,
+      caster:,
+      wanted: support.without_item(wanted),
+      now: support.at(ms:),
+    )
   support.answered_as(caster:, state:, effects:, at: ms, struck: [], rolls: [])
+}
+
+/// The key of a standing spell that comes from no item.
+fn keyed(spell4_id spell4_id: Int) -> cast_state.StandingKey {
+  cast_state.StandingKey(spell4_id:, from: None)
 }
 
 fn started_spells(effects effects: List(Effect)) -> List(Int) {
@@ -67,13 +78,16 @@ pub fn standing_changed_starts_each_wanted_spell_not_yet_standing_in_list_order_
   assert started_spells(effects:) == [first, second]
     as "two spells start two casts in list order, and the spell wanted twice starts once"
   assert dict.to_list(state.standing)
-    == list.zip(started_ids(effects:), [first, second])
-    as "each cast stands for its own spell"
+    == list.zip(started_ids(effects:), [
+      keyed(spell4_id: first),
+      keyed(spell4_id: second),
+    ])
+    as "each cast stands for its own spell, from no item"
   let #(again, written) =
     cast.standing_changed(
       cast: state,
       caster:,
-      wanted:,
+      wanted: support.without_item(wanted),
       now: support.at(ms: 2000),
     )
   assert again == state
@@ -83,7 +97,10 @@ pub fn standing_changed_starts_each_wanted_spell_not_yet_standing_in_list_order_
     cast.standing_changed(
       cast: state,
       caster:,
-      wanted: [support.standing_spell(second), support.standing_spell(third)],
+      wanted: support.without_item([
+        support.standing_spell(second),
+        support.standing_spell(third),
+      ]),
       now: support.at(ms: 3000),
     )
   assert message_ids(effects: swap) == [0x07FE, 0x07FF]
@@ -92,7 +109,7 @@ pub fn standing_changed_starts_each_wanted_spell_not_yet_standing_in_list_order_
     as "the 0x7fe is the first spell's cast"
   assert started_spells(effects: swap) == [third]
   assert set.from_list(dict.values(swapped.standing))
-    == set.from_list([second, third])
+    == set.from_list([keyed(spell4_id: second), keyed(spell4_id: third)])
     as "the spell that was kept stands on, and the added one stands beside it"
 }
 
@@ -116,7 +133,7 @@ pub fn standing_changed_ends_a_lingering_spell_no_longer_wanted_with_its_0x7fe_a
     cast.standing_changed(
       cast: state,
       caster:,
-      wanted: [kept],
+      wanted: support.without_item([kept]),
       now: support.at(ms: 2000),
     )
   assert support.finished_ids(support.writes(effects: ended)) == [holder_cast]
@@ -157,7 +174,7 @@ pub fn standing_changed_ends_a_lingering_spell_no_longer_wanted_with_its_0x7fe_a
     cast.standing_changed(
       cast: state,
       caster:,
-      wanted: [kept],
+      wanted: support.without_item([kept]),
       now: support.at(ms: 3500),
     )
   assert support.finished_ids(support.writes(effects: stopped)) == [live_cast]
@@ -168,7 +185,7 @@ pub fn standing_changed_ends_a_lingering_spell_no_longer_wanted_with_its_0x7fe_a
     as "and nothing is applied"
   assert !dict.has_key(state.casts, live_cast)
     as "the cast is no longer live, and no later cast takes it for a standing one"
-  assert dict.values(state.standing) == [second]
+  assert dict.values(state.standing) == [keyed(spell4_id: second)]
 }
 
 pub fn ending_a_standing_spell_that_holds_stealth_writes_the_stealth_change_and_records_the_event_test() -> Nil {

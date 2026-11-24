@@ -1373,6 +1373,22 @@ pub fn started_spells(frames frames: List(Frame)) -> List(Int) {
   })
 }
 
+/// The item level of each `spell_started` (0x07FF) among the frames, in order, with the Spell4
+/// id of its spell: what the start tells the client's buff tooltip in place of the player's level
+/// (`opcode.0x7ff.caster_item_level`).
+pub fn started_item_levels(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == spell_started.message_id {
+      True -> {
+        let assert Ok(start) = spell_started.decode(frame.body)
+          as "a spell_started decodes"
+        Ok(#(start.spell4_id, start.caster_item_level))
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// The stealth bits of each `unit_stealth` (0x08F5) among the frames, in order.
 pub fn stealth_bits(frames frames: List(Frame)) -> List(Int) {
   list.filter_map(frames, fn(frame) {

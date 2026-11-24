@@ -106,26 +106,27 @@ import genesis_prime/game/cast/state.{
   type Lingering, type Listed, type Live, type Message, type Paid,
   type PressRefusal, type PressTarget, type PressedFrom, type ProcHold,
   type ProxyTickAsked, type Reached, type Refusal, type Resolution,
-  type Restricting, type Role, type State, type Struck, type TargetVerdict,
-  type TickAsked, type Used, type UsedUnit, Accept, Activated, Activating,
-  Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered,
-  AwaitingAnswer, Base, Cancelled, CannotTell, CastClears, CasterChangeEnds,
-  CasterChangeStarts, ChargeLevel, Child, CooldownEnds, CooldownKept,
-  CooldownModifierEnds, CooldownModifierStarts, Deflected, Described, Finish,
-  ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
-  Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld,
-  Lingering, Listed, Live, Log, ModifierEnd, ModifierStart, NoClientCastId,
-  NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
-  NotSentByClient, OnCaster, OnPlayer, Passive, Plain, PlayerChangeEnd,
-  PressNotBuilt, PressRefused, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
-  QuestAdvanced, QuestButton, Reached, Refuse, RepeatHeld, Resolution,
-  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, StartChild,
-  StartHeld, Started, StartedMoving, Starts, State, StateEnd, StealthChanged,
-  Strike, TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell,
-  UnbuiltShortcut, UnbuiltSpell, UnbuiltStandingSpell, UnknownAnswer,
-  UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
-  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WithCast,
-  WithNothing, WithUse, WrongAnswerSpell,
+  type Restricting, type Role, type Standing, type StandingKey, type State,
+  type Struck, type TargetVerdict, type TickAsked, type Used, type UsedUnit,
+  Accept, Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
+  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
+  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
+  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
+  Deflected, Described, Finish, ForcedMoveStart, Frames, GateFails, Go, GoAsked,
+  Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune, Item,
+  ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd,
+  ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell,
+  NodesEnd, NotBuilt, NotDecoded, NotSentByClient, OnCaster, OnPlayer, Passive,
+  Plain, PlayerChangeEnd, PressNotBuilt, PressRefused, Pressed, PressedAt,
+  ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton, Reached, Refuse,
+  RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
+  ShortcutCast, Stage, Standing, StandingKey, StartChild, StartHeld, Started,
+  StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
+  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell, UnbuiltShortcut,
+  UnbuiltSpell, UnbuiltStandingSpell, UnknownAnswer, UnknownCancel,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
+  WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -1569,7 +1570,10 @@ fn activation_begun(
             creature_id:,
             dropped: start.dropped,
           )
-        Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> #(cast, [])
+        Child(..) | Base(..) | Stage(..) | Passive(..) | Shortcut(..) -> #(
+          cast,
+          [],
+        )
       }
     },
   )
@@ -1661,7 +1665,7 @@ fn press_checked(
         spell4_id:,
         key: case role {
           Shortcut(..) -> UnbuiltShortcut(spell4_id:)
-          Child(..) | Base(..) | Stage(..) | Passive | Activation(..) ->
+          Child(..) | Base(..) | Stage(..) | Passive(..) | Activation(..) ->
             UnbuiltSpell(spell4_id:)
         },
         result:,
@@ -1930,7 +1934,7 @@ fn proc_matched(
           <> ", so it does not fire",
       ),
     ])
-    Ok(holder_spell4_id) -> {
+    Ok(#(holder_spell4_id, handed_down)) -> {
       let holder_subject = cast_tick.subject_of(cast:, caster:)
       let event_subject = case event.other_unit {
         Some(unit) ->
@@ -1965,6 +1969,7 @@ fn proc_matched(
             hold:,
             held:,
             holder_spell4_id:,
+            handed_down:,
             at:,
             delay_ms:,
             poses:,
@@ -1980,21 +1985,25 @@ fn proc_matched(
   }
 }
 
-/// The spell of the cast that holds the proc `hold` names: the caster's own entry takes it from
-/// the cast, live or lingering, and an entry held on an ally from the change held on that ally,
-/// which stays when the cast has lost its last node on the ally (a spell with propertyFlags
-/// 0x100).
+/// The spell of the cast that holds the proc `hold` names, with the item whose value its
+/// children read: the caster's own entry takes both from the cast, live or lingering
+/// (`Holder.handed_down`), and an entry held on an ally takes the spell from the change held on
+/// that ally, which stays when the cast has lost its last node on the ally (a spell with
+/// propertyFlags 0x100), and no item: an entry is held on an ally only for a Proc row aimed at
+/// the primary target or the area allies, which no item's cast holds in the client's tables
+/// (`cast.gaps`).
 fn holder_spell(
   cast cast: State,
   hold hold: ProcHold,
-) -> Result(Spell4Id, Nil) {
+) -> Result(#(Spell4Id, Option(PressedFrom)), Nil) {
   case hold.holder {
     Some(unit_id) ->
       cast_state.held_spell_on_player(cast:, source: hold.source, unit_id:)
+      |> result.map(fn(spell4_id) { #(spell4_id, None) })
     None ->
       result.map(
         cast_state.holder_of(cast:, cast_id: hold.source.cast_id),
-        fn(holder) { holder.spell.spell4_id },
+        fn(holder) { #(holder.spell.spell4_id, holder.handed_down) },
       )
   }
 }
@@ -2015,6 +2024,7 @@ fn proc_fires(
   hold hold: ProcHold,
   held held: HeldProc,
   holder_spell4_id holder_spell4_id: Spell4Id,
+  handed_down handed_down: Option(PressedFrom),
   at at: Int,
   delay_ms delay_ms: Int,
   poses poses: Dict(Int, area.Pose),
@@ -2057,6 +2067,7 @@ fn proc_fires(
             now_ms:,
             row:,
             holder_spell4_id:,
+            from: handed_down,
             at:,
             named_player: case hold.holder {
               Some(ally) if ally == at -> Some(ally)
@@ -2084,6 +2095,7 @@ fn proc_started(
   now_ms now_ms: Int,
   row row: spell_plan.ProcRow,
   holder_spell4_id holder_spell4_id: Spell4Id,
+  from from: Option(PressedFrom),
   at at: Int,
   named_player named_player: Option(Int),
 ) -> #(State, List(Effect)) {
@@ -2097,7 +2109,7 @@ fn proc_started(
     primary_target: at,
     named_player:,
     counted_with: WithNothing,
-    from: None,
+    from:,
   )
 }
 
@@ -2106,8 +2118,8 @@ fn proc_started(
 /// live, and `root` the spell the client's 0x7ff names as the root; no threshold is touched,
 /// and a global cooldown starts only when the child's spell has one (`start`). `counted_with`
 /// and `from` are what the child counts its quest rows with and the item whose value it
-/// reads, handed down from the cast that started it (`WithNothing` and none for a proc and
-/// a tick). `named_player` is the player a child of a Proxy aimed at the primary target is
+/// reads, handed down from the cast that started it (`WithNothing` for a proc and a tick,
+/// which count no quest row). `named_player` is the player a child of a Proxy aimed at the primary target is
 /// started on (`children`): a player the caster no longer sees starts no child, and a debug
 /// line says so, as the press's own rule refuses a press at a player out of sight.
 fn child_started(
@@ -2185,6 +2197,7 @@ fn proc_due(
             now_ms:,
             row:,
             holder_spell4_id: holder.spell.spell4_id,
+            from: holder.handed_down,
             at:,
             named_player: None,
           )
@@ -3021,7 +3034,8 @@ fn finish_fired(
 /// How a tick of a periodic Proxy aimed at the caster or the primary target starts its child,
 /// for `cast_tick.ticks_due`: the named spell on the unit the row ticks on, the caster or the
 /// player a bag press named, as a child of the holder, the holder's root as its root, counting
-/// no quest objective and holding no item's value, as a proc's spell does. A Proxy aimed at the area starts its children through `children` once the
+/// no quest objective and reading the item's value the holder's cast was pressed from, as a
+/// proc's spell does. A Proxy aimed at the area starts its children through `children` once the
 /// connection has found the units (`proxy_tick_units_found`).
 fn tick_child_started(
   now_ms now_ms: Int,
@@ -3040,7 +3054,7 @@ fn tick_child_started(
         False -> Some(unit_id)
       },
       counted_with: WithNothing,
-      from: None,
+      from: holder.handed_down,
     )
   }
 }
@@ -3465,7 +3479,8 @@ pub fn ticked(
 /// answer to `FindProxyTickUnits`, in the same input): the tick's round closes and the
 /// Proxy's child starts on each unit that passes the Proxy's target gate, in the order
 /// found, as a go's does (`children`), with the holder's root and spell as the child's root
-/// and parent, counting no quest row and holding no item's value. `poses`, `indexes` and
+/// and parent, counting no quest row and reading the item's value the holder's cast was
+/// pressed from. `poses`, `indexes` and
 /// `first_units` are what the gate reads of the units, as a go's (`went`). A row the cast
 /// no longer holds starts and writes nothing. A row a later go armed again starts nothing,
 /// but the round of the earlier schedule closes, so a node end that waited for it goes on
@@ -3499,8 +3514,8 @@ pub fn proxy_tick_units_found(
 }
 
 /// The children of a periodic Proxy's tick on the units found: the holder's root and spell
-/// are the child's root and parent, no quest row is counted and no item's value is held, and
-/// a tick draws no roll (`children`).
+/// are the child's root and parent, no quest row is counted, the item's value the holder's cast
+/// was pressed from is read, and a tick draws no roll (`children`).
 fn proxy_children_found(
   cast cast: State,
   caster caster: Caster,
@@ -3523,7 +3538,7 @@ fn proxy_children_found(
       root: holder.root,
       parent: holder.spell.spell4_id,
       counted_with: WithNothing,
-      from: None,
+      from: holder.handed_down,
       subject: cast_tick.subject_of(cast:, caster:),
       poses:,
       indexes:,
@@ -3910,52 +3925,55 @@ fn dropped_while_waiting(cast cast: State) -> State {
 
 /// The player's standing spells become the wanted ones, in the order given: the spells a
 /// source holds for the player while it lasts, the innate passive first and then the equip
-/// spells of the worn items.
+/// spells of the worn items, each with the item it is worn from (`Standing`). A standing
+/// cast is told by its spell and its item, so the same spell from an item of another level is
+/// another cast.
 /// Each standing spell no longer wanted ends first, the lowest cast id first, with its 0x7fe
 /// to the caster and the audience (`standing_ended`). Then each wanted spell that does not
 /// stand starts as a cast of the player's own with its caster as root, no parent and its
 /// primary target, written as 0x7ff with no 0x7fd, which runs no check of the caster and
-/// starts no global cooldown (`Passive`); it starts at each join, alive or dead. A spell
-/// wanted twice starts once, and a list equal to what stands changes and writes nothing.
+/// starts no global cooldown (`Passive`); the 0x7ff tells the item's level, and the cast's
+/// children read the item's value. It starts at each join, alive or dead. A spell
+/// wanted twice from one item starts once, and a list equal to what stands changes and writes
+/// nothing.
 /// The caster's stealth change is written and recorded as any input's is (`settled`), so
 /// ending a standing spell that holds a stealth source leaves stealth as a cast's end does.
 pub fn standing_changed(
   cast cast: State,
   caster caster: Caster,
-  wanted wanted: List(Spell),
+  wanted wanted: List(Standing),
   now now: Now,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, own: [])
   let now_ms = now.monotonic_ms
-  let wanted_ids =
-    set.from_list(list.map(wanted, fn(spell) { spell.spell4_id.value }))
+  let wanted_keys =
+    set.from_list(list.map(wanted, fn(standing) { standing_key_of(standing:) }))
   let #(cast, ended) =
     dict.to_list(cast.standing)
-    |> list.filter(fn(entry) { !set.contains(wanted_ids, entry.1) })
+    |> list.filter(fn(entry) { !set.contains(wanted_keys, entry.1) })
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.fold(#(cast, []), fn(so_far, entry) {
       let #(cast, effects) = so_far
       let #(cast, more) =
-        standing_ended(cast:, cast_id: entry.0, spell4_id: entry.1, now_ms:)
+        standing_ended(cast:, cast_id: entry.0, key: entry.1, now_ms:)
       #(cast, list.append(effects, more))
     })
   let #(_, starting) =
     list.fold(
       wanted,
       #(set.from_list(dict.values(cast.standing)), []),
-      fn(so_far, spell) {
+      fn(so_far, standing) {
         let #(known, starting) = so_far
-        case set.contains(known, spell.spell4_id.value) {
+        let key = standing_key_of(standing:)
+        case set.contains(known, key) {
           True -> #(known, starting)
-          False -> #(
-            set.insert(known, spell.spell4_id.value),
-            list.append(starting, [spell]),
-          )
+          False -> #(set.insert(known, key), list.append(starting, [standing]))
         }
       },
     )
-  list.fold(starting, #(cast, ended), fn(so_far, spell) {
+  list.fold(starting, #(cast, ended), fn(so_far, standing) {
     let #(cast, effects) = so_far
+    let Standing(spell:, from:) = standing
     let #(cast, started) =
       start(
         cast:,
@@ -3966,12 +3984,16 @@ pub fn standing_changed(
         parent: None,
         primary_target: caster.unit_id,
         client_cast_id: None,
-        role: Passive,
+        role: Passive(from:),
         spent: None,
         reserved: [],
       )
     #(cast, list.append(effects, started))
   })
+}
+
+fn standing_key_of(standing standing: Standing) -> StandingKey {
+  StandingKey(spell4_id: standing.spell.spell4_id.value, from: standing.from)
 }
 
 /// The standing spells a source wants that the plans leave out, each logged once as a
@@ -4009,7 +4031,7 @@ pub fn standing_unbuilt(
 fn standing_ended(
   cast cast: State,
   cast_id cast_id: Int,
-  spell4_id spell4_id: Int,
+  key key: StandingKey,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(cast, ended) = case
@@ -4021,7 +4043,7 @@ fn standing_ended(
     Error(Nil), Error(Nil) -> #(cast_proc.standing_cleared(cast:, cast_id:), [])
   }
   let #(cast, children) =
-    cast_proc.standing_timers_cancelled(cast:, cast_id:, spell4_id:)
+    cast_proc.standing_timers_cancelled(cast:, cast_id:, key:)
   #(cast, list.append(ended, children))
 }
 
@@ -4187,7 +4209,8 @@ fn start(
   let pressed = case role {
     Shortcut(from:, ..) -> Some(from)
     Child(from:, ..) -> from
-    Base(..) | Stage(..) | Passive | Activation(..) -> None
+    Passive(from:) -> from
+    Base(..) | Stage(..) | Activation(..) -> None
   }
   let start_message =
     cast_frame.started_message(
@@ -4200,7 +4223,7 @@ fn start(
       activating: case role {
         Activation(activating: Activating(by_item: False, ..), ..) -> True
         Activation(activating: Activating(by_item: True, ..), ..) -> False
-        Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> False
+        Child(..) | Base(..) | Stage(..) | Passive(..) | Shortcut(..) -> False
       },
       caster_item_level: case pressed {
         Some(Item(item_level:, ..)) -> item_level
@@ -4218,7 +4241,8 @@ fn start(
       named_player: case role {
         Base(..) if primary_target != caster.unit_id -> Some(primary_target)
         Child(named_player:, ..) -> named_player
-        Base(..) | Stage(..) | Passive | Activation(..) | Shortcut(..) -> None
+        Base(..) | Stage(..) | Passive(..) | Activation(..) | Shortcut(..) ->
+          None
       },
       started_at: area.pose_of(place: caster.place),
       audience:,
@@ -4226,23 +4250,24 @@ fn start(
       started_ms: now_ms,
       stage_of: case role {
         Stage(ability:, ..) -> Some(ability)
-        Child(..) | Base(..) | Passive | Activation(..) | Shortcut(..) -> None
+        Child(..) | Base(..) | Passive(..) | Activation(..) | Shortcut(..) ->
+          None
       },
       closes_threshold: cast_press.closes_threshold(role:),
       nodes: dict.new(),
       ticking: dict.new(),
       activation: case role {
         Activation(activating:, ..) -> Some(activating)
-        Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> None
+        Child(..) | Base(..) | Stage(..) | Passive(..) | Shortcut(..) -> None
       },
       interaction: case role {
         Activation(interaction:, ..) | Shortcut(interaction:, ..) -> interaction
-        Child(..) | Base(..) | Stage(..) | Passive -> NoInteraction
+        Child(..) | Base(..) | Stage(..) | Passive(..) -> NoInteraction
       },
       pressed:,
       aimed: case role {
         Shortcut(aimed:, ..) -> aimed
-        Child(..) | Base(..) | Stage(..) | Passive | Activation(..) -> None
+        Child(..) | Base(..) | Stage(..) | Passive(..) | Activation(..) -> None
       },
       counted_with: case role {
         Activation(activating:, ..) -> activation_counted_with(activating:)
@@ -4250,14 +4275,14 @@ fn start(
           WithCast(spell4_id: spell.spell4_id.value, target: aimed)
         Shortcut(from: Item(..), ..) -> WithNothing
         Child(counted_with:, ..) -> counted_with
-        Base(..) | Stage(..) | Passive -> WithNothing
+        Base(..) | Stage(..) | Passive(..) -> WithNothing
       },
       advance_rows_applied: set.new(),
       finish_due: False,
       goes_asked: 0,
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
-    Passive, _ -> cast.global_cooldown_ends_ms
+    Passive(..), _ -> cast.global_cooldown_ends_ms
     Child(..), Some(wait_ms)
     | Base(..), Some(wait_ms)
     | Stage(..), Some(wait_ms)
@@ -4287,19 +4312,35 @@ fn start(
               holder: None,
             ),
           ])
-        Child(..) | Passive | Activation(..) | Shortcut(..) -> cast.pending
+        Child(..) | Passive(..) | Activation(..) | Shortcut(..) -> cast.pending
       },
       standing: case role {
-        Passive -> dict.insert(cast.standing, id, spell.spell4_id.value)
+        Passive(from:) ->
+          dict.insert(
+            cast.standing,
+            id,
+            StandingKey(spell4_id: spell.spell4_id.value, from:),
+          )
         Child(..) | Base(..) | Stage(..) | Activation(..) | Shortcut(..) ->
           cast.standing
       },
       current: case
-        role != Passive
-        && spell_plan.shows_cast_bar(spell:, pressed: root == spell.spell4_id)
+        role,
+        spell_plan.shows_cast_bar(spell:, pressed: root == spell.spell4_id)
       {
-        True -> Some(id)
-        False -> cast.current
+        Passive(..), _ -> cast.current
+        Child(..), True
+        | Base(..), True
+        | Stage(..), True
+        | Activation(..), True
+        | Shortcut(..), True
+        -> Some(id)
+        Child(..), False
+        | Base(..), False
+        | Stage(..), False
+        | Activation(..), False
+        | Shortcut(..), False
+        -> cast.current
       },
     )
   let to_caster = case client_cast_id {
@@ -4342,7 +4383,7 @@ fn threshold_step(
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
   case role {
-    Child(..) | Passive | Activation(..) | Shortcut(..) -> #(cast, [])
+    Child(..) | Passive(..) | Activation(..) | Shortcut(..) -> #(cast, [])
     Base(ability:, bag_spell:) ->
       case spell_plan.opens_threshold(spell: ability) {
         True -> open_threshold(cast:, ability:, bag_spell:, cast_id:)
@@ -6402,6 +6443,7 @@ fn finish_or_linger(
               primary_target: live.primary_target,
               nodes: dict.from_list(kept),
               ticking: live.ticking,
+              handed_down: cast_state.handed_down(live:),
             ),
           ),
         )
@@ -6452,7 +6494,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A target apply prerequisite on an absorb or a type 11 row aimed at another player reads what the caster's picture shows of that player, not the player's own state.",
+      missing: "A viewer that arrives after a cast starts is told it by a unit create, whose entry has no item level, so the client reads that cast's buff tooltip at its own player's level, as for a cast of no item; a held cast of another player is told item level 0 for the same reason.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A proc held on an ally by a cast pressed from an item starts a child that reads no item's value and tells item level 0, because the entry held on an ally keeps no item; no cast of an item holds a Proc row on another player in the client's tables.",
     ),
   ]
 }
