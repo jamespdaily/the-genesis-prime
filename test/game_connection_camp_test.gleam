@@ -13,6 +13,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/limited_action_set
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{NoHolder}
 import genesis_prime/message/camp_countdown
@@ -27,8 +28,8 @@ import genesis_prime/step.{
   WatchId,
 }
 import genesis_prime/store.{
-  AccountId, ActionSets, CharacterLoaded, ForSelect, ForWorld, ListCharacters,
-  Listed, Select, Unavailable,
+  AccountId, CharacterLoaded, ForSelect, ForWorld, ListCharacters, Listed,
+  Select, Unavailable,
 }
 import genesis_prime/world_map/map.{Left}
 import gleam/bit_array
@@ -410,7 +411,9 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
             [],
             [],
             [],
-            action_sets: ActionSets(slots: []),
+            action_sets: limited_action_set.rows(
+              saved: limited_action_set.none(),
+            ),
           )),
         ),
       ),

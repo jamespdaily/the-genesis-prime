@@ -96,20 +96,20 @@ import genesis_prime/store.{
   type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
   type NewItem, type QuestRow, type RenameAnswer, type Request,
   type SelectAnswer, type SelectRequest, type UnsetItem, type WorldAnswer,
-  type WorldRequest, Account, AccountFound, AccountId, ActionSetRefused,
-  ActionSlotRow, ActiveQuest, Bought, BuyFromVendor, Character, CharacterCreated,
-  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
-  ChargesFilled, CreateCharacter, CreateForNoSuchAccount, Created, CurrencySet,
-  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FillCharges,
-  FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
-  HeldCurrency, HeldItem, ItemMade, ItemWords, Items, ItemsNotSaved, ItemsSaved,
-  ListCharacters, Listed, LoadCharacter, Login, MergeItems, Move, MoveItems,
-  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
-  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
-  RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SellToVendor,
-  SetCurrency, SpendItem, SplitItem, TurnInQuest, TurnedIn, Unavailable,
-  UnsetItem, World,
+  type WorldRequest, AbilityTierRow, Account, AccountFound, AccountId,
+  ActionSetRefused, ActionSlotRow, ActiveQuest, Bought, BuyFromVendor, Character,
+  CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
+  CharacterRenamed, ChargesFilled, CreateCharacter, CreateForNoSuchAccount,
+  Created, CurrencySet, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused,
+  FillCharges, FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld,
+  HealthRefused, HeldCurrency, HeldItem, ItemMade, ItemWords, Items,
+  ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
+  MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
+  NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
+  NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
+  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused,
+  Select, SellToVendor, SetCurrency, SpendItem, SplitItem, TurnInQuest, TurnedIn,
+  Unavailable, UnsetItem, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -160,16 +160,20 @@ const quest_checks = [
   "character_quest_kill_mask_has_six_slots",
 ]
 
-/// The checks and the unique key of the character_action_slot table (migration 0049), one
-/// for each limit of the client's an action slot row can break. A save one of them
-/// refuses answers `ActionSetRefused` with its own name. The table's primary key and its
-/// foreign key to the character are not among them: neither is a limit of the client's,
-/// and a refused one is a refused place.
-const action_slot_checks = [
+/// The checks and the unique key of the character_action_slot table (migration 0049) and
+/// the checks of the character_ability_tier table (migration 0050), one for each limit of
+/// the client's an action slot row or a tier row can break. A save one of them refuses
+/// answers `ActionSetRefused` with its own name. The tables' primary keys and their
+/// foreign keys to the character are not among them: none is a limit of the client's, and
+/// a refused one is a refused place.
+const action_set_checks = [
   "character_action_slot_set_is_one_of_four",
   "character_action_slot_slot_is_one_of_twelve",
   "character_action_slot_ability_fits_the_message",
   "character_action_slot_one_place_per_ability",
+  "character_ability_tier_set_is_one_of_four",
+  "character_ability_tier_ability_fits_the_message",
+  "character_ability_tier_is_above_the_first_and_fits_the_message",
 ]
 
 /// Every constraint or unique index the worker answers for by name. The schema
@@ -180,7 +184,7 @@ pub fn mapped_constraints() -> List(String) {
     character_name_follows_rule_0,
     character_health_is_not_negative,
     character_experience_is_not_negative,
-    ..list.append(quest_checks, action_slot_checks)
+    ..list.append(quest_checks, action_set_checks)
   ]
 }
 
@@ -483,6 +487,7 @@ fn items(
       experience:,
       level:,
       quests:,
+      action_sets:,
       credits_held:,
       credits_after:,
       placed:,
@@ -498,6 +503,7 @@ fn items(
         experience:,
         level:,
         quests:,
+        action_sets:,
         credits_held:,
         credits_after:,
         placed:,
@@ -521,6 +527,7 @@ fn turn_in_quest(
   experience experience: Int,
   level level: Int,
   quests quests: List(store.QuestRow),
+  action_sets action_sets: store.ActionSets,
   credits_held credits_held: Int,
   credits_after credits_after: Int,
   placed placed: List(store.Placed),
@@ -536,7 +543,7 @@ fn turn_in_quest(
       experience:,
       level:,
       quests:,
-      action_sets: store.ActionSets(slots: []),
+      action_sets:,
     )
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
@@ -1155,7 +1162,7 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Error(Refused(constraint:, ..)) ->
       case
         list.contains(quest_checks, constraint),
-        list.contains(action_slot_checks, constraint)
+        list.contains(action_set_checks, constraint)
       {
         True, _ -> Ok(QuestLogRefused(constraint:))
         _, True -> Ok(ActionSetRefused(constraint:))
@@ -1210,6 +1217,7 @@ fn save_place(
     level,
     quests_json(quests),
     action_slots_json(action_sets:),
+    ability_tiers_json(action_sets:),
   )
 }
 
@@ -1281,9 +1289,14 @@ fn load_character(
           sql.load_character_currencies(connection, character_id)
         }),
       )
-      use action_slot_rows <- result.map(
+      use action_slot_rows <- result.try(
         of_the_loaded(characters: loaded.rows, read: fn() {
           sql.load_character_action_slots(connection, character_id)
+        }),
+      )
+      use ability_tier_rows <- result.map(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_character_ability_tiers(connection, character_id)
         }),
       )
       pog.Returned(
@@ -1295,6 +1308,7 @@ fn load_character(
             quests: quest_rows.rows,
             currencies: currency_rows.rows,
             action_slots: action_slot_rows.rows,
+            ability_tiers: ability_tier_rows.rows,
           )
         }),
       )
@@ -1309,6 +1323,7 @@ fn load_character(
         quests: quest_rows,
         currencies: currency_rows,
         action_slots: action_slot_rows,
+        ability_tiers: ability_tier_rows,
       ),
     ] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
@@ -1350,7 +1365,10 @@ fn load_character(
             amount: row.amount,
           )
         }),
-        action_sets: action_sets_of(rows: action_slot_rows),
+        action_sets: action_sets_of(
+          slots: action_slot_rows,
+          tiers: ability_tier_rows,
+        ),
       )
     }
     [] -> NotTheAccounts
@@ -1359,7 +1377,7 @@ fn load_character(
 }
 
 /// The one row a load's transaction gives: the character whose epoch the
-/// update raised, with its items, quest log, currencies and action slots.
+/// update raised, with its items, quest log, currencies, action slots and ability tiers.
 type LoadRow {
   LoadedRow(
     row: sql.LoadCharacterRow,
@@ -1367,19 +1385,29 @@ type LoadRow {
     quests: List(sql.LoadQuestLogRow),
     currencies: List(sql.LoadCharacterCurrenciesRow),
     action_slots: List(sql.LoadCharacterActionSlotsRow),
+    ability_tiers: List(sql.LoadCharacterAbilityTiersRow),
   )
 }
 
-/// The action sets a load's rows hold, in the order the query gave them (set, then slot).
+/// The action sets a load's rows hold, in the order the queries gave them (set, then slot;
+/// set, then Spell4Base).
 fn action_sets_of(
-  rows rows: List(sql.LoadCharacterActionSlotsRow),
+  slots slots: List(sql.LoadCharacterActionSlotsRow),
+  tiers tiers: List(sql.LoadCharacterAbilityTiersRow),
 ) -> store.ActionSets {
   store.ActionSets(
-    slots: list.map(rows, fn(row) {
+    slots: list.map(slots, fn(row) {
       ActionSlotRow(
         action_set: row.action_set,
         slot: row.slot,
         spell4_base_id: row.spell4_base_id,
+      )
+    }),
+    tiers: list.map(tiers, fn(row) {
+      AbilityTierRow(
+        action_set: row.action_set,
+        spell4_base_id: row.spell4_base_id,
+        tier: row.tier,
       )
     }),
   )
@@ -1388,15 +1416,25 @@ fn action_sets_of(
 /// The action slots as the JSON array save_place.sql unpacks, one object for each slot
 /// whose keys are the character_action_slot columns, a null ability for an empty slot.
 fn action_slots_json(action_sets action_sets: store.ActionSets) -> Json {
-  json.preprocessed_array(
-    list.map(action_sets.slots, fn(slot) {
-      json.object([
-        #("action_set", json.int(slot.action_set)),
-        #("slot", json.int(slot.slot)),
-        #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
-      ])
-    }),
-  )
+  json.array(from: action_sets.slots, of: fn(slot) {
+    json.object([
+      #("action_set", json.int(slot.action_set)),
+      #("slot", json.int(slot.slot)),
+      #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
+    ])
+  })
+}
+
+/// The ability tiers as the JSON array save_place.sql unpacks, one object for each ability
+/// held above tier 1 whose keys are the character_ability_tier columns.
+fn ability_tiers_json(action_sets action_sets: store.ActionSets) -> Json {
+  json.array(from: action_sets.tiers, of: fn(tier) {
+    json.object([
+      #("action_set", json.int(tier.action_set)),
+      #("spell4_base_id", json.int(tier.spell4_base_id)),
+      #("tier", json.int(tier.tier)),
+    ])
+  })
 }
 
 /// The rows of a character's quest log as the rows the store hands the quest log's
@@ -1451,53 +1489,51 @@ fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
 /// each row whose keys are the character_quest columns, a completed time in whole
 /// Unix seconds and the active columns null for a row without an active entry.
 fn quests_json(quests: List(QuestRow)) -> Json {
-  json.preprocessed_array(
-    list.map(quests, fn(quest) {
-      json.object([
-        #("quest_id", json.int(quest.quest_id)),
-        #("state", json.int(quest.state)),
-        #("completed_at", json.nullable(quest.completed_at, json.int)),
-        #(
-          "placeholder_objective_id",
-          json.nullable(quest.active, fn(active) {
-            json.int(active.placeholder_objective_id)
-          }),
-        ),
-        #(
-          "tracked",
-          json.nullable(quest.active, fn(active) { json.bool(active.tracked) }),
-        ),
-        #(
-          "done_mask",
-          json.nullable(quest.active, fn(active) { json.int(active.done_mask) }),
-        ),
-        #(
-          "progress",
-          json.nullable(quest.active, fn(active) {
-            json.array(active.progress, json.int)
-          }),
-        ),
-        #(
-          "quest_ms_left",
-          json.nullable(quest.active, fn(active) {
-            json.int(active.quest_ms_left)
-          }),
-        ),
-        #(
-          "objective_ms_left",
-          json.nullable(quest.active, fn(active) {
-            json.array(active.objective_ms_left, json.int)
-          }),
-        ),
-        #(
-          "kill_mask",
-          json.nullable(quest.active, fn(active) {
-            json.array(active.kill_mask, json.int)
-          }),
-        ),
-      ])
-    }),
-  )
+  json.array(from: quests, of: fn(quest) {
+    json.object([
+      #("quest_id", json.int(quest.quest_id)),
+      #("state", json.int(quest.state)),
+      #("completed_at", json.nullable(quest.completed_at, json.int)),
+      #(
+        "placeholder_objective_id",
+        json.nullable(quest.active, fn(active) {
+          json.int(active.placeholder_objective_id)
+        }),
+      ),
+      #(
+        "tracked",
+        json.nullable(quest.active, fn(active) { json.bool(active.tracked) }),
+      ),
+      #(
+        "done_mask",
+        json.nullable(quest.active, fn(active) { json.int(active.done_mask) }),
+      ),
+      #(
+        "progress",
+        json.nullable(quest.active, fn(active) {
+          json.array(active.progress, json.int)
+        }),
+      ),
+      #(
+        "quest_ms_left",
+        json.nullable(quest.active, fn(active) {
+          json.int(active.quest_ms_left)
+        }),
+      ),
+      #(
+        "objective_ms_left",
+        json.nullable(quest.active, fn(active) {
+          json.array(active.objective_ms_left, json.int)
+        }),
+      ),
+      #(
+        "kill_mask",
+        json.nullable(quest.active, fn(active) {
+          json.array(active.kill_mask, json.int)
+        }),
+      ),
+    ])
+  })
 }
 
 /// The rows of a character's items as the items they hold, in the order the query gave

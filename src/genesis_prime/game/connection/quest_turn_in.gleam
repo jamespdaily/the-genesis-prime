@@ -41,6 +41,7 @@ import genesis_prime/game/connection/vendor_trade
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/experience
 import genesis_prime/game/interaction
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/quest as quest_rule
@@ -179,6 +180,7 @@ fn asking(
       place: movement.place(state: entered.movement),
       health: Some(player_life.saved_health(life: entered.life)),
       quests: quest_log.rows(log: turn_in.log, now_ms: now.monotonic_ms),
+      action_sets: limited_action_set.rows(saved: entered.action_sets),
     )),
     before:,
   )

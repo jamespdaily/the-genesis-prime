@@ -12,34 +12,82 @@
 import ability_book_support as book_support
 import ability_points_support as support
 import cast_support
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/world_entry
+import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/list
 import limited_action_set_support as limited
 import owned_test
 import world_entry_support
 
-/// A class and level, the (to spend, total) pair its entry sends, and why.
+/// A class and level, the tiers its player saved (set, Spell4Base, tier), the (to spend,
+/// total) pair its entry sends, and why.
 type Entry {
-  Entry(class_id: Int, level: Int, points: #(Int, Int), why: String)
+  Entry(
+    class_id: Int,
+    level: Int,
+    tiers: List(#(Int, Int, Int)),
+    points: #(Int, Int),
+    why: String,
+  )
 }
 
 fn entries() -> List(Entry) {
   [
-    Entry(1, 3, #(0, 0), "Warrior 3: IDs 1 to 3 give none"),
-    Entry(4, 9, #(0, 0), "Medic 9: IDs 1 to 9 give none"),
-    Entry(7, 10, #(1, 1), "Spellslinger 10: ID 10 gives the first"),
-    Entry(4, 11, #(2, 2), "Medic 11: IDs 10 and 11 give two"),
-    Entry(1, 50, #(41, 41), "Warrior 50: IDs 10 to 50 give 41"),
+    Entry(1, 3, [], #(0, 0), "Warrior 3: IDs 1 to 3 give none"),
+    Entry(4, 9, [], #(0, 0), "Medic 9: IDs 1 to 9 give none"),
+    Entry(7, 10, [], #(1, 1), "Spellslinger 10: ID 10 gives the first"),
+    Entry(4, 11, [], #(2, 2), "Medic 11: IDs 10 and 11 give two"),
+    Entry(1, 50, [], #(41, 41), "Warrior 50: IDs 10 to 50 give 41"),
+    Entry(
+      7,
+      10,
+      [#(0, 27_638, 2)],
+      #(0, 1),
+      "Spellslinger 10 saved Quick Draw at tier 2, which costs the one point (Spell4 abilityPointCost 1)",
+    ),
+    Entry(
+      7,
+      25,
+      [#(0, 20_684, 5), #(0, 27_638, 5)],
+      #(0, 16),
+      "Spellslinger 25 saved Charged Shot and Quick Draw at tier 5, 8 points each of the 16",
+    ),
+    Entry(
+      7,
+      25,
+      [#(0, 20_684, 5), #(0, 20_718, 2), #(0, 27_638, 5)],
+      #(16, 16),
+      "Spellslinger 25 saved 17 points of tiers, over the 16 the level gives: every tier of the set is reset (Jim's rule) and all 16 points are left",
+    ),
   ]
+}
+
+/// The frames of the entry of this case's player.
+fn entry_frames(case_ case_: Entry) -> List(Frame) {
+  case case_.tiers {
+    [] ->
+      world_entry_support.entering(class_id: case_.class_id, level: case_.level).0
+    tiers -> {
+      let assert world_entry.InTheWorld(effects:, ..) =
+        world_entry_support.joined_with_action_sets(
+          class_id: case_.class_id,
+          level: case_.level,
+          action_sets: limited.with_tiers(tiers:),
+          unset: [],
+        )
+        as "the entry puts the player in the world"
+      world_entry_support.frames_of(effects:)
+    }
+  }
 }
 
 pub fn entry_sends_one_0x0169_between_0x092c_and_0x025e_holding_the_levels_points_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(entries(), fn(case_) {
-    let #(frames, _) =
-      world_entry_support.entering(class_id: case_.class_id, level: case_.level)
+    let frames = entry_frames(case_:)
     assert support.points_in(frames:) == [case_.points] as case_.why
     let ids = cast_support.ids(frames:)
     assert list.window(ids, 4)
@@ -73,9 +121,8 @@ pub fn a_rejoin_sends_the_points_of_the_level_the_session_holds_test() -> Nil {
         as { why <> ": a join sends no 0x025E" }
     },
   )
-  // A tier bought in the session is not carried by the join: the bars are rebuilt from the
-  // saved rows, which hold no tier, so every ability is at tier 1 and the point is unspent
-  // again (the stated gap of `ability_points.gaps`).
+  // A tier bought in the session is carried by the join: the bars and the tiers are rebuilt
+  // from the saved rows, so Quick Draw is at tier 2 in set 0 and the point stays spent.
   let #(_, entered) = world_entry_support.entering(class_id: 7, level: 10)
   let #(spent, _) =
     limited.taken(
@@ -95,8 +142,11 @@ pub fn a_rejoin_sends_the_points_of_the_level_the_session_holds_test() -> Nil {
     world_entry_support.rejoining_from(
       entered: world_entry.Entered(..entered, action_sets: spent),
     )
-  assert support.points_in(frames:) == [#(1, 1)]
-    as "the join sends the level's point unspent"
-  assert list.all(book_support.tiers_in(frames:), fn(entry) { entry.tier == 1 })
-    as "and every ability at tier 1 in each set"
+  assert support.points_in(frames:) == [#(0, 1)]
+    as "the join sends the level's point spent"
+  assert list.filter(book_support.tiers_in(frames:), fn(entry) {
+      entry.tier > 1
+    })
+    == [AbilityTier(spell4_base_id: 27_638, tier: 2, action_set_index: 0)]
+    as "and Quick Draw at tier 2 in set 0 and every other ability at tier 1 in each set"
 }

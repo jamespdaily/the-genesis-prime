@@ -22,6 +22,7 @@ import genesis_prime/client_connection.{
   AskMap, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
 }
 import genesis_prime/connection/frame.{Frame}
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/hand_off.{Kept}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -49,10 +50,9 @@ import genesis_prime/step.{
   StoppedWaiting, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{
-  AccountId, ActionSets, Character, CharacterId, CharacterLoaded, ChargesFilled,
-  FillCharges, ForSelect, ForWorld, ItemFill, ItemsNotSaved, ItemsSaved,
-  ListCharacters, Listed, LoadCharacter, NotTheAccounts, Select, Unavailable,
-  UnsetItem, World,
+  AccountId, Character, CharacterId, CharacterLoaded, ChargesFilled, FillCharges,
+  ForSelect, ForWorld, ItemFill, ItemsNotSaved, ItemsSaved, ListCharacters,
+  Listed, LoadCharacter, NotTheAccounts, Select, Unavailable, UnsetItem, World,
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/map.{Join}
@@ -100,7 +100,9 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
             [],
             [],
             [],
-            action_sets: ActionSets(slots: []),
+            action_sets: limited_action_set.rows(
+              saved: limited_action_set.none(),
+            ),
           )),
         ),
       ),
@@ -205,7 +207,9 @@ pub fn a_load_with_an_unset_item_asks_the_store_to_fill_it_before_the_map_is_ask
             ],
             currencies: [],
             quests: [],
-            action_sets: ActionSets(slots: []),
+            action_sets: limited_action_set.rows(
+              saved: limited_action_set.none(),
+            ),
           )),
         ),
       ),
@@ -509,7 +513,9 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
               [],
               [],
               [],
-              action_sets: ActionSets(slots: []),
+              action_sets: limited_action_set.rows(
+                saved: limited_action_set.none(),
+              ),
             )),
           ),
         ),

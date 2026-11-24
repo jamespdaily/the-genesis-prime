@@ -26,6 +26,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Worked}
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/loadout
 import genesis_prime/game/objective
 import genesis_prime/game/server_proxy
@@ -627,7 +628,7 @@ pub fn joining_holding_currencies(
           [],
           quests,
           currencies,
-          store.ActionSets(slots: []),
+          limited_action_set.rows(saved: limited_action_set.none()),
         )),
       ),
     ),
@@ -974,7 +975,7 @@ pub fn entered_stocking_with_quests(
             [],
             quests,
             [HeldCurrency(currency_type_id: 1, amount: credits)],
-            store.ActionSets(slots: []),
+            limited_action_set.rows(saved: limited_action_set.none()),
           )),
         ),
       ),
@@ -1155,7 +1156,7 @@ pub fn save_asked_keeping(
       experience: 0,
       level: 1,
       quests: [],
-      action_sets: store.ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )),
   )
 }
@@ -1920,7 +1921,7 @@ pub fn entered_with_dev_commands(
               0 -> []
               _ -> [HeldCurrency(currency_type_id: 1, amount: credits)]
             },
-            store.ActionSets(slots: []),
+            limited_action_set.rows(saved: limited_action_set.none()),
           )),
         ),
       ),

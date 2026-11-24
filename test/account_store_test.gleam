@@ -31,24 +31,25 @@ import driven_time
 import event_wait
 import genesis_prime/add_character/sql as add_character_sql
 import genesis_prime/game/character_name
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/login/guid
 import genesis_prime/migration
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, type ActionSlotRow, type ActiveQuest, type QuestRow, Account,
-  AccountFound, AccountId, ActionSetRefused, ActionSets, ActionSlotRow,
-  ActiveQuest, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
-  Created, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount,
-  ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
-  ItemMade, ItemMove, ItemPlace, Items, ItemsNotSaved, ItemsSaved,
-  ListCharacters, Listed, LoadCharacter, Login, LookEntry, MergeItems, Move,
-  MoveItems, NameBreaksRule, NameStands, NameTaken, NeedsRename, NewCharacter,
-  NewItem, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
-  NoSuchCharacter, NotRenamable, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SpendItem, SplitItem, Unavailable, World,
+  AccountFound, AccountId, ActionSetRefused, ActionSlotRow, ActiveQuest,
+  Character, CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
+  CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
+  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount, ForItems,
+  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, ItemMade,
+  ItemMove, ItemPlace, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
+  LoadCharacter, Login, LookEntry, MergeItems, Move, MoveItems, NameBreaksRule,
+  NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
+  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
+  QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SpendItem,
+  SplitItem, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{
@@ -972,7 +973,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
       [],
       [],
       [],
-      ActionSets(slots: []),
+      limited_action_set.rows(saved: limited_action_set.none()),
     ))
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   account_store_support.stop(store)
@@ -1074,7 +1075,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       [],
       [],
       [],
-      ActionSets(slots: []),
+      limited_action_set.rows(saved: limited_action_set.none()),
     ))
     as "the row as character_support inserted it: the saved world, zone and position come with it, the epoch the load raised from 0 to 1, and no saved health: a character never saved enters at full health"
   assert account_store_support.ask(
@@ -1364,7 +1365,7 @@ fn save_progress(
       experience:,
       level:,
       quests: [],
-      action_sets: ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )),
   )
 }
@@ -3142,7 +3143,7 @@ fn save_log(
       experience: 0,
       level: 1,
       quests:,
-      action_sets: ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )),
   )
 }
@@ -4874,6 +4875,33 @@ fn turn_in(
   credits_after credits_after: Int,
   placed placed: List(store.Placed),
 ) -> store.Answer {
+  turn_in_saving(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    sequence:,
+    quests:,
+    action_sets: limited_action_set.rows(saved: limited_action_set.none()),
+    credits_held:,
+    credits_after:,
+    placed:,
+  )
+}
+
+/// A turn-in that carries these action sets as its save of the place.
+fn turn_in_saving(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  quests quests: List(QuestRow),
+  action_sets action_sets: store.ActionSets,
+  credits_held credits_held: Int,
+  credits_after credits_after: Int,
+  placed placed: List(store.Placed),
+) -> store.Answer {
   account_store_support.ask(
     store:,
     request: Items(store.TurnInQuest(
@@ -4893,6 +4921,7 @@ fn turn_in(
       experience: 300,
       level: 2,
       quests:,
+      action_sets:,
       credits_held:,
       credits_after:,
       placed:,
@@ -6879,6 +6908,29 @@ fn save_slots(
   place place: start_place.Place,
   action_sets action_sets: store.ActionSets,
 ) -> store.Answer {
+  save_sets_and_quests(
+    store:,
+    account:,
+    character_id:,
+    epoch:,
+    sequence:,
+    place:,
+    quests: [],
+    action_sets:,
+  )
+}
+
+/// A place save of a login naming these quests and action sets, with no health to keep.
+fn save_sets_and_quests(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  place place: start_place.Place,
+  quests quests: List(QuestRow),
+  action_sets action_sets: store.ActionSets,
+) -> store.Answer {
   account_store_support.ask(
     store:,
     request: Move(SavePlace(
@@ -6890,15 +6942,52 @@ fn save_slots(
       health: None,
       experience: 0,
       level: 1,
-      quests: [],
+      quests:,
       action_sets:,
     )),
   )
 }
 
+/// The tier rows the table holds for the character, read straight from the database, in
+/// set then Spell4Base order, with the row version each has (`xmin`, which a write of the
+/// row changes).
+fn stored_tiers(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(#(store.AbilityTierRow, String)) {
+  let assert Ok(returned) =
+    pog.query(
+      "select action_set::int, spell4_base_id, tier::int, xmin::text from character_ability_tier where character_id = $1 order by action_set, spell4_base_id",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning({
+      use action_set <- decode.field(0, decode.int)
+      use spell4_base_id <- decode.field(1, decode.int)
+      use tier <- decode.field(2, decode.int)
+      use version <- decode.field(3, decode.string)
+      decode.success(#(
+        store.AbilityTierRow(action_set:, spell4_base_id:, tier:),
+        version,
+      ))
+    })
+    |> pog.execute(store.pool)
+    as "the tier rows read"
+  returned.rows
+}
+
+/// The tier rows without their versions.
+fn stored_tier_rows(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(store.AbilityTierRow) {
+  list.map(stored_tiers(store:, character_id:), fn(held) { held.0 })
+}
+
 /// The slots of a saved set as the store holds them: the rows of `ids` in set `set`.
 fn slots_of(set set: Int, ids ids: List(Int)) -> store.ActionSets {
-  store.ActionSets(slots: limited_action_set_support.rows_of(set:, ids:))
+  limited_action_set_support.with_slots(
+    slots: limited_action_set_support.rows_of(set:, ids:),
+  )
 }
 
 /// What a load answers with, which raises the epoch: the epoch it gave, the action sets and
@@ -6992,7 +7081,7 @@ pub fn a_saved_set_is_loaded_after_a_login_and_a_save_the_fence_refuses_writes_n
   }
   let #(first_login, loaded, _) =
     action_sets_of_load(store:, account:, character_id:)
-  assert loaded == store.ActionSets(slots: [])
+  assert loaded == limited_action_set.rows(saved: limited_action_set.none())
     as "a character that never saved a bar loads no rows: its bar is the class's"
   assert saved(
       first_login,
@@ -7156,7 +7245,7 @@ pub fn a_slot_row_the_table_refuses_is_refused_by_name_and_a_swap_in_one_save_is
   ]
   list.each(refusals, fn(refusal) {
     let #(why, rows, constraint) = refusal
-    assert saved(1, store.ActionSets(slots: rows))
+    assert saved(1, limited_action_set_support.with_slots(slots: rows))
       == ForMove(ActionSetRefused(constraint:))
       as why
     assert stored_rows(store:, character_id: id) == []
@@ -7178,11 +7267,11 @@ pub fn a_slot_row_the_table_refuses_is_refused_by_name_and_a_swap_in_one_save_is
     ])
     as "the swap is saved"
   let refused = [row(0, 0, Some(27_638)), row(0, 1, Some(27_638))]
-  assert saved(3, store.ActionSets(slots: refused))
+  assert saved(3, limited_action_set_support.with_slots(slots: refused))
     == ForMove(ActionSetRefused(
       constraint: "character_action_slot_one_place_per_ability",
     ))
-  assert saved(4, store.ActionSets(slots: refused))
+  assert saved(4, limited_action_set_support.with_slots(slots: refused))
     == ForMove(ActionSetRefused(
       constraint: "character_action_slot_one_place_per_ability",
     ))
@@ -7239,6 +7328,251 @@ pub fn the_action_slot_migration_makes_the_table_with_its_named_checks_and_casca
   )
   assert stored_rows(store:, character_id: id) == []
     as "deleting the character deletes its slot rows"
+  account_store_support.stop(store)
+}
+
+pub fn the_ability_tier_migration_makes_the_table_with_its_named_checks_and_cascades_with_the_character_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(_, id) = one_character(store:)
+  let assert Ok(returned) =
+    pog.query(
+      "select conname::text, condeferrable, condeferred from pg_constraint where conrelid = 'character_ability_tier'::regclass and contype <> 'n' order by conname",
+    )
+    |> pog.returning({
+      use name <- decode.field(0, decode.string)
+      use deferrable <- decode.field(1, decode.bool)
+      use deferred <- decode.field(2, decode.bool)
+      decode.success(#(name, deferrable, deferred))
+    })
+    |> pog.execute(store.pool)
+    as "the catalogue was read"
+  assert returned.rows
+    == [
+      #("character_ability_tier_ability_fits_the_message", False, False),
+      #("character_ability_tier_character_exists", False, False),
+      #(
+        "character_ability_tier_is_above_the_first_and_fits_the_message",
+        False,
+        False,
+      ),
+      #("character_ability_tier_pkey", False, False),
+      #("character_ability_tier_set_is_one_of_four", False, False),
+    ]
+    as "the primary key and the four named constraints, none deferrable"
+  let insert = fn(character_id) {
+    pog.query(
+      "insert into character_ability_tier (character_id, action_set, spell4_base_id, tier) values ($1, 0, 27638, 2)",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.execute(store.pool)
+  }
+  let assert Ok(_) = insert(id) as "a row for a character that exists"
+  assert list.length(stored_tier_rows(store:, character_id: id)) == 1
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) = insert(id + 1000)
+    as "a row for no character is refused"
+  assert constraint == "character_ability_tier_character_exists"
+  execute(
+    store.pool,
+    "delete from character where character_id = " <> int.to_string(id),
+  )
+  assert stored_tier_rows(store:, character_id: id) == []
+    as "deleting the character deletes its tier rows"
+  account_store_support.stop(store)
+}
+
+pub fn a_tier_row_the_table_refuses_is_refused_by_name_and_writes_nothing_of_the_save_and_deletes_no_held_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let epoch = epoch_of_load(store:, account:, character_id: id)
+  let first =
+    place_facing(x: 1.0, y: 2.0, z: 3.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let second =
+    place_facing(x: 4.0, y: 5.0, z: 6.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let saved = fn(sequence, place, quest, ids, tiers) {
+    save_sets_and_quests(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence:,
+      place:,
+      quests: [completed_quest(quest)],
+      action_sets: store.ActionSets(
+        ..slots_of(set: 0, ids:),
+        tiers: list.map(tiers, limited_action_set_support.tier_row),
+      ),
+    )
+  }
+  let tier_check =
+    "character_ability_tier_is_above_the_first_and_fits_the_message"
+  let set_check = "character_ability_tier_set_is_one_of_four"
+  let ability_check = "character_ability_tier_ability_fits_the_message"
+  assert saved(1, first, 1001, limited_action_set_support.ids_a, [
+      #(0, 27_638, 2),
+    ])
+    == ForMove(PlaceSaved)
+  let held_row =
+    store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2)
+  let refusals = [
+    #("tier 1: a tier row is above the first", #(0, 27_638, 1), tier_check),
+    #("tier 16: the message carries 4 bits", #(0, 27_638, 16), tier_check),
+    #("tier 0", #(0, 27_638, 0), tier_check),
+    #("a set of 4: the client has four sets", #(4, 27_638, 2), set_check),
+    #("id 0: no ability has it", #(0, 0, 2), ability_check),
+    #("id 262144: the message carries 18 bits", #(0, 262_144, 2), ability_check),
+  ]
+  list.each(refusals, fn(refusal) {
+    let #(why, row, constraint) = refusal
+    assert list.contains(worker.mapped_constraints(), constraint)
+      as "the worker maps the constraint it names"
+    assert saved(2, second, 1002, limited_action_set_support.ids_b, [row])
+      == ForMove(ActionSetRefused(constraint:))
+      as why
+    assert stored_rows(store:, character_id: id)
+      == limited_action_set_support.rows_of(
+        set: 0,
+        ids: limited_action_set_support.ids_a,
+      )
+      as "the new bar of the refused save is not written"
+    assert quest_states(store:, character_id: id) == [#(1001, 3)]
+      as "nor its quest"
+    assert character_support.place_row(pool: store.pool, character_id: id).position.0
+      == 1.0
+      as "nor its place"
+    assert stored_sequence(store:, character_id: id) == 1
+      as "the save took no sequence"
+    assert stored_tier_rows(store:, character_id: id) == [held_row]
+      as "the held tier row, which the refused save's list left out, was not deleted: the delete in the same statement rolled back too"
+  })
+  assert saved(2, second, 1002, limited_action_set_support.ids_b, [
+      #(0, 20_684, 3),
+      #(0, 27_638, 2),
+    ])
+    == ForMove(PlaceSaved)
+    as "each refusal stored nothing, and a good save after them is written"
+  assert stored_tier_rows(store:, character_id: id)
+    == list.map(
+      [#(0, 20_684, 3), #(0, 27_638, 2)],
+      limited_action_set_support.tier_row,
+    )
+  account_store_support.stop(store)
+}
+
+pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_and_a_turn_in_writes_its_rows_while_a_stale_save_changes_none_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [#(1, 10)])
+  let CharacterId(id) = character_id
+  let other =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Other One",
+      class_id: 4,
+      path: 2,
+    )
+  execute(
+    store.pool,
+    "insert into character_ability_tier (character_id, action_set, spell4_base_id, tier) values ("
+      <> int.to_string(other)
+      <> ", 1, 20718, 4)",
+  )
+  let others_row = [
+    store.AbilityTierRow(action_set: 1, spell4_base_id: 20_718, tier: 4),
+  ]
+  let first =
+    place_facing(x: 1.0, y: 2.0, z: 3.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let second =
+    place_facing(x: 4.0, y: 5.0, z: 6.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let elsewhere =
+    place_facing(x: 7.0, y: 8.0, z: 9.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let saved = fn(epoch, sequence, place, tiers) {
+    save_slots(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence:,
+      place:,
+      action_sets: limited_action_set_support.with_tiers(tiers),
+    )
+  }
+  let three = [#(0, 20_684, 3), #(0, 27_638, 2), #(2, 27_638, 5)]
+  let quick_draws = [#(0, 27_638, 2), #(2, 27_638, 5)]
+  let #(first_login, loaded, _) =
+    action_sets_of_load(store:, account:, character_id:)
+  assert loaded.tiers == [] as "a character that never saved a tier loads none"
+  assert saved(first_login, 1, first, three) == ForMove(PlaceSaved)
+  assert stored_tier_rows(store:, character_id: id)
+    == list.map(three, limited_action_set_support.tier_row)
+    as "the three tier rows, in set then Spell4Base order"
+  let #(second_login, loaded, _) =
+    action_sets_of_load(store:, account:, character_id:)
+  assert loaded.tiers == list.map(three, limited_action_set_support.tier_row)
+    as "a new login loads them in that order"
+  let before = stored_tiers(store:, character_id: id)
+  assert saved(second_login, 2, second, quick_draws) == ForMove(PlaceSaved)
+  let after = stored_tiers(store:, character_id: id)
+  assert list.map(after, fn(held) { held.0 })
+    == list.map(quick_draws, limited_action_set_support.tier_row)
+    as "the whole list replaces the held rows: the Charged Shot row is deleted"
+  assert list.drop(before, 1) == after
+    as "the Quick Draw rows keep their versions: only a changed row is written"
+  assert saved(second_login, 3, second, quick_draws) == ForMove(PlaceSaved)
+  assert stored_tiers(store:, character_id: id) == after
+    as "the same list again writes no row"
+  let #(third_login, _, _) =
+    action_sets_of_load(store:, account:, character_id:)
+  let turned_in = fn(sequence, credits_held, tiers) {
+    turn_in_saving(
+      store:,
+      account:,
+      character_id:,
+      epoch: third_login,
+      sequence:,
+      quests: [completed_quest(1001)],
+      action_sets: limited_action_set_support.with_tiers(tiers),
+      credits_held:,
+      credits_after: credits_held + 145,
+      placed: [],
+    )
+  }
+  let with_charged_shot = [#(0, 20_684, 2), ..quick_draws]
+  let assert ForItems(store.TurnedIn(..)) =
+    turned_in(1, 1000, with_charged_shot)
+    as "a quest turn-in saves the place in its own transaction"
+  assert stored_tier_rows(store:, character_id: id)
+    == list.map(with_charged_shot, limited_action_set_support.tier_row)
+    as "the turn-in writes the Charged Shot row at tier 2, beside its quest and its place"
+  assert quest_states(store:, character_id: id) == [#(1001, 3)]
+  assert character_support.place_row(pool: store.pool, character_id: id).position.0
+    == 10.0
+  let assert ForItems(store.TurnedIn(..)) =
+    turned_in(2, 1145, [#(0, 27_638, 2)])
+    as "a second turn-in"
+  assert stored_tier_rows(store:, character_id: id)
+    == [store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2)]
+    as "a turn-in saves the whole list: the rows it does not carry are deleted"
+  let held = stored_tiers(store:, character_id: id)
+  assert saved(third_login, 2, elsewhere, [#(1, 20_718, 4)])
+    == ForMove(NothingSaved)
+    as "a save older than the last stored one writes and deletes no tier row"
+  assert saved(first_login, 99, elsewhere, [#(1, 20_718, 4)])
+    == ForMove(NothingSaved)
+    as "a save under the epoch of a login another login has replaced writes and deletes none"
+  assert stored_tiers(store:, character_id: id) == held
+  assert character_support.place_row(pool: store.pool, character_id: id).position.0
+    == 10.0
+    as "and moves no place"
+  assert stored_tier_rows(store:, character_id: other) == others_row
+    as "the other character's row was untouched by every save and turn-in"
+  assert saved(third_login, 3, second, []) == ForMove(PlaceSaved)
+  assert stored_tier_rows(store:, character_id: id) == []
+    as "the empty list deletes the character's rows"
+  assert stored_tier_rows(store:, character_id: other) == others_row
+    as "and no one else's"
   account_store_support.stop(store)
 }
 

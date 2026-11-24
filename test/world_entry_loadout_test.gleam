@@ -49,7 +49,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
-import genesis_prime/store.{type Character, ActionSets, HeldItem}
+import genesis_prime/store.{type Character, HeldItem}
 import genesis_prime/table/character_creation
 import genesis_prime/table/id.{ClassId, Item2Id, Spell4BaseId}
 import genesis_prime/world_map/unit_fields
@@ -196,7 +196,7 @@ pub fn the_weapon_is_the_classes_and_factions_item_04_for_every_class_and_factio
   })
 }
 
-pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil {
+pub fn one_0x1a0_sets_the_held_tier_of_each_ability_in_each_action_set_and_tier_1_for_the_rest_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(classes(), fn(class) {
     let #(frames, _) =
@@ -225,6 +225,43 @@ pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil
     assert tiers.tiers == expected
       as "opcode.0x1a0: an entry holds four action sets, and tier 1 is each ability's and the innate's first, then the first of each alternate spell's base the ability book holds"
   })
+  // A Spellslinger of level 15 (6 points) that saved Quick Draw at tier 2 in set 0 and Charged
+  // Shot at tier 3 in set 2 holds them at those tiers, and every other entry at tier 1: the same
+  // entries in the same order as an entry with no saved tier.
+  let tiers_of_entry = fn(saved) {
+    let assert world_entry.InTheWorld(effects:, ..) =
+      world_entry_support.joined_with_action_sets(
+        class_id: 7,
+        level: 15,
+        action_sets: limited_action_set_support.with_tiers(tiers: saved),
+        unset: [],
+      )
+      as "the entry puts the player in the world"
+    let assert Ok(tiers) =
+      ability_tiers.decode(
+        {
+          world_entry_support.only_frame(
+            frames: world_entry_support.frames_of(effects:),
+            message_id: 0x01A0,
+          )
+        }.body,
+      )
+      as "0x1a0 decodes"
+    tiers.tiers
+  }
+  let with_none = tiers_of_entry([])
+  let with_two = tiers_of_entry([#(0, 27_638, 2), #(2, 20_684, 3)])
+  assert list.all(with_none, fn(entry) { entry.tier == 1 })
+    as "an entry with no saved tier holds every ability at tier 1, as before"
+  assert with_two
+    == list.map(with_none, fn(entry) {
+      case entry.spell4_base_id, entry.action_set_index {
+        27_638, 0 -> AbilityTier(..entry, tier: 2)
+        20_684, 2 -> AbilityTier(..entry, tier: 3)
+        _, _ -> entry
+      }
+    })
+    as "opcode.0x1a0: Quick Draw at tier 2 in set 0, Charged Shot at tier 3 in set 2 and tier 1 elsewhere, the entries in the order of the entry with none"
 }
 
 pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_test() -> Nil {
@@ -310,7 +347,7 @@ pub fn an_entry_with_saved_rows_sends_the_saved_bar_and_one_with_no_rows_sends_t
     world_entry_support.joined_with_action_sets(
       class_id: 7,
       level: 4,
-      action_sets: ActionSets(slots: rows),
+      action_sets: limited_action_set_support.with_slots(slots: rows),
       unset:,
     )
   }

@@ -20,6 +20,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/limited_action_set
 import genesis_prime/message/character_list
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
@@ -39,10 +40,10 @@ import genesis_prime/step.{
   NotRunning, StoppedWaiting,
 }
 import genesis_prime/store.{
-  AccountId, ActionSets, Character, CharacterCreated, CharacterDeleted,
-  CharacterId, CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect,
-  ForWorld, ListCharacters, Listed, LoadCharacter, LookEntry, NewCharacter,
-  NewNameTaken, NotTheAccounts, Renamed, Select, Unavailable, World,
+  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect, ForWorld,
+  ListCharacters, Listed, LoadCharacter, LookEntry, NewCharacter, NewNameTaken,
+  NotTheAccounts, Renamed, Select, Unavailable, World,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import genesis_prime/world_map/map
@@ -245,7 +246,7 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
             [],
             [],
             [],
-            ActionSets(slots: []),
+            limited_action_set.rows(saved: limited_action_set.none()),
           )),
         ),
       ),
