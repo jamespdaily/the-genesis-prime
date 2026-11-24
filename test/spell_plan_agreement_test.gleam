@@ -93,6 +93,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     spell_plan.ProxyOnEachAllyAtSeveralGos(..) ->
       NamesNoRow("a Proxy at the allies of the area that fires at several gos")
     spell_plan.InnateFailed(..) -> NamesNoRow("an innate")
+    spell_plan.EquipItemNotRead(..) -> NamesNoRow("a worn item")
     spell_plan.AreaNotBuilt(..) | spell_plan.AreaDataFault(..) ->
       NamesNoRow("an area")
     spell_plan.PrerequisiteCycle(..) ->

@@ -308,6 +308,15 @@ pub fn rejoining_from(entered entered: world_entry.Entered) -> List(Frame) {
 pub fn rejoining_effects(
   entered entered: world_entry.Entered,
 ) -> List(world_entry.Effect) {
+  let #(_, effects) = rejoined(entered:)
+  effects
+}
+
+/// The player the Holocrypt's join of this player on the committed rows builds, and its
+/// effects, in order.
+pub fn rejoined(
+  entered entered: world_entry.Entered,
+) -> #(world_entry.Entered, List(world_entry.Effect)) {
   let tables = character_tables.shared()
   let character = entered.character
   let landing =
@@ -329,10 +338,10 @@ pub fn rejoining_effects(
       tables:,
       visibility: dict.new(),
     )
-  let assert world_entry.InTheWorld(effects:, ..) =
+  let assert world_entry.InTheWorld(entered:, effects:, ..) =
     joined_state(state:, tables:, character:, place: landing, now: now())
     as "the map's answer to the rejoin puts the player in the world"
-  effects
+  #(entered, effects)
 }
 
 /// What a character's entry decides on these tables, with the Novice set its

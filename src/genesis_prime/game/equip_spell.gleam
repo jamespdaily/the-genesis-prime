@@ -13,6 +13,10 @@
 ////   specials name are no roots (`item_property.is_slotted`, `CheckItemEquipSlot 0x1403b11b0`).
 //// - **A root** is the equip spell of any Item2 row that takes a slot; the plans hold one
 ////   for each (`genesis_prime/game/spell_plan` `standing_plans`).
+//// - **A row the tables lack is an error**, never "not worn": a special row behind a non-zero
+////   `itemSpecialId00`, and the Item2Type, ItemCategory or ItemFamily row of an item whose
+////   special names an equip spell. `roots` returns it and the plans' load fails with it; the
+////   inventory treats the same error as a broken item.
 
 import genesis_prime/game/item_property
 import genesis_prime/table/id.{Item2Id, ItemSpecialId}
@@ -25,45 +29,55 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The Spell4 id the worn item's special names as its equip spell, or `None` for an item
-/// with no special, a special with no equip spell, an item that takes no equipped slot, and
-/// an Item2 id the table lacks.
+/// with no special, a special with no equip spell, an item that takes no equipped slot, an
+/// Item2 id the table lacks, and an item whose rows cannot be read (the gear lists such an
+/// item as unread, and the load's `roots` fails on it).
 pub fn of_item(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Option(Int) {
   case item2.get(tables:, id: Item2Id(item2_id)) {
-    Ok(row) -> of_row(tables:, row:)
+    Ok(row) -> of_row(tables:, row:) |> result.unwrap(or: None)
     Error(Nil) -> None
   }
 }
 
 /// The equip spell of every Item2 row that takes an equipped slot, each once, lowest Spell4
-/// id first.
-pub fn roots(tables tables: table_store.Tables) -> List(Int) {
-  item2.all(tables)
-  |> list.filter_map(fn(row) { of_row(tables:, row:) |> option.to_result(Nil) })
+/// id first; the first row of an item the tables cannot read fails it.
+pub fn roots(
+  tables tables: table_store.Tables,
+) -> Result(List(Int), item_property.ItemPropertyError) {
+  use spells <- result.map(
+    list.try_map(item2.all(tables), fn(row) { of_row(tables:, row:) }),
+  )
+  spells
+  |> option.values
   |> list.unique
   |> list.sort(int.compare)
 }
 
+/// The equip spell of an item row. A special row the table lacks behind a non-zero
+/// `itemSpecialId00`, and a missing Item2Type, ItemCategory or ItemFamily row of an item
+/// whose special names an equip spell, are errors, as they are for the inventory.
 fn of_row(
   tables tables: table_store.Tables,
   row row: item2.Item2,
-) -> Option(Int) {
-  let equip =
-    item_special.get(tables:, id: ItemSpecialId(row.item_special_id00))
-    |> result.map(fn(special) { special.spell4_id_on_equip })
-  case equip {
-    Ok(spell4_id) if spell4_id != 0 ->
-      // Only a missing row of the item's type, category or family is an error, and an item
-      // with none is not worn.
-      case
-        item_property.is_slotted(tables:, item2_id: row.id)
-        |> result.unwrap(False)
-      {
-        True -> Some(spell4_id)
-        False -> None
+) -> Result(Option(Int), item_property.ItemPropertyError) {
+  case row.item_special_id00 {
+    0 -> Ok(None)
+    special_id ->
+      case item_special.get(tables:, id: ItemSpecialId(special_id)) {
+        Error(Nil) ->
+          Error(item_property.NoRow(table: "ItemSpecial", id: special_id))
+        Ok(special) if special.spell4_id_on_equip == 0 -> Ok(None)
+        Ok(special) ->
+          item_property.is_slotted(tables:, item2_id: row.id)
+          |> result.map(fn(slotted) {
+            case slotted {
+              True -> Some(special.spell4_id_on_equip)
+              False -> None
+            }
+          })
       }
-    Ok(_) | Error(Nil) -> None
   }
 }

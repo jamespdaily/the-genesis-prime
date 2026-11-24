@@ -43,6 +43,7 @@ import gleam/string
 import novice_tables.{type Set}
 import owned_test
 import planted_table.{Integer}
+import worn_item_support
 
 /// The armor a class's Novice set gives: heavy 250, medium 200, light 150.
 fn armor_of(class_id class_id: Int) -> Float {
@@ -512,21 +513,7 @@ fn one_item(
   location location: Int,
   bag_index bag_index: Int,
 ) -> List(HeldItem) {
-  [
-    HeldItem(
-      item_guid: 1,
-      item2_id: Item2Id(fixture_tables.root("Item2", item2_id)),
-      location:,
-      bag_index:,
-      stack_count: 1,
-      words: store.ItemWords(
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
-      ),
-    ),
-  ]
+  worn_item_support.held_items(items: [#(item2_id, location, bag_index)])
 }
 
 /// Item2 1375 gives property 34, Critical Hit Rating, 64.125 (`item_property`'s test of
@@ -720,26 +707,6 @@ pub fn a_worn_items_focus_pool_adds_to_the_classes_base_and_returns_on_unequip_t
   })
 }
 
-/// Items held as `#(Item2 id, location, bag index)`, with the guids 1 up.
-fn held_items(items items: List(#(Int, Int, Int))) -> List(HeldItem) {
-  list.index_map(items, fn(item, index) {
-    let #(item2_id, location, bag_index) = item
-    HeldItem(
-      item_guid: index + 1,
-      item2_id: Item2Id(fixture_tables.root("Item2", item2_id)),
-      location:,
-      bag_index:,
-      stack_count: 1,
-      words: store.ItemWords(
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
-      ),
-    )
-  })
-}
-
 /// `ItemSpecial.spell4IdOnEquip` of an item's special: Item2 91747 and 85762 name ItemSpecial
 /// 9402, whose equip spell is Spell4 82325 and whose use spell is none; Item2 12631 names
 /// ItemSpecial 4463, whose only spell is the use spell 42389.
@@ -759,7 +726,12 @@ pub fn a_worn_item_that_names_an_equip_spell_gives_it_and_an_item_in_a_bag_or_wi
   ]
   |> list.each(fn(row) {
     let #(name, items, spells) = row
-    let worn = gear.of_items(tables:, level: 1, items: held_items(items:))
+    let worn =
+      gear.of_items(
+        tables:,
+        level: 1,
+        items: worn_item_support.held_items(items:),
+      )
     assert worn.equip_spells == spells
       as { name <> ": ItemSpecial.spell4IdOnEquip of the worn item's special" }
   })
@@ -775,7 +747,8 @@ pub fn a_worn_item_that_names_an_equip_spell_gives_it_and_an_item_in_a_bag_or_wi
 /// equip spells.
 pub fn the_list_drops_an_exact_repeat_and_keeps_the_worn_order_test() -> Nil {
   use <- owned_test.run(60_000)
-  let twice = held_items(items: [#(91_747, 0, 15), #(85_762, 0, 16)])
+  let twice =
+    worn_item_support.held_items(items: [#(91_747, 0, 15), #(85_762, 0, 16)])
   let worn =
     gear.of_items(tables: fixture_tables.shared(), level: 1, items: twice)
   assert worn.equip_spells == [82_325]
@@ -785,7 +758,8 @@ pub fn the_list_drops_an_exact_repeat_and_keeps_the_worn_order_test() -> Nil {
     id: 11_671,
     with: [#("itemSpecialId00", Integer(9264))],
     body: fn(tables) {
-      let reversed = held_items(items: [#(91_747, 0, 15), #(11_671, 0, 5)])
+      let reversed =
+        worn_item_support.held_items(items: [#(91_747, 0, 15), #(11_671, 0, 5)])
       let worn = gear.of_items(tables:, level: 1, items: reversed)
       assert worn.equip_spells == [82_021, 82_325]
         as "the list follows the worn order, the bag index, whatever order the items are held in"

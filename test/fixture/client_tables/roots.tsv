@@ -1590,3 +1590,4 @@ Spell4	49164	Ignite (Spell4Base 20718) tier 6	spell_tier_test, limited_action_se
 Spell4	49165	Ignite (Spell4Base 20718) tier 7	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
 Spell4	49166	Ignite (Spell4Base 20718) tier 8	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
 Spell4	49167	Ignite (Spell4Base 20718) tier 9	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Item2	38020	(a worn item with equip spell 62538, whose root holds eight UnitPropertyModifier rows; no level, class, race, prerequisite or proficiency)	game_connection_inventory_test
