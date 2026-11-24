@@ -251,9 +251,10 @@ pub type Selection {
     gates: List(spell_plan.StruckGate),
     players: List(PlayerAddress),
     heals: List(spell_area.InstantHeal),
-    /// Whether the phase starts a child cast on each unit of the area (a Proxy aimed at the
-    /// area), so each ally the area selected is a hit of the go whatever rows reach it.
-    starts_children: Bool,
+    /// Whether the phase acts on each ally the area selected, by a child cast started on each
+    /// (a Proxy aimed at the area) or a property change of each (a modifier aimed at the area),
+    /// so each ally the area selected is a hit of the go whatever rows reach it.
+    answers_allies: Bool,
   )
 }
 
@@ -362,7 +363,7 @@ pub fn select(
       gates: [],
       players: [],
       heals: [],
-      starts_children: False,
+      answers_allies: False,
     )
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
@@ -411,7 +412,7 @@ pub fn select(
           attacker:,
           asked:,
           heals: phase.heals,
-          starts_children: phase.starts_children,
+          answers_allies: phase.acts_on_each_unit,
           allies: case spell_area_found.finds_allies {
             True -> from_area
             False -> []
@@ -433,7 +434,7 @@ pub fn select(
           [] -> []
           [_, ..] -> phase.heals
         },
-        starts_children: phase.starts_children,
+        answers_allies: phase.acts_on_each_unit,
       )
     }
   }
@@ -442,13 +443,13 @@ pub fn select(
 /// The players a go tells its heal rows to or starts a child on, with the player the cast
 /// names first: the primary target when it is a player in sight and a row aims at it, and the
 /// allies the area selected (`allies`, in selection order) when a row aims at the area or the
-/// phase starts a child on each unit of the area (`starts_children`), each once. A player the
+/// phase acts on each ally of the area (`answers_allies`), each once. A player the
 /// caster has no address for is left out; none when the phase has neither.
 fn players_of_the_phase(
   attacker attacker: Attacker,
   asked asked: GoAsked,
   heals heals: List(spell_area.InstantHeal),
-  starts_children starts_children: Bool,
+  answers_allies answers_allies: Bool,
   allies allies: List(Int),
 ) -> List(PlayerAddress) {
   let primary = case
@@ -461,7 +462,7 @@ fn players_of_the_phase(
     True, Error(Nil) | False, _ -> []
   }
   let in_the_area = case
-    starts_children
+    answers_allies
     || list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
   {
     True ->
@@ -713,7 +714,7 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
     gates:,
     players: _,
     heals:,
-    starts_children: _,
+    answers_allies: _,
   ) = selection
   case blows, ticking, controls, gates, heals {
     [], [], [], [], [] -> 0
@@ -870,9 +871,10 @@ pub fn begin(
 /// The player a go tells its heal rows to: a place that waits for its answer and the tell
 /// of the rows that reach it, in the plan's order, each with the amount its formula gives
 /// for the caster as it is now. A player no row reaches past its gates has no place and no
-/// tell, and is not in the go, unless the phase starts a child on each ally the area
-/// selected (`Selection.starts_children`): such an ally is a hit of the go, answered at once
-/// with nothing landed (`cast_state.HitOtherPlayer`), so the go starts the child on it. The
+/// tell, and is not in the go, unless the phase acts on each ally the area selected
+/// (`Selection.answers_allies`): such an ally is a hit of the go, answered at once with
+/// nothing landed (`cast_state.HitOtherPlayer`), so the go starts the child on it or changes
+/// it. The
 /// caster, when the area took it as a candidate, is told nothing: its place is already
 /// answered, with the rows that reached it, and the go applies them itself
 /// (`cast_state.HitCaster`).
@@ -884,12 +886,12 @@ fn players_told(
   let told =
     list.filter_map(selection.players, fn(address) {
       let unit_id = address.unit_id
-      let selected_for_a_child =
-        selection.starts_children
+      let selected_for_the_phase =
+        selection.answers_allies
         && unit_id != attacker.unit_id
         && list.contains(selection.area, unit_id)
       case rows_reaching_unit(rows: reach.heals, unit_id:) {
-        [] if selected_for_a_child ->
+        [] if selected_for_the_phase ->
           Ok(#(
             Answered(
               struck: cast_state.Hit(

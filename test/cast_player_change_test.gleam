@@ -1182,6 +1182,202 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
       }
     assert went != [] as "the go happened"
   })
+  // The same paths for the allies a press did not name, found by the area of a spell shaped as
+  // Barrier's child (`barrier_shaped`): the press is on the caster, the round hit two allies,
+  // and each ally's change ends once by each path that ends its cast's node. A change of a spell
+  // that holds propertyFlags 0x100 (Barrier's 0x2100) is kept when the ally leaves the caster's
+  // sight and ends by its timer.
+  let both_see = esper_seeing(players: [ally, second_ally])
+  let kept = barrier_shaped(outlives_caster: True)
+  let area_ends = fn(units) {
+    fn(cast_id) {
+      list.map(units, fn(unit_id) { barrier_change_ends(unit_id:, cast_id:) })
+    }
+  }
+  let area_paths = [
+    AreaPath(
+      why: "time: each end timer fires at the go plus 5000 and tells its ally's end, in the round's order, and the node's end in the same millisecond tells nothing more but writes the 0x7fe",
+      spell: kept,
+      run: fn(state, _) {
+        fired_in_order(
+          state:,
+          timers: list.append(
+            player_end_timers(state:),
+            nodes_end_timers(state:),
+          ),
+          seeing: [ally, second_ally],
+          at: 6000,
+        )
+      },
+      ends: area_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: area_ends([]),
+    ),
+    AreaPath(
+      why: "time, the node's end first: it ends both allies' changes, and the end timers, late, tell nothing more",
+      spell: kept,
+      run: fn(state, _) {
+        fired_in_order(
+          state:,
+          timers: list.append(
+            nodes_end_timers(state:),
+            player_end_timers(state:),
+          ),
+          seeing: [ally, second_ally],
+          at: 6000,
+        )
+      },
+      ends: area_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: area_ends([]),
+    ),
+    AreaPath(
+      why: "the caster's death ends both allies' changes and writes the 0x7fe",
+      spell: kept,
+      run: fn(state, _) {
+        cast.died(
+          cast: state,
+          caster: support.dead_caster(),
+          now: support.at(ms: 1100),
+        )
+      },
+      ends: area_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: area_ends([]),
+    ),
+    AreaPath(
+      why: "the caster leaving ends both allies' changes and writes nothing",
+      spell: kept,
+      run: fn(state, _) { cast_tick.left(cast: state) },
+      ends: area_ends([second_ally, ally]),
+      finishes: False,
+      removed: [],
+      left_after: area_ends([]),
+    ),
+    AreaPath(
+      why: "the ally leaving the caster's sight, for a spell that does not hold 0x100, ends its change alone; the other ally's change stays and ends with the caster's leaving",
+      spell: barrier_shaped(outlives_caster: False),
+      run: fn(state, _) {
+        cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100)
+      },
+      ends: area_ends([ally]),
+      finishes: False,
+      removed: [],
+      left_after: area_ends([second_ally]),
+    ),
+    AreaPath(
+      why: "the ally leaving the caster's sight, for a spell that holds 0x100 (Barrier's 0x2100), ends nothing then; each end timer tells its ally's end at the go plus 5000",
+      spell: kept,
+      run: fn(state, _) {
+        let #(state, removal) =
+          cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100)
+        assert told(effects: removal) == []
+          as "a change of a spell that outlives its caster's sight is kept at the removal"
+        let #(state, ended) =
+          fired_in_order(
+            state:,
+            timers: player_end_timers(state:),
+            seeing: [],
+            at: 6000,
+          )
+        #(state, list.append(removal, ended))
+      },
+      ends: area_ends([second_ally, ally]),
+      finishes: False,
+      removed: [],
+      left_after: area_ends([]),
+    ),
+    AreaPath(
+      why: "a type 80 removal of the cast's node on one ally ends that ally's change, writes the 0x811 that takes the node off it and cancels its end timer, so the timer tells nothing at the go plus 5000; the other ally's change stays",
+      spell: kept,
+      run: fn(state, _) {
+        let timers = player_end_timers(state:)
+        let #(state, _, removal) =
+          pressed_and_gone_in(
+            plans: armor_and_its_removal(spell: kept),
+            bag: bag_of_base_1,
+            state:,
+            at_press: both_see,
+            at_go: both_see,
+            rolls: [],
+            at: 1100,
+          )
+        assert list.length(player_end_timers(state:)) == 1
+          as "the removal cancels the removed ally's end timer"
+        let #(state, late) =
+          fired_in_order(
+            state:,
+            timers: list.drop(timers, 1),
+            seeing: [ally, second_ally],
+            at: 6000,
+          )
+        assert told(effects: late) == []
+          as "and the cancelled end timer, late, tells nothing"
+        #(state, list.append(removal, late))
+      },
+      ends: area_ends([ally]),
+      finishes: False,
+      removed: [ally],
+      left_after: area_ends([second_ally]),
+    ),
+  ]
+  list.each(area_paths, fn(path) {
+    let #(state, pressed) =
+      pressed_at_in(
+        plans: plans_of(spell: path.spell),
+        bag: bag_of_base_3,
+        target: 7,
+        state: cast_state.new(),
+        caster: both_see,
+        at: 1000,
+      )
+    let #(state, went) =
+      support.answered_each(
+        caster: both_see,
+        state:,
+        effects: pressed,
+        at: 1000,
+        struck_of: fn(asked) {
+          case asked.spell4_id == path.spell.spell4_id {
+            True -> [
+              ally_selected(unit_id: second_ally),
+              ally_selected(unit_id: ally),
+            ]
+            False -> []
+          }
+        },
+        rolls: [],
+        poses: dict.new(),
+      )
+    let id = support.pressed_id(effects: pressed)
+    assert list.length(told(effects: went)) == 2
+      as "the go told each ally its change"
+    let #(state, effects) = path.run(state, id)
+    assert told(effects:) == path.ends(id) as path.why
+    assert list.filter(support.finished_ids(support.writes(effects:)), fn(done) {
+        done == id
+      })
+      == case path.finishes {
+        True -> [id]
+        False -> []
+      }
+      as { path.why <> ": the cast's 0x7fe" }
+    assert list.all(path.removed, fn(unit_id) {
+      list.contains(
+        support.removed_targets(support.writes(effects:)),
+        #(id, [unit_id]),
+      )
+    })
+      as { path.why <> ": the 0x811 of the ally" }
+    assert told(effects: cast_tick.left(cast: state).1) == path.left_after(id)
+      as {
+        path.why <> ": and the caster's leaving afterwards ends what is left"
+      }
+    assert went != [] as "the go happened"
+  })
   // The caster leaving writes nothing and leaves no timer waiting.
   let #(state, _, _) =
     pressed_and_gone(
@@ -3111,4 +3307,327 @@ pub fn a_proxy_at_the_area_starts_one_child_on_each_ally_the_round_hit_naming_th
         <> string.join(lines, "; ")
       }
   })
+}
+
+// ---- a modifier row aimed at the area of a spell that finds allies ----
+
+/// A second player the caster sees, an ally the round hit beside the ally 40.
+const second_ally = 41
+
+/// Spell4Effects 92788, Barrier's property row (Spell4 41369): property 175, flags 5, 5000 ms.
+const barrier_row = 92_788
+
+/// A planted spell shaped as Barrier's child 41369: the caster's own `PropertyChange` and the
+/// allies' `StruckChange` of row 92788 (targetFlags 5, 5000 ms, no delay), pressed on the caster.
+/// The real spell's propertyFlags are 8448 (0x2100), which hold 0x100, so `outlives_caster` is true
+/// for it (`held_changes.sight_of`); `outlives_caster: False` plants the same spell without.
+fn barrier_shaped(outlives_caster outlives_caster: Bool) -> Spell {
+  let assert spell_plan.StruckChange(modifier:, ..) =
+    support.armor_modifier_row(id: barrier_row, aim: spell_plan.AimsAtCaster).change
+    as "row 130474 is a StruckChange"
+  let five_seconds =
+    lasting.LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
+  let caster_part =
+    spell_plan.PropertyModifier(
+      ..support.armor_modifier_row(
+        id: barrier_row,
+        aim: spell_plan.AimsAtCaster,
+      ),
+      change: spell_plan.PropertyChange(modifier),
+      row: five_seconds,
+    )
+  let allies_part =
+    spell_plan.PropertyModifier(
+      ..support.armor_modifier_row(id: barrier_row, aim: spell_plan.AimsAtArea),
+      row: five_seconds,
+    )
+  Spell(
+    ..support.armor_spell(rows: [caster_part, allies_part]),
+    spell4_id: Spell4Id(41_369),
+    outlives_caster:,
+  )
+}
+
+fn barrier_change_of(
+  unit_id unit_id: Int,
+  cast_id cast_id: Int,
+  sight sight: held_changes.Sight,
+  go_ms go_ms: Int,
+) -> Effect {
+  let assert spell_plan.StruckChange(modifier:, ..) =
+    support.armor_modifier_row(id: barrier_row, aim: spell_plan.AimsAtArea).change
+    as "row 130474 is a StruckChange"
+  cast_state.OtherPlayerChangeStarts(
+    address: PlayerAddress(..address(), unit_id:),
+    source: source_of(cast_id:, effect_id: barrier_row),
+    change: held_changes.Property(modifier:),
+    sight:,
+    spell4_id: Spell4Id(41_369),
+    effect: unit_casts.HeldEffect(
+      effect_id: Spell4EffectsId(barrier_row),
+      starts_ms: go_ms,
+      ends: unit_casts.EndsAt(ms: go_ms + 5000),
+    ),
+  )
+}
+
+fn barrier_change_ends(unit_id unit_id: Int, cast_id cast_id: Int) -> Effect {
+  cast_state.OtherPlayerChangeEnds(
+    address: PlayerAddress(..address(), unit_id:),
+    source: source_of(cast_id:, effect_id: barrier_row),
+  )
+}
+
+/// One press on the caster of the Barrier-shaped spell, whose go the round of `hit` answers.
+type Area {
+  Area(
+    why: String,
+    outlives_caster: Bool,
+    hit: List(cast_state.Struck),
+    sees_at_go: List(Int),
+    told_to: List(Int),
+    debug: List(String),
+  )
+}
+
+pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_and_ends_it_with_the_cast_node_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A `StruckChange` aimed at the area (`PropertyModifier` of Barrier's row 92788, text 640545
+  // "yourself and N allies in the targeted area") lands on each player the round hit that the
+  // caster sees: the caster's connection tells each ally's, for the ally to hold for the
+  // caster, in the round's order, and ends it with the cast's node on that ally.
+  let kept = held_changes.KeptWhenUnseen
+  let rows = [
+    Area(
+      why: "a round that hit two allies tells each its change in the round's order, kept when the caster no longer sees it (propertyFlags 0x100)",
+      outlives_caster: True,
+      hit: [
+        ally_selected(unit_id: second_ally),
+        ally_selected(unit_id: ally),
+      ],
+      sees_at_go: [ally, second_ally],
+      told_to: [second_ally, ally],
+      debug: [],
+    ),
+    Area(
+      why: "an ally out of the caster's sight at the go is told nothing and a debug line says so; the ally in sight is told",
+      outlives_caster: True,
+      hit: [
+        ally_selected(unit_id: ally),
+        ally_selected(unit_id: second_ally),
+      ],
+      sees_at_go: [second_ally],
+      told_to: [second_ally],
+      debug: ["92788", "40", "not in the caster's sight"],
+    ),
+    Area(
+      why: "a round that hit no ally tells nobody",
+      outlives_caster: True,
+      hit: [],
+      sees_at_go: [ally, second_ally],
+      told_to: [],
+      debug: [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let sight = case row.outlives_caster {
+      True -> kept
+      False -> held_changes.EndsWhenUnseen
+    }
+    let spell = barrier_shaped(outlives_caster: row.outlives_caster)
+    let #(state, pressed) =
+      pressed_at_in(
+        plans: plans_of(spell:),
+        bag: bag_of_base_3,
+        target: 7,
+        state: cast_state.new(),
+        caster: esper_seeing(players: [ally, second_ally]),
+        at: 1000,
+      )
+    let #(_, went) =
+      support.answered_each(
+        caster: esper_seeing(players: row.sees_at_go),
+        state:,
+        effects: pressed,
+        at: 1000,
+        struck_of: fn(asked) {
+          case asked.spell4_id == spell.spell4_id {
+            True -> row.hit
+            False -> []
+          }
+        },
+        rolls: [],
+        poses: dict.new(),
+      )
+    let id = support.pressed_id(effects: pressed)
+    assert told(effects: went)
+      == list.map(row.told_to, fn(unit_id) {
+        barrier_change_of(unit_id:, cast_id: id, sight:, go_ms: 1000)
+      })
+      as row.why
+    assert list.length(support.caster_change_starts(effects: went)) == 1
+      as { row.why <> ": the caster's own part is its own change, told once" }
+    assert list.filter(support.listed_by_unit(effects: went), fn(unit) {
+        unit.0 != 7
+      })
+      == list.map(
+        list.sort(gate.hit_units(struck: row.hit), int.compare),
+        fn(unit_id) {
+          #(unit_id, case list.contains(row.told_to, unit_id) {
+            True -> [barrier_row]
+            False -> []
+          })
+        },
+      )
+      as {
+        row.why
+        <> ": the go's target info lists each ally the round hit, with the row for the ones it landed on"
+      }
+    let lines = support.debug_lines(effects: went)
+    assert list.all(row.debug, fn(words) {
+      list.any(lines, string.contains(_, words))
+    })
+      as { row.why <> ": the debug lines say " <> string.join(row.debug, ", ") }
+    assert row.debug != [] || lines == []
+      as { row.why <> ": and none is written otherwise" }
+  })
+  // The sight a change is held under: a spell without propertyFlags 0x100 ends the change when
+  // the caster no longer sees the ally.
+  let unkept = barrier_shaped(outlives_caster: False)
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell: unkept),
+      bag: bag_of_base_3,
+      target: 7,
+      state: cast_state.new(),
+      caster: esper_seeing(players: [ally]),
+      at: 1000,
+    )
+  let #(_, went) =
+    support.answered_each(
+      caster: esper_seeing(players: [ally]),
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(_) { [ally_selected(unit_id: ally)] },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let id = support.pressed_id(effects: pressed)
+  assert told(effects: went)
+    == [
+      barrier_change_of(
+        unit_id: ally,
+        cast_id: id,
+        sight: held_changes.EndsWhenUnseen,
+        go_ms: 1000,
+      ),
+    ]
+    as "a spell without propertyFlags 0x100: the change is held until the caster does not see the ally"
+  // The ends: one end timer for each ally, at the go plus 5000 ms, and the cast's node on each
+  // ally ends at the same time and tells nothing more.
+  let spell = barrier_shaped(outlives_caster: True)
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell:),
+      bag: bag_of_base_3,
+      target: 7,
+      state: cast_state.new(),
+      caster: esper_seeing(players: [ally, second_ally]),
+      at: 1000,
+    )
+  let hit = [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)]
+  let #(state, went) =
+    support.answered_each(
+      caster: esper_seeing(players: [ally, second_ally]),
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(_) { hit },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let id = support.pressed_id(effects: pressed)
+  assert list.length(player_end_timers(state:)) == 2
+    as "one end timer for each ally"
+  let #(_, fired) =
+    support.run_timers_each(
+      caster: esper_seeing(players: [ally, second_ally]),
+      state:,
+      effects: list.append(pressed, went),
+      from_ms: 1000,
+      struck_of: fn(_) { [] },
+    )
+  assert list.filter_map(fired, fn(step) {
+      case told(effects: step.1) {
+        [] -> Error(Nil)
+        ends -> Ok(#(step.0, ends))
+      }
+    })
+    |> list.flat_map(fn(step) { list.map(step.1, fn(end) { #(step.0, end) }) })
+    == [
+      #(6000, barrier_change_ends(unit_id: second_ally, cast_id: id)),
+      #(6000, barrier_change_ends(unit_id: ally, cast_id: id)),
+    ]
+    as "each ally's end is told once, 5000 ms after the go, in the round's order"
+  // A second go of the cast tells the same sources again and replaces the end timers: the one
+  // end of each ally is at the second go plus 5000 ms.
+  let two_gos = Spell(..spell, phase_delays_ms: [0, 1000])
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell: two_gos),
+      bag: bag_of_base_3,
+      target: 7,
+      state: cast_state.new(),
+      caster: esper_seeing(players: [ally]),
+      at: 1000,
+    )
+  let #(state, went) =
+    support.answered_each(
+      caster: esper_seeing(players: [ally]),
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(_) { [ally_selected(unit_id: ally)] },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let id = support.pressed_id(effects: pressed)
+  let #(_, fired) =
+    support.run_timers_each(
+      caster: esper_seeing(players: [ally]),
+      state:,
+      effects: list.append(pressed, went),
+      from_ms: 1000,
+      struck_of: fn(_) { [ally_selected(unit_id: ally)] },
+    )
+  assert list.filter_map(fired, fn(step) {
+      case told(effects: step.1) {
+        [] -> Error(Nil)
+        changes -> Ok(#(step.0, changes))
+      }
+    })
+    == [
+      #(2000, [
+        barrier_change_of(unit_id: ally, cast_id: id, sight: kept, go_ms: 2000),
+      ]),
+      #(7000, [barrier_change_ends(unit_id: ally, cast_id: id)]),
+    ]
+    as "the second go tells the same source again and the end timer is the second go's plus 5000 ms"
+}
+
+/// How one path ends the changes told to the allies a round hit: the spell, what the path does
+/// to the state the go left (given the cast's id) and the effects it gives, the ends it tells
+/// (given the cast's id), whether it writes the cast's 0x7fe, the allies whose 0x811 it writes,
+/// and the ends the caster's leaving tells afterwards.
+type AreaPath {
+  AreaPath(
+    why: String,
+    spell: Spell,
+    run: fn(State, Int) -> #(State, List(Effect)),
+    ends: fn(Int) -> List(Effect),
+    finishes: Bool,
+    removed: List(Int),
+    left_after: fn(Int) -> List(Effect),
+  )
 }

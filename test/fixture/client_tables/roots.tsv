@@ -1552,3 +1552,6 @@ Spell4	54912	Mind Over Body - Tier 9 child, which lists a Fluff row on the unit 
 Spell4	77864	Phantasmal Armor - Tier 9 child, whose absorb and outfit rows are gated on the target of the live cast of 54806	cast_player_change_test
 Spell4	87531	Bolster - Tier 9 child of the periodic Proxy 229005, whose Spell4Effects 229006 is a 3000 ms absorb aimed at the primary target	cast_player_change_test
 Spell4	52142	Bolster - Tier 9, whose Spell4Effects 229005 is a periodic Proxy aimed at the primary target that starts 87531	cast_player_change_test
+Spell4Effects	92788	Barrier - Tier 9 child (Spell4 41369): a UnitPropertyModifier of property 175 aimed by flags 5, 5000 ms, in a spell whose area finds allies	spell_plan_union_aim_test
+Spell4Effects	217926	Energy Auger aura (Spell4 82830): a UnitPropertyModifier of property 100 aimed by flags 4, until removed	spell_plan_union_aim_test
+Spell4Effects	178513	Volatile Injection (Spell4 41756): a UnitPropertyModifier aimed by flags 5, 10000 ms	spell_plan_union_aim_test
