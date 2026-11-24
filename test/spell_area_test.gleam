@@ -2396,6 +2396,27 @@ pub fn a_modifier_only_spell_aimed_at_the_area_selects_the_areas_units_test() ->
     as "targetFlags 4 aims at the area, so the phase selects the area's units"
   assert !phase.strikes_primary_target
     as "targetFlags 4 does not aim at the cast's target"
+  // Where the area finds the caster's allies (the texts say "allies inside the field", 483333)
+  // the same rows change the allies the area selects and strike no foe: the phase acts on
+  // each unit of the area, selects it and does not count as striking it. In a foe's spell the
+  // rows strike the units and the phase does not act on each. A change of the primary target
+  // alone (Fissure's child 41886, row 94370, targetFlags 2) acts on no unit of an area.
+  let phase_of = fn(spell: spell_area.SpellArea) {
+    let assert Ok(phase) = spell_area.phase(spell:, phase: 0, spent: None)
+    phase
+  }
+  let friendly = phase_of(spell_area.SpellArea(..aura, finds_allies: True))
+  assert friendly.acts_on_each_unit
+    as "where the area finds allies a modifier aimed at the area acts on each unit it selects"
+  assert friendly.selects_area as "and the phase selects the area's units"
+  assert !friendly.strikes_area
+    as "and does not strike them: no foe is hit, so an area ordered by health is not refused"
+  assert !phase.acts_on_each_unit && phase.strikes_area
+    as "in a spell that finds no allies the rows strike the units and act on none by themselves"
+  let fissure = spell_tables.area_alone(spell4_id: 41_886)
+  let alone = phase_of(spell_area.SpellArea(..fissure, finds_allies: True))
+  assert !alone.acts_on_each_unit && alone.strikes_primary_target
+    as "a change of the primary target alone strikes it and acts on no unit of an area, even in an area that finds allies"
 }
 
 pub fn an_absorb_and_an_armor_row_aimed_at_the_target_strike_nobody_test() -> Nil {
@@ -2800,6 +2821,68 @@ fn friendly_kick_ordered(selection selection: Int) -> #(Option(Row), Bool) {
   })
 }
 
+/// Kick's area row and whether its first go selects from it, with Kick's damage row 140383 made
+/// a UnitPropertyModifier of the allies the area selects (the cells of Energy Auger's row
+/// 217926: property 100, 5000 ms, targetFlags 4) and its crowd-control row 140382 aimed at the
+/// caster alone, so no row of Kick hits foes; its Spell4 pointed at a copy of area row 640
+/// (row 900001) ordered `selection`. With `beneficial` its mechanic row 6 is beneficial (flags
+/// 1), so the area finds the caster's allies; without, Kick stays a foe's spell and its area
+/// finds none. The edits stand in for no client row: the fixture holds no friendly area ordered
+/// by health beside a modifier.
+fn kick_changing_the_areas_units(
+  selection selection: Int,
+  beneficial beneficial: Bool,
+) -> Result(#(Option(Row), Bool), table_store.LoadError) {
+  let assert Ok(rows) =
+    fixture_tables.add(
+      rows: fixture_tables.rows(),
+      table: "Spell4AoeTargetConstraints",
+      copy_of: 640,
+      id: 900_001,
+      with: [#("targetSelection", Integer(selection))],
+    )
+    as "the area row 640 is in the fixture"
+  let assert Ok(rows) =
+    fixture_tables.change_all(rows:, edits: [
+      #("Spell4", 58_591, [#("spell4AoeTargetConstraintsId", Integer(900_001))]),
+      #("Spell4TargetMechanics", 6, [
+        #(
+          "flags",
+          Integer(case beneficial {
+            True -> 1
+            False -> 0
+          }),
+        ),
+      ]),
+      #("Spell4Effects", 140_383, [
+        #("effectType", Integer(11)),
+        #("delayTime", Integer(0)),
+        #("durationTime", Integer(5000)),
+        #("targetFlags", Integer(4)),
+        #("dataBits00", Integer(100)),
+        #("dataBits01", Integer(1)),
+        #("dataBits02", Integer(1_065_353_216)),
+        #("dataBits03", Integer(1_065_353_216)),
+        #("parameterType00", Integer(0)),
+        #("parameterType01", Integer(0)),
+        #("parameterType02", Integer(0)),
+        #("parameterType03", Integer(0)),
+      ]),
+      #("Spell4Effects", 140_382, [#("targetFlags", Integer(1))]),
+    ])
+    as "the edits name rows and columns the fixture holds"
+  case fixture_tables.load(rows:) {
+    Ok(tables) -> {
+      let kick = fixture_area_of(tables:, spell4_id: 58_591)
+      let assert Ok(phase) =
+        spell_area.phase(spell: kick, phase: 0, spent: None)
+        as "Kick has a first phase"
+      Ok(#(kick.row, phase.selects_area))
+    }
+    Error(refused) -> Error(refused)
+  }
+}
+
 /// The area the tables' load built for the spell.
 fn fixture_area_of(
   tables tables: table_store.Tables,
@@ -2831,6 +2914,28 @@ pub fn an_area_that_finds_allies_builds_the_order_by_health_for_a_phase_that_sel
     as "order 4 is no area, as before, and nothing selects from it"
   assert friendly_kick_ordered(selection: 1) == #(Some(kick_row), True)
     as "the control: the same friendly area at order 1 builds Kick's row"
+  // A phase whose only row is a property change of the units the area selects (Barrier's child
+  // 41369 with its Proxy planted away, whose row 92788 is one, in an area ordered by missing
+  // health): where the area finds allies the change selects allies, whose health the picture
+  // holds, so the area is built; the same phase in a foe's spell strikes the units the area
+  // selects and is refused.
+  assert kick_changing_the_areas_units(selection: 5, beneficial: True)
+    == Ok(#(Some(Row(..kick_row, order: area.MissingMostHealth)), True))
+    as "a friendly area at order 5 whose phase holds only a change of the area's units builds MissingMostHealth and its phase selects from it"
+  assert string.contains(
+    case kick_changing_the_areas_units(selection: 5, beneficial: False) {
+      Ok(_) -> ""
+      Error(refused) -> table_store.describe(refused)
+    },
+    spell_area.describe(error: SelectionNeedsHealth(
+      spell4_id: 58_591,
+      target_selection: 5,
+    )),
+  )
+    as "the same phase in a spell that finds no allies is refused by name"
+  assert kick_changing_the_areas_units(selection: 1, beneficial: True)
+    == Ok(#(Some(kick_row), True))
+    as "the control: the same friendly phase at order 1 builds Kick's row"
   // Nullifier's field 58868 (area row 119, Closest) holds the periodic Proxy 141450 aimed at
   // the area; its mechanic is row 6, made beneficial (flags 1) or left hostile (flags 0).
   let field = fn(mechanic_flags, selection, tick_ms) {

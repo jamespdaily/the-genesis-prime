@@ -159,7 +159,7 @@ fn selection(
     controls:,
     gates: [],
     players: [],
-    starts_children: False,
+    answers_allies: False,
     heals: [],
   )
 }

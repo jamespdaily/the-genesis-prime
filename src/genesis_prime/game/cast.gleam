@@ -5140,6 +5140,7 @@ fn player_modifier_refusals(
       row: entry.0,
       unit_id: entry.1,
       caster:,
+      struck:,
       press_target:,
     )
     |> option.to_result(Nil)

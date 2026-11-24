@@ -4025,3 +4025,162 @@ pub fn a_spellslinger_pressing_runes_of_protection_gives_the_ally_in_range_the_a
     && runes_child_targets(frames: far.ally_ended) == []
     as "the Medic outside the area reads no absorb and no child"
 }
+
+/// What a Medic's press of Barrier, with another Medic standing `metres` metres ahead of it
+/// (behind it when negative), showed the two clients: each Medic's unit and the frames each
+/// client read at the go (`caster_read`, `ally_read`) and when the property's 5000 ms were over
+/// (`ally_ended`).
+type BarrierRound {
+  BarrierRound(
+    caster: Int,
+    ally: Int,
+    caster_read: List(Frame),
+    ally_read: List(Frame),
+    ally_ended: List(Frame),
+  )
+}
+
+/// The primary target of each 0x7ff of the spell `spell4_id` among `frames`, in the order read.
+fn started_targets_of(
+  frames frames: List(Frame),
+  spell4_id spell4_id: Int,
+) -> List(Int) {
+  list.filter_map(
+    connection_support.decoded(
+      frames,
+      spell_started.message_id,
+      spell_started.decode,
+    ),
+    fn(start) {
+      case start.spell4_id == spell4_id {
+        True -> Ok(start.primary_target_unit_id)
+        False -> Error(Nil)
+      }
+    },
+  )
+}
+
+/// A Medic of level 14 presses Barrier (Spell4 78081, Spell4Base 53946: castTime 0, no target
+/// named) on the client's real tables, facing -z, while a Medic of level 14 stands `metres` metres
+/// ahead of it. The area 737 (one ally, 180 degrees ahead, 30 m, ordered by missing health, the
+/// caster never a candidate) finds the Medic ahead; the Proxy 204583 starts the child 41369 on it,
+/// whose area 429 (3 targets, ordered by missing health, a circle of 8 m on the ally) selects the
+/// ally itself, and whose row 92788 (property 175, 5000 ms, targetFlags 5) is the caster's own
+/// change and each ally's. The clock is the test's.
+fn barrier_pressed_with_an_ally(metres metres: Float) -> BarrierRound {
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) = two_players_enter(started:, first_class: 4, level: 14)
+  let caster = unit_of_player(frames: first_burst)
+  let ally = unit_of(seen_second)
+  let #(x, y, z) =
+    game_client.placed_by_tail(
+      tail: game_client.unit_create_player_in(frames: first_burst).tail,
+    )
+  game_client.face(game: first, yaw: 0.0, clock: 100)
+  game_client.move_to(game: second, clock: 110, x:, y:, z: z -. metres)
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0638 })
+    })
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 4,
+      level: 14,
+      ability: 53_946,
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: 0,
+  )
+  // As the Runes of Protection test reads: the caster's connection writes every start and the
+  // tells of the go in one input, so its pong follows them all, and what it told the ally's
+  // connection is held before that connection's own pong.
+  let #(caster_read, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  let #(ally_read, second_have) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert refusals(frames: caster_read) == []
+    as "opcode.0x7fc: Barrier is planned, so the press is not refused"
+  driven_time.advance(time:, ms: 5000)
+  let #(_, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let #(ally_ended, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 2)
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+  BarrierRound(caster:, ally:, caster_read:, ally_read:, ally_ended:)
+}
+
+/// A Medic of level 14 presses Barrier with no target named while a Medic of level 14 stands
+/// 10 m ahead, and again with one 10 m behind (`barrier_pressed_with_an_ally`). The area 737
+/// finds the Medic ahead, whose connection the caster's tells the property 175 change of the row
+/// 92788 (text 640545: "sets Shield Mitigation ... to yourself and N allies in the targeted
+/// area for 5s"): its client reads the 0x7ff of the child 41369 naming it, the change in a
+/// 0x93a of its own unit and, 5000 ms on, the property given back. The Medic behind is outside
+/// the 180 degrees of 737, which finds nobody, so no child starts and neither client reads a
+/// change: the caster's own is the child's row too. The caster's frames and the ally's come from two
+/// connections, read as the Runes of Protection test reads them.
+pub fn a_medic_pressing_barrier_gives_the_ally_in_front_shield_mitigation_for_five_seconds_and_the_ally_behind_none_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let near = barrier_pressed_with_an_ally(metres: 10.0)
+  assert started_targets_of(frames: near.ally_read, spell4_id: 41_369)
+    == [near.ally]
+    as "opcode.0x7ff: the Medic ahead reads the child 41369 cast with itself as its primary target"
+  let given =
+    property_entries_of(
+      frames: near.ally_read,
+      unit_id: near.ally,
+      property_id: 175,
+    )
+  assert list.any(given, fn(entry) { entry.value != entry.base })
+    as "opcode.0x93a: the Medic ahead is given a changed property 175, the row 92788's"
+  assert list.any(
+    property_entries_of(
+      frames: near.caster_read,
+      unit_id: near.caster,
+      property_id: 175,
+    ),
+    fn(entry) { entry.value != entry.base },
+  )
+    as "opcode.0x93a: the caster is given its own change of property 175"
+  assert list.last(property_entries_of(
+      frames: near.ally_ended,
+      unit_id: near.ally,
+      property_id: 175,
+    ))
+    |> result.map(fn(entry) { entry.value == entry.base })
+    == Ok(True)
+    as "opcode.0x93a: 5000 ms on, the Medic ahead is given property 175 back"
+  let behind = barrier_pressed_with_an_ally(metres: -10.0)
+  assert started_targets_of(frames: behind.ally_read, spell4_id: 41_369) == []
+    as "the Medic behind is outside the 180 degrees of the area 737, which finds nobody: no child is cast on it"
+  assert property_entries_of(
+      frames: behind.ally_read,
+      unit_id: behind.ally,
+      property_id: 175,
+    )
+    == []
+    as "opcode.0x93a: and its client reads no change of property 175"
+  assert property_entries_of(
+      frames: behind.caster_read,
+      unit_id: behind.caster,
+      property_id: 175,
+    )
+    == []
+    as "opcode.0x93a: and so does the caster's: its own change is the child's row 92788, whose Proxy 204583 (targetFlags 4) starts the child on each ally the area found and on the caster never"
+}

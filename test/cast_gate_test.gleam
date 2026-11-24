@@ -1206,6 +1206,9 @@ const bystander = 41
 
 const creature = 21
 
+/// A second player the caster sees.
+const other_bystander = 42
+
 fn address_of(unit_id unit_id: Int) -> PlayerAddress {
   PlayerAddress(
     connection: ConnectionId(unit_id),
@@ -1276,7 +1279,11 @@ fn landing_on(
   |> list.map(fn(entry) { entry.1 })
 }
 
-pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_caster_sees_it_test() -> Nil {
+/// A modifier row lands on another player the caster sees when the press named it and the row
+/// aims at the primary target, and, for a `StruckChange`, when the round hit it and the row aims
+/// at the area: the allies a friendly area selected (Barrier's row 92788, text 640545). An absorb
+/// or an Interrupt Armor row aimed at the area does not: no planned tree holds one.
+pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_caster_sees_test() -> Nil {
   use <- owned_test.run(5000)
   let primary = spell_plan.AimsAtPrimaryTarget
   let one_second =
@@ -1330,13 +1337,106 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
       [ally],
     ),
     #(
-      "a StruckChange row aimed at the area alone does not land on a player the press did not name that a heal's answer hit (friendly areas are not built)",
+      "a StruckChange row aimed at the area alone lands on a player the round hit that the caster sees, though the press did not name it",
       modifier_aimed(aim: spell_plan.AimsAtArea),
       at_ally,
       ally,
       [ally, bystander],
       [healed_player(unit_id: bystander)],
+      [bystander],
+    ),
+    #(
+      "the same player out of the caster's sight: it does not",
+      modifier_aimed(aim: spell_plan.AimsAtArea),
+      at_ally,
+      ally,
+      [ally],
+      [healed_player(unit_id: bystander)],
       [],
+    ),
+    #(
+      "two players the round hit land in the round's order",
+      modifier_aimed(aim: spell_plan.AimsAtArea),
+      at_ally,
+      ally,
+      [ally, bystander, other_bystander],
+      [
+        healed_player(unit_id: other_bystander),
+        healed_player(unit_id: bystander),
+      ],
+      [other_bystander, bystander],
+    ),
+    #(
+      "a child no press named (a Proxy's child on an ally) lands the row aimed at the area on the players the round hit",
+      modifier_aimed(aim: spell_plan.AimsAtArea),
+      option.None,
+      ally,
+      [bystander],
+      [healed_player(unit_id: bystander)],
+      [bystander],
+    ),
+    #(
+      "a StruckChange row aimed at the primary target alone does not land on a player the round hit that the press did not name",
+      modifier_aimed(aim: primary),
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      [ally],
+    ),
+    #(
+      "a row aimed at the area with a delay lands on no player the round hit",
+      spell_plan.PropertyModifier(
+        ..modifier_aimed(aim: spell_plan.AimsAtArea),
+        row: one_second,
+      ),
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      [],
+    ),
+    #(
+      "a row aimed at the area that lasts until removed lands on no player the round hit",
+      spell_plan.PropertyModifier(
+        ..modifier_aimed(aim: spell_plan.AimsAtArea),
+        row: until_removed,
+      ),
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      [],
+    ),
+    #(
+      "an absorb row aimed at the area does not land on a player the round hit (Spell4Effects 61863 is one, outside the planned trees)",
+      absorb_aimed(aim: spell_plan.AimsAtArea),
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      [],
+    ),
+    #(
+      "an Interrupt Armor row aimed at the area does not land on a player the round hit (Spell4Effects 83981 is one, outside the planned trees)",
+      support.spectral_form_row(aim: spell_plan.AimsAtArea),
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      [],
+    ),
+    #(
+      "the caster's own part of a flags 5 row, a property change, lands on the caster alone whoever the round hit",
+      spell_plan.PropertyModifier(
+        ..modifier_aimed(aim: spell_plan.AimsAtCasterAndArea),
+        change: spell_plan.PropertyChange(support.slowing_change()),
+      ),
+      option.None,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      [7],
     ),
     #(
       "a property change aimed at the caster lands on the caster alone, whoever the press named",
@@ -1533,8 +1633,47 @@ pub fn a_modifier_row_lands_on_a_player_only_when_the_press_named_it_and_the_cas
       row: support.spectral_form_row(aim: primary),
       unit_id: ally,
       caster: seeing(players: []),
+      struck: [],
       press_target: at_ally,
     )
     == option.Some("the player is not in the caster's sight")
     as "an Interrupt Armor row aimed at the player the press named, out of the caster's sight, is refused with that reason"
+  // Each row aimed at the area that does not land on a player the round hit says why.
+  let area_refusal = fn(planned, sees) {
+    cast_gate.modifier_refusal(
+      row: planned,
+      unit_id: bystander,
+      caster: seeing(players: sees),
+      struck: [healed_player(unit_id: bystander)],
+      press_target: at_ally,
+    )
+  }
+  let aimed_at_the_area = modifier_aimed(aim: spell_plan.AimsAtArea)
+  assert area_refusal(aimed_at_the_area, [ally])
+    == option.Some("the player is not in the caster's sight")
+    as "a player the round hit that the caster does not see is refused with that reason"
+  assert area_refusal(
+      spell_plan.PropertyModifier(..aimed_at_the_area, row: one_second),
+      [ally, bystander],
+    )
+    == option.Some(
+      "the row has a delay, which a change on another player does not take",
+    )
+    as "a delayed row aimed at the area is refused with its sentence"
+  assert area_refusal(
+      spell_plan.PropertyModifier(..aimed_at_the_area, row: until_removed),
+      [ally, bystander],
+    )
+    == option.Some(
+      "the row lasts until removed, which a change on another player does not take",
+    )
+    as "an until-removed row aimed at the area is refused with its sentence"
+  assert area_refusal(aimed_at_the_area, [ally, bystander]) == option.None
+    as "a row that lands is not refused"
+  assert area_refusal(absorb_aimed(aim: spell_plan.AimsAtArea), [
+      ally,
+      bystander,
+    ])
+    == option.None
+    as "an absorb row aimed at the area names no player the round hit, so there is nothing to refuse"
 }

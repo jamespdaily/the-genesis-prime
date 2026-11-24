@@ -409,6 +409,159 @@ pub fn union_property_modifier_plans_a_caster_change_and_a_struck_change_test() 
     as "both parts change the same property by the same amount"
 }
 
+/// The changes a reading plans for a UnitPropertyModifier row, in order: `Caster` for the
+/// caster's own `PropertyChange` and the aim of a `StruckChange`.
+type ModifierPart {
+  Caster
+  Struck(aim: Aim)
+}
+
+fn modifier_parts_of(reading reading: RowReading) -> List(ModifierPart) {
+  list.filter_map(planned_parts(reading:), fn(row) {
+    case row {
+      spell_plan.ModifierEffect(spell_plan.PropertyModifier(change:, ..)) ->
+        case change {
+          spell_plan.PropertyChange(..) -> Ok(Caster)
+          spell_plan.StruckChange(aim:, ..) -> Ok(Struck(aim:))
+          spell_plan.AbsorbChange(..) | spell_plan.LookChange(..) -> Error(Nil)
+        }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The row `id` with its targetFlags set to `flags`, read in the place on the fixture's rows.
+fn modifier_parts_aimed_by(
+  id id: Int,
+  flags flags: Int,
+  place place: spell_plan.RowPlace,
+) -> Result(List(ModifierPart), spell_plan.PlanError) {
+  spell_tables.read_row(
+    effect: spell4_effects.Spell4Effects(..client_row(id:), target_flags: flags),
+    place:,
+  )
+  |> result.map(fn(reading) { modifier_parts_of(reading:) })
+}
+
+/// A UnitPropertyModifier row aimed at the area names the units the area selects wherever the
+/// area finds the caster's allies (text 640545 of Barrier, "yourself and N allies in the
+/// targeted area"; 263097 of Energy Auger, "Allies in the field gain"): the area's bit is kept
+/// beside the caster's, in the plan's order, the caster's part first. The rows are the client's
+/// 92788 (Spell4 41369, flags 5), 178513 (41756, flags 5), 217926 (82830, flags 4) and 3639
+/// (2252, flags 5); the flags 6, 7 and 13 cells are synthetic. A row behind a target apply
+/// prerequisite is refused there, since the strike checks no gate of a modifier for an ally.
+pub fn a_modifier_aimed_at_the_area_of_a_spell_that_finds_allies_keeps_the_areas_bit_and_one_behind_a_target_gate_fails_the_plan_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let finding = spell_tables.pressed_finding_allies
+  list.each(
+    [
+      #(
+        "92788 as read (flags 5) where the area finds allies: the caster's change and the allies'",
+        modifier_parts_aimed_by(id: 92_788, flags: 5, place: finding),
+        Ok([Caster, Struck(aim: AimsAtArea)]),
+      ),
+      #(
+        "178513 as read (flags 5) where the area finds allies: the same",
+        modifier_parts_aimed_by(id: 178_513, flags: 5, place: finding),
+        Ok([Caster, Struck(aim: AimsAtArea)]),
+      ),
+      #(
+        "92788 with flags 7 (synthetic) where the area finds allies: the caster's change and the primary target and the area's",
+        modifier_parts_aimed_by(id: 92_788, flags: 7, place: finding),
+        Ok([Caster, Struck(aim: AimsAtPrimaryTargetAndArea)]),
+      ),
+      #(
+        "92788 with flags 7 in a spell that hits foes: both parts as before",
+        modifier_parts_aimed_by(
+          id: 92_788,
+          flags: 7,
+          place: spell_tables.pressed_hitting_foes,
+        ),
+        Ok([Caster, Struck(aim: AimsAtPrimaryTargetAndArea)]),
+      ),
+      #(
+        "92788 as read where the area finds no allies: the caster alone",
+        modifier_parts_aimed_by(
+          id: 92_788,
+          flags: 5,
+          place: spell_tables.pressed,
+        ),
+        Ok([Caster]),
+      ),
+      #(
+        "92788 as read in a spell that hits foes: both parts as before",
+        modifier_parts_aimed_by(
+          id: 92_788,
+          flags: 5,
+          place: spell_tables.pressed_hitting_foes,
+        ),
+        Ok([Caster, Struck(aim: AimsAtArea)]),
+      ),
+      #(
+        "217926 as read (flags 4) where the area finds allies: the allies' change alone, which is read so today",
+        modifier_parts_aimed_by(id: 217_926, flags: 4, place: finding),
+        Ok([Struck(aim: AimsAtArea)]),
+      ),
+      #(
+        "217926 with flags 6 (synthetic): the primary target and the area, no caster part",
+        modifier_parts_aimed_by(id: 217_926, flags: 6, place: finding),
+        Ok([Struck(aim: AimsAtPrimaryTargetAndArea)]),
+      ),
+      #(
+        "129039 as read (flags 4), Defense Grid's: the allies' change alone, which is read so today",
+        modifier_parts_aimed_by(id: 129_039, flags: 4, place: finding),
+        Ok([Struck(aim: AimsAtArea)]),
+      ),
+      #(
+        "92788 with flags 13 (synthetic, bit 8 and the caster's bit): the caster alone, as every bit 8 row is read",
+        modifier_parts_aimed_by(id: 92_788, flags: 13, place: finding),
+        Ok([Caster]),
+      ),
+      #(
+        "3639 (flags 5) where the area finds no allies: the caster alone, as read_today_union_row_in_a_spell_that_hits_no_foes_keeps_its_caster_and_target_parts_test has it",
+        modifier_parts_aimed_by(id: 3639, flags: 5, place: spell_tables.pressed),
+        Ok([Caster]),
+      ),
+    ],
+    fn(row) {
+      let #(reason, read, expected) = row
+      assert read == expected as reason
+    },
+  )
+  // A row of another kind keeps its own reading: the ForcedMove row 49023 (Spell4 28467, type 3,
+  // flags 5) is read where the area finds allies as it is where it finds none.
+  assert read_client_row(id: 49_023, place: finding)
+    == read_client_row(id: 49_023, place: spell_tables.pressed)
+    as "the change is for type 11 rows only"
+  // The gate: Spell4Effects 92788 with the target apply prerequisite 13985 (type 40).
+  let gated_in = fn(place) {
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 92_788,
+      with: [#("prerequisiteIdTargetApply", Integer(13_985))],
+      body: fn(tables) {
+        spell_plan.read_row(
+          tables:,
+          sources: spell_plan.sources_of(tables:),
+          place:,
+          effect: spell_tables.effect_row_in(tables:, id: 92_788),
+        )
+      },
+    )
+  }
+  assert gated_in(finding)
+    == Error(spell_plan.AlliesModifierGateNotRead(
+      spell4_id: 41_369,
+      effect_id: 92_788,
+    ))
+    as "a modifier aimed at the area of a spell that finds allies and behind a target apply prerequisite fails the plan"
+  assert case gated_in(spell_tables.pressed) {
+    Ok(Applied(_)) -> True
+    _ -> False
+  }
+    as "the same row where the area finds no allies is read as before"
+}
+
 pub fn union_proxy_plans_one_child_on_the_caster_and_one_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Ok(Applied(spell_plan.ReadProxy(targets:, condition: _, ..))) =
