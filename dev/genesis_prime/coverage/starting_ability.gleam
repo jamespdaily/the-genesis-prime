@@ -411,9 +411,13 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     spell_plan.ProcAllyGateNotRead ->
       "an ally holds it behind a holder gate or an event gate"
     spell_plan.ProcAllyDelayNotRead -> "an ally holds it with a delay"
-    spell_plan.ProcAllyFilterNamesNoSpell(spell4_id:) ->
-      "an ally holds it and its filter names Spell4 "
+    spell_plan.ProcFilterNamesNoSpell4(spell4_id:) ->
+      "its filter names Spell4 "
       <> int.to_string(spell4_id)
+      <> ", which has no row"
+    spell_plan.ProcFilterNamesNoSpell4Base(spell4_base_id:) ->
+      "its filter names Spell4Base "
+      <> int.to_string(spell4_base_id)
       <> ", which has no row"
     spell_plan.ProcAllyUntilRemoved ->
       "an ally holds it until removed, in a spell that is no aura that ends"
@@ -421,7 +425,6 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
       "it sits behind a persistence prerequisite"
     spell_plan.ProcBehindTargetApply ->
       "it sits behind a target apply prerequisite"
-    spell_plan.ProcGroupWithoutFilter -> "it names a group with no filter kind"
     spell_plan.ProcAimNotRead(data_bits03:) ->
       "its aim bits are " <> int.to_string(data_bits03)
     spell_plan.ProcWithoutLife -> "it has no duration and no flags bit 2"

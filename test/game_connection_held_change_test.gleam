@@ -67,7 +67,7 @@ import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, OwnEffect,
 }
 import genesis_prime/table/id.{
-  type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+  type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
@@ -2026,6 +2026,7 @@ fn beast_takes_damage() -> proc.Event {
     other_unit: Some(7),
     spell: Some(proc.EventSpell(
       spell4_id: Spell4Id(5649),
+      spell4_base_id: Spell4BaseId(4947),
       groups: [6, 9, 134, 333],
       school: 1,
     )),

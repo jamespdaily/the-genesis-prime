@@ -441,6 +441,7 @@ pub fn blow_events(blow blow: BlowTaken) -> List(proc.Event) {
 pub fn event_spell(spell spell: Spell) -> proc.EventSpell {
   proc.EventSpell(
     spell4_id: spell.spell4_id,
+    spell4_base_id: spell.spell4_base_id,
     groups: spell.groups,
     school: spell.school,
   )

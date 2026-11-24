@@ -25,10 +25,10 @@ import genesis_prime/game/proc.{
 }
 import genesis_prime/game/spell_plan.{
   Always, AnySpell, AtHolder, AtOtherUnit, ForLife, InGroup, InWindow, LandsHit,
-  OneSpell, ProcRow,
+  OfBase, OneSpell, ProcRow,
 }
 import genesis_prime/game/spend
-import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -65,8 +65,17 @@ fn event(spell spell: Option(EventSpell)) -> proc.Event {
   proc.Event(trigger: LandsHit, other_unit: Some(struck), spell:, holder: None)
 }
 
-fn spell_of(spell4_id spell4_id: Int, groups groups: List(Int)) -> EventSpell {
-  EventSpell(spell4_id: Spell4Id(spell4_id), groups:, school: 0)
+fn spell_of(
+  spell4_id spell4_id: Int,
+  spell4_base_id spell4_base_id: Int,
+  groups groups: List(Int),
+) -> EventSpell {
+  EventSpell(
+    spell4_id: Spell4Id(spell4_id),
+    spell4_base_id: Spell4BaseId(spell4_base_id),
+    groups:,
+    school: 0,
+  )
 }
 
 /// The subject a gate of type 28 reads: a unit in combat or not.
@@ -133,7 +142,9 @@ pub fn a_chance_1_proc_fires_on_every_event_and_takes_no_draw_test() -> Nil {
       row: row(),
       fires_ms: [],
       now_ms: 999_999,
-      event: event(spell: Some(spell_of(spell4_id: 1, groups: []))),
+      event: event(
+        spell: Some(spell_of(spell4_id: 1, spell4_base_id: 1, groups: [])),
+      ),
       draw: None,
     )
     == Fires(at: holder, delay_ms: 0)
@@ -220,7 +231,11 @@ pub fn a_group_filter_passes_only_an_event_spell_in_the_group_test() -> Nil {
       row: grouped,
       fires_ms: [],
       now_ms: 0,
-      event: event(spell: Some(spell_of(spell4_id: 79_220, groups: [5, 463]))),
+      event: event(
+        spell: Some(
+          spell_of(spell4_id: 79_220, spell4_base_id: 54_946, groups: [5, 463]),
+        ),
+      ),
       draw: None,
     )
     == Fires(at: holder, delay_ms: 0)
@@ -229,7 +244,11 @@ pub fn a_group_filter_passes_only_an_event_spell_in_the_group_test() -> Nil {
       row: grouped,
       fires_ms: [],
       now_ms: 0,
-      event: event(spell: Some(spell_of(spell4_id: 79_220, groups: [5, 464]))),
+      event: event(
+        spell: Some(
+          spell_of(spell4_id: 79_220, spell4_base_id: 54_946, groups: [5, 464]),
+        ),
+      ),
       draw: None,
     )
     == FilteredOut
@@ -243,7 +262,11 @@ pub fn a_one_spell_filter_passes_only_that_spell4_test() -> Nil {
       row: one,
       fires_ms: [],
       now_ms: 0,
-      event: event(spell: Some(spell_of(spell4_id: 79_220, groups: []))),
+      event: event(
+        spell: Some(
+          spell_of(spell4_id: 79_220, spell4_base_id: 54_946, groups: []),
+        ),
+      ),
       draw: None,
     )
     == Fires(at: holder, delay_ms: 0)
@@ -251,10 +274,59 @@ pub fn a_one_spell_filter_passes_only_that_spell4_test() -> Nil {
       row: one,
       fires_ms: [],
       now_ms: 0,
-      event: event(spell: Some(spell_of(spell4_id: 79_221, groups: [463]))),
+      event: event(
+        spell: Some(
+          spell_of(spell4_id: 79_221, spell4_base_id: 54_947, groups: [463]),
+        ),
+      ),
       draw: None,
     )
     == FilteredOut
+}
+
+pub fn a_base_filter_passes_only_an_event_spell_of_that_spell4base_test() -> Nil {
+  use <- owned_test.run(5000)
+  let based =
+    ProcRow(..row(), filter: OfBase(spell4_base_id: Spell4BaseId(54_946)))
+  assert decided(
+      row: based,
+      fires_ms: [],
+      now_ms: 0,
+      event: event(
+        spell: Some(
+          spell_of(spell4_id: 79_220, spell4_base_id: 54_946, groups: []),
+        ),
+      ),
+      draw: None,
+    )
+    == Fires(at: holder, delay_ms: 0)
+    as "a Spell4 of the Spell4Base passes"
+  assert decided(
+      row: based,
+      fires_ms: [],
+      now_ms: 0,
+      event: event(
+        spell: Some(
+          spell_of(spell4_id: 79_225, spell4_base_id: 54_946, groups: []),
+        ),
+      ),
+      draw: None,
+    )
+    == Fires(at: holder, delay_ms: 0)
+    as "so does another tier of it: the filter names the base, not one Spell4"
+  assert decided(
+      row: based,
+      fires_ms: [],
+      now_ms: 0,
+      event: event(
+        spell: Some(
+          spell_of(spell4_id: 79_221, spell4_base_id: 54_947, groups: [463]),
+        ),
+      ),
+      draw: None,
+    )
+    == FilteredOut
+    as "a Spell4 of another Spell4Base does not"
 }
 
 pub fn a_filtered_proc_never_fires_for_an_event_with_no_spell_test() -> Nil {
@@ -271,6 +343,14 @@ pub fn a_filtered_proc_never_fires_for_an_event_with_no_spell_test() -> Nil {
     as "a stealth, combat or death event has no spell for a group to name"
   assert decided(
       row: ProcRow(..row(), filter: OneSpell(spell4_id: Spell4Id(1))),
+      fires_ms: [],
+      now_ms: 0,
+      event: none,
+      draw: None,
+    )
+    == FilteredOut
+  assert decided(
+      row: ProcRow(..row(), filter: OfBase(spell4_base_id: Spell4BaseId(1))),
       fires_ms: [],
       now_ms: 0,
       event: none,
@@ -480,7 +560,9 @@ pub fn the_checks_run_limit_filter_holder_gate_event_gate_then_chance_test() -> 
       row:,
       fires_ms:,
       now_ms: 100,
-      event: event(spell: Some(spell_of(spell4_id: 79_220, groups:))),
+      event: event(
+        spell: Some(spell_of(spell4_id: 79_220, spell4_base_id: 54_946, groups:)),
+      ),
       holder_unit: holder,
       holder_subject: subject(in_combat: holder_in_combat),
       event_subject: subject(in_combat: event_in_combat),

@@ -182,7 +182,12 @@ fn blow_taken(
 
 /// The attack spell of the creature that strikes, as its blow's events carry it.
 fn attack(groups groups: List(Int)) -> event_proc.EventSpell {
-  event_proc.EventSpell(spell4_id: Spell4Id(5649), groups:, school: 1)
+  event_proc.EventSpell(
+    spell4_id: Spell4Id(5649),
+    spell4_base_id: Spell4BaseId(4947),
+    groups:,
+    school: 1,
+  )
 }
 
 /// A blow of creature 31 that landed with these results, by an attack spell of no group.

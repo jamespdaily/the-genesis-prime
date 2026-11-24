@@ -359,6 +359,7 @@ fn blow_carried(
           let spell =
             proc.EventSpell(
               spell4_id:,
+              spell4_base_id: facts.spell4_base_id,
               groups: facts.groups,
               school: facts.school,
             )
