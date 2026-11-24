@@ -3929,8 +3929,24 @@ pub fn a_change_that_lasts_until_removed_on_an_ally_ends_at_the_end_of_the_aura_
   assert auger_told_at(steps: steps)
     == [#(1500, [auger_change_of(cast_id: id, sight: kept, go_ms: 1500)])]
     as "a go 500 ms after the cast's start tells the ally the change, listed until removed as the caster's own node lists the row"
-  assert list.length(player_end_timers(state:)) == 1
+  let assert [end_timer] = player_end_timers(state:)
     as "and arms one end timer for the change"
+  let go_effects =
+    list.flat_map(steps, fn(step) {
+      case step.0 == 1500 {
+        True -> step.1
+        False -> []
+      }
+    })
+  assert list.filter_map(go_effects, fn(effect) {
+      case effect {
+        cast_state.StartTimer(timer:, after_ms:) if timer == end_timer ->
+          Ok(after_ms)
+        _ -> Error(Nil)
+      }
+    })
+    == [2500]
+    as "the end timer is armed for the 2500 ms the aura has left at the go: it alone ends the ally's change once the caster no longer sees the ally, so the node's end at 4000 cannot stand in for it"
   // Run to the end: the timer and the node's end are both due at 4000.
   let #(_, _, whole) = auger_run_until(spell: aura, until_ms: 100_000)
   assert auger_told_at(steps: whole)
