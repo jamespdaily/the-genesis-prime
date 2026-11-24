@@ -36,7 +36,7 @@ const probes = [
 /// of a `mailbox_support.settled` process is left out.
 pub fn breaches(file: SourceFile) -> List(Breach) {
   let module = syntax.parse(file)
-  let calls = calls_in(module)
+  let calls = syntax.calls(module)
   let waits = waiting_closures(module, calls)
   let exempt = probes_of_settled_state(module, calls)
   list.flat_map(probes, fn(probe) {
@@ -57,44 +57,10 @@ pub fn breaches(file: SourceFile) -> List(Breach) {
   |> list.sort(fn(first, second) { int.compare(first.line, second.line) })
 }
 
-/// A call in the module: where its function is written, and its arguments.
-type Call {
-  Call(function: glance.Span, arguments: List(glance.Field(glance.Expression)))
-}
-
-fn calls_in(module: glance.Module) -> List(Call) {
-  list.filter_map(syntax.expressions(module), fn(expression) {
-    case expression {
-      glance.Call(function:, arguments:, ..) ->
-        Ok(Call(function: syntax.span_of(function), arguments:))
-      glance.Int(..)
-      | glance.Float(..)
-      | glance.String(..)
-      | glance.Variable(..)
-      | glance.NegateInt(..)
-      | glance.NegateBool(..)
-      | glance.Block(..)
-      | glance.Panic(..)
-      | glance.Todo(..)
-      | glance.Tuple(..)
-      | glance.List(..)
-      | glance.Fn(..)
-      | glance.RecordUpdate(..)
-      | glance.FieldAccess(..)
-      | glance.TupleIndex(..)
-      | glance.FnCapture(..)
-      | glance.BitString(..)
-      | glance.Case(..)
-      | glance.BinaryOperator(..)
-      | glance.Echo(..) -> Error(Nil)
-    }
-  })
-}
-
 /// The span of each closure that is an argument of a call of `event_wait.until`.
 fn waiting_closures(
   module: glance.Module,
-  calls: List(Call),
+  calls: List(syntax.Call),
 ) -> List(glance.Span) {
   let until_locations =
     syntax.references_to(module:, from: ["event_wait"], named: ["until"])
@@ -111,7 +77,7 @@ fn waiting_closures(
 /// `process.self` or of `mailbox_support.settled`.
 fn probes_of_settled_state(
   module: glance.Module,
-  calls: List(Call),
+  calls: List(syntax.Call),
 ) -> List(glance.Span) {
   let settled_locations =
     list.append(

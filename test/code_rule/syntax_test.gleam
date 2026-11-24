@@ -5,6 +5,7 @@
 
 import code_rule/planted
 import code_rule/syntax
+import glance
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -70,4 +71,126 @@ pub fn a_function_binds_its_parameters_lets_closures_and_patterns_test() -> Nil 
       "assigned", "closed", "closure", "field", "first", "found", "head",
       "inside", "label", "parameter", "rest", "tail", "used", "whole",
     ]
+}
+
+pub fn many_byte_offsets_are_given_their_lines_in_one_read_of_the_text_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert syntax.lines_of(text: "ab\ncd\n\nf", byte_offsets: [0, 2, 3, 5, 6, 7])
+    == [1, 1, 2, 2, 3, 4]
+    as "a newline byte belongs to the line it ends; a blank line has its own number"
+  assert syntax.lines_of(text: "é\nx", byte_offsets: [0, 3]) == [1, 2]
+    as "offsets count bytes, not characters"
+  assert syntax.lines_of(text: "ab", byte_offsets: [1, 0]) == [1, 1]
+    as "the lines come in the order of the offsets"
+}
+
+pub fn lines_of_offsets_in_any_order_and_at_the_end_of_the_text_are_each_given_their_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert syntax.lines_of(text: "ab\ncd\n\nf", byte_offsets: [7, 0, 3, 8, 5, 2])
+    == [4, 1, 2, 4, 2, 1]
+    as "offsets out of order, and the end of the text, each have their own line"
+}
+
+pub fn the_line_of_one_offset_is_the_line_of_that_byte_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert syntax.line_of(text: "ab\ncd", byte_offset: 3) == 2
+    as "the byte after a newline starts the next line"
+  assert syntax.line_of(text: "ab\ncd", byte_offset: 2) == 1
+    as "a newline byte belongs to the line it ends"
+  assert syntax.line_of(text: "ab", byte_offset: 2) == 1
+    as "the end of the text is on the last line"
+}
+
+/// What the call at the top of a function body gives for a value: the integer
+/// literal as written, `"other"` for any other expression, none for no
+/// expression.
+fn given(
+  call call: String,
+  label label: String,
+  position position: syntax.Position,
+) -> option.Option(String) {
+  let module =
+    syntax.parse(
+      planted.file("src/planted.gleam", ["pub fn f() { " <> call <> " }"]),
+    )
+  let assert [first, ..] = syntax.calls(module) as "the body holds a call"
+  case syntax.argument(arguments: first.arguments, label:, position:) {
+    Some(glance.Int(value:, ..)) -> Some(value)
+    Some(_) -> Some("other")
+    None -> None
+  }
+}
+
+pub fn a_value_a_call_gives_by_label_is_found_by_label_or_else_by_position_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  list.each(
+    [
+      #("g(1, 2)", syntax.LastArgument, Some("2"), "the last unlabelled one"),
+      #("g(1, 2)", syntax.FirstArgument, Some("1"), "the first unlabelled one"),
+      #(
+        "g(1, within: 5)",
+        syntax.LastArgument,
+        Some("5"),
+        "the label wins over the position",
+      ),
+      #(
+        "g(1, 2, within: 3)",
+        syntax.FirstArgument,
+        Some("3"),
+        "the label wins over the first",
+      ),
+      #(
+        "g(x: 1)",
+        syntax.FirstArgument,
+        None,
+        "a first argument with another label is not the value",
+      ),
+      #(
+        "g(1, x: 2)",
+        syntax.LastArgument,
+        None,
+        "a last argument with another label is not the value",
+      ),
+      #(
+        "g(within:)",
+        syntax.LastArgument,
+        None,
+        "a punned label has no expression",
+      ),
+      #("g()", syntax.FirstArgument, None, "no arguments, no value"),
+      #(
+        "g(within: foo(1))",
+        syntax.FirstArgument,
+        Some("other"),
+        "any expression",
+      ),
+    ],
+    fn(row) {
+      let #(call, position, expected, reason) = row
+      assert given(call:, label: "within", position:) == expected as reason
+    },
+  )
+}
+
+pub fn a_capture_is_a_call_with_the_arguments_around_its_hole_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert given(
+      call: "g(1, _, 3)",
+      label: "within",
+      position: syntax.FirstArgument,
+    )
+    == Some("1")
+    as "the arguments before the hole come first"
+  assert given(call: "g(_, 2)", label: "within", position: syntax.LastArgument)
+    == Some("2")
+    as "the arguments after the hole follow"
+  let module =
+    syntax.parse(planted.file("src/planted.gleam", ["pub fn f() { g(1, _) }"]))
+  assert list.length(syntax.calls(module)) == 1
+    as "a capture is one call, not a call and a capture"
 }
