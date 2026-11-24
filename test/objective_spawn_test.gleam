@@ -54,13 +54,14 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
+import genesis_prime/terrain.{type Ground}
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn.{type Placed}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -73,6 +74,7 @@ import place_support
 import planted_table.{Integer}
 import rating_support
 import spawn_support
+import terrain_support
 import unitest
 
 const world = 3460
@@ -125,7 +127,41 @@ fn placed_with_tables(
     kinds: spawn_support.turret_kinds(),
     kills:,
     clicks:,
+    grounds: dict.new(),
   )
+}
+
+/// The placement over the fixture's tables with these grounds by world, and no
+/// objective in the kill or click table.
+fn placed_over(
+  tables tables: store.Tables,
+  stored stored: List(Row),
+  grounds grounds: Dict(Int, Ground),
+) -> Placed {
+  objective_spawn.place(
+    tables:,
+    stored:,
+    factions: creature_faction.none(),
+    kinds: spawn_support.turret_kinds(),
+    kills: set.new(),
+    clicks: set.new(),
+    grounds:,
+  )
+}
+
+/// The rows of Jim's world database, imported into a database of the test's own and
+/// read back (with the migrations' seeded rows).
+fn stored_by_the_world_database() -> List(Row) {
+  let assert Ok(folder) = envoy.get("GENESIS_WORLD_DATA")
+    as "the guard saw the variable"
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(_) =
+    import_world_data.import_spawns(
+      db: content_support.connect(database:),
+      folder:,
+    )
+    as "the world database imports"
+  content_support.stored_spawns(database:)
 }
 
 fn close(left: Float, right: Float) -> Bool {
@@ -382,6 +418,7 @@ pub fn a_turret_creature_with_no_kind_is_not_placed_and_is_reported_test() -> Ni
       kinds: spawn_support.kinds(),
       kills: set.new(),
       clicks: set.new(),
+      grounds: dict.new(),
     )
   assert of_creatures(placed:, creatures: [73_494, turret]) == []
     as "neither Sim-Turret is placed"
@@ -549,6 +586,205 @@ pub fn two_objectives_on_one_creature_and_marker_place_once_test() -> Nil {
     as "the larger of the counts 1 and 2"
 }
 
+/// Each (world, x, z) at which two or more of the rows stand, to the millimetre.
+fn shared_places(rows rows: List(Row)) -> List(#(Int, Int, Int)) {
+  list.group(rows, fn(row) {
+    #(row.world_id, float.round(row.x *. 1000.0), float.round(row.z *. 1000.0))
+  })
+  |> dict.to_list
+  |> list.filter_map(fn(place) {
+    case place.1 {
+      [_, _, ..] -> Ok(place.0)
+      _ -> Error(Nil)
+    }
+  })
+  |> list.sort(fn(left, right) { int.compare(left.1, right.1) })
+}
+
+pub fn objectives_whose_markers_are_shared_place_no_two_rows_at_one_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 4564 (quest 3479, TargetGroup 7288: Creature2 7287 and the group
+  // 1463) and 4565 (quest 3480, TargetGroup 1463: 12844, 11945, 11948, 13116,
+  // 13117, 13959 and 51126) are type 8, count 8, on markers 12155 to 12158 of
+  // World 426 (`table_rows -- QuestObjective 4564 4565`, `-- TargetGroup 7287 7288
+  // 1463`, `-- WorldLocation2 12155 12156 12157 12158`). World 426 stores rows of 11945, 11948,
+  // 12844, 13116 and 51126, so the creatures to place are 36331, 36335, 13117
+  // and 13959. Marker 12157's centre is (4049.0891, -735.689, -5470.0864) with radius
+  // 78.62, so its ring slots are 39.31 either side of the centre along x.
+  let tables = character_tables.content_tables()
+  let held =
+    list.index_map(
+      [11_945, 11_948, 12_844, 13_116, 51_126],
+      fn(creature_id, index) {
+        stored(tables:, id: index + 1, creature_id:, world_id: 426)
+      },
+    )
+  let placed =
+    placed_by_the_load(tables:, stored: held, factions: creature_faction.none())
+  let rows = list.filter(placed.rows, fn(row: Row) { row.world_id == 426 })
+  let standing_at = fn(x, z) {
+    list.filter(rows, fn(row: Row) { close(row.x, x) && close(row.z, z) })
+  }
+  assert list.map(standing_at(4088.4006, -5470.0864), fn(row) {
+      row.creature_id
+    })
+    == [13_117]
+    as "one Creature2 13117 stands at marker 12157's first ring slot, not one for each of the two objectives"
+  assert list.map(standing_at(4009.77705, -5470.0864), fn(row) {
+      row.creature_id
+    })
+    == [13_117]
+    as "one Creature2 13117 stands at marker 12157's second ring slot"
+  assert shared_places(rows:) == []
+    as "no two rows of the two objectives stand at one place"
+  // Objective 4564 asks for 36331 twice at marker 12155, 36335 twice at 12156 and
+  // 13117 and 13959 twice each at 12157 and 12158; 4565 for 13117 twice at 12155, 13959
+  // twice at 12156 and the same as 4564 at the other two. Each objective keeps what
+  // it asked of each marker, and a creature both ask of a marker stands once there.
+  assert list.map([36_331, 36_335, 13_117, 13_959], fn(creature_id) {
+      list.length(of_creatures(placed:, creatures: [creature_id]))
+    })
+    == [2, 2, 4, 4]
+    as "no creature either objective asked for is left out, and none stands twice at a marker"
+}
+
+pub fn no_two_creatures_the_real_tables_place_stand_at_one_place_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("world_data")
+  use <- unitest.guard(client_tables.present())
+  use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
+  let tables = client_tables.with_content_tables()
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: stored_by_the_world_database(),
+      factions: spawn_support.the_boss_is_given_233(tables:),
+    )
+  let shared = shared_places(rows: list.append(placed.rows, placed.click_rows))
+  assert shared == []
+    as "no two placed creatures, kill or click, stand at one place of a world"
+}
+
+/// What the ground under a marker's ring slots is, to the slot's height.
+type Standing {
+  /// The slot stands on the ground read at it, a planted raw value's height.
+  OnGround(raw: Int)
+  /// The slot keeps its marker's own height.
+  AtMarkerHeight
+}
+
+/// A marker whose centre and ring-slot chunks hold these raw values (a slot with
+/// `Error(Nil)` has no chunk), and where each of the three slots stands.
+type RingGround {
+  RingGround(
+    why: String,
+    centre: Int,
+    first_slot: Result(Int, Nil),
+    third_slot: Result(Int, Nil),
+    stands: List(Standing),
+  )
+}
+
+pub fn a_ring_slot_stands_on_the_ground_read_at_it_when_its_marker_stands_on_the_ground_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 21290: Creature2 73492 and 73567, count 3, marker 51740 in World 3460
+  // at (-142.06599, -860.46375, 556.80902), radius 38, so slot i of 3 stands 19 from
+  // the centre at the angle 2 pi i / 3 from the +x axis towards +z. The marker's
+  // centre and slot 1 are in the 32-unit chunk x -160 to -128, z 544 to 576;
+  // the slot 0 is in the chunk beside it along x and the slot 2 in the chunk before
+  // it along z. A raw value of 9500 is the height -860.464, the marker's own, and
+  // each raw step is 0.125 (`terrain_support.height`).
+  let centre_raw = 9500
+  let base =
+    RingGround(
+      why: "a slot whose ground is 4.6 above its marker's centre stands on it, a slot in its marker's chunk on the chunk's ground, and a slot with no ground read at the marker's height",
+      centre: centre_raw,
+      first_slot: Ok(centre_raw + 37),
+      third_slot: Error(Nil),
+      stands: [OnGround(centre_raw + 37), OnGround(centre_raw), AtMarkerHeight],
+    )
+  let cases = [
+    base,
+    RingGround(
+      why: "a marker whose centre is 100 below the ground (an interior) keeps its height at every slot",
+      centre: centre_raw + 800,
+      first_slot: Ok(centre_raw + 837),
+      third_slot: Ok(centre_raw + 800),
+      stands: [AtMarkerHeight, AtMarkerHeight, AtMarkerHeight],
+    ),
+    RingGround(
+      why: "a marker whose centre is 100 above the ground keeps its height at every slot",
+      centre: centre_raw - 800,
+      first_slot: Ok(centre_raw - 763),
+      third_slot: Ok(centre_raw - 800),
+      stands: [AtMarkerHeight, AtMarkerHeight, AtMarkerHeight],
+    ),
+    RingGround(
+      ..base,
+      why: "a centre 1.875 below the ground is on the ground, inside the 2 the client lifts a unit by",
+      centre: centre_raw + 15,
+      first_slot: Ok(centre_raw + 52),
+      stands: [
+        OnGround(centre_raw + 52),
+        OnGround(centre_raw + 15),
+        AtMarkerHeight,
+      ],
+    ),
+    RingGround(
+      ..base,
+      why: "a centre 2.125 below the ground is not on it",
+      centre: centre_raw + 17,
+      first_slot: Ok(centre_raw + 54),
+      stands: [AtMarkerHeight, AtMarkerHeight, AtMarkerHeight],
+    ),
+  ]
+  let tables = character_tables.content_tables()
+  let centre_x = -142.06599
+  let centre_z = 556.80902
+  let slot_at = fn(index) {
+    let angle = 2.0 *. maths.pi() *. int.to_float(index) /. 3.0
+    #(
+      centre_x +. 19.0 *. maths.cos(angle),
+      centre_z +. 19.0 *. maths.sin(angle),
+    )
+  }
+  list.each(cases, fn(row) {
+    let #(first_x, first_z) = slot_at(0)
+    let #(third_x, third_z) = slot_at(2)
+    let chunks =
+      list.flatten([
+        [#(centre_x, centre_z, row.centre)],
+        case row.first_slot {
+          Ok(raw) -> [#(first_x, first_z, raw)]
+          Error(Nil) -> []
+        },
+        case row.third_slot {
+          Ok(raw) -> [#(third_x, third_z, raw)]
+          Error(Nil) -> []
+        },
+      ])
+    let placed =
+      placed_over(
+        tables:,
+        stored: the_world_holds_spawns(tables:),
+        grounds: dict.from_list([
+          #(world, terrain_support.ground_with_chunks(chunks:)),
+        ]),
+      )
+    let rows = of_creatures(placed:, creatures: [73_492, 73_567])
+    assert list.length(rows) == 3 as row.why
+    assert list.map(rows, fn(placed_row) { placed_row.y })
+      |> list.zip(row.stands)
+      |> list.all(fn(pair) {
+        case pair.1 {
+          OnGround(raw:) -> close(pair.0, terrain_support.height(raw:))
+          AtMarkerHeight -> close(pair.0, -860.46375)
+        }
+      })
+      as row.why
+  })
+}
+
 pub fn a_target_with_no_creature2_row_is_skipped_and_reported_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
@@ -610,8 +846,10 @@ pub fn placement_ids_take_no_stored_or_run_only_id_test() -> Nil {
 /// - 342 of those pairs have a stored spawn of every creature of the objective in
 ///   the world, so nothing is placed for them, and the rest are placed the
 ///   objective's count at its markers there;
-/// - 1,764 placed rows in all, by world 22: 432, 51: 608, 426: 38, 870: 20, 990:
-///   12, 1061: 623, 1387: 20 and 3460: 11.
+/// - 1,723 placed rows in all, by world 22: 429, 51: 593, 426: 34, 870: 20, 990:
+///   12, 1061: 606, 1387: 20 and 3460: 9. A creature that two objectives ask
+///   of one marker stands once there, so these are 39 fewer than the 1,762 rows
+///   placed objective by objective.
 pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
@@ -650,13 +888,13 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
     as "the pairs of a kill objective and a stored world its markers are in"
   assert list.count(pairs, fn(pair) { pair.1 }) == 343
     as "the pairs whose creatures are all stored there"
-  assert list.length(placed.rows) == 1762
+  assert list.length(placed.rows) == 1723
     as "the rows placed, by the count over the tables"
   let placed_in = fn(world_id) {
     list.count(placed.rows, fn(row: Row) { row.world_id == world_id })
   }
   assert list.map([22, 51, 426, 870, 990, 1061, 1387, 3460], placed_in)
-    == [432, 608, 38, 20, 12, 623, 20, 9]
+    == [429, 593, 34, 20, 12, 606, 20, 9]
     as "the rows placed in each world with spawns that has any"
   assert list.all(placed.rows, fn(row: Row) {
     set.contains(worlds, row.world_id)
@@ -2061,15 +2299,34 @@ pub fn the_click_targets_stand_at_the_marker_test() -> Nil {
     )
   let assert [row] = click_of(placed:, creatures: [pyrius])
     as "one row of the creature"
-  let marker = the_marker_of(tables:, marker_id: 40_836)
+  assert list.length(of_creatures(placed:, creatures: [pyrius])) == 1
+    as "objective 10256's kill row of the same creature and marker stands too"
+  assert shared_places(rows: list.append(placed.rows, placed.click_rows)) == []
+    as "the kill row and the click row of one marker stand on its ring, not at one place"
+  assert row.world_id == 22
+    && row.area_id == the_marker_of(tables:, marker_id: 40_836).world_zone_id
+    as "the marker's world and zone"
+  // Quest 5918's creature 26436 has no kill objective at its marker 19699, so its
+  // click row is the marker's only one and stands at the marker's centre.
+  let placed =
+    placed_with_tables(
+      tables:,
+      stored: [stored(tables:, id: 1, creature_id: filler, world_id: 22)],
+      factions: creature_faction.none(),
+      kills: set.new(),
+      clicks: set.from_list([9002]),
+    )
+  let assert [alone] = click_of(placed:, creatures: [26_436])
+    as "one row of the creature"
+  let marker = the_marker_of(tables:, marker_id: 19_699)
   assert stands_at(
-    row:,
+    row: alone,
     x: marker.position0,
     y: marker.position1,
     z: marker.position2,
   )
     as "the creature stands at the marker's centre"
-  assert row.world_id == 22 && row.area_id == marker.world_zone_id
+  assert alone.world_id == 22 && alone.area_id == marker.world_zone_id
     as "the marker's world and zone"
   let skipped =
     placed_with_tables(
