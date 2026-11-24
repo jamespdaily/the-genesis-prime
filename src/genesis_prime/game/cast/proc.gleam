@@ -447,6 +447,20 @@ pub fn event_spell(spell spell: Spell) -> proc.EventSpell {
   )
 }
 
+/// The spell of an event whose spell is only a Spell4 id, as a proc's filter reads it:
+/// the facts the plan reads of it (`spell_plan.facts_of_spell4`).
+pub fn event_spell_of_facts(
+  spell4_id spell4_id: Spell4Id,
+  facts facts: spell_plan.SpellFacts,
+) -> proc.EventSpell {
+  proc.EventSpell(
+    spell4_id:,
+    spell4_base_id: facts.spell4_base_id,
+    groups: facts.groups,
+    school: facts.school,
+  )
+}
+
 /// The triggers one damage description of a strike on a creature raises.
 fn hit_triggers(
   spell spell: Spell,

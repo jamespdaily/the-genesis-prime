@@ -914,7 +914,10 @@ pub fn an_event_spell_carries_the_spell4base_of_its_spell4_test() -> Nil {
     spell_plan.facts_of_spell4(tables:, spell4_id: Spell4Id(32_893))
     as "the facts of Telekinetic Strike"
   assert facts.spell4_base_id == Spell4BaseId(19_102)
-    as "a spell the connection tells a blow of carries its Spell4Base"
+    as "the facts of a Spell4 hold its Spell4Base"
+  assert cast_proc.event_spell_of_facts(spell4_id: Spell4Id(32_893), facts:).spell4_base_id
+    == Spell4BaseId(19_102)
+    as "a creature's blow, whose spell is only a Spell4 id, carries the Spell4Base to its events"
   let assert Ok(spell) =
     spell_plan.spell_alone(
       tables:,
