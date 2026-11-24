@@ -94,9 +94,9 @@ import genesis_prime/game/cast/state.{
   PlayerChangeEnd, PressRefused, ProcDue, QuestAdvanceDue, Refuse, RepeatHeld,
   Resolution, RestrictionEnd, Shortcut, Stage, StartChild, StartHeld, Starts,
   State, StateEnd, TargetModifierStart, Tick, UnbuiltItemSpell,
-  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UnreadSpend, WindowEnd,
+  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, UnbuiltStandingSpell,
+  Unheld, Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UnreadSpend, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/player_state.{type PlayerState}
@@ -117,7 +117,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/set
 import gleam/string
 
 /// What a press is refused or cast without, because the server does not build what the cast
@@ -464,11 +463,8 @@ fn dropped_once(
   effect_ids effect_ids: List(Spell4EffectsId),
   why why: String,
 ) -> #(State, List(Effect)) {
-  use <- bool.guard(
-    when: effect_ids == [] || set.contains(cast.logged, key),
-    return: #(cast, []),
-  )
-  #(State(..cast, logged: set.insert(cast.logged, key)), [
+  use <- bool.guard(when: effect_ids == [], return: #(cast, []))
+  cast_state.logged_once(cast:, key:, log: fn() {
     Log(
       level: LogWarning,
       text: "the activate cast of Spell4 "
@@ -486,8 +482,8 @@ fn dropped_once(
       )
         <> ": "
         <> why,
-    ),
-  ])
+    )
+  })
 }
 
 /// The log of the crowd-control rows the plan drops from a spell (`Spell.dropped_controls`),
@@ -498,10 +494,11 @@ pub fn controls_dropped(
   cast cast: State,
   spell spell: Spell,
 ) -> #(State, List(Effect)) {
-  let key = DroppedControls(spell4_id: spell.spell4_id.value)
-  case spell.dropped_controls == [] || set.contains(cast.logged, key) {
-    True -> #(cast, [])
-    False -> #(State(..cast, logged: set.insert(cast.logged, key)), [
+  use <- bool.guard(when: spell.dropped_controls == [], return: #(cast, []))
+  cast_state.logged_once(
+    cast:,
+    key: DroppedControls(spell4_id: spell.spell4_id.value),
+    log: fn() {
       Log(
         level: LogWarning,
         text: "the cast of Spell4 "
@@ -514,9 +511,9 @@ pub fn controls_dropped(
           ", ",
         )
           <> ", each a state on another unit held until removed, which the server does not end with its spell",
-      ),
-    ])
-  }
+      )
+    },
+  )
 }
 
 /// A right-click refused because the server does not build what the cast needs: the
@@ -536,6 +533,7 @@ pub fn not_built_refusal(
     UnbuiltItemSpell(..) | UnreadItemPrerequisite(..) ->
       "the use of an item whose spell is Spell4 "
     UnbuiltSpell(..)
+    | UnbuiltStandingSpell(..)
     | UnreadPrerequisite(..)
     | UnreadLinkPrerequisite(..)
     | DroppedSignals(..)
@@ -543,24 +541,19 @@ pub fn not_built_refusal(
     | DroppedUnitStates(..)
     | DroppedControls(..) -> "the activate cast of Spell4 "
   }
-  case set.contains(cast.logged, key) {
-    True -> Ok(#(cast, [refusal]))
-    False ->
-      Ok(
-        #(State(..cast, logged: set.insert(cast.logged, key)), [
-          Log(
-            level: LogWarning,
-            text: what
-              <> int.to_string(spell4_id)
-              <> " "
-              <> why
-              <> ": it is refused with "
-              <> int.to_string(cast_result.to_value(result)),
-          ),
-          refusal,
-        ]),
+  let #(cast, logs) =
+    cast_state.logged_once(cast:, key:, log: fn() {
+      Log(
+        level: LogWarning,
+        text: what
+          <> int.to_string(spell4_id)
+          <> " "
+          <> why
+          <> ": it is refused with "
+          <> int.to_string(cast_result.to_value(result)),
       )
-  }
+    })
+  Ok(#(cast, list.append(logs, [refusal])))
 }
 
 /// The spell a press of the ability casts: under Spell Surge, the alternate the ability

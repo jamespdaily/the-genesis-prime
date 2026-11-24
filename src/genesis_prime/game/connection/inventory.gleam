@@ -54,6 +54,13 @@ import gleam/bool
 import gleam/list
 import gleam/option.{Some}
 
+/// What brings the player's standing spells to the worn items after a change of them
+/// (`casting.standing_changed`), given by the caller because the casting module reaches the
+/// inventory through the item spend.
+pub type Standing =
+  fn(Session, Now) ->
+    #(Session, List(Effect(ConnectionEffect(client_connection.Request))))
+
 /// The client's 0x182, 0x17D or 0x149, taken from inside 0x038C with the player
 /// in the world: a refusal is written and the player stays in the world; an
 /// accepted change asks the store and the connection waits in `MovingItem`; a
@@ -139,6 +146,7 @@ pub fn move_answered(
   entered entered: world_entry.Entered,
   moving moving: inventory.Moving,
   outcome outcome: Outcome(Answer),
+  standing standing: Standing,
 ) -> client_connection.Handled(Session) {
   let before = entered.items
   answered(
@@ -167,6 +175,7 @@ pub fn move_answered(
           holder:,
           entered:,
           moved: list.append(effects_of(session:, effects:), settled),
+          standing:,
         )
       case moving.change {
         // The timer fired to start this removal: it goes on to the next moment, or tries
@@ -240,15 +249,18 @@ pub fn answered(
 /// frames are written first, then, when the worn items give other gear than `entered`
 /// holds, the look and the properties follow it: 0x933 and `LookChanged` for the slots
 /// that changed, one 0x93a and `PropertiesChanged` for the properties, then the life's
-/// own writes, and a warning for each worn item newly read as giving nothing. A sale
-/// that sold a worn item (genesis_prime/game/connection/vendor_sale) follows its frames the
-/// same way.
+/// own writes, a warning for each worn item newly read as giving nothing, and last the
+/// standing spells: the 0x7ff of the equip spell of an item put on, the 0x7fe of one taken
+/// off (`casting.standing_changed`; the server's order, since no client fact needs the
+/// other). A sale that sold a worn item (genesis_prime/game/connection/vendor_sale) follows
+/// its frames the same way.
 pub fn regeared(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   moved moved: List(Effect(ConnectionEffect(client_connection.Request))),
+  standing standing: Standing,
 ) -> client_connection.Handled(Session) {
   let tables = session.settings.tables
   let level = connection_state.level_of(entered:)
@@ -294,9 +306,16 @@ pub fn regeared(
           bases:,
           shield: worn.properties.shield,
         )
+      let #(session, standing_told) = standing(session, now)
       Continue(
         session,
-        list.flatten([moved, look_told, properties_told, warnings]),
+        list.flatten([
+          moved,
+          look_told,
+          properties_told,
+          warnings,
+          standing_told,
+        ]),
       )
     }
   }

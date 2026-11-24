@@ -563,7 +563,10 @@ pub fn derivation() -> table_store.Derivation {
 /// (genesis_prime/game/spell_plan `plans`).
 pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   let started =
-    dict.values(spell_plan.plans_with_later(tables:))
+    list.append(
+      dict.values(spell_plan.plans_with_later(tables:)),
+      dict.values(spell_plan.standing_plans(tables:)),
+    )
     |> list.flat_map(spells_of_tree)
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)

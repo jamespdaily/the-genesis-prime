@@ -127,6 +127,7 @@ pub fn answered(
   spending spending: item_charge.Spending,
   outcome outcome: Outcome(Answer),
   release release: Release,
+  standing standing: connection_inventory.Standing,
 ) -> client_connection.Handled(Session) {
   let what = "the spend of the item's charge was not saved"
   connection_item_expiry.rearmed(
@@ -141,7 +142,15 @@ pub fn answered(
       saved: fn(session, answer) {
         case answer {
           ItemsSaved ->
-            released(session:, now:, holder:, entered:, spending:, release:)
+            released(
+              session:,
+              now:,
+              holder:,
+              entered:,
+              spending:,
+              release:,
+              standing:,
+            )
           ItemsNotSaved ->
             cancelled(
               session:,
@@ -191,6 +200,7 @@ fn released(
   entered entered: world_entry.Entered,
   spending spending: item_charge.Spending,
   release release: Release,
+  standing standing: connection_inventory.Standing,
 ) -> client_connection.Handled(Session) {
   let #(cast, effects) =
     cast.item_started(cast: entered.cast, start: spending.start, now:)
@@ -216,6 +226,7 @@ fn released(
     holder:,
     entered:,
     moved: list.flatten([told, released, settled]),
+    standing:,
   )
 }
 

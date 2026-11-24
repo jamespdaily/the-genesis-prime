@@ -34,8 +34,9 @@ import gleam/set.{type Set}
 /// - The loadouts: each class and faction's Novice weapon, abilities and gear
 ///   properties, whose missing rows fail the load (genesis_prime/game/loadout).
 /// - The spell plans: the tree of casts each class's level-1 ability starts, whose
-///   missing rows, unread costs and cycles fail the load, and that of each later ability
-///   of a class that the server can plan (genesis_prime/game/spell_plan).
+///   missing rows, unread costs and cycles fail the load, that of each later ability
+///   of a class that the server can plan, and that of each equip spell a worn item puts on
+///   its wearer (genesis_prime/game/spell_plan).
 /// - Spell Surge's spell, GameFormula 913's dataint0, whose missing row fails the load
 ///   (genesis_prime/game/spell_surge).
 /// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),

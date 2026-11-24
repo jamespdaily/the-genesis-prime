@@ -14,7 +14,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/spell_plan.{type Spell, LandsHit}
 import genesis_prime/game/unit_properties
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step.{ConnectionId, LogWarning}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -204,4 +204,74 @@ pub fn ending_a_standing_spell_that_holds_stealth_writes_the_stealth_change_and_
     )
     == 1
     as "and the event of leaving stealth is recorded for the procs that wait for it"
+}
+
+pub fn a_standing_spell_the_plans_left_out_logs_one_warning_per_spell_for_the_stay_in_the_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, effects) =
+    cast.standing_unbuilt(cast: cast_state.new(), spell4_ids: [
+      first,
+      second,
+      first,
+    ])
+  assert effects
+    == [
+      cast_state.Log(
+        level: LogWarning,
+        text: "the standing spell with Spell4 250101 is in no plan, so it is not started",
+      ),
+      cast_state.Log(
+        level: LogWarning,
+        text: "the standing spell with Spell4 250102 is in no plan, so it is not started",
+      ),
+    ]
+    as "one warning for each spell, in the order given, though the list names one twice"
+  let #(again, effects) =
+    cast.standing_unbuilt(cast: state, spell4_ids: [second, first])
+  assert effects == [] as "a second call for the same spells logs nothing"
+  assert again == state
+  let #(_, effects) =
+    cast.standing_unbuilt(cast: cast_state.new(), spell4_ids: [first])
+  assert list.length(effects) == 1
+    as "a new join builds a new cast state, which logs the spell again"
+  let #(_, effects) = cast.standing_unbuilt(cast: state, spell4_ids: [third])
+  assert list.length(effects) == 1
+    as "a spell not logged yet is logged beside those that were"
+}
+
+pub fn a_log_asked_for_under_a_key_is_written_once_per_state_and_another_key_writes_beside_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let log = fn(text) { fn() { cast_state.Log(level: LogWarning, text:) } }
+  let #(state, effects) =
+    cast_state.logged_once(
+      cast: cast_state.new(),
+      key: cast_state.UnbuiltSpell(spell4_id: first),
+      log: log("one"),
+    )
+  assert effects == [cast_state.Log(level: LogWarning, text: "one")]
+    as "the first ask for a key writes its log"
+  let #(again, effects) =
+    cast_state.logged_once(
+      cast: state,
+      key: cast_state.UnbuiltSpell(spell4_id: first),
+      log: log("two"),
+    )
+  assert effects == [] as "the same key asked again writes nothing"
+  assert again == state as "and leaves the state as it was"
+  let #(_, effects) =
+    cast_state.logged_once(
+      cast: state,
+      key: cast_state.UnbuiltStandingSpell(spell4_id: first),
+      log: log("three"),
+    )
+  assert effects == [cast_state.Log(level: LogWarning, text: "three")]
+    as "a key of another case on the same spell is its own log"
+  let #(_, effects) =
+    cast_state.logged_once(
+      cast: cast_state.new(),
+      key: cast_state.UnbuiltSpell(spell4_id: first),
+      log: log("four"),
+    )
+  assert effects == [cast_state.Log(level: LogWarning, text: "four")]
+    as "a new state, the next join's, writes the key again"
 }

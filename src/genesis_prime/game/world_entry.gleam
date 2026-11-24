@@ -15,7 +15,7 @@
 //// Joined(unit record, loadout, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x169, 0x25E (a play only), 0x111 x 10 (x 11 with an
 ////                                                 innate), 0x1A0, 0x19D, 0x19F (with an innate), 0x6BC, 0x636, 0xF1, 0x61,
-////                                                 WatchMap(map, run), StartStanding (with an innate passive)
+////                                                 WatchMap(map, run), StartStanding
 ////                                                 (a player saved dead: the ghost's 0x262 and
 ////                                                 0x1B3 before 0x636, which names the ghost)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
@@ -96,10 +96,11 @@
 ////   carries its class resource's slot at its start and the slot's maximum
 ////   (`player_unit.with_resource`, genesis_prime/game/class_resource), which the
 ////   player then holds.
-//// - **The innate's passive** is never cast by the client, so the entry's last effect
-////   starts it (`StartStanding`, genesis_prime/game/cast `standing_changed`), after the
-////   entry's writes and the watch on the map, at each join: a play and the Holocrypt's
-////   join (`Class.spell4IdInnateAbilityPassive00`).
+//// - **The innate's passive and the worn items' equip spells** are never cast by the client,
+////   so the entry's last effect starts them (`StartStanding`, genesis_prime/game/cast
+////   `standing_changed`), after the entry's writes and the watch on the map, at each join
+////   and for every class: a play and the Holocrypt's join
+////   (`Class.spell4IdInnateAbilityPassive00`, `ItemSpecial.spell4IdOnEquip`).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
 ////   floats, which neither entry path reads (opcode.0xad.last_floats). The
 ////   position, here and in 0x262, is bounded to the box the client bounds a
@@ -155,7 +156,6 @@ import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/held_changes
-import genesis_prime/game/innate
 import genesis_prime/game/inventory
 import genesis_prime/game/item_property
 import genesis_prime/game/limited_action_set
@@ -230,8 +230,9 @@ pub type Effect {
   /// health timer, and one that enters dead is written its ghost, the window and
   /// control of the ghost.
   Life(effects: List(player_life.Effect))
-  /// Start the spells that stand on the player: the innate passive the loadout holds, if any
-  /// (genesis_prime/game/connection/casting `standing_wanted`).
+  /// Start the spells that stand on the player: the innate passive the loadout holds, if any,
+  /// and the equip spells of the worn items (genesis_prime/game/connection/casting
+  /// `standing_wanted`, `worn_wanted`). Sent at every join, for every class.
   StartStanding
   /// A line for the log at the warning level.
   Warn(text: String)
@@ -1164,7 +1165,7 @@ pub fn joined(
                 entered_world(),
                 WatchMap(map:, incarnation:),
               ],
-              standing_started(loadout:),
+              standing_started(),
               unread_warned(gear: worn),
             ]),
             told: told_after(entry:),
@@ -1682,12 +1683,10 @@ fn loadout_sent(
   ])
 }
 
-/// The start of the standing spells, when the class's innate has a passive.
-fn standing_started(loadout loadout: Loadout) -> List(Effect) {
-  case loadout.innate {
-    Some(innate.Innate(passive: Some(_), ..)) -> [StartStanding]
-    Some(innate.Innate(passive: None, ..)) | None -> []
-  }
+/// The start of the standing spells, at every join: the worn items are a source for every
+/// class, and a class with no passive and no worn spell starts nothing.
+fn standing_started() -> List(Effect) {
+  [StartStanding]
 }
 
 /// 0x19F with index 0, the innate slot the loadout holds (`opcode.0x19f`).

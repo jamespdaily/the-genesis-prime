@@ -19,9 +19,12 @@
 import cast_support
 import client_tables
 import fixture_tables
+import game_connection_support
+import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
+import genesis_prime/game/spell_plan
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
@@ -29,6 +32,8 @@ import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/step.{LogWarning}
+import genesis_prime/store.{type HeldItem, HeldItem}
+import genesis_prime/table/id.{ClassId, Item2Id}
 
 import gleam/bit_array
 import gleam/dict
@@ -214,7 +219,7 @@ pub fn the_action_set_keeps_the_three_bar_abilities_and_0x19f_names_slot_0_test(
   })
 }
 
-pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
+pub fn the_entry_always_asks_for_the_standing_spells_and_the_wanted_list_holds_the_classs_passive_if_any_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   list.each(classes(), fn(class) {
@@ -240,21 +245,13 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
           | world_entry.Warn(..) -> Error(Nil)
         }
       })
-    assert started
-      == case passive {
-        Some(_) -> [Nil]
-        None -> []
-      }
+    assert started == [Nil]
       as {
-        "Class.spell4IdInnateAbilityPassive00: class "
+        "the entry of class "
         <> int.to_string(class_id)
-        <> " starts its slot-0 passive, if any"
+        <> " always asks for the standing spells, since the worn items are a source for every class, whether or not it has a slot-0 passive"
       }
-    assert list.last(effects)
-      == case passive {
-        Some(_) -> Ok(world_entry.StartStanding)
-        None -> list.last(effects)
-      }
+    assert list.last(effects) == Ok(world_entry.StartStanding)
       as "the standing spells' start is the last thing the entry asks, once its writes and the map's watch are out"
     let #(wanted, warnings) =
       casting.standing_wanted(entered:, plans: cast_support.real_plans())
@@ -268,7 +265,7 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
   })
 }
 
-pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_starts_no_passive_test() -> Nil {
+pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_wants_no_standing_spell_test() -> Nil {
   use <- owned_test.run(60_000)
   // No client Class row lacks an innate (spell4IdInnateAbilityActive00 is not 0
   // in all six), so the Engineer's row is edited to have none: the test's subject.
@@ -297,17 +294,21 @@ pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_sta
       assert !list.contains(cast_support.ids(frames:), 0x019F)
         as "0x19f is sent only with an innate to point the button at"
       assert entered.loadout.innate == None
-      assert list.all(effects, fn(effect) {
-        case effect {
-          world_entry.StartStanding -> False
-          world_entry.Send(..)
-          | world_entry.AskStore(..)
-          | world_entry.AskMap(..)
-          | world_entry.WatchMap(..)
-          | world_entry.Life(..)
-          | world_entry.Warn(..) -> True
-        }
-      })
+      assert list.last(effects) == Ok(world_entry.StartStanding)
+        as "the entry asks for the standing spells whatever the class holds, since a worn item is a source for every class"
+      let #(wanted, warnings) =
+        casting.standing_wanted(entered:, plans: spell_plan.plans(tables))
+      assert wanted == [] && warnings == []
+        as "a class with no passive and no worn spell wants nothing"
+      let #(state, written) =
+        cast.standing_changed(
+          cast: entered.cast,
+          caster: cast_support.caster(),
+          wanted:,
+          now: cast_support.at(ms: 1000),
+        )
+      assert state == entered.cast && written == []
+        as "an empty list against an empty set changes and writes nothing"
     },
   )
 }
@@ -412,5 +413,129 @@ pub fn the_entry_starts_the_passive_of_classes_1_2_and_5_with_the_frames_the_sin
         <> int.to_string(class_id)
         <> ": the passive's frames are the bytes the single passive cast wrote"
       }
+  })
+}
+
+/// Item2 91747, the Chua Tighty-Whitey Deflector (Item2Type 53, ItemSlot 43, worn in slot 15, no level
+/// requirement), whose ItemSpecial 9402 names the equip spell 82325.
+const deflector = 91_747
+
+const deflector_spell = 82_325
+
+/// The character's Novice set with the deflector worn in its shield's slot 15 (ItemSlot 43,
+/// ArmorShields, equippedSlotFlags 32768).
+fn wearing_the_deflector(
+  character character: store.Character,
+) -> List(HeldItem) {
+  list.append(
+    list.filter(world_entry_support.novice_items(character:), fn(item) {
+      item.bag_index != 15
+    }),
+    [
+      HeldItem(
+        item_guid: 50,
+        item2_id: Item2Id(fixture_tables.root("Item2", deflector)),
+        location: 0,
+        bag_index: 15,
+        stack_count: 1,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
+      ),
+    ],
+  )
+}
+
+/// The step of the connection entering the world as this character wearing the deflector,
+/// with the health its last save kept.
+fn entered_wearing_the_deflector(
+  character character: store.Character,
+  saved_health saved_health: option.Option(Int),
+) -> step.ConnectionStep(Request) {
+  let #(state, taken) =
+    game_connection_support.joining_holding_items(
+      in_character_select: game_connection_support.in_select(),
+      character:,
+      saved_health:,
+      saved_experience: None,
+      quests: [],
+      items: wearing_the_deflector(character:),
+    )
+  game_connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromMap(game_connection_support.map_answer(taken))),
+  ).1
+}
+
+pub fn the_entry_starts_the_equip_spell_of_each_worn_item_after_the_passive_and_a_player_saved_dead_starts_it_too_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A row: its name, the class, the health its last save kept, the Spell4 of its slot-0
+  // passive (`Class.spell4IdInnateAbilityPassive00`: the Engineer's is 45000; Classes 3, 4 and
+  // 7 hold none).
+  [
+    #("an Engineer saved alive", 2, None, Some(45_000)),
+    #(
+      "an Engineer saved dead: a standing spell starts at each join, alive or dead",
+      2,
+      Some(0),
+      Some(45_000),
+    ),
+    #("a class 3 with no passive", 3, None, None),
+    #("a class 4 with no passive", 4, None, None),
+    #("a class 7 with no passive", 7, None, None),
+  ]
+  |> list.each(fn(row) {
+    let #(name, class_id, saved_health, passive) = row
+    let character =
+      store.Character(
+        ..game_connection_support.world_character(),
+        class_id: ClassId(class_id),
+      )
+    let started =
+      game_connection_support.started_spells(
+        frames: game_connection_support.written(entered_wearing_the_deflector(
+          character:,
+          saved_health:,
+        )),
+      )
+    case passive {
+      Some(passive) -> {
+        assert list.first(started) == Ok(passive)
+          as {
+            name <> ": the class's passive is the first cast the entry starts"
+          }
+        assert list.last(started) == Ok(deflector_spell)
+          as {
+            name
+            <> ": the equip spell of the worn item (ItemSpecial.spell4IdOnEquip) is started after the passive's"
+          }
+        assert list.count(started, fn(spell4_id) {
+            spell4_id == deflector_spell
+          })
+          == 1
+          as { name <> ": and once" }
+      }
+      None -> {
+        assert started == [deflector_spell]
+          as {
+            name
+            <> ": with no passive the worn item's spell is the entry's only cast: the entry always asks for the standing spells"
+          }
+      }
+    }
+    // The Holocrypt's join builds a new cast state, which starts the spells again.
+    let #(_, entered) =
+      world_entry_support.entry_holding(
+        tables: fixture_tables.shared(),
+        character:,
+        items: wearing_the_deflector(character:),
+      )
+    assert list.last(world_entry_support.rejoining_effects(entered:))
+      == Ok(world_entry.StartStanding)
+      as { name <> ": a rejoin asks for the standing spells again" }
   })
 }

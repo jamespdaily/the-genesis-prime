@@ -110,6 +110,7 @@ pub fn sale_answered(
   entered entered: world_entry.Entered,
   sale sale: vendor_sale.Sale,
   outcome outcome: Outcome(Answer),
+  standing standing: connection_inventory.Standing,
 ) -> client_connection.Handled(Session) {
   let handled =
     vendor_trade.answered(
@@ -147,6 +148,7 @@ pub fn sale_answered(
           holder:,
           entered:,
           moved: effects,
+          standing:,
         )
       Continue(..) | Asking(..) | Done(..) -> handled
     },
