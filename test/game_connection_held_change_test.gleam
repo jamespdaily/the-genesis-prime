@@ -23,6 +23,7 @@
 //// - The viewers are connections 2 and 3, as `game_connection_landing_test` has them; the
 ////   player's unit is 5 and the unit of viewer `n` is 100 + `n`.
 
+import cast_support
 import connection_rule_support as rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
@@ -39,11 +40,17 @@ import genesis_prime/game/held_changes.{
   PlayerChangeEnds, PlayerChangeStarts,
 }
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/spell_finished
-import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_create_cast.{
+  type UnitCreateCast, UnitCreateCast,
+}
+import genesis_prime/message/unit_create_player.{
+  type UnitCreatePlayer, UnitCreatePlayer,
+}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
@@ -53,8 +60,11 @@ import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, OwnEffect,
 }
-import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{
+  type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+}
 import genesis_prime/world_map/map
+import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -123,7 +133,25 @@ fn maximum_entry(value value: Float) -> UnitProperty {
 
 /// What a held change is: the caster's connection number, the source and the change.
 type Hold {
-  Hold(caster: Int, source: Source, change: Change, sight: Sight)
+  Hold(
+    caster: Int,
+    source: Source,
+    change: Change,
+    sight: Sight,
+    spell4_id: Spell4Id,
+    effect: HeldEffect,
+  )
+}
+
+/// The spell a hold is told for unless a test states it: Phantasmal Armor tier 9.
+fn armor_spell() -> Spell4Id {
+  Spell4Id(54_806)
+}
+
+/// The effect of `source` as a go at the monotonic time 1000 tells it, 10 000 ms long,
+/// unless a test states it.
+fn effect_of(source source: Source) -> HeldEffect {
+  HeldEffect(effect_id: source.effect_id, starts_ms: 1000, ends: EndsAt(11_000))
 }
 
 fn held(
@@ -131,7 +159,14 @@ fn held(
   source source: Source,
   change change: Change,
 ) -> Hold {
-  Hold(caster:, source:, change:, sight: EndsWhenUnseen)
+  Hold(
+    caster:,
+    source:,
+    change:,
+    sight: EndsWhenUnseen,
+    spell4_id: armor_spell(),
+    effect: effect_of(source:),
+  )
 }
 
 fn starts(hold hold: Hold) -> PlayerChange {
@@ -141,6 +176,8 @@ fn starts(hold hold: Hold) -> PlayerChange {
     source: hold.source,
     change: hold.change,
     sight: hold.sight,
+    spell4_id: hold.spell4_id,
+    effect: hold.effect,
   )
 }
 
@@ -360,6 +397,8 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       source: armor_source(cast_id: 100),
       change: armor(),
       sight: EndsWhenUnseen,
+      spell4_id: armor_spell(),
+      effect: effect_of(source: armor_source(cast_id: 100)),
     )
   }
   let pooled = fn(caster, from_stay) {
@@ -369,6 +408,8 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       source: pool_source(cast_id: 101),
       change: pool(amount: 300),
       sight: EndsWhenUnseen,
+      spell4_id: armor_spell(),
+      effect: effect_of(source: pool_source(cast_id: 101)),
     )
   }
   let seen_by_two_and_three =
@@ -809,6 +850,8 @@ pub fn the_allys_ledger_clears_every_caster_at_its_death_test() -> Nil {
             unit_id: support.viewer_unit_id(hold.caster),
             source: hold.source,
             sight: hold.sight,
+            spell4_id: hold.spell4_id,
+            effect: hold.effect,
           ).0
         }),
       )
@@ -920,11 +963,16 @@ fn showing_casts(
 /// with the sight `sight`.
 fn armor_and_pool(cast_id cast_id: Int, sight sight: Sight) -> List(Hold) {
   [
-    Hold(caster: 3, source: armor_source(cast_id:), change: armor(), sight:),
     Hold(
-      caster: 3,
-      source: pool_source(cast_id:),
-      change: pool(amount: 300),
+      ..held(caster: 3, source: armor_source(cast_id:), change: armor()),
+      sight:,
+    ),
+    Hold(
+      ..held(
+        caster: 3,
+        source: pool_source(cast_id:),
+        change: pool(amount: 300),
+      ),
       sight:,
     ),
   ]
@@ -1251,4 +1299,147 @@ pub fn the_death_of_an_ally_whose_kept_change_lost_its_caster_ends_its_sources_i
     |> list.take(2)
     == [Wrote(0x093A), Finished(100)]
     as "the armor's end is written, then the cast's 0x7fe after the last source"
+}
+
+// ---- the create the ally sends a viewer that comes into sight ----
+
+/// Gamma Rays (Spell4 29874: castTime 1250 ms, a Normal cast with a cast bar), the Medic's
+/// level-1 ability, by Spell4Base.
+const gamma_rays_base = 16_322
+
+/// The Interrupt Armor of caster 3's cast `cast_id`, as the go of Spell4 76766 at the
+/// monotonic time 1000 tells it: row 199192, 5000 ms from the go.
+fn interrupt_armor_hold(cast_id cast_id: Int) -> Hold {
+  Hold(
+    ..held(
+      caster: 3,
+      source: interrupt_armor_source(cast_id:),
+      change: interrupt_armor(),
+    ),
+    spell4_id: Spell4Id(76_766),
+    effect: HeldEffect(
+      effect_id: Spell4EffectsId(199_192),
+      starts_ms: 1000,
+      ends: EndsAt(ms: 6000),
+    ),
+  )
+}
+
+/// The cast of Interrupt Armor caster 3's connection started, as the create of a player that
+/// holds it lists it at the monotonic time `at_ms`: caster 3's unit, the player as primary and
+/// only target, state 0 (a landed change is told at the go), the row at delay 0 with the time
+/// left of its 6000 ms end (`opcode.0x262.casts`, `opcode.0x7f4.effect_delay`,
+/// `opcode.0x7f4.effect_time`).
+fn interrupt_armor_entry(
+  cast_id cast_id: Int,
+  at_ms at_ms: Int,
+) -> UnitCreateCast {
+  UnitCreateCast(
+    caster_unit_id: support.viewer_unit_id(3),
+    primary_target_unit_id: support.own_unit_id,
+    cast_id:,
+    spell4_id: 76_766,
+    started: 0,
+    targets: [
+      cast_support.listed_target_info(
+        unit_id: support.own_unit_id,
+        index: 0,
+        count: 1,
+        effects: [
+          cast_support.listed_effect_info(
+            effect_id: 199_192,
+            instance_id: 1,
+            delay_ms: 0,
+            lifetime_ms: 6000 - at_ms,
+          ),
+        ],
+      ),
+    ],
+    initial_positions: [],
+    telegraph_positions: [],
+  )
+}
+
+/// The entries of a create that name caster 3's unit as their caster: what the create lists
+/// beside the player's own casts and passive.
+fn held_from_caster_3(
+  created created: UnitCreatePlayer,
+) -> List(UnitCreateCast) {
+  list.filter(created.tail.casts, fn(cast) {
+    cast.caster_unit_id == support.viewer_unit_id(3)
+  })
+}
+
+pub fn a_player_that_comes_into_sight_lists_the_casts_other_players_hold_on_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The ally holds the Interrupt Armor of caster 3's cast 100: the viewer that arrives at
+  // 2500 ms is sent a create that lists the cast, whether or not it sees the caster.
+  let created =
+    support.created_at(
+      state: holding(holds: [interrupt_armor_hold(cast_id: 100)]),
+      viewer: 4,
+      ms: 2500,
+    )
+  assert held_from_caster_3(created:)
+    == [interrupt_armor_entry(cast_id: 100, at_ms: 2500)]
+    as "the create lists the cast another player's connection holds on the ally"
+  assert created.tail.cast_id == 0 as "no cast bar: the ally casts nothing"
+  // The ally's own cast and the held casts are one list in cast id order; the tail's cast id
+  // is the ally's own cast, never a held one.
+  let #(state, _, bag_index) =
+    support.entered_with_spell_trees(class_id: 4, ability: gamma_rays_base)
+  let #(state, steps) =
+    support.pressed_until(
+      state: support.watched_by(state:, viewers: [2, 3]),
+      bag_index:,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 1000,
+    )
+  let assert [own_cast, ..] =
+    list.flat_map(steps, fn(taken) {
+      support.cast_starts(support.news_told(taken:, viewer: 2))
+    })
+    as "the watcher is told the Gamma Rays cast started"
+  let below = own_cast.cast_id - 1000
+  let above = own_cast.cast_id + 1000
+  let #(state, _) =
+    feed_all(
+      state:,
+      events: list.map(
+        [
+          interrupt_armor_hold(cast_id: above),
+          interrupt_armor_hold(cast_id: below),
+        ],
+        fn(hold) { tell(starts(hold:)) },
+      ),
+    )
+  let created = support.created_at(state:, viewer: 4, ms: 1000)
+  assert list.map(created.tail.casts, fn(cast) { cast.cast_id })
+    == [below, own_cast.cast_id, above]
+    as "the ally's own cast stands between the held casts, in cast id order"
+  assert held_from_caster_3(created:)
+    == [
+      interrupt_armor_entry(cast_id: below, at_ms: 1000),
+      interrupt_armor_entry(cast_id: above, at_ms: 1000),
+    ]
+    as "each held cast is listed as the first is"
+  assert created.tail.cast_id == own_cast.cast_id
+    as "the tail's cast id is the ally's own cast, never a held one"
+  // The list's count is 9 bits: 512 casts held list 511, the lowest cast ids first.
+  let casts =
+    int.range(from: 1, to: 513, with: [], run: fn(acc, i) { [i, ..acc] })
+    |> list.reverse
+  let created =
+    support.created_at(
+      state: holding(
+        holds: list.map(casts, fn(cast_id) { interrupt_armor_hold(cast_id:) }),
+      ),
+      viewer: 4,
+      ms: 2500,
+    )
+  assert list.map(created.tail.casts, fn(cast) { cast.cast_id })
+    == int.range(from: 1, to: 512, with: [], run: fn(acc, i) { [i, ..acc] })
+    |> list.reverse
+    as "the list is cut at 511 entries (opcode.0x262.casts: a 9-bit count)"
 }

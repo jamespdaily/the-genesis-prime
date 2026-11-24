@@ -23,8 +23,10 @@
 
 import attacker_support
 import cast_support as support
+import client_tables
 import genesis_prime/game/activate
 import genesis_prime/game/cast
+import genesis_prime/game/cast/gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -38,20 +40,26 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/message/spell_started
 import genesis_prime/step.{type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/spell4
+import genesis_prime/table/spell_level
+import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import gleam/string
 import map_support
 import owned_test
 import player_state_support
 import prerequisite_support
 import spell_tables
+import unitest
 
 const ally = 40
 
@@ -212,23 +220,42 @@ fn source_of(cast_id cast_id: Int, effect_id effect_id: Int) -> Source {
   support.source_of(cast_id:, effect_id:)
 }
 
-/// The absorb pool of row 130470 told for the cast: 139 of every damage type.
+/// The effect of a row of Phantasmal Armor tier 9 as the go at `go_ms` tells it: 10 000 ms
+/// from the go, no delay (rows 130470 and 130474, `table_rows -- Spell4Effects 130470
+/// 130474`).
+fn held_effect_of_armor(
+  effect_id effect_id: Int,
+  go_ms go_ms: Int,
+) -> unit_casts.HeldEffect {
+  unit_casts.HeldEffect(
+    effect_id: Spell4EffectsId(effect_id),
+    starts_ms: go_ms,
+    ends: unit_casts.EndsAt(ms: go_ms + 10_000),
+  )
+}
+
+/// The absorb pool of row 130470 told for the cast at the go `go_ms`: 139 of every damage
+/// type, for the spell Phantasmal Armor tier 9, Spell4 54806.
 fn pool_starts(
   cast_id cast_id: Int,
   sight sight: held_changes.Sight,
+  go_ms go_ms: Int,
 ) -> Effect {
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: absorb_id),
     change: held_changes.Absorb(amount: 139, mask: 7),
     sight:,
+    spell4_id: Spell4Id(54_806),
+    effect: held_effect_of_armor(effect_id: absorb_id, go_ms:),
   )
 }
 
-/// The modifier of row 130474 told for the cast: property 161 by 0.86f.
+/// The modifier of row 130474 told for the cast at the go `go_ms`: property 161 by 0.86f.
 fn armor_starts(
   cast_id cast_id: Int,
   sight sight: held_changes.Sight,
+  go_ms go_ms: Int,
 ) -> Effect {
   let assert spell_plan.StruckChange(modifier:, ..) =
     support.armor_modifier_row(
@@ -241,6 +268,8 @@ fn armor_starts(
     source: source_of(cast_id:, effect_id: modifier_id),
     change: held_changes.Property(modifier:),
     sight:,
+    spell4_id: Spell4Id(54_806),
+    effect: held_effect_of_armor(effect_id: modifier_id, go_ms:),
   )
 }
 
@@ -278,11 +307,13 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
   let ends_with_sight = held_changes.EndsWhenUnseen
   let both = fn(id) {
     [
-      pool_starts(cast_id: id, sight: kept),
-      armor_starts(cast_id: id, sight: kept),
+      pool_starts(cast_id: id, sight: kept, go_ms: 1000),
+      armor_starts(cast_id: id, sight: kept, go_ms: 1000),
     ]
   }
-  let modifier_only = fn(id) { [armor_starts(cast_id: id, sight: kept)] }
+  let modifier_only = fn(id) {
+    [armor_starts(cast_id: id, sight: kept, go_ms: 1000)]
+  }
   let gated = fn(condition) {
     armor_with(absorb: fn(row) {
       spell_plan.PropertyModifier(..row, condition:)
@@ -318,8 +349,8 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
       listed: [absorb_id, modifier_id],
       told: fn(id) {
         [
-          pool_starts(cast_id: id, sight: ends_with_sight),
-          armor_starts(cast_id: id, sight: ends_with_sight),
+          pool_starts(cast_id: id, sight: ends_with_sight, go_ms: 1000),
+          armor_starts(cast_id: id, sight: ends_with_sight, go_ms: 1000),
         ]
       },
       debug: [],
@@ -480,7 +511,7 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
       }
     })
     == [
-      #(2000, [armor_starts(cast_id: id, sight: kept)]),
+      #(2000, [armor_starts(cast_id: id, sight: kept, go_ms: 2000)]),
       #(12_000, [
         cast_state.OtherPlayerChangeEnds(
           address: address(),
@@ -489,6 +520,104 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
       ]),
     ]
     as "the second go tells the modifier again, and the one end is told 10 000 ms after it, none at the first go's end"
+  // The tier a player presses names its own Spell4 in the tell: Phantasmal Armor tier 1,
+  // Spell4 32823, tells its absorb 62024 (10 000 ms, no delay, `table_rows -- Spell4Effects
+  // spellId=32823`) for that spell, from the go's time to the go plus 10 000.
+  let tier_one = as_base_3(spell4_id: 32_823)
+  let #(_, pressed, went) =
+    pressed_and_gone_in(
+      plans: plans_of(spell: tier_one),
+      bag: bag_of_base_3,
+      state: cast_state.new(),
+      at_press: esper_seeing(players: [ally]),
+      at_go: esper_seeing(players: [ally]),
+      rolls: [],
+      at: 1000,
+    )
+  let tier_one_id = support.pressed_id(effects: pressed)
+  let assert [tier_one_told] =
+    list.filter(told(effects: went), fn(change) {
+      case change {
+        cast_state.OtherPlayerChangeStarts(source:, ..) ->
+          source.cast_id == tier_one_id
+        _ -> False
+      }
+    })
+    as "tier 1 tells its one absorb"
+  let assert cast_state.OtherPlayerChangeStarts(
+    source:,
+    spell4_id:,
+    effect:,
+    ..,
+  ) = tier_one_told
+  assert source.effect_id == Spell4EffectsId(62_024)
+  assert spell4_id == Spell4Id(32_823)
+    as "the tell names the pressed tier's Spell4, not Phantasmal Armor tier 9's"
+  assert effect
+    == unit_casts.HeldEffect(
+      effect_id: Spell4EffectsId(62_024),
+      starts_ms: 1000,
+      ends: unit_casts.EndsAt(ms: 11_000),
+    )
+    as "the effect starts at the go and ends 10 000 ms after it"
+  // What the ledger of the ally lists from those tells is what the caster's own node on the
+  // ally lists (`cast_state.views`): the same effects with the same delay and time left at
+  // the go and later, so the caster's create and the ally's create cannot disagree.
+  let #(state, pressed, went) =
+    pressed_and_gone(
+      spell: support.armor_spell(rows: support.armor_rows()),
+      state: cast_state.new(),
+      at_press: esper_seeing(players: [ally]),
+      at_go: esper_seeing(players: [ally]),
+      rolls: [],
+      at: 1000,
+    )
+  let id = support.pressed_id(effects: pressed)
+  let ledger =
+    list.fold(told(effects: went), held_changes.new(), fn(held, change) {
+      case change {
+        cast_state.OtherPlayerChangeStarts(
+          source:,
+          sight:,
+          spell4_id:,
+          effect:,
+          ..,
+        ) ->
+          held_changes.started(
+            held:,
+            by: ConnectionId(1),
+            unit_id: 7,
+            source:,
+            sight:,
+            spell4_id:,
+            effect:,
+          ).0
+        cast_state.OtherPlayerChangeEnds(..) -> held
+        _ -> held
+      }
+    })
+  let assert [from_ledger] =
+    held_changes.cast_views(held: ledger, holder_unit_id: ally, now_ms: 1000)
+    as "the ledger lists the one cast"
+  let assert [from_caster] =
+    list.filter(cast_state.views(cast: state, caster_unit_id: 7), fn(view) {
+      view.cast_id == id
+    })
+    as "the caster lists the one cast"
+  let on_ally =
+    unit_casts.CastView(
+      ..from_caster,
+      targets: list.filter(from_caster.targets, fn(target) {
+        target.unit_id == ally
+      }),
+    )
+  assert from_ledger == on_ally
+    as "the ledger's view of the cast is the caster's view of its node on the ally"
+  list.each([1000, 4000, 10_999], fn(now_ms) {
+    assert unit_casts.entry_of(view: from_ledger, now_ms:)
+      == unit_casts.entry_of(view: on_ally, now_ms:)
+      as "and so is the entry at every clock"
+  })
 }
 
 /// The timers waiting for the end of a change on a player, in the order they started.
@@ -758,8 +887,16 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
           == list.flatten([
             ends_of(cast_id: first),
             [
-              pool_starts(cast_id: second, sight: held_changes.KeptWhenUnseen),
-              armor_starts(cast_id: second, sight: held_changes.KeptWhenUnseen),
+              pool_starts(
+                cast_id: second,
+                sight: held_changes.KeptWhenUnseen,
+                go_ms: 1100,
+              ),
+              armor_starts(
+                cast_id: second,
+                sight: held_changes.KeptWhenUnseen,
+                go_ms: 1100,
+              ),
             ],
           ])
           as "the first cast's ends come before the second cast's starts"
@@ -921,8 +1058,8 @@ pub fn a_re_press_of_the_same_caster_before_the_kept_buff_ends_replaces_the_held
     == list.flatten([
       ends_of(cast_id: first),
       [
-        pool_starts(cast_id: second, sight: kept),
-        armor_starts(cast_id: second, sight: kept),
+        pool_starts(cast_id: second, sight: kept, go_ms: 3000),
+        armor_starts(cast_id: second, sight: kept, go_ms: 3000),
       ],
     ])
     as "the kept changes of the first cast end before the second cast's start: the stack group 387 holds one cast per caster on a unit, so the ally holds one pool and one modifier, not two"
@@ -1277,6 +1414,32 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
   ))
     as "the ally's connection reads the child's 0x7ff"
   assert state.thresholds == dict.new() as "a child touches no threshold"
+  let child_id = support.started_cast_id(effects: went, spell4_id: 76_766)
+  let assert [child_told] =
+    list.filter(told(effects: went), fn(change) {
+      case change {
+        cast_state.OtherPlayerChangeStarts(source:, ..) ->
+          source.cast_id == child_id
+        _ -> False
+      }
+    })
+    as "the child tells its one row"
+  let assert cast_state.OtherPlayerChangeStarts(
+    source:,
+    spell4_id:,
+    effect:,
+    ..,
+  ) = child_told
+  assert source.effect_id == Spell4EffectsId(199_192)
+  assert spell4_id == Spell4Id(76_766)
+    as "the tell names the child's own Spell4, whose cast the viewer holds, not the pressed tier's"
+  assert effect
+    == unit_casts.HeldEffect(
+      effect_id: Spell4EffectsId(199_192),
+      starts_ms: 1000,
+      ends: unit_casts.EndsAt(ms: 6000),
+    )
+    as "Interrupt Armor row 199192 lasts 5000 ms from the child's go"
 }
 
 /// One child a parent started by its go, and what its rows do: where the press was
@@ -1404,7 +1567,13 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
     let own = fn(source: Source) { source.cast_id == child_id }
     assert list.filter_map(told(effects: went), fn(change) {
         case change {
-          cast_state.OtherPlayerChangeStarts(address:, source:, change:, sight:) ->
+          cast_state.OtherPlayerChangeStarts(
+            address:,
+            source:,
+            change:,
+            sight:,
+            ..,
+          ) ->
             case own(source) {
               True ->
                 Ok(#(address.unit_id, source.effect_id.value, change, sight))
@@ -1674,8 +1843,16 @@ pub fn at_a_stack_cap_of_two_a_kept_cast_and_a_cast_with_a_node_count_together_t
     == list.flatten([
       ends_of(cast_id: first),
       [
-        pool_starts(cast_id: third, sight: held_changes.KeptWhenUnseen),
-        armor_starts(cast_id: third, sight: held_changes.KeptWhenUnseen),
+        pool_starts(
+          cast_id: third,
+          sight: held_changes.KeptWhenUnseen,
+          go_ms: 5000,
+        ),
+        armor_starts(
+          cast_id: third,
+          sight: held_changes.KeptWhenUnseen,
+          go_ms: 5000,
+        ),
       ],
     ])
     as "the third press pushes off the oldest cast on the ally, the kept one, and only that one: the second keeps its node and its changes"
@@ -2289,5 +2466,161 @@ pub fn a_periodic_proxy_aimed_at_the_primary_target_ticks_on_the_player_the_pres
   list.each(courses, fn(course) {
     let run = run_of(course:)
     course.check(run)
+  })
+}
+
+// ---- the rows a node lists on the player a press names ----
+
+/// The spells a press at a player starts, as the plan holds them: the spell itself, its
+/// stages and each child a Proxy aimed at the primary target starts on that player, their
+/// children the same way.
+fn started_at_a_player(spell spell: Spell) -> List(Spell) {
+  let stages = list.map(spell.stages, fn(stage) { stage.spell })
+  let children =
+    list.filter_map(spell.effects, fn(planned) {
+      case planned.kind {
+        spell_plan.ProxyEffect(proxy: spell_plan.Proxy(
+          target: spell_plan.OnPrimaryTarget,
+          spell: child,
+          ..,
+        )) -> Ok(child)
+        _ -> Error(Nil)
+      }
+    })
+  [spell, ..list.flat_map(list.append(stages, children), started_at_a_player)]
+}
+
+/// What a go lists on the player the press named for the rows of `spell`: the effect ids of
+/// the rows it lists, the ones of those it tells that player as a change
+/// (`gate.modifier_applies`: a modifier, an absorb or an Interrupt Armor row) and the ones
+/// that would land behind a prerequisite the plan decides at the go.
+type OnThePlayer {
+  OnThePlayer(listed: List(Int), told: List(Int), gated: List(Int))
+}
+
+fn listed_and_told_on_the_player(spell spell: Spell) -> OnThePlayer {
+  let caster = esper_seeing(players: [ally])
+  let rows =
+    list.filter_map(spell.effects, fn(planned) {
+      let id = planned.effect_id.value
+      case planned.kind {
+        spell_plan.ModifierEffect(modifier:) ->
+          case
+            spell_plan.reaches_primary_target(aim: spell_plan.modifier_aim(
+              modifier:,
+            ))
+          {
+            True ->
+              Ok(#(
+                id,
+                gate.modifier_applies(
+                  row: modifier,
+                  unit_id: ally,
+                  caster:,
+                  struck: [],
+                  press_target: Some(ally),
+                ),
+                modifier.condition == Always,
+              ))
+            False -> Error(Nil)
+          }
+        spell_plan.LastingEffect(lasting: spell_plan.Lasting(aim:, ..)) ->
+          case spell_plan.reaches_primary_target(aim:) {
+            True -> Ok(#(id, False, True))
+            False -> Error(Nil)
+          }
+        _ -> Error(Nil)
+      }
+    })
+  let ids = fn(wanted: fn(#(Int, Bool, Bool)) -> Bool) {
+    list.filter(rows, wanted) |> list.map(fn(row) { row.0 })
+  }
+  OnThePlayer(
+    listed: ids(fn(_) { True }),
+    told: ids(fn(row) { row.1 && row.2 }),
+    gated: ids(fn(row) { row.1 && !row.2 }),
+  )
+}
+
+pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledger_is_told_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  // An ability is the Spell4Base of a SpellLevel row's spell; each tier of it is a spell of
+  // that base.
+  let bases =
+    spell_level.all(tables)
+    |> list.filter_map(fn(level) {
+      spell4.get(tables:, id: Spell4Id(level.spell4_id))
+    })
+    |> list.map(fn(spell) { spell.spell4_base_id_base_spell })
+    |> set.from_list
+  let tiers =
+    list.filter(spell4.all(tables), fn(spell) {
+      set.contains(bases, spell.spell4_base_id_base_spell)
+    })
+    |> list.map(fn(spell) { spell.id })
+  assert tiers != [] as "the client's tables hold the abilities' tiers"
+  // Per spell a press starts: the rows its node lists on the named player and the changes
+  // told. A spell that tells a change lists no other row on the player, so what the ledger
+  // lists of it is what the caster's node lists. The Fluff rows (Spell4 bases 26762, 35526,
+  // 63087, 19030's child 54912 and 47675's children) are listed on the player and told as
+  // no change: the stated gap, which the ledger does not list.
+  let reached =
+    list.flat_map(tiers, fn(spell4_id) {
+      case spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: []) {
+        Ok(spell) -> started_at_a_player(spell:)
+        Error(error) -> {
+          assert spell_plan.is_unbuilt(error:)
+            as "a tier the plan leaves out names an effect or rule the server does not build, never a fault of the data"
+          []
+        }
+      }
+    })
+    |> list.map(listed_and_told_on_the_player)
+  let told = list.flat_map(reached, fn(spell) { spell.told }) |> list.unique
+  assert list.sort(told, int.compare)
+    == list.sort(
+      [
+        // Phantasmal Armor's absorb of each of its nine tiers.
+        62_024,
+        123_652,
+        123_656,
+        123_660,
+        123_664,
+        123_668,
+        123_672,
+        123_676,
+        130_470,
+        // The modifier of tiers 5 to 9.
+        203_798,
+        203_799,
+        203_800,
+        203_801,
+        130_474,
+        // Interrupt Armor, started by every tier's Proxy, and Bolster tier 9's absorb.
+        199_192,
+        229_006,
+      ],
+      int.compare,
+    )
+    as "the changes a press at a player tells it are the 16 rows of Phantasmal Armor, its Interrupt Armor child and Bolster's absorb"
+  // Spell4Effects 216950 (Spell4 82438) would land a type 11 row on the player, behind the
+  // caster prerequisite 38543, which nothing the caster holds meets (no table starts Spell4
+  // 82431): the plan decides it at each go, so it is told no change here.
+  assert list.flat_map(reached, fn(spell) { spell.gated })
+    |> list.unique
+    == [216_950]
+    as "the one row that would land behind a prerequisite is Spell4 82438's"
+  list.each(reached, fn(spell) {
+    let changes = list.append(spell.told, spell.gated)
+    use <- bool.guard(when: changes == [], return: Nil)
+    assert list.all(spell.listed, fn(id) { list.contains(changes, id) })
+      as {
+        "a spell that tells a change lists no other row on the player: "
+        <> string.join(list.map(spell.listed, int.to_string), ", ")
+      }
   })
 }

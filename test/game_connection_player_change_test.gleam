@@ -23,10 +23,13 @@ import genesis_prime/game/held_changes.{
 }
 import genesis_prime/game/lasting
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
+import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Effect, ConnectionId, Now, OwnEffect}
-import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{
+  type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+}
 import gleam/dict
 import gleam/list
 import gleam/result
@@ -55,6 +58,21 @@ fn modifier() -> unit_properties.Modifier {
     multiplier: 0.86,
     flat: 0.0,
     per_level: 0.0,
+  )
+}
+
+/// The spell of the cast that holds the change: Phantasmal Armor tier 9 (Spell4 54806).
+fn spell4_id() -> Spell4Id {
+  Spell4Id(54_806)
+}
+
+/// The effect the rule tells with the change, its start a monotonic time before the clock
+/// origin so that a start taken as a delay, or as 0, differs from it.
+fn held_effect() -> HeldEffect {
+  HeldEffect(
+    effect_id: source().effect_id,
+    starts_ms: -4000,
+    ends: EndsAt(ms: 6000),
   )
 }
 
@@ -105,6 +123,8 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
         source: source(),
         change: Absorb(amount: 300, mask: 7),
         sight: KeptWhenUnseen,
+        spell4_id: spell4_id(),
+        effect: held_effect(),
       ),
       [
         told_to_the_ally(change: PlayerChangeStarts(
@@ -113,6 +133,8 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
           source: source(),
           change: Absorb(amount: 300, mask: 7),
           sight: KeptWhenUnseen,
+          spell4_id: spell4_id(),
+          effect: held_effect(),
         )),
       ],
     ),
@@ -123,6 +145,8 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
         source: source(),
         change: Property(modifier: modifier()),
         sight: held_changes.EndsWhenUnseen,
+        spell4_id: spell4_id(),
+        effect: held_effect(),
       ),
       [
         told_to_the_ally(change: PlayerChangeStarts(
@@ -131,6 +155,8 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
           source: source(),
           change: Property(modifier: modifier()),
           sight: held_changes.EndsWhenUnseen,
+          spell4_id: spell4_id(),
+          effect: held_effect(),
         )),
       ],
     ),
@@ -155,6 +181,8 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
         source: source(),
         change: Absorb(amount: 300, mask: 7),
         sight: KeptWhenUnseen,
+        spell4_id: spell4_id(),
+        effect: held_effect(),
       ),
       cast_state.OtherPlayerChangeEnds(address: address(), source: source()),
     ])
@@ -167,7 +195,7 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
       source: source(),
       address: address(),
       sight: KeptWhenUnseen,
-      spell4_id: id.Spell4Id(54_806),
+      spell4_id: spell4_id(),
       stack: lasting.Stack(group_id: 387, cap: 1),
       started_ms: 0,
     )

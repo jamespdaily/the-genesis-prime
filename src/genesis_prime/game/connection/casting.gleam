@@ -1332,7 +1332,14 @@ fn carried_out(
       -> connection_look.started(session:, source:, disguise:)
       cast_state.CasterChangeEnds(source:), _ ->
         connection_landing.ended(session:, now:, source:)
-      cast_state.OtherPlayerChangeStarts(address:, source:, change:, sight:),
+      cast_state.OtherPlayerChangeStarts(
+        address:,
+        source:,
+        change:,
+        sight:,
+        spell4_id:,
+        effect:,
+      ),
         Some(entered)
       -> #(session, [
         tells_the_player(
@@ -1343,6 +1350,8 @@ fn carried_out(
             source:,
             change:,
             sight:,
+            spell4_id:,
+            effect:,
           ),
         ),
       ])

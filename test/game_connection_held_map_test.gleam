@@ -43,6 +43,7 @@ import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/held_changes
 import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
+import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -69,7 +70,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{HeldItem, ItemsSaved, NewStack}
 import genesis_prime/table/id.{
-  Creature2Id, Faction2Id, Item2Id, Spell4EffectsId, UnitProperty2Id,
+  Creature2Id, Faction2Id, Item2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/map.{Join, Left}
 import genesis_prime/world_map/map_id.{MapId}
@@ -373,6 +374,12 @@ fn a_change_told(
             per_level: 0.0,
           )),
           sight: held_changes.EndsWhenUnseen,
+          spell4_id: Spell4Id(54_806),
+          effect: unit_casts.HeldEffect(
+            effect_id: source.effect_id,
+            starts_ms: 0,
+            ends: unit_casts.EndsAt(ms: 10_000),
+          ),
         )
     }),
   )

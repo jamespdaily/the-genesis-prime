@@ -23,7 +23,7 @@
 ////
 //// ```
 //// caster's connection C                        this connection T (the ally)
-////   Tell(Connection(T), TellPlayerChange(stay_T, PlayerChangeStarts(C, stay_C, source, change, sight)))
+////   Tell(Connection(T), TellPlayerChange(stay_T, PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect)))
 ////                      ─▶ ForStay(stay_T, SentByCaster(..))   (the stay fence; held through an ask)
 ////                      ─▶ changed: the change through the function the player's own cast uses
 ////                         (properties.started, absorption.started), held for C
@@ -46,6 +46,10 @@
 ////   (genesis_prime/game/connection/viewers), and this module writes its 0x7fe, once, when
 ////   the last source of it ends, by any of the ends above (`orphans_finished`): the caster's
 ////   own frames no longer reach the client.
+//// - **The tell carries what a create lists**: the cast's Spell4 id and the change's
+////   effect with the go's own monotonic time as its start, which the ledger keeps
+////   (`held_changes.started`) so that the player's create lists the cast
+////   (`held_changes.cast_views`).
 //// - **A source told again goes to the player's own function again**: an absorb pool is
 ////   refilled, a property modifier already held changes nothing
 ////   (genesis_prime/game/unit_properties `apply`).
@@ -149,7 +153,15 @@ pub fn changed(
   change change: held_changes.PlayerChange,
 ) -> client_connection.Handled(Session) {
   case change {
-    held_changes.PlayerChangeStarts(from:, from_stay:, source:, change:, sight:) ->
+    held_changes.PlayerChangeStarts(
+      from:,
+      from_stay:,
+      source:,
+      change:,
+      sight:,
+      spell4_id:,
+      effect:,
+    ) ->
       case
         player_life.state(life: entered.life),
         dict.get(entered.viewers, from)
@@ -165,6 +177,8 @@ pub fn changed(
                   unit_id: viewer.unit_id,
                   source:,
                   sight:,
+                  spell4_id:,
+                  effect:,
                 )
               world_entry.Entered(..entered, held:)
             })
@@ -302,7 +316,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A cast held on a player from another player is not in the 0x262 a viewer that comes later is sent: the player lists only its own casts (genesis_prime/game/connection/viewers `appearance`), so that viewer sees the buff from the next change.",
+      missing: "A cast held on a player from another player is in the 0x262 the player sends a viewer that comes later (genesis_prime/game/connection/viewers `appearance` lists `held_changes.cast_views`), and the viewer drops an entry whose caster is another unit (`casts_listed`), so that viewer sees the buff from the next change.",
     ),
     gap.Entry(
       area: "Casting",

@@ -16,9 +16,14 @@
 import genesis_prime/game/held_changes.{
   type Held, type Sight, EndsWhenUnseen, KeptWhenUnseen,
 }
+import genesis_prime/game/unit_casts.{
+  type HeldEffect, CastView, EndsAt, HeldEffect, ViewTarget,
+}
 import genesis_prime/game/unit_properties.{type Source, Source}
+import genesis_prime/message/spell_effect_info
+import genesis_prime/message/spell_target_info
 import genesis_prime/step.{type ConnectionId, ConnectionId}
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{type Spell4Id, Spell4EffectsId, Spell4Id}
 import gleam/list
 import gleam/result
 import owned_test
@@ -27,6 +32,18 @@ import qcheck
 /// The source of cast `cast_id`'s first row.
 fn source(cast_id cast_id: Int) -> Source {
   Source(cast_id:, effect_id: Spell4EffectsId(1))
+}
+
+/// The spell and the effect the tests' starts tell unless a test states them.
+fn any_listing(source source: Source) -> #(Spell4Id, HeldEffect) {
+  #(
+    Spell4Id(54_806),
+    HeldEffect(
+      effect_id: source.effect_id,
+      starts_ms: 0,
+      ends: EndsAt(ms: 10_000),
+    ),
+  )
 }
 
 /// A start: the caster's connection number, how its spell keeps its change, and the cast.
@@ -45,6 +62,8 @@ fn held_after(starts starts: List(Start)) -> #(Held, List(Bool)) {
           unit_id: 100 + start.caster,
           source: source(cast_id: start.cast_id),
           sight: start.sight,
+          spell4_id: any_listing(source: source(cast_id: start.cast_id)).0,
+          effect: any_listing(source: source(cast_id: start.cast_id)).1,
         )
       #(held, [started, ..flags])
     })
@@ -106,6 +125,56 @@ pub fn a_source_started_twice_is_held_once_and_each_casters_sources_keep_their_s
       == holder
       as reason
   })
+  // What a source lists: told again by its holder (a later go of one cast) it keeps its
+  // place and takes the new spell and effect; told by another connection it changes nothing.
+  let first = source(cast_id: 1)
+  let second = source(cast_id: 2)
+  let told = fn(held, by, cast_source: Source, spell, effect) {
+    held_changes.started(
+      held:,
+      by: ConnectionId(by),
+      unit_id: 100 + by,
+      source: cast_source,
+      sight: EndsWhenUnseen,
+      spell4_id: Spell4Id(spell),
+      effect:,
+    ).0
+  }
+  let effect_at = fn(starts, ends) {
+    HeldEffect(
+      effect_id: first.effect_id,
+      starts_ms: starts,
+      ends: EndsAt(ends),
+    )
+  }
+  let held =
+    held_changes.new()
+    |> told(1, first, 100, effect_at(0, 10_000))
+    |> told(1, second, 101, effect_at(0, 10_000))
+  let listed = fn(held) {
+    list.map(
+      held_changes.cast_views(held:, holder_unit_id: 5, now_ms: 0),
+      fn(view) { #(view.cast_id, view.spell4_id.value, effects_of(view:)) },
+    )
+  }
+  assert listed(held)
+    == [
+      #(1, 100, [effect_at(0, 10_000)]),
+      #(2, 101, [effect_at(0, 10_000)]),
+    ]
+    as "two sources of two casts are listed in start order"
+  let again = held |> told(1, first, 200, effect_at(5000, 15_000))
+  assert cast_ids(held_changes.all(held: again)) == [1, 2]
+    as "a source told again keeps its place"
+  assert listed(again)
+    == [
+      #(1, 200, [effect_at(5000, 15_000)]),
+      #(2, 101, [effect_at(0, 10_000)]),
+    ]
+    as "and takes the new spell and the new effect"
+  assert listed(held |> told(2, first, 300, effect_at(7000, 17_000)))
+    == listed(held)
+    as "a source told by another connection changes nothing"
 }
 
 pub fn ending_a_source_gives_the_caster_that_held_it_and_a_source_not_held_gives_nothing_test() -> Nil {
@@ -389,6 +458,14 @@ pub fn the_casts_a_player_holds_kept_from_a_caster_unit_and_whether_it_holds_a_c
             unit_id: start.unit_id,
             source: row_source(cast_id: start.cast_id, row: start.row),
             sight: start.sight,
+            spell4_id: any_listing(source: row_source(
+              cast_id: start.cast_id,
+              row: start.row,
+            )).0,
+            effect: any_listing(source: row_source(
+              cast_id: start.cast_id,
+              row: start.row,
+            )).1,
           )
         held
       })
@@ -402,5 +479,214 @@ pub fn the_casts_a_player_holds_kept_from_a_caster_unit_and_whether_it_holds_a_c
       assert held_changes.holds_cast(held:, cast_id: asked.0) == asked.1
         as reason
     })
+  })
+}
+
+/// The effects of the one target of a listed cast.
+fn effects_of(view view: unit_casts.CastView) -> List(HeldEffect) {
+  case view.targets {
+    [target] -> target.effects
+    _ -> []
+  }
+}
+
+/// One source a player holds for a create: the caster's connection number, the cast and the
+/// Spell4Effects row, the cast's spell, and the effect as the caster's go told it.
+type Listed {
+  Listed(
+    caster: Int,
+    cast_id: Int,
+    row: Int,
+    spell4_id: Int,
+    starts_ms: Int,
+    ends_ms: Int,
+  )
+}
+
+fn held_listed(listed listed: List(Listed)) -> Held {
+  list.fold(listed, held_changes.new(), fn(held, one) {
+    held_changes.started(
+      held:,
+      by: ConnectionId(one.caster),
+      unit_id: 100 + one.caster,
+      source: row_source(cast_id: one.cast_id, row: one.row),
+      sight: KeptWhenUnseen,
+      spell4_id: Spell4Id(one.spell4_id),
+      effect: HeldEffect(
+        effect_id: Spell4EffectsId(one.row),
+        starts_ms: one.starts_ms,
+        ends: EndsAt(ms: one.ends_ms),
+      ),
+    ).0
+  })
+}
+
+/// The player that holds the changes.
+const holder = 5
+
+/// The cast a player holding the change of `caster` lists: gone (bit 0), the player its
+/// primary target and its one target, one stack, not the cast bar.
+fn view_of(
+  caster caster: Int,
+  cast_id cast_id: Int,
+  spell4_id spell4_id: Int,
+  effects effects: List(HeldEffect),
+) -> unit_casts.CastView {
+  CastView(
+    caster_unit_id: 100 + caster,
+    cast_id:,
+    spell4_id: Spell4Id(spell4_id),
+    primary_target: holder,
+    gone: True,
+    current: False,
+    targets: [ViewTarget(unit_id: holder, count: 1, effects:)],
+  )
+}
+
+fn effect_of_row(
+  row row: Int,
+  starts_ms starts_ms: Int,
+  ends_ms ends_ms: Int,
+) -> HeldEffect {
+  HeldEffect(
+    effect_id: Spell4EffectsId(row),
+    starts_ms:,
+    ends: EndsAt(ms: ends_ms),
+  )
+}
+
+pub fn the_casts_a_player_holds_are_listed_for_a_create_from_its_ledger_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Rows: the sources held in start order, the sources released after, the clock of the
+  // create, and the casts listed. A cast is one view with the holder as its one target
+  // (`opcode.0x262.casts`); a landed change is told at the go, so the cast has gone
+  // (bit 0). A start is a monotonic time and the clock can be negative
+  // (`step.Now.monotonic_ms`).
+  let rows = [
+    #("nothing held lists no cast", [], [], 1000, []),
+    #(
+      "one source lists one cast: its caster's unit, id and spell, the holder as the primary and the one target, with the source's effect",
+      [Listed(3, 7, 1, 54_806, 1000, 11_000)],
+      [],
+      2000,
+      [
+        view_of(caster: 3, cast_id: 7, spell4_id: 54_806, effects: [
+          effect_of_row(row: 1, starts_ms: 1000, ends_ms: 11_000),
+        ]),
+      ],
+    ),
+    #(
+      "two sources of one cast list one cast with both effects in start order",
+      [
+        Listed(3, 7, 2, 54_806, 1000, 11_000),
+        Listed(3, 7, 1, 54_806, 1000, 11_000),
+      ],
+      [],
+      2000,
+      [
+        view_of(caster: 3, cast_id: 7, spell4_id: 54_806, effects: [
+          effect_of_row(row: 2, starts_ms: 1000, ends_ms: 11_000),
+          effect_of_row(row: 1, starts_ms: 1000, ends_ms: 11_000),
+        ]),
+      ],
+    ),
+    #(
+      "two casts are listed one view each, in cast id order, whoever started first",
+      [
+        Listed(2, 9, 1, 76_766, 1000, 6000),
+        Listed(3, 7, 1, 54_806, 1000, 11_000),
+      ],
+      [],
+      2000,
+      [
+        view_of(caster: 3, cast_id: 7, spell4_id: 54_806, effects: [
+          effect_of_row(row: 1, starts_ms: 1000, ends_ms: 11_000),
+        ]),
+        view_of(caster: 2, cast_id: 9, spell4_id: 76_766, effects: [
+          effect_of_row(row: 1, starts_ms: 1000, ends_ms: 6000),
+        ]),
+      ],
+    ),
+    #(
+      "a source released by its end tell is not listed, the cast's other source is",
+      [
+        Listed(3, 7, 1, 54_806, 1000, 11_000),
+        Listed(3, 7, 2, 54_806, 1000, 11_000),
+      ],
+      [row_source(cast_id: 7, row: 1)],
+      2000,
+      [
+        view_of(caster: 3, cast_id: 7, spell4_id: 54_806, effects: [
+          effect_of_row(row: 2, starts_ms: 1000, ends_ms: 11_000),
+        ]),
+      ],
+    ),
+    #(
+      "a change told at the go's time -5000 for 10 000 ms and listed at -2000 is listed as told: the start is a time, not a delay",
+      [Listed(3, 7, 1, 54_806, -5000, 5000)],
+      [],
+      -2000,
+      [
+        view_of(caster: 3, cast_id: 7, spell4_id: 54_806, effects: [
+          effect_of_row(row: 1, starts_ms: -5000, ends_ms: 5000),
+        ]),
+      ],
+    ),
+    #(
+      "an effect whose end is at the create's time is not listed, and one an instant after it is",
+      [
+        Listed(3, 7, 1, 54_806, 1000, 11_000),
+        Listed(3, 8, 1, 54_806, 1000, 11_001),
+      ],
+      [],
+      11_000,
+      [
+        view_of(caster: 3, cast_id: 8, spell4_id: 54_806, effects: [
+          effect_of_row(row: 1, starts_ms: 1000, ends_ms: 11_001),
+        ]),
+      ],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, listed, releases, now_ms, expected) = row
+    let held =
+      list.fold(releases, held_listed(listed:), fn(held, source) {
+        let assert Ok(#(held, _)) = held_changes.released(held:, source:)
+        held
+      })
+    assert held_changes.cast_views(held:, holder_unit_id: holder, now_ms:)
+      == expected
+      as reason
+  })
+  // A source with no caster unit (a creature's) is held but listed to nobody.
+  let #(held, _) =
+    held_changes.started_by_connection(
+      held: held_changes.new(),
+      by: ConnectionId(3),
+      source: source(cast_id: 7),
+    )
+  assert held_changes.cast_views(held:, holder_unit_id: holder, now_ms: 0) == []
+    as "a source with no caster unit is not listed"
+  // What the client is told of the listed change at a negative clock and at the go's own
+  // time: no delay, and the time left counted from the end (`opcode.0x7f4.effect_delay`,
+  // `opcode.0x7f4.effect_time`). Read at the clock -2000 a start of 0 would be told a delay
+  // of 2000.
+  let held = held_listed(listed: [Listed(3, 7, 1, 54_806, -5000, 5000)])
+  assert told_effects(held:, now_ms: -2000) == [#(1, 0, 7000)]
+    as "a create at a negative clock tells delay 0 and the time left from the end"
+  let held = held_listed(listed: [Listed(3, 7, 1, 54_806, 1000, 11_000)])
+  assert told_effects(held:, now_ms: 1000) == [#(1, 0, 10_000)]
+    as "a create at the go's own time tells delay 0 and the whole duration"
+}
+
+/// Each effect the one cast of the held changes tells at `now_ms`: the row, the delay and
+/// the lifetime.
+fn told_effects(held held: Held, now_ms now_ms: Int) -> List(#(Int, Int, Int)) {
+  let assert [view] =
+    held_changes.cast_views(held:, holder_unit_id: holder, now_ms:)
+  let assert Ok(entry) = unit_casts.entry_of(view:, now_ms:)
+  let assert [spell_target_info.SpellTargetInfo(effects:, ..)] = entry.targets
+  list.map(effects, fn(effect: spell_effect_info.SpellEffectInfo) {
+    #(effect.spell4_effects_id, effect.delay_ms, effect.lifetime_ms)
   })
 }
