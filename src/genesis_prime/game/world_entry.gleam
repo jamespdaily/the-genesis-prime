@@ -1265,6 +1265,8 @@ fn with_saved_bars(
   case
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
+      tiers: spell_tier.tiers(tables:),
+      points_total: ability_points.total(tables:, level: character.level),
       level: character.level,
       book:,
       rows:,
@@ -1275,7 +1277,7 @@ fn with_saved_bars(
       Ok(ActionSlotFault(
         text: "a play of character "
         <> int.to_string(character_number(character))
-        <> ", whose saved action slots hold a row the table's checks cannot: "
+        <> ", whose saved action slots or tiers hold a row the table's checks cannot: "
         <> limited_action_set.describe_row(error:),
       ))
   }

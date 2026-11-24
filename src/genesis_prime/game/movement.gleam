@@ -764,7 +764,8 @@ pub fn next_save(state state: State) -> #(State, Int) {
 /// that number, with the `health` the player keeps (`player_life.saved_health`)
 /// and the `experience` and `level` it has and the `quests` rows of the quest
 /// log the player keeps (`quest_log.rows`) and the `action_sets` slots of the bars
-/// it has saved (`limited_action_set.rows`). A save asked and never answered
+/// it has saved and the ability tiers it holds (`limited_action_set.rows`); the whole
+/// lists replace the stored rows, so a slot or tier the lists leave out is deleted. A save asked and never answered
 /// keeps its number, so a late answer is never taken for a newer save's.
 pub fn save(
   state state: State,
@@ -819,7 +820,7 @@ pub fn saved(answer answer: MoveAnswer) -> List(Effect) {
     ]
     ActionSetRefused(constraint:) -> [
       Fault(
-        text: "the database refused a slot of the action sets it was asked to save, by the constraint "
+        text: "the database refused a slot or a tier of the action sets it was asked to save, by the constraint "
         <> constraint,
       ),
     ]

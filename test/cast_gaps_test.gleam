@@ -4,7 +4,6 @@
 //// `coverage_gaps_test`.
 
 import genesis_prime/coverage/gaps
-import genesis_prime/game/ability_points
 import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
@@ -136,12 +135,6 @@ fn limits() -> List(Limit) {
       "Casting",
       ["0x6c", "0x148"],
       "the creature words that make the client pick no spell are not read",
-    ),
-    Limit(
-      ability_points.gaps(),
-      "Abilities",
-      ["tiers a player buys", "next map change"],
-      "the tiers a player buys last only until the next map change, as no save carries them",
     ),
     Limit(
       cast_proc.gaps(),

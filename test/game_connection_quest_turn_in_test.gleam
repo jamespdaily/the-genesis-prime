@@ -33,11 +33,12 @@ import genesis_prime/store.{
   type QuestRow, AccountId, Character, CharacterId, ForItems, HeldItem, Items,
   ItemsNotSaved, NewStack, QuestRow, SaveRefused, TurnInQuest, TurnedIn,
 }
-import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/id.{ClassId, Item2Id}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import item_expiry_support
+import limited_action_set_support as limited
 import message_support
 import owned_test
 import planted_table.{type Cell, Integer}
@@ -133,6 +134,46 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
   assert quest_state.decode(state_frame.body)
     == Ok(QuestState(quest_id: 10_520, state: 3, objective_id: 0))
     as "opcode.0x35c: the quest in state 3 with objective 0"
+  // The turn-in's save is the player's save: a Spellslinger of level 10 that saved the sitting's first
+  // bar with Quick Draw at tier 2 (the 0xB1 of the builder) asks the store to save both.
+  let spellslinger =
+    quest_walker_support.in_world_as(
+      tables: character_tables.shared(),
+      quests: [quest_turn_in_support.achieved(quest_id: 10_520)],
+      character: Character(
+        ..game_connection_support.world_character(),
+        class_id: ClassId(limited.spellslinger),
+        level: 10,
+      ),
+    )
+  let #(spellslinger, _) =
+    game_connection_support.feed(
+      state: spellslinger,
+      event: quest_walker_support.walker_appears(),
+    )
+  let #(spellslinger, _) =
+    game_connection_support.read(
+      state: spellslinger,
+      bytes: game_connection_support.world_message(
+        message_id: 0x00B1,
+        body: limited.tiering([#(27_638, 2)]),
+      ),
+    )
+  let #(_, taken) =
+    game_connection_support.read(
+      state: spellslinger,
+      bytes: turn_in_of(quest_id: 10_520),
+    )
+  let assert TurnInQuest(action_sets:, ..) = asked_turn_in(taken:)
+    as "a TurnInQuest"
+  assert action_sets
+    == store.ActionSets(
+      slots: limited.rows_of(set: 0, ids: limited.ids_a),
+      tiers: [
+        store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2),
+      ],
+    )
+    as "the ask carries the 12 slot rows of the bar and the tier row, the whole list a place save carries"
 }
 
 /// The items a turn-in's stacks become once the store has saved them: one stack of each Item2,

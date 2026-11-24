@@ -13,7 +13,6 @@
 //// - The render groups the entries by area in the order each area is first met, and keeps
 ////   the entries' order within an area.
 
-import genesis_prime/game/ability_points
 import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
@@ -67,6 +66,7 @@ import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/message/vendor_items
+import genesis_prime/wire_recording/fixture as wire_recording_fixture
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
@@ -130,7 +130,6 @@ pub fn registry() -> List(Entry) {
     kill_objective.gaps(),
     cast_press.gaps(),
     activate.gaps(),
-    ability_points.gaps(),
     limited_action_set.gaps(),
     cast.gaps(),
     cast_control.gaps(),
@@ -139,6 +138,7 @@ pub fn registry() -> List(Entry) {
     cast_proc.gaps(),
     heal_split.gaps(),
     objective_spawn.gaps(),
+    wire_recording_fixture.gaps(),
   ])
 }
 

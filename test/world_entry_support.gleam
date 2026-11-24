@@ -7,6 +7,7 @@ import character_tables
 import class_resource_support
 import connection_rule_support
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/objective
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/start_place.{type Place}
@@ -115,7 +116,7 @@ pub fn loaded_seeing(
     saved_health:,
     saved_experience:,
     quests:,
-    action_sets: store.ActionSets(slots: []),
+    action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility:,
   )
 }
@@ -136,7 +137,7 @@ pub fn loaded_with_unset(
     saved_health: None,
     saved_experience: None,
     quests: [],
-    action_sets: store.ActionSets(slots: []),
+    action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility: dict.new(),
   )
 }

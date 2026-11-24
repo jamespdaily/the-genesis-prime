@@ -1126,6 +1126,7 @@ pub fn request(
   place place: Place,
   health health: Option(Int),
   quests quests: List(store.QuestRow),
+  action_sets action_sets: store.ActionSets,
 ) -> store.Request {
   store.Items(store.TurnInQuest(
     account_id:,
@@ -1137,6 +1138,7 @@ pub fn request(
     experience: turn_in.credited.progress.experience,
     level: turn_in.credited.progress.level,
     quests:,
+    action_sets:,
     credits_held: turn_in.credits_held,
     credits_after: turn_in.credits_after,
     placed: turn_in.placed,

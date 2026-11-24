@@ -19,11 +19,11 @@ import dropped_support.{type Recorded, Recorded}
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{FromHandOff, FromMap, FromStore}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/limited_action_set
 import genesis_prime/hand_off.{Taken}
 import genesis_prime/step.{LogError}
 import genesis_prime/store.{
-  ActionSets, Character, CharacterId, CharacterLoaded, ForSelect, ForWorld,
-  Listed,
+  Character, CharacterId, CharacterLoaded, ForSelect, ForWorld, Listed,
 }
 import gleam/bit_array
 import gleam/int
@@ -195,7 +195,9 @@ pub fn pre_game_activity_before_world_entry_is_dropped_test() -> Nil {
             unset: [],
             quests: [],
             currencies: [],
-            action_sets: ActionSets(slots: []),
+            action_sets: limited_action_set.rows(
+              saved: limited_action_set.none(),
+            ),
           )),
         ),
       ),
