@@ -284,17 +284,19 @@ pub fn a_one_spell_filter_passes_only_that_spell4_test() -> Nil {
     == FilteredOut
 }
 
+// Spell4Base 27740 is Spellslinger Arcane Missiles' damage spell: Spell4 54957 is its tier 2
+// and 54959 its tier 4 (`table_rows -- Spell4 54959`); Spell4 79220 is of Spell4Base 54946.
 pub fn a_base_filter_passes_only_an_event_spell_of_that_spell4base_test() -> Nil {
   use <- owned_test.run(5000)
   let based =
-    ProcRow(..row(), filter: OfBase(spell4_base_id: Spell4BaseId(54_946)))
+    ProcRow(..row(), filter: OfBase(spell4_base_id: Spell4BaseId(27_740)))
   assert decided(
       row: based,
       fires_ms: [],
       now_ms: 0,
       event: event(
         spell: Some(
-          spell_of(spell4_id: 79_220, spell4_base_id: 54_946, groups: []),
+          spell_of(spell4_id: 54_959, spell4_base_id: 27_740, groups: []),
         ),
       ),
       draw: None,
@@ -307,7 +309,7 @@ pub fn a_base_filter_passes_only_an_event_spell_of_that_spell4base_test() -> Nil
       now_ms: 0,
       event: event(
         spell: Some(
-          spell_of(spell4_id: 79_225, spell4_base_id: 54_946, groups: []),
+          spell_of(spell4_id: 54_957, spell4_base_id: 27_740, groups: []),
         ),
       ),
       draw: None,
@@ -320,7 +322,7 @@ pub fn a_base_filter_passes_only_an_event_spell_of_that_spell4base_test() -> Nil
       now_ms: 0,
       event: event(
         spell: Some(
-          spell_of(spell4_id: 79_221, spell4_base_id: 54_947, groups: [463]),
+          spell_of(spell4_id: 79_220, spell4_base_id: 54_946, groups: [463]),
         ),
       ),
       draw: None,

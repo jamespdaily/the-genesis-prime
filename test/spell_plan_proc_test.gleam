@@ -49,10 +49,13 @@ import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
+import genesis_prime/table/spell4_group_list
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/set
+import gleam/string
 import owned_test
 import planted_table.{Integer}
 import spell_tables
@@ -393,8 +396,8 @@ pub fn a_filter_reads_data_bits08_in_the_id_space_data_bits07_names_and_0_as_no_
     ),
     #(
       0,
-      54_946,
-      OfBase(spell4_base_id: Spell4BaseId(54_946)),
+      27_740,
+      OfBase(spell4_base_id: Spell4BaseId(27_740)),
       "kind 0 with an id names a Spell4Base, as Arcane Missiles T4 Proc 200794 names 27740",
     ),
     #(
@@ -880,6 +883,29 @@ pub fn a_filter_naming_an_id_its_table_lacks_leaves_the_row_out_whoever_holds_it
       )),
     ),
     #(
+      "a caster's row naming a group no Spell4GroupList lists is left out",
+      Spell4Effects(..row(id: 99_046), data_bits07: 2, data_bits08: missing),
+      spell_tables.pressed,
+      LeftOutFor(why: spell_plan.ProcFilterNamesNoGroup(group_id: missing)),
+    ),
+    #(
+      "the primary target's row naming a group no Spell4GroupList lists is left out",
+      Spell4Effects(
+        ..salve,
+        target_flags: 2,
+        data_bits07: 2,
+        data_bits08: missing,
+      ),
+      spell_tables.pressed,
+      LeftOutFor(why: spell_plan.ProcFilterNamesNoGroup(group_id: missing)),
+    ),
+    #(
+      "a group a Spell4GroupList lists (463, the Stalker's damage group) is read",
+      Spell4Effects(..row(id: 99_046), data_bits07: 2, data_bits08: 463),
+      spell_tables.pressed,
+      ReadFor(holder: spell_plan.HeldByCaster),
+    ),
+    #(
       "a Spell4 the table holds (Telekinetic Strike) is read",
       Spell4Effects(..row(id: 99_046), data_bits07: 1, data_bits08: 32_893),
       spell_tables.pressed,
@@ -904,6 +930,118 @@ pub fn a_filter_naming_an_id_its_table_lacks_leaves_the_row_out_whoever_holds_it
       == expected
       as reason
   })
+}
+
+/// The Spell4Effects id of a planted Proc row and of a planted summon row (type 98) in
+/// Telekinetic Strike's spell.
+const planted_proc = 99_201
+
+const planted_summon = 99_202
+
+/// A Proc row of kind 217 aimed at the caster in Telekinetic Strike's spell, with these
+/// columns changed.
+fn planted_proc_row(
+  columns columns: List(#(String, planted_table.Cell)),
+) -> List(planted_table.Cell) {
+  spell_tables.effect_row_with(
+    id: planted_proc,
+    effect_type: 14,
+    target_flags: 1,
+    columns: list.append(columns, spell_tables.proc_columns(kind: 217)),
+  )
+}
+
+/// A summon row (type 98) of Creature2 63677, aimed at the primary target as Spell4Effects
+/// 189689 of the Q9396 Probebot is, in Telekinetic Strike's spell.
+fn planted_summon_row() -> List(planted_table.Cell) {
+  spell_tables.effect_row_with(
+    id: planted_summon,
+    effect_type: 98,
+    target_flags: 2,
+    columns: [
+      #("dataBits00", Integer(63_677)),
+      #("durationTime", Integer(3_600_000)),
+    ],
+  )
+}
+
+pub fn a_proc_the_caster_holds_beside_a_summon_row_leaves_the_spell_unbuilt_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The summon creates a unit the server does not build, and the Proc beside it is that
+  // unit's own (Spell4 73125, the Q9396 Probebot: Proc 189684 and summon 189689; Spell4
+  // 76365: 198006 and 198007), so a plan that kept it would hold it on the player.
+  let refused =
+    Error(spell_plan.SummonedProcNotRead(
+      spell4_id: 32_893,
+      proc_effect_id: planted_proc,
+      summon_effect_id: planted_summon,
+      creature2_id: 63_677,
+    ))
+  let built = fn(rows) {
+    spell_tables.planned_strike(rows: spell_tables.rows_with_effects(
+      effects: rows,
+    ))
+    |> result.replace(Nil)
+  }
+  let cases = [
+    #(
+      "a Proc aimed at the caster beside a summon row is refused",
+      [planted_proc_row(columns: []), planted_summon_row()],
+      refused,
+    ),
+    #(
+      "a Proc with no summon beside it is read",
+      [planted_proc_row(columns: [])],
+      Ok(Nil),
+    ),
+    #(
+      "a summon row with no Proc beside it builds",
+      [planted_summon_row()],
+      Ok(Nil),
+    ),
+    #(
+      "a Proc the plan leaves out (a filter naming a Spell4 with no row) lands nowhere, so a summon beside it refuses nothing",
+      [
+        planted_proc_row(columns: [
+          #("dataBits07", Integer(1)),
+          #("dataBits08", Integer(999_999_999)),
+        ]),
+        planted_summon_row(),
+      ],
+      Ok(Nil),
+    ),
+    #(
+      "a lasting row beside a summon row is no Proc, so the spell builds",
+      [
+        spell_tables.effect_row_with(
+          id: planted_proc,
+          effect_type: 17,
+          target_flags: 1,
+          columns: [#("durationTime", Integer(5000))],
+        ),
+        planted_summon_row(),
+      ],
+      Ok(Nil),
+    ),
+  ]
+  list.each(cases, fn(found) {
+    let #(reason, rows, expected) = found
+    assert built(rows) == expected as reason
+  })
+  let error =
+    spell_plan.SummonedProcNotRead(
+      spell4_id: 32_893,
+      proc_effect_id: planted_proc,
+      summon_effect_id: planted_summon,
+      creature2_id: 63_677,
+    )
+  assert spell_plan.is_unbuilt(error:)
+    as "the ability is left out and the load goes on"
+  assert string.contains(
+    spell_plan.describe(error:),
+    "its summon (type 98, Creature2 63677) is not built",
+  )
+    as "the reason names the summon as not built"
 }
 
 pub fn an_event_spell_carries_the_spell4base_of_its_spell4_test() -> Nil {
@@ -1139,6 +1277,10 @@ pub fn no_proc_row_fails_the_load_test() -> Nil {
     let #(effect, reading) = found
     case reading {
       Ok(_) -> Nil
+      Error(spell_plan.SummonedProcNotRead(..) as error) -> {
+        assert spell_plan.is_unbuilt(error:)
+          as "a Proc beside a summon leaves its ability out and the load goes on"
+      }
       Error(error) ->
         panic as {
           "the Proc row "
@@ -1147,6 +1289,56 @@ pub fn no_proc_row_fails_the_load_test() -> Nil {
           <> spell_plan.describe(error:)
         }
     }
+  })
+}
+
+pub fn each_client_proc_row_beside_a_summon_row_refuses_its_spell_and_no_other_does_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let summoning =
+    spell4_effects.all(tables)
+    |> list.filter(fn(effect) { effect.effect_type == 98 })
+    |> list.map(fn(effect) { effect.spell_id })
+    |> set.from_list
+  let refused =
+    spell_tables.rows_read(tables:, effect_type: 14)
+    |> list.filter_map(fn(found) {
+      case found.1 {
+        Error(spell_plan.SummonedProcNotRead(
+          spell4_id:,
+          proc_effect_id:,
+          summon_effect_id:,
+          creature2_id:,
+        )) -> {
+          assert spell4_id == { found.0 }.spell_id
+            && proc_effect_id == { found.0 }.id
+            as "the error names the Proc row and its spell"
+          let assert Ok(summon) =
+            spell4_effects.get(
+              tables:,
+              id: id.Spell4EffectsId(summon_effect_id),
+            )
+            as "the error names a row of the tables"
+          assert summon.effect_type == 98
+            && summon.spell_id == spell4_id
+            && summon.data_bits00 == creature2_id
+            as "the summon row is a type 98 row of the same spell naming the Creature2 in dataBits00"
+          Ok(proc_effect_id)
+        }
+        _ -> Error(Nil)
+      }
+    })
+  assert list.contains(refused, 189_684)
+    as "Spell4Effects 189684 (Spell4 73125, the Q9396 Probebot's Proc) is refused"
+  assert list.contains(refused, 198_006)
+    as "Spell4Effects 198006 (Spell4 76365) is refused"
+  list.each(refused, fn(proc_effect_id) {
+    let assert Ok(effect) =
+      spell4_effects.get(tables:, id: id.Spell4EffectsId(proc_effect_id))
+    assert set.contains(summoning, effect.spell_id) && effect.target_flags == 1
+      as "a refused Proc is aimed at the caster in a spell that holds a type 98 row"
   })
 }
 
@@ -1180,6 +1372,23 @@ pub fn each_client_proc_row_reads_its_filter_in_the_id_space_its_kind_names_test
         <> int.to_string({ found.0 }.id)
         <> " reads dataBits08 in the id space dataBits07 names, and 0 as no filter"
       }
+  })
+  let listed_groups =
+    spell4_group_list.all(tables)
+    |> list.flat_map(fn(row) { spell_plan.group_ids_of(row:) })
+    |> set.from_list
+  list.each(filters, fn(found) {
+    case found.1 {
+      InGroup(group_id:) -> {
+        assert set.contains(listed_groups, group_id)
+          as {
+            "the Proc row "
+            <> int.to_string({ found.0 }.id)
+            <> " is read with a group filter no Spell4GroupList row lists"
+          }
+      }
+      OfBase(..) | OneSpell(..) | spell_plan.AnySpell -> Nil
+    }
   })
   let classes = [
     #(0, 0, "kind 0 with no id"),
@@ -1222,6 +1431,17 @@ pub fn each_client_proc_row_reads_its_filter_in_the_id_space_its_kind_names_test
             "the Proc row "
             <> int.to_string(effect.id)
             <> " is left out for a Spell4Base filter whose id the Spell4Base table lacks"
+          }
+      }
+      Ok(spell_plan.LeftOut(why: spell_plan.ProcFilterNamesNoGroup(group_id:))) -> {
+        assert effect.data_bits07 == 2
+          && effect.data_bits08 == group_id
+          && group_id != 0
+          && !set.contains(listed_groups, group_id)
+          as {
+            "the Proc row "
+            <> int.to_string(effect.id)
+            <> " is left out for a group filter whose id no Spell4GroupList row lists"
           }
       }
       _ -> Nil

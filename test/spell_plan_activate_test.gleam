@@ -81,13 +81,13 @@ pub fn every_activate_spell_has_a_plan_or_a_reason_test() -> Nil {
     })
   assert list.all(reasons, fn(reason) { string.starts_with(reason.1, "the ") })
     as "each spell the plan cannot build holds the plan's own reason in words: the Spell4 row and the effect it does not read, or the table row it lacks"
-  assert list.length(reasons) == 223
-    as "223 of the activate spells cannot be planned: 52 hold an effect the plan does not read (11 an effect behind an apply prerequisite of a type the server does not decode: Spell4 32593 (effect 61526, target apply 22, type 12), 48619 (effect 114668, target apply 20647, type 76), 72622 (effect 187557, target apply 31022, type 44), 82228 (effect 216305, target apply 38432, type 76), 47811 (effect 112402, caster apply 20380, type 117), 56564 (effect 134965, caster apply 14401, type 117), 35705 (effect 72383, type 44), 58836 (effect 141445, type 149), 81708 (effect 214863, type 12), 25911 (effect 42095, type 12) and 33213 (Spell4 33240's effect 195954, type 44), the table's rows read with `table_rows -- Spell4Effects` and `-- Prerequisite`; a lasting row behind a caster apply of an undecoded type is refused because no go can check it; 4 an effect aimed past the caster behind a target apply prerequisite of type 15, which reads what the casts held on the unit it strikes hold (#569): Spell4 72314, 72315, 72316 and 72317, each through Spell4 75843's effect 198286; 2 a row that keeps a state on the area's units, aimed by flags 5 or 7 in a spell that hits no foes (#834): Spell4 31307 (effect 135752) and 51321 (effect 120818); 1 a UnitPropertyModifier row with a parameter that has a factor, which the plan does not read: Spell4 43113, the spell of Creature2 43108 Dodger's Finesse, whose effect 98517 (type 11, targetFlags 1, a 30-minute Finesse buff on the caster) holds a parameter of type 2 at 0.2, read with `table_rows -- Spell4Effects 98517`; then a DisguiseOutfit, a SpellForceRemove, a VitalModifier of a vital the plan does not read (Spell4 59770, 59771 and 59772, the Clarity Elixirs' ticking Focus gains, are planned since Focus is read), a Stealth or a Proxy row, or a missing Spell4Base row) and 171 more hold an effect other than Activate aimed at the target or an area of a type some rule reads for that aim (a Proxy, Damage, Fluff, a ForcedMove aimed by flags 2, 4 or 6 and so on), which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once; a row of a type no rule reads is dropped by every cast and refuses nothing, and so are a RavelSignal aimed at the target alone, behind no gate the server cannot read, and a Heal aimed at the target (the six spells that hold one are planned, see an_activate_spell_whose_target_row_is_a_heal_is_planned_test)"
+  assert list.length(reasons) == 224
+    as "224 of the activate spells cannot be planned: 53 hold an effect the plan does not read (11 an effect behind an apply prerequisite of a type the server does not decode: Spell4 32593 (effect 61526, target apply 22, type 12), 48619 (effect 114668, target apply 20647, type 76), 72622 (effect 187557, target apply 31022, type 44), 82228 (effect 216305, target apply 38432, type 76), 47811 (effect 112402, caster apply 20380, type 117), 56564 (effect 134965, caster apply 14401, type 117), 35705 (effect 72383, type 44), 58836 (effect 141445, type 149), 81708 (effect 214863, type 12), 25911 (effect 42095, type 12) and 33213 (Spell4 33240's effect 195954, type 44), the table's rows read with `table_rows -- Spell4Effects` and `-- Prerequisite`; a lasting row behind a caster apply of an undecoded type is refused because no go can check it; 4 an effect aimed past the caster behind a target apply prerequisite of type 15, which reads what the casts held on the unit it strikes hold (#569): Spell4 72314, 72315, 72316 and 72317, each through Spell4 75843's effect 198286; 2 a row that keeps a state on the area's units, aimed by flags 5 or 7 in a spell that hits no foes (#834): Spell4 31307 (effect 135752) and 51321 (effect 120818); 1 a UnitPropertyModifier row with a parameter that has a factor, which the plan does not read: Spell4 43113, the spell of Creature2 43108 Dodger's Finesse, whose effect 98517 (type 11, targetFlags 1, a 30-minute Finesse buff on the caster) holds a parameter of type 2 at 0.2, read with `table_rows -- Spell4Effects 98517`; then a DisguiseOutfit, a SpellForceRemove, a VitalModifier of a vital the plan does not read (Spell4 59770, 59771 and 59772, the Clarity Elixirs' ticking Focus gains, are planned since Focus is read), a Stealth or a Proxy row, a missing Spell4Base row, or a Proc row the caster holds beside a summon effect (type 98), which the server does not build: Spell4 73275 through its Proxy 193699 to Spell4 73125, whose Proc 189684 sits beside the Q9396 Probebot's summon 189689 of Creature2 63677) and 171 more hold an effect other than Activate aimed at the target or an area of a type some rule reads for that aim (a Proxy, Damage, Fluff, a ForcedMove aimed by flags 2, 4 or 6 and so on), which an activate cast, striking no one, would lose: the press is refused as not built, with the reason logged once; a row of a type no rule reads is dropped by every cast and refuses nothing, and so are a RavelSignal aimed at the target alone, behind no gate the server cannot read, and a Heal aimed at the target (the six spells that hold one are planned, see an_activate_spell_whose_target_row_is_a_heal_is_planned_test)"
   assert list.count(reasons, fn(reason) {
       string.contains(reason.1, "aims at the target or an area")
     })
     == 171
-    as "171 of the 223 are refused for an effect aimed at the target or an area, seven of them for a row aimed by flags 3, which the plan read as an unread aim before #794 (Spell4 29659, 34728, 40529, 44980, 47304, 64848 and 75778): Spell4 24240, 47193, 72381 and 76226, whose ForcedMove rows (targetFlags 2) the activate cast would lose, and Spell4 38392, whose ForcedMove 58586 of Spell4 31489 is planned since the plan reads a target apply prerequisite; Spell4 35706 is not among them, its effect 72383 behind a type 44 condition fails the plan first"
+    as "171 of the 224 are refused for an effect aimed at the target or an area, seven of them for a row aimed by flags 3, which the plan read as an unread aim before #794 (Spell4 29659, 34728, 40529, 44980, 47304, 64848 and 75778): Spell4 24240, 47193, 72381 and 76226, whose ForcedMove rows (targetFlags 2) the activate cast would lose, and Spell4 38392, whose ForcedMove 58586 of Spell4 31489 is planned since the plan reads a target apply prerequisite; Spell4 35706 is not among them, its effect 72383 behind a type 44 condition fails the plan first"
   let assert Ok(friendly) = list.key_find(reasons, 71_989)
     as "Spell4 71989 cannot be planned"
   assert string.contains(friendly, "184889")
@@ -385,22 +385,20 @@ pub fn the_hoverboard_activate_spell_is_planned_test() -> Nil {
     as "224967 holds Ability Restriction (dataBits00 27) on the caster until removed (targetFlags 1, flags 2)"
 }
 
-pub fn the_probe_console_activate_spell_is_planned_with_its_probebots_proc_reading_any_spell_test() -> Nil {
+pub fn the_probe_console_activate_spell_is_not_planned_because_its_probebot_summon_is_not_built_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.guard(client_tables.present())
   let activations = activate.activations(tables: client_tables.shared())
-  let assert Ok(Planned(spell:, ..)) =
+  let assert Ok(activate.CannotBePlanned(why:)) =
     activate.planned_of(activations:, spell4_id: 73_275)
-    as "Spell4 73275, the activate spell of Creature2 63712 (Eldan Maintenance Controls, the Q9396 Probe Console), is planned: its Proc row 189684 reads dataBits07 1 with dataBits08 0, which is no filter"
-  let assert [proxy] = spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
-    as "Spell4Effects 193699 is the Proxy to Spell4 73125"
-  assert proxy.spell.spell4_id == Spell4Id(73_125)
-  let assert [proc] =
-    spell_plan.payloads(spell: proxy.spell, as_kind: spell_plan.as_proc)
-    |> list.filter(fn(proc) { proc.effect_id == Spell4EffectsId(189_684) })
-    as "73125 holds the Proc row 189684"
-  assert proc.filter == spell_plan.AnySpell
-    as "dataBits08 0 is no filter under dataBits07 1"
+    as "Spell4 73275, the activate spell of Creature2 63712 (Eldan Maintenance Controls, the Q9396 Probe Console), has an activate entry"
+  assert string.contains(
+    why,
+    "its summon (type 98, Creature2 63677) is not built",
+  )
+    as "Spell4 73125's Proc 189684 lands on the caster without the Probebot its summon 189689 makes, so the spell stays unplanned for the summon"
+  assert string.contains(why, "189684") && string.contains(why, "189689")
+    as "the reason names the Proc row and the summon row"
 }
 
 /// What the plan holds of the spell's target death, from the fixture's rows.

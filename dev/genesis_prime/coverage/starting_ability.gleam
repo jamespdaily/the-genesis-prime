@@ -419,6 +419,10 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
       "its filter names Spell4Base "
       <> int.to_string(spell4_base_id)
       <> ", which has no row"
+    spell_plan.ProcFilterNamesNoGroup(group_id:) ->
+      "its filter names spell group "
+      <> int.to_string(group_id)
+      <> ", which no Spell4GroupList row lists"
     spell_plan.ProcAllyUntilRemoved ->
       "an ally holds it until removed, in a spell that is no aura that ends"
     spell_plan.ProcBehindPersistence ->

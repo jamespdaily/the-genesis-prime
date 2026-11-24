@@ -264,6 +264,7 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.AbsorptionHasNoLifetime(1, 2), True),
     #(spell_plan.AbsorptionOnStruckUnit(1, 2, 3), True),
     #(spell_plan.ProcKindNotRead(1, 2, 3), True),
+    #(spell_plan.SummonedProcNotRead(1, 2, 3, 4), True),
     #(spell_plan.StruckMoveNotRead(1, 2, forced_move.UnknownKind(2, 16)), True),
     #(
       spell_plan.StruckMoveNotRead(1, 2, forced_move.NotAFloat(2, "dataBits01")),

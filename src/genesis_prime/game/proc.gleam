@@ -33,8 +33,8 @@ pub type Event {
   )
 }
 
-/// The spell of an event: its Spell4, its spell groups (`Spell4GroupList`) and its school
-/// (`Spell4Base.school`).
+/// The spell of an event: its Spell4, its Spell4Base (`Spell4.spell4BaseIdBaseSpell`), its
+/// spell groups (`Spell4GroupList`) and its school (`Spell4Base.school`).
 pub type EventSpell {
   EventSpell(
     spell4_id: Spell4Id,

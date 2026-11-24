@@ -214,8 +214,11 @@
 ////   with an aim of 32 or above, or with no life
 ////   (`ProcIsLeftOut`), a row whose spell the Spell4 table has no row for, which the
 ////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`),
-////   and a row whose filter names a Spell4 or Spell4Base the table lacks
-////   (`ProcFilterNamesNoSpell4`, `ProcFilterNamesNoSpell4Base`);
+////   and a row whose filter names a Spell4, Spell4Base or spell group the tables lack
+////   (`ProcFilterNamesNoSpell4`, `ProcFilterNamesNoSpell4Base`, `ProcFilterNamesNoGroup`);
+////   a Proc the caster holds in a spell that also holds a summon effect (type 98) is no
+////   left-out row but a refusal of its ability, since the summoned unit it belongs to is not
+////   built (`SummonedProcNotRead`, `proc_beside_a_summon`);
 ////   a row of these kinds with a chance outside 0 to 1.0, a window or
 ////   count at or below 0 (a window of -1 excepted), a filter kind other than 0, 1 and 2 or a
 ////   negative delay fails the load naming the column (`ProcNotRead`). The spells the procs
@@ -2374,6 +2377,10 @@ pub type LeftOutReason {
   /// A Proc whose filter names a Spell4Base the table has no row for (Procs 217742 and 217745
   /// of the Engineer's Rune Set spells name 25688): left out as `ProcFilterNamesNoSpell4` is.
   ProcFilterNamesNoSpell4Base(spell4_base_id: Int)
+  /// A Proc whose filter names a spell group no Spell4GroupList row lists (Proc 187515 of
+  /// Spell4 61170 names group 1306): no event's spell holds it, so the row could never fire.
+  /// It is left out as `ProcFilterNamesNoSpell4` is (`proc_read_with_gates`).
+  ProcFilterNamesNoGroup(group_id: Int)
   /// A Proc behind a caster or target persistence prerequisite, which no rule checks
   /// while a proc is held (`Spell4Effects.effectType.14.prerequisites`).
   ProcBehindPersistence
@@ -2670,6 +2677,17 @@ pub type PlanError {
   /// A Proc effect of a kind the server does not read (`proc_read`): the row is in no
   /// list of its spell and the load goes on, so this error is a skip, never a failure.
   ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int)
+  /// A Proc effect the caster holds sits in a spell that also holds a summon effect
+  /// (`effect_type` 98, whose dataBits00 names the Creature2): `proc_effect_id` and
+  /// `summon_effect_id` are the two rows. The server does not build the summon, so the
+  /// summoned unit the Proc belongs to is absent and the row would land on the caster
+  /// (Spell4 73125's Proc 189684 beside the Q9396 Probebot's summon 189689).
+  SummonedProcNotRead(
+    spell4_id: Int,
+    proc_effect_id: Int,
+    summon_effect_id: Int,
+    creature2_id: Int,
+  )
   /// A Proc effect of a kind the server reads has a column the plan does not read: its
   /// name and value. The load fails (`proc_read`).
   ProcNotRead(spell4_id: Int, effect_id: Int, column: String, value: Int)
@@ -3074,6 +3092,21 @@ pub fn describe(error error: PlanError) -> String {
       <> " of kind "
       <> int.to_string(kind)
       <> ", which is not read"
+    SummonedProcNotRead(
+      spell4_id:,
+      proc_effect_id:,
+      summon_effect_id:,
+      creature2_id:,
+    ) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proc effect "
+      <> int.to_string(proc_effect_id)
+      <> " aimed at the caster beside the summon effect "
+      <> int.to_string(summon_effect_id)
+      <> ", and its summon (type 98, Creature2 "
+      <> int.to_string(creature2_id)
+      <> ") is not built, so the Proc would land on the caster"
     ProcNotRead(spell4_id:, effect_id:, column:, value:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3307,6 +3340,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | AbsorptionHasNoLifetime(..)
     | AbsorptionOnStruckUnit(..)
     | ProcKindNotRead(..)
+    | SummonedProcNotRead(..)
     | DisguiseNotRead(..)
     | AreaNotBuilt(..) -> True
     NoRow(..)
@@ -3664,15 +3698,15 @@ fn phases_by_owner(
   })
 }
 
-/// What a Proc's filters read of a spell that is only a Spell4 id: its spell groups and its
-/// school.
+/// What a Proc's filters read of a spell that is only a Spell4 id: its Spell4Base, its spell
+/// groups and its school.
 pub type SpellFacts {
   SpellFacts(spell4_base_id: Spell4BaseId, groups: List(Int), school: Int)
 }
 
-/// The groups and school of the spell `spell4_id` as a Proc's filters read them: the group
-/// ids of its Spell4GroupList row (`0x140561d80`), none for the list id 0, and its
-/// Spell4Base school. A Spell4, Spell4Base or group list row the tables lack is an error, so a
+/// The Spell4Base, groups and school of the spell `spell4_id` as a Proc's filters read them:
+/// its Spell4Base (`Spell4.spell4BaseIdBaseSpell`), the group ids of its Spell4GroupList row
+/// (`0x140561d80`), none for the list id 0, and its Spell4Base school. A Spell4, Spell4Base or group list row the tables lack is an error, so a
 /// caller never takes a spell whose groups are unknown for one that has none.
 pub fn facts_of_spell4(
   tables tables: table_store.Tables,
@@ -5946,7 +5980,8 @@ fn kind_reading(
       )
       heal_reading(tables:, place:, spell4_id:, effect:, vital:)
     }
-    effect_kind.Proc -> proc_reading(tables:, place:, spell4_id:, effect:)
+    effect_kind.Proc ->
+      proc_reading(tables:, sources:, place:, spell4_id:, effect:)
     effect_kind.Proxy ->
       proxy_reading(tables:, sources:, place:, spell4_id:, effect:)
     effect_kind.Damage -> Ok(ReadByArea)
@@ -6636,12 +6671,15 @@ fn try_heal(
 }
 
 /// A Proc row: left out when its kind is one the holder's own events do not make or its
-/// shape is one a rule does not hold (`proc_read`) or its dataBits01 names a Spell4 the
-/// tables lack (`ProcCastsNoSpell`), else its reading with its caster condition and its
-/// two gates, the Prerequisite rows its dataBits06 and dataBits09 name; a gate or a
-/// one-spell filter naming a row the tables lack fails the load.
+/// shape is one a rule does not hold (`proc_read`), its dataBits01 names a Spell4 the
+/// tables lack (`ProcCastsNoSpell`) or its filter names an id its table lacks
+/// (`proc_read_with_gates`), else its reading with its caster condition and its two gates,
+/// the Prerequisite rows its dataBits06 and dataBits09 name; a gate naming a row the tables
+/// lack fails the load, and a row the caster holds in a spell that also summons leaves its
+/// ability unbuilt (`proc_beside_a_summon`).
 fn proc_reading(
   tables tables: table_store.Tables,
+  sources sources: Sources,
   place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
@@ -6658,9 +6696,69 @@ fn proc_reading(
           case spell4.get(tables:, id: Spell4Id(effect.data_bits01)) {
             Error(Nil) ->
               Ok(LeftOut(why: ProcCastsNoSpell(spell4_id: effect.data_bits01)))
-            Ok(_) -> proc_read_with_gates(tables:, effect:, reading:)
+            Ok(_) ->
+              proc_gated_reading(
+                tables:,
+                sources:,
+                spell4_id:,
+                effect:,
+                reading:,
+              )
           }
       }
+  }
+}
+
+/// The reading of a Proc row whose spell has its row, with its gates and its filter's ids
+/// (`proc_read_with_gates`), refused when the caster holds it in a spell that also summons
+/// (`proc_beside_a_summon`).
+fn proc_gated_reading(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  reading reading: ProcReading,
+) -> Result(RowReading, PlanError) {
+  use read <- result.try(proc_read_with_gates(
+    tables:,
+    sources:,
+    effect:,
+    reading:,
+  ))
+  case read, reading.holder {
+    Applied(ReadProc(..)), HeldByCaster ->
+      proc_beside_a_summon(sources:, spell4_id:, effect:)
+      |> result.replace(read)
+    Applied(..), _
+    | Held(..), _
+    | LeftOut(..), _
+    | ReadByArea, _
+    | ReadByActivation, _
+    -> Ok(read)
+  }
+}
+
+/// Refuses a Proc row the caster holds when its spell also holds a summon effect (type 98):
+/// the Proc belongs to the summoned unit the server does not build, so it would land on the
+/// caster. Two spells hold both, Spell4 73125 and 76365, and no spell a player reaches does.
+fn proc_beside_a_summon(
+  sources sources: Sources,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Nil, PlanError) {
+  case
+    list.find(effects_of(sources:, spell4_id:), fn(row) {
+      row.effect_type == 98
+    })
+  {
+    Ok(summon) ->
+      Error(SummonedProcNotRead(
+        spell4_id:,
+        proc_effect_id: effect.id,
+        summon_effect_id: summon.id,
+        creature2_id: summon.data_bits00,
+      ))
+    Error(Nil) -> Ok(Nil)
   }
 }
 
@@ -6712,9 +6810,11 @@ fn proc_place_refusal(
   |> option.from_result
 }
 
-/// The reading of a Proc row whose spell has its row, with its condition and its gates.
+/// The reading of a Proc row whose spell has its row, with its condition and its gates; a
+/// filter naming a Spell4, Spell4Base or spell group the tables lack leaves the row out.
 fn proc_read_with_gates(
   tables tables: table_store.Tables,
+  sources sources: Sources,
   effect effect: spell4_effects.Spell4Effects,
   reading reading: ProcReading,
 ) -> Result(RowReading, PlanError) {
@@ -6745,7 +6845,12 @@ fn proc_read_with_gates(
             )),
           )
       }
-    AnySpell | InGroup(..) -> Ok(applied)
+    InGroup(group_id: named) ->
+      case set.contains(sources.known_groups, named) {
+        True -> Ok(applied)
+        False -> Ok(LeftOut(why: ProcFilterNamesNoGroup(group_id: named)))
+      }
+    AnySpell -> Ok(applied)
   }
 }
 
@@ -8585,8 +8690,8 @@ pub fn restrictions_in_phase(
   |> list.filter(fn(control) { reaches_caster(aim: control.aim) })
 }
 
-/// The spellGroupId00 to 31 columns of a Spell4GroupList row, in order.
-fn group_ids_of(row row: spell4_group_list.Spell4GroupList) -> List(Int) {
+/// The spellGroupId00 to 31 columns of a Spell4GroupList row, in order, 0 for an empty slot.
+pub fn group_ids_of(row row: spell4_group_list.Spell4GroupList) -> List(Int) {
   [
     row.spell_group_id00,
     row.spell_group_id01,
@@ -8627,6 +8732,10 @@ fn group_ids_of(row row: spell4_group_list.Spell4GroupList) -> List(Int) {
 /// reasons and plan errors the coverage measure prints for each row.
 pub fn gaps() -> List(gap.Entry) {
   [
+    gap.Entry(
+      area: "Summons",
+      missing: "a summon effect (type 98) is read by no rule, and a spell that holds one beside a Proc the caster holds is refused with its ability, since the Proc belongs to the summoned unit the server does not build: Spell4 73125 (the Q9396 Probebot, Proc 189684, summon 189689 of Creature2 63677), reached through the Probe Console's activate spell 73275, and Spell4 76365 (Proc 198006, summon 198007 of Creature2 67734), reached by no press; a summon in any other spell is dropped with its row left out and nothing else of the spell changes",
+    ),
     gap.Entry(
       area: "Resource gains",
       missing: "a gain of vital 8 with no points and a float in dataBits05 (the Stalker's Nano Skin passives and one more spell) gives 0 points: nothing in the client's code or texts says what that float is for the resource",
