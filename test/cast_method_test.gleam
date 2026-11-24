@@ -874,7 +874,8 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
         | client_connection.Level(..)
         | client_connection.PropertiesChanged(..)
         | client_connection.Stealth(..)
-        | client_connection.LookChanged(..) -> False
+        | client_connection.LookChanged(..)
+        | client_connection.HeldCastEnded(..) -> False
       }
     })
     |> list.length

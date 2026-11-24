@@ -10,7 +10,7 @@
 ////   effects into writes to the caster, tells of news to the viewers
 ////   (`CastStarted`, `CastWent`, `CastFinished`, in the run of the player's map),
 ////   timers and log lines. A viewer writes a 0x7ff only for a caster it shows, and
-////   a go or finish only for a start it wrote (`casts_written`, by cast id, kept
+////   a go or finish only for a start it wrote (`client_casts`, by cast id, kept
 ////   with the caster's unit id, so a removed unit's casts are finished before its
 ////   0x355 is written).
 //// - **Strikes** are a feature of their own (genesis_prime/game/strike): a go the cast
@@ -2079,6 +2079,7 @@ pub fn creature_news_frames(
     | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
-    | client_connection.LookChanged(..) -> []
+    | client_connection.LookChanged(..)
+    | client_connection.HeldCastEnded(..) -> []
   }
 }

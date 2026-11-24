@@ -690,3 +690,62 @@ fn told_effects(held held: Held, now_ms now_ms: Int) -> List(#(Int, Int, Int)) {
     #(effect.spell4_effects_id, effect.delay_ms, effect.lifetime_ms)
   })
 }
+
+/// The ally ends a cast for its viewers when the ledger's last source of it leaves (the
+/// module's doc comment): a release names each cast it left with no source once, in cast id
+/// order, and names nothing for a cast that still has a source.
+pub fn the_casts_a_release_leaves_with_no_source_are_named_once_each_in_cast_id_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Rows: the sources held in start order as (cast, row), the releases in order as lists of
+  // (cast, row), and the casts each release names.
+  let rows = [
+    #(
+      "two sources of one cast released together name the cast once",
+      [#(7, 1), #(7, 2)],
+      [[#(7, 1), #(7, 2)]],
+      [[7]],
+    ),
+    #(
+      "one of two sources released names nothing and the second then names the cast",
+      [#(7, 1), #(7, 2)],
+      [[#(7, 1)], [#(7, 2)]],
+      [[], [7]],
+    ),
+    #(
+      "sources of two casts released together name both in cast id order, not start order",
+      [#(9, 1), #(3, 1), #(9, 2)],
+      [[#(9, 1), #(3, 1), #(9, 2)]],
+      [[3, 9]],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, sources, releases, named) = row
+    let held =
+      held_listed(
+        listed: list.map(sources, fn(one) {
+          Listed(
+            caster: 3,
+            cast_id: one.0,
+            row: one.1,
+            spell4_id: 54_806,
+            starts_ms: 0,
+            ends_ms: 10_000,
+          )
+        }),
+      )
+    let #(_, got) =
+      list.fold(releases, #(held, []), fn(so_far, release) {
+        let #(held, got) = so_far
+        let released =
+          list.map(release, fn(one) { row_source(cast_id: one.0, row: one.1) })
+        let held =
+          list.fold(released, held, fn(held, source) {
+            let assert Ok(#(held, _)) = held_changes.released(held:, source:)
+              as "the source is held"
+            held
+          })
+        #(held, [held_changes.casts_left(held:, released:), ..got])
+      })
+    assert list.reverse(got) == named as reason
+  })
+}

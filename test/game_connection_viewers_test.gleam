@@ -37,6 +37,7 @@ import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_effect_info
+import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_target_info
 import genesis_prime/message/spell_targets_removed
@@ -1640,15 +1641,21 @@ pub fn an_object_unseen_and_seen_again_under_the_same_id_writes_a_0x355_then_a_0
     as "a second notice of the shown object writes nothing"
 }
 
-/// `opcode.0x262.casts` and `CreateCast 0x140561780`: the client links a listed cast into
-/// the unit it names as its caster, and a cast id 0 is filed as a pending cast, which makes
-/// the client skip the rest of the list; so a viewer writes only the entries of the unit
-/// the create is for and with a cast id above 0, and a cast it listed is one it later
-/// finishes (a 0x7fe is written only for a recorded cast, as for a watched one).
-pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
+/// `opcode.0x262.casts`, `cast.unknown_caster` and `CreateCast 0x140561780`: the client
+/// makes every cast a create lists, whether or not it knows the caster, and links it into
+/// the unit it names as its caster; a cast id 0 is filed as a pending cast, which makes the
+/// client skip the rest of the list. So a viewer writes the entries of the unit the create
+/// is for and the entries of other players' casts the unit holds, with a cast id above 0 and
+/// a caster that is not the viewer (its cast rule finished such a cast when it dropped the
+/// last node, `proc.nodes_left`), and records as its own to finish only the casts of the
+/// unit the create is for (a 0x7fe is written only for a recorded cast, as for a watched
+/// one).
+pub fn a_unit_create_lists_the_casts_of_the_unit_and_the_casts_of_others_it_holds_test() -> Nil {
   use <- owned_test.run(10_000)
   let id = 2_147_497_985
   let own = game_connection_support.listed_cast(cast_id: id, caster: 9)
+  let held_from_another =
+    game_connection_support.listed_cast(cast_id: id, caster: 7)
   list.each(
     [
       #(
@@ -1657,13 +1664,28 @@ pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
         id,
         [own],
         id,
+        [0x07FE],
       ),
       #(
-        "an entry whose caster is another unit is dropped, not recorded, and the cast in progress it named is 0",
-        [game_connection_support.listed_cast(cast_id: id, caster: 7)],
+        "an entry whose caster is another unit is kept and not recorded (the created unit's CastFinished for it writes no 0x7fe), and the cast in progress stays the created unit's own, which is none",
+        [held_from_another],
+        id,
+        [held_from_another],
+        0,
+        [],
+      ),
+      #(
+        "an entry whose caster is the viewer's own unit is dropped",
+        [
+          game_connection_support.listed_cast(
+            cast_id: id,
+            caster: game_connection_support.own_unit_id,
+          ),
+        ],
         id,
         [],
         0,
+        [],
       ),
       #(
         "an entry with cast id 0 is dropped and not recorded",
@@ -1671,10 +1693,11 @@ pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
         0,
         [],
         0,
+        [],
       ),
     ],
     fn(row) {
-      let #(name, casts, cast_id, kept, written_cast_id) = row
+      let #(name, casts, cast_id, kept, written_cast_id, finished) = row
       let #(state, taken) =
         game_connection_support.feed(
           game_connection_support.in_world(),
@@ -1697,7 +1720,7 @@ pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
         as name
       assert created.tail.casts == kept as name
       assert created.tail.cast_id == written_cast_id as name
-      let #(_, finished) =
+      let #(_, taken) =
         game_connection_support.feed(
           state,
           game_connection_support.sent_by_a_peer(
@@ -1707,11 +1730,206 @@ pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
             ),
           ),
         )
-      assert game_connection_support.written_ids(finished)
-        == list.map(kept, fn(_) { 0x07FE })
-        as name
+      assert game_connection_support.written_ids(taken) == finished as name
     },
   )
+}
+
+/// What a viewer writes that the test below tells apart: the 0x811 of a cast naming units, the
+/// 0x7fe of a cast, or any other frame by its opcode.
+type Written {
+  TargetsRemoved(cast_id: Int, unit_ids: List(Int))
+  Finished(cast_id: Int)
+  Other(opcode: Int)
+}
+
+fn written_of(
+  taken taken: step.ConnectionStep(client_connection.Request),
+) -> List(Written) {
+  list.map(
+    game_connection_support.heard(taken, game_connection_support.keyed()),
+    fn(frame) {
+      case frame.message_id {
+        0x0811 -> {
+          let assert Ok(removed) = spell_targets_removed.decode(frame.body)
+            as "a 0x811 the viewer wrote decodes"
+          TargetsRemoved(cast_id: removed.cast_id, unit_ids: removed.unit_ids)
+        }
+        0x07FE -> {
+          let assert Ok(finished) = spell_finished.decode(frame.body)
+            as "a 0x7fe the viewer wrote decodes"
+          Finished(cast_id: finished.cast_id)
+        }
+        opcode -> Other(opcode:)
+      }
+    },
+  )
+}
+
+/// News of the unit `unit_id` as its owner sends it to the viewer.
+fn from_unit(
+  unit_id unit_id: Int,
+  news news: client_connection.News,
+) -> step.Event(
+  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+) {
+  game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+    unit_id:,
+    news:,
+  ))
+}
+
+/// The create of the player unit `unit_id` that lists `casts`, no cast in progress.
+fn created_listing(
+  unit_id unit_id: Int,
+  casts casts: List(UnitCreateCast),
+) -> client_connection.News {
+  Appeared(
+    unit_create_player.UnitCreatePlayer(
+      ..game_connection_support.another_unit_casting(casts:, cast_id: 0),
+      unit_id:,
+    ),
+  )
+}
+
+/// `opcode.0x811`, `cast.target_node_end` and `cast.unknown_caster`: a cast an ally's create
+/// listed is ended at a viewer by one party. When the caster told the viewer the cast, its
+/// own frames end it and the ally's end is dropped; when the viewer was never told it, or
+/// was told it and saw it finished, the ally's `HeldCastEnded` writes one 0x811 naming the
+/// ally, never a 0x7fe (that would end the cast's nodes on other units too). A cast the
+/// ally's create borrowed stays borrowed when the caster's create or start reaches the
+/// viewer after it, so the caster's removal, finish and start write nothing for it
+/// (`viewers.written_cast_frames`: a frame is written only for a cast the viewer wrote the
+/// start of).
+pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_caster_did_not_tell_the_viewer_the_cast_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let ally = 9
+  let other_ally = 10
+  let caster = 7
+  let cast_id = 2_147_497_985
+  let listed = [
+    game_connection_support.listed_cast(cast_id:, caster:),
+  ]
+  let ally_lists =
+    from_unit(
+      unit_id: ally,
+      news: created_listing(unit_id: ally, casts: listed),
+    )
+  let ally_ends =
+    from_unit(unit_id: ally, news: client_connection.HeldCastEnded(cast_id:))
+  let caster_appears =
+    from_unit(
+      unit_id: caster,
+      news: created_listing(unit_id: caster, casts: []),
+    )
+  let caster_starts =
+    from_unit(
+      unit_id: caster,
+      news: client_connection.CastStarted(
+        start: game_connection_support.spell_started_of(cast_id:, caster:),
+      ),
+    )
+  let caster_finishes = from_unit(unit_id: caster, news: CastFinished(cast_id:))
+  let caster_removes_the_ally =
+    from_unit(
+      unit_id: caster,
+      news: client_connection.CastTargetsRemoved(
+        removed: spell_targets_removed.SpellTargetsRemoved(cast_id:, unit_ids: [
+          ally,
+        ]),
+        destroyed: True,
+      ),
+    )
+  let ended_on = fn(unit_ids) { TargetsRemoved(cast_id:, unit_ids:) }
+  // What reaches the viewer before the steps asserted, the steps, and what each writes.
+  let rows = [
+    #(
+      "the viewer was never told the cast: the ally's end writes one 0x811 naming the ally, and a second writes nothing",
+      [ally_lists],
+      [ally_ends, ally_ends],
+      [[ended_on([ally])], []],
+    ),
+    #(
+      "the caster told the viewer the cast before the ally's create: the ally's end writes nothing and the caster's own 0x811 naming the ally is written",
+      [caster_appears, caster_starts, ally_lists],
+      [ally_ends, caster_removes_the_ally],
+      [[], [ended_on([ally])]],
+    ),
+    #(
+      "the caster's finish was written before the ally's create: the ally's end writes the 0x811",
+      [caster_appears, caster_starts, caster_finishes, ally_lists],
+      [ally_ends],
+      [[ended_on([ally])]],
+    ),
+    #(
+      "the caster's create lists the cast after the ally's: the cast stays borrowed, the caster's finish writes nothing and the ally's end writes the 0x811",
+      [
+        ally_lists,
+        from_unit(
+          unit_id: caster,
+          news: created_listing(unit_id: caster, casts: listed),
+        ),
+      ],
+      [caster_finishes, ally_ends],
+      [[], [ended_on([ally])]],
+    ),
+    #(
+      "the caster leaves the viewer's sight after the ally's create borrowed the cast: its removal writes no 0x7fe, and the ally's end then writes the 0x811",
+      [
+        ally_lists,
+        from_unit(
+          unit_id: caster,
+          news: created_listing(unit_id: caster, casts: listed),
+        ),
+      ],
+      [from_unit(unit_id: caster, news: Removed), ally_ends],
+      [[Other(0x0355)], [ended_on([ally])]],
+    ),
+    #(
+      "the caster's start reaches the viewer after the ally's create: it is dropped, so the caster's finish writes nothing and the ally's end writes the 0x811",
+      [caster_appears, ally_lists],
+      [caster_starts, caster_finishes, ally_ends],
+      [[], [], [ended_on([ally])]],
+    ),
+    #(
+      "two allies listed one cast: each end names its own ally alone",
+      [
+        ally_lists,
+        from_unit(
+          unit_id: other_ally,
+          news: created_listing(unit_id: other_ally, casts: listed),
+        ),
+      ],
+      [
+        ally_ends,
+        from_unit(
+          unit_id: other_ally,
+          news: client_connection.HeldCastEnded(cast_id:),
+        ),
+      ],
+      [[ended_on([ally])], [ended_on([other_ally])]],
+    ),
+    #(
+      "the ally leaves the viewer's sight, then its end: nothing",
+      [ally_lists],
+      [from_unit(unit_id: ally, news: Removed), ally_ends],
+      [[Other(0x0355)], []],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, setup, steps, expected) = row
+    let state =
+      list.fold(setup, game_connection_support.in_world(), fn(state, event) {
+        game_connection_support.feed(state, event).0
+      })
+    let #(_, written) =
+      list.fold(steps, #(state, []), fn(so_far, event) {
+        let #(state, written) = so_far
+        let #(state, taken) = game_connection_support.feed(state, event)
+        #(state, list.append(written, [written_of(taken:)]))
+      })
+    assert written == expected as reason
+  })
 }
 
 /// Gamma Rays (Spell4 29874: castTime 1250 ms, a Normal cast with a cast bar) and Discharge

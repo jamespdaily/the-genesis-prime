@@ -571,7 +571,8 @@ fn is_cast_or_combat_news(news: client_connection.News) -> Bool {
     | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
-    | client_connection.LookChanged(..) -> False
+    | client_connection.LookChanged(..)
+    | client_connection.HeldCastEnded(..) -> False
   }
 }
 
@@ -631,7 +632,8 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_tes
       | client_connection.Level(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
-      | client_connection.LookChanged(..) -> False
+      | client_connection.LookChanged(..)
+      | client_connection.HeldCastEnded(..) -> False
     }
   })
     as "the viewer is told 42148's start, which it writes as 0x7ff for a caster it shows (opcode.0x7ff)"

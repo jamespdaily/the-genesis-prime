@@ -218,8 +218,14 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["0x262", "from another player"],
-      "a cast held on a player by another player is not listed in the 0x262 a later viewer is sent",
+      ["comes into sight", "already shown"],
+      "a viewer is shown another player's buffs on a player only when it comes into sight of the player after the change started",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["borrowed", "client_casts"],
+      "a cast a viewer borrowed from a player's create is ended by that player alone",
     ),
     Limit(
       connection_landing.gaps(),

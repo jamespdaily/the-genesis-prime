@@ -3513,6 +3513,152 @@ pub fn an_esper_walks_out_of_the_sight_of_the_ally_it_pressed_phantasmal_armor_a
   login_support.stop(started)
 }
 
+/// Phantasmal Armor as above, then the Esper walks out of the Medic's sight, and a third
+/// player, a Medic, comes into the first Medic's sight and never sees the Esper. The Medic's
+/// 0x262 lists the Esper's cast of Spell4 32823 (`opcode.0x262.casts`): the Esper as its
+/// caster, the Medic as its primary and only target, Spell4Effects 62024 with the time it has
+/// left; the client shows a cast whose caster it does not know (`cast.unknown_caster`), so the
+/// third client shows the buff. When the test's clock passes the row's 10 000 ms the Esper's
+/// connection tells the Medic's the end and the Medic's tells the third a 0x811 naming the
+/// Medic for that cast id (`opcode.0x811`), and no 0x7fe of it, which would end the cast's
+/// nodes on other units too. The third client's reads wait for the Medic's 0x262 and the
+/// 0x811 by themselves; the flow is three processes (the Esper's connection, the Medic's and
+/// the third's), so no read depends on the order of one sender's frame against another's.
+pub fn a_player_that_arrives_beside_an_ally_after_its_esper_walked_away_shows_the_phantasmal_armor_buff_on_the_ally_until_it_ends_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(first:, second:, seen_second:, second_have:, ..) =
+    two_players_enter(started:, first_class: 3, level: 6)
+  let esper = 1
+  let medic = unit_of(seen_second)
+  assert medic == 2 as "the Medic is the second unit"
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 6,
+      ability: 19_033,
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: medic,
+  )
+  let pressed_start = fn(frames) {
+    list.filter(
+      connection_support.decoded(
+        frames,
+        spell_started.message_id,
+        spell_started.decode,
+      ),
+      fn(start) { start.spell4_id == 32_823 },
+    )
+  }
+  let #(medic_read, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      pressed_start(frames) != []
+      && list.any(absorptions_in(frames:, unit: medic), fn(value) { value > 0 })
+    })
+  let assert [started_cast] = pressed_start(medic_read)
+    as "the Medic's client is told the pressed cast once"
+  walk_to(game: first, z: 1040.0, clock: 1)
+  let #(_, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), esper)
+    })
+  // The third player enters at the Medic's place, 1040 units from the Esper.
+  let #(third, third_character) =
+    new_player_at_level(
+      started:,
+      number: 3,
+      character_name: "Third Mc",
+      class_id: 4,
+      level: 6,
+    )
+  send_play(game: third, character_id: third_character)
+  let #(third_entry, third_have) =
+    game_client.read_entry_kept(game: third, have: <<>>)
+  let created_medic = fn(frames) {
+    list.any(frames, fn(frame) {
+      created_unit_of(frame:) |> result.map(fn(created) { created.0 })
+      == Ok(medic)
+    })
+  }
+  let #(third_arrived, third_have) =
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      created_medic(list.append(third_entry, frames))
+    })
+  let third_seen = list.append(third_entry, third_arrived)
+  assert !list.any(third_seen, fn(frame) {
+    created_unit_of(frame:) |> result.map(fn(created) { created.0 })
+    == Ok(esper)
+  })
+    as "the third player never sees the Esper: it stands 1040 units away, past the sight range"
+  let medic_casts =
+    list.flat_map(third_seen, fn(frame) {
+      case created_unit_of(frame:) {
+        Ok(#(created, casts)) if created == medic -> casts
+        Ok(_) | Error(Nil) -> []
+      }
+    })
+  let assert Ok(pressed) =
+    list.find(medic_casts, fn(cast) { cast.cast_id == started_cast.cast_id })
+    as "opcode.0x262.casts: the Medic's 0x262 lists the Esper's cast the third player was never told"
+  assert pressed.caster_unit_id == esper
+    && pressed.spell4_id == 32_823
+    && pressed.primary_target_unit_id == medic
+    as "the entry names the Esper as its caster, Spell4 32823 and the Medic as the primary target"
+  let assert [target] = pressed.targets
+    as "the cast holds one target, the Medic"
+  assert target.unit_id == medic as "and it is the Medic"
+  let assert [effect] = target.effects
+    as "the Medic holds the one effect Spell4Effects 62024 of tier 1"
+  assert effect.spell4_effects_id == 62_024
+    && effect.delay_ms == 0
+    && effect.lifetime_ms > 0
+    && effect.lifetime_ms <= 10_000
+    as "opcode.0x7f4.effect_time: the absorb is listed with delay 0 and the time it has left, at most its 10 000 ms"
+  // The node ends 10 000 ms after the go: the Esper's connection tells the Medic's the end,
+  // and the Medic's connection tells the third player's. The Medic's own client is written
+  // its absorption's end in the step that tells the viewers, and the Medic's move after it is
+  // told to the third player after the end, by the one sender, so the third player's read of
+  // the move bounds the 0x811, which is among the frames read by then or never written.
+  driven_time.advance(time:, ms: 10_000)
+  let #(_, _) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      absorptions_in(frames:, unit: medic) == [0]
+    })
+  walk_to(game: second, z: 3.0, clock: 1)
+  let #(until_end, _) =
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      list.any(game_client.fight_in(frames:), fn(event) {
+        case event {
+          game_client.Moves(unit_id:, ..) -> unit_id == medic
+          _ -> False
+        }
+      })
+    })
+  assert list.count(
+      game_client.targets_removed_in(frames: until_end),
+      fn(removed) { removed == #(started_cast.cast_id, [medic]) },
+    )
+    == 1
+    as "opcode.0x811: the third player's client reads one 0x811 naming the Medic for the cast, which ends the buff"
+  assert !list.contains(
+    finished_casts_in(frames: until_end),
+    started_cast.cast_id,
+  )
+    as "opcode.0x7fe: and no 0x7fe of the cast, which would end its nodes on other units"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  game_client.close(game: third)
+  login_support.stop(started)
+}
+
 /// What a Spellslinger's press of Runes of Protection, with a Medic standing `metres` metres
 /// ahead of it, showed the two clients: each Medic's and the Spellslinger's unit, the absorb the
 /// row 206315 gives, the frames each client read at the go (`caster_read`, `ally_read`) and

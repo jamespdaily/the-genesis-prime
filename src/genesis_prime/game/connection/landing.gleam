@@ -32,6 +32,8 @@
 ////   the map's UnseenBy(C) ─▶ caster_unseen: C's sources with `EndsWhenUnseen` taken off
 ////   the map's Gone(C's unit) ─▶ caster_removed: every source of that unit taken off
 ////   T dies                ─▶ ended_at_death: every source T holds taken off
+////   each of the three, once a cast has no source left
+////                         ─▶ Tell(each viewer, PeerNews(T, HeldCastEnded(cast_id))), after T's own writes
 //// ```
 ////
 //// - **A change is taken only from a caster T sees**: C is among T's viewers with the stay
@@ -50,6 +52,10 @@
 ////   effect with the go's own monotonic time as its start, which the ledger keeps
 ////   (`held_changes.started`) so that the player's create lists the cast
 ////   (`held_changes.cast_views`).
+//// - **The viewers are told when a cast's last source ends** (`viewers_told_ended`,
+////   `held_changes.casts_left`): a viewer that was listed the cast by T's create and not told
+////   it by its caster writes a 0x811 naming T, and any other viewer drops the news
+////   (genesis_prime/game/client_casts). T keeps no per-viewer record, so every viewer is told.
 //// - **A source told again goes to the player's own function again**: an absorb pool is
 ////   refilled, a property modifier already held changes nothing
 ////   (genesis_prime/game/unit_properties `apply`).
@@ -61,6 +67,7 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/client_casts
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/look as connection_look
@@ -77,10 +84,8 @@ import genesis_prime/step.{
 }
 import gleam/bool
 import gleam/dict
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set
 
 /// The heal rows of `strike` applied to the player `entered`, and the answer told to
 /// the caster's connection for the stay the strike names, before the player's own news.
@@ -198,7 +203,14 @@ pub fn changed(
             })
           let #(session, effects) = ended(session:, now:, source:)
           let #(session, finished) = orphans_finished(session:)
-          Continue(session, list.append(effects, finished))
+          Continue(
+            session,
+            list.flatten([
+              effects,
+              finished,
+              viewers_told_ended(session:, sources: [source]),
+            ]),
+          )
         }
         Ok(_) | Error(Nil) -> Continue(session, [])
       }
@@ -264,12 +276,42 @@ fn released_ended(
           #(session, list.append(done, more))
         })
       let #(session, finished) = orphans_finished(session:)
-      #(session, list.append(effects, finished))
+      #(
+        session,
+        list.flatten([
+          effects,
+          finished,
+          viewers_told_ended(session:, sources:),
+        ]),
+      )
     }
   }
 }
 
-/// The 0x7fe of each cast the client holds with no caster (`Entered.casts_orphaned`) of
+/// The tell of `HeldCastEnded` to each viewer of the player for each cast of `sources` of
+/// which the player holds no source any more, in cast id order, after the writes to the
+/// player's own client: the viewers that were listed the cast by the player's create and
+/// not told it by its caster end it themselves (genesis_prime/game/connection/viewers).
+fn viewers_told_ended(
+  session session: Session,
+  sources sources: List(unit_properties.Source),
+) -> List(Effect(ConnectionEffect(Request))) {
+  case connection_state.entered_of(session.status) {
+    None -> []
+    Some(entered) ->
+      list.flat_map(
+        held_changes.casts_left(held: entered.held, released: sources),
+        fn(cast_id) {
+          connection_state.news_to_viewers(
+            entered:,
+            news: client_connection.HeldCastEnded(cast_id:),
+          )
+        },
+      )
+  }
+}
+
+/// The 0x7fe of each cast the client holds with no caster (`client_casts.orphans`) of
 /// which the player holds no source any more, in cast id order, written after the write of
 /// the source that ended last: with the caster's unit removed, no frame of the caster
 /// reaches the client, so the player's connection ends the cast (`cast.target_node_end`).
@@ -279,19 +321,20 @@ fn orphans_finished(
   case connection_state.entered_of(session.status) {
     None -> #(session, [])
     Some(entered) -> {
-      let #(done, still) =
-        set.to_list(entered.casts_orphaned)
-        |> list.sort(int.compare)
-        |> list.partition(fn(cast_id) {
-          !held_changes.holds_cast(held: entered.held, cast_id:)
-        })
+      let done =
+        held_changes.casts_without_source(
+          held: entered.held,
+          cast_ids: client_casts.orphans(casts: entered.client_casts),
+        )
       use <- bool.guard(when: done == [], return: #(session, []))
       let session =
         connection_state.with_entered(session:, change: fn(entered) {
           world_entry.Entered(
             ..entered,
-            casts_orphaned: set.from_list(still),
-            casts_written: dict.drop(entered.casts_written, done),
+            client_casts: client_casts.orphans_ended(
+              casts: entered.client_casts,
+              cast_ids: done,
+            ),
           )
         })
       #(
@@ -316,7 +359,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A cast held on a player from another player is in the 0x262 the player sends a viewer that comes later (genesis_prime/game/connection/viewers `appearance` lists `held_changes.cast_views`), and the viewer drops an entry whose caster is another unit (`casts_listed`), so that viewer sees the buff from the next change.",
+      missing: "A viewer is shown the buffs other players' casts hold on a player only when it comes into sight of the player after the change started: a viewer already shown the player when a change starts, and not told the cast by its caster, is shown no buff; a cast that starts after the viewer's create reaches it only through its caster's frames; a tell that reaches the player after its create was written leaves the node missing until the caster's next go; and a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`).",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A cast a viewer borrowed from a player's create (genesis_prime/game/client_casts) is ended by that player alone: its caster's later create, start, frames and removal write nothing for it, so a second go of the cast, a tick or a 0x813 of its stack does not reach that viewer, and a cast held with no caster by the player's own client that another player lists is ended by the player's own end alone. The Fluff rows of another player's press (Spell4 bases 26762, 35526, 63087 and the children of 47675 and 19030) are not changes and are listed to no viewer. A cast whose method is Channeled, ChanneledField, Multiphase or 10 would stay filed after the 0x811 (none of the three spells that land a change is one).",
     ),
     gap.Entry(
       area: "Casting",
@@ -328,7 +375,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "The buff icon of a kept cast (a spell with propertyFlags 0x100) that holds a change on a player from another player ends in the client of each viewer of that player other than the player, which is written the cast's 0x7fe when the caster leaves its sight, while the change lasts, because only the player's own connection learns the end of a kept change; and a kept cast that holds a change on two players the player sees ends in the player's client with the player's own end, because the player cannot know the other node.",
+      missing: "The buff icon of a kept cast (a spell with propertyFlags 0x100) that holds a change on a player from another player ends in the client of each viewer of that player that was told the cast by its caster, other than the player, which is written the cast's 0x7fe when the caster leaves its sight, while the change lasts, because only the player's own connection learns the end of a kept change (a viewer that borrowed the cast from the player's create keeps it until the player's end); and a kept cast that holds a change on two players the player sees ends in the player's client with the player's own end, because the player cannot know the other node.",
     ),
     gap.Entry(
       area: "Casting",
