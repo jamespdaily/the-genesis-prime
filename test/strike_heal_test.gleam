@@ -624,7 +624,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
   assert list.map(selection.players, fn(address) { address.unit_id })
     == [32, 33]
     as "a Proxy at the area and no heal row: the two nearest allies, in the area's order"
-  assert selection.answers_allies && selection.heals == []
+  assert selection.acts_on_each_unit && selection.heals == []
     as "the phase starts children and tells no heal"
   assert strike.entropy_needed(selection:) == 0
     as "an ally selected for a Proxy takes no seed byte"
@@ -707,7 +707,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
   assert list.map(selection.players, fn(address) { address.unit_id })
     == [32, 33]
     as "a change of the area's units and no heal or Proxy: the two nearest allies, in the area's order"
-  assert selection.answers_allies && selection.heals == []
+  assert selection.acts_on_each_unit && selection.heals == []
     as "the phase answers its allies and tells no heal"
   assert strike.entropy_needed(selection:) == 0
     as "an ally selected for a change takes no seed byte"
@@ -1211,7 +1211,7 @@ fn selection_of(
     controls: [],
     gates: [],
     players: [ally(unit_id: 9)],
-    answers_allies: False,
+    acts_on_each_unit: False,
     heals:,
   )
 }

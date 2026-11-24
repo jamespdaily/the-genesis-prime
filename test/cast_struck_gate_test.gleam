@@ -134,7 +134,7 @@ fn selection_of(
     controls: [],
     gates: spell.struck_gates,
     players: [],
-    answers_allies: False,
+    acts_on_each_unit: False,
     heals: [],
   )
 }

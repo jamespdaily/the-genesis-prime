@@ -1511,7 +1511,7 @@ fn phase_of(
       spent:,
       as_kind: spell_plan.as_proxy,
     )
-  let strikes_with = fn(reaches: fn(Aim) -> Bool, counting_changes: Bool) {
+  let strikes_without_changes = fn(reaches: fn(Aim) -> Bool) {
     list.any(firing, fn(effect) { reaches(effect.aim) })
     || list.any(gates, fn(gate) { reaches(gate.aim) })
     || list.any(throws, reaches)
@@ -1519,9 +1519,10 @@ fn phase_of(
     || list.any(unit_states, reaches)
     || list.any(ticking_firing, fn(row) { reaches(row.damage.aim) })
     || list.any(controls, fn(control) { reaches(control.aim) })
-    || { counting_changes && list.any(changes, reaches) }
   }
-  let strikes = fn(reaches: fn(Aim) -> Bool) { strikes_with(reaches, True) }
+  let strikes = fn(reaches: fn(Aim) -> Bool) {
+    strikes_without_changes(reaches) || list.any(changes, reaches)
+  }
   let changes_allies =
     spell.finds_allies
     && list.any(changes, fn(aim) { spell_plan.reaches_area(aim:) })
@@ -1574,10 +1575,13 @@ fn phase_of(
       spell.finds_allies
       && list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
     },
-    strikes_area: strikes_with(
-      fn(aim) { spell_plan.reaches_area(aim:) },
-      !spell.finds_allies,
-    ),
+    strikes_area: strikes_without_changes(fn(aim) {
+      spell_plan.reaches_area(aim:)
+    })
+      || {
+      !spell.finds_allies
+      && list.any(changes, fn(aim) { spell_plan.reaches_area(aim:) })
+    },
     acts_on_each_unit: starts_children || changes_allies,
     strikes_primary_target: strikes(fn(aim) {
       spell_plan.reaches_primary_target(aim:)

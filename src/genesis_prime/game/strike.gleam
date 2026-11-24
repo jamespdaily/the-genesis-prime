@@ -254,7 +254,7 @@ pub type Selection {
     /// Whether the phase acts on each ally the area selected, by a child cast started on each
     /// (a Proxy aimed at the area) or a property change of each (a modifier aimed at the area),
     /// so each ally the area selected is a hit of the go whatever rows reach it.
-    answers_allies: Bool,
+    acts_on_each_unit: Bool,
   )
 }
 
@@ -363,7 +363,7 @@ pub fn select(
       gates: [],
       players: [],
       heals: [],
-      answers_allies: False,
+      acts_on_each_unit: False,
     )
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
@@ -412,7 +412,7 @@ pub fn select(
           attacker:,
           asked:,
           heals: phase.heals,
-          answers_allies: phase.acts_on_each_unit,
+          acts_on_each_unit: phase.acts_on_each_unit,
           allies: case spell_area_found.finds_allies {
             True -> from_area
             False -> []
@@ -434,7 +434,7 @@ pub fn select(
           [] -> []
           [_, ..] -> phase.heals
         },
-        answers_allies: phase.acts_on_each_unit,
+        acts_on_each_unit: phase.acts_on_each_unit,
       )
     }
   }
@@ -443,13 +443,13 @@ pub fn select(
 /// The players a go tells its heal rows to or starts a child on, with the player the cast
 /// names first: the primary target when it is a player in sight and a row aims at it, and the
 /// allies the area selected (`allies`, in selection order) when a row aims at the area or the
-/// phase acts on each ally of the area (`answers_allies`), each once. A player the
+/// phase acts on each ally of the area (`acts_on_each_unit`), each once. A player the
 /// caster has no address for is left out; none when the phase has neither.
 fn players_of_the_phase(
   attacker attacker: Attacker,
   asked asked: GoAsked,
   heals heals: List(spell_area.InstantHeal),
-  answers_allies answers_allies: Bool,
+  acts_on_each_unit acts_on_each_unit: Bool,
   allies allies: List(Int),
 ) -> List(PlayerAddress) {
   let primary = case
@@ -462,7 +462,7 @@ fn players_of_the_phase(
     True, Error(Nil) | False, _ -> []
   }
   let in_the_area = case
-    answers_allies
+    acts_on_each_unit
     || list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
   {
     True ->
@@ -702,7 +702,7 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
     gates:,
     players: _,
     heals:,
-    answers_allies: _,
+    acts_on_each_unit: _,
   ) = selection
   case blows, ticking, controls, gates, heals {
     [], [], [], [], [] -> 0
@@ -860,7 +860,7 @@ pub fn begin(
 /// of the rows that reach it, in the plan's order, each with the amount its formula gives
 /// for the caster as it is now. A player no row reaches past its gates has no place and no
 /// tell, and is not in the go, unless the phase acts on each ally the area selected
-/// (`Selection.answers_allies`): such an ally is a hit of the go, answered at once with
+/// (`Selection.acts_on_each_unit`): such an ally is a hit of the go, answered at once with
 /// nothing landed (`cast_state.HitOtherPlayer`), so the go starts the child on it or changes
 /// it. The
 /// caster, when the area took it as a candidate, is told nothing: its place is already
@@ -875,7 +875,7 @@ fn players_told(
     list.filter_map(selection.players, fn(address) {
       let unit_id = address.unit_id
       let selected_for_the_phase =
-        selection.answers_allies
+        selection.acts_on_each_unit
         && unit_id != attacker.unit_id
         && list.contains(selection.area, unit_id)
       case rows_reaching_unit(rows: reach.heals, unit_id:) {
