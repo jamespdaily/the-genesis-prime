@@ -264,6 +264,16 @@ fn limits() -> List(Limit) {
       "a viewer of the ally other than the ally loses the buff icon of a kept cast when the caster leaves its sight, and a cast that holds a change on two players the ally sees ends in the ally's client with the ally's end",
     ),
     Limit(
+      connection_landing.gaps(),
+      "Casting",
+      [
+        "Proc row the caster holds on an ally",
+        "applies nothing",
+        "walks into the area",
+      ],
+      "a Proc row the caster holds on an ally is told as a change that applies nothing, is held for the allies the round selected at the go, and ends with the change on the ally, the ally's death included",
+    ),
+    Limit(
       strike.gaps(),
       "Casting",
       ["target gate", "another player", "not read"],
