@@ -20,10 +20,13 @@
 ////   the height: the marker's own at its centre (the ground there, where the
 ////   marker is on the ground), and on its ring the ground the server reads
 ////   (`terrain.height_at`) at the slot when the marker's centre stands on the
-////   ground, its height within the client's lift of 2 of the ground read at the
-////   centre. A marker below or above the ground at its centre (an interior, a
-////   cave, a prop) keeps its own height at every slot, and so does a slot the
-////   ground has no read at.
+////   ground (its height within the client's lift of 2 of the ground read at the
+////   centre) and that read is within the ring's radius plus 2 of the marker's
+////   height, the server's choice for the ground of a slope no steeper than 45
+////   degrees from the centre. A marker below or above the ground at its centre
+////   (an interior, a cave, a prop) keeps its own height at every slot, and so does
+////   a slot the ground has no read at or whose read is outside that band (a pit, a
+////   cliff, terrain under props).
 //// - Where a creature stands in the circle, and which creature of a group takes
 ////   which place, are the server's choice. The objective's count is dealt to
 ////   its markers one at a time in column order; a marker that gets one stands
@@ -76,16 +79,6 @@
 //// Quest2 row, an index the quest has no objective at, or a quest slot with no
 //// QuestObjective row; a link to an objective of another type names none to place
 //// and is not. A placed creature stays after it is used.
-////
-//// Gaps, for the coverage measure: a creature on the ring of a marker that is not on
-//// the ground, or at a slot the ground has no read at, stands at the marker's height,
-//// which may be off the ground the client draws. Of the 2,072 rows placed over the
-//// client's tables and the world database, 1,230 ring rows stand on the ground of a
-//// marker that is on it; 232 stand on the ring of a marker above its centre's ground
-//// and 160 of a marker below it (props, interiors, caves), 126 on the ring of a marker
-//// whose centre has no ground read (46 in a hole cell, 80 in a square with no ground
-//// file) and 1 at a slot in a chunk with no layer; the rest stand at the centre of
-//// their marker.
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/activate
@@ -95,6 +88,7 @@ import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/target_group
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId, WorldLocation2Id}
@@ -177,15 +171,8 @@ type Marker {
 /// What one objective asks for, as far as the tables let it: the creatures with
 /// a Creature2 row, the markers with a row in a world with a stored spawn, and its
 /// count.
-/// `key` is the creature ids and the marker ids it names, each sorted, which two
-/// objectives that ask the same thing share.
 type Job {
-  Job(
-    key: #(List(Int), List(Int)),
-    creatures: List(Creature2),
-    markers: List(Marker),
-    count: Int,
-  )
+  Job(creatures: List(Creature2), markers: List(Marker), count: Int)
 }
 
 /// The rows to stand for the kill objectives, given the rows the stored spawn
@@ -242,7 +229,6 @@ pub fn place(
   let jobs =
     planned
     |> list.filter_map(fn(pair) { option.to_result(pair.0, Nil) })
-    |> merged
   let held = held_by(stored:, kinds:)
   let looks = spawn.looks(tables:)
   let stands =
@@ -363,7 +349,7 @@ fn with_largest_counts(
 }
 
 /// How many creatures of kill objectives each marker stands, by the marker's id.
-fn kill_slot_counts(stands stands: List(Stand)) -> dict.Dict(Int, Int) {
+fn kill_slot_counts(stands stands: List(Stand)) -> Dict(Int, Int) {
   list.map(stands, fn(stand) {
     #(stand.marker.row.id, list.length(stand.creatures))
   })
@@ -375,8 +361,8 @@ fn kill_slot_counts(stands stands: List(Stand)) -> dict.Dict(Int, Int) {
 fn ring_sizes(
   stands stands: List(Stand),
   click_stands click_stands: List(ClickStand),
-) -> dict.Dict(Int, Int) {
-  let add = fn(sizes: dict.Dict(Int, Int), marker: Marker, more: Int) {
+) -> Dict(Int, Int) {
+  let add = fn(sizes: Dict(Int, Int), marker: Marker, more: Int) {
     dict.upsert(sizes, marker.row.id, fn(held) { option.unwrap(held, 0) + more })
   }
   let with_kills =
@@ -388,8 +374,12 @@ fn ring_sizes(
   })
 }
 
-fn ring_size(sizes sizes: dict.Dict(Int, Int), marker marker: Marker) -> Int {
-  result.unwrap(dict.get(sizes, marker.row.id), 1)
+/// The slots of the marker's ring. Every marker that has a row to place is in
+/// `sizes` (`ring_sizes` counts the creatures of each stand's marker).
+fn ring_size(sizes sizes: Dict(Int, Int), marker marker: Marker) -> Int {
+  let assert Ok(size) = dict.get(sizes, marker.row.id)
+    as "a marker that stands a creature has a ring size"
+  size
 }
 
 /// An objective's marker a creature is linked to (`objective_link.links`): the
@@ -685,15 +675,7 @@ fn plan(
       let job = case rows, markers {
         [], _ | _, [] -> None
         _, _ ->
-          option.Some(Job(
-            key: #(
-              list.sort(creature_ids, int.compare),
-              list.sort(marker_ids, int.compare),
-            ),
-            creatures: rows,
-            markers:,
-            count: objective.count,
-          ))
+          option.Some(Job(creatures: rows, markers:, count: objective.count))
       }
       #(job, list.flatten([no_group, no_rows, marker_skips]))
     }
@@ -727,24 +709,6 @@ fn marker_of(
     start_place.of_row(row:) |> result.replace_error(no_spawns),
   )
   Ok(Marker(row:, place:))
-}
-
-/// The jobs with those that ask the same thing made one, the largest count kept,
-/// in the order of the first.
-fn merged(jobs jobs: List(Job)) -> List(Job) {
-  list.fold(jobs, [], fn(kept: List(Job), job: Job) {
-    case list.any(kept, fn(other: Job) { other.key == job.key }) {
-      True ->
-        list.map(kept, fn(other: Job) {
-          case other.key == job.key {
-            True -> Job(..other, count: int.max(other.count, job.count))
-            False -> other
-          }
-        })
-      False -> [job, ..kept]
-    }
-  })
-  |> list.reverse
 }
 
 /// Whether the creature's row makes it a turret (`creature_unit_type.of_creation_type`) the
@@ -880,7 +844,10 @@ fn slot_place(
 }
 
 /// The height a ring slot at (`slot_x`, `slot_z`) stands at: the ground read there
-/// when the marker's centre stands on the ground, else the marker's height.
+/// when the marker's centre stands on the ground and the read is within the ring's
+/// band of the marker's height (the ring's radius plus the client's lift: the ground
+/// of a slope no steeper than 45 degrees from the centre, a server choice), else the
+/// marker's height. A read outside the band is a pit, a cliff or terrain under props.
 fn ring_height(
   marker marker: Marker,
   slot_x slot_x: Float,
@@ -889,6 +856,7 @@ fn ring_height(
 ) -> Float {
   let centre = marker.place
   let marker_height = start_place.y(centre)
+  let band = marker.row.radius /. 2.0 +. ground_lift_reach
   let on_the_ground = {
     use ground <- result.try(
       dict.get(grounds, marker.row.world_id)
@@ -907,8 +875,14 @@ fn ring_height(
         >. ground_lift_reach,
       return: Error(Nil),
     )
-    terrain.height_at(ground:, x: slot_x, z: slot_z)
-    |> result.replace_error(Nil)
+    use under_slot <- result.try(
+      terrain.height_at(ground:, x: slot_x, z: slot_z)
+      |> result.replace_error(Nil),
+    )
+    case float.absolute_value(under_slot -. marker_height) <=. band {
+      True -> Ok(under_slot)
+      False -> Error(Nil)
+    }
   }
   case on_the_ground {
     Ok(height) -> float32.rounded(height)
@@ -1055,4 +1029,18 @@ pub fn labelled(
 fn number_of(row row: Row) -> Int {
   let SpawnId(number) = row.id
   number
+}
+
+/// What the placement leaves at the height of a marker, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Objective creature placement",
+      missing: "the ground under the ring of a marker whose centre is not on the ground (an interior, a cave, a prop) or has no ground read: its creatures stand at the marker's height, which may be off the ground the client draws",
+    ),
+    gap.Entry(
+      area: "Objective creature placement",
+      missing: "the ground at a ring slot that has no ground read (a hole cell, a chunk with no layer) or whose ground is farther from the marker's height than the ring's radius plus 2: the creature stands at the marker's height, which may be off the ground the client draws",
+    ),
+  ]
 }

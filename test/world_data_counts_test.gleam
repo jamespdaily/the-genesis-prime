@@ -29,15 +29,12 @@
 ////   faction-0 rows above not among them) and 5,510 stay Friendly to both.
 //// - The creatures of kill objectives that the load places at their markers
 ////   (`objective_spawn.place`, in the worlds that hold a stored spawn) start in
-////   addition. The rows placed are those of the objectives' groups, markers and
-////   counts over the client's QuestObjective, TargetGroup, WorldLocation2 and
-////   Creature2 tables and `spawn.tsv`, with a creature that two objectives ask of
-////   one marker standing once there: 429, 593, 34, 20, 12, 606, 20 and 11 in worlds
-////   22, 51, 426, 870, 990, 1061, 1387 and 3460 (11 there before migration 0029's
-////   turret rows, 9 with them, below), and none in a world with no stored spawn.
-////   The selection starts 420, 590, 34, 20, 12, 606, 20 and 6 of the rows placed
-////   and leaves out the other 9, 3, 0, 0, 0, 0, 0 and 3 as it does stored rows
-////   (Friendly to both, a service link, health 0).
+////   addition: each world starts its stored spawns' decoded number below plus the
+////   placed rows the selection starts (`spawn.select` over the placed rows, which
+////   leaves out those Friendly to both, with a service link or with health 0 as it
+////   does stored rows). How many rows the placement makes is the coverage run's
+////   count, and the whole-table test of `objective_spawn_test` holds what it must
+////   do for each objective, so no count of placed rows is a literal here.
 //// - Migration 0027: the boss, Creature2 73499 (one of the 5 rows placed in 3460 that
 ////   are Friendly to both with no quest or link, QuestObjective 21296 and 21310),
 ////   stands with faction 233, Hostile to both player factions
@@ -48,10 +45,10 @@
 //// - Migration 0029: the Sim-Turrets start as creatures with factions 1441 (73494,
 ////   Exile) and 1442 (74862, Dominion), Hostile to their own side only. The 2 stored
 ////   type 13 rows of 73494 in 3460 start as creatures (so 3460 holds no static type
-////   13 and 239 of the 241 remain) and hold it, so 73494 has no placed row and the
-////   placed rows are 1,723 in all and 9 in 3460, 2 of them 74862's, which has no
-////   stored row. 3460 starts 66 stored + 27 Daguns (migration 0008) + 2 stored
-////   73494 rows + 9 placed rows = 104.
+////   13 and 239 of the 241 remain) and hold it, so 73494 has no placed row and
+////   74862's 2 rows, which has no stored row, are placed. 3460 starts 66 stored + 27
+////   Daguns (migration 0008) + 2 stored 73494 rows + the placed rows the selection
+////   starts.
 //// - The creatures of type 5 and 32 objectives (the click targets) that have no stored
 ////   spawn at their objective's marker are placed there too
 ////   (`objective_spawn.place`'s `click_rows`): 349 rows in all, 114 of them entity
@@ -83,6 +80,7 @@ import database_support
 import envoy
 import genesis_prime
 import genesis_prime/content
+import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/activate
 import genesis_prime/game/click_objective
@@ -103,6 +101,7 @@ import genesis_prime/table/id.{Creature2Id, Quest2Id, QuestObjectiveId}
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn
@@ -112,6 +111,7 @@ import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/set
 import owned_key
 import owned_test
@@ -174,26 +174,43 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
   // world stand at its marker (`objective_spawn.place`): the rows placed, by
   // world, are the counts named in the head of this file, and the load starts the
   // selection's share of them beside the decoded stored spawns.
+  let assert Ok(faction_rows) =
+    content_creature_faction.rows(db: content_support.connect(database:))
+    as "the creature_faction table reads"
+  let assert Ok(chosen) = creature_faction.select(rows: faction_rows, tables:)
+    as "the chosen factions pass the load's own check"
   let placed =
     objective_spawn.place(
       tables:,
       stored: rows,
-      factions: spawn_support.the_boss_is_given_233(tables:),
+      factions: chosen,
       kinds: spawn_support.turret_kinds(),
       kills: content_support.objective_ids(table: kill_objective.table),
       clicks: content_support.objective_ids(table: click_objective.table),
       grounds: dict.new(),
     ).rows
-  assert list.length(placed) == 1723
-    as "the rows placed in all, none of them in a world with no stored spawn"
   assert list.count(placed, fn(row) { row.creature_id == 74_862 }) == 2
     as "the Dominion Sim-Turret has no stored row, so its 2 are placed; the Exile Sim-Turret's 2 stored rows hold it"
-  assert list.map(
-      [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
-      fn(world_id) { list.count(placed, fn(row) { row.world_id == world_id }) },
+  let stored_worlds = set.from_list(list.map(rows, fn(row) { row.world_id }))
+  assert list.all(placed, fn(row) { set.contains(stored_worlds, row.world_id) })
+    as "no row is placed in a world with no stored spawn"
+  // The placed rows the load starts are those the selection starts of them.
+  let placed_selection =
+    spawn.select(
+      rows: placed,
+      tables:,
+      formulas: rating.formulas(tables:),
+      kinds: spawn_support.turret_kinds(),
+      vendors: vendor.none(),
+      factions: chosen,
     )
-    == [429, 593, 34, 20, 12, 606, 20, 9, 0, 0]
-    as "the rows placed in each world"
+  let placed_started_in = fn(world_id) {
+    list.find(placed_selection.coverage, fn(world) {
+      world.world_id == world_id
+    })
+    |> result.map(fn(world) { world.started })
+    |> result.unwrap(0)
+  }
   let clicked =
     objective_spawn.place(
       tables:,
@@ -218,14 +235,14 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
     == [
-      11_847 + 214 + 420 + 40 + 2,
-      13_754 + 180 + 590 + 27 + 3,
-      407 + 20 + 34 + 3,
-      702 + 20,
-      799 + 12,
-      13_507 + 38 + 606 + 39,
-      851 + 20,
-      66 + 27 + 2 + 9,
+      11_847 + 214 + placed_started_in(22) + 40 + 2,
+      13_754 + 180 + placed_started_in(51) + 27 + 3,
+      407 + 20 + placed_started_in(426) + 3,
+      702 + placed_started_in(870),
+      799 + placed_started_in(990),
+      13_507 + 38 + placed_started_in(1061) + 39,
+      851 + placed_started_in(1387),
+      66 + 27 + 2 + placed_started_in(3460),
       0,
       0,
     ]

@@ -205,3 +205,27 @@ pub fn the_registry_holds_the_channel_pulse_and_the_unread_gain_column_gaps_test
       as { limit <> " is stated as a gap" }
   })
 }
+
+pub fn the_registry_holds_the_objective_placement_ground_gaps_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["registry", "coverage"])
+  let entries = gaps.registry()
+  [
+    #(
+      ["marker", "not on the ground", "has no ground read", "marker's height"],
+      "a creature on the ring of a marker not on the ground, or with no ground read at its centre, stands at the marker's height",
+    ),
+    #(
+      ["ring slot", "no ground read", "farther", "ring's radius plus 2"],
+      "a ring slot with no ground read, or whose ground is outside the band of the ring's radius plus 2, stands at the marker's height",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(words, limit) = row
+    assert list.any(entries, fn(entry) {
+      entry.area == "Objective creature placement"
+      && list.all(words, fn(word) { string.contains(entry.missing, word) })
+    })
+      as { limit <> " is stated as a gap" }
+  })
+}
