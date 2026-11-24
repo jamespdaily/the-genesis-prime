@@ -846,6 +846,7 @@ fn rolls_taken(
         cast_gate.checked(prerequisite: gate, subject:, rolls:)
       },
       rolls: left,
+      now_ms: 1000,
     )
   #(
     list.length(rolls) - list.length(aimed.rolls_left),
@@ -1260,6 +1261,29 @@ fn landing_on(
   press_target press_target: option.Option(Int),
   struck struck: List(cast_state.Struck),
 ) -> List(Int) {
+  landing_under_aura(
+    row:,
+    caster:,
+    primary_target:,
+    press_target:,
+    struck:,
+    aura_ends_ms: option.None,
+  )
+}
+
+/// The go of a cast of an aura spell: the monotonic time its rows are applied at.
+const go_ms = 1500
+
+/// `landing_on` for a cast whose spell is an aura that runs out at `aura_ends_ms` (none for
+/// a spell that is no aura), applied at `go_ms`.
+fn landing_under_aura(
+  row row: spell_plan.PropertyModifier,
+  caster caster: cast_state.Caster,
+  primary_target primary_target: Int,
+  press_target press_target: option.Option(Int),
+  struck struck: List(cast_state.Struck),
+  aura_ends_ms aura_ends_ms: option.Option(Int),
+) -> List(Int) {
   cast_gate.rows_with_units(
     rows: [row],
     aim: spell_plan.modifier_aim,
@@ -1274,6 +1298,8 @@ fn landing_on(
       caster:,
       struck:,
       press_target:,
+      aura_ends_ms:,
+      go_ms:,
     )
   })
   |> list.map(fn(entry) { entry.1 })
@@ -1635,6 +1661,8 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
       caster: seeing(players: []),
       struck: [],
       press_target: at_ally,
+      aura_ends_ms: option.None,
+      go_ms:,
     )
     == option.Some("the player is not in the caster's sight")
     as "an Interrupt Armor row aimed at the player the press named, out of the caster's sight, is refused with that reason"
@@ -1646,6 +1674,8 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
       caster: seeing(players: sees),
       struck: [healed_player(unit_id: bystander)],
       press_target: at_ally,
+      aura_ends_ms: option.None,
+      go_ms:,
     )
   }
   let aimed_at_the_area = modifier_aimed(aim: spell_plan.AimsAtArea)
@@ -1670,6 +1700,97 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
     as "an until-removed row aimed at the area is refused with its sentence"
   assert area_refusal(aimed_at_the_area, [ally, bystander]) == option.None
     as "a row that lands is not refused"
+  // An until-removed row has no end of its own: it lands on a player the round hit when the
+  // cast is an aura that runs out after the go, and then ends with the aura. Defense Grid's
+  // 129039 is such a row, in the aura 54475 of 10 000 ms (`table_rows -- Spell4 54475`); the
+  // cast starts at 1000 and goes at 1500, so the aura ends at 11 000 (`0x1407180c0`).
+  let defense_grid_row =
+    spell_plan.PropertyModifier(..aimed_at_the_area, row: until_removed)
+  let aura_end = option.Some(11_000)
+  // Each row: why, the row, the aura's end, the units it lands on, its refusal.
+  let aura_rows = [
+    #(
+      "an until-removed row aimed at the area lands on a player the round hit when the aura runs out after the go",
+      defense_grid_row,
+      aura_end,
+      [bystander],
+      option.None,
+    ),
+    #(
+      "the same row in a spell with no aura lands on nobody and says it lasts until removed",
+      defense_grid_row,
+      option.None,
+      [],
+      option.Some(
+        "the row lasts until removed, which a change on another player does not take",
+      ),
+    ),
+    #(
+      "an aura that runs out at the go gives the row no end: it lands on nobody",
+      defense_grid_row,
+      option.Some(go_ms),
+      [],
+      option.Some(
+        "the row lasts until removed, which a change on another player does not take",
+      ),
+    ),
+    #(
+      "an aura that ran out before the go gives the row no end: it lands on nobody",
+      defense_grid_row,
+      option.Some(go_ms - 1),
+      [],
+      option.Some(
+        "the row lasts until removed, which a change on another player does not take",
+      ),
+    ),
+    #(
+      "a delayed until-removed row under an aura is still refused for its delay",
+      spell_plan.PropertyModifier(
+        ..aimed_at_the_area,
+        row: lasting.LastingRow(
+          delay_ms: 1000,
+          duration_ms: 0,
+          until_removed: True,
+        ),
+      ),
+      aura_end,
+      [],
+      option.Some(
+        "the row has a delay, which a change on another player does not take",
+      ),
+    ),
+    #(
+      "a timed row under an aura lands as it does with none: the aura gives it no other end",
+      aimed_at_the_area,
+      aura_end,
+      [bystander],
+      option.None,
+    ),
+  ]
+  list.each(aura_rows, fn(aura_row) {
+    let #(reason, planned, aura_ends_ms, lands, refusal) = aura_row
+    assert landing_under_aura(
+        row: planned,
+        caster: seeing(players: [ally, bystander]),
+        primary_target: ally,
+        press_target: at_ally,
+        struck: [healed_player(unit_id: bystander)],
+        aura_ends_ms:,
+      )
+      == lands
+      as reason
+    assert cast_gate.modifier_refusal(
+        row: planned,
+        unit_id: bystander,
+        caster: seeing(players: [ally, bystander]),
+        struck: [healed_player(unit_id: bystander)],
+        press_target: at_ally,
+        aura_ends_ms:,
+        go_ms:,
+      )
+      == refusal
+      as { reason <> " (refusal)" }
+  })
   assert area_refusal(absorb_aimed(aim: spell_plan.AimsAtArea), [
       ally,
       bystander,

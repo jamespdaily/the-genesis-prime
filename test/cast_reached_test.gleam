@@ -131,6 +131,7 @@ fn reached_by_the_first_go_of(spell spell: Spell) -> List(cast_state.Reached) {
     restricting: [],
     target_verdict: fn(_, _, rolls) { #(prerequisite.Passes, rolls) },
     rolls: [],
+    now_ms: 1000,
   ).reached
 }
 

@@ -397,9 +397,11 @@ pub fn rows_with_units(
 /// - An absorb, an Interrupt Armor row (a `PropertyChange` with `armor` set) or a
 ///   `StruckChange` row whose aim names the primary target also lands on the player the press
 ///   named when that is another player in the caster's sight, at once and with an end of its
-///   own (`player_row`); `press_target` is that player: for a bag press its primary target,
-///   for a child a Proxy aimed at the primary target started on that player the same player,
-///   and none for every other child and cast, whose primary target stands for the caster. A
+///   own (`player_row`): the row's duration, or for a row that lasts until removed the end of
+///   the aura the cast is, when that is after the go (`aura_ends_ms`, `lasting.row_life`).
+///   `press_target` is that player: for a bag press its primary target, for a child a Proxy
+///   aimed at the primary target started on that player the same player, and none for every
+///   other child and cast, whose primary target stands for the caster. A
 ///   `StruckChange` row aimed at the area also lands on each other player the round hit that
 ///   the caster sees, the allies a friendly area selected (Barrier's row 92788: "yourself and
 ///   N allies in the targeted area"); an absorb or an Interrupt Armor row aimed at the area
@@ -411,9 +413,20 @@ pub fn modifier_applies(
   caster caster: Caster,
   struck struck: List(Struck),
   press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
 ) -> Bool {
   let on_the_player =
-    player_row(row:, unit_id:, caster:, struck:, press_target:) == Lands
+    player_row(
+      row:,
+      unit_id:,
+      caster:,
+      struck:,
+      press_target:,
+      aura_ends_ms:,
+      go_ms:,
+    )
+    == Lands
   let on_the_caster =
     press_target == Some(caster.unit_id) && unit_id == caster.unit_id
   case row.change {
@@ -445,6 +458,8 @@ fn player_row(
   caster caster: Caster,
   struck struck: List(Struck),
   press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
 ) -> PlayerRow {
   let aim = spell_plan.modifier_aim(modifier: row)
   let named_by_the_press =
@@ -471,21 +486,34 @@ fn player_row(
     when: !names_the_player || !changes_a_player,
     return: NotPlayerRow,
   )
+  // A row with a delay is refused whatever its life, and for one with none the larger of
+  // delay and duration is its duration, so the spell's choice between them changes nothing here.
+  let life =
+    lasting.row_life(
+      row: row.row,
+      longer_of_delay_and_duration: False,
+      aura_ends_ms:,
+      go_ms:,
+    )
   case
     dict.has_key(caster.players_in_sight, unit_id),
     row.row.delay_ms > 0,
-    row.row.until_removed
+    life
   {
     False, _, _ -> Refused(why: "the player is not in the caster's sight")
     True, True, _ ->
       Refused(
         why: "the row has a delay, which a change on another player does not take",
       )
-    True, False, True ->
+    True, False, lasting.UntilRemoved ->
       Refused(
         why: "the row lasts until removed, which a change on another player does not take",
       )
-    True, False, False -> Lands
+    True, False, lasting.NoLife ->
+      Refused(
+        why: "the row has no life, which a change on another player needs",
+      )
+    True, False, lasting.EndsAt(..) -> Lands
   }
 }
 
@@ -498,8 +526,20 @@ pub fn modifier_refusal(
   caster caster: Caster,
   struck struck: List(Struck),
   press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
 ) -> Option(String) {
-  case player_row(row:, unit_id:, caster:, struck:, press_target:) {
+  case
+    player_row(
+      row:,
+      unit_id:,
+      caster:,
+      struck:,
+      press_target:,
+      aura_ends_ms:,
+      go_ms:,
+    )
+  {
     Refused(why:) -> Some(why)
     Lands | NotPlayerRow -> None
   }

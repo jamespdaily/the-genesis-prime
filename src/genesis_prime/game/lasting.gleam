@@ -272,6 +272,23 @@ pub fn given(
   }
 }
 
+/// The life of one row's effect on a unit: its own life (`life_of`), or the aura's end when
+/// it lasts until removed under an aura that ends after the go (`life_under_aura`). A row
+/// given to another player's change takes its end from this one function, as the cast's node
+/// does.
+pub fn row_life(
+  row row: LastingRow,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> Life {
+  life_under_aura(
+    life: life_of(effects: [row], longer_of_delay_and_duration:, go_ms:),
+    aura_ends_ms:,
+    go_ms:,
+  )
+}
+
 /// The life of a node whose cast is an aura: a node that holds an effect until removed
 /// ends at the aura's end, whatever its timed effects, as the client's buff runs out at
 /// the cast's start plus spellDuration: its timer branch (the node's longest timer when

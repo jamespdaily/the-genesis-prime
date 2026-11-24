@@ -1087,6 +1087,52 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
       _ -> Nil
     }
   })
+  // A row that lasts until removed has no end of its own, so a change on an ally ends with its
+  // aura (`lasting.row_life`): every such row of the kinds a go can land on a unit that reaches a
+  // unit other than the caster is aimed at the area of a place that finds allies, none names the
+  // primary target (so the press at a player lands none), and its spell is an aura with an end.
+  // A row aimed at the caster alone changes the caster and ends with the cast's node.
+  let lands_on_a_unit = [
+    effect_kind.PropertyModifier,
+    effect_kind.Absorption,
+    effect_kind.InterruptArmor,
+    effect_kind.DisguiseOutfit,
+    effect_kind.PropertyConversion,
+  ]
+  let until_removed_rows =
+    list.flat_map(spells, fn(spell4_id) {
+      spell_plan.effects_of(sources:, spell4_id:)
+      |> list.filter(fn(row) {
+        list.contains(
+          lands_on_a_unit,
+          effect_kind.kind_of(effect_type: row.effect_type),
+        )
+        && spell_plan.lasting_row_of(effect: row).until_removed
+        && int.bitwise_and(row.target_flags, 6) != 0
+      })
+      |> list.map(fn(row) { #(spell4_id, row) })
+    })
+  assert until_removed_rows != []
+    as "the planned trees hold rows that last until removed"
+  list.each(until_removed_rows, fn(entry) {
+    let #(spell4_id, row) = entry
+    let why =
+      "the until-removed row "
+      <> int.to_string(row.id)
+      <> " of Spell4 "
+      <> int.to_string(spell4_id)
+    assert int.bitwise_and(row.target_flags, 4) != 0
+      as { why <> " is aimed at the area" }
+    assert int.bitwise_and(row.target_flags, 2) == 0
+      as { why <> " names the primary target" }
+    assert place_of(spell4_id).finds_allies
+      as { why <> " is in a place that finds allies" }
+    let assert Ok(#(spell, _)) =
+      list.find(started, fn(entry) { { entry.0 }.spell4_id.value == spell4_id })
+      as { why <> " is in a spell of a planned tree" }
+    assert option.is_some(spell_plan.aura_ends_ms(spell:, started_ms: 0))
+      as { why <> " is in a spell that is an aura with an end" }
+  })
   // A press at another player selects nothing from its area, which makes the units the area
   // hit the allies it found: no spell cast by a press at a unit (a Targeted mechanic) holds a
   // modifier row aimed at the area of a place that finds allies.
