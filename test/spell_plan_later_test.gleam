@@ -647,7 +647,7 @@ pub fn every_row_of_the_abilities_with_a_timed_caster_proxy_is_read_but_the_rows
   Nil
 }
 
-pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_one_whose_child_is_centred_on_an_ally_stays_listed_test() -> Nil {
+pub fn the_abilities_refused_only_for_valid_targets_or_for_a_child_centred_on_an_ally_are_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -657,9 +657,12 @@ pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_one
   // Each ability's valid targets held a bit the load refused: Defense Grid 54475, Emergency
   // Reserves 32358, Volatile Injection 41756, Empowering Probes 41533 and Extricate 42241
   // (Spell4ValidTargets row 3, bitmask 16), Recursive Matrix 42572 (row 13, 128), Energy
-  // Auger 34426 (row 5, 4), Triage 29888 and Regenerative Pulse 39646 (row 12, 256).
+  // Auger 34426 (row 5, 4), Triage 29888 and Regenerative Pulse 39646 (row 12, 256). Warden
+  // 33392 was refused for its child 36660, whose hit row is centred on the ally it is started
+  // on, which the picture places at its position.
   let planned = [
     54_475, 32_358, 41_756, 42_572, 34_426, 29_888, 41_533, 42_241, 39_646,
+    33_392,
   ]
   list.each(planned, fn(spell4_id) {
     assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
@@ -675,19 +678,9 @@ pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_one
     ))
       as { "the plans hold the ability of Spell4 " <> int.to_string(spell4_id) }
   })
-  // Warden 33392 (the most injured ally) is refused for its child's hit row: the area ordered
-  // by health is built, and its child 36660 is centred on the ally
-  // it is started on, which the picture does not place.
-  let assert Ok(one) = list.find(left_out, fn(one) { one.spell4_id == 33_392 })
-    as "Warden is refused for its child's hit row"
-  let sentence = spell_plan.describe(error: one.error)
-  assert string.contains(sentence, "is started on each ally")
-    as { "the sentence names its next gate: " <> sentence }
-  assert !string.contains(sentence, "valid targets")
-    as { "the valid targets are not the refusal: " <> sentence }
 }
 
-pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and_the_one_with_another_gate_stays_refused_test() -> Nil {
+pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -696,10 +689,8 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and
   // Mental Boon 33257, Mending Probes 41333, Astral Infusion 35870, Runes of Protection
   // 39092 and Flash 41926 held a Proxy aimed by flags 5 in a spell that hits no foes and no
   // other refusal; the tables name the Surge alternates 39327 and 54717
-  // (`Spell4.spell4IdMechanicAlternateSpell`). 78081 (Barrier) is refused for its own gate: its
-  // child 41369 is centred on the ally it is started on (`spell_area`).
+  // (`Spell4.spell4IdMechanicAlternateSpell`).
   let freed = [33_257, 41_333, 35_870, 39_092, 41_926]
-  let still_refused = [#(78_081, "is started on each ally")]
   list.each(freed, fn(spell4_id) {
     assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
       as {
@@ -727,14 +718,6 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and
           as "the alternate is the one the Spell4 row names"
       }
     }
-  })
-  list.each(still_refused, fn(refused) {
-    let #(spell4_id, words) = refused
-    let assert Ok(one) =
-      list.find(left_out, fn(one) { one.spell4_id == spell4_id })
-      as "the ability is refused for a gate of its own"
-    assert string.contains(spell_plan.describe(error: one.error), words)
-      as { "the sentence names its own gate: " <> words }
   })
   assert list.all(left_out, fn(one) {
     case one.error {
@@ -783,7 +766,7 @@ fn proxy_targets_of(
   |> list.map(fn(proxy) { #(proxy.effect_id.value, proxy.target) })
 }
 
-pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_each_ally_and_the_two_it_frees_are_planned_test() -> Nil {
+pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_each_ally_and_the_four_it_frees_are_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
@@ -847,8 +830,9 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
     == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
   // Sentinel 54395 and Mending Banner 33345 held a Proxy at the area (a Guard on the party
   // member missing the most health; "the most injured ally within 35 m", texts 483043, 246918)
-  // and are planned.
-  list.each([54_395, 33_345], fn(spell4_id) {
+  // and are planned, and so are Warden 33392 and Barrier 78081, whose children 36660 and 41369
+  // are centred on the ally they are started on.
+  list.each([54_395, 33_345, 33_392, 78_081], fn(spell4_id) {
     assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
       as {
         int.to_string(spell4_id)
@@ -862,22 +846,73 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
     ))
       as { "the plans hold the ability of Spell4 " <> int.to_string(spell4_id) }
   })
-  // Warden 33392 and Barrier 78081 are centred on the ally their child is started on, which
-  // the picture does not place; Pyrokinetic Flame, Voidspring (its area 653 is ordered by the
+  // Warden's child 36660 heals at the area (row 76991, targetFlags 4), and Barrier's rows
+  // are read as they stand: 92788 and 210663 apply, 199194 (in 76767) is the Interrupt Armor, 94870
+  // is a shield for the caster alone 10 ms after the go, and 228254 (type 148) is left out.
+  let reading_of = fn(row_id: Int) {
+    let assert Ok(row) =
+      spell4_effects.get(tables:, id: Spell4EffectsId(row_id))
+      as "a row of the tree is in the table"
+    spell_plan.read_row(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      place: effect_row_read.places(
+        tables:,
+        effects: spell4_effects.all(tables),
+      )(row.spell_id),
+      effect: row,
+    )
+  }
+  let assert Ok(spell_plan.Applied(spell_plan.ReadEffects(effects: [
+    spell_effect.PlannedEffect(
+      kind: spell_plan.HealEffect(spell_plan.Heal(aim: warden_aim, ..)),
+      ..,
+    ),
+  ]))) = reading_of(76_991)
+    as "Warden's row 76991 is a heal"
+  assert warden_aim == spell_plan.AimsAtArea
+    as "Warden's heal is aimed at the area, centred on the ally"
+  let assert Ok(spell_plan.Applied(spell_plan.ReadEffects(effects: [
+    spell_effect.PlannedEffect(
+      kind: spell_plan.HealEffect(spell_plan.Heal(
+        aim: barrier_aim,
+        delay_ms: 10,
+        ..,
+      )),
+      ..,
+    ),
+  ]))) = reading_of(94_870)
+    as "Barrier's row 94870 is a heal 10 ms after the go"
+  assert barrier_aim == spell_plan.AimsAtCaster
+    as "Barrier's shield, which lands 10 ms after the go, is for the caster alone"
+  let assert Ok(spell_plan.Applied(spell_plan.ReadEffects(effects: [
+    spell_effect.PlannedEffect(
+      kind: spell_plan.ModifierEffect(spell_plan.PropertyModifier(
+        armor: Some(_),
+        ..,
+      )),
+      ..,
+    ),
+  ]))) = reading_of(199_194)
+    as "Barrier's row 199194 is its Interrupt Armor"
+  let assert Ok(spell_plan.Applied(spell_plan.ReadEffects(effects: [
+    spell_effect.PlannedEffect(kind: spell_plan.ModifierEffect(..), ..),
+  ]))) = reading_of(92_788)
+    as "Barrier's row 92788 is a property change"
+  let assert Ok(spell_plan.Applied(spell_plan.ReadEffects(effects: [
+    spell_effect.PlannedEffect(kind: spell_plan.LastingEffect(..), ..),
+  ]))) = reading_of(210_663)
+    as "Barrier's row 210663 is a lasting effect"
+  assert reading_of(228_254)
+    == Ok(spell_plan.LeftOut(why: spell_plan.TypeNotRead))
+    as "Barrier's row 228254 (type 148) is a type no rule reads"
+  // Pyrokinetic Flame, Voidspring (its area 653 is ordered by the
   // lowest health, which no friendly area builds, so its Proxy starts on a creature) and
   // Field Probes keep their own sentences, and Projected Spirit's Proxy 77150 fires at each of
   // the five gos of spell 36696 (phaseFlags -1) while its texts (292646, 488045: "restoring ...
   // health to yourself and N allies") say the health is restored once.
   list.each(
     [
-      #(
-        33_392,
-        "has a hit telegraph placed on the cast's target and is started on each ally",
-      ),
-      #(
-        78_081,
-        "has a hit telegraph placed on the cast's target and is started on each ally",
-      ),
       #(
         36_233,
         "Proxy effect 77150 that starts a child on each ally in its area at 5 gos",

@@ -777,8 +777,9 @@ pub fn a_player_hit_row_placed_by_flag_0_or_2_is_anchored_on_the_cast_target_and
 pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_centre_is_that_units_place_test() -> Nil {
   use <- owned_test.run(60_000)
   // `strike.select` centres a spell started on another unit on that unit's shown place at yaw
-  // 0.0 (a Proxy on each struck unit, a proc aimed at another unit), and a press, a Proxy on
-  // the caster or a proc aimed at its holder on the caster (`cast.proc_started`).
+  // 0.0 (a Proxy on each struck unit or on each ally, a proc aimed at another unit), and a
+  // press, a Proxy on the caster or a proc aimed at its holder on the caster
+  // (`cast.proc_started`).
   // `area.in_shape` reads a circle only through its origin, which an offset moves along
   // the unit's yaw, so a circle with no offset is the same at any yaw and under any
   // `turn_degrees`; any other shape reads the yaw (`0x14054b1b0.follows_caster`).
@@ -944,16 +945,16 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
       #(
         on_each_ally,
         on_the_target,
-        [circle],
-        False,
-        "a circle on the ally is refused, though one on a struck creature is built: the picture holds no place for a player (Warden's 36660, telegraph 1244; Barrier's 41369, telegraph 11329)",
+        [circle, turned_circle, circle_negative_zero_aside],
+        True,
+        "a circle with no offset on the ally is built as one on a struck unit is: the picture holds the ally's place and no yaw, which the circle does not read (Warden's 36660, telegraph 1244; Barrier's 41369, telegraph 11329)",
       ),
       #(
         on_each_ally,
         on_the_target,
         [box, cone, rectangle, circle_ahead, circle_aside],
         False,
-        "any other shape on the ally is refused too",
+        "any other shape on the ally is refused: it reads the yaw of a player, which the picture does not hold",
       ),
     ],
     fn(row) {
@@ -2870,6 +2871,105 @@ pub fn an_area_that_finds_allies_builds_the_order_by_health_for_a_phase_that_sel
     as "and a field that finds no allies (a hostile mechanic) is refused by name: a Proxy on each unit of its area needs their health"
 }
 
+/// Whether a go of the spell selects units from its area.
+fn selects_at_any_go(found: spell_area.SpellArea) -> Bool {
+  list.any(
+    spell_plan.go_numbers(go_count: spell_area.phase_count(spell: found)),
+    fn(phase) {
+      let assert Ok(strike) =
+        spell_area.phase(spell: found, phase:, spent: None)
+        as "the go is one of the spell's"
+      strike.selects_area
+    },
+  )
+}
+
+/// A press at another player centres no area on it. A spell is cast at a unit it names when its
+/// target mechanic is of kind 1, 3, 5 or 8 (`Spell4TargetMechanics.targetType`), and at an ally
+/// when it is beneficial (flags bit 0). Of the spells of the planned trees that are, only two
+/// select units from their area, Warden's child 36660 and Barrier's child 41369 (area rows 766
+/// and its twin, "nearby allies", texts 246578 and 490333), and a Proxy starts each of them on
+/// the ally its parent's area selected: none is the spell of a press, so a press at another
+/// player still finds no ally around it. The spells whose area is centred on an ally are those
+/// two. A third spell in either set needs the "Player area around another player" gap of
+/// `spell_area` to change.
+pub fn the_targeted_spells_of_the_planned_trees_select_no_area_and_the_two_children_with_an_area_of_their_own_start_on_an_ally_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let areas = spell_area.areas(tables:)
+  let started =
+    dict.values(spell_plan.plans_with_later(tables:))
+    |> list.flat_map(fn(ability) {
+      let alternate = case ability.alternate {
+        Some(alternate) ->
+          spell_plan.tree_started(spell: alternate, started: fn(_) { True })
+        None -> []
+      }
+      list.append(
+        spell_plan.tree_started(spell: ability, started: fn(_) { True }),
+        alternate,
+      )
+    })
+    |> list.map(fn(started) { #(started.0.spell4_id.value, started.1) })
+  let started_as = fn(spell4_id: Int) {
+    list.filter_map(started, fn(entry) {
+      case entry.0 == spell4_id {
+        True -> Ok(entry.1)
+        False -> Error(Nil)
+      }
+    })
+    |> list.unique
+  }
+  let beneficial_and_targeted =
+    list.filter(dict.values(areas), fn(found) {
+      found.spell.targeting.kind == target_mechanic.Targeted
+      && target_mechanic.is_beneficial(
+        flags: found.spell.targeting.mechanics_flags,
+      )
+    })
+  assert beneficial_and_targeted != []
+    as "the planned trees hold beneficial spells that name the unit they are cast at"
+  let selecting =
+    list.filter(beneficial_and_targeted, selects_at_any_go)
+    |> list.map(fn(found) { found.spell4_id.value })
+    |> list.sort(int.compare)
+  assert selecting == [36_660, 41_369]
+    as "of the beneficial spells that name their target, only Warden's child and Barrier's select units from their area"
+  list.each(selecting, fn(spell4_id) {
+    assert started_as(spell4_id)
+      == [spell_plan.Proxied(target: spell_plan.OnEachAlly)]
+      as {
+        "Spell4 "
+        <> int.to_string(spell4_id)
+        <> " is started by a Proxy on each ally and by no press"
+      }
+  })
+  let centred_on_an_ally =
+    list.filter_map(started, fn(entry) {
+      let assert Ok(found) =
+        spell_area.of_spell(areas:, spell4_id: Spell4Id(entry.0))
+        as "a spell of the trees is in the areas"
+      case entry.1, found.row, found.anchor, selects_at_any_go(found) {
+        spell_plan.Proxied(target: spell_plan.OnEachAlly),
+          Some(_),
+          area.FollowsTarget,
+          True
+        | spell_plan.Proxied(target: spell_plan.OnEachAlly),
+          Some(_),
+          area.FixedAtTarget,
+          True
+        -> Ok(entry.0)
+        _, _, _, _ -> Error(Nil)
+      }
+    })
+    |> list.unique
+    |> list.sort(int.compare)
+  assert centred_on_an_ally == [36_660, 41_369]
+    as "the spells a Proxy starts on each ally whose area, centred on that ally, selects units are the same two"
+}
+
 pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_and_ally_proxies_by_missing_health_select_and_no_other_spell_ordered_by_health_does_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")
@@ -2881,17 +2981,6 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_and_all
       spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
       as "the spell is in the areas of the abilities the orders free"
     found
-  }
-  let selects_at_any_go = fn(found: spell_area.SpellArea) {
-    list.any(
-      spell_plan.go_numbers(go_count: spell_area.phase_count(spell: found)),
-      fn(phase) {
-        let assert Ok(strike) =
-          spell_area.phase(spell: found, phase:, spent: None)
-          as "the go is one of the spell's"
-        strike.selects_area
-      },
-    )
   }
   // Spell4AoeTargetConstraints 677 (selection 2, 3 units, 0 to 10 m), 660 (5), 661 (5), 637
   // (5) and 638 (1, 5 units, 0 to 25 m, 45 degrees); `table_rows -- Spell4AoeTargetConstraints
@@ -2923,17 +3012,17 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_and_all
     })
   assert ordered_by_health != []
     as "the abilities the orders free include spells whose area row orders by health"
-  // The 16 instant heal rows of the six abilities whose friendly area is ordered by missing
+  // The instant heal rows of the abilities whose friendly area is ordered by missing
   // health (Crisis Wave 93037; Soothe 78168, 78280, 78282; Vitality Burst 85507, 85508, 85509,
   // 85526, 85527, 85529; Triage 141503; Dual Fire 84876 and its Surge alternate's 126516;
   // Regenerative Pulse's 204551 and 204560, behind a health percentage the caster's picture
-  // holds, and its alternate's 204570): the spells that hold them build the order and select
-  // units from it.
+  // holds, and its alternate's 204570; Warden's 76991, in its child 36660, centred on the ally
+  // the child is cast on): the spells that hold them build the order and select units from it.
   let healing_spells =
     list.map(
       [
         93_037, 78_168, 78_280, 78_282, 85_507, 85_508, 85_509, 85_526, 85_527,
-        85_529, 141_503, 84_876, 126_516, 204_551, 204_560, 204_570,
+        85_529, 141_503, 84_876, 126_516, 204_551, 204_560, 204_570, 76_991,
       ],
       fn(row_id) {
         let assert Ok(row) =
@@ -2958,8 +3047,8 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_and_all
   // are Sentinel's 128694, Mending Banner's 83890 to 83894, Projected Spirit's 77150, Mental
   // Boon's tiers 76609 and 76778 to 76781 and Astral Infusion's 229155 and 229164 (texts 483043,
   // 246918, 292646, 245408, 287485). Those build the order and select units from it as the heals
-  // do; the abilities that start a child on the most injured ally with a hit row on that ally
-  // (Warden 33392, Barrier 78081) are refused with their abilities, so no area of them is here.
+  // do, and so do the abilities that start a child on the most injured ally with a hit row on
+  // that ally (Warden 33392, Barrier 78081), whose parents are among them.
   let proxying_spells =
     list.filter_map(spell4_effects.all(tables), fn(row) {
       case

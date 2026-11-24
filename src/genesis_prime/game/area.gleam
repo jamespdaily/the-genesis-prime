@@ -160,6 +160,19 @@ pub fn centre_of(
   }
 }
 
+/// Whether `centre_of` puts the centre on the caster: an anchor on the caster, or a primary
+/// target that is the caster.
+pub fn centred_on_the_caster(
+  anchor anchor: Anchor,
+  primary primary: Primary,
+) -> Bool {
+  case anchor, primary {
+    FollowsCaster, _ | FixedAtCaster, _ -> True
+    FollowsTarget, TheCaster | FixedAtTarget, TheCaster -> True
+    FollowsTarget, AnotherUnit(..) | FixedAtTarget, AnotherUnit(..) -> False
+  }
+}
+
 /// A shape placed on a unit, the caster or the cast's target: where it lies against that
 /// unit's place and facing. The struck unit's hit radius grows it.
 pub type Placement {
@@ -480,9 +493,10 @@ pub fn select_ordered(
   )
 }
 
-/// `select_ordered` with one more candidate, the caster, which is a candidate of every area
-/// that finds its allies for a heal row that does not name it: it stands at the centre, at
-/// distance 0, and takes no shape test, ranked by the health it misses as the others are.
+/// `select_ordered` with one more candidate, the caster, in an area centred on the caster
+/// (`centred_on_the_caster`) that finds its allies for a heal row that does not name it: it
+/// stands at the centre, at distance 0, and takes no shape test, ranked by the health it misses
+/// as the others are.
 /// Distance 0 ranks the caster first among units missing as much, and first of all when
 /// every unit misses none: a guess, as the client orders nothing
 /// (`Spell4AoeTargetConstraints.targetSelection`).

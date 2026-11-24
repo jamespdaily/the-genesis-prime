@@ -32,6 +32,9 @@
 ////   shows: the yaw of its 0x262 or of the path that turned it, or what its `CreatureFaces` news
 ////   set, so a position condition judges a creature by what its client shows
 ////   (`creature.facing`: kind 4 paths move a creature without turning it).
+//// - **A strike's centre on another unit** (`strike_centre_of`) is a creature's pose, and for a
+////   player the ground point of its place with no facing: the stored place carries the
+////   viewer's own facing, and no message tells the player's.
 //// - **A creature that faces a unit standing on its own ground point** keeps the yaw it showed
 ////   at the last news or move before (`with_resolved`, `ShownCreature.faced_yaw`).
 //// - **An ally** is another player of the picture whose disposition toward the caster is
@@ -450,6 +453,29 @@ pub fn pose_of(
       })
     }
     Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> Error(Nil)
+  }
+}
+
+/// Where a strike centres an area on another unit: a creature at its pose (`pose_of`), a
+/// player at the place its last position command gave with no facing (yaw 0.0), and no
+/// centre for an object, a player with no place yet or a unit the picture does not show. A
+/// player's stored place carries the viewer's own facing (`viewers.player_place` moves the
+/// viewer's place), not the player's, which the server does not hold, so a shape that reads a
+/// facing is not built for a player (`spell_area.start_placed`). `pose_of` stays creature
+/// only: the target gates read a position condition on a unit only when it has a pose.
+pub fn strike_centre_of(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  now_ms now_ms: Int,
+  viewer viewer: Viewer,
+) -> Result(Pose, Nil) {
+  case dict.get(picture, unit_id) {
+    Ok(ShownPlayer(state: PlayerState(place: Some(place), ..))) ->
+      Ok(area.Pose(at: area.point_of(place:), yaw: 0.0))
+    Ok(ShownPlayer(..))
+    | Ok(ShownCreature(..))
+    | Ok(ShownObject(..))
+    | Error(Nil) -> pose_of(picture:, unit_id:, now_ms:, viewer:)
   }
 }
 

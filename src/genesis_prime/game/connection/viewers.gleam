@@ -1050,51 +1050,19 @@ fn creature_news(
     return: Continue(session, []),
   )
   let session = case news {
-    client_connection.Died | client_connection.Health(dead: True, ..) ->
+    client_connection.Health(health:, dead:) ->
+      shown_changed(session:, change: fn(picture) {
+        let picture = case dead {
+          True -> shown.with_alive(picture:, unit_id:, alive: False)
+          False -> picture
+        }
+        shown.with_player_health(picture:, unit_id:, health:, dead:)
+      })
+    client_connection.Died ->
       shown_changed(session:, change: fn(picture) {
         shown.with_alive(picture:, unit_id:, alive: False)
       })
-    client_connection.Health(dead: False, ..)
-    | client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged
-    | client_connection.Appeared(..)
-    | client_connection.CreatureAppeared(..)
-    | client_connection.Moving(..)
-    | client_connection.Removed
-    | client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastFinished(..)
-    | client_connection.CastInterrupted(..)
-    | client_connection.CreatureMoved(..)
-    | client_connection.CreaturePlaced(..)
-    | client_connection.CreatureFaces(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..)
-    | client_connection.Shield(..)
-    | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..)
-    | client_connection.InterruptArmor(..)
-    | client_connection.Absorption(..)
-    | client_connection.Level(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.LookChanged(..) -> session
-  }
-  let session = case news {
-    client_connection.Health(health:, dead:) ->
-      shown_changed(session:, change: fn(picture) {
-        shown.with_player_health(picture:, unit_id:, health:, dead:)
-      })
-    client_connection.Died
-    | client_connection.CameBack
+    client_connection.CameBack
     | client_connection.DeathLogged
     | client_connection.CameBackLogged
     | client_connection.Appeared(..)
