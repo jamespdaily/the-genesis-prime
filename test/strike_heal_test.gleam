@@ -445,6 +445,27 @@ fn emission_changing(count count: Int) -> spell_area.Areas {
   )
 }
 
+/// The fixture's areas with Emission's heal row 141384 made a Proc held by the units its area
+/// selects (the cells of Healing Salve's row 86457, `fixture_tables.area_proc_cells`), so the
+/// phase holds that Proc and no heal, Proxy or change, and its area row 662 taking `count` units.
+/// The edits stand in for no client row; they are the shape of Healing Salve's phase in the area
+/// of a spell that finds allies.
+fn emission_procing(count count: Int) -> spell_area.Areas {
+  fixture_tables.changes(
+    edits: [
+      #("Spell4Effects", 141_384, fixture_tables.area_proc_cells()),
+      #("Spell4AoeTargetConstraints", 662, [
+        #("targetCount", planted_table.Integer(count)),
+      ]),
+    ],
+    body: fn(tables) {
+      let assert Ok(areas) = spell_area.build(tables:)
+        as "the edited rows build their areas"
+      areas
+    },
+  )
+}
+
 type AllyRow {
   AllyRow(
     reason: String,
@@ -730,23 +751,55 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
       list.map(selection.players, fn(address) { address.unit_id })
     }
   }
-  assert around(emission_changing(count: 4), [7, 32, 34], [
-      #(7, player_at(x: 0.0, z: -2.0)),
-      #(
-        20,
-        strike_support.creature_at(
-          x: 0.0,
-          z: -5.0,
-          alive: True,
-          attackable: Attackable(exile: True, dominion: True),
-        ),
+  let crowd = [
+    #(7, player_at(x: 0.0, z: -2.0)),
+    #(
+      20,
+      strike_support.creature_at(
+        x: 0.0,
+        z: -5.0,
+        alive: True,
+        attackable: Attackable(exile: True, dominion: True),
       ),
-      #(32, player_at(x: 0.0, z: -4.0)),
-      #(33, player_at(x: 0.0, z: -3.0)),
-      #(34, player_at(x: 0.0, z: -6.0)),
-    ])
-    == [32, 34]
+    ),
+    #(32, player_at(x: 0.0, z: -4.0)),
+    #(33, player_at(x: 0.0, z: -3.0)),
+    #(34, player_at(x: 0.0, z: -6.0)),
+  ]
+  assert around(emission_changing(count: 4), [7, 32, 34], crowd) == [32, 34]
     as "the caster, a creature and an ally with no address in the caster's sight (33) inside the cone are not selected"
+  // A phase whose only row is a Proc the area's units hold (the shape of Healing Salve's row
+  // 86457, text 315682 "yourself and N allies") selects the allies as the changes above do: it
+  // names no caster, so the caster is not one of them, and a creature or an ally the caster has
+  // no address for is not.
+  assert around(emission_procing(count: 4), [7, 32, 34], crowd) == [32, 34]
+    as "a Proc held by the area's units: the caster, a creature and an ally with no address in sight are not selected"
+  let #(attacker, selection) =
+    proxied_by(emission_procing(count: 2), [31, 32, 33])
+  assert list.map(selection.players, fn(address) { address.unit_id })
+    == [32, 33]
+    as "a Proc held by the area's units and no heal or Proxy: the two nearest allies, in the area's order"
+  assert selection.acts_on_each_unit && selection.heals == []
+    as "the phase answers its allies and tells no heal"
+  assert strike.entropy_needed(selection:) == 0
+    as "an ally selected for a Proc takes no seed byte"
+  let #(_, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection:,
+      attacker:,
+      formulas: rating_support.formulas(),
+      entropy: <<>>,
+      gate: strike_support.passes_all(),
+      now: at(ms: 1000),
+    )
+  assert strike_support.players_told(effects:) == []
+    as "no ally is told a strike for a Proc: it is held by the cast's change"
+  let assert [#(_, struck, _)] = strike_support.rounds_closed(effects:)
+    as "the round has nothing to wait for and closes at once"
+  assert struck
+    == [hit_of(unit_id: 32, heals: []), hit_of(unit_id: 33, heals: [])]
+    as "each ally is answered as a hit with no heal landed, in the area's order"
   let assert Ok(emission) = dict.get(emission_changing(count: 2), 58_841)
     as "Emission is in the areas"
   let party_only =

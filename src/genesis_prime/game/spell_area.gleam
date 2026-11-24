@@ -270,8 +270,8 @@ pub type PhaseStrike {
     strikes_area: Bool,
     /// Whether the phase acts on each unit the area selects though no row names a foe: a Proxy
     /// with no tickTime aimed at the area starts a child on each (`OnEachStruck`, `OnEachAlly`),
-    /// or, where the area finds the caster's allies, a property change aimed at the area changes
-    /// each ally. Where the area finds the caster's allies the units are players and each is a
+    /// or, where the area finds the caster's allies, a property change or a Proc aimed at the
+    /// area changes or is held by each ally. Where the area finds the caster's allies the units are players and each is a
     /// hit of the go that no row need reach.
     acts_on_each_unit: Bool,
     /// The instant heal rows of the phase aimed at the cast's primary target, which a go
@@ -1456,21 +1456,40 @@ fn phase_of(
   let controls =
     spell_plan.controls_in_phase(spell: spell.spell, phase:, spent:)
   let changes =
-    list.filter_map(
-      spell_plan.in_phase(
-        spell: spell.spell,
-        phase:,
-        spent:,
-        as_kind: spell_plan.as_modifier,
+    list.append(
+      list.filter_map(
+        spell_plan.in_phase(
+          spell: spell.spell,
+          phase:,
+          spent:,
+          as_kind: spell_plan.as_modifier,
+        ),
+        fn(modifier) {
+          case modifier.change {
+            spell_plan.StruckChange(aim:, ..) -> Ok(aim)
+            spell_plan.PropertyChange(..)
+            | spell_plan.LookChange(..)
+            | spell_plan.AbsorbChange(..) -> Error(Nil)
+          }
+        },
       ),
-      fn(modifier) {
-        case modifier.change {
-          spell_plan.StruckChange(aim:, ..) -> Ok(aim)
-          spell_plan.PropertyChange(..)
-          | spell_plan.LookChange(..)
-          | spell_plan.AbsorbChange(..) -> Error(Nil)
-        }
-      },
+      // A Proc the area's allies hold changes each ally the area selects as a property change
+      // aimed at the area does.
+      list.filter_map(
+        spell_plan.in_phase(
+          spell: spell.spell,
+          phase:,
+          spent:,
+          as_kind: spell_plan.as_proc,
+        ),
+        fn(proc) {
+          case proc.holder {
+            spell_plan.HeldByAreaAllies -> Ok(spell_plan.AimsAtArea)
+            spell_plan.HeldByCaster | spell_plan.HeldByPrimaryTarget ->
+              Error(Nil)
+          }
+        },
+      ),
     )
   let throws =
     list.map(

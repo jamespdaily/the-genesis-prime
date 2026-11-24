@@ -1798,3 +1798,282 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
     == option.None
     as "an absorb row aimed at the area names no player the round hit, so there is nothing to refuse"
 }
+
+/// A Proc row held by `holder`, 12 000 ms with no delay as Healing Salve's 86457 is.
+fn proc_held_by(holder holder: spell_plan.ProcHolder) -> spell_plan.ProcRow {
+  support.held_proc_row(
+    id: 86_457,
+    holder:,
+    row: lasting.LastingRow(
+      delay_ms: 0,
+      duration_ms: 12_000,
+      until_removed: False,
+    ),
+  )
+}
+
+/// The units a Proc row is held by, in the order its holder names them: each unit the holder
+/// names, with `primary_target` as the primary target and the units the round hit as the area,
+/// that `proc_applies` accepts.
+fn proc_landing_on(
+  row row: spell_plan.ProcRow,
+  caster caster: cast_state.Caster,
+  primary_target primary_target: Int,
+  press_target press_target: option.Option(Int),
+  struck struck: List(cast_state.Struck),
+  aura_ends_ms aura_ends_ms: option.Option(Int),
+) -> List(Int) {
+  cast_gate.rows_with_units(
+    rows: [row],
+    aim: spell_plan.proc_aim,
+    caster:,
+    primary_target:,
+    struck:,
+  )
+  |> list.filter(fn(entry) {
+    cast_gate.proc_applies(
+      row: entry.0,
+      unit_id: entry.1,
+      caster:,
+      struck:,
+      press_target:,
+      aura_ends_ms:,
+      go_ms:,
+    )
+  })
+  |> list.map(fn(entry) { entry.1 })
+}
+
+/// A Proc row is held by the player the press named when its holder is the primary target, and
+/// by each player the round hit when its holder is the area's allies, when the caster sees the
+/// player (Healing Salve's 86457, flags 4, and Sentinel's 139830, flags 2: "yourself and N
+/// allies", text 315682); never by a creature or an unseen player, and a row that lasts until
+/// removed only in an aura that ends after the go (`lasting.row_life`).
+pub fn a_proc_row_is_held_by_the_player_the_press_named_or_each_the_area_hit_and_not_by_a_creature_or_an_unseen_player_test() -> Nil {
+  use <- owned_test.run(5000)
+  let by_target = proc_held_by(holder: spell_plan.HeldByPrimaryTarget)
+  let by_area = proc_held_by(holder: spell_plan.HeldByAreaAllies)
+  let until_removed =
+    spell_plan.ProcRow(
+      ..by_area,
+      row: lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    )
+  let at_ally = option.Some(ally)
+  let hit_creature =
+    support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)
+  // Each row: why, the row, the press target the rule is given, the row's primary target, the
+  // players the caster sees, what the round struck, the monotonic time the aura the cast is runs
+  // out (none for a spell that is no aura), and the units the row is held by.
+  let rows = [
+    #(
+      "a primary-target row is held by the player the press named, when the caster sees it",
+      by_target,
+      at_ally,
+      ally,
+      [ally],
+      [],
+      option.None,
+      [ally],
+    ),
+    #(
+      "the same player out of the caster's sight: nobody holds it",
+      by_target,
+      at_ally,
+      ally,
+      [],
+      [],
+      option.None,
+      [],
+    ),
+    #(
+      "a primary-target row of a press at oneself is the caster's own proc, held on the caster",
+      by_target,
+      option.Some(7),
+      7,
+      [ally],
+      [],
+      option.None,
+      [7],
+    ),
+    #(
+      "a primary target that is a creature holds nothing: the press named no player",
+      by_target,
+      option.None,
+      creature,
+      [ally],
+      [hit_creature],
+      option.None,
+      [],
+    ),
+    #(
+      "a primary-target row of a child a Proxy started on the caster (no press target) holds nothing",
+      by_target,
+      option.None,
+      7,
+      [ally],
+      [],
+      option.None,
+      [],
+    ),
+    #(
+      "an area row is held by each player the round hit that the caster sees, in the round's order, and not by the caster",
+      by_area,
+      at_ally,
+      ally,
+      [ally, bystander, other_bystander],
+      [
+        healed_player(unit_id: other_bystander),
+        healed_player(unit_id: bystander),
+      ],
+      option.None,
+      [other_bystander, bystander],
+    ),
+    #(
+      "a player the round hit that the caster does not see holds nothing; the one it sees does",
+      by_area,
+      at_ally,
+      ally,
+      [other_bystander],
+      [
+        healed_player(unit_id: bystander),
+        healed_player(unit_id: other_bystander),
+      ],
+      option.None,
+      [other_bystander],
+    ),
+    #(
+      "a creature the round hit holds nothing",
+      by_area,
+      at_ally,
+      ally,
+      [ally],
+      [hit_creature, healed_player(unit_id: bystander)],
+      option.None,
+      [],
+    ),
+    #(
+      "an area row is not held by a player the press named when the round did not hit it",
+      by_area,
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      option.None,
+      [bystander],
+    ),
+    #(
+      "a row of the caster's (flags 1) is held by the caster alone, whoever the round hit",
+      proc_held_by(holder: spell_plan.HeldByCaster),
+      at_ally,
+      ally,
+      [ally, bystander],
+      [healed_player(unit_id: bystander)],
+      option.None,
+      [7],
+    ),
+    #(
+      "an area row that lasts until removed in an aura that ends after the go is held, its end the aura's",
+      until_removed,
+      at_ally,
+      ally,
+      [bystander],
+      [healed_player(unit_id: bystander)],
+      option.Some(go_ms + 1000),
+      [bystander],
+    ),
+    #(
+      "an area row that lasts until removed in an aura that ended before the go is held by nobody",
+      until_removed,
+      at_ally,
+      ally,
+      [bystander],
+      [healed_player(unit_id: bystander)],
+      option.Some(go_ms - 1),
+      [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(
+      reason,
+      planned,
+      press_target,
+      primary_target,
+      sees,
+      struck,
+      aura_ends_ms,
+      holders,
+    ) = row
+    assert proc_landing_on(
+        row: planned,
+        caster: seeing(players: sees),
+        primary_target:,
+        press_target:,
+        struck:,
+        aura_ends_ms:,
+      )
+      == holders
+      as reason
+  })
+  // A refused row says why: the player is out of sight, or the row has no end after the go, or
+  // the press named no player for a primary-target row.
+  let refusal = fn(planned, unit_id, sees, press_target, struck, aura_ends_ms) {
+    cast_gate.proc_refusal(
+      row: planned,
+      unit_id:,
+      caster: seeing(players: sees),
+      struck:,
+      press_target:,
+      aura_ends_ms:,
+      go_ms:,
+    )
+  }
+  assert refusal(by_target, ally, [], at_ally, [], option.None)
+    == option.Some("the player is not in the caster's sight")
+    as "a primary-target row on the player the press named, out of sight, says so"
+  assert refusal(
+      by_area,
+      bystander,
+      [],
+      at_ally,
+      [
+        healed_player(unit_id: bystander),
+      ],
+      option.None,
+    )
+    == option.Some("the player is not in the caster's sight")
+    as "an area row on a player the round hit, out of sight, says so"
+  assert refusal(
+      until_removed,
+      bystander,
+      [bystander],
+      at_ally,
+      [healed_player(unit_id: bystander)],
+      option.Some(go_ms - 1),
+    )
+    == option.Some(
+      "the row lasts until removed, which a change on another player does not take",
+    )
+    as "an until-removed row in an aura that ended before the go is refused with its sentence"
+  assert option.is_some(refusal(
+    by_target,
+    creature,
+    [ally],
+    option.None,
+    [hit_creature],
+    option.None,
+  ))
+    as "a primary-target row whose primary target is no player the press named says so"
+  assert refusal(by_target, 7, [ally], option.Some(7), [], option.None)
+    == option.None
+    as "a primary-target row of a press at oneself is held and says nothing"
+  assert refusal(
+      by_area,
+      creature,
+      [ally],
+      at_ally,
+      [hit_creature],
+      option.None,
+    )
+    == option.None
+    as "a creature the round hit is no player an area row names, so it says nothing"
+}

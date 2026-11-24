@@ -70,6 +70,10 @@ pub fn places(
           )
         Error(Nil) -> False
       },
+      ends_as_aura: case spell4.get(tables:, id: Spell4Id(spell4_id)) {
+        Ok(row) -> spell_plan.spell_ends_as_aura(tables:, row:)
+        Error(Nil) -> False
+      },
     )
   }
 }

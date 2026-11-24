@@ -45,6 +45,7 @@ fn row() -> spell_plan.ProcRow {
   ProcRow(
     effect_id: Spell4EffectsId(208_200),
     phase_flags: -1,
+    holder: spell_plan.HeldByCaster,
     trigger: LandsHit,
     spell: cast_support.child(spell4_id: 79_221, base: 79_221),
     chance: 1.0,

@@ -61,7 +61,8 @@
 ////   ends that cast's change first (`kept_pushed_off`). After its changes the go tells the
 ////   player's connection one `OtherPlayerCastWent` for the cast, with the audience the
 ////   caster told the cast's 0x7ff (`modifiers_armed`), so the player starts the cast for
-////   the viewers outside it.
+////   the viewers outside it. A Proc row the player holds is told the same way, as a change that
+////   applies nothing, and the caster keeps its entry for that player until the change ends.
 //// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
 ////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
 ////   five modifier rows (Spell4Effects 130474 and 203798 to 203801). The same row of a child
@@ -322,7 +323,8 @@ pub fn all_units_ended(
 /// The funnel of every end: a waiting start of a creature on a unit `unit_ids` names has
 /// its timer cancelled and tells nothing; each held change on such a unit that `ending`
 /// accepts is forgotten and told ended, and the end timer of a change on a player is
-/// cancelled with it.
+/// cancelled with it, and the Proc row the caster holds for that player with it
+/// (`State.procs`).
 fn ended_where(
   cast cast: State,
   cast_id cast_id: Int,
@@ -347,17 +349,31 @@ fn ended_where(
     [] -> dict.delete(cast.on_units, cast_id)
     [_, ..] -> dict.insert(cast.on_units, cast_id, kept)
   }
-  let #(cast, end_cancels) =
-    cast_state.cancel_timers(State(..cast, on_units:), matching: fn(due) {
-      case held_timer_of(due:) {
-        Ok(PlayerEnd(unit_id:, source:)) ->
-          list.any(ended, fn(on) {
-            cast_state.held_unit_id(on:) == unit_id
-            && cast_state.held_source(on:) == source
-          })
-        Ok(WaitingStart(..)) | Error(Nil) -> False
+  let procs =
+    list.fold(ended, cast.procs, fn(procs, on) {
+      case on {
+        HeldOnPlayer(source:, address:, ..) ->
+          dict.delete(
+            procs,
+            cast_state.ProcHold(source:, holder: Some(address.unit_id)),
+          )
+        HeldOnCreature(..) -> procs
       }
     })
+  let #(cast, end_cancels) =
+    cast_state.cancel_timers(
+      State(..cast, on_units:, procs:),
+      matching: fn(due) {
+        case held_timer_of(due:) {
+          Ok(PlayerEnd(unit_id:, source:)) ->
+            list.any(ended, fn(on) {
+              cast_state.held_unit_id(on:) == unit_id
+              && cast_state.held_source(on:) == source
+            })
+          Ok(WaitingStart(..)) | Error(Nil) -> False
+        }
+      },
+    )
   #(
     cast,
     list.flatten([
@@ -704,118 +720,39 @@ pub fn modifiers_armed(
 ) -> #(State, List(Effect)) {
   let #(cast, effects, told) =
     list.fold(
-      cast_state.rows_reached(
-        reached: aimed.reached,
-        as_kind: spell_plan.as_modifier,
-      ),
+      cast_state.rows_reached(reached: aimed.reached, as_kind: placed_of),
       #(cast, [], []),
       fn(so_far, found) {
         let #(cast, effects, told) = so_far
-        let #(entry, row) = found
-        let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+        let #(entry, placed) = found
         let player = dict.get(caster.players_in_sight, entry.unit_id)
-        let #(cast, more, newly_told) = case row.change {
-          spell_plan.StruckChange(modifier:, ..) ->
-            case player {
-              Ok(address) ->
-                told_player(
-                  armed: player_change_armed(
-                    cast:,
-                    cast_id:,
-                    row:,
-                    address:,
-                    change: held_changes.Property(modifier:),
-                    spell:,
-                    started_ms:,
-                    now_ms:,
-                  ),
-                  address:,
-                )
-              Error(Nil) if entry.unit_id == caster.unit_id ->
-                untold(armed: caster_modifier_armed(
-                  cast:,
-                  row:,
-                  source:,
-                  change: HeldChange(held_changes.Property(modifier:)),
-                ))
-              Error(Nil) ->
-                untold(armed: creature_modifier_armed(
-                  cast:,
-                  cast_id:,
-                  row:,
-                  modifier:,
-                  unit_id: entry.unit_id,
-                  struck:,
-                ))
-            }
-          spell_plan.PropertyChange(modifier:) ->
-            case player, row.armor {
-              Ok(address), Some(_) ->
-                told_player(
-                  armed: player_change_armed(
-                    cast:,
-                    cast_id:,
-                    row:,
-                    address:,
-                    change: held_changes.Property(modifier:),
-                    spell:,
-                    started_ms:,
-                    now_ms:,
-                  ),
-                  address:,
-                )
-              Ok(_), None ->
-                panic as "a property change without armor is aimed at the caster alone (spell_plan.modifier_aim), and the caster is not among the other players in its sight"
-              Error(Nil), _ ->
-                untold(armed: caster_modifier_armed(
-                  cast:,
-                  row:,
-                  source:,
-                  change: HeldChange(held_changes.Property(modifier:)),
-                ))
-            }
-          spell_plan.LookChange(disguise:) ->
-            untold(armed: caster_modifier_armed(
+        let #(cast, more, newly_told) = case placed {
+          PlacedProc(row:) ->
+            proc_armed(
               cast:,
+              cast_id:,
               row:,
-              source:,
-              change: Look(disguise:),
-            ))
-          spell_plan.AbsorbChange(absorption:) -> {
-            // An absorb's pool is worked out at the go from the caster as it stood before
-            // the go's own effects, as a shield heal's amount is (`cast_heal.healed_on`).
-            let pool =
-              held_changes.Absorb(
-                amount: damage.amount_on_caster(
-                  formula: absorption.formula,
-                  caster: cast_heal.on_caster_of(caster:, passed_in:),
-                ),
-                mask: absorption.mask,
-              )
-            case player {
-              Ok(address) ->
-                told_player(
-                  armed: player_change_armed(
-                    cast:,
-                    cast_id:,
-                    row:,
-                    address:,
-                    change: pool,
-                    spell:,
-                    started_ms:,
-                    now_ms:,
-                  ),
-                  address:,
-                )
-              Error(Nil) ->
-                untold(armed: caster_modifier_armed(
-                  cast:,
-                  row:,
-                  source:,
-                  change: HeldChange(pool),
-                ))
-            }
-          }
+              unit_id: entry.unit_id,
+              player:,
+              caster:,
+              spell:,
+              started_ms:,
+              now_ms:,
+            )
+          PlacedModifier(row:) ->
+            modifier_armed(
+              cast:,
+              cast_id:,
+              caster:,
+              passed_in:,
+              row:,
+              unit_id: entry.unit_id,
+              player:,
+              struck:,
+              spell:,
+              started_ms:,
+              now_ms:,
+            )
         }
         let told = case newly_told {
           Some(address) ->
@@ -837,6 +774,195 @@ pub fn modifiers_armed(
       }),
     ),
   )
+}
+
+/// A row of a go that is put on a player or kept by the caster: a modifier or a Proc row.
+type Placed {
+  PlacedModifier(row: spell_plan.PropertyModifier)
+  PlacedProc(row: spell_plan.ProcRow)
+}
+
+fn placed_of(kind kind: spell_plan.Kind) -> Result(Placed, Nil) {
+  case spell_plan.as_modifier(kind:), spell_plan.as_proc(kind:) {
+    Ok(row), _ -> Ok(PlacedModifier(row:))
+    Error(Nil), Ok(row) -> Ok(PlacedProc(row:))
+    Error(Nil), Error(Nil) -> Error(Nil)
+  }
+}
+
+/// A modifier row a go reached on a unit: a change on another player is told to that player
+/// with an end of its own, one on the caster is held by the caster, and one on a creature the
+/// round struck by its node. A look and a property change without armor are the caster's alone.
+fn modifier_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  caster caster: Caster,
+  passed_in passed_in: Option(Float),
+  row row: spell_plan.PropertyModifier,
+  unit_id unit_id: Int,
+  player player: Result(PlayerAddress, Nil),
+  struck struck: List(Struck),
+  spell spell: Spell,
+  started_ms started_ms: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect), Option(PlayerAddress)) {
+  let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+  case row.change {
+    spell_plan.StruckChange(modifier:, ..) ->
+      case player {
+        Ok(address) ->
+          told_player(
+            armed: player_change_armed(
+              cast:,
+              cast_id:,
+              effect_id: row.effect_id,
+              life: row.row,
+              address:,
+              change: held_changes.Property(modifier:),
+              spell:,
+              started_ms:,
+              now_ms:,
+            ),
+            address:,
+          )
+        Error(Nil) if unit_id == caster.unit_id ->
+          untold(armed: caster_modifier_armed(
+            cast:,
+            row:,
+            source:,
+            change: HeldChange(held_changes.Property(modifier:)),
+          ))
+        Error(Nil) ->
+          untold(armed: creature_modifier_armed(
+            cast:,
+            cast_id:,
+            row:,
+            modifier:,
+            unit_id:,
+            struck:,
+          ))
+      }
+    spell_plan.PropertyChange(modifier:) ->
+      case player, row.armor {
+        Ok(address), Some(_) ->
+          told_player(
+            armed: player_change_armed(
+              cast:,
+              cast_id:,
+              effect_id: row.effect_id,
+              life: row.row,
+              address:,
+              change: held_changes.Property(modifier:),
+              spell:,
+              started_ms:,
+              now_ms:,
+            ),
+            address:,
+          )
+        Ok(_), None ->
+          panic as "a property change without armor is aimed at the caster alone (spell_plan.modifier_aim), and the caster is not among the other players in its sight"
+        Error(Nil), _ ->
+          untold(armed: caster_modifier_armed(
+            cast:,
+            row:,
+            source:,
+            change: HeldChange(held_changes.Property(modifier:)),
+          ))
+      }
+    spell_plan.LookChange(disguise:) ->
+      untold(armed: caster_modifier_armed(
+        cast:,
+        row:,
+        source:,
+        change: Look(disguise:),
+      ))
+    spell_plan.AbsorbChange(absorption:) -> {
+      // An absorb's pool is worked out at the go from the caster as it stood before
+      // the go's own effects, as a shield heal's amount is (`cast_heal.healed_on`).
+      let pool =
+        held_changes.Absorb(
+          amount: damage.amount_on_caster(
+            formula: absorption.formula,
+            caster: cast_heal.on_caster_of(caster:, passed_in:),
+          ),
+          mask: absorption.mask,
+        )
+      case player {
+        Ok(address) ->
+          told_player(
+            armed: player_change_armed(
+              cast:,
+              cast_id:,
+              effect_id: row.effect_id,
+              life: row.row,
+              address:,
+              change: pool,
+              spell:,
+              started_ms:,
+              now_ms:,
+            ),
+            address:,
+          )
+        Error(Nil) ->
+          untold(armed: caster_modifier_armed(
+            cast:,
+            row:,
+            source:,
+            change: HeldChange(pool),
+          ))
+      }
+    }
+  }
+}
+
+/// A Proc row a go reached on a unit: the caster's own row is held by the caster itself
+/// (`cast_proc.procs_held`), and a row on another player is told to that player as a change that
+/// applies nothing (`held_changes.Watches`) with an end of its own, and held by the caster for
+/// that player. A later go of the cast keeps the fires of the entry it holds.
+fn proc_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.ProcRow,
+  unit_id unit_id: Int,
+  player player: Result(PlayerAddress, Nil),
+  caster caster: Caster,
+  spell spell: Spell,
+  started_ms started_ms: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect), Option(PlayerAddress)) {
+  case unit_id == caster.unit_id, player {
+    True, _ | False, Error(Nil) -> untold(armed: #(cast, []))
+    False, Ok(address) -> {
+      let #(cast, effects) =
+        player_change_armed(
+          cast:,
+          cast_id:,
+          effect_id: row.effect_id,
+          life: row.row,
+          address:,
+          change: held_changes.Watches(trigger: row.trigger),
+          spell:,
+          started_ms:,
+          now_ms:,
+        )
+      let hold =
+        cast_state.ProcHold(
+          source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
+          holder: Some(address.unit_id),
+        )
+      let cast =
+        State(
+          ..cast,
+          procs: dict.upsert(cast.procs, hold, fn(found) {
+            case found {
+              Some(already) -> already
+              None -> cast_state.HeldProc(row:, fires_ms: [])
+            }
+          }),
+        )
+      told_player(armed: #(cast, effects), address:)
+    }
+  }
 }
 
 /// A change armed on a player, with the player it was told to.
@@ -907,14 +1033,15 @@ fn creature_modifier_armed(
 fn player_change_armed(
   cast cast: State,
   cast_id cast_id: Int,
-  row row: spell_plan.PropertyModifier,
+  effect_id effect_id: Spell4EffectsId,
+  life life: lasting.LastingRow,
   address address: PlayerAddress,
   change change: held_changes.Change,
   spell spell: Spell,
   started_ms started_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+  let source = unit_properties.Source(cast_id:, effect_id:)
   let sight = held_changes.sight_of(outlives_caster: spell.outlives_caster)
   let on =
     HeldOnPlayer(
@@ -929,15 +1056,15 @@ fn player_change_armed(
   // until removed (`cast_gate.player_row`).
   let assert Ok(effect) =
     unit_casts.held_effect_of(
-      effect_id: row.effect_id,
-      row: row.row,
+      effect_id:,
+      row: life,
       longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
       go_ms: now_ms,
     )
     as "a row landed on a player has no delay and a life (cast_gate.player_row)"
   let assert lasting.EndsAt(ms: ends_ms) =
     lasting.row_life(
-      row: row.row,
+      row: life,
       longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
       aura_ends_ms: spell_plan.aura_ends_ms(spell:, started_ms:),
       go_ms: now_ms,

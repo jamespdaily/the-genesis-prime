@@ -2485,6 +2485,19 @@ pub fn a_modifier_only_spell_aimed_at_the_area_selects_the_areas_units_test() ->
     as "and does not strike them: no foe is hit, so an area ordered by health is not refused"
   assert !phase.acts_on_each_unit && phase.strikes_area
     as "in a spell that finds no allies the rows strike the units and act on none by themselves"
+  // Healing Salve's child 39386 holds the caster's own Proc row 86458 (flags 1) and 86457
+  // (flags 4: "yourself and N allies", text 315682) and no damage, heal, Proxy or type 11 row
+  // (`table_rows -- Spell4Effects spellId=39386`): in the area that finds the caster's allies
+  // its one row at the area is a Proc each ally the area selects holds, so the phase selects and
+  // acts on each ally and strikes none.
+  let salve = spell_tables.area_alone(spell4_id: 39_386)
+  let salve_phase = phase_of(spell_area.SpellArea(..salve, finds_allies: True))
+  assert salve_phase.acts_on_each_unit && salve_phase.selects_area
+    as "a Proc aimed at the area acts on each ally the area selects"
+  assert !salve_phase.strikes_area
+    as "and strikes none of them, so an area ordered by health is not refused"
+  assert !salve_phase.strikes_primary_target
+    as "the caster's own Proc row aims at the caster and strikes nobody"
   let fissure = spell_tables.area_alone(spell4_id: 41_886)
   let alone = phase_of(spell_area.SpellArea(..fissure, finds_allies: True))
   assert !alone.acts_on_each_unit && alone.strikes_primary_target

@@ -144,6 +144,7 @@ pub fn started(
       connection_properties.started(session:, now:, source:, modifier:)
     held_changes.Absorb(amount:, mask:) ->
       connection_absorption.started(session:, now:, source:, amount:, mask:)
+    held_changes.Watches(..) -> #(session, [])
   }
 }
 
@@ -441,6 +442,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Casting",
       missing: "The buff icon of a kept cast (a spell with propertyFlags 0x100) that holds a change on a player from another player ends in the client of each viewer of that player that was told the cast by its caster, other than the player, which is written the cast's 0x7fe when the caster leaves its sight, while the change lasts, because only the player's own connection learns the end of a kept change (a viewer that borrowed the cast from the player's create keeps it until the player's end); and a kept cast that holds a change on two players the player sees ends in the player's client with the player's own end, because the player cannot know the other node.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "A Proc row the caster holds on an ally is told as a change that applies nothing and is listed as the cast's effect on the ally; it is held for the allies the round selected at the go, so an ally who walks into the area later is given none, and it ends with the change on that ally, the ally's death included, a server choice.",
     ),
     gap.Entry(
       area: "Casting",
