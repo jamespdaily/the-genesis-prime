@@ -53,6 +53,11 @@
 ////   already seeing both keeps the node until the cast's 0x7fe (the caster's client
 ////   destroys its nodes on the creature at its own 0x355, `0x1404550d0`).
 //// - A crowd-control state a player holds on a creature is not listed, as for players.
+//// - A player's list holds its own casts and the casts that other players' casts hold on it
+////   (`held_changes.cast_views`: an absorb, an Interrupt Armor row or a modifier row a press
+////   at the player landed); the Fluff rows of another player's press (Spell4 bases 26762,
+////   35526, 63087, 19030's child 54912 and 47675's children) are listed on it by the caster's
+////   own node and by no ledger.
 
 import genesis_prime/game/cast/target_info
 import genesis_prime/game/lasting
@@ -105,11 +110,29 @@ pub type CastView {
   )
 }
 
+/// The effect a row of a node holds, as a create lists it: it starts at its go plus its
+/// delay and ends at its go plus its lifetime (`lasting.life_of`, with
+/// `longer_of_delay_and_duration` for the spells whose record flag says so); `Error(Nil)`
+/// when the row has no life. `go_ms` is a monotonic time, which can be negative.
+pub fn held_effect_of(
+  effect_id effect_id: Spell4EffectsId,
+  row row: lasting.LastingRow,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  go_ms go_ms: Int,
+) -> Result(HeldEffect, Nil) {
+  let life =
+    lasting.life_of(effects: [row], longer_of_delay_and_duration:, go_ms:)
+  use ends <- result.map(case life {
+    lasting.NoLife -> Error(Nil)
+    lasting.UntilRemoved -> Ok(UntilRemoved)
+    lasting.EndsAt(ms:) -> Ok(EndsAt(ms:))
+  })
+  HeldEffect(effect_id:, starts_ms: go_ms + row.delay_ms, ends:)
+}
+
 /// The target a node is, or `Error(Nil)` when none of its listed effects has a life: a
-/// crowd-control state, an ability restriction and a heal applied at once give none. An
-/// effect starts at its go plus its delay and ends at its go plus its lifetime
-/// (`lasting.life_of`, with `longer_of_delay_and_duration` for the spells whose
-/// record flag says so).
+/// crowd-control state, an ability restriction and a heal applied at once give none.
+/// Each listed effect is a `held_effect_of` the node's go.
 pub fn target_of(
   node node: lasting.Node,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
@@ -118,20 +141,13 @@ pub fn target_of(
     list.filter_map(node.effects, fn(effect) {
       case effect {
         lasting.LifeOnly(..) -> Error(Nil)
-        lasting.Listed(effect_id:, row:) -> {
-          let life =
-            lasting.life_of(
-              effects: [row],
-              longer_of_delay_and_duration:,
-              go_ms: node.armed_ms,
-            )
-          use ends <- result.map(case life {
-            lasting.NoLife -> Error(Nil)
-            lasting.UntilRemoved -> Ok(UntilRemoved)
-            lasting.EndsAt(ms:) -> Ok(EndsAt(ms:))
-          })
-          HeldEffect(effect_id:, starts_ms: node.armed_ms + row.delay_ms, ends:)
-        }
+        lasting.Listed(effect_id:, row:) ->
+          held_effect_of(
+            effect_id:,
+            row:,
+            longer_of_delay_and_duration:,
+            go_ms: node.armed_ms,
+          )
       }
     })
   case effects {

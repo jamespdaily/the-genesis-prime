@@ -1372,7 +1372,9 @@ fn creature_casts_kept(
 /// property of the player's own 0x262, and stat 1, are left out, since a 0x935 goes to the
 /// player alone (`opcode.0x262.resource_stats`); property 5, the Focus maximum, stays, a gear
 /// property like the rest that 0x93a keeps current; stamped from the map's clock,
-/// from the origin `Joined` carried (`map.server_time`).
+/// from the origin `Joined` carried (`map.server_time`). Its list holds the player's own
+/// casts and the casts other players' casts hold on it (`held_changes.cast_views`), in cast
+/// id order.
 fn appearance(
   entered entered: world_entry.Entered,
   now now: Now,
@@ -1396,9 +1398,13 @@ fn appearance(
     tail: UnitCreateTail(
       ..unit.tail,
       casts: unit_casts.entries_of(
-        views: cast_state.views(
-          cast: entered.cast,
-          caster_unit_id: entered.unit_id,
+        views: list.append(
+          cast_state.views(cast: entered.cast, caster_unit_id: entered.unit_id),
+          held_changes.cast_views(
+            held: entered.held,
+            holder_unit_id: entered.unit_id,
+            now_ms: now.monotonic_ms,
+          ),
         ),
         now_ms: now.monotonic_ms,
       ),

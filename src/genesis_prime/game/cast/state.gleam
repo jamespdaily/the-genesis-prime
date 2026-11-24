@@ -228,12 +228,17 @@ pub type Effect {
   /// the press named, at the go: the connection tells that player's connection for the
   /// stay `address` names (genesis_prime/game/held_changes `PlayerChangeStarts`), which
   /// applies it as its own cast's change of that kind is applied and holds it for the
-  /// caster. `sight` says whether it outlives the caster's sight.
+  /// caster. `sight` says whether it outlives the caster's sight. `spell4_id` is the spell
+  /// of the cast that holds the change and `effect` the row's effect as a create lists it
+  /// (its start is the go's own monotonic time), so the player can list the cast to a
+  /// viewer that comes into its sight.
   OtherPlayerChangeStarts(
     address: PlayerAddress,
     source: unit_properties.Source,
     change: held_changes.Change,
     sight: held_changes.Sight,
+    spell4_id: Spell4Id,
+    effect: unit_casts.HeldEffect,
   )
   /// The change of `source` the caster's spell put on another player ends: the node's end,
   /// a removal of the cast, its push off, the caster's death or its leaving. The connection

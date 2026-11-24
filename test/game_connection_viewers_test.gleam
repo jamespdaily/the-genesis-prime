@@ -1749,30 +1749,7 @@ fn medic_casting_seen_by_a_new_viewer(
       ))
     })
   assert starts != [] as "the watcher is told the pressed cast started"
-  #(starts, created_at(state:, viewer: 3, ms: until_ms))
-}
-
-/// The 0x262 the player's connection sends the viewer `viewer` that comes into sight at the
-/// monotonic time `ms`, the time its effects' delays and lifetimes are counted from.
-fn created_at(
-  state state: game_connection.State,
-  viewer viewer: Int,
-  ms ms: Int,
-) -> UnitCreatePlayer {
-  let #(_, taken) =
-    game_connection_support.at(
-      state:,
-      ms:,
-      event: game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(viewer),
-        stay: game_connection_support.viewer_stay(viewer),
-        unit_id: game_connection_support.viewer_unit_id(viewer),
-      )),
-    )
-  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
-    game_connection_support.peer_tells(taken)
-    as "the player's connection sends the arriving viewer its unit_create_player"
-  unit
+  #(starts, game_connection_support.created_at(state:, viewer: 3, ms: until_ms))
 }
 
 /// The target info a unit create lists for the player's own unit with these effects: the
@@ -1929,7 +1906,7 @@ pub fn a_player_that_comes_into_sight_lists_its_buffs_test() -> Nil {
       ))
     })
     as "the watcher is told the pressed cast started"
-  let created = created_at(state:, viewer: 3, ms: 1100)
+  let created = game_connection_support.created_at(state:, viewer: 3, ms: 1100)
   assert gate.spell4_id == 34_355
   assert created.tail.casts
     == [

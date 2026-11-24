@@ -181,6 +181,7 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
@@ -858,6 +859,14 @@ fn player_change_armed(
       stack: spell.stack,
       started_ms: now_ms,
     )
+  let assert Ok(effect) =
+    unit_casts.held_effect_of(
+      effect_id: row.effect_id,
+      row: row.row,
+      longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+      go_ms: now_ms,
+    )
+    as "a row landed on a player has no delay and an end (cast_gate.player_row), so it has a life"
   let #(cast, pushed) = kept_pushed_off(cast:, cast_id:, on:)
   let #(cast, cancels) =
     cast_state.cancel_timers(cast:, matching: fn(due) {
@@ -882,7 +891,16 @@ fn player_change_armed(
     list.flatten([
       pushed,
       cancels,
-      [OtherPlayerChangeStarts(address:, source:, change:, sight:)],
+      [
+        OtherPlayerChangeStarts(
+          address:,
+          source:,
+          change:,
+          sight:,
+          spell4_id: spell.spell4_id,
+          effect:,
+        ),
+      ],
       ending,
     ]),
   )

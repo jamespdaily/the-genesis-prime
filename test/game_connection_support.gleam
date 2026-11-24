@@ -1428,6 +1428,28 @@ pub fn created_for(
   unit
 }
 
+/// The `unit_create_player` (0x0262) the tests' player's connection sends the arriving viewer
+/// connection `viewer` at the monotonic time `ms`.
+pub fn created_at(
+  state state: game_connection.State,
+  viewer viewer: Int,
+  ms ms: Int,
+) -> UnitCreatePlayer {
+  let #(_, taken) =
+    at(
+      state:,
+      ms:,
+      event: sent_by_the_map(SeenBy(
+        by: ConnectionId(viewer),
+        stay: viewer_stay(viewer),
+        unit_id: viewer_unit_id(viewer),
+      )),
+    )
+  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] = peer_tells(taken)
+    as "the player's connection sends the arriving viewer its unit_create_player"
+  unit
+}
+
 /// A viewer connection that shows the unit 9.
 pub fn viewer_showing_unit_9() -> game_connection.State {
   feed(state: in_world(), event: event_of(Appears)).0
