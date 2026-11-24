@@ -402,6 +402,9 @@ pub fn every_phase_of_every_planned_spell_that_selects_the_area_has_hit_shapes_w
   // rectangles that move ahead, one for each of the gos 0 to 3 (TelegraphDamage 1163, 1304 and
   // 1305 by their phaseFlags), and none names the go 4, so that go strikes nobody from the area,
   // as the client's rows draw nothing at it (`table_rows -- Spell4Telegraph spell4Id=36696`).
+  // Its texts (292646, 488045 for a tier: "Dash forward, restoring ... health to yourself and N
+  // allies") say the health is restored once and name no repeat at each go or along the path, so
+  // the heal at each of the four gos with a rectangle is stated as open in `spell_plan.gaps`.
   assert silent == [#(36_696, 4)]
     as "a go that selects the area names no hit row, so it strikes nobody from the area: Projected Spirit's fifth go alone"
 }
@@ -817,7 +820,7 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
     spell_plan.Proxied(target: spell_plan.OnEachStruck),
     spell_plan.FromProc(aim: spell_plan.AtOtherUnit),
   ]
-  let on_each_ally = [spell_plan.ProxiedOnEachAlly]
+  let on_each_ally = [spell_plan.Proxied(target: spell_plan.OnEachAlly)]
   list.each(
     [
       #(
@@ -2822,7 +2825,7 @@ fn fixture_area_of(
 /// by missing health (targetSelection 5) and its phase selects from it, by an instant heal aimed
 /// at the area or by a Proxy with no tickTime aimed at the area (Nullifier's field 58868 with
 /// its Proxy 141450 made once: the shape of Sentinel 54395, whose child starts on each ally);
-/// order 4, lowest health, is still no area. An area that finds no allies, and a Proxy with a
+/// order 4, lowest health, is no area. An area that finds no allies, and a Proxy with a
 /// tickTime, which ticks on the units in the area, stay refused by name.
 pub fn an_area_that_finds_allies_builds_the_order_by_health_for_a_phase_that_selects_through_a_proxy_and_a_foes_area_stays_refused_test() -> Nil {
   use <- owned_test.run(120_000)
@@ -2875,7 +2878,7 @@ pub fn an_area_that_finds_allies_builds_the_order_by_health_for_a_phase_that_sel
     as "and a field that finds no allies (a hostile mechanic) is refused by name: a Proxy on each unit of its area needs their health"
 }
 
-pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_by_missing_health_select_and_no_other_spell_ordered_by_health_does_test() -> Nil {
+pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_and_ally_proxies_by_missing_health_select_and_no_other_spell_ordered_by_health_does_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
@@ -2957,14 +2960,27 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_by_miss
     assert selects_at_any_go(found)
       as "a go of it selects the allies from its area"
   })
-  // The spells that hold a Proxy aimed at the area (flags 4 to 7) in a friendly area start a
-  // child on each ally the area selects: Sentinel's 128694, Mending Banner's 83890 to 83894,
-  // Projected Spirit's 77150, Mental Boon's tiers 76609 and 76778 to 76781 and Astral
-  // Infusion's 229155 and 229164 (texts 483043, 246918, 292646, 245408, 287485). Those whose
-  // area is ordered by health build the order and select units from it as the heals do; the
-  // abilities that start a child on the most injured ally with a hit row on that ally (Warden
-  // 33392, Barrier 78081) are refused with their abilities, so no area of them is among these.
+  // The spells that hold a Proxy with no tickTime aimed at the area (flags 4 to 7) in a friendly
+  // area start a child on each ally the area selects: every Proxy row of the table of type 26
+  // with no tickTime and the area's bit, in a spell whose area is ordered by health. Among them
+  // are Sentinel's 128694, Mending Banner's 83890 to 83894, Projected Spirit's 77150, Mental
+  // Boon's tiers 76609 and 76778 to 76781 and Astral Infusion's 229155 and 229164 (texts 483043,
+  // 246918, 292646, 245408, 287485). Those build the order and select units from it as the heals
+  // do; the abilities that start a child on the most injured ally with a hit row on that ally
+  // (Warden 33392, Barrier 78081) are refused with their abilities, so no area of them is here.
   let proxying_spells =
+    list.filter_map(spell4_effects.all(tables), fn(row) {
+      case
+        row.effect_type == 26
+        && row.tick_time == 0
+        && int.bitwise_and(row.target_flags, 4) != 0
+      {
+        True -> Ok(row.spell_id)
+        False -> Error(Nil)
+      }
+    })
+    |> list.unique
+  let named_proxy_spells =
     list.map(
       [
         128_694, 83_890, 83_891, 83_892, 83_893, 83_894, 77_150, 76_609, 76_778,
@@ -2978,6 +2994,10 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_by_miss
       },
     )
     |> list.unique
+  list.each(named_proxy_spells, fn(spell4_id) {
+    assert list.contains(proxying_spells, spell4_id)
+      as "each Proxy row the texts name is among the table's Proxies with no tickTime at the area"
+  })
   // Every other spell of the areas that orders by health selects nothing from it.
   list.each(ordered_by_health, fn(found) {
     case

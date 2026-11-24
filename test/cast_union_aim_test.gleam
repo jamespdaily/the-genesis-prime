@@ -259,7 +259,9 @@ pub fn union_proxy_starts_its_child_on_the_caster_and_on_each_struck_unit_test()
         case proxy.target {
           spell_plan.OnEachStruck ->
             spell_plan.Proxy(..proxy, gains: lender.gains)
-          spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> proxy
+          spell_plan.OnCaster
+          | spell_plan.OnPrimaryTarget
+          | spell_plan.OnEachAlly -> proxy
         }
       },
     )

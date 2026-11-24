@@ -639,6 +639,10 @@ pub type ProxyTarget {
   /// one child for each Hit unit of the go (genesis_prime/game/cast `went`), or, with a
   /// tickTime, for each unit the area holds at each tick (`Proxy.period`).
   OnEachStruck
+  /// Each ally the area selects: a Proxy with no tickTime aimed at the area of a spell whose
+  /// area finds the caster's allies (`proxy_at_allies`). An ally is a player, so the child is
+  /// planned for a player and its primary target is that ally.
+  OnEachAlly
 }
 
 /// The times of a Channeled spell, in milliseconds (Spell4.channelInitialDelay,
@@ -1501,10 +1505,6 @@ pub type Proxy {
     tag: spend.Tag,
     /// Which unit the child cast is made on, from the effect's `targetFlags`.
     target: ProxyTarget,
-    /// Whether the units of an `OnEachStruck` Proxy are the caster's allies, which are players
-    /// (the Proxy's spell finds allies, `spell_finds_allies`), and not the creatures a spell
-    /// that hits foes strikes. False for a Proxy that is not aimed at the area.
-    on_allies: Bool,
     spell: Spell,
     /// The first phase's gains of a child started at each struck unit, given once
     /// at the go of the parent whose units it struck; none for a child on the
@@ -3413,7 +3413,6 @@ pub fn server_proxy(child child: Spell, phase_flags phase_flags: Int) -> Proxy {
     condition: Always,
     tag: spend.always,
     target: OnCaster,
-    on_allies: False,
     spell: child,
     gains: [],
     period: None,
@@ -3628,11 +3627,9 @@ pub fn proxy_named(
 }
 
 /// One Proxy row of the spell `spell4_id` as a `Proxy`: the child it names planned on the
-/// same chain, and the gains of a child started on each struck unit lifted onto it.
-/// `finds_allies` is whether the area of that spell finds the caster's allies: a Proxy with no
-/// tickTime aimed at such an area starts its child on each ally, a player, so the child is
-/// planned for a player (no `struck_by`), whose health, absorb and armor its rows read; any
-/// other Proxy aimed at the area starts it on a struck creature.
+/// same chain, and the gains of a child started on each struck unit lifted onto it. A child
+/// on each ally, a player, is planned for a player (no `struck_by`), whose health, absorb and
+/// armor its rows read; one on each struck unit of an area is planned for a creature.
 fn proxy_of(
   tables tables: table_store.Tables,
   sources sources: Sources,
@@ -3640,24 +3637,18 @@ fn proxy_of(
   chain chain: List(Int),
   effect effect: spell4_effects.Spell4Effects,
   target target: ProxyTarget,
-  finds_allies finds_allies: Bool,
   condition condition: Condition,
   period period: Option(Periodic),
 ) -> Result(Proxy, PlanError) {
-  let on_allies = case target, period {
-    OnEachStruck, None -> finds_allies
-    OnEachStruck, Some(_) | OnCaster, _ | OnPrimaryTarget, _ -> False
-  }
   use child <- result.map(spell_of(
     tables:,
     sources:,
     spell4_id: proxy_named(tables:, effect:),
     chain:,
     threshold_costs: [],
-    struck_by: case target, on_allies {
-      OnEachStruck, False ->
-        Some(StruckBy(spell4_id:, proxy_effect_id: effect.id))
-      OnEachStruck, True | OnCaster, _ | OnPrimaryTarget, _ -> None
+    struck_by: case target {
+      OnEachStruck -> Some(StruckBy(spell4_id:, proxy_effect_id: effect.id))
+      OnEachAlly | OnCaster | OnPrimaryTarget -> None
     },
     pressed: False,
   ))
@@ -3667,15 +3658,16 @@ fn proxy_of(
   // pulse (`pulse_phased`) and be lifted to the first; no planned tree holds one. A periodic
   // Proxy lifts none: each tick's child gives its own at its own go.
   let #(lifted, kept) = case target, period {
-    OnEachStruck, None ->
+    OnEachStruck, None | OnEachAlly, None ->
       list.partition(child.effects, fn(planned) {
         result.is_ok(as_gain(kind: planned.kind))
         && spell_effect.has_flag(flags: planned.phase_flags, bit: 1)
       })
-    OnEachStruck, Some(_) | OnCaster, _ | OnPrimaryTarget, _ -> #(
-      [],
-      child.effects,
-    )
+    OnEachStruck, Some(_)
+    | OnEachAlly, Some(_)
+    | OnCaster, _
+    | OnPrimaryTarget, _
+    -> #([], child.effects)
   }
   Proxy(
     effect_id: Spell4EffectsId(effect.id),
@@ -3687,7 +3679,6 @@ fn proxy_of(
     condition:,
     tag: tag_of(effect:),
     target:,
-    on_allies:,
     spell: Spell(..child, effects: kept),
     gains: list.filter_map(lifted, fn(planned) { as_gain(kind: planned.kind) }),
     period:,
@@ -3917,7 +3908,6 @@ fn spell_of(
                 chain:,
                 effect:,
                 target:,
-                finds_allies: place.finds_allies,
                 condition:,
                 period:,
               )
@@ -4065,7 +4055,6 @@ fn press_proxies_of(
       chain:,
       effect:,
       target: OnCaster,
-      finds_allies: False,
       condition: Always,
       period: None,
     ))
@@ -5338,8 +5327,7 @@ pub fn struck_unit_children(
   let hitting = spells_that_hit_foes(effects:)
   let by_spell = list.group(effects, fn(effect) { effect.spell_id })
   let finds_allies = fn(effect: spell4_effects.Spell4Effects) {
-    effect.tick_time == 0
-    && case spell4.get(tables:, id: Spell4Id(effect.spell_id)) {
+    case spell4.get(tables:, id: Spell4Id(effect.spell_id)) {
       Ok(row) ->
         spell_finds_allies(
           tables:,
@@ -5363,7 +5351,8 @@ pub fn struck_unit_children(
       True, Ok(aim) ->
         reaches_area(aim:)
         && { !reaches_caster(aim:) || set.contains(hitting, effect.spell_id) }
-        && !finds_allies(effect)
+        && proxy_at_allies(finds_allies: finds_allies(effect), effect:)
+        != StartsOnAllies
       True, Error(Nil) | False, _ -> False
     }
     case starts_on_struck_units, dict.has_key(found, named) {
@@ -6187,17 +6176,50 @@ fn row_aim_of(
   |> result.unwrap(AimsAtCaster)
 }
 
-/// The aim of a Proxy in a place: what `aim_in_place` reads, except that where the area finds
-/// the caster's allies the area's bit is read for a Proxy that casts once. A Proxy with a
-/// tickTime ticks on the units in the area and its allies are not found
-/// (`PeriodicProxyAtAlliesNotRead`), so its aim stays the caster's.
+/// How a Proxy row relates to the allies the area of its place finds.
+type ProxyAtAllies {
+  /// No tickTime, aimed at the area of a place that finds the caster's allies: the child
+  /// starts on each ally once, at the go (`OnEachAlly`).
+  StartsOnAllies
+  /// A tickTime, aimed at the area of a place that finds the caster's allies: it would tick
+  /// on them, which is not read (`PeriodicProxyAtAlliesNotRead`).
+  TicksOnAllies
+  /// Any other Proxy.
+  NotAtAllies
+}
+
+/// Which `ProxyAtAllies` a Proxy row is in a place whose area finds allies or not. The one
+/// rule every reader of a Proxy's units asks: the aim (`proxy_aim_in_place`), the targets
+/// (`target_of`), the periodic refusal (`proxy_reading`) and the coverage measure's place map
+/// (`struck_unit_children`).
+fn proxy_at_allies(
+  finds_allies finds_allies: Bool,
+  effect effect: spell4_effects.Spell4Effects,
+) -> ProxyAtAllies {
+  let aimed_at_the_area = case aim_of(target_flags: effect.target_flags) {
+    Ok(aim) -> reaches_area(aim:)
+    Error(Nil) -> False
+  }
+  case finds_allies && aimed_at_the_area, effect.tick_time {
+    False, _ -> NotAtAllies
+    True, 0 -> StartsOnAllies
+    True, _ -> TicksOnAllies
+  }
+}
+
+/// The aim of a Proxy in a place: what `aim_in_place` reads, except that where the Proxy
+/// starts its child on the allies the area finds the area's bit is kept. A Proxy that ticks
+/// on units in the area has no allies found (`PeriodicProxyAtAlliesNotRead`), so its aim
+/// stays the caster's.
 fn proxy_aim_in_place(
   place place: RowPlace,
   aim aim: Aim,
-  tick_ms tick_ms: Int,
+  effect effect: spell4_effects.Spell4Effects,
 ) -> Aim {
-  use <- bool.guard(when: place.finds_allies && tick_ms == 0, return: aim)
-  aim_in_place(place:, aim:)
+  case proxy_at_allies(finds_allies: place.finds_allies, effect:) {
+    StartsOnAllies -> aim
+    TicksOnAllies | NotAtAllies -> aim_in_place(place:, aim:)
+  }
 }
 
 /// The aim in a place: the area's bit is read only in a spell that hits foes. A friendly
@@ -6986,11 +7008,13 @@ fn target_of(
       target_flags: effect.target_flags,
     )),
   )
-  let aim = proxy_aim_in_place(place:, aim:, tick_ms: effect.tick_time)
+  let aim = proxy_aim_in_place(place:, aim:, effect:)
+  let at_allies = proxy_at_allies(finds_allies: place.finds_allies, effect:)
   [
     #(OnCaster, reaches_caster(aim:)),
     #(OnPrimaryTarget, aim == AimsAtPrimaryTarget),
-    #(OnEachStruck, reaches_area(aim:)),
+    #(OnEachAlly, at_allies == StartsOnAllies),
+    #(OnEachStruck, reaches_area(aim:) && at_allies != StartsOnAllies),
   ]
   |> list.filter(fn(target) { target.1 })
   |> list.map(fn(target) { target.0 })
@@ -7217,17 +7241,13 @@ fn proxy_reading(
     return: Ok(LeftOut(why: ProxyStartsTiersNoChoice)),
   )
   use targets <- result.try(target_of(place:, spell4_id:, effect:))
-  let aimed_at_the_area = case aim_of(target_flags: effect.target_flags) {
-    Ok(aim) -> reaches_area(aim:)
-    Error(Nil) -> False
-  }
   use Nil <- result.try(
     case
       effect.tick_time > 0
       && {
         list.contains(targets, OnEachStruck)
-        || place.finds_allies
-        && aimed_at_the_area
+        || proxy_at_allies(finds_allies: place.finds_allies, effect:)
+        == TicksOnAllies
       }
     {
       True -> periodic_proxy_finds_foes(tables:, spell4_id:, effect:, named:)
@@ -8089,12 +8109,10 @@ pub type Start {
   /// By a press: the ability's own spell, a threshold stage and a Proxy the press walks. The
   /// primary target is the caster, since a press does not read the player's target.
   Pressed
-  /// By a Proxy of another spell, on the caster or on each unit that spell struck: the
-  /// primary target is the caster for the first and the struck unit for the second.
+  /// By a Proxy of another spell, on the caster, on each unit that spell struck or on each ally
+  /// its area selected: the primary target is the caster for the first, the struck unit for
+  /// the second and the ally, a player, for the third.
   Proxied(target: ProxyTarget)
-  /// By a Proxy of another spell on each ally the area of that spell selects, a player
-  /// (`Proxy.on_allies`): the primary target is the ally.
-  ProxiedOnEachAlly
   /// By a Proc effect: the primary target is the unit the proc is aimed at, the holder for
   /// `AtHolder` and, for `AtOtherUnit`, the creature a hit struck or the holder when the event
   /// has none.
@@ -8121,12 +8139,7 @@ fn walk_started(
   let proxied =
     payloads(spell:, as_kind: as_proxy)
     |> list.filter(started)
-    |> list.map(fn(proxy) {
-      #(proxy.spell, case proxy.on_allies {
-        True -> ProxiedOnEachAlly
-        False -> Proxied(target: proxy.target)
-      })
-    })
+    |> list.map(fn(proxy) { #(proxy.spell, Proxied(target: proxy.target)) })
   let procced =
     payloads(spell:, as_kind: as_proc)
     |> list.map(fn(proc) { #(proc.spell, FromProc(aim: proc.aim)) })
@@ -8261,7 +8274,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row and for a Proxy with no tickTime only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a modifier, absorb or Fluff aimed at the area, and a heal with a delay or a tickTime aimed at the area (Barrier's 94870); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and so does Triage's shield row 174070 (flags 4, delay 10), which reaches nobody; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row and for a Proxy with no tickTime only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a modifier, absorb or Fluff aimed at the area, and a heal with a delay or a tickTime aimed at the area (Barrier's 94870); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and Triage's shield row 174070 (flags 4, delay 10) reaches nobody; Projected Spirit's Proxy 77150 fires at each of the five gos of spell 36696 (phaseFlags -1) and the area strikes at four of them, so an ally inside the moving rectangles at several gos takes the heal 78454 at each, up to four times in one cast, while the texts (292646, and 488045 for a tier: \"restoring ... health to yourself and N allies\") say the health is restored once: whether the heal repeats at each go is open; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",

@@ -107,7 +107,7 @@ fn effect_rolls_needed(
   }
   case kind {
     spell_plan.ProxyEffect(proxy:) ->
-      case starts_a_child(proxy:, hit: hit_units(struck:) != []) {
+      case starts_a_child(proxy:, struck:) {
         False -> 0
         True ->
           strike_rolls_needed(
@@ -115,6 +115,7 @@ fn effect_rolls_needed(
             units: case proxy.target {
               spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> 1
               spell_plan.OnEachStruck -> list.length(hit_units(struck:))
+              spell_plan.OnEachAlly -> list.length(hit_players(struck:))
             },
           )
           + int.sum(list.map(lifted_gains(proxy:), gain_rolls_needed))
@@ -316,29 +317,30 @@ fn gain_rolls_needed(gain: spell_plan.Gain) -> Int {
 
 /// The Proxies of the phase that the cast's n chooses and that have a unit to start a
 /// child on: one aimed at the caster always, a periodic one aimed at each struck unit
-/// always (`starts_a_child`), any other aimed at each struck unit when the round has a Hit.
+/// always (`starts_a_child`), any other aimed at each struck unit or each ally when the round
+/// has a Hit unit or a Hit player.
 pub fn proxies_with_targets(
   spell spell: Spell,
   phase phase: Int,
   struck struck: List(Struck),
   spent spent: Option(Int),
 ) -> List(Proxy) {
-  let hit = hit_units(struck:) != []
   list.filter(
     spell_plan.in_phase(spell:, phase:, spent:, as_kind: spell_plan.as_proxy),
-    fn(proxy) { starts_a_child(proxy:, hit:) },
+    fn(proxy) { starts_a_child(proxy:, struck:) },
   )
 }
 
 /// Whether a Proxy has a unit to start a child on: one aimed at the caster always has, one
-/// aimed at each struck unit when the round has a Hit, and a periodic one is armed whether
-/// or not the round hit anything, since its units are found at each tick (a field's own go
-/// strikes nobody).
-fn starts_a_child(proxy proxy: Proxy, hit hit: Bool) -> Bool {
+/// aimed at each struck unit when the round has a Hit unit, one aimed at each ally when it has
+/// a Hit player, and a periodic one is armed whether or not the round hit anything, since its
+/// units are found at each tick (a field's own go strikes nobody).
+fn starts_a_child(proxy proxy: Proxy, struck struck: List(Struck)) -> Bool {
   case proxy.target, proxy.period {
     spell_plan.OnCaster, _ | spell_plan.OnPrimaryTarget, _ -> True
     spell_plan.OnEachStruck, Some(_) -> True
-    spell_plan.OnEachStruck, None -> hit
+    spell_plan.OnEachStruck, None -> hit_units(struck:) != []
+    spell_plan.OnEachAlly, _ -> hit_players(struck:) != []
   }
 }
 

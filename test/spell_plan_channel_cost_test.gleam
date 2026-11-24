@@ -22,6 +22,7 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set
+import gleam/string
 import owned_test
 import spell_tables
 import unitest
@@ -121,105 +122,47 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
       ),
       #(39_054, spell_plan.NoRow(table: "Spell4", id: 0)),
       #(
-        41_953,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 41_953,
-          proxy_effect_id: 94_581,
-          effect_id: 94_586,
-        ),
-      ),
-      #(
         48_669,
         spell_plan.UnreadRequirement(spell4_id: 48_669, requirement_type: 3),
-      ),
-      #(
-        52_155,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_155,
-          proxy_effect_id: 123_163,
-          effect_id: 123_217,
-        ),
-      ),
-      #(
-        52_156,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_156,
-          proxy_effect_id: 123_169,
-          effect_id: 123_219,
-        ),
-      ),
-      #(
-        52_157,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_157,
-          proxy_effect_id: 123_175,
-          effect_id: 123_221,
-        ),
-      ),
-      #(
-        52_158,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_158,
-          proxy_effect_id: 123_181,
-          effect_id: 123_224,
-        ),
-      ),
-      #(
-        52_159,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_159,
-          proxy_effect_id: 123_187,
-          effect_id: 123_226,
-        ),
-      ),
-      #(
-        52_160,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_160,
-          proxy_effect_id: 123_193,
-          effect_id: 123_229,
-        ),
-      ),
-      #(
-        52_161,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_161,
-          proxy_effect_id: 123_199,
-          effect_id: 123_231,
-        ),
-      ),
-      #(
-        52_162,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_162,
-          proxy_effect_id: 123_205,
-          effect_id: 123_233,
-        ),
-      ),
-      #(
-        52_163,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 52_163,
-          proxy_effect_id: 123_211,
-          effect_id: 123_235,
-        ),
       ),
       #(
         55_653,
         spell_plan.ProxyCycle(chain: [55_653, 80_426, 70_410, 80_424, 70_410]),
       ),
-      #(
-        63_316,
-        spell_plan.HealOnStruckUnit(
-          spell4_id: 63_316,
-          proxy_effect_id: 158_904,
-          effect_id: 94_586,
-        ),
-      ),
     ]
-    as "7.3: the 16 rows that do not plan, each by its error: a vital requirement of type 3, a vital modifier of vital 9, the Spell4 row 0 a tree names, heals on a struck unit and a Proxy cycle; any other row that stops planning is a coverage loss"
-  assert list.length(planned) == 123
-    as "7.3: the other 123 rows plan, and each holds its costs as the next check reads them"
+    as "7.3: the 5 rows that do not plan, each by its error: a vital requirement of type 3, a vital modifier of vital 9, the Spell4 row 0 a tree names and a Proxy cycle; any other row that stops planning is a coverage loss"
+  assert list.length(planned) == 134
+    as "7.3: the other 134 rows plan, and each holds its costs as the next check reads them"
+  // A Proxy with no tickTime aimed at the area of a spell whose area finds the caster's allies
+  // starts its child on each ally, a player, so the child's heal row at the primary target
+  // is read (`spell_plan.proxy_of`). The 10 tiers of the base 26147 and Spell4 63316 plan by
+  // that rule: their Proxies (flags 4, phase -1) start 41954 and its tiers, each an instant
+  // heal and a Fluff at the primary target. The client names them "[DEPRECATED] Medic -
+  // Emission" and "[DEPRECATED] [CAPTURE] Emission - Longer", and no spell of a base the
+  // plans hold carries that name, so no player's press reaches them.
+  let held = spell_tables.bases_the_plans_hold(tables:)
+  let deprecated_in_the_plans =
+    list.filter(spell4.all(tables), fn(row) {
+      string.starts_with(row.description, "[DEPRECATED]")
+      && set.contains(held, row.spell4_base_id_base_spell)
+    })
+  assert list.map(deprecated_in_the_plans, fn(row) { row.id }) == []
+    as "7.3: a spell the client calls deprecated is of no base the plans hold"
+  let deprecated_on_allies =
+    list.filter(planned, fn(entry) {
+      string.starts_with({ entry.0 }.description, "[DEPRECATED]")
+      && list.any(
+        spell_plan.tree(spell: entry.1, started: fn(_) { True }),
+        fn(one) {
+          list.any(
+            spell_plan.payloads(spell: one, as_kind: spell_plan.as_proxy),
+            fn(proxy) { proxy.target == spell_plan.OnEachAlly },
+          )
+        },
+      )
+    })
+  assert deprecated_on_allies != []
+    as "7.3: the deprecated Emission rows plan with a child on each ally"
   list.each(planned, fn(entry) {
     assert list.map({ entry.1 }.costs, kind_of)
       == list.map(costs(entry.0), expected_kind)

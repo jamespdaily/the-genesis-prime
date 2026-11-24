@@ -1655,7 +1655,6 @@ fn knockback_plans() -> spell_plan.Plans {
             condition: spell_plan.Always,
             tag: spend.always,
             target: spell_plan.OnEachStruck,
-            on_allies: False,
             spell: knockback,
             gains: [],
           ),

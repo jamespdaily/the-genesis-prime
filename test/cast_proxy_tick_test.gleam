@@ -104,7 +104,6 @@ fn once(named named: Spell) -> Proxy {
     condition: spell_plan.Always,
     tag: spend.always,
     target: spell_plan.OnCaster,
-    on_allies: False,
     spell: named,
     gains: [],
     period: None,

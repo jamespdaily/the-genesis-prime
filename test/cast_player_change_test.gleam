@@ -1096,7 +1096,6 @@ fn proxy_of(
     condition:,
     tag: spend.always,
     target:,
-    on_allies: False,
     spell: child,
     gains: [],
   )
@@ -2482,7 +2481,6 @@ fn started_at_a_player(spell spell: Spell) -> List(Spell) {
       case planned.kind {
         spell_plan.ProxyEffect(proxy: spell_plan.Proxy(
           target: spell_plan.OnPrimaryTarget,
-          on_allies: False,
           spell: child,
           ..,
         )) -> Ok(child)
@@ -2669,15 +2667,7 @@ pub fn a_proxy_at_the_area_starts_one_child_on_each_ally_the_round_hit_naming_th
   let other_ally = 41
   let creature = 20
   let on_allies = fn(delay_ms, condition) {
-    spell_plan.Proxy(
-      ..proxy_of(
-        child: plain,
-        target: spell_plan.OnEachStruck,
-        delay_ms:,
-        condition:,
-      ),
-      on_allies: True,
-    )
+    proxy_of(child: plain, target: spell_plan.OnEachAlly, delay_ms:, condition:)
   }
   let rows = [
     Selected(
@@ -2701,7 +2691,7 @@ pub fn a_proxy_at_the_area_starts_one_child_on_each_ally_the_round_hit_naming_th
       debug: [],
     ),
     Selected(
-      why: "an ally out of the caster's sight when the child starts: no child for it, a debug line says so, and the ally in sight still gets its own",
+      why: "an ally out of the caster's sight when the child starts: no child for it, a debug line says so, and the ally in sight gets its own",
       proxy: on_allies(250, Always),
       hit: [ally_selected(unit_id: ally), ally_selected(unit_id: other_ally)],
       sees_at_go: [ally, other_ally],

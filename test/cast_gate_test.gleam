@@ -42,7 +42,7 @@ import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None, Some}
 import gleam/string
 import map_support
 import owned_test
@@ -63,7 +63,6 @@ fn proxy(condition: spell_plan.Condition) -> Proxy {
     condition:,
     tag: spend.always,
     target: spell_plan.OnCaster,
-    on_allies: False,
     spell: support.child(spell4_id: child_spell4_id, base: child_spell4_id),
     gains: [],
   )
@@ -958,15 +957,15 @@ fn ally_answered(effect_ids effect_ids: List(Int)) -> List(cast_state.Struck) {
   ]
 }
 
-/// One go at the ally: why, the aim and condition of row 1, the rows the ally answered, the
-/// rolls given, how many rolls the go is counted to take and the heal rows that pass their
-/// caster gates.
+/// One go at the ally: why, the aim and condition of row 1, what the ally answered (none: the
+/// strike gave no answer; some: the heal rows it told, which may be none), the rolls given,
+/// how many rolls the go is counted to take and the heal rows that pass their caster gates.
 type RollRow {
   RollRow(
     why: String,
     aim: spell_plan.Aim,
     condition: spell_plan.Condition,
-    answered: List(Int),
+    answered: Option(List(Int)),
     rolls: List(Int),
     counted: Int,
     passed: List(Int),
@@ -999,13 +998,14 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
   let primary = spell_plan.AimsAtPrimaryTarget
   let caster_and_primary = spell_plan.AimsAtCasterAndPrimaryTarget
   let area = spell_plan.AimsAtArea
+  let caster_and_area = spell_plan.AimsAtCasterAndArea
   list.each(
     [
       RollRow(
         "no answer, the ally row behind a caster gate: both rows draw their rolls, 50 then 51, so the caster's row fails",
         primary,
         caster_gate,
-        [],
+        None,
         [50, 51],
         2,
         [1],
@@ -1014,7 +1014,7 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         "the ally answered row 1: it draws none, so the roll 50 reaches the caster's row, which passes",
         primary,
         caster_gate,
-        [1],
+        Some([1]),
         [50, 51],
         1,
         [1, 2],
@@ -1023,7 +1023,7 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         "no answer, the ally row behind a caster gate and a target gate: a roll for the caster gate and one for the ally's target gate, then the caster's row",
         primary,
         both_gates,
-        [],
+        None,
         [50, 50, 50],
         3,
         [1, 2],
@@ -1032,7 +1032,7 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         "the ally answered row 1, behind both gates: its target gate is not checked again either, so only the caster's row draws",
         primary,
         both_gates,
-        [1],
+        Some([1]),
         [50, 51],
         1,
         [1, 2],
@@ -1041,7 +1041,7 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         "no answer, row 1 aimed at the caster and the ally behind both gates: the caster gate once, the target gate for the caster and for the ally, then the caster's row",
         caster_and_primary,
         both_gates,
-        [],
+        None,
         [50, 50, 50, 50],
         4,
         [1, 2],
@@ -1050,7 +1050,7 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         "the ally answered row 1, aimed at the caster as well: its caster gate and the target gate for the caster are checked at the go, the target gate for the ally is not",
         caster_and_primary,
         both_gates,
-        [1],
+        Some([1]),
         [50, 50, 50],
         3,
         [1, 2],
@@ -1059,7 +1059,7 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         "the ally answered row 1, aimed at the area alone behind a caster gate: the strike gated it once and the caster is not healed by it, so the go draws none and the roll 50 reaches the caster's row, which passes",
         area,
         caster_gate,
-        [1],
+        Some([1]),
         [50, 51],
         1,
         [1, 2],
@@ -1068,16 +1068,25 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         "the ally answered row 1, aimed at the area alone behind both gates: neither gate is checked again",
         area,
         both_gates,
-        [1],
+        Some([1]),
         [50, 51],
         1,
+        [1, 2],
+      ),
+      RollRow(
+        "the ally answered with no heal (a Proxy selected it), row 1 aimed at the caster and the area behind both gates: the empty answer is an answer, so the target gate is not drawn for the ally; the caster gate, the caster's own target gate and the caster's row are",
+        caster_and_area,
+        both_gates,
+        Some([]),
+        [50, 50, 50],
+        3,
         [1, 2],
       ),
       RollRow(
         "no answer, row 1 aimed at the area alone: the strike told it to the allies it selected and drew its rolls, so the go draws none whoever answered",
         area,
         caster_gate,
-        [],
+        None,
         [50, 51],
         1,
         [1, 2],
@@ -1094,8 +1103,8 @@ pub fn a_heal_row_the_ally_answered_takes_no_roll_at_the_go_and_is_not_counted_t
         )
       let go = live_go_at_the_ally(spell:)
       let struck = case row.answered {
-        [] -> []
-        _ -> ally_answered(effect_ids: row.answered)
+        None -> []
+        Some(effect_ids) -> ally_answered(effect_ids:)
       }
       assert cast_gate.rolls_needed(
           cast: go.0,

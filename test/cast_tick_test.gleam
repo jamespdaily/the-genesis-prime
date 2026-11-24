@@ -2059,7 +2059,6 @@ fn proxy_row_of(
     condition: spell_plan.Always,
     tag: spend.always,
     target: spell_plan.OnCaster,
-    on_allies: False,
     spell: proxy_child(),
     gains: [],
     period: Some(spell_plan.Periodic(schedule:, persistence: None)),

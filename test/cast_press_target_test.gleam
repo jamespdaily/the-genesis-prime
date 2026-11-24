@@ -758,7 +758,7 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
         caster_entry,
       ),
       #(
-        "an ally the area selected only to start a child on is answered with no heal (a Proxy selected it, no row reached it): it is listed nowhere and gets no heal, gate or roll at the go, and the ally a heal reached is listed as before",
+        "an ally the area selected only to start a child on is answered with no heal (a Proxy selected it, no row reached it): it is listed nowhere and gets no heal at the go (its rolls are pinned in the cast_gate test of the answered ally), and the ally a heal reached is listed",
         area_rows(spell_plan.GatedOnTarget(prerequisite: not_held)),
         [
           answered_by(ally, [heal_of(77, 50, 27)]),

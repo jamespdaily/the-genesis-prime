@@ -674,8 +674,8 @@ pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_one
     ))
       as { "the plans hold the ability of Spell4 " <> int.to_string(spell4_id) }
   })
-  // Warden 33392 (the most injured ally) was refused for the area ordered by health, the gate
-  // the valid targets hid; the order is built now, and its child 36660 is centred on the ally
+  // Warden 33392 (the most injured ally) is refused for its child's hit row: the area ordered
+  // by health is built, and its child 36660 is centred on the ally
   // it is started on, which the picture does not place.
   let assert Ok(one) = list.find(left_out, fn(one) { one.spell4_id == 33_392 })
     as "Warden is refused for its child's hit row"
@@ -820,17 +820,17 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
     |> list.unique
   }
   list.each(on_each_ally_and_the_caster, fn(row) {
-    assert targets_of(row) == [spell_plan.OnCaster, spell_plan.OnEachStruck]
+    assert targets_of(row) == [spell_plan.OnCaster, spell_plan.OnEachAlly]
       as {
         "row "
         <> int.to_string(row)
         <> " starts its child on the caster and on each ally"
       }
   })
-  assert targets_of(207_513) == [spell_plan.OnEachStruck]
+  assert targets_of(207_513) == [spell_plan.OnEachAlly]
     as "Affinity's row 207513 (flags 4) starts its child on each ally alone"
   assert targets_of(180_600) == []
-    as "Flash's row 180600 starts no child, as before: it names tiers with no choice"
+    as "Flash's row 180600 starts no child: it names tiers with no choice"
   let sources = spell_plan.sources_of(tables:)
   let assert Ok(flash_row) =
     spell4_effects.get(tables:, id: Spell4EffectsId(180_600))
@@ -863,7 +863,7 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
   })
   // Warden 33392 and Barrier 78081 are centred on the ally their child is started on, which
   // the picture does not place; Pyrokinetic Flame, Voidspring (its area 653 is ordered by the
-  // lowest health, which no friendly area builds, so its Proxy still starts on a creature) and
+  // lowest health, which no friendly area builds, so its Proxy starts on a creature) and
   // Field Probes keep their own sentences.
   list.each(
     [
@@ -891,6 +891,57 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
         as { "its sentence: " <> spell_plan.describe(error: one.error) }
     },
   )
+}
+
+pub fn every_proxy_row_with_no_ticktime_aimed_at_the_area_of_an_ally_finding_spell_starts_its_child_on_each_ally_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  // Every Proxy row of the table (effectType 26) with no tickTime and the area's bit
+  // (targetFlags 4), in a spell whose area finds the caster's allies (`RowPlace.finds_allies`),
+  // is read as a child on each ally and never on each struck unit: the units of a friendly
+  // area are the caster's allies, players. A row that is not read that way is left out (it names
+  // no spell, or tiers with no choice) or has an aim the plan does not read (bit 8).
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let rows = spell4_effects.all(tables)
+  let place_of = effect_row_read.places(tables:, effects: rows)
+  let proxies =
+    list.filter(rows, fn(row) {
+      row.effect_type == 26
+      && row.tick_time == 0
+      && int.bitwise_and(row.target_flags, 4) != 0
+      && place_of(row.spell_id).finds_allies
+    })
+  assert proxies != []
+    as "the table holds Proxy rows at the area of a spell that finds allies"
+  list.each(proxies, fn(row) {
+    let reading =
+      spell_plan.read_row(
+        tables:,
+        sources:,
+        place: place_of(row.spell_id),
+        effect: row,
+      )
+    let why =
+      "Proxy row "
+      <> int.to_string(row.id)
+      <> " of Spell4 "
+      <> int.to_string(row.spell_id)
+    case reading {
+      Ok(spell_plan.Applied(spell_plan.ReadProxy(targets:, ..)))
+      | Ok(spell_plan.Held(spell_plan.ReadProxy(targets:, ..))) -> {
+        assert list.contains(targets, spell_plan.OnEachAlly)
+          as { why <> " starts a child on each ally" }
+        assert !list.contains(targets, spell_plan.OnEachStruck)
+          as { why <> " starts no child on a struck unit" }
+      }
+      Ok(spell_plan.LeftOut(..)) | Error(spell_plan.ProxyAimNotRead(..)) -> Nil
+      Ok(_) -> panic as { why <> " is read as another kind" }
+      Error(error) ->
+        panic as { why <> " is refused: " <> spell_plan.describe(error:) }
+    }
+  })
 }
 
 pub fn every_row_of_nullifiers_tree_is_read_and_its_ability_is_planned_test() -> Nil {

@@ -793,7 +793,6 @@ fn struck_children(caster caster: Caster) -> List(#(Int, Int)) {
       condition: GatedOnCasterAndTarget(caster: [], target: accepted_gate()),
       tag: spend.always,
       target: spell_plan.OnEachStruck,
-      on_allies: False,
       spell: support.child(spell4_id: 39_427, base: 39_427),
       gains: [],
     )

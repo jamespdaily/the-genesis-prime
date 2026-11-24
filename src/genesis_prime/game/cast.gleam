@@ -5845,6 +5845,7 @@ fn proxy_targets(
       option.unwrap(live.named_player, caster.unit_id),
     ]
     spell_plan.OnEachStruck -> cast_gate.hit_units(struck:)
+    spell_plan.OnEachAlly -> cast_gate.hit_players(struck:)
   }
 }
 
@@ -5863,7 +5864,8 @@ fn proxy_players(
         None -> []
       }
     spell_plan.OnCaster -> []
-    spell_plan.OnEachStruck -> cast_gate.hit_players(struck:)
+    spell_plan.OnEachStruck | spell_plan.OnEachAlly ->
+      cast_gate.hit_players(struck:)
   }
 }
 

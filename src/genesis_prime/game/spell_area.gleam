@@ -450,14 +450,15 @@ pub fn describe(error error: AreaError) -> String {
           "on the player the press named"
         spell_plan.Proxied(target: spell_plan.OnEachStruck) ->
           "on each struck unit"
-        spell_plan.ProxiedOnEachAlly -> "on each ally the area selects"
+        spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
+          "on each ally the area selects"
         spell_plan.FromProc(aim: spell_plan.AtHolder) ->
           "by a proc aimed at its holder"
         spell_plan.FromProc(aim: spell_plan.AtOtherUnit) ->
           "by a proc aimed at another unit"
       }
       <> case start {
-        spell_plan.ProxiedOnEachAlly ->
+        spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
           ", on a player whose place the caster's picture does not hold"
         spell_plan.Pressed | spell_plan.Proxied(..) | spell_plan.FromProc(..) ->
           ", on a unit whose facing the strike does not know, and the row's shape is not a circle at that unit's place"
@@ -692,7 +693,7 @@ pub fn start_placed(
         FollowsCaster | FixedAtCaster -> True
         FollowsTarget | FixedAtTarget -> list.all(shapes, is_plain_circle)
       }
-    spell_plan.ProxiedOnEachAlly ->
+    spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
       case anchor {
         FollowsCaster | FixedAtCaster -> True
         FollowsTarget | FixedAtTarget -> list.is_empty(shapes)
@@ -735,7 +736,6 @@ fn targeting_given(
     }
     spell_plan.Pressed, False
     | spell_plan.Proxied(..), _
-    | spell_plan.ProxiedOnEachAlly, _
     | spell_plan.FromProc(..), _
     -> Ok(Nil)
   }
@@ -858,9 +858,7 @@ fn area_of(
 
 /// Whether some phase of the area selects units from it or ticks on the units it holds.
 fn phases_select(area area: SpellArea) -> Bool {
-  spell_plan.go_numbers(go_count: phase_count_of(spell: area.spell))
-  |> list.any(fn(phase) {
-    let chosen = phase_of(spell: area, phase:, spent: None)
+  any_phase(area:, holds: fn(chosen) {
     chosen.selects_area || chosen.ticks_on_area
   })
 }
@@ -871,14 +869,21 @@ fn phases_select(area area: SpellArea) -> Bool {
 /// An instant heal aimed at the area, and a Proxy that starts a child on each ally, select the
 /// allies the picture holds a health for.
 fn phases_select_beyond_allies(area area: SpellArea) -> Bool {
-  spell_plan.go_numbers(go_count: phase_count_of(spell: area.spell))
-  |> list.any(fn(phase) {
-    let chosen = phase_of(spell: area, phase:, spent: None)
+  any_phase(area:, holds: fn(chosen) {
     chosen.strikes_area
     || chosen.ticks_on_area
     || chosen.starts_children
     && !area.finds_allies
   })
+}
+
+/// Whether some go of the area's spell has a phase for which `holds` is true.
+fn any_phase(
+  area area: SpellArea,
+  holds holds: fn(PhaseStrike) -> Bool,
+) -> Bool {
+  spell_plan.go_numbers(go_count: phase_count_of(spell: area.spell))
+  |> list.any(fn(phase) { holds(phase_of(spell: area, phase:, spent: None)) })
 }
 
 /// Valid-target bits the area record holds and the strike does not read: the area may strike
@@ -1536,7 +1541,7 @@ fn phase_of(
     )
   let starts_children =
     list.any(proxies, fn(proxy) {
-      proxy.target == spell_plan.OnEachStruck && proxy.period == None
+      proxy.period == None && starts_on_each_unit(proxy:)
     })
   PhaseStrike(
     heals:,
@@ -1560,9 +1565,17 @@ fn phase_of(
       spell_plan.reaches_primary_target(aim:)
     }),
     ticks_on_area: list.any(proxies, fn(proxy) {
-      proxy.target == spell_plan.OnEachStruck && option.is_some(proxy.period)
+      starts_on_each_unit(proxy:) && option.is_some(proxy.period)
     }),
   )
+}
+
+/// Whether a Proxy starts its child on the units of the area, each struck unit or each ally.
+fn starts_on_each_unit(proxy proxy: spell_plan.Proxy) -> Bool {
+  case proxy.target {
+    spell_plan.OnEachStruck | spell_plan.OnEachAlly -> True
+    spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> False
+  }
 }
 
 /// Whether the row strikes a unit but its caster. A row aimed at its caster alone loads

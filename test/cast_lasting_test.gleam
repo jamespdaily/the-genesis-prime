@@ -2689,7 +2689,6 @@ fn periodic_proxy(schedule schedule: ticking.Schedule) -> spell_plan.Proxy {
     condition: Always,
     tag: spend.always,
     target: spell_plan.OnCaster,
-    on_allies: False,
     spell: support.child(spell4_id: 79_757, base: 79_757),
     gains: [],
     period: option.Some(spell_plan.Periodic(schedule:, persistence: option.None)),

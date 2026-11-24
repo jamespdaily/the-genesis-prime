@@ -32,12 +32,15 @@ import genesis_prime/game/spell_plan.{
   AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster, InterruptArmor,
 }
 import genesis_prime/game/spend
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/dict
 import gleam/list
 import gleam/option.{Some}
 import gleam/result
+import gleam/set
+import gleam/string
 import owned_test
 import planted_table.{type Cell, Integer}
 import spell_tables
@@ -377,8 +380,37 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     as "`table_rows -- Spell4Effects effectType=52`: 38 rows"
   let unread =
     effect_row.unread_by_type(tables: client_tables.shared(), effects: rows)
-  assert dict.get(unread, 52) == Ok(2)
-    as "36 are read; row 105619 (targetFlags 4) is not, and neither is row 100384 (targetFlags 2) of Spell4 43457, which Proxy 99382 (targetFlags 4) starts on each struck unit"
+  assert dict.get(unread, 52) == Ok(1)
+    as "37 are read; only row 105619 (targetFlags 4) is not"
+  // Row 100384 (targetFlags 2) of Spell4 43457 is read: Proxy 99382 (targetFlags 4, no tickTime)
+  // of Spell4 43456 starts 43457 on each ally of an area that finds the caster's allies, so its
+  // primary target is a player and the armor lands on it. The client names 43456 "[TS] Trash
+  // - Pell - 2H Staff - Invocation", a test spell of a creature, and no spell of its base is
+  // among the plans, so no player's press reaches it.
+  let assert Ok(child) =
+    spell_tables.planned_alone(
+      tables: client_tables.shared(),
+      spell4_id: 43_457,
+    )
+    as "Spell4 43457 plans alone"
+  let assert [armor] =
+    list.filter(
+      spell_plan.payloads(spell: child, as_kind: spell_plan.as_modifier),
+      fn(row) { row.effect_id == Spell4EffectsId(100_384) },
+    )
+    as "Spell4 43457 holds row 100384"
+  assert option.is_some(armor.armor)
+    && spell_plan.modifier_aim(modifier: armor) == AimsAtPrimaryTarget
+    as "row 100384 is an Interrupt Armor row aimed at the primary target"
+  let assert Ok(parent) =
+    spell4.get(tables: client_tables.shared(), id: Spell4Id(43_456))
+  assert string.starts_with(parent.description, "[TS]")
+    as "Spell4 43456 is a test spell by its name"
+  assert !set.contains(
+    spell_tables.bases_the_plans_hold(tables: client_tables.shared()),
+    parent.spell4_base_id_base_spell,
+  )
+    as "no ability among the plans holds a spell of the base of 43456"
   Nil
 }
 

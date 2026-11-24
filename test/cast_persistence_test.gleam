@@ -338,7 +338,6 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
           condition: spell_plan.Always,
           tag: spend.always,
           target: spell_plan.OnEachStruck,
-          on_allies: False,
           spell: child,
           gains: [],
         ),
@@ -899,7 +898,6 @@ fn periodic_holder(
       condition: Always,
       tag: spend.always,
       target: spell_plan.OnCaster,
-      on_allies: False,
       spell: support.child(spell4_id: 7030, base: 7030),
       gains: [],
       period: Some(spell_plan.Periodic(
@@ -1197,7 +1195,6 @@ pub fn augmented_blades_stack_removal_buff_ends_with_its_last_kinetic_rage_stack
         condition: Always,
         tag: spend.always,
         target: spell_plan.OnCaster,
-        on_allies: False,
         spell: rage,
         gains: [],
         period: Some(spell_plan.Periodic(

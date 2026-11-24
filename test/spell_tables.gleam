@@ -42,6 +42,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
 import gleam/result
+import gleam/set
 import planted_table.{type Cell, Float, Integer}
 
 /// The planted rows of each table the plan reads.
@@ -531,6 +532,27 @@ pub fn started_on_each_struck(
     throws_target: False,
     finds_allies: False,
   )
+}
+
+/// The Spell4Base ids of every spell in the tree of an ability among the plans of the tables
+/// (`spell_plan.plans_with_later`), its alternate's tree included: the abilities a character
+/// can cast by a press, a Proxy or a proc, whatever the tier. A spell of a base outside it is
+/// cast by no class ability.
+pub fn bases_the_plans_hold(tables tables: table_store.Tables) -> set.Set(Int) {
+  dict.values(spell_plan.plans_with_later(tables:))
+  |> list.flat_map(fn(ability) {
+    let alternate = case ability.alternate {
+      Some(alternate) ->
+        spell_plan.tree(spell: alternate, started: fn(_) { True })
+      None -> []
+    }
+    list.append(
+      spell_plan.tree(spell: ability, started: fn(_) { True }),
+      alternate,
+    )
+  })
+  |> list.map(fn(spell) { spell.spell4_base_id.value })
+  |> set.from_list
 }
 
 /// What the plan makes of each of these effect rows in a place (`spell_plan.read_row`),

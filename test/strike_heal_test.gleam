@@ -630,7 +630,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
       hit_of(unit_id: 32, heals: [first_heal()]),
       hit_of(unit_id: 33, heals: []),
     ]
-    as "the ally the heal's gate refused is still a hit, for the Proxy, with no heal"
+    as "the ally the heal's gate refused is a hit, for the Proxy, with no heal"
   let kick =
     strike.select(
       asked: go(primary_target: 7, spell4_id: 58_591),

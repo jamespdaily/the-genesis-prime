@@ -533,7 +533,7 @@ pub fn a_proxy_aimed_by_4_to_7_starts_its_child_on_the_caster_alone_where_the_ar
         flags: 4,
         place: spell_tables.pressed_finding_allies,
       ),
-      Ok([spell_plan.OnEachStruck]),
+      Ok([spell_plan.OnEachAlly]),
     ),
     #(
       "64390 as read: flags 5, the area finds allies",
@@ -542,7 +542,7 @@ pub fn a_proxy_aimed_by_4_to_7_starts_its_child_on_the_caster_alone_where_the_ar
         flags: 5,
         place: spell_tables.pressed_finding_allies,
       ),
-      Ok([spell_plan.OnCaster, spell_plan.OnEachStruck]),
+      Ok([spell_plan.OnCaster, spell_plan.OnEachAlly]),
     ),
     #(
       "64390 with flags 6 (synthetic), the area finds allies: the primary-target bit is not read",
@@ -551,7 +551,7 @@ pub fn a_proxy_aimed_by_4_to_7_starts_its_child_on_the_caster_alone_where_the_ar
         flags: 6,
         place: spell_tables.pressed_finding_allies,
       ),
-      Ok([spell_plan.OnEachStruck]),
+      Ok([spell_plan.OnEachAlly]),
     ),
     #(
       "64390 with flags 7 (synthetic), the area finds allies",
@@ -560,7 +560,7 @@ pub fn a_proxy_aimed_by_4_to_7_starts_its_child_on_the_caster_alone_where_the_ar
         flags: 7,
         place: spell_tables.pressed_finding_allies,
       ),
-      Ok([spell_plan.OnCaster, spell_plan.OnEachStruck]),
+      Ok([spell_plan.OnCaster, spell_plan.OnEachAlly]),
     ),
     #(
       "64390 with flags 13 (synthetic, bit 8), the spell hits no foes",
@@ -587,7 +587,7 @@ pub fn a_proxy_aimed_by_4_to_7_starts_its_child_on_the_caster_alone_where_the_ar
       proxy.effect_id == Spell4EffectsId(76_609)
     })
   assert list.map(of_row, fn(proxy) { proxy.target })
-    == [spell_plan.OnCaster, spell_plan.OnEachStruck]
+    == [spell_plan.OnCaster, spell_plan.OnEachAlly]
     as "text 245408 heals yourself and hurt allies: the spell holds Proxy 76609 once for the caster and once for each ally the area selects"
   let assert [proxy, ..] = of_row as "the spell holds Proxy 76609"
   assert proxy.spell.spell4_id == Spell4Id(33_258)
@@ -733,9 +733,9 @@ pub fn no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_eac
     as "table_rows -- Spell4Effects dataBits00=5844 and dataBits00=8285 find no row, so no Proxy starts either spell, on each struck unit or otherwise"
 }
 
-/// The child of the Proxy `proxy_row` of the spell `parent` that starts it on each struck
-/// unit, as the plan holds it, or what refuses the parent's plan.
-fn child_on_each_struck(
+/// The child of the Proxy `proxy_row` of the spell `parent` that starts it on each ally, as the
+/// plan holds it, or what refuses the parent's plan.
+fn child_on_each_ally(
   parent parent: Int,
   proxy_row proxy_row: Int,
 ) -> Result(spell_plan.Spell, spell_plan.PlanError) {
@@ -753,10 +753,10 @@ fn child_on_each_struck(
       spell_plan.payloads(spell: planned, as_kind: spell_plan.as_proxy),
       fn(proxy) {
         proxy.effect_id == Spell4EffectsId(proxy_row)
-        && proxy.target == spell_plan.OnEachStruck
+        && proxy.target == spell_plan.OnEachAlly
       },
     )
-    as "the parent holds the Proxy once, aimed at each struck unit"
+    as "the parent holds the Proxy once, aimed at each ally"
   Ok(proxy.spell)
 }
 
@@ -787,19 +787,17 @@ pub fn a_child_started_on_each_ally_is_read_for_its_heals_absorbs_and_armor_at_t
       fn(modifier) { modifier.effect_id == Spell4EffectsId(row) },
     )
   }
-  let assert Ok(boon) = child_on_each_struck(parent: 36_562, proxy_row: 76_609)
+  let assert Ok(boon) = child_on_each_ally(parent: 36_562, proxy_row: 76_609)
     as "Mental Boon's child on each ally is planned, its heal read"
   heal_aimed_at_the_primary_target(boon, 64_373)
-  let assert Ok(runes) =
-    child_on_each_struck(parent: 39_092, proxy_row: 206_357)
+  let assert Ok(runes) = child_on_each_ally(parent: 39_092, proxy_row: 206_357)
     as "Runes of Protection's child on each ally is planned, its absorb read"
   let assert [absorb] = modifiers_of(runes, 206_315)
     as "the child holds the absorb row once"
   assert spell_plan.modifier_aim(modifier: absorb) == AimsAtPrimaryTarget
   let assert spell_plan.AbsorbChange(..) = absorb.change
     as "the row is an absorb"
-  let assert Ok(matrix) =
-    child_on_each_struck(parent: 42_572, proxy_row: 125_421)
+  let assert Ok(matrix) = child_on_each_ally(parent: 42_572, proxy_row: 125_421)
     as "Recursive Matrix's child on each ally is planned"
   let assert [caster_part, struck_part] = modifiers_of(matrix, 209_430)
     as "flags 3 hold the caster's part and the primary target's"
@@ -808,8 +806,7 @@ pub fn a_child_started_on_each_ally_is_read_for_its_heals_absorbs_and_armor_at_t
   let assert spell_plan.StruckChange(aim:, ..) = struck_part.change
     as "the other part changes the unit the child is cast on"
   assert aim == AimsAtPrimaryTarget
-  let assert Ok(barrier) =
-    child_on_each_struck(parent: 41_369, proxy_row: 92_796)
+  let assert Ok(barrier) = child_on_each_ally(parent: 41_369, proxy_row: 92_796)
     as "Barrier's child on each ally is planned, its Interrupt Armor read"
   let assert [armor] = modifiers_of(barrier, 199_194)
     as "the child holds the Interrupt Armor row once"

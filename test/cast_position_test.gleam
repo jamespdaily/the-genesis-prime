@@ -101,7 +101,6 @@ fn proxy(
     condition: GatedOnCasterAndTarget(caster: caster_gates, target: target_gate),
     tag: spend.always,
     target: spell_plan.OnEachStruck,
-    on_allies: False,
     spell: support.child(spell4_id: child, base: child),
     gains: [],
   )
