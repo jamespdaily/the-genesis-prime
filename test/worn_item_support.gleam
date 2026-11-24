@@ -5,9 +5,7 @@
 
 import fixture_tables
 import genesis_prime/store.{type HeldItem}
-import genesis_prime/table/id.{Item2Id}
 import gleam/list
-import gleam/option.{None}
 import item_flags_support
 
 /// Item2 91747, the Chua Tighty-Whitey Deflector: Item2Type 53 (ItemSlot 43, ArmorShields,
