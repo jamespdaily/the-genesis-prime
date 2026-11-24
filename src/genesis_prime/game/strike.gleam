@@ -622,18 +622,23 @@ fn area_selection(
   }
 }
 
-/// The caster as a candidate of the area of a phase whose heal rows aim at the area and none
-/// at the caster: a row that does not name the caster leaves it to the area, which counts it
-/// among the allies it heals ("yourself and N allies", Triage's text 195454). A phase with a
-/// row that names the caster heals it by that row's flag, and the area finds the others only.
+/// The caster as a candidate of the area of a phase with a heal row aimed at the area alone
+/// (targetFlags 4) and no row that reaches the caster another way: such a row names no caster
+/// of its own, so the area counts it among the allies it heals ("yourself and N allies",
+/// Triage's text 195454). A row that names the caster (flags 1, 3, 5, 7) heals it by that flag,
+/// and one aimed at the primary target and the area (flags 6) reaches it as the primary
+/// target of a spell on itself, so in either case the area finds the others only.
 fn caster_candidate_of(
   attacker attacker: Attacker,
   heals heals: List(spell_area.InstantHeal),
 ) -> Option(area.Candidate) {
   let names_caster =
-    list.any(heals, fn(heal) { spell_plan.reaches_caster(aim: heal.aim) })
+    list.any(heals, fn(heal) {
+      spell_plan.reaches_caster(aim: heal.aim)
+      || heal.aim == spell_plan.AimsAtPrimaryTargetAndArea
+    })
   let leaves_it_to_the_area =
-    list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
+    list.any(heals, fn(heal) { heal.aim == spell_plan.AimsAtArea })
   case leaves_it_to_the_area && !names_caster {
     True ->
       Some(area.Candidate(

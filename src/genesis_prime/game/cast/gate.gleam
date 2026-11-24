@@ -227,10 +227,11 @@ pub fn heal_answered(
 /// what the answers list: it checks none of its caster gates and draws no roll for them
 /// (`heal_answered` for the target gate). A row aimed at the primary target alone is told when
 /// the round holds the primary target's answer. A row aimed at the area alone is a friendly
-/// area's heal of its other allies, which the strike gated once, for the caster and for each
-/// ally it selected, whoever answered: the caster is not among the units it reaches, so it has
-/// no part of the row for the go to gate. A row aimed at the caster as well keeps its caster
-/// gate, which gates the caster's part of the row.
+/// area's heal of its allies, which the strike gated once, for the caster and for each ally it
+/// selected, whoever answered. The caster, when the area took it as a candidate, is added to
+/// the units the row reaches (`caster_took`) with the strike's gates already passed, so the go
+/// gates it no more than the others. A row aimed at the caster as well keeps its caster gate,
+/// which gates the caster's part of the row.
 pub fn heal_told(
   kind kind: spell_plan.Kind,
   primary_target primary_target: Int,

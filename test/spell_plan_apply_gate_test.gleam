@@ -31,7 +31,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import planted_table
@@ -163,63 +163,69 @@ pub fn until_removed_periodic_damage_row_behind_an_unread_gate_is_left_out_test(
     as "an until-removed row is left out before its gate is read, as it was before the gates were read, so the load goes on"
 }
 
-pub fn damage_row_past_the_caster_reading_struck_state_is_refused_at_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Kept edit: Prerequisite 3476 made a condition of type 15 (comparison 1), which reads
-  // the state of the creature it is tested on, and the row is aimed at the area (targetFlags 4).
-  use tables <- fixture_tables.changed(table: "Prerequisite", id: 3476, with: [
-    #("prerequisiteTypeId0", planted_table.Integer(15)),
-    #("prerequisiteComparisonId0", planted_table.Integer(1)),
-  ])
-  let result =
-    spell_area.damage_row_of(
-      tables:,
-      spell4_id: 23_980,
-      effect: spell_tables.effect_row_in(tables:, id: 38_307),
-    )
-  assert result
-    == Error(
-      spell_area.ApplyGateNotRead(spell_plan.TargetPrerequisiteReadsStruckUnit(
-        spell4_id: 23_980,
-        effect_id: 38_307,
-        prerequisite_type: 15,
-      )),
-    )
-  let assert Error(error) = result
-  assert string.ends_with(
-    spell_area.describe(error:),
-    "which reads what the casts held on the creature it strikes hold",
-  )
-    as "the refusal says the struck unit's casts are not read, with no issue"
-}
-
-/// A gate of type 40 (the unit's health percentage, `0x1404a4d90`) reads what the caster's picture
-/// holds of a player and what a creature holds of itself in no subject the server has, so a row
-/// that strikes creatures behind it is refused as one behind the casts held on the unit is,
-/// where a heal row of a friendly area behind it is read
-/// (`a_friendly_area_heal_behind_a_gate_the_strike_cannot_check_for_an_ally_keeps_the_casters_own_heal_test`).
-pub fn damage_row_past_the_caster_behind_a_health_percent_gate_is_refused_at_load_test() -> Nil {
+/// A damage row aimed at the area (targetFlags 4) behind a target gate that reads what the
+/// creature it strikes holds is refused at load: no creature holds a player's picture of it
+/// for the caster's check, and none checks it itself. Type 15 reads the state of the creature
+/// it is tested on; type 40 (a unit's health percentage, `0x1404a4d90`) reads a health the
+/// caster's picture holds of a player only, where a heal row of a friendly area behind it is
+/// read (`a_friendly_area_heal_behind_a_gate_the_strike_cannot_check_for_an_ally_keeps_the_casters_own_heal_test`).
+pub fn damage_row_past_the_caster_behind_a_gate_reading_the_struck_unit_is_refused_at_load_test() -> Nil {
   use <- owned_test.run(60_000)
   // Kept edit: Prerequisite 3476, the target gate of damage row 38307 (targetFlags 4), made a
-  // condition of type 40, comparison 6 (at most), value 30.
-  use tables <- fixture_tables.changed(table: "Prerequisite", id: 3476, with: [
-    #("prerequisiteTypeId0", planted_table.Integer(40)),
-    #("prerequisiteComparisonId0", planted_table.Integer(6)),
-    #("value0", planted_table.Integer(30)),
-  ])
-  assert spell_area.damage_row_of(
-      tables:,
-      spell4_id: 23_980,
-      effect: spell_tables.effect_row_in(tables:, id: 38_307),
-    )
-    == Error(
-      spell_area.ApplyGateNotRead(spell_plan.TargetPrerequisiteReadsStruckUnit(
-        spell4_id: 23_980,
-        effect_id: 38_307,
-        prerequisite_type: 40,
-      )),
-    )
-    as "a damage row at the area behind a health percentage is refused: no creature holds its health for the caster's check, and none checks it itself"
+  // condition of each row's type, comparison and value.
+  list.each(
+    [
+      #(
+        "type 15 (comparison 1) reads the state of the creature it is tested on",
+        15,
+        1,
+        None,
+        "which reads what the casts held on the creature it strikes hold",
+      ),
+      #(
+        "type 40 (comparison 6, value 30) reads a health no creature holds for the caster's check",
+        40,
+        6,
+        Some(30),
+        "which reads the state of the creature it strikes, and the row is not one its strike carries to the creature",
+      ),
+    ],
+    fn(row) {
+      let #(reason, prerequisite_type, comparison, value, told) = row
+      use tables <- fixture_tables.changed(
+        table: "Prerequisite",
+        id: 3476,
+        with: [
+          #("prerequisiteTypeId0", planted_table.Integer(prerequisite_type)),
+          #("prerequisiteComparisonId0", planted_table.Integer(comparison)),
+          ..case value {
+            Some(value) -> [#("value0", planted_table.Integer(value))]
+            None -> []
+          }
+        ],
+      )
+      let result =
+        spell_area.damage_row_of(
+          tables:,
+          spell4_id: 23_980,
+          effect: spell_tables.effect_row_in(tables:, id: 38_307),
+        )
+      assert result
+        == Error(
+          spell_area.ApplyGateNotRead(
+            spell_plan.TargetPrerequisiteReadsStruckUnit(
+              spell4_id: 23_980,
+              effect_id: 38_307,
+              prerequisite_type:,
+            ),
+          ),
+        )
+        as reason
+      let assert Error(error) = result
+      assert string.ends_with(spell_area.describe(error:), told)
+        as "the refusal says what the gate reads of the struck unit, with no issue"
+    },
+  )
 }
 
 pub fn ccstateset_row_behind_an_apply_prerequisite_is_read_with_its_gates_test() -> Nil {

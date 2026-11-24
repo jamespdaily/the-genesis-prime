@@ -295,12 +295,26 @@ fn hurt_at(x x: Float, z z: Float, missing missing: Int) -> shown.Shown {
 /// (targetFlags 4, as Dual Fire's rows 84876 and 126516 are) and its area row 662 ordered by
 /// missing health (targetSelection 5) taking `count` units, built as the load builds them.
 fn emission_by_health_at_the_area_alone(count count: Int) -> spell_area.Areas {
+  emission_by_health(flags: 4, count:, min_range: 0.0)
+}
+
+/// The areas of the fixture's rows with Emission's heal row 141384 of the targetFlags `flags`
+/// and its area row 662 ordered by missing health (targetSelection 5), taking `count` units
+/// from `min_range` metres, built as the load builds them.
+fn emission_by_health(
+  flags flags: Int,
+  count count: Int,
+  min_range min_range: Float,
+) -> spell_area.Areas {
   fixture_tables.changes(
     edits: [
-      #("Spell4Effects", 141_384, [#("targetFlags", planted_table.Integer(4))]),
+      #("Spell4Effects", 141_384, [
+        #("targetFlags", planted_table.Integer(flags)),
+      ]),
       #("Spell4AoeTargetConstraints", 662, [
         #("targetSelection", planted_table.Integer(5)),
         #("targetCount", planted_table.Integer(count)),
+        #("minRange", planted_table.Float(min_range)),
       ]),
     ],
     body: fn(tables) {
@@ -514,10 +528,13 @@ type CasterRow {
 /// shape test (Jim's decision on 2026-11-23; the text 195454 of Triage reads "yourself or an
 /// ally based on who has the lowest health", and Spell4 27972 "ST smart heal"), ranked by the
 /// health it misses from the vitals it holds, as an ally is. A row that names the caster
-/// (targetFlags 5 and 7, as Crisis Wave's) heals it by its flag, so the area finds the others
-/// only. Emission's cone (1 to 15 m ahead of the caster) leaves the caster, which stands at
-/// the centre, outside the hit shape in every row. A caster at full health among allies at
-/// full health is taken first (distance 0, the first guess marked in `area`).
+/// (targetFlags 5 and 7, as Crisis Wave's) heals it by its flag, and a row aimed at the primary
+/// target and the area (flags 6) reaches it as the primary target of a spell on itself, so in
+/// both the area finds the others only. The caster stands at the centre of Emission's cone,
+/// which its 1.2 m hit radius reaches from 1 m ahead, so only the row whose area starts 5 m
+/// out (Spell4AoeTargetConstraints 662 edited to minRange 5) puts it outside the hit shape,
+/// as it does the ally 2 m ahead. A caster at full health among allies at full health is taken
+/// first (distance 0, the first guess marked in `area`).
 pub fn a_heal_row_aimed_at_the_area_alone_takes_the_caster_as_a_candidate_by_its_missing_health_and_a_row_that_names_the_caster_does_not_test() -> Nil {
   use <- owned_test.run(60_000)
   let full = fn(x, z) { hurt_at(x:, z:, missing: 0) }
@@ -563,6 +580,23 @@ pub fn a_heal_row_aimed_at_the_area_alone_takes_the_caster_as_a_candidate_by_its
           #(35, hurt_at(x: 0.0, z: 6.0, missing: 4999)),
         ],
         [7, 32],
+      ),
+      CasterRow(
+        "an area that starts 5 m out leaves the caster, at its centre, outside the hit shape, and the ally 2 m ahead: the caster is still a candidate, the ally in range is selected, and the ally 2 m ahead is not whatever it misses",
+        emission_by_health(flags: 4, count: 2, min_range: 5.0),
+        4000,
+        [
+          #(32, hurt_at(x: 0.0, z: -2.0, missing: 4999)),
+          #(33, hurt_at(x: 0.0, z: -7.0, missing: 800)),
+        ],
+        [7, 33],
+      ),
+      CasterRow(
+        "a row aimed at the primary target and the area (targetFlags 6), the caster missing the most, count 1: the area finds the ally, never the caster, which the go reaches as the primary target of a spell on itself",
+        emission_by_health(flags: 6, count: 1, min_range: 0.0),
+        4000,
+        [#(32, hurt_at(x: 0.0, z: -4.0, missing: 800))],
+        [32],
       ),
       CasterRow(
         "the caster and every ally at full health, count 1: the caster, at distance 0 (a guess: the client names no order)",
