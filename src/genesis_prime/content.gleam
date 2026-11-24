@@ -430,6 +430,9 @@ fn read(
     Ok(factions) -> factions
     Error(..) -> creature_faction.taken_of(rows: faction_rows, tables:)
   }
+  // The ground of each world, read for the stored rows' squares; the placed rows stand
+  // on it where their marker does.
+  let grounds = content_terrain.grounds(tables:, rows:, read: terrain)
   // A kill objective's creature with no stored spawn in its marker's world stands in
   // the marker's circle; the placed rows are checked with the stored ones.
   // With no kinds taken the load has refusals and starts nothing, so nothing is placed.
@@ -448,6 +451,7 @@ fn read(
           checked: objectives,
           table: click_objective.table,
         ),
+        grounds: result.unwrap(grounds, or: dict.new()),
       )
     Error(..) ->
       objective_spawn.Placed(
@@ -477,7 +481,6 @@ fn read(
         visibility: dict.new(),
       )
   }
-  let grounds = content_terrain.grounds(tables:, rows:, read: terrain)
   case
     list.flatten([
       objective_spawn.labelled(refusals: selection.refusals, placed:),

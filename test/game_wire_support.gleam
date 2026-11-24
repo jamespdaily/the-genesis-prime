@@ -18,6 +18,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/content
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
@@ -604,6 +605,19 @@ pub fn with_world_data(
   folder folder: String,
   adjusted adjusted: fn(server.Settings) -> server.Settings,
 ) -> fn(server.Settings) -> server.Settings {
+  with_world_data_on_ground(
+    folder:,
+    terrain: terrain_support.flat_reader(),
+    adjusted:,
+  )
+}
+
+/// As `with_world_data`, the content load reading the ground through `terrain`.
+pub fn with_world_data_on_ground(
+  folder folder: String,
+  terrain terrain: content_terrain.Reader,
+  adjusted adjusted: fn(server.Settings) -> server.Settings,
+) -> fn(server.Settings) -> server.Settings {
   fn(settings: server.Settings) {
     let pool =
       pog.Config(
@@ -629,7 +643,7 @@ pub fn with_world_data(
           pause_ms: 50,
         ),
         probe: content.pool_probe,
-        terrain: terrain_support.flat_reader(),
+        terrain:,
         key:,
       )
       as "the content load puts the seeded spawns in the world's term"
