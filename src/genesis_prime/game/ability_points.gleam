@@ -41,7 +41,11 @@ pub fn total(tables tables: table_store.Tables, level level: Int) -> Int {
 }
 
 /// 0x0169 for a character of the level: the points to spend are the total less those spent.
-pub fn frame(tables tables: table_store.Tables, level level: Int) -> Frame {
+pub fn frame(
+  tables tables: table_store.Tables,
+  level level: Int,
+  spent _spent: Int,
+) -> Frame {
   let total = total(tables:, level:)
   let assert Ok(body) =
     ability_points.encode(AbilityPoints(
@@ -58,12 +62,13 @@ pub fn after_rise(
   tables tables: table_store.Tables,
   from_level from_level: Int,
   to_level to_level: Int,
+  spent spent: Int,
 ) -> List(Frame) {
   use <- bool.guard(
     when: total(tables:, level: from_level) == total(tables:, level: to_level),
     return: [],
   )
-  [frame(tables:, level: to_level)]
+  [frame(tables:, level: to_level, spent:)]
 }
 
 /// What the ability points do not do: the spending the client offers for them.

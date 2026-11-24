@@ -8,9 +8,11 @@
 import genesis_prime/client_connection.{Continue}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book
+import genesis_prime/game/ability_points
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/player_life
+import genesis_prime/game/spell_tier
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
 
@@ -25,6 +27,10 @@ pub fn take_message(
   let player =
     limited_action_set.Player(
       level:,
+      points_total: ability_points.total(
+        tables: session.settings.tables,
+        level:,
+      ),
       book: ability_book.book(
         tables: session.settings.tables,
         loadout: entered.loadout,
@@ -36,6 +42,7 @@ pub fn take_message(
   case
     limited_action_set.take(
       unlocks: limited_action_set.unlocks(tables: session.settings.tables),
+      tiers: spell_tier.tiers(tables: session.settings.tables),
       player:,
       saved: entered.action_sets,
       class_bar: entered.loadout.abilities,

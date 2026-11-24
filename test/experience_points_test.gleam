@@ -3,8 +3,8 @@
 //// rows. Expected values come from these places.
 //// - `XpPerLevel.abilityPointsPerLevel`: 0 for IDs 1 to 9 and 1 for IDs 10 to 50, so the
 ////   total is 0 up to level 9, 1 at 10, 2 at 11 and 41 at 50 (`table_rows -- XpPerLevel`).
-//// - `opcode.0x169`: the points to spend, then the total; the server saves no tier, so
-////   they are equal. A rise that leaves the total as it was sends nothing, and a gain over
+//// - `opcode.0x169`: the points to spend, then the total; the points to spend are the total
+////   less the points the held tiers cost. A rise that leaves the total as it was sends nothing, and a gain over
 ////   several levels sends one frame, of the last level.
 //// - `lua.Abilities.UpdateInterfaceMenuAlerts`, `0x1403d9a60`, `0x14045edd0`: the client's
 ////   fanfare timer starts when it applies the 0x0938 stat 10 and raises PlayerLevelChange,
@@ -20,7 +20,11 @@ import ability_points_support as support
 import client_tables
 import experience_support
 import game_connection_support as connection_support
+import genesis_prime/client_connection.{type Request}
+import genesis_prime/game/connection as game_connection
+import genesis_prime/step.{type ConnectionStep}
 import gleam/list
+import limited_action_set_support as limited
 import owned_test
 import unitest
 
@@ -32,6 +36,7 @@ type Rise {
     to: Int,
     ids: List(Int),
     points: List(#(Int, Int)),
+    tier_changes: List(#(Int, Int)),
     why: String,
   )
 }
@@ -42,14 +47,31 @@ const with_points = [0x01AC, 0x0938, 0x0169, 0x093A]
 
 fn rises() -> List(Rise) {
   [
-    Rise(4, 1, 2, without_points, [], "Medic 1 to 2: both levels hold 0 and 0"),
-    Rise(4, 8, 9, without_points, [], "Medic 8 to 9: both levels hold 0 and 0"),
+    Rise(
+      4,
+      1,
+      2,
+      without_points,
+      [],
+      [],
+      "Medic 1 to 2: both levels hold 0 and 0",
+    ),
+    Rise(
+      4,
+      8,
+      9,
+      without_points,
+      [],
+      [],
+      "Medic 8 to 9: both levels hold 0 and 0",
+    ),
     Rise(
       4,
       9,
       10,
       with_points,
       [#(1, 1)],
+      [],
       "Medic 9 to 10: ID 10 gives the first",
     ),
     Rise(
@@ -58,6 +80,7 @@ fn rises() -> List(Rise) {
       10,
       with_points,
       [#(1, 1)],
+      [],
       "Spellslinger 9 to 10: the class does not change the total",
     ),
     Rise(
@@ -66,6 +89,7 @@ fn rises() -> List(Rise) {
       11,
       with_points,
       [#(2, 2)],
+      [],
       "Medic 10 to 11: ID 11 gives one more",
     ),
     Rise(
@@ -74,7 +98,17 @@ fn rises() -> List(Rise) {
       11,
       with_points,
       [#(2, 2)],
+      [],
       "Medic 8 to 11: one frame of the last level's total in one gain",
+    ),
+    Rise(
+      7,
+      10,
+      11,
+      with_points,
+      [#(1, 2)],
+      [#(27_638, 2)],
+      "Spellslinger 10 to 11 with Quick Draw at tier 2: the new total less the point spent on it",
     ),
     Rise(
       4,
@@ -82,9 +116,43 @@ fn rises() -> List(Rise) {
       50,
       with_points,
       [#(41, 41)],
+      [],
       "Medic 49 to 50: the last of IDs 10 to 50",
     ),
   ]
+}
+
+/// A Spellslinger of level `from` who saved the class's bar with these tier changes (Spell4Base,
+/// tier) in the builder, credited a kill that takes it to level `to`.
+fn level_up_after_saving(
+  from from: Int,
+  to to: Int,
+  tier_changes tier_changes: List(#(Int, Int)),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let state =
+    book_support.entered_at(
+      class_id: limited.spellslinger,
+      level: from,
+      saved_experience: book_support.experience_of(level: to) - 1,
+    )
+  let #(state, _) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.world_message(
+        message_id: 0x00B1,
+        body: limited.body_with(
+          ids: limited.class_bar,
+          set: 0,
+          tier_changes:,
+          amp_ids: [],
+        ),
+      ),
+    )
+  experience_support.credited(
+    state:,
+    creature_id: book_support.killed_creature,
+    level: from,
+  )
 }
 
 /// The ids without the 0x0111 and 0x01A0 of the abilities a rise grants.
@@ -95,12 +163,20 @@ fn without_the_book(ids ids: List(Int)) -> List(Int) {
 pub fn a_level_rise_sends_the_new_total_after_the_level_only_when_the_rise_changes_it_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(rises(), fn(rise) {
-    let #(_, taken) =
-      book_support.level_up(
-        class_id: rise.class_id,
-        from: rise.from,
-        to: rise.to,
-      )
+    let #(_, taken) = case rise.tier_changes {
+      [] ->
+        book_support.level_up(
+          class_id: rise.class_id,
+          from: rise.from,
+          to: rise.to,
+        )
+      changes ->
+        level_up_after_saving(
+          from: rise.from,
+          to: rise.to,
+          tier_changes: changes,
+        )
+    }
     let frames = book_support.written(taken:)
     assert without_the_book(ids: connection_support.written_ids(taken))
       == rise.ids

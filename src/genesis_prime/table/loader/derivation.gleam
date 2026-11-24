@@ -18,6 +18,7 @@ import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spell_surge
+import genesis_prime/game/spell_tier
 import genesis_prime/game/top_zone
 import genesis_prime/game/unit_properties
 import genesis_prime/table/loader/store
@@ -89,6 +90,7 @@ pub fn all() -> List(store.Derivation) {
     shortcut_spell.derivation(),
     level_up.derivation(),
     limited_action_set.derivation(),
+    spell_tier.derivation(),
     faction_level.derivation(),
     communicator.derivation(),
     quest_turn_in.derivation(),

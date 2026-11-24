@@ -3,15 +3,20 @@
 //// `genesis_prime/game/ability_points`). Expected values come from these places.
 //// - `XpPerLevel.abilityPointsPerLevel`: 0 for IDs 1 to 9 and 1 for IDs 10 to 50, so the
 ////   total of a level is 0 at 3 and 9, 1 at 10, 2 at 11 and 41 at 50 (`table_rows -- XpPerLevel`).
-//// - `opcode.0x169`: the points to spend, then the total; the server saves no tier, so they
-////   are equal.
+//// - `opcode.0x169`: the points to spend, then the total; a join holds no tier, so they are
+////   equal.
 //// - `lua.Abilities.UpdateInterfaceMenuAlerts`: the Abilities button reads the points at the
 ////   handler of 0x025E (CharacterCreated), not on 0x0169's own event, so the message comes
 ////   before 0x025E and after 0x092C (`opcode.0x25e.entry_order`).
 
+import ability_book_support as book_support
 import ability_points_support as support
 import cast_support
+import genesis_prime/game/limited_action_set
+import genesis_prime/game/world_entry
+import genesis_prime/table/id.{Spell4BaseId}
 import gleam/list
+import limited_action_set_support as limited
 import owned_test
 import world_entry_support
 
@@ -68,4 +73,30 @@ pub fn a_rejoin_sends_the_points_of_the_level_the_session_holds_test() -> Nil {
         as { why <> ": a join sends no 0x025E" }
     },
   )
+  // A tier bought in the session is not carried by the join: the bars are rebuilt from the
+  // saved rows, which hold no tier, so every ability is at tier 1 and the point is unspent
+  // again (the stated gap of `ability_points.gaps`).
+  let #(_, entered) = world_entry_support.entering(class_id: 7, level: 10)
+  let #(spent, _) =
+    limited.taken(
+      saved: entered.action_sets,
+      level: 10,
+      body: limited.body_with(
+        ids: limited.class_bar,
+        set: 0,
+        tier_changes: [#(27_638, 2)],
+        amp_ids: [],
+      ),
+    )
+  assert limited_action_set.held_tiers(saved: spent, set: 0)
+    == [#(Spell4BaseId(27_638), 2)]
+    as "the save in the session spent the point of level 10 on Quick Draw"
+  let frames =
+    world_entry_support.rejoining_from(
+      entered: world_entry.Entered(..entered, action_sets: spent),
+    )
+  assert support.points_in(frames:) == [#(1, 1)]
+    as "the join sends the level's point unspent"
+  assert list.all(book_support.tiers_in(frames:), fn(entry) { entry.tier == 1 })
+    as "and every ability at tier 1 in each set"
 }

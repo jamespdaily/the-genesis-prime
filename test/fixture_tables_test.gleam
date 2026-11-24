@@ -120,6 +120,18 @@ pub fn the_committed_files_are_what_the_generator_makes_from_the_client_test() -
       list.map(differences, fixture_rows.describe_difference),
       "\n",
     )
+  // The roots name every tier row of Quick Draw (Spell4Base 27638) and Ignite (20718), so the
+  // fixture holds tiers 1 to 9 of both (`table_rows -- Spell4 spell4BaseIdBaseSpell=27638`).
+  let tiers_of = fn(base) {
+    spell4.all(fixture_tables.shared())
+    |> list.filter(fn(row) { row.spell4_base_id_base_spell == base })
+    |> list.map(fn(row) { row.tier_index })
+    |> list.sort(int.compare)
+  }
+  assert tiers_of(27_638) == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    as "the fixture holds the nine tiers of Quick Draw"
+  assert tiers_of(20_718) == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    as "the fixture holds the nine tiers of Ignite"
 }
 
 pub fn a_difference_names_the_file_the_row_and_whether_it_was_added_removed_or_changed_test() -> Nil {

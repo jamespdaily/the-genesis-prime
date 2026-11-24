@@ -54,6 +54,7 @@ import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/prerequisite.{type Relation}
+import genesis_prime/game/spell_tier
 import genesis_prime/gap
 import genesis_prime/message/action_set_save
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
@@ -121,14 +122,46 @@ pub fn set_number(set set: SetIndex) -> Int {
   set.number
 }
 
-/// The bars the player has saved, by set. A set with no entry has the class's bar.
+/// The bars the player has saved, by set, and the tiers above tier 1 the player holds, by set
+/// and ability. A set with no entry has the class's bar, and an ability with no entry is at
+/// tier 1.
 pub opaque type Saved {
-  Saved(bars: Dict(Int, Bar))
+  Saved(bars: Dict(Int, Bar), tiers: Dict(Int, Dict(Spell4BaseId, Int)))
 }
 
-/// A player who has saved no bar.
+/// A player who has saved no bar and holds no tier above 1.
 pub fn none() -> Saved {
-  Saved(bars: dict.new())
+  Saved(bars: dict.new(), tiers: dict.new())
+}
+
+/// The tier an ability is at in a set: 1 unless the player raised it.
+pub fn tier_of(
+  saved saved: Saved,
+  set set: Int,
+  base base: Spell4BaseId,
+) -> Int {
+  dict.get(saved.tiers, set)
+  |> result.try(dict.get(_, base))
+  |> result.unwrap(1)
+}
+
+/// The abilities of a set held above tier 1 with their tiers, in Spell4Base order.
+pub fn held_tiers(
+  saved saved: Saved,
+  set set: Int,
+) -> List(#(Spell4BaseId, Int)) {
+  dict.get(saved.tiers, set)
+  |> result.map(dict.to_list)
+  |> result.unwrap([])
+  |> list.sort(fn(a, b) { int.compare({ a.0 }.value, { b.0 }.value) })
+}
+
+/// The points the player's set 0 tiers cost: the sum of what each held tier costs from tier 1.
+pub fn points_spent(
+  tiers tiers: spell_tier.SpellTiers,
+  saved saved: Saved,
+) -> Int {
+  spell_tier.spent(tiers:, held: held_tiers(saved:, set: first_set().number))
 }
 
 /// The bar the player has in a set: the saved one, or the class's level-1 abilities in
@@ -207,6 +240,7 @@ pub fn entering(
         }),
       )
     }),
+    tiers: dict.new(),
   )
 }
 
@@ -406,7 +440,13 @@ fn opens(opening opening: Opening, level level: Int) -> Bool {
 /// What the rule knows of the player: the level that opens slots, the book of abilities it
 /// holds, and whether it is dead or in combat.
 pub type Player {
-  Player(level: Int, book: List(Spell4BaseId), dead: Bool, in_combat: Bool)
+  Player(
+    level: Int,
+    points_total: Int,
+    book: List(Spell4BaseId),
+    dead: Bool,
+    in_combat: Bool,
+  )
 }
 
 /// What the rule asks the connection to do, in order.
@@ -487,6 +527,7 @@ fn describe_fault(fault fault: Fault) -> String {
 /// the held bar. The tier changes and AMP ids a save carries are read and not applied.
 pub fn take(
   unlocks unlocks: Unlocks,
+  tiers _tiers: spell_tier.SpellTiers,
   player player: Player,
   saved saved: Saved,
   class_bar class_bar: List(Spell4BaseId),
@@ -518,7 +559,7 @@ fn accepted(
       }),
     )
   #(
-    Saved(bars: dict.insert(saved.bars, first_set().number, bar)),
+    Saved(..saved, bars: dict.insert(saved.bars, first_set().number, bar)),
     list.flatten([
       [
         Send(answer(bar:, result: ability_book_frame.action_set_ok)),

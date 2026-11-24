@@ -75,6 +75,7 @@ import genesis_prime/table/spell4_target_angle
 import genesis_prime/table/spell4_target_mechanics
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
+import genesis_prime/table/spell4_tier_requirements
 import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
@@ -241,6 +242,7 @@ pub fn entries() -> List(store.Entry) {
     spell4_target_mechanics.entry(),
     spell4_telegraph.entry(),
     spell4_thresholds.entry(),
+    spell4_tier_requirements.entry(),
     spell4_valid_targets.entry(),
     spell_cool_down.entry(),
     spell_level.entry(),
