@@ -44,7 +44,7 @@ const quick_draw_spell_level = 1011
 const quick_draw_tier_1 = 43_468
 
 pub fn the_tiers_of_every_base_the_book_can_hold_have_the_clients_costs_levels_and_count_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -173,7 +173,7 @@ type Change {
 }
 
 pub fn a_change_costs_the_tiers_it_crosses_and_a_fall_gives_them_back_and_a_tier_with_no_row_cannot_be_bought_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
   let tiers = spell_tier.tiers(tables:)
   list.each(
@@ -251,7 +251,7 @@ type Edit {
 }
 
 pub fn a_repeated_tier_a_missing_requirement_row_or_a_level_row_with_no_spell_fails_the_load_naming_it_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let rows = fixture_tables.rows()
   list.each(
     [

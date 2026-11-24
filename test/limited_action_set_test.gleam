@@ -816,7 +816,7 @@ fn points_of_level(level level: Int) -> Int {
 }
 
 pub fn any_accepted_tier_save_keeps_the_points_spent_within_the_levels_total_and_a_repeat_changes_nothing_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
   // A tier change is a place in the book (taken modulo its length, so every change names a
   // held ability) and a tier from 0 to 10, which holds the tiers the rule refuses.
