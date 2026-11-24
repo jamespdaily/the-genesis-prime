@@ -169,13 +169,14 @@ import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type Aimed, type Aside, type Caster, type Due, type Effect, type HeldProc,
-  type Holder, type Live, type ProcHold, type State, type Struck, Activated,
-  Aside, CancelTimer, CasterChangeEnding, CasterChangeEnds, CasterChangeStarts,
-  ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
-  CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
-  FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
-  HeldChange, HeldProc, Hit, HitCaster, HitCreature, HitOtherPlayer, HitPlayer,
-  Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerCastWent,
+  type Holder, type Live, type ProcHold, type StandingKey, type State,
+  type Struck, Activated, Aside, CancelTimer, CasterChangeEnding,
+  CasterChangeEnds, CasterChangeStarts, ChargeLevel, CooldownEnding,
+  CooldownModifierEnds, CooldownModifierStarts, CreatureControlsEnd,
+  CreatureDespawns, CreatureHoldsUnitStates, Deflected, FindProxyTickUnits,
+  Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal, HeldChange,
+  HeldProc, Hit, HitCaster, HitCreature, HitOtherPlayer, HitPlayer, Immune, Log,
+  Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerCastWent,
   OtherPlayerChangeEnds, OtherPlayerChangeStarts, Pay, PlayerChangeEnd, ProcDue,
   ProcHold, QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send,
   ShortcutCast, StartChild, StartHeld, StartTimer, State, StateEnd,
@@ -718,7 +719,7 @@ pub fn standing_set_aside(cast cast: State) -> #(State, List(Aside)) {
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
   |> list.fold(#(cast, []), fn(so_far, entry) {
     let #(cast, asides) = so_far
-    case one_set_aside(cast:, id: entry.0, spell4_id: entry.1) {
+    case one_set_aside(cast:, id: entry.0, key: entry.1) {
       #(cast, Some(aside)) -> #(cast, list.append(asides, [aside]))
       #(cast, None) -> #(cast, asides)
     }
@@ -730,14 +731,14 @@ pub fn standing_set_aside(cast cast: State) -> #(State, List(Aside)) {
 fn one_set_aside(
   cast cast: State,
   id id: Int,
-  spell4_id spell4_id: Int,
+  key key: StandingKey,
 ) -> #(State, Option(Aside)) {
   let live = dict.get(cast.casts, id) |> option.from_result
   let lingering = dict.get(cast.lingering, id) |> option.from_result
   let #(timers, rest) =
     dict.to_list(cast.timers)
     |> list.partition(fn(entry) {
-      belongs_to_standing(due: entry.1, id:, spell4_id: Spell4Id(spell4_id))
+      belongs_to_standing(due: entry.1, id:, spell4_id: Spell4Id(key.spell4_id))
     })
   let #(stealth, others) = cast_tick.split_cast(held: cast.stealth, cast_id: id)
   let #(procs, other_procs) = procs_split(held: cast.procs, cast_id: id)
@@ -755,7 +756,7 @@ fn one_set_aside(
       ),
       Some(Aside(
         id:,
-        spell4_id:,
+        key:,
         live:,
         lingering:,
         timers:,
@@ -772,7 +773,7 @@ pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
   list.fold(aside, cast, fn(cast, set_aside) {
     let Aside(
       id:,
-      spell4_id:,
+      key:,
       live:,
       lingering:,
       timers:,
@@ -797,7 +798,7 @@ pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
       timers: dict.merge(cast.timers, dict.from_list(timers)),
       stealth: dict.merge(cast.stealth, dict.from_list(stealth)),
       procs: dict.merge(cast.procs, dict.from_list(procs)),
-      standing: dict.insert(cast.standing, id, spell4_id),
+      standing: dict.insert(cast.standing, id, key),
     )
   })
 }
@@ -807,10 +808,10 @@ pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
 pub fn standing_timers_cancelled(
   cast cast: State,
   cast_id cast_id: Int,
-  spell4_id spell4_id: Int,
+  key key: StandingKey,
 ) -> #(State, List(Effect)) {
   cast_state.cancel_timers(cast:, matching: fn(due) {
-    belongs_to_standing(due:, id: cast_id, spell4_id: Spell4Id(spell4_id))
+    belongs_to_standing(due:, id: cast_id, spell4_id: Spell4Id(key.spell4_id))
   })
 }
 

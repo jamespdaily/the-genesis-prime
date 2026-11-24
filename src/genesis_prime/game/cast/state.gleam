@@ -897,11 +897,12 @@ pub type PressRefusal {
 
 /// What a cast is to its ability's threshold.
 pub type Role {
-  /// A child a Proxy started, or a cast the server starts of its own for no press (the level-up
-  /// fanfare): no threshold is touched. It counts its QuestAdvanceObjective rows with the use
-  /// or cast of the cast that started it, `counted_with` (none for a child a proc fire or the
-  /// server started), and reads an item's passed-in value as the item's cast does: `from` is
-  /// the item's use that pressed the cast that started it (`handed_down`), none otherwise.
+  /// A child a Proxy, a proc fire or a periodic Proxy's tick started, or a cast the server
+  /// starts of its own for no press (the level-up fanfare): no threshold is touched. It counts
+  /// its QuestAdvanceObjective rows with the use or cast of the cast that started it,
+  /// `counted_with` (none for a child a proc fire, a tick or the server started), and reads an
+  /// item's passed-in value as the item's cast does: `from` is the item that pressed the cast
+  /// that started it, its use or its worn spell (`handed_down`), none otherwise.
   /// `named_player` is the player the child was started on when a bag press named that player
   /// (`Live.named_player`), none for a child on the caster, on a struck unit or started by a
   /// proc or a tick.
@@ -915,8 +916,10 @@ pub type Role {
   /// The stage at `index` of the ability's open threshold.
   Stage(ability: Spell, index: Int)
   /// A standing spell (genesis_prime/game/cast `standing_changed`), which no press made: no
-  /// threshold is touched, no global cooldown starts and it is never the current cast.
-  Passive
+  /// threshold is touched, no global cooldown starts and it is never the current cast. `from`
+  /// is the worn item whose equip spell it is, none for the innate passive and for a
+  /// level-scaled item (`Standing`).
+  Passive(from: Option(PressedFrom))
   /// The activate cast of a unit the player right-clicked: no threshold is touched.
   Activation(activating: Activating, interaction: Interaction)
   /// The cast of a spell on its caster, from a quest button (`opcode.0x9d`) or an item's use
@@ -927,6 +930,20 @@ pub type Role {
     aimed: Option(PressedAt),
     from: PressedFrom,
   )
+}
+
+/// A spell the player's standing casts should hold, and the item that gives it.
+pub type Standing {
+  /// `from` is the item whose equip spell it is, whose level the cast tells and whose
+  /// passed-in value its children read; none for the innate passive and for a level-scaled
+  /// item, whose curve level the client builds from the wearer's.
+  Standing(spell: Spell, from: Option(PressedFrom))
+}
+
+/// What identifies one standing cast: its spell and the item it is worn from, so the same
+/// spell at another item level is another cast, which tells its own level.
+pub type StandingKey {
+  StandingKey(spell4_id: Int, from: Option(PressedFrom))
 }
 
 /// What pressed a cast of a spell on its caster.
@@ -1082,6 +1099,9 @@ pub type Lingering {
     nodes: Dict(Int, lasting.Node),
     /// The periodic rows still ticking, as on its `Live` cast.
     ticking: Dict(TickKey, Ticking),
+    /// What the children of the cast take from the item that pressed it (`handed_down` of its
+    /// `Live` cast), so a quest button's is never kept.
+    handed_down: Option(PressedFrom),
   )
 }
 
@@ -1221,9 +1241,10 @@ pub type State {
     /// they happened: each input records its own (`cast.settled`), and the connection draws what
     /// they need (`cast_proc.proc_draws_needed`) and has them matched (`cast.procs_fire`).
     pending: List(proc.Event),
-    /// The casts of the player's standing spells, by cast id, each with the Spell4 id of its
-    /// spell, once `cast.standing_changed` has started them: the casts a death leaves.
-    standing: Dict(Int, Int),
+    /// The casts of the player's standing spells, by cast id, each with its key (the Spell4 id
+    /// of its spell and the item it is worn from), once `cast.standing_changed` has started
+    /// them: the casts a death leaves.
+    standing: Dict(Int, StandingKey),
     /// The persistence columns already logged as not read or not checked on this
     /// connection, by Spell4 id and result (282 or 283): one debug line for each.
     persistence_logged: Set(#(Int, Int)),
@@ -1566,6 +1587,8 @@ pub type Holder {
     /// Whether the cast's first go has gone: a lingering cast has, and a live cast has
     /// once `Live.gone` counts a go (a node is made in the step that counts it).
     gone: Bool,
+    /// What the children of the cast take from the item that pressed it (`handed_down`).
+    handed_down: Option(PressedFrom),
   )
 }
 
@@ -1586,6 +1609,7 @@ pub fn holder_of(
         ticking: live.ticking,
         lingering: False,
         gone: live.gone > 0,
+        handed_down: handed_down(live:),
       ))
     Error(Nil), Ok(lingering) ->
       Ok(Holder(
@@ -1598,6 +1622,7 @@ pub fn holder_of(
         ticking: lingering.ticking,
         lingering: True,
         gone: True,
+        handed_down: lingering.handed_down,
       ))
     Error(Nil), Error(Nil) -> Error(Nil)
   }
@@ -1776,7 +1801,7 @@ pub fn sorted_units(nodes: List(#(Int, lasting.Node))) -> List(Int) {
 pub type Aside {
   Aside(
     id: Int,
-    spell4_id: Int,
+    key: StandingKey,
     live: Option(Live),
     lingering: Option(Lingering),
     timers: List(#(TimerId, Due)),
