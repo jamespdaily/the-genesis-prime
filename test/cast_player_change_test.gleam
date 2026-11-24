@@ -38,6 +38,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{PlayerState}
 import genesis_prime/game/prerequisite
+import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
@@ -4031,4 +4032,307 @@ pub fn a_change_that_lasts_until_removed_on_an_ally_ends_at_the_end_of_the_aura_
         as { row.0 <> ": and a debug line says the row lasts until removed" }
     },
   )
+}
+
+// ---- a Proc row held by the allies of the area or by the player the press named ----
+
+/// Spell4Effects 86457 and 86458, Healing Salve's two Proc rows (Spell4 39386): the allies' and
+/// the caster's own, each 12 000 ms from the go (`table_rows -- Spell4Effects 86457 86458`).
+const salve_allies_row = 86_457
+
+const salve_own_row = 86_458
+
+/// Spell4Effects 139828 and 139830, Sentinel's modifier and Proc rows (Spell4 58432) on the one
+/// ally the Proxy started the spell on, each 18 000 ms from the go.
+const sentinel_modifier_row = 139_828
+
+const sentinel_proc_row = 139_830
+
+fn lasting_for(duration_ms duration_ms: Int) -> lasting.LastingRow {
+  lasting.LastingRow(delay_ms: 0, duration_ms:, until_removed: False)
+}
+
+/// A planted spell shaped as Healing Salve's child 39386: the caster's own Proc row 86458 (flags
+/// 1) and the allies' 86457 (flags 4), each 12 000 ms with no delay, in a spell with propertyFlags
+/// 256 (0x100, so the change on an ally outlives the caster's sight). `chance` is the chance of
+/// both rows; the client's is 1.0.
+fn salve_shaped(chance chance: Float) -> Spell {
+  let proc = fn(id, holder) {
+    spell_plan.ProcRow(
+      ..support.held_proc_row(
+        id:,
+        holder:,
+        row: lasting_for(duration_ms: 12_000),
+      ),
+      chance:,
+    )
+  }
+  Spell(
+    ..support.with_effects(spell: support.armor_spell(rows: []), kinds: [
+      spell_plan.ProcEffect(proc: proc(salve_own_row, spell_plan.HeldByCaster)),
+      spell_plan.ProcEffect(proc: proc(
+        salve_allies_row,
+        spell_plan.HeldByAreaAllies,
+      )),
+    ]),
+    spell4_id: Spell4Id(39_386),
+    outlives_caster: True,
+  )
+}
+
+/// A planted spell shaped as Sentinel's child 58432: a modifier row 139828 and a Proc row 139830
+/// (flags 2) on the one ally the press named, each 18 000 ms with no delay, in a spell with
+/// propertyFlags 1280 (0x500, which holds 0x100).
+fn sentinel_shaped() -> Spell {
+  let modifier =
+    spell_plan.PropertyModifier(
+      ..support.armor_modifier_row(
+        id: sentinel_modifier_row,
+        aim: spell_plan.AimsAtPrimaryTarget,
+      ),
+      row: lasting_for(duration_ms: 18_000),
+    )
+  let proc =
+    support.held_proc_row(
+      id: sentinel_proc_row,
+      holder: spell_plan.HeldByPrimaryTarget,
+      row: lasting_for(duration_ms: 18_000),
+    )
+  Spell(
+    ..support.with_effects(spell: support.armor_spell(rows: []), kinds: [
+      spell_plan.ModifierEffect(modifier:),
+      spell_plan.ProcEffect(proc:),
+    ]),
+    spell4_id: Spell4Id(58_432),
+    outlives_caster: True,
+  )
+}
+
+/// The tell of a Proc row held on the player `unit_id` for the cast at the go `go_ms`: the row's
+/// source, the event it watches, kept when the caster no longer sees the player, listed as the
+/// cast of `spell4_id` with the row's effect for `lasts_ms`.
+fn watch_starts(
+  unit_id unit_id: Int,
+  cast_id cast_id: Int,
+  effect_id effect_id: Int,
+  spell4_id spell4_id: Int,
+  lasts_ms lasts_ms: Int,
+  go_ms go_ms: Int,
+) -> Effect {
+  cast_state.OtherPlayerChangeStarts(
+    address: PlayerAddress(..address(), unit_id:),
+    source: source_of(cast_id:, effect_id:),
+    change: held_changes.Watches(trigger: spell_plan.TakesDamage),
+    sight: held_changes.KeptWhenUnseen,
+    spell4_id: Spell4Id(spell4_id),
+    effect: unit_casts.HeldEffect(
+      effect_id: Spell4EffectsId(effect_id),
+      starts_ms: go_ms,
+      ends: unit_casts.EndsAt(ms: go_ms + lasts_ms),
+    ),
+  )
+}
+
+/// The Proc rows a state holds as (effect id, holder), the caster's own with no holder, in the
+/// order of effect id and then holder.
+fn held_procs(state state: State) -> List(#(Int, option.Option(Int))) {
+  dict.keys(state.procs)
+  |> list.map(fn(hold) { #(hold.source.effect_id.value, hold.holder) })
+  |> list.sort(fn(first, second) {
+    int.compare(
+      first.0 * 1000 + option.unwrap(first.1, 0),
+      second.0 * 1000 + option.unwrap(second.1, 0),
+    )
+  })
+}
+
+/// The caster's press of the spell at `target`, its go answered by the round `hit` for a caster
+/// who sees `sees_at_go`: the state, the press's effects and the go's.
+fn pressed_with_round(
+  spell spell: Spell,
+  target target: Int,
+  hit hit: List(cast_state.Struck),
+  sees_at_go sees_at_go: List(Int),
+) -> #(State, List(Effect), List(Effect)) {
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell:),
+      bag: bag_of_base_3,
+      target:,
+      state: cast_state.new(),
+      caster: esper_seeing(players: [ally, second_ally]),
+      at: 1000,
+    )
+  let #(state, went) =
+    support.answered_each(
+      caster: esper_seeing(players: sees_at_go),
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(asked) {
+        case asked.spell4_id == spell.spell4_id {
+          True -> hit
+          False -> []
+        }
+      },
+      rolls: [],
+      poses: dict.new(),
+    )
+  #(state, pressed, went)
+}
+
+pub fn a_go_tells_a_proc_row_to_each_ally_it_holds_it_on_lists_it_and_sends_one_went_tell_for_the_cast_and_ally_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Healing Salve's allies' row (86457, text 315682 "yourself and N allies"): a round that hit
+  // two allies puts the row on each, in the round's order, as a change that applies nothing and is
+  // listed as the cast's effect on the ally, and the caster holds one entry for each beside its
+  // own.
+  let hit = [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)]
+  let #(state, pressed, went) =
+    pressed_with_round(
+      spell: salve_shaped(chance: 1.0),
+      target: 7,
+      hit:,
+      sees_at_go: [ally, second_ally],
+    )
+  let id = support.pressed_id(effects: pressed)
+  let salve_start = fn(unit_id) {
+    watch_starts(
+      unit_id:,
+      cast_id: id,
+      effect_id: salve_allies_row,
+      spell4_id: 39_386,
+      lasts_ms: 12_000,
+      go_ms: 1000,
+    )
+  }
+  assert told(effects: went) == [salve_start(second_ally), salve_start(ally)]
+    as "each ally the round hit is told the row, in the round's order"
+  assert trail(effects: went, cast_id: id)
+    == ["starts 86457", "starts 86457", "went", "went"]
+    as "and one went tell for the cast and each ally, after both rows: a cast whose only rows on the ally are procs still reaches its went"
+  assert list.map(wents(effects: went), fn(effect) {
+      let assert cast_state.OtherPlayerCastWent(address:, ..) = effect
+      address.unit_id
+    })
+    == [second_ally, ally]
+    as "the went tells name each ally once"
+  assert list.length(player_end_timers(state:)) == 2
+    as "one end timer for each ally, armed for the row's 12 000 ms"
+  assert list.filter(support.listed_by_unit(effects: went), fn(unit) {
+      unit.0 != 7
+    })
+    == [#(ally, [salve_allies_row]), #(second_ally, [salve_allies_row])]
+    as "the go lists the row on each ally it holds it on"
+  assert held_procs(state:)
+    == [
+      #(salve_allies_row, Some(ally)),
+      #(salve_allies_row, Some(second_ally)),
+      #(salve_own_row, None),
+    ]
+    as "the caster holds its own row once and the allies' row once for each ally"
+  // A creature the round hit and a player the caster does not see hold nothing and are told
+  // nothing; the go does not list the row on them.
+  let #(state, _, went) =
+    pressed_with_round(
+      spell: salve_shaped(chance: 1.0),
+      target: 7,
+      hit: [
+        support.creature_hit(unit_id: 21, life: 3, struck_at_ms: 1000),
+        ally_selected(unit_id: second_ally),
+        ally_selected(unit_id: ally),
+      ],
+      sees_at_go: [ally],
+    )
+  assert list.map(told(effects: went), fn(effect) {
+      let assert cast_state.OtherPlayerChangeStarts(address:, ..) = effect
+      address.unit_id
+    })
+    == [ally]
+    as "a creature and an unseen player are told nothing"
+  assert list.filter(support.listed_by_unit(effects: went), fn(unit) {
+      unit.0 != 7 && !list.is_empty(unit.1)
+    })
+    == [#(ally, [salve_allies_row])]
+    as "and the go lists the row on neither"
+  assert held_procs(state:)
+    == [#(salve_allies_row, Some(ally)), #(salve_own_row, None)]
+    as "and the caster holds the row for neither"
+  // Sentinel's pair on the one ally the press named: the ally is told its modifier and its Proc
+  // row, and the caster sends one went tell for the cast and the ally, not one for each row.
+  let #(state, pressed, went) =
+    pressed_with_round(
+      spell: sentinel_shaped(),
+      target: ally,
+      hit: [],
+      sees_at_go: [ally],
+    )
+  let id = support.pressed_id(effects: pressed)
+  assert trail(effects: went, cast_id: id)
+    == ["starts 139828", "starts 139830", "went"]
+    as "the ally is told the modifier and the Proc row, then one went"
+  assert list.filter(told(effects: went), fn(effect) {
+      case effect {
+        cast_state.OtherPlayerChangeStarts(source:, ..) ->
+          source.effect_id.value == sentinel_proc_row
+        _ -> False
+      }
+    })
+    == [
+      watch_starts(
+        unit_id: ally,
+        cast_id: id,
+        effect_id: sentinel_proc_row,
+        spell4_id: 58_432,
+        lasts_ms: 18_000,
+        go_ms: 1000,
+      ),
+    ]
+    as "the Proc row is told as a watched change for 18 000 ms"
+  assert held_procs(state:) == [#(sentinel_proc_row, Some(ally))]
+    as "the caster holds the row for the ally and no own proc"
+  // The caster's own events fire its own row alone: a creature's blow on the caster, with the
+  // allies holding 86457, fires 86458 once and takes one chance word, and no ally's entry
+  // matches it.
+  let #(state, _, _) =
+    pressed_with_round(
+      spell: salve_shaped(chance: 0.5),
+      target: 7,
+      hit:,
+      sees_at_go: [ally, second_ally],
+    )
+  let #(blown, raised) =
+    cast.blow_taken(
+      cast: state,
+      caster: esper_seeing(players: [ally, second_ally]),
+      now: support.at(ms: 2000),
+      blow: cast_proc.BlowLanded(
+        striker: 31,
+        spell: event_proc.EventSpell(
+          spell4_id: Spell4Id(5649),
+          groups: [],
+          school: 1,
+        ),
+        lowered: True,
+        critical: False,
+        shield_depleted: False,
+      ),
+    )
+  assert cast_proc.proc_draws_needed(cast: blown) == #(1, 0)
+    as "one chance word for the caster's own row, none for the allies' entries"
+  let #(_, fired) =
+    support.then_procs_drawn(
+      step: #(blown, raised),
+      caster: esper_seeing(players: [ally, second_ally]),
+      at: 2000,
+      draws: [0],
+      rolls: [],
+    )
+  assert starts_of(
+      effects: fired,
+      spell4_id: support.salve_proc_spell4_id,
+      at: 2000,
+    )
+    == [#(2000, 7)]
+    as "the caster's own row casts Spell4 39127 once, at the caster"
 }

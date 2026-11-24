@@ -160,15 +160,14 @@
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
-  type Aimed, type Applied, type Aside, type Caster, type Due, type Effect,
-  type HeldProc, type Holder, type Live, type ProcHold, type State, type Struck,
-  Activated, Aside, CancelTimer, CasterChangeEnding, CasterChangeEnds,
-  CasterChangeStarts, ChargeLevel, CooldownEnding, CooldownModifierEnds,
-  CooldownModifierStarts, CreatureControlsEnd, CreatureDespawns,
-  CreatureHoldsUnitStates, Deflected, FindProxyTickUnits, Finish,
-  ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal, HeldChange, HeldProc, Hit,
-  HitCaster, HitCreature, HitOtherPlayer, HitPlayer, Immune, Log, Look,
-  ModifierEnd, ModifierStart, NodesEnd, OtherPlayerCastWent,
+  type Aimed, type Aside, type Caster, type Due, type Effect, type HeldProc,
+  type Holder, type Live, type ProcHold, type State, type Struck, Activated,
+  Aside, CancelTimer, CasterChangeEnding, CasterChangeEnds, CasterChangeStarts,
+  ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
+  CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
+  FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
+  HeldChange, HeldProc, Hit, HitCaster, HitCreature, HitOtherPlayer, HitPlayer,
+  Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerCastWent,
   OtherPlayerChangeEnds, OtherPlayerChangeStarts, Pay, PlayerChangeEnd, ProcDue,
   ProcHold, QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send,
   ShortcutCast, StartChild, StartHeld, StartTimer, State, StateEnd,
@@ -498,17 +497,30 @@ pub fn proc_refusal(
   )
 }
 
-/// The Proc rows of a go that applied, each held by the cast `cast_id` from this go on;
-/// a row the cast already holds keeps its fires, as a later go of the same cast is the
-/// same node.
+/// The Proc rows of a go that stand on the caster (`aimed.reached`: its own rows, and a row held
+/// by the primary target in a press at oneself), each held by the cast `cast_id` from this go
+/// on; a row the cast already holds keeps its fires, as a later go of the same cast is the same
+/// node. The rows on other players are held where they are told (`cast_control.modifiers_armed`).
 pub fn procs_held(
   cast cast: State,
   cast_id cast_id: Int,
-  applied applied: Applied,
+  caster caster: Caster,
+  aimed aimed: Aimed,
 ) -> #(State, List(Effect)) {
   let #(never, held) =
     list.partition(
-      cast_state.passed_of(applied:, as_kind: spell_plan.as_proc),
+      list.filter_map(
+        cast_state.rows_reached(
+          reached: aimed.reached,
+          as_kind: spell_plan.as_proc,
+        ),
+        fn(found) {
+          case { found.0 }.unit_id == caster.unit_id {
+            True -> Ok(found.1)
+            False -> Error(Nil)
+          }
+        },
+      ),
       fn(row) {
         row.trigger == spell_plan.Died && cast.passive != Some(cast_id)
       },
