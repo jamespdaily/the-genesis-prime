@@ -984,7 +984,7 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
   use <- unitest.guard(client_tables.present())
   // Every row of a spell of a planned tree (an ability's, a Surge alternate's, each spell a Proxy
   // or a stage starts) that names the area (`Spell4Effects.targetFlags` bit 4) in a spell whose
-  // area finds the caster's allies (`RowPlace.finds_allies`), of the kinds the Part 4 reading
+  // area finds the caster's allies (`RowPlace.finds_allies`), of the kinds the allies reading
   // decides: a UnitPropertyModifier reads as a change of the units the area selects and has no
   // target apply prerequisite (the strike checks no gate of a modifier for an ally); no absorb,
   // Interrupt Armor, disguise or conversion row is there (the gate lands only a `StruckChange`
