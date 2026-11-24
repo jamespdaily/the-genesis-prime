@@ -19,13 +19,17 @@ import client_tables
 import fixture_tables
 import genesis_prime/coverage/standing_root
 import genesis_prime/game/equip_spell
+import genesis_prime/game/item_property
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/table/loader/server_table
+import genesis_prime/table/loader/store as table_store
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 import unitest
 
 type Row {
@@ -65,7 +69,7 @@ fn rows() -> List(Row) {
 
 pub fn which_equip_spells_are_standing_roots_test() -> Nil {
   use <- owned_test.run(60_000)
-  let roots = equip_spell.roots(tables: fixture_tables.shared())
+  let assert Ok(roots) = equip_spell.roots(tables: fixture_tables.shared())
   list.each(rows(), fn(row) {
     assert list.contains(roots, row.spell4_id) == row.root
       as {
@@ -80,12 +84,70 @@ pub fn which_equip_spells_are_standing_roots_test() -> Nil {
   })
 }
 
+/// A worn item and the column that names a row no table holds, with the table and id the
+/// load's error must name. No client row has any of these (every Item2 row of the client's
+/// tables names a type, category, family and special its tables hold), so each is planted
+/// on Item2 91747 (equip spell 82325).
+type MissingRow {
+  MissingRow(column: String, table: String, id: Int)
+}
+
+fn missing_rows() -> List(MissingRow) {
+  [
+    MissingRow("item2TypeId", "Item2Type", 999_001),
+    MissingRow("item2CategoryId", "Item2Category", 999_002),
+    MissingRow("item2FamilyId", "Item2Family", 999_003),
+    MissingRow("itemSpecialId00", "ItemSpecial", 999_004),
+  ]
+}
+
+pub fn a_worn_item_whose_type_category_family_or_special_row_is_missing_fails_the_load_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(missing_rows(), fn(missing) {
+    let assert Ok(rows) =
+      fixture_tables.change_all(rows: fixture_tables.rows(), edits: [
+        #("Item2", 91_747, [#(missing.column, Integer(missing.id))]),
+      ])
+    let expected = item_property.NoRow(table: missing.table, id: missing.id)
+    let why = "Item2 91747 with a missing " <> missing.table <> " row"
+    let assert Ok(tables) =
+      fixture_tables.edited(
+        rows:,
+        entries: server_table.entries(),
+        requirements: [],
+        derivations: [],
+      )
+    assert equip_spell.roots(tables:) == Error(expected)
+      as { why <> ": the roots return the error naming the table and the id" }
+    assert spell_plan.standing_unplanned(
+        tables:,
+        area_checked: spell_area.checker,
+      )
+      == Error(spell_plan.EquipItemNotRead(error: expected))
+      as { why <> ": the plans fail with the item's error, not an unbuilt one" }
+    assert !spell_plan.is_unbuilt(error: spell_plan.EquipItemNotRead(expected))
+      as { why <> ": it is no unbuilt reason" }
+    let assert Error(load_error) =
+      fixture_tables.load(rows: fixture_tables.closure(rows:, roots: []))
+      as { why <> ": the tables' load fails" }
+    let message = table_store.describe(load_error)
+    assert string.contains(message, missing.table)
+      && string.contains(message, int.to_string(missing.id))
+      as {
+        why <> ": the load's message names the table and the id: " <> message
+      }
+    assert spell_plan.describe(error: spell_plan.EquipItemNotRead(expected))
+      == item_property.describe(error: expected)
+      as { why <> ": the plans' sentence is the item's" }
+  })
+}
+
 pub fn every_standing_root_is_planned_through_the_area_checker_or_left_out_with_an_unbuilt_reason_and_none_fails_the_load_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   // The load of the client's tables plans every root or fails (`client_tables.shared`).
   let tables = client_tables.shared()
-  let roots = equip_spell.roots(tables:)
+  let assert Ok(roots) = equip_spell.roots(tables:)
   let planned = spell_plan.standing_plans(tables:)
   let assert Ok(left_out) =
     spell_plan.standing_unplanned(tables:, area_checked: spell_area.checker)
@@ -114,6 +176,11 @@ pub fn the_coverage_lists_a_planned_standing_root_that_stands_only_in_part_test(
   let tables = client_tables.shared()
   let assert Ok(report) = standing_root.measure(tables:)
   let planned = spell_plan.standing_plans(tables:)
+  assert report.roots == report.planned + list.length(report.left_out)
+    as "the report's roots are the planned ones and the left-out ones"
+  let assert Ok(roots) = equip_spell.roots(tables:)
+  assert report.roots == list.length(roots)
+    as "and are the equip spells of the client's worn items, counted from the items"
   list.each(
     [
       #(83_579, "the row 220935 (type 14)"),

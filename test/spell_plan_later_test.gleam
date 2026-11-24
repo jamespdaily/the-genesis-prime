@@ -19,6 +19,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
 import genesis_prime/game/innate
+import genesis_prime/game/item_property
 import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
@@ -282,6 +283,7 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.PrerequisiteCycle([1]), False),
     #(spell_plan.AreaDataFault(1, "an area"), False),
     #(spell_plan.InnateFailed(innate.NoSpell(1, 2)), False),
+    #(spell_plan.EquipItemNotRead(item_property.NoRow("Item2Type", 1)), False),
   ]
 }
 
