@@ -126,6 +126,78 @@ pub fn ground_at_origin(file file: BitArray) -> Ground {
   ground_of([#(64, 64, file)])
 }
 
+/// The slot, in its area's file, of the 32-unit chunk holding the place: the chunk's
+/// row along z times 16 plus its column along x, each counted from the area's own
+/// start (`terrain.height_at`).
+pub fn slot_of(x x: Float, z z: Float) -> Int {
+  let assert Ok(column) = int.modulo(chunk_of(x), 16) as "16 is not zero"
+  let assert Ok(row) = int.modulo(chunk_of(z), 16) as "16 is not zero"
+  row * 16 + column
+}
+
+fn chunk_of(coordinate: Float) -> Int {
+  float.truncate(float.floor(coordinate /. 32.0))
+}
+
+/// A ground with a chunk of one raw value everywhere at each place given (x, z, raw),
+/// and no file or chunk anywhere else.
+pub fn ground_with_chunks(chunks chunks: List(#(Float, Float, Int))) -> Ground {
+  let held =
+    list.map(chunks, fn(chunk) {
+      let #(x, z, raw) = chunk
+      let assert Ok(square) = terrain.square_of(x:, z:)
+        as "a planted chunk is inside the world"
+      #(square, #(slot_of(x:, z:), uniform(raw:)))
+    })
+  list.unique(list.map(held, fn(each) { each.0 }))
+  |> list.map(fn(square) {
+    #(
+      square.0,
+      square.1,
+      file(
+        list.filter_map(held, fn(each) {
+          case each.0 == square {
+            True -> Ok(each.1)
+            False -> Error(Nil)
+          }
+        }),
+      ),
+    )
+  })
+  |> ground_of
+}
+
+/// A reader that answers flat ground for each square it is asked, with the chunks at
+/// the places given (x, z, raw) holding their raw value instead.
+pub fn reader_with_chunks(
+  chunks chunks: List(#(Float, Float, Int)),
+) -> content_terrain.Reader {
+  fn(_asset, squares) {
+    Ok(
+      ground_of(
+        list.map(squares, fn(square: #(Int, Int)) {
+          let own =
+            list.filter_map(chunks, fn(chunk) {
+              let #(x, z, raw) = chunk
+              case terrain.square_of(x:, z:) == Ok(square) {
+                True -> Ok(#(slot_of(x:, z:), uniform(raw:)))
+                False -> Error(Nil)
+              }
+            })
+          let flat_slots =
+            list.filter_map(span(from: 0, to: 255), fn(slot) {
+              case list.key_find(own, slot) {
+                Ok(_) -> Error(Nil)
+                Error(Nil) -> Ok(#(slot, uniform(raw: flat_raw)))
+              }
+            })
+          #(square.0, square.1, file(list.append(own, flat_slots)))
+        }),
+      ),
+    )
+  }
+}
+
 /// A reader that answers flat ground for exactly the squares it is asked, whatever
 /// the asset.
 pub fn flat_reader() -> content_terrain.Reader {

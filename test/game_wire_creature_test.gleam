@@ -18,11 +18,13 @@ import game_wire_support.{
   on_rows_with_turrets_that_never_deflect,
   on_rows_without_paralytic_surges_recharge, press_and_fire,
   press_until_dead_reading, send_play, start_with_creatures,
-  start_with_world_data, static_objects_created_in, walk_to, world_on,
-  world_with_a_beast_ahead, world_with_beasts,
+  start_with_world_data, static_objects_created_in, walk_to,
+  with_world_data_on_ground, world_on, world_with_a_beast_ahead,
+  world_with_beasts,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
+import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
@@ -41,6 +43,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
 import gleam/bool
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process
@@ -56,6 +59,7 @@ import owned_test
 import planted_table
 import pog
 import spawn_support
+import terrain_support
 
 /// The messages of the Holocrypt's join: an entry burst without 0x25E.
 fn holocrypt_burst_length() -> Int {
@@ -140,6 +144,84 @@ fn planted_creatures_in(
   list.filter(game_client.creatures_created_in(frames:), fn(creature) {
     creature.creature_id == 73_464 || creature.creature_id == 73_465
   })
+}
+
+pub fn the_creatures_of_two_kill_objectives_on_one_marker_are_sent_once_each_on_the_ground_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objectives 4564 and 4565 (quests 3479 and 3480) are type 8, count 8, on markers
+  // 12155 to 12158 of World 426 and name Creature2 13117 between them (TargetGroup
+  // 7288 holds 1463, whose creatures include 13117 and 13959). Marker 12157's
+  // centre is (4049.0889, -735.689, -5470.0864) with radius 78.62, so its two ring
+  // slots are (4088.4007, -5470.0864) and (4009.7771, -5470.0864). World 426's
+  // retail ground there is -740.371 at the first slot, 4.68 below the centre's
+  // height; the planted ground has a chunk for the centre, one for each slot and
+  // flat ground elsewhere (raw 10498 is the height -735.71, 10461 is -740.335 and
+  // 10480 is -737.96). The player stands 15 from the first slot (the report of the
+  // yeti hanging in the air).
+  let centre = #(4049.0889, -5470.0864, 10_498)
+  let first = #(4088.4007, -5470.0864, 10_461)
+  let second = #(4009.7771, -5470.0864, 10_480)
+  let time = driven_time.new()
+  let started =
+    login_support.start_with(
+      time:,
+      change: with_world_data_on_ground(
+        folder: "test/fixture/world_data_yeti",
+        terrain: terrain_support.reader_with_chunks(chunks: [
+          centre,
+          first,
+          second,
+        ]),
+        adjusted: fn(settings) { settings },
+      ),
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 426,
+    world_zone_id: 651,
+    position: #(4083.6, -741.3, -5484.4),
+  )
+  send_play(game:, character_id: character)
+  let started_units =
+    dict.size(
+      content_spawn.world(key: started.settings.world.spawns, world_id: 426).by_id,
+    )
+  let #(_burst, have) = game_client.read_entry_kept(game:, have: <<>>)
+  let #(frames, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.length(game_client.creatures_created_in(frames:)) >= started_units
+    })
+  let yetis =
+    list.filter(game_client.creatures_created_in(frames:), fn(creature) {
+      creature.creature_id == 13_117
+    })
+    |> list.map(fn(creature) { game_client.placed_by_tail(tail: creature.tail) })
+  let at = fn(slot: #(Float, Float, Int)) {
+    list.filter(yetis, fn(place) {
+      float.absolute_value(place.0 -. slot.0) <. 0.01
+      && float.absolute_value(place.2 -. slot.1) <. 0.01
+    })
+  }
+  let assert [on_first] = at(first)
+    as "one 0x262 of Creature2 13117 at marker 12157's first ring slot"
+  let assert [on_second] = at(second)
+    as "one 0x262 of Creature2 13117 at marker 12157's second ring slot"
+  assert float.absolute_value(
+      on_first.1 -. terrain_support.height(raw: first.2),
+    )
+    <. 0.01
+    as "the first slot's yeti is sent at the ground read there, not at the marker's height"
+  assert float.absolute_value(
+      on_second.1 -. terrain_support.height(raw: second.2),
+    )
+    <. 0.01
+    as "the second slot's yeti is sent at the ground read there"
+  game_client.close(game:)
+  login_support.stop(started)
 }
 
 /// The Creature2 ids of the static objects the frames create, sorted: the 0x262 of a

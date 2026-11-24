@@ -1,0 +1,6 @@
+test/fixture/world_data_yeti/spawn.tsv holds the header and rows 18118, 18129, 18247, 18324 and 18654 of
+spawn.tsv of the wildstar-knowledge world-data (https://github.com/jamespdaily/wildstar-knowledge, path
+world-data/spawn.tsv), copied as they are, under that repository's licence, the GNU Affero General
+Public License, version 3 (the same as this project's). The tests import it as the world database's
+own rows: one retail row in World 426 of each of Creature2 11945, 11948, 12844, 13116 and 51126, the
+Yeti creatures of the group that quest objectives 4564 and 4565 kill.
