@@ -1320,60 +1320,124 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
       left_after: area_ends([second_ally]),
     ),
   ]
-  list.each(area_paths, fn(path) {
-    let #(state, pressed) =
-      pressed_at_in(
-        plans: plans_of(spell: path.spell),
-        bag: bag_of_base_3,
-        target: 7,
-        state: cast_state.new(),
-        caster: both_see,
-        at: 1000,
-      )
-    let #(state, went) =
-      support.answered_each(
-        caster: both_see,
-        state:,
-        effects: pressed,
-        at: 1000,
-        struck_of: fn(asked) {
-          case asked.spell4_id == path.spell.spell4_id {
-            True -> [
-              ally_selected(unit_id: second_ally),
-              ally_selected(unit_id: ally),
-            ]
-            False -> []
-          }
-        },
-        rolls: [],
-        poses: dict.new(),
-      )
-    let id = support.pressed_id(effects: pressed)
-    assert list.length(told(effects: went)) == 2
-      as "the go told each ally its change"
-    let #(state, effects) = path.run(state, id)
-    assert told(effects:) == path.ends(id) as path.why
-    assert list.filter(support.finished_ids(support.writes(effects:)), fn(done) {
-        done == id
+  list.each(area_paths, area_path_ends_once)
+  // The same paths for the Proc row a spell shaped as Healing Salve's child holds on the allies
+  // the round hit (`salve_shaped`, 12 000 ms, propertyFlags 0x100): the change each ally holds
+  // ends once by each path that ends its cast's node, and is kept when the ally leaves the
+  // caster's sight, to end by its timer.
+  let salve = salve_shaped(chance: 1.0)
+  let watch_ends = fn(units) {
+    fn(cast_id) {
+      list.map(units, fn(unit_id) {
+        cast_state.OtherPlayerChangeEnds(
+          address: PlayerAddress(..address(), unit_id:),
+          source: source_of(cast_id:, effect_id: salve_allies_row),
+        )
       })
-      == case path.finishes {
-        True -> [id]
-        False -> []
-      }
-      as { path.why <> ": the cast's 0x7fe" }
-    assert list.all(path.removed, fn(unit_id) {
-      list.contains(
-        support.removed_targets(support.writes(effects:)),
-        #(id, [unit_id]),
-      )
-    })
-      as { path.why <> ": the 0x811 of the ally" }
-    assert told(effects: cast_tick.left(cast: state).1) == path.left_after(id)
-      as {
-        path.why <> ": and the caster's leaving afterwards ends what is left"
-      }
-    assert went != [] as "the go happened"
-  })
+    }
+  }
+  let watch_paths = [
+    AreaPath(
+      why: "a Proc row on the allies, time: each end timer fires at the go plus 12 000 and tells its ally's end, in the round's order, and the node's end in the same millisecond tells nothing more but writes the 0x7fe",
+      spell: salve,
+      run: fn(state, _) {
+        fired_in_order(
+          state:,
+          timers: list.append(
+            player_end_timers(state:),
+            nodes_end_timers(state:),
+          ),
+          seeing: [ally, second_ally],
+          at: 13_000,
+        )
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, the node's end first: it ends both, and the end timers, late, tell nothing more",
+      spell: salve,
+      run: fn(state, _) {
+        fired_in_order(
+          state:,
+          timers: list.append(
+            nodes_end_timers(state:),
+            player_end_timers(state:),
+          ),
+          seeing: [ally, second_ally],
+          at: 13_000,
+        )
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, the caster's death ends both and writes the 0x7fe",
+      spell: salve,
+      run: fn(state, _) {
+        cast.died(
+          cast: state,
+          caster: support.dead_caster(),
+          now: support.at(ms: 1100),
+        )
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, the ally leaving the caster's sight, for a spell that holds 0x100, ends nothing then; each end timer tells its ally's end at the go plus 12 000",
+      spell: salve,
+      run: fn(state, _) {
+        let #(state, removal) =
+          cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100)
+        assert told(effects: removal) == []
+          as "a Proc row of a spell that outlives its caster's sight is kept at the removal"
+        let #(state, ended) =
+          fired_in_order(
+            state:,
+            timers: player_end_timers(state:),
+            seeing: [],
+            at: 13_000,
+          )
+        #(state, list.append(removal, ended))
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: False,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, a type 80 removal of the cast's node on one ally ends that ally's row, writes the 0x811 and cancels its end timer; the other ally's row stays",
+      spell: salve,
+      run: fn(state, _) {
+        let both_see = esper_seeing(players: [ally, second_ally])
+        let #(state, _, removal) =
+          pressed_and_gone_in(
+            plans: armor_and_its_removal(spell: salve),
+            bag: bag_of_base_1,
+            state:,
+            at_press: both_see,
+            at_go: both_see,
+            rolls: [],
+            at: 1100,
+          )
+        assert list.length(player_end_timers(state:)) == 1
+          as "the removal cancels the removed ally's end timer"
+        #(state, removal)
+      },
+      ends: watch_ends([ally]),
+      finishes: False,
+      removed: [ally],
+      left_after: watch_ends([second_ally]),
+    ),
+  ]
+  list.each(watch_paths, area_path_ends_once)
   // The caster leaving writes nothing and leaves no timer waiting.
   let #(state, _, _) =
     pressed_and_gone(
@@ -1389,6 +1453,63 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     as "the caster's leaving writes no frame"
   assert cast_state.timers_in_order(cast: state) == []
     as "and cancels every timer, the end timers included"
+}
+
+/// One path that ends the changes told to the two allies a round hit (`AreaPath`): the go told
+/// each ally its change, the path tells each end once, writes the cast's 0x7fe or not, writes the
+/// 0x811 of the allies it removes, and the caster's leaving afterwards ends what is left.
+fn area_path_ends_once(path path: AreaPath) -> Nil {
+  let both_see = esper_seeing(players: [ally, second_ally])
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell: path.spell),
+      bag: bag_of_base_3,
+      target: 7,
+      state: cast_state.new(),
+      caster: both_see,
+      at: 1000,
+    )
+  let #(state, went) =
+    support.answered_each(
+      caster: both_see,
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(asked) {
+        case asked.spell4_id == path.spell.spell4_id {
+          True -> [
+            ally_selected(unit_id: second_ally),
+            ally_selected(unit_id: ally),
+          ]
+          False -> []
+        }
+      },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let id = support.pressed_id(effects: pressed)
+  assert list.length(told(effects: went)) == 2
+    as "the go told each ally its change"
+  let #(state, effects) = path.run(state, id)
+  assert told(effects:) == path.ends(id) as path.why
+  assert list.filter(support.finished_ids(support.writes(effects:)), fn(done) {
+      done == id
+    })
+    == case path.finishes {
+      True -> [id]
+      False -> []
+    }
+    as { path.why <> ": the cast's 0x7fe" }
+  assert list.all(path.removed, fn(unit_id) {
+    list.contains(
+      support.removed_targets(support.writes(effects:)),
+      #(id, [unit_id]),
+    )
+  })
+    as { path.why <> ": the 0x811 of the ally" }
+  assert told(effects: cast_tick.left(cast: state).1) == path.left_after(id)
+    as { path.why <> ": and the caster's leaving afterwards ends what is left" }
+  assert went != [] as "the go happened"
 }
 
 pub fn a_re_press_of_the_same_caster_before_the_kept_buff_ends_replaces_the_held_change_test() -> Nil {
