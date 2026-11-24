@@ -144,6 +144,7 @@ pub fn started(
       connection_properties.started(session:, now:, source:, modifier:)
     held_changes.Absorb(amount:, mask:) ->
       connection_absorption.started(session:, now:, source:, amount:, mask:)
+    held_changes.Watches(..) -> #(session, [])
   }
 }
 

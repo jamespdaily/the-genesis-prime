@@ -4719,6 +4719,15 @@ fn interrupt_armor_read(
   )
 }
 
+/// The units a Proc row is held by, as an aim: the caster, the primary target or the area.
+pub fn proc_aim(proc proc: ProcRow) -> Aim {
+  case proc.holder {
+    HeldByCaster -> AimsAtCaster
+    HeldByPrimaryTarget -> AimsAtPrimaryTarget
+    HeldByAreaAllies -> AimsAtArea
+  }
+}
+
 /// The unit a timed row aims at: the caster for a type 11 row that includes the caster, a
 /// type 145 or a type 112 row, which the plan reads only when its targetFlags include the
 /// caster; what its targetFlags name for a type 11 row aimed only at other units

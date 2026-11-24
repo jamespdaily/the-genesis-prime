@@ -1102,8 +1102,15 @@ pub type HeldUntil {
   CastClears
 }
 
-/// A Proc row a cast holds on the caster, with the monotonic times of its fires, which
-/// its limit counts (`proc.counted`).
+/// Which unit holds a Proc row a cast keeps: the row's source and the player that holds it,
+/// `None` for the caster itself. A cast holds one source once for each ally its row is held
+/// by, beside the caster's own row.
+pub type ProcHold {
+  ProcHold(source: unit_properties.Source, holder: Option(Int))
+}
+
+/// A Proc row a cast holds, on the caster or on an ally (`ProcHold`), with the monotonic
+/// times of its fires, which its limit counts (`proc.counted`).
 pub type HeldProc {
   HeldProc(row: spell_plan.ProcRow, fires_ms: List(Int))
 }
@@ -1183,10 +1190,11 @@ pub type State {
     /// The Stealth rows the caster's casts hold on it, by cast id and effect id, each
     /// with whether damage ends it; the caster is stealthed while this is not empty.
     stealth: Dict(unit_properties.Source, spell_plan.Breaks),
-    /// The Proc rows the caster's casts hold on it, by cast id and effect id, each with the
-    /// monotonic times of its fires; a proc leaves where a stealth source does
-    /// (`cast_proc.procs_dropped`).
-    procs: Dict(unit_properties.Source, HeldProc),
+    /// The Proc rows the caster's casts hold, by cast id, effect id and the holder (the caster,
+    /// or an ally the cast put the row on), each with the monotonic times of its fires; the
+    /// caster's own leave where a stealth source does (`cast_proc.procs_dropped`) and an ally's
+    /// where the change on that ally ends (`cast_control.ended_where`).
+    procs: Dict(ProcHold, HeldProc),
     /// The events of the caster that no proc has been matched against yet, in the order
     /// they happened: each input records its own (`cast.settled`), and the connection draws what
     /// they need (`cast_proc.proc_draws_needed`) and has them matched (`cast.procs_fire`).
@@ -1730,7 +1738,7 @@ pub type Aside {
     lingering: Option(Lingering),
     timers: List(#(TimerId, Due)),
     stealth: List(#(unit_properties.Source, spell_plan.Breaks)),
-    procs: List(#(unit_properties.Source, HeldProc)),
+    procs: List(#(ProcHold, HeldProc)),
     on_units: List(OnUnit),
   )
 }

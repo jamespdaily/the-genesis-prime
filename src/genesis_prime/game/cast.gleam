@@ -1823,11 +1823,12 @@ pub fn procs_fire(
   let cast = State(..cast, pending: [])
   let ordered =
     dict.to_list(cast.procs)
+    |> list.filter(fn(entry) { { entry.0 }.holder == None })
     |> list.sort(fn(first, second) {
-      int.compare({ first.0 }.cast_id, { second.0 }.cast_id)
+      int.compare({ first.0 }.source.cast_id, { second.0 }.source.cast_id)
       |> order.break_tie(int.compare(
-        { first.0 }.effect_id.value,
-        { second.0 }.effect_id.value,
+        { first.0 }.source.effect_id.value,
+        { second.0 }.source.effect_id.value,
       ))
     })
   let #(cast, effects, _, _) =
@@ -1838,12 +1839,13 @@ pub fn procs_fire(
       })
       |> list.fold(#(cast, effects, draws, rolls), fn(so_far, entry) {
         let #(cast, effects, draws, rolls) = so_far
-        let source = entry.0
+        let hold = entry.0
+        let source = hold.source
         let row = { entry.1 }.row
         let #(words, roll_count) = proc.draws_needed(row:)
         let #(taken, draws) = list.split(draws, words)
         let #(own_rolls, rolls) = list.split(rolls, roll_count)
-        let #(cast, more) = case dict.get(cast.procs, source) {
+        let #(cast, more) = case dict.get(cast.procs, hold) {
           Error(Nil) -> #(cast, [])
           Ok(held) ->
             proc_matched(
@@ -1968,7 +1970,7 @@ fn proc_fires(
           ..cast,
           procs: dict.insert(
             cast.procs,
-            source,
+            cast_state.ProcHold(source:, holder: None),
             HeldProc(row:, fires_ms: [
               now_ms,
               ..proc.counted(limit: row.limit, fires_ms: held.fires_ms, now_ms:)
