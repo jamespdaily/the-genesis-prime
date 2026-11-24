@@ -406,8 +406,8 @@ pub fn changed_and_added_edit_on_their_own_heap_and_leave_the_shared_tables_alon
   // An id below the table's highest: a loaded table is a tuple as long as its
   // highest id, so an id above it makes the load larger. The fixture holds no
   // Spell4 row 1 (`added` refuses an id the table holds).
-  // The copy takes tierIndex 10, which no tier of the book is: the load refuses two Spell4
-  // rows of one base and tier (`spell_tier`).
+  // The copy names Spell4Base 8, the activation system spell that no ability book holds: the
+  // load refuses two Spell4 rows of one tier only for a base the book holds (`spell_tier`).
   let new_id = 1
   fixture_tables.added(
     table: "Spell4",
@@ -415,7 +415,7 @@ pub fn changed_and_added_edit_on_their_own_heap_and_leave_the_shared_tables_alon
     id: new_id,
     with: [
       #("castTime", planted_table.Integer(edited)),
-      #("tierIndex", planted_table.Integer(10)),
+      #("spell4BaseIdBaseSpell", planted_table.Integer(8)),
     ],
     body: fn(tables) {
       let assert Ok(row) = spell4.get(tables:, id: Spell4Id(new_id))

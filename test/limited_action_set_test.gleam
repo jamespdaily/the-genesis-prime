@@ -38,9 +38,12 @@ import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{ActionSets}
 import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/character_creation
-import genesis_prime/table/id.{ClassId, PrerequisiteId, Spell4BaseId}
+import genesis_prime/table/id.{
+  type Spell4BaseId, ClassId, PrerequisiteId, Spell4BaseId,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import gleam/int
 import gleam/list
@@ -705,7 +708,7 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
   let frames = support.frames_of(effects: accepted)
   assert list.map(frames, fn(frame) { frame.message_id })
     == [0x019D, 0x01A0, 0x0169, 0x00B2]
-    as "opcode.0x169 comes before 0xB2, which clears the client's own count of points"
+    as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book"
   assert support.the_action_set(frames:)
     == action_set.ActionSet(
       action_set_index: 0,
@@ -808,6 +811,28 @@ fn points_of_level(level level: Int) -> Int {
   level - 9
 }
 
+/// The points the held tiers cost, from the client's Spell4 rows: each tier from 2 up to the
+/// held one costs its row's `abilityPointCost` (`0x1403bb2b0`).
+fn points_cost(
+  tables tables: table_store.Tables,
+  held held: List(#(Spell4BaseId, Int)),
+) -> Int {
+  let rows = spell4.all(tables)
+  list.fold(held, 0, fn(spent, ability) {
+    let #(base, tier) = ability
+    list.fold(rows, spent, fn(spent, row) {
+      case
+        row.spell4_base_id_base_spell == base.value
+        && row.tier_index >= 2
+        && row.tier_index <= tier
+      {
+        True -> spent + row.ability_point_cost
+        False -> spent
+      }
+    })
+  })
+}
+
 pub fn any_accepted_tier_save_keeps_the_points_spent_within_the_levels_total_and_a_repeat_changes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
@@ -865,6 +890,48 @@ pub fn any_accepted_tier_save_keeps_the_points_spent_within_the_levels_total_and
         as "the same save again holds the same tiers"
       assert support.frames_of(effects: repeated) == support.frames_of(effects:)
         as "the same save again answers the same frames"
+      let expected_points = case
+        support.the_action_set(frames: support.frames_of(effects:)).result
+      {
+        1 -> [
+          #(
+            points_of_level(level:)
+              - points_cost(
+              tables:,
+              held: limited_action_set.held_tiers(saved: after, set: 0),
+            ),
+            points_of_level(level:),
+          ),
+        ]
+        _ -> []
+      }
+      assert ability_points_support.points_in(frames: support.frames_of(
+          effects:,
+        ))
+        == expected_points
+        as "an accepted save answers with the points left and the points the level gives (0x0169), a refused one with none"
+      // A save that brings every ability back to tier 1 is a fall, which is always allowed.
+      let #(fallen, fell) =
+        support.taken(
+          saved: after,
+          level:,
+          body: support.body_with(
+            ids: support.class_bar,
+            set: 0,
+            tier_changes: list.map(book, fn(base) { #(base.value, 1) }),
+            amp_ids: [],
+          ),
+        )
+      assert support.the_action_set(frames: support.frames_of(effects: fell)).result
+        == 1
+        as "a save that returns every ability to tier 1 is accepted"
+      assert limited_action_set.held_tiers(saved: fallen, set: 0) == []
+        as "and holds no tier above 1"
+      assert ability_points_support.points_in(frames: support.frames_of(
+          effects: fell,
+        ))
+        == [#(points_of_level(level:), points_of_level(level:))]
+        as "and spends no point"
       after
     })
     Nil
@@ -1025,6 +1092,29 @@ pub fn every_ability_the_book_offers_the_bar_is_a_class_ability_of_its_own_class
           <> ": Spell4Base "
           <> int.to_string(base.value)
           <> " is of the class"
+        }
+    })
+  })
+}
+
+pub fn every_ability_the_book_offers_has_tier_data_for_every_class_and_faction_at_level_50_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let tiers = spell_tier.tiers(tables:)
+  list.each(novice_loadouts(tables:), fn(found) {
+    let #(class_id, faction_id, held) = found
+    list.each(ability_book.book(tables:, loadout: held, level: 50), fn(base) {
+      assert result.is_ok(spell_tier.highest(tiers:, base:))
+        as {
+          "class "
+          <> int.to_string(class_id)
+          <> ", faction "
+          <> int.to_string(faction_id)
+          <> ": Spell4Base "
+          <> int.to_string(base.value)
+          <> " is in the book, so a tier purchase of it must find its tiers, not be refused with 41"
         }
     })
   })

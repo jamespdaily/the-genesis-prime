@@ -3,8 +3,7 @@
 //// checking that a slot is open, that the player holds the ability, that an id appears once,
 //// that a tier exists or that the points cover it. The rule judges it and answers with the bar
 //// and the tiers the player has, which is the only way the client's bar and book tiers change.
-//// The
-//// client's name for the builder's set is "limited action set" (`ActionSetLib`); a feature
+//// The client's name for the builder's set is "limited action set" (`ActionSetLib`); a feature
 //// of the game connection's rule (genesis_prime/game/connection) taken from inside 0x038C
 //// with the player in the world.
 ////
@@ -39,12 +38,14 @@
 ////   ability has no row for or the player's level does not reach 41, and tiers costing more
 ////   than the level's points 42 (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`; the order and
 ////   the mapping are the server's, since the stock client stops below a tier it cannot take,
-////   `0x140748390`). A fall is always allowed, a change to the held tier changes nothing, and the
-////   points are judged on the tiers the save leaves. Any refusal refuses the whole save, bar
+////   `0x140748390`). A fall is allowed to any tier that has a row (the client takes a lower
+////   tier whatever its row, and no real base lacks a row below its highest), a change to the
+////   held tier changes nothing, and the points are judged on the tiers the save leaves. Any refusal refuses the whole save, bar
 ////   included. A tier belongs to the ability in the set, so a save that takes an ability off the
 ////   bar keeps its tier. What a tier costs and needs is genesis_prime/game/spell_tier.
 //// - **The tiers last** while the connection holds `Saved`: they are not in `rows`, so a place
-////   save, a map change, a Holocrypt rejoin and a login start every ability at tier 1 (`gaps`).
+////   save carries none and leaves the tiers held in the session as they are, and a map change,
+////   a Holocrypt rejoin and a login start every ability at tier 1 (`gaps`).
 //// - **A slot opens** by the client's own reading of its ActionSlotPrereq row's Prerequisite
 ////   row (`ActionSlotPrereq.prerequisiteIdUnlock`): the conditions the client keeps are all
 ////   of type 177 (the unit's level) and each holds at the player's level
@@ -724,8 +725,9 @@ fn fault_of(
 /// The tiers the set holds above tier 1 after the save's tier changes, or the first check
 /// they fail, in the save's order: an ability the book does not hold 18, an ability twice 13, a
 /// tier the ability has no row for or the player's level does not reach 41, and last tiers that
-/// cost more than the level gives 42. A fall is always allowed and the points are judged on the
-/// tiers the save leaves, so one save may free points on one ability and spend them on another.
+/// cost more than the level gives 42. A fall is allowed to any tier that has a row, and the
+/// points are judged on the tiers the save leaves, so one save may free points on one ability
+/// and spend them on another.
 /// The tier checks are the server's mapping: the client names the results and does not make
 /// them (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`).
 fn tiers_after(

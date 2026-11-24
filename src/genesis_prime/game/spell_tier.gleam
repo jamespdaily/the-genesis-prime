@@ -1,8 +1,7 @@
 //// The tiers of an ability: the nine Spell4 rows of one Spell4Base that the ability builder's
 //// pips choose between, what each costs in ability points, and the level each needs. The
 //// client's own word is `GetSpellIdForTier`; the builder's save (genesis_prime/game/
-//// limited_action_set) judges a tier change against this module, and the cast of a held tier
-//// finds its Spell4 row here.
+//// limited_action_set) judges a tier change against this module.
 ////
 //// ```
 //// load: SpellLevel + Class innates + the alternates their tier rows name ─▶ the bases the book can hold
@@ -30,7 +29,9 @@
 //// - **The load fails** when two Spell4 rows of a base hold one tierIndex from 1 to 9, a tier from
 ////   2 to 9 that has a row has no Spell4TierRequirements row, two requirement rows name one tier,
 ////   a SpellLevel row or a named alternate names a Spell4 row the table lacks, or a class's innate
-////   cannot be held (genesis_prime/game/innate).
+////   cannot be held (genesis_prime/game/innate). The repeated tier is the server's own refusal:
+////   the client's `GetSpellIdForTier` returns one spell and does not check, and the client's rows
+////   hold no repeat. A base the book cannot hold is not read, so its rows may repeat a tier.
 
 import genesis_prime/game/innate
 import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id, Spell4Id}
@@ -217,17 +218,17 @@ fn describe_build(error error: BuildError) -> String {
       "the table Spell4TierRequirements has two rows of tier "
       <> int.to_string(tier)
     NoLevelSpell(spell_level_id:, spell4_id:) ->
-      "the table SpellLevel row "
+      "the table Spell4 has no row "
+      <> int.to_string(spell4_id)
+      <> ", which SpellLevel row "
       <> int.to_string(spell_level_id)
-      <> " names Spell4 "
-      <> int.to_string(spell4_id)
-      <> ", which the table Spell4 does not have"
+      <> " names"
     NoAlternate(spell4_id:, alternate:) ->
-      "the table Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " names the alternate Spell4 "
+      "the table Spell4 has no row "
       <> int.to_string(alternate)
-      <> ", which the table Spell4 does not have"
+      <> ", which Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " names as its alternate"
     InnateFailed(error:) -> innate.describe(error:)
   }
 }

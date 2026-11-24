@@ -78,12 +78,13 @@ pub fn a_levels_fanfare_is_the_tier_one_below_it_test() -> Nil {
       as "level 3 is the row whose tierIndex is 2"
   })
   // A Spell4 of another base with tierIndex 1 is not level 2's: the lookup is by
-  // Spell4Base 53378 only. 19102 is Telekinetic Strike's base.
+  // Spell4Base 53378 only. Base 8 is the activation system spell, which no ability book holds,
+  // so a second row of tierIndex 1 for it is no repeated tier of the book (`spell_tier`).
   fixture_tables.added(
     table: "Spell4",
     copy_of: 77_398,
     id: 99_077,
-    with: [#("spell4BaseIdBaseSpell", Integer(19_102))],
+    with: [#("spell4BaseIdBaseSpell", Integer(8))],
     body: fn(tables) {
       let fanfares = level_up.fanfares(tables:)
       assert spell_id_of(fanfares:, level: 2) == Ok(77_398)

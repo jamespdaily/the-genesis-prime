@@ -113,7 +113,7 @@ pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_canno
     sent(state:, body: limited.tiering([#(27_638, 2)]))
   assert list.map(frames, fn(frame) { frame.message_id })
     == [0x019D, 0x01A0, 0x0169, 0x00B2]
-    as "opcode.0x169 before 0xB2, which clears the client's own count"
+    as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book"
   assert limited.the_action_set(frames:).result == 1
   assert raised_in(frames:) == [#(27_638, 2)]
     as "the 0x01A0 names Quick Draw at tier 2 in set 0"

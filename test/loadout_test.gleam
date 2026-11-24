@@ -563,9 +563,28 @@ pub fn a_changed_formula_row_changes_the_weapons_ratings_the_armors_ratings_the_
 /// Why the load of these rows fails, as the reason the loadouts could not be
 /// built.
 fn why_the_load_fails(rows rows: fixture_tables.Rows) -> String {
-  let assert Error(table_store.DerivationFailed(name: "Loadouts", reason:)) =
+  why_the_build_fails(rows:, building: "Loadouts")
+}
+
+/// Why the load of these rows fails, as the reason the named build could not
+/// finish. The load stops at the first build that fails, in the order of
+/// `derivation.all`.
+fn why_the_build_fails(
+  rows rows: fixture_tables.Rows,
+  building building: String,
+) -> String {
+  let assert Error(table_store.DerivationFailed(name:, reason:)) =
     fixture_tables.load(rows:)
-    as "the load without a row the loadouts read fails in their build"
+    as "the load without a row the builds read fails in a build"
+  assert name == building
+    as {
+      "the load without the row fails in the build of "
+      <> building
+      <> ", not in "
+      <> name
+      <> ": "
+      <> reason
+    }
   reason
 }
 
@@ -589,11 +608,19 @@ pub fn a_missing_formula_row_fails_the_load_naming_the_table_and_the_id_test() -
   })
 }
 
-/// A load without one row of a table fails, and its reason names the table and
-/// the row.
-fn a_load_without_the_row_fails(table table: String, id id: Int) -> Nil {
+/// A load without one row of a table fails in the named build, and its reason names the
+/// table and the row. A Spell4 row a SpellLevel row names is read by the build of SpellTiers
+/// first, which stops the load before the loadouts' build reads it.
+fn a_load_without_the_row_fails(
+  table table: String,
+  id id: Int,
+  building building: String,
+) -> Nil {
   let reason =
-    why_the_load_fails(rows: without(rows: fixture_tables.rows(), table:, id:))
+    why_the_build_fails(
+      rows: without(rows: fixture_tables.rows(), table:, id:),
+      building:,
+    )
   assert string.contains(reason, table)
     && string.contains(reason, "row " <> int.to_string(id))
     as {
@@ -608,13 +635,29 @@ fn a_load_without_the_row_fails(table table: String, id id: Int) -> Nil {
 
 pub fn a_missing_item_category_item_slot_item_or_spell4_row_fails_the_load_naming_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  a_load_without_the_row_fails(table: "Item2Category", id: 3)
-  a_load_without_the_row_fails(table: "ItemSlot", id: 20)
-  a_load_without_the_row_fails(table: "Item2", id: 81_352)
-  a_load_without_the_row_fails(table: "Item2Type", id: 51)
-  a_load_without_the_row_fails(table: "Item2Family", id: 2)
-  a_load_without_the_row_fails(table: "CreatureLevel", id: 17)
-  a_load_without_the_row_fails(table: "Spell4", id: 58_591)
+  a_load_without_the_row_fails(
+    table: "Item2Category",
+    id: 3,
+    building: "Loadouts",
+  )
+  a_load_without_the_row_fails(table: "ItemSlot", id: 20, building: "Loadouts")
+  a_load_without_the_row_fails(table: "Item2", id: 81_352, building: "Loadouts")
+  a_load_without_the_row_fails(table: "Item2Type", id: 51, building: "Loadouts")
+  a_load_without_the_row_fails(
+    table: "Item2Family",
+    id: 2,
+    building: "Loadouts",
+  )
+  a_load_without_the_row_fails(
+    table: "CreatureLevel",
+    id: 17,
+    building: "Loadouts",
+  )
+  a_load_without_the_row_fails(
+    table: "Spell4",
+    id: 58_591,
+    building: "SpellTiers",
+  )
 }
 
 pub fn a_class_with_no_level_1_spell_row_or_a_createable_class_and_faction_with_no_novice_set_fails_the_load_test() -> Nil {
@@ -953,5 +996,9 @@ pub fn a_novice_item_with_no_item_display_source_entry_for_its_source_type_and_l
 
 pub fn a_display_with_no_item_display_row_fails_the_load_naming_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  a_load_without_the_row_fails(table: "ItemDisplay", id: 3838)
+  a_load_without_the_row_fails(
+    table: "ItemDisplay",
+    id: 3838,
+    building: "Loadouts",
+  )
 }
