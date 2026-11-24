@@ -219,13 +219,13 @@ fn limits() -> List(Limit) {
       connection_landing.gaps(),
       "Casting",
       ["inside the audience", "next go"],
-      "a viewer inside the audience whose client did not yet hold the player when the caster's go reached it is shown no buff until the caster's next go",
+      "a viewer inside the audience whose client held no copy of the player when the caster's go reached it is shown no buff until the caster's next go",
     ),
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["took a cast's changes", "told so far"],
-      "a viewer that comes into sight of the player between its taking a cast's changes and its taking the cast's go is shown the effects told so far",
+      ["took a cast's changes", "told before it came into sight"],
+      "a viewer that comes into sight of the player between its taking a cast's changes and its taking the cast's go is shown the effects told before it came into sight",
     ),
     Limit(
       connection_landing.gaps(),
