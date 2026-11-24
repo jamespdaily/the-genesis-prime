@@ -58,6 +58,12 @@
 //// - **Type 37** compares a roll from 1 to 100 with the value, a new roll for each
 ////   such condition tested; the roll is the server's, 1 + floor(100 r) of a draw r
 ////   in [0, 1) as the client makes it (`Prerequisite.prerequisiteTypeId.37`).
+//// - **Type 40** compares the unit's health as a percentage of its maximum health with the
+////   value, as type 71 does for the Health vital; the objectId is not read
+////   (`Prerequisite.prerequisiteTypeId.40`, `0x1404a4d90`). A creature holds no health the
+////   caster's check can read, so a row that strikes creatures behind it is refused, and a heal
+////   row of a friendly area is read for the players the caster's picture holds the health of
+////   (`with_health`, `PlaceAndHealth`).
 //// - **Type 71** compares the vital the objectId names, as a percentage of its
 ////   maximum, with the value, in 32-bit floats; a zero maximum with nothing held
 ////   is not a number, which counts as equal and fails every other comparison, and
@@ -343,6 +349,10 @@ type Condition {
   /// Type 37: a roll from 1 to 100 against the value
   /// (`Prerequisite.prerequisiteTypeId.37`).
   Roll(relation: Relation, value: Int)
+  /// Type 40: the unit's health as a percentage of its maximum health against the value
+  /// (`Prerequisite.prerequisiteTypeId.40`, `0x1404a4d90`): type 71's reading of the Health
+  /// vital, which the unit's two health slots give.
+  HealthPercent(relation: Relation, value: Int)
   /// Type 71: the vital's percentage of its maximum against the value
   /// (`Prerequisite.prerequisiteTypeId.71`).
   VitalPercent(relation: Relation, vital: Int, value: Int)
@@ -570,6 +580,10 @@ pub type Checker {
   )
 }
 
+/// The Vital id of Health (Vital.tbl id 1), the vital type 40 reads from a subject's `vitals`
+/// (`Prerequisite.prerequisiteTypeId.71`, `0x1404a4d90`).
+pub const health_vital = 1
+
 /// What the check's first unit is, for the types that read its identity.
 pub type FirstUnit {
   /// The player whose client runs the check.
@@ -641,6 +655,16 @@ pub type Subject {
   )
 }
 
+/// The subject of a player in the caster's sight with the health and the maximum health the
+/// caster's picture holds of it, which type 40 reads.
+pub fn with_health(subject subject: Subject, health health: Vital) -> Subject {
+  Subject(
+    ..subject,
+    vitals: dict.insert(subject.vitals, health_vital, health),
+    seen: PlaceAndHealth,
+  )
+}
+
 /// The subject with a creature in the check, whose checklist index (the one its 0x262
 /// carried) type 94 reads.
 pub fn counting(
@@ -666,6 +690,10 @@ pub type Seen {
   WholeUnit
   /// Only the place of the subject holds.
   PlaceOnly
+  /// The place of the subject and its health, which a player's copy in the caster's picture
+  /// holds: type 40 is decided, and every other condition that reads the unit's own state is
+  /// not read, as for `PlaceOnly`.
+  PlaceAndHealth
 }
 
 /// The subject of a unit the caster struck, for a target-side check (a Proxy's target apply
@@ -1221,6 +1249,7 @@ fn condition_of(
         value:,
       )
     37 -> Roll(relation: relation_of(code: comparison), value:)
+    40 -> HealthPercent(relation: relation_of(code: comparison), value:)
     71 ->
       VitalPercent(
         relation: relation_of(code: comparison),
@@ -1323,6 +1352,7 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | StackCountByCaster(..)
     | InCombat(..)
     | Roll(..)
+    | HealthPercent(..)
     | VitalPercent(..)
     | VitalCurrent(..)
     | Nested(..)
@@ -1378,6 +1408,7 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | StackCount(..)
       | StackCountByCaster(..)
       | InCombat(..)
+      | HealthPercent(..)
       | VitalPercent(..)
       | VitalCurrent(..)
       | ResourceSlot(..)
@@ -1439,6 +1470,7 @@ pub fn objective_links(
       | StackCountByCaster(..)
       | InCombat(..)
       | Roll(..)
+      | HealthPercent(..)
       | VitalPercent(..)
       | VitalCurrent(..)
       | ResourceSlot(..)
@@ -1497,6 +1529,7 @@ pub fn press_unread_types(
       | TargetOfLiveCast(..)
       | StackCount(..)
       | InCombat(..)
+      | HealthPercent(..)
       | VitalPercent(..)
       | VitalCurrent(..)
       | ResourceSlot(..)
@@ -1564,6 +1597,7 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
       | StackCountByCaster(..)
       | InCombat(..)
       | Roll(..)
+      | HealthPercent(..)
       | VitalPercent(..)
       | VitalCurrent(..)
       | ResourceSlot(..)
@@ -1612,7 +1646,9 @@ pub fn unread_on_a_struck_unit(
 ) -> List(Int) {
   list.flat_map(prerequisite.conditions, fn(condition) {
     case reading_of(condition:) {
-      OwnState(prerequisite_type:) | CastsHeld(prerequisite_type:) -> [
+      OwnState(prerequisite_type:)
+      | PlayerHealth(prerequisite_type:)
+      | CastsHeld(prerequisite_type:) -> [
         prerequisite_type,
       ]
       NestedRow(row:) -> unread_on_a_struck_unit(prerequisite: row)
@@ -1622,12 +1658,27 @@ pub fn unread_on_a_struck_unit(
   |> list.unique
 }
 
+/// The PrerequisiteTypes, in the prerequisite and the rows it nests, that the caster's own
+/// check cannot read of a player in its sight it heals, each once: those of
+/// `unread_on_a_struck_unit` but the health percentage (type 40), which the caster's picture of
+/// the player holds (`of_struck`, `with_health`).
+pub fn unread_on_a_player(
+  prerequisite prerequisite: Prerequisite,
+) -> List(Int) {
+  list.filter(unread_on_a_struck_unit(prerequisite:), fn(prerequisite_type) {
+    prerequisite_type != 40
+  })
+}
+
 /// What a condition reads of the unit a gate is tested on: the state the unit holds itself,
 /// the casts held on it, who it is, a row it nests, or something else.
 type Reading {
   /// The unit's level (1), class (3), factions (4 and 250), fight state (28), vitals (71 and
   /// 73) or difficulty (179).
   OwnState(prerequisite_type: Int)
+  /// The health of a player the caster's picture holds (40): a creature holds none of its own
+  /// to check against.
+  PlayerHealth(prerequisite_type: Int)
   /// The casts held on the unit (15, 59 and 129).
   CastsHeld(prerequisite_type: Int)
   /// Whether the unit is a player (39) or which Creature2 row it is (38): known from its place
@@ -1647,6 +1698,7 @@ fn reading_of(condition condition: Condition) -> Reading {
     CurrentFaction(..) -> OwnState(prerequisite_type: 4)
     BaseFaction(..) -> OwnState(prerequisite_type: 250)
     InCombat(..) -> OwnState(prerequisite_type: 28)
+    HealthPercent(..) -> PlayerHealth(prerequisite_type: 40)
     VitalPercent(..) -> OwnState(prerequisite_type: 71)
     VitalCurrent(..) -> OwnState(prerequisite_type: 73)
     UnitLevel(..) -> OwnState(prerequisite_type: 1)
@@ -1703,7 +1755,7 @@ fn held_by_the_unit(reading reading: Reading) -> Bool {
   case reading {
     OwnState(..) | WhoItIs -> True
     NestedRow(row:) -> checked_by_creature(prerequisite: row)
-    CastsHeld(..) | ReadElsewhere -> False
+    PlayerHealth(..) | CastsHeld(..) | ReadElsewhere -> False
   }
 }
 
@@ -1787,7 +1839,13 @@ fn condition_check(
 ) -> #(List(Int), Verdict) {
   case subject.seen, reads_held_state(condition:) {
     PlaceOnly, Some(prerequisite_type) -> #(rolls, NotRead(prerequisite_type:))
-    PlaceOnly, None | WholeUnit, _ ->
+    PlaceAndHealth, Some(40) ->
+      condition_decided(condition:, subject:, rolls:, purpose:)
+    PlaceAndHealth, Some(prerequisite_type) -> #(
+      rolls,
+      NotRead(prerequisite_type:),
+    )
+    PlaceOnly, None | PlaceAndHealth, None | WholeUnit, _ ->
       condition_decided(condition:, subject:, rolls:, purpose:)
   }
 }
@@ -1806,6 +1864,7 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     TargetOfLiveCast(..) -> Some(15)
     StackCount(..) -> Some(59)
     InCombat(..) -> Some(28)
+    HealthPercent(..) -> Some(40)
     VitalPercent(..) -> Some(71)
     VitalCurrent(..) -> Some(73)
     UnderGroup(..) -> Some(129)
@@ -1902,6 +1961,13 @@ fn condition_decided(
         )
         [] -> #([], NotRead(prerequisite_type: 37))
       }
+    HealthPercent(relation:, value:) -> #(
+      rolls,
+      case dict.get(subject.vitals, health_vital) {
+        Ok(held) -> verdict_of(percent_compares(relation:, vital: held, value:))
+        Error(Nil) -> NotRead(prerequisite_type: 40)
+      },
+    )
     VitalPercent(relation:, vital:, value:) -> #(
       rolls,
       case dict.get(subject.vitals, vital) {

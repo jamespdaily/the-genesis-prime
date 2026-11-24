@@ -98,7 +98,12 @@
 ////   the caster's formula gives (`damage.amount_on_caster`) and the caster's
 ////   HealingMultiplierOutgoing. The healed player's connection applies them
 ////   (genesis_prime/game/connection/landing) and answers, and the player's place fills with
-////   what it applied, listed in the go with the description of each heal (`cast_heal.healed_on`). A row a gate fails or
+////   what it applied, listed in the go with the description of each heal (`cast_heal.healed_on`).
+////   When a heal row of the phase is aimed at the area alone and none names the caster, the
+////   caster is one more candidate of the area, at distance 0 with no shape test and ranked by
+////   the health its vitals miss (`area.select_ordered_with_caster`); it is told nothing, its
+////   place is answered at once with the rows that passed its gates (`cast_state.HitCaster`),
+////   and the go applies them itself. A row a gate fails or
 ////   cannot tell is left out with a debug line; a player no row reaches has no place and no
 ////   tell. A target gate on such a row is read from what the caster holds of the player
 ////   (`gaps`).
@@ -153,7 +158,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit
-import genesis_prime/game/player_address.{type PlayerAddress}
+import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
@@ -380,6 +385,7 @@ pub fn select(
             row:,
             centre:,
             seed: asked.cast_id,
+            caster_candidate: caster_candidate_of(attacker:, heals: phase.heals),
             now_ms:,
           )
         _, _, _ -> []
@@ -447,7 +453,15 @@ fn players_of_heals(
   {
     True ->
       list.filter_map(allies, fn(unit_id) {
-        dict.get(attacker.players_in_sight, unit_id)
+        case unit_id == attacker.unit_id {
+          True ->
+            Ok(PlayerAddress(
+              connection: attacker.connection,
+              unit_id:,
+              stay: attacker.stay,
+            ))
+          False -> dict.get(attacker.players_in_sight, unit_id)
+        }
       })
     False -> []
   }
@@ -537,6 +551,7 @@ pub fn select_proxy_tick(
             row:,
             centre:,
             seed: proxy_tick_seed(asked:),
+            caster_candidate: None,
             now_ms:,
           )
         _, _ -> []
@@ -563,6 +578,7 @@ fn area_selection(
   row row: area.Row,
   centre centre: Pose,
   seed seed: Int,
+  caster_candidate caster_candidate: Option(area.Candidate),
   now_ms now_ms: Int,
 ) -> List(Int) {
   let valid_targets = area.spell.targeting.valid_targets
@@ -590,10 +606,51 @@ fn area_selection(
         False -> []
       }
   }
-  case spell_area.inside(spell: area, phase:) {
-    None -> []
-    Some(inside) ->
+  case spell_area.inside(spell: area, phase:), caster_candidate {
+    None, _ -> []
+    Some(inside), None ->
       area.select_ordered(candidates:, centre:, row:, inside:, seed:)
+    Some(inside), Some(caster) ->
+      area.select_ordered_with_caster(
+        candidates:,
+        caster:,
+        centre:,
+        row:,
+        inside:,
+        seed:,
+      )
+  }
+}
+
+/// The caster as a candidate of the area of a phase with a heal row aimed at the area alone
+/// (targetFlags 4) and no row that reaches the caster another way: such a row names no caster
+/// of its own, so the area counts it among the allies it heals ("yourself and N allies",
+/// Triage's text 195454). A row that names the caster (flags 1, 3, 5, 7) heals it by that flag,
+/// and one aimed at the primary target and the area (flags 6) reaches it as the primary
+/// target of a spell on itself, so in either case the area finds the others only.
+fn caster_candidate_of(
+  attacker attacker: Attacker,
+  heals heals: List(spell_area.InstantHeal),
+) -> Option(area.Candidate) {
+  let names_caster =
+    list.any(heals, fn(heal) {
+      spell_plan.reaches_caster(aim: heal.aim)
+      || heal.aim == spell_plan.AimsAtPrimaryTargetAndArea
+    })
+  let leaves_it_to_the_area =
+    list.any(heals, fn(heal) { heal.aim == spell_plan.AimsAtArea })
+  case leaves_it_to_the_area && !names_caster {
+    True ->
+      Some(area.Candidate(
+        unit_id: attacker.unit_id,
+        at: attacker.pose.at,
+        hit_radius: attacker.hit_radius,
+        missing_health: int.max(
+          attacker.vitals.max_health - attacker.vitals.health,
+          0,
+        ),
+      ))
+    False -> None
   }
 }
 
@@ -772,7 +829,9 @@ pub fn begin(
 /// The player a go tells its heal rows to: a place that waits for its answer and the tell
 /// of the rows that reach it, in the plan's order, each with the amount its formula gives
 /// for the caster as it is now. A player no row reaches past its gates has no place and no
-/// tell, and is not in the go.
+/// tell, and is not in the go. The caster, when the area took it as a candidate, is told
+/// nothing: its place is already answered, with the rows that reached it, and the go
+/// applies them itself (`cast_state.HitCaster`).
 fn players_told(
   selection selection: Selection,
   attacker attacker: Attacker,
@@ -783,10 +842,27 @@ fn players_told(
       let unit_id = address.unit_id
       case rows_reaching_unit(rows: reach.heals, unit_id:) {
         [] -> Error(Nil)
+        rows if unit_id == attacker.unit_id ->
+          Ok(#(
+            Answered(
+              struck: cast_state.Hit(
+                unit_id:,
+                unit: cast_state.HitCaster(
+                  heals: list.map(rows, fn(row) { row.effect_id }),
+                ),
+                descriptions: [],
+                controls: [],
+                armor_removed: 0,
+                ticking: [],
+              ),
+              gates_passed: [],
+            ),
+            None,
+          ))
         rows ->
           Ok(#(
             Waiting(unit_id:, awaits: AwaitedPlayer),
-            TellPlayerStrike(
+            Some(TellPlayerStrike(
               address:,
               strike: strike_tell.PlayerStrike(
                 key: strike_tell.Key(
@@ -807,13 +883,13 @@ fn players_told(
                   )
                 }),
               ),
-            ),
+            )),
           ))
       }
     })
   #(
     list.map(told, fn(entry) { entry.0 }),
-    list.map(told, fn(entry) { entry.1 }),
+    list.filter_map(told, fn(entry) { option.to_result(entry.1, Nil) }),
   )
 }
 

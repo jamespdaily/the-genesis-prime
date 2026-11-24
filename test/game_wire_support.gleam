@@ -446,6 +446,27 @@ pub fn two_players_enter_saved(
   first_acts first_acts: fn(game_client.Game, BitArray) ->
     #(List(Frame), BitArray),
 ) -> TwoEntered {
+  two_players_enter_saved_each(
+    started:,
+    first_class:,
+    level:,
+    first_health: saved_health,
+    second_health: saved_health,
+    first_acts:,
+  )
+}
+
+/// As `two_players_enter_saved`, each character saved with the health of its own when it is
+/// given.
+pub fn two_players_enter_saved_each(
+  started started: login_support.Started,
+  first_class first_class: Int,
+  level level: Int,
+  first_health first_health: Option(Int),
+  second_health second_health: Option(Int),
+  first_acts first_acts: fn(game_client.Game, BitArray) ->
+    #(List(Frame), BitArray),
+) -> TwoEntered {
   let #(first, first_character) =
     new_player_at_level(
       started:,
@@ -462,18 +483,26 @@ pub fn two_players_enter_saved(
       class_id: 4,
       level:,
     )
-  case saved_health {
-    Some(health) -> {
-      let pool = pog.named_connection(started.settings.pool.pool_name)
-      let assert Ok(_) =
-        pog.query("update character set health = $1")
-        |> pog.parameter(pog.int(health))
-        |> pog.execute(pool)
-        as "both characters' rows hold the health they saved"
-      Nil
-    }
-    None -> Nil
-  }
+  list.each(
+    [#(first_character, first_health), #(second_character, second_health)],
+    fn(saved) {
+      case saved.1 {
+        Some(health) -> {
+          let pool = pog.named_connection(started.settings.pool.pool_name)
+          let assert Ok(_) =
+            pog.query(
+              "update character set health = $1 where character_id = $2",
+            )
+            |> pog.parameter(pog.int(health))
+            |> pog.parameter(pog.int(saved.0))
+            |> pog.execute(pool)
+            as "each character's row holds the health it saved"
+          Nil
+        }
+        None -> Nil
+      }
+    },
+  )
   send_play(game: first, character_id: first_character)
   let #(first_burst, first_have) =
     game_client.read_entry_kept(game: first, have: <<>>)

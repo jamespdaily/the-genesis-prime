@@ -2633,6 +2633,187 @@ pub fn a_medic_pressing_emission_heals_the_ally_in_its_cone_and_the_caster_reads
     as "the control: the caster's own heal is listed whoever stands in the cone"
 }
 
+/// What a Medic's press of Triage, with a Medic ally standing 8 m ahead of it, showed the two
+/// clients: each Medic's own health before the press (`caster_saved`, `ally_saved`), the
+/// amount of the heal row 141503, the caster's go and what each client read of its own health.
+type TriageRound {
+  TriageRound(
+    caster: Int,
+    ally: Int,
+    caster_saved: Int,
+    ally_saved: Int,
+    amount: Int,
+    go: spell_go.SpellGo,
+    caster_healths: List(Int),
+    ally_healths: List(Int),
+  )
+}
+
+/// A Medic of level 9 presses Triage (Spell4 29888, Spell4Base 16336, a type 2 target: the
+/// caster is its primary target whatever it has targeted) with a Medic of the same faction
+/// 8 m ahead of it, the two saved with the health given. Triage has no cast time, so the go is
+/// the press's own, before either Medic's regeneration, which falls every 500 ms
+/// (`player_life`): each reads its own health after the heal.
+fn triage_pressed_with_an_ally(
+  caster_saved caster_saved: Int,
+  ally_saved ally_saved: Int,
+) -> TriageRound {
+  let time = driven_time.new()
+  let tables = character_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    game_wire_support.two_players_enter_saved_each(
+      started:,
+      first_class: 4,
+      level: 9,
+      first_health: option.Some(caster_saved),
+      second_health: option.Some(ally_saved),
+      first_acts: fn(_, have) { #([], have) },
+    )
+  let caster = unit_of_player(frames: first_burst)
+  let ally = unit_of(seen_second)
+  assert health_in(frames: first_burst) == caster_saved
+    as "opcode.0x262: the caster enters with the health it was saved with"
+  let #(x, y, z) =
+    game_client.placed_by_tail(
+      tail: game_client.unit_create_player_in(frames: first_burst).tail,
+    )
+  game_client.face(game: first, yaw: 0.0, clock: 100)
+  game_client.move_to(game: second, clock: 110, x:, y:, z: z -. 8.0)
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0638 })
+    })
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames: first_burst), fn(item) {
+      item.1 == 16_336
+    })
+    as "the level-9 Medic holds Triage's base 16336 (SpellLevel 1021)"
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: 0,
+  )
+  let #(went, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      gos_in(frames:) != []
+    })
+  assert refusals(frames: went) == []
+    as "opcode.0x7fc: Triage is planned, so the press is not refused"
+  let #(rest, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let caster_frames = list.append(went, rest)
+  let #(ally_read, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      gos_in(frames:) != []
+    })
+  let #(ally_rest, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let ally_frames = list.append(ally_read, ally_rest)
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the tables hold GameFormula row 1266"
+  let support_power =
+    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
+  let amount =
+    float.round(
+      int.to_float(float.round(0.3139 *. support_power)) +. 13.67 *. 9.0,
+    )
+  let assert Ok(go) =
+    list.find(gos_in(frames: caster_frames), fn(go) { go.targets != [] })
+    as "the caster's client reads a 0x7f4 that lists a unit"
+  let healths = fn(frames, unit) {
+    game_client.own_health_of(events: game_client.fight_in(frames:), unit:)
+  }
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+  TriageRound(
+    caster:,
+    ally:,
+    caster_saved:,
+    ally_saved:,
+    amount:,
+    go:,
+    caster_healths: healths(caster_frames, caster),
+    ally_healths: healths(ally_frames, ally),
+  )
+}
+
+/// The rows of the heal 141503 the go lists on the unit `unit_id`, one list for each of its
+/// entries.
+fn triage_heal_listed_on(
+  round: TriageRound,
+  unit_id: Int,
+) -> List(List(#(Int, spell_effect_result.SpellEffectResult))) {
+  list.filter(round.go.targets, fn(target) { target.unit_id == unit_id })
+  |> list.map(fn(target) {
+    list.filter(target.effects, fn(effect) {
+      effect.spell4_effects_id == 141_503
+    })
+    |> list.map(fn(effect) { #(effect.spell4_effects_id, effect.result) })
+  })
+}
+
+/// A Medic of level 9 presses Triage with no target named: its area (Spell4AoeTargetConstraints
+/// 735: 360 degrees, 0 to 35 m, one target, ordered by missing health) finds the Medic ally
+/// 8 m ahead, and its heal row 141503 (type 10, targetFlags 4: the area alone, parameter 13 x
+/// 0.3139 and 10 x 13.67, `0x140565600`: the stat part rounded alone) does not name the caster,
+/// so the caster is a candidate of the area, as the text 195454 says ("yourself or an ally based
+/// on who has the lowest health", Jim's decision on 2026-11-23). The one it takes is the one
+/// missing the most health, by the health each told the server on entering. Case one: the ally
+/// entered missing more: its own 0x92f rises by the row's amount, the caster's 0x7f4 lists that
+/// heal on the ally, and the caster's own health does not rise. Case two: the caster entered
+/// missing more: its own health rises and the ally's does not.
+pub fn a_medic_pressing_triage_heals_whoever_misses_the_most_health_of_itself_and_the_ally_in_its_cone_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let heal_of = fn(round: TriageRound) {
+    [
+      #(
+        141_503,
+        cast_support.heal_result(
+          amount: round.amount,
+          kind: damage_type.Heal,
+          overkill: 0,
+        ),
+      ),
+    ]
+  }
+  let ally_hurt =
+    triage_pressed_with_an_ally(caster_saved: 400, ally_saved: 100)
+  assert ally_hurt.amount > 0 as "the row's amount is above 0"
+  assert triage_heal_listed_on(ally_hurt, ally_hurt.ally)
+    == [heal_of(ally_hurt)]
+    as "opcode.0x7f4: the ally, which entered missing more health, is listed with its own heal, the split it answered"
+  assert triage_heal_listed_on(ally_hurt, ally_hurt.caster) == []
+    as "opcode.0x7f4: the caster, missing less than the ally, is not selected, and Triage's one target is the ally"
+  assert list.last(ally_hurt.ally_healths)
+    == Ok(ally_hurt.ally_saved + ally_hurt.amount)
+    as "opcode.0x92f: the ally's health rises by the row's amount"
+  assert ally_hurt.caster_healths == []
+    as "opcode.0x92f: the caster's health does not rise"
+  let caster_hurt =
+    triage_pressed_with_an_ally(caster_saved: 100, ally_saved: 400)
+  assert triage_heal_listed_on(caster_hurt, caster_hurt.caster)
+    == [heal_of(caster_hurt)]
+    as "opcode.0x7f4: the caster, which entered missing more health, is listed with its own heal"
+  assert triage_heal_listed_on(caster_hurt, caster_hurt.ally) == []
+    as "opcode.0x7f4: the ally, missing less than the caster, is not listed"
+  assert list.last(caster_hurt.caster_healths)
+    == Ok(caster_hurt.caster_saved + caster_hurt.amount)
+    as "opcode.0x92f: the caster's own health rises by the row's amount"
+  assert caster_hurt.ally_healths == []
+    as "opcode.0x92f: the ally is told no health"
+}
+
 /// The 0x7f8 among `frames`, decoded, in order.
 fn ticks_in(
   frames frames: List(Frame),

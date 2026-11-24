@@ -76,7 +76,7 @@ pub type Message {
 
 /// The Vital id of Health and of Shield Capacity in `Caster.life_vitals`
 /// (`Prerequisite.prerequisiteTypeId.71`: Vital.tbl ids 1 and 3).
-pub const health_vital = 1
+pub const health_vital = prerequisite.health_vital
 
 pub const shield_vital = 3
 
@@ -467,6 +467,11 @@ pub type HitUnit {
   /// A player another player's cast healed (genesis_prime/game/strike `player_answered`):
   /// the heal rows it applied itself, each with the split of its amount (`HealLanded`).
   HitOtherPlayer(heals: List(strike_tell.HealLanded))
+  /// The caster itself, taken as a candidate by the area of a heal row aimed at the area alone
+  /// (genesis_prime/game/strike `select`): the heal rows the strike let through for it, past
+  /// the caster gates and the caster's own target gates. The go works out and applies each
+  /// itself (genesis_prime/game/cast/heal `healed_on`) and gates none of them again.
+  HitCaster(heals: List(Spell4EffectsId))
 }
 
 /// A property modifier a cast started on a creature: the creature's unit, the life
