@@ -445,6 +445,10 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
+      missing: "A Proc row the caster holds on an ally is told as a change that applies nothing and is listed as the cast's effect on the ally; it is held for the allies the round selected at the go, so an ally who walks into the area later is given none, and it ends with the change on that ally, the ally's death included, a server choice.",
+    ),
+    gap.Entry(
+      area: "Casting",
       missing: "A heal told to a player is applied whenever it arrives, also after the round of the caster that waits for its answer has closed, because the tell carries no deadline.",
     ),
   ]
