@@ -218,14 +218,32 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["comes into sight", "already shown"],
-      "a viewer is shown another player's buffs on a player only when it comes into sight of the player after the change started",
+      ["inside the audience", "next go"],
+      "a viewer inside the audience whose client did not yet hold the player when the caster's go reached it is shown no buff until the caster's next go",
     ),
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["borrowed", "client_casts"],
-      "a cast a viewer borrowed from a player's create is ended by that player alone",
+      ["took a cast's changes", "told so far"],
+      "a viewer that comes into sight of the player between its taking a cast's changes and its taking the cast's go is shown the effects told so far",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["comes back", "kept change"],
+      "a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["borrowed", "client_casts", "the start the player tells"],
+      "a cast a viewer borrowed from a player's create or from the start the player tells is ended by that player alone, and a second go of a cast does not reach a viewer outside its audience",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["dead viewer", "written the start"],
+      "a dead viewer is written the start a player tells as a live one is",
     ),
     Limit(
       connection_landing.gaps(),

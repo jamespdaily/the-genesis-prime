@@ -36,12 +36,14 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
+import genesis_prime/game/player_state.{PlayerState}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties.{type Source}
+import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_started
 import genesis_prime/step.{type ConnectionId, type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
@@ -52,6 +54,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/set
 import gleam/string
 import map_support
@@ -91,6 +94,20 @@ fn esper_seeing(players players: List(Int)) -> Caster {
         #(unit_id, PlayerAddress(..address(), unit_id:))
       }),
     ),
+  )
+}
+
+/// The Esper as `esper_seeing` has it, in a group with each of the players, so that a spell
+/// that needs its target in the caster's group (`press_target.group_refusal`: a child a Proxy
+/// starts on an ally has the bit) is not refused when it is pressed at one.
+fn esper_grouped_with(players players: List(Int)) -> Caster {
+  let caster = esper_seeing(players:)
+  cast_state.Caster(
+    ..caster,
+    group_id: 1,
+    other_players: dict.map_values(caster.other_players, fn(_, player) {
+      PlayerState(..player, group_id: 1)
+    }),
   )
 }
 
@@ -602,29 +619,7 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
       at: 1000,
     )
   let id = support.pressed_id(effects: pressed)
-  let ledger =
-    list.fold(told(effects: went), held_changes.new(), fn(held, change) {
-      case change {
-        cast_state.OtherPlayerChangeStarts(
-          source:,
-          sight:,
-          spell4_id:,
-          effect:,
-          ..,
-        ) ->
-          held_changes.started(
-            held:,
-            by: ConnectionId(1),
-            unit_id: 7,
-            source:,
-            sight:,
-            spell4_id:,
-            effect:,
-          ).0
-        cast_state.OtherPlayerChangeEnds(..) -> held
-        _ -> held
-      }
-    })
+  let ledger = ledger_told(effects: went)
   let assert [from_ledger] =
     held_changes.cast_views(held: ledger, holder_unit_id: ally, now_ms: 1000)
     as "the ledger lists the one cast"
@@ -2778,75 +2773,119 @@ pub fn a_periodic_proxy_aimed_at_the_primary_target_ticks_on_the_player_the_pres
 
 // ---- the rows a node lists on the player a press names ----
 
-/// The spells a press at a player starts, as the plan holds them: the spell itself, its
-/// stages and each child a Proxy aimed at the primary target starts on that player, their
-/// children the same way.
-fn started_at_a_player(spell spell: Spell) -> List(Spell) {
-  let stages = list.map(spell.stages, fn(stage) { stage.spell })
-  let children =
-    list.filter_map(spell.effects, fn(planned) {
-      case planned.kind {
-        spell_plan.ProxyEffect(proxy: spell_plan.Proxy(
-          target: spell_plan.OnPrimaryTarget,
-          spell: child,
-          ..,
-        )) -> Ok(child)
-        _ -> Error(Nil)
-      }
-    })
-  [spell, ..list.flat_map(list.append(stages, children), started_at_a_player)]
+/// The spells a press at a player starts, from the tree of `spell` (`spell_plan.tree_started`):
+/// the spell itself, its stages and each spell a Proxy aimed at one of `aimed` starts on that
+/// player, theirs the same way. A spell a proc starts is left out: its primary target is the
+/// unit the proc names.
+fn started_at_a_player(
+  spell spell: Spell,
+  aimed aimed: List(spell_plan.ProxyTarget),
+) -> List(Spell) {
+  spell_plan.tree_started(spell:, started: fn(proxy) {
+    list.contains(aimed, proxy.target)
+  })
+  |> list.filter_map(fn(started) {
+    case started.1 {
+      spell_plan.Pressed -> Ok(started.0)
+      spell_plan.Proxied(target:) ->
+        case list.contains(aimed, target) {
+          True -> Ok(started.0)
+          False -> Error(Nil)
+        }
+      spell_plan.FromProc(..) -> Error(Nil)
+    }
+  })
 }
 
-/// What a go lists on the player the press named for the rows of `spell`: the effect ids of
-/// the rows it lists, the ones of those it tells that player as a change
-/// (`gate.modifier_applies`: a modifier, an absorb or an Interrupt Armor row) and the ones
-/// that would land behind a prerequisite the plan decides at the go.
-type OnThePlayer {
-  OnThePlayer(listed: List(Int), told: List(Int), gated: List(Int))
+/// The ledger of the ally's connection after the changes `effects` tell it, from the caster's
+/// connection 1 and its unit 7.
+fn ledger_told(effects effects: List(Effect)) -> held_changes.Held {
+  list.fold(told(effects:), held_changes.new(), fn(held, change) {
+    case change {
+      cast_state.OtherPlayerChangeStarts(
+        source:,
+        sight:,
+        spell4_id:,
+        effect:,
+        ..,
+      ) ->
+        held_changes.started(
+          held:,
+          by: ConnectionId(1),
+          unit_id: 7,
+          source:,
+          sight:,
+          spell4_id:,
+          effect:,
+        ).0
+      _ -> held
+    }
+  })
 }
 
-fn listed_and_told_on_the_player(spell spell: Spell) -> OnThePlayer {
-  let caster = esper_seeing(players: [ally])
-  let rows =
-    list.filter_map(spell.effects, fn(planned) {
-      let id = planned.effect_id.value
-      case planned.kind {
-        spell_plan.ModifierEffect(modifier:) ->
-          case
-            spell_plan.reaches_primary_target(aim: spell_plan.modifier_aim(
-              modifier:,
-            ))
-          {
-            True ->
-              Ok(#(
-                id,
-                gate.modifier_applies(
-                  row: modifier,
-                  unit_id: ally,
-                  caster:,
-                  struck: [],
-                  press_target: Some(ally),
-                ),
-                modifier.condition == Always,
-              ))
-            False -> Error(Nil)
-          }
-        spell_plan.LastingEffect(lasting: spell_plan.Lasting(aim:, ..)) ->
-          case spell_plan.reaches_primary_target(aim:) {
-            True -> Ok(#(id, False, True))
-            False -> Error(Nil)
-          }
-        _ -> Error(Nil)
-      }
-    })
-  let ids = fn(wanted: fn(#(Int, Bool, Bool)) -> Bool) {
-    list.filter(rows, wanted) |> list.map(fn(row) { row.0 })
-  }
-  OnThePlayer(
-    listed: ids(fn(_) { True }),
-    told: ids(fn(row) { row.1 && row.2 }),
-    gated: ids(fn(row) { row.1 && !row.2 }),
+/// One press of `spell` at the ally and its go, as the cast rule runs it for a caster that
+/// sees the ally: the pressed cast's id, the effect ids of the changes the go told the ally,
+/// and the view the ally's ledger lists of the cast from those tells beside the view the
+/// caster's own node lists of it on the ally (`cast_state.views`), both at the go's time.
+type GoneOnTheAlly {
+  GoneOnTheAlly(
+    told: List(Int),
+    in_ledger: List(unit_casts.CastView),
+    on_the_ally: List(unit_casts.CastView),
   )
+}
+
+fn gone_on_the_ally(spell spell: Spell) -> Result(GoneOnTheAlly, Nil) {
+  let #(state, pressed, went) =
+    pressed_and_gone(
+      spell: Spell(..spell, spell4_base_id: Spell4BaseId(3)),
+      state: cast_state.new(),
+      at_press: esper_grouped_with(players: [ally]),
+      at_go: esper_grouped_with(players: [ally]),
+      rolls: [],
+      at: 1000,
+    )
+  // A press the rule refuses has no go: it tells the ally nothing.
+  use <- bool.guard(
+    when: support.frames_of(
+      message_id: spell_cast_confirmed.message_id,
+      effects: pressed,
+    )
+      == [],
+    return: Error(Nil),
+  )
+  let id = support.pressed_id(effects: pressed)
+  Ok(GoneOnTheAlly(
+    told: list.filter_map(told(effects: went), fn(change) {
+      case change {
+        cast_state.OtherPlayerChangeStarts(source:, ..)
+          if source.cast_id == id
+        -> Ok(source.effect_id.value)
+        _ -> Error(Nil)
+      }
+    }),
+    in_ledger: list.filter(
+      held_changes.cast_views(
+        held: ledger_told(effects: went),
+        holder_unit_id: ally,
+        now_ms: 1000,
+      ),
+      fn(view) { view.cast_id == id },
+    ),
+    on_the_ally: list.filter_map(
+      list.filter(cast_state.views(cast: state, caster_unit_id: 7), fn(view) {
+        view.cast_id == id
+      }),
+      fn(view) {
+        let targets =
+          list.filter(view.targets, fn(target) { target.unit_id == ally })
+        case targets {
+          [] -> Error(Nil)
+          _ -> Ok(unit_casts.CastView(..view, targets:))
+        }
+      },
+    ),
+  ))
 }
 
 pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledger_is_told_test() -> Nil {
@@ -2870,25 +2909,43 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
     })
     |> list.map(fn(spell) { spell.id })
   assert tiers != [] as "the client's tables hold the abilities' tiers"
-  // Per spell a press starts: the rows its node lists on the named player and the changes
-  // told. A spell that tells a change lists no other row on the player, so what the ledger
-  // lists of it is what the caster's node lists. The Fluff rows (Spell4 bases 26762, 35526,
-  // 63087, 19030's child 54912 and 47675's children) are listed on the player and told as
-  // no change: the stated gap, which the ledger does not list.
-  let reached =
-    list.flat_map(tiers, fn(spell4_id) {
+  let abilities =
+    list.filter_map(tiers, fn(spell4_id) {
       case spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: []) {
-        Ok(spell) -> started_at_a_player(spell:)
+        Ok(spell) -> Ok(spell)
         Error(error) -> {
           assert spell_plan.is_unbuilt(error:)
             as "a tier the plan leaves out names an effect or rule the server does not build, never a fault of the data"
-          []
+          Error(Nil)
         }
       }
     })
-    |> list.map(listed_and_told_on_the_player)
-  let told = list.flat_map(reached, fn(spell) { spell.told }) |> list.unique
-  assert list.sort(told, int.compare)
+  // Each spell a press starts at a player, once, pressed at the ally and gone: what its go
+  // told and what the ledger and the caster's node list of it. The Fluff rows (Spell4 bases
+  // 26762, 35526, 63087, 19030's child 54912 and 47675's children) are listed on the player
+  // and told as no change: the stated gap, which the ledger does not list, so a spell that
+  // tells nothing is not compared.
+  let gone_after = fn(aimed) {
+    list.flat_map(abilities, started_at_a_player(spell: _, aimed:))
+    |> list.fold(dict.new(), fn(spells, spell) {
+      case dict.has_key(spells, spell.spell4_id.value) {
+        True -> spells
+        False -> dict.insert(spells, spell.spell4_id.value, spell)
+      }
+    })
+    |> dict.to_list
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+    |> list.filter_map(fn(spell) {
+      result.map(gone_on_the_ally(spell: spell.1), fn(gone) { #(spell.1, gone) })
+    })
+  }
+  let told_by = fn(gone: List(#(Spell, GoneOnTheAlly))) {
+    list.flat_map(gone, fn(spell) { { spell.1 }.told })
+    |> list.unique
+    |> list.sort(int.compare)
+  }
+  let at_a_player = gone_after([spell_plan.OnPrimaryTarget])
+  assert told_by(at_a_player)
     == list.sort(
       [
         // Phantasmal Armor's absorb of each of its nine tiers.
@@ -2914,20 +2971,72 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
       int.compare,
     )
     as "the changes a press at a player tells it are the 16 rows of Phantasmal Armor, its Interrupt Armor child and Bolster's absorb"
-  // Spell4Effects 216950 (Spell4 82438) would land a type 11 row on the player, behind the
-  // caster prerequisite 38543, which nothing the caster holds meets (no table starts Spell4
-  // 82431): the plan decides it at each go, so it is told no change here.
-  assert list.flat_map(reached, fn(spell) { spell.gated })
-    |> list.unique
-    == [216_950]
-    as "the one row that would land behind a prerequisite is Spell4 82438's"
-  list.each(reached, fn(spell) {
-    let changes = list.append(spell.told, spell.gated)
-    use <- bool.guard(when: changes == [], return: Nil)
-    assert list.all(spell.listed, fn(id) { list.contains(changes, id) })
+  // A press whose Proxy starts a child on each ally the area selects lands the child's rows
+  // on that ally as a press at the ally does.
+  let widened = gone_after([spell_plan.OnPrimaryTarget, spell_plan.OnEachAlly])
+  assert list.all(told_by(at_a_player), list.contains(told_by(widened), _))
+    as "a child on each ally adds to the changes told and takes none away"
+  assert list.contains(told_by(widened), 206_315)
+    as "Runes of Protection's child 78708 tells its absorb 206315 to the ally"
+  assert list.contains(told_by(widened), 199_194)
+    as "Barrier's child 76767 tells its Interrupt Armor row 199194 to the ally"
+  list.each(widened, fn(entry) {
+    let #(spell, gone) = entry
+    use <- bool.guard(when: gone.told == [], return: Nil)
+    let why = "Spell4 " <> int.to_string(spell.spell4_id.value)
+    // The ally starts a cast with a 0x7ff of root = the spell and parent 0, which the
+    // client reads only for a threshold cast (`opcode.0x7ff.root_parent`: cast methods 2, 6
+    // and 7), and holds one go (`opcode.0x7f4`).
+    assert spell.method == spell_plan.Normal
+      as { why <> " tells a change and is a Normal cast" }
+    assert spell_plan.go_times_ms(spell:) == [0]
+      as { why <> " tells a change and has the one go" }
+    // What the caster's node lists on the player beside the changes told are the spell's Fluff
+    // rows (the plan's `LastingEffect`) and its heal rows (`HealEffect`: Heal, and HealShields,
+    // type 118), which the go lists on the player and tells as no change or as a heal: the
+    // stated gaps. Every other row the node lists is told, so the ledger lists of the cast
+    // what the caster's node lists.
+    let not_changes =
+      list.filter_map(spell.effects, fn(planned) {
+        case
+          spell_plan.as_lasting(kind: planned.kind),
+          spell_plan.as_heal(kind: planned.kind)
+        {
+          Error(Nil), Error(Nil) -> Error(Nil)
+          _, _ -> Ok(planned.effect_id.value)
+        }
+      })
+    let listed =
+      list.flat_map(gone.on_the_ally, fn(view) {
+        list.flat_map(view.targets, fn(target) {
+          list.map(target.effects, fn(effect) { effect.effect_id.value })
+        })
+      })
+    assert list.all(listed, fn(id) {
+      list.contains(gone.told, id) || list.contains(not_changes, id)
+    })
       as {
-        "a spell that tells a change lists no other row on the player: "
-        <> string.join(list.map(spell.listed, int.to_string), ", ")
+        why
+        <> ": the node lists on the ally only the rows told, Fluff rows and heal rows"
+      }
+    let told_only =
+      list.map(gone.on_the_ally, fn(view) {
+        unit_casts.CastView(
+          ..view,
+          targets: list.map(view.targets, fn(target) {
+            unit_casts.ViewTarget(
+              ..target,
+              effects: list.filter(target.effects, fn(effect) {
+                list.contains(gone.told, effect.effect_id.value)
+              }),
+            )
+          }),
+        )
+      })
+    assert gone.in_ledger == told_only
+      as {
+        why
+        <> ": the ledger's view of the cast is the caster's node on the ally, bar the Fluff and heal rows"
       }
   })
 }
