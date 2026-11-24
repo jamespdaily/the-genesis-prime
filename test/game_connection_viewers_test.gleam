@@ -2094,8 +2094,8 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
     )),
     game_connection_support.for_stay(
       stay: game_connection_support.own_stay(),
-      sent: client_connection.SentByCaster(
-        change: held_changes.PlayerChangeStarts(
+      sent: client_connection.SentByPlayer(
+        client_connection.Change(change: held_changes.PlayerChangeStarts(
           from: ConnectionId(3),
           from_stay: game_connection_support.viewer_stay(3),
           source: kept_source,
@@ -2107,7 +2107,7 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
             starts_ms: 1000,
             ends: unit_casts.EndsAt(ms: 11_000),
           ),
-        ),
+        )),
       ),
     ),
     from_unit(
