@@ -312,41 +312,16 @@ fn short_name(module: String) -> String {
 /// the literal 0.
 fn unbounded_receives(module: glance.Module) -> List(#(Int, String)) {
   let looks =
-    syntax.expressions(module)
-    |> list.filter_map(fn(expression) {
-      case expression {
-        glance.Call(function:, arguments:, ..) ->
-          Ok(#(syntax.span_of(function), arguments))
-        glance.FnCapture(function:, arguments_before:, arguments_after:, ..) ->
-          Ok(#(
-            syntax.span_of(function),
-            list.append(arguments_before, arguments_after),
-          ))
-        glance.Int(..)
-        | glance.Float(..)
-        | glance.String(..)
-        | glance.Variable(..)
-        | glance.NegateInt(..)
-        | glance.NegateBool(..)
-        | glance.Block(..)
-        | glance.Panic(..)
-        | glance.Todo(..)
-        | glance.Tuple(..)
-        | glance.List(..)
-        | glance.Fn(..)
-        | glance.RecordUpdate(..)
-        | glance.FieldAccess(..)
-        | glance.TupleIndex(..)
-        | glance.BitString(..)
-        | glance.Case(..)
-        | glance.BinaryOperator(..)
-        | glance.Echo(..) -> Error(Nil)
-      }
-    })
+    syntax.calls(module)
     |> list.filter_map(fn(call) {
-      let #(function, arguments) = call
-      case bound_of(arguments) {
-        Some(glance.Int(value: "0", ..)) -> Ok(function.start)
+      case
+        syntax.argument(
+          call.arguments,
+          label: "within",
+          position: syntax.LastArgument,
+        )
+      {
+        Some(glance.Int(value: "0", ..)) -> Ok(call.function.start)
         Some(_) | None -> Error(Nil)
       }
     })
@@ -363,26 +338,6 @@ fn unbounded_receives(module: glance.Module) -> List(#(Int, String)) {
       "names real time (a receive whose bound is not the literal 0)",
     )
   })
-}
-
-/// The bound a receive is given: the argument labelled `within`, or the last.
-fn bound_of(
-  arguments: List(glance.Field(glance.Expression)),
-) -> option.Option(glance.Expression) {
-  let labelled =
-    list.find_map(arguments, fn(argument) {
-      case argument {
-        glance.LabelledField(label: "within", item:, ..) -> Ok(item)
-        glance.LabelledField(..)
-        | glance.UnlabelledField(..)
-        | glance.ShorthandField(..) -> Error(Nil)
-      }
-    })
-  case labelled, list.last(arguments) {
-    Ok(item), _ -> Some(item)
-    Error(Nil), Ok(glance.UnlabelledField(item)) -> Some(item)
-    Error(Nil), Ok(_) | Error(Nil), Error(Nil) -> None
-  }
 }
 
 /// The offset of each reference to an entry point of a support module, with its

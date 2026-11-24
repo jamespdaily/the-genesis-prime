@@ -5,6 +5,7 @@ import code_rule/source.{type SourceFile}
 import database_support
 import glance.{type Expression, type Statement}
 import gleam/bit_array
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
@@ -372,30 +373,52 @@ fn tags_of_call(expression: Expression) -> List(String) {
 
 /// The line, counted from 1, that holds the byte at the offset.
 pub fn line_of(text text: String, byte_offset byte_offset: Int) -> Int {
-  let assert Ok(before) = bit_array.slice(<<text:utf8>>, 0, byte_offset)
-    as "the offset is outside the text"
-  1 + count_newlines(before, 0)
+  let assert [line] = lines_of(text:, byte_offsets: [byte_offset])
+  line
 }
 
-fn count_newlines(bytes: BitArray, count: Int) -> Int {
-  case bytes {
-    <<10, rest:bits>> -> count_newlines(rest, count + 1)
-    <<_, rest:bits>> -> count_newlines(rest, count)
-    _ -> count
-  }
-}
-
-/// The line of each byte offset, counted from 1, for offsets in one text: the
-/// text is read once, so many offsets cost no more than one `line_of` of the
-/// last of them. The lines come in the order of the offsets given.
+/// The line of each byte offset, counted from 1, in the order the offsets are
+/// given. A newline byte belongs to the line it ends. The text is read once
+/// and the offsets are sorted and walked once along the text's newlines, so
+/// the cost is the text's length plus sorting the offsets. An offset outside
+/// the text stops the test.
 pub fn lines_of(
   text text: String,
   byte_offsets byte_offsets: List(Int),
 ) -> List(Int) {
-  let newlines = newline_offsets(bytes: <<text:utf8>>, offset: 0, found: [])
-  list.map(byte_offsets, fn(offset) {
-    1 + list.count(newlines, fn(newline) { newline < offset })
-  })
+  let bytes = <<text:utf8>>
+  let size = bit_array.byte_size(bytes)
+  assert list.all(byte_offsets, fn(offset) { offset >= 0 && offset <= size })
+    as "the offset is outside the text"
+  let newlines = newline_offsets(bytes:, offset: 0, found: [])
+  byte_offsets
+  |> list.index_map(fn(offset, index) { #(offset, index) })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> lines_along(newlines:, line: 1, found: [])
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.map(fn(entry) { entry.1 })
+}
+
+/// The line of each `#(offset, index)`, offsets ascending, as `#(index, line)`:
+/// `newlines` are the ascending offsets of the newline bytes not yet passed.
+fn lines_along(
+  offsets: List(#(Int, Int)),
+  newlines newlines: List(Int),
+  line line: Int,
+  found found: List(#(Int, Int)),
+) -> List(#(Int, Int)) {
+  case offsets, newlines {
+    [], _ -> found
+    [#(offset, index), ..rest], [newline, ..later] if newline < offset ->
+      lines_along(
+        [#(offset, index), ..rest],
+        newlines: later,
+        line: line + 1,
+        found:,
+      )
+    [#(_, index), ..rest], _ ->
+      lines_along(rest, newlines:, line:, found: [#(index, line), ..found])
+  }
 }
 
 fn newline_offsets(
@@ -408,6 +431,84 @@ fn newline_offsets(
       newline_offsets(bytes: rest, offset: offset + 1, found: [offset, ..found])
     <<_, rest:bits>> -> newline_offsets(bytes: rest, offset: offset + 1, found:)
     _ -> list.reverse(found)
+  }
+}
+
+/// A call in a module: where its function is written, and its arguments. A
+/// capture such as `f(1, _)` is a call whose arguments are those before and
+/// after the hole.
+pub type Call {
+  Call(function: glance.Span, arguments: List(glance.Field(Expression)))
+}
+
+/// Every call and capture in the module's functions, in the order
+/// `expressions` finds them.
+pub fn calls(module: glance.Module) -> List(Call) {
+  list.filter_map(expressions(module), fn(expression) {
+    case expression {
+      glance.Call(function:, arguments:, ..) ->
+        Ok(Call(function: span_of(function), arguments:))
+      glance.FnCapture(function:, arguments_before:, arguments_after:, ..) ->
+        Ok(Call(
+          function: span_of(function),
+          arguments: list.append(arguments_before, arguments_after),
+        ))
+      glance.Int(..)
+      | glance.Float(..)
+      | glance.String(..)
+      | glance.Variable(..)
+      | glance.NegateInt(..)
+      | glance.NegateBool(..)
+      | glance.Block(..)
+      | glance.Panic(..)
+      | glance.Todo(..)
+      | glance.Tuple(..)
+      | glance.List(..)
+      | glance.Fn(..)
+      | glance.RecordUpdate(..)
+      | glance.FieldAccess(..)
+      | glance.TupleIndex(..)
+      | glance.BitString(..)
+      | glance.Case(..)
+      | glance.BinaryOperator(..)
+      | glance.Echo(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Which unlabelled argument stands for a value a call may give by label.
+pub type Position {
+  FirstArgument
+  LastArgument
+}
+
+/// The expression a call gives for a value: the argument labelled `label`, or
+/// else the first or last argument of the call when that one has no label. A
+/// punned `label:` has no expression of its own, and none is given for it.
+pub fn argument(
+  arguments: List(glance.Field(Expression)),
+  label label: String,
+  position position: Position,
+) -> Option(Expression) {
+  let labelled =
+    list.find_map(arguments, fn(argument) {
+      case argument {
+        glance.LabelledField(label: found, item:, ..) if found == label ->
+          Ok(Some(item))
+        glance.ShorthandField(label: found, ..) if found == label -> Ok(None)
+        glance.LabelledField(..)
+        | glance.ShorthandField(..)
+        | glance.UnlabelledField(..) -> Error(Nil)
+      }
+    })
+  let positional = case position {
+    FirstArgument -> list.first(arguments)
+    LastArgument -> list.last(arguments)
+  }
+  case labelled, positional {
+    Ok(found), _ -> found
+    Error(Nil), Ok(glance.UnlabelledField(item)) -> Some(item)
+    Error(Nil), Ok(_) | Error(Nil), Error(Nil) -> None
   }
 }
 
