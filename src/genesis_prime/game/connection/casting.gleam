@@ -1017,7 +1017,8 @@ pub fn with_cast(
 
 /// The spell the player's standing casts should hold from the loadout's innate passive, as
 /// its plan, and a warning when the plans lack its Spell4Base, which leaves it out of the
-/// list.
+/// list. The warning is also written at each regear, not only at a join; it cannot be
+/// reached, since the load fails without a plan for every class's passive.
 pub fn standing_wanted(
   entered entered: world_entry.Entered,
   plans plans: spell_plan.Plans,

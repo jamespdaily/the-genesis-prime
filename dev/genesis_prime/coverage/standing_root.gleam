@@ -14,7 +14,6 @@
 ////   as a later ability does, and is listed with that row.
 
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/equip_spell
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/table/loader/store
@@ -29,7 +28,7 @@ import gleam/string
 /// What the measure found.
 pub type Report {
   Report(
-    /// How many equip spell roots the client's items name.
+    /// How many equip spell roots the client's items name: the planned ones and the left-out ones.
     roots: Int,
     /// How many of them the plans hold.
     planned: Int,
@@ -53,7 +52,7 @@ pub fn measure(
   let place_of =
     effect_row_read.places(tables:, effects: spell4_effects.all(tables))
   Report(
-    roots: list.length(equip_spell.roots(tables:)),
+    roots: dict.size(planned) + list.length(left_out),
     planned: dict.size(planned),
     left_out: list.map(left_out, fn(one) {
       #(one.spell4_id, spell_plan.describe(error: one.error))
