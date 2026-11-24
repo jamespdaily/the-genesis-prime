@@ -2926,20 +2926,7 @@ fn kick_changing_the_areas_units(
           }),
         ),
       ]),
-      #("Spell4Effects", 140_383, [
-        #("effectType", Integer(11)),
-        #("delayTime", Integer(0)),
-        #("durationTime", Integer(5000)),
-        #("targetFlags", Integer(4)),
-        #("dataBits00", Integer(100)),
-        #("dataBits01", Integer(1)),
-        #("dataBits02", Integer(1_065_353_216)),
-        #("dataBits03", Integer(1_065_353_216)),
-        #("parameterType00", Integer(0)),
-        #("parameterType01", Integer(0)),
-        #("parameterType02", Integer(0)),
-        #("parameterType03", Integer(0)),
-      ]),
+      #("Spell4Effects", 140_383, fixture_tables.area_modifier_cells()),
       #("Spell4Effects", 140_382, [#("targetFlags", Integer(1))]),
     ])
     as "the edits name rows and columns the fixture holds"

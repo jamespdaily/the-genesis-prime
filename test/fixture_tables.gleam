@@ -620,6 +620,27 @@ pub fn change_all(
   })
 }
 
+/// The cells that make a Spell4Effects row a UnitPropertyModifier of the units its area selects
+/// as Energy Auger's row 217926 is: property 100, 5000 ms from the go with no delay, targetFlags 4
+/// (the area alone), no parameter types. The edits stand in for no client row: they give a test a
+/// phase that holds that change and no heal or Proxy in a spell of the fixture.
+pub fn area_modifier_cells() -> List(#(String, Cell)) {
+  [
+    #("effectType", planted_table.Integer(11)),
+    #("delayTime", planted_table.Integer(0)),
+    #("durationTime", planted_table.Integer(5000)),
+    #("targetFlags", planted_table.Integer(4)),
+    #("dataBits00", planted_table.Integer(100)),
+    #("dataBits01", planted_table.Integer(1)),
+    #("dataBits02", planted_table.Integer(1_065_353_216)),
+    #("dataBits03", planted_table.Integer(1_065_353_216)),
+    #("parameterType00", planted_table.Integer(0)),
+    #("parameterType01", planted_table.Integer(0)),
+    #("parameterType02", planted_table.Integer(0)),
+    #("parameterType03", planted_table.Integer(0)),
+  ]
+}
+
 /// Runs the body on the tables with several rows changed, each edit a table, a row id and
 /// the cells to replace, applied in order and built on the body's heap; the shared tables
 /// are not touched. Stops the test when an edit is refused (`change_all`).

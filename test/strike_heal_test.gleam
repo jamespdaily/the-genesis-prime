@@ -432,19 +432,7 @@ fn emission_proxying(
 fn emission_changing(count count: Int) -> spell_area.Areas {
   fixture_tables.changes(
     edits: [
-      #("Spell4Effects", 141_384, [
-        #("effectType", planted_table.Integer(11)),
-        #("targetFlags", planted_table.Integer(4)),
-        #("durationTime", planted_table.Integer(5000)),
-        #("dataBits00", planted_table.Integer(100)),
-        #("dataBits01", planted_table.Integer(1)),
-        #("dataBits02", planted_table.Integer(1_065_353_216)),
-        #("dataBits03", planted_table.Integer(1_065_353_216)),
-        #("parameterType00", planted_table.Integer(0)),
-        #("parameterType01", planted_table.Integer(0)),
-        #("parameterType02", planted_table.Integer(0)),
-        #("parameterType03", planted_table.Integer(0)),
-      ]),
+      #("Spell4Effects", 141_384, fixture_tables.area_modifier_cells()),
       #("Spell4AoeTargetConstraints", 662, [
         #("targetCount", planted_table.Integer(count)),
       ]),
