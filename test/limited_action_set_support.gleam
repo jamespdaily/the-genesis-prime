@@ -113,6 +113,12 @@ pub fn body_with(
   )
 }
 
+/// The body of a 0xB1 that saves the sitting's first bar (`ids_a`) in set 0 with these tier
+/// changes (Spell4Base, tier) and no AMP.
+pub fn tiering(changes: List(#(Int, Int))) -> BitArray {
+  body_with(ids: ids_a, set: 0, tier_changes: changes, amp_ids: [])
+}
+
 /// The player of the Spellslinger at a level: alive, out of combat, holding the book the
 /// level gives.
 pub fn player(

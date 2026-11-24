@@ -246,16 +246,6 @@ const spellslinger_innate = 31_213
 /// spell4BaseIdBaseSpell=26543`: 42352 and 51989).
 const base_with_a_missing_tier = 26_543
 
-/// The sitting's first bar with these tier changes, set 0.
-fn tiering(changes: List(#(Int, Int))) -> BitArray {
-  support.body_with(
-    ids: support.ids_a,
-    set: 0,
-    tier_changes: changes,
-    amp_ids: [],
-  )
-}
-
 /// A row of the accepted table: the level, the bodies sent in turn from no saved set, the
 /// ids the bar holds after them, the tiers above 1 the set holds (Spell4Base, tier) and the
 /// 0x0169 (points to spend, total) the last answer holds.
@@ -278,7 +268,7 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
     [
       Accepted(
         10,
-        [tiering([#(quick_draw, 2)])],
+        [support.tiering([#(quick_draw, 2)])],
         support.ids_a,
         [#(quick_draw, 2)],
         #(0, 1),
@@ -286,7 +276,7 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
       ),
       Accepted(
         25,
-        [tiering([#(quick_draw, 5), #(ignite, 3)])],
+        [support.tiering([#(quick_draw, 5), #(ignite, 3)])],
         support.ids_a,
         [#(ignite, 3), #(quick_draw, 5)],
         #(6, 16),
@@ -294,7 +284,7 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
       ),
       Accepted(
         15,
-        [tiering([#(quick_draw, 3)])],
+        [support.tiering([#(quick_draw, 3)])],
         support.ids_a,
         [#(quick_draw, 3)],
         #(4, 6),
@@ -303,8 +293,8 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
       Accepted(
         25,
         [
-          tiering([#(quick_draw, 5), #(charged_shot, 5)]),
-          tiering([#(quick_draw, 1), #(ignite, 5)]),
+          support.tiering([#(quick_draw, 5), #(charged_shot, 5)]),
+          support.tiering([#(quick_draw, 1), #(ignite, 5)]),
         ],
         support.ids_a,
         [#(charged_shot, 5), #(ignite, 5)],
@@ -313,7 +303,10 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
       ),
       Accepted(
         10,
-        [tiering([#(quick_draw, 2)]), tiering([#(quick_draw, 2)])],
+        [
+          support.tiering([#(quick_draw, 2)]),
+          support.tiering([#(quick_draw, 2)]),
+        ],
         support.ids_a,
         [#(quick_draw, 2)],
         #(0, 1),
@@ -322,7 +315,7 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
       Accepted(
         10,
         [
-          tiering([#(quick_draw, 2)]),
+          support.tiering([#(quick_draw, 2)]),
           support.body(
             ids: [0, 20_684, 20_325, 20_718, 0, 0, 0, 0, 0, 0, 0, 0],
             set: 0,
@@ -335,7 +328,7 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
       ),
       Accepted(
         15,
-        [tiering([#(charged_shot_alternate, 3)])],
+        [support.tiering([#(charged_shot_alternate, 3)])],
         support.ids_a,
         [#(charged_shot_alternate, 3)],
         #(6, 6),
@@ -478,7 +471,7 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
     Refused(4, False, False, support.body(ids:, set: 0), result, why)
   }
   let refuse_tiers = fn(why, level, changes, result) {
-    Refused(level, False, False, tiering(changes), result, why)
+    Refused(level, False, False, support.tiering(changes), result, why)
   }
   list.each(
     [
@@ -707,7 +700,7 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     support.taken(
       saved: limited_action_set.none(),
       level: 10,
-      body: tiering([#(quick_draw, 2)]),
+      body: support.tiering([#(quick_draw, 2)]),
     )
   let frames = support.frames_of(effects: accepted)
   assert list.map(frames, fn(frame) { frame.message_id })
@@ -798,7 +791,7 @@ pub fn amp_ids_in_a_save_are_dropped_and_the_bar_is_kept_test() -> Nil {
     support.taken(
       saved: limited_action_set.none(),
       level: 15,
-      body: tiering([#(charged_shot, 2), #(quick_draw, 3)]),
+      body: support.tiering([#(charged_shot, 2), #(quick_draw, 3)]),
     )
   assert support.frames_of(effects:) == support.frames_of(effects: without_amps)
     as "the AMP ids change nothing in the answer"

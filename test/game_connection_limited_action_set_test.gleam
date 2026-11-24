@@ -104,22 +104,13 @@ fn raised_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
   |> list.map(fn(entry) { #(entry.spell4_base_id, entry.tier) })
 }
 
-/// The sitting's first bar with these tier changes, set 0.
-fn tiering(changes: List(#(Int, Int))) -> BitArray {
-  limited.body_with(
-    ids: limited.ids_a,
-    set: 0,
-    tier_changes: changes,
-    amp_ids: [],
-  )
-}
-
 pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_cannot_cover_is_refused_on_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   // A Spellslinger of level 10 has 1 point (XpPerLevel). Quick Draw (27638) to tier 2 costs
   // 1 and Charged Shot (20684) to tier 2 costs 1 (Spell4 abilityPointCost).
   let state = in_world_at_level(level: 10)
-  let #(state, taken, frames) = sent(state:, body: tiering([#(27_638, 2)]))
+  let #(state, taken, frames) =
+    sent(state:, body: limited.tiering([#(27_638, 2)]))
   assert list.map(frames, fn(frame) { frame.message_id })
     == [0x019D, 0x01A0, 0x0169, 0x00B2]
     as "opcode.0x169 before 0xB2, which clears the client's own count"
@@ -129,7 +120,8 @@ pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_canno
   assert ability_points_support.points_in(frames:) == [#(0, 1)]
     as "the one point of level 10 is spent"
   assert support.asked(taken) == None as "nothing waits on the store"
-  let #(state, taken, frames) = sent(state:, body: tiering([#(20_684, 2)]))
+  let #(state, taken, frames) =
+    sent(state:, body: limited.tiering([#(20_684, 2)]))
   assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
     as "a refusal is the held set and 0xB2 only: no 0x01A0 and no 0x0169"
   assert limited.the_action_set(frames:).result == 42
@@ -137,7 +129,7 @@ pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_canno
   assert limited.the_answer_bit(frames:) == 0
   assert !support.stops(taken)
   let #(_, _, frames) =
-    sent(state:, body: tiering([#(27_638, 2), #(20_684, 1)]))
+    sent(state:, body: limited.tiering([#(27_638, 2), #(20_684, 1)]))
   assert limited.the_action_set(frames:).result == 1
     as "the held tier and a tier 1 are accepted"
   assert raised_in(frames:) == [#(27_638, 2)]
