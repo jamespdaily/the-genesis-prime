@@ -32,10 +32,12 @@
 import cast_support
 import client_tables
 import fixture_tables
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
+import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_plan.{
   type ProcReading, type Spell, Always, AtHolder, AtOtherUnit, Died,
   EnteredStealth, ForLife, InGroup, InWindow, Kills, LandsCritical,
@@ -43,6 +45,7 @@ import genesis_prime/game/spell_plan.{
   OneSpell, ProcIsLeftOut, ProcIsRead, ProcKindNotRead, ProcNotRead, ProcReading,
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/int
@@ -1025,45 +1028,147 @@ pub fn the_proc_rows_of_a_planned_tree_held_by_another_unit_are_read_for_an_ally
   })
 }
 
-pub fn no_proc_row_of_a_read_kind_fails_the_load_and_each_is_read_or_names_its_reason_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
-  let procs =
-    spell4_effects.all(client_tables.shared())
-    |> list.filter(fn(effect) { effect.effect_type == 14 })
-  let reads = fn(kinds: List(Int)) {
-    list.filter(procs, fn(effect) { list.contains(kinds, effect.data_bits00) })
-    |> list.map(fn(effect) {
-      #(effect, spell_plan.proc_read(spell4_id: effect.spell_id, effect:))
-    })
+/// Whether a refusal of a Proc row is the one a row meets in its place: a caster's row whose
+/// one-spell filter (dataBits07 1, dataBits08) names a Spell4 the tables lack, which fails the
+/// plan of a spell that holds it (`proc_filter_of`). A row of a kind the server does not read
+/// is no refusal: it reads as left out (`ProcOfAnotherKind`).
+fn is_a_filter_naming_a_missing_spell4(
+  tables tables: table_store.Tables,
+  effect effect: Spell4Effects,
+  error error: spell_plan.PlanError,
+) -> Bool {
+  case error {
+    spell_plan.NoRow(table: "Spell4", id:) ->
+      effect.target_flags == 1
+      && effect.data_bits07 == 1
+      && effect.data_bits08 == id
+      && spell4.get(tables:, id: Spell4Id(id)) == Error(Nil)
+    _ -> False
   }
-  let kinds = [12, 13, 145, 1, 20, 147, 217, 218, 44, 0, 16, 146, 51, 115]
-  let read = reads(kinds)
-  assert read != [] as "the client's tables hold rows of the read kinds"
+}
+
+pub fn no_proc_row_fails_the_load_unless_its_kind_is_not_read_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let read = spell_tables.proc_rows_read(tables:)
+  assert read != [] as "the client's tables hold Proc rows"
   list.each(read, fn(found) {
-    let #(effect, result) = found
-    let id = int.to_string(effect.id)
-    case result {
-      Ok(ProcIsRead(..)) | Ok(ProcIsLeftOut(..)) -> Nil
-      Error(error) ->
-        panic as {
+    let #(effect, reading) = found
+    let refusal = case reading {
+      Ok(_) -> []
+      Error(error) -> [error]
+    }
+    list.each(refusal, fn(error) {
+      assert is_a_filter_naming_a_missing_spell4(tables:, effect:, error:)
+        as {
           "the Proc row "
-          <> id
-          <> " of a read kind fails the load: "
+          <> int.to_string(effect.id)
+          <> " fails the load: "
           <> spell_plan.describe(error:)
         }
-    }
+    })
   })
 }
 
-pub fn the_effect_kind_reads_a_proc_row_aimed_at_the_caster_only_test() -> Nil {
-  use <- owned_test.run(5000)
+pub fn each_ally_proc_row_the_plan_reads_waits_for_a_trigger_a_creatures_blow_raises_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let spell =
+    event_proc.EventSpell(spell4_id: Spell4Id(5649), groups: [], school: 1)
+  let blows = [
+    cast_proc.BlowDeflected(striker: 31, spell:),
+    ..list.flat_map([True, False], fn(lowered) {
+      list.flat_map([True, False], fn(critical) {
+        list.map([True, False], fn(shield_depleted) {
+          cast_proc.BlowLanded(
+            striker: 31,
+            spell:,
+            lowered:,
+            critical:,
+            shield_depleted:,
+          )
+        })
+      })
+    })
+  ]
+  let raised =
+    list.flat_map(blows, fn(blow) { cast_proc.blow_events(blow:) })
+    |> list.map(fn(event) { event.trigger })
+  let ally_rows_read =
+    spell_tables.proc_rows_read(tables: client_tables.shared())
+    |> list.filter_map(fn(found) {
+      case found {
+        #(effect, Ok(spell_plan.Applied(spell_plan.ReadProc(reading:, ..))))
+          if effect.target_flags == 2 || effect.target_flags == 4
+        -> Ok(#(effect, reading))
+        _ -> Error(Nil)
+      }
+    })
+  assert ally_rows_read != [] as "the plan reads Proc rows an ally holds"
+  list.each(ally_rows_read, fn(found) {
+    let #(effect, reading) = found
+    assert list.contains(raised, reading.trigger)
+      as {
+        "the Proc row "
+        <> int.to_string(effect.id)
+        <> " is held by an ally and waits for kind "
+        <> int.to_string(effect.data_bits00)
+        <> ", which no blow of a creature on the ally raises"
+      }
+  })
+}
+
+pub fn the_effect_kind_reads_a_proc_row_aimed_at_the_caster_the_primary_target_or_the_area_alone_test() -> Nil {
+  use <- owned_test.run(120_000)
   assert effect_kind.is_read(effect_type: 14)
-    as "type 14 is handled, for its rows aimed at the caster"
-  assert effect_kind.is_row_read(effect_type: 14, target_flags: 1)
-  assert !effect_kind.is_row_read(effect_type: 14, target_flags: 2)
-    as "a row aimed only at another unit is not read (Spell4Effects.targetFlags)"
+    as "type 14 is handled, for its rows aimed at the caster, the primary target or the area"
   assert effect_kind.kind_of(effect_type: 14) == effect_kind.Proc
+  // The plan's own reading of a row's holder: a row left out as held by another unit has
+  // targetFlags no holder is named for.
+  list.each([0, 1, 2, 3, 4, 5, 6, 7], fn(flags) {
+    let plan_holds = case
+      spell_plan.proc_read(
+        spell4_id: holder,
+        effect: timed(id: 1, flags:, kind: 16),
+      )
+    {
+      Ok(ProcIsLeftOut(why: spell_plan.ProcHeldByAnotherUnit(..))) -> False
+      Ok(_) -> True
+      Error(error) -> panic as spell_plan.describe(error:)
+    }
+    assert effect_kind.is_row_read(effect_type: 14, target_flags: flags)
+      == plan_holds
+      as {
+        "the effect kind and the plan agree on who holds a Proc row of targetFlags "
+        <> int.to_string(flags)
+      }
+    assert plan_holds == list.contains([1, 2, 4], flags)
+      as "Spell4Effects.targetFlags: 1 the caster, 2 the primary target, 4 the area's allies hold a Proc row; 3, 5, 6 and 7 name several units at once"
+  })
+  use <- unitest.guard(client_tables.present())
+  let effects = spell4_effects.all(client_tables.shared())
+  let activating =
+    list.filter(effects, fn(effect) {
+      effect_kind.kind_of(effect_type: effect.effect_type)
+      == effect_kind.Activate
+    })
+    |> list.map(fn(effect) { effect.spell_id })
+    |> set.from_list
+  effects
+  |> list.filter(fn(effect) {
+    effect.effect_type == 14 && list.contains([2, 4], effect.target_flags)
+  })
+  |> list.each(fn(effect) {
+    assert !set.contains(activating, effect.spell_id)
+      as {
+        "the Proc row "
+        <> int.to_string(effect.id)
+        <> " aimed at another unit sits in an activate spell, which the activation would refuse"
+      }
+  })
 }
 
 pub fn a_spell_refuses_the_life_its_caster_condition_names_test() -> Nil {

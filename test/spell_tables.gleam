@@ -587,6 +587,34 @@ pub fn read_row(
   reading
 }
 
+/// Every Proc row (effect type 14) of these tables with what the plan makes of it in the
+/// place its spell gives it (`spell_plan.read_row`, `effect_row_read.places`), in table order.
+pub fn proc_rows_read(
+  tables tables: table_store.Tables,
+) -> List(
+  #(
+    spell4_effects.Spell4Effects,
+    Result(spell_plan.RowReading, spell_plan.PlanError),
+  ),
+) {
+  let effects = spell4_effects.all(tables)
+  let place_of = effect_row_read.places(tables:, effects:)
+  let sources = spell_plan.sources_of(tables:)
+  effects
+  |> list.filter(fn(effect) { effect.effect_type == 14 })
+  |> list.map(fn(effect) {
+    #(
+      effect,
+      spell_plan.read_row(
+        tables:,
+        sources:,
+        place: place_of(effect.spell_id),
+        effect:,
+      ),
+    )
+  })
+}
+
 /// The kinds a reading plans, in order: nothing for a reading that plans no effect of a
 /// spell's list (a Proc, a Proxy, a row the area or the activation reads, a row left out).
 pub fn planned_kinds(
