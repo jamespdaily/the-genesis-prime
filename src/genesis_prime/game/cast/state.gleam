@@ -892,8 +892,8 @@ pub type Role {
   Base(ability: Spell, bag_spell: Spell4Id)
   /// The stage at `index` of the ability's open threshold.
   Stage(ability: Spell, index: Int)
-  /// A class's innate passive, which no press made: no threshold is touched, no
-  /// global cooldown starts and it is never the current cast.
+  /// A standing spell (genesis_prime/game/cast `standing_changed`), which no press made: no
+  /// threshold is touched, no global cooldown starts and it is never the current cast.
   Passive
   /// The activate cast of a unit the player right-clicked: no threshold is touched.
   Activation(activating: Activating, interaction: Interaction)
@@ -1191,9 +1191,9 @@ pub type State {
     /// they happened: each input records its own (`cast.settled`), and the connection draws what
     /// they need (`cast_proc.proc_draws_needed`) and has them matched (`cast.procs_fire`).
     pending: List(proc.Event),
-    /// The id of the cast of the player's innate passive, once `cast.passive_started` has
-    /// started it: the one cast a death leaves.
-    passive: Option(Int),
+    /// The casts of the player's standing spells, by cast id, each with the Spell4 id of its
+    /// spell, once `cast.standing_changed` has started them: the casts a death leaves.
+    standing: Dict(Int, Int),
     /// The persistence columns already logged as not read or not checked on this
     /// connection, by Spell4 id and result (282 or 283): one debug line for each.
     persistence_logged: Set(#(Int, Int)),
@@ -1273,7 +1273,7 @@ pub fn new() -> State {
     stealth: dict.new(),
     procs: dict.new(),
     pending: [],
-    passive: None,
+    standing: dict.new(),
     persistence_logged: set.new(),
     on_units: dict.new(),
     restrictions: dict.new(),
@@ -1716,16 +1716,22 @@ fn audiences_changed(
   )
 }
 
+/// Whether the cast `cast_id` is one of the player's standing spells' casts.
+pub fn is_standing(cast cast: State, cast_id cast_id: Int) -> Bool {
+  dict.has_key(cast.standing, cast_id)
+}
+
 /// The unit ids of nodes, in unit id order.
 pub fn sorted_units(nodes: List(#(Int, lasting.Node))) -> List(Int) {
   list.map(nodes, fn(entry) { entry.0 }) |> list.sort(int.compare)
 }
 
-/// What a death leaves of the innate passive: its live or lingering cast, the timers
+/// What a death leaves of a standing spell: its live or lingering cast, the timers
 /// that belong to its tree, and the stealth sources and the procs it holds.
 pub type Aside {
   Aside(
     id: Int,
+    spell4_id: Int,
     live: Option(Live),
     lingering: Option(Lingering),
     timers: List(#(TimerId, Due)),

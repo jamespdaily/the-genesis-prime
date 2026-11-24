@@ -162,7 +162,7 @@ fn requested(effect: world_entry.Effect) -> Result(WorldRequest, Nil) {
     | world_entry.AskMap(..)
     | world_entry.WatchMap(..)
     | world_entry.Life(..)
-    | world_entry.StartPassive(..)
+    | world_entry.StartStanding
     | world_entry.Warn(..) -> Error(Nil)
   }
 }

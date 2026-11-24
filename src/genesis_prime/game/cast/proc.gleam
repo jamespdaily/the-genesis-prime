@@ -25,7 +25,7 @@
 ////   Proc row of its phase whose gate passes in the caster's target info and holds the caster's node
 ////   until the row's life ends, as a Stealth row does (`Spell4Effects.effectType.14.lifetime`), and
 ////   adds its source; a source leaves where a stealth source leaves (`effects_ended`), at the
-////   caster's death but for the innate passive's, and at leaving. Each input ends in `cast.settled`,
+////   caster's death but for the standing spells', and at leaving. Each input ends in `cast.settled`,
 ////   which records its events as pending (`State.pending`), in order: the input's own (`Died` for
 ////   `cast.died`, `LeftCombat` for `cast.combat_left`, and the hits of the strike round a go or a tick
 ////   settles, `hit_events`), a `LandsHeal` for each Heal change its effects start on the caster,
@@ -53,15 +53,15 @@
 ////   inputs of their own, so a fire's events are matched in a later step and no proc cascades inside
 ////   one. A spell whose caster condition refuses the caster's life (row 1, mask 225, refuses a dead
 ////   caster: `Spell4.spell4ConditionsIdCaster`, `cast.dead_player`) does not fire and records no
-////   fire, with a debug line. A death leaves the passive's procs with the passive and ends every
+////   fire, with a debug line. A death leaves a standing spell's procs with its cast and ends every
 ////   other cast before the procs are matched, so a `Died` proc of any other cast is never held: its
-////   go writes a debug line (the plan cannot tell the passive, so the rule enforces it,
+////   go writes a debug line (the plan cannot tell a standing spell, so the rule enforces it,
 ////   `procs_held`); a camp drops the procs and their fire times.
 //// - **A unit that leaves the caster's sight** takes its nodes with it on the client
 ////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
 ////   ends with its 0x7fe (`unit_removed`).
-//// - **The innate passive** is a cast the client never makes: `cast.passive_started` starts it
-////   at each join with a 0x7ff and no 0x7fd, as `Passive`, which starts no global
+//// - **A standing spell** (the innate passive is the first) is a cast the client never makes:
+////   `cast.standing_changed` starts it at each join with a 0x7ff and no 0x7fd, as `Passive`, which starts no global
 ////   cooldown, is never the current cast, opens no threshold and runs no check of the
 ////   caster. Its go runs as any cast's, and the cast lingers with no 0x7fe, even when
 ////   no node of it lives, for the whole stay. The three passives hold caster condition
@@ -129,7 +129,7 @@
 //// | a hit's trigger is matched while its proc's delay runs | the fire is counted at the event; the cast starts when its `ProcDue` timer fires, and is cancelled with the holder's cast |
 //// | a proc's trigger and the removal of its holder's node in one input | the removed proc does not fire: procs are matched after the input's work |
 //// | a proc's trigger happens for a caster its spell's condition refuses (a dead caster) | a debug line naming the row and the spell, no cast and no fire recorded |
-//// | a go of a cast that is not the innate passive applies a `Died` proc | the proc is not held, with a debug line: a death ends the cast before it could fire |
+//// | a go of a cast that is not a standing spell's applies a `Died` proc | the proc is not held, with a debug line: a death ends the cast before it could fire |
 //// | the caster dies in combat | `cast.combat_left`, then `cast.died`: 63366 twice, each under its own limit |
 //// | the caster camps or leaves stealthed | the procs drop with every cast, nothing is cast or written |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
@@ -140,8 +140,9 @@
 //// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
 //// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
 //// | the caster's connection ends, a key held | its timers and the hold end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
-//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end, but the innate passive's cast, its nodes, modifiers and pending children (`cast.died`) |
-//// | the innate passive's plan is missing | a warning and no cast: the plans hold every class's passive, or the load fails |
+//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end, but the standing spells' casts, their nodes, modifiers and pending children (`cast.died`) |
+//// | a standing spell stops standing | its cast ends with its 0x7fe, live or lingering, and its modifiers, procs and pending children end with it (`cast.standing_changed`) |
+//// | the innate passive's plan is missing | a warning and no cast: the plans hold every class's passive, or the load fails (`connection/casting.standing_wanted`) |
 //// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
 //// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
 //// | the answer of a store ask comes after a timer's due time | the timer is taken after the answer: the go and finish are late by the ask, never lost |
@@ -185,7 +186,7 @@ import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{type Spell4Id}
+import genesis_prime/table/id.{type Spell4Id, Spell4Id}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -508,7 +509,8 @@ pub fn procs_held(
     list.partition(
       cast_state.passed_of(applied:, as_kind: spell_plan.as_proc),
       fn(row) {
-        row.trigger == spell_plan.Died && cast.passive != Some(cast_id)
+        row.trigger == spell_plan.Died
+        && !cast_state.is_standing(cast:, cast_id:)
       },
     )
   let procs =
@@ -528,7 +530,7 @@ pub fn procs_held(
         level: LogDebug,
         text: "the Proc effect "
           <> int.to_string(row.effect_id.value)
-          <> " of kind 0 is held by a cast that is not the innate passive, which a death ends before the proc is matched, so it is not held",
+          <> " of kind 0 is held by a cast that is not a standing spell's, which a death ends before the proc is matched, so it is not held",
       )
     }),
   )
@@ -547,7 +549,7 @@ pub fn nodes_left(
     True -> {
       let #(cast, cancels) = cast_tick.cancel_nodes_end(cast:, cast_id:)
       #(
-        passive_cleared(
+        standing_cleared(
           cast: State(..cast, lingering: dict.delete(cast.lingering, cast_id)),
           cast_id:,
         ),
@@ -619,15 +621,14 @@ pub fn unit_removed(
   })
 }
 
-/// The passive's delayed proc fires dropped with the timers of what a death set aside, and
-/// their timers cancelled: the holder is gone, so no cast follows for its hit (a fire the
+/// The standing spells' delayed proc fires dropped with the timers of what a death set aside,
+/// and their timers cancelled: the holder is gone, so no cast follows for its hit (a fire the
 /// death itself makes is armed after this, by the proc pass).
 pub fn proc_fires_dropped(
-  aside aside: Option(Aside),
-) -> #(Option(Aside), List(Effect)) {
-  case aside {
-    None -> #(None, [])
-    Some(set_aside) -> {
+  aside aside: List(Aside),
+) -> #(List(Aside), List(Effect)) {
+  let dropped =
+    list.map(aside, fn(set_aside) {
       let #(fires, kept) =
         list.partition(set_aside.timers, fn(entry) {
           case entry.1 {
@@ -654,95 +655,126 @@ pub fn proc_fires_dropped(
           }
         })
       #(
-        Some(Aside(..set_aside, timers: kept)),
+        Aside(..set_aside, timers: kept),
         list.map(fires, fn(entry) { CancelTimer(timer: entry.0) }),
       )
-    }
-  }
+    })
+  #(
+    list.map(dropped, fn(entry) { entry.0 }),
+    list.flat_map(dropped, fn(entry) { entry.1 }),
+  )
 }
 
-/// The cast without the passive's cast, timers, stealth sources and procs, and what was
-/// taken out, when the passive has a cast.
-pub fn passive_set_aside(cast cast: State) -> #(State, Option(Aside)) {
-  case cast.passive {
-    None -> #(cast, None)
-    Some(id) -> {
-      let live = dict.get(cast.casts, id) |> option.from_result
-      let lingering = dict.get(cast.lingering, id) |> option.from_result
-      let spell4_id = case live, lingering {
-        Some(live), _ -> Some(live.spell.spell4_id)
-        None, Some(lingering) -> Some(lingering.spell.spell4_id)
-        None, None -> None
-      }
-      let #(timers, rest) =
-        dict.to_list(cast.timers)
-        |> list.partition(fn(entry) {
-          belongs_to_passive(due: entry.1, id:, spell4_id:)
-        })
-      let #(stealth, others) =
-        cast_tick.split_cast(held: cast.stealth, cast_id: id)
-      let #(procs, other_procs) =
-        cast_tick.split_cast(held: cast.procs, cast_id: id)
-      case live, lingering {
-        None, None -> #(cast, None)
-        _, _ -> #(
-          State(
-            ..cast,
-            casts: dict.delete(cast.casts, id),
-            lingering: dict.delete(cast.lingering, id),
-            timers: dict.from_list(rest),
-            stealth: others,
-            procs: other_procs,
-            on_units: dict.delete(cast.on_units, id),
-          ),
-          Some(Aside(
-            id:,
-            live:,
-            lingering:,
-            timers:,
-            stealth:,
-            procs:,
-            on_units: dict.get(cast.on_units, id) |> result.unwrap([]),
-          )),
-        )
-      }
+/// The cast without each standing spell's cast, timers, stealth sources and procs, and what
+/// was taken out, in cast id order.
+pub fn standing_set_aside(cast cast: State) -> #(State, List(Aside)) {
+  dict.to_list(cast.standing)
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.fold(#(cast, []), fn(so_far, entry) {
+    let #(cast, asides) = so_far
+    case one_set_aside(cast:, id: entry.0, spell4_id: entry.1) {
+      #(cast, Some(aside)) -> #(cast, list.append(asides, [aside]))
+      #(cast, None) -> #(cast, asides)
     }
-  }
+  })
 }
 
-/// The cast with what `passive_set_aside` took out put back.
-pub fn passive_restored(cast cast: State, aside aside: Option(Aside)) -> State {
-  case aside {
-    None -> cast
-    Some(Aside(id:, live:, lingering:, timers:, stealth:, procs:, on_units:)) ->
+/// The cast without the standing cast `id`, its timers, stealth sources and procs, and what
+/// was taken out, when it has a cast.
+fn one_set_aside(
+  cast cast: State,
+  id id: Int,
+  spell4_id spell4_id: Int,
+) -> #(State, Option(Aside)) {
+  let live = dict.get(cast.casts, id) |> option.from_result
+  let lingering = dict.get(cast.lingering, id) |> option.from_result
+  let #(timers, rest) =
+    dict.to_list(cast.timers)
+    |> list.partition(fn(entry) {
+      belongs_to_standing(due: entry.1, id:, spell4_id: Spell4Id(spell4_id))
+    })
+  let #(stealth, others) = cast_tick.split_cast(held: cast.stealth, cast_id: id)
+  let #(procs, other_procs) =
+    cast_tick.split_cast(held: cast.procs, cast_id: id)
+  case live, lingering {
+    None, None -> #(cast, None)
+    _, _ -> #(
       State(
         ..cast,
-        on_units: case on_units {
-          [] -> cast.on_units
-          [_, ..] -> dict.insert(cast.on_units, id, on_units)
-        },
-        casts: case live {
-          Some(live) -> dict.insert(cast.casts, id, live)
-          None -> cast.casts
-        },
-        lingering: case lingering {
-          Some(lingering) -> dict.insert(cast.lingering, id, lingering)
-          None -> cast.lingering
-        },
-        timers: dict.merge(cast.timers, dict.from_list(timers)),
-        stealth: dict.merge(cast.stealth, dict.from_list(stealth)),
-        procs: dict.merge(cast.procs, dict.from_list(procs)),
-        passive: Some(id),
-      )
+        casts: dict.delete(cast.casts, id),
+        lingering: dict.delete(cast.lingering, id),
+        timers: dict.from_list(rest),
+        stealth: others,
+        procs: other_procs,
+        on_units: dict.delete(cast.on_units, id),
+      ),
+      Some(Aside(
+        id:,
+        spell4_id:,
+        live:,
+        lingering:,
+        timers:,
+        stealth:,
+        procs:,
+        on_units: dict.get(cast.on_units, id) |> result.unwrap([]),
+      )),
+    )
   }
 }
 
-/// Whether a timer belongs to the passive's own tree: one of its cast `id`, a modifier
+/// The cast with what `standing_set_aside` took out put back.
+pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
+  list.fold(aside, cast, fn(cast, set_aside) {
+    let Aside(
+      id:,
+      spell4_id:,
+      live:,
+      lingering:,
+      timers:,
+      stealth:,
+      procs:,
+      on_units:,
+    ) = set_aside
+    State(
+      ..cast,
+      on_units: case on_units {
+        [] -> cast.on_units
+        [_, ..] -> dict.insert(cast.on_units, id, on_units)
+      },
+      casts: case live {
+        Some(live) -> dict.insert(cast.casts, id, live)
+        None -> cast.casts
+      },
+      lingering: case lingering {
+        Some(lingering) -> dict.insert(cast.lingering, id, lingering)
+        None -> cast.lingering
+      },
+      timers: dict.merge(cast.timers, dict.from_list(timers)),
+      stealth: dict.merge(cast.stealth, dict.from_list(stealth)),
+      procs: dict.merge(cast.procs, dict.from_list(procs)),
+      standing: dict.insert(cast.standing, id, spell4_id),
+    )
+  })
+}
+
+/// The timers of a standing spell's tree still pending when its cast ends because the spell
+/// no longer stands, cancelled: a child it was about to start does not start.
+pub fn standing_timers_cancelled(
+  cast cast: State,
+  cast_id cast_id: Int,
+  spell4_id spell4_id: Int,
+) -> #(State, List(Effect)) {
+  cast_state.cancel_timers(cast:, matching: fn(due) {
+    belongs_to_standing(due:, id: cast_id, spell4_id: Spell4Id(spell4_id))
+  })
+}
+
+/// Whether a timer belongs to a standing spell's own tree: one of its cast `id`, a modifier
 /// or cooldown effect of that cast, or the start of a child whose root is its spell.
-fn belongs_to_passive(
+fn belongs_to_standing(
   due due: Due,
   id id: Int,
-  spell4_id spell4_id: Option(Spell4Id),
+  spell4_id spell4_id: Spell4Id,
 ) -> Bool {
   case due {
     Go(cast_id:, ..)
@@ -758,7 +790,7 @@ fn belongs_to_passive(
     TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) ->
       on.source.cast_id == id
     PlayerChangeEnd(source:, ..) -> source.cast_id == id
-    StartChild(root:, ..) -> Some(root) == spell4_id
+    StartChild(root:, ..) -> root == spell4_id
     StateEnd(..)
     | QuestAdvanceDue(..)
     | StartHeld
@@ -1139,12 +1171,11 @@ fn node_off(
   }
 }
 
-/// The cast without the innate passive's id when the cast `cast_id` is the passive and
-/// has left both `casts` and `lingering`, so that no later cast the caster mints the
-/// same id for is taken for the passive.
-pub fn passive_cleared(cast cast: State, cast_id cast_id: Int) -> State {
-  use <- bool.guard(when: cast.passive != Some(cast_id), return: cast)
-  State(..cast, passive: None)
+/// The cast without the standing spell's cast id `cast_id` when it has left both `casts` and
+/// `lingering`, so that no later cast the caster mints the same id for is taken for a standing
+/// spell's.
+pub fn standing_cleared(cast cast: State, cast_id cast_id: Int) -> State {
+  State(..cast, standing: dict.delete(cast.standing, cast_id))
 }
 
 /// What the procs of the casts never see.

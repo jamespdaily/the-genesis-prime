@@ -1391,7 +1391,7 @@ pub const world_entry_ids = [
 ]
 
 /// The ids without the messages of the innate passive's cast (0x7FF, 0x7F4 and
-/// 0x7FE): the entry's last effect starts it (`world_entry.StartPassive`), and
+/// 0x7FE): the entry's last effect starts it (`world_entry.StartStanding`), and
 /// which messages its cast writes is the cast flow's, which its own tests
 /// check. The three classes with a passive write them after 0x61, so the same
 /// ids before it stay.

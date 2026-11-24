@@ -148,7 +148,7 @@ fn passive_started(
   base base: Spell4BaseId,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  cast.passive_started(cast:, caster:, plans:, base:, now:)
+  support.standing_started(cast:, caster:, plans:, base:, now:)
   |> then_procs(caster:, now:)
 }
 

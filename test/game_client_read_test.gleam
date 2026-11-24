@@ -118,7 +118,7 @@ fn bare(message_id: Int) -> Frame {
 pub fn the_innate_passives_cast_is_dropped_only_after_the_0x61_of_an_entry_test() -> Nil {
   use <- owned_test.run(60_000)
   // 0x7FF, 0x7F4 and 0x7FE before 0x61 are not the passive's cast (the entry's
-  // last effect writes it after 0x61, `world_entry.StartPassive`).
+  // last effect writes it after 0x61, `world_entry.StartStanding`).
   let frames = [
     bare(0x00AD),
     bare(0x07FF),

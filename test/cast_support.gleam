@@ -80,8 +80,8 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  type Spell4BaseId, Creature2Id, Item2Id, ItemDisplayId, ItemSlotId,
-  Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+  type Spell4BaseId, type Spell4EffectsId, Creature2Id, Item2Id, ItemDisplayId,
+  ItemSlotId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import gleam/dict
 import gleam/int
@@ -423,6 +423,99 @@ pub fn ability_in(plans plans: Plans, base base: Int) -> Spell {
   let assert Ok(spell) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
     as "the plans hold the ability"
   spell
+}
+
+/// The plan of the Spell4Base as the one spell the player's standing spells become
+/// (`cast.standing_changed`): what the entry's innate passive is.
+pub fn standing_started(
+  cast cast: State,
+  caster caster: Caster,
+  plans plans: Plans,
+  base base: Spell4BaseId,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  let assert Ok(spell) = spell_plan.in_plans(plans:, base:)
+    as "the plans hold the spell that stands"
+  cast.standing_changed(cast:, caster:, wanted: [spell], now:)
+}
+
+/// The effect id of the row `row` of the planted standing spell `spell4_id` (250000 to
+/// 250999), which fits the 19 bits of a Spell4Effects id.
+fn standing_effect_id(
+  spell4_id spell4_id: Int,
+  row row: Int,
+) -> Spell4EffectsId {
+  Spell4EffectsId(100_000 + { spell4_id - 250_000 } * 10 + row)
+}
+
+/// The effect id of the property modifier of the planted standing spell `spell4_id`
+/// (`standing_spell`).
+pub fn standing_modifier_id(spell4_id spell4_id: Int) -> Spell4EffectsId {
+  standing_effect_id(spell4_id:, row: 1)
+}
+
+/// A planted spell that goes at once and holds one property modifier until removed, as
+/// the innate passives do (Spell4Effects 103997): its cast lingers with its node.
+pub fn standing_spell(spell4_id spell4_id: Int) -> Spell {
+  spell_holding(spell4_id:, base: spell4_id, modifiers: [
+    spell_plan.PropertyModifier(
+      effect_id: standing_modifier_id(spell4_id:),
+      phase_flags: -1,
+      change: spell_plan.PropertyChange(unit_properties.Change(
+        property: UnitProperty2Id(141),
+        mode: 3,
+        multiplier: 1.0,
+        flat: 0.0,
+        per_level: 0.0,
+      )),
+      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      condition: spell_plan.Always,
+      tag: spend.always,
+      armor: None,
+    ),
+  ])
+}
+
+/// The planted standing spell with a Proc row until removed (effect row 2,
+/// the trigger given, casting `casts`, once in 500 ms) and a Proxy to a child that waits
+/// 5000 ms (effect row 3, Spell4 `spell4_id + 500`), the rows the Stalker's
+/// passive holds (Spell4Effects 147119 and 147125).
+pub fn standing_holder(
+  spell4_id spell4_id: Int,
+  fires_on trigger: spell_plan.Trigger,
+  casts casts: Spell,
+) -> Spell {
+  with_effects(spell: standing_spell(spell4_id:), kinds: [
+    spell_plan.ProcEffect(spell_plan.ProcRow(
+      effect_id: standing_effect_id(spell4_id:, row: 2),
+      phase_flags: -1,
+      trigger:,
+      spell: casts,
+      chance: 1.0,
+      limit: spell_plan.InWindow(window_ms: 500, count: 1),
+      filter: spell_plan.AnySpell,
+      aim: spell_plan.AtHolder,
+      event_gate: None,
+      holder_gate: None,
+      delay_ms: 0,
+      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      condition: spell_plan.Always,
+      tag: spend.always,
+    )),
+    spell_plan.ProxyEffect(
+      spell_plan.Proxy(
+        period: None,
+        effect_id: standing_effect_id(spell4_id:, row: 3),
+        delay_ms: 5000,
+        phase_flags: -1,
+        condition: spell_plan.Always,
+        tag: spend.always,
+        target: spell_plan.OnCaster,
+        spell: child(spell4_id: spell4_id + 500, base: spell4_id + 500),
+        gains: [],
+      ),
+    ),
+  ])
 }
 
 /// The player 7 with the abilities above and its weapon, seen by the connections

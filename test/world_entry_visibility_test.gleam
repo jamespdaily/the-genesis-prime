@@ -89,7 +89,7 @@ fn join_hidden_saved_at(
         | world_entry.Send(..)
         | world_entry.WatchMap(..)
         | world_entry.Life(..)
-        | world_entry.StartPassive(..)
+        | world_entry.StartStanding
         | world_entry.Warn(..) -> Error(Nil)
       }
     })

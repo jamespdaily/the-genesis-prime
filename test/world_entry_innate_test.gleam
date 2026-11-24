@@ -19,13 +19,17 @@
 import cast_support
 import client_tables
 import fixture_tables
+import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/connection/casting
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
-import genesis_prime/table/id.{Spell4BaseId}
+import genesis_prime/step.{LogWarning}
+
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -212,7 +216,7 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   list.each(classes(), fn(class) {
     let #(class_id, _, _, passive) = class
-    let #(effects, _) =
+    let #(effects, entered) =
       world_entry_support.entry(
         tables: client_tables.shared(),
         character: world_entry_support.character(
@@ -224,7 +228,7 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
     let started =
       list.filter_map(effects, fn(effect) {
         case effect {
-          world_entry.StartPassive(base:) -> Ok(base.value)
+          world_entry.StartStanding -> Ok(Nil)
           world_entry.Send(..)
           | world_entry.AskStore(..)
           | world_entry.AskMap(..)
@@ -235,7 +239,7 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
       })
     assert started
       == case passive {
-        Some(base) -> [base]
+        Some(_) -> [Nil]
         None -> []
       }
       as {
@@ -245,10 +249,19 @@ pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
       }
     assert list.last(effects)
       == case passive {
-        Some(base) -> Ok(world_entry.StartPassive(base: Spell4BaseId(base)))
+        Some(_) -> Ok(world_entry.StartStanding)
         None -> list.last(effects)
       }
-      as "the passive's start is the last thing the entry asks, once its writes and the map's watch are out"
+      as "the standing spells' start is the last thing the entry asks, once its writes and the map's watch are out"
+    let #(wanted, warnings) =
+      casting.standing_wanted(entered:, plans: cast_support.real_plans())
+    assert list.map(wanted, fn(spell) { spell.spell4_base_id.value })
+      == case passive {
+        Some(base) -> [base]
+        None -> []
+      }
+      as "the list the start works from holds the class's slot-0 passive, if any"
+    assert warnings == []
   })
 }
 
@@ -283,7 +296,7 @@ pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_sta
       assert entered.loadout.innate == None
       assert list.all(effects, fn(effect) {
         case effect {
-          world_entry.StartPassive(..) -> False
+          world_entry.StartStanding -> False
           world_entry.Send(..)
           | world_entry.AskStore(..)
           | world_entry.AskMap(..)
@@ -294,4 +307,33 @@ pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_sta
       })
     },
   )
+}
+
+pub fn the_wanted_list_holds_the_innate_passive_of_the_loadout_and_leaves_out_a_base_the_plans_lack_with_a_warning_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The Engineer's slot-0 passive is Spell4Base 29076 (`Class.spell4IdInnateAbilityPassive00`,
+  // Spell4 45000); the plans are planted, so the test does not read the client's spell tree.
+  let #(_, entered) =
+    world_entry_support.entry(
+      tables: fixture_tables.shared(),
+      character: world_entry_support.character(class: 2, faction: 166, level: 1),
+    )
+  let passive = cast_support.child(spell4_id: 45_000, base: 29_076)
+  let plans = cast_support.plans_of([passive])
+  let #(wanted, warnings) = casting.standing_wanted(entered:, plans:)
+  assert wanted == [passive]
+    as "the loadout's passive is wanted, as the plan of its Spell4Base"
+  assert warnings == []
+  let #(wanted, warnings) =
+    casting.standing_wanted(entered:, plans: dict.delete(plans, 29_076))
+  assert wanted == []
+    as "a base the plans lack is not in the list, so the rule never sees it"
+  assert warnings
+    == [
+      cast_state.Log(
+        level: LogWarning,
+        text: "the innate passive with Spell4Base 29076 is in no plan, so it is not started",
+      ),
+    ]
+    as "and is one warning"
 }

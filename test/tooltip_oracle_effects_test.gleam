@@ -48,7 +48,6 @@ import attacker_support
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/area
-import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -648,13 +647,13 @@ fn unplanned_property(
 }
 
 /// The effects of the passive's start and of the two presses of the stealth ability, as the
-/// client's player makes them (`cast.passive_started`, two 0x9a presses of the ability's
+/// client's player makes them (`cast.standing_changed`, two 0x9a presses of the ability's
 /// place in the bag), each answered with no unit struck.
 fn leaving_stealth(rows rows: Rows) -> Result(List(cast_state.Effect), Unread) {
   let caster =
     cast_state.Caster(..oracle.caster_of(base: stealth_base), in_combat: False)
   let #(state, joined) =
-    cast.passive_started(
+    support.standing_started(
       cast: cast_state.new(),
       caster:,
       plans: rows.plans,

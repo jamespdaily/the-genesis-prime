@@ -6,7 +6,6 @@
 import genesis_prime/client_connection.{type Request, AskMap, AskStore, Continue}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/camp
-import genesis_prime/game/cast
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
@@ -27,7 +26,6 @@ import genesis_prime/step.{
   LogWarning, OwnEffect, StartTimer, Watch,
 }
 import genesis_prime/store
-import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/list
 import gleam/option.{None, Some}
@@ -59,8 +57,9 @@ pub type Decided {
   /// (genesis_prime/game/player_life), carried out as a fight's are
   /// (genesis_prime/game/connection/life_effect).
   Lives(effects: List(player_life.Effect))
-  /// Start the player's innate passive, the plans' spell of this Spell4Base.
-  StartsPassive(base: Spell4BaseId)
+  /// Start the player's standing spells that do not stand and end those no longer wanted
+  /// (genesis_prime/game/connection/casting `standing_changed`).
+  StartsStanding
   /// What the chat decided: writes, tells, watches and group joins.
   Chats(effects: List(chat.Effect))
   /// The player leaves the world for character select: the save timer is
@@ -93,7 +92,7 @@ pub fn from_entry(effect: world_entry.Effect) -> Decided {
     world_entry.AskMap(map:, message:) -> Asks(request: AskMap(map:, message:))
     world_entry.WatchMap(map:, incarnation:) -> WatchesMap(map:, incarnation:)
     world_entry.Life(effects:) -> Lives(effects:)
-    world_entry.StartPassive(base:) -> StartsPassive(base:)
+    world_entry.StartStanding -> StartsStanding
     world_entry.Warn(text:) -> Warning(text:)
   }
 }
@@ -144,26 +143,9 @@ pub fn carry_out(
         written: list.append(list.reverse(converted), written),
       )
     }
-    [StartsPassive(base:), ..rest] -> {
-      let assert Some(entered) = connection_state.entered_of(session.status)
-        as "a passive starts while the connection holds a player"
-      let #(started, decided) =
-        cast.passive_started(
-          cast: entered.cast,
-          caster: connection_casting.caster_of(
-            tables: session.settings.tables,
-            entered:,
-          ),
-          plans: connection_state.plans_of(session:),
-          base:,
-          now:,
-        )
+    [StartsStanding, ..rest] -> {
       let #(session, converted) =
-        connection_casting.cast_effects(
-          session: connection_casting.with_cast(session:, cast: started),
-          now:,
-          effects: decided,
-        )
+        connection_casting.standing_changed(session:, now:)
       carry_out(
         session:,
         now:,

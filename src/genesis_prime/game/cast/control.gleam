@@ -23,7 +23,7 @@
 ////   time (a node can outlive it, or end before it when the spell takes the larger of
 ////   delay and duration); taking the cast's node off the caster ends its modifiers and
 ////   cancels their timers; the caster's death ends every modifier of its casts but the
-////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
+////   standing spells', and every one still pending but theirs; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
 //// - **A go's property modifiers on creatures** (type 11 rows whose targetFlags name a
@@ -37,8 +37,8 @@
 ////   It has no end timer of its own: it ends, as `TargetChangeEnds` told once, when the
 ////   cast's node on that creature ends by time, is taken off by a type 80 removal or a
 ////   push off by the stack rule, when the creature leaves the caster's sight, when the
-////   cast's persistence stops holding, when the caster dies (but for the innate passive's
-////   cast) and when the player leaves; a start still waiting for its delay is cancelled
+////   cast's persistence stops holding, when the caster dies (but for the standing spells'
+////   casts) and when the player leaves; a start still waiting for its delay is cancelled
 ////   with it and told nothing. A later go of the cast on the same creature starts it
 ////   again from that go. Casters' modifiers on one creature do not stack.
 //// - **A go's changes on another player** (an absorb, an Interrupt Armor row, or a type 11
