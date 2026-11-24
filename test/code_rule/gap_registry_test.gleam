@@ -72,6 +72,18 @@ pub fn a_module_with_gaps_the_registry_does_not_call_is_a_breach_test() -> Nil {
     )
     == [breach]
     as "a mention of the function that does not call it is a breach"
+  assert gap_registry.breaches(
+      files: [planted_module()],
+      registry: planted.file("dev/genesis_prime/coverage/gaps.gleam", [
+        "import genesis_prime/game/planted_module",
+        "",
+        "pub fn registry() -> List(String) {",
+        "  planted_module.gaps(1)",
+        "}",
+      ]),
+    )
+    == [breach]
+    as "a call of gaps with an argument is no call of the function that takes none"
 }
 
 pub fn a_module_the_registry_calls_is_no_breach_test() -> Nil {

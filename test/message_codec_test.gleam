@@ -619,6 +619,7 @@ fn generated_gaps() -> List(#(String, List(gap.Entry))) {
 
 pub fn the_committed_message_modules_equal_the_generator_output_and_hold_each_schema_gap_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("gaps")
   assert message_generator.mismatches(generated(), committed()) == []
     as "regeneration of the real schema reproduces every committed module"
   let assert Ok(text) = simplifile.read(message_generator.schema_path)

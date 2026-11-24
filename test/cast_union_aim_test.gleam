@@ -40,6 +40,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import spell_tables
+import unitest
 
 // The planted base 3 is bag index 11 (`cast_support.abilities`).
 const bag_of_base_3 = 11
@@ -555,6 +556,7 @@ pub fn each_ability_with_a_proxy_at_a_friendly_area_gives_its_caster_what_its_te
 
 pub fn mental_boons_nimble_is_planned_and_lands_on_no_unit_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("gaps")
   // Rows 84796, 84798, 84800, 84802 and 84804 (type 11, flags 2, property 39, 550 ms) sit
   // in 33258 and 36622 to 36625. Text 314819 names the Nimble. A flags 2 modifier lands on a
   // creature the go struck (`cast/control`), and a child started on the caster strikes none.
