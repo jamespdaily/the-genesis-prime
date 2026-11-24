@@ -56,6 +56,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/pair
 import gleam/result
 import gleam/set
 import gleam/string
@@ -384,7 +385,12 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
       rolls: [],
       listed: [],
       told: fn(_) { [] },
-      debug: ["130470", "130474", "not in the caster's sight"],
+      debug: [
+        "130470",
+        "130474",
+        "is not applied: ",
+        "not in the caster's sight",
+      ],
     ),
     Go(
       why: "a spell whose propertyFlags lack 0x100: the changes end when the caster is unseen",
@@ -4392,6 +4398,17 @@ pub fn a_go_tells_a_proc_row_to_each_ally_it_holds_it_on_lists_it_and_sends_one_
   assert held_procs(state:)
     == [#(salve_allies_row, Some(ally)), #(salve_own_row, None)]
     as "and the caster holds the row for neither"
+  assert list.any(support.debug_lines(effects: went), fn(line) {
+    string.contains(
+      line,
+      "the Proc effect "
+        <> int.to_string(salve_allies_row)
+        <> " on unit "
+        <> int.to_string(second_ally)
+        <> " is not held: ",
+    )
+  })
+    as "and a debug line says the row is not held on the unseen player"
   // Sentinel's pair on the one ally the press named: the ally is told its modifier and its Proc
   // row, and the caster sends one went tell for the cast and the ally, not one for each row.
   let #(state, pressed, went) =
@@ -5167,7 +5184,7 @@ pub fn an_event_an_ally_told_fires_the_proc_the_caster_holds_on_that_ally_and_no
     ),
   ]
   // Each of the four kinds an ally tells (16 takes damage, 146 a critical, 51 a deflect, 115 a
-  // depleted shield; `spell_plan.kinds_an_ally_tells`) held by a Healing Salve shaped spell: the
+  // depleted shield; `Spell4Effects.effectType.14.dataBits00`) held by a Healing Salve shaped spell: the
   // four events of one pass fire the row of their own kind once, drawing one word for it, and the
   // other three draw none.
   let each_kind = [
@@ -5188,20 +5205,12 @@ pub fn an_event_an_ally_told_fires_the_proc_the_caster_holds_on_that_ally_and_no
           raised: [
             Raised(
               1500,
-              list.map(
-                [
-                  spell_plan.TakesDamage,
-                  spell_plan.SuffersCritical,
-                  spell_plan.DeflectsAttack,
-                  spell_plan.ShieldDepleted,
-                ],
-                fn(raised) {
-                  #(
-                    Some(ally),
-                    creature_event(trigger: raised, groups: [6, 9, 134, 333]),
-                  )
-                },
-              ),
+              list.map(list.map(each_kind, pair.second), fn(raised) {
+                #(
+                  Some(ally),
+                  creature_event(trigger: raised, groups: [6, 9, 134, 333]),
+                )
+              }),
               [],
               [0],
             ),

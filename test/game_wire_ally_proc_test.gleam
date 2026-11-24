@@ -81,16 +81,6 @@ fn falls_and_rises(
   }).1
 }
 
-/// The 0x937 health news the frames give `unit`, in order.
-fn health_news_of(frames frames: List(Frame), unit unit: Int) -> List(Int) {
-  list.filter_map(game_client.health_in(frames:), fn(news) {
-    case news.0 == unit {
-      True -> Ok(news.1)
-      False -> Error(Nil)
-    }
-  })
-}
-
 /// The primary target, root, parent and caster of each 0x7ff of the heal 39127 among the frames.
 fn heal_starts_in(frames frames: List(Frame)) -> List(#(Int, Int, Int, Int)) {
   list.filter_map(
@@ -246,7 +236,10 @@ pub fn a_spellslinger_pressing_healing_salve_has_the_ally_in_range_healed_when_a
   let ally_health_in = fn(frames) {
     falls_and_rises(
       start: health_in(frames: [seen_second]),
-      healths: health_news_of(frames:, unit: ally_unit),
+      healths: game_client.health_of(
+        events: game_client.fight_in(frames:),
+        unit: ally_unit,
+      ),
     )
   }
   let #(caster_read, _) =
