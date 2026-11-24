@@ -358,30 +358,32 @@ fn a_change_told(
     as "dataBits02 of row 203798 is a finite float"
   connection_support.for_stay(
     stay: connection_support.own_stay(),
-    sent: client_connection.SentByCaster(change: case ends {
-      True ->
-        held_changes.PlayerChangeEnds(from: step.ConnectionId(from), source:)
-      False ->
-        held_changes.PlayerChangeStarts(
-          from: step.ConnectionId(from),
-          from_stay: connection_support.viewer_stay(from),
-          source:,
-          change: held_changes.Property(unit_properties.Change(
-            property: UnitProperty2Id(161),
-            mode: 3,
-            multiplier:,
-            flat: 0.0,
-            per_level: 0.0,
-          )),
-          sight: held_changes.EndsWhenUnseen,
-          spell4_id: Spell4Id(54_806),
-          effect: unit_casts.HeldEffect(
-            effect_id: source.effect_id,
-            starts_ms: 0,
-            ends: unit_casts.EndsAt(ms: 10_000),
-          ),
-        )
-    }),
+    sent: client_connection.SentByPlayer(
+      tell: client_connection.Change(case ends {
+        True ->
+          held_changes.PlayerChangeEnds(from: step.ConnectionId(from), source:)
+        False ->
+          held_changes.PlayerChangeStarts(
+            from: step.ConnectionId(from),
+            from_stay: connection_support.viewer_stay(from),
+            source:,
+            change: held_changes.Property(unit_properties.Change(
+              property: UnitProperty2Id(161),
+              mode: 3,
+              multiplier:,
+              flat: 0.0,
+              per_level: 0.0,
+            )),
+            sight: held_changes.EndsWhenUnseen,
+            spell4_id: Spell4Id(54_806),
+            effect: unit_casts.HeldEffect(
+              effect_id: source.effect_id,
+              starts_ms: 0,
+              ends: unit_casts.EndsAt(ms: 10_000),
+            ),
+          )
+      }),
+    ),
   )
 }
 

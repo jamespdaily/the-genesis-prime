@@ -1610,7 +1610,10 @@ fn tells_the_player(
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Connection(connection: address.connection),
-    request: client_connection.TellPlayerChange(stay: address.stay, change:),
+    request: client_connection.TellPlayer(
+      stay: address.stay,
+      tell: client_connection.Change(change:),
+    ),
   ))
 }
 
@@ -1938,9 +1941,9 @@ fn strike_carried_out(
       strike.TellPlayerStrike(address:, strike:), Some(_) -> #(session, [
         OwnEffect(step.Tell(
           to: step.Connection(connection: address.connection),
-          request: client_connection.TellPlayerStrike(
+          request: client_connection.TellPlayer(
             stay: address.stay,
-            strike:,
+            tell: client_connection.Strike(strike:),
           ),
         )),
       ])

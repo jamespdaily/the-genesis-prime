@@ -26,11 +26,11 @@
 //// the map's Gone(C) ───────────▶ the same as Released(C), and C joins gone
 ////
 //// another player's connection H
-//// SentByStriker(PlayerStrike(key, H, stay_H, outgoing, heals))
+//// SentByPlayer(Strike(PlayerStrike(key, H, stay_H, outgoing, heals)))
 ////                             ─▶ dead: PlayerDead, no row
 ////                                alive: each heal row in order on P's life (`heals_taken`)
 ////                                                                          ─▶ the same 0x938, 0x92f and viewers' news as P's own heal
-////                                Tell(Connection(H), TellPlayerAnswer(stay_H, PlayerAnswered(key, outcome)))
+////                                Tell(Connection(H), TellPlayer(stay_H, Answer(PlayerAnswered(key, outcome))))
 //// ```
 ////
 //// Health and shield regenerate on two timers this rule asks for as effects, as the

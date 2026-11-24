@@ -6,6 +6,10 @@
 ////   `{undefined, undefined}`); a name no listener holds is not in Ranch's
 ////   table, so both calls fail with `badarg`. `suspend_listener` of a listener
 ////   already suspended is `ok`.
+//// - Erlang: a port that was closed has no `erlang:port_info/1`. A connect to a
+////   listening port is refused by the system only while no socket listens on
+////   it, and the freed port may be taken by any other listener on the machine,
+////   so the test reads the socket the listener held, never the system's answer.
 //// - The listener's contract in its doc comment: `stop_accepting` refuses a new
 ////   connect, and its connections end within the connection settings'
 ////   `shutdown_ms`, which Ranch holds as its `shutdown` transport option.
@@ -16,7 +20,7 @@ import genesis_prime/connection/listener.{
   ListenerNotListening, ListenerNotRunning,
 }
 import gleam/erlang/process
-import mug
+import gleam/list
 import owned_test
 
 pub fn a_name_no_listener_holds_has_no_port_and_cannot_be_closed_test() -> Nil {
@@ -51,12 +55,18 @@ pub fn a_listener_ends_its_connections_within_the_shutdown_time_of_its_connectio
   ask_support.stop(server)
 }
 
-pub fn a_listener_that_stopped_accepting_refuses_a_new_connect_test() -> Nil {
+pub fn a_listener_that_stopped_accepting_closes_its_listening_socket_test() -> Nil {
   use <- owned_test.run(10_000)
   let server = ask_support.started_listener(time: driven_time.new())
+  let sockets = ask_support.listening_sockets_of(server.name)
+  assert list.length(sockets) == 1
+    as "a running listener holds one listening socket"
+  assert list.all(sockets, ask_support.is_open)
+    as "a running listener's socket is open"
   assert listener.stop_accepting(server.name) == Ok(Nil)
-  let refused = ask_support.connecting(port: server.port)
-  assert refused == Error(mug.ConnectFailedIpv4(mug.Econnrefused))
-    as "the listening socket is closed, so the system refuses the connect"
+  assert ask_support.listening_sockets_of(server.name) == []
+    as "a listener that stopped accepting holds no listening socket"
+  assert list.all(sockets, fn(socket) { !ask_support.is_open(socket) })
+    as "the socket it held is closed, so the system refuses a connect to its port unless another listener has taken the port"
   ask_support.stop(server)
 }

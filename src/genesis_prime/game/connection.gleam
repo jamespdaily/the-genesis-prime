@@ -1316,12 +1316,20 @@ fn stay_sent(
           connection_life.foe_taken(session:, now:, holder:, entered:, fight:)
         client_connection.SentByTarget(answered:) ->
           connection_casting.target_taken(session:, now:, entered:, answered:)
-        client_connection.SentByStriker(strike:) ->
-          connection_landing.struck(session:, now:, entered:, strike:)
-        client_connection.SentByCaster(change:) ->
-          connection_landing.changed(session:, now:, entered:, change:)
-        client_connection.SentByHealed(answered:) ->
-          connection_casting.player_taken(session:, now:, entered:, answered:)
+        client_connection.SentByPlayer(tell:) ->
+          case tell {
+            client_connection.Strike(strike:) ->
+              connection_landing.struck(session:, now:, entered:, strike:)
+            client_connection.Change(change:) ->
+              connection_landing.changed(session:, now:, entered:, change:)
+            client_connection.Answer(answered:) ->
+              connection_casting.player_taken(
+                session:,
+                now:,
+                entered:,
+                answered:,
+              )
+          }
         client_connection.SentByKill(credit:) ->
           case
             connection_experience.credited(session:, now:, entered:, credit:)
