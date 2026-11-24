@@ -46,7 +46,9 @@ import genesis_prime/game/experience.{
   type Credit, type Credited, Credited, GainSent, LevelRose, Progress,
 }
 import genesis_prime/game/gear
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/spell_plan
+import genesis_prime/game/spell_tier
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
@@ -172,6 +174,10 @@ fn carried_out(
             tables:,
             from_level: entered.character.level,
             to_level: level,
+            spent: limited_action_set.points_spent(
+              tiers: spell_tier.tiers(tables:),
+              saved: entered.action_sets,
+            ),
           ),
           connection_state.to_client(session, _),
         ),

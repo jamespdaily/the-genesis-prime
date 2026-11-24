@@ -228,12 +228,22 @@ fn tell(change: PlayerChange) -> Event(ConnectionEvent(Message, Answer)) {
   )
 }
 
-/// A player in the world seen by connections 2 and 3, holding `holds`, in order.
-fn holding(holds holds: List(Hold)) -> game_connection.State {
+/// The player of `state` seen by connections `viewers`, holding `holds` as the tells
+/// gave them, in order.
+fn holding_on(
+  state state: game_connection.State,
+  viewers viewers: List(Int),
+  holds holds: List(Hold),
+) -> game_connection.State {
   feed_all(
-    state: support.watched_by(state: support.in_world(), viewers: [2, 3]),
+    state: support.watched_by(state:, viewers:),
     events: list.map(holds, fn(hold) { tell(starts(hold:)) }),
   ).0
+}
+
+/// A player in the world seen by connections 2 and 3, holding `holds`, in order.
+fn holding(holds holds: List(Hold)) -> game_connection.State {
+  holding_on(state: support.in_world(), viewers: [2, 3], holds:)
 }
 
 /// The state after each event, and the steps they took.
@@ -1796,10 +1806,7 @@ fn went(
 /// The ally, seen by connections 2, 3 and 4 (the caster's), holding `holds` as the caster's
 /// tells gave them.
 fn holding_for_caster_4(holds holds: List(Hold)) -> game_connection.State {
-  feed_all(
-    state: support.watched_by(state: support.in_world(), viewers: [2, 3, 4]),
-    events: list.map(holds, fn(hold) { tell(starts(hold:)) }),
-  ).0
+  holding_on(state: support.in_world(), viewers: [2, 3, 4], holds:)
 }
 
 /// Caster 4's holds of the cast `cast_id`, Phantasmal Armor's armor and its pool, each kept
@@ -2205,7 +2212,7 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
       0,
     ),
     #(
-      "a caster that waits for DeflectsAttack is told nothing of a blow that landed",
+      "a critical blow that took the shield to 0 is no deflect: a caster that waits for DeflectsAttack is told nothing of it",
       [waits(caster: 3, cast_id: 103, trigger: spell_plan.DeflectsAttack)],
       beast_critical_blow(damage: 3000),
       [],
@@ -2275,13 +2282,10 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
     #("datafloat02", planted_table.Integer(float32.to_bits(200.0))),
   ])
   let deflecting = fn(holds) {
-    list.fold(
-      holds,
-      support.watched_by(
-        state: support.entered_with_quests_on(tables:, quests: []).0,
-        viewers: [2, 3],
-      ),
-      fn(state, hold) { support.feed(state:, event: tell(starts(hold:))).0 },
+    holding_on(
+      state: support.entered_with_quests_on(tables:, quests: []).0,
+      viewers: [2, 3],
+      holds:,
     )
   }
   check(deflecting, #(

@@ -16,6 +16,7 @@
 ////   connection takes no other input while a save waits (`asking`).
 
 import ability_book_support
+import ability_points_support
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{AskStore}
@@ -86,13 +87,55 @@ pub fn a_0xb1_in_the_world_is_answered_0x19d_then_0xb2_and_kept_in_entered_test(
   assert held_ids(state:) == limited.class_bar
     as "a player who has saved nothing holds the class's bar"
   let #(state, taken, frames) = sent(state:, body: limited.hex(limited.save_a))
-  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
-    as "opcode.0xb2: the builder redraws from the set, so the set comes first"
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A0, 0x0169, 0x00B2]
+    as "opcode.0xb2: the builder redraws from the set, so the set comes first, then the tiers and the points"
   assert support.asked(taken) == None as "nothing waits on the store"
   assert held_ids(state:) == limited.ids_a
     as "the set of the first save is held"
   let #(state, _, _) = sent(state:, body: limited.hex(limited.save_b))
   assert held_ids(state:) == limited.ids_b as "the second save replaces it"
+}
+
+/// The tiers above 1 the 0x01A0 among frames holds in set 0, as (Spell4Base, tier).
+fn raised_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  ability_book_support.tiers_in(frames:)
+  |> list.filter(fn(entry) { entry.tier > 1 })
+  |> list.map(fn(entry) { #(entry.spell4_base_id, entry.tier) })
+}
+
+pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_cannot_cover_is_refused_on_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A Spellslinger of level 10 has 1 point (XpPerLevel). Quick Draw (27638) to tier 2 costs
+  // 1 and Charged Shot (20684) to tier 2 costs 1 (Spell4 abilityPointCost).
+  let state = in_world_at_level(level: 10)
+  let #(state, taken, frames) =
+    sent(state:, body: limited.tiering([#(27_638, 2)]))
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A0, 0x0169, 0x00B2]
+    as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book"
+  assert limited.the_action_set(frames:).result == 1
+  assert raised_in(frames:) == [#(27_638, 2)]
+    as "the 0x01A0 names Quick Draw at tier 2 in set 0"
+  assert ability_points_support.points_in(frames:) == [#(0, 1)]
+    as "the one point of level 10 is spent"
+  assert support.asked(taken) == None as "nothing waits on the store"
+  let #(state, taken, frames) =
+    sent(state:, body: limited.tiering([#(20_684, 2)]))
+  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
+    as "a refusal is the held set and 0xB2 only: no 0x01A0 and no 0x0169"
+  assert limited.the_action_set(frames:).result == 42
+    as "Charged Shot's tier 2 costs 1 point and the one point of level 10 is spent on Quick Draw"
+  assert limited.the_answer_bit(frames:) == 0
+  assert !support.stops(taken)
+  let #(_, _, frames) =
+    sent(state:, body: limited.tiering([#(27_638, 2), #(20_684, 1)]))
+  assert limited.the_action_set(frames:).result == 1
+    as "the held tier and a tier 1 are accepted"
+  assert raised_in(frames:) == [#(27_638, 2)]
+    as "the first save's tier is kept in the connection"
+  assert ability_points_support.points_in(frames:) == [#(0, 1)]
+    as "and its point is still spent"
 }
 
 pub fn a_refused_save_is_answered_with_the_held_bar_and_the_players_life_and_level_are_read_live_test() -> Nil {
@@ -283,7 +326,7 @@ pub fn a_refused_save_leaves_what_the_next_place_save_carries_unchanged_test() -
   assert list.map(connection_support.written(taken:), fn(frame) {
       frame.message_id
     })
-    == [0x019D, 0x00B2]
+    == [0x019D, 0x01A0, 0x0169, 0x00B2]
     as "the 0xB1 that waited is answered after the save"
   assert action_sets_asked(taken: timer_save(state:).1)
     == slots_of_set_0(ids: limited.ids_b)

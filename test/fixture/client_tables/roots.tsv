@@ -1574,6 +1574,22 @@ Item2	85762	an Item2Type 53 item naming the same ItemSpecial 9402 (power level 1
 Item2	61522	(a worn item with a use spell 83572 and an equip spell 83570)	spell_plan_standing_test
 Item2	15588	(proxy flag 0x4000 with an equip spell 32599, refused by item_property.is_slotted)	spell_plan_standing_test
 ItemSpecial	3204	(an equip spell 4436 that no Item2 names)	spell_plan_standing_test
+Spell4	49023	Quick Draw (Spell4Base 27638) tier 2	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49025	Quick Draw (Spell4Base 27638) tier 3	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49026	Quick Draw (Spell4Base 27638) tier 4	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49027	Quick Draw (Spell4Base 27638) tier 5	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49028	Quick Draw (Spell4Base 27638) tier 6	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49029	Quick Draw (Spell4Base 27638) tier 7	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49030	Quick Draw (Spell4Base 27638) tier 8	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49031	Quick Draw (Spell4Base 27638) tier 9	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49160	Ignite (Spell4Base 20718) tier 2	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49161	Ignite (Spell4Base 20718) tier 3	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49162	Ignite (Spell4Base 20718) tier 4	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49163	Ignite (Spell4Base 20718) tier 5	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49164	Ignite (Spell4Base 20718) tier 6	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49165	Ignite (Spell4Base 20718) tier 7	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49166	Ignite (Spell4Base 20718) tier 8	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
+Spell4	49167	Ignite (Spell4Base 20718) tier 9	spell_tier_test, limited_action_set_test, game_connection_limited_action_set_test
 Item2	38020	(a worn item with equip spell 62538, whose root holds eight UnitPropertyModifier rows; no level, class, race, prerequisite or proficiency)	game_connection_inventory_test
 Item2	13272	(a worn item of power level 10 with equip spell 30116)	world_entry_innate_test
 Item2	42059	(a level-scaled worn item, flags bit 3, power level -1, equip spell 69687)	world_entry_innate_test

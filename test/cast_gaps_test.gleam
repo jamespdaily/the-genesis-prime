@@ -140,8 +140,8 @@ fn limits() -> List(Limit) {
     Limit(
       ability_points.gaps(),
       "Abilities",
-      ["tier", "dropped"],
-      "tier spending is not built: the tier changes of the builder's save are dropped",
+      ["tiers a player buys", "next map change"],
+      "the tiers a player buys last only until the next map change, as no save carries them",
     ),
     Limit(
       cast_proc.gaps(),
