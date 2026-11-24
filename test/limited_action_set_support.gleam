@@ -8,7 +8,9 @@ import ability_book_support
 import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book
+import genesis_prime/game/ability_points
 import genesis_prime/game/limited_action_set.{type Effect, Log, Send}
+import genesis_prime/game/spell_tier
 import genesis_prime/message/action_set.{type ActionSet}
 import genesis_prime/message/action_set_saved
 import genesis_prime/step.{type LogLevel}
@@ -82,17 +84,39 @@ pub fn levels(from from: Int, to to: Int) -> List(Int) {
   |> list.reverse
 }
 
-/// The body of a 0xB1 for these ids and this set, with no tier change and no AMP, packed by
-/// the client's writer's widths: a 4-bit count, the ids in 32 bits each, the set in 3, a
-/// 5-bit count and a 7-bit count (`opcode.0xb1`).
+/// The body of a 0xB1 for these ids and this set, with no tier change and no AMP.
 pub fn body(ids ids: List(Int), set set: Int) -> BitArray {
+  body_with(ids:, set:, tier_changes: [], amp_ids: [])
+}
+
+/// The body of a 0xB1 for these ids, this set, these tier changes (Spell4Base, tier) and
+/// these AMP ids, packed by the client's writer's widths: a 4-bit count, the ids in 32 bits
+/// each, the set in 3, a 5-bit count of tier changes of 18 and 8 bits, and a 7-bit count of
+/// AMP ids of 16 bits (`opcode.0xb1`, the writer `0x14008a810`).
+pub fn body_with(
+  ids ids: List(Int),
+  set set: Int,
+  tier_changes tier_changes: List(#(Int, Int)),
+  amp_ids amp_ids: List(Int),
+) -> BitArray {
   message_support.packed(
     list.flatten([
       [#(4, list.length(ids))],
       list.map(ids, fn(id) { #(32, id) }),
-      [#(3, set), #(5, 0), #(7, 0)],
+      [#(3, set), #(5, list.length(tier_changes))],
+      list.flat_map(tier_changes, fn(change) {
+        [#(18, change.0), #(8, change.1)]
+      }),
+      [#(7, list.length(amp_ids))],
+      list.map(amp_ids, fn(id) { #(16, id) }),
     ]),
   )
+}
+
+/// The body of a 0xB1 that saves the sitting's first bar (`ids_a`) in set 0 with these tier
+/// changes (Spell4Base, tier) and no AMP.
+pub fn tiering(changes: List(#(Int, Int))) -> BitArray {
+  body_with(ids: ids_a, set: 0, tier_changes: changes, amp_ids: [])
 }
 
 /// The player of the Spellslinger at a level: alive, out of combat, holding the book the
@@ -103,6 +127,7 @@ pub fn player(
 ) -> limited_action_set.Player {
   limited_action_set.Player(
     level:,
+    points_total: ability_points.total(tables:, level:),
     book: ability_book.book(
       tables:,
       loadout: ability_book_support.loadout_of(tables:, class_id: spellslinger),
@@ -153,6 +178,7 @@ pub fn taken(
   let assert Ok(result) =
     limited_action_set.take(
       unlocks: limited_action_set.unlocks(tables:),
+      tiers: spell_tier.tiers(tables:),
       player: player(tables:, level:),
       saved:,
       class_bar: class_abilities(tables:),

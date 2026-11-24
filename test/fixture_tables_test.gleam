@@ -120,6 +120,18 @@ pub fn the_committed_files_are_what_the_generator_makes_from_the_client_test() -
       list.map(differences, fixture_rows.describe_difference),
       "\n",
     )
+  // The roots name every tier row of Quick Draw (Spell4Base 27638) and Ignite (20718), so the
+  // fixture holds tiers 1 to 9 of both (`table_rows -- Spell4 spell4BaseIdBaseSpell=27638`).
+  let tiers_of = fn(base) {
+    spell4.all(fixture_tables.shared())
+    |> list.filter(fn(row) { row.spell4_base_id_base_spell == base })
+    |> list.map(fn(row) { row.tier_index })
+    |> list.sort(int.compare)
+  }
+  assert tiers_of(27_638) == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    as "the fixture holds the nine tiers of Quick Draw"
+  assert tiers_of(20_718) == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    as "the fixture holds the nine tiers of Ignite"
 }
 
 pub fn a_difference_names_the_file_the_row_and_whether_it_was_added_removed_or_changed_test() -> Nil {
@@ -394,12 +406,17 @@ pub fn changed_and_added_edit_on_their_own_heap_and_leave_the_shared_tables_alon
   // An id below the table's highest: a loaded table is a tuple as long as its
   // highest id, so an id above it makes the load larger. The fixture holds no
   // Spell4 row 1 (`added` refuses an id the table holds).
+  // The copy names Spell4Base 8, the activation system spell that no ability book holds: the
+  // load refuses two Spell4 rows of one tier only for a base the book holds (`spell_tier`).
   let new_id = 1
   fixture_tables.added(
     table: "Spell4",
     copy_of: id,
     id: new_id,
-    with: [#("castTime", planted_table.Integer(edited))],
+    with: [
+      #("castTime", planted_table.Integer(edited)),
+      #("spell4BaseIdBaseSpell", planted_table.Integer(8)),
+    ],
     body: fn(tables) {
       let assert Ok(row) = spell4.get(tables:, id: Spell4Id(new_id))
       assert row.cast_time == edited as "the added row holds the new cell"

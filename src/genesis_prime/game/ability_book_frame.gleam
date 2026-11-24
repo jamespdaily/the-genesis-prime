@@ -4,7 +4,7 @@
 ////
 //// ```
 //// a bag slot ─▶ 0x0111 (location 4, reason 49)       the item in its bag slot, a press names the slot
-//// the book   ─▶ 0x01A0 (tier 1 in each action set)   the entry the book window and the bar read
+//// the book   ─▶ 0x01A0 (the held tier in each set)  the entry the book window and the bar read
 //// a bar      ─▶ 0x019D (one action set)              the shortcuts the bar slots hold
 //// a save     ─▶ 0x00B2 (one bit)                     the answer to the builder's Save
 //// ```
@@ -144,16 +144,21 @@ pub fn held_ability(
   )
 }
 
-/// 0x01A0 with tier 1 of each ability in each action set.
-pub fn tiers(abilities abilities: List(Spell4BaseId)) -> Frame {
+/// 0x01A0 with one entry for each ability and each of the action sets, the tier from
+/// `tier_of` (the set, then the ability).
+pub fn tiers(
+  abilities abilities: List(Spell4BaseId),
+  sets sets: List(Int),
+  tier_of tier_of: fn(Int, Spell4BaseId) -> Int,
+) -> Frame {
   let assert Ok(body) =
     ability_tiers.encode(
       AbilityTiers(
         tiers: list.flat_map(abilities, fn(ability) {
-          list.map(action_sets, fn(action_set_index) {
+          list.map(sets, fn(action_set_index) {
             AbilityTier(
               spell4_base_id: ability.value,
-              tier: first_tier,
+              tier: tier_of(action_set_index, ability),
               action_set_index:,
             )
           })
@@ -162,6 +167,16 @@ pub fn tiers(abilities abilities: List(Spell4BaseId)) -> Frame {
     )
     as "a Spell4Base id of 18 bits, a tier of 4 and a set of 3 fit the message"
   Frame(message_id: ability_tiers.message_id, body:)
+}
+
+/// The action sets of the book's entry: all four (`opcode.0x1a0`).
+pub fn every_set() -> List(Int) {
+  action_sets
+}
+
+/// The tier of an ability nobody has raised.
+pub fn first_tier_of(_set: Int, _ability: Spell4BaseId) -> Int {
+  first_tier
 }
 
 /// The frames of a level rise: 0x0111 of each ability it grants, at the bag indexes after
@@ -187,7 +202,13 @@ pub fn granted(
             base:,
           )
         }),
-        [tiers(abilities: spell_plan.book(plans:, bag: abilities))],
+        [
+          tiers(
+            abilities: spell_plan.book(plans:, bag: abilities),
+            sets: action_sets,
+            tier_of: first_tier_of,
+          ),
+        ],
       )
     }
   }

@@ -18,23 +18,32 @@
 //// - The sitting's saves (`limited_action_set_support.save_a` and the others): a Spellslinger of
 ////   level 4 placing its level 4 ability in slot 3.
 
+import ability_book_support
+import ability_points_support
 import client_tables
 import fixture_tables
 import genesis_prime/game/ability_book
+import genesis_prime/game/ability_book_frame
+import genesis_prime/game/ability_points
 import genesis_prime/game/limited_action_set.{
   Player, RowOutsideTable, RowRepeated,
 }
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite
+import genesis_prime/game/spell_tier
+import genesis_prime/message/ability_tier
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{ActionSets}
 import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/character_creation
-import genesis_prime/table/id.{ClassId, PrerequisiteId, Spell4BaseId}
+import genesis_prime/table/id.{
+  type Spell4BaseId, ClassId, PrerequisiteId, Spell4BaseId,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import gleam/int
 import gleam/list
@@ -222,10 +231,36 @@ pub fn a_slot_row_the_rule_does_not_read_never_opens_and_a_missing_row_fails_the
     as "the load names the slot"
 }
 
-/// A row of the accepted table: the level, the bodies sent in turn from no saved set, and the
-/// ids the bar holds after them.
+/// Quick Draw, Charged Shot (and its alternate), Ignite and the Spellslinger's innate: the
+/// Spell4Base ids of the tier rows the tests spend points on (`table_rows -- Spell4
+/// spell4BaseIdBaseSpell=27638`, 20684, 20685, 20718, and Class 7's first innate, Spell4
+/// 47273).
+const quick_draw = 27_638
+
+const charged_shot = 20_684
+
+const charged_shot_alternate = 20_685
+
+const ignite = 20_718
+
+const spellslinger_innate = 31_213
+
+/// A Medic's level 1 ability whose Spell4 rows hold tiers 1 and 9 only (`table_rows -- Spell4
+/// spell4BaseIdBaseSpell=26543`: 42352 and 51989).
+const base_with_a_missing_tier = 26_543
+
+/// A row of the accepted table: the level, the bodies sent in turn from no saved set, the
+/// ids the bar holds after them, the tiers above 1 the set holds (Spell4Base, tier) and the
+/// 0x0169 (points to spend, total) the last answer holds.
 type Accepted {
-  Accepted(level: Int, bodies: List(BitArray), expected: List(Int), why: String)
+  Accepted(
+    level: Int,
+    bodies: List(BitArray),
+    expected: List(Int),
+    tiers: List(#(Int, Int)),
+    points: #(Int, Int),
+    why: String,
+  )
 }
 
 pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> Nil {
@@ -235,9 +270,79 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
   list.each(
     [
       Accepted(
+        10,
+        [support.tiering([#(quick_draw, 2)])],
+        support.ids_a,
+        [#(quick_draw, 2)],
+        #(0, 1),
+        "level 10 gives 1 point: Quick Draw to tier 2 costs 1",
+      ),
+      Accepted(
+        25,
+        [support.tiering([#(quick_draw, 5), #(ignite, 3)])],
+        support.ids_a,
+        [#(ignite, 3), #(quick_draw, 5)],
+        #(6, 16),
+        "level 25 gives 16 points: Quick Draw to tier 5 costs 8 and Ignite to tier 3 costs 2",
+      ),
+      Accepted(
+        15,
+        [support.tiering([#(quick_draw, 3)])],
+        support.ids_a,
+        [#(quick_draw, 3)],
+        #(4, 6),
+        "tier 3 needs level 15 and costs 2 of the 6 points",
+      ),
+      Accepted(
+        25,
+        [
+          support.tiering([#(quick_draw, 5), #(charged_shot, 5)]),
+          support.tiering([#(quick_draw, 1), #(ignite, 5)]),
+        ],
+        support.ids_a,
+        [#(charged_shot, 5), #(ignite, 5)],
+        #(0, 16),
+        "16 of 16 points spent, then Quick Draw falls to tier 1 and Ignite rises to tier 5 in one save: judged on the tiers the save leaves",
+      ),
+      Accepted(
+        10,
+        [
+          support.tiering([#(quick_draw, 2)]),
+          support.tiering([#(quick_draw, 2)]),
+        ],
+        support.ids_a,
+        [#(quick_draw, 2)],
+        #(0, 1),
+        "the tier it already holds changes nothing",
+      ),
+      Accepted(
+        10,
+        [
+          support.tiering([#(quick_draw, 2)]),
+          support.body(
+            ids: [0, 20_684, 20_325, 20_718, 0, 0, 0, 0, 0, 0, 0, 0],
+            set: 0,
+          ),
+        ],
+        [0, 20_684, 20_325, 20_718, 0, 0, 0, 0, 0, 0, 0, 0],
+        [#(quick_draw, 2)],
+        #(0, 1),
+        "a save that takes Quick Draw off the bar and carries no tier change keeps its tier and its point spent: a tier belongs to the ability in the set",
+      ),
+      Accepted(
+        15,
+        [support.tiering([#(charged_shot_alternate, 3)])],
+        support.ids_a,
+        [#(charged_shot_alternate, 3)],
+        #(6, 6),
+        "Charged Shot's alternate costs 0 at every tier (Spell4 abilityPointCost): tier 3 is bought and no point is spent",
+      ),
+      Accepted(
         4,
         [message_support.hex(support.save_a)],
         support.ids_a,
+        [],
+        #(0, 0),
         "the sitting's save, sequence 16176",
       ),
       Accepted(
@@ -247,6 +352,8 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
           message_support.hex(support.save_b),
         ],
         support.ids_b,
+        [],
+        #(0, 0),
         "a swap and a removal of the set of the first save, sequence 16317",
       ),
       Accepted(
@@ -257,12 +364,16 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
           message_support.hex(support.save_c),
         ],
         support.ids_c,
+        [],
+        #(0, 0),
         "one removed, sequence 16356",
       ),
       Accepted(
         4,
         [message_support.hex(support.save_a), support.body(ids: zeros, set: 0)],
         zeros,
+        [],
+        #(0, 0),
         "all twelve empty is a saved set of nothing, not no set",
       ),
       Accepted(
@@ -274,6 +385,8 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
           ),
         ],
         [27_638, 20_684, 20_325, 0, 0, 0, 0, 23_012, 0, 0, 0, 0],
+        [],
+        #(1, 1),
         "a level 6 ability in slot 7 (the committed rows hold no level 10 ability), which opens at level 10",
       ),
       Accepted(
@@ -285,20 +398,30 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
           ),
         ],
         [52_215, 20_684, 20_325, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [],
+        #(0, 0),
         "an alternate in the book is accepted: the client's book holds alternates",
       ),
     ],
     fn(case_) {
-      let Accepted(level:, bodies:, expected:, why:) = case_
-      let saved =
-        list.fold(bodies, limited_action_set.none(), fn(saved, body) {
-          let #(saved, effects) = support.taken(saved:, level:, body:)
+      let Accepted(level:, bodies:, expected:, tiers:, points:, why:) = case_
+      let #(saved, last) =
+        list.fold(bodies, #(limited_action_set.none(), []), fn(held, body) {
+          let #(saved, effects) = support.taken(saved: held.0, level:, body:)
           assert support.the_action_set(frames: support.frames_of(effects:)).result
             == 1
             as { why <> ": every save of the row is accepted" }
-          saved
+          #(saved, effects)
         })
       assert support.held_ids(tables:, saved:) == expected as why
+      assert limited_action_set.held_tiers(saved:, set: 0)
+        == list.map(tiers, fn(held) { #(Spell4BaseId(held.0), held.1) })
+        as { why <> ": the tiers above 1 the set holds" }
+      assert ability_points_support.points_in(frames: support.frames_of(
+          effects: last,
+        ))
+        == [points]
+        as { why <> ": the points to spend and the total, opcode.0x169" }
     },
   )
   // The same body twice gives the same set and the same frames.
@@ -350,8 +473,88 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
   let refuse = fn(why, ids, result) {
     Refused(4, False, False, support.body(ids:, set: 0), result, why)
   }
+  let refuse_tiers = fn(why, level, changes, result) {
+    Refused(level, False, False, support.tiering(changes), result, why)
+  }
   list.each(
     [
+      refuse_tiers(
+        "tier 0 is no tier of any ability",
+        10,
+        [#(quick_draw, 0)],
+        41,
+      ),
+      refuse_tiers(
+        "tier 10 is above the highest: the client's writer drops it",
+        50,
+        [#(quick_draw, 10)],
+        41,
+      ),
+      refuse_tiers(
+        "tier 2 of an innate whose base holds one tier",
+        10,
+        [#(spellslinger_innate, 2)],
+        41,
+      ),
+      refuse_tiers(
+        "tier 5 of a base whose Spell4 rows hold tiers 1 and 9 only: a tier with no row cannot be bought",
+        25,
+        [#(base_with_a_missing_tier, 5)],
+        41,
+      ),
+      refuse_tiers("tier 3 needs level 15", 14, [#(quick_draw, 3)], 41),
+      refuse_tiers(
+        "tier 3 at level 10: the level check comes before the points check, so 41 and not 42",
+        10,
+        [#(quick_draw, 3)],
+        41,
+      ),
+      refuse_tiers("tier 2 needs level 10", 9, [#(quick_draw, 2)], 41),
+      refuse_tiers("tier 4 needs level 20", 15, [#(quick_draw, 4)], 41),
+      refuse_tiers(
+        "two abilities to tier 2 cost 2 points and level 10 has 1",
+        10,
+        [#(quick_draw, 2), #(ignite, 2)],
+        42,
+      ),
+      refuse_tiers(
+        "an ability the book does not hold (a Medic's, Spell4Base 26038)",
+        10,
+        [#(26_038, 2)],
+        18,
+      ),
+      refuse_tiers(
+        "an ability twice",
+        10,
+        [#(quick_draw, 2), #(quick_draw, 2)],
+        13,
+      ),
+      Refused(
+        10,
+        False,
+        False,
+        support.body_with(
+          ids: [20_684, 20_684, 20_325, 20_718, 0, 0, 0, 0, 0, 0, 0, 0],
+          set: 0,
+          tier_changes: [#(quick_draw, 2)],
+          amp_ids: [],
+        ),
+        13,
+        "a good tier change in a save whose bar repeats an id: the bar's result, and the tier not applied",
+      ),
+      Refused(
+        10,
+        False,
+        False,
+        support.body_with(
+          ids: support.ids_b,
+          set: 0,
+          tier_changes: [#(quick_draw, 0)],
+          amp_ids: [],
+        ),
+        41,
+        "a good bar with a bad tier: the bar is not applied either",
+      ),
       refuse(
         "20718 in slot 4, which opens at level 5",
         a_with(slot: 4, id: 20_718),
@@ -440,10 +643,19 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
           level:,
           body: message_support.hex(support.save_a),
         )
+      let player = support.player(tables:, level:)
+      // The Medic's ability with a missing tier is in the book so that its tier, and not
+      // its absence from the book, is what the save is refused for.
+      let player =
+        Player(..player, dead:, in_combat:, book: [
+          Spell4BaseId(base_with_a_missing_tier),
+          ..player.book
+        ])
       let assert Ok(#(after, effects)) =
         limited_action_set.take(
           unlocks: limited_action_set.unlocks(tables:),
-          player: Player(..support.player(tables:, level:), dead:, in_combat:),
+          tiers: spell_tier.tiers(tables:),
+          player:,
           saved: held,
           class_bar: support.class_abilities(tables:),
           body:,
@@ -455,12 +667,16 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
       assert support.held_ids(tables:, saved: after)
         == support.held_ids(tables:, saved: held)
         as { why <> ": the set held is unchanged" }
+      assert limited_action_set.held_tiers(saved: after, set: 0)
+        == limited_action_set.held_tiers(saved: held, set: 0)
+        as { why <> ": the tiers held are unchanged" }
     },
   )
 }
 
 pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_held_set_test() -> Nil {
   use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
   let shortcuts = fn(ids: List(Int)) {
     list.index_map(ids, fn(id, slot) {
       case id {
@@ -481,16 +697,18 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
       }
     })
   }
-  // Accepted from no set: the set 0, unlocked, result 1, the twelve shortcuts, then bit 1.
+  // Accepted from no set at level 10 with Quick Draw to tier 2: the set 0, unlocked, result 1,
+  // the twelve shortcuts, then the book's tiers, the points, and bit 1.
   let #(_, accepted) =
     support.taken(
       saved: limited_action_set.none(),
-      level: 4,
-      body: message_support.hex(support.save_a),
+      level: 10,
+      body: support.tiering([#(quick_draw, 2)]),
     )
   let frames = support.frames_of(effects: accepted)
-  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
-    as "the set, then the answer: no tiers and no points"
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A0, 0x0169, 0x00B2]
+    as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book"
   assert support.the_action_set(frames:)
     == action_set.ActionSet(
       action_set_index: 0,
@@ -498,9 +716,37 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
       result: 1,
       shortcuts: shortcuts(support.ids_a),
     )
+  let book = support.player(tables:, level: 10).book
+  assert ability_book_support.tiers_in(frames:)
+    == list.map(book, fn(base) {
+      ability_tier.AbilityTier(
+        spell4_base_id: base.value,
+        tier: case base.value == quick_draw {
+          True -> 2
+          False -> 1
+        },
+        action_set_index: 0,
+      )
+    })
+    as "opcode.0x1a0: every ability of the book in set 0 and no other set, Quick Draw at 2"
+  assert ability_points_support.points_in(frames:) == [#(0, 1)]
+    as "level 10 gives 1 point, spent"
   assert support.the_answer_bit(frames:) == 1
   assert support.logs_of(effects: accepted) == []
-  // Refused from the set of A: the result, the twelve shortcuts of the held set, bit 0, a warning.
+  // The entry's 0x01A0 names every ability in each of the four sets at tier 1.
+  assert ability_book_support.tiers_in(frames: [
+      ability_book_frame.tiers(
+        abilities: book,
+        sets: ability_book_frame.every_set(),
+        tier_of: ability_book_frame.first_tier_of,
+      ),
+    ])
+    == ability_book_support.tiers_of(
+      bases: list.map(book, fn(base) { base.value }),
+    )
+    as "the entry sends sets 0 to 3 at tier 1"
+  // Refused from the set of A: the result, the twelve shortcuts of the held set, bit 0, a
+  // warning, and no tiers or points.
   let #(held, _) =
     support.taken(
       saved: limited_action_set.none(),
@@ -530,28 +776,166 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     as "the class's bar is the held bar of a player who saved none"
 }
 
-pub fn tier_changes_and_amps_in_a_save_are_dropped_and_the_bar_is_kept_test() -> Nil {
+pub fn amp_ids_in_a_save_are_dropped_and_the_bar_is_kept_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
   let #(saved, effects) =
     support.taken(
       saved: limited_action_set.none(),
-      level: 10,
+      level: 15,
       body: message_support.hex(support.save_d),
     )
   assert support.held_ids(tables:, saved:) == support.ids_a
     as "the bar of the save is kept"
-  let #(_, plain) =
+  assert limited_action_set.held_tiers(saved:, set: 0)
+    == [#(Spell4BaseId(charged_shot), 2), #(Spell4BaseId(quick_draw), 3)]
+    as "the two tier changes of the save are applied (opcode.0xb1: (20684, 2) and (27638, 3))"
+  let #(_, without_amps) =
     support.taken(
       saved: limited_action_set.none(),
-      level: 10,
-      body: message_support.hex(support.save_a),
+      level: 15,
+      body: support.tiering([#(charged_shot, 2), #(quick_draw, 3)]),
     )
-  assert support.frames_of(effects:) == support.frames_of(effects: plain)
-    as "the answer is the accepted answer of a save with no edits"
+  assert support.frames_of(effects:) == support.frames_of(effects: without_amps)
+    as "the AMP ids change nothing in the answer"
+  assert support.logs_of(effects: without_amps) == []
+    as "a tier change that is applied is not logged as dropped"
   let assert [#(LogDebug, line)] = support.logs_of(effects:) as "one debug line"
-  assert string.contains(line, "2 tier changes and 2 AMPs")
-    as "it says how many were not applied"
+  assert string.contains(line, "2 AMPs")
+    as "it says how many AMPs were not applied"
+  assert !string.contains(line, "tier") as "and names no tier change"
+}
+
+/// The points a level gives: 1 a level from level 10 (`XpPerLevel.abilityPointsPerLevel`).
+fn points_of_level(level level: Int) -> Int {
+  level - 9
+}
+
+/// The points the held tiers cost, from the client's Spell4 rows: each tier from 2 up to the
+/// held one costs its row's `abilityPointCost` (`0x1403bb2b0`).
+fn points_cost(
+  tables tables: table_store.Tables,
+  held held: List(#(Spell4BaseId, Int)),
+) -> Int {
+  let rows = spell4.all(tables)
+  list.fold(held, 0, fn(spent, ability) {
+    let #(base, tier) = ability
+    list.fold(rows, spent, fn(spent, row) {
+      case
+        row.spell4_base_id_base_spell == base.value
+        && row.tier_index >= 2
+        && row.tier_index <= tier
+      {
+        True -> spent + row.ability_point_cost
+        False -> spent
+      }
+    })
+  })
+}
+
+pub fn any_accepted_tier_save_keeps_the_points_spent_within_the_levels_total_and_a_repeat_changes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  // A tier change is a place in the book (taken modulo its length, so every change names a
+  // held ability) and a tier from 0 to 10, which holds the tiers the rule refuses.
+  let change =
+    qcheck.tuple2(qcheck.bounded_int(0, 40), qcheck.bounded_int(0, 10))
+  let save =
+    qcheck.generic_list(
+      elements_from: change,
+      length_from: qcheck.bounded_int(0, 4),
+    )
+  let saves =
+    qcheck.generic_list(
+      elements_from: save,
+      length_from: qcheck.bounded_int(0, 8),
+    )
+  qcheck.given(qcheck.tuple2(qcheck.bounded_int(10, 50), saves), fn(drawn) {
+    let #(level, saves) = drawn
+    let book = support.player(tables:, level:).book
+    let book_size = list.length(book)
+    list.fold(saves, limited_action_set.none(), fn(saved, changes) {
+      let named =
+        list.filter_map(changes, fn(change) {
+          list.drop(book, change.0 % book_size)
+          |> list.first
+          |> result.map(fn(base) { #(base.value, change.1) })
+        })
+      let body =
+        support.body_with(
+          ids: support.class_bar,
+          set: 0,
+          tier_changes: named,
+          amp_ids: [],
+        )
+      let #(after, effects) = support.taken(saved:, level:, body:)
+      let #(again, repeated) = support.taken(saved: after, level:, body:)
+      assert limited_action_set.points_spent(
+          tiers: spell_tier.tiers(tables:),
+          saved: after,
+        )
+        <= points_of_level(level:)
+        as "the points the held tiers cost never exceed the points the level gives"
+      list.each(limited_action_set.held_tiers(saved: after, set: 0), fn(held) {
+        assert held.1 >= 2 && held.1 <= 9
+          as "a held tier is 2 to 9 (tier 1 is no entry, the client's writer drops tier 10)"
+        assert level >= 5 * held.1
+          as "a held tier passes its level gate: tier n needs level 5n (Spell4TierRequirements)"
+      })
+      assert limited_action_set.rows(saved: again)
+        == limited_action_set.rows(saved: after)
+        as "the same save again holds the same bar"
+      assert limited_action_set.held_tiers(saved: again, set: 0)
+        == limited_action_set.held_tiers(saved: after, set: 0)
+        as "the same save again holds the same tiers"
+      assert support.frames_of(effects: repeated) == support.frames_of(effects:)
+        as "the same save again answers the same frames"
+      let expected_points = case
+        support.the_action_set(frames: support.frames_of(effects:)).result
+      {
+        1 -> [
+          #(
+            points_of_level(level:)
+              - points_cost(
+              tables:,
+              held: limited_action_set.held_tiers(saved: after, set: 0),
+            ),
+            points_of_level(level:),
+          ),
+        ]
+        _ -> []
+      }
+      assert ability_points_support.points_in(frames: support.frames_of(
+          effects:,
+        ))
+        == expected_points
+        as "an accepted save answers with the points left and the points the level gives (0x0169), a refused one with none"
+      // A save that brings every ability back to tier 1 is a fall, which is always allowed.
+      let #(fallen, fell) =
+        support.taken(
+          saved: after,
+          level:,
+          body: support.body_with(
+            ids: support.class_bar,
+            set: 0,
+            tier_changes: list.map(book, fn(base) { #(base.value, 1) }),
+            amp_ids: [],
+          ),
+        )
+      assert support.the_action_set(frames: support.frames_of(effects: fell)).result
+        == 1
+        as "a save that returns every ability to tier 1 is accepted"
+      assert limited_action_set.held_tiers(saved: fallen, set: 0) == []
+        as "and holds no tier above 1"
+      assert ability_points_support.points_in(frames: support.frames_of(
+          effects: fell,
+        ))
+        == [#(points_of_level(level:), points_of_level(level:))]
+        as "and spends no point"
+      after
+    })
+    Nil
+  })
 }
 
 /// The CharacterCreation start enum of the Novice (PreTutorial) rows, the ones the
@@ -625,6 +1009,7 @@ pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_
       let player =
         Player(
           level:,
+          points_total: ability_points.total(tables:, level:),
           book: ability_book.book(tables:, loadout: held, level:),
           dead: False,
           in_combat: False,
@@ -632,6 +1017,7 @@ pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_
       let assert Ok(#(saved, effects)) =
         limited_action_set.take(
           unlocks:,
+          tiers: spell_tier.tiers(tables:),
           player:,
           saved: limited_action_set.none(),
           class_bar: held.abilities,
@@ -706,6 +1092,29 @@ pub fn every_ability_the_book_offers_the_bar_is_a_class_ability_of_its_own_class
           <> ": Spell4Base "
           <> int.to_string(base.value)
           <> " is of the class"
+        }
+    })
+  })
+}
+
+pub fn every_ability_the_book_offers_has_tier_data_for_every_class_and_faction_at_level_50_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let tiers = spell_tier.tiers(tables:)
+  list.each(novice_loadouts(tables:), fn(found) {
+    let #(class_id, faction_id, held) = found
+    list.each(ability_book.book(tables:, loadout: held, level: 50), fn(base) {
+      assert result.is_ok(spell_tier.highest(tiers:, base:))
+        as {
+          "class "
+          <> int.to_string(class_id)
+          <> ", faction "
+          <> int.to_string(faction_id)
+          <> ": Spell4Base "
+          <> int.to_string(base.value)
+          <> " is in the book, so a tier purchase of it must find its tiers, not be refused with 41"
         }
     })
   })

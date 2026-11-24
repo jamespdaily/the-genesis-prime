@@ -1,16 +1,18 @@
 //// The ability builder's save on the game connection (genesis_prime/game/limited_action_set):
-//// the rule judges the client's 0xB1 against the player's level, book, life and combat, and
-//// this writes the frames it answers with, in order, and keeps the bar it leaves in
-//// `Entered`, which the next place save carries to the store and a map or Holocrypt rejoin
-//// sends again. Nothing waits on the store. A body the client's reader refuses ends the
-//// connection with the sentence the rule gives.
+//// the rule judges the client's 0xB1 against the player's level, points, book, life and
+//// combat, and this writes the frames it answers with, in order, and keeps the bar and the
+//// tiers it leaves in `Entered`: the next place save carries the bar to the store and a map or
+//// Holocrypt rejoin sends it again, and the tiers last until then. Nothing waits on the store.
+//// A body the client's reader refuses ends the connection with the sentence the rule gives.
 
 import genesis_prime/client_connection.{Continue}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book
+import genesis_prime/game/ability_points
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/player_life
+import genesis_prime/game/spell_tier
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
 
@@ -25,6 +27,10 @@ pub fn take_message(
   let player =
     limited_action_set.Player(
       level:,
+      points_total: ability_points.total(
+        tables: session.settings.tables,
+        level:,
+      ),
       book: ability_book.book(
         tables: session.settings.tables,
         loadout: entered.loadout,
@@ -36,6 +42,7 @@ pub fn take_message(
   case
     limited_action_set.take(
       unlocks: limited_action_set.unlocks(tables: session.settings.tables),
+      tiers: spell_tier.tiers(tables: session.settings.tables),
       player:,
       saved: entered.action_sets,
       class_bar: entered.loadout.abilities,
