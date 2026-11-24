@@ -887,6 +887,62 @@ pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test()
     })
     == [9]
     as "the caster roll 1 passes, ally 9's roll 5 passes the target gate 860 and ally 12's roll 50 fails it: only ally 9 is told"
+  // The same row aimed at the area alone, whose area took the caster (unit 7) and the ally 9
+  // as candidates: the caster's side is rolled once, then the target gate once for the
+  // caster as a unit the row reaches and once for the ally, so the go draws no roll of its own.
+  let caster_address =
+    PlayerAddress(
+      connection: ConnectionId(2),
+      unit_id: 7,
+      stay: map_support.stay(count: 1),
+    )
+  let at_the_area_alone =
+    spell_area.InstantHeal(
+      ..heal_row(caster_apply: 3286, target_apply: 860),
+      aim: spell_plan.AimsAtArea,
+    )
+  let with_the_caster =
+    Selection(
+      ..selection(units: [], blows: [], ticking: [], controls: []),
+      players: [caster_address, ally()],
+      area: [7, 9],
+      heals: [at_the_area_alone],
+    )
+  assert strike.entropy_needed(selection: with_the_caster)
+    == 3 * prerequisite.roll_bytes
+    as "one roll for the caster's side and one for each of the two units the row reaches, the caster among them"
+  list.each(
+    [
+      #(
+        "the caster's side 1 and its own target gate 5 pass, the ally's 50 fails: the caster alone, which the go lists, and nobody is told",
+        [word_for(roll: 1), word_for(roll: 5), word_for(roll: 50)],
+        [7],
+        [],
+      ),
+      #(
+        "the caster's own target gate fails (50), the ally's passes (5): the ally alone is told and the go names no caster",
+        [word_for(roll: 1), word_for(roll: 50), word_for(roll: 5)],
+        [],
+        [[62_019]],
+      ),
+    ],
+    fn(row) {
+      let #(reason, gate_rolls, struck, told) = row
+      let #(_, effects) =
+        begun(
+          selection: with_the_caster,
+          gate: gate_of(caster: support.caster(), creatures: []),
+          entropy: entropy(rolls: [], gate: gate_rolls),
+        )
+      assert told_heals(effects:) == told as reason
+      assert list.map(strike_support.players_told(effects:), fn(told) {
+          told.0.unit_id
+        })
+        == list.map(told, fn(_) { 9 })
+        as "the caster is never told a strike: it applies its own heal at the go"
+      assert struck_ids(struck: went(effects:)) == struck as reason
+    },
+  )
 }
 
 pub fn a_gate_unread_at_run_time_drops_the_row_for_that_unit_with_a_debug_line_test() -> Nil {

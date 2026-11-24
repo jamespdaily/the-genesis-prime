@@ -812,6 +812,84 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
         as { why <> ": the heals carried for the caster" }
     },
   )
+  // A row aimed at the area alone (targetFlags 4), pressed with no named target, whose area
+  // took the caster as a candidate: the strike gated the row for the caster and let it through
+  // (`HitCaster`), so the go lists the caster's heal once, worked out from its own stats and
+  // vitals, and carries it for the caster, whatever its gates say at the go. The allies it took
+  // are listed by their answers, and the row's target gate (which fails the caster now) is not
+  // checked again.
+  let caster_took =
+    cast_state.Hit(
+      unit_id: 7,
+      unit: cast_state.HitCaster(heals: [Spell4EffectsId(62_019)]),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  let ally_took = answered_by(ally, [heal_of(77, 50, 27)])
+  let ally_entry = [
+    #(
+      62_019,
+      support.heal_result(amount: 77, kind: damage_type.Heal, overkill: 27),
+    ),
+  ]
+  let at_the_area_alone = fn(condition) {
+    [health_row(id: 62_019, aim: spell_plan.AimsAtArea, condition:)]
+  }
+  list.each(
+    [
+      #(
+        "the strike took the caster alone: the caster's heal is listed once and carried once, and no ally is listed",
+        at_the_area_alone(spell_plan.Always),
+        [caster_took],
+        [],
+        caster_entry,
+      ),
+      #(
+        "the strike took the ally alone: the ally's answered heal is listed and the caster, not among the units, is not healed",
+        at_the_area_alone(spell_plan.Always),
+        [ally_took],
+        ally_entry,
+        [],
+      ),
+      #(
+        "the strike took both: each is listed once, the caster's heal carried once",
+        at_the_area_alone(spell_plan.Always),
+        [caster_took, ally_took],
+        ally_entry,
+        caster_entry,
+      ),
+      #(
+        "a target gate the caster fails now is not checked again for the caster the strike let through",
+        at_the_area_alone(spell_plan.GatedOnTarget(prerequisite: not_held)),
+        [caster_took],
+        [],
+        caster_entry,
+      ),
+    ],
+    fn(row) {
+      let #(why, rows, struck, on_ally, on_caster) = row
+      let #(pressed, went) =
+        healer_pressed_at(
+          rows:,
+          target: healing_ally_in_sight().unit_id,
+          struck:,
+        )
+      assert support.listed_on(effects: went, unit_id: ally) == on_ally as why
+      assert support.listed_on(
+          effects: went,
+          unit_id: healing_ally_in_sight().unit_id,
+        )
+        == on_caster
+        as { why <> ": the caster's entry" }
+      assert list.length(
+          support.caster_change_starts(effects: list.append(pressed, went)),
+        )
+        == list.length(on_caster)
+        as { why <> ": the heals carried for the caster" }
+    },
+  )
 }
 
 pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters_gates_say_at_the_go_test() -> Nil {

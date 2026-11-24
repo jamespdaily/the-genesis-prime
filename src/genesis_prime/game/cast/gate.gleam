@@ -31,8 +31,8 @@
 import genesis_prime/game/cast/state.{
   type Caster, type Effect, type GainVerdict, type GateDecision, type Live,
   type State, type Struck, type TargetVerdict, CannotTell, Deflected, Gain,
-  GateFails, Given, Hit, HitCreature, HitOtherPlayer, Immune, Log, NotApplied,
-  Starts, Withheld,
+  GateFails, Given, Hit, HitCaster, HitCreature, HitOtherPlayer, Immune, Log,
+  NotApplied, Starts, Withheld,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting
@@ -1084,12 +1084,30 @@ pub fn clears_current(
   clears_whichever || clears_itself
 }
 
-/// The units a round Hit, in the round's order; a deflect is none of them.
+/// The units a round Hit, in the round's order; a deflect is none of them, and neither is the
+/// caster the area took as a candidate of a heal (`caster_took`), which is no unit struck.
 pub fn hit_units(struck struck: List(Struck)) -> List(Int) {
   list.filter_map(struck, fn(one) {
     case one {
+      Hit(unit: HitCaster(..), ..) | Immune(unit: HitCaster(..), ..) ->
+        Error(Nil)
       Hit(unit_id:, ..) | Immune(unit_id:, ..) -> Ok(unit_id)
       Deflected(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether the round holds the caster as a candidate the strike let the heal row `effect_id`
+/// through for: the row's caster gates and the caster's own target gate passed at the strike,
+/// so the go checks neither again (`heal_told`).
+pub fn caster_took(
+  struck struck: List(Struck),
+  effect_id effect_id: Spell4EffectsId,
+) -> Bool {
+  list.any(struck, fn(one) {
+    case one {
+      Hit(unit: HitCaster(heals:), ..) -> list.contains(heals, effect_id)
+      Hit(..) | Immune(..) | Deflected(..) -> False
     }
   })
 }
