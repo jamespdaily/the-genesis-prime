@@ -111,6 +111,18 @@
 ////     with the overlay.
 ////   - The owner dying ends its disguise in the death's step (the 0x933 restore); a camp
 ////     or the Holocrypt sends the viewers `Removed` and no 0x933.
+//// - **Casts a viewer's client holds** (genesis_prime/game/client_casts): a player's 0x262
+////   lists its own casts and the casts other players' casts hold on it, whether or not the
+////   viewer shows their caster (`cast.unknown_caster`); a cast whose caster told the viewer
+////   its start ends by the caster's frames, and any other by the unit that listed it:
+////
+////   ```
+////   ally T's create lists cast X of caster C ─▶ viewer: C told it X? no: X is borrowed from T
+////   T's last source of X ends ─▶ Tell(each viewer, HeldCastEnded(X)) ─▶ borrowed? 0x811 {X, [T]}
+////   ```
+////
+////   - A borrowed cast gets none of its caster's later frames, so the caster's removal does not
+////     end it before T's tell does; T's removal drops it with the client's nodes on T.
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
@@ -127,6 +139,7 @@ import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
+import genesis_prime/game/client_casts
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/landing as connection_landing
@@ -146,7 +159,9 @@ import genesis_prime/game/unit_casts
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_create_cast.{type UnitCreateCast}
 import genesis_prime/message/unit_create_creature.{
   type UnitCreateCreature, UnitCreateCreature,
 }
@@ -487,7 +502,8 @@ pub fn viewer_takes(
     | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
-    | client_connection.LookChanged(..) -> False
+    | client_connection.LookChanged(..)
+    | client_connection.HeldCastEnded(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && names_own_unit(entered:, unit_id:),
@@ -499,17 +515,20 @@ pub fn viewer_takes(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      let unit = casts_listed(unit:, caster_unit_id: unit_id)
+      let unit =
+        casts_listed(
+          unit:,
+          caster_unit_id: unit_id,
+          viewer_unit_id: entered.unit_id,
+        )
       let session =
         connection_state.with_entered(session:, change: fn(entered) {
           world_entry.Entered(
             ..entered,
-            casts_written: list.fold(
-              unit.tail.casts,
-              entered.casts_written,
-              fn(written, cast) {
-                dict.insert(written, cast.cast_id, cast.caster_unit_id)
-              },
+            client_casts: casts_recorded(
+              casts: entered.client_casts,
+              unit_id:,
+              listed: unit.tail.casts,
             ),
           )
         })
@@ -545,7 +564,7 @@ pub fn viewer_takes(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      let unit = creature_casts_kept(unit:, written: entered.casts_written)
+      let unit = creature_casts_kept(unit:, casts: entered.client_casts)
       Continue(
         shown_changed(session:, change: dict.insert(
           _,
@@ -628,12 +647,15 @@ pub fn viewer_takes(
     client_connection.Removed -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let kept =
-        list.filter(written_casts_of(entered:, unit_id:), fn(cast_id) {
-          list.contains(
-            held_changes.kept_casts_of_unit(held: entered.held, unit_id:),
-            cast_id,
-          )
-        })
+        list.filter(
+          client_casts.written_of_unit(casts: entered.client_casts, unit_id:),
+          fn(cast_id) {
+            list.contains(
+              held_changes.kept_casts_of_unit(held: entered.held, unit_id:),
+              cast_id,
+            )
+          },
+        )
       let #(forgotten, ended) =
         cast_loses_unit(
           session: casts_orphaned(
@@ -664,20 +686,54 @@ pub fn viewer_takes(
     }
     client_connection.CastStarted(start:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      use <- bool.guard(
+        when: client_casts.is_borrowed(
+          casts: entered.client_casts,
+          cast_id: start.cast_id,
+        ),
+        return: Continue(session, []),
+      )
       Continue(
         connection_state.with_entered(session:, change: fn(entered) {
           world_entry.Entered(
             ..entered,
-            casts_written: dict.insert(
-              entered.casts_written,
-              start.cast_id,
-              unit_id,
+            client_casts: client_casts.written(
+              casts: entered.client_casts,
+              cast_id: start.cast_id,
+              caster_unit_id: unit_id,
             ),
           )
         }),
         [connection_state.to_client(session, cast_frame.started_frame(start:))],
       )
     }
+    client_connection.HeldCastEnded(cast_id:) ->
+      case
+        client_casts.ally_ended(
+          casts: entered.client_casts,
+          cast_id:,
+          ally_unit_id: unit_id,
+        )
+      {
+        Ok(casts) ->
+          Continue(
+            connection_state.with_entered(session:, change: fn(entered) {
+              world_entry.Entered(..entered, client_casts: casts)
+            }),
+            [
+              connection_state.to_client(
+                session,
+                cast_frame.targets_removed_frame(
+                  removed: spell_targets_removed.SpellTargetsRemoved(
+                    cast_id:,
+                    unit_ids: [unit_id],
+                  ),
+                ),
+              ),
+            ],
+          )
+        Error(Nil) -> Continue(session, [])
+      }
     client_connection.CastWent(go:) ->
       written_cast_frame(
         session:,
@@ -1093,7 +1149,8 @@ fn creature_news(
     | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
-    | client_connection.LookChanged(..) -> session
+    | client_connection.LookChanged(..)
+    | client_connection.HeldCastEnded(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -1188,7 +1245,8 @@ fn life_news(
     | client_connection.Level(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
-    | client_connection.LookChanged(..) -> Continue(session, [])
+    | client_connection.LookChanged(..)
+    | client_connection.HeldCastEnded(..) -> Continue(session, [])
   }
 }
 
@@ -1212,8 +1270,8 @@ fn written_cast_frame(
 }
 
 /// The frames of a cast of the unit written in order, when this client was sent the cast's
-/// start; the cast is forgotten after them when `forgetting`, and no longer held with no
-/// caster (`Entered.casts_orphaned`), so its end tells no second 0x7fe.
+/// start (`client_casts.is_written`: a cast an ally listed or one held with no caster gets
+/// none of its caster's frames); the cast is forgotten after them when `forgetting`.
 fn written_cast_frames(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -1222,7 +1280,7 @@ fn written_cast_frames(
   forgetting forgetting: Bool,
 ) -> client_connection.Handled(Session) {
   use <- bool.guard(
-    when: !dict.has_key(entered.casts_written, cast_id),
+    when: !client_casts.is_written(casts: entered.client_casts, cast_id:),
     return: Continue(session, []),
   )
   let session = case forgetting {
@@ -1230,8 +1288,10 @@ fn written_cast_frames(
       connection_state.with_entered(session:, change: fn(entered) {
         world_entry.Entered(
           ..entered,
-          casts_written: dict.delete(entered.casts_written, cast_id),
-          casts_orphaned: set.delete(entered.casts_orphaned, cast_id),
+          client_casts: client_casts.finished(
+            casts: entered.client_casts,
+            cast_id:,
+          ),
         )
       })
     False -> session
@@ -1240,18 +1300,6 @@ fn written_cast_frames(
     session,
     list.map(frames, fn(frame) { connection_state.to_client(session, frame) }),
   )
-}
-
-/// The cast ids of the unit this client was sent the start of and no finish, in cast id
-/// order.
-fn written_casts_of(
-  entered entered: world_entry.Entered,
-  unit_id unit_id: Int,
-) -> List(Int) {
-  dict.to_list(entered.casts_written)
-  |> list.filter(fn(written) { written.1 == unit_id })
-  |> list.map(fn(written) { written.0 })
-  |> list.sort(int.compare)
 }
 
 /// 0x7fe for each cast of the unit that this client was sent the start of and no
@@ -1268,7 +1316,7 @@ fn finishes_of_forgotten_casts(
   unit_id unit_id: Int,
   keeping keeping: List(Int),
 ) -> List(Effect(ConnectionEffect(Request))) {
-  written_casts_of(entered:, unit_id:)
+  client_casts.written_of_unit(casts: entered.client_casts, unit_id:)
   |> list.filter(fn(cast_id) { !list.contains(keeping, cast_id) })
   |> list.map(fn(cast_id) {
     connection_state.to_client(session, cast_frame.finished_frame(cast_id:))
@@ -1283,26 +1331,35 @@ fn casts_orphaned(
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(
       ..entered,
-      casts_orphaned: list.fold(cast_ids, entered.casts_orphaned, set.insert),
+      client_casts: client_casts.orphaned(
+        casts: entered.client_casts,
+        cast_ids:,
+      ),
     )
   })
 }
 
-/// The unit's record with the casts its client may be given: the entries of the unit
-/// the create is for and with a cast id above 0 (`CreateCast 0x140561780` links a cast
-/// into its caster and files cast id 0 as a pending cast, which makes the client skip the
-/// rest of the list), and the cast in progress only when an entry holds it
-/// (`SetUnitCast 0x1404697a0` looks it up in the list).
+/// The unit's record with the casts its client may be given: the entries with a cast id
+/// above 0 (`CreateCast 0x140561780` files cast id 0 as a pending cast, which makes the
+/// client skip the rest of the list) and a caster that is not the viewer's own unit (the
+/// viewer's own cast rule finished such a cast when it dropped its last node,
+/// `proc.nodes_left`, and its client holds its casts itself). The client makes a cast whose
+/// caster it does not know (`cast.unknown_caster`), so the entries of other players' casts
+/// the unit holds stay beside its own. The cast in progress is kept only when an entry of
+/// the unit's own holds it (`SetUnitCast 0x1404697a0` looks it up in the list).
 fn casts_listed(
   unit unit: UnitCreatePlayer,
   caster_unit_id caster_unit_id: Int,
+  viewer_unit_id viewer_unit_id: Int,
 ) -> UnitCreatePlayer {
   let casts =
     list.filter(unit.tail.casts, fn(cast) {
-      cast.caster_unit_id == caster_unit_id && cast.cast_id != 0
+      cast.cast_id != 0 && cast.caster_unit_id != viewer_unit_id
     })
+  let own =
+    list.filter(casts, fn(cast) { cast.caster_unit_id == caster_unit_id })
   let cast_id = case
-    list.any(casts, fn(cast) { cast.cast_id == unit.tail.cast_id })
+    list.any(own, fn(cast) { cast.cast_id == unit.tail.cast_id })
   {
     True -> unit.tail.cast_id
     False -> 0
@@ -1310,21 +1367,48 @@ fn casts_listed(
   UnitCreatePlayer(..unit, tail: UnitCreateTail(..unit.tail, casts:, cast_id:))
 }
 
+/// The casts the client holds after the create of the unit `unit_id` listed `listed`: an
+/// entry of the unit's own cast is one its caster's frames end, and an entry of another
+/// player's cast is borrowed from the unit (`client_casts`).
+fn casts_recorded(
+  casts casts: client_casts.Casts,
+  unit_id unit_id: Int,
+  listed listed: List(UnitCreateCast),
+) -> client_casts.Casts {
+  list.fold(listed, casts, fn(casts, cast) {
+    case cast.caster_unit_id == unit_id {
+      True ->
+        client_casts.written(
+          casts:,
+          cast_id: cast.cast_id,
+          caster_unit_id: unit_id,
+        )
+      False ->
+        client_casts.borrow(
+          casts:,
+          cast_id: cast.cast_id,
+          ally_unit_id: unit_id,
+        )
+    }
+  })
+}
+
 /// The creature's record with the casts its client was given: an entry of the list
-/// stays only when its cast id is in `casts_written`. A viewer not told of a cast is
-/// sent none of its 0x7fe, 0x7f9 or 0x811 (`written_cast_frames`), so the node of an
-/// entry for it would stay until the creature leaves its sight (`cast.target_node_end`).
-/// The tail's cast id stays 0 and `casts_written` is not changed.
+/// stays only when the viewer was told its caster's start (`client_casts.is_written`). A
+/// viewer not told of a cast is sent none of its 0x7fe, 0x7f9 or 0x811
+/// (`written_cast_frames`), so the node of an entry for it would stay until the creature
+/// leaves its sight (`cast.target_node_end`). The tail's cast id stays 0 and the viewer's
+/// casts are not changed.
 fn creature_casts_kept(
   unit unit: UnitCreateCreature,
-  written written: Dict(Int, Int),
+  casts casts: client_casts.Casts,
 ) -> UnitCreateCreature {
   UnitCreateCreature(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
       casts: list.filter(unit.tail.casts, fn(cast) {
-        dict.has_key(written, cast.cast_id)
+        client_casts.is_written(casts:, cast_id: cast.cast_id)
       }),
     ),
   )
@@ -1444,16 +1528,18 @@ fn shown_changed(
 }
 
 /// The session with the unit no longer shown, the casts of it forgotten (the client is
-/// written their finish before the unit's 0x355, `finishes_of_forgotten_casts`) and the
-/// news held for it dropped.
+/// written their finish before the unit's 0x355, `finishes_of_forgotten_casts`), the casts
+/// it listed no longer held for it (`client_casts.unit_forgotten`) and the news held for it
+/// dropped.
 fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(
       ..entered,
       shown: dict.delete(entered.shown, unit_id),
-      casts_written: dict.filter(entered.casts_written, fn(_, caster) {
-        caster != unit_id
-      }),
+      client_casts: client_casts.unit_forgotten(
+        casts: entered.client_casts,
+        unit_id:,
+      ),
       strike: strike.forget(strike: entered.strike, unit_id:),
     )
   })

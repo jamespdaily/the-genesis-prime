@@ -307,7 +307,8 @@ fn started_told(
       | client_connection.Level(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
-      | client_connection.LookChanged(..) -> Error(Nil)
+      | client_connection.LookChanged(..)
+      | client_connection.HeldCastEnded(..) -> Error(Nil)
     }
   })
 }

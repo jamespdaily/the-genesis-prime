@@ -362,7 +362,8 @@ fn ticks_told(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | client_connection.Level(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
-      | client_connection.LookChanged(..) -> False
+      | client_connection.LookChanged(..)
+      | client_connection.HeldCastEnded(..) -> False
     }
   })
 }

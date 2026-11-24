@@ -149,6 +149,7 @@ import genesis_prime/game/character_state
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
 import genesis_prime/game/class_resource
+import genesis_prime/game/client_casts
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/departures
 import genesis_prime/game/experience
@@ -423,14 +424,10 @@ pub type Entered {
     clock_origin_ms: Int,
     viewers: Dict(ConnectionId, player_address.Viewer),
     shown: shown.Picture,
-    casts_written: Dict(Int, Int),
-    /// The casts the client holds with no caster: the caster's unit was removed while the
-    /// player held a source of the cast that outlives its caster's sight
-    /// (genesis_prime/game/held_changes `kept_casts_of_unit`), so the client keeps the cast
-    /// and its buff on the player. Kept apart from `casts_written`, which the caster's own
-    /// frames write for; the cast's 0x7fe is written when the last source ends
-    /// (genesis_prime/game/connection/landing).
-    casts_orphaned: Set(Int),
+    /// The casts the client holds that the connection must end, each by its caster's
+    /// frames, by an ally's tell or by the player's own ledger
+    /// (genesis_prime/game/client_casts).
+    client_casts: client_casts.Casts,
     gone: Set(Int),
     movement: movement.State,
     readiness: Readiness,
@@ -1108,8 +1105,7 @@ pub fn joined(
               clock_origin_ms:,
               viewers: dict.new(),
               shown: dict.new(),
-              casts_written: dict.new(),
-              casts_orphaned: set.new(),
+              client_casts: client_casts.new(),
               gone: set.new(),
               movement:,
               readiness: readiness_of(entry:),
