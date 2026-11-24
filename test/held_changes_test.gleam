@@ -25,6 +25,7 @@ import genesis_prime/message/spell_target_info
 import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/table/id.{type Spell4Id, Spell4EffectsId, Spell4Id}
 import gleam/list
+import gleam/option.{None}
 import gleam/result
 import owned_test
 import qcheck
@@ -64,6 +65,7 @@ fn held_after(starts starts: List(Start)) -> #(Held, List(Bool)) {
           sight: start.sight,
           spell4_id: any_listing(source: source(cast_id: start.cast_id)).0,
           effect: any_listing(source: source(cast_id: start.cast_id)).1,
+          trigger: None,
         )
       #(held, [started, ..flags])
     })
@@ -138,6 +140,7 @@ pub fn a_source_started_twice_is_held_once_and_each_casters_sources_keep_their_s
       sight: EndsWhenUnseen,
       spell4_id: Spell4Id(spell),
       effect:,
+      trigger: None,
     ).0
   }
   let effect_at = fn(starts, ends) {
@@ -466,6 +469,7 @@ pub fn the_casts_a_player_holds_kept_from_a_caster_unit_and_whether_it_holds_a_c
               cast_id: start.cast_id,
               row: start.row,
             )).1,
+            trigger: None,
           )
         held
       })
@@ -517,6 +521,7 @@ fn held_listed(listed listed: List(Listed)) -> Held {
         starts_ms: one.starts_ms,
         ends: EndsAt(ms: one.ends_ms),
       ),
+      trigger: None,
     ).0
   })
 }

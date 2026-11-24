@@ -69,7 +69,7 @@ import genesis_prime/table/id.{
 import genesis_prime/world_map/map
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/set
 import owned_test
 import world_entry_support
@@ -990,6 +990,7 @@ pub fn the_allys_ledger_clears_every_caster_at_its_death_test() -> Nil {
             sight: hold.sight,
             spell4_id: hold.spell4_id,
             effect: hold.effect,
+            trigger: None,
           ).0
         }),
       )

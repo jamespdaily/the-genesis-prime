@@ -21,12 +21,15 @@ import gleam/option.{type Option, None, Some}
 
 /// An event of a proc's holder. `other_unit` is the unit the event concerns besides the
 /// holder, the creature a hit struck, none for stealth, combat, death and a heal;
-/// `spell` is the spell that made it, none for an event no spell makes.
+/// `spell` is the spell that made it, none for an event no spell makes. `holder` is the
+/// unit the proc is held on when it is not the caster's own, the ally whose blow raised
+/// the event, and none for the caster's own events.
 pub type Event {
   Event(
     trigger: spell_plan.Trigger,
     other_unit: Option(Int),
     spell: Option(EventSpell),
+    holder: Option(Int),
   )
 }
 

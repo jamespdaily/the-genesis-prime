@@ -3137,6 +3137,7 @@ fn ledger_told(effects effects: List(Effect)) -> held_changes.Held {
           sight:,
           spell4_id:,
           effect:,
+          trigger: None,
         ).0
       _ -> held
     }

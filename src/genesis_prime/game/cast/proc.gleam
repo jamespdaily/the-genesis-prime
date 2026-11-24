@@ -231,8 +231,18 @@ pub fn heals_landed(
             fn(holder) { event_spell(spell: holder.spell) },
           )
         [
-          proc.Event(trigger: spell_plan.LandsHeal, other_unit: None, spell:),
-          proc.Event(trigger: spell_plan.ReceivesHeal, other_unit: None, spell:),
+          proc.Event(
+            trigger: spell_plan.LandsHeal,
+            other_unit: None,
+            spell:,
+            holder: None,
+          ),
+          proc.Event(
+            trigger: spell_plan.ReceivesHeal,
+            other_unit: None,
+            spell:,
+            holder: None,
+          ),
         ]
       }
       CasterChangeStarts(change: HeldChange(..), ..)
@@ -277,6 +287,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
           trigger: spell_plan.SpendsResource,
           other_unit: None,
           spell: None,
+          holder: None,
         ))
       Send(..)
       | Tell(..)
@@ -326,6 +337,7 @@ pub fn hit_events(
       trigger:,
       other_unit: Some(unit_id),
       spell: Some(event_spell(spell:)),
+      holder: None,
     )
   }
   list.flat_map(struck, fn(one) {
@@ -401,6 +413,7 @@ pub fn blow_events(blow blow: BlowTaken) -> List(proc.Event) {
       trigger:,
       other_unit: Some(blow.striker),
       spell: Some(blow.spell),
+      holder: None,
     )
   }
   case blow {

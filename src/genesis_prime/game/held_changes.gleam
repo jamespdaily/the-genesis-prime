@@ -42,6 +42,7 @@ import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
 
@@ -65,6 +66,15 @@ pub type Told {
   /// The player applies nothing and keeps the source for the caster, which waits for the
   /// event `trigger`.
   Awaits(trigger: spell_plan.Trigger)
+}
+
+/// The event a caster waits for when a start tells `told`, none for a change the player
+/// applies.
+pub fn trigger_of(told told: Told) -> Option(spell_plan.Trigger) {
+  case told {
+    Applies(..) -> None
+    Awaits(trigger:) -> Some(trigger)
+  }
 }
 
 /// Whether a held change ends when its caster leaves the sight of the unit that holds it.
@@ -119,13 +129,16 @@ type Listing {
 
 type Entry {
   /// A source of another player's cast: the caster's connection and unit, how the change
-  /// keeps when the caster leaves sight, and what a create lists of it.
+  /// keeps when the caster leaves sight, what a create lists of it, and the event the
+  /// caster waits for when the source is a Proc row (`Awaits`), none for a change the
+  /// player applies.
   PlayerSource(
     source: Source,
     by: ConnectionId,
     unit_id: Int,
     sight: Sight,
     listing: Listing,
+    trigger: Option(spell_plan.Trigger),
   )
   /// A source of a creature's, held for its connection until the connection ends: no unit,
   /// no sight rule and nothing listed.
@@ -144,8 +157,8 @@ pub fn new() -> Held {
 }
 
 /// The source `source` held for the connection `by` whose unit is `unit_id`, kept as
-/// `sight` says and listed to a viewer as the cast of `spell4_id` with the effect `effect`:
-/// `True` when it was not held. The same source told again by its holder keeps its place
+/// `sight` says and listed to a viewer as the cast of `spell4_id` with the effect `effect`,
+/// the caster waiting for the event `trigger` when there is one: `True` when it was not held. The same source told again by its holder keeps its place
 /// and takes the new spell and effect (a later go of one cast); told by another connection
 /// it changes nothing.
 pub fn started(
@@ -156,6 +169,7 @@ pub fn started(
   sight sight: Sight,
   spell4_id spell4_id: Spell4Id,
   effect effect: unit_casts.HeldEffect,
+  trigger trigger: Option(spell_plan.Trigger),
 ) -> #(Held, Bool) {
   let listing = Listing(spell4_id:, effect:)
   case holder_of(held:, source:) {
@@ -174,7 +188,7 @@ pub fn started(
     Ok(_) | Error(Nil) ->
       added(
         held:,
-        entry: PlayerSource(source:, by:, unit_id:, sight:, listing:),
+        entry: PlayerSource(source:, by:, unit_id:, sight:, listing:, trigger:),
       )
   }
 }

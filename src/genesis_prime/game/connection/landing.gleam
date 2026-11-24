@@ -202,6 +202,7 @@ pub fn changed(
                   sight:,
                   spell4_id:,
                   effect:,
+                  trigger: held_changes.trigger_of(told: change),
                 )
               world_entry.Entered(..entered, held:)
             })

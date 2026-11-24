@@ -1731,9 +1731,19 @@ fn settled(
         True -> spell_plan.EnteredStealth
         False -> spell_plan.LeftStealth
       }
-      #([proc.Event(trigger: change, other_unit: None, spell: None)], [
-        StealthChanged(stealthed:),
-      ])
+      #(
+        [
+          proc.Event(
+            trigger: change,
+            other_unit: None,
+            spell: None,
+            holder: None,
+          ),
+        ],
+        [
+          StealthChanged(stealthed:),
+        ],
+      )
     }
   }
   let before_count = list.length(cast.pending)
@@ -1771,6 +1781,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
             trigger: spell_plan.StartsMoving,
             other_unit: None,
             spell: None,
+            holder: None,
           ),
         ]
         ResourceMoved(slot:, from:, to:) if from != to ->
@@ -1780,6 +1791,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
                 trigger: spell_plan.ResourceCrosses,
                 other_unit: None,
                 spell: None,
+                holder: None,
               ),
             ],
             case slot == cast_state.suit_power_slot && to <. from {
@@ -1788,6 +1800,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
                   trigger: spell_plan.SuitPowerDrops,
                   other_unit: None,
                   spell: None,
+                  holder: None,
                 ),
               ]
               False -> []
@@ -3571,7 +3584,12 @@ pub fn died(
   now now: Now,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, own: [
-    proc.Event(trigger: spell_plan.Died, other_unit: None, spell: None),
+    proc.Event(
+      trigger: spell_plan.Died,
+      other_unit: None,
+      spell: None,
+      holder: None,
+    ),
   ])
   all_ended(cast:, now:)
 }
@@ -3584,7 +3602,12 @@ pub fn combat_left(
   now _now: Now,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, own: [
-    proc.Event(trigger: spell_plan.LeftCombat, other_unit: None, spell: None),
+    proc.Event(
+      trigger: spell_plan.LeftCombat,
+      other_unit: None,
+      spell: None,
+      holder: None,
+    ),
   ])
   #(cast, [])
 }
@@ -4152,6 +4175,7 @@ fn start(
               trigger: spell_plan.UsesAbility,
               other_unit: None,
               spell: Some(cast_proc.event_spell(spell:)),
+              holder: None,
             ),
           ])
         Child(..) | Passive | Activation(..) | Shortcut(..) -> cast.pending
