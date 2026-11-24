@@ -56,11 +56,13 @@
 //// - A creature's create keeps an entry only for a cast whose start its viewer was written
 ////   (`client_casts.is_written`), though the client would show a cast whose caster it does not
 ////   know (`cast.unknown_caster`).
-//// - A player's list holds its own casts and the casts that other players' casts hold on it
-////   (`held_changes.cast_views`: an absorb, an Interrupt Armor row or a modifier row a press
-////   at the player landed); the Fluff rows of another player's press (Spell4 bases 26762,
-////   35526, 63087, 19030's child 54912 and 47675's children) are listed on it by the caster's
-////   own node and by no ledger.
+//// - A player's list, and the start the player tells a viewer already beside it
+////   (`landing.cast_went`), hold its own casts and the casts that other players' casts hold on
+////   it (`held_changes.cast_views`: an absorb, an Interrupt Armor row or a modifier row a
+////   press at the player landed); the Fluff rows and heal rows of another player's press
+////   (Spell4 bases 26762, 35526, 63087, 19030's child 54912, 47675's children, and the
+////   children a Proxy starts on each ally, such as Spell4 60416's HealShields row 145873) are
+////   listed on it by the caster's own node and by no ledger.
 
 import genesis_prime/game/cast/target_info
 import genesis_prime/game/lasting

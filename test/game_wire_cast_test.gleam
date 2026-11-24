@@ -3713,7 +3713,7 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
   }
   // The third's client has read the creates of the Esper and the Medic, so the Esper's and
   // the Medic's connections hold the third as a viewer.
-  let #(third_arrived, third_have) =
+  let #(_, third_have) =
     game_client.read_until(game: third, have: third_have, found: fn(frames) {
       created(list.append(third_entry, frames), esper)
       && created(list.append(third_entry, frames), medic)
@@ -3779,8 +3779,8 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
     && started_cast.primary_target_unit_id == medic
     && started_cast.spell4_id == 32_823
     as "opcode.0x7ff: the start names the Esper as its caster and the Medic as its primary target"
-  assert !created(list.append(third_arrived, third_read), esper)
-    as "cast.unknown_caster: the Esper is never created again for the third client"
+  assert !created(third_read, esper)
+    as "cast.unknown_caster: the Esper is not created again for the third client, which shows the buff for a caster it does not hold"
   let assert [go] =
     list.filter(gos_in(frames: third_read), fn(go) {
       go.cast_id == started_cast.cast_id

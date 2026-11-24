@@ -100,7 +100,14 @@ pub fn is_written(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   }
 }
 
-/// Whether the client holds the cast from an ally's create.
+/// Whether the client holds the cast in any state: written by its caster, borrowed from an
+/// ally, held with no caster or listed again by its caster. A cast the client holds is not
+/// started again (`opcode.0x7ff`: a cast id already live restarts that cast).
+pub fn is_held(casts casts: Casts, cast_id cast_id: Int) -> Bool {
+  dict.has_key(casts.holds, cast_id)
+}
+
+/// Whether the client holds the cast from an ally's create or start.
 pub fn is_borrowed(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   case dict.get(casts.holds, cast_id) {
     Ok(Borrowed(..)) -> True

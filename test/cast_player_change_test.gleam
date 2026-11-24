@@ -26,7 +26,6 @@ import cast_support as support
 import client_tables
 import genesis_prime/game/activate
 import genesis_prime/game/cast
-import genesis_prime/game/cast/gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick

@@ -922,7 +922,7 @@ fn player_change_armed(
       longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
       go_ms: now_ms,
     )
-    as "a row landed on a player has no delay and an end (cast_gate.player_row), so it has a life"
+    as "a row landed on a player has no delay and does not last until removed (cast_gate.player_row), and the rows of the spells a press at a player or a Proxy on each ally reaches have a duration, so it has a life"
   let #(cast, pushed) = kept_pushed_off(cast:, cast_id:, on:)
   let #(cast, cancels) =
     cast_state.cancel_timers(cast:, matching: fn(due) {
