@@ -6494,6 +6494,10 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
+      missing: "A target apply prerequisite on an absorb or a type 11 row aimed at another player reads what the caster's picture shows of that player, not the player's own state.",
+    ),
+    gap.Entry(
+      area: "Casting",
       missing: "A viewer that arrives after a cast starts is told it by a unit create, whose entry has no item level, so the client reads that cast's buff tooltip at its own player's level, as for a cast of no item; a held cast of another player is told item level 0 for the same reason.",
     ),
     gap.Entry(
