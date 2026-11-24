@@ -21,6 +21,7 @@ import genesis_prime/game/forced_move
 import genesis_prime/game/innate
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type PlanError}
 import genesis_prime/table/id.{
   type Spell4BaseId, ClassId, Spell4BaseId, Spell4EffectsId, Spell4Id,
@@ -782,7 +783,7 @@ fn proxy_targets_of(
   |> list.map(fn(proxy) { #(proxy.effect_id.value, proxy.target) })
 }
 
-pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_each_ally_and_the_three_it_frees_are_planned_test() -> Nil {
+pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_each_ally_and_the_two_it_frees_are_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
@@ -844,10 +845,10 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
       effect: flash_row,
     )
     == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
-  // Sentinel 54395, Projected Spirit 36233 and Mending Banner 33345 held a Proxy at the area
-  // (a Guard on the party member missing the most health; "yourself and N allies"; "the most
-  // injured ally within 35 m", texts 483043, 292646, 246918) and are planned.
-  list.each([54_395, 36_233, 33_345], fn(spell4_id) {
+  // Sentinel 54395 and Mending Banner 33345 held a Proxy at the area (a Guard on the party
+  // member missing the most health; "the most injured ally within 35 m", texts 483043, 246918)
+  // and are planned.
+  list.each([54_395, 33_345], fn(spell4_id) {
     assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
       as {
         int.to_string(spell4_id)
@@ -864,7 +865,9 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
   // Warden 33392 and Barrier 78081 are centred on the ally their child is started on, which
   // the picture does not place; Pyrokinetic Flame, Voidspring (its area 653 is ordered by the
   // lowest health, which no friendly area builds, so its Proxy starts on a creature) and
-  // Field Probes keep their own sentences.
+  // Field Probes keep their own sentences, and Projected Spirit's Proxy 77150 fires at each of
+  // the five gos of spell 36696 (phaseFlags -1) while its texts (292646, 488045: "restoring ...
+  // health to yourself and N allies") say the health is restored once.
   list.each(
     [
       #(
@@ -874,6 +877,10 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
       #(
         78_081,
         "has a hit telegraph placed on the cast's target and is started on each ally",
+      ),
+      #(
+        36_233,
+        "Proxy effect 77150 that starts a child on each ally in its area at 5 gos",
       ),
       #(36_821, "periodic damage effect 100978 that lasts until removed"),
       #(
@@ -942,6 +949,37 @@ pub fn every_proxy_row_with_no_ticktime_aimed_at_the_area_of_an_ally_finding_spe
         panic as { why <> " is refused: " <> spell_plan.describe(error:) }
     }
   })
+}
+
+pub fn no_planned_proxy_starts_its_child_on_each_ally_at_more_than_one_go_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  // The texts of a Proxy at the allies of an area ("yourself and N allies") say the child acts
+  // once on each ally, so a Proxy whose phaseFlags name two or more gos of its spell, which
+  // would act on an ally at each, is refused (`ProxyOnEachAllyAtSeveralGos`).
+  let tables = client_tables.shared()
+  let several =
+    dict.values(spell_plan.plans_with_later(tables:))
+    |> list.flat_map(fn(plan) {
+      spell_plan.tree(spell: plan, started: fn(_) { True })
+    })
+    |> list.flat_map(fn(spell) {
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
+      |> list.filter(fn(proxy) { proxy.target == spell_plan.OnEachAlly })
+      |> list.filter(fn(proxy) {
+        list.count(
+          spell_plan.go_numbers(go_count: spell_plan.go_count(spell:)),
+          fn(go) {
+            spell_effect.names_phase(phase_flags: proxy.phase_flags, phase: go)
+          },
+        )
+        > 1
+      })
+      |> list.map(fn(proxy) { #(spell.spell4_id.value, proxy.effect_id.value) })
+    })
+  assert several == []
+    as "no planned Proxy at the allies of an area fires at two gos or more of its spell"
 }
 
 pub fn every_row_of_nullifiers_tree_is_read_and_its_ability_is_planned_test() -> Nil {

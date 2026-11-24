@@ -349,8 +349,10 @@ fn emission_areas(
 /// and its area row 662 ordered Closest) made to start Mental Boon's child 33258 on each unit its
 /// area selects: the heal row itself turned into a Proxy at the area alone, or, with `heal_too`,
 /// the heal row kept and a copy of it turned into that Proxy (row 900501). The area takes `count`
-/// units. The edits stand in for no client row; they are the shape of Sentinel 54395 (a Proxy and
-/// no heal) and of a phase that holds both.
+/// units. Emission's channel is cut to one pulse (channelMaxTime equal to channelInitialDelay),
+/// since a Proxy at the area that fires at several gos is refused (`ProxyOnEachAllyAtSeveralGos`).
+/// The edits stand in for no client row; they are the shape of Sentinel 54395 (a Proxy and no
+/// heal) and of a phase that holds both.
 fn emission_proxying(
   heal_too heal_too: Bool,
   count count: Int,
@@ -374,6 +376,7 @@ fn emission_proxying(
     as "the heal row 141384 is in the fixture"
   let assert Ok(rows) =
     fixture_tables.change_all(rows:, edits: [
+      #("Spell4", 58_841, [#("channelMaxTime", planted_table.Integer(410))]),
       #("Spell4AoeTargetConstraints", 662, [
         #("targetCount", planted_table.Integer(count)),
       ]),

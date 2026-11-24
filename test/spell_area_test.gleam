@@ -397,16 +397,8 @@ pub fn every_phase_of_every_planned_spell_that_selects_the_area_has_hit_shapes_w
         }
       })
     })
-  // Projected Spirit's spell 36696 (SpellPhase rows 2577 to 2581) has five gos and a Proxy
-  // 77150 of every go (phaseFlags -1) that starts a child on each ally; its hit rows are four
-  // rectangles that move ahead, one for each of the gos 0 to 3 (TelegraphDamage 1163, 1304 and
-  // 1305 by their phaseFlags), and none names the go 4, so that go strikes nobody from the area,
-  // as the client's rows draw nothing at it (`table_rows -- Spell4Telegraph spell4Id=36696`).
-  // Its texts (292646, 488045 for a tier: "Dash forward, restoring ... health to yourself and N
-  // allies") say the health is restored once and name no repeat at each go or along the path, so
-  // the heal at each of the four gos with a rectangle is stated as open in `spell_plan.gaps`.
-  assert silent == [#(36_696, 4)]
-    as "a go that selects the area names no hit row, so it strikes nobody from the area: Projected Spirit's fifth go alone"
+  assert silent == []
+    as "a go that selects the area names no hit row, so it strikes nobody from the area"
 }
 
 pub fn the_window_the_client_draws_a_row_in_holds_the_go_its_phase_names_for_every_planned_phased_spell_test() -> Nil {

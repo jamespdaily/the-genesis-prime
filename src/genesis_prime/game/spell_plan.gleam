@@ -45,10 +45,12 @@
 ////   find, so it is refused by name (`PeriodicProxyAtAlliesNotRead`); a Proxy with no tickTime
 ////   aimed at the area (flags 4 to 7) in a spell whose area finds the caster's allies starts
 ////   its child on each ally the area selects, and, with the caster's bit (5 or 7), on the caster
-////   too (`OnEachStruck`, `Proxy.on_allies`): the tooltips say "yourself and N allies", texts
+////   too (`OnEachAlly`): the tooltips say "yourself and N allies", texts
 ////   245408, 360845, 315699, 287485 and 389501, and `Spell4Effects.targetFlags` gives the area
-////   those units; in a spell that hits no foes whose area finds no allies it starts its child
-////   on the caster alone; a Proxy with no tickTime whose spell holds two or more
+////   those units, and one whose phaseFlags name more than one go of its spell is refused
+////   (`ProxyOnEachAllyAtSeveralGos`: the texts say the child acts once, Projected Spirit's
+////   Proxy 77150, texts 292646 and 488045); in a spell that hits no foes whose area finds no
+////   allies it starts its child on the caster alone; a Proxy with no tickTime whose spell holds two or more
 ////   such Proxies naming different tiers of one Spell4Base with every compared field
 ////   alike is left out, `ProxyStartsTiersNoChoice`, since no row picks a tier: Flash,
 ////   Proxy 180600 to Spell4 70756, whose text 389501 promises its own heal only) starts
@@ -2520,6 +2522,10 @@ pub type PlanError {
     effect_id: Int,
     named_spell4_id: Int,
   )
+  /// A Proxy with no tickTime that starts its child on each ally of the area (`OnEachAlly`)
+  /// fires at more than one go of its spell (`gos` of them): the child would act on an ally
+  /// at each go, while the texts say it acts once.
+  ProxyOnEachAllyAtSeveralGos(spell4_id: Int, effect_id: Int, gos: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
   /// prerequisite, which no rule of the server holds.
@@ -2824,6 +2830,14 @@ pub fn describe(error error: PlanError) -> String {
       <> " that casts the Spell4 row "
       <> int.to_string(named_spell4_id)
       <> " every tickTime on the allies in its area, whom the server does not find"
+    ProxyOnEachAllyAtSeveralGos(spell4_id:, effect_id:, gos:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proxy effect "
+      <> int.to_string(effect_id)
+      <> " that starts a child on each ally in its area at "
+      <> int.to_string(gos)
+      <> " gos, and the texts say the child acts once"
     ControlPersistenceNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3184,6 +3198,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | ControlAimNotRead(..)
     | FriendlyAreaNotRead(..)
     | PeriodicProxyAtAlliesNotRead(..)
+    | ProxyOnEachAllyAtSeveralGos(..)
     | ControlPersistenceNotRead(..)
     | StealthAimNotRead(..)
     | StealthTimedNotRead(..)
@@ -4016,7 +4031,31 @@ fn spell_of(
       alternate: None,
       press_proxies:,
     )
-  Ok(spell)
+  use Nil <- result.map(each_ally_proxies_fire_once(spell:))
+  spell
+}
+
+/// A Proxy that starts its child on each ally of the area (`OnEachAlly`) fires at one go of
+/// its spell only: the texts say the child acts once on "yourself and N allies", and a Proxy
+/// whose phaseFlags name several gos would act on an ally at each go it stands in the area at.
+/// A Proxy that names several gos is refused (`ProxyOnEachAllyAtSeveralGos`).
+fn each_ally_proxies_fire_once(spell spell: Spell) -> Result(Nil, PlanError) {
+  let gos = go_numbers(go_count: go_count(spell:))
+  list.try_each(payloads(spell:, as_kind: as_proxy), fn(proxy) {
+    let named =
+      list.count(gos, fn(go) {
+        spell_effect.names_phase(phase_flags: proxy.phase_flags, phase: go)
+      })
+    case proxy.target == OnEachAlly && named > 1 {
+      True ->
+        Error(ProxyOnEachAllyAtSeveralGos(
+          spell4_id: spell.spell4_id.value,
+          effect_id: proxy.effect_id.value,
+          gos: named,
+        ))
+      False -> Ok(Nil)
+    }
+  })
 }
 
 /// The Proxy rows of a RapidTap or ChargeRelease spell with no threshold time that the
@@ -8274,7 +8313,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row and for a Proxy with no tickTime only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a modifier, absorb or Fluff aimed at the area, and a heal with a delay or a tickTime aimed at the area (Barrier's 94870); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and Triage's shield row 174070 (flags 4, delay 10) reaches nobody; Projected Spirit's Proxy 77150 fires at each of the five gos of spell 36696 (phaseFlags -1) and the area strikes at four of them, so an ally inside the moving rectangles at several gos takes the heal 78454 at each, up to four times in one cast, while the texts (292646, and 488045 for a tier: \"restoring ... health to yourself and N allies\") say the health is restored once: whether the heal repeats at each go is open; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row and for a Proxy with no tickTime only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a modifier, absorb or Fluff aimed at the area, and a heal with a delay or a tickTime aimed at the area (Barrier's 94870); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and Triage's shield row 174070 (flags 4, delay 10) reaches nobody; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",
