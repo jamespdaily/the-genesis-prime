@@ -128,6 +128,7 @@ pub fn a_held_tier_plays_its_own_plan_or_the_best_lower_tier_the_plans_cast_and_
 
 pub fn a_held_tier_plan_keeps_the_abilitys_base_and_its_tiers_own_spell4_id_for_every_tier_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let plans = spell_plan.plans_with_later(tables:)

@@ -1651,6 +1651,7 @@ fn tier_rows_of_planned_abilities(
 
 pub fn every_tier_of_a_planned_ability_is_planned_or_listed_unplanned_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let planned = spell_plan.tier_plans(tables)
@@ -1793,6 +1794,7 @@ fn named_differences() -> List(NamedDifference) {
 
 pub fn a_tier_the_plans_leave_out_differs_from_the_tier_that_plays_it_only_in_the_columns_each_named_with_its_reason_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let tiers = spell_tier.tiers(tables)
