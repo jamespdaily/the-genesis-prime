@@ -3316,11 +3316,7 @@ fn checked(
   spell spell: Spell,
   checker checker: Checker,
 ) -> Result(Spell, PlanError) {
-  let trees = case spell.alternate {
-    Some(alternate) -> [spell, alternate]
-    None -> [spell]
-  }
-  list.flat_map(trees, tree_started(spell: _, started: fn(_) { True }))
+  tree_started_with_alternate(spell:)
   |> list.try_each(fn(started) { checker(started.0, started.1) })
   |> result.replace(spell)
 }
@@ -8224,6 +8220,24 @@ pub type Start {
   /// `AtHolder` and, for `AtOtherUnit`, the creature a hit struck or the holder when the event
   /// has none.
   FromProc(aim: ProcAim)
+}
+
+/// Every spell of the tree of an ability (`tree`) and of its alternate's tree, every Proxy
+/// taken as started.
+pub fn tree_with_alternate(spell spell: Spell) -> List(Spell) {
+  tree_started_with_alternate(spell:) |> list.map(fn(started) { started.0 })
+}
+
+/// Every spell of the tree of an ability and of its alternate's tree with how it is started
+/// (`tree_started`), every Proxy taken as started.
+pub fn tree_started_with_alternate(
+  spell spell: Spell,
+) -> List(#(Spell, Start)) {
+  let trees = case spell.alternate {
+    Some(alternate) -> [spell, alternate]
+    None -> [spell]
+  }
+  list.flat_map(trees, tree_started(spell: _, started: fn(_) { True }))
 }
 
 /// Every spell of the tree (`tree`) with how it is started, a spell reached two ways once

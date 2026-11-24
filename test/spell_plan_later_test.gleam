@@ -408,15 +408,7 @@ fn freed_and_read(
     })
   let left_out_seen =
     list.flat_map(planned, fn(ability) {
-      let alternate_tree = case ability.alternate {
-        Some(alternate) ->
-          spell_plan.tree(spell: alternate, started: fn(_) { True })
-        None -> []
-      }
-      list.append(
-        spell_plan.tree(spell: ability, started: fn(_) { True }),
-        alternate_tree,
-      )
+      spell_plan.tree_with_alternate(spell: ability)
       |> list.flat_map(fn(spell) {
         spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
         |> list.filter_map(fn(effect) {
@@ -591,15 +583,7 @@ fn unread_rows_of(
         base: base_of(tables:, spell4_id:),
       )
       as "the plans hold the ability"
-    let alternate_tree = case ability.alternate {
-      Some(alternate) ->
-        spell_plan.tree(spell: alternate, started: fn(_) { True })
-      None -> []
-    }
-    list.append(
-      spell_plan.tree(spell: ability, started: fn(_) { True }),
-      alternate_tree,
-    )
+    spell_plan.tree_with_alternate(spell: ability)
     |> list.flat_map(fn(spell) {
       spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
       |> list.filter(fn(effect) {
@@ -754,15 +738,7 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_tes
 fn proxy_targets_of(
   ability ability: spell_plan.Spell,
 ) -> List(#(Int, spell_plan.ProxyTarget)) {
-  let alternate_tree = case ability.alternate {
-    Some(alternate) ->
-      spell_plan.tree(spell: alternate, started: fn(_) { True })
-    None -> []
-  }
-  list.append(
-    spell_plan.tree(spell: ability, started: fn(_) { True }),
-    alternate_tree,
-  )
+  spell_plan.tree_with_alternate(spell: ability)
   |> list.flat_map(fn(spell) {
     spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
   })
@@ -1022,15 +998,7 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
   let started =
     dict.values(spell_plan.plans_with_later(tables:))
     |> list.flat_map(fn(ability) {
-      let alternate = case ability.alternate {
-        Some(alternate) ->
-          spell_plan.tree_started(spell: alternate, started: fn(_) { True })
-        None -> []
-      }
-      list.append(
-        spell_plan.tree_started(spell: ability, started: fn(_) { True }),
-        alternate,
-      )
+      spell_plan.tree_started_with_alternate(spell: ability)
     })
   let spells =
     list.unique(list.map(started, fn(entry) { { entry.0 }.spell4_id.value }))

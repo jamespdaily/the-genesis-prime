@@ -3079,15 +3079,7 @@ pub fn the_targeted_spells_of_the_planned_trees_select_no_area_and_the_two_child
   let started =
     dict.values(spell_plan.plans_with_later(tables:))
     |> list.flat_map(fn(ability) {
-      let alternate = case ability.alternate {
-        Some(alternate) ->
-          spell_plan.tree_started(spell: alternate, started: fn(_) { True })
-        None -> []
-      }
-      list.append(
-        spell_plan.tree_started(spell: ability, started: fn(_) { True }),
-        alternate,
-      )
+      spell_plan.tree_started_with_alternate(spell: ability)
     })
     |> list.map(fn(started) { #(started.0.spell4_id.value, started.1) })
   let started_as = fn(spell4_id: Int) {

@@ -1142,6 +1142,40 @@ pub fn tree_started_names_how_each_spell_of_a_tree_is_started_test() -> Nil {
   })
 }
 
+pub fn the_tree_of_an_ability_and_the_tree_of_its_alternate_are_walked_together_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Telekinetic Strike's tree holds the spells 30900, 32893, 41869 and 77116 and Crush's 32812
+  // and 42297 (`tree_started_names_how_each_spell_of_a_tree_is_started_test`); Crush stands in
+  // as the alternate the Spell4 row would name (`Spell4.spell4IdMechanicAlternateSpell`).
+  let strike = spell_tables.client_spell(spell4_id: 32_893)
+  let crush = spell_tables.client_spell(spell4_id: 32_812)
+  let ids = fn(spells: List(Spell)) {
+    list.map(spells, fn(spell) { spell.spell4_id.value })
+    |> list.sort(int.compare)
+  }
+  assert ids(spell_plan.tree_with_alternate(spell: strike))
+    == [30_900, 32_893, 41_869, 77_116]
+    as "an ability with no alternate walks its own tree alone"
+  let surged = spell_plan.Spell(..strike, alternate: Some(crush))
+  assert ids(spell_plan.tree_with_alternate(spell: surged))
+    == [30_900, 32_812, 32_893, 41_869, 42_297, 77_116]
+    as "an ability with an alternate walks both trees"
+  assert list.map(
+      spell_plan.tree_started_with_alternate(spell: surged),
+      fn(started) { #({ started.0 }.spell4_id.value, started.1) },
+    )
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    == [
+      #(30_900, spell_plan.Proxied(target: spell_plan.OnEachStruck)),
+      #(32_812, spell_plan.Pressed),
+      #(32_893, spell_plan.Pressed),
+      #(41_869, spell_plan.Proxied(target: spell_plan.OnCaster)),
+      #(42_297, spell_plan.Proxied(target: spell_plan.OnEachStruck)),
+      #(77_116, spell_plan.Proxied(target: spell_plan.OnCaster)),
+    ]
+    as "each spell of both trees is told with how it is started"
+}
+
 pub fn a_proxy_aimed_at_the_caster_and_the_area_starts_its_child_both_ways_test() -> Nil {
   use <- owned_test.run(60_000)
   // Spell4Effects.targetFlags 5 holds the caster's bit and the area's, so `target_of` gives

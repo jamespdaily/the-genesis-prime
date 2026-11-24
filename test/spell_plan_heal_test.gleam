@@ -58,7 +58,6 @@ import genesis_prime/table/spell_level
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
 import gleam/result
 import gleam/set
 import gleam/string
@@ -979,15 +978,7 @@ fn tree_heals(
       base: Spell4BaseId(row.spell4_base_id_base_spell),
     )
     as "the plans hold the ability"
-  let alternate = case ability.alternate {
-    Some(alternate) ->
-      spell_plan.tree(spell: alternate, started: fn(_) { True })
-    None -> []
-  }
-  list.append(
-    spell_plan.tree(spell: ability, started: fn(_) { True }),
-    alternate,
-  )
+  spell_plan.tree_with_alternate(spell: ability)
   |> list.flat_map(fn(spell) {
     list.filter_map(spell.effects, fn(planned) {
       spell_plan.as_heal(kind: planned.kind)
@@ -1061,15 +1052,7 @@ fn tree_proxies(
       base: Spell4BaseId(row.spell4_base_id_base_spell),
     )
     as "the plans hold the ability"
-  let alternate = case ability.alternate {
-    Some(alternate) ->
-      spell_plan.tree(spell: alternate, started: fn(_) { True })
-    None -> []
-  }
-  list.append(
-    spell_plan.tree(spell: ability, started: fn(_) { True }),
-    alternate,
-  )
+  spell_plan.tree_with_alternate(spell: ability)
   |> list.flat_map(fn(spell) {
     list.filter_map(spell.effects, fn(planned) {
       spell_plan.as_proxy(kind: planned.kind)
