@@ -137,14 +137,14 @@ pub fn started(
   session session: Session,
   now now: Now,
   source source: unit_properties.Source,
-  change change: held_changes.Change,
+  change change: held_changes.Told,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case change {
-    held_changes.Property(modifier:) ->
+    held_changes.Applies(change: held_changes.Property(modifier:)) ->
       connection_properties.started(session:, now:, source:, modifier:)
-    held_changes.Absorb(amount:, mask:) ->
+    held_changes.Applies(change: held_changes.Absorb(amount:, mask:)) ->
       connection_absorption.started(session:, now:, source:, amount:, mask:)
-    held_changes.Watches(..) -> #(session, [])
+    held_changes.Awaits(..) -> #(session, [])
   }
 }
 

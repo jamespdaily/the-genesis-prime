@@ -235,7 +235,7 @@ pub type Effect {
   OtherPlayerChangeStarts(
     address: PlayerAddress,
     source: unit_properties.Source,
-    change: held_changes.Change,
+    change: held_changes.Told,
     sight: held_changes.Sight,
     spell4_id: Spell4Id,
     effect: unit_casts.HeldEffect,

@@ -291,7 +291,7 @@ fn pool_starts(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: absorb_id),
-    change: held_changes.Absorb(amount: 139, mask: 7),
+    change: held_changes.Applies(held_changes.Absorb(amount: 139, mask: 7)),
     sight:,
     spell4_id: Spell4Id(54_806),
     effect: held_effect_of_armor(effect_id: absorb_id, go_ms:),
@@ -313,7 +313,7 @@ fn armor_starts(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: modifier_id),
-    change: held_changes.Property(modifier:),
+    change: held_changes.Applies(held_changes.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(54_806),
     effect: held_effect_of_armor(effect_id: modifier_id, go_ms:),
@@ -2202,7 +2202,9 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
           _ -> Error(Nil)
         }
       })
-      == list.map(row.told, fn(change) { #(ally, change.0, change.1, change.2) })
+      == list.map(row.told, fn(change) {
+        #(ally, change.0, held_changes.Applies(change.1), change.2)
+      })
       as { row.why <> ": the changes told to the ally" }
     assert list.filter_map(support.goes_in(effects: went), fn(go) {
         case go.cast_id == child_id {
@@ -2688,7 +2690,7 @@ fn pool_changed(
     cast_state.OtherPlayerChangeStarts(
       address:,
       source:,
-      change: held_changes.Absorb(amount:, ..),
+      change: held_changes.Applies(held_changes.Absorb(amount:, ..)),
       ..,
     )
       if address.unit_id == ally
@@ -3661,7 +3663,7 @@ fn barrier_change_of(
   cast_state.OtherPlayerChangeStarts(
     address: PlayerAddress(..address(), unit_id:),
     source: source_of(cast_id:, effect_id: barrier_row),
-    change: held_changes.Property(modifier:),
+    change: held_changes.Applies(held_changes.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(41_369),
     effect: unit_casts.HeldEffect(
@@ -3972,7 +3974,7 @@ fn auger_change_of(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: auger_row),
-    change: held_changes.Property(modifier:),
+    change: held_changes.Applies(held_changes.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(82_830),
     effect: unit_casts.HeldEffect(
@@ -4243,7 +4245,7 @@ fn watch_starts(
   cast_state.OtherPlayerChangeStarts(
     address: PlayerAddress(..address(), unit_id:),
     source: source_of(cast_id:, effect_id:),
-    change: held_changes.Watches(trigger: spell_plan.TakesDamage),
+    change: held_changes.Awaits(trigger: spell_plan.TakesDamage),
     sight: held_changes.KeptWhenUnseen,
     spell4_id: Spell4Id(spell4_id),
     effect: unit_casts.HeldEffect(

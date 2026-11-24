@@ -36,7 +36,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/held_changes.{
-  type Change, type PlayerChange, type Sight, EndsWhenUnseen, KeptWhenUnseen,
+  type PlayerChange, type Sight, type Told, EndsWhenUnseen, KeptWhenUnseen,
   PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
 }
 import genesis_prime/game/spell_plan
@@ -80,27 +80,29 @@ const one_bits = 0x3F800000
 const armored_bits = 1_062_836_634
 
 /// The modifier of row 203798.
-fn armor() -> Change {
+fn armor() -> Told {
   let assert Ok(multiplier) = float32.of_column(armored_bits)
     as "dataBits02 of row 203798 is a finite float"
-  held_changes.Property(Change(
-    property: UnitProperty2Id(161),
-    mode: 3,
-    multiplier:,
-    flat: 0.0,
-    per_level: 0.0,
-  ))
+  held_changes.Applies(
+    held_changes.Property(Change(
+      property: UnitProperty2Id(161),
+      mode: 3,
+      multiplier:,
+      flat: 0.0,
+      per_level: 0.0,
+    )),
+  )
 }
 
 /// The pool of an absorb row, `amount` taking every damage type (mask 7, row 62024).
-fn pool(amount amount: Int) -> Change {
-  held_changes.Absorb(amount:, mask: 7)
+fn pool(amount amount: Int) -> Told {
+  held_changes.Applies(held_changes.Absorb(amount:, mask: 7))
 }
 
 /// The Proc row 86457 a caster holds on the player (Healing Salve's allies' row, kind 16 takes
 /// damage, Spell4 39386, 12 000 ms): the player applies nothing of it.
-fn watches() -> Change {
-  held_changes.Watches(trigger: spell_plan.TakesDamage)
+fn watches() -> Told {
+  held_changes.Awaits(trigger: spell_plan.TakesDamage)
 }
 
 fn watch_source(cast_id cast_id: Int) -> Source {
@@ -137,14 +139,16 @@ fn armor_entry(value value: Int) -> UnitProperty {
 
 /// The Interrupt Armor row 199192 (`table_rows -- Spell4Effects 199192`): +1 flat on property
 /// 44, the armor's maximum (default 0.0), for 5000 ms.
-fn interrupt_armor() -> Change {
-  held_changes.Property(unit_properties.Change(
-    property: unit_properties.interrupt_armor_threshold,
-    mode: 0,
-    multiplier: 1.0,
-    flat: 1.0,
-    per_level: 0.0,
-  ))
+fn interrupt_armor() -> Told {
+  held_changes.Applies(
+    held_changes.Property(unit_properties.Change(
+      property: unit_properties.interrupt_armor_threshold,
+      mode: 0,
+      multiplier: 1.0,
+      flat: 1.0,
+      per_level: 0.0,
+    )),
+  )
 }
 
 fn interrupt_armor_source(cast_id cast_id: Int) -> Source {
@@ -165,7 +169,7 @@ type Hold {
   Hold(
     caster: Int,
     source: Source,
-    change: Change,
+    change: Told,
     sight: Sight,
     spell4_id: Spell4Id,
     effect: HeldEffect,
@@ -186,7 +190,7 @@ fn effect_of(source source: Source) -> HeldEffect {
 fn held(
   caster caster: Int,
   source source: Source,
-  change change: Change,
+  change change: Told,
 ) -> Hold {
   Hold(
     caster:,

@@ -367,13 +367,15 @@ fn a_change_told(
             from: step.ConnectionId(from),
             from_stay: connection_support.viewer_stay(from),
             source:,
-            change: held_changes.Property(unit_properties.Change(
-              property: UnitProperty2Id(161),
-              mode: 3,
-              multiplier:,
-              flat: 0.0,
-              per_level: 0.0,
-            )),
+            change: held_changes.Applies(
+              held_changes.Property(unit_properties.Change(
+                property: UnitProperty2Id(161),
+                mode: 3,
+                multiplier:,
+                flat: 0.0,
+                per_level: 0.0,
+              )),
+            ),
             sight: held_changes.EndsWhenUnseen,
             spell4_id: Spell4Id(54_806),
             effect: unit_casts.HeldEffect(

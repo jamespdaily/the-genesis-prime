@@ -1977,8 +1977,7 @@ fn heals(
         Ok(#({ start.0 }.effect_id.value, vital, amount))
       cast_state.HeldChange(held_changes.Property(..))
       | cast_state.Look(..)
-      | cast_state.HeldChange(held_changes.Absorb(..))
-      | cast_state.HeldChange(held_changes.Watches(..)) -> Error(Nil)
+      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
     }
   })
 }

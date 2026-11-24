@@ -47,16 +47,24 @@ import gleam/set.{type Set}
 
 /// What a caster's cast changes on a player that is not the caster, as it is told: a
 /// property modifier (the UnitPropertyModifier and UnitPropertyConversion rows, and the
-/// Proxy-started Interrupt Armor's property), an absorb pool (an Absorption row) of
+/// Proxy-started Interrupt Armor's property), or an absorb pool (an Absorption row) of
 /// `amount`, as the caster's formula gave it at the go, that takes the damage types of
-/// `mask`, or a Proc row the caster holds on the player (`Watches`), which changes nothing the
-/// player has and is listed in its create as the cast's effect on it.
+/// `mask`.
 pub type Change {
   Property(modifier: unit_properties.Modifier)
   Absorb(amount: Int, mask: Int)
-  /// A Proc row of the event `trigger` that the caster holds on the player: the player
-  /// applies nothing and keeps the source for the caster.
-  Watches(trigger: spell_plan.Trigger)
+}
+
+/// What a start tells a player: a change it applies to itself, or the event of a Proc row
+/// the caster holds on it, which changes nothing the player has and is listed in its create
+/// as the cast's effect on it. A caster's own change is only ever a `Change`, so it cannot
+/// hold a Proc row that applies nothing.
+pub type Told {
+  /// The player applies `change` and holds it for the caster.
+  Applies(change: Change)
+  /// The player applies nothing and keeps the source for the caster, which waits for the
+  /// event `trigger`.
+  Awaits(trigger: spell_plan.Trigger)
 }
 
 /// Whether a held change ends when its caster leaves the sight of the unit that holds it.
@@ -87,7 +95,7 @@ pub type PlayerChange {
     from: ConnectionId,
     from_stay: Stay,
     source: Source,
-    change: Change,
+    change: Told,
     sight: Sight,
     spell4_id: Spell4Id,
     effect: unit_casts.HeldEffect,

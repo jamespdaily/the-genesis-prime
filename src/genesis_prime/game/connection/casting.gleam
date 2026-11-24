@@ -1371,7 +1371,13 @@ fn carried_out(
         change: cast_state.HeldChange(change:),
       ),
         _
-      -> connection_landing.started(session:, now:, source:, change:)
+      ->
+        connection_landing.started(
+          session:,
+          now:,
+          source:,
+          change: held_changes.Applies(change:),
+        )
       cast_state.CasterChangeStarts(
         change: cast_state.Heal(vital:, amount:),
         ..,

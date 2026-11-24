@@ -58,7 +58,7 @@
 ////   go writes a debug line (the plan cannot tell a standing spell, so the rule enforces it,
 ////   `procs_held`); a camp drops the procs and their fire times.
 ////   A Proc row held by the player the press named or by each ally the round hit is held by that
-////   player: the go tells it as a change that applies nothing (`held_changes.Watches`,
+////   player: the go tells it as a change that applies nothing (`held_changes.Awaits`,
 ////   `cast_control.modifiers_armed`) and the caster keeps one entry for it by source and holder
 ////   (`State.procs`). The caster's own events match its own entries alone (`proc_draws_needed`,
 ////   `cast.procs_fire`); an ally's entry leaves with the change on that ally
