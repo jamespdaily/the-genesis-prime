@@ -6228,7 +6228,7 @@ fn heal_reading(
       tables:,
       effect:,
       reach: case heals_allies(tables:, place:, effect:) {
-        True -> PastTheCaster
+        True -> PlayersHealed
         False -> reach_of_flags(target_flags: effect.target_flags)
       },
     ),
@@ -6273,7 +6273,7 @@ fn heals_allies(
     id ->
       case prerequisite_of(tables:, id:) {
         Ok(target) ->
-          result.is_ok(target_gate_read(target:, effect:, reach: PastTheCaster))
+          result.is_ok(target_gate_read(target:, effect:, reach: PlayersHealed))
         Error(..) -> False
       }
   }
@@ -6958,6 +6958,10 @@ type Reach {
   /// reads its aim from its flags: the cast rule cannot check a prerequisite that reads a
   /// creature's state for these.
   PastTheCaster
+  /// The caster and the players of its sight a heal row reaches, whose health the caster's
+  /// picture holds: a prerequisite that reads a unit's health (type 40) is checked for them,
+  /// and one that reads any other state of a unit is not, as for `PastTheCaster`.
+  PlayersHealed
 }
 
 /// The reach of a row of this aim.
@@ -6983,6 +6987,7 @@ fn reach_in_place(place place: RowPlace, aim aim: Aim) -> Reach {
       }
     OnlyTheCaster -> OnlyTheCaster
     PastTheCaster -> PastTheCaster
+    PlayersHealed -> PlayersHealed
   }
 }
 
@@ -7045,7 +7050,11 @@ fn target_condition_of(
         [] -> Always
         [_, ..] -> GatedOnCaster(gates: caster)
       })
-    StruckUnits, False | OnlyTheCaster, _ | PastTheCaster, _ -> {
+    StruckUnits, False
+    | OnlyTheCaster, _
+    | PastTheCaster, _
+    | PlayersHealed, _
+    -> {
       use Nil <- result.map(target_gate_read(target:, effect:, reach:))
       case caster {
         [] -> GatedOnTarget(prerequisite: target)
@@ -7115,12 +7124,14 @@ fn target_gate_read(
         prerequisite_type:,
       ))
     [], OnlyTheCaster -> Ok(Nil)
-    [], StruckUnits | [], PastTheCaster -> {
+    [], StruckUnits | [], PastTheCaster | [], PlayersHealed -> {
+      let unread = case reach {
+        PlayersHealed -> prerequisite.unread_on_a_player(prerequisite: target)
+        OnlyTheCaster | StruckUnits | PastTheCaster ->
+          prerequisite.unread_on_a_struck_unit(prerequisite: target)
+      }
       let #(casts, own_state) =
-        list.partition(
-          prerequisite.unread_on_a_struck_unit(prerequisite: target),
-          list.contains(prerequisite.casts_held_types, _),
-        )
+        list.partition(unread, list.contains(prerequisite.casts_held_types, _))
       case list.append(casts, own_state) {
         [prerequisite_type, ..] ->
           Error(TargetPrerequisiteReadsStruckUnit(
@@ -8179,7 +8190,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too, so a Proxy aimed at the caster and the area starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\", and a Proxy aimed at the area alone (Affinity's) starts its child on no unit, since the area finds allies, which are no struck units, and no foe; a delayed or periodic heal reaches the caster alone; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is left out, since the strike holds no unit's health percentage for the gate; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too, so a Proxy aimed at the caster and the area starts its child on the caster alone and the allies in the area get nothing, though the tooltips say \"yourself and N allies\", and a Proxy aimed at the area alone (Affinity's) starts its child on no unit, since the area finds allies, which are no struck units, and no foe; a delayed or periodic heal reaches the caster alone; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",

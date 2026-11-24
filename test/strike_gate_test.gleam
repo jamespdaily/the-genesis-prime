@@ -42,6 +42,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
+import genesis_prime/game/player_state
 import genesis_prime/game/prerequisite.{NonPlayer}
 import genesis_prime/game/spell_area.{
   type DamageEffect, type TickingDamage, Once, TickingDamage,
@@ -66,6 +67,7 @@ import gleam/option.{None}
 import gleam/string
 import map_support
 import owned_test
+import player_state_support
 import prerequisite_support
 import rating_support
 import spell_tables
@@ -757,6 +759,72 @@ pub fn a_heal_row_reaches_a_player_only_past_its_gates_and_the_rows_around_it_st
   assert string.contains(text, "unit 9")
   assert string.contains(text, "5734")
   assert string.contains(text, "type 108")
+  // Regenerative Pulse's two rows aimed at the area alone (Spell4Effects 204551 behind
+  // Prerequisite 13986, type 40 comparison 3 value 30: more than 30 percent health; 204560 behind
+  // 13985, comparison 6: at most 30), told to the allies whose health the caster's picture
+  // holds: unit 9 at 25 of 100, unit 12 at 80 of 100, and unit 13, whose health the picture
+  // does not hold.
+  let more_than_30 =
+    prerequisite_support.single(id: 13_986, condition: #(40, 3, 0, 30))
+  let at_most_30 =
+    prerequisite_support.single(id: 13_985, condition: #(40, 6, 0, 30))
+  let pulse_row = fn(effect_id, prerequisite) {
+    spell_area.InstantHeal(
+      ..heal_row(caster_apply: 0, target_apply: 0),
+      effect_id: Spell4EffectsId(effect_id),
+      aim: spell_plan.AimsAtArea,
+      condition: GatedOnTarget(prerequisite:),
+    )
+  }
+  let in_sight = fn(unit_id) {
+    PlayerAddress(..ally(), unit_id:, stay: map_support.stay(count: 2))
+  }
+  let health_of = fn(unit_id, health) {
+    #(
+      unit_id,
+      player_state.PlayerState(
+        ..player_state_support.a_player(),
+        health:,
+        maximum_health: 100,
+      ),
+    )
+  }
+  let pulse =
+    Selection(
+      ..selection(units: [], blows: [], ticking: [], controls: []),
+      players: [in_sight(9), in_sight(12), in_sight(13)],
+      area: [9, 12, 13],
+      heals: [pulse_row(204_551, more_than_30), pulse_row(204_560, at_most_30)],
+    )
+  let #(_, pulsed) =
+    begun(
+      selection: pulse,
+      gate: gate_of(
+        caster: cast_state.Caster(
+          ..support.caster(),
+          other_players: dict.from_list([health_of(9, 25), health_of(12, 80)]),
+        ),
+        creatures: [],
+      ),
+      entropy: entropy(rolls: [], gate: []),
+    )
+  assert list.map(strike_support.players_told(effects: pulsed), fn(told) {
+      #(
+        told.0.unit_id,
+        list.map({ told.1 }.heals, fn(heal) { heal.effect_id.value }),
+      )
+    })
+    == [#(9, [204_560]), #(12, [204_551])]
+    as "the ally at 25 percent is told the row for at most 30 and not the row for more than 30, the ally at 80 percent the reverse, from the health the picture holds"
+  let assert [#(LogDebug, first), #(LogDebug, second)] = logs(effects: pulsed)
+    as "the ally the picture holds no health for is told neither row, and a debug line is logged for each row"
+  assert string.contains(first, "heal effect 204551")
+    && string.contains(second, "heal effect 204560")
+    as "the lines name the rows"
+  assert list.all([first, second], fn(text) {
+    string.contains(text, "unit 13") && string.contains(text, "type 40")
+  })
+    as "each line names the unit and the type that is not read"
 }
 
 pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test() -> Nil {

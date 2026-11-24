@@ -76,7 +76,7 @@ pub type Message {
 
 /// The Vital id of Health and of Shield Capacity in `Caster.life_vitals`
 /// (`Prerequisite.prerequisiteTypeId.71`: Vital.tbl ids 1 and 3).
-pub const health_vital = 1
+pub const health_vital = prerequisite.health_vital
 
 pub const shield_vital = 3
 
