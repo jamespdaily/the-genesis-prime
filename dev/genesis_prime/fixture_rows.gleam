@@ -809,6 +809,14 @@ const untyped_references = [
   ),
   UntypedReference(
     "Spell4Effects",
+    [#("effectType", 14), #("dataBits07", 0)],
+    [],
+    "dataBits08",
+    "Spell4Base",
+    "spell_plan.proc_reading (Proc effect type 14, filter kind 0: dataBits08 is the Spell4Base it names)",
+  ),
+  UntypedReference(
+    "Spell4Effects",
     [#("effectType", 80), #("dataBits00", 2)],
     [],
     "dataBits01",

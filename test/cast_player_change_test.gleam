@@ -4461,6 +4461,7 @@ pub fn a_go_tells_a_proc_row_to_each_ally_it_holds_it_on_lists_it_and_sends_one_
         striker: 31,
         spell: event_proc.EventSpell(
           spell4_id: Spell4Id(5649),
+          spell4_base_id: Spell4BaseId(4947),
           groups: [],
           school: 1,
         ),
@@ -4661,6 +4662,7 @@ pub fn the_caster_drops_the_proc_it_holds_on_an_ally_where_the_change_on_that_al
             striker: 31,
             spell: event_proc.EventSpell(
               spell4_id: Spell4Id(5649),
+              spell4_base_id: Spell4BaseId(4947),
               groups: [],
               school: 1,
             ),
@@ -4811,6 +4813,7 @@ fn creature_event(
     other_unit: Some(31),
     spell: Some(event_proc.EventSpell(
       spell4_id: Spell4Id(5649),
+      spell4_base_id: Spell4BaseId(4947),
       groups:,
       school: 1,
     )),

@@ -405,6 +405,7 @@ fn only_damage_and_delay(
       | effect_kind.Absorption
       | effect_kind.Activate
       | effect_kind.Immunity
+      | effect_kind.SummonPet
       | effect_kind.Despawn
       | effect_kind.UnitState
       | effect_kind.QuestAdvance

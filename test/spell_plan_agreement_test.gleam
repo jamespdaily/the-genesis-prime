@@ -136,6 +136,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.AbsorptionPeriodic(effect_id:, ..)
     | spell_plan.AbsorptionHasNoLifetime(effect_id:, ..)
     | spell_plan.ProcKindNotRead(effect_id:, ..)
+    | spell_plan.SummonedProcNotRead(proc_effect_id: effect_id, ..)
     | spell_plan.ProcNotRead(effect_id:, ..)
     | spell_plan.DisguiseNotRead(effect_id:, ..)
     | spell_plan.StruckMoveNotRead(effect_id:, ..)
@@ -414,6 +415,7 @@ fn children_of(
           | effect_kind.Absorption
           | effect_kind.Activate
           | effect_kind.Immunity
+          | effect_kind.SummonPet
           | effect_kind.Despawn
           | effect_kind.UnitState
           | effect_kind.NpcExecutionDelay

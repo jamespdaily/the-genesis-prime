@@ -356,12 +356,7 @@ fn blow_carried(
         spell_plan.facts_of_spell4(tables: session.settings.tables, spell4_id:)
       {
         Ok(facts) -> {
-          let spell =
-            proc.EventSpell(
-              spell4_id:,
-              groups: facts.groups,
-              school: facts.school,
-            )
+          let spell = cast_proc.event_spell_of_facts(spell4_id:, facts:)
           let blow = blow_of(striker: unit_id, spell:, took:)
           let #(session, own) =
             cast_carried(

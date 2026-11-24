@@ -759,7 +759,12 @@ fn damaged(state state: State, at ms: Int) -> #(State, List(Effect)) {
     now: support.at(ms:),
     blow: cast_proc.BlowLanded(
       striker: 7,
-      spell: proc.EventSpell(spell4_id: Spell4Id(5649), groups: [], school: 1),
+      spell: proc.EventSpell(
+        spell4_id: Spell4Id(5649),
+        spell4_base_id: Spell4BaseId(4947),
+        groups: [],
+        school: 1,
+      ),
       lowered: True,
       critical: False,
       shield_depleted: False,
