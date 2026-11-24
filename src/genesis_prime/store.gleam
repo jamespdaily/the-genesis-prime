@@ -243,8 +243,8 @@ pub type AbilityTierRow {
 /// lists are whole: a save that carries a shorter tier list deletes the tier rows it leaves out
 /// (a tier returned to 1 is no row), and an empty one deletes them all, so every request that
 /// saves the place carries the whole held list. A save is refused by name only for a row the
-/// table's checks refuse. Two rows for one slot or for one ability of one set, or a set or
-/// slot beyond 16 bits, fail the statement with an error no check names, which crashes the
+/// table's checks refuse. Two rows for one slot or for one ability of one set, or a set, slot
+/// or tier beyond 16 bits, fail the statement with an error no check names, which crashes the
 /// worker; `limited_action_set.rows` never builds any.
 pub type ActionSets {
   ActionSets(slots: List(ActionSlotRow), tiers: List(AbilityTierRow))

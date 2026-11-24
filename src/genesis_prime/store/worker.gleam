@@ -1416,29 +1416,25 @@ fn action_sets_of(
 /// The action slots as the JSON array save_place.sql unpacks, one object for each slot
 /// whose keys are the character_action_slot columns, a null ability for an empty slot.
 fn action_slots_json(action_sets action_sets: store.ActionSets) -> Json {
-  json.preprocessed_array(
-    list.map(action_sets.slots, fn(slot) {
-      json.object([
-        #("action_set", json.int(slot.action_set)),
-        #("slot", json.int(slot.slot)),
-        #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
-      ])
-    }),
-  )
+  json.array(from: action_sets.slots, of: fn(slot) {
+    json.object([
+      #("action_set", json.int(slot.action_set)),
+      #("slot", json.int(slot.slot)),
+      #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
+    ])
+  })
 }
 
 /// The ability tiers as the JSON array save_place.sql unpacks, one object for each ability
 /// held above tier 1 whose keys are the character_ability_tier columns.
 fn ability_tiers_json(action_sets action_sets: store.ActionSets) -> Json {
-  json.preprocessed_array(
-    list.map(action_sets.tiers, fn(tier) {
-      json.object([
-        #("action_set", json.int(tier.action_set)),
-        #("spell4_base_id", json.int(tier.spell4_base_id)),
-        #("tier", json.int(tier.tier)),
-      ])
-    }),
-  )
+  json.array(from: action_sets.tiers, of: fn(tier) {
+    json.object([
+      #("action_set", json.int(tier.action_set)),
+      #("spell4_base_id", json.int(tier.spell4_base_id)),
+      #("tier", json.int(tier.tier)),
+    ])
+  })
 }
 
 /// The rows of a character's quest log as the rows the store hands the quest log's
@@ -1493,53 +1489,51 @@ fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
 /// each row whose keys are the character_quest columns, a completed time in whole
 /// Unix seconds and the active columns null for a row without an active entry.
 fn quests_json(quests: List(QuestRow)) -> Json {
-  json.preprocessed_array(
-    list.map(quests, fn(quest) {
-      json.object([
-        #("quest_id", json.int(quest.quest_id)),
-        #("state", json.int(quest.state)),
-        #("completed_at", json.nullable(quest.completed_at, json.int)),
-        #(
-          "placeholder_objective_id",
-          json.nullable(quest.active, fn(active) {
-            json.int(active.placeholder_objective_id)
-          }),
-        ),
-        #(
-          "tracked",
-          json.nullable(quest.active, fn(active) { json.bool(active.tracked) }),
-        ),
-        #(
-          "done_mask",
-          json.nullable(quest.active, fn(active) { json.int(active.done_mask) }),
-        ),
-        #(
-          "progress",
-          json.nullable(quest.active, fn(active) {
-            json.array(active.progress, json.int)
-          }),
-        ),
-        #(
-          "quest_ms_left",
-          json.nullable(quest.active, fn(active) {
-            json.int(active.quest_ms_left)
-          }),
-        ),
-        #(
-          "objective_ms_left",
-          json.nullable(quest.active, fn(active) {
-            json.array(active.objective_ms_left, json.int)
-          }),
-        ),
-        #(
-          "kill_mask",
-          json.nullable(quest.active, fn(active) {
-            json.array(active.kill_mask, json.int)
-          }),
-        ),
-      ])
-    }),
-  )
+  json.array(from: quests, of: fn(quest) {
+    json.object([
+      #("quest_id", json.int(quest.quest_id)),
+      #("state", json.int(quest.state)),
+      #("completed_at", json.nullable(quest.completed_at, json.int)),
+      #(
+        "placeholder_objective_id",
+        json.nullable(quest.active, fn(active) {
+          json.int(active.placeholder_objective_id)
+        }),
+      ),
+      #(
+        "tracked",
+        json.nullable(quest.active, fn(active) { json.bool(active.tracked) }),
+      ),
+      #(
+        "done_mask",
+        json.nullable(quest.active, fn(active) { json.int(active.done_mask) }),
+      ),
+      #(
+        "progress",
+        json.nullable(quest.active, fn(active) {
+          json.array(active.progress, json.int)
+        }),
+      ),
+      #(
+        "quest_ms_left",
+        json.nullable(quest.active, fn(active) {
+          json.int(active.quest_ms_left)
+        }),
+      ),
+      #(
+        "objective_ms_left",
+        json.nullable(quest.active, fn(active) {
+          json.array(active.objective_ms_left, json.int)
+        }),
+      ),
+      #(
+        "kill_mask",
+        json.nullable(quest.active, fn(active) {
+          json.array(active.kill_mask, json.int)
+        }),
+      ),
+    ])
+  })
 }
 
 /// The rows of a character's items as the items they hold, in the order the query gave

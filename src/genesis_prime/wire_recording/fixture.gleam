@@ -10,8 +10,7 @@
 ////   characters hold, never the rest of the database, and every column of the six
 ////   tables but
 ////   `created_at`, which no flow reads. The ability tiers a character holds
-////   (`character_ability_tier`) are not kept, so a replay of a character that held tiers
-////   enters every ability at tier 1. The ids and an item's guid are identity
+////   (`character_ability_tier`) are not kept (a gap, listed in `gaps`). The ids and an item's guid are identity
 ////   columns, so each insert overrides its own. A statement after the rows of each table sets its
 ////   sequence to where the live database's stood (its last value and whether it
 ////   had given one), so a row a replay makes gets the id or guid it got live,
@@ -31,6 +30,7 @@
 ////   quest or action slot statement leaves those tables empty, as a file written
 ////   before they were kept does.
 
+import genesis_prime/gap
 import genesis_prime/store/worker
 import genesis_prime/wire_recording
 import genesis_prime/wire_recording/fixture/sql
@@ -43,6 +43,16 @@ import gleam/result
 import gleam/string
 import pog
 import simplifile
+
+/// What the fixture leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Recorded sessions",
+      missing: "a replay's starting rows hold no ability tier, so a character that held spent tiers when the session was recorded enters every ability at tier 1 and the replay shows it with its points unspent.",
+    ),
+  ]
+}
 
 /// Why the fixture could not be written or applied.
 pub type FixtureError {

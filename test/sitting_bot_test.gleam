@@ -21,6 +21,7 @@ import game_wire_support.{
 import genesis_prime/add_account
 import genesis_prime/dev_database
 import genesis_prime/game/item_property
+import genesis_prime/language_file
 import genesis_prime/message/float32
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -32,9 +33,11 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/sitting_bot.{Place}
+import genesis_prime/sitting_bot/ability
 import genesis_prime/store.{AccountId}
 import gleam/dynamic/decode
 import gleam/erlang/process
+import gleam/int
 import gleam/list
 import gleam/option
 import login_support
@@ -261,6 +264,79 @@ pub fn a_named_character_with_no_saved_place_is_refused_test() -> Nil {
   assert sitting_bot.seat(pool:, near: "Zed Qu")
     == Error(sitting_bot.NoSavedPlace(name: "Zed Qu"))
     as "world 0 is no place, so there is no world to seat the bot in"
+}
+
+/// A language file with no entries: the bot's equip reads only the tables.
+fn empty_language() -> language_file.LanguageFile {
+  let assert Ok(file) =
+    language_file.read(bytes: <<
+      "XETL":utf8,
+      0:size(480),
+      0:32,
+      0:32,
+      0:64,
+      0:64,
+      0:64,
+    >>)
+    as "a header with no entries and no text is a language file"
+  file
+}
+
+/// What the character holds of ability tiers: each row's set, Spell4Base and tier.
+fn tier_rows(pool: pog.Connection) -> List(#(Int, Int, Int)) {
+  let assert Ok(returned) =
+    pog.query(
+      "select action_set, spell4_base_id, tier from character_ability_tier order by action_set, spell4_base_id",
+    )
+    |> pog.returning({
+      use set <- decode.field(0, decode.int)
+      use base <- decode.field(1, decode.int)
+      use tier <- decode.field(2, decode.int)
+      decode.success(#(set, base, tier))
+    })
+    |> pog.execute(pool)
+    as "the tier rows read"
+  returned.rows
+}
+
+pub fn equipping_the_bot_deletes_the_tiers_it_had_saved_so_it_enters_with_no_points_spent_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let pool = pool()
+  insert_named(pool, "Zed Qu")
+  let assert Ok(seat) = sitting_bot.seat(pool:, near: "Zed Qu")
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_ability_tier (character_id, action_set, spell4_base_id, tier) values ("
+      <> int.to_string(seat.character_id)
+      <> ", 0, 20684, 3), ("
+      <> int.to_string(seat.character_id)
+      <> ", 2, 20718, 2)",
+    )
+    |> pog.execute(pool)
+    as "the bot's saved tiers were inserted"
+  assert tier_rows(pool) == [#(0, 20_684, 3), #(2, 20_718, 2)]
+  let choice =
+    ability.Choice(
+      class_id: 4,
+      level: 20,
+      spell4_base_id: 20_684,
+      name: "Charged Shot",
+    )
+  let assert Ok(Nil) =
+    ability.equip(
+      pool:,
+      known: ability.Known(
+        tables: fixture_tables.shared(),
+        language: empty_language(),
+      ),
+      character_id: seat.character_id,
+      login_name: seat.account.login_name,
+      choice:,
+      faction_id: 166,
+    )
+    as "the bot was equipped as the same class at a higher level"
+  assert tier_rows(pool) == []
+    as "a tier saved before the equip would count against the new level's points, so the equip takes it with the action bar"
 }
 
 // ---- the sitting bot on the whole server ----

@@ -723,7 +723,7 @@ fn raised_tiers(frames frames: List(Frame)) -> List(#(Int, Int, Int)) {
 /// (`opcode.0x1a0`) and its 0x0169 the point spent (`opcode.0x169`); the answer is 0x019D, 0x01A0,
 /// 0x0169 then 0x00B2 (`opcode.0xb2`). Quick Draw's tier 2 costs 1 (`Spell4.abilityPointCost`).
 pub fn a_tier_bought_in_the_builder_is_back_after_a_camp_and_a_tier_returned_to_1_is_gone_after_the_next_on_the_whole_server_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let time = driven_time.new()
   let started = login_support.start(time:)
   let #(game, character) =

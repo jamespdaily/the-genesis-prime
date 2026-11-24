@@ -6983,23 +6983,6 @@ fn stored_tier_rows(
   list.map(stored_tiers(store:, character_id:), fn(held) { held.0 })
 }
 
-/// The x of the place the character's row holds.
-fn stored_position_x(
-  store store: Store,
-  character_id character_id: Int,
-) -> Float {
-  let assert Ok(returned) =
-    pog.query(
-      "select position_x::float8 from character where character_id = $1",
-    )
-    |> pog.parameter(pog.int(character_id))
-    |> pog.returning(decode.at([0], decode.float))
-    |> pog.execute(store.pool)
-    as "the position read"
-  let assert [x] = returned.rows as "the character exists"
-  x
-}
-
 /// The slots of a saved set as the store holds them: the rows of `ids` in set `set`.
 fn slots_of(set set: Int, ids ids: List(Int)) -> store.ActionSets {
   limited_action_set_support.with_slots(
@@ -7349,7 +7332,7 @@ pub fn the_action_slot_migration_makes_the_table_with_its_named_checks_and_casca
 }
 
 pub fn the_ability_tier_migration_makes_the_table_with_its_named_checks_and_cascades_with_the_character_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let store = account_store_support.start_store(pool_size: 2)
   let #(_, id) = one_character(store:)
   let assert Ok(returned) =
@@ -7399,7 +7382,7 @@ pub fn the_ability_tier_migration_makes_the_table_with_its_named_checks_and_casc
 }
 
 pub fn a_tier_row_the_table_refuses_is_refused_by_name_and_writes_nothing_of_the_save_and_deletes_no_held_row_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let epoch = epoch_of_load(store:, account:, character_id: id)
@@ -7455,7 +7438,9 @@ pub fn a_tier_row_the_table_refuses_is_refused_by_name_and_writes_nothing_of_the
       as "the new bar of the refused save is not written"
     assert quest_states(store:, character_id: id) == [#(1001, 3)]
       as "nor its quest"
-    assert stored_position_x(store:, character_id: id) == 1.0 as "nor its place"
+    assert character_support.place_row(pool: store.pool, character_id: id).position.0
+      == 1.0
+      as "nor its place"
     assert stored_sequence(store:, character_id: id) == 1
       as "the save took no sequence"
     assert stored_tier_rows(store:, character_id: id) == [held_row]
@@ -7476,7 +7461,7 @@ pub fn a_tier_row_the_table_refuses_is_refused_by_name_and_writes_nothing_of_the
 }
 
 pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_and_a_turn_in_writes_its_rows_while_a_stale_save_changes_none_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [#(1, 10)])
   let CharacterId(id) = character_id
@@ -7562,7 +7547,8 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
     == list.map(with_charged_shot, limited_action_set_support.tier_row)
     as "the turn-in writes the Charged Shot row at tier 2, beside its quest and its place"
   assert quest_states(store:, character_id: id) == [#(1001, 3)]
-  assert stored_position_x(store:, character_id: id) == 10.0
+  assert character_support.place_row(pool: store.pool, character_id: id).position.0
+    == 10.0
   let assert ForItems(store.TurnedIn(..)) =
     turned_in(2, 1145, [#(0, 27_638, 2)])
     as "a second turn-in"
@@ -7577,7 +7563,8 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
     == ForMove(NothingSaved)
     as "a save under the epoch of a login another login has replaced writes and deletes none"
   assert stored_tiers(store:, character_id: id) == held
-  assert stored_position_x(store:, character_id: id) == 10.0
+  assert character_support.place_row(pool: store.pool, character_id: id).position.0
+    == 10.0
     as "and moves no place"
   assert stored_tier_rows(store:, character_id: other) == others_row
     as "the other character's row was untouched by every save and turn-in"

@@ -50,8 +50,8 @@
 ////   back through `entering`.
 //// - **A saved tier is kept at entry** only while the book holds its ability, the Spell4 rows
 ////   hold that tier and the level reaches it; a set whose kept tiers cost more than the level's
-////   points has every tier reset to tier 1 and its points refunded (Jim's rule, since the client
-////   never reads a stored tier), so a table change or a lower level cannot show a tier the
+////   points has every tier reset to tier 1 and its points refunded (the server's choice, since the
+////   client never reads a stored tier), so a table change or a lower level cannot show a tier the
 ////   player cannot hold or spend below 0 points. A row outside the table's checks (a
 ////   set above 3, an ability of 0 or beyond 18 bits, a tier outside 2 to 15, a second row for
 ////   one ability of one set) is a `RowError`.
@@ -269,10 +269,10 @@ pub fn rows(saved saved: Saved) -> ActionSets {
 /// A saved tier stays only while the player's book holds its ability, the Spell4 rows hold
 /// that tier of it, the player's level reaches the tier (`Spell4TierRequirements`) and the
 /// points the level gives cover it; any other is dropped and the next save deletes its row.
-/// Judging is for each set on its own. Jim's rule for a set whose tiers, once those are
-/// dropped, cost more points than the level gives (only a changed table or an edited database
-/// can make it): every tier of the set is reset to tier 1 and all its points are refunded, so
-/// the player chooses again. The entry's points left are never below 0 and every tier it
+/// Judging is for each set on its own. For a set whose tiers, once those are dropped, cost
+/// more points than the level gives (only a changed table or an edited database can make it),
+/// the server chooses to reset every tier of the set to tier 1 and refund all its points, so
+/// the player chooses again; the client never reads a stored tier. The entry's points left are never below 0 and every tier it
 /// holds has a cost, which `ability_points.points_frame` and `spell_tier.spent` need.
 pub fn entering(
   unlocks unlocks: Unlocks,
@@ -312,7 +312,8 @@ pub fn entering(
 }
 
 /// The tiers of one set the entry keeps: those the book, the Spell4 rows and the level allow,
-/// or none when their cost is over the points the level gives (Jim's rule).
+/// or none when their cost is over the points the level gives (the server's choice: refund
+/// and let the player choose again).
 fn tiers_kept(
   held held: Dict(Spell4BaseId, Int),
   tiers tiers: spell_tier.SpellTiers,

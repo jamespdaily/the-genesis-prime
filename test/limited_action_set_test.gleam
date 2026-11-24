@@ -1271,7 +1271,7 @@ type TierCase {
 }
 
 pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book_the_tables_the_level_or_the_points_no_longer_allow_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
   let tiers = spell_tier.tiers(tables:)
   // Charged Shot, Ignite, a third Spell4Base with nine tiers, the class 4 level 1 ability with
@@ -1326,14 +1326,14 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
       Keeps([#(0, charged_shot, 5), #(0, quick_draw, 5)]),
     ),
     TierCase(
-      "the same with Ignite at tier 2 is 17 of 16: the set costs more than the level gives, so every tier of it is reset to tier 1 and its points are refunded (Jim's rule)",
+      "the same with Ignite at tier 2 is 17 of 16: the set costs more than the level gives, so every tier of it is reset to tier 1 and its points are refunded (the server's choice)",
       25,
       16,
       [#(0, quick_draw, 5), #(0, charged_shot, 5), #(0, ignite, 2)],
       Keeps([]),
     ),
     TierCase(
-      "level 45 gives 36 points: tier 9 of Charged Shot, Ignite and the third base is 48 and Quick Draw's tier 3 makes 50, so every tier of the set is reset (Jim's rule)",
+      "level 45 gives 36 points: tier 9 of Charged Shot, Ignite and the third base is 48 and Quick Draw's tier 3 makes 50, so every tier of the set is reset (the server's choice)",
       45,
       36,
       [
@@ -1350,6 +1350,22 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
       16,
       [#(0, quick_draw, 5), #(0, charged_shot, 5), #(0, unheld, 9)],
       Keeps([#(0, charged_shot, 5), #(0, quick_draw, 5)]),
+    ),
+    TierCase(
+      "a tier the level does not reach is dropped before the points are summed: at level 14 (5 points) Quick Draw's tier 5 needs level 25 and would make the sum 11, but it is dropped and the three tier-2 rows (3 points) stay",
+      14,
+      5,
+      [
+        #(0, charged_shot, 2),
+        #(0, ignite, 2),
+        #(0, nine_tiers, 2),
+        #(0, quick_draw, 5),
+      ],
+      Keeps([
+        #(0, charged_shot, 2),
+        #(0, ignite, 2),
+        #(0, nine_tiers, 2),
+      ]),
     ),
     TierCase(
       "a set over its points is reset on its own: set 0 costs 17 of 16 and falls, set 2 costs 16 and stays",
