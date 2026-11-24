@@ -6235,14 +6235,29 @@ fn proxy_at_allies(
   finds_allies finds_allies: Bool,
   effect effect: spell4_effects.Spell4Effects,
 ) -> ProxyAtAllies {
-  let aimed_at_the_area = case aim_of(target_flags: effect.target_flags) {
-    Ok(aim) -> reaches_area(aim:)
-    Error(Nil) -> False
+  case ally_area_aim(finds_allies:, effect:), effect.tick_time {
+    Error(Nil), _ -> NotAtAllies
+    Ok(_), 0 -> StartsOnAllies
+    Ok(_), _ -> TicksOnAllies
   }
-  case finds_allies && aimed_at_the_area, effect.tick_time {
-    False, _ -> NotAtAllies
-    True, 0 -> StartsOnAllies
-    True, _ -> TicksOnAllies
+}
+
+/// The aim of a row read for the allies the area of its place finds: the place finds allies
+/// and the row's targetFlags name the area (`reaches_area`). A value `aim_of` refuses has no
+/// aim, so each kind keeps its own reading of it. The one rule every kind that is read for
+/// those allies (a heal, a Proxy, a modifier) asks first, before its own checks.
+fn ally_area_aim(
+  finds_allies finds_allies: Bool,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Aim, Nil) {
+  use <- bool.guard(when: !finds_allies, return: Error(Nil))
+  case aim_of(target_flags: effect.target_flags) {
+    Ok(aim) ->
+      case reaches_area(aim:) {
+        True -> Ok(aim)
+        False -> Error(Nil)
+      }
+    Error(Nil) -> Error(Nil)
   }
 }
 
@@ -6372,13 +6387,9 @@ fn heals_allies(
   place place: RowPlace,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Bool {
-  place.finds_allies
+  result.is_ok(ally_area_aim(finds_allies: place.finds_allies, effect:))
   && effect.delay_time == 0
   && effect.tick_time == 0
-  && case aim_of(target_flags: effect.target_flags) {
-    Ok(aim) -> reaches_area(aim:)
-    Error(Nil) -> False
-  }
   && case effect.prerequisite_id_target_apply {
     0 -> True
     id ->
