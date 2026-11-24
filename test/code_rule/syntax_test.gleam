@@ -71,3 +71,15 @@ pub fn a_function_binds_its_parameters_lets_closures_and_patterns_test() -> Nil 
       "inside", "label", "parameter", "rest", "tail", "used", "whole",
     ]
 }
+
+pub fn many_byte_offsets_are_given_their_lines_in_one_read_of_the_text_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert syntax.lines_of(text: "ab\ncd\n\nf", byte_offsets: [0, 2, 3, 5, 6, 7])
+    == [1, 1, 2, 2, 3, 4]
+    as "a newline byte belongs to the line it ends; a blank line has its own number"
+  assert syntax.lines_of(text: "é\nx", byte_offsets: [0, 3]) == [1, 2]
+    as "offsets count bytes, not characters"
+  assert syntax.lines_of(text: "ab", byte_offsets: [1, 0]) == [1, 1]
+    as "the lines come in the order of the offsets"
+}

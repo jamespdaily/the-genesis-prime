@@ -385,6 +385,32 @@ fn count_newlines(bytes: BitArray, count: Int) -> Int {
   }
 }
 
+/// The line of each byte offset, counted from 1, for offsets in one text: the
+/// text is read once, so many offsets cost no more than one `line_of` of the
+/// last of them. The lines come in the order of the offsets given.
+pub fn lines_of(
+  text text: String,
+  byte_offsets byte_offsets: List(Int),
+) -> List(Int) {
+  let newlines = newline_offsets(bytes: <<text:utf8>>, offset: 0, found: [])
+  list.map(byte_offsets, fn(offset) {
+    1 + list.count(newlines, fn(newline) { newline < offset })
+  })
+}
+
+fn newline_offsets(
+  bytes bytes: BitArray,
+  offset offset: Int,
+  found found: List(Int),
+) -> List(Int) {
+  case bytes {
+    <<10, rest:bits>> ->
+      newline_offsets(bytes: rest, offset: offset + 1, found: [offset, ..found])
+    <<_, rest:bits>> -> newline_offsets(bytes: rest, offset: offset + 1, found:)
+    _ -> list.reverse(found)
+  }
+}
+
 /// Every expression in the module's functions, each followed by the
 /// expressions inside it.
 pub fn expressions(module: glance.Module) -> List(Expression) {
