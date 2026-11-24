@@ -1087,6 +1087,43 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
       _ -> Nil
     }
   })
+  // A spell with a modifier row aimed at the area whose valid targets find no player reaches no
+  // ally: the mask takes only the caster's group (bit 16), which no player of the server has.
+  list.each(started, fn(entry) {
+    let spell = entry.0
+    let holds_modifier =
+      list.any(area_rows, fn(row) {
+        row.0 == spell.spell4_id.value
+        && effect_kind.kind_of(effect_type: { row.1 }.effect_type)
+        == effect_kind.PropertyModifier
+      })
+    assert !holds_modifier
+      || spell_area.finds_players(valid_targets: spell.targeting.valid_targets)
+      || spell_effect.has_flag(
+        flags: spell.targeting.valid_targets,
+        bit: target_mechanic.valid_same_group_only,
+      )
+      as {
+        "Spell4 "
+        <> int.to_string(spell.spell4_id.value)
+        <> " holds a modifier aimed at the area and reaches no player, though its valid targets are not the party's"
+      }
+  })
+  // The gate lands a row that changes the units the area selects on a player the round hit, in
+  // any spell (`cast_gate.player_row`): a foe's spell, whose place finds no allies, holds none, so
+  // a debuff meant for the foes in its area never lands on an ally one of its rows hit.
+  list.each(started, fn(entry) {
+    let spell = entry.0
+    assert place_of(spell.spell4_id.value).finds_allies
+      || !list.any(spell.effects, fn(planned) {
+        changes_the_units_of_the_area(kind: planned.kind)
+      })
+      as {
+        "Spell4 "
+        <> int.to_string(spell.spell4_id.value)
+        <> " is in a place that finds no allies and changes the units its area selects"
+      }
+  })
   // A row that lasts until removed has no end of its own, so a change on an ally ends with its
   // aura (`lasting.row_life`): every such row of the kinds a go can land on a unit that reaches a
   // unit other than the caster is aimed at the area of a place that finds allies, none names the
