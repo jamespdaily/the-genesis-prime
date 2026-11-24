@@ -228,15 +228,26 @@ pub type ActionSlotRow {
   ActionSlotRow(action_set: Int, slot: Int, spell4_base_id: Option(Int))
 }
 
-/// The slots of every action set a character has saved, whole sets in set then slot
-/// order, twelve rows for each; none for a character that never saved a bar. It is
-/// one record so that what the builder keeps later (tiers, AMPs) joins it without a
-/// new field on the requests and answers that carry it. A save is refused by name
-/// only for a row the table's checks refuse. Two rows for one slot, or a set or slot
-/// beyond 16 bits, fail the statement with an error no check names, which crashes the
-/// worker; `limited_action_set.rows` never builds either.
+/// One ability held above tier 1 in an action set as the character_ability_tier table
+/// keeps it: the set (0 to 3), the Spell4Base id of the ability (18 bits) and the tier it
+/// is held at (2 to 15, the 4 bits of the ability book's message, `opcode.0x1a0`). The
+/// table's checks hold the ranges; which tiers a base has and the level and points allow is
+/// the ability builder's rule (genesis_prime/game/limited_action_set).
+pub type AbilityTierRow {
+  AbilityTierRow(action_set: Int, spell4_base_id: Int, tier: Int)
+}
+
+/// What a character has saved of its action sets: the slots of every set it has placed a
+/// bar in, whole sets in set then slot order, twelve rows for each (none for a character that
+/// never saved a bar), and the tiers it holds above tier 1, in set then Spell4Base order. Both
+/// lists are whole: a save that carries a shorter tier list deletes the tier rows it leaves out
+/// (a tier returned to 1 is no row), and an empty one deletes them all, so every request that
+/// saves the place carries the whole held list. A save is refused by name only for a row the
+/// table's checks refuse. Two rows for one slot or for one ability of one set, or a set, slot
+/// or tier beyond 16 bits, fail the statement with an error no check names, which crashes the
+/// worker; `limited_action_set.rows` never builds any.
 pub type ActionSets {
-  ActionSets(slots: List(ActionSlotRow))
+  ActionSets(slots: List(ActionSlotRow), tiers: List(AbilityTierRow))
 }
 
 /// The entry the client's active list carries for a quest (opcode.0x35f): the
@@ -369,9 +380,11 @@ pub type MoveRequest {
   /// fence, so a refused save changes no quest row. A row a check of the
   /// character_quest table refuses is `QuestLogRefused`, which no log the rule
   /// keeps breaks. The character's `action_sets` are the slots of the bars it has
-  /// saved: the statement writes the slots that changed and no other, under the
-  /// same fence, and none for an empty record; a slot a check of the
-  /// character_action_slot table refuses, or an ability twice in one set, is
+  /// saved and the tiers it holds above tier 1: the statement writes the slots
+  /// that changed and no other, under the same fence, and none for an empty
+  /// record; the tiers are the whole list, so the statement also deletes the
+  /// tier rows it leaves out. A slot or tier a check of the character_action_slot
+  /// or character_ability_tier table refuses, or an ability twice in one set, is
   /// `ActionSetRefused`, which nothing the rule keeps breaks.
   SavePlace(
     account_id: AccountId,
@@ -505,8 +518,9 @@ pub type ItemsRequest {
     held: Int,
     after: Int,
   )
-  /// A quest turned in, all or none: the place, experience, level and quest rows saved as
-  /// `SavePlace` saves them (the quest log then holds the quest Completed), and then
+  /// A quest turned in, all or none: the place, experience, level, quest rows and action
+  /// sets saved as `SavePlace` saves them (the quest log then holds the quest Completed, and
+  /// the action sets are the whole held list, as a place save's), and then
   /// the credits set to `credits_after` only while the character holds exactly
   /// `credits_held` of them (a missing row reads as 0) and each stack of `placed` raised and
   /// made as `BuyFromVendor` does it, in one transaction. Answered by `TurnedIn` with the
@@ -521,6 +535,7 @@ pub type ItemsRequest {
     experience: Int,
     level: Int,
     quests: List(QuestRow),
+    action_sets: ActionSets,
     credits_held: Int,
     credits_after: Int,
     placed: List(Placed),
@@ -623,8 +638,8 @@ pub type WorldAnswer {
   /// the rows of its quest log, in quest id order (none for a character with no
   /// quest) and the currencies it holds, by type (none for a character that holds
   /// none). The rows are read in the transaction that raised the epoch, so no
-  /// delete lands between them, and the slots of the action sets it has saved
-  /// (none for a character that never saved a bar). Asking again takes the
+  /// delete lands between them, and the slots and tiers of the action sets it has saved
+  /// (none for a character that never saved a bar or bought a tier). Asking again takes the
   /// character again and raises it again.
   CharacterLoaded(
     character: Character,
@@ -664,9 +679,10 @@ pub type MoveAnswer {
   /// name, which no log the rule keeps breaks: a bug of the server's, so nothing
   /// was saved, neither the quest rows nor the place beside them.
   QuestLogRefused(constraint: String)
-  /// The database refused a slot of the action sets for the check constraint or the
-  /// unique key of this name, which nothing the rule keeps breaks: a bug of the
-  /// server's, so nothing was saved, neither the slots nor the place beside them.
+  /// The database refused a slot or a tier of the action sets for the check constraint
+  /// or the unique key of this name, which nothing the rule keeps breaks: a bug of the
+  /// server's, so nothing was saved, neither the slots and tiers nor the place beside
+  /// them.
   ActionSetRefused(constraint: String)
   /// The database refused the health (`character_health_is_not_negative`),
   /// which the rule never asks to keep below 0: a bug of the server's, so

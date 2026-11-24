@@ -17,11 +17,11 @@
 ////   (genesis_prime/game/spell_tier `spent`, over the tiers the builder's Save (0x00B1) bought:
 ////   genesis_prime/game/limited_action_set). A tier button enables on the points to spend, and
 ////   the Abilities button alerts while they are above 0.
-//// - **The tiers last** until the next map change, Holocrypt rejoin, camp or login, which
-////   starts every ability at tier 1 and so spends no point (`gaps`).
+//// - **The tiers are saved** with the place (genesis_prime/game/limited_action_set `rows`),
+////   so the points they spend are the same after a map change, a Holocrypt rejoin, a camp
+////   and a login.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/gap
 import genesis_prime/message/ability_points.{AbilityPoints}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
@@ -73,14 +73,4 @@ pub fn after_rise(
     return: [],
   )
   [frame(tables:, level: to_level, spent:)]
-}
-
-/// What the ability points do not do: the spending the client offers for them.
-pub fn gaps() -> List(gap.Entry) {
-  [
-    gap.Entry(
-      area: "Abilities",
-      missing: "The tiers a player buys are kept only until the next map change, Holocrypt rejoin, camp or login: the place save carries the bars and no tier, so each of those starts every ability at tier 1 and gives every point back.",
-    ),
-  ]
 }

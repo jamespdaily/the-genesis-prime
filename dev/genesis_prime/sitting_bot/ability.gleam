@@ -6,7 +6,7 @@
 ////    ─▶ choices: each class's abilities at that faction, with the level that gives each
 ////    ─▶ resolve ─▶ one choice (class, level, Spell4Base id)
 ////    ─▶ equip: the bot's character becomes that class at that level and faction,
-////               holding that class's Novice set, with no saved action bar
+////               holding that class's Novice set, with no saved action bar or tier
 //// ```
 ////
 //// - **The bag is the class's and level's alone**: a character holds the class's
@@ -216,7 +216,7 @@ fn describe_choice(choice: Choice) -> String {
 }
 
 /// Makes the bot's character a character of the choice's class and level in the
-/// faction, holding the class's Novice set, with no saved action bar, in one
+/// faction, holding the class's Novice set, with no saved action bar and no saved ability tier, in one
 /// transaction: all of it or none. Only a character of the account with the
 /// login name is changed.
 pub fn equip(
@@ -248,6 +248,11 @@ pub fn equip(
       login_name,
     ))
     use _ <- result.try(sql.delete_bot_action_slots(
+      connection,
+      character_id,
+      login_name,
+    ))
+    use _ <- result.try(sql.delete_bot_ability_tiers(
       connection,
       character_id,
       login_name,
