@@ -526,7 +526,7 @@ pub fn the_entry_starts_the_equip_spell_of_each_worn_item_after_the_passive_and_
 /// cast state. A state from `cast_state.new()` writes a logged warning again; this shows the
 /// join builds one, whatever the player it replaces had logged.
 pub fn a_rejoin_builds_a_cast_state_with_nothing_logged_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let character =
     world_entry_support.character(class: 2, faction: 166, level: 1)
   let #(_, entered) =
