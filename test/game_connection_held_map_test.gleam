@@ -478,7 +478,7 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
 }
 
 pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   let #(state, taken) = selling()
   let #(state, _) =
     connection_support.feed(
