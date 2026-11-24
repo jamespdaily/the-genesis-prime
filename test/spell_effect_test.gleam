@@ -184,7 +184,10 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     effect_kind.Despawn -> ["DespawnEffect"]
     effect_kind.NpcExecutionDelay -> ["DelayEffect"]
     effect_kind.QuestAdvance -> ["QuestAdvanceEffect"]
-    effect_kind.Immunity | effect_kind.UnitState | effect_kind.Unread(..) -> []
+    effect_kind.Immunity
+    | effect_kind.SummonPet
+    | effect_kind.UnitState
+    | effect_kind.Unread(..) -> []
   }
 }
 

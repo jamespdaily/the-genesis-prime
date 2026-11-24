@@ -73,7 +73,8 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{HeldItem, ItemsSaved, NewStack}
 import genesis_prime/table/id.{
-  Creature2Id, Faction2Id, Item2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+  Creature2Id, Faction2Id, Item2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
+  UnitProperty2Id,
 }
 import genesis_prime/world_map/map.{Join, Left}
 import genesis_prime/world_map/map_id.{MapId}
@@ -510,6 +511,7 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
               other_unit: Some(31),
               spell: Some(proc.EventSpell(
                 spell4_id: Spell4Id(5649),
+                spell4_base_id: Spell4BaseId(4947),
                 groups: [],
                 school: 1,
               )),

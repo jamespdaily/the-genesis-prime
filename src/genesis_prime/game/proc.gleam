@@ -13,7 +13,7 @@
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type ProcRow}
 import genesis_prime/random
-import genesis_prime/table/id.{type Spell4Id}
+import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -33,10 +33,15 @@ pub type Event {
   )
 }
 
-/// The spell of an event: its Spell4, its spell groups (`Spell4GroupList`) and its school
-/// (`Spell4Base.school`).
+/// The spell of an event: its Spell4, its Spell4Base (`Spell4.spell4BaseIdBaseSpell`), its
+/// spell groups (`Spell4GroupList`) and its school (`Spell4Base.school`).
 pub type EventSpell {
-  EventSpell(spell4_id: Spell4Id, groups: List(Int), school: Int)
+  EventSpell(
+    spell4_id: Spell4Id,
+    spell4_base_id: Spell4BaseId,
+    groups: List(Int),
+    school: Int,
+  )
 }
 
 /// What one event gives a proc.
@@ -187,8 +192,8 @@ fn cannot_tell(
   )
 }
 
-/// Whether the event's spell is one the filter names. An event with no spell passes only
-/// `AnySpell`.
+/// Whether the event's spell is one the filter names: in its group, its Spell4 or a Spell4 of
+/// its Spell4Base. An event with no spell passes only `AnySpell`.
 fn passes_filter(
   filter filter: spell_plan.ProcFilter,
   event event: Event,
@@ -198,7 +203,12 @@ fn passes_filter(
     spell_plan.InGroup(group_id:), Some(spell) ->
       list.contains(spell.groups, group_id)
     spell_plan.OneSpell(spell4_id:), Some(spell) -> spell.spell4_id == spell4_id
-    spell_plan.InGroup(..), None | spell_plan.OneSpell(..), None -> False
+    spell_plan.OfBase(spell4_base_id:), Some(spell) ->
+      spell.spell4_base_id == spell4_base_id
+    spell_plan.InGroup(..), None
+    | spell_plan.OneSpell(..), None
+    | spell_plan.OfBase(..), None
+    -> False
   }
 }
 
