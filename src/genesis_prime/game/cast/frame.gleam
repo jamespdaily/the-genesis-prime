@@ -472,8 +472,9 @@ pub fn closed_frame(
   Frame(message_id: spell_threshold_closed.message_id, body:)
 }
 
-/// 0x7ff for a creature's cast of its attack spell on its target, from where it
-/// stands: the target is the cast's primary target, which the client draws a client-placed
+/// 0x7ff for a cast the caller names a caster for, from where it stands: a creature's cast
+/// of its attack spell on its target, or a cast a player holds for a viewer
+/// (`held_start`). The target is the cast's primary target, which the client draws a client-placed
 /// target row on (`0x140546e60.placement_branches`), the spell its own root, and the
 /// safe values are a player's cast's (`started_message`). The positions are the
 /// `opening` of the spell's server-placed telegraph rows, which the client draws only
@@ -530,27 +531,43 @@ pub fn creature_applied(
   target_unit_id target_unit_id: Int,
   effects effects: List(CreatureEffect),
 ) -> SpellGo {
+  single_target_go(
+    cast_id:,
+    place:,
+    ignore_cooldown: 0,
+    target: target_info.target(
+      index: 0,
+      unit_id: target_unit_id,
+      instance_count: 1,
+      combat_result: combat_result.Hit,
+      effects: list.map(effects, fn(effect) {
+        target_info.effect(
+          effect_id: effect.effect_id,
+          instance_id: effect.instance_id,
+          delay_ms: 0,
+          lifetime_ms: effect.lifetime_ms,
+          result: target_info.bit(),
+        )
+      }),
+    ),
+  )
+}
+
+/// 0x7f4 for the one go, phase 0, of a cast that applies effects to the one unit `target`
+/// describes, with the place as its destination and no positions or missiles: the go of a
+/// creature's cast (`creature_applied`) and of a cast a player holds for a viewer
+/// (`held_start`) differ only in the target and `ignore_cooldown` (`opcode.0x7f4`).
+fn single_target_go(
+  cast_id cast_id: Int,
+  place place: Place,
+  ignore_cooldown ignore_cooldown: Int,
+  target target: SpellTargetInfo,
+) -> SpellGo {
   SpellGo(
     cast_id:,
-    ignore_cooldown: 0,
+    ignore_cooldown:,
     destination: telegraph_entries.position_of(place:),
-    targets: [
-      target_info.target(
-        index: 0,
-        unit_id: target_unit_id,
-        instance_count: 1,
-        combat_result: combat_result.Hit,
-        effects: list.map(effects, fn(effect) {
-          target_info.effect(
-            effect_id: effect.effect_id,
-            instance_id: effect.instance_id,
-            delay_ms: 0,
-            lifetime_ms: effect.lifetime_ms,
-            result: target_info.bit(),
-          )
-        }),
-      ),
-    ],
+    targets: [target],
     initial_positions: [],
     telegraph_positions: [],
     missiles: [],
@@ -567,7 +584,8 @@ pub fn held_start(
   place place: Place,
   now_ms now_ms: Int,
 ) -> #(SpellStarted, SpellGo) {
-  let _ = now_ms
+  let assert [target] = unit_casts.targets_of(view:, now_ms:)
+    as "a cast a player holds names the player as its one target (held_changes.cast_views)"
   #(
     creature_started(
       cast_id: view.cast_id,
@@ -577,12 +595,7 @@ pub fn held_start(
       place:,
       opening: telegraph_entries.none,
     ),
-    creature_applied(
-      cast_id: view.cast_id,
-      place:,
-      target_unit_id: view.primary_target,
-      effects: [],
-    ),
+    single_target_go(cast_id: view.cast_id, place:, ignore_cooldown: 1, target:),
   )
 }
 

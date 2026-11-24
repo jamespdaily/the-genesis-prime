@@ -9,6 +9,8 @@
 ////                                  ─▶ started(by: C, source, .., spell4_id, effect)
 ////   Tell(T, TellPlayerChange(stay_T, PlayerChangeEnds(C, source)))
 ////                                  ─▶ released(source)
+////   Tell(T, TellPlayerChange(stay_T, PlayerCastWent(C, cast_id, audience)))
+////                                  ─▶ holds_cast_from(cast_id, C), cast_views(T's unit, now)
 ////   the map's UnseenBy(C)          ─▶ released_unseen(C): the sources with `EndsWhenUnseen`
 ////   the map's Gone(C's unit)       ─▶ released_with_unit(unit): every source of that unit
 ////   C's connection ends (creature) ─▶ released_by(C): every source of C
@@ -272,8 +274,9 @@ pub fn holds_cast_from(
   cast_id cast_id: Int,
   by by: ConnectionId,
 ) -> Bool {
-  let _ = #(held, cast_id, by)
-  False
+  list.any(held.entries, fn(entry) {
+    entry.source.cast_id == cast_id && entry.by == by
+  })
 }
 
 /// Every source held, in the order they started.

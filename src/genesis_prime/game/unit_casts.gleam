@@ -189,9 +189,7 @@ pub fn entry_of(
             True -> 0
             False -> 1
           },
-          targets: list.index_map(view.targets, fn(target, index) {
-            target_of_view(target:, index:, now_ms:)
-          }),
+          targets: targets_of(view:, now_ms:),
           initial_positions: [],
           telegraph_positions: [],
         ),
@@ -205,8 +203,9 @@ pub fn targets_of(
   view view: CastView,
   now_ms now_ms: Int,
 ) -> List(SpellTargetInfo) {
-  let _ = #(view, now_ms)
-  []
+  list.index_map(view.targets, fn(target, index) {
+    target_of_view(target:, index:, now_ms:)
+  })
 }
 
 /// The entries a create lists at `now_ms`: those of `listed` views.

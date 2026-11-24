@@ -643,7 +643,8 @@ pub fn a_held_cast_is_started_and_gone_for_a_viewer_with_the_targets_its_create_
     ]
     as "each effect is listed in start order with its delay and its time left"
   // A negative clock (the monotonic time starts below 0): a change told at the go's time
-  // -5000 for 10 000 ms, built at -2000, has no delay left and 3000 ms to live.
+  // -5000 for 10 000 ms ends at 5000, so built at -2000 it has no delay left and 7000 ms to
+  // live.
   let #(_, early) =
     cast_frame.held_start(
       view: held_view(effects: [
@@ -659,9 +660,9 @@ pub fn a_held_cast_is_started_and_gone_for_a_viewer_with_the_targets_its_create_
           effect_id: 123_664,
           instance_id: 1,
           delay_ms: 0,
-          lifetime_ms: 3000,
+          lifetime_ms: 7000,
         ),
       ]),
     ]
-    as "at a negative clock the effect has no delay and 3000 ms left"
+    as "at a negative clock the effect has no delay and 7000 ms left"
 }

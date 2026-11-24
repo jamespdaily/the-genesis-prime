@@ -56,7 +56,10 @@
 ////   0x100 outlives its caster's sight: the node is dropped when the caster loses sight of
 ////   the player, the change stays, and its timer ends it, told from the go's address. A
 ////   later cast of the same stack group that no node of an earlier cast holds a change for
-////   ends that cast's change first (`kept_pushed_off`).
+////   ends that cast's change first (`kept_pushed_off`). After its changes the go tells the
+////   player's connection one `OtherPlayerCastWent` for the cast, with the audience the
+////   caster told the cast's 0x7ff (`modifiers_armed`), so the player starts the cast for
+////   the viewers outside it.
 //// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
 ////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
 ////   five modifier rows (Spell4Effects 130474 and 203798 to 203801). The same row of a child
@@ -811,8 +814,39 @@ fn players_told_the_cast_went(
   cast_id cast_id: Int,
   audience audience: Set(ConnectionId),
 ) -> List(Effect) {
-  let _ = #(effects, cast_id, audience)
-  []
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      OtherPlayerChangeStarts(address:, ..) -> Ok(address)
+      cast_state.Send(..)
+      | Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Strike(..)
+      | cast_state.TickStrike(..)
+      | cast_state.FindProxyTickUnits(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.OtherPlayerChangeEnds(..)
+      | cast_state.OtherPlayerCastWent(..)
+      | TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | ForcedMoveStarts(..)
+      | CreatureDespawns(..)
+      | CreatureHoldsUnitStates(..)
+      | CreatureControlsEnd(..)
+      | cast_state.StealthChanged(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..) -> Error(Nil)
+    }
+  })
+  |> list.unique
+  |> list.map(fn(address) {
+    cast_state.OtherPlayerCastWent(address:, cast_id:, audience:)
+  })
 }
 
 /// A property modifier on a creature the go struck, armed from this go: the modifier

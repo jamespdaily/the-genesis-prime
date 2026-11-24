@@ -650,8 +650,9 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
   // The go's third tell: after the rows a cast lands on the player, one went for the cast and
   // the player, with the audience the caster told the cast's 0x7ff, so the ally can start the
   // cast for the viewers outside it. Phantasmal Armor tier 1 (Spell4 32823) lands its absorb
-  // 62024 and tier 5 (Spell4 52341) its absorb 123664 and its modifier 203798 (`table_rows --
-  // Spell4Effects spellId=52341`).
+  // 62024 and tier 9 (Spell4 54806) its absorb 130470 and its modifier 130474 (`table_rows --
+  // Spell4Effects spellId=32823 spellId=54806`); the committed rows hold no other tier with
+  // two rows.
   let told_the_0x7ff = set.from_list([ConnectionId(2), ConnectionId(3)])
   let #(one_id, one_went) =
     pressed_with_audience_changes(
@@ -670,18 +671,24 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
       ),
     ]
     as "the went names the ally's address, the cast and the connections told the cast's 0x7ff"
-  let #(five_id, five_went) =
+  let #(nine_id, nine_went) =
     pressed_with_audience_changes(
-      spell: as_base_3(spell4_id: 52_341),
+      spell: support.armor_spell(rows: support.armor_rows()),
       joined: [],
       left: [],
     )
-  assert trail(effects: five_went, cast_id: five_id)
-    == ["starts 123664", "starts 203798", "went"]
-    as "tier 5: both changes are told, then exactly one went, after the last: one for the cast, not one for each change"
+  assert trail(effects: nine_went, cast_id: nine_id)
+    == ["starts 130470", "starts 130474", "went"]
+    as "tier 9: both changes are told, then exactly one went, after the last: one for the cast, not one for each change"
+  // A cast that shows its cast bar is the caster's current cast until its go, so a create of
+  // the caster lists it and the connection that came into sight joins its audience.
   let #(moved_id, moved_went) =
     pressed_with_audience_changes(
-      spell: as_base_3(spell4_id: 32_823),
+      spell: Spell(
+        ..as_base_3(spell4_id: 32_823),
+        cast_time_ms: 1500,
+        cast_bar: spell_plan.ShowsCastBar,
+      ),
       joined: [ConnectionId(5)],
       left: [ConnectionId(3)],
     )
@@ -745,7 +752,7 @@ fn pressed_with_audience_changes(
     list.fold(left, state, fn(state, viewer) {
       cast_state.audience_left(cast: state, viewer:)
     })
-  let #(_, went) =
+  let #(state, went) =
     support.answered_each(
       caster: esper_seeing(players: [ally]),
       state:,
@@ -755,7 +762,27 @@ fn pressed_with_audience_changes(
       rolls: [],
       poses: dict.new(),
     )
-  #(support.pressed_id(effects: pressed), went)
+  // A spell with a cast time goes on a timer of its own, at the press plus the cast time.
+  let on_time = case spell.cast_time_ms > 0 {
+    True -> {
+      let #(_, steps) =
+        support.run_timers_each(
+          caster: esper_seeing(players: [ally]),
+          state:,
+          effects: list.append(pressed, went),
+          from_ms: 1000,
+          struck_of: fn(_) { [] },
+        )
+      list.flat_map(steps, fn(step) {
+        case step.0 <= 1000 + spell.cast_time_ms {
+          True -> step.1
+          False -> []
+        }
+      })
+    }
+    False -> []
+  }
+  #(support.pressed_id(effects: pressed), list.append(went, on_time))
 }
 
 /// The wents of the cast `cast_id` among the effects.
@@ -1675,15 +1702,20 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
     )
   assert support.refusal_results(effects: pressed) == []
     as "the press is accepted"
+  // The spell also starts a child on the caster, which tells no player: the children that
+  // tell a player are those with a went.
   let child_ids =
     list.filter_map(support.started_in(effects: went), fn(start) {
-      case start.spell4_id == 78_708 {
+      case
+        start.spell4_id == 78_708
+        && wents_of(effects: went, cast_id: start.cast_id) != []
+      {
         True -> Ok(start.cast_id)
         False -> Error(Nil)
       }
     })
   assert list.length(child_ids) == 2
-    as "one child of Runes of Protection for each ally"
+    as "one child of Runes of Protection for each ally tells its ally"
   let assert [first_child, second_child] = child_ids
   let on = fn(unit_id) { PlayerAddress(..address(), unit_id:) }
   assert trail(effects: went, cast_id: first_child) == ["starts 206315", "went"]

@@ -29,6 +29,9 @@
 ////                         (properties.started, absorption.started), held for C
 ////   Tell(Connection(T), TellPlayerChange(stay_T, PlayerChangeEnds(C, source)))
 ////                      ─▶ changed: the source taken off, when C holds it
+////   Tell(Connection(T), TellPlayerChange(stay_T, PlayerCastWent(C, cast_id, audience)))
+////                      ─▶ cast_went: Tell(each viewer of T outside the audience, except C,
+////                         PeerNews(T, HeldCastStarted(0x7ff, 0x7f4))), after the rows
 ////   the map's UnseenBy(C) ─▶ caster_unseen: C's sources with `EndsWhenUnseen` taken off
 ////   the map's Gone(C's unit) ─▶ caster_removed: every source of that unit taken off
 ////   T dies                ─▶ ended_at_death: every source T holds taken off
@@ -48,6 +51,13 @@
 ////   (genesis_prime/game/connection/viewers), and this module writes its 0x7fe, once, when
 ////   the last source of it ends, by any of the ends above (`orphans_finished`): the caster's
 ////   own frames no longer reach the client.
+//// - **A cast is started for a viewer only from the ledger**: the went is taken when T is
+////   alive and holds a source of the cast that the connection it came from started, not
+////   when that connection is still among T's viewers, since a source of a spell with
+////   propertyFlags 0x100 stays after its caster left T's sight. The start lists each effect
+////   the ledger holds of the cast (`held_changes.cast_views`), at the clock the went is
+////   taken, and goes to each viewer outside the audience except the caster, whose client
+////   holds the cast from its own go (`opcode.0x7ff`).
 //// - **The tell carries what a create lists**: the cast's Spell4 id and the change's
 ////   effect with the go's own monotonic time as its start, which the ledger keeps
 ////   (`held_changes.started`) so that the player's create lists the cast
@@ -74,6 +84,7 @@ import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/held_changes
+import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
@@ -231,8 +242,41 @@ fn cast_went(
   cast_id cast_id: Int,
   audience audience: Set(step.ConnectionId),
 ) -> client_connection.Handled(Session) {
-  let _ = #(now, entered, from, cast_id, audience)
-  Continue(session, [])
+  case
+    player_life.state(life: entered.life),
+    held_changes.holds_cast_from(held: entered.held, cast_id:, by: from)
+  {
+    player_life.Alive, True ->
+      case
+        list.find(
+          held_changes.cast_views(
+            held: entered.held,
+            holder_unit_id: entered.unit_id,
+            now_ms: now.monotonic_ms,
+          ),
+          fn(view) { view.cast_id == cast_id },
+        )
+      {
+        Ok(view) -> {
+          let #(start, go) =
+            cast_frame.held_start(
+              view:,
+              place: movement.place(entered.movement),
+              now_ms: now.monotonic_ms,
+            )
+          Continue(
+            session,
+            connection_state.news_to_viewers_but(
+              entered:,
+              left_out: set.insert(audience, from),
+              news: client_connection.HeldCastStarted(start:, go:),
+            ),
+          )
+        }
+        Error(Nil) -> Continue(session, [])
+      }
+    player_life.Alive, False | player_life.Dead, _ -> Continue(session, [])
+  }
 }
 
 /// The caster of connection `by` is no longer one of the player's viewers: each source of
