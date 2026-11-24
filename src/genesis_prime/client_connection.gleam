@@ -30,8 +30,8 @@ import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type PlayerAnswered, type PlayerStrike,
-  type Tell as StrikeTell,
+  type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
+  type PlayerStrike, type Tell as StrikeTell,
 }
 import genesis_prime/game/unit_casts.{type CastView}
 import genesis_prime/game/unit_properties.{type Modifier, type Source}
@@ -211,6 +211,12 @@ pub type PlayerTell {
   /// is the caster's, which the strike named, and the strike rule takes the answer
   /// into the round it belongs to (genesis_prime/game/strike).
   Answer(answered: PlayerAnswered)
+  /// The events of a blow on the told player's ally that the told player's own Proc rows on
+  /// that ally wait for, which the ally's connection tells the caster
+  /// (genesis_prime/game/connection/landing `events_told`): the caster raises them as events
+  /// of that ally and fires the rows it holds on it (genesis_prime/game/connection/casting
+  /// `ally_event_taken`). Never asked, so no answer comes back.
+  Event(event: PlayerEvent)
 }
 
 /// What a cast holds on a creature, as `TellCastView` carries it.

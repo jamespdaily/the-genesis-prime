@@ -26,6 +26,13 @@
 ////                                                            ─▶ each heal row on T's life, in order
 ////   SentByPlayer(Answer(PlayerAnswered(key, outcome))) ◀─ Tell(Connection(C), TellPlayer(stay_C, Answer(..))),
 ////                                                 then T's own news
+////
+//// caster's connection C                                     ally's connection T (holds C's Proc row)
+////   a creature's blow lands on T, T alive, C among T's viewers
+////   SentByPlayer(Event(PlayerEvent(T's unit, events))) ◀─ Tell(Connection(C), TellPlayer(stay_C, Event(..))),
+////                                                 the events C's Proc rows on T wait for, never asked
+////   ─▶ C raises each event with T's unit as its holder, draws the chances from its own
+////      seed, and fires the rows C holds on T: the child cast of the row's spell
 //// ```
 ////
 //// - **The key** names one strike: the cast, the occasion (a go's phase, or a tick of
@@ -77,6 +84,7 @@ import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/game/proc
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
@@ -254,6 +262,15 @@ pub type PlayerStrike {
     outgoing: Float,
     heals: List(HealTell),
   )
+}
+
+/// What an ally's connection tells the caster's connection of a blow on the ally: the
+/// ally's unit and the events of the blow that the caster waits for, as the ally's own
+/// rule made them (`holder` none). The caster's connection takes the unit as the holder of
+/// each event and fires the Proc rows it holds on that unit; the tell names no sender, as
+/// the other tells between players do not.
+pub type PlayerEvent {
+  PlayerEvent(unit_id: Int, events: List(proc.Event))
 }
 
 /// One heal row as the healed player applied it: the row, the vital and the split of the

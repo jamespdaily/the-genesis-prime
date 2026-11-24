@@ -3505,3 +3505,57 @@ pub fn placed_at(frames frames: List(Frame)) -> UnitPositionCommand {
     as "the first command is the position"
   position
 }
+
+/// A Spellslinger of level 10 on the client's tables (the files must be on the machine) that
+/// pressed Healing Salve (Spell4Base 23468) at 2000 ms with the unit 9, connection 3's player,
+/// in its sight, and whose go has run: the cast holds Proc row 86457 on the ally and has told
+/// the ally's connection. The state and the steps of the press and its timers.
+pub fn spellslinger_holding_a_salve_on_the_ally() -> #(
+  game_connection.State,
+  List(ConnectionStep(Request)),
+) {
+  let tables = client_tables.shared()
+  let #(state, _) =
+    entered_at_level(
+      settings: Settings(..settings(), tables:),
+      class_id: 7,
+      level: 10,
+      saved_health: None,
+    )
+  let bag_index = bag_index_of(tables:, class_id: 7, level: 10, ability: 23_468)
+  let #(state, _) =
+    feed(
+      state:,
+      event: sent_by_the_map(SeenBy(
+        by: ConnectionId(3),
+        stay: viewer_stay(3),
+        unit_id: 9,
+      )),
+    )
+  let #(state, _) = feed(state:, event: event_of(Appears))
+  let #(state, pressed) =
+    at(
+      state:,
+      ms: 2000,
+      event: OwnEvent(
+        step.Read(world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: 2000,
+            bag_index:,
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  list.fold(
+    cast_timers(steps: [pressed], ms: 2000),
+    #(state, [pressed]),
+    fn(so_far, due) {
+      let #(state, taken) = so_far
+      let #(state, more) = fired_at(state:, timer: due.1, ms: due.0)
+      #(state, list.append(taken, [more]))
+    },
+  )
+}

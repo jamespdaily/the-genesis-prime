@@ -523,6 +523,27 @@ pub fn held_unit_id(on on: OnUnit) -> Int {
   }
 }
 
+/// The spell of the change the cast of `source` holds on the player `unit_id` for `source`:
+/// the record the end timer and the end paths keep in step with the cast's entry for that
+/// player, and it is there when the cast is neither live nor lingering. `Error` when no such
+/// change is held.
+pub fn held_spell_on_player(
+  cast cast: State,
+  source source: unit_properties.Source,
+  unit_id unit_id: Int,
+) -> Result(Spell4Id, Nil) {
+  result.try(dict.get(cast.on_units, source.cast_id), fn(held) {
+    list.find_map(held, fn(on) {
+      case on {
+        HeldOnPlayer(source: held_source, address:, spell4_id:, ..)
+          if held_source == source && address.unit_id == unit_id
+        -> Ok(spell4_id)
+        HeldOnPlayer(..) | HeldOnCreature(..) -> Error(Nil)
+      }
+    })
+  })
+}
+
 /// The source of a held change.
 pub fn held_source(on on: OnUnit) -> unit_properties.Source {
   case on {

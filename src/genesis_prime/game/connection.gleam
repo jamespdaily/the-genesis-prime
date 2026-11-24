@@ -1329,6 +1329,13 @@ fn stay_sent(
                 entered:,
                 answered:,
               )
+            client_connection.Event(event:) ->
+              connection_casting.ally_event_taken(
+                session:,
+                now:,
+                entered:,
+                event:,
+              )
           }
         client_connection.SentByKill(credit:) ->
           case

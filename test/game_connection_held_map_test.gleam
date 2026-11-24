@@ -23,6 +23,7 @@
 ////   world still ends the connection with an error line (`game_connection_save_test`).
 
 import character_tables
+import client_tables
 import connection_rule_support as support
 import departures_support
 import experience_support
@@ -42,6 +43,8 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/held_changes
+import genesis_prime/game/proc
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties
@@ -83,6 +86,7 @@ import planted_table.{Integer}
 import quest_support
 import quest_turn_in_support
 import quest_walker_support
+import unitest
 import vendor_support
 
 const beast = 73_464
@@ -474,7 +478,7 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
 }
 
 pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(120_000)
   let #(state, taken) = selling()
   let #(state, _) =
     connection_support.feed(
@@ -490,6 +494,59 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
     connection_support.answer(state:, taken:, outcome: sale_saved())
   assert kill_sources(taken: answered) == [7]
     as "the kill told for another stay of the player counts for nothing, the one of the present stay does"
+  // An ally's event reaches a caster that holds a Proc row on that ally by the same fence: the
+  // Spellslinger's Healing Salve holds row 86457 on the ally, unit 9 of connection 3.
+  use <- unitest.guard(client_tables.present())
+  let #(caster, _) =
+    connection_support.spellslinger_holding_a_salve_on_the_ally()
+  let blow_for = fn(stay) {
+    connection_support.for_stay(
+      stay:,
+      sent: client_connection.SentByPlayer(
+        tell: client_connection.Event(
+          event: strike_tell.PlayerEvent(unit_id: 9, events: [
+            proc.Event(
+              trigger: spell_plan.TakesDamage,
+              other_unit: Some(31),
+              spell: Some(proc.EventSpell(
+                spell4_id: Spell4Id(5649),
+                groups: [],
+                school: 1,
+              )),
+              holder: None,
+            ),
+          ]),
+        ),
+      ),
+    )
+  }
+  let #(_, taken) =
+    connection_support.at(
+      state: caster,
+      ms: 4000,
+      event: blow_for(connection_support.own_stay()),
+    )
+  assert connection_support.started_spells(frames: connection_support.written(
+      taken:,
+    ))
+    == [39_127]
+    as "the event for the caster's stay fires the row: Healing Salve's heal 39127 starts"
+  let #(_, taken) =
+    connection_support.at(
+      state: caster,
+      ms: 4000,
+      event: blow_for(connection_support.viewer_stay(2)),
+    )
+  assert connection_support.written_ids(taken) == []
+    as "the event for another stay of the caster is dropped: the row fires nothing and nothing is written"
+  let #(_, taken) =
+    connection_support.at(
+      state: connection_support.in_select(),
+      ms: 4000,
+      event: blow_for(connection_support.own_stay()),
+    )
+  assert connection_support.written_ids(taken) == []
+    as "an event that arrives while the caster is not in the world is dropped"
 }
 
 pub fn a_connection_that_ends_while_holding_map_messages_takes_none_test() -> Nil {
