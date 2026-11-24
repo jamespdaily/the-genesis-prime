@@ -402,22 +402,20 @@ pub fn lines_of(
 /// The line of each `#(offset, index)`, offsets ascending, as `#(index, line)`:
 /// `newlines` are the ascending offsets of the newline bytes not yet passed.
 fn lines_along(
-  offsets: List(#(Int, Int)),
+  offsets offsets: List(#(Int, Int)),
   newlines newlines: List(Int),
   line line: Int,
   found found: List(#(Int, Int)),
 ) -> List(#(Int, Int)) {
   case offsets, newlines {
     [], _ -> found
-    [#(offset, index), ..rest], [newline, ..later] if newline < offset ->
-      lines_along(
-        [#(offset, index), ..rest],
-        newlines: later,
-        line: line + 1,
-        found:,
-      )
+    [#(offset, _), ..], [newline, ..later] if newline < offset ->
+      lines_along(offsets:, newlines: later, line: line + 1, found:)
     [#(_, index), ..rest], _ ->
-      lines_along(rest, newlines:, line:, found: [#(index, line), ..found])
+      lines_along(offsets: rest, newlines:, line:, found: [
+        #(index, line),
+        ..found
+      ])
   }
 }
 
@@ -486,7 +484,7 @@ pub type Position {
 /// else the first or last argument of the call when that one has no label. A
 /// punned `label:` has no expression of its own, and none is given for it.
 pub fn argument(
-  arguments: List(glance.Field(Expression)),
+  arguments arguments: List(glance.Field(Expression)),
   label label: String,
   position position: Position,
 ) -> Option(Expression) {

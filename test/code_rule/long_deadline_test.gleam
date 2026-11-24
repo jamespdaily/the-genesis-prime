@@ -50,7 +50,11 @@ fn listed_at(ceiling_ms: Int, line: Int) -> List(Listed) {
   [Listed(module: "planted_test", test_name: "long_test", ceiling_ms:, line:)]
 }
 
-fn listed_row(module: String, test_name: String, line: Int) -> Listed {
+fn listed_row(
+  module module: String,
+  test_name test_name: String,
+  line line: Int,
+) -> Listed {
   Listed(module:, test_name:, ceiling_ms: 60_000, line:)
 }
 
@@ -229,9 +233,9 @@ pub fn a_list_row_for_a_test_that_is_gone_renamed_short_or_named_is_no_breach_te
       [],
       call_60,
       [
-        listed_row("gone_test", "long_test", 1),
-        listed_row("planted_test", "gone_test", 2),
-        listed_row("planted_test", "long_test", 3),
+        listed_row(module: "gone_test", test_name: "long_test", line: 1),
+        listed_row(module: "planted_test", test_name: "gone_test", line: 2),
+        listed_row(module: "planted_test", test_name: "long_test", line: 3),
       ],
       [],
       "a listed test or module that is no longer there is no breach",
@@ -251,7 +255,7 @@ pub fn a_list_past_its_most_rows_is_a_breach_at_its_last_row_test() -> Nil {
   use <- unitest.tag("code_rule")
   let file = planted_test([], "  use <- owned_test.run(600_000)")
   let listed = [
-    listed_row("other_test", "long_test", 1),
+    listed_row(module: "other_test", test_name: "long_test", line: 1),
     Listed(
       module: "planted_test",
       test_name: "long_test",
@@ -296,7 +300,7 @@ pub fn a_repeated_row_or_a_row_out_of_order_is_a_breach_at_its_list_line_test() 
     [
       #(
         [
-          listed_row("planted_test", "long_test", 1),
+          listed_row(module: "planted_test", test_name: "long_test", line: 1),
           Listed(
             module: "planted_test",
             test_name: "long_test",
@@ -309,25 +313,25 @@ pub fn a_repeated_row_or_a_row_out_of_order_is_a_breach_at_its_list_line_test() 
       ),
       #(
         [
-          listed_row("b_test", "long_test", 1),
-          listed_row("a_test", "long_test", 2),
+          listed_row(module: "b_test", test_name: "long_test", line: 1),
+          listed_row(module: "a_test", test_name: "long_test", line: 2),
         ],
         [2],
         "a module before the one it follows",
       ),
       #(
         [
-          listed_row("a_test", "second_test", 1),
-          listed_row("a_test", "first_test", 2),
+          listed_row(module: "a_test", test_name: "second_test", line: 1),
+          listed_row(module: "a_test", test_name: "first_test", line: 2),
         ],
         [2],
         "a test before the one it follows",
       ),
       #(
         [
-          listed_row("a_test", "first_test", 1),
-          listed_row("a_test", "second_test", 2),
-          listed_row("b_test", "first_test", 3),
+          listed_row(module: "a_test", test_name: "first_test", line: 1),
+          listed_row(module: "a_test", test_name: "second_test", line: 2),
+          listed_row(module: "b_test", test_name: "first_test", line: 3),
         ],
         [],
         "rows in order",

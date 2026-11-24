@@ -108,16 +108,16 @@ pub fn the_line_of_one_offset_is_the_line_of_that_byte_test() -> Nil {
 /// literal as written, `"other"` for any other expression, none for no
 /// expression.
 fn given(
-  call: String,
-  label: String,
-  position: syntax.Position,
+  call call: String,
+  label label: String,
+  position position: syntax.Position,
 ) -> option.Option(String) {
   let module =
     syntax.parse(
       planted.file("src/planted.gleam", ["pub fn f() { " <> call <> " }"]),
     )
   let assert [first, ..] = syntax.calls(module) as "the body holds a call"
-  case syntax.argument(first.arguments, label:, position:) {
+  case syntax.argument(arguments: first.arguments, label:, position:) {
     Some(glance.Int(value:, ..)) -> Some(value)
     Some(_) -> Some("other")
     None -> None
@@ -171,7 +171,7 @@ pub fn a_value_a_call_gives_by_label_is_found_by_label_or_else_by_position_test(
     ],
     fn(row) {
       let #(call, position, expected, reason) = row
-      assert given(call, "within", position) == expected as reason
+      assert given(call:, label: "within", position:) == expected as reason
     },
   )
 }
@@ -179,9 +179,15 @@ pub fn a_value_a_call_gives_by_label_is_found_by_label_or_else_by_position_test(
 pub fn a_capture_is_a_call_with_the_arguments_around_its_hole_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  assert given("g(1, _, 3)", "within", syntax.FirstArgument) == Some("1")
+  assert given(
+      call: "g(1, _, 3)",
+      label: "within",
+      position: syntax.FirstArgument,
+    )
+    == Some("1")
     as "the arguments before the hole come first"
-  assert given("g(_, 2)", "within", syntax.LastArgument) == Some("2")
+  assert given(call: "g(_, 2)", label: "within", position: syntax.LastArgument)
+    == Some("2")
     as "the arguments after the hole follow"
   let module =
     syntax.parse(planted.file("src/planted.gleam", ["pub fn f() { g(1, _) }"]))

@@ -316,7 +316,7 @@ fn unbounded_receives(module: glance.Module) -> List(#(Int, String)) {
     |> list.filter_map(fn(call) {
       case
         syntax.argument(
-          call.arguments,
+          arguments: call.arguments,
           label: "within",
           position: syntax.LastArgument,
         )

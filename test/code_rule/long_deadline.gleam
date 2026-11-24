@@ -292,7 +292,7 @@ fn deadline_of(
   use arguments <- result.try(dict.get(arguments_by_start, start))
   let deadline: Option(glance.Expression) =
     syntax.argument(
-      arguments,
+      arguments:,
       label: deadline_label,
       position: syntax.FirstArgument,
     )
