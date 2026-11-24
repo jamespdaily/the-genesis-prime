@@ -5195,15 +5195,25 @@ fn reached_by(
             ..walk,
             logs: list.append(
               walk.logs,
-              player_modifier_refusals(
+              unit_refusals(
                 row:,
+                aim: spell_plan.modifier_aim,
+                refusal: fn(entry) {
+                  cast_gate.modifier_refusal(
+                    row: entry.0,
+                    unit_id: entry.1,
+                    caster:,
+                    struck:,
+                    press_target:,
+                    aura_ends_ms:,
+                    go_ms: now_ms,
+                  )
+                },
                 what:,
+                verb: "applied",
                 caster:,
                 live:,
                 struck:,
-                press_target:,
-                aura_ends_ms:,
-                go_ms: now_ms,
               ),
             ),
           )
@@ -5356,35 +5366,26 @@ fn proc_reached(
           target_verdict:,
         )
       let refusals =
-        cast_gate.rows_with_units(
-          rows: [row],
+        unit_refusals(
+          row:,
           aim: spell_plan.proc_aim,
+          refusal: fn(entry) {
+            cast_gate.proc_refusal(
+              row: entry.0,
+              unit_id: entry.1,
+              caster:,
+              struck:,
+              press_target:,
+              aura_ends_ms:,
+              go_ms: now_ms,
+            )
+          },
+          what:,
+          verb: "held",
           caster:,
-          primary_target: live.primary_target,
+          live:,
           struck:,
         )
-        |> list.filter_map(fn(entry) {
-          cast_gate.proc_refusal(
-            row: entry.0,
-            unit_id: entry.1,
-            caster:,
-            struck:,
-            press_target:,
-            aura_ends_ms:,
-            go_ms: now_ms,
-          )
-          |> option.to_result(Nil)
-          |> result.map(fn(why) {
-            Log(
-              level: LogDebug,
-              text: what
-                <> " on unit "
-                <> int.to_string(entry.1)
-                <> " is not held: "
-                <> why,
-            )
-          })
-        })
       Walk(..walk, logs: list.append(walk.logs, refusals))
     }
   }
@@ -5425,37 +5426,28 @@ fn press_target_of(live live: Live, caster caster: Caster) -> Option(Int) {
   }
 }
 
-/// A debug line for each unit that is the player the press named, or a player the round hit that
-/// the modifier row's area aim names, and that the row does not land on: it is not in the caster's sight at the go, or the row has a
-/// delay or lasts until removed with no aura end after the go, which a change on another player
-/// does not take.
-fn player_modifier_refusals(
-  row row: spell_plan.PropertyModifier,
+/// A debug line for each unit the row's aim names that `refusal` says the row does not
+/// land on (the player the press named, or a player the round hit): "`what` on unit N is not
+/// `verb`: why". `verb` is "applied" for a change the row gives and "held" for a proc it holds.
+fn unit_refusals(
+  row row: row,
+  aim aim: fn(row) -> spell_plan.Aim,
+  refusal refusal: fn(#(row, Int)) -> Option(String),
   what what: String,
+  verb verb: String,
   caster caster: Caster,
   live live: Live,
   struck struck: List(Struck),
-  press_target press_target: Option(Int),
-  aura_ends_ms aura_ends_ms: Option(Int),
-  go_ms go_ms: Int,
 ) -> List(Effect) {
   cast_gate.rows_with_units(
     rows: [row],
-    aim: spell_plan.modifier_aim,
+    aim:,
     caster:,
     primary_target: live.primary_target,
     struck:,
   )
   |> list.filter_map(fn(entry) {
-    cast_gate.modifier_refusal(
-      row: entry.0,
-      unit_id: entry.1,
-      caster:,
-      struck:,
-      press_target:,
-      aura_ends_ms:,
-      go_ms:,
-    )
+    refusal(entry)
     |> option.to_result(Nil)
     |> result.map(fn(why) {
       Log(
@@ -5463,7 +5455,9 @@ fn player_modifier_refusals(
         text: what
           <> " on unit "
           <> int.to_string(entry.1)
-          <> " is not applied: "
+          <> " is not "
+          <> verb
+          <> ": "
           <> why,
       )
     })
