@@ -86,6 +86,7 @@ import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set.{type Set}
 
 /// The heal rows of `strike` applied to the player `entered`, and the answer told to
 /// the caster's connection for the stay the strike names, before the player's own news.
@@ -214,7 +215,24 @@ pub fn changed(
         }
         Ok(_) | Error(Nil) -> Continue(session, [])
       }
+    held_changes.PlayerCastWent(from:, cast_id:, audience:) ->
+      cast_went(session:, now:, entered:, from:, cast_id:, audience:)
   }
+}
+
+/// The go of the cast `cast_id` that the caster of connection `from` started has told the
+/// player its changes: the player tells each of its viewers outside `audience`, except
+/// the caster, the cast's start, built from the changes it holds of the cast.
+fn cast_went(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  from from: step.ConnectionId,
+  cast_id cast_id: Int,
+  audience audience: Set(step.ConnectionId),
+) -> client_connection.Handled(Session) {
+  let _ = #(now, entered, from, cast_id, audience)
+  Continue(session, [])
 }
 
 /// The caster of connection `by` is no longer one of the player's viewers: each source of

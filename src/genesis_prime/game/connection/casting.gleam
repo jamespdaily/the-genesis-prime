@@ -1367,6 +1367,7 @@ fn carried_out(
           ),
         ],
       )
+      cast_state.OtherPlayerCastWent(..), _ -> #(session, [])
       cast_state.OtherPlayerChangeStarts(..), None
       | cast_state.OtherPlayerChangeEnds(..), None
       -> #(session, [])
@@ -2080,6 +2081,7 @@ pub fn creature_news_frames(
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..) -> []
+    | client_connection.HeldCastEnded(..)
+    | client_connection.HeldCastStarted(..) -> []
   }
 }

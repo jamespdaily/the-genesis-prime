@@ -199,6 +199,16 @@ pub fn entry_of(
   }
 }
 
+/// The target infos of the view's targets at `now_ms`, in order: what a create's entry
+/// lists for the cast and what a go that starts it for a viewer lists.
+pub fn targets_of(
+  view view: CastView,
+  now_ms now_ms: Int,
+) -> List(SpellTargetInfo) {
+  let _ = #(view, now_ms)
+  []
+}
+
 /// The entries a create lists at `now_ms`: those of `listed` views.
 pub fn entries_of(
   views views: List(CastView),

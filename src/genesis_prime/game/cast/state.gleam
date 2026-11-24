@@ -246,6 +246,17 @@ pub type Effect {
   /// (genesis_prime/game/held_changes `PlayerChangeEnds`), which takes it off when it holds
   /// the source for the caster.
   OtherPlayerChangeEnds(address: PlayerAddress, source: unit_properties.Source)
+  /// The go of the cast `cast_id` has told the player at `address` each change it lands on
+  /// that player (`OtherPlayerChangeStarts`), one tell per cast and player after the last:
+  /// the connection tells that player's connection for the stay `address` names
+  /// (genesis_prime/game/held_changes `PlayerCastWent`), which holds the cast in its ledger
+  /// and starts it for each of its viewers that is not in `audience`, the connections the
+  /// caster told the cast's 0x7ff.
+  OtherPlayerCastWent(
+    address: PlayerAddress,
+    cast_id: Int,
+    audience: Set(ConnectionId),
+  )
   /// A property modifier of the caster's spell starts on the creature `unit_id` whose
   /// life the go struck, at the monotonic time `struck_at_ms` the go struck it
   /// (`HitCreature`): the connection tells the creature
@@ -1946,6 +1957,7 @@ pub fn without_cancels(
       | CasterChangeEnds(..)
       | OtherPlayerChangeStarts(..)
       | OtherPlayerChangeEnds(..)
+      | OtherPlayerCastWent(..)
       | TargetChangeStarts(..)
       | ForcedMoveStarts(..)
       | CreatureDespawns(..)

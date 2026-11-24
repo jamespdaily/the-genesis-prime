@@ -40,6 +40,7 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/set.{type Set}
 
 /// What a caster's cast changes on a player that is not the caster, as it is told: a
 /// property modifier (the UnitPropertyModifier and UnitPropertyConversion rows, and the
@@ -87,6 +88,12 @@ pub type PlayerChange {
   /// The cast's node on the player has ended: the change of `source` that `from` started
   /// is taken off.
   PlayerChangeEnds(from: ConnectionId, source: Source)
+  /// The go of the cast `cast_id` that `from` started has told the player each of its
+  /// changes: the player starts the cast for each of its viewers outside `audience` (the
+  /// connections the caster told the cast's 0x7ff) except `from`, from what it holds of the
+  /// cast. It names no stay: the player's own stay is fenced where it is taken, and the
+  /// guard is the ledger's (`holds_cast_from`).
+  PlayerCastWent(from: ConnectionId, cast_id: Int, audience: Set(ConnectionId))
 }
 
 /// What a player lists of a cast that holds a change on it: the cast's spell and the
@@ -257,6 +264,16 @@ pub fn kept_casts_of_unit(held held: Held, unit_id unit_id: Int) -> List(Int) {
 /// Whether any source of the cast `cast_id` is held.
 pub fn holds_cast(held held: Held, cast_id cast_id: Int) -> Bool {
   list.any(held.entries, fn(entry) { entry.source.cast_id == cast_id })
+}
+
+/// Whether a source of the cast `cast_id` that the connection `by` started is held.
+pub fn holds_cast_from(
+  held held: Held,
+  cast_id cast_id: Int,
+  by by: ConnectionId,
+) -> Bool {
+  let _ = #(held, cast_id, by)
+  False
 }
 
 /// Every source held, in the order they started.

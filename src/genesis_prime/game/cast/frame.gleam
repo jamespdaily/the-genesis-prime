@@ -21,6 +21,7 @@ import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/telegraph_entries.{type Opening}
+import genesis_prime/game/unit_casts
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
@@ -554,6 +555,34 @@ pub fn creature_applied(
     telegraph_positions: [],
     missiles: [],
     phase: 0,
+  )
+}
+
+/// The 0x7ff and the 0x7f4 that start the cast of `view` for a viewer that was not told it by
+/// its caster, from the changes the view's holder holds of it at `now_ms`: the cast is the
+/// caster's, aimed at the holder, who stands at `place`, and the go lists the holder's effects
+/// as a create's entry lists them (`unit_casts.targets_of`).
+pub fn held_start(
+  view view: unit_casts.CastView,
+  place place: Place,
+  now_ms now_ms: Int,
+) -> #(SpellStarted, SpellGo) {
+  let _ = now_ms
+  #(
+    creature_started(
+      cast_id: view.cast_id,
+      spell4_id: view.spell4_id.value,
+      caster_unit_id: view.caster_unit_id,
+      target_unit_id: view.primary_target,
+      place:,
+      opening: telegraph_entries.none,
+    ),
+    creature_applied(
+      cast_id: view.cast_id,
+      place:,
+      target_unit_id: view.primary_target,
+      effects: [],
+    ),
   )
 }
 

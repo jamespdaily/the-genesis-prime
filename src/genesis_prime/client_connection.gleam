@@ -391,6 +391,11 @@ pub type News {
   /// told it by its caster writes a 0x811 naming the player (opcode.0x811), and any other
   /// viewer drops the news, since its caster's frames end the cast.
   HeldCastEnded(cast_id: Int)
+  /// The player holds a cast of another player (the caster's go put its change on the
+  /// player) that this viewer was not told by the caster: the 0x7ff and the 0x7f4 the
+  /// player builds from what it holds of the cast, which a viewer that does not hold the
+  /// cast writes and borrows from the player (opcode.0x7ff, opcode.0x7f4).
+  HeldCastStarted(start: SpellStarted, go: SpellGo)
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
