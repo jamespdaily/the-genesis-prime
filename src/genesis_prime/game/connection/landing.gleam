@@ -6,11 +6,11 @@
 ////
 //// ```
 //// caster's connection C                        this connection T (the healed player)
-////   Tell(Connection(T), TellPlayerStrike(stay_T, PlayerStrike(key, C, stay_C, outgoing, heals)))
-////                      ─▶ ForStay(stay_T, SentByStriker(strike))   (the stay fence; held through an ask)
+////   Tell(Connection(T), TellPlayer(stay_T, Strike(PlayerStrike(key, C, stay_C, outgoing, heals))))
+////                      ─▶ ForStay(stay_T, SentByPlayer(Strike(strike)))   (the stay fence; held through an ask)
 ////                      ─▶ player_life.heals_taken: each row in order on the life the one before left
-////   ForStay(stay_C, SentByHealed(PlayerAnswered(key, HealsLanded(splits) | PlayerDead)))
-////                      ◀─ Tell(Connection(C), TellPlayerAnswer(stay_C, answered)), then T's own news
+////   ForStay(stay_C, SentByPlayer(Answer(PlayerAnswered(key, HealsLanded(splits) | PlayerDead))))
+////                      ◀─ Tell(Connection(C), TellPlayer(stay_C, Answer(answered))), then T's own news
 //// ```
 ////
 //// - **The answer is told before T's own news**, in the order a creature answers a strike
@@ -23,13 +23,13 @@
 ////
 //// ```
 //// caster's connection C                        this connection T (the ally)
-////   Tell(Connection(T), TellPlayerChange(stay_T, PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect)))
-////                      ─▶ ForStay(stay_T, SentByCaster(..))   (the stay fence; held through an ask)
+////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
+////                      ─▶ ForStay(stay_T, SentByPlayer(Change(..)))   (the stay fence; held through an ask)
 ////                      ─▶ changed: the change through the function the player's own cast uses
 ////                         (properties.started, absorption.started), held for C
-////   Tell(Connection(T), TellPlayerChange(stay_T, PlayerChangeEnds(C, source)))
+////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerChangeEnds(C, source))))
 ////                      ─▶ changed: the source taken off, when C holds it
-////   Tell(Connection(T), TellPlayerChange(stay_T, PlayerCastWent(C, cast_id, audience)))
+////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id, audience))))
 ////                      ─▶ cast_went: Tell(each viewer of T outside the audience, except C,
 ////                         PeerNews(T, HeldCastStarted(0x7ff, 0x7f4))), after the rows
 ////   the map's UnseenBy(C) ─▶ caster_unseen: C's sources with `EndsWhenUnseen` taken off
@@ -119,9 +119,12 @@ pub fn struck(
   let answer: Effect(ConnectionEffect(Request)) =
     OwnEffect(step.Tell(
       to: step.Connection(connection: strike.from),
-      request: client_connection.TellPlayerAnswer(
+      request: client_connection.TellPlayer(
         stay: strike.stay,
-        answered: strike_tell.PlayerAnswered(key: strike.key, outcome:),
+        tell: client_connection.Answer(answered: strike_tell.PlayerAnswered(
+          key: strike.key,
+          outcome:,
+        )),
       ),
     ))
   Continue(session, [answer, ..news])
@@ -160,7 +163,7 @@ pub fn ended(
   #(session, list.flatten([properties, look, absorption]))
 }
 
-/// What a caster's connection told the player (`TellPlayerChange`). A start is taken
+/// What a caster's connection told the player (`PlayerTell.Change`). A start is taken
 /// only while the player is alive and the caster is one of its viewers with the stay the
 /// tell names; it is applied (`started`) and held for the caster. An end is taken only
 /// from the caster that holds the source. A went is taken only from the caster that holds

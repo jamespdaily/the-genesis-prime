@@ -1507,9 +1507,7 @@ pub fn mapped_logging(
     | client_connection.TellDespawn(..)
     | client_connection.TellUnitStates(..)
     | client_connection.TellCastView(..)
-    | client_connection.TellPlayerStrike(..)
-    | client_connection.TellPlayerChange(..)
-    | client_connection.TellPlayerAnswer(..)
+    | client_connection.TellPlayer(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -2551,14 +2549,16 @@ pub fn a_player_strike(
   outgoing outgoing: Float,
   heals heals: List(#(effect_kind.Vital, Int)),
 ) -> client_connection.StaySent {
-  client_connection.SentByStriker(strike: strike_support.heal_strike(
-    from: ConnectionId(from),
-    stay:,
-    cast_id:,
-    unit_id: own_unit_id,
-    outgoing:,
-    heals:,
-  ))
+  client_connection.SentByPlayer(
+    tell: client_connection.Strike(strike: strike_support.heal_strike(
+      from: ConnectionId(from),
+      stay:,
+      cast_id:,
+      unit_id: own_unit_id,
+      outgoing:,
+      heals:,
+    )),
+  )
 }
 
 /// The healed player's answer a caster's connection takes for its stay: `outcome` to the
@@ -2568,14 +2568,16 @@ pub fn an_answer_from_a_player(
   unit_id unit_id: Int,
   outcome outcome: strike_tell.PlayerOutcome,
 ) -> client_connection.StaySent {
-  client_connection.SentByHealed(answered: strike_tell.PlayerAnswered(
-    key: strike_tell.Key(
-      cast_id:,
-      occasion: strike_tell.AtGo(phase: 0),
-      unit_id:,
-    ),
-    outcome:,
-  ))
+  client_connection.SentByPlayer(
+    tell: client_connection.Answer(answered: strike_tell.PlayerAnswered(
+      key: strike_tell.Key(
+        cast_id:,
+        occasion: strike_tell.AtGo(phase: 0),
+        unit_id:,
+      ),
+      outcome:,
+    )),
+  )
 }
 
 /// What a step tells other processes: the address and the request, in the order told.
@@ -2596,8 +2598,10 @@ pub fn player_strikes(
 ) -> List(#(step.Address, Stay, strike_tell.PlayerStrike)) {
   list.filter_map(tells(taken), fn(told) {
     case told.1 {
-      client_connection.TellPlayerStrike(stay:, strike:) ->
-        Ok(#(told.0, stay, strike))
+      client_connection.TellPlayer(
+        stay:,
+        tell: client_connection.Strike(strike:),
+      ) -> Ok(#(told.0, stay, strike))
       _ -> Error(Nil)
     }
   })
@@ -2612,7 +2616,10 @@ pub fn player_answers(
     case told {
       #(
         step.Connection(ConnectionId(caster)),
-        client_connection.TellPlayerAnswer(stay:, answered:),
+        client_connection.TellPlayer(
+          stay:,
+          tell: client_connection.Answer(answered:),
+        ),
       ) -> Ok(#(caster, stay, answered))
       #(_, _) -> Error(Nil)
     }

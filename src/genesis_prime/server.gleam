@@ -103,11 +103,10 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, ChangeEnds, ChangeStarts, ControlsEnd, ForStay,
-  FromHandOff, FromMap, FromSessions, FromStore, SentByCaster, SentByChat,
-  SentByFoe, SentByHealed, SentByKill, SentByMap, SentByPeer, SentBySessions,
-  SentByStriker, SentByTarget, TellCastView, TellChat, TellDespawn,
-  TellLifeChanged, TellMoved, TellPeer, TellPlayerAnswer, TellPlayerChange,
-  TellPlayerStrike, TellReady, TellReleased, TellStealthChanged, TellStrike,
+  FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
+  SentByKill, SentByMap, SentByPeer, SentByPlayer, SentBySessions, SentByTarget,
+  TellCastView, TellChat, TellDespawn, TellLifeChanged, TellMoved, TellPeer,
+  TellPlayer, TellReady, TellReleased, TellStealthChanged, TellStrike,
   TellStrikeAnswered, TellTargetChange, TellTargetMoved, TellThrown,
   TellUnitStates, TellVisibilityChanged, ViewEnds, ViewSet,
 }
@@ -374,9 +373,7 @@ fn directory(settings: Settings) -> Directory {
       | TellDespawn(..)
       | TellUnitStates(..)
       | TellCastView(..)
-      | TellPlayerStrike(..)
-      | TellPlayerChange(..)
-      | TellPlayerAnswer(..) -> Error(Nil)
+      | TellPlayer(..) -> Error(Nil)
     }
   }
 }
@@ -489,9 +486,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellDespawn(..)
     | TellUnitStates(..)
     | TellCastView(..)
-    | TellPlayerStrike(..)
-    | TellPlayerChange(..)
-    | TellPlayerAnswer(..)
+    | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -557,9 +552,7 @@ pub fn tell_the_run(
     | TellDespawn(..)
     | TellUnitStates(..)
     | TellCastView(..)
-    | TellPlayerStrike(..)
-    | TellPlayerChange(..)
-    | TellPlayerAnswer(..)
+    | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -644,9 +637,7 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
       Ok(creature.CastViewEnds(by: connection, cast_id:))
     TellPeer(..)
     | TellChat(..)
-    | TellPlayerStrike(..)
-    | TellPlayerChange(..)
-    | TellPlayerAnswer(..)
+    | TellPlayer(..)
     | TellMoved(..)
     | TellReady(..)
     | TellStealthChanged(..)
@@ -664,10 +655,9 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
-/// registry as `SentByPeer` for the viewer's stay (`ForStay`), a caster's heal rows
-/// (`TellPlayerStrike`) as `SentByStriker`, a caster's held change (`TellPlayerChange`)
-/// as `SentByCaster` and the healed player's answer
-/// (`TellPlayerAnswer`) as `SentByHealed`, each for the stay the request names, and a
+/// registry as `SentByPeer` for the viewer's stay (`ForStay`), a tell to another
+/// connection's player (`TellPlayer`: a caster's heal rows, its held change or the
+/// healed player's answer) as `SentByPlayer`, each for the stay the request names, and a
 /// chat tell (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). A strike
 /// (`TellStrike`), a fighter's move (`TellTargetMoved`), the answer to a
@@ -687,12 +677,8 @@ fn connection_deliver(
     case request, to {
       TellPeer(stay:, news:), _ ->
         reach.send(to, ForStay(stay:, sent: SentByPeer(news:)))
-      TellPlayerStrike(stay:, strike:), _ ->
-        reach.send(to, ForStay(stay:, sent: SentByStriker(strike:)))
-      TellPlayerAnswer(stay:, answered:), _ ->
-        reach.send(to, ForStay(stay:, sent: SentByHealed(answered:)))
-      TellPlayerChange(stay:, change:), _ ->
-        reach.send(to, ForStay(stay:, sent: SentByCaster(change:)))
+      TellPlayer(stay:, tell:), _ ->
+        reach.send(to, ForStay(stay:, sent: SentByPlayer(tell:)))
       TellChat(tell:), _ -> chat_reach.send(to, tell)
       TellStrike(..) as request, step.Creature(..)
       | TellTargetMoved(..) as request, step.Creature(..)

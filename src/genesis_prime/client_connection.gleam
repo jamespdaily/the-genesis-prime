@@ -191,21 +191,26 @@ pub type Request {
   /// when no creature of that address and life is there, and never asked.
   TellCastView(connection: ConnectionId, change: ViewChange)
   /// What a `Tell` effect sends the connection of another player (genesis_prime/step
-  /// `Connection`) whose cast heals this connection's player: the heal rows it applies
-  /// to its own life (genesis_prime/game/connection/landing). `stay` is the healed
-  /// player's stay, which fences the tell; the strike holds the caster's. Never asked,
-  /// and never told to a map.
-  TellPlayerStrike(stay: Stay, strike: PlayerStrike)
-  /// What a `Tell` effect sends the connection of another player (genesis_prime/step
-  /// `Connection`) whose cast changes this connection's player: the change it holds
-  /// there, or the end of it (genesis_prime/game/connection/landing). `stay` is the
-  /// player's stay, which fences the tell; the change holds the caster's. Never asked,
-  /// no answer comes back, and never told to a map.
-  TellPlayerChange(stay: Stay, change: PlayerChange)
-  /// What a `Tell` effect sends the connection of the player whose `TellPlayerStrike`
-  /// this connection's player took: the answer. `stay` is the caster's stay, which the
-  /// strike named, and fences the answer. Never asked, and never told to a map.
-  TellPlayerAnswer(stay: Stay, answered: PlayerAnswered)
+  /// `Connection`): what its cast does to this connection's player, or the answer to
+  /// what this connection's player did to it (`PlayerTell`). `stay` is the told
+  /// player's stay, which fences the tell. Never asked, and never told to a map.
+  TellPlayer(stay: Stay, tell: PlayerTell)
+}
+
+/// What one connection tells the connection of another player, as `TellPlayer`
+/// carries it and `SentByPlayer` delivers it.
+pub type PlayerTell {
+  /// The heal rows the caster's cast applies to the told player's life
+  /// (genesis_prime/game/connection/landing); the strike holds the caster's stay.
+  Strike(strike: PlayerStrike)
+  /// The change the caster's cast holds on the told player, or the end of it
+  /// (genesis_prime/game/connection/landing); the change holds the caster's stay.
+  /// No answer comes back.
+  Change(change: PlayerChange)
+  /// The answer to a `Strike` that the told player's connection took: the told stay
+  /// is the caster's, which the strike named, and the strike rule takes the answer
+  /// into the round it belongs to (genesis_prime/game/strike).
+  Answer(answered: PlayerAnswered)
 }
 
 /// What a cast holds on a creature, as `TellCastView` carries it.
@@ -455,18 +460,11 @@ pub type StaySent {
   /// strike its caster told in this stay, which the strike rule takes into the
   /// round it belongs to (genesis_prime/game/strike).
   SentByTarget(answered: Answered)
-  /// What the connection of another player tells this one whose player its cast heals:
-  /// the heal rows to apply, which the landing rule takes
-  /// (genesis_prime/game/connection/landing).
-  SentByStriker(strike: PlayerStrike)
-  /// What the connection of another player tells this one whose player its cast changes:
-  /// the change to hold or to end, which the landing rule takes
-  /// (genesis_prime/game/connection/landing).
-  SentByCaster(change: PlayerChange)
-  /// What the connection of a player this connection's player healed answers: the
-  /// answer to a strike its caster told in this stay, which the strike rule takes into
-  /// the round it belongs to (genesis_prime/game/strike).
-  SentByHealed(answered: PlayerAnswered)
+  /// What the connection of another player tells this one: heal rows to apply or a
+  /// change to hold or end (genesis_prime/game/connection/landing), or the answer to
+  /// a strike this connection's player told in this stay (genesis_prime/game/strike),
+  /// each taken by its own rule (`PlayerTell`).
+  SentByPlayer(tell: PlayerTell)
   /// What a creature that this connection's player killed with its blow sends it:
   /// the credit for the kill, told in the stay of the strike that killed it, which
   /// the experience rule turns into experience (genesis_prime/game/experience).

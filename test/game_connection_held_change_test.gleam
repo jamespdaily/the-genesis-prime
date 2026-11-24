@@ -187,7 +187,7 @@ fn starts(hold hold: Hold) -> PlayerChange {
 fn tell(change: PlayerChange) -> Event(ConnectionEvent(Message, Answer)) {
   support.for_stay(
     stay: support.own_stay(),
-    sent: client_connection.SentByCaster(change:),
+    sent: client_connection.SentByPlayer(tell: client_connection.Change(change:)),
   )
 }
 

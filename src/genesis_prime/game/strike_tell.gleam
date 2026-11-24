@@ -22,9 +22,9 @@
 ////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
 ////
 //// caster's connection C                                     healed player's connection T
-////   Tell(Connection(T), TellPlayerStrike(stay_T, PlayerStrike(key, C, stay_C, outgoing, heals)))
+////   Tell(Connection(T), TellPlayer(stay_T, Strike(PlayerStrike(key, C, stay_C, outgoing, heals))))
 ////                                                            ─▶ each heal row on T's life, in order
-////   SentByHealed(PlayerAnswered(key, outcome)) ◀─ Tell(Connection(C), TellPlayerAnswer(stay_C, ..)),
+////   SentByPlayer(Answer(PlayerAnswered(key, outcome))) ◀─ Tell(Connection(C), TellPlayer(stay_C, Answer(..))),
 ////                                                 then T's own news
 //// ```
 ////
