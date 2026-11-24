@@ -412,7 +412,8 @@ fn absorbs_of(
       }
       cast_state.HeldChange(held_changes.Property(..))
       | cast_state.Heal(..)
-      | cast_state.Look(..) -> Error(Nil)
+      | cast_state.Look(..)
+      | cast_state.HeldChange(held_changes.Watches(..)) -> Error(Nil)
     }
   })
 }

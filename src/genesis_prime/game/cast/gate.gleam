@@ -452,6 +452,18 @@ type PlayerRow {
   NotPlayerRow
 }
 
+/// What decides whether a row held on another player lands: the unit set its aim names, whether
+/// the row takes the players the round hit, whether the row is one another player can hold at
+/// all, and the columns that give it a life.
+type HeldShape {
+  HeldShape(
+    aim: spell_plan.Aim,
+    area_holds: Bool,
+    changes_a_player: Bool,
+    life_row: lasting.LastingRow,
+  )
+}
+
 fn player_row(
   row row: spell_plan.PropertyModifier,
   unit_id unit_id: Int,
@@ -461,43 +473,70 @@ fn player_row(
   aura_ends_ms aura_ends_ms: Option(Int),
   go_ms go_ms: Int,
 ) -> PlayerRow {
-  let aim = spell_plan.modifier_aim(modifier: row)
+  player_hold(
+    shape: HeldShape(
+      aim: spell_plan.modifier_aim(modifier: row),
+      area_holds: case row.change {
+        spell_plan.StruckChange(..) -> True
+        spell_plan.PropertyChange(..)
+        | spell_plan.AbsorbChange(..)
+        | spell_plan.LookChange(..) -> False
+      },
+      changes_a_player: case row.change {
+        spell_plan.StruckChange(..) | spell_plan.AbsorbChange(..) -> True
+        spell_plan.PropertyChange(..) -> option.is_some(row.armor)
+        spell_plan.LookChange(..) -> False
+      },
+      life_row: row.row,
+    ),
+    unit_id:,
+    caster:,
+    struck:,
+    press_target:,
+    aura_ends_ms:,
+    go_ms:,
+  )
+}
+
+/// The one rule that decides whether a row held on another player lands on `unit_id`, the
+/// player the press named (a row aimed at the primary target) or a player the round hit (a row
+/// aimed at the area): the player is in the caster's sight, the row has no delay and its life
+/// is an end after the go, its own or the aura's.
+fn player_hold(
+  shape shape: HeldShape,
+  unit_id unit_id: Int,
+  caster caster: Caster,
+  struck struck: List(Struck),
+  press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> PlayerRow {
   let named_by_the_press =
     press_target == Some(unit_id)
     && unit_id != caster.unit_id
-    && spell_plan.reaches_primary_target(aim:)
+    && spell_plan.reaches_primary_target(aim: shape.aim)
   let found_by_the_area =
     unit_id != caster.unit_id
-    && spell_plan.reaches_area(aim:)
+    && spell_plan.reaches_area(aim: shape.aim)
     && list.contains(hit_players(struck:), unit_id)
-    && case row.change {
-      spell_plan.StruckChange(..) -> True
-      spell_plan.PropertyChange(..)
-      | spell_plan.AbsorbChange(..)
-      | spell_plan.LookChange(..) -> False
-    }
+    && shape.area_holds
   let names_the_player = named_by_the_press || found_by_the_area
-  let changes_a_player = case row.change {
-    spell_plan.StruckChange(..) | spell_plan.AbsorbChange(..) -> True
-    spell_plan.PropertyChange(..) -> option.is_some(row.armor)
-    spell_plan.LookChange(..) -> False
-  }
   use <- bool.guard(
-    when: !names_the_player || !changes_a_player,
+    when: !names_the_player || !shape.changes_a_player,
     return: NotPlayerRow,
   )
   // A row with a delay is refused whatever its life, and for one with none the larger of
   // delay and duration is its duration, so the spell's choice between them changes nothing here.
   let life =
     lasting.row_life(
-      row: row.row,
+      row: shape.life_row,
       longer_of_delay_and_duration: False,
       aura_ends_ms:,
       go_ms:,
     )
   case
     dict.has_key(caster.players_in_sight, unit_id),
-    row.row.delay_ms > 0,
+    shape.life_row.delay_ms > 0,
     life
   {
     False, _, _ -> Refused(why: "the player is not in the caster's sight")
@@ -514,6 +553,106 @@ fn player_row(
         why: "the row has no life, which a change on another player needs",
       )
     True, False, lasting.EndsAt(..) -> Lands
+  }
+}
+
+/// What a Proc row does on `unit_id`: held, refused or not the row's to hold.
+fn proc_hold(
+  row row: spell_plan.ProcRow,
+  unit_id unit_id: Int,
+  caster caster: Caster,
+  struck struck: List(Struck),
+  press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> PlayerRow {
+  player_hold(
+    shape: HeldShape(
+      aim: spell_plan.proc_aim(proc: row),
+      area_holds: True,
+      changes_a_player: True,
+      life_row: row.row,
+    ),
+    unit_id:,
+    caster:,
+    struck:,
+    press_target:,
+    aura_ends_ms:,
+    go_ms:,
+  )
+}
+
+/// Whether a Proc row is held by `unit_id`, one of the units its holder names (`proc_aim`):
+/// the caster for its own row, and for a row held by the primary target the player the press
+/// named, or the caster in a press at oneself; for a row held by the area's allies each player
+/// the round hit. A player is held only when the caster sees it and the row has an end after the
+/// go (`player_hold`). No creature holds a proc.
+pub fn proc_applies(
+  row row: spell_plan.ProcRow,
+  unit_id unit_id: Int,
+  caster caster: Caster,
+  struck struck: List(Struck),
+  press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> Bool {
+  case row.holder {
+    spell_plan.HeldByCaster -> unit_id == caster.unit_id
+    spell_plan.HeldByPrimaryTarget | spell_plan.HeldByAreaAllies ->
+      proc_hold(
+        row:,
+        unit_id:,
+        caster:,
+        struck:,
+        press_target:,
+        aura_ends_ms:,
+        go_ms:,
+      )
+      == Lands
+      || {
+        row.holder == spell_plan.HeldByPrimaryTarget
+        && press_target == Some(caster.unit_id)
+        && unit_id == caster.unit_id
+      }
+  }
+}
+
+/// Why a Proc row that names a player is not held by it, or none: the player is out of the
+/// caster's sight, the row has a delay or no end after the go, or, for a row held by the primary
+/// target, the press named no player.
+pub fn proc_refusal(
+  row row: spell_plan.ProcRow,
+  unit_id unit_id: Int,
+  caster caster: Caster,
+  struck struck: List(Struck),
+  press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
+) -> Option(String) {
+  case
+    row.holder,
+    proc_hold(
+      row:,
+      unit_id:,
+      caster:,
+      struck:,
+      press_target:,
+      aura_ends_ms:,
+      go_ms:,
+    )
+  {
+    spell_plan.HeldByCaster, _ -> None
+    _, Refused(why:) -> Some(why)
+    _, Lands -> None
+    spell_plan.HeldByAreaAllies, NotPlayerRow -> None
+    spell_plan.HeldByPrimaryTarget, NotPlayerRow ->
+      case press_target == Some(caster.unit_id) && unit_id == caster.unit_id {
+        True -> None
+        False ->
+          Some(
+            "the cast's primary target is no player the press named, so nobody holds the row",
+          )
+      }
   }
 }
 

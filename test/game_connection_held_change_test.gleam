@@ -39,6 +39,7 @@ import genesis_prime/game/held_changes.{
   type Change, type PlayerChange, type Sight, EndsWhenUnseen, KeptWhenUnseen,
   PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
 }
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
@@ -94,6 +95,31 @@ fn armor() -> Change {
 /// The pool of an absorb row, `amount` taking every damage type (mask 7, row 62024).
 fn pool(amount amount: Int) -> Change {
   held_changes.Absorb(amount:, mask: 7)
+}
+
+/// The Proc row 86457 a caster holds on the player (Healing Salve's allies' row, kind 16 takes
+/// damage, Spell4 39386, 12 000 ms): the player applies nothing of it.
+fn watches() -> Change {
+  held_changes.Watches(trigger: spell_plan.TakesDamage)
+}
+
+fn watch_source(cast_id cast_id: Int) -> Source {
+  Source(cast_id:, effect_id: Spell4EffectsId(86_457))
+}
+
+/// The hold of the Proc row of caster 3's cast `cast_id`, as the go of Spell4 39386 at the
+/// monotonic time 1000 tells it: 12 000 ms from the go, kept when the caster is unseen.
+fn watch_hold(cast_id cast_id: Int) -> Hold {
+  Hold(
+    ..held(caster: 3, source: watch_source(cast_id:), change: watches()),
+    sight: KeptWhenUnseen,
+    spell4_id: Spell4Id(39_386),
+    effect: HeldEffect(
+      effect_id: Spell4EffectsId(86_457),
+      starts_ms: 1000,
+      ends: EndsAt(ms: 13_000),
+    ),
+  )
 }
 
 fn armor_source(cast_id cast_id: Int) -> Source {
@@ -362,6 +388,12 @@ pub fn a_change_a_player_in_sight_tells_is_applied_as_the_players_own_change_of_
       [Absorption(absorption: 300)],
     ),
     #(
+      "a Proc row the caster holds on the player applies nothing: no property, absorb or armor is written and no viewer is told",
+      watch_hold(cast_id: 103),
+      Seen(properties: [], absorptions: [], armor: []),
+      [],
+    ),
+    #(
       "an Interrupt Armor change (property 44, +1) writes the armor's maximum, then the armor stat at 1, to the player and tells each viewer both",
       held(
         caster: 3,
@@ -391,6 +423,36 @@ pub fn a_change_a_player_in_sight_tells_is_applied_as_the_players_own_change_of_
   })
 }
 
+/// The cast of Healing Salve's child 39386 caster 3's connection started, as the create of a
+/// player that holds its Proc row lists it at the monotonic time `at_ms`: caster 3's unit, the
+/// player as primary and only target, row 86457 at delay 0 with the time left of its 13 000 ms end.
+fn watch_entry(cast_id cast_id: Int, at_ms at_ms: Int) -> UnitCreateCast {
+  UnitCreateCast(
+    caster_unit_id: support.viewer_unit_id(3),
+    primary_target_unit_id: support.own_unit_id,
+    cast_id:,
+    spell4_id: 39_386,
+    started: 0,
+    targets: [
+      cast_support.listed_target_info(
+        unit_id: support.own_unit_id,
+        index: 0,
+        count: 1,
+        effects: [
+          cast_support.listed_effect_info(
+            effect_id: 86_457,
+            instance_id: 1,
+            delay_ms: 0,
+            lifetime_ms: 13_000 - at_ms,
+          ),
+        ],
+      ),
+    ],
+    initial_positions: [],
+    telegraph_positions: [],
+  )
+}
+
 pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_the_player_a_caster_in_another_stay_and_a_dead_player_test() -> Nil {
   use <- owned_test.run(10_000)
   let armored = fn(caster, from_stay) {
@@ -415,11 +477,23 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       effect: effect_of(source: pool_source(cast_id: 101)),
     )
   }
+  let watched = fn(caster, from_stay) {
+    let hold = watch_hold(cast_id: 103)
+    PlayerChangeStarts(
+      from: ConnectionId(caster),
+      from_stay:,
+      source: hold.source,
+      change: hold.change,
+      sight: hold.sight,
+      spell4_id: hold.spell4_id,
+      effect: hold.effect,
+    )
+  }
   let seen_by_two_and_three =
     support.watched_by(state: support.in_world(), viewers: [2, 3])
   let dead = support.killed(seen_by_two_and_three).0
   // The player, the caster whose change is told and whose unseen notice follows, and the
-  // change told it.
+  // changes told it.
   let rows = [
     #(
       "a caster that is not among the viewers",
@@ -427,6 +501,7 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       4,
       armored(4, support.viewer_stay(4)),
       pooled(4, support.viewer_stay(4)),
+      watched(4, support.viewer_stay(4)),
     ),
     #(
       "a caster whose stay is not the one the map named for it",
@@ -434,6 +509,7 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       3,
       armored(3, support.viewer_stay(9)),
       pooled(3, support.viewer_stay(9)),
+      watched(3, support.viewer_stay(9)),
     ),
     #(
       "a dead player",
@@ -441,14 +517,25 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       3,
       armored(3, support.viewer_stay(3)),
       pooled(3, support.viewer_stay(3)),
+      watched(3, support.viewer_stay(3)),
     ),
   ]
   list.each(rows, fn(row) {
-    let #(reason, state, caster, armor_tell, pool_tell) = row
+    let #(reason, state, caster, armor_tell, pool_tell, watch_tell) = row
     let #(state, armor_taken) = support.feed(state:, event: tell(armor_tell))
     let #(state, pool_taken) = support.feed(state:, event: tell(pool_tell))
+    let #(state, watch_taken) = support.feed(state:, event: tell(watch_tell))
     assert rule_support.effects_of(armor_taken) == [] as reason
     assert rule_support.effects_of(pool_taken) == [] as reason
+    assert rule_support.effects_of(watch_taken) == [] as reason
+    // The Proc row was not held either: the create of a viewer lists no cast of it.
+    assert held_from_caster_3(created: support.created_at(
+        state:,
+        viewer: 4,
+        ms: 2500,
+      ))
+      == []
+      as reason
     // Nothing was held either: the caster's notice that it is unseen ends nothing.
     let #(_, unseen) =
       support.feed(
@@ -1430,6 +1517,15 @@ pub fn a_player_that_comes_into_sight_lists_the_casts_other_players_hold_on_it_t
   assert held_from_caster_3(created:)
     == [interrupt_armor_entry(cast_id: 100, at_ms: 2500)]
     as "the create lists the cast another player's connection holds on the ally"
+  // A Proc row the caster holds on the ally is held as any source is and listed in the create
+  // with the cast of its spell and the row's effect.
+  assert held_from_caster_3(created: support.created_at(
+      state: holding(holds: [watch_hold(cast_id: 103)]),
+      viewer: 4,
+      ms: 2500,
+    ))
+    == [watch_entry(cast_id: 103, at_ms: 2500)]
+    as "the create lists the Proc row's cast as any held source's"
   assert created.tail.cast_id == 0 as "no cast bar: the ally casts nothing"
   // The ally's own cast and the held casts are one list in cast id order; the tail's cast id
   // is the ally's own cast, never a held one.

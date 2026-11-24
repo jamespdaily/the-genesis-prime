@@ -57,6 +57,13 @@
 ////   other cast before the procs are matched, so a `Died` proc of any other cast is never held: its
 ////   go writes a debug line (the plan cannot tell a standing spell, so the rule enforces it,
 ////   `procs_held`); a camp drops the procs and their fire times.
+////   A Proc row held by the player the press named or by each ally the round hit is held by that
+////   player: the go tells it as a change that applies nothing (`held_changes.Watches`,
+////   `cast_control.modifiers_armed`) and the caster keeps one entry for it by source and holder
+////   (`State.procs`). The caster's own events match its own entries alone (`proc_draws_needed`,
+////   `cast.procs_fire`); an ally's entry leaves with the change on that ally
+////   (`cast_control.ended_where`), and the caster's node leaving drops the caster's own entries
+////   alone (`procs_dropped`).
 //// - **A unit that leaves the caster's sight** takes its nodes with it on the client
 ////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
 ////   ends with its 0x7fe (`unit_removed`).
@@ -161,19 +168,19 @@
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
-  type Aimed, type Applied, type Aside, type Caster, type Due, type Effect,
-  type Holder, type Live, type State, type Struck, Activated, Aside, CancelTimer,
-  CasterChangeEnding, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
-  CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
+  type Aimed, type Aside, type Caster, type Due, type Effect, type HeldProc,
+  type Holder, type Live, type ProcHold, type State, type Struck, Activated,
+  Aside, CancelTimer, CasterChangeEnding, CasterChangeEnds, CasterChangeStarts,
+  ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
   CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
   FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
   HeldChange, HeldProc, Hit, HitCaster, HitCreature, HitOtherPlayer, HitPlayer,
   Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerCastWent,
   OtherPlayerChangeEnds, OtherPlayerChangeStarts, Pay, PlayerChangeEnd, ProcDue,
-  QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast,
-  StartChild, StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
-  TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell, Tick,
-  TickStrike, WindowEnd,
+  ProcHold, QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send,
+  ShortcutCast, StartChild, StartHeld, StartTimer, State, StateEnd,
+  StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
+  TargetModifierStart, Tell, Tick, TickStrike, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown
@@ -459,8 +466,9 @@ pub fn has_pending(cast cast: State) -> Bool {
 /// exact. A state with nothing pending needs none.
 pub fn proc_draws_needed(cast cast: State) -> #(Int, Int) {
   list.fold(cast.pending, #(0, 0), fn(total, event) {
-    list.fold(dict.values(cast.procs), total, fn(total, held) {
-      case held.row.trigger == event.trigger {
+    list.fold(dict.to_list(cast.procs), total, fn(total, entry) {
+      let #(hold, held) = entry
+      case hold.holder == None && held.row.trigger == event.trigger {
         True -> {
           let #(words, rolls) = proc.draws_needed(row: held.row)
           #(total.0 + words, total.1 + rolls)
@@ -497,17 +505,30 @@ pub fn proc_refusal(
   )
 }
 
-/// The Proc rows of a go that applied, each held by the cast `cast_id` from this go on;
-/// a row the cast already holds keeps its fires, as a later go of the same cast is the
-/// same node.
+/// The Proc rows of a go that stand on the caster (`aimed.reached`: its own rows, and a row held
+/// by the primary target in a press at oneself), each held by the cast `cast_id` from this go
+/// on; a row the cast already holds keeps its fires, as a later go of the same cast is the same
+/// node. The rows on other players are held where they are told (`cast_control.modifiers_armed`).
 pub fn procs_held(
   cast cast: State,
   cast_id cast_id: Int,
-  applied applied: Applied,
+  caster caster: Caster,
+  aimed aimed: Aimed,
 ) -> #(State, List(Effect)) {
   let #(never, held) =
     list.partition(
-      cast_state.passed_of(applied:, as_kind: spell_plan.as_proc),
+      list.filter_map(
+        cast_state.rows_reached(
+          reached: aimed.reached,
+          as_kind: spell_plan.as_proc,
+        ),
+        fn(found) {
+          case { found.0 }.unit_id == caster.unit_id {
+            True -> Ok(found.1)
+            False -> Error(Nil)
+          }
+        },
+      ),
       fn(row) {
         row.trigger == spell_plan.Died
         && !cast_state.is_standing(cast:, cast_id:)
@@ -516,7 +537,7 @@ pub fn procs_held(
   let procs =
     list.fold(held, cast.procs, fn(procs, row) {
       let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-      dict.upsert(procs, source, fn(found) {
+      dict.upsert(procs, ProcHold(source:, holder: None), fn(found) {
         case found {
           Some(already) -> already
           None -> HeldProc(row:, fires_ms: [])
@@ -694,8 +715,7 @@ fn one_set_aside(
       belongs_to_standing(due: entry.1, id:, spell4_id: Spell4Id(spell4_id))
     })
   let #(stealth, others) = cast_tick.split_cast(held: cast.stealth, cast_id: id)
-  let #(procs, other_procs) =
-    cast_tick.split_cast(held: cast.procs, cast_id: id)
+  let #(procs, other_procs) = procs_split(held: cast.procs, cast_id: id)
   case live, lingering {
     None, None -> #(cast, None)
     _, _ -> #(
@@ -992,10 +1012,28 @@ fn stealth_dropped(cast cast: State, cast_id cast_id: Int) -> State {
   State(..cast, stealth: cast_tick.without_cast(held: cast.stealth, cast_id:))
 }
 
-/// The Proc rows of the cast `cast_id` dropped, as its node leaves the caster: a proc is
-/// held as long as the node that holds it.
+/// The Proc rows the caster holds itself for the cast `cast_id` dropped, as its node leaves the
+/// caster: a proc is held as long as the node that holds it. The rows the cast holds on allies
+/// stay with the changes on those allies (`cast_control.ended_where`).
 fn procs_dropped(cast cast: State, cast_id cast_id: Int) -> State {
-  State(..cast, procs: cast_tick.without_cast(held: cast.procs, cast_id:))
+  State(
+    ..cast,
+    procs: dict.filter(cast.procs, fn(hold, _) {
+      hold.source.cast_id != cast_id || hold.holder != None
+    }),
+  )
+}
+
+/// The Proc rows held for the cast `cast_id`, on the caster or on allies, and the rows the
+/// caster holds for other casts.
+fn procs_split(
+  held held: Dict(ProcHold, HeldProc),
+  cast_id cast_id: Int,
+) -> #(List(#(ProcHold, HeldProc)), Dict(ProcHold, HeldProc)) {
+  let #(of_cast, others) =
+    dict.to_list(held)
+    |> list.partition(fn(entry) { { entry.0 }.source.cast_id == cast_id })
+  #(of_cast, dict.from_list(others))
 }
 
 /// The nodes a go gives, one for each unit a Fluff row aims at or a crowd-control state

@@ -38,6 +38,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{PlayerState}
 import genesis_prime/game/prerequisite
+import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
@@ -1319,60 +1320,124 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
       left_after: area_ends([second_ally]),
     ),
   ]
-  list.each(area_paths, fn(path) {
-    let #(state, pressed) =
-      pressed_at_in(
-        plans: plans_of(spell: path.spell),
-        bag: bag_of_base_3,
-        target: 7,
-        state: cast_state.new(),
-        caster: both_see,
-        at: 1000,
-      )
-    let #(state, went) =
-      support.answered_each(
-        caster: both_see,
-        state:,
-        effects: pressed,
-        at: 1000,
-        struck_of: fn(asked) {
-          case asked.spell4_id == path.spell.spell4_id {
-            True -> [
-              ally_selected(unit_id: second_ally),
-              ally_selected(unit_id: ally),
-            ]
-            False -> []
-          }
-        },
-        rolls: [],
-        poses: dict.new(),
-      )
-    let id = support.pressed_id(effects: pressed)
-    assert list.length(told(effects: went)) == 2
-      as "the go told each ally its change"
-    let #(state, effects) = path.run(state, id)
-    assert told(effects:) == path.ends(id) as path.why
-    assert list.filter(support.finished_ids(support.writes(effects:)), fn(done) {
-        done == id
+  list.each(area_paths, area_path_ends_once)
+  // The same paths for the Proc row a spell shaped as Healing Salve's child holds on the allies
+  // the round hit (`salve_shaped`, 12 000 ms, propertyFlags 0x100): the change each ally holds
+  // ends once by each path that ends its cast's node, and is kept when the ally leaves the
+  // caster's sight, to end by its timer.
+  let salve = salve_shaped(chance: 1.0)
+  let watch_ends = fn(units) {
+    fn(cast_id) {
+      list.map(units, fn(unit_id) {
+        cast_state.OtherPlayerChangeEnds(
+          address: PlayerAddress(..address(), unit_id:),
+          source: source_of(cast_id:, effect_id: salve_allies_row),
+        )
       })
-      == case path.finishes {
-        True -> [id]
-        False -> []
-      }
-      as { path.why <> ": the cast's 0x7fe" }
-    assert list.all(path.removed, fn(unit_id) {
-      list.contains(
-        support.removed_targets(support.writes(effects:)),
-        #(id, [unit_id]),
-      )
-    })
-      as { path.why <> ": the 0x811 of the ally" }
-    assert told(effects: cast_tick.left(cast: state).1) == path.left_after(id)
-      as {
-        path.why <> ": and the caster's leaving afterwards ends what is left"
-      }
-    assert went != [] as "the go happened"
-  })
+    }
+  }
+  let watch_paths = [
+    AreaPath(
+      why: "a Proc row on the allies, time: each end timer fires at the go plus 12 000 and tells its ally's end, in the round's order, and the node's end in the same millisecond tells nothing more but writes the 0x7fe",
+      spell: salve,
+      run: fn(state, _) {
+        fired_in_order(
+          state:,
+          timers: list.append(
+            player_end_timers(state:),
+            nodes_end_timers(state:),
+          ),
+          seeing: [ally, second_ally],
+          at: 13_000,
+        )
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, the node's end first: it ends both, and the end timers, late, tell nothing more",
+      spell: salve,
+      run: fn(state, _) {
+        fired_in_order(
+          state:,
+          timers: list.append(
+            nodes_end_timers(state:),
+            player_end_timers(state:),
+          ),
+          seeing: [ally, second_ally],
+          at: 13_000,
+        )
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, the caster's death ends both and writes the 0x7fe",
+      spell: salve,
+      run: fn(state, _) {
+        cast.died(
+          cast: state,
+          caster: support.dead_caster(),
+          now: support.at(ms: 1100),
+        )
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: True,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, the ally leaving the caster's sight, for a spell that holds 0x100, ends nothing then; each end timer tells its ally's end at the go plus 12 000",
+      spell: salve,
+      run: fn(state, _) {
+        let #(state, removal) =
+          cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100)
+        assert told(effects: removal) == []
+          as "a Proc row of a spell that outlives its caster's sight is kept at the removal"
+        let #(state, ended) =
+          fired_in_order(
+            state:,
+            timers: player_end_timers(state:),
+            seeing: [],
+            at: 13_000,
+          )
+        #(state, list.append(removal, ended))
+      },
+      ends: watch_ends([second_ally, ally]),
+      finishes: False,
+      removed: [],
+      left_after: watch_ends([]),
+    ),
+    AreaPath(
+      why: "a Proc row on the allies, a type 80 removal of the cast's node on one ally ends that ally's row, writes the 0x811 and cancels its end timer; the other ally's row stays",
+      spell: salve,
+      run: fn(state, _) {
+        let both_see = esper_seeing(players: [ally, second_ally])
+        let #(state, _, removal) =
+          pressed_and_gone_in(
+            plans: armor_and_its_removal(spell: salve),
+            bag: bag_of_base_1,
+            state:,
+            at_press: both_see,
+            at_go: both_see,
+            rolls: [],
+            at: 1100,
+          )
+        assert list.length(player_end_timers(state:)) == 1
+          as "the removal cancels the removed ally's end timer"
+        #(state, removal)
+      },
+      ends: watch_ends([ally]),
+      finishes: False,
+      removed: [ally],
+      left_after: watch_ends([second_ally]),
+    ),
+  ]
+  list.each(watch_paths, area_path_ends_once)
   // The caster leaving writes nothing and leaves no timer waiting.
   let #(state, _, _) =
     pressed_and_gone(
@@ -1388,6 +1453,63 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
     as "the caster's leaving writes no frame"
   assert cast_state.timers_in_order(cast: state) == []
     as "and cancels every timer, the end timers included"
+}
+
+/// One path that ends the changes told to the two allies a round hit (`AreaPath`): the go told
+/// each ally its change, the path tells each end once, writes the cast's 0x7fe or not, writes the
+/// 0x811 of the allies it removes, and the caster's leaving afterwards ends what is left.
+fn area_path_ends_once(path path: AreaPath) -> Nil {
+  let both_see = esper_seeing(players: [ally, second_ally])
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell: path.spell),
+      bag: bag_of_base_3,
+      target: 7,
+      state: cast_state.new(),
+      caster: both_see,
+      at: 1000,
+    )
+  let #(state, went) =
+    support.answered_each(
+      caster: both_see,
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(asked) {
+        case asked.spell4_id == path.spell.spell4_id {
+          True -> [
+            ally_selected(unit_id: second_ally),
+            ally_selected(unit_id: ally),
+          ]
+          False -> []
+        }
+      },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let id = support.pressed_id(effects: pressed)
+  assert list.length(told(effects: went)) == 2
+    as "the go told each ally its change"
+  let #(state, effects) = path.run(state, id)
+  assert told(effects:) == path.ends(id) as path.why
+  assert list.filter(support.finished_ids(support.writes(effects:)), fn(done) {
+      done == id
+    })
+    == case path.finishes {
+      True -> [id]
+      False -> []
+    }
+    as { path.why <> ": the cast's 0x7fe" }
+  assert list.all(path.removed, fn(unit_id) {
+    list.contains(
+      support.removed_targets(support.writes(effects:)),
+      #(id, [unit_id]),
+    )
+  })
+    as { path.why <> ": the 0x811 of the ally" }
+  assert told(effects: cast_tick.left(cast: state).1) == path.left_after(id)
+    as { path.why <> ": and the caster's leaving afterwards ends what is left" }
+  assert went != [] as "the go happened"
 }
 
 pub fn a_re_press_of_the_same_caster_before_the_kept_buff_ends_replaces_the_held_change_test() -> Nil {
@@ -4031,4 +4153,579 @@ pub fn a_change_that_lasts_until_removed_on_an_ally_ends_at_the_end_of_the_aura_
         as { row.0 <> ": and a debug line says the row lasts until removed" }
     },
   )
+}
+
+// ---- a Proc row held by the allies of the area or by the player the press named ----
+
+/// Spell4Effects 86457 and 86458, Healing Salve's two Proc rows (Spell4 39386): the allies' and
+/// the caster's own, each 12 000 ms from the go (`table_rows -- Spell4Effects 86457 86458`).
+const salve_allies_row = 86_457
+
+const salve_own_row = 86_458
+
+/// Spell4Effects 139828 and 139830, Sentinel's modifier and Proc rows (Spell4 58432) on the one
+/// ally the Proxy started the spell on, each 18 000 ms from the go.
+const sentinel_modifier_row = 139_828
+
+const sentinel_proc_row = 139_830
+
+fn lasting_for(duration_ms duration_ms: Int) -> lasting.LastingRow {
+  lasting.LastingRow(delay_ms: 0, duration_ms:, until_removed: False)
+}
+
+/// A planted spell shaped as Healing Salve's child 39386: the caster's own Proc row 86458 (flags
+/// 1) and the allies' 86457 (flags 4), each 12 000 ms with no delay, in a spell with propertyFlags
+/// 256 (0x100, so the change on an ally outlives the caster's sight). `chance` is the chance of
+/// both rows; the client's is 1.0.
+fn salve_shaped(chance chance: Float) -> Spell {
+  let proc = fn(id, holder) {
+    spell_plan.ProcRow(
+      ..support.held_proc_row(
+        id:,
+        holder:,
+        row: lasting_for(duration_ms: 12_000),
+      ),
+      chance:,
+    )
+  }
+  Spell(
+    ..support.with_effects(spell: support.armor_spell(rows: []), kinds: [
+      spell_plan.ProcEffect(proc: proc(salve_own_row, spell_plan.HeldByCaster)),
+      spell_plan.ProcEffect(proc: proc(
+        salve_allies_row,
+        spell_plan.HeldByAreaAllies,
+      )),
+    ]),
+    spell4_id: Spell4Id(39_386),
+    outlives_caster: True,
+  )
+}
+
+/// A planted spell shaped as Sentinel's child 58432: a modifier row 139828 and a Proc row 139830
+/// (flags 2) on the one ally the press named, each 18 000 ms with no delay, in a spell with
+/// propertyFlags 1280 (0x500, which holds 0x100).
+fn sentinel_shaped() -> Spell {
+  let modifier =
+    spell_plan.PropertyModifier(
+      ..support.armor_modifier_row(
+        id: sentinel_modifier_row,
+        aim: spell_plan.AimsAtPrimaryTarget,
+      ),
+      row: lasting_for(duration_ms: 18_000),
+    )
+  let proc =
+    support.held_proc_row(
+      id: sentinel_proc_row,
+      holder: spell_plan.HeldByPrimaryTarget,
+      row: lasting_for(duration_ms: 18_000),
+    )
+  Spell(
+    ..support.with_effects(spell: support.armor_spell(rows: []), kinds: [
+      spell_plan.ModifierEffect(modifier:),
+      spell_plan.ProcEffect(proc:),
+    ]),
+    spell4_id: Spell4Id(58_432),
+    outlives_caster: True,
+  )
+}
+
+/// The tell of a Proc row held on the player `unit_id` for the cast at the go `go_ms`: the row's
+/// source, the event it watches, kept when the caster no longer sees the player, listed as the
+/// cast of `spell4_id` with the row's effect for `lasts_ms`.
+fn watch_starts(
+  unit_id unit_id: Int,
+  cast_id cast_id: Int,
+  effect_id effect_id: Int,
+  spell4_id spell4_id: Int,
+  lasts_ms lasts_ms: Int,
+  go_ms go_ms: Int,
+) -> Effect {
+  cast_state.OtherPlayerChangeStarts(
+    address: PlayerAddress(..address(), unit_id:),
+    source: source_of(cast_id:, effect_id:),
+    change: held_changes.Watches(trigger: spell_plan.TakesDamage),
+    sight: held_changes.KeptWhenUnseen,
+    spell4_id: Spell4Id(spell4_id),
+    effect: unit_casts.HeldEffect(
+      effect_id: Spell4EffectsId(effect_id),
+      starts_ms: go_ms,
+      ends: unit_casts.EndsAt(ms: go_ms + lasts_ms),
+    ),
+  )
+}
+
+/// The Proc rows a state holds as (effect id, holder), the caster's own with no holder, in the
+/// order of effect id and then holder.
+fn held_procs(state state: State) -> List(#(Int, option.Option(Int))) {
+  dict.keys(state.procs)
+  |> list.map(fn(hold) { #(hold.source.effect_id.value, hold.holder) })
+  |> list.sort(fn(first, second) {
+    int.compare(
+      first.0 * 1000 + option.unwrap(first.1, 0),
+      second.0 * 1000 + option.unwrap(second.1, 0),
+    )
+  })
+}
+
+/// The caster's press of the spell at `target`, its go answered by the round `hit` for a caster
+/// who sees `sees_at_go`: the state, the press's effects and the go's.
+fn pressed_with_round(
+  spell spell: Spell,
+  target target: Int,
+  hit hit: List(cast_state.Struck),
+  sees_at_go sees_at_go: List(Int),
+) -> #(State, List(Effect), List(Effect)) {
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell:),
+      bag: bag_of_base_3,
+      target:,
+      state: cast_state.new(),
+      caster: esper_seeing(players: [ally, second_ally]),
+      at: 1000,
+    )
+  let #(state, went) =
+    support.answered_each(
+      caster: esper_seeing(players: sees_at_go),
+      state:,
+      effects: pressed,
+      at: 1000,
+      struck_of: fn(asked) {
+        case asked.spell4_id == spell.spell4_id {
+          True -> hit
+          False -> []
+        }
+      },
+      rolls: [],
+      poses: dict.new(),
+    )
+  #(state, pressed, went)
+}
+
+pub fn a_go_tells_a_proc_row_to_each_ally_it_holds_it_on_lists_it_and_sends_one_went_tell_for_the_cast_and_ally_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Healing Salve's allies' row (86457, text 315682 "yourself and N allies"): a round that hit
+  // two allies puts the row on each, in the round's order, as a change that applies nothing and is
+  // listed as the cast's effect on the ally, and the caster holds one entry for each beside its
+  // own.
+  let hit = [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)]
+  let #(state, pressed, went) =
+    pressed_with_round(
+      spell: salve_shaped(chance: 1.0),
+      target: 7,
+      hit:,
+      sees_at_go: [ally, second_ally],
+    )
+  let id = support.pressed_id(effects: pressed)
+  let salve_start = fn(unit_id) {
+    watch_starts(
+      unit_id:,
+      cast_id: id,
+      effect_id: salve_allies_row,
+      spell4_id: 39_386,
+      lasts_ms: 12_000,
+      go_ms: 1000,
+    )
+  }
+  assert told(effects: went) == [salve_start(second_ally), salve_start(ally)]
+    as "each ally the round hit is told the row, in the round's order"
+  assert trail(effects: went, cast_id: id)
+    == ["starts 86457", "starts 86457", "went", "went"]
+    as "and one went tell for the cast and each ally, after both rows: a cast whose only rows on the ally are procs still reaches its went"
+  assert list.map(wents(effects: went), fn(effect) {
+      let assert cast_state.OtherPlayerCastWent(address:, ..) = effect
+      address.unit_id
+    })
+    == [second_ally, ally]
+    as "the went tells name each ally once"
+  assert list.length(player_end_timers(state:)) == 2
+    as "one end timer for each ally, armed for the row's 12 000 ms"
+  assert list.filter(support.listed_by_unit(effects: went), fn(unit) {
+      unit.0 != 7
+    })
+    == [#(ally, [salve_allies_row]), #(second_ally, [salve_allies_row])]
+    as "the go lists the row on each ally it holds it on"
+  assert held_procs(state:)
+    == [
+      #(salve_allies_row, Some(ally)),
+      #(salve_allies_row, Some(second_ally)),
+      #(salve_own_row, None),
+    ]
+    as "the caster holds its own row once and the allies' row once for each ally"
+  // A creature the round hit and a player the caster does not see hold nothing and are told
+  // nothing; the go does not list the row on them.
+  let #(state, _, went) =
+    pressed_with_round(
+      spell: salve_shaped(chance: 1.0),
+      target: 7,
+      hit: [
+        support.creature_hit(unit_id: 21, life: 3, struck_at_ms: 1000),
+        ally_selected(unit_id: second_ally),
+        ally_selected(unit_id: ally),
+      ],
+      sees_at_go: [ally],
+    )
+  assert list.map(told(effects: went), fn(effect) {
+      let assert cast_state.OtherPlayerChangeStarts(address:, ..) = effect
+      address.unit_id
+    })
+    == [ally]
+    as "a creature and an unseen player are told nothing"
+  assert list.filter(support.listed_by_unit(effects: went), fn(unit) {
+      unit.0 != 7 && !list.is_empty(unit.1)
+    })
+    == [#(ally, [salve_allies_row])]
+    as "and the go lists the row on neither"
+  assert held_procs(state:)
+    == [#(salve_allies_row, Some(ally)), #(salve_own_row, None)]
+    as "and the caster holds the row for neither"
+  // Sentinel's pair on the one ally the press named: the ally is told its modifier and its Proc
+  // row, and the caster sends one went tell for the cast and the ally, not one for each row.
+  let #(state, pressed, went) =
+    pressed_with_round(
+      spell: sentinel_shaped(),
+      target: ally,
+      hit: [],
+      sees_at_go: [ally],
+    )
+  let id = support.pressed_id(effects: pressed)
+  assert trail(effects: went, cast_id: id)
+    == ["starts 139828", "starts 139830", "went"]
+    as "the ally is told the modifier and the Proc row, then one went"
+  assert list.filter(told(effects: went), fn(effect) {
+      case effect {
+        cast_state.OtherPlayerChangeStarts(source:, ..) ->
+          source.effect_id.value == sentinel_proc_row
+        _ -> False
+      }
+    })
+    == [
+      watch_starts(
+        unit_id: ally,
+        cast_id: id,
+        effect_id: sentinel_proc_row,
+        spell4_id: 58_432,
+        lasts_ms: 18_000,
+        go_ms: 1000,
+      ),
+    ]
+    as "the Proc row is told as a watched change for 18 000 ms"
+  assert held_procs(state:) == [#(sentinel_proc_row, Some(ally))]
+    as "the caster holds the row for the ally and no own proc"
+  // The caster's own events fire its own row alone: a creature's blow on the caster, with the
+  // allies holding 86457, fires 86458 once and takes one chance word, and no ally's entry
+  // matches it.
+  let #(state, _, _) =
+    pressed_with_round(
+      spell: salve_shaped(chance: 0.5),
+      target: 7,
+      hit:,
+      sees_at_go: [ally, second_ally],
+    )
+  let #(blown, raised) =
+    cast.blow_taken(
+      cast: state,
+      caster: esper_seeing(players: [ally, second_ally]),
+      now: support.at(ms: 2000),
+      blow: cast_proc.BlowLanded(
+        striker: 31,
+        spell: event_proc.EventSpell(
+          spell4_id: Spell4Id(5649),
+          groups: [],
+          school: 1,
+        ),
+        lowered: True,
+        critical: False,
+        shield_depleted: False,
+      ),
+    )
+  assert cast_proc.proc_draws_needed(cast: blown) == #(1, 0)
+    as "one chance word for the caster's own row, none for the allies' entries"
+  let #(_, fired) =
+    support.then_procs_drawn(
+      step: #(blown, raised),
+      caster: esper_seeing(players: [ally, second_ally]),
+      at: 2000,
+      draws: [0, 0, 0],
+      rolls: [],
+    )
+  assert starts_of(
+      effects: fired,
+      spell4_id: support.salve_proc_spell4_id,
+      at: 2000,
+    )
+    == [#(2000, 7)]
+    as "the caster's own row casts Spell4 39127 once, at the caster"
+}
+
+/// The Proc rows a state holds as (cast id, effect id, holder), the caster's own with no holder,
+/// in the order of cast id, effect id and then holder.
+fn held_procs_of_casts(
+  state state: State,
+) -> List(#(Int, Int, option.Option(Int))) {
+  dict.keys(state.procs)
+  |> list.map(fn(hold) {
+    #(hold.source.cast_id, hold.source.effect_id.value, hold.holder)
+  })
+  |> list.sort(fn(first, second) {
+    int.compare(
+      first.0 * 1_000_000 + first.1 * 100 + option.unwrap(first.2, 0),
+      second.0 * 1_000_000 + second.1 * 100 + option.unwrap(second.2, 0),
+    )
+  })
+}
+
+/// A cast of a spell that holds Proc rows on allies, as one press and its go leave it: the spell,
+/// the unit the press names, the round the go answers, the players the caster sees, the entries
+/// it holds as (effect id, holder), and how long its rows last.
+type Held {
+  Held(
+    spell: Spell,
+    target: Int,
+    hit: List(cast_state.Struck),
+    sees: List(Int),
+    entries: List(#(Int, option.Option(Int))),
+    lasts_ms: Int,
+  )
+}
+
+/// How one end takes the entries the cast holds: why, the end (given the state the go left, the
+/// cast's id and the shape's own rows) and the entries (effect id and holder) that remain.
+type End {
+  End(
+    why: String,
+    run: fn(State, Int) -> State,
+    remains: List(#(Int, option.Option(Int))),
+  )
+}
+
+pub fn the_caster_drops_the_proc_it_holds_on_an_ally_where_the_change_on_that_ally_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Each end that takes a change off an ally drops the entry the caster holds for that ally,
+  // from the one place every end of a change on a player passes (`cast_control.ended_where`): the
+  // end of the cast's node, the change's own end timer, a pushed-off stack, the caster's death and
+  // the caster's own node ending early, which drops the caster's own row alone. The ally leaving
+  // the caster's sight keeps the entry for a spell that outlives the caster's sight (propertyFlags
+  // 0x100), as the change itself is kept, and drops it for one that does not.
+  let both = [ally, second_ally]
+  let salve =
+    Held(
+      spell: salve_shaped(chance: 1.0),
+      target: 7,
+      hit: [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)],
+      sees: both,
+      entries: [
+        #(salve_allies_row, Some(ally)),
+        #(salve_allies_row, Some(second_ally)),
+        #(salve_own_row, None),
+      ],
+      lasts_ms: 12_000,
+    )
+  let sentinel =
+    Held(
+      spell: sentinel_shaped(),
+      target: ally,
+      hit: [],
+      sees: [ally],
+      entries: [#(sentinel_proc_row, Some(ally))],
+      lasts_ms: 18_000,
+    )
+  list.each([salve, sentinel], fn(held) {
+    let seeing = esper_seeing(players: held.sees)
+    let #(state, pressed, _) =
+      pressed_with_round(
+        spell: held.spell,
+        target: held.target,
+        hit: held.hit,
+        sees_at_go: held.sees,
+      )
+    let id = support.pressed_id(effects: pressed)
+    assert list.map(held_procs_of_casts(state:), fn(entry) {
+        #(entry.1, entry.2)
+      })
+      == list.sort(held.entries, fn(first, second) {
+        int.compare(
+          first.0 * 100 + option.unwrap(first.1, 0),
+          second.0 * 100 + option.unwrap(second.1, 0),
+        )
+      })
+      as "the go leaves the caster holding the shape's entries"
+    let owns = list.filter(held.entries, fn(entry) { entry.1 == None })
+    let allies = list.filter(held.entries, fn(entry) { entry.1 != None })
+    let end_ms = 1000 + held.lasts_ms
+    let ends = [
+      End(
+        why: "the cast's nodes end at the go plus the row's life: every entry goes with its node",
+        run: fn(state, _) {
+          fired_in_order(
+            state:,
+            timers: nodes_end_timers(state:),
+            seeing: held.sees,
+            at: end_ms,
+          ).0
+        },
+        remains: [],
+      ),
+      End(
+        why: "the change's own end timer: the ally's entry goes, the caster's own row stays with its node",
+        run: fn(state, _) {
+          fired_in_order(
+            state:,
+            timers: player_end_timers(state:),
+            seeing: held.sees,
+            at: end_ms,
+          ).0
+        },
+        remains: owns,
+      ),
+      End(
+        why: "the caster's death ends every change and so every entry",
+        run: fn(state, _) {
+          cast.died(
+            cast: state,
+            caster: support.dead_caster(),
+            now: support.at(ms: 1100),
+          ).0
+        },
+        remains: [],
+      ),
+      End(
+        why: "the caster's own node ending early drops its own row alone: the entries for the allies live with their nodes",
+        run: fn(state, id) {
+          cast_proc.apply_removals(
+            cast: state,
+            removals: [lasting.NodeOff(cast_id: id, unit_id: 7)],
+            now_ms: 1100,
+          ).0
+        },
+        remains: allies,
+      ),
+      End(
+        why: "the ally leaving the caster's sight, for a spell with propertyFlags 0x100, keeps every entry until the change's own end",
+        run: fn(state, _) {
+          cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100).0
+        },
+        remains: held.entries,
+      ),
+    ]
+    list.each(ends, fn(end) {
+      let after = end.run(state, id)
+      assert list.map(held_procs_of_casts(state: after), fn(entry) {
+          #(entry.1, entry.2)
+        })
+        == list.sort(end.remains, fn(first, second) {
+          int.compare(
+            first.0 * 100 + option.unwrap(first.1, 0),
+            second.0 * 100 + option.unwrap(second.1, 0),
+          )
+        })
+        as end.why
+      // A blow of a creature on the caster after the end fires what the caster still holds of
+      // its own and nothing for an ally, and writes no warning.
+      let #(blown, raised) =
+        cast.blow_taken(
+          cast: after,
+          caster: seeing,
+          now: support.at(ms: end_ms + 1),
+          blow: cast_proc.BlowLanded(
+            striker: 31,
+            spell: event_proc.EventSpell(
+              spell4_id: Spell4Id(5649),
+              groups: [],
+              school: 1,
+            ),
+            lowered: True,
+            critical: False,
+            shield_depleted: False,
+          ),
+        )
+      let #(_, fired) =
+        support.then_procs(
+          step: #(blown, raised),
+          caster: seeing,
+          at: end_ms + 1,
+        )
+      assert list.length(starts_of(
+          effects: fired,
+          spell4_id: support.salve_proc_spell4_id,
+          at: end_ms + 1,
+        ))
+        == list.length(list.filter(end.remains, fn(entry) { entry.1 == None }))
+        as {
+          end.why
+          <> ": the caster's blow fires its own row if it still holds one"
+        }
+      assert list.all(fired, fn(effect) {
+        case effect {
+          cast_state.Log(level: step.LogWarning, ..) -> False
+          _ -> True
+        }
+      })
+        as { end.why <> ": and writes no warning" }
+    })
+  })
+  // The ally leaving the caster's sight for a spell without propertyFlags 0x100 ends the change
+  // and so drops the entry for that ally alone.
+  let unkept = Spell(..salve_shaped(chance: 1.0), outlives_caster: False)
+  let #(state, pressed, _) =
+    pressed_with_round(
+      spell: unkept,
+      target: 7,
+      hit: [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)],
+      sees_at_go: [ally, second_ally],
+    )
+  let id = support.pressed_id(effects: pressed)
+  let #(after, _) =
+    cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 1100)
+  assert held_procs_of_casts(state: after)
+    == [
+      #(id, salve_allies_row, Some(second_ally)),
+      #(id, salve_own_row, None),
+    ]
+    as "an ally leaving the sight of a spell without 0x100 drops its entry and no other"
+  // A second press of the same stack pushes the first cast's changes off the allies: the first
+  // cast's entries go and the second's stay.
+  let kept = salve_shaped(chance: 1.0)
+  let #(state, pressed, _) =
+    pressed_with_round(
+      spell: kept,
+      target: 7,
+      hit: [ally_selected(unit_id: ally)],
+      sees_at_go: [ally],
+    )
+  let first_id = support.pressed_id(effects: pressed)
+  let #(state, second_pressed) =
+    pressed_at_in(
+      plans: plans_of(spell: kept),
+      bag: bag_of_base_3,
+      target: 7,
+      state:,
+      caster: esper_seeing(players: [ally]),
+      at: 2000,
+    )
+  let second_id = support.pressed_id(effects: second_pressed)
+  let #(state, _) =
+    support.answered_each(
+      caster: esper_seeing(players: [ally]),
+      state:,
+      effects: second_pressed,
+      at: 2000,
+      struck_of: fn(_) { [ally_selected(unit_id: ally)] },
+      rolls: [],
+      poses: dict.new(),
+    )
+  assert first_id != second_id
+  assert list.filter(held_procs_of_casts(state:), fn(entry) {
+      entry.0 == first_id
+    })
+    == []
+    as "a pushed-off stack ends the first cast's changes on the ally and on the caster: every entry of it goes"
+  assert list.filter(held_procs_of_casts(state:), fn(entry) {
+      entry.0 == second_id
+    })
+    == [
+      #(second_id, salve_allies_row, Some(ally)),
+      #(second_id, salve_own_row, None),
+    ]
+    as "and the second cast holds both"
 }

@@ -209,6 +209,36 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
   )
 }
 
+/// The Spell4 Healing Salve's two Proc rows cast (`table_rows -- Spell4Effects 86457 86458`).
+pub const salve_proc_spell4_id = 39_127
+
+/// A Proc row held by `holder` as Healing Salve's 86457 and 86458 are (Spell4 39386, kind 16 takes
+/// damage, chance 1.0, once in 2000 ms, casting Spell4 39127, targetFlags 4 and 1), living as
+/// `row` says: the id, the unit that holds it and the life it gives.
+pub fn held_proc_row(
+  id id: Int,
+  holder holder: spell_plan.ProcHolder,
+  row row: lasting.LastingRow,
+) -> spell_plan.ProcRow {
+  spell_plan.ProcRow(
+    effect_id: Spell4EffectsId(id),
+    phase_flags: -1,
+    holder:,
+    trigger: spell_plan.TakesDamage,
+    spell: child(spell4_id: salve_proc_spell4_id, base: salve_proc_spell4_id),
+    chance: 1.0,
+    limit: spell_plan.InWindow(window_ms: 2000, count: 1),
+    filter: spell_plan.AnySpell,
+    aim: spell_plan.AtHolder,
+    event_gate: None,
+    holder_gate: None,
+    delay_ms: 0,
+    row:,
+    condition: Always,
+    tag: spend.always,
+  )
+}
+
 /// A planted spell with a cast time of 1000 ms and a cast bar whose live cast
 /// leaves the caster free to press another (`0x1403afb10`).
 pub fn exempt() -> Spell {
@@ -489,6 +519,7 @@ pub fn standing_holder(
     spell_plan.ProcEffect(spell_plan.ProcRow(
       effect_id: standing_effect_id(spell4_id:, row: 2),
       phase_flags: -1,
+      holder: spell_plan.HeldByCaster,
       trigger:,
       spell: casts,
       chance: 1.0,
@@ -717,7 +748,8 @@ pub fn property_starts(
         Ok(#(start.0, modifier))
       cast_state.Heal(..)
       | cast_state.Look(..)
-      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
+      | cast_state.HeldChange(held_changes.Absorb(..))
+      | cast_state.HeldChange(held_changes.Watches(..)) -> Error(Nil)
     }
   })
 }

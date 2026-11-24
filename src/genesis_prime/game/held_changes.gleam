@@ -33,6 +33,7 @@
 ////   when the last source of one has ended, which is when the client is written its end.
 ////
 
+import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/step.{type ConnectionId}
@@ -46,12 +47,16 @@ import gleam/set.{type Set}
 
 /// What a caster's cast changes on a player that is not the caster, as it is told: a
 /// property modifier (the UnitPropertyModifier and UnitPropertyConversion rows, and the
-/// Proxy-started Interrupt Armor's property), or an absorb pool (an Absorption row) of
+/// Proxy-started Interrupt Armor's property), an absorb pool (an Absorption row) of
 /// `amount`, as the caster's formula gave it at the go, that takes the damage types of
-/// `mask`.
+/// `mask`, or a Proc row the caster holds on the player (`Watches`), which changes nothing the
+/// player has and is listed in its create as the cast's effect on it.
 pub type Change {
   Property(modifier: unit_properties.Modifier)
   Absorb(amount: Int, mask: Int)
+  /// A Proc row of the event `trigger` that the caster holds on the player: the player
+  /// applies nothing and keeps the source for the caster.
+  Watches(trigger: spell_plan.Trigger)
 }
 
 /// Whether a held change ends when its caster leaves the sight of the unit that holds it.

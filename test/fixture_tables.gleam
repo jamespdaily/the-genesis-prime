@@ -641,6 +641,36 @@ pub fn area_modifier_cells() -> List(#(String, Cell)) {
   ]
 }
 
+/// The cells that make a Spell4Effects row a Proc held by the allies its area selects, as
+/// Healing Salve's row 86457 is: kind 16 (takes damage) casting Spell4 39127, chance 1.0, once in
+/// 2000 ms, 12 000 ms from the go with no delay, targetFlags 4, no gate and no parameter types.
+/// The edits stand in for no client row: they give a test a phase that holds that Proc and no
+/// heal or Proxy in a spell of the fixture.
+pub fn area_proc_cells() -> List(#(String, Cell)) {
+  [
+    #("effectType", planted_table.Integer(14)),
+    #("delayTime", planted_table.Integer(0)),
+    #("tickTime", planted_table.Integer(0)),
+    #("durationTime", planted_table.Integer(12_000)),
+    #("flags", planted_table.Integer(0)),
+    #("targetFlags", planted_table.Integer(4)),
+    #("dataBits00", planted_table.Integer(16)),
+    #("dataBits01", planted_table.Integer(39_127)),
+    #("dataBits02", planted_table.Integer(1_065_353_216)),
+    #("dataBits03", planted_table.Integer(2)),
+    #("dataBits04", planted_table.Integer(2000)),
+    #("dataBits05", planted_table.Integer(1)),
+    #("dataBits06", planted_table.Integer(0)),
+    #("dataBits07", planted_table.Integer(0)),
+    #("dataBits08", planted_table.Integer(0)),
+    #("dataBits09", planted_table.Integer(0)),
+    #("parameterType00", planted_table.Integer(0)),
+    #("parameterType01", planted_table.Integer(0)),
+    #("parameterType02", planted_table.Integer(0)),
+    #("parameterType03", planted_table.Integer(0)),
+  ]
+}
+
 /// Runs the body on the tables with several rows changed, each edit a table, a row id and
 /// the cells to replace, applied in order and built on the body's heap; the shared tables
 /// are not touched. Stops the test when an edit is refused (`change_all`).

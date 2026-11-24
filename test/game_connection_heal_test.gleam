@@ -428,6 +428,7 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
             _, cast_state.Heal(..)
             | _, cast_state.HeldChange(held_changes.Property(..))
             | _, cast_state.HeldChange(held_changes.Absorb(..))
+            | _, cast_state.HeldChange(held_changes.Watches(..))
             | _, cast_state.Look(..)
             -> Error(Nil)
           }

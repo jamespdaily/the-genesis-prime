@@ -1821,11 +1821,12 @@ pub fn procs_fire(
   let cast = State(..cast, pending: [])
   let ordered =
     dict.to_list(cast.procs)
+    |> list.filter(fn(entry) { { entry.0 }.holder == None })
     |> list.sort(fn(first, second) {
-      int.compare({ first.0 }.cast_id, { second.0 }.cast_id)
+      int.compare({ first.0 }.source.cast_id, { second.0 }.source.cast_id)
       |> order.break_tie(int.compare(
-        { first.0 }.effect_id.value,
-        { second.0 }.effect_id.value,
+        { first.0 }.source.effect_id.value,
+        { second.0 }.source.effect_id.value,
       ))
     })
   let #(cast, effects, _, _) =
@@ -1836,12 +1837,13 @@ pub fn procs_fire(
       })
       |> list.fold(#(cast, effects, draws, rolls), fn(so_far, entry) {
         let #(cast, effects, draws, rolls) = so_far
-        let source = entry.0
+        let hold = entry.0
+        let source = hold.source
         let row = { entry.1 }.row
         let #(words, roll_count) = proc.draws_needed(row:)
         let #(taken, draws) = list.split(draws, words)
         let #(own_rolls, rolls) = list.split(rolls, roll_count)
-        let #(cast, more) = case dict.get(cast.procs, source) {
+        let #(cast, more) = case dict.get(cast.procs, hold) {
           Error(Nil) -> #(cast, [])
           Ok(held) ->
             proc_matched(
@@ -1966,7 +1968,7 @@ fn proc_fires(
           ..cast,
           procs: dict.insert(
             cast.procs,
-            source,
+            cast_state.ProcHold(source:, holder: None),
             HeldProc(row:, fires_ms: [
               now_ms,
               ..proc.counted(limit: row.limit, fires_ms: held.fires_ms, now_ms:)
@@ -4685,7 +4687,8 @@ fn go(
           from_ms: now_ms,
           rows: aimed.ticking,
         )
-      let #(cast, never_held) = cast_proc.procs_held(cast:, cast_id:, applied:)
+      let #(cast, never_held) =
+        cast_proc.procs_held(cast:, cast_id:, caster:, aimed:)
       let #(cast, modifying) =
         cast_control.modifiers_armed(
           cast:,
@@ -5141,10 +5144,21 @@ fn reached_by(
             gates_passed:,
             target_verdict:,
           )
+        spell_plan.ProcEffect(proc: row) ->
+          proc_reached(
+            walk:,
+            planned:,
+            row:,
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+            now_ms:,
+          )
         spell_plan.ForcedMoveEffect(..)
         | spell_plan.CooldownEffect(..)
-        | spell_plan.StealthEffect(..)
-        | spell_plan.ProcEffect(..) ->
+        | spell_plan.StealthEffect(..) ->
           Walk(
             ..walk,
             reached: list.append(walk.reached, [
@@ -5154,6 +5168,93 @@ fn reached_by(
       }
     },
   )
+}
+
+/// The walk after a Proc row: a row of the caster's own stands on the caster, and a row held by
+/// the player the press named or by the allies the round hit stands on each player that holds it
+/// (`cast_gate.proc_applies`), with a debug line for each player the row names and is not held by.
+fn proc_reached(
+  walk walk: Walk,
+  planned planned: spell_effect.PlannedEffect(spell_plan.Kind),
+  row row: spell_plan.ProcRow,
+  caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
+  gates_passed gates_passed: Dict(Int, List(Int)),
+  target_verdict target_verdict: TargetVerdict,
+  now_ms now_ms: Int,
+) -> Walk {
+  case row.holder {
+    spell_plan.HeldByCaster ->
+      Walk(
+        ..walk,
+        reached: list.append(walk.reached, [
+          Reached(effect: planned, unit_id: caster.unit_id, product: Plain),
+        ]),
+      )
+    spell_plan.HeldByPrimaryTarget | spell_plan.HeldByAreaAllies -> {
+      let press_target = press_target_of(live:, caster:)
+      let aura_ends_ms =
+        spell_plan.aura_ends_ms(spell: live.spell, started_ms: live.started_ms)
+      let what = "the Proc effect " <> int.to_string(row.effect_id.value)
+      let walk =
+        reach_units(
+          walk:,
+          planned:,
+          row:,
+          aim: spell_plan.proc_aim(proc: row),
+          stands: fn(entry) {
+            cast_gate.proc_applies(
+              row: entry.0,
+              unit_id: entry.1,
+              caster:,
+              struck:,
+              press_target:,
+              aura_ends_ms:,
+              go_ms: now_ms,
+            )
+          },
+          condition: row.condition,
+          what:,
+          caster:,
+          live:,
+          struck:,
+          gates_passed:,
+          target_verdict:,
+        )
+      let refusals =
+        cast_gate.rows_with_units(
+          rows: [row],
+          aim: spell_plan.proc_aim,
+          caster:,
+          primary_target: live.primary_target,
+          struck:,
+        )
+        |> list.filter_map(fn(entry) {
+          cast_gate.proc_refusal(
+            row: entry.0,
+            unit_id: entry.1,
+            caster:,
+            struck:,
+            press_target:,
+            aura_ends_ms:,
+            go_ms: now_ms,
+          )
+          |> option.to_result(Nil)
+          |> result.map(fn(why) {
+            Log(
+              level: LogDebug,
+              text: what
+                <> " on unit "
+                <> int.to_string(entry.1)
+                <> " is not held: "
+                <> why,
+            )
+          })
+        })
+      Walk(..walk, logs: list.append(walk.logs, refusals))
+    }
+  }
 }
 
 /// The walk with the heal row `row` on the caster first when the round holds the caster as a

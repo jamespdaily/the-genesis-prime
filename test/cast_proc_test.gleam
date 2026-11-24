@@ -342,6 +342,7 @@ fn proc(
   ProcRow(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
+    holder: spell_plan.HeldByCaster,
     trigger:,
     spell: casts,
     chance: 1.0,
