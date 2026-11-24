@@ -575,7 +575,7 @@ fn proxy_row_landed(
       [],
       Some(proxy),
     )
-    spell_plan.OnEachStruck ->
+    spell_plan.OnEachStruck | spell_plan.OnEachAlly ->
       case proxy_tick_refusal(cast:, caster:, holder:, proxy:) {
         Some(logs) -> #(cast_state.with_tick(row:, tick:), caster, logs, None)
         None -> #(
@@ -887,7 +887,7 @@ pub fn proxies_ticking(
             spell_plan.OnCaster -> caster.unit_id
             spell_plan.OnPrimaryTarget ->
               option.unwrap(named_player, caster.unit_id)
-            spell_plan.OnEachStruck -> primary_target
+            spell_plan.OnEachStruck | spell_plan.OnEachAlly -> primary_target
           },
           life: 0,
           effect_id: proxy.effect_id,
@@ -1818,7 +1818,10 @@ pub fn target_gate(
     | spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
       let gate_subject = case proxy.target, primary_target == caster.unit_id {
         spell_plan.OnCaster, _ | spell_plan.OnPrimaryTarget, True -> subject
-        spell_plan.OnPrimaryTarget, False | spell_plan.OnEachStruck, _ ->
+        spell_plan.OnPrimaryTarget, False
+        | spell_plan.OnEachStruck, _
+        | spell_plan.OnEachAlly, _
+        ->
           struck_subject(
             cast:,
             caster:,

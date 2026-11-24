@@ -195,6 +195,7 @@ fn host_of(ability ability: Spell, phase phase: Int) -> Result(Proxy, Nil) {
       | spell_plan.OnPrimaryTarget, spell_plan.GatedOnTarget(..)
       | spell_plan.OnPrimaryTarget, spell_plan.GatedOnCasterAndTarget(..)
       | spell_plan.OnEachStruck, _
+      | spell_plan.OnEachAlly, _
       -> False
     }
   })

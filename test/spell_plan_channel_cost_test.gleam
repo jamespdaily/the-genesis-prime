@@ -119,13 +119,21 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
           vital: 9,
         ),
       ),
+      #(
+        38_863,
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
+          spell4_id: 38_863,
+          effect_id: 84_122,
+          gos: 6,
+        ),
+      ),
       #(39_054, spell_plan.NoRow(table: "Spell4", id: 0)),
       #(
         41_953,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 41_953,
-          proxy_effect_id: 94_581,
-          effect_id: 94_586,
+          effect_id: 94_581,
+          gos: 3,
         ),
       ),
       #(
@@ -134,74 +142,74 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
       ),
       #(
         52_155,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_155,
-          proxy_effect_id: 123_163,
-          effect_id: 123_217,
+          effect_id: 123_163,
+          gos: 3,
         ),
       ),
       #(
         52_156,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_156,
-          proxy_effect_id: 123_169,
-          effect_id: 123_219,
+          effect_id: 123_169,
+          gos: 3,
         ),
       ),
       #(
         52_157,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_157,
-          proxy_effect_id: 123_175,
-          effect_id: 123_221,
+          effect_id: 123_175,
+          gos: 3,
         ),
       ),
       #(
         52_158,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_158,
-          proxy_effect_id: 123_181,
-          effect_id: 123_224,
+          effect_id: 123_181,
+          gos: 3,
         ),
       ),
       #(
         52_159,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_159,
-          proxy_effect_id: 123_187,
-          effect_id: 123_226,
+          effect_id: 123_187,
+          gos: 3,
         ),
       ),
       #(
         52_160,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_160,
-          proxy_effect_id: 123_193,
-          effect_id: 123_229,
+          effect_id: 123_193,
+          gos: 3,
         ),
       ),
       #(
         52_161,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_161,
-          proxy_effect_id: 123_199,
-          effect_id: 123_231,
+          effect_id: 123_199,
+          gos: 3,
         ),
       ),
       #(
         52_162,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_162,
-          proxy_effect_id: 123_205,
-          effect_id: 123_233,
+          effect_id: 123_205,
+          gos: 3,
         ),
       ),
       #(
         52_163,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 52_163,
-          proxy_effect_id: 123_211,
-          effect_id: 123_235,
+          effect_id: 123_211,
+          gos: 3,
         ),
       ),
       #(
@@ -209,17 +217,33 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
         spell_plan.ProxyCycle(chain: [55_653, 80_426, 70_410, 80_424, 70_410]),
       ),
       #(
+        60_119,
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
+          spell4_id: 60_119,
+          effect_id: 145_107,
+          gos: 3,
+        ),
+      ),
+      #(
         63_316,
-        spell_plan.HealOnStruckUnit(
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
           spell4_id: 63_316,
-          proxy_effect_id: 158_904,
-          effect_id: 94_586,
+          effect_id: 158_904,
+          gos: 7,
+        ),
+      ),
+      #(
+        70_922,
+        spell_plan.ProxyOnEachAllyAtSeveralGos(
+          spell4_id: 70_922,
+          effect_id: 181_484,
+          gos: 3,
         ),
       ),
     ]
-    as "7.3: the 16 rows that do not plan, each by its error: a vital requirement of type 3, a vital modifier of vital 9, the Spell4 row 0 a tree names, heals on a struck unit and a Proxy cycle; any other row that stops planning is a coverage loss"
-  assert list.length(planned) == 123
-    as "7.3: the other 123 rows plan, and each holds its costs as the next check reads them"
+    as "7.3: the 19 rows that do not plan, each by its error: a vital requirement of type 3, a vital modifier of vital 9, the Spell4 row 0 a tree names, Proxies that start a child on each ally at several gos and a Proxy cycle; any other row that stops planning is a coverage loss"
+  assert list.length(planned) == 120
+    as "7.3: the other 120 rows plan, and each holds its costs as the next check reads them"
   list.each(planned, fn(entry) {
     assert list.map({ entry.1 }.costs, kind_of)
       == list.map(costs(entry.0), expected_kind)

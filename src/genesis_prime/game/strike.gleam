@@ -20,7 +20,8 @@
 ////   answered: the unit's place in the round is filled, with the effect ids its gates passed
 ////   the round closes: all answered, or the deadline passed, and every earlier round of k closed
 ////   a heal aimed at the primary target when it is a player in sight, or at the allies a friendly
-////   area selected (caster's connection C, healed T):
+////   area selected (caster's connection C, healed T); an ally selected only to start a child on
+////   (a Proxy at the area) is answered at once as a hit, with nothing told:
 ////     TellPlayerStrike(T, PlayerStrike(key, C, stay, outgoing, heals)) ──▶ T applies each row, answers
 ////   ◀── PlayerAnswered(key, HealsLanded(splits) | PlayerDead) ◀── T
 ////   player_answered: the player's place in the round is filled, as a creature's is
@@ -247,6 +248,9 @@ pub type Selection {
     gates: List(spell_plan.StruckGate),
     players: List(PlayerAddress),
     heals: List(spell_area.InstantHeal),
+    /// Whether the phase starts a child cast on each unit of the area (a Proxy aimed at the
+    /// area), so each ally the area selected is a hit of the go whatever rows reach it.
+    starts_children: Bool,
   )
 }
 
@@ -355,6 +359,7 @@ pub fn select(
       gates: [],
       players: [],
       heals: [],
+      starts_children: False,
     )
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
@@ -399,10 +404,11 @@ pub fn select(
         False -> from_area
       }
       let players =
-        players_of_heals(
+        players_of_the_phase(
           attacker:,
           asked:,
           heals: phase.heals,
+          starts_children: phase.starts_children,
           allies: case spell_area_found.finds_allies {
             True -> from_area
             False -> []
@@ -424,19 +430,22 @@ pub fn select(
           [] -> []
           [_, ..] -> phase.heals
         },
+        starts_children: phase.starts_children,
       )
     }
   }
 }
 
-/// The players a go tells its heal rows to, with the player the cast names first: the
-/// primary target when it is a player in sight and a row aims at it, and the allies the area
-/// selected (`allies`, in selection order) when a row aims at the area, each once. A player
-/// the caster has no address for is left out; none when the phase has no heal row.
-fn players_of_heals(
+/// The players a go tells its heal rows to or starts a child on, with the player the cast
+/// names first: the primary target when it is a player in sight and a row aims at it, and the
+/// allies the area selected (`allies`, in selection order) when a row aims at the area or the
+/// phase starts a child on each unit of the area (`starts_children`), each once. A player the
+/// caster has no address for is left out; none when the phase has neither.
+fn players_of_the_phase(
   attacker attacker: Attacker,
   asked asked: GoAsked,
   heals heals: List(spell_area.InstantHeal),
+  starts_children starts_children: Bool,
   allies allies: List(Int),
 ) -> List(PlayerAddress) {
   let primary = case
@@ -449,7 +458,8 @@ fn players_of_heals(
     True, Error(Nil) | False, _ -> []
   }
   let in_the_area = case
-    list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
+    starts_children
+    || list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
   {
     True ->
       list.filter_map(allies, fn(unit_id) {
@@ -673,6 +683,7 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
     gates:,
     players: _,
     heals:,
+    starts_children: _,
   ) = selection
   case blows, ticking, controls, gates, heals {
     [], [], [], [], [] -> 0
@@ -829,9 +840,12 @@ pub fn begin(
 /// The player a go tells its heal rows to: a place that waits for its answer and the tell
 /// of the rows that reach it, in the plan's order, each with the amount its formula gives
 /// for the caster as it is now. A player no row reaches past its gates has no place and no
-/// tell, and is not in the go. The caster, when the area took it as a candidate, is told
-/// nothing: its place is already answered, with the rows that reached it, and the go
-/// applies them itself (`cast_state.HitCaster`).
+/// tell, and is not in the go, unless the phase starts a child on each ally the area
+/// selected (`Selection.starts_children`): such an ally is a hit of the go, answered at once
+/// with nothing landed (`cast_state.HitOtherPlayer`), so the go starts the child on it. The
+/// caster, when the area took it as a candidate, is told nothing: its place is already
+/// answered, with the rows that reached it, and the go applies them itself
+/// (`cast_state.HitCaster`).
 fn players_told(
   selection selection: Selection,
   attacker attacker: Attacker,
@@ -840,7 +854,26 @@ fn players_told(
   let told =
     list.filter_map(selection.players, fn(address) {
       let unit_id = address.unit_id
+      let selected_for_a_child =
+        selection.starts_children
+        && unit_id != attacker.unit_id
+        && list.contains(selection.area, unit_id)
       case rows_reaching_unit(rows: reach.heals, unit_id:) {
+        [] if selected_for_a_child ->
+          Ok(#(
+            Answered(
+              struck: cast_state.Hit(
+                unit_id:,
+                unit: cast_state.HitOtherPlayer(heals: []),
+                descriptions: [],
+                controls: [],
+                armor_removed: 0,
+                ticking: [],
+              ),
+              gates_passed: [],
+            ),
+            None,
+          ))
         [] -> Error(Nil)
         rows if unit_id == attacker.unit_id ->
           Ok(#(

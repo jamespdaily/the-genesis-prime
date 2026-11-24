@@ -64,7 +64,9 @@
 ////   same of the area row as of a phase that selects (a row, in an order the server builds),
 ////   and the go strikes nobody for it. A Proxy that names a beneficial spell is refused by the
 ////   plan (`spell_plan.PeriodicProxyAtAlliesNotRead`), since the allies in the area are not
-////   found.
+////   found. A Proxy with no tickTime aimed at the area of a spell that finds the caster's
+////   allies (`PhaseStrike.starts_children`) makes the phase select the area: each ally selected
+////   is a hit of the go that no row need reach, and the go starts the child on it.
 //// - **Order.** An area row's `targetSelection` is read for a player and a creature alike:
 ////   Closest (1), Furthest (2) and Random (3) are the orders `area.select_ordered` takes, and
 ////   no strike selects a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
@@ -74,9 +76,11 @@
 ////   refused (`SelectionNeedsHealth`) only for a phase that selects units from it. A player's
 ////   order 5 (MissingMostHealth) is built for an area that finds the caster's allies when its
 ////   phases select units by the instant heals alone, the units that hold a health being the
-////   allies' copies the caster's connection keeps (`shown.ally_candidates`); a phase that also
-////   selects through a Proxy aimed at the area is refused (`SelectionNeedsHealth`), and a
-////   phase that selects nothing leaves it as no area.
+////   allies' copies the caster's connection keeps (`shown.ally_candidates`), or through a Proxy
+////   with no tickTime aimed at the area, which starts a child on each of those allies; a phase
+////   that also strikes the area with a row, ticks on it, or, where the area finds no allies,
+////   selects through a Proxy is refused (`SelectionNeedsHealth`), and a phase that selects
+////   nothing leaves it as no area.
 //// - **Valid targets** (`Spell4ValidTargets.targetBitmask`, `FillSpellRecord` 0x140568540,
 ////   `FillSpellAoeConstraints` 0x1405698c0): bits 1, 2 and 256 act at a press, not in an area,
 ////   and 256 (no pet) excludes no unit of the strike; bits 4 (players only) and 16 (party
@@ -115,14 +119,16 @@
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1 to 5 (4 and 5 are refused by `SelectionNeedsHealth` for a
 ////   creature, 4 for a player's phase that selects units from the area, and 5 for a player's
-////   phase that selects other than by an instant heal that reaches the caster's allies); a valid-targets
+////   phase that selects other than by an instant heal or a Proxy that reach the caster's
+////   allies); a valid-targets
 ////   bitmask holding bit 8, 32 or 64 on a spell with an area row; a hit row placed on anything but the
 ////   caster, the cast's target and the
 ////   held position (`targetTypeFlags` other than 0, 1, 2 and 8; for a creature other than 0 to
 ////   2: `TelegraphOnStruckUnits` for bit 4, else `TelegraphNotOnCaster`); a spell's hit rows
 ////   placed apart (`PlacedApart`); a pressed spell whose hit row is on the target and whose
 ////   target mechanic is not cast at the caster (`TargetingNotBuilt`); a spell started on
-////   another unit whose hit row on the target is not a circle with no offset
+////   another unit whose hit row on the target is not a circle with no offset, or any hit row
+////   on the target of a spell started on an ally, whose place the picture does not hold
 ////   (`HitRowOffTheStrikeCentre`); a shape
 ////   the rule does not build (for a player 1, 3, 5, 6, or 8 with
 ////   a box that has a width or a length: the box's height, p4, is never tested; for a
@@ -255,6 +261,13 @@ pub type PhaseStrike {
     /// `OnEachStruck`), or, in an area that finds the caster's allies, an instant heal aimed at
     /// the area (`heals`).
     selects_area: Bool,
+    /// Whether a damage effect, a crowd-control state or a property change of struck units
+    /// aims at the area: what selects units from it whether or not it finds allies.
+    strikes_area: Bool,
+    /// Whether the phase starts a child cast on each unit the area selects: a Proxy with no
+    /// tickTime aimed at the area (`OnEachStruck`). Where the area finds the caster's allies the
+    /// units are players and each is a hit of the go that no row need reach.
+    starts_children: Bool,
     /// The instant heal rows of the phase aimed at the cast's primary target, which a go
     /// tells the player that is its primary target, and, in an area that finds the caster's
     /// allies, those aimed at the area, which a go tells each ally the area selected.
@@ -437,12 +450,19 @@ pub fn describe(error error: AreaError) -> String {
           "on the player the press named"
         spell_plan.Proxied(target: spell_plan.OnEachStruck) ->
           "on each struck unit"
+        spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
+          "on each ally the area selects"
         spell_plan.FromProc(aim: spell_plan.AtHolder) ->
           "by a proc aimed at its holder"
         spell_plan.FromProc(aim: spell_plan.AtOtherUnit) ->
           "by a proc aimed at another unit"
       }
-      <> ", on a unit whose facing the strike does not know, and the row's shape is not a circle at that unit's place"
+      <> case start {
+        spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
+          ", on a player whose place the caster's picture does not hold"
+        spell_plan.Pressed | spell_plan.Proxied(..) | spell_plan.FromProc(..) ->
+          ", on a unit whose facing the strike does not know, and the row's shape is not a circle at that unit's place"
+      }
     TelegraphOnStruckUnits(spell4_id:, telegraph_id:, target_type_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -673,6 +693,11 @@ pub fn start_placed(
         FollowsCaster | FixedAtCaster -> True
         FollowsTarget | FixedAtTarget -> list.all(shapes, is_plain_circle)
       }
+    spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
+      case anchor {
+        FollowsCaster | FixedAtCaster -> True
+        FollowsTarget | FixedAtTarget -> list.is_empty(shapes)
+      }
   }
 }
 
@@ -819,7 +844,7 @@ fn area_of(
     Some(ByHealth(target_selection:)), True ->
       Error(SelectionNeedsHealth(spell4_id: id, target_selection:))
     Some(ByMissingHealth(row:)), True ->
-      case phases_select(area: SpellArea(..area, finds_allies: False)) {
+      case phases_select_beyond_allies(area:) {
         True -> Error(SelectionNeedsHealth(spell4_id: id, target_selection: 5))
         False -> Ok(SpellArea(..area, row: Some(row)))
       }
@@ -833,11 +858,32 @@ fn area_of(
 
 /// Whether some phase of the area selects units from it or ticks on the units it holds.
 fn phases_select(area area: SpellArea) -> Bool {
-  spell_plan.go_numbers(go_count: phase_count_of(spell: area.spell))
-  |> list.any(fn(phase) {
-    let chosen = phase_of(spell: area, phase:, spent: None)
+  any_phase(area:, holds: fn(chosen) {
     chosen.selects_area || chosen.ticks_on_area
   })
+}
+
+/// Whether some phase selects units from the area by anything the caster's picture cannot
+/// order by missing health: a row that strikes the area, a periodic Proxy that ticks on the
+/// units in it, or, where the area finds no allies, a Proxy that starts a child on each unit.
+/// An instant heal aimed at the area, and a Proxy that starts a child on each ally, select the
+/// allies the picture holds a health for.
+fn phases_select_beyond_allies(area area: SpellArea) -> Bool {
+  any_phase(area:, holds: fn(chosen) {
+    chosen.strikes_area
+    || chosen.ticks_on_area
+    || chosen.starts_children
+    && !area.finds_allies
+  })
+}
+
+/// Whether some go of the area's spell has a phase for which `holds` is true.
+fn any_phase(
+  area area: SpellArea,
+  holds holds: fn(PhaseStrike) -> Bool,
+) -> Bool {
+  spell_plan.go_numbers(go_count: phase_count_of(spell: area.spell))
+  |> list.any(fn(phase) { holds(phase_of(spell: area, phase:, spent: None)) })
 }
 
 /// Valid-target bits the area record holds and the strike does not read: the area may strike
@@ -1493,6 +1539,10 @@ fn phase_of(
         }
       },
     )
+  let starts_children =
+    list.any(proxies, fn(proxy) {
+      proxy.period == None && starts_on_each_unit(proxy:)
+    })
   PhaseStrike(
     heals:,
     damage: list.filter(firing, fn(effect) {
@@ -1504,20 +1554,28 @@ fn phase_of(
     controls:,
     gates:,
     selects_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) })
-      || list.any(proxies, fn(proxy) {
-      proxy.target == spell_plan.OnEachStruck && proxy.period == None
-    })
+      || starts_children
       || {
       spell.finds_allies
       && list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
     },
+    strikes_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) }),
+    starts_children:,
     strikes_primary_target: strikes(fn(aim) {
       spell_plan.reaches_primary_target(aim:)
     }),
     ticks_on_area: list.any(proxies, fn(proxy) {
-      proxy.target == spell_plan.OnEachStruck && option.is_some(proxy.period)
+      starts_on_each_unit(proxy:) && option.is_some(proxy.period)
     }),
   )
+}
+
+/// Whether a Proxy starts its child on the units of the area, each struck unit or each ally.
+fn starts_on_each_unit(proxy proxy: spell_plan.Proxy) -> Bool {
+  case proxy.target {
+    spell_plan.OnEachStruck | spell_plan.OnEachAlly -> True
+    spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> False
+  }
 }
 
 /// Whether the row strikes a unit but its caster. A row aimed at its caster alone loads
@@ -1756,7 +1814,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player area orders",
-      missing: "a player's area ordered by lowest health (Spell4AoeTargetConstraints targetSelection 4, which no planned ability names) is read as no area and refused for a phase that selects units from it; an area ordered by missing health (targetSelection 5) is built only for a friendly area (`SpellArea.finds_allies`) whose phases select units by its instant heals alone, and a phase that selects through a Proxy aimed at the area (Sentinel 54395, Warden 33392, Barrier 78081, which start a child on the most injured ally) is refused; the missing health is the maximum less the health as the caster's client was told of each ally, an amount and not a fraction, with ties to the nearer unit then the lower unit id and an ally at full health a candidate after every hurt one, all guesses, the client naming order 5 and ordering nothing; an area that finds the caster's allies (an instant heal aimed at it) selects the other Friendly players the caster has in sight, and the caster too as a candidate at distance 0 with no shape test when a heal row of the phase is aimed at the area alone and none names the caster (Triage, Dual Fire and Regenerative Pulse, \"yourself or an ally\", text 195454; the client names no order, so the caster's rank among units missing as much health, and first when every unit is at full health, is a guess), never the caster for a phase with a row that names it, which heals it by its flag, and an area whose valid targets hold bit 16 (the caster's party only) finds nobody, since every player has the group id 0; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+      missing: "a player's area ordered by lowest health (Spell4AoeTargetConstraints targetSelection 4, which no planned ability names) is read as no area and refused for a phase that selects units from it; an area ordered by missing health (targetSelection 5) is built only for a friendly area (`SpellArea.finds_allies`) whose phases select units by its instant heals or by a Proxy with no tickTime that starts a child on each ally (Sentinel 54395, Mending Banner 33345, Mental Boon 33257 and Astral Infusion 35870; Warden 33392 and Barrier 78081 start a child with a hit row on the ally and stay refused); Mental Boon says \"hurt allies\" (text 245408) and the order keeps an ally at full health a candidate after every hurt one, so a cast with fewer hurt allies than its count starts a child on unhurt ones too, a guess; an area that only a Proxy at the area uses never takes the caster as a candidate, since a Proxy names no caster of its own and no table field tells Affinity's \"yourself and an ally\" (text 316675) from Mending Banner's \"most injured ally\" (text 246918), a guess; the missing health is the maximum less the health as the caster's client was told of each ally, an amount and not a fraction, with ties to the nearer unit then the lower unit id and an ally at full health a candidate after every hurt one, all guesses, the client naming order 5 and ordering nothing; an area that finds the caster's allies (an instant heal aimed at it) selects the other Friendly players the caster has in sight, and the caster too as a candidate at distance 0 with no shape test when a heal row of the phase is aimed at the area alone and none names the caster (Triage, Dual Fire and Regenerative Pulse, \"yourself or an ally\", text 195454; the client names no order, so the caster's rank among units missing as much health, and first when every unit is at full health, is a guess), never the caster for a phase with a row that names it, which heals it by its flag, and an area whose valid targets hold bit 16 (the caster's party only) finds nobody, since every player has the group id 0; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
     ),
     gap.Entry(
       area: "Player area around another player",
