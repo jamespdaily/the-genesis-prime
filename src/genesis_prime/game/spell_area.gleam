@@ -65,8 +65,10 @@
 ////   and the go strikes nobody for it. A Proxy that names a beneficial spell is refused by the
 ////   plan (`spell_plan.PeriodicProxyAtAlliesNotRead`), since the allies in the area are not
 ////   found. A Proxy with no tickTime aimed at the area of a spell that finds the caster's
-////   allies (`PhaseStrike.starts_children`) makes the phase select the area: each ally selected
-////   is a hit of the go that no row need reach, and the go starts the child on it.
+////   allies, and a property change aimed at that area (`PhaseStrike.acts_on_each_unit`), make the
+////   phase select the area: each ally selected is a hit of the go that no row need reach, and the
+////   go starts the child on it or changes it. Such a change strikes no foe (`strikes_area`), so
+////   an area ordered by missing health stays built for it.
 //// - **Order.** An area row's `targetSelection` is read for a player and a creature alike:
 ////   Closest (1), Furthest (2) and Random (3) are the orders `area.select_ordered` takes, and
 ////   no strike selects a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
@@ -262,12 +264,16 @@ pub type PhaseStrike {
     /// the area (`heals`).
     selects_area: Bool,
     /// Whether a damage effect, a crowd-control state or a property change of struck units
-    /// aims at the area: what selects units from it whether or not it finds allies.
+    /// aims at the area, and the area does not find the caster's allies: what strikes the units
+    /// it selects, which an area ordered by health cannot serve. A property change of the
+    /// allies an area finds is no strike, so it is not counted.
     strikes_area: Bool,
-    /// Whether the phase starts a child cast on each unit the area selects: a Proxy with no
-    /// tickTime aimed at the area (`OnEachStruck`). Where the area finds the caster's allies the
-    /// units are players and each is a hit of the go that no row need reach.
-    starts_children: Bool,
+    /// Whether the phase acts on each unit the area selects though no row names a foe: a Proxy
+    /// with no tickTime aimed at the area starts a child on each (`OnEachStruck`, `OnEachAlly`),
+    /// or, where the area finds the caster's allies, a property change aimed at the area changes
+    /// each ally. Where the area finds the caster's allies the units are players and each is a
+    /// hit of the go that no row need reach.
+    acts_on_each_unit: Bool,
     /// The instant heal rows of the phase aimed at the cast's primary target, which a go
     /// tells the player that is its primary target, and, in an area that finds the caster's
     /// allies, those aimed at the area, which a go tells each ally the area selected.
@@ -863,7 +869,7 @@ fn phases_select_beyond_allies(area area: SpellArea) -> Bool {
   any_phase(area:, holds: fn(chosen) {
     chosen.strikes_area
     || chosen.ticks_on_area
-    || chosen.starts_children
+    || chosen.acts_on_each_unit
     && !area.finds_allies
   })
 }
@@ -1491,7 +1497,7 @@ fn phase_of(
       spent:,
       as_kind: spell_plan.as_proxy,
     )
-  let strikes = fn(reaches: fn(Aim) -> Bool) {
+  let strikes_with = fn(reaches: fn(Aim) -> Bool, counting_changes: Bool) {
     list.any(firing, fn(effect) { reaches(effect.aim) })
     || list.any(gates, fn(gate) { reaches(gate.aim) })
     || list.any(throws, reaches)
@@ -1499,8 +1505,12 @@ fn phase_of(
     || list.any(unit_states, reaches)
     || list.any(ticking_firing, fn(row) { reaches(row.damage.aim) })
     || list.any(controls, fn(control) { reaches(control.aim) })
-    || list.any(changes, reaches)
+    || { counting_changes && list.any(changes, reaches) }
   }
+  let strikes = fn(reaches: fn(Aim) -> Bool) { strikes_with(reaches, True) }
+  let changes_allies =
+    spell.finds_allies
+    && list.any(changes, fn(aim) { spell_plan.reaches_area(aim:) })
   let heals =
     list.filter_map(
       spell_plan.in_phase(
@@ -1550,8 +1560,11 @@ fn phase_of(
       spell.finds_allies
       && list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
     },
-    strikes_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) }),
-    starts_children:,
+    strikes_area: strikes_with(
+      fn(aim) { spell_plan.reaches_area(aim:) },
+      !spell.finds_allies,
+    ),
+    acts_on_each_unit: starts_children || changes_allies,
     strikes_primary_target: strikes(fn(aim) {
       spell_plan.reaches_primary_target(aim:)
     }),
@@ -1817,7 +1830,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell valid targets",
-      missing: "a spell with an area row whose valid targets (Spell4ValidTargets targetBitmask) hold bit 8 (strike the dead), 32 (a creature cluster only) or 64 (units in combat only) is refused with its ability, since a strike picks the alive and the server holds no creature cluster; bit 128, which the client copies and no code reads, is read as clear, a guess; an area whose valid targets hold bit 4 (players only) or 16 (party members only) selects no creature, so a row aimed at that area alone lands on nobody, since the units a strike chooses from are creatures; bit 256 (not a pet) excludes no unit, since the server stands no unit as a pet",
+      missing: "a spell with an area row whose valid targets (Spell4ValidTargets targetBitmask) hold bit 8 (strike the dead), 32 (a creature cluster only) or 64 (units in combat only) is refused with its ability, since a strike picks the alive and the server holds no creature cluster; bit 128, which the client copies and no code reads, is read as clear, a guess; an area whose valid targets hold bit 4 (players only) or 16 (party members only) selects no creature, so a row aimed at that area alone lands on nobody, since the units a strike chooses from are creatures; an area whose valid targets hold bit 16 finds no ally either, since no player has a group (Defense Grid's 54475, Volatile Injection's 41756, Emergency Reserves' 32358 and Empowering Probes' 41533 are read and reach nobody); bit 256 (not a pet) excludes no unit, since the server stands no unit as a pet",
     ),
     gap.Entry(
       area: "Creature area orders and shapes",

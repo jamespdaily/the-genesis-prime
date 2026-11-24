@@ -461,7 +461,7 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
       ticking: [],
       gates: [],
       players: [],
-      starts_children: False,
+      answers_allies: False,
       heals: [],
     )
   let #(round, begun) =

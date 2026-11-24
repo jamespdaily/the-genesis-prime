@@ -138,6 +138,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.ProcNotRead(effect_id:, ..)
     | spell_plan.DisguiseNotRead(effect_id:, ..)
     | spell_plan.StruckMoveNotRead(effect_id:, ..)
+    | spell_plan.AlliesModifierGateNotRead(effect_id:, ..)
     | spell_plan.ControlHelperNotRead(effect_id:, ..) -> NamesARow(effect_id:)
   }
 }

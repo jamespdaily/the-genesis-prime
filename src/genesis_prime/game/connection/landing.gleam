@@ -316,7 +316,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A cast held on a player from another player is in the 0x262 the player sends a viewer that comes later (genesis_prime/game/connection/viewers `appearance` lists `held_changes.cast_views`), and the viewer drops an entry whose caster is another unit (`casts_listed`), so that viewer sees the buff from the next change.",
+      missing: "A cast held on a player from another player is in the 0x262 the player sends a viewer that comes later (genesis_prime/game/connection/viewers `appearance` lists `held_changes.cast_views`), and the viewer drops an entry whose caster is another unit (`casts_listed`), so that viewer sees the buff from the next change; the entry names the holder as the cast's primary and only target, which is wrong for a cast whose primary target is another unit (a child Barrier's Proxy started on an ally, whose area found others around that ally).",
     ),
     gap.Entry(
       area: "Casting",

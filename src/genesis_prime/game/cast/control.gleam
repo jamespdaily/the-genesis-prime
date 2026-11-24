@@ -44,7 +44,9 @@
 //// - **A go's changes on another player** (an absorb, an Interrupt Armor row, or a type 11
 ////   row aimed at the primary target, that the press named a player in the caster's sight
 ////   for, or that a child a Proxy aimed at the primary target started on that player
-////   carries, with no delay and a lifetime): each is listed on that player like a Fluff
+////   carries, and a type 11 row aimed at the area (`StruckChange`) for each other player the
+////   round hit that the caster sees, the allies a friendly area selected, all with no delay and
+////   a lifetime): each is listed on that player like a Fluff
 ////   effect, gives its node the row's
 ////   life, and is told to the player's connection at the go as `OtherPlayerChangeStarts`
 ////   (genesis_prime/game/held_changes `PlayerChangeStarts`; an absorb's pool is worked out

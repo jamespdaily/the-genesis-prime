@@ -19,10 +19,12 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
 import genesis_prime/game/innate
+import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type PlanError}
+import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{
   type Spell4BaseId, ClassId, Spell4BaseId, Spell4EffectsId, Spell4Id,
   TelegraphDamageId,
@@ -241,6 +243,7 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.ControlStateNotRead(1, 2, 3), True),
     #(spell_plan.ControlAimNotRead(1, 2, 3), True),
     #(spell_plan.FriendlyAreaNotRead(1, 2, 3), True),
+    #(spell_plan.AlliesModifierGateNotRead(1, 2), True),
     #(spell_plan.ControlPersistenceNotRead(1, 2), True),
     #(spell_plan.StealthAimNotRead(1, 2, 3), True),
     #(spell_plan.StealthTimedNotRead(1, 2), True),
@@ -896,9 +899,22 @@ pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_e
   ]))) = reading_of(199_194)
     as "Barrier's row 199194 is its Interrupt Armor"
   let assert Ok(spell_plan.Applied(spell_plan.ReadEffects(effects: [
-    spell_effect.PlannedEffect(kind: spell_plan.ModifierEffect(..), ..),
+    spell_effect.PlannedEffect(
+      kind: spell_plan.ModifierEffect(spell_plan.PropertyModifier(
+        change: spell_plan.PropertyChange(..),
+        ..,
+      )),
+      ..,
+    ),
+    spell_effect.PlannedEffect(
+      kind: spell_plan.ModifierEffect(spell_plan.PropertyModifier(
+        change: spell_plan.StruckChange(aim: spell_plan.AimsAtArea, ..),
+        ..,
+      )),
+      ..,
+    ),
   ]))) = reading_of(92_788)
-    as "Barrier's row 92788 is a property change"
+    as "Barrier's row 92788 (flags 5, text 640545 \"yourself and N allies\") is a property change of the caster and one of the allies its area selects"
   let assert Ok(spell_plan.Applied(spell_plan.ReadEffects(effects: [
     spell_effect.PlannedEffect(kind: spell_plan.LastingEffect(..), ..),
   ]))) = reading_of(210_663)
@@ -984,6 +1000,155 @@ pub fn every_proxy_row_with_no_ticktime_aimed_at_the_area_of_an_ally_finding_spe
         panic as { why <> " is refused: " <> spell_plan.describe(error:) }
     }
   })
+}
+
+pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_planned_trees_is_a_modifier_read_for_allies_or_a_lasting_row_with_no_life_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  // Every row of a spell of a planned tree (an ability's, a Surge alternate's, each spell a Proxy
+  // or a stage starts) that names the area (`Spell4Effects.targetFlags` bit 4) in a spell whose
+  // area finds the caster's allies (`RowPlace.finds_allies`), of the kinds the Part 4 reading
+  // decides: a UnitPropertyModifier reads as a change of the units the area selects and has no
+  // target apply prerequisite (the strike checks no gate of a modifier for an ally); no absorb,
+  // Interrupt Armor, disguise or conversion row is there (the gate lands only a `StruckChange`
+  // on an ally); a row of a kind that keeps a state has no life, so no node holds it. A row of a
+  // new kind there fails this test and must be read.
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let rows = spell4_effects.all(tables)
+  let place_of = effect_row_read.places(tables:, effects: rows)
+  let areas = spell_area.areas(tables:)
+  let started =
+    dict.values(spell_plan.plans_with_later(tables:))
+    |> list.flat_map(fn(ability) {
+      let alternate = case ability.alternate {
+        Some(alternate) ->
+          spell_plan.tree_started(spell: alternate, started: fn(_) { True })
+        None -> []
+      }
+      list.append(
+        spell_plan.tree_started(spell: ability, started: fn(_) { True }),
+        alternate,
+      )
+    })
+  let spells =
+    list.unique(list.map(started, fn(entry) { { entry.0 }.spell4_id.value }))
+  let area_rows =
+    list.flat_map(spells, fn(spell4_id) {
+      case place_of(spell4_id).finds_allies {
+        False -> []
+        True ->
+          spell_plan.effects_of(sources:, spell4_id:)
+          |> list.filter(fn(row) { int.bitwise_and(row.target_flags, 4) != 0 })
+          |> list.map(fn(row) { #(spell4_id, row) })
+      }
+    })
+  assert list.any(area_rows, fn(entry) {
+    effect_kind.kind_of(effect_type: { entry.1 }.effect_type)
+    == effect_kind.PropertyModifier
+  })
+    as "the planned trees hold modifier rows aimed at the area of a spell that finds allies"
+  list.each(area_rows, fn(entry) {
+    let #(spell4_id, row) = entry
+    let why =
+      "row "
+      <> int.to_string(row.id)
+      <> " of Spell4 "
+      <> int.to_string(spell4_id)
+    case effect_kind.kind_of(effect_type: row.effect_type) {
+      effect_kind.PropertyModifier ->
+        assert_modifier_read_for_allies(
+          tables:,
+          sources:,
+          areas:,
+          place: place_of(spell4_id),
+          spell4_id:,
+          row:,
+          why:,
+        )
+      effect_kind.Absorption
+      | effect_kind.InterruptArmor
+      | effect_kind.DisguiseOutfit
+      | effect_kind.PropertyConversion ->
+        panic as {
+          why
+          <> " is an absorb, Interrupt Armor, disguise or conversion row aimed at the area, which is not read for allies"
+        }
+      effect_kind.Fluff
+      | effect_kind.Scale
+      | effect_kind.ItemVisualSwap
+      | effect_kind.RavelSignal
+      | effect_kind.FullScreenEffect
+      | effect_kind.ForceRemove -> {
+        assert !lasting.has_life(row: spell_plan.lasting_row_of(effect: row))
+          as { why <> " keeps a state with no life, so no node holds it" }
+      }
+      _ -> Nil
+    }
+  })
+  // A press at another player selects nothing from its area, which makes the units the area
+  // hit the allies it found: no spell cast by a press at a unit (a Targeted mechanic) holds a
+  // modifier row aimed at the area of a place that finds allies.
+  list.each(started, fn(entry) {
+    let #(spell, start) = entry
+    assert start != spell_plan.Pressed
+      || spell.targeting.kind != target_mechanic.Targeted
+      || !list.any(area_rows, fn(row) {
+        row.0 == spell.spell4_id.value
+        && effect_kind.kind_of(effect_type: { row.1 }.effect_type)
+        == effect_kind.PropertyModifier
+      })
+      as {
+        "Spell4 "
+        <> int.to_string(spell.spell4_id.value)
+        <> " is pressed at a unit and holds a modifier aimed at the area of a place that finds allies"
+      }
+  })
+}
+
+/// A UnitPropertyModifier row aimed at the area of a place that finds allies is behind no target
+/// apply prerequisite, is read as a change of the units the area selects, and is in a spell whose
+/// area record finds allies.
+fn assert_modifier_read_for_allies(
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+  areas areas: spell_area.Areas,
+  place place: spell_plan.RowPlace,
+  spell4_id spell4_id: Int,
+  row row: spell4_effects.Spell4Effects,
+  why why: String,
+) -> Nil {
+  assert row.prerequisite_id_target_apply == 0
+    as { why <> " is a modifier behind no target apply prerequisite" }
+  let planned = case
+    spell_plan.read_row(tables:, sources:, place:, effect: row)
+  {
+    Ok(spell_plan.Applied(spell_plan.ReadEffects(effects:)))
+    | Ok(spell_plan.Held(spell_plan.ReadEffects(effects:))) ->
+      list.map(effects, fn(effect) { effect.kind })
+    Ok(_) -> panic as { why <> " is read as another kind" }
+    Error(error) ->
+      panic as { why <> " is refused: " <> spell_plan.describe(error:) }
+  }
+  assert list.any(planned, changes_the_units_of_the_area)
+    as { why <> " changes the units the area selects" }
+  let assert Ok(found) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+    as { why <> " is in a spell the areas hold" }
+  assert found.finds_allies
+    as { why <> " is in a spell whose area record finds allies" }
+}
+
+/// Whether the planned kind is a change of the units the area selects.
+fn changes_the_units_of_the_area(kind kind: spell_plan.Kind) -> Bool {
+  case kind {
+    spell_plan.ModifierEffect(spell_plan.PropertyModifier(
+      change: spell_plan.StruckChange(aim:, ..),
+      ..,
+    )) -> spell_plan.reaches_area(aim:)
+    _ -> False
+  }
 }
 
 pub fn no_planned_proxy_starts_its_child_on_each_ally_at_more_than_one_go_test() -> Nil {

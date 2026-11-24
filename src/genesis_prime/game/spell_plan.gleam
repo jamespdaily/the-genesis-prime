@@ -122,7 +122,10 @@
 ////   its life. A row aimed only at other units (targetFlags 2, 4 or 6) is a `StruckChange`
 ////   that changes the creatures a strike hits, and a row that names the caster and others
 ////   (3, 5 or 7) changes the caster in a `PropertyModifier` row and the others in a
-////   `StruckChange` row. Its caster apply
+////   `StruckChange` row; in a spell whose area finds the caster's allies the area's bit is kept
+////   (`ally_area_aim`), so the row changes each ally the area selects (Barrier's row 92788, text
+////   640545 "yourself and N allies in the targeted area"), and such a row behind a target apply
+////   prerequisite is refused (`AlliesModifierGateNotRead`). Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's. A UnitPropertyConversion
 ////   effect (`Spell4Effects.effectType.145`) whose targetFlags include the caster is a
 ////   `PropertyModifier` row too, whose change is a `Conversion` of property dataBits00
@@ -2526,6 +2529,10 @@ pub type PlanError {
   /// fires at more than one go of its spell (`gos` of them): the child would act on an ally
   /// at each go, while the texts say it acts once.
   ProxyOnEachAllyAtSeveralGos(spell4_id: Int, effect_id: Int, gos: Int)
+  /// A UnitPropertyModifier effect aimed at the area of a spell whose area finds the caster's
+  /// allies is behind a target apply prerequisite: the strike tells an ally no gate of a
+  /// modifier, so the row would land on an ally unchecked.
+  AlliesModifierGateNotRead(spell4_id: Int, effect_id: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
   /// prerequisite, which no rule of the server holds.
@@ -2838,6 +2845,12 @@ pub fn describe(error error: PlanError) -> String {
       <> " that starts a child on each ally in its area at "
       <> int.to_string(gos)
       <> " gos, and the texts say the child acts once"
+    AlliesModifierGateNotRead(spell4_id:, effect_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a UnitPropertyModifier effect "
+      <> int.to_string(effect_id)
+      <> " aimed at the area of a spell that finds the caster's allies and behind a target apply prerequisite, which the strike does not check for an ally"
     ControlPersistenceNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3199,6 +3212,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | FriendlyAreaNotRead(..)
     | PeriodicProxyAtAlliesNotRead(..)
     | ProxyOnEachAllyAtSeveralGos(..)
+    | AlliesModifierGateNotRead(..)
     | ControlPersistenceNotRead(..)
     | StealthAimNotRead(..)
     | StealthTimedNotRead(..)
@@ -6147,8 +6161,9 @@ fn property_modifier_reading(
       ),
     )
   }
+  use Nil <- result.try(modifier_gate_checked(spell4_id:, place:, effect:))
   planned_in_parts(
-    aim: row_aim_of(place:, effect:),
+    aim: modifier_aim_in_place(place:, effect:),
     caster_part: fn() { modifier_with(OnlyTheCaster, fn(change) { change }) },
     past_part: fn(aim) {
       modifier_with(reach_in_place(place:, aim:), fn(change) {
@@ -6167,6 +6182,37 @@ fn property_modifier_reading(
       False -> Held(planned)
     }
   })
+}
+
+/// The aim of a UnitPropertyModifier row in a place: the area's bit is kept where the area
+/// finds the caster's allies (`ally_area_aim`), so the row changes each ally the area selects,
+/// and the row's aim in any other place is `row_aim_of`'s.
+fn modifier_aim_in_place(
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Aim {
+  case ally_area_aim(finds_allies: place.finds_allies, effect:) {
+    Ok(aim) -> aim
+    Error(Nil) -> row_aim_of(place:, effect:)
+  }
+}
+
+/// A UnitPropertyModifier row read for the allies the area of its place finds is refused
+/// when it is behind a target apply prerequisite (`AlliesModifierGateNotRead`): the strike
+/// tells an ally no gate of a modifier, so the row would land on an ally unchecked.
+fn modifier_gate_checked(
+  spell4_id spell4_id: Int,
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Nil, PlanError) {
+  case
+    ally_area_aim(finds_allies: place.finds_allies, effect:),
+    effect.prerequisite_id_target_apply
+  {
+    Ok(_), 0 | Error(Nil), _ -> Ok(Nil)
+    Ok(_), _ ->
+      Error(AlliesModifierGateNotRead(spell4_id:, effect_id: effect.id))
+  }
 }
 
 /// A row aimed at the caster and past it as its two parts, each planned by the part's own
@@ -8324,7 +8370,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row and for a Proxy with no tickTime only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a modifier, absorb or Fluff aimed at the area, and a heal with a delay or a tickTime aimed at the area (Barrier's 94870); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and Triage's shield row 174070 (flags 4, delay 10) reaches nobody; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row, for a Proxy with no tickTime and for a UnitPropertyModifier row only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; a UnitPropertyModifier row aimed at the area lands on each ally the area selects that the caster sees, through the ally's connection with an end of its own, when it has no delay and a durationTime (Barrier's 92788), and lands on nobody, with a debug line, when it lasts until removed (Energy Auger's 217926 and Defense Grid's three rows) or has a delay, and the area selects once, at the go, so an ally who walks in or out of a field later is neither given nor stripped of the change; such a row behind a target apply prerequisite fails the plan (`AlliesModifierGateNotRead`, no row has one); an absorb, Interrupt Armor, disguise or conversion row aimed at the area is not read for allies, no planned tree holding one; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a Fluff aimed at the area (it has no life in the two planned rows, Emergency Reserves' 117293 and Soothe's 192394), a row of Barrier's child of a type no rule reads (228254), and a heal with a delay or a tickTime aimed at the area (Barrier's 94870, which reaches the caster alone); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and Triage's shield row 174070 (flags 4, delay 10) reaches nobody; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",
