@@ -25,7 +25,9 @@
 ////   id (`standing_plans`): the spells a worn item puts on its wearer. The same fold plans it or
 ////   leaves it out as it does a later ability (`planned_or_left_out`): one whose error
 ////   `is_unbuilt` names is listed by `standing_unplanned`, which is not `unplanned`, so the ability
-////   book and the later abilities' coverage line never name it; any other error fails the load.
+////   book and the later abilities' coverage line never name it; any other error fails the load,
+////   and so does a worn item whose Item2Type, ItemCategory, ItemFamily or ItemSpecial row the
+////   tables lack (`EquipItemNotRead`), since which spell it puts on its wearer is then unknown.
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
 ////   Spell4Effects row in the place its spell is planned (`RowPlace`): in the effects of its
 ////   spell and applied by a go (`Applied`), in the effects and applied by none (`Held`: a
@@ -353,6 +355,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/equip_spell
 import genesis_prime/game/forced_move
 import genesis_prime/game/innate
+import genesis_prime/game/item_property
 import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/look
@@ -2680,6 +2683,9 @@ pub type PlanError {
   /// A spell of a tree has an area row the client's table leaves incomplete or a
   /// number that is no number: the reason is the area rule's sentence.
   AreaDataFault(spell4_id: Int, reason: String)
+  /// A worn item's table row is missing or the item cannot be read, so which spell it puts
+  /// on its wearer is not known.
+  EquipItemNotRead(error: item_property.ItemPropertyError)
 }
 
 /// What an aim refusal says of the flag values `aim_of` reads: 1 to 7, and for a value with
@@ -3055,6 +3061,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " whose aim names that unit, and an absorb on a struck unit is not built"
     AreaNotBuilt(reason:, ..) | AreaDataFault(reason:, ..) -> reason
+    EquipItemNotRead(error:) -> item_property.describe(error:)
     ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3310,14 +3317,16 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | ProcNotRead(..)
     | InnateFailed(..)
     | PrerequisiteCycle(..)
-    | AreaDataFault(..) -> False
+    | AreaDataFault(..)
+    | EquipItemNotRead(..) -> False
   }
 }
 
 /// The plans of every level-1 ability and innate, which fail the load on any error, of
 /// every other class ability with no prerequisite, and of every worn item's equip spell
 /// (`equip_spell.roots`): each of those a row `is_unbuilt` names is left out of its plans
-/// and listed, the later abilities' list first and the equip spells' second.
+/// and listed, the later abilities' list first and the equip spells' second. A worn item whose
+/// table row is missing fails the load (`EquipItemNotRead`).
 fn plan_all(
   tables tables: table_store.Tables,
   checker checker: Checker,
@@ -3364,11 +3373,14 @@ fn plan_all(
     checker:,
     spell4_ids: later,
   ))
+  use roots <- result.try(
+    equip_spell.roots(tables:) |> result.map_error(EquipItemNotRead),
+  )
   use #(standing_planned, standing_left_out) <- result.map(planned_or_left_out(
     tables:,
     sources:,
     checker:,
-    spell4_ids: equip_spell.roots(tables:),
+    spell4_ids: roots,
   ))
   #(
     PlanSet(

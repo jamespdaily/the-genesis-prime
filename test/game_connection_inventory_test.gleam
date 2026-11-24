@@ -61,13 +61,14 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
+import gleam/bool
 import gleam/list
 import gleam/option.{None, Some}
 import item_flags_support
 import owned_test
-import planted_table.{Integer}
 import vendor_support
 import world_entry_support
+import worn_item_support
 
 /// A 0x182 of the chest piece from the worn slot 0 to inventory slot 0, as the
 /// client sends it, inside 0x038C.
@@ -908,34 +909,12 @@ pub fn a_move_the_store_refuses_binds_nothing_and_sends_no_0x567_test() -> Nil {
   })
 }
 
-/// Item2 91747, the Chua Tighty-Whitey Deflector: Item2Type 53 (ItemSlot 43, ArmorShields: worn slot 15), requiredLevel 0 and
-/// no class, prerequisite or proficiency, so a level 1 player may wear it; its ItemSpecial 9402
-/// names the equip spell 82325, a shield-depleted Proc and no property modifier.
-const deflector = 91_747
-
-const deflector_spell = 82_325
-
-/// The deflector in inventory slot 0.
-fn deflector_in_the_bag() -> HeldItem {
-  HeldItem(
-    item_guid: 50,
-    item2_id: Item2Id(fixture_tables.root(table: "Item2", id: deflector)),
-    location: 1,
-    bag_index: 0,
-    stack_count: 1,
-    words: store.ItemWords(
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
-    ),
-  )
-}
-
-/// The tests' Engineer in the world on these tables, wearing the Novice set but its shield
-/// and holding the deflector, a shield, in inventory slot 0.
-fn holding_the_deflector(
+/// The tests' Engineer in the world on these tables, wearing the Novice set but its item of
+/// `worn_slot` and holding `item2_id` in inventory slot 0.
+fn holding_the_item(
   tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+  worn_slot worn_slot: Int,
 ) -> game_connection.State {
   let character = game_connection_support.world_character()
   let fresh =
@@ -951,9 +930,16 @@ fn holding_the_deflector(
       quests: [],
       items: list.append(
         list.filter(world_entry_support.novice_items(character:), fn(item) {
-          item.bag_index != 15
+          item.bag_index != worn_slot
         }),
-        [deflector_in_the_bag()],
+        [
+          worn_item_support.held(
+            item2_id:,
+            item_guid: 50,
+            location: 1,
+            bag_index: 0,
+          ),
+        ],
       ),
     )
   game_connection_support.answer(
@@ -963,8 +949,8 @@ fn holding_the_deflector(
   ).0
 }
 
-/// A 0x182 of the deflector between inventory slot 0 and worn slot 15.
-fn deflector_moved(
+/// A 0x182 of the item between inventory slot 0 and its worn slot.
+fn item_moved(
   from from: item_place.ItemPlace,
   to to: item_place.ItemPlace,
 ) -> BitArray {
@@ -985,72 +971,121 @@ fn cast_ids_started(frames frames: List(Frame)) -> List(Int) {
   })
 }
 
-/// Each case: its tables, the frames an equip writes and the frames an unequip writes, as
-/// message ids. Both start with the move's 0x569 and the gear's 0x93a (no 0x933: the deflector
-/// is not drawn). An equip then starts the cast, 0x7ff and its go 0x7f4, and an unequip ends it,
-/// 0x7fe; a spell that holds a property modifier writes one more 0x93a of its own, at the start
-/// after the go and at the end before the 0x7fe.
-fn deflector_cases() -> List(
-  #(String, List(Int), List(Int), fn(fn(table_store.Tables) -> Nil) -> Nil),
-) {
+/// A worn item with an equip spell: the item and the slot it is worn in, the spell, whether
+/// the spell holds property modifiers, and the frames, as message ids, that come before the
+/// standing frames in an equip and in an unequip. Both start with the move's 0x569 and the
+/// gear's 0x93a, and a drawn item adds the look's 0x933. An equip then starts the cast, 0x7ff
+/// and its go 0x7f4, and an unequip ends it, 0x7fe; a spell that holds property modifiers
+/// writes 0x93a frames of its own, after the go at the start and before the 0x7fe at the end.
+type WornCase {
+  WornCase(
+    name: String,
+    item2_id: Int,
+    worn_slot: Int,
+    spell4_id: Int,
+    holds_modifiers: Bool,
+    equip_gear_ids: List(Int),
+    unequip_gear_ids: List(Int),
+  )
+}
+
+fn deflector_cases() -> List(WornCase) {
   [
-    #(
-      "a spell with a Proc row only (82325)",
-      [0x0569, 0x093A, 0x07FF, 0x07F4],
-      [0x0569, 0x093A, 0x07FE],
-      fn(body) { body(character_tables.shared()) },
+    WornCase(
+      "a spell with a Proc row only (the deflector's 82325)",
+      worn_item_support.deflector,
+      15,
+      worn_item_support.deflector_spell,
+      False,
+      [0x0569, 0x093A],
+      [0x0569, 0x093A],
     ),
-    #(
-      "the spell also holding a property modifier (a copy of Spell4Effects 103997 with its value changed)",
-      [0x0569, 0x093A, 0x07FF, 0x07F4, 0x093A],
-      [0x0569, 0x093A, 0x093A, 0x07FE],
-      fn(body) {
-        fixture_tables.added(
-          table: "Spell4Effects",
-          copy_of: 103_997,
-          id: 500_001,
-          with: [
-            #("spellId", Integer(deflector_spell)),
-            #("dataBits02", Integer(1_069_547_520)),
-          ],
-          body:,
-        )
-      },
+    WornCase(
+      "a spell whose root holds UnitPropertyModifier rows (Item2 38020's 62538, a weapon with a look)",
+      38_020,
+      16,
+      62_538,
+      True,
+      [0x0569, 0x0933, 0x093A],
+      [0x0569, 0x0933, 0x093A],
     ),
   ]
 }
 
+/// The ids after `before` and before `after`, or nothing when they do not start and end so.
+fn ids_between(
+  ids ids: List(Int),
+  before before: List(Int),
+  after after: List(Int),
+) -> Result(List(Int), Nil) {
+  use <- bool.guard(
+    when: list.take(ids, list.length(before)) != before,
+    return: Error(Nil),
+  )
+  let rest = list.drop(ids, list.length(before))
+  let kept = list.length(rest) - list.length(after)
+  use <- bool.guard(
+    when: kept < 0 || list.drop(rest, kept) != after,
+    return: Error(Nil),
+  )
+  Ok(list.take(rest, kept))
+}
+
 pub fn equipping_an_item_with_an_equip_spell_writes_its_0x7ff_after_the_gear_frames_and_unequipping_it_writes_its_0x7fe_after_them_test() -> Nil {
   use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
   list.each(deflector_cases(), fn(case_) {
-    let #(name, equip_ids, unequip_ids, with_tables) = case_
-    use tables <- with_tables
-    let slot = item_place.ItemPlace(location: 0, bag_index: 15)
+    let name = case_.name
+    let slot = item_place.ItemPlace(location: 0, bag_index: case_.worn_slot)
     let bag = item_place.ItemPlace(location: 1, bag_index: 0)
     let #(state, equipped) =
       saved_after(
-        state: holding_the_deflector(tables:),
-        message: deflector_moved(from: bag, to: slot),
+        state: holding_the_item(
+          tables:,
+          item2_id: case_.item2_id,
+          worn_slot: case_.worn_slot,
+        ),
+        message: item_moved(from: bag, to: slot),
       )
-    assert game_connection_support.written_ids(equipped) == equip_ids
+    let modifier_frames_are_only_0x93a = fn(frames: Result(List(Int), Nil)) {
+      case frames {
+        Ok(ids) ->
+          list.all(ids, fn(id) { id == 0x093A })
+          && { ids != [] } == case_.holds_modifiers
+        Error(Nil) -> False
+      }
+    }
+    assert modifier_frames_are_only_0x93a(
+      ids_between(
+        ids: game_connection_support.written_ids(equipped),
+        before: list.append(case_.equip_gear_ids, [0x07FF, 0x07F4]),
+        after: [],
+      ),
+    )
       as {
         name
-        <> ": the move's frame and the gear's properties come first (the equip is legal at level 1: Item2 91747 needs no level, class or proficiency; no look, since the deflector's ItemDisplaySourceEntry row 6029 names display 0), then the standing frames: the equip spell's 0x7ff and go (the server's order: no client fact needs the other, so it is `regeared`'s)"
+        <> ": the move's frame and the gear's properties come first (the equip is legal at level 1), then the standing frames: the equip spell's 0x7ff and go (the server's order: no client fact needs the other, so it is `regeared`'s), then the modifiers' 0x93a frames when the spell holds any"
       }
     assert game_connection_support.started_spells(
         frames: game_connection_support.written(equipped),
       )
-      == [deflector_spell]
+      == [case_.spell4_id]
       as { name <> ": the equip spell is the one cast the equip starts" }
     let #(state, unequipped) =
-      saved_after(state:, message: deflector_moved(from: slot, to: bag))
-    assert game_connection_support.written_ids(unequipped) == unequip_ids
+      saved_after(state:, message: item_moved(from: slot, to: bag))
+    assert modifier_frames_are_only_0x93a(
+      ids_between(
+        ids: game_connection_support.written_ids(unequipped),
+        before: case_.unequip_gear_ids,
+        after: [0x07FE],
+      ),
+    )
       as {
         name
-        <> ": an unequip writes the move's frame and the gear's properties first, then its own 0x93a when the spell held a modifier and the 0x7fe of the equip spell's cast"
+        <> ": an unequip writes the move's frame and the gear's properties first, then the modifiers' 0x93a frames when the spell held any and the 0x7fe of the equip spell's cast"
       }
     let #(_, again) =
-      saved_after(state:, message: deflector_moved(from: bag, to: slot))
+      saved_after(state:, message: item_moved(from: bag, to: slot))
     let first_cast =
       cast_ids_started(frames: game_connection_support.written(equipped))
     assert cast_ids_started(frames: game_connection_support.written(again))
@@ -1079,13 +1114,11 @@ pub fn selling_a_worn_item_ends_its_equip_spell_through_the_same_function_as_an_
       expires_at_unix_ms: None,
     )
   let worn =
-    HeldItem(
+    worn_item_support.held(
+      item2_id: gadget,
       item_guid: 60,
-      item2_id: Item2Id(fixture_tables.root(table: "Item2", id: gadget)),
       location: 0,
       bag_index: 11,
-      stack_count: 1,
-      words:,
     )
   let state =
     vendor_support.at_the_vendor(

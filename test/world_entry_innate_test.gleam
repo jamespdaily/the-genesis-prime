@@ -32,19 +32,21 @@ import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
 import genesis_prime/step.{LogWarning}
-import genesis_prime/store.{type HeldItem, HeldItem}
-import genesis_prime/table/id.{ClassId, Item2Id}
+import genesis_prime/store.{type HeldItem}
+import genesis_prime/table/id.{ClassId}
 
 import gleam/bit_array
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import gleam/string
 import owned_test
 import planted_table
 import unitest
 import world_entry_support
+import worn_item_support
 
 /// A class's id, its three level-1 abilities, its slot-0 innate's Spell4Base and
 /// the Spell4Base of its slot-0 passive, when it has one.
@@ -416,12 +418,6 @@ pub fn the_entry_starts_the_passive_of_classes_1_2_and_5_with_the_frames_the_sin
   })
 }
 
-/// Item2 91747, the Chua Tighty-Whitey Deflector (Item2Type 53, ItemSlot 43, worn in slot 15, no level
-/// requirement), whose ItemSpecial 9402 names the equip spell 82325.
-const deflector = 91_747
-
-const deflector_spell = 82_325
-
 /// The character's Novice set with the deflector worn in its shield's slot 15 (ItemSlot 43,
 /// ArmorShields, equippedSlotFlags 32768).
 fn wearing_the_deflector(
@@ -431,21 +427,7 @@ fn wearing_the_deflector(
     list.filter(world_entry_support.novice_items(character:), fn(item) {
       item.bag_index != 15
     }),
-    [
-      HeldItem(
-        item_guid: 50,
-        item2_id: Item2Id(fixture_tables.root("Item2", deflector)),
-        location: 0,
-        bag_index: 15,
-        stack_count: 1,
-        words: store.ItemWords(
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
-        ),
-      ),
-    ],
+    [worn_item_support.deflector_at(location: 0, bag_index: 15)],
   )
 }
 
@@ -508,19 +490,19 @@ pub fn the_entry_starts_the_equip_spell_of_each_worn_item_after_the_passive_and_
           as {
             name <> ": the class's passive is the first cast the entry starts"
           }
-        assert list.last(started) == Ok(deflector_spell)
+        assert list.last(started) == Ok(worn_item_support.deflector_spell)
           as {
             name
             <> ": the equip spell of the worn item (ItemSpecial.spell4IdOnEquip) is started after the passive's"
           }
         assert list.count(started, fn(spell4_id) {
-            spell4_id == deflector_spell
+            spell4_id == worn_item_support.deflector_spell
           })
           == 1
           as { name <> ": and once" }
       }
       None -> {
-        assert started == [deflector_spell]
+        assert started == [worn_item_support.deflector_spell]
           as {
             name
             <> ": with no passive the worn item's spell is the entry's only cast: the entry always asks for the standing spells"
@@ -538,4 +520,26 @@ pub fn the_entry_starts_the_equip_spell_of_each_worn_item_after_the_passive_and_
       == Ok(world_entry.StartStanding)
       as { name <> ": a rejoin asks for the standing spells again" }
   })
+}
+
+/// A guard, not a failing-first test: it passes on today's code, where a join builds a new
+/// cast state. A state from `cast_state.new()` writes a logged warning again; this shows the
+/// join builds one, whatever the player it replaces had logged.
+pub fn a_rejoin_builds_a_cast_state_with_nothing_logged_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let #(_, entered) =
+    world_entry_support.entry(tables: fixture_tables.shared(), character:)
+  let #(logged, warned) =
+    cast.standing_unbuilt(cast: cast_state.new(), spell4_ids: [82_308])
+  assert list.length(warned) == 1
+    as "the left-out spell is warned of the first time it is asked for"
+  assert set.size(logged.logged) == 1 as "the player's cast state has logged it"
+  let #(rejoined, _) =
+    world_entry_support.rejoined(
+      entered: world_entry.Entered(..entered, cast: logged),
+    )
+  assert set.size(rejoined.cast.logged) == 0
+    as "the player the join builds has nothing logged, so the warning is written again once per stay"
 }
