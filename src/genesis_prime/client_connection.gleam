@@ -386,6 +386,11 @@ pub type News {
   /// (genesis_prime/game/look); a viewer that first sees the unit gets the current
   /// visuals in its 0x262 instead.
   LookChanged(item_visuals: List(ItemVisual))
+  /// The last source of the cast `cast_id` that the player holds from another player's
+  /// cast has ended: the viewer that was listed the cast by this player's create and not
+  /// told it by its caster writes a 0x811 naming the player (opcode.0x811), and any other
+  /// viewer drops the news, since its caster's frames end the cast.
+  HeldCastEnded(cast_id: Int)
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).

@@ -28,8 +28,8 @@ import connection_rule_support as rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
   type Answer, type Message, type News, type Request, Absorption, Appeared,
-  CastFinished, CastStarted, InterruptArmor, PropertiesChanged, Removed,
-  TellPeer,
+  CastFinished, CastStarted, HeldCastEnded, InterruptArmor, PropertiesChanged,
+  Removed, TellPeer,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
@@ -472,7 +472,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
   // viewer 2 gets.
   let rows = [
     #(
-      "a held property: the 0x93a restores the value and the viewers get the entry",
+      "a held property: the 0x93a restores the value and the viewers get the entry, then that the cast ended",
       [armor_held],
       [
         PlayerChangeEnds(
@@ -485,7 +485,10 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
         absorptions: [],
         armor: [],
       ),
-      [PropertiesChanged(properties: [armor_entry(value: one_bits)])],
+      [
+        PropertiesChanged(properties: [armor_entry(value: one_bits)]),
+        HeldCastEnded(cast_id: 100),
+      ],
     ),
     #(
       "a held Interrupt Armor change: the armor stat returns to 0 before the 0x93a that lowers the maximum, and the viewers get both in that order",
@@ -509,6 +512,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
       [
         InterruptArmor(armor: 0),
         PropertiesChanged(properties: [maximum_entry(value: 0.0)]),
+        HeldCastEnded(cast_id: 102),
       ],
     ),
     #(
@@ -521,7 +525,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
         ),
       ],
       Seen(properties: [], absorptions: [0], armor: []),
-      [Absorption(absorption: 0)],
+      [Absorption(absorption: 0), HeldCastEnded(cast_id: 101)],
     ),
     #(
       "a source never started",
@@ -565,7 +569,10 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
         absorptions: [],
         armor: [],
       ),
-      [PropertiesChanged(properties: [armor_entry(value: one_bits)])],
+      [
+        PropertiesChanged(properties: [armor_entry(value: one_bits)]),
+        HeldCastEnded(cast_id: 100),
+      ],
     ),
   ]
   list.each(rows, fn(row) {
@@ -1442,4 +1449,160 @@ pub fn a_player_that_comes_into_sight_lists_the_casts_other_players_hold_on_it_t
     == int.range(from: 1, to: 512, with: [], run: fn(acc, i) { [i, ..acc] })
     |> list.reverse
     as "the list is cut at 511 entries (opcode.0x262.casts: a 9-bit count)"
+}
+
+/// The cast ids each step tells the viewer connection `viewer` ended (`HeldCastEnded`), a
+/// list for each step, in order.
+fn held_casts_ended(
+  steps steps: List(ConnectionStep(Request)),
+  viewer viewer: Int,
+) -> List(List(Int)) {
+  list.map(steps, fn(taken) {
+    list.filter_map(support.news_told(taken:, viewer:), fn(news) {
+      case news {
+        HeldCastEnded(cast_id:) -> Ok(cast_id)
+        _ -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// Whether the effect is the tell of a `HeldCastEnded` to a viewer.
+fn tells_a_held_cast_ended(
+  effect effect: step.Effect(step.ConnectionEffect(Request)),
+) -> Bool {
+  case effect {
+    OwnEffect(step.Tell(
+      request: TellPeer(
+        news: client_connection.PeerNews(news: HeldCastEnded(..), ..),
+        ..,
+      ),
+      ..,
+    )) -> True
+    _ -> False
+  }
+}
+
+/// What happens to the ally in a row of the test below.
+type AllyEvent {
+  CasterEnds(hold: Hold)
+  MapNotice(notice: Notice)
+  AllyDies
+}
+
+/// The Design's end paths of #570 Part 7, and `landing.changed`, `caster_unseen`,
+/// `caster_removed` and `ended_at_death`: when the ledger's last source of a cast leaves,
+/// the ally tells each of its viewers `HeldCastEnded` with the cast id, once per cast, in
+/// cast id order, after what it writes for its own client. The ledger's own ends are tested
+/// above; this tests what the ally then tells.
+pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_the_cast_ended_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let armor_of_three =
+    held(caster: 3, source: armor_source(cast_id: 100), change: armor())
+  let kept_armor_of_three = Hold(..armor_of_three, sight: KeptWhenUnseen)
+  let assert [armor_hold, pool_hold] =
+    armor_and_pool(cast_id: 100, sight: EndsWhenUnseen)
+    as "Phantasmal Armor's cast holds its armor and its pool"
+  // What the ally holds, what happens to it, and the casts each step tells connection 2 and
+  // connection 3 ended, a list for each step.
+  let rows = [
+    #(
+      "the end tell of the only source tells each viewer the cast ended",
+      [armor_of_three],
+      [CasterEnds(armor_of_three)],
+      [[100]],
+      [[100]],
+    ),
+    #(
+      "the end tell of one of two sources tells none, and of the second tells one",
+      [armor_hold, pool_hold],
+      [CasterEnds(armor_hold), CasterEnds(pool_hold)],
+      [[], [100]],
+      [[], [100]],
+    ),
+    #(
+      "the unseen notice of the caster ends an unkept source and tells the viewers that remain, not the caster that left",
+      [armor_of_three],
+      [MapNotice(Unseen(3))],
+      [[100]],
+      [[]],
+    ),
+    #(
+      "the unseen notice of the caster leaves a kept source and tells none",
+      [kept_armor_of_three],
+      [MapNotice(Unseen(3))],
+      [[]],
+      [[]],
+    ),
+    #(
+      "the gone notice of the caster's unit ends a kept source and tells",
+      [kept_armor_of_three],
+      [MapNotice(UnitGone(3))],
+      [[100]],
+      [[100]],
+    ),
+    #(
+      "the ally's death with two casts held tells one per cast in cast id order",
+      list.append(armor_and_pool(cast_id: 200, sight: EndsWhenUnseen), [
+        interrupt_armor_hold(cast_id: 100),
+      ]),
+      [AllyDies],
+      [[100, 200]],
+      [[100, 200]],
+    ),
+    #(
+      "an ally with no viewer left tells nobody",
+      [kept_armor_of_three],
+      [
+        MapNotice(Unseen(3)),
+        MapNotice(Unseen(2)),
+        CasterEnds(kept_armor_of_three),
+      ],
+      [[], [], []],
+      [[], [], []],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, holds, events, to_two, to_three) = row
+    let #(_, steps) =
+      list.fold(events, #(holding(holds:), []), fn(so_far, event) {
+        let #(state, steps) = so_far
+        let #(state, taken) = case event {
+          CasterEnds(hold:) -> support.feed(state:, event: ending(hold:))
+          MapNotice(notice:) ->
+            support.feed(
+              state:,
+              event: support.sent_by_the_map(notice_of(notice:)),
+            )
+          AllyDies -> support.killed(state)
+        }
+        #(state, list.append(steps, [taken]))
+      })
+    assert held_casts_ended(steps:, viewer: 2) == to_two as reason
+    assert held_casts_ended(steps:, viewer: 3) == to_three as reason
+  })
+  // The tell comes after every write to the ally's own client, as the cast's 0x7fe of a kept
+  // change does.
+  let #(_, ended) =
+    support.feed(
+      state: holding(holds: [armor_of_three]),
+      event: ending(hold: armor_of_three),
+    )
+  let effects = rule_support.effects_of(ended)
+  let #(before, from_the_first_tell) =
+    list.split_while(effects, fn(effect) { !tells_a_held_cast_ended(effect:) })
+  assert list.any(before, fn(effect) {
+    case effect {
+      OwnEffect(step.Write(..)) -> True
+      _ -> False
+    }
+  })
+    as "the end of the armor writes its 0x93a to the ally's own client first"
+  assert list.all(from_the_first_tell, fn(effect) {
+    case effect {
+      OwnEffect(step.Write(..)) -> False
+      _ -> True
+    }
+  })
+    as "no write to the ally's own client follows the first tell"
 }

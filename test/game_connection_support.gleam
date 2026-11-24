@@ -2122,7 +2122,8 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.UnitStateEnded(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
-      | client_connection.LookChanged(..) -> Error(Nil)
+      | client_connection.LookChanged(..)
+      | client_connection.HeldCastEnded(..) -> Error(Nil)
     }
   })
 }
@@ -2163,7 +2164,8 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.UnitStateEnded(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
-    | client_connection.LookChanged(..) -> False
+    | client_connection.LookChanged(..)
+    | client_connection.HeldCastEnded(..) -> False
   }
 }
 

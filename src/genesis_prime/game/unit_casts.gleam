@@ -53,6 +53,9 @@
 ////   already seeing both keeps the node until the cast's 0x7fe (the caster's client
 ////   destroys its nodes on the creature at its own 0x355, `0x1404550d0`).
 //// - A crowd-control state a player holds on a creature is not listed, as for players.
+//// - A creature's create keeps an entry only for a cast whose start its viewer was written
+////   (`client_casts.is_written`), though the client would show a cast whose caster it does not
+////   know (`cast.unknown_caster`).
 //// - A player's list holds its own casts and the casts that other players' casts hold on it
 ////   (`held_changes.cast_views`: an absorb, an Interrupt Armor row or a modifier row a press
 ////   at the player landed); the Fluff rows of another player's press (Spell4 bases 26762,

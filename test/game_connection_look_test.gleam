@@ -202,7 +202,8 @@ fn look_visuals(news news: News) -> Result(List(ItemVisual), Nil) {
     | client_connection.UnitStateEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..) -> Error(Nil)
+    | client_connection.Stealth(..)
+    | client_connection.HeldCastEnded(..) -> Error(Nil)
   }
 }
 

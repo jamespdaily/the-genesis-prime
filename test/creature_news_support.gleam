@@ -59,6 +59,7 @@ pub fn name_of(news: News) -> String {
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..)
+    | client_connection.HeldCastEnded(..)
     | client_connection.UnitStateHeld(..)
     | client_connection.UnitStateEnded(..) -> "other"
     client_connection.CrowdControlApplied(..) -> "0x87f"

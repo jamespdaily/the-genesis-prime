@@ -762,7 +762,8 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
         | client_connection.Level(..)
         | client_connection.PropertiesChanged(..)
         | client_connection.Stealth(..)
-        | client_connection.LookChanged(..) -> Error(Nil)
+        | client_connection.LookChanged(..)
+        | client_connection.HeldCastEnded(..) -> Error(Nil)
       }
     })
   assert list.length(told) == 2 as "the caster's audience is two connections"
