@@ -25,6 +25,7 @@
 
 import cast_support
 import connection_rule_support as rule_support
+import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
   type Answer, type Message, type News, type Request, Absorption, Appeared,
@@ -76,6 +77,7 @@ import gleam/option.{None, Some}
 import gleam/set
 import owned_test
 import place_support
+import planted_table
 import spawn_support
 import world_entry_support
 
@@ -2024,6 +2026,35 @@ fn beast_takes_damage() -> proc.Event {
   )
 }
 
+/// The event of the same blow of kind `trigger`: the Beast 7 and its attack Spell4 5649 name
+/// each event of one blow alike (`cast_proc.blow_events`).
+fn beast_event(trigger trigger: spell_plan.Trigger) -> proc.Event {
+  proc.Event(..beast_takes_damage(), trigger:)
+}
+
+/// A creature's blow of the Beast's attack Spell4 5649 that is a critical (a crit chance of 1.0
+/// draws a roll below it) and deals `damage`.
+fn beast_critical_blow(
+  damage damage: Int,
+) -> fn(game_connection.State) -> ConnectionStep(Request) {
+  fn(state) {
+    support.feed(
+      state:,
+      event: support.a_strike_of(
+        striker: spawn_support.beast_striker(),
+        offence: hit.Offence(
+          ..spawn_support.dealing(
+            offence: spawn_support.beast_attack().offence,
+            damage:,
+          ),
+          crit_chance: 1.0,
+        ),
+        unit_id: support.own_unit_id,
+      ),
+    ).1
+  }
+}
+
 /// The tell of `events` caster `caster` is sent for the player, as the caster's stay names it.
 fn told_to(
   caster caster: Int,
@@ -2135,6 +2166,52 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
       0,
     ),
     #(
+      "a critical blow that took the shield to 0 tells a caster that waits for all three of its events one tell: TakesDamage, SuffersCritical and ShieldDepleted, in that order",
+      [
+        waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage),
+        waits(caster: 3, cast_id: 104, trigger: spell_plan.SuffersCritical),
+        waits(caster: 3, cast_id: 105, trigger: spell_plan.ShieldDepleted),
+      ],
+      beast_critical_blow(damage: 3000),
+      [
+        told_to(caster: 3, events: [
+          beast_event(trigger: spell_plan.TakesDamage),
+          beast_event(trigger: spell_plan.SuffersCritical),
+          beast_event(trigger: spell_plan.ShieldDepleted),
+        ]),
+      ],
+      0,
+    ),
+    #(
+      "a caster that waits for SuffersCritical alone is told that event of the same blow and no other",
+      [waits(caster: 3, cast_id: 103, trigger: spell_plan.SuffersCritical)],
+      beast_critical_blow(damage: 3000),
+      [
+        told_to(caster: 3, events: [
+          beast_event(trigger: spell_plan.SuffersCritical),
+        ]),
+      ],
+      0,
+    ),
+    #(
+      "a caster that waits for ShieldDepleted alone is told that event of the same blow and no other",
+      [waits(caster: 3, cast_id: 103, trigger: spell_plan.ShieldDepleted)],
+      beast_critical_blow(damage: 3000),
+      [
+        told_to(caster: 3, events: [
+          beast_event(trigger: spell_plan.ShieldDepleted),
+        ]),
+      ],
+      0,
+    ),
+    #(
+      "a caster that waits for DeflectsAttack is told nothing of a blow that landed",
+      [waits(caster: 3, cast_id: 103, trigger: spell_plan.DeflectsAttack)],
+      beast_critical_blow(damage: 3000),
+      [],
+      0,
+    ),
+    #(
       "a player that holds no Proc source tells nobody",
       [],
       beast_blow(damage: 12),
@@ -2142,14 +2219,15 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
       0,
     ),
   ]
-  list.each(rows, fn(row) {
+  let check = fn(holding_in, row) {
     let #(reason, holds, blow, told, warnings) = row
-    let taken = blow(holding(holds:))
+    let taken = blow(holding_in(holds))
     assert events_told(taken:) == told as reason
     assert list.length(rule_support.logs_of(step: taken, level: step.LogWarning))
       == warnings
       as reason
-  })
+  }
+  list.each(rows, check(fn(holds) { holding(holds:) }, _))
   // A tell adds nothing else: the blow's other effects are those of the same blow on a
   // player that holds nothing.
   let without_tells = fn(taken) {
@@ -2189,4 +2267,37 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
     )
     == [told_to(caster: 3, events: [beast_takes_damage()])]
     as "the kept source is awaited again when the caster is back among the viewers"
+  // A deflect: GameFormula 1235 gives the deflect chance (`rating.formulas`), an intercept of
+  // 100 with the knee above it makes it 100% at level 1, so every roll deflects the blow (an
+  // edit of the real row: no client row gives a player a deflect chance at level 1).
+  use tables <- fixture_tables.changed(table: "GameFormula", id: 1235, with: [
+    #("dataint0", planted_table.Integer(100)),
+    #("datafloat02", planted_table.Integer(float32.to_bits(200.0))),
+  ])
+  let deflecting = fn(holds) {
+    list.fold(
+      holds,
+      support.watched_by(
+        state: support.entered_with_quests_on(tables:, quests: []).0,
+        viewers: [2, 3],
+      ),
+      fn(state, hold) { support.feed(state:, event: tell(starts(hold:))).0 },
+    )
+  }
+  check(deflecting, #(
+    "a deflect tells a caster that waits for all four events DeflectsAttack only: it lowered nothing, was no critical and took no shield",
+    [
+      waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage),
+      waits(caster: 3, cast_id: 104, trigger: spell_plan.SuffersCritical),
+      waits(caster: 3, cast_id: 105, trigger: spell_plan.DeflectsAttack),
+      waits(caster: 3, cast_id: 106, trigger: spell_plan.ShieldDepleted),
+    ],
+    beast_critical_blow(damage: 3000),
+    [
+      told_to(caster: 3, events: [
+        beast_event(trigger: spell_plan.DeflectsAttack),
+      ]),
+    ],
+    0,
+  ))
 }

@@ -4,7 +4,6 @@
 //// Every wait is for bytes the server writes, with a deadline a passing test never
 //// reaches. The tree, the logins and the players come from `game_wire_support`.
 
-import ask_support
 import cast_support
 import character_support
 import character_tables
@@ -13,14 +12,16 @@ import fight_bot
 import fixture_tables
 import game_client
 import game_wire_support.{
-  beast_health_in, beast_place, enters_and_sees_the_beasts, entry_stat, finishes,
-  holds_a_finish, index_where, is_near, new_player, new_player_at_level,
+  beast_health_in, beast_place, dagun_attack_interval_ms, dagun_z,
+  enters_and_sees_the_beasts, entry_stat, finishes, holds_a_finish, index_where,
+  is_near, new_player, new_player_at_level,
   on_rows_with_turrets_that_never_deflect,
   on_rows_without_paralytic_surges_recharge, press_and_fire,
-  press_until_dead_reading, send_play, start_with_creatures,
-  start_with_world_data, static_objects_created_in, walk_to,
+  press_until_dead_reading, read_after_the_map_and_the_creature_took_it,
+  send_play, start_with_creatures, start_with_world_data,
+  static_objects_created_in, the_dagun_and_its_map, walk_to,
   with_world_data_on_ground, world_on, world_with_a_beast_ahead,
-  world_with_beasts,
+  world_with_a_dagun_on, world_with_beasts,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
@@ -36,12 +37,7 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth
-import genesis_prime/server
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/registry as world_map_registry
-import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
@@ -50,15 +46,13 @@ import gleam/erlang/process
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/otp/system
 import login_support
 import message_support
-import open_wait
 import owned_test
 import planted_table
 import pog
-import spawn_support
 import terrain_support
 
 /// The messages of the Holocrypt's join: an entry burst without 0x25E.
@@ -917,41 +911,6 @@ fn press_until_dead(
 // `opcode.0x90a`, `opcode.0x89a`, `opcode.0x938`, `opcode.0x92f`,
 // `movement_command.kind_4`).
 
-/// Where the Dagun stands: 23.5 units along -z from where a new test character
-/// stands in World 1387, zone 1100, at 1.5, 2.5, 3.5.
-const dagun_z = -20.0
-
-/// The Dagun's attack tick: the attack interval of the creature kinds the tests'
-/// worlds are planted with. The interval is a server choice (the client's effect
-/// 184741 has no tickTime), so it is read from those kinds.
-fn dagun_attack_interval_ms() -> Int {
-  spawn_support.kinds().default.attack_interval_ms
-}
-
-/// A world with one Dagun at x 1.5, z -20, its map's and creature's timers and the
-/// connections' on the clock `time`, so the Dagun's attack tick and home timer fire
-/// only when the test advances it.
-fn world_with_a_dagun(time time: driven_time.Time) -> login_support.Started {
-  login_support.start_with(time:, change: fn(settings) {
-    server.Settings(
-      ..settings,
-      world: server.World(
-        ..settings.world,
-        spawns: spawn_support.key_in(
-          world_id: 1387,
-          spawns: [
-            spawn.Spawn(
-              ..spawn_support.dagun(number: 1, x: 0.0),
-              place: beast_place(x: 1.5, z: dagun_z),
-            ),
-          ],
-          respawn_ms: 60_000,
-        ),
-      ),
-    )
-  })
-}
-
 /// Returns when the first creature of the map, unit `unit_id`, has taken all it was
 /// sent, for a test whose next step is an input, not an advance (an advance waits
 /// for the participants itself): a creature's frames are sent before its step's
@@ -1149,60 +1108,6 @@ fn stealth_changes_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
   })
 }
 
-/// The run of the world 1387 map and the process of the Dagun's creature, unit
-/// `dagun`. The first player's connection takes the map's watch 1, so the first
-/// creature has life 2 (genesis_prime/world_map/map `joined_new`).
-fn the_dagun_and_its_map(
-  started started: login_support.Started,
-  dagun dagun: Int,
-) -> #(world_map_registry.MapProcess, process.Pid) {
-  let assert Ok(run) =
-    open_wait.named("Maps to answer the find", fn() {
-      world_map_registry.find_or_start(
-        started.settings.world.maps,
-        MapId(world_id: 1387, instance: 0),
-        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
-      )
-    })
-    as "the map is running, started by the play"
-  let assert Ok(creature) =
-    creature_registry.find(
-      started.settings.world.creatures,
-      map: MapId(world_id: 1387, instance: 0),
-      incarnation: run.incarnation,
-      unit_id: dagun,
-      life: 2,
-    )
-    as "the Dagun runs under its address"
-  #(run, creature)
-}
-
-/// Pings and reads all the server wrote for the connection after what the test sent
-/// has crossed the map and the creature. It rests on one ordering assumption, which
-/// nothing but the first pong links: the connection takes what the test sent (the
-/// first pong is written after its tells to the map), so the map holds the
-/// connection's `Moved` before the test's `get_state` of the map; the map then
-/// holds nothing for the creature that is not already in the creature's mailbox
-/// (a local send lands at once), so the `get_state` of the creature follows its
-/// `Approached`; and the creature has queued what it tells the connection before
-/// the second ping, which the connection takes after it. The frames of both reads.
-fn read_after_the_map_and_the_creature_took_it(
-  game game: game_client.Game,
-  have have: BitArray,
-  started started: login_support.Started,
-  dagun dagun: Int,
-  pongs pongs: #(Int, Int),
-) -> #(List(Frame), BitArray) {
-  let #(first, have) =
-    game_client.read_until_pong(game:, have:, number: pongs.0)
-  let #(run, creature) = the_dagun_and_its_map(started:, dagun:)
-  let _map_took_it = system.get_state(run.pid)
-  let _creature_took_it = system.get_state(creature)
-  let #(second, have) =
-    game_client.read_until_pong(game:, have:, number: pongs.1)
-  #(list.append(first, second), have)
-}
-
 pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_stealth_again_inside_it_is_targeted_and_chased_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
   // A Stalker pressing its Stealth toggle, Spell4.46073: a first press enters stealth
@@ -1368,34 +1273,24 @@ pub fn a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_te
 // the world, else at the place the stay entered at (`death.server_choices`):
 // World 1387 holds no Novice start, so the place a new test character stands at.
 
-/// A world with one Dagun at x 1.5, z -20 whose blow is 100000: planted test
-/// data, since the Dagun's own 12 every 1500 ms takes some 400 ticks to kill a
-/// player of level 1, and the test is of the death and the coming back, not of the
-/// number. The fight's sequence is the client's as on the Dagun of
-/// `world_with_a_dagun`.
+/// A world with one Dagun whose blow is 100000: planted test data, since the Dagun's own 12
+/// every 1500 ms takes some 400 ticks to kill a player of level 1, and the test is of the
+/// death and the coming back, not of the number. The fight's sequence is the client's as on
+/// the Dagun of `world_with_a_dagun`.
 fn world_with_a_lethal_dagun(
   time time: driven_time.Time,
 ) -> login_support.Started {
-  let dagun =
-    spawn_support.spawn_dealing(
-      spawn: spawn_support.dagun(number: 1, x: 0.0),
-      damage: 100_000,
-    )
-  login_support.start_with(time:, change: fn(settings) {
-    server.Settings(
-      ..settings,
-      world: server.World(
-        ..settings.world,
-        spawns: spawn_support.key_in(
-          world_id: 1387,
-          spawns: [
-            spawn.Spawn(..dagun, place: beast_place(x: 1.5, z: dagun_z)),
-          ],
-          respawn_ms: 60_000,
-        ),
-      ),
-    )
-  })
+  world_with_a_dagun_on(
+    tables: character_tables.shared(),
+    blow: Some(100_000),
+    time:,
+  )
+}
+
+/// A world with one Dagun, its map's and creature's timers and the connections' on the clock
+/// `time`, so the Dagun's attack tick and home timer fire only when the test advances it.
+fn world_with_a_dagun(time time: driven_time.Time) -> login_support.Started {
+  world_with_a_dagun_on(tables: character_tables.shared(), blow: None, time:)
 }
 
 /// The player of the frames' 0x262 walks into the Dagun's ring, the Dagun's aggro
