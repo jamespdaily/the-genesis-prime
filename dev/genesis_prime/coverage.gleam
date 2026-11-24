@@ -23,6 +23,11 @@
 //// does not build. A character is granted each of them; a press of one is refused as an
 //// unknown spell.
 ////
+//// It then counts the equip spells of the worn items (genesis_prime/game/spell_plan
+//// `standing_plans`, `standing_unplanned`; genesis_prime/coverage/standing_root): how many
+//// are planned, which of those stand only in part, with the first row no cast plays, and
+//// which are left out, with the sentence that says what the server does not build.
+////
 //// It then lists what the server leaves undone that no other part prints, grouped by area, each
 //// module's own entries (`genesis_prime/coverage/gaps`); an entry with no area or sentence, a
 //// sentence with a change-log word, and an entry listed twice are breaches.
@@ -67,6 +72,7 @@ import genesis_prime/coverage/gaps
 import genesis_prime/coverage/item_use
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
 import genesis_prime/coverage/named_unreached
+import genesis_prime/coverage/standing_root
 import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
@@ -129,6 +135,8 @@ pub fn main() -> Nil {
       io.println(left_out)
       io.println("")
       io.println(later_abilities_report(tables:))
+      io.println("")
+      io.println(standing_root.report_of(tables:))
       io.println("")
       io.println(gaps.report())
       io.println("")

@@ -6,6 +6,7 @@
 //// ```
 //// SpellLevel (class, no prerequisite) ─▶ Spell4 (the ability) ─▶ Spell4Base
 //// Class (the first innate slot, genesis_prime/game/innate) ─▶ Spell4 (the innate's active and passive) ─▶ Spell4Base
+//// Item2 (takes a slot) ─▶ ItemSpecial.spell4IdOnEquip ─▶ Spell4 (the equip spell, genesis_prime/game/equip_spell)
 ////      Spell4Effects (spellId = the Spell4 id), each effect of type Proxy (26) ─▶ the Spell4 it names, as a child
 ////      Spell4Thresholds (parent = the Spell4 id), by order index ─▶ the Spell4 each tap or charge level casts, as a stage
 ////      SpellPhase (owner = a Multiphase Spell4) ─▶ the phase delays and flags, in row order
@@ -19,6 +20,12 @@
 ////   (`SpellLevel.spell4Id.no_prerequisite`) is planned too, and one whose error
 ////   `is_unbuilt` names is left out and listed by `unplanned`; any other error fails the
 ////   load. A press of a base with no plan is refused unknown (`cast_press.ability_at`).
+//// - **The equip spells.** The equip spell of each Item2 row that takes a slot
+////   (genesis_prime/game/equip_spell `roots`) is planned as a spell no ability holds, by Spell4
+////   id (`standing_plans`): the spells a worn item puts on its wearer. The same fold plans it or
+////   leaves it out as it does a later ability (`planned_or_left_out`): one whose error
+////   `is_unbuilt` names is listed by `standing_unplanned`, which is not `unplanned`, so the ability
+////   book and the later abilities' coverage line never name it; any other error fails the load.
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
 ////   Spell4Effects row in the place its spell is planned (`RowPlace`): in the effects of its
 ////   spell and applied by a go (`Applied`), in the effects and applied by none (`Held`: a
@@ -343,6 +350,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/equip_spell
 import genesis_prime/game/forced_move
 import genesis_prime/game/innate
 import genesis_prime/game/lasting
@@ -3096,7 +3104,7 @@ pub type Plans =
 /// What the plans' derivation holds: the plans of the level-1 abilities and the innates,
 /// and the same with each later ability of a class that the server can plan.
 type PlanSet {
-  PlanSet(starting: Plans, with_later: Plans)
+  PlanSet(starting: Plans, with_later: Plans, standing: Dict(Int, Spell))
 }
 
 const plans_key: table_store.DerivedKey(PlanSet) =
@@ -3202,7 +3210,9 @@ pub type Unplanned {
 /// derivation's body, and the function a test of a missing row or a cycle runs
 /// on planted tables.
 pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
-  use #(held, _) <- result.map(plan_all(tables:, checker: fn(_, _) { Ok(Nil) }))
+  use #(held, _, _) <- result.map(
+    plan_all(tables:, checker: fn(_, _) { Ok(Nil) }),
+  )
   held.starting
 }
 
@@ -3213,7 +3223,29 @@ pub fn unplanned(
   tables tables: table_store.Tables,
   area_checked area_checked: fn(table_store.Tables) -> Checker,
 ) -> Result(List(Unplanned), PlanError) {
-  use #(_, left_out) <- result.map(plan_all(
+  use #(_, left_out, _) <- result.map(plan_all(
+    tables:,
+    checker: area_checked(tables),
+  ))
+  left_out
+}
+
+/// The plan of each spell a worn item's equip spell root names, by Spell4 id
+/// (`equip_spell.roots`), which the player's standing casts start from. It is no ability: no
+/// press, bag or book holds it, so it is not among `plans_with_later`.
+pub fn standing_plans(tables tables: table_store.Tables) -> Dict(Int, Spell) {
+  table_store.derived(tables:, key: plans_key).standing
+}
+
+/// The equip spell roots the plans leave out, by the error that says what the server does
+/// not build (`is_unbuilt`); any other error fails the load (`build`). A worn item whose
+/// spell is here puts nothing on its wearer, and it is not one of the later abilities
+/// `unplanned` lists.
+pub fn standing_unplanned(
+  tables tables: table_store.Tables,
+  area_checked area_checked: fn(table_store.Tables) -> Checker,
+) -> Result(List(Unplanned), PlanError) {
+  use #(_, _, left_out) <- result.map(plan_all(
     tables:,
     checker: area_checked(tables),
   ))
@@ -3282,13 +3314,14 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
   }
 }
 
-/// The plans of every level-1 ability and innate, which fail the load on any error, and
-/// of every other class ability with no prerequisite, which a row `is_unbuilt` names is
-/// left out of, and listed.
+/// The plans of every level-1 ability and innate, which fail the load on any error, of
+/// every other class ability with no prerequisite, and of every worn item's equip spell
+/// (`equip_spell.roots`): each of those a row `is_unbuilt` names is left out of its plans
+/// and listed, the later abilities' list first and the equip spells' second.
 fn plan_all(
   tables tables: table_store.Tables,
   checker checker: Checker,
-) -> Result(#(PlanSet, List(Unplanned)), PlanError) {
+) -> Result(#(PlanSet, List(Unplanned), List(Unplanned)), PlanError) {
   let sources = sources_of(tables:)
   use held <- result.try(innate.held(tables:) |> result.map_error(InnateFailed))
   let rows = spell_level.all(tables)
@@ -3325,23 +3358,59 @@ fn plan_all(
       },
     ),
   )
-  use #(with_later, left_out) <- result.map(
-    list.try_fold(later, #(plans, []), fn(held, spell4_id) {
-      let #(plans, left_out) = held
+  use #(later_planned, left_out) <- result.try(planned_or_left_out(
+    tables:,
+    sources:,
+    checker:,
+    spell4_ids: later,
+  ))
+  use #(standing_planned, standing_left_out) <- result.map(planned_or_left_out(
+    tables:,
+    sources:,
+    checker:,
+    spell4_ids: equip_spell.roots(tables:),
+  ))
+  #(
+    PlanSet(
+      starting: plans,
+      with_later: list.fold(later_planned, plans, fn(plans, spell) {
+        plan_added(plans:, spell:)
+      }),
+      standing: dict.from_list(
+        list.map(standing_planned, fn(spell) { #(spell.spell4_id.value, spell) }),
+      ),
+    ),
+    left_out,
+    standing_left_out,
+  )
+}
+
+/// The plan of each of these spells that passes the checker, in order, and each that does
+/// not with the error that says why, when `is_unbuilt` names it; any other error is the
+/// result. The one fold every list of roots that may be left out is planned by.
+fn planned_or_left_out(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  checker checker: Checker,
+  spell4_ids spell4_ids: List(Int),
+) -> Result(#(List(Spell), List(Unplanned)), PlanError) {
+  use #(planned, left_out) <- result.map(
+    list.try_fold(spell4_ids, #([], []), fn(found, spell4_id) {
+      let #(planned, left_out) = found
       case
         ability_alone(tables:, sources:, spell4_id:)
         |> result.try(checked(_, checker:))
       {
-        Ok(spell) -> Ok(#(plan_added(plans:, spell:), left_out))
+        Ok(spell) -> Ok(#([spell, ..planned], left_out))
         Error(error) ->
           case is_unbuilt(error:) {
-            True -> Ok(#(plans, [Unplanned(spell4_id:, error:), ..left_out]))
+            True -> Ok(#(planned, [Unplanned(spell4_id:, error:), ..left_out]))
             False -> Error(error)
           }
       }
     }),
   )
-  #(PlanSet(starting: plans, with_later:), list.reverse(left_out))
+  #(list.reverse(planned), list.reverse(left_out))
 }
 
 /// The spell when every spell of its tree and of its alternate's tree passes the checker.

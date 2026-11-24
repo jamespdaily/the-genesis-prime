@@ -1569,3 +1569,8 @@ Creature2	11948	creature of TargetGroup 7288 or 1463, killed for objective 4564 
 Creature2	12844	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
 Creature2	13116	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
 Creature2	51126	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Item2	91747	Chua Tighty-Whitey Deflector (no level requirement, Item2Type 53, equip spell 82325)	spell_plan_standing_test, gear_test, world_entry_innate_test, game_connection_inventory_test
+Item2	85762	an Item2Type 53 item naming the same ItemSpecial 9402 (power level 116, required level 50)	spell_plan_standing_test, gear_test
+Item2	61522	(a worn item with a use spell 83572 and an equip spell 83570)	spell_plan_standing_test
+Item2	15588	(proxy flag 0x4000 with an equip spell 32599, refused by item_property.is_slotted)	spell_plan_standing_test
+ItemSpecial	3204	(an equip spell 4436 that no Item2 names)	spell_plan_standing_test

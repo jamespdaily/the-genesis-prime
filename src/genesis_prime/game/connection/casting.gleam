@@ -1015,9 +1015,9 @@ pub fn with_cast(
   })
 }
 
-/// The spells the player's standing casts should be, in the order they start, from every
-/// source that names one (the loadout's innate passive), each as its plan, and a warning
-/// for each source whose spell the plans lack, which is then left out of the list.
+/// The spell the player's standing casts should hold from the loadout's innate passive, as
+/// its plan, and a warning when the plans lack its Spell4Base, which leaves it out of the
+/// list.
 pub fn standing_wanted(
   entered entered: world_entry.Entered,
   plans plans: spell_plan.Plans,
@@ -1039,7 +1039,20 @@ pub fn standing_wanted(
   }
 }
 
-/// The player's standing casts made what `standing_wanted` lists: the cast rule starts each
+/// The spells the worn items' equip spells put on the player, in worn order, each as its
+/// plan from `equip_plans` (`spell_plan.standing_plans`), and the Spell4 ids of those the
+/// plans leave out, which the cast rule logs once (`cast.standing_unbuilt`).
+fn worn_wanted(
+  entered entered: world_entry.Entered,
+  equip_plans equip_plans: dict.Dict(Int, spell_plan.Spell),
+) -> #(List(spell_plan.Spell), List(Int)) {
+  let #(planned, left_out) =
+    list.partition(entered.gear.equip_spells, dict.has_key(equip_plans, _))
+  #(list.filter_map(planned, dict.get(equip_plans, _)), left_out)
+}
+
+/// The player's standing casts made what `standing_wanted` and `worn_wanted` list, the
+/// innate passive first: the cast rule logs each equip spell the plans leave out, starts each
 /// wanted spell that does not stand and ends each standing spell no longer wanted
 /// (`cast.standing_changed`), and its effects are carried out as any cast's are.
 pub fn standing_changed(
@@ -1048,19 +1061,26 @@ pub fn standing_changed(
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let assert Some(entered) = connection_state.entered_of(session.status)
     as "the standing spells change while the connection holds a player"
-  let #(wanted, warnings) =
+  let #(innate, warnings) =
     standing_wanted(entered:, plans: connection_state.plans_of(session:))
+  let #(worn, left_out) =
+    worn_wanted(
+      entered:,
+      equip_plans: spell_plan.standing_plans(session.settings.tables),
+    )
+  let #(logged, unbuilt) =
+    cast.standing_unbuilt(cast: entered.cast, spell4_ids: left_out)
   let #(changed, decided) =
     cast.standing_changed(
-      cast: entered.cast,
+      cast: logged,
       caster: caster_of(tables: session.settings.tables, entered:),
-      wanted:,
+      wanted: list.append(innate, worn),
       now:,
     )
   cast_effects(
     session: with_cast(session:, cast: changed),
     now:,
-    effects: list.append(warnings, decided),
+    effects: list.flatten([warnings, unbuilt, decided]),
   )
 }
 

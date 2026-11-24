@@ -30,7 +30,9 @@ import game_connection_support
 import genesis_prime/client_connection.{
   type Request, AskStore, FromMap, FromStore, LookChanged, PropertiesChanged,
 }
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/gear
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -42,6 +44,7 @@ import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/player_health
 import genesis_prime/message/send_chat_line.{SendChatLine}
+import genesis_prime/message/spell_started
 import genesis_prime/message/unit_item_visuals_changed
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty}
@@ -57,10 +60,13 @@ import genesis_prime/store.{
   ItemPlace, Items, ItemsNotSaved, ItemsSaved, MoveItems, SaveRefused, SplitItem,
 }
 import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{None, Some}
 import item_flags_support
 import owned_test
+import planted_table.{Integer}
+import vendor_support
 import world_entry_support
 
 /// A 0x182 of the chest piece from the worn slot 0 to inventory slot 0, as the
@@ -900,4 +906,223 @@ pub fn a_move_the_store_refuses_binds_nothing_and_sends_no_0x567_test() -> Nil {
     assert game_connection_support.ask_request(again) == asked
       as "the item is as it was held: the same equip asks the same bits"
   })
+}
+
+/// Item2 91747, the Chua Tighty-Whitey Deflector: Item2Type 53 (ItemSlot 43, ArmorShields: worn slot 15), requiredLevel 0 and
+/// no class, prerequisite or proficiency, so a level 1 player may wear it; its ItemSpecial 9402
+/// names the equip spell 82325, a shield-depleted Proc and no property modifier.
+const deflector = 91_747
+
+const deflector_spell = 82_325
+
+/// The deflector in inventory slot 0.
+fn deflector_in_the_bag() -> HeldItem {
+  HeldItem(
+    item_guid: 50,
+    item2_id: Item2Id(fixture_tables.root(table: "Item2", id: deflector)),
+    location: 1,
+    bag_index: 0,
+    stack_count: 1,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
+  )
+}
+
+/// The tests' Engineer in the world on these tables, wearing the Novice set but its shield
+/// and holding the deflector, a shield, in inventory slot 0.
+fn holding_the_deflector(
+  tables tables: table_store.Tables,
+) -> game_connection.State {
+  let character = game_connection_support.world_character()
+  let fresh =
+    game_connection_support.accepted(
+      Settings(..game_connection_support.settings(), tables:),
+    ).0
+  let #(state, taken) =
+    game_connection_support.joining_holding_items(
+      in_character_select: game_connection_support.in_select_from(fresh),
+      character:,
+      saved_health: None,
+      saved_experience: None,
+      quests: [],
+      items: list.append(
+        list.filter(world_entry_support.novice_items(character:), fn(item) {
+          item.bag_index != 15
+        }),
+        [deflector_in_the_bag()],
+      ),
+    )
+  game_connection_support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromMap(game_connection_support.map_answer(taken))),
+  ).0
+}
+
+/// A 0x182 of the deflector between inventory slot 0 and worn slot 15.
+fn deflector_moved(
+  from from: item_place.ItemPlace,
+  to to: item_place.ItemPlace,
+) -> BitArray {
+  game_connection_support.item_moved_message(from:, to:)
+}
+
+/// The cast id of each 0x7ff among the frames, in order.
+fn cast_ids_started(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == spell_started.message_id {
+      True -> {
+        let assert Ok(start) = spell_started.decode(frame.body)
+          as "a spell_started decodes"
+        Ok(start.cast_id)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// Each case: its tables, the frames an equip writes and the frames an unequip writes, as
+/// message ids. Both start with the move's 0x569 and the gear's 0x93a (no 0x933: the deflector
+/// is not drawn). An equip then starts the cast, 0x7ff and its go 0x7f4, and an unequip ends it,
+/// 0x7fe; a spell that holds a property modifier writes one more 0x93a of its own, at the start
+/// after the go and at the end before the 0x7fe.
+fn deflector_cases() -> List(
+  #(String, List(Int), List(Int), fn(fn(table_store.Tables) -> Nil) -> Nil),
+) {
+  [
+    #(
+      "a spell with a Proc row only (82325)",
+      [0x0569, 0x093A, 0x07FF, 0x07F4],
+      [0x0569, 0x093A, 0x07FE],
+      fn(body) { body(character_tables.shared()) },
+    ),
+    #(
+      "the spell also holding a property modifier (a copy of Spell4Effects 103997 with its value changed)",
+      [0x0569, 0x093A, 0x07FF, 0x07F4, 0x093A],
+      [0x0569, 0x093A, 0x093A, 0x07FE],
+      fn(body) {
+        fixture_tables.added(
+          table: "Spell4Effects",
+          copy_of: 103_997,
+          id: 500_001,
+          with: [
+            #("spellId", Integer(deflector_spell)),
+            #("dataBits02", Integer(1_069_547_520)),
+          ],
+          body:,
+        )
+      },
+    ),
+  ]
+}
+
+pub fn equipping_an_item_with_an_equip_spell_writes_its_0x7ff_after_the_gear_frames_and_unequipping_it_writes_its_0x7fe_after_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(deflector_cases(), fn(case_) {
+    let #(name, equip_ids, unequip_ids, with_tables) = case_
+    use tables <- with_tables
+    let slot = item_place.ItemPlace(location: 0, bag_index: 15)
+    let bag = item_place.ItemPlace(location: 1, bag_index: 0)
+    let #(state, equipped) =
+      saved_after(
+        state: holding_the_deflector(tables:),
+        message: deflector_moved(from: bag, to: slot),
+      )
+    assert game_connection_support.written_ids(equipped) == equip_ids
+      as {
+        name
+        <> ": the move's frame and the gear's properties come first (the equip is legal at level 1: Item2 91747 needs no level, class or proficiency; no look, since the deflector's ItemDisplaySourceEntry row 6029 names display 0), then the standing frames: the equip spell's 0x7ff and go (the server's order: no client fact needs the other, so it is `regeared`'s)"
+      }
+    assert game_connection_support.started_spells(
+        frames: game_connection_support.written(equipped),
+      )
+      == [deflector_spell]
+      as { name <> ": the equip spell is the one cast the equip starts" }
+    let #(state, unequipped) =
+      saved_after(state:, message: deflector_moved(from: slot, to: bag))
+    assert game_connection_support.written_ids(unequipped) == unequip_ids
+      as {
+        name
+        <> ": an unequip writes the move's frame and the gear's properties first, then its own 0x93a when the spell held a modifier and the 0x7fe of the equip spell's cast"
+      }
+    let #(_, again) =
+      saved_after(state:, message: deflector_moved(from: bag, to: slot))
+    let first_cast =
+      cast_ids_started(frames: game_connection_support.written(equipped))
+    assert cast_ids_started(frames: game_connection_support.written(again))
+      != first_cast
+      as { name <> ": a second equip starts a new cast" }
+  })
+}
+
+/// Item2 61522, an ArmorGadget (ItemSlot 46, worn slot 11): its ItemSpecial 9565 names the
+/// equip spell 83570 and the use spell 83572. Its `maxCharges` is 0, as every one of the six
+/// worn items that hold both a use spell and an equip spell (61522, 61712, 61720, 61723,
+/// 61728, 90288) has, so no row spends a charge of a worn item and the spend path of
+/// `regeared` has no real row to run on.
+const gadget = 61_522
+
+/// A sale takes the worn item out of the held items and calls `inventory.regeared` as an
+/// unequip does, so the equip spell ends with its 0x7fe after the sale's own frames, the
+/// look and the properties.
+pub fn selling_a_worn_item_ends_its_equip_spell_through_the_same_function_as_an_unequip_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let words =
+    store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    )
+  let worn =
+    HeldItem(
+      item_guid: 60,
+      item2_id: Item2Id(fixture_tables.root(table: "Item2", id: gadget)),
+      location: 0,
+      bag_index: 11,
+      stack_count: 1,
+      words:,
+    )
+  let state =
+    vendor_support.at_the_vendor(
+      state: game_connection_support.in_world_stocking_holding(
+        vendors: vendor_support.stocking(creature_ids: [74_812]),
+        credits: 100,
+        items: [worn],
+      ),
+    )
+  let #(state, taken) =
+    game_connection_support.sale_requested(
+      state:,
+      place: item_place.ItemPlace(location: 0, bag_index: 11),
+      quantity: 1,
+    )
+  let assert AskStore(Items(store.SellToVendor(after:, ..))) =
+    game_connection_support.ask_request(taken)
+    as "the sale of the worn gadget asks the store"
+  let #(_, sold) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForItems(
+            store.Sold(amount: after, words: [
+              store.SoldWord(item_guid: 60, words:),
+            ]),
+          ),
+        ),
+      ),
+    )
+  let ids = game_connection_support.written_ids(sold)
+  assert list.take(ids, 3) == [0x0919, 0x00DD, 0x0148]
+    as "the sale's own frames come first: the credits, the gain, the item's removal"
+  assert list.last(ids) == Ok(0x07FE)
+    as "the equip spell's cast ends with its 0x7fe, after the sale's frames and the gear's"
+  assert list.count(ids, fn(id) { id == 0x07FE }) == 1
+    as "once, for the one standing cast the gadget put on the player"
 }

@@ -285,6 +285,73 @@ fn errors() -> List(#(PlanError, Bool)) {
   ]
 }
 
+/// A list of roots the plan folds over, and the edits that give one root a plan error of
+/// each kind: its list of the roots left out, an unbuilt reason (a cost type no check was
+/// read for, `UnreadCost`) and a fault of the data (a row the table lacks).
+type FoldCase {
+  FoldCase(
+    list: String,
+    spell4_id: Int,
+    left_out: fn(table_store.Tables) -> List(spell_plan.Unplanned),
+    planned: fn(table_store.Tables) -> Bool,
+    unbuilt: List(#(String, Int, List(#(String, Cell)))),
+    faulted: List(#(String, Int, List(#(String, Cell)))),
+    names: List(String),
+  )
+}
+
+/// The later abilities (SpellLevel 929's Spell4 57694) and the standing roots (Item2 91747's
+/// equip spell 82325, through ItemSpecial 9402), which share one fold.
+fn fold_cases() -> List(FoldCase) {
+  let cost = [
+    #("innateCostType0", Integer(2)),
+    #("innateCost0", Integer(10)),
+  ]
+  [
+    FoldCase(
+      list: "the later abilities",
+      spell4_id: later_spell,
+      left_out: fn(tables) {
+        let assert Ok(left_out) =
+          spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+        left_out
+      },
+      planned: fn(tables) {
+        dict.has_key(spell_plan.plans_with_later(tables), 37_245)
+      },
+      unbuilt: [#("Spell4", later_spell, cost)],
+      faulted: [
+        #("Spell4", later_spell, [
+          #("spell4AoeTargetConstraintsId", Integer(999_999)),
+        ]),
+      ],
+      names: ["Spell4AoeTargetConstraints", "999999"],
+    ),
+    FoldCase(
+      list: "the standing roots",
+      spell4_id: 82_325,
+      left_out: fn(tables) {
+        let assert Ok(left_out) =
+          spell_plan.standing_unplanned(
+            tables:,
+            area_checked: spell_area.checker,
+          )
+        left_out
+      },
+      planned: fn(tables) {
+        dict.has_key(spell_plan.standing_plans(tables), 82_325)
+      },
+      unbuilt: [#("Spell4", 82_325, cost)],
+      faulted: [
+        #("Spell4", 82_325, [
+          #("spell4AoeTargetConstraintsId", Integer(999_999)),
+        ]),
+      ],
+      names: ["Spell4AoeTargetConstraints", "999999"],
+    ),
+  ]
+}
+
 pub fn every_plan_error_is_a_skip_or_a_load_failure_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(errors(), fn(case_) {
@@ -297,6 +364,42 @@ pub fn every_plan_error_is_a_skip_or_a_load_failure_test() -> Nil {
           False -> " is a missing row or a fault of the data: the load fails"
         }
       }
+  })
+  // Both lists of roots go through one fold, whose skip half is this test's: an error
+  // `is_unbuilt` names leaves the root out and lists it.
+  list.each(fold_cases(), fn(case_) {
+    let assert Ok(tables) = loaded(added: [], changed: case_.unbuilt)
+      as { case_.list <> ": an unread cost does not fail the load" }
+    assert list.any(case_.left_out(tables), fn(one) {
+      one.spell4_id == case_.spell4_id
+      && one.error
+      == spell_plan.UnreadCost(spell4_id: case_.spell4_id, cost_type: 2)
+    })
+      as { case_.list <> ": the root is left out, listed with its error" }
+  })
+}
+
+/// The fold's load-failure half, for both lists, and each list's roots split into planned and
+/// left out with no root in both lists.
+pub fn the_shared_fold_plans_or_leaves_out_a_list_of_roots_as_the_later_abilities_do_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(fold_cases(), fn(case_) {
+    let sentence = refusal(loaded: loaded(added: [], changed: case_.faulted))
+    assert sentence != ""
+      as {
+        case_.list <> ": any other error than the unbuilt ones fails the load"
+      }
+    assert list.all(case_.names, string.contains(sentence, _))
+      as { case_.list <> ": the failure names the row: " <> sentence }
+    let assert Ok(tables) = loaded(added: [], changed: [])
+      as { case_.list <> ": the committed rows load" }
+    let left_out = list.map(case_.left_out(tables), fn(one) { one.spell4_id })
+    assert !list.contains(left_out, case_.spell4_id)
+      as {
+        case_.list
+        <> ": a root that plans is not in the list of the roots left out"
+      }
+    assert case_.planned(tables) as { case_.list <> ": and it holds its plan" }
   })
 }
 

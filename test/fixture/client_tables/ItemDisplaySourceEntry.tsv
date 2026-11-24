@@ -731,3 +731,4 @@ ID	itemSourceId	item2TypeId	itemMinLevel	itemMaxLevel	itemDisplayId	icon
 6499	23	440	5	999	0	IconSprites:Icon_RunesWarrior_Icon_Rune_Set_Warrior_Lightning
 6500	23	441	5	999	0	IconSprites:Icon_RunesWarrior_Icon_Rune_Set_Warrior_Genetic
 6641	128	215	1	999	0	IconSprites:Icon_ItemMisc_Gadget_04
+6642	129	215	1	999	0	IconSprites:Icon_ItemMisc_Gadget_05

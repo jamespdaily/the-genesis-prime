@@ -67,7 +67,7 @@
 //// - **A unit that leaves the caster's sight** takes its nodes with it on the client
 ////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
 ////   ends with its 0x7fe (`unit_removed`).
-//// - **A standing spell** (the innate passive is the first) is a cast the client never makes:
+//// - **A standing spell** (the innate passive, then the worn items' equip spells) is a cast the client never makes:
 ////   `cast.standing_changed` starts it at each join with a 0x7ff and no 0x7fd, as `Passive`, which starts no global
 ////   cooldown, is never the current cast, opens no threshold and runs no check of the
 ////   caster. Its go runs as any cast's, and the cast lingers with no 0x7fe, even when
@@ -576,7 +576,7 @@ pub fn procs_held(
         level: LogDebug,
         text: "the Proc effect "
           <> int.to_string(row.effect_id.value)
-          <> " of kind 0 is held by a cast that is not the innate passive, which a death ends before the proc is matched, so it is not held",
+          <> " of kind 0 is held by a cast that is not a standing cast, which a death ends before the proc is matched, so it is not held",
       )
     }),
   )
