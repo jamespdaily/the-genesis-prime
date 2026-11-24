@@ -5,11 +5,11 @@
 ////
 //// ```
 //// caster's connection C                                holder's connection T
-////   Tell(T, TellPlayerChange(stay_T, PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect)))
+////   Tell(T, TellPlayer(stay_T, Change(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
 ////                                  ─▶ started(by: C, source, .., spell4_id, effect)
-////   Tell(T, TellPlayerChange(stay_T, PlayerChangeEnds(C, source)))
+////   Tell(T, TellPlayer(stay_T, Change(PlayerChangeEnds(C, source))))
 ////                                  ─▶ released(source)
-////   Tell(T, TellPlayerChange(stay_T, PlayerCastWent(C, cast_id, audience)))
+////   Tell(T, TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id, audience))))
 ////                                  ─▶ holds_cast_from(cast_id, C), cast_views(T's unit, now)
 ////   the map's UnseenBy(C)          ─▶ released_unseen(C): the sources with `EndsWhenUnseen`
 ////   the map's Gone(C's unit)       ─▶ released_with_unit(unit): every source of that unit
@@ -72,7 +72,7 @@ pub fn sight_of(outlives_caster outlives_caster: Bool) -> Sight {
 }
 
 /// What a caster's connection tells the connection of another player, for the stay of
-/// that player (genesis_prime/client_connection `TellPlayerChange`).
+/// that player (genesis_prime/client_connection `PlayerTell.Change`).
 pub type PlayerChange {
   /// The change `change` of the cast `source` names is put on the player. `from` is the
   /// caster's connection and `from_stay` its stay, which the player holds the change

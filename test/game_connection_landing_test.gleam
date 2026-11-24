@@ -125,9 +125,9 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
     == Ok(
       OwnEffect(step.Tell(
         to: step.Connection(connection: ConnectionId(3)),
-        request: client_connection.TellPlayerAnswer(
+        request: client_connection.TellPlayer(
           stay: support.viewer_stay(3),
-          answered:,
+          tell: client_connection.Answer(answered:),
         ),
       )),
     )
@@ -193,7 +193,7 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
       state: hurt,
       event: support.for_stay(
         stay: support.own_stay(),
-        sent: client_connection.SentByStriker(
+        sent: client_connection.SentByPlayer(tell: client_connection.Strike(
           strike: strike_tell.PlayerStrike(
             ..strike_support.heal_strike(
               from: ConnectionId(5),
@@ -212,7 +212,7 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
               ),
             ],
           ),
-        ),
+        )),
       ),
     )
   assert support.player_answers(ticked)

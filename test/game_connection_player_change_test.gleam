@@ -1,19 +1,19 @@
 //// What the caster's game connection does with the changes its cast rule tells another
 //// player (`genesis_prime/game/connection/casting` `cast_effects`): it tells the connection
-//// of that player, for the stay the cast's address names, `TellPlayerChange` with its own
+//// of that player, for the stay the cast's address names, `TellPlayer` of a `Change` with its own
 //// connection and stay as the caster, and writes nothing to its own client. The
 //// shell decides nothing: the rule chose the change, the source and whether it outlives
 //// sight. Expected values come from these places.
 //// - `genesis_prime/game/held_changes`: a start names the caster's connection and stay
 ////   (`from`, `from_stay`), which the player holds the change against; an end names the
 ////   caster's connection and the source.
-//// - `genesis_prime/client_connection` `TellPlayerChange(stay, change)`: the stay is the
+//// - `genesis_prime/client_connection` `TellPlayer(stay, Change(change))`: the stay is the
 ////   player's, from the address the go used (the map's `SeenBy`).
 //// - The caster is the tests' connection 1 in the stay `world_entry_support` gives its
 ////   `Entered`; the ally is connection 2 in the stay `map_support.stay(count: 2)`.
 
 import game_connection_support as support
-import genesis_prime/client_connection.{TellPlayerChange}
+import genesis_prime/client_connection.{TellPlayer}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/effects as connection_effects
@@ -104,7 +104,10 @@ fn told_to_the_ally(
 ) -> Effect(step.ConnectionEffect(client_connection.Request)) {
   OwnEffect(step.Tell(
     to: step.Connection(connection: address().connection),
-    request: TellPlayerChange(stay: address().stay, change:),
+    request: TellPlayer(
+      stay: address().stay,
+      tell: client_connection.Change(change:),
+    ),
   ))
 }
 
