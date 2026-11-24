@@ -293,13 +293,28 @@ fn hurt_at(x x: Float, z z: Float, missing missing: Int) -> shown.Shown {
 
 /// The areas of the fixture's rows with Emission's heal row 141384 aimed at the area alone
 /// (targetFlags 4, as Dual Fire's rows 84876 and 126516 are) and its area row 662 ordered by
-/// missing health (targetSelection 5) taking 4 units, built as the load builds them.
-fn emission_by_health_at_the_area_alone() -> spell_area.Areas {
+/// missing health (targetSelection 5) taking `count` units, built as the load builds them.
+fn emission_by_health_at_the_area_alone(count count: Int) -> spell_area.Areas {
+  emission_by_health(flags: 4, count:, min_range: 0.0)
+}
+
+/// The areas of the fixture's rows with Emission's heal row 141384 of the targetFlags `flags`
+/// and its area row 662 ordered by missing health (targetSelection 5), taking `count` units
+/// from `min_range` metres, built as the load builds them.
+fn emission_by_health(
+  flags flags: Int,
+  count count: Int,
+  min_range min_range: Float,
+) -> spell_area.Areas {
   fixture_tables.changes(
     edits: [
-      #("Spell4Effects", 141_384, [#("targetFlags", planted_table.Integer(4))]),
+      #("Spell4Effects", 141_384, [
+        #("targetFlags", planted_table.Integer(flags)),
+      ]),
       #("Spell4AoeTargetConstraints", 662, [
         #("targetSelection", planted_table.Integer(5)),
+        #("targetCount", planted_table.Integer(count)),
+        #("minRange", planted_table.Float(min_range)),
       ]),
     ],
     body: fn(tables) {
@@ -328,6 +343,54 @@ fn emission_areas(
       row: Some(area.Row(..row, order:, target_count: count)),
     ),
   )
+}
+
+/// The fixture's areas with Emission's rows (Spell4 58841: its heal row 141384 of targetFlags 5
+/// and its area row 662 ordered Closest) made to start Mental Boon's child 33258 on each unit its
+/// area selects: the heal row itself turned into a Proxy at the area alone, or, with `heal_too`,
+/// the heal row kept and a copy of it turned into that Proxy (row 900501). The area takes `count`
+/// units. Emission's channel is cut to one pulse (channelMaxTime equal to channelInitialDelay),
+/// since a Proxy at the area that fires at several gos is refused (`ProxyOnEachAllyAtSeveralGos`).
+/// The edits stand in for no client row; they are the shape of Sentinel 54395 (a Proxy and no
+/// heal) and of a phase that holds both.
+fn emission_proxying(
+  heal_too heal_too: Bool,
+  count count: Int,
+) -> spell_area.Areas {
+  let as_proxy = [
+    #("effectType", planted_table.Integer(26)),
+    #("targetFlags", planted_table.Integer(4)),
+    #("dataBits00", planted_table.Integer(33_258)),
+  ]
+  let assert Ok(rows) = case heal_too {
+    True ->
+      fixture_tables.add(
+        rows: fixture_tables.rows(),
+        table: "Spell4Effects",
+        copy_of: 141_384,
+        id: 900_501,
+        with: as_proxy,
+      )
+    False -> Ok(fixture_tables.rows())
+  }
+    as "the heal row 141384 is in the fixture"
+  let assert Ok(rows) =
+    fixture_tables.change_all(rows:, edits: [
+      #("Spell4", 58_841, [#("channelMaxTime", planted_table.Integer(410))]),
+      #("Spell4AoeTargetConstraints", 662, [
+        #("targetCount", planted_table.Integer(count)),
+      ]),
+      ..case heal_too {
+        True -> []
+        False -> [#("Spell4Effects", 141_384, as_proxy)]
+      }
+    ])
+    as "the edits name rows and columns the fixture holds"
+  fixture_tables.on_rows(rows:, reaching: [], body: fn(tables) {
+    let assert Ok(areas) = spell_area.build(tables:)
+      as "the edited rows build their areas"
+    areas
+  })
 }
 
 type AllyRow {
@@ -444,14 +507,14 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
         [32],
       ),
       AllyRow(
-        "a heal row aimed at the area alone (targetFlags 4, as Dual Fire's) by missing health: the other allies, most injured first, and not the caster, whose place among the candidates is not built",
-        emission_by_health_at_the_area_alone(),
+        "a heal row aimed at the area alone (targetFlags 4, as Dual Fire's) by missing health, count 2: the two allies missing the most, the most first (the caster's own place among the candidates is the next test's)",
+        emission_by_health_at_the_area_alone(count: 2),
         [
-          #(7, hurt_at(x: 0.0, z: 0.0, missing: 4000)),
-          #(32, hurt_at(x: 0.0, z: -4.0, missing: 200)),
-          #(33, hurt_at(x: 0.0, z: -7.0, missing: 800)),
+          #(32, hurt_at(x: 0.0, z: -4.0, missing: 4000)),
+          #(33, hurt_at(x: 0.0, z: -7.0, missing: 4800)),
+          #(34, hurt_at(x: 0.0, z: -9.0, missing: 100)),
         ],
-        [7, 32, 33],
+        [32, 33, 34],
         [33, 32],
       ),
     ],
@@ -473,6 +536,104 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
         as "no creature is selected by a friendly area, and a player is no creature a strike is told to"
     },
   )
+  // A phase that starts a child on each ally it selects (a Proxy at the area, the shape of
+  // Sentinel's and Affinity's rows) selects the allies in the area's order, from the players
+  // the caster has an address for, and answers each at once as a hit: no tell, no roll, no
+  // seed byte. A heal row beside it tells the allies that pass its gate and the Proxy hits
+  // the rest.
+  let beside = dict.from_list(three)
+  let proxied_by = fn(areas, sight) {
+    let attacker =
+      healer(sight: list.map(sight, fn(unit_id) { ally(unit_id:) }))
+    let selection =
+      strike.select(
+        asked: go(primary_target: 7, spell4_id: 58_841),
+        attacker:,
+        picture: beside,
+        areas:,
+        now_ms: 1000,
+      )
+    #(attacker, selection)
+  }
+  let only_proxy = emission_proxying(heal_too: False, count: 2)
+  let #(attacker, selection) = proxied_by(only_proxy, [31, 32, 33])
+  assert list.map(selection.players, fn(address) { address.unit_id })
+    == [32, 33]
+    as "a Proxy at the area and no heal row: the two nearest allies, in the area's order"
+  assert selection.starts_children && selection.heals == []
+    as "the phase starts children and tells no heal"
+  assert strike.entropy_needed(selection:) == 0
+    as "an ally selected for a Proxy takes no seed byte"
+  let #(opened, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection:,
+      attacker:,
+      formulas: rating_support.formulas(),
+      entropy: <<>>,
+      gate: strike_support.passes_all(),
+      now: at(ms: 1000),
+    )
+  assert strike_support.players_told(effects:) == []
+    && strike_support.creatures_told(effects:) == []
+    as "no ally is told anything for the selection"
+  let assert [#(_, struck, _)] = strike_support.rounds_closed(effects:)
+    as "the round has nothing to wait for and closes at once"
+  assert struck
+    == [hit_of(unit_id: 32, heals: []), hit_of(unit_id: 33, heals: [])]
+    as "each ally is answered as a hit with no heal landed, in the area's order"
+  assert opened == strike.new() as "no round stays open"
+  let #(_, selection) = proxied_by(only_proxy, [31, 33])
+  assert list.map(selection.players, fn(address) { address.unit_id })
+    == [33, 31]
+    as "the nearest ally has no address in the caster's sight: it is out, and the count goes to the next"
+  let #(attacker, selection) =
+    proxied_by(emission_proxying(heal_too: True, count: 2), [32, 33])
+  let refuses_33 = fn(_, side, _, rolls) {
+    case side {
+      cast_state.UnitSide(unit_id: 33) -> #(cast_state.GateFails, rolls)
+      cast_state.UnitSide(..) | cast_state.CasterSide -> #(
+        cast_state.Starts,
+        rolls,
+      )
+    }
+  }
+  let #(state, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection:,
+      attacker:,
+      formulas: rating_support.formulas(),
+      entropy: zeros(units: []),
+      gate: refuses_33,
+      now: at(ms: 1000),
+    )
+  assert list.map(strike_support.players_told(effects:), fn(told) {
+      { told.0 }.unit_id
+    })
+    == [32]
+    as "the heal is told to the ally that passes its gate alone"
+  let #(_, effects) =
+    strike.player_answered(
+      strike: state,
+      answer: PlayerAnswered(
+        key: strike_tell.Key(
+          cast_id: 5,
+          occasion: strike_tell.AtGo(phase: 0),
+          unit_id: 32,
+        ),
+        outcome: HealsLanded(heals: [first_heal()]),
+      ),
+      now: at(ms: 1001),
+    )
+  let assert [#(_, struck, _)] = strike_support.rounds_closed(effects:)
+    as "the ally's answer closes the round"
+  assert struck
+    == [
+      hit_of(unit_id: 32, heals: [first_heal()]),
+      hit_of(unit_id: 33, heals: []),
+    ]
+    as "the ally the heal's gate refused is a hit, for the Proxy, with no heal"
   let kick =
     strike.select(
       asked: go(primary_target: 7, spell4_id: 58_591),
@@ -498,12 +659,322 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
     as "the control: the same picture gives Kick's area the creature 20, so the case above is a friendly area's choice"
 }
 
+type CasterRow {
+  CasterRow(
+    reason: String,
+    areas: spell_area.Areas,
+    caster_missing: Int,
+    picture: List(#(Int, shown.Shown)),
+    selected: List(Int),
+  )
+}
+
+/// A heal row aimed at the area alone (targetFlags 4) does not name the caster, so the
+/// caster is one of the candidates of the area, at distance 0 from its centre and with no
+/// shape test (Jim's decision on 2026-11-23; the text 195454 of Triage reads "yourself or an
+/// ally based on who has the lowest health", and Spell4 27972 "ST smart heal"), ranked by the
+/// health it misses from the vitals it holds, as an ally is. A row that names the caster
+/// (targetFlags 5 and 7, as Crisis Wave's) heals it by its flag, and a row aimed at the primary
+/// target and the area (flags 6) reaches it as the primary target of a spell on itself, so in
+/// both the area finds the others only. The caster stands at the centre of Emission's cone,
+/// which its 1.2 m hit radius reaches from 1 m ahead, so only the row whose area starts 5 m
+/// out (Spell4AoeTargetConstraints 662 edited to minRange 5) puts it outside the hit shape,
+/// as it does the ally 2 m ahead. A caster at full health among allies at full health is taken
+/// first (distance 0, the first guess marked in `area`).
+pub fn a_heal_row_aimed_at_the_area_alone_takes_the_caster_as_a_candidate_by_its_missing_health_and_a_row_that_names_the_caster_does_not_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let full = fn(x, z) { hurt_at(x:, z:, missing: 0) }
+  list.each(
+    [
+      CasterRow(
+        "the caster misses the most, count 1: it is selected and no ally is",
+        emission_by_health_at_the_area_alone(count: 1),
+        4000,
+        [#(32, hurt_at(x: 0.0, z: -4.0, missing: 800))],
+        [7],
+      ),
+      CasterRow(
+        "an ally misses more than the caster, count 1: the ally is selected, not the caster",
+        emission_by_health_at_the_area_alone(count: 1),
+        200,
+        [#(32, hurt_at(x: 0.0, z: -4.0, missing: 900))],
+        [32],
+      ),
+      CasterRow(
+        "equal missing health, count 1: the caster first, at distance 0",
+        emission_by_health_at_the_area_alone(count: 1),
+        500,
+        [#(32, hurt_at(x: 0.0, z: -4.0, missing: 500))],
+        [7],
+      ),
+      CasterRow(
+        "count 2: the caster and the ally missing the most, in the order of their missing health",
+        emission_by_health_at_the_area_alone(count: 2),
+        500,
+        [
+          #(32, hurt_at(x: 0.0, z: -4.0, missing: 100)),
+          #(33, hurt_at(x: 0.0, z: -7.0, missing: 800)),
+        ],
+        [33, 7],
+      ),
+      CasterRow(
+        "count 2: an ally behind the caster, outside the cone, is not selected whatever it misses, and the caster standing outside the cone still is",
+        emission_by_health_at_the_area_alone(count: 2),
+        20,
+        [
+          #(32, hurt_at(x: 0.0, z: -4.0, missing: 10)),
+          #(35, hurt_at(x: 0.0, z: 6.0, missing: 4999)),
+        ],
+        [7, 32],
+      ),
+      CasterRow(
+        "an area that starts 5 m out leaves the caster, at its centre, outside the hit shape, and the ally 2 m ahead: the caster is still a candidate, the ally in range is selected, and the ally 2 m ahead is not whatever it misses",
+        emission_by_health(flags: 4, count: 2, min_range: 5.0),
+        4000,
+        [
+          #(32, hurt_at(x: 0.0, z: -2.0, missing: 4999)),
+          #(33, hurt_at(x: 0.0, z: -7.0, missing: 800)),
+        ],
+        [7, 33],
+      ),
+      CasterRow(
+        "a row aimed at the primary target and the area (targetFlags 6), the caster missing the most, count 1: the area finds the ally, never the caster, which the go reaches as the primary target of a spell on itself",
+        emission_by_health(flags: 6, count: 1, min_range: 0.0),
+        4000,
+        [#(32, hurt_at(x: 0.0, z: -4.0, missing: 800))],
+        [32],
+      ),
+      CasterRow(
+        "the caster and every ally at full health, count 1: the caster, at distance 0 (a guess: the client names no order)",
+        emission_by_health_at_the_area_alone(count: 1),
+        0,
+        [#(32, full(0.0, -4.0)), #(33, full(0.0, -7.0))],
+        [7],
+      ),
+      CasterRow(
+        "a row that names the caster (Emission's heal row, targetFlags 5), the caster missing the most, count 2: the two allies missing the most, never the caster",
+        emission_areas(order: area.MissingMostHealth, count: 2),
+        4000,
+        [
+          #(32, hurt_at(x: 0.0, z: -4.0, missing: 100)),
+          #(33, hurt_at(x: 0.0, z: -7.0, missing: 800)),
+          #(34, hurt_at(x: 0.0, z: -9.0, missing: 300)),
+        ],
+        [33, 34],
+      ),
+    ],
+    fn(row) {
+      let ids = list.map(row.picture, fn(entry) { entry.0 })
+      let attacker =
+        healer(sight: list.map(ids, fn(unit_id) { ally(unit_id:) }))
+      let selection =
+        strike.select(
+          asked: go(primary_target: 7, spell4_id: 58_841),
+          attacker: strike.Attacker(
+            ..attacker,
+            vitals: damage.Vitals(
+              health: player_state_support.full_health - row.caster_missing,
+              max_health: player_state_support.full_health,
+              shield: 0,
+              max_shield: 0,
+            ),
+          ),
+          picture: dict.from_list(row.picture),
+          areas: row.areas,
+          now_ms: 1000,
+        )
+      assert selection.area == row.selected as row.reason
+      assert list.map(selection.players, fn(address) { address.unit_id })
+        == row.selected
+        as row.reason
+      assert selection.heals != []
+        as "the phase's heal rows are told whenever the area selected a player"
+    },
+  )
+}
+
+/// The areas with Emission's hit placed on the unit the cast is on, as Warden's child's is,
+/// where the fixture places it on the caster.
+fn emission_on_its_target(areas areas: spell_area.Areas) -> spell_area.Areas {
+  let assert Ok(emission) = dict.get(areas, 58_841)
+    as "Emission is in the areas"
+  dict.insert(
+    areas,
+    58_841,
+    spell_area.SpellArea(..emission, anchor: area.FollowsTarget),
+  )
+}
+
+/// What `strike.select` of the spell selects for a cast on `primary_target`, by a caster at the
+/// origin missing `caster_missing` health, with every unit of the picture in its sight.
+fn selected_around(
+  areas areas: spell_area.Areas,
+  spell4_id spell4_id: Int,
+  primary_target primary_target: Int,
+  caster_missing caster_missing: Int,
+  picture picture: List(#(Int, shown.Shown)),
+) -> Selection {
+  let ids = list.map(picture, fn(entry) { entry.0 })
+  let attacker = healer(sight: list.map(ids, fn(unit_id) { ally(unit_id:) }))
+  strike.select(
+    asked: go(primary_target:, spell4_id:),
+    attacker: strike.Attacker(
+      ..attacker,
+      vitals: damage.Vitals(
+        health: player_state_support.full_health - caster_missing,
+        max_health: player_state_support.full_health,
+        shield: 0,
+        max_shield: 0,
+      ),
+    ),
+    picture: dict.from_list(picture),
+    areas:,
+    now_ms: 1000,
+  )
+}
+
+type AllyCentreRow {
+  AllyCentreRow(
+    reason: String,
+    caster_missing: Int,
+    picture: List(#(Int, shown.Shown)),
+    selected: List(Int),
+  )
+}
+
+/// A child cast on an ally centres its area on that ally, where the picture puts it
+/// (`shown.strike_centre_of`), so the caster, which stands at distance 0 only in an area
+/// centred on itself, is one candidate of the area like any ally: the area's own shape tests it
+/// from where it stands. Warden's child 36660 (Spell4Effects 76991, a heal of targetFlags 4 at
+/// the area 766: order 5, 5 targets, a circle of 12 m, TelegraphDamage 1244 on the cast's
+/// target; text 246578: "nearby allies" of "the most injured ally") is cast on the ally 31
+/// by its parent's Proxy. Emission's rows stand in for the two cases Warden's do not hold: its
+/// area placed on the target as Warden's is, with the caster 8 m from the ally inside its cone,
+/// a heal of flags 4 selects the caster and one of flags 5, which names it, never does; and its
+/// area on the caster, as the fixture's is, stays centred on the caster whoever the child is
+/// cast on, so the caster is found at distance 0 beside the allies of the caster's own cone.
+pub fn a_child_cast_on_an_ally_selects_its_area_around_that_ally_and_the_caster_is_a_candidate_only_inside_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let warden_child = 36_660
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let assert Ok(warden) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(warden_child))
+    as "Warden's child is in the areas, since Warden is planned"
+  let assert Some(row) = warden.row as "Warden's child has an area row"
+  assert row
+    == area.Row(
+      min_range: 0.0,
+      max_range: 12.0,
+      degrees: row.degrees,
+      target_count: 5,
+      order: area.MissingMostHealth,
+    )
+    as "Spell4AoeTargetConstraints 766 takes 5 units of 12 m, by missing health"
+  list.each(
+    [
+      AllyCentreRow(
+        "the allies within 12 m of the ally, by missing health, the ally itself among them; the ally 9 m past the edge is not",
+        0,
+        [
+          #(31, hurt_at(x: 30.0, z: 0.0, missing: 100)),
+          #(32, hurt_at(x: 30.0, z: 8.0, missing: 500)),
+          #(33, hurt_at(x: 30.0, z: -5.0, missing: 900)),
+          #(34, hurt_at(x: 30.0, z: 11.0, missing: 300)),
+          #(35, hurt_at(x: 30.0, z: 21.0, missing: 4999)),
+        ],
+        [33, 32, 34, 31],
+      ),
+      AllyCentreRow(
+        "an ally 10 m from the caster and 20 m from the ally is not selected, whatever it misses",
+        0,
+        [
+          #(31, hurt_at(x: 30.0, z: 0.0, missing: 100)),
+          #(35, hurt_at(x: 10.0, z: 0.0, missing: 4000)),
+        ],
+        [31],
+      ),
+      AllyCentreRow(
+        "the caster 8 m from the ally and missing the most is selected, first",
+        4000,
+        [#(31, hurt_at(x: 8.0, z: 0.0, missing: 100))],
+        [7, 31],
+      ),
+      AllyCentreRow(
+        "the caster 20 m from the ally and missing the most is not selected: it stands at distance 0 only in an area centred on itself",
+        4000,
+        [#(31, hurt_at(x: 20.0, z: 0.0, missing: 100))],
+        [31],
+      ),
+    ],
+    fn(row) {
+      let selection =
+        selected_around(
+          areas:,
+          spell4_id: warden_child,
+          primary_target: 31,
+          caster_missing: row.caster_missing,
+          picture: row.picture,
+        )
+      assert selection.area == row.selected as row.reason
+      assert list.map(selection.players, fn(address) { address.unit_id })
+        == row.selected
+        as row.reason
+    },
+  )
+  // The caster is 8 m ahead of the ally 31 (ahead is toward -z), inside Emission's cone of 1 to
+  // 15 m, and the ally 33 is 6 m ahead of it.
+  let near_caster = [
+    #(31, hurt_at(x: 0.0, z: 8.0, missing: 100)),
+    #(33, hurt_at(x: 0.0, z: 2.0, missing: 300)),
+  ]
+  assert selected_around(
+      areas: emission_on_its_target(areas: emission_by_health(
+        flags: 4,
+        count: 5,
+        min_range: 0.0,
+      )),
+      spell4_id: 58_841,
+      primary_target: 31,
+      caster_missing: 4000,
+      picture: near_caster,
+    ).area
+    == [7, 33, 31]
+    as "the control: a heal aimed at the area alone takes the caster inside the cone around the ally, with the ally and the one 6 m on"
+  assert selected_around(
+      areas: emission_on_its_target(areas: emission_by_health(
+        flags: 5,
+        count: 5,
+        min_range: 0.0,
+      )),
+      spell4_id: 58_841,
+      primary_target: 31,
+      caster_missing: 4000,
+      picture: near_caster,
+    ).area
+    == [33, 31]
+    as "a heal that names the caster (flags 5) never takes it as a candidate of the area"
+  assert selected_around(
+      areas: emission_by_health(flags: 4, count: 5, min_range: 0.0),
+      spell4_id: 58_841,
+      primary_target: 31,
+      caster_missing: 4000,
+      picture: [
+        #(31, hurt_at(x: 0.0, z: 40.0, missing: 100)),
+        #(33, hurt_at(x: 0.0, z: -6.0, missing: 300)),
+      ],
+    ).area
+    == [7, 33]
+    as "an area placed on the caster is centred on it, whoever the child is cast on: the caster at distance 0 and the ally in its cone, the ally 40 m off out of it"
+}
+
 /// Affinity's Spell4 39063 (Spell4Effects 207513, a Proxy at the area that starts the child
 /// 79079 on each unit the area strikes, 250 ms after the go) is beneficial and holds no foe row,
-/// so its area finds allies (Closest, 1 target, 0 to 35 m, 360 degrees): a foe creature inside
-/// it is not struck, so the child starts on no creature, where a spell that hits foes starts it
-/// on each one. The control is the same area read as a foe's.
-pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> Nil {
+/// so its area finds allies (Closest, 1 target, a beam 3.5 m wide and 34 m long, TelegraphDamage
+/// 7664): the ally inside it is
+/// selected, to start the child on, and a foe creature inside it is not struck, where a spell
+/// that hits foes starts it on each one. The control is the same area read as a foe's.
+pub fn a_friendly_areas_proxy_at_the_area_selects_the_allies_and_no_foe_creature_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let affinity = 39_063
@@ -520,7 +991,7 @@ pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> N
   let selected_by = fn(area) {
     strike.select(
       asked: go(primary_target: 7, spell4_id: affinity),
-      attacker: healer(sight: []),
+      attacker: healer(sight: [ally(unit_id: 31)]),
       picture: dict.from_list([
         #(
           20,
@@ -531,19 +1002,22 @@ pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> N
             attackable: Attackable(exile: True, dominion: True),
           ),
         ),
+        #(31, player_at(x: 0.0, z: -12.0)),
       ]),
       areas: dict.from_list([#(affinity, area)]),
       now_ms: 1000,
     )
   }
-  assert selected_by(friendly).units == []
+  let selection = selected_by(friendly)
+  assert list.map(selection.players, fn(address) { address.unit_id }) == [31]
+    as "the ally 12 m ahead is selected, to start the child on"
+  assert selection.units == []
     as "a foe creature 10 m away is not struck by a friendly area, so no child starts on it"
-  assert list.map(
-      selected_by(spell_area.SpellArea(..friendly, finds_allies: False)).units,
-      fn(aimed) { aimed.unit_id },
-    )
-    == [20]
+  let as_foes =
+    selected_by(spell_area.SpellArea(..friendly, finds_allies: False))
+  assert list.map(as_foes.units, fn(aimed) { aimed.unit_id }) == [20]
     as "the control: read as a foe's area it strikes the creature 20, so the case above is the friendly area's choice"
+  assert as_foes.players == [] as "and it selects no player"
 }
 
 /// A selection of the player 9 for the heal rows `heals`, with the creatures `units` in
@@ -564,6 +1038,7 @@ fn selection_of(
     controls: [],
     gates: [],
     players: [ally(unit_id: 9)],
+    starts_children: False,
     heals:,
   )
 }

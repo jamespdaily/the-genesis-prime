@@ -718,6 +718,45 @@ pub fn a_periodic_proxy_for_allies_is_refused_with_its_sentence_by_bit_0_of_the_
     == "the Spell4 row 58868 has a Proxy effect 141450 that casts the Spell4 row 77099 every tickTime on the allies in its area, whom the server does not find"
   assert spell_plan.is_unbuilt(error:)
     as "the refusal leaves its ability out of the plans, as a friendly area's does"
+  // A periodic Proxy aimed by flags 5 in a place that finds the caster's allies: the field's
+  // own mechanic (Spell4TargetMechanics 6) made beneficial, as the area test does. The allies
+  // of a periodic Proxy are not found, so a row that names a beneficial spell is refused as
+  // one aimed at the area is, and a row that names a hostile one keeps its caster-only aim.
+  let in_a_friendly_field = fn(mechanic: Int) {
+    fixture_tables.changes(
+      edits: [
+        #("Spell4TargetMechanics", 6, [#("flags", planted_table.Integer(1))]),
+        #("Spell4Effects", nullifier_row, [
+          #("targetFlags", planted_table.Integer(5)),
+        ]),
+        #("Spell4Base", 53_136, [
+          #("spell4TargetMechanicId", planted_table.Integer(mechanic)),
+        ]),
+      ],
+      body: fn(tables) {
+        reader_of(tables:)(client_row(tables:, id: nullifier_row))
+      },
+    )
+  }
+  assert in_a_friendly_field(4) == Error(error)
+    as "flags 5 with a tickTime in a place that finds allies, naming a beneficial spell: refused with the sentence of the area's periodic Proxy"
+  assert in_a_friendly_field(3)
+    == Ok(
+      Applied(ReadProxy(
+        targets: [spell_plan.OnCaster],
+        condition: spell_plan.Always,
+        period: Some(spell_plan.Periodic(
+          schedule: Schedule(
+            delay_ms: 0,
+            tick_ms: 1000,
+            duration_ms: 0,
+            count: ticking.UntilTheNodeEnds,
+          ),
+          persistence: None,
+        )),
+      )),
+    )
+    as "naming a hostile spell: the aim stays the caster's, as a friendly spell's flags 5 were read"
   // A named spell whose base row, or whose base's mechanic row, is gone is a missing row,
   // not a reading. The fixture's load reads every planned spell, so the child itself cannot
   // lose them: a copy of the child (Spell4 999900) names a base that is missing, or a copy of

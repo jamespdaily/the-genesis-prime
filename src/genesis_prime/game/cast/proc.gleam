@@ -166,8 +166,8 @@ import genesis_prime/game/cast/state.{
   CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
   CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
   FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
-  HeldChange, HeldProc, Hit, HitCreature, HitOtherPlayer, HitPlayer, Immune, Log,
-  Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerChangeEnds,
+  HeldChange, HeldProc, Hit, HitCaster, HitCreature, HitOtherPlayer, HitPlayer,
+  Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerChangeEnds,
   OtherPlayerChangeStarts, Pay, PlayerChangeEnd, ProcDue, QuestAdvanceDue,
   QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast, StartChild,
   StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
@@ -333,7 +333,9 @@ pub fn hit_events(
       Hit(unit: HitPlayer, ..)
       | Immune(unit: HitPlayer, ..)
       | Hit(unit: HitOtherPlayer(..), ..)
-      | Immune(unit: HitOtherPlayer(..), ..) -> []
+      | Immune(unit: HitOtherPlayer(..), ..)
+      | Hit(unit: HitCaster(..), ..)
+      | Immune(unit: HitCaster(..), ..) -> []
     }
   })
 }

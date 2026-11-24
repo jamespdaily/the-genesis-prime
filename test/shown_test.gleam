@@ -436,6 +436,71 @@ pub fn a_unit_that_is_not_a_shown_creature_has_no_pose_test() -> Nil {
     as "the poses of the units asked for that are shown creatures, and no other"
 }
 
+/// A child cast on another unit centres its area on where the picture puts that unit. A
+/// creature stands in its pose. A player stands at the place of its last position command, and
+/// the stored place carries the viewer's own facing (`viewers.player_place` moves the
+/// viewer's place), so the centre holds no facing: yaw 0.0. An object is no unit a strike
+/// finds, and a player with no position command yet has no place.
+pub fn a_strike_centre_is_a_players_place_with_no_facing_a_creatures_pose_and_none_for_an_object_or_an_unplaced_player_test() -> Nil {
+  use <- owned_test.run(5000)
+  let turned_place =
+    start_place.turned(
+      place: standing(x: 3.0, z: -4.0),
+      facing: start_place.Facing(yaw: 1.3, pitch: 0.0, roll: 0.0),
+    )
+  let picture =
+    dict.from_list([
+      #(1, facing_creature(x: 10.0, z: -20.0)),
+      #(2, ShownPlayer(state: player_state_support.a_player())),
+      #(3, an_object()),
+      #(
+        4,
+        ShownPlayer(
+          state: PlayerState(
+            ..player_state_support.a_player(),
+            place: option.Some(turned_place),
+          ),
+        ),
+      ),
+      #(
+        5,
+        ShownPlayer(
+          state: PlayerState(
+            ..player_state_support.a_player(),
+            place: option.Some(standing(x: -6.5, z: 2.0)),
+          ),
+        ),
+      ),
+    ])
+  [
+    #(1, Ok(Pose(at: Point(x: 10.0, z: -20.0), yaw: 0.7)), "a creature's pose"),
+    #(2, Error(Nil), "a player with no place"),
+    #(3, Error(Nil), "an object"),
+    #(
+      4,
+      Ok(Pose(at: Point(x: 3.0, z: -4.0), yaw: 0.0)),
+      "a player's place, whose stored facing is the viewer's: no yaw",
+    ),
+    #(
+      5,
+      Ok(Pose(at: Point(x: -6.5, z: 2.0), yaw: 0.0)),
+      "another player's place",
+    ),
+    #(99, Error(Nil), "a unit the picture does not show"),
+  ]
+  |> list.each(fn(row) {
+    let #(unit_id, expected, reason) = row
+    assert shown.strike_centre_of(
+        picture:,
+        unit_id:,
+        now_ms: 0,
+        viewer: a_viewer(),
+      )
+      == expected
+      as reason
+  })
+}
+
 pub fn a_died_news_clears_a_creatures_held_states_and_only_its_own_test() -> Nil {
   use <- owned_test.run(5000)
   let holding =

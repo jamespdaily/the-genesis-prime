@@ -31,8 +31,8 @@
 import genesis_prime/game/cast/state.{
   type Caster, type Effect, type GainVerdict, type GateDecision, type Live,
   type State, type Struck, type TargetVerdict, CannotTell, Deflected, Gain,
-  GateFails, Given, Hit, HitCreature, HitOtherPlayer, Immune, Log, NotApplied,
-  Starts, Withheld,
+  GateFails, Given, Hit, HitCaster, HitCreature, HitOtherPlayer, Immune, Log,
+  NotApplied, Starts, Withheld,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting
@@ -107,7 +107,7 @@ fn effect_rolls_needed(
   }
   case kind {
     spell_plan.ProxyEffect(proxy:) ->
-      case starts_a_child(proxy:, hit: hit_units(struck:) != []) {
+      case starts_a_child(proxy:, struck:) {
         False -> 0
         True ->
           strike_rolls_needed(
@@ -115,6 +115,7 @@ fn effect_rolls_needed(
             units: case proxy.target {
               spell_plan.OnCaster | spell_plan.OnPrimaryTarget -> 1
               spell_plan.OnEachStruck -> list.length(hit_units(struck:))
+              spell_plan.OnEachAlly -> list.length(hit_players(struck:))
             },
           )
           + int.sum(list.map(lifted_gains(proxy:), gain_rolls_needed))
@@ -227,10 +228,11 @@ pub fn heal_answered(
 /// what the answers list: it checks none of its caster gates and draws no roll for them
 /// (`heal_answered` for the target gate). A row aimed at the primary target alone is told when
 /// the round holds the primary target's answer. A row aimed at the area alone is a friendly
-/// area's heal of its other allies, which the strike gated once, for the caster and for each
-/// ally it selected, whoever answered: the caster is not among the units it reaches, so it has
-/// no part of the row for the go to gate. A row aimed at the caster as well keeps its caster
-/// gate, which gates the caster's part of the row.
+/// area's heal of its allies, which the strike gated once, for the caster and for each ally it
+/// selected, whoever answered. The caster, when the area took it as a candidate, is added to
+/// the units the row reaches (`caster_took`) with the strike's gates already passed, so the go
+/// gates it no more than the others. A row aimed at the caster as well keeps its caster gate,
+/// which gates the caster's part of the row.
 pub fn heal_told(
   kind kind: spell_plan.Kind,
   primary_target primary_target: Int,
@@ -315,29 +317,30 @@ fn gain_rolls_needed(gain: spell_plan.Gain) -> Int {
 
 /// The Proxies of the phase that the cast's n chooses and that have a unit to start a
 /// child on: one aimed at the caster always, a periodic one aimed at each struck unit
-/// always (`starts_a_child`), any other aimed at each struck unit when the round has a Hit.
+/// always (`starts_a_child`), any other aimed at each struck unit or each ally when the round
+/// has a Hit unit or a Hit player.
 pub fn proxies_with_targets(
   spell spell: Spell,
   phase phase: Int,
   struck struck: List(Struck),
   spent spent: Option(Int),
 ) -> List(Proxy) {
-  let hit = hit_units(struck:) != []
   list.filter(
     spell_plan.in_phase(spell:, phase:, spent:, as_kind: spell_plan.as_proxy),
-    fn(proxy) { starts_a_child(proxy:, hit:) },
+    fn(proxy) { starts_a_child(proxy:, struck:) },
   )
 }
 
 /// Whether a Proxy has a unit to start a child on: one aimed at the caster always has, one
-/// aimed at each struck unit when the round has a Hit, and a periodic one is armed whether
-/// or not the round hit anything, since its units are found at each tick (a field's own go
-/// strikes nobody).
-fn starts_a_child(proxy proxy: Proxy, hit hit: Bool) -> Bool {
+/// aimed at each struck unit when the round has a Hit unit, one aimed at each ally when it has
+/// a Hit player, and a periodic one is armed whether or not the round hit anything, since its
+/// units are found at each tick (a field's own go strikes nobody).
+fn starts_a_child(proxy proxy: Proxy, struck struck: List(Struck)) -> Bool {
   case proxy.target, proxy.period {
     spell_plan.OnCaster, _ | spell_plan.OnPrimaryTarget, _ -> True
     spell_plan.OnEachStruck, Some(_) -> True
-    spell_plan.OnEachStruck, None -> hit
+    spell_plan.OnEachStruck, None -> hit_units(struck:) != []
+    spell_plan.OnEachAlly, _ -> hit_players(struck:) != []
   }
 }
 
@@ -1084,12 +1087,41 @@ pub fn clears_current(
   clears_whichever || clears_itself
 }
 
-/// The units a round Hit, in the round's order; a deflect is none of them.
+/// The units a round Hit, in the round's order; a deflect is none of them, and neither is the
+/// caster the area took as a candidate of a heal (`caster_took`), which is no unit struck.
 pub fn hit_units(struck struck: List(Struck)) -> List(Int) {
   list.filter_map(struck, fn(one) {
     case one {
+      Hit(unit: HitCaster(..), ..) | Immune(unit: HitCaster(..), ..) ->
+        Error(Nil)
       Hit(unit_id:, ..) | Immune(unit_id:, ..) -> Ok(unit_id)
       Deflected(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The players a round Hit, in the round's order: the units the strike answered as another
+/// player (`HitOtherPlayer`), which a heal reached or a Proxy selected.
+pub fn hit_players(struck struck: List(Struck)) -> List(Int) {
+  list.filter_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, unit: HitOtherPlayer(..), ..) -> Ok(unit_id)
+      Hit(..) | Immune(..) | Deflected(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether the round holds the caster as a candidate the strike let the heal row `effect_id`
+/// through for: the row's caster gates and the caster's own target gate passed at the strike,
+/// so the go checks neither again (`heal_told`).
+pub fn caster_took(
+  struck struck: List(Struck),
+  effect_id effect_id: Spell4EffectsId,
+) -> Bool {
+  list.any(struck, fn(one) {
+    case one {
+      Hit(unit: HitCaster(heals:), ..) -> list.contains(heals, effect_id)
+      Hit(..) | Immune(..) | Deflected(..) -> False
     }
   })
 }

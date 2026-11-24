@@ -1082,11 +1082,11 @@ fn tree_proxies(
 /// aimed at the area read those rows as heals aimed at the area: Crisis Wave 41382 (row 93037),
 /// Soothe 33140 (78168, 78280, 78282), Vitality Burst 39132 (85507, 85508, 85509, 85526,
 /// 85527, 85529) with targetFlags 5, so the caster keeps its bit, and Triage 29888 (141503),
-/// Dual Fire 39068 and its Surge alternate (84876, 126516), Regenerative Pulse 39646's alternate
-/// (204570) with targetFlags 4 (`table_rows -- Spell4Effects 93037 ... 204570`). Rows that keep
-/// today's reading: Triage's HealShields 174070 (delay 10, so not an instant row), Regenerative
-/// Pulse's 204551 and 204560 (behind a target gate of type 40, which the strike cannot check for
-/// an ally), and the Proxy rows and the periodic heal 85062 of Mental Boon 33257 and Astral
+/// Dual Fire 39068 and its Surge alternate (84876, 126516), Regenerative Pulse 39646 (204551
+/// and 204560, behind the target gates of type 40, Prerequisite 13986 and 13985: the ally's health
+/// percentage, which the caster's picture holds) and its alternate (204570) with targetFlags 4
+/// (`table_rows -- Spell4Effects 93037 ... 204570`). Rows that keep today's reading: Triage's
+/// HealShields 174070 (delay 10, so not an instant row), and the Proxy rows and the periodic heal 85062 of Mental Boon 33257 and Astral
 /// Infusion 35870, whose areas are ordered by health too and whose Proxies start on the caster.
 pub fn the_six_abilities_with_a_friendly_area_ordered_by_health_read_their_area_heals_and_the_proxy_ones_stay_as_they_were_test() -> Nil {
   use <- owned_test.run(120_000)
@@ -1103,7 +1103,8 @@ pub fn the_six_abilities_with_a_friendly_area_ordered_by_health_read_their_area_
       ),
       #(29_888, [141_503], AimsAtArea),
       #(39_068, [84_876, 126_516], AimsAtArea),
-      #(39_646, [204_570], AimsAtArea),
+      #(39_646, [204_551, 204_560], AimsAtArea),
+      #(47_080, [204_570], AimsAtArea),
     ],
     fn(one) {
       let #(spell4_id, row_ids, aim) = one
@@ -1127,8 +1128,6 @@ pub fn the_six_abilities_with_a_friendly_area_ordered_by_health_read_their_area_
   list.each(
     [
       #(29_888, 174_070, "Triage's HealShields row has a delay of 10 ms"),
-      #(39_646, 204_551, "a target gate of type 40 (Prerequisite 13986)"),
-      #(39_646, 204_560, "a target gate of type 40 (Prerequisite 13985)"),
     ],
     fn(one) {
       let #(spell4_id, row_id, reason) = one
@@ -1179,11 +1178,11 @@ fn instant_heal_at_the_area() -> Spell4Effects {
 }
 
 /// A friendly area's heal row is read for the allies only when the strike can check its target
-/// apply prerequisite for another player: it knows an ally by its place alone
-/// (`prerequisite.of_struck`), so a gate on the casts held on the unit (types 15, 59, 129) or on
-/// its own state (type 1, the level) cannot be told for an ally and the row keeps the caster's
-/// own heal, as it did before the area found allies, while a gate on who the unit is (type 39,
-/// a player) or no gate lets it reach them. Each row is Energize's heal row aimed at the caster
+/// apply prerequisite for another player: it knows an ally by its place and its health
+/// (`prerequisite.of_struck`, `with_health`), so a gate on the casts held on the unit (types 15, 59,
+/// 129) or on its own state (type 1, the level) cannot be told for an ally and the row keeps the
+/// caster's own heal, as it did before the area found allies, while a gate on who the unit is (type
+/// 39, a player), on its health percentage (type 40) or no gate lets it reach them. Each row is Energize's heal row aimed at the caster
 /// and the area (flags 5) in a place that finds allies, behind a Prerequisite of one condition
 /// planted for the case: no client row of a friendly area holds a gate the strike can tell.
 pub fn a_friendly_area_heal_behind_a_gate_the_strike_cannot_check_for_an_ally_keeps_the_casters_own_heal_test() -> Nil {
@@ -1222,6 +1221,13 @@ pub fn a_friendly_area_heal_behind_a_gate_the_strike_cannot_check_for_an_ally_ke
     #(59, 1, 0, AimsAtCaster, "the stack count on the unit (type 59)"),
     #(1, 1, 5, AimsAtCaster, "the unit's own level (type 1)"),
     #(39, 1, 1, AimsAtCasterAndArea, "whether the unit is a player (type 39)"),
+    #(
+      40,
+      6,
+      30,
+      AimsAtCasterAndArea,
+      "the unit's health percentage (type 40), which the picture holds of an ally",
+    ),
   ]
   list.each(cases, fn(one) {
     let #(condition_type, comparison, value, expected, reason) = one

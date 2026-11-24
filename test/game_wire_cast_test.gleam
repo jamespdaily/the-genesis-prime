@@ -2633,6 +2633,187 @@ pub fn a_medic_pressing_emission_heals_the_ally_in_its_cone_and_the_caster_reads
     as "the control: the caster's own heal is listed whoever stands in the cone"
 }
 
+/// What a Medic's press of Triage, with a Medic ally standing 8 m ahead of it, showed the two
+/// clients: each Medic's own health before the press (`caster_saved`, `ally_saved`), the
+/// amount of the heal row 141503, the caster's go and what each client read of its own health.
+type TriageRound {
+  TriageRound(
+    caster: Int,
+    ally: Int,
+    caster_saved: Int,
+    ally_saved: Int,
+    amount: Int,
+    go: spell_go.SpellGo,
+    caster_healths: List(Int),
+    ally_healths: List(Int),
+  )
+}
+
+/// A Medic of level 9 presses Triage (Spell4 29888, Spell4Base 16336, a type 2 target: the
+/// caster is its primary target whatever it has targeted) with a Medic of the same faction
+/// 8 m ahead of it, the two saved with the health given. Triage has no cast time, so the go is
+/// the press's own, before either Medic's regeneration, which falls every 500 ms
+/// (`player_life`): each reads its own health after the heal.
+fn triage_pressed_with_an_ally(
+  caster_saved caster_saved: Int,
+  ally_saved ally_saved: Int,
+) -> TriageRound {
+  let time = driven_time.new()
+  let tables = character_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    game_wire_support.two_players_enter_saved_each(
+      started:,
+      first_class: 4,
+      level: 9,
+      first_health: option.Some(caster_saved),
+      second_health: option.Some(ally_saved),
+      first_acts: fn(_, have) { #([], have) },
+    )
+  let caster = unit_of_player(frames: first_burst)
+  let ally = unit_of(seen_second)
+  assert health_in(frames: first_burst) == caster_saved
+    as "opcode.0x262: the caster enters with the health it was saved with"
+  let #(x, y, z) =
+    game_client.placed_by_tail(
+      tail: game_client.unit_create_player_in(frames: first_burst).tail,
+    )
+  game_client.face(game: first, yaw: 0.0, clock: 100)
+  game_client.move_to(game: second, clock: 110, x:, y:, z: z -. 8.0)
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0638 })
+    })
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames: first_burst), fn(item) {
+      item.1 == 16_336
+    })
+    as "the level-9 Medic holds Triage's base 16336 (SpellLevel 1021)"
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: 0,
+  )
+  let #(went, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      gos_in(frames:) != []
+    })
+  assert refusals(frames: went) == []
+    as "opcode.0x7fc: Triage is planned, so the press is not refused"
+  let #(rest, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let caster_frames = list.append(went, rest)
+  let #(ally_read, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      gos_in(frames:) != []
+    })
+  let #(ally_rest, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let ally_frames = list.append(ally_read, ally_rest)
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the tables hold GameFormula row 1266"
+  let support_power =
+    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
+  let amount =
+    float.round(
+      int.to_float(float.round(0.3139 *. support_power)) +. 13.67 *. 9.0,
+    )
+  let assert Ok(go) =
+    list.find(gos_in(frames: caster_frames), fn(go) { go.targets != [] })
+    as "the caster's client reads a 0x7f4 that lists a unit"
+  let healths = fn(frames, unit) {
+    game_client.own_health_of(events: game_client.fight_in(frames:), unit:)
+  }
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+  TriageRound(
+    caster:,
+    ally:,
+    caster_saved:,
+    ally_saved:,
+    amount:,
+    go:,
+    caster_healths: healths(caster_frames, caster),
+    ally_healths: healths(ally_frames, ally),
+  )
+}
+
+/// The rows of the heal 141503 the go lists on the unit `unit_id`, one list for each of its
+/// entries.
+fn triage_heal_listed_on(
+  round: TriageRound,
+  unit_id: Int,
+) -> List(List(#(Int, spell_effect_result.SpellEffectResult))) {
+  list.filter(round.go.targets, fn(target) { target.unit_id == unit_id })
+  |> list.map(fn(target) {
+    list.filter(target.effects, fn(effect) {
+      effect.spell4_effects_id == 141_503
+    })
+    |> list.map(fn(effect) { #(effect.spell4_effects_id, effect.result) })
+  })
+}
+
+/// A Medic of level 9 presses Triage with no target named: its area (Spell4AoeTargetConstraints
+/// 735: 360 degrees, 0 to 35 m, one target, ordered by missing health) finds the Medic ally
+/// 8 m ahead, and its heal row 141503 (type 10, targetFlags 4: the area alone, parameter 13 x
+/// 0.3139 and 10 x 13.67, `0x140565600`: the stat part rounded alone) does not name the caster,
+/// so the caster is a candidate of the area, as the text 195454 says ("yourself or an ally based
+/// on who has the lowest health", Jim's decision on 2026-11-23). The one it takes is the one
+/// missing the most health, by the health each told the server on entering. Case one: the ally
+/// entered missing more: its own 0x92f rises by the row's amount, the caster's 0x7f4 lists that
+/// heal on the ally, and the caster's own health does not rise. Case two: the caster entered
+/// missing more: its own health rises and the ally's does not.
+pub fn a_medic_pressing_triage_heals_whoever_misses_the_most_health_of_itself_and_the_ally_in_its_cone_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let heal_of = fn(round: TriageRound) {
+    [
+      #(
+        141_503,
+        cast_support.heal_result(
+          amount: round.amount,
+          kind: damage_type.Heal,
+          overkill: 0,
+        ),
+      ),
+    ]
+  }
+  let ally_hurt =
+    triage_pressed_with_an_ally(caster_saved: 400, ally_saved: 100)
+  assert ally_hurt.amount > 0 as "the row's amount is above 0"
+  assert triage_heal_listed_on(ally_hurt, ally_hurt.ally)
+    == [heal_of(ally_hurt)]
+    as "opcode.0x7f4: the ally, which entered missing more health, is listed with its own heal, the split it answered"
+  assert triage_heal_listed_on(ally_hurt, ally_hurt.caster) == []
+    as "opcode.0x7f4: the caster, missing less than the ally, is not selected, and Triage's one target is the ally"
+  assert list.last(ally_hurt.ally_healths)
+    == Ok(ally_hurt.ally_saved + ally_hurt.amount)
+    as "opcode.0x92f: the ally's health rises by the row's amount"
+  assert ally_hurt.caster_healths == []
+    as "opcode.0x92f: the caster's health does not rise"
+  let caster_hurt =
+    triage_pressed_with_an_ally(caster_saved: 100, ally_saved: 400)
+  assert triage_heal_listed_on(caster_hurt, caster_hurt.caster)
+    == [heal_of(caster_hurt)]
+    as "opcode.0x7f4: the caster, which entered missing more health, is listed with its own heal"
+  assert triage_heal_listed_on(caster_hurt, caster_hurt.ally) == []
+    as "opcode.0x7f4: the ally, missing less than the caster, is not listed"
+  assert list.last(caster_hurt.caster_healths)
+    == Ok(caster_hurt.caster_saved + caster_hurt.amount)
+    as "opcode.0x92f: the caster's own health rises by the row's amount"
+  assert caster_hurt.ally_healths == []
+    as "opcode.0x92f: the ally is told no health"
+}
+
 /// The 0x7f8 among `frames`, decoded, in order.
 fn ticks_in(
   frames frames: List(Frame),
@@ -3476,4 +3657,176 @@ pub fn a_player_that_arrives_beside_an_ally_after_its_esper_walked_away_shows_th
   game_client.close(game: second)
   game_client.close(game: third)
   login_support.stop(started)
+}
+
+/// What a Spellslinger's press of Runes of Protection, with a Medic standing `metres` metres
+/// ahead of it, showed the two clients: each Medic's and the Spellslinger's unit, the absorb the
+/// row 206315 gives, the frames each client read at the go (`caster_read`, `ally_read`) and
+/// those it read when the absorb's 10 000 ms were over (`caster_ended`, `ally_ended`).
+type RunesRound {
+  RunesRound(
+    caster: Int,
+    ally: Int,
+    amount: Int,
+    caster_read: List(Frame),
+    ally_read: List(Frame),
+    caster_ended: List(Frame),
+    ally_ended: List(Frame),
+  )
+}
+
+/// The primary target of each 0x7ff of the child 78708 among `frames`, in the order read.
+fn runes_child_targets(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(
+    connection_support.decoded(
+      frames,
+      spell_started.message_id,
+      spell_started.decode,
+    ),
+    fn(start) {
+      case start.spell4_id == 78_708 {
+        True -> Ok(start.primary_target_unit_id)
+        False -> Error(Nil)
+      }
+    },
+  )
+}
+
+/// A Spellslinger of level 6 presses Runes of Protection (Spell4 39092, Spell4Base 23441, a
+/// Spellslinger's from level 6: SpellLevel 1144) with no target named, on the client's real
+/// tables, facing -z, while a Medic of level 6 stands `metres` metres ahead of it. The Medic is
+/// in the area when `ally_hears`: a beam 4.5 m wide and 34 m long ahead of the caster
+/// (TelegraphDamage 2044, targetTypeFlags 1) within the area row's 35 m
+/// (Spell4AoeTargetConstraints 454: Closest, 4 targets, 0 to 35 m, 360 degrees). The Proxy
+/// 206357 starts the child 78708 on the caster and on each ally the area selects; the child holds the absorb 206315 (effectType 29, targetFlags 2, 10 000
+/// ms, formula 0.848 of the Support Power and 45.23 a level, the stat part rounded alone,
+/// `0x140565600`). The clock is the test's.
+fn runes_pressed_with_an_ally(
+  metres metres: Float,
+  ally_hears ally_hears: Bool,
+) -> RunesRound {
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) = two_players_enter(started:, first_class: 7, level: 6)
+  let caster = unit_of_player(frames: first_burst)
+  let ally = unit_of(seen_second)
+  let #(x, y, z) =
+    game_client.placed_by_tail(
+      tail: game_client.unit_create_player_in(frames: first_burst).tail,
+    )
+  game_client.face(game: first, yaw: 0.0, clock: 100)
+  game_client.move_to(game: second, clock: 110, x:, y:, z: z -. metres)
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0638 })
+    })
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 7,
+      level: 6,
+      ability: 23_441,
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: 0,
+  )
+  // The caster's connection writes every start and the tells of the go in one input, so its
+  // pong follows them all, and what it told the Medic's connection is held before that
+  // connection's own pong (`game_client.read_until_pong`): both reads end at a pong, never at a
+  // frame a Medic that was started no child would not send.
+  let #(caster_read, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  let #(ally_read, second_have) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert list.contains(runes_child_targets(frames: ally_read), ally)
+    == ally_hears
+    as "opcode.0x7ff: the Medic's client reads the child cast with itself as its primary target exactly when it stands in the area"
+  assert { absorptions_in(frames: ally_read, unit: ally) != [] } == ally_hears
+    as "opcode.0x938: the Medic's client reads an absorb at the go exactly when it stands in the area"
+  assert refusals(frames: caster_read) == []
+    as "opcode.0x7fc: Runes of Protection is planned, so the press is not refused"
+  let expected_starts = case ally_hears {
+    True -> list.sort([caster, ally], int.compare)
+    False -> [caster]
+  }
+  assert list.sort(runes_child_targets(frames: caster_read), int.compare)
+    == expected_starts
+    as "opcode.0x7ff: the caster's client reads the child 78708 cast on itself and on each Medic in the area of 35 m, the Medic its primary target"
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the client's tables hold GameFormula row 1266"
+  let support_power =
+    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
+  let amount =
+    float.round(
+      int.to_float(float.round(0.8479999899864197 *. support_power))
+      +. 45.22999954223633
+      *. 6.0,
+    )
+  driven_time.advance(time:, ms: 10_000)
+  let #(caster_ended, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let #(ally_ended, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 2)
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+  RunesRound(
+    caster:,
+    ally:,
+    amount:,
+    caster_read:,
+    ally_read:,
+    caster_ended:,
+    ally_ended:,
+  )
+}
+
+/// A Spellslinger of level 6 presses Runes of Protection with no target named while a Medic
+/// stands 10 m ahead, and again with a Medic 50 m ahead, outside the area of 35 m
+/// (`runes_pressed_with_an_ally`): the area's Proxy starts the child 78708 on the caster and
+/// on the Medic in it, the caster's client reads the child's 0x7ff naming that Medic as its
+/// primary target, the Medic's client reads the absorb of the row 206315 and its end, and the
+/// caster reads its own absorb. The Medic outside the area is started no child, so its client
+/// reads no absorb and no 0x7ff, and the caster reads one child 0x7ff, its own. The caster's
+/// frames and the Medic's come from two connections; the test reads the caster's up to its pong
+/// and then the Medic's up to its pong, which relies on one contract of
+/// `game_client.read_until_pong`: what the caster's connection told the Medic's before the
+/// caster's pong is held before the Medic's pong. It holds here because the round closes at
+/// once, the children start inline, the tell to the Medic is sent in the press input, and the
+/// 10 000 ms end goes through `driven_time.advance`, whose barrier runs after each timer.
+pub fn a_spellslinger_pressing_runes_of_protection_gives_the_ally_in_range_the_absorb_and_the_caster_reads_the_child_cast_on_the_ally_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let near = runes_pressed_with_an_ally(metres: 10.0, ally_hears: True)
+  assert absorptions_in(frames: near.caster_read, unit: near.caster)
+    == [near.amount]
+    as "opcode.0x938: the caster reads its own absorb, the pool the row's formula gives (0.848 of the Support Power and 45.23 a level)"
+  assert absorptions_in(frames: near.ally_read, unit: near.ally)
+    == [near.amount]
+    as "opcode.0x938: the Medic in the area reads the absorb of the row 206315"
+  assert absorptions_in(frames: near.ally_ended, unit: near.ally) == [0]
+    as "opcode.0x938: the Medic's absorb ends with the child's node, 10 000 ms on"
+  assert absorptions_in(frames: near.caster_ended, unit: near.caster) == [0]
+    as "and so does the caster's own"
+  let far = runes_pressed_with_an_ally(metres: 50.0, ally_hears: False)
+  assert runes_child_targets(frames: far.caster_read) == [far.caster]
+    as "opcode.0x7ff: the Medic 50 m ahead, outside the area of 35 m, is started no child: the caster reads the one cast on itself"
+  assert absorptions_in(frames: far.caster_read, unit: far.caster)
+    == [far.amount]
+    as "the caster reads its own absorb"
+  assert absorptions_in(frames: far.ally_ended, unit: far.ally) == []
+    && runes_child_targets(frames: far.ally_ended) == []
+    as "the Medic outside the area reads no absorb and no child"
 }

@@ -160,6 +160,19 @@ pub fn centre_of(
   }
 }
 
+/// Whether `centre_of` puts the centre on the caster: an anchor on the caster, or a primary
+/// target that is the caster.
+pub fn centred_on_the_caster(
+  anchor anchor: Anchor,
+  primary primary: Primary,
+) -> Bool {
+  case anchor, primary {
+    FollowsCaster, _ | FixedAtCaster, _ -> True
+    FollowsTarget, TheCaster | FixedAtTarget, TheCaster -> True
+    FollowsTarget, AnotherUnit(..) | FixedAtTarget, AnotherUnit(..) -> False
+  }
+}
+
 /// A shape placed on a unit, the caster or the cast's target: where it lies against that
 /// unit's place and facing. The struck unit's hit radius grows it.
 pub type Placement {
@@ -470,10 +483,64 @@ pub fn select_ordered(
   inside inside: Inside,
   seed seed: Int,
 ) -> List(Int) {
-  let found =
-    list.filter(candidates, fn(candidate) {
+  ordered(
+    found: list.filter(candidates, fn(candidate) {
       is_inside(candidate:, centre:, row:, inside:)
     })
+      |> list.map(found_from(_, centre:)),
+    row:,
+    seed:,
+  )
+}
+
+/// `select_ordered` with one more candidate, the caster, in an area centred on the caster
+/// (`centred_on_the_caster`) that finds its allies for a heal row that does not name it: it
+/// stands at the centre, at distance 0, and takes no shape test, ranked by the health it misses
+/// as the others are.
+/// Distance 0 ranks the caster first among units missing as much, and first of all when
+/// every unit misses none: a guess, as the client orders nothing
+/// (`Spell4AoeTargetConstraints.targetSelection`).
+pub fn select_ordered_with_caster(
+  candidates candidates: List(Candidate),
+  caster caster: Candidate,
+  centre centre: Pose,
+  row row: Row,
+  inside inside: Inside,
+  seed seed: Int,
+) -> List(Int) {
+  ordered(
+    found: [
+      Found(
+        unit_id: caster.unit_id,
+        distance: 0.0,
+        missing_health: caster.missing_health,
+      ),
+      ..list.filter(candidates, fn(candidate) {
+        is_inside(candidate:, centre:, row:, inside:)
+      })
+      |> list.map(found_from(_, centre:))
+    ],
+    row:,
+    seed:,
+  )
+}
+
+/// A candidate with its distance from the centre.
+fn found_from(candidate candidate: Candidate, centre centre: Pose) -> Found {
+  Found(
+    unit_id: candidate.unit_id,
+    distance: distance(from: centre.at, to: candidate.at),
+    missing_health: candidate.missing_health,
+  )
+}
+
+/// The found units sorted by the row's order, the lower unit id first on a tie, the first
+/// `target_count` of them.
+fn ordered(
+  found found: List(Found),
+  row row: Row,
+  seed seed: Int,
+) -> List(Int) {
   let by_order = case row.order {
     Nearest -> fn(first: Found, second: Found) {
       float.compare(first.distance, second.distance)
@@ -492,19 +559,11 @@ pub fn select_ordered(
       |> order.break_tie(float.compare(first.distance, second.distance))
     }
   }
-  let ordered =
-    list.map(found, fn(candidate) {
-      Found(
-        unit_id: candidate.unit_id,
-        distance: distance(from: centre.at, to: candidate.at),
-        missing_health: candidate.missing_health,
-      )
-    })
-    |> list.sort(fn(first, second) {
-      by_order(first, second)
-      |> order.break_tie(int.compare(first.unit_id, second.unit_id))
-    })
-  list.take(ordered, row.target_count)
+  list.sort(found, fn(first, second) {
+    by_order(first, second)
+    |> order.break_tie(int.compare(first.unit_id, second.unit_id))
+  })
+  |> list.take(row.target_count)
   |> list.map(fn(found) { found.unit_id })
 }
 

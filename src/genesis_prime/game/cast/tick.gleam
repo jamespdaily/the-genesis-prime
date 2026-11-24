@@ -575,7 +575,7 @@ fn proxy_row_landed(
       [],
       Some(proxy),
     )
-    spell_plan.OnEachStruck ->
+    spell_plan.OnEachStruck | spell_plan.OnEachAlly ->
       case proxy_tick_refusal(cast:, caster:, holder:, proxy:) {
         Some(logs) -> #(cast_state.with_tick(row:, tick:), caster, logs, None)
         None -> #(
@@ -887,7 +887,7 @@ pub fn proxies_ticking(
             spell_plan.OnCaster -> caster.unit_id
             spell_plan.OnPrimaryTarget ->
               option.unwrap(named_player, caster.unit_id)
-            spell_plan.OnEachStruck -> primary_target
+            spell_plan.OnEachStruck | spell_plan.OnEachAlly -> primary_target
           },
           life: 0,
           effect_id: proxy.effect_id,
@@ -1749,8 +1749,9 @@ fn nodes_held(cast cast: State, caster caster: Caster) -> List(lasting.Held) {
 
 /// The subject of a Proxy's target gate on a struck unit: as the caster's picture shows it,
 /// with the checklist index its 0x262 carried when the picture holds one, what the unit is
-/// (a unit the picture does not hold is unknown to a type 38 or 214 condition), and what
-/// the caster's own casts hold on it (a type 130 condition's group).
+/// (a unit the picture does not hold is unknown to a type 38 or 214 condition), what
+/// the caster's own casts hold on it (a type 130 condition's group) and, for a player in the
+/// caster's sight, the health the picture holds of it (a type 40 condition).
 pub fn struck_subject(
   cast cast: State,
   caster caster: Caster,
@@ -1773,6 +1774,17 @@ pub fn struck_subject(
       under: held_by_caster_on(cast:, caster:, unit_id: primary_target),
       checker: caster.checker,
     )
+  let struck = case dict.get(caster.other_players, primary_target) {
+    Ok(player) ->
+      prerequisite.with_health(
+        subject: struck,
+        health: prerequisite.Vital(
+          current: int.to_float(player.health),
+          maximum: int.to_float(player.maximum_health),
+        ),
+      )
+    Error(Nil) -> struck
+  }
   case dict.get(indexes, primary_target) {
     Ok(index) -> prerequisite.counting(subject: struck, checklist_index: index)
     Error(Nil) -> struck
@@ -1806,7 +1818,10 @@ pub fn target_gate(
     | spell_plan.GatedOnCasterAndTarget(target:, ..) -> {
       let gate_subject = case proxy.target, primary_target == caster.unit_id {
         spell_plan.OnCaster, _ | spell_plan.OnPrimaryTarget, True -> subject
-        spell_plan.OnPrimaryTarget, False | spell_plan.OnEachStruck, _ ->
+        spell_plan.OnPrimaryTarget, False
+        | spell_plan.OnEachStruck, _
+        | spell_plan.OnEachAlly, _
+        ->
           struck_subject(
             cast:,
             caster:,

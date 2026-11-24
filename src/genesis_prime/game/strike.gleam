@@ -20,7 +20,8 @@
 ////   answered: the unit's place in the round is filled, with the effect ids its gates passed
 ////   the round closes: all answered, or the deadline passed, and every earlier round of k closed
 ////   a heal aimed at the primary target when it is a player in sight, or at the allies a friendly
-////   area selected (caster's connection C, healed T):
+////   area selected (caster's connection C, healed T); an ally selected only to start a child on
+////   (a Proxy at the area) is answered at once as a hit, with nothing told:
 ////     TellPlayerStrike(T, PlayerStrike(key, C, stay, outgoing, heals)) ──▶ T applies each row, answers
 ////   ◀── PlayerAnswered(key, HealsLanded(splits) | PlayerDead) ◀── T
 ////   player_answered: the player's place in the round is filled, as a creature's is
@@ -48,7 +49,8 @@
 //// - **Selection** reads the picture of the units the client shows
 ////   (genesis_prime/game/shown) and the spell's area (genesis_prime/game/spell_area): the
 ////   phase's centre is the caster's place and facing, or, for a child cast on a struck
-////   unit (Crush's 42297), that unit's shown place; the primary target is added for an
+////   unit (Crush's 42297), that unit's shown place, and for a child cast on an ally
+////   (Warden's 36660) the ally's place with no facing (`shown.strike_centre_of`); the primary target is added for an
 ////   effect aimed at it, and a unit is struck once for a go. A phase that selects no
 ////   unit has an empty round, which waits behind the cast's earlier rounds like any.
 ////   A cast that spent points above its base cost (`GoAsked.spent`) strikes with the
@@ -98,7 +100,14 @@
 ////   the caster's formula gives (`damage.amount_on_caster`) and the caster's
 ////   HealingMultiplierOutgoing. The healed player's connection applies them
 ////   (genesis_prime/game/connection/landing) and answers, and the player's place fills with
-////   what it applied, listed in the go with the description of each heal (`cast_heal.healed_on`). A row a gate fails or
+////   what it applied, listed in the go with the description of each heal (`cast_heal.healed_on`).
+////   When a heal row of the phase is aimed at the area alone and none names the caster, the
+////   caster is one more candidate of the area, ranked by the health its vitals miss: at
+////   distance 0 with no shape test when the area is centred on it (`area.select_ordered_with_caster`),
+////   and tested with the area's own shape from where it stands when the area is centred on
+////   an ally a child cast was started on (`area.centred_on_the_caster`); it is told nothing, its
+////   place is answered at once with the rows that passed its gates (`cast_state.HitCaster`),
+////   and the go applies them itself. A row a gate fails or
 ////   cannot tell is left out with a debug line; a player no row reaches has no place and no
 ////   tell. A target gate on such a row is read from what the caster holds of the player
 ////   (`gaps`).
@@ -153,7 +162,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit
-import genesis_prime/game/player_address.{type PlayerAddress}
+import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
@@ -242,6 +251,9 @@ pub type Selection {
     gates: List(spell_plan.StruckGate),
     players: List(PlayerAddress),
     heals: List(spell_area.InstantHeal),
+    /// Whether the phase starts a child cast on each unit of the area (a Proxy aimed at the
+    /// area), so each ally the area selected is a hit of the go whatever rows reach it.
+    starts_children: Bool,
   )
 }
 
@@ -350,6 +362,7 @@ pub fn select(
       gates: [],
       players: [],
       heals: [],
+      starts_children: False,
     )
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
@@ -380,6 +393,7 @@ pub fn select(
             row:,
             centre:,
             seed: asked.cast_id,
+            caster_candidate: caster_candidate_of(attacker:, heals: phase.heals),
             now_ms:,
           )
         _, _, _ -> []
@@ -393,10 +407,11 @@ pub fn select(
         False -> from_area
       }
       let players =
-        players_of_heals(
+        players_of_the_phase(
           attacker:,
           asked:,
           heals: phase.heals,
+          starts_children: phase.starts_children,
           allies: case spell_area_found.finds_allies {
             True -> from_area
             False -> []
@@ -418,19 +433,22 @@ pub fn select(
           [] -> []
           [_, ..] -> phase.heals
         },
+        starts_children: phase.starts_children,
       )
     }
   }
 }
 
-/// The players a go tells its heal rows to, with the player the cast names first: the
-/// primary target when it is a player in sight and a row aims at it, and the allies the area
-/// selected (`allies`, in selection order) when a row aims at the area, each once. A player
-/// the caster has no address for is left out; none when the phase has no heal row.
-fn players_of_heals(
+/// The players a go tells its heal rows to or starts a child on, with the player the cast
+/// names first: the primary target when it is a player in sight and a row aims at it, and the
+/// allies the area selected (`allies`, in selection order) when a row aims at the area or the
+/// phase starts a child on each unit of the area (`starts_children`), each once. A player the
+/// caster has no address for is left out; none when the phase has neither.
+fn players_of_the_phase(
   attacker attacker: Attacker,
   asked asked: GoAsked,
   heals heals: List(spell_area.InstantHeal),
+  starts_children starts_children: Bool,
   allies allies: List(Int),
 ) -> List(PlayerAddress) {
   let primary = case
@@ -443,11 +461,20 @@ fn players_of_heals(
     True, Error(Nil) | False, _ -> []
   }
   let in_the_area = case
-    list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
+    starts_children
+    || list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
   {
     True ->
       list.filter_map(allies, fn(unit_id) {
-        dict.get(attacker.players_in_sight, unit_id)
+        case unit_id == attacker.unit_id {
+          True ->
+            Ok(PlayerAddress(
+              connection: attacker.connection,
+              unit_id:,
+              stay: attacker.stay,
+            ))
+          False -> dict.get(attacker.players_in_sight, unit_id)
+        }
       })
     False -> []
   }
@@ -463,11 +490,18 @@ fn players_of_heals(
   }
 }
 
+/// Where a cast's area is centred: the pose, and whether it is centred on the caster.
+type Centre {
+  Centre(pose: Pose, on_the_caster: Bool)
+}
+
 /// Where a cast's area is centred (`area.centre_of`): on the pose the cast started at, the
 /// caster now, or the primary target, which is the caster or another unit the picture shows,
-/// at the place and facing the picture gives it (`shown.pose_of`). An area fixed at its
-/// target stays at `primary_pose`, the pose, facing included, the target stood in when the
-/// cast went, when there is one. A primary target the picture does not show gives no centre.
+/// at the place and facing the picture gives it (`shown.strike_centre_of`: a player's place
+/// has no facing). An area fixed at its target stays at `primary_pose`, the pose, facing
+/// included, the target stood in when the cast went, when there is one. A primary target the
+/// picture does not show gives no centre. The area is centred on the caster for an anchor on
+/// the caster and for a primary target that is the caster (`area.centred_on_the_caster`).
 fn centre_of_cast(
   anchor anchor: area.Anchor,
   attacker attacker: Attacker,
@@ -476,11 +510,11 @@ fn centre_of_cast(
   started_at started_at: Pose,
   primary_pose primary_pose: Option(Pose),
   now_ms now_ms: Int,
-) -> Result(Pose, Nil) {
+) -> Result(Centre, Nil) {
   use primary <- result.map(case primary_target == attacker.unit_id {
     True -> Ok(area.TheCaster)
     False ->
-      shown.pose_of(
+      shown.strike_centre_of(
         picture:,
         unit_id: primary_target,
         now_ms:,
@@ -498,7 +532,10 @@ fn centre_of_cast(
     | area.FollowsTarget, _, _
     -> primary
   }
-  area.centre_of(anchor:, caster: attacker.pose, started_at:, primary:)
+  Centre(
+    pose: area.centre_of(anchor:, caster: attacker.pose, started_at:, primary:),
+    on_the_caster: area.centred_on_the_caster(anchor:, primary:),
+  )
 }
 
 /// The units inside the area of a periodic Proxy's tick as the picture shows them now, in
@@ -537,6 +574,7 @@ pub fn select_proxy_tick(
             row:,
             centre:,
             seed: proxy_tick_seed(asked:),
+            caster_candidate: None,
             now_ms:,
           )
         _, _ -> []
@@ -561,8 +599,9 @@ fn area_selection(
   area area: spell_area.SpellArea,
   phase phase: Int,
   row row: area.Row,
-  centre centre: Pose,
+  centre centre: Centre,
   seed seed: Int,
+  caster_candidate caster_candidate: Option(area.Candidate),
   now_ms now_ms: Int,
 ) -> List(Int) {
   let valid_targets = area.spell.targeting.valid_targets
@@ -590,10 +629,68 @@ fn area_selection(
         False -> []
       }
   }
-  case spell_area.inside(spell: area, phase:) {
-    None -> []
-    Some(inside) ->
-      area.select_ordered(candidates:, centre:, row:, inside:, seed:)
+  case spell_area.inside(spell: area, phase:), caster_candidate {
+    None, _ -> []
+    Some(inside), None ->
+      area.select_ordered(
+        candidates:,
+        centre: centre.pose,
+        row:,
+        inside:,
+        seed:,
+      )
+    Some(inside), Some(caster) ->
+      case centre.on_the_caster {
+        True ->
+          area.select_ordered_with_caster(
+            candidates:,
+            caster:,
+            centre: centre.pose,
+            row:,
+            inside:,
+            seed:,
+          )
+        False ->
+          area.select_ordered(
+            candidates: [caster, ..candidates],
+            centre: centre.pose,
+            row:,
+            inside:,
+            seed:,
+          )
+      }
+  }
+}
+
+/// The caster as a candidate of the area of a phase with a heal row aimed at the area alone
+/// (targetFlags 4) and no row that reaches the caster another way: such a row names no caster
+/// of its own, so the area counts it among the allies it heals ("yourself and N allies",
+/// Triage's text 195454). A row that names the caster (flags 1, 3, 5, 7) heals it by that flag,
+/// and one aimed at the primary target and the area (flags 6) reaches it as the primary
+/// target of a spell on itself, so in either case the area finds the others only.
+fn caster_candidate_of(
+  attacker attacker: Attacker,
+  heals heals: List(spell_area.InstantHeal),
+) -> Option(area.Candidate) {
+  let names_caster =
+    list.any(heals, fn(heal) {
+      spell_plan.reaches_caster(aim: heal.aim)
+      || heal.aim == spell_plan.AimsAtPrimaryTargetAndArea
+    })
+  let leaves_it_to_the_area =
+    list.any(heals, fn(heal) { heal.aim == spell_plan.AimsAtArea })
+  case leaves_it_to_the_area && !names_caster {
+    True ->
+      Some(area.Candidate(
+        unit_id: attacker.unit_id,
+        at: attacker.pose.at,
+        hit_radius: attacker.hit_radius,
+        missing_health: int.max(
+          attacker.vitals.max_health - attacker.vitals.health,
+          0,
+        ),
+      ))
+    False -> None
   }
 }
 
@@ -616,6 +713,7 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
     gates:,
     players: _,
     heals:,
+    starts_children: _,
   ) = selection
   case blows, ticking, controls, gates, heals {
     [], [], [], [], [] -> 0
@@ -772,7 +870,12 @@ pub fn begin(
 /// The player a go tells its heal rows to: a place that waits for its answer and the tell
 /// of the rows that reach it, in the plan's order, each with the amount its formula gives
 /// for the caster as it is now. A player no row reaches past its gates has no place and no
-/// tell, and is not in the go.
+/// tell, and is not in the go, unless the phase starts a child on each ally the area
+/// selected (`Selection.starts_children`): such an ally is a hit of the go, answered at once
+/// with nothing landed (`cast_state.HitOtherPlayer`), so the go starts the child on it. The
+/// caster, when the area took it as a candidate, is told nothing: its place is already
+/// answered, with the rows that reached it, and the go applies them itself
+/// (`cast_state.HitCaster`).
 fn players_told(
   selection selection: Selection,
   attacker attacker: Attacker,
@@ -781,12 +884,48 @@ fn players_told(
   let told =
     list.filter_map(selection.players, fn(address) {
       let unit_id = address.unit_id
+      let selected_for_a_child =
+        selection.starts_children
+        && unit_id != attacker.unit_id
+        && list.contains(selection.area, unit_id)
       case rows_reaching_unit(rows: reach.heals, unit_id:) {
+        [] if selected_for_a_child ->
+          Ok(#(
+            Answered(
+              struck: cast_state.Hit(
+                unit_id:,
+                unit: cast_state.HitOtherPlayer(heals: []),
+                descriptions: [],
+                controls: [],
+                armor_removed: 0,
+                ticking: [],
+              ),
+              gates_passed: [],
+            ),
+            None,
+          ))
         [] -> Error(Nil)
+        rows if unit_id == attacker.unit_id ->
+          Ok(#(
+            Answered(
+              struck: cast_state.Hit(
+                unit_id:,
+                unit: cast_state.HitCaster(
+                  heals: list.map(rows, fn(row) { row.effect_id }),
+                ),
+                descriptions: [],
+                controls: [],
+                armor_removed: 0,
+                ticking: [],
+              ),
+              gates_passed: [],
+            ),
+            None,
+          ))
         rows ->
           Ok(#(
             Waiting(unit_id:, awaits: AwaitedPlayer),
-            TellPlayerStrike(
+            Some(TellPlayerStrike(
               address:,
               strike: strike_tell.PlayerStrike(
                 key: strike_tell.Key(
@@ -807,13 +946,13 @@ fn players_told(
                   )
                 }),
               ),
-            ),
+            )),
           ))
       }
     })
   #(
     list.map(told, fn(entry) { entry.0 }),
-    list.map(told, fn(entry) { entry.1 }),
+    list.filter_map(told, fn(entry) { option.to_result(entry.1, Nil) }),
   )
 }
 

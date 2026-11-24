@@ -3424,7 +3424,7 @@ fn proxy_children_found(
       now_ms:,
       proxy:,
       targets: units,
-      named_player: None,
+      players: [],
       root: holder.root,
       parent: holder.spell.spell4_id,
       counted_with: WithNothing,
@@ -4675,17 +4675,8 @@ fn go(
               caster:,
               now_ms:,
               proxy:,
-              targets: case proxy.target {
-                spell_plan.OnCaster -> [caster.unit_id]
-                spell_plan.OnPrimaryTarget -> [
-                  option.unwrap(live.named_player, caster.unit_id),
-                ]
-                spell_plan.OnEachStruck -> cast_gate.hit_units(struck:)
-              },
-              named_player: case proxy.target {
-                spell_plan.OnPrimaryTarget -> live.named_player
-                spell_plan.OnCaster | spell_plan.OnEachStruck -> None
-              },
+              targets: proxy_targets(proxy:, caster:, live:, struck:),
+              players: proxy_players(proxy:, live:, struck:),
               root: live.root,
               parent: live.spell.spell4_id,
               counted_with: live.counted_with,
@@ -5061,7 +5052,7 @@ fn reached_by(
           )
         spell_plan.HealEffect(heal: row) ->
           reach_units(
-            walk:,
+            walk: caster_taken(walk:, planned:, row:, caster:, struck:),
             planned:,
             row:,
             aim: row.aim,
@@ -5087,6 +5078,28 @@ fn reached_by(
           )
       }
     },
+  )
+}
+
+/// The walk with the heal row `row` on the caster first when the round holds the caster as a
+/// candidate the strike let the row through for (`cast_gate.caster_took`): a row aimed at the
+/// area alone, which names no caster of its own. The strike gated it, so the go does not.
+fn caster_taken(
+  walk walk: Walk,
+  planned planned: spell_effect.PlannedEffect(spell_plan.Kind),
+  row row: spell_plan.Heal,
+  caster caster: Caster,
+  struck struck: List(Struck),
+) -> Walk {
+  use <- bool.guard(
+    when: !cast_gate.caster_took(struck:, effect_id: row.effect_id),
+    return: walk,
+  )
+  Walk(
+    ..walk,
+    reached: list.append(walk.reached, [
+      Reached(effect: planned, unit_id: caster.unit_id, product: Plain),
+    ]),
   )
 }
 
@@ -5817,14 +5830,56 @@ fn cooldown_row_started(
   }
 }
 
+/// The units a go starts the children of a Proxy on: the caster for a Proxy aimed at the
+/// caster, the player the press named for one aimed at the primary target (the caster when no
+/// player was named) and each unit the round Hit for one aimed at the area.
+fn proxy_targets(
+  proxy proxy: Proxy,
+  caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
+) -> List(Int) {
+  case proxy.target {
+    spell_plan.OnCaster -> [caster.unit_id]
+    spell_plan.OnPrimaryTarget -> [
+      option.unwrap(live.named_player, caster.unit_id),
+    ]
+    spell_plan.OnEachStruck -> cast_gate.hit_units(struck:)
+    spell_plan.OnEachAlly -> cast_gate.hit_players(struck:)
+  }
+}
+
+/// The units among `proxy_targets` that are players the caster must see when the child
+/// starts: the player the press named for a Proxy aimed at the primary target, and each ally
+/// the round Hit for one aimed at the area.
+fn proxy_players(
+  proxy proxy: Proxy,
+  live live: Live,
+  struck struck: List(Struck),
+) -> List(Int) {
+  case proxy.target {
+    spell_plan.OnPrimaryTarget ->
+      case live.named_player {
+        Some(player) -> [player]
+        None -> []
+      }
+    spell_plan.OnCaster -> []
+    spell_plan.OnEachStruck | spell_plan.OnEachAlly ->
+      cast_gate.hit_players(struck:)
+  }
+}
+
 /// The children of a Proxy on the units `targets`, each the named spell as a child cast
 /// of `parent` with `root` as its root, counting its quest rows with `counted_with` and
 /// reading the item's value `from`: a go gives the caster for a Proxy aimed at the caster,
 /// the player the press named for one aimed at the primary target (the caster when no
 /// player was named) and each Hit unit of the round for one aimed at the area (none for a
 /// deflect), and a tick of a Proxy aimed at the area gives the units found inside it.
-/// `named_player` is the player the press named, which a child of a Proxy aimed at the
-/// primary target carries. A Proxy behind a target gate starts a child on a unit only when
+/// `players` are the units among `targets` that are players the caster must see when the child
+/// starts: the player the press named for a Proxy aimed at the primary target, and each ally
+/// the round hit for one aimed at the area. A child on one of them carries it as its named
+/// player (`Live.named_player`); a child on a creature or the caster carries none. A Proxy
+/// behind a target gate starts a child on a unit only when
 /// the gate passes against that unit, once for each unit, in the order of the units, each
 /// check taking the rolls its gate needs (`cast_tick.target_gate`); the rolls left follow the
 /// effects.
@@ -5834,7 +5889,7 @@ fn children(
   now_ms now_ms: Int,
   proxy proxy: Proxy,
   targets targets: List(Int),
-  named_player named_player: Option(Int),
+  players players: List(Int),
   root root: Spell4Id,
   parent parent: Spell4Id,
   counted_with counted_with: AdvanceWith,
@@ -5870,7 +5925,10 @@ fn children(
             root:,
             parent:,
             primary_target:,
-            named_player:,
+            named_player: case list.contains(players, primary_target) {
+              True -> Some(primary_target)
+              False -> None
+            },
             counted_with:,
             from:,
           )

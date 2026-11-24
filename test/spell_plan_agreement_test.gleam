@@ -17,7 +17,7 @@
 ////   (`genesis_prime/coverage/effect_row` `places`), except that the spell planned alone is
 ////   no Proxy's child: its own rows are read where nothing starts it on each struck unit;
 //// - a spell refused for a column of its own (a cost, a requirement, a cycle of Proxies, a
-////   stealth condition, a phase or a threshold) is listed by its error and not compared:
+////   stealth condition, a phase, a threshold or the gos a Proxy at the allies fires at) is listed by its error and not compared:
 ////   each of its rows is counted by its own columns.
 
 import client_tables
@@ -90,6 +90,8 @@ fn effect_row_of(error: PlanError) -> Refusal {
     spell_plan.NoThresholdTime(..) -> NamesNoRow("a threshold")
     spell_plan.StealthConditionNotRead(..) -> NamesNoRow("a stealth condition")
     spell_plan.StealthChangeNotRead(..) -> NamesNoRow("a stealth change")
+    spell_plan.ProxyOnEachAllyAtSeveralGos(..) ->
+      NamesNoRow("a Proxy at the allies of the area that fires at several gos")
     spell_plan.InnateFailed(..) -> NamesNoRow("an innate")
     spell_plan.AreaNotBuilt(..) | spell_plan.AreaDataFault(..) ->
       NamesNoRow("an area")

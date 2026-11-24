@@ -473,6 +473,67 @@ pub fn type_71_compares_the_vitals_percentage_of_its_maximum_test() -> Nil {
     as "and fails every other comparison"
 }
 
+/// Type 40 (`0x1404a4d90`, Prerequisite rows 13985 and 13986): the unit's health as a percentage of
+/// its maximum health, against the value 30, by comparison 6 (at most) and 3 (more than).
+pub fn a_health_percent_gate_compares_the_units_health_with_its_maximum_test() -> Nil {
+  use <- owned_test.run(5000)
+  let held = fn(current, maximum) {
+    prerequisite.with_health(subject: bare(), health: Vital(current:, maximum:))
+  }
+  let gate = fn(code) {
+    prerequisite_support.row(id: 13_985, flags: 0, conditions: [
+      #(40, code, 0, 30),
+    ])
+  }
+  list.each(
+    [
+      #(
+        "30 of 100 is exactly 30 percent: at most 30",
+        30.0,
+        100.0,
+        Passes,
+        Fails,
+      ),
+      #("31 of 100 is above 30 percent", 31.0, 100.0, Fails, Passes),
+      #("29 of 100 is below 30 percent", 29.0, 100.0, Passes, Fails),
+      #("a unit at full health is at 100 percent", 100.0, 100.0, Fails, Passes),
+      #(
+        "60 of 200 is 30 percent, whatever the maximum",
+        60.0,
+        200.0,
+        Passes,
+        Fails,
+      ),
+    ],
+    fn(row) {
+      let #(reason, current, maximum, at_most, more_than) = row
+      assert prerequisite_support.check(
+          row: gate(6),
+          subject: held(current, maximum),
+        )
+        == at_most
+        as reason
+      assert prerequisite_support.check(
+          row: gate(3),
+          subject: held(current, maximum),
+        )
+        == more_than
+        as reason
+    },
+  )
+  assert prerequisite_support.check(row: gate(6), subject: bare())
+    == NotRead(prerequisite_type: 40)
+    as "a unit that holds no health is not read"
+  assert prerequisite_support.check(
+      row: prerequisite_support.row(id: 1, flags: 0, conditions: [
+        #(71, 6, 1, 30),
+      ]),
+      subject: held(10.0, 100.0),
+    )
+    == NotRead(prerequisite_type: 71)
+    as "a player's copy that holds its health alone is read by type 40 only: type 71 of the same vital is not read"
+}
+
 pub fn type_73_compares_the_current_value_cut_toward_zero_test() -> Nil {
   use <- owned_test.run(5000)
   let held =
@@ -605,12 +666,12 @@ pub fn the_types_the_server_decides_are_those_is_read_names_test() -> Nil {
     })
     == [
       0, 1, 2, 3, 4, 6, 10, 11, 13, 14, 15, 17, 21, 22, 23, 26, 28, 32, 33, 34,
-      35, 36, 37, 38, 39, 43, 45, 47, 50, 52, 57, 58, 59, 60, 64, 68, 69, 71, 72,
-      73, 74, 75, 94, 108, 109, 116, 118, 125, 129, 130, 132, 143, 144, 156, 157,
-      158, 161, 165, 179, 181, 202, 214, 243, 246, 247, 249, 250, 257, 258, 274,
-      282, 284, 288, 296, 297, 298, 299, 300,
+      35, 36, 37, 38, 39, 40, 43, 45, 47, 50, 52, 57, 58, 59, 60, 64, 68, 69, 71,
+      72, 73, 74, 75, 94, 108, 109, 116, 118, 125, 129, 130, 132, 143, 144, 156,
+      157, 158, 161, 165, 179, 181, 202, 214, 243, 246, 247, 249, 250, 257, 258,
+      274, 282, 284, 288, 296, 297, 298, 299, 300,
     ]
-    as "the types the server reads (1 to 4, 6, 10, 11, 13, 14, 15, 22, 23, 26, 28, 33 to 39, 43, 47, 50, 52, 59, 60, 64, 68, 69, 71, 73, 74, 94, 108, 109, 116, 118, 125, 129, 130, 143, 179, 214, 243, 246, 250, 288; Prerequisite.prerequisiteTypeId.1, .2, .3, .4, .6, .10, .11, .13, .14, .22, .26, .38, .39, .43, .47, .52, .60, .64, .68, .69, .74, .94, .108, .109, .116, .118, .129, .130, .143, .214, .243, .246, .250, .288) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
+    as "the types the server reads (1 to 4, 6, 10, 11, 13, 14, 15, 22, 23, 26, 28, 33 to 40, 43, 47, 50, 52, 59, 60, 64, 68, 69, 71, 73, 74, 94, 108, 109, 116, 118, 125, 129, 130, 143, 179, 214, 243, 246, 250, 288; Prerequisite.prerequisiteTypeId.1, .2, .3, .4, .6, .10, .11, .13, .14, .22, .26, .38, .39, .40, .43, .47, .52, .60, .64, .68, .69, .74, .94, .108, .109, .116, .118, .129, .130, .143, .214, .243, .246, .250, .288) and the types the client's check has no case for, which it fails as the client does (0x1404a2100: 0, those 24 and those above 295)"
 }
 
 fn types_up_to_300() -> List(Int) {

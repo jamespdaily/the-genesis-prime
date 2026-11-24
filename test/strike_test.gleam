@@ -96,6 +96,7 @@ fn selection(
     ticking: [],
     gates: [],
     players: [],
+    starts_children: False,
     heals: [],
   )
 }
@@ -278,6 +279,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         ticking: [],
         gates: [],
         players: [],
+        starts_children: False,
         heals: [],
       ),
       attacker: Attacker(..strike_support.attacker(), stats: novice),
@@ -2204,6 +2206,7 @@ fn offence_of_caster_with(
         ticking: [],
         gates: [],
         players: [],
+        starts_children: False,
         heals: [],
       ),
       attacker: Attacker(..strike_support.attacker(), properties:),

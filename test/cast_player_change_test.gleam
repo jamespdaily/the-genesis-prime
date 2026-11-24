@@ -2624,3 +2624,184 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
       }
   })
 }
+
+// ---- a Proxy aimed at the area of a spell that finds allies ----
+
+/// A hit of a go on the player `unit_id` that no row reached: the area selected it for a Proxy,
+/// so the strike answered it at once with nothing landed.
+fn ally_selected(unit_id unit_id: Int) -> cast_state.Struck {
+  cast_state.Hit(
+    unit_id:,
+    unit: cast_state.HitOtherPlayer(heals: []),
+    descriptions: [],
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// One press at oneself of a parent that holds a Proxy aimed at the area, whose go the round
+/// of `hit` answers: whom the caster sees at the go and when the child starts, the rolls of the
+/// go, and each start of the child as the time and the primary target it names.
+type Selected {
+  Selected(
+    why: String,
+    proxy: spell_plan.Proxy,
+    hit: List(cast_state.Struck),
+    sees_at_go: List(Int),
+    sees_later: List(Int),
+    rolls: List(Int),
+    starts: List(#(Int, Int)),
+    debug: List(String),
+  )
+}
+
+pub fn a_proxy_at_the_area_starts_one_child_on_each_ally_the_round_hit_naming_that_ally_and_none_on_a_creature_a_foe_spell_hit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A Proxy aimed at the area (targetFlags 4) starts its child on each unit the go hit
+  // (`cast.went`). The area of a spell that finds allies selects players, so each child is cast
+  // on an ally and names it as its player, whose sight the caster checks when the child starts
+  // (`child_started`); the area of a spell that hits foes selects creatures, which are no
+  // player and name none. Planted parent, as the union tests' (`cast_union_aim_test`).
+  let plain = support.child(spell4_id: 90_003, base: 4)
+  let other_ally = 41
+  let creature = 20
+  let on_allies = fn(delay_ms, condition) {
+    proxy_of(child: plain, target: spell_plan.OnEachAlly, delay_ms:, condition:)
+  }
+  let rows = [
+    Selected(
+      why: "a round that hit two allies starts two children, each with its ally as primary target, in the round's order",
+      proxy: on_allies(0, Always),
+      hit: [ally_selected(unit_id: other_ally), ally_selected(unit_id: ally)],
+      sees_at_go: [ally, other_ally],
+      sees_later: [ally, other_ally],
+      rolls: [],
+      starts: [#(1000, other_ally), #(1000, ally)],
+      debug: [],
+    ),
+    Selected(
+      why: "a Proxy with a delay of 250 ms (Affinity's 207513) starts each child 250 ms on",
+      proxy: on_allies(250, Always),
+      hit: [ally_selected(unit_id: ally), ally_selected(unit_id: other_ally)],
+      sees_at_go: [ally, other_ally],
+      sees_later: [ally, other_ally],
+      rolls: [],
+      starts: [#(1250, ally), #(1250, other_ally)],
+      debug: [],
+    ),
+    Selected(
+      why: "an ally out of the caster's sight when the child starts: no child for it, a debug line says so, and the ally in sight gets its own",
+      proxy: on_allies(250, Always),
+      hit: [ally_selected(unit_id: ally), ally_selected(unit_id: other_ally)],
+      sees_at_go: [ally, other_ally],
+      sees_later: [other_ally],
+      rolls: [],
+      starts: [#(1250, other_ally)],
+      debug: ["90003", "40", "not in the caster's sight"],
+    ),
+    Selected(
+      why: "an ally out of the caster's sight at the go: no child and the same line",
+      proxy: on_allies(0, Always),
+      hit: [ally_selected(unit_id: ally)],
+      sees_at_go: [],
+      sees_later: [],
+      rolls: [],
+      starts: [],
+      debug: ["90003", "40", "not in the caster's sight"],
+    ),
+    Selected(
+      why: "a Proxy behind a caster gate that fails (4585: at most 50, roll 80) starts no child",
+      proxy: on_allies(0, spell_plan.GatedOnCaster(gates: [chance_gate()])),
+      hit: [ally_selected(unit_id: ally)],
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [80],
+      starts: [],
+      debug: [],
+    ),
+    Selected(
+      why: "a round that hit no ally starts no child",
+      proxy: on_allies(0, Always),
+      hit: [],
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      starts: [],
+      debug: [],
+    ),
+    Selected(
+      why: "a creature a spell that hits foes struck: the child starts on it and names no player, though the caster sees no creature as one",
+      proxy: proxy_of(
+        child: plain,
+        target: spell_plan.OnEachStruck,
+        delay_ms: 0,
+        condition: Always,
+      ),
+      hit: support.hits([creature]),
+      sees_at_go: [ally],
+      sees_later: [ally],
+      rolls: [],
+      starts: [#(1000, creature)],
+      debug: [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let parent = parent_of(proxy: row.proxy)
+    let #(state, pressed) =
+      pressed_at_in(
+        plans: plans_of(spell: parent),
+        bag: bag_of_base_3,
+        target: 7,
+        state: cast_state.new(),
+        caster: esper_seeing(players: [ally, other_ally]),
+        at: 1000,
+      )
+    let #(state, went) =
+      support.answered_each(
+        caster: esper_seeing(players: row.sees_at_go),
+        state:,
+        effects: pressed,
+        at: 1000,
+        struck_of: fn(asked) {
+          case asked.spell4_id == parent.spell4_id {
+            True -> row.hit
+            False -> []
+          }
+        },
+        rolls: row.rolls,
+        poses: dict.new(),
+      )
+    let #(_, steps) =
+      support.run_timers_each(
+        caster: esper_seeing(players: row.sees_later),
+        state:,
+        effects: list.append(pressed, went),
+        from_ms: 1000,
+        struck_of: fn(_) { [] },
+      )
+    let started =
+      list.flatten([
+        starts_of(effects: went, spell4_id: 90_003, at: 1000),
+        list.flat_map(steps, fn(step) {
+          starts_of(effects: step.1, spell4_id: 90_003, at: step.0)
+        }),
+      ])
+    assert started == row.starts as row.why
+    let lines =
+      list.flatten([
+        support.debug_lines(effects: went),
+        list.flat_map(steps, fn(step) { support.debug_lines(effects: step.1) }),
+      ])
+    assert list.all(row.debug, fn(words) {
+      list.any(lines, string.contains(_, words))
+    })
+      as { row.why <> ": the debug lines say " <> string.join(row.debug, ", ") }
+    assert row.debug != [] || lines == []
+      as {
+        row.why
+        <> ": and none is written otherwise, not "
+        <> string.join(lines, "; ")
+      }
+  })
+}

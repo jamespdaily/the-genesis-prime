@@ -475,14 +475,13 @@ pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
     && string.contains(proxy.reason, "several tiers of one ability")
     as "the gap names the aim with bit 8 and the Proxies that start tiers with no choice"
   assert !string.contains(proxy.reason, "3, 5 or 7")
-    as "a Proxy aimed by 3, 5 or 7 in a spell that hits no foes is read as the caster alone, so it is no gap"
+    as "a Proxy aimed by 3, 5 or 7 is read, as the caster alone where the area of a spell that hits no foes finds no allies and as the caster and each ally where it does, so the gap does not name those flags"
   let entries = gaps.registry()
   [
-    #("a friendly area's Proxy starts its child on the caster alone", [
-      "yourself and N allies",
-      "Proxy",
-      "caster alone",
-    ]),
+    #(
+      "the rows of the child a friendly area's Proxy starts on each ally that land nowhere",
+      ["each ally", "a Proc", "Triage's shield row 174070"],
+    ),
     #("a Proxy that starts tiers with no choice is left out", [
       "several tiers",
       "tier",
