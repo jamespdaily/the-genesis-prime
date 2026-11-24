@@ -106,10 +106,11 @@
 //// - **Who the primary target is** follows from how the spell is started
 ////   (genesis_prime/game/spell_plan `Start`): the caster for a press, a Proxy on the caster and
 ////   a proc aimed at its holder (`AtHolder`), the struck unit for a Proxy on each struck unit,
+////   the ally for a Proxy on each ally,
 ////   and another unit for a proc aimed at one (`AtOtherUnit`, which falls back to the holder
 ////   when the event has none, so its spell is still built only as for another unit). A row on
-////   the target of a spell started on a struck unit or by a proc aimed at another unit is built
-////   only as a circle with no offset, which reads no yaw (`start_placed`), and a pressed
+////   the target of a spell started on a struck unit, on an ally or by a proc aimed at another
+////   unit is built only as a circle with no offset, which reads no yaw (`start_placed`), and a pressed
 ////   spell's row on the target only when the spell is cast at the caster, since the press names
 ////   the caster and reads no other target (`targeting_given`, `target_mechanic.takes_caster`).
 //// - **Which spells** are read: the spells of each level-1 ability's tree
@@ -127,8 +128,7 @@
 ////   2: `TelegraphOnStruckUnits` for bit 4, else `TelegraphNotOnCaster`); a spell's hit rows
 ////   placed apart (`PlacedApart`); a pressed spell whose hit row is on the target and whose
 ////   target mechanic is not cast at the caster (`TargetingNotBuilt`); a spell started on
-////   another unit whose hit row on the target is not a circle with no offset, or any hit row
-////   on the target of a spell started on an ally, whose place the picture does not hold
+////   another unit, or on an ally, whose hit row on the target is not a circle with no offset
 ////   (`HitRowOffTheStrikeCentre`); a shape
 ////   the rule does not build (for a player 1, 3, 5, 6, or 8 with
 ////   a box that has a width or a length: the box's height, p4, is never tested; for a
@@ -457,12 +457,7 @@ pub fn describe(error error: AreaError) -> String {
         spell_plan.FromProc(aim: spell_plan.AtOtherUnit) ->
           "by a proc aimed at another unit"
       }
-      <> case start {
-        spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
-          ", on a player whose place the caster's picture does not hold"
-        spell_plan.Pressed | spell_plan.Proxied(..) | spell_plan.FromProc(..) ->
-          ", on a unit whose facing the strike does not know, and the row's shape is not a circle at that unit's place"
-      }
+      <> ", on a unit whose facing the strike does not know, and the row's shape is not a circle at that unit's place"
     TelegraphOnStruckUnits(spell4_id:, telegraph_id:, target_type_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -671,10 +666,10 @@ fn start_checked(
 /// the holder). A Proxy aimed at the primary target is read as on the caster, whichever
 /// player a bag press named, which holds only because the one child of such a Proxy that has
 /// a hit row draws a circle with no offset (Spell4 54912), which the reading below builds
-/// too. A spell started on a struck unit, or by a proc aimed at another unit, has another
-/// unit as its primary target, whose place the strike knows and whose yaw it does not
-/// (`strike.select`: yaw 0.0): a row on the caster is centred on the caster, and a row on the
-/// target only when every hit shape is a circle with no offset, which reads no yaw
+/// too. A spell started on a struck unit, on an ally or by a proc aimed at another unit has
+/// another unit as its primary target, whose place the strike knows and whose yaw it does not
+/// (`shown.strike_centre_of`: yaw 0.0): a row on the caster is centred on the caster, and a row
+/// on the target only when every hit shape is a circle with no offset, which reads no yaw
 /// (`area.in_shape`; a turned circle is the same circle). Any other shape of a row on the
 /// target is turned or moved by the unit's facing on the client (`0x14054b1b0.follows_caster`).
 pub fn start_placed(
@@ -688,15 +683,11 @@ pub fn start_placed(
     | spell_plan.Proxied(target: spell_plan.OnPrimaryTarget)
     | spell_plan.FromProc(aim: spell_plan.AtHolder) -> True
     spell_plan.Proxied(target: spell_plan.OnEachStruck)
+    | spell_plan.Proxied(target: spell_plan.OnEachAlly)
     | spell_plan.FromProc(aim: spell_plan.AtOtherUnit) ->
       case anchor {
         FollowsCaster | FixedAtCaster -> True
         FollowsTarget | FixedAtTarget -> list.all(shapes, is_plain_circle)
-      }
-    spell_plan.Proxied(target: spell_plan.OnEachAlly) ->
-      case anchor {
-        FollowsCaster | FixedAtCaster -> True
-        FollowsTarget | FixedAtTarget -> list.is_empty(shapes)
       }
   }
 }
@@ -1814,11 +1805,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player area orders",
-      missing: "a player's area ordered by lowest health (Spell4AoeTargetConstraints targetSelection 4, which no planned ability names) is read as no area and refused for a phase that selects units from it; an area ordered by missing health (targetSelection 5) is built only for a friendly area (`SpellArea.finds_allies`) whose phases select units by its instant heals or by a Proxy with no tickTime that starts a child on each ally (Sentinel 54395, Mending Banner 33345, Mental Boon 33257 and Astral Infusion 35870; Warden 33392 and Barrier 78081 start a child with a hit row on the ally and stay refused); Mental Boon says \"hurt allies\" (text 245408) and the order keeps an ally at full health a candidate after every hurt one, so a cast with fewer hurt allies than its count starts a child on unhurt ones too, a guess; an area that only a Proxy at the area uses never takes the caster as a candidate, since a Proxy names no caster of its own and no table field tells Affinity's \"yourself and an ally\" (text 316675) from Mending Banner's \"most injured ally\" (text 246918), a guess; the missing health is the maximum less the health as the caster's client was told of each ally, an amount and not a fraction, with ties to the nearer unit then the lower unit id and an ally at full health a candidate after every hurt one, all guesses, the client naming order 5 and ordering nothing; an area that finds the caster's allies (an instant heal aimed at it) selects the other Friendly players the caster has in sight, and the caster too as a candidate at distance 0 with no shape test when a heal row of the phase is aimed at the area alone and none names the caster (Triage, Dual Fire and Regenerative Pulse, \"yourself or an ally\", text 195454; the client names no order, so the caster's rank among units missing as much health, and first when every unit is at full health, is a guess), never the caster for a phase with a row that names it, which heals it by its flag, and an area whose valid targets hold bit 16 (the caster's party only) finds nobody, since every player has the group id 0; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+      missing: "a player's area ordered by lowest health (Spell4AoeTargetConstraints targetSelection 4, which no planned ability names) is read as no area and refused for a phase that selects units from it; an area ordered by missing health (targetSelection 5) is built only for a friendly area (`SpellArea.finds_allies`) whose phases select units by its instant heals or by a Proxy with no tickTime that starts a child on each ally (Sentinel 54395, Mending Banner 33345, Mental Boon 33257 and Astral Infusion 35870; Warden 33392 and Barrier 78081 start a child whose hit row, a circle, is on the ally); Mental Boon says \"hurt allies\" (text 245408) and the order keeps an ally at full health a candidate after every hurt one, so a cast with fewer hurt allies than its count starts a child on unhurt ones too, a guess; an area that only a Proxy at the area uses never takes the caster as a candidate, since a Proxy names no caster of its own and no table field tells Affinity's \"yourself and an ally\" (text 316675) from Mending Banner's \"most injured ally\" (text 246918), a guess; the missing health is the maximum less the health as the caster's client was told of each ally, an amount and not a fraction, with ties to the nearer unit then the lower unit id and an ally at full health a candidate after every hurt one, all guesses, the client naming order 5 and ordering nothing; an area that finds the caster's allies (an instant heal aimed at it) selects the other Friendly players the caster has in sight, and the caster too as a candidate when a heal row of the phase is aimed at the area alone and none names the caster (Triage, Dual Fire and Regenerative Pulse, \"yourself or an ally\", text 195454; at distance 0 with no shape test when the area is centred on the caster, and from where it stands, by the area's own shape, when the area is centred on an ally a child cast was started on; the client names no order, so the caster's rank among units missing as much health, and first when every unit is at full health, is a guess), never the caster for a phase with a row that names it, which heals it by its flag, and an area whose valid targets hold bit 16 (the caster's party only) finds nobody, since every player has the group id 0; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
     ),
     gap.Entry(
       area: "Player area around another player",
-      missing: "a cast whose primary target is another player selects nothing from its area, since the picture holds a pose for a creature only (`shown.pose_of`): no planned ability's friendly area is cast at another player (no spell that finds allies has a Targeted mechanic) and a hostile one is refused while no player is PvP flagged, so no press reaches it",
+      missing: "a cast whose primary target is another player centres its area on the ground point of that player's place with yaw 0.0, a guess: the stored place carries the viewer's own facing and no message tells the player's, so a shape that reads a facing is not built for a child cast on an ally (`start_placed`); only a child a Proxy starts on an ally has an area of its own centred on a player (Warden's 36660 and Barrier's 41369), and no press reaches another player's area: no beneficial spell that names its target and is pressed selects units from its area, and a hostile one is refused while no player is PvP flagged",
     ),
     gap.Entry(
       area: "Player area valid targets",

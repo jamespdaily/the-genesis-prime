@@ -49,7 +49,8 @@
 //// - **Selection** reads the picture of the units the client shows
 ////   (genesis_prime/game/shown) and the spell's area (genesis_prime/game/spell_area): the
 ////   phase's centre is the caster's place and facing, or, for a child cast on a struck
-////   unit (Crush's 42297), that unit's shown place; the primary target is added for an
+////   unit (Crush's 42297), that unit's shown place, and for a child cast on an ally
+////   (Warden's 36660) the ally's place with no facing (`shown.strike_centre_of`); the primary target is added for an
 ////   effect aimed at it, and a unit is struck once for a go. A phase that selects no
 ////   unit has an empty round, which waits behind the cast's earlier rounds like any.
 ////   A cast that spent points above its base cost (`GoAsked.spent`) strikes with the
@@ -101,8 +102,10 @@
 ////   (genesis_prime/game/connection/landing) and answers, and the player's place fills with
 ////   what it applied, listed in the go with the description of each heal (`cast_heal.healed_on`).
 ////   When a heal row of the phase is aimed at the area alone and none names the caster, the
-////   caster is one more candidate of the area, at distance 0 with no shape test and ranked by
-////   the health its vitals miss (`area.select_ordered_with_caster`); it is told nothing, its
+////   caster is one more candidate of the area, ranked by the health its vitals miss: at
+////   distance 0 with no shape test when the area is centred on it (`area.select_ordered_with_caster`),
+////   and tested with the area's own shape from where it stands when the area is centred on
+////   an ally a child cast was started on (`area.centred_on_the_caster`); it is told nothing, its
 ////   place is answered at once with the rows that passed its gates (`cast_state.HitCaster`),
 ////   and the go applies them itself. A row a gate fails or
 ////   cannot tell is left out with a debug line; a player no row reaches has no place and no
@@ -487,11 +490,18 @@ fn players_of_the_phase(
   }
 }
 
+/// Where a cast's area is centred: the pose, and whether it is centred on the caster.
+type Centre {
+  Centre(pose: Pose, on_the_caster: Bool)
+}
+
 /// Where a cast's area is centred (`area.centre_of`): on the pose the cast started at, the
 /// caster now, or the primary target, which is the caster or another unit the picture shows,
-/// at the place and facing the picture gives it (`shown.pose_of`). An area fixed at its
-/// target stays at `primary_pose`, the pose, facing included, the target stood in when the
-/// cast went, when there is one. A primary target the picture does not show gives no centre.
+/// at the place and facing the picture gives it (`shown.strike_centre_of`: a player's place
+/// has no facing). An area fixed at its target stays at `primary_pose`, the pose, facing
+/// included, the target stood in when the cast went, when there is one. A primary target the
+/// picture does not show gives no centre. The area is centred on the caster for an anchor on
+/// the caster and for a primary target that is the caster (`area.centred_on_the_caster`).
 fn centre_of_cast(
   anchor anchor: area.Anchor,
   attacker attacker: Attacker,
@@ -500,11 +510,11 @@ fn centre_of_cast(
   started_at started_at: Pose,
   primary_pose primary_pose: Option(Pose),
   now_ms now_ms: Int,
-) -> Result(Pose, Nil) {
+) -> Result(Centre, Nil) {
   use primary <- result.map(case primary_target == attacker.unit_id {
     True -> Ok(area.TheCaster)
     False ->
-      shown.pose_of(
+      shown.strike_centre_of(
         picture:,
         unit_id: primary_target,
         now_ms:,
@@ -522,7 +532,10 @@ fn centre_of_cast(
     | area.FollowsTarget, _, _
     -> primary
   }
-  area.centre_of(anchor:, caster: attacker.pose, started_at:, primary:)
+  Centre(
+    pose: area.centre_of(anchor:, caster: attacker.pose, started_at:, primary:),
+    on_the_caster: area.centred_on_the_caster(anchor:, primary:),
+  )
 }
 
 /// The units inside the area of a periodic Proxy's tick as the picture shows them now, in
@@ -586,7 +599,7 @@ fn area_selection(
   area area: spell_area.SpellArea,
   phase phase: Int,
   row row: area.Row,
-  centre centre: Pose,
+  centre centre: Centre,
   seed seed: Int,
   caster_candidate caster_candidate: Option(area.Candidate),
   now_ms now_ms: Int,
@@ -619,16 +632,33 @@ fn area_selection(
   case spell_area.inside(spell: area, phase:), caster_candidate {
     None, _ -> []
     Some(inside), None ->
-      area.select_ordered(candidates:, centre:, row:, inside:, seed:)
-    Some(inside), Some(caster) ->
-      area.select_ordered_with_caster(
+      area.select_ordered(
         candidates:,
-        caster:,
-        centre:,
+        centre: centre.pose,
         row:,
         inside:,
         seed:,
       )
+    Some(inside), Some(caster) ->
+      case centre.on_the_caster {
+        True ->
+          area.select_ordered_with_caster(
+            candidates:,
+            caster:,
+            centre: centre.pose,
+            row:,
+            inside:,
+            seed:,
+          )
+        False ->
+          area.select_ordered(
+            candidates: [caster, ..candidates],
+            centre: centre.pose,
+            row:,
+            inside:,
+            seed:,
+          )
+      }
   }
 }
 
