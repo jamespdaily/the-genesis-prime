@@ -15,14 +15,13 @@ import game_connection_support as connection_support
 import game_wire_support.{
   type TwoEntered, TwoEntered, beast_health_in, beast_place,
   enters_and_sees_the_beasts, finishes, health_in, index_where, location_4_items,
-  new_player_at_level, refusals, send_play, two_players_enter,
+  new_player_at_level, refusals, send_play, started_on, two_players_enter,
   two_players_enter_after, two_players_enter_one_map, unit_of, walk_to,
   world_with_a_beast_ahead, world_with_beasts, world_with_spawns,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
-import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -46,7 +45,6 @@ import genesis_prime/message/unit_float_stat_changed
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
-import genesis_prime/server
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
@@ -85,23 +83,6 @@ fn two_players_enter_on(
   time time: driven_time.Time,
 ) -> TwoEntered {
   two_players_enter(started: started_on(tables:, time:), first_class:, level: 9)
-}
-
-/// A server holding these tables, its game connections and its World taking their time and
-/// their timers from `time`.
-fn started_on(
-  tables tables: table_store.Tables,
-  time time: driven_time.Time,
-) -> login_support.Started {
-  login_support.start_with(time:, change: fn(settings) {
-    server.Settings(
-      ..settings,
-      game: server.Served(
-        ..settings.game,
-        settings: connection_state.Settings(..settings.game.settings, tables:),
-      ),
-    )
-  })
 }
 
 pub fn a_players_press_is_answered_0x7fd_go_and_finish_and_a_player_in_sight_reads_the_same_cast_on_the_whole_server_test() -> Nil {
