@@ -2884,16 +2884,17 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_by_miss
     })
   assert ordered_by_health != []
     as "the abilities the orders free include spells whose area row orders by health"
-  // The 14 instant heal rows of the six abilities whose friendly area is ordered by missing
-  // health that the plan reads (Crisis Wave 93037; Soothe 78168, 78280, 78282; Vitality Burst
-  // 85507, 85508, 85509, 85526, 85527, 85529; Triage 141503; Dual Fire 84876 and its Surge
-  // alternate's 126516; Regenerative Pulse's alternate 204570): the spells that hold them build
-  // the order and select units from it.
+  // The 16 instant heal rows of the six abilities whose friendly area is ordered by missing
+  // health (Crisis Wave 93037; Soothe 78168, 78280, 78282; Vitality Burst 85507, 85508, 85509,
+  // 85526, 85527, 85529; Triage 141503; Dual Fire 84876 and its Surge alternate's 126516;
+  // Regenerative Pulse's 204551 and 204560, behind a health percentage the caster's picture
+  // holds, and its alternate's 204570): the spells that hold them build the order and select
+  // units from it.
   let healing_spells =
     list.map(
       [
         93_037, 78_168, 78_280, 78_282, 85_507, 85_508, 85_509, 85_526, 85_527,
-        85_529, 141_503, 84_876, 126_516, 204_570,
+        85_529, 141_503, 84_876, 126_516, 204_551, 204_560, 204_570,
       ],
       fn(row_id) {
         let assert Ok(row) =

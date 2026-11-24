@@ -5061,7 +5061,7 @@ fn reached_by(
           )
         spell_plan.HealEffect(heal: row) ->
           reach_units(
-            walk:,
+            walk: caster_taken(walk:, planned:, row:, caster:, struck:),
             planned:,
             row:,
             aim: row.aim,
@@ -5087,6 +5087,28 @@ fn reached_by(
           )
       }
     },
+  )
+}
+
+/// The walk with the heal row `row` on the caster first when the round holds the caster as a
+/// candidate the strike let the row through for (`cast_gate.caster_took`): a row aimed at the
+/// area alone, which names no caster of its own. The strike gated it, so the go does not.
+fn caster_taken(
+  walk walk: Walk,
+  planned planned: spell_effect.PlannedEffect(spell_plan.Kind),
+  row row: spell_plan.Heal,
+  caster caster: Caster,
+  struck struck: List(Struck),
+) -> Walk {
+  use <- bool.guard(
+    when: !cast_gate.caster_took(struck:, effect_id: row.effect_id),
+    return: walk,
+  )
+  Walk(
+    ..walk,
+    reached: list.append(walk.reached, [
+      Reached(effect: planned, unit_id: caster.unit_id, product: Plain),
+    ]),
   )
 }
 

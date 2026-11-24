@@ -37,8 +37,8 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type Healed, type Product, type Reached,
   type State, type Struck, type TickingOn, CasterChangeStarts, CooldownKept,
-  Deflected, Described, Heal, Healed, Healing, Hit, HitCreature, HitOtherPlayer,
-  HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
+  Deflected, Described, Heal, Healed, Healing, Hit, HitCaster, HitCreature,
+  HitOtherPlayer, HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
 } as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
@@ -82,6 +82,8 @@ pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
       | Immune(unit: HitPlayer, ..)
       | Hit(unit: HitOtherPlayer(..), ..)
       | Immune(unit: HitOtherPlayer(..), ..)
+      | Hit(unit: HitCaster(..), ..)
+      | Immune(unit: HitCaster(..), ..)
       | Deflected(..) -> []
     }
   })
