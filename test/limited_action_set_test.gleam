@@ -1249,6 +1249,15 @@ type Tiering {
   RefusesTier(error: limited_action_set.RowError)
 }
 
+/// The tiers a `Saved` holds as (set, Spell4Base, tier), in set then Spell4Base order.
+fn kept_tiers(saved saved: limited_action_set.Saved) -> List(#(Int, Int, Int)) {
+  list.flat_map([0, 1, 2, 3], fn(set) {
+    list.map(limited_action_set.held_tiers(saved:, set:), fn(held) {
+      #(set, { held.0 }.value, held.1)
+    })
+  })
+}
+
 /// One row of the entering table: a level, the points the level gives, the saved tiers
 /// (set, Spell4Base, tier) and what the entry keeps, with the reason.
 type TierCase {
@@ -1269,10 +1278,10 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
   // tiers 1 and 9 only, and Quick Draw: the abilities of the book these rows are judged against.
   let charged_shot = 20_684
   let ignite = 20_718
-  let nine_tiers = 21_056
+  let nine_tiers = 23_148
   let two_tiers = 26_543
   let quick_draw = 27_638
-  let unheld = 23_148
+  let unheld = 18_309
   let book =
     list.map(
       [charged_shot, ignite, nine_tiers, two_tiers, quick_draw],
@@ -1289,6 +1298,13 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
   assert cost(ignite, 2) == 1
   assert cost(ignite, 9) == 16
   assert cost(two_tiers, 9) == 5
+  assert cost(nine_tiers, 9) == 16
+  assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(nine_tiers), tier: 9)
+    |> result.is_ok
+    as "the third base has a tier 9 row"
+  assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(unheld), tier: 9)
+    |> result.is_ok
+    as "the base the book does not hold has a tier 9 row"
   assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(unheld), tier: 2)
     |> result.is_ok
     as "the base the book does not hold has a tier 2 row, so only the book drops it"
@@ -1310,14 +1326,14 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
       Keeps([#(0, charged_shot, 5), #(0, quick_draw, 5)]),
     ),
     TierCase(
-      "the same with Ignite at tier 2 is 17 of 16: in Spell4Base order Charged Shot (8) and Ignite (9) fit and Quick Draw (17) does not, so it falls to tier 1",
+      "the same with Ignite at tier 2 is 17 of 16: the set costs more than the level gives, so every tier of it is reset to tier 1 and its points are refunded (Jim's rule)",
       25,
       16,
       [#(0, quick_draw, 5), #(0, charged_shot, 5), #(0, ignite, 2)],
-      Keeps([#(0, charged_shot, 5), #(0, ignite, 2)]),
+      Keeps([]),
     ),
     TierCase(
-      "level 45 gives 36 points: tier 9 of Charged Shot and Ignite is 32, the third base's tier 9 would be 48 and falls, and Quick Draw's tier 3 (34 of 36) is kept after it, which a stop at the first misfit would not",
+      "level 45 gives 36 points: tier 9 of Charged Shot, Ignite and the third base is 48 and Quick Draw's tier 3 makes 50, so every tier of the set is reset (Jim's rule)",
       45,
       36,
       [
@@ -1326,7 +1342,27 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
         #(0, nine_tiers, 9),
         #(0, quick_draw, 3),
       ],
-      Keeps([#(0, charged_shot, 9), #(0, ignite, 9), #(0, quick_draw, 3)]),
+      Keeps([]),
+    ),
+    TierCase(
+      "a tier the book does not hold is dropped before the points are summed, so the rest of the 16 points' worth stays",
+      25,
+      16,
+      [#(0, quick_draw, 5), #(0, charged_shot, 5), #(0, unheld, 9)],
+      Keeps([#(0, charged_shot, 5), #(0, quick_draw, 5)]),
+    ),
+    TierCase(
+      "a set over its points is reset on its own: set 0 costs 17 of 16 and falls, set 2 costs 16 and stays",
+      25,
+      16,
+      [
+        #(0, quick_draw, 5),
+        #(0, charged_shot, 5),
+        #(0, ignite, 2),
+        #(2, quick_draw, 5),
+        #(2, charged_shot, 5),
+      ],
+      Keeps([#(2, charged_shot, 5), #(2, quick_draw, 5)]),
     ),
     TierCase(
       "a base the book does not hold is dropped",
@@ -1463,13 +1499,7 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
       Ok(saved) -> {
         assert limited_action_set.rows(saved:).slots == []
           as { case_.why <> " (no bar was saved, so none is)" }
-        Keeps(
-          list.flat_map([0, 1, 2, 3], fn(set) {
-            list.map(limited_action_set.held_tiers(saved:, set:), fn(held) {
-              #(set, { held.0 }.value, held.1)
-            })
-          }),
-        )
+        Keeps(kept_tiers(saved:))
       }
       Error(error) -> RefusesTier(error)
     }
@@ -1528,6 +1558,39 @@ fn bases_with_nine_tiers(tables tables: table_store.Tables) -> List(Int) {
   |> list.sort(int.compare)
 }
 
+/// The tier rows of one set the entry cannot drop from these draws (a place in the list of
+/// abilities with nine tiers and a tier): the first draw of each ability, in Spell4Base order,
+/// while the running cost stays within the points.
+fn fitting_tier_rows(
+  tables tables: table_store.Tables,
+  set set: Int,
+  draws draws: List(#(Int, Int, Int)),
+  tiered tiered: List(Int),
+  points_total points_total: Int,
+) -> List(store.AbilityTierRow) {
+  let #(_, kept) =
+    list.map(draws, fn(draw) {
+      #(list.drop(tiered, draw.1) |> list.first |> result.unwrap(0), draw.2)
+    })
+    |> list.unique
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+    |> list.fold(#(0, []), fn(so_far, draw) {
+      let #(spent, kept) = so_far
+      let cost = points_cost(tables:, held: [#(Spell4BaseId(draw.0), draw.1)])
+      case
+        spent + cost <= points_total
+        && !list.any(kept, fn(held: #(Int, Int)) { held.0 == draw.0 })
+      {
+        True -> #(spent + cost, [draw, ..kept])
+        False -> so_far
+      }
+    })
+  list.reverse(kept)
+  |> list.map(fn(draw) {
+    store.AbilityTierRow(action_set: set, spell4_base_id: draw.0, tier: draw.1)
+  })
+}
+
 pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
@@ -1581,36 +1644,13 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
       // points, in Spell4Base order: the tiers the entry cannot drop.
       let tier_rows =
         list.flat_map([0, 1, 2, 3], fn(set) {
-          let #(_, kept) =
-            list.filter(drawn_tiers, fn(tier) { tier.0 == set })
-            |> list.map(fn(tier) {
-              #(
-                { list.drop(tiered, tier.1) |> list.first |> result.unwrap(0) },
-                tier.2,
-              )
-            })
-            |> list.unique
-            |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-            |> list.fold(#(0, []), fn(so_far, tier) {
-              let #(spent, kept) = so_far
-              let cost =
-                points_cost(tables:, held: [#(Spell4BaseId(tier.0), tier.1)])
-              case
-                spent + cost <= points_total
-                && !list.any(kept, fn(held: #(Int, Int)) { held.0 == tier.0 })
-              {
-                True -> #(spent + cost, [tier, ..kept])
-                False -> so_far
-              }
-            })
-          list.reverse(kept)
-          |> list.map(fn(tier) {
-            store.AbilityTierRow(
-              action_set: set,
-              spell4_base_id: tier.0,
-              tier: tier.1,
-            )
-          })
+          fitting_tier_rows(
+            tables:,
+            set:,
+            draws: list.filter(drawn_tiers, fn(tier) { tier.0 == set }),
+            tiered:,
+            points_total:,
+          )
         })
       let book =
         list.append(

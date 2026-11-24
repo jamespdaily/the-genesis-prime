@@ -49,10 +49,10 @@
 ////   store deletes the stored one. A map change, a Holocrypt rejoin and a login take them
 ////   back through `entering`.
 //// - **A saved tier is kept at entry** only while the book holds its ability, the Spell4 rows
-////   hold that tier, the level reaches it and the points cover it (in Spell4Base order, a tier
-////   that does not fit is dropped and a later one that does is kept: the server's guess, since
-////   the client never reads a stored tier), so a table change or a lower level cannot show a
-////   tier the player cannot hold or spend below 0 points. A row outside the table's checks (a
+////   hold that tier and the level reaches it; a set whose kept tiers cost more than the level's
+////   points has every tier reset to tier 1 and its points refunded (Jim's rule, since the client
+////   never reads a stored tier), so a table change or a lower level cannot show a tier the
+////   player cannot hold or spend below 0 points. A row outside the table's checks (a
 ////   set above 3, an ability of 0 or beyond 18 bits, a tier outside 2 to 15, a second row for
 ////   one ability of one set) is a `RowError`.
 //// - **A slot opens** by the client's own reading of its ActionSlotPrereq row's Prerequisite
@@ -269,12 +269,11 @@ pub fn rows(saved saved: Saved) -> ActionSets {
 /// A saved tier stays only while the player's book holds its ability, the Spell4 rows hold
 /// that tier of it, the player's level reaches the tier (`Spell4TierRequirements`) and the
 /// points the level gives cover it; any other is dropped and the next save deletes its row.
-/// Judging is for each set on its own, taking its tiers in Spell4Base order. Tiers that cost
-/// more points than the level gives (only a changed table or an edited database can make
-/// them) are kept in that order while they fit, a tier that does not fit is dropped and a
-/// later one that does is kept; the client never reads a stored tier, so this is the
-/// server's guess. The entry's points left are never below 0 and every tier it holds has a
-/// cost, which `ability_points.points_frame` and `spell_tier.spent` need.
+/// Judging is for each set on its own. Jim's rule for a set whose tiers, once those are
+/// dropped, cost more points than the level gives (only a changed table or an edited database
+/// can make it): every tier of the set is reset to tier 1 and all its points are refunded, so
+/// the player chooses again. The entry's points left are never below 0 and every tier it
+/// holds has a cost, which `ability_points.points_frame` and `spell_tier.spent` need.
 pub fn entering(
   unlocks unlocks: Unlocks,
   tiers tiers: spell_tier.SpellTiers,
@@ -313,7 +312,7 @@ pub fn entering(
 }
 
 /// The tiers of one set the entry keeps: those the book, the Spell4 rows and the level allow,
-/// in Spell4Base order, while the running cost stays within the points the level gives.
+/// or none when their cost is over the points the level gives (Jim's rule).
 fn tiers_kept(
   held held: Dict(Spell4BaseId, Int),
   tiers tiers: spell_tier.SpellTiers,
@@ -323,28 +322,19 @@ fn tiers_kept(
 ) -> Dict(Spell4BaseId, Int) {
   let allowed =
     dict.to_list(held)
-    |> list.sort(fn(a, b) { int.compare({ a.0 }.value, { b.0 }.value) })
-    |> list.filter_map(fn(entry) {
+    |> list.filter(fn(entry) {
       let #(base, tier) = entry
-      use <- bool.guard(when: !list.contains(book, base), return: Error(Nil))
-      use cost <- result.try(spell_tier.change_cost(
-        tiers:,
-        base:,
-        from: 1,
-        to: tier,
-      ))
-      use needed <- result.try(spell_tier.level_needed(tiers:, tier:))
-      use <- bool.guard(when: level < needed, return: Error(Nil))
-      Ok(#(base, tier, cost))
+      list.contains(book, base)
+      && result.is_ok(spell_tier.change_cost(tiers:, base:, from: 1, to: tier))
+      && case spell_tier.level_needed(tiers:, tier:) {
+        Ok(needed) -> level >= needed
+        Error(Nil) -> False
+      }
     })
-  list.fold(allowed, #(0, dict.new()), fn(state, entry) {
-    let #(spent, kept) = state
-    let #(base, tier, cost) = entry
-    case spent + cost > points_total {
-      True -> state
-      False -> #(spent + cost, dict.insert(kept, base, tier))
-    }
-  }).1
+  case spell_tier.spent(tiers:, held: allowed) > points_total {
+    True -> dict.new()
+    False -> dict.from_list(allowed)
+  }
 }
 
 /// The tier rows of each set by ability, or the first row the table's checks cannot hold: a

@@ -59,8 +59,8 @@ fn entries() -> List(Entry) {
       7,
       25,
       [#(0, 20_684, 5), #(0, 20_718, 2), #(0, 27_638, 5)],
-      #(7, 16),
-      "Spellslinger 25 saved 17 points of tiers: Quick Draw's does not fit and is dropped, so 9 are spent and 7 are left",
+      #(16, 16),
+      "Spellslinger 25 saved 17 points of tiers, over the 16 the level gives: every tier of the set is reset (Jim's rule) and all 16 points are left",
     ),
   ]
 }
