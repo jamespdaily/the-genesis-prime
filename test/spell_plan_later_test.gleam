@@ -1436,6 +1436,7 @@ pub fn the_proxies_of_the_three_targeted_root_abilities_start_the_five_counted_c
       anchor: area.FixedAtTarget,
       start: spell_plan.Proxied(target: spell_plan.OnEachStruck),
       shapes: found.1,
+      selected_by_row: None,
     )
       as "its hit shapes are built even where a struck unit's yaw is not known"
   })

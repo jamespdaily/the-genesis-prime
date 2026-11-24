@@ -112,7 +112,7 @@
 ////   and another unit for a proc aimed at one (`AtOtherUnit`, which falls back to the holder
 ////   when the event has none, so its spell is still built only as for another unit). A row on
 ////   the target of a spell started on a struck unit, on an ally or by a proc aimed at another
-////   unit is built only as a circle with no offset, which reads no yaw (`start_placed`), and a pressed
+////   unit is built only as a circle with no offset, which reads no yaw (`start_placed`; a spell that draws no hit shape selects by its area row, built only at 360 degrees), and a pressed
 ////   spell's row on the target only when the spell is cast at the caster, since the press names
 ////   the caster and reads no other target (`targeting_given`, `target_mechanic.takes_caster`).
 //// - **Which spells** are read: the spells of each level-1 ability's tree
@@ -648,12 +648,18 @@ fn start_checked(
 ) -> Result(Nil, AreaError) {
   case area.row {
     None -> Ok(Nil)
-    Some(_) ->
+    Some(row) ->
       case
         start_placed(
           anchor: area.anchor,
           start:,
           shapes: shapes_of_any_go(area:),
+          selected_by_row: case
+            list.any(area.inside_by_go, fn(inside) { inside == Some(InsideRow) })
+          {
+            True -> Some(row)
+            False -> None
+          },
         )
       {
         False ->
@@ -676,12 +682,15 @@ fn start_checked(
 /// another unit as its primary target, whose place the strike knows and whose yaw it does not
 /// (`shown.strike_centre_of`: yaw 0.0): a row on the caster is centred on the caster, and a row
 /// on the target only when every hit shape is a circle with no offset, which reads no yaw
-/// (`area.in_shape`; a turned circle is the same circle). Any other shape of a row on the
+/// (`area.in_shape`; a turned circle is the same circle), and, for a go that draws no hit
+/// shape and so selects by the area row alone (`selected_by_row`), only when the row is all
+/// round (360 degrees), since a narrower row reads the facing. Any other shape of a row on the
 /// target is turned or moved by the unit's facing on the client (`0x14054b1b0.follows_caster`).
 pub fn start_placed(
   anchor anchor: Anchor,
   start start: Start,
   shapes shapes: List(Placement),
+  selected_by_row selected_by_row: Option(area.Row),
 ) -> Bool {
   case start {
     spell_plan.Pressed
@@ -693,7 +702,12 @@ pub fn start_placed(
     | spell_plan.FromProc(aim: spell_plan.AtOtherUnit) ->
       case anchor {
         FollowsCaster | FixedAtCaster -> True
-        FollowsTarget | FixedAtTarget -> list.all(shapes, is_plain_circle)
+        FollowsTarget | FixedAtTarget ->
+          list.all(shapes, is_plain_circle)
+          && case selected_by_row {
+            Some(row) -> row.degrees >=. 360.0
+            None -> True
+          }
       }
   }
 }
@@ -1822,7 +1836,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player area around another player",
-      missing: "a cast whose primary target is another player centres its area on the ground point of that player's place with yaw 0.0, a guess: the stored place carries the viewer's own facing and no message tells the player's, so a shape that reads a facing is not built for a child cast on an ally (`start_placed`); only a child a Proxy starts on an ally has an area of its own centred on a player (Warden's 36660 and Barrier's 41369), and no press reaches another player's area: no beneficial spell that names its target and is pressed selects units from its area, and a hostile one is refused while no player is PvP flagged",
+      missing: "a cast whose primary target is another player centres its area on the ground point of that player's place with yaw 0.0, a guess: the stored place carries the viewer's own facing and no message tells the player's, so a shape that reads a facing, or an area row under 360 degrees where no hit shape is drawn, is not built for a child cast on an ally (`start_placed`); only a child a Proxy starts on an ally has an area of its own centred on a player (Warden's 36660 and Barrier's 41369), and no press reaches another player's area: no beneficial spell that names its target and is pressed selects units from its area, and a hostile one is refused while no player is PvP flagged",
     ),
     gap.Entry(
       area: "Player area valid targets",
