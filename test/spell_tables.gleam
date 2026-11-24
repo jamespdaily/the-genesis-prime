@@ -507,6 +507,17 @@ pub const pressed_hitting_foes =
     finds_allies: False,
   )
 
+/// The place of a spell no Proxy starts on each struck unit, that spends nothing, hits no
+/// foes and whose area finds the caster's allies (`spell_plan.area_finds_allies`).
+pub const pressed_finding_allies =
+  spell_plan.RowPlace(
+    struck_by: None,
+    spends_all: False,
+    hits_foes: False,
+    throws_target: False,
+    finds_allies: True,
+  )
+
 /// The place of a spell the Proxy effect `proxy_effect_id` of Spell4 `spell4_id` starts on
 /// each unit its area strikes.
 pub fn started_on_each_struck(

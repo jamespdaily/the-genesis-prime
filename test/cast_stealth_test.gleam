@@ -425,6 +425,7 @@ fn gated_proxy(
     condition: GatedOnCaster(gates: [gate]),
     tag: spend.always,
     target: spell_plan.OnCaster,
+    on_allies: False,
     spell: support.child(spell4_id: child, base: child),
     gains: [],
   )

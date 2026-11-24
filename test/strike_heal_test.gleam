@@ -345,6 +345,51 @@ fn emission_areas(
   )
 }
 
+/// The fixture's areas with Emission's rows (Spell4 58841: its heal row 141384 of targetFlags 5
+/// and its area row 662 ordered Closest) made to start Mental Boon's child 33258 on each unit its
+/// area selects: the heal row itself turned into a Proxy at the area alone, or, with `heal_too`,
+/// the heal row kept and a copy of it turned into that Proxy (row 900501). The area takes `count`
+/// units. The edits stand in for no client row; they are the shape of Sentinel 54395 (a Proxy and
+/// no heal) and of a phase that holds both.
+fn emission_proxying(
+  heal_too heal_too: Bool,
+  count count: Int,
+) -> spell_area.Areas {
+  let as_proxy = [
+    #("effectType", planted_table.Integer(26)),
+    #("targetFlags", planted_table.Integer(4)),
+    #("dataBits00", planted_table.Integer(33_258)),
+  ]
+  let assert Ok(rows) = case heal_too {
+    True ->
+      fixture_tables.add(
+        rows: fixture_tables.rows(),
+        table: "Spell4Effects",
+        copy_of: 141_384,
+        id: 900_501,
+        with: as_proxy,
+      )
+    False -> Ok(fixture_tables.rows())
+  }
+    as "the heal row 141384 is in the fixture"
+  let assert Ok(rows) =
+    fixture_tables.change_all(rows:, edits: [
+      #("Spell4AoeTargetConstraints", 662, [
+        #("targetCount", planted_table.Integer(count)),
+      ]),
+      ..case heal_too {
+        True -> []
+        False -> [#("Spell4Effects", 141_384, as_proxy)]
+      }
+    ])
+    as "the edits name rows and columns the fixture holds"
+  fixture_tables.on_rows(rows:, reaching: [], body: fn(tables) {
+    let assert Ok(areas) = spell_area.build(tables:)
+      as "the edited rows build their areas"
+    areas
+  })
+}
+
 type AllyRow {
   AllyRow(
     reason: String,
@@ -488,6 +533,104 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
         as "no creature is selected by a friendly area, and a player is no creature a strike is told to"
     },
   )
+  // A phase that starts a child on each ally it selects (a Proxy at the area, the shape of
+  // Sentinel's and Affinity's rows) selects the allies in the area's order, from the players
+  // the caster has an address for, and answers each at once as a hit: no tell, no roll, no
+  // seed byte. A heal row beside it tells the allies that pass its gate and the Proxy hits
+  // the rest.
+  let beside = dict.from_list(three)
+  let proxied_by = fn(areas, sight) {
+    let attacker =
+      healer(sight: list.map(sight, fn(unit_id) { ally(unit_id:) }))
+    let selection =
+      strike.select(
+        asked: go(primary_target: 7, spell4_id: 58_841),
+        attacker:,
+        picture: beside,
+        areas:,
+        now_ms: 1000,
+      )
+    #(attacker, selection)
+  }
+  let only_proxy = emission_proxying(heal_too: False, count: 2)
+  let #(attacker, selection) = proxied_by(only_proxy, [31, 32, 33])
+  assert list.map(selection.players, fn(address) { address.unit_id })
+    == [32, 33]
+    as "a Proxy at the area and no heal row: the two nearest allies, in the area's order"
+  assert selection.starts_children && selection.heals == []
+    as "the phase starts children and tells no heal"
+  assert strike.entropy_needed(selection:) == 0
+    as "an ally selected for a Proxy takes no seed byte"
+  let #(opened, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection:,
+      attacker:,
+      formulas: rating_support.formulas(),
+      entropy: <<>>,
+      gate: strike_support.passes_all(),
+      now: at(ms: 1000),
+    )
+  assert strike_support.players_told(effects:) == []
+    && strike_support.creatures_told(effects:) == []
+    as "no ally is told anything for the selection"
+  let assert [#(_, struck, _)] = strike_support.rounds_closed(effects:)
+    as "the round has nothing to wait for and closes at once"
+  assert struck
+    == [hit_of(unit_id: 32, heals: []), hit_of(unit_id: 33, heals: [])]
+    as "each ally is answered as a hit with no heal landed, in the area's order"
+  assert opened == strike.new() as "no round stays open"
+  let #(_, selection) = proxied_by(only_proxy, [31, 33])
+  assert list.map(selection.players, fn(address) { address.unit_id })
+    == [33, 31]
+    as "the nearest ally has no address in the caster's sight: it is out, and the count goes to the next"
+  let #(attacker, selection) =
+    proxied_by(emission_proxying(heal_too: True, count: 2), [32, 33])
+  let refuses_33 = fn(_, side, _, rolls) {
+    case side {
+      cast_state.UnitSide(unit_id: 33) -> #(cast_state.GateFails, rolls)
+      cast_state.UnitSide(..) | cast_state.CasterSide -> #(
+        cast_state.Starts,
+        rolls,
+      )
+    }
+  }
+  let #(state, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection:,
+      attacker:,
+      formulas: rating_support.formulas(),
+      entropy: zeros(units: []),
+      gate: refuses_33,
+      now: at(ms: 1000),
+    )
+  assert list.map(strike_support.players_told(effects:), fn(told) {
+      { told.0 }.unit_id
+    })
+    == [32]
+    as "the heal is told to the ally that passes its gate alone"
+  let #(_, effects) =
+    strike.player_answered(
+      strike: state,
+      answer: PlayerAnswered(
+        key: strike_tell.Key(
+          cast_id: 5,
+          occasion: strike_tell.AtGo(phase: 0),
+          unit_id: 32,
+        ),
+        outcome: HealsLanded(heals: [first_heal()]),
+      ),
+      now: at(ms: 1001),
+    )
+  let assert [#(_, struck, _)] = strike_support.rounds_closed(effects:)
+    as "the ally's answer closes the round"
+  assert struck
+    == [
+      hit_of(unit_id: 32, heals: [first_heal()]),
+      hit_of(unit_id: 33, heals: []),
+    ]
+    as "the ally the heal's gate refused is still a hit, for the Proxy, with no heal"
   let kick =
     strike.select(
       asked: go(primary_target: 7, spell4_id: 58_591),
@@ -649,10 +792,11 @@ pub fn a_heal_row_aimed_at_the_area_alone_takes_the_caster_as_a_candidate_by_its
 
 /// Affinity's Spell4 39063 (Spell4Effects 207513, a Proxy at the area that starts the child
 /// 79079 on each unit the area strikes, 250 ms after the go) is beneficial and holds no foe row,
-/// so its area finds allies (Closest, 1 target, 0 to 35 m, 360 degrees): a foe creature inside
-/// it is not struck, so the child starts on no creature, where a spell that hits foes starts it
-/// on each one. The control is the same area read as a foe's.
-pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> Nil {
+/// so its area finds allies (Closest, 1 target, a beam 3.5 m wide and 34 m long, TelegraphDamage
+/// 7664): the ally inside it is
+/// selected, to start the child on, and a foe creature inside it is not struck, where a spell
+/// that hits foes starts it on each one. The control is the same area read as a foe's.
+pub fn a_friendly_areas_proxy_at_the_area_selects_the_allies_and_no_foe_creature_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let affinity = 39_063
@@ -669,7 +813,7 @@ pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> N
   let selected_by = fn(area) {
     strike.select(
       asked: go(primary_target: 7, spell4_id: affinity),
-      attacker: healer(sight: []),
+      attacker: healer(sight: [ally(unit_id: 31)]),
       picture: dict.from_list([
         #(
           20,
@@ -680,19 +824,22 @@ pub fn a_friendly_areas_proxy_at_the_area_starts_its_child_on_no_foe_test() -> N
             attackable: Attackable(exile: True, dominion: True),
           ),
         ),
+        #(31, player_at(x: 0.0, z: -12.0)),
       ]),
       areas: dict.from_list([#(affinity, area)]),
       now_ms: 1000,
     )
   }
-  assert selected_by(friendly).units == []
+  let selection = selected_by(friendly)
+  assert list.map(selection.players, fn(address) { address.unit_id }) == [31]
+    as "the ally 12 m ahead is selected, to start the child on"
+  assert selection.units == []
     as "a foe creature 10 m away is not struck by a friendly area, so no child starts on it"
-  assert list.map(
-      selected_by(spell_area.SpellArea(..friendly, finds_allies: False)).units,
-      fn(aimed) { aimed.unit_id },
-    )
-    == [20]
+  let as_foes =
+    selected_by(spell_area.SpellArea(..friendly, finds_allies: False))
+  assert list.map(as_foes.units, fn(aimed) { aimed.unit_id }) == [20]
     as "the control: read as a foe's area it strikes the creature 20, so the case above is the friendly area's choice"
+  assert as_foes.players == [] as "and it selects no player"
 }
 
 /// A selection of the player 9 for the heal rows `heals`, with the creatures `units` in
@@ -713,6 +860,7 @@ fn selection_of(
     controls: [],
     gates: [],
     players: [ally(unit_id: 9)],
+    starts_children: False,
     heals:,
   )
 }

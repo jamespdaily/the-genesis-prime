@@ -434,12 +434,12 @@ fn every(
   |> list.index_map(fn(_, index) { #(first_ms + index * every_ms, row) })
 }
 
-pub fn each_ability_the_friendly_area_proxy_refused_gives_its_caster_what_its_text_says_and_nothing_more_test() -> Nil {
+pub fn each_ability_with_a_proxy_at_a_friendly_area_gives_its_caster_what_its_text_says_and_nothing_more_with_no_ally_in_sight_test() -> Nil {
   use <- owned_test.run(120_000)
   // Texts: 245408 (Mental Boon heals "yourself and ... hurt allies every 0.5s"), 360845
   // (Mending Probes), 315699 (Runes of Protection), 287485 (Astral Infusion), 389501
-  // (Flash restores health "to yourself and N allies"). The allies are the area's, which
-  // the server does not find; the caster is part of each spell and takes what it gives.
+  // (Flash restores health "to yourself and N allies"). The allies are the area's: the caster
+  // sees none here, so the area selects none and the caster takes what each spell gives it.
   let esper = 3
   let medic = 4
   let spellslinger = 7
@@ -447,7 +447,7 @@ pub fn each_ability_the_friendly_area_proxy_refused_gives_its_caster_what_its_te
     assert support.refusal_results(effects:) == []
       as { name <> ": the press is accepted" }
     assert support.target_changes(effects: effects_of(steps:)) == []
-      as { name <> " lands nothing on a creature: the allies are not found" }
+      as { name <> " lands nothing on a creature: no ally is in sight" }
   }
 
   // Mental Boon: the Esper holds 3 Psi Points and the cast spends all of them, the base
@@ -463,7 +463,7 @@ pub fn each_ability_the_friendly_area_proxy_refused_gives_its_caster_what_its_te
     == every(row: 76_784, first_ms: press_ms + 500, every_ms: 500, count: 12)
     as "twelve heals of row 76784, one each 500 ms from 1,500 ms to 7,000 ms (text 245408), none of another tier's row"
   assert list.length(boon_starts) == 12
-    as "Mental Boon gives the caster nothing else: its Nimble lands on no unit"
+    as "Mental Boon gives the caster nothing else: its Nimble lands on no unit, since no ally is in sight"
 
   // Mending Probes: the ticking heal of its child. Proxy 92693 starts Spell4 41334 at the
   // go; its heal, row 92704, has delay 2000, tickTime 2000 and durationTime 12000. The

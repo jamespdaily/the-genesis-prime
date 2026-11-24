@@ -758,6 +758,26 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
         caster_entry,
       ),
       #(
+        "an ally the area selected only to start a child on is answered with no heal (a Proxy selected it, no row reached it): it is listed nowhere and gets no heal, gate or roll at the go, and the ally a heal reached is listed as before",
+        area_rows(spell_plan.GatedOnTarget(prerequisite: not_held)),
+        [
+          answered_by(ally, [heal_of(77, 50, 27)]),
+          answered_by(other_ally, []),
+        ],
+        [
+          #(
+            62_019,
+            support.heal_result(
+              amount: 77,
+              kind: damage_type.Heal,
+              overkill: 27,
+            ),
+          ),
+        ],
+        [],
+        [],
+      ),
+      #(
         "a target gate the allies fail now is not checked for the answered allies: both are listed, and the caster, whom it gates, is not healed",
         area_rows(spell_plan.GatedOnTarget(prerequisite: not_held)),
         [

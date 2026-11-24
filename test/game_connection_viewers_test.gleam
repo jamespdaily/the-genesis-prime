@@ -2562,8 +2562,8 @@ fn written_for_news(
 /// (stat 0 and Base Health, property 7), and follows the owner's news: a `Health` news
 /// (0x937) sets the health and the player alive or dead, and a `PropertiesChanged` news
 /// (0x93a) with property 7 sets the maximum. A news for a unit not shown changes nothing.
-/// The picture is one news behind at worst; a maximum that changes with no news (a gear swap
-/// the viewer is not told) is not held.
+/// The picture is one news behind at worst: a gear change tells each viewer a
+/// `PropertiesChanged` news (`connection/properties.rebased`).
 pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_and_maximum_test() -> Nil {
   use <- owned_test.run(10_000)
   let entered = world_entry_support.entered_after(clock_origin_ms: 600)

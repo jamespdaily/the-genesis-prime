@@ -63,6 +63,7 @@ fn proxy(condition: spell_plan.Condition) -> Proxy {
     condition:,
     tag: spend.always,
     target: spell_plan.OnCaster,
+    on_allies: False,
     spell: support.child(spell4_id: child_spell4_id, base: child_spell4_id),
     gains: [],
   )

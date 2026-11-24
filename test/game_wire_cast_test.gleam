@@ -3512,3 +3512,168 @@ pub fn an_esper_walks_out_of_the_sight_of_the_ally_it_pressed_phantasmal_armor_a
   game_client.close(game: second)
   login_support.stop(started)
 }
+
+/// What a Spellslinger's press of Runes of Protection, with a Medic standing `metres` metres
+/// ahead of it, showed the two clients: each Medic's and the Spellslinger's unit, the absorb the
+/// row 206315 gives, the frames each client read at the go (`caster_read`, `ally_read`) and
+/// those it read when the absorb's 10 000 ms were over (`caster_ended`, `ally_ended`).
+type RunesRound {
+  RunesRound(
+    caster: Int,
+    ally: Int,
+    amount: Int,
+    caster_read: List(Frame),
+    ally_read: List(Frame),
+    caster_ended: List(Frame),
+    ally_ended: List(Frame),
+  )
+}
+
+/// The primary target of each 0x7ff of the child 78708 among `frames`, in the order read.
+fn runes_child_targets(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(
+    connection_support.decoded(
+      frames,
+      spell_started.message_id,
+      spell_started.decode,
+    ),
+    fn(start) {
+      case start.spell4_id == 78_708 {
+        True -> Ok(start.primary_target_unit_id)
+        False -> Error(Nil)
+      }
+    },
+  )
+}
+
+/// A Spellslinger of level 6 presses Runes of Protection (Spell4 39092, Spell4Base 23441, a
+/// Spellslinger's from level 6: SpellLevel 1144) with no target named, on the client's real
+/// tables, facing -z, while a Medic of level 6 stands `metres` metres ahead of it. The Medic is
+/// in the area when `ally_hears`: a beam 4.5 m wide and 34 m long ahead of the caster
+/// (TelegraphDamage 2044, targetTypeFlags 1) within the area row's 35 m
+/// (Spell4AoeTargetConstraints 454: Closest, 4 targets, 0 to 35 m, 360 degrees). The Proxy 206357 starts the child 78708 on the caster and on each ally
+/// the area selects; the child holds the absorb 206315 (effectType 29, targetFlags 2, 10 000
+/// ms, formula 0.848 of the Support Power and 45.23 a level, the stat part rounded alone,
+/// `0x140565600`). The clock is the test's.
+fn runes_pressed_with_an_ally(
+  metres metres: Float,
+  ally_hears ally_hears: Bool,
+) -> RunesRound {
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(
+    first:,
+    second:,
+    first_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) = two_players_enter(started:, first_class: 7, level: 6)
+  let caster = unit_of_player(frames: first_burst)
+  let ally = unit_of(seen_second)
+  let #(x, y, z) =
+    game_client.placed_by_tail(
+      tail: game_client.unit_create_player_in(frames: first_burst).tail,
+    )
+  game_client.face(game: first, yaw: 0.0, clock: 100)
+  game_client.move_to(game: second, clock: 110, x:, y:, z: z -. metres)
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0638 })
+    })
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 7,
+      level: 6,
+      ability: 23_441,
+    )
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: 0,
+  )
+  // The caster's connection writes every start and the tells of the go in one input, so its
+  // pong follows them all, and the Medic's pong after that follows what the caster told it
+  // (`game_client.read_until_pong`): no wait is for a frame an ally that was never started a
+  // child would not send.
+  let #(caster_read, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  let #(ally_read, second_have) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert refusals(frames: caster_read) == []
+    as "opcode.0x7fc: Runes of Protection is planned, so the press is not refused"
+  let expected_starts = case ally_hears {
+    True -> list.sort([caster, ally], int.compare)
+    False -> [caster]
+  }
+  assert list.sort(runes_child_targets(frames: caster_read), int.compare)
+    == expected_starts
+    as "opcode.0x7ff: the caster's client reads the child 78708 cast on itself and on each Medic in the area of 35 m, the Medic its primary target"
+  let assert Ok(power) = game_formula.get(tables:, id: GameFormulaId(1266))
+    as "the client's tables hold GameFormula row 1266"
+  let support_power =
+    own_property_in(frames: first_burst, property_id: 36) *. power.datafloat01
+  let amount =
+    float.round(
+      int.to_float(float.round(0.8479999899864197 *. support_power))
+      +. 45.22999954223633
+      *. 6.0,
+    )
+  driven_time.advance(time:, ms: 10_000)
+  let #(caster_ended, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let #(ally_ended, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 2)
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+  RunesRound(
+    caster:,
+    ally:,
+    amount:,
+    caster_read:,
+    ally_read:,
+    caster_ended:,
+    ally_ended:,
+  )
+}
+
+/// A Spellslinger of level 6 presses Runes of Protection with no target named while a Medic
+/// stands 10 m ahead, and again with a Medic 50 m ahead, outside the area of 35 m
+/// (`runes_pressed_with_an_ally`): the area's Proxy starts the child 78708 on the caster and
+/// on the Medic in it, the caster's client reads the child's 0x7ff naming that Medic as its
+/// primary target, the Medic's client reads the absorb of the row 206315 and its end, and the
+/// caster reads its own absorb as before. The Medic outside the area is started no child, so
+/// its client reads no absorb of its own, and the caster reads one child 0x7ff, its own. The
+/// child's frames and the Medic's absorb come from two senders, so each is waited for by
+/// itself and never by its order against the other.
+pub fn a_spellslinger_pressing_runes_of_protection_gives_the_ally_in_range_the_absorb_and_the_caster_reads_the_child_cast_on_the_ally_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let near = runes_pressed_with_an_ally(metres: 10.0, ally_hears: True)
+  assert absorptions_in(frames: near.caster_read, unit: near.caster)
+    == [near.amount]
+    as "opcode.0x938: the caster reads its own absorb, the pool the row's formula gives (0.848 of the Support Power and 45.23 a level)"
+  assert absorptions_in(frames: near.ally_read, unit: near.ally)
+    == [near.amount]
+    as "opcode.0x938: the Medic in the area reads the absorb of the row 206315"
+  assert list.contains(runes_child_targets(frames: near.ally_read), near.ally)
+    as "opcode.0x7ff: the Medic's client reads the child cast with itself as its primary target"
+  assert absorptions_in(frames: near.ally_ended, unit: near.ally) == [0]
+    as "opcode.0x938: the Medic's absorb ends with the child's node, 10 000 ms on"
+  assert absorptions_in(frames: near.caster_ended, unit: near.caster) == [0]
+    as "and so does the caster's own"
+  let far = runes_pressed_with_an_ally(metres: 50.0, ally_hears: False)
+  assert runes_child_targets(frames: far.caster_read) == [far.caster]
+    as "opcode.0x7ff: the Medic 50 m ahead, outside the area of 35 m, is started no child: the caster reads the one cast on itself"
+  assert absorptions_in(frames: far.caster_read, unit: far.caster)
+    == [far.amount]
+    as "the caster reads its own absorb as before"
+  assert absorptions_in(frames: far.ally_ended, unit: far.ally) == []
+    && runes_child_targets(frames: far.ally_ended) == []
+    as "the Medic outside the area reads no absorb and no child"
+}

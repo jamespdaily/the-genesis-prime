@@ -362,6 +362,7 @@ pub fn plans_starting_on_each_struck(started started: Spell) -> Plans {
           condition: Always,
           tag: spend.always,
           target: spell_plan.OnEachStruck,
+          on_allies: False,
           spell: started,
           gains: [],
         ),

@@ -11,8 +11,9 @@
 ////   press is judged by what the caster's own client shows (`opcode.0x9d.target_checks`).
 //// - **The health** is the health stat of the 0x262 (stat 0) and its Base Health (property 7,
 ////   the value `Unit:GetMaxHealth` reads, `0x1404584b0`), kept by the owner's `Health` and
-////   `PropertiesChanged` news. A maximum that changes with no news (a gear swap the viewer is
-////   not told) is not held, so the copy is one news behind at worst.
+////   `PropertiesChanged` news. A gear change tells each viewer that news too
+////   (genesis_prime/game/connection/properties `rebased`), so the copy is one news behind at
+////   worst.
 //// - **The place** is the last position command's x, y and z (none before one), in the
 ////   viewer's world and zone: the client measures the range by the unit's movement height
 ////   less its own lift (`0x1403b2240`, `unit.ground_lift`).

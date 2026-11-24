@@ -1034,6 +1034,7 @@ pub fn a_heal_aimed_at_another_unit_lands_nothing_test() -> Nil {
           condition: Always,
           tag: spend.always,
           target:,
+          on_allies: False,
           spell: child,
           gains: [],
         ),

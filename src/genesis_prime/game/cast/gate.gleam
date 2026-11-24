@@ -1098,6 +1098,17 @@ pub fn hit_units(struck struck: List(Struck)) -> List(Int) {
   })
 }
 
+/// The players a round Hit, in the round's order: the units the strike answered as another
+/// player (`HitOtherPlayer`), which a heal reached or a Proxy selected.
+pub fn hit_players(struck struck: List(Struck)) -> List(Int) {
+  list.filter_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, unit: HitOtherPlayer(..), ..) -> Ok(unit_id)
+      Hit(..) | Immune(..) | Deflected(..) -> Error(Nil)
+    }
+  })
+}
+
 /// Whether the round holds the caster as a candidate the strike let the heal row `effect_id`
 /// through for: the row's caster gates and the caster's own target gate passed at the strike,
 /// so the go checks neither again (`heal_told`).

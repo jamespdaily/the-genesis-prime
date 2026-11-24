@@ -508,8 +508,8 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
       ),
       #(
         36_821,
-        "Proxy effect 77845 that starts a child on each struck unit, which holds the Heal or HealShields effect 181759",
-        "Pyrokinetic Flame: the area Proxy 77845 of its spell 36822 starts 71014 on each struck unit, whose heal row 181759 (targetFlags 2) names that unit and is not built",
+        "periodic damage effect 100978 that lasts until removed",
+        "Pyrokinetic Flame: the torch's damage row 100978 (tickTime, flags bit 2) lasts until removed, which no schedule ends; its heal 181759 reaches the allies its area Proxy 77845 starts 71014 on",
       ),
       #(
         33_181,
@@ -646,7 +646,7 @@ pub fn every_row_of_the_abilities_with_a_timed_caster_proxy_is_read_but_the_rows
   Nil
 }
 
-pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_two_ordered_by_health_stay_listed_test() -> Nil {
+pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_one_whose_child_is_centred_on_an_ally_stays_listed_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -674,18 +674,16 @@ pub fn the_nine_abilities_refused_only_for_valid_targets_are_planned_and_the_two
     ))
       as { "the plans hold the ability of Spell4 " <> int.to_string(spell4_id) }
   })
-  // Sentinel 54395 (Guard to the party member missing the most health) and Warden 33392
-  // (the most injured ally) select their units in order 5, the gate the valid targets hid.
-  list.each([54_395, 33_392], fn(spell4_id) {
-    let assert Ok(one) =
-      list.find(left_out, fn(one) { one.spell4_id == spell4_id })
-      as "the ability is refused for the area ordered by health"
-    let sentence = spell_plan.describe(error: one.error)
-    assert string.contains(sentence, "order 5")
-      as { "the sentence names its next gate: " <> sentence }
-    assert !string.contains(sentence, "valid targets")
-      as { "the valid targets are not the refusal: " <> sentence }
-  })
+  // Warden 33392 (the most injured ally) was refused for the area ordered by health, the gate
+  // the valid targets hid; the order is built now, and its child 36660 is centred on the ally
+  // it is started on, which the picture does not place.
+  let assert Ok(one) = list.find(left_out, fn(one) { one.spell4_id == 33_392 })
+    as "Warden is refused for its child's hit row"
+  let sentence = spell_plan.describe(error: one.error)
+  assert string.contains(sentence, "is started on each ally")
+    as { "the sentence names its next gate: " <> sentence }
+  assert !string.contains(sentence, "valid targets")
+    as { "the valid targets are not the refusal: " <> sentence }
 }
 
 pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and_the_one_with_another_gate_stays_refused_test() -> Nil {
@@ -697,10 +695,10 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and
   // Mental Boon 33257, Mending Probes 41333, Astral Infusion 35870, Runes of Protection
   // 39092 and Flash 41926 held a Proxy aimed by flags 5 in a spell that hits no foes and no
   // other refusal; the tables name the Surge alternates 39327 and 54717
-  // (`Spell4.spell4IdMechanicAlternateSpell`). 78081 (an area ordered by health) is refused
-  // for its own gate (`spell_area` order 5).
+  // (`Spell4.spell4IdMechanicAlternateSpell`). 78081 (Barrier) is refused for its own gate: its
+  // child 41369 is centred on the ally it is started on (`spell_area`).
   let freed = [33_257, 41_333, 35_870, 39_092, 41_926]
-  let still_refused = [#(78_081, "selects in order 5")]
+  let still_refused = [#(78_081, "is started on each ally")]
   list.each(freed, fn(spell4_id) {
     assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
       as {
@@ -750,27 +748,149 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_and
     }
   })
     as "no refusal for the friendly area names a Proxy row: a Proxy reads as the caster"
-  // Every row of the freed trees is read, but three: 228666 (type 55, in 87375 behind a
-  // gate), 92704 (a heal the place map marks as started on each struck unit, though the plan
-  // builds its child on the caster) and 180600 (Flash's detonation Proxy).
+  // Every row of the freed trees is read, but two: 228666 (type 55, in 87375 behind a gate)
+  // and 180600 (Flash's detonation Proxy).
   let unread =
     unread_rows_of(tables:, spell4_ids: freed)
     |> list.unique
     |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-  assert list.map(unread, fn(row) { row.0 }) == [92_704, 180_600, 228_666]
+  assert list.map(unread, fn(row) { row.0 }) == [180_600, 228_666]
     as "table_rows -- Spell4Effects spellId=<each spell of the trees>"
-  let assert [heal, detonation, type_55] = unread
+  let assert [detonation, type_55] = unread
   assert detonation.1
     == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
   assert type_55.1 == Ok(spell_plan.LeftOut(why: spell_plan.TypeNotRead))
-  assert heal.1
-    == Error(spell_plan.HealOnStruckUnit(
-      spell4_id: 82_553,
-      proxy_effect_id: 217_358,
-      effect_id: 92_704,
-    ))
-    as "the measure's place map marks 41334 as started on each struck unit by Proxy 217358 of 82553, so it counts 92704 unread; the plan builds the child on the caster and the cast heals it (`cast_union_aim_test`)"
   Nil
+}
+
+/// The Proxy payloads of an ability's tree and its alternate's, the targets of each row.
+fn proxy_targets_of(
+  ability ability: spell_plan.Spell,
+) -> List(#(Int, spell_plan.ProxyTarget)) {
+  let alternate_tree = case ability.alternate {
+    Some(alternate) ->
+      spell_plan.tree(spell: alternate, started: fn(_) { True })
+    None -> []
+  }
+  list.append(
+    spell_plan.tree(spell: ability, started: fn(_) { True }),
+    alternate_tree,
+  )
+  |> list.flat_map(fn(spell) {
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
+  })
+  |> list.map(fn(proxy) { #(proxy.effect_id.value, proxy.target) })
+}
+
+pub fn the_abilities_that_hold_a_proxy_at_a_friendly_area_start_their_child_on_each_ally_and_the_three_it_frees_are_planned_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  let plans = spell_plan.plans_with_later(tables:)
+  // The Proxy rows with the area's bit in a spell that hits no foes and finds allies, in the
+  // planned abilities: Mental Boon 33257 (36562 and its tiers: 76609, 76778 to 76781), Mending
+  // Probes 41333 (92693), Empowering Probes 41533 (93341), Recursive Matrix 42572 (125421),
+  // Runes of Protection 39092 (206357, 206358), Astral Infusion 35870 (229155, 229164) and
+  // Affinity 39063 (207513, flags 4: "yourself and an ally" is its text, but its row aims at the
+  // area alone). Flash 41926 holds 180600, which starts tiers with no choice.
+  let on_each_ally_and_the_caster = [
+    76_609, 76_778, 76_779, 76_780, 76_781, 92_693, 93_341, 125_421, 206_357,
+    206_358, 229_155, 229_164,
+  ]
+  let targets =
+    list.flat_map(
+      [33_257, 41_333, 41_533, 42_572, 39_092, 35_870, 39_063],
+      fn(spell4_id) {
+        let assert Ok(ability) =
+          spell_plan.in_plans(plans:, base: base_of(tables:, spell4_id:))
+          as "the plans hold the ability"
+        proxy_targets_of(ability:)
+      },
+    )
+  let targets_of = fn(row: Int) {
+    list.filter_map(targets, fn(found) {
+      case found.0 == row {
+        True -> Ok(found.1)
+        False -> Error(Nil)
+      }
+    })
+    |> list.unique
+  }
+  list.each(on_each_ally_and_the_caster, fn(row) {
+    assert targets_of(row) == [spell_plan.OnCaster, spell_plan.OnEachStruck]
+      as {
+        "row "
+        <> int.to_string(row)
+        <> " starts its child on the caster and on each ally"
+      }
+  })
+  assert targets_of(207_513) == [spell_plan.OnEachStruck]
+    as "Affinity's row 207513 (flags 4) starts its child on each ally alone"
+  assert targets_of(180_600) == []
+    as "Flash's row 180600 starts no child, as before: it names tiers with no choice"
+  let sources = spell_plan.sources_of(tables:)
+  let assert Ok(flash_row) =
+    spell4_effects.get(tables:, id: Spell4EffectsId(180_600))
+  assert spell_plan.read_row(
+      tables:,
+      sources:,
+      place: effect_row_read.places(
+        tables:,
+        effects: spell4_effects.all(tables),
+      )(flash_row.spell_id),
+      effect: flash_row,
+    )
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProxyStartsTiersNoChoice))
+  // Sentinel 54395, Projected Spirit 36233 and Mending Banner 33345 held a Proxy at the area
+  // (a Guard on the party member missing the most health; "yourself and N allies"; "the most
+  // injured ally within 35 m", texts 483043, 292646, 246918) and are planned.
+  list.each([54_395, 36_233, 33_345], fn(spell4_id) {
+    assert !list.any(left_out, fn(one) { one.spell4_id == spell4_id })
+      as {
+        int.to_string(spell4_id)
+        <> " is built, so it is not listed unplanned ("
+        <> int.to_string(list.length(left_out))
+        <> " abilities remain listed)"
+      }
+    assert result.is_ok(spell_plan.in_plans(
+      plans:,
+      base: base_of(tables:, spell4_id:),
+    ))
+      as { "the plans hold the ability of Spell4 " <> int.to_string(spell4_id) }
+  })
+  // Warden 33392 and Barrier 78081 are centred on the ally their child is started on, which
+  // the picture does not place; Pyrokinetic Flame, Voidspring (its area 653 is ordered by the
+  // lowest health, which no friendly area builds, so its Proxy still starts on a creature) and
+  // Field Probes keep their own sentences.
+  list.each(
+    [
+      #(
+        33_392,
+        "has a hit telegraph placed on the cast's target and is started on each ally",
+      ),
+      #(
+        78_081,
+        "has a hit telegraph placed on the cast's target and is started on each ally",
+      ),
+      #(36_821, "periodic damage effect 100978 that lasts until removed"),
+      #(
+        39_134,
+        "Proxy effect 85651 that starts a child on each struck unit, which holds the Heal or HealShields effect 85652",
+      ),
+      #(41_398, "every tickTime on the allies in its area"),
+    ],
+    fn(row) {
+      let #(spell4_id, sentence) = row
+      let assert Ok(one) =
+        list.find(left_out, fn(one) { one.spell4_id == spell4_id })
+        as { int.to_string(spell4_id) <> " stays listed unplanned" }
+      assert string.contains(spell_plan.describe(error: one.error), sentence)
+        as { "its sentence: " <> spell_plan.describe(error: one.error) }
+    },
+  )
 }
 
 pub fn every_row_of_nullifiers_tree_is_read_and_its_ability_is_planned_test() -> Nil {

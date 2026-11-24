@@ -890,6 +890,7 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
           condition: spell_plan.Always,
           tag: spend.always,
           target: spell_plan.OnEachStruck,
+          on_allies: False,
           spell: child,
           gains: [],
         ),
