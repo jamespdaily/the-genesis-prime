@@ -57,6 +57,13 @@
 ////   other cast before the procs are matched, so a `Died` proc of any other cast is never held: its
 ////   go writes a debug line (the plan cannot tell the passive, so the rule enforces it,
 ////   `procs_held`); a camp drops the procs and their fire times.
+////   A Proc row held by the player the press named or by each ally the round hit is held by that
+////   player: the go tells it as a change that applies nothing (`held_changes.Watches`,
+////   `cast_control.modifiers_armed`) and the caster keeps one entry for it by source and holder
+////   (`State.procs`). The caster's own events match its own entries alone (`proc_draws_needed`,
+////   `cast.procs_fire`); an ally's entry leaves with the change on that ally
+////   (`cast_control.ended_where`), and the caster's node leaving drops the caster's own entries
+////   alone (`procs_dropped`).
 //// - **A unit that leaves the caster's sight** takes its nodes with it on the client
 ////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
 ////   ends with its 0x7fe (`unit_removed`).

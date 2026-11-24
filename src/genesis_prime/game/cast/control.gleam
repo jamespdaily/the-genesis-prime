@@ -61,7 +61,8 @@
 ////   ends that cast's change first (`kept_pushed_off`). After its changes the go tells the
 ////   player's connection one `OtherPlayerCastWent` for the cast, with the audience the
 ////   caster told the cast's 0x7ff (`modifiers_armed`), so the player starts the cast for
-////   the viewers outside it.
+////   the viewers outside it. A Proc row the player holds is told the same way, as a change that
+////   applies nothing, and the caster keeps its entry for that player until the change ends.
 //// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
 ////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
 ////   five modifier rows (Spell4Effects 130474 and 203798 to 203801). The same row of a child
