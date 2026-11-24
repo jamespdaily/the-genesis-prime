@@ -556,7 +556,7 @@ Prerequisite	2672	anim state of Creature2 11070: type 43 on quests 3479 and 3480
 Quest2	3886	Northern Wilds quest: use 13630, use three 13623, turn in at 11066	game_wire_quest_test
 QuestObjective	5053	type 12 objective of quest 3886, Creature2 13630	game_wire_quest_test
 QuestObjective	5052	type 14 objective of quest 3886, TargetGroup 1460	game_wire_quest_test
-QuestObjective	4565	type 8 objective of quest 3480, TargetGroup 1463	game_wire_quest_test
+QuestObjective	4565	type 8 objective of quest 3480, TargetGroup 1463	game_wire_quest_test, objective_spawn_test
 TargetGroup	1460	group of Creature2 13623, the checklist of objective 5052	game_wire_quest_test
 TargetGroup	1463	kill group of objective 4565	game_wire_quest_test
 Creature2	11061	giver of quest 3480	game_wire_quest_test
@@ -1555,3 +1555,17 @@ Spell4	52142	Bolster - Tier 9, whose Spell4Effects 229005 is a periodic Proxy ai
 Spell4Effects	92788	Medic - Barrier - Tier 1 child (Spell4 41369): a UnitPropertyModifier of property 175 aimed by flags 5, 5000 ms, in a spell whose area finds allies	spell_plan_union_aim_test
 Spell4Effects	217926	Energy Auger aura (Spell4 82830): a UnitPropertyModifier of property 100 aimed by flags 4, until removed	spell_plan_union_aim_test
 Spell4Effects	178513	Volatile Injection (Spell4 41756): a UnitPropertyModifier aimed by flags 5, 10000 ms	spell_plan_union_aim_test
+QuestObjective	4564	type 8 objective of quest 3479, TargetGroup 7288, on the markers 4565 has	objective_spawn_test
+WorldLocation2	12155	marker of kill objectives 4564 and 4565 in World 426	objective_spawn_test
+WorldLocation2	12156	marker of kill objectives 4564 and 4565 in World 426	objective_spawn_test
+WorldLocation2	12157	marker of kill objectives 4564 and 4565 in World 426	objective_spawn_test
+WorldLocation2	12158	marker of kill objectives 4564 and 4565 in World 426	objective_spawn_test
+Creature2	13117	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	13959	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	36331	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	36335	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	11945	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	11948	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	12844	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	13116	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test
+Creature2	51126	creature of TargetGroup 7288 or 1463, killed for objective 4564 or 4565	objective_spawn_test

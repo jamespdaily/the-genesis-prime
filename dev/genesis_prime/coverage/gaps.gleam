@@ -72,6 +72,7 @@ import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_special
 import genesis_prime/world_map/lying_body
+import genesis_prime/world_map/objective_spawn
 import gleam/int
 import gleam/list
 import gleam/string
@@ -137,6 +138,7 @@ pub fn registry() -> List(Entry) {
     cast_heal.gaps(),
     cast_proc.gaps(),
     heal_split.gaps(),
+    objective_spawn.gaps(),
   ])
 }
 

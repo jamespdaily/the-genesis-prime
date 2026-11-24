@@ -16,8 +16,17 @@
 ////   (`WorldLocation2.npe_battle_markers`). The client lifts a unit onto the
 ////   ground when it is at most 2 units below it and draws it at the height sent
 ////   above it, and it gives the server no ground height
-////   (`unit.ground_lift`, `terrain_height.server_view`), so a creature stands at
-////   its marker's height.
+////   (`unit.ground_lift`, `terrain_height.server_view`), so the server sends
+////   the height: the marker's own at its centre (the ground there, where the
+////   marker is on the ground), and on its ring the ground the server reads
+////   (`terrain.height_at`) at the slot when the marker's centre stands on the
+////   ground (its height within the client's lift of 2 of the ground read at the
+////   centre) and that read is within the ring's radius plus 2 of the marker's
+////   height, the server's choice for the ground of a slope no steeper than 45
+////   degrees from the centre. A marker below or above the ground at its centre
+////   (an interior, a cave, a prop) keeps its own height at every slot, and so does
+////   a slot the ground has no read at or whose read is outside that band (a pit, a
+////   cliff, terrain under props).
 //// - Where a creature stands in the circle, and which creature of a group takes
 ////   which place, are the server's choice. The objective's count is dealt to
 ////   its markers one at a time in column order; a marker that gets one stands
@@ -28,6 +37,13 @@
 ////   whose markers lie in different worlds is placed in each world with its
 ////   whole count; objectives of the same creatures and markers are placed once
 ////   with the largest count.
+//// - Objectives that share a marker place one set of creatures there (a server
+////   choice: the client's tables name no place for a creature). A marker stands
+////   the creatures the first objective deals it, then of each later objective
+////   those it deals more of than the marker holds, so each objective keeps what
+////   it asked of the marker, a creature two objectives ask of it stands once (the
+////   larger number), and the creatures of one marker, the click targets of the
+////   marker after them, fill one ring, no two on one place.
 //// - A creature stands with what `spawn.creature_row` gives its Creature2 row:
 ////   the unit type (entity type 13 for a turret creature), the faction, the first
 ////   display and outfit of its groups, no stored health and its minLevel.
@@ -55,7 +71,7 @@
 //// with (the same number, but 19 for 18 and 32 for 20, as the world database
 //// stores them).
 //// Several creatures at one marker stand on its half-radius ring in creature id
-//// order. The click rows are numbered after the kill rows. A pair is skipped and
+//// order, after the kill creatures of the marker. The click rows are numbered after the kill rows. A pair is skipped and
 //// reported (`click_skipped`) for a marker with no WorldLocation2 row, a marker
 //// in a world with no stored spawn, and a creature whose unit type
 //// `spawn.select` does not start (`spawn.starts_entity_type`). A link of a creature
@@ -72,12 +88,14 @@ import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/target_group
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective.{type QuestObjective}
 import genesis_prime/table/world_location2.{type WorldLocation2}
+import genesis_prime/terrain.{type Ground}
 import genesis_prime/world_map/creation_type
 import genesis_prime/world_map/creature_faction.{type Factions}
 import genesis_prime/world_map/creature_kind.{type Kinds}
@@ -85,7 +103,8 @@ import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
-import gleam/dict
+import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -152,15 +171,8 @@ type Marker {
 /// What one objective asks for, as far as the tables let it: the creatures with
 /// a Creature2 row, the markers with a row in a world with a stored spawn, and its
 /// count.
-/// `key` is the creature ids and the marker ids it names, each sorted, which two
-/// objectives that ask the same thing share.
 type Job {
-  Job(
-    key: #(List(Int), List(Int)),
-    creatures: List(Creature2),
-    markers: List(Marker),
-    count: Int,
-  )
+  Job(creatures: List(Creature2), markers: List(Marker), count: Int)
 }
 
 /// The rows to stand for the kill objectives, given the rows the stored spawn
@@ -183,6 +195,7 @@ pub fn place(
   kinds kinds: Kinds,
   kills kills: Set(Int),
   clicks clicks: Set(Int),
+  grounds grounds: Dict(Int, Ground),
 ) -> Placed {
   let objectives =
     quest_objective.all(tables)
@@ -216,26 +229,157 @@ pub fn place(
   let jobs =
     planned
     |> list.filter_map(fn(pair) { option.to_result(pair.0, Nil) })
-    |> merged
   let held = held_by(stored:, kinds:)
   let looks = spawn.looks(tables:)
-  let rows =
-    list.flat_map(jobs, fn(job) { rows_of(job:, held:, looks:, factions:) })
+  let stands =
+    jobs
+    |> list.flat_map(fn(job) { stands_of(job:, held:) })
+    |> combined
+  let #(click_stands, click_skipped, unread_links) =
+    click_stands(tables:, clicks:, worlds:, stored:)
+  let sizes = ring_sizes(stands:, click_stands:)
   let first = highest_id(stored:) + 1
   let rows =
-    list.index_map(rows, fn(row, index) {
+    list.flat_map(stands, fn(stand) {
+      list.index_map(stand.creatures, fn(creature, slot) {
+        spawn.creature_row(
+          looks:,
+          factions:,
+          id: SpawnId(0),
+          creature:,
+          place: slot_place(
+            marker: stand.marker,
+            slot:,
+            slots: ring_size(sizes:, marker: stand.marker),
+            grounds:,
+          ),
+          level: None,
+        )
+      })
+    })
+    |> list.index_map(fn(row, index) {
       spawn.Row(..row, id: SpawnId(first + index))
     })
-  let #(click_rows, click_skipped, unread_links) =
-    click_placed(
-      tables:,
-      clicks:,
-      worlds:,
-      stored:,
-      factions:,
-      first: first + list.length(rows),
-    )
+  let kill_slots = kill_slot_counts(stands:)
+  let click_rows =
+    list.flat_map(click_stands, fn(stand) {
+      let taken = result.unwrap(dict.get(kill_slots, stand.marker.row.id), 0)
+      list.index_map(stand.wants, fn(want, index) {
+        spawn.Row(
+          ..spawn.creature_row(
+            looks:,
+            factions:,
+            id: SpawnId(0),
+            creature: want.creature,
+            place: slot_place(
+              marker: stand.marker,
+              slot: taken + index,
+              slots: ring_size(sizes:, marker: stand.marker),
+              grounds:,
+            ),
+            level: None,
+          ),
+          entity_type: paired_unit_type(creature: want.creature),
+        )
+      })
+    })
+    |> list.index_map(fn(row, index) {
+      spawn.Row(..row, id: SpawnId(first + list.length(rows) + index))
+    })
   Placed(rows:, skipped:, click_rows:, click_skipped:, unread_links:)
+}
+
+/// The creatures one marker stands for the kill objectives, in the order of its
+/// ring's slots.
+type Stand {
+  Stand(marker: Marker, creatures: List(Creature2))
+}
+
+/// The click targets one marker stands, in creature id order, after the creatures
+/// of its kill `Stand`.
+type ClickStand {
+  ClickStand(marker: Marker, wants: List(Want))
+}
+
+/// The stands of the jobs with each marker's made one: a marker two jobs ask
+/// creatures of stands the creatures of the first job as it dealt them, then
+/// of each later job those it asks of more than the stand holds, so each job keeps
+/// what it asked at the marker, a creature two jobs ask once stands once (the larger
+/// count), and no two creatures share a ring slot. The markers are in the order
+/// they first show.
+fn combined(stands stands: List(Stand)) -> List(Stand) {
+  list.fold(stands, [], fn(kept: List(Stand), stand: Stand) {
+    case
+      list.any(kept, fn(other) { other.marker.row.id == stand.marker.row.id })
+    {
+      True ->
+        list.map(kept, fn(other) {
+          case other.marker.row.id == stand.marker.row.id {
+            True ->
+              Stand(
+                ..other,
+                creatures: with_largest_counts(
+                  held: other.creatures,
+                  added: stand.creatures,
+                ),
+              )
+            False -> other
+          }
+        })
+      False -> [stand, ..kept]
+    }
+  })
+  |> list.reverse
+}
+
+/// The creatures held, then each creature of `added` as many times as `added` has it
+/// beyond the times it is held.
+fn with_largest_counts(
+  held held: List(Creature2),
+  added added: List(Creature2),
+) -> List(Creature2) {
+  let times = fn(creatures: List(Creature2), creature: Creature2) {
+    list.count(creatures, fn(one) { one.id == creature.id })
+  }
+  list.unique(added)
+  |> list.flat_map(fn(creature) {
+    list.repeat(creature, times(added, creature) - times(held, creature))
+  })
+  |> list.append(held, _)
+}
+
+/// How many creatures of kill objectives each marker stands, by the marker's id.
+fn kill_slot_counts(stands stands: List(Stand)) -> Dict(Int, Int) {
+  list.map(stands, fn(stand) {
+    #(stand.marker.row.id, list.length(stand.creatures))
+  })
+  |> dict.from_list
+}
+
+/// How many creatures each marker stands in all, kill and click, by the marker's id:
+/// the slots of its ring.
+fn ring_sizes(
+  stands stands: List(Stand),
+  click_stands click_stands: List(ClickStand),
+) -> Dict(Int, Int) {
+  let add = fn(sizes: Dict(Int, Int), marker: Marker, more: Int) {
+    dict.upsert(sizes, marker.row.id, fn(held) { option.unwrap(held, 0) + more })
+  }
+  let with_kills =
+    list.fold(stands, dict.new(), fn(sizes, stand) {
+      add(sizes, stand.marker, list.length(stand.creatures))
+    })
+  list.fold(click_stands, with_kills, fn(sizes, stand) {
+    add(sizes, stand.marker, list.length(stand.wants))
+  })
+}
+
+/// The slots of the marker's ring. Every marker that has a row to place is in
+/// `sizes` (`ring_sizes` counts the creatures of each stand's marker).
+fn ring_size(sizes sizes: Dict(Int, Int), marker marker: Marker) -> Int {
+  let assert Ok(size) = dict.get(sizes, marker.row.id)
+    as "a marker that stands a creature has a ring size"
+  size
 }
 
 /// An objective's marker a creature is linked to (`objective_link.links`): the
@@ -244,23 +388,21 @@ type Want {
   Want(objective_id: Int, creature: Creature2, marker_id: Int, marker: Marker)
 }
 
-/// The rows to stand for the click targets, from id `first` up, and the pairs that
+/// The click targets to stand, marker by marker in marker id order, and the pairs that
 /// were not placed. Every creature that `objective_link.links` ties to a type 5 or 32
 /// objective with a marker is wanted at each marker. A stored row of the creature of
 /// any unit type serves the one marker it stands nearest in its own world, and a
-/// marker no row serves gets the creature at its centre, as the unit type its
+/// marker no row serves gets the creature, as the unit type its
 /// CreationTypeEnum pairs with (`paired_unit_type`), several creatures of one marker
-/// on its half-radius ring in creature-id order. A pair of a marker with no row or
+/// in creature-id order. A pair of a marker with no row or
 /// no stored spawn in its world is skipped as the kill path skips it, and one whose
 /// unit type the server does not start is skipped as `NotStarted`.
-fn click_placed(
+fn click_stands(
   tables tables: table_store.Tables,
   clicks clicks: Set(Int),
   worlds worlds: Set(Int),
   stored stored: List(Row),
-  factions factions: Factions,
-  first first: Int,
-) -> #(List(Row), List(Skipped), List(UnreadLink)) {
+) -> #(List(ClickStand), List(Skipped), List(UnreadLink)) {
   let #(linked_pairs, unread_links) = click_pairs(tables:)
   let pairs = list.append(linked_pairs, pane_pairs(tables:, clicks:))
   let #(wants, marker_skips) =
@@ -293,8 +435,7 @@ fn click_placed(
         ),
       )
     })
-  let looks = spawn.looks(tables:)
-  let rows =
+  let stands =
     started
     |> list.sort(fn(a, b) {
       int.compare(a.marker_id, b.marker_id)
@@ -302,26 +443,12 @@ fn click_placed(
     })
     |> once_each
     |> list.chunk(fn(want) { want.marker_id })
-    |> list.flat_map(fn(group) {
-      let slots = list.length(group)
-      list.index_map(group, fn(want, slot) {
-        spawn.Row(
-          ..spawn.creature_row(
-            looks:,
-            factions:,
-            id: SpawnId(0),
-            creature: want.creature,
-            place: slot_place(marker: want.marker, slot:, slots:),
-            level: None,
-          ),
-          entity_type: paired_unit_type(creature: want.creature),
-        )
-      })
+    |> list.map(fn(group) {
+      let assert [first, ..] = group
+        as "a chunk of a list holds at least one element"
+      ClickStand(marker: first.marker, wants: group)
     })
-    |> list.index_map(fn(row, index) {
-      spawn.Row(..row, id: SpawnId(first + index))
-    })
-  #(rows, list.unique(list.append(marker_skips, not_started)), unread_links)
+  #(stands, list.unique(list.append(marker_skips, not_started)), unread_links)
 }
 
 /// Every (objective, creature, marker) of the click table's objectives: each creature of
@@ -548,15 +675,7 @@ fn plan(
       let job = case rows, markers {
         [], _ | _, [] -> None
         _, _ ->
-          option.Some(Job(
-            key: #(
-              list.sort(creature_ids, int.compare),
-              list.sort(marker_ids, int.compare),
-            ),
-            creatures: rows,
-            markers:,
-            count: objective.count,
-          ))
+          option.Some(Job(creatures: rows, markers:, count: objective.count))
       }
       #(job, list.flatten([no_group, no_rows, marker_skips]))
     }
@@ -592,24 +711,6 @@ fn marker_of(
   Ok(Marker(row:, place:))
 }
 
-/// The jobs with those that ask the same thing made one, the largest count kept,
-/// in the order of the first.
-fn merged(jobs jobs: List(Job)) -> List(Job) {
-  list.fold(jobs, [], fn(kept: List(Job), job: Job) {
-    case list.any(kept, fn(other: Job) { other.key == job.key }) {
-      True ->
-        list.map(kept, fn(other: Job) {
-          case other.key == job.key {
-            True -> Job(..other, count: int.max(other.count, job.count))
-            False -> other
-          }
-        })
-      False -> [job, ..kept]
-    }
-  })
-  |> list.reverse
-}
-
 /// Whether the creature's row makes it a turret (`creature_unit_type.of_creation_type`) the
 /// server has no kind for: it would stand as a static object, not fight.
 fn is_unrun_turret(creature creature: Creature2, kinds kinds: Kinds) -> Bool {
@@ -642,13 +743,8 @@ fn highest_id(stored stored: List(Row)) -> Int {
   list.fold(stored, 0, fn(highest, row) { int.max(highest, number_of(row:)) })
 }
 
-/// The rows of one job, world by world in the order its markers first show them.
-fn rows_of(
-  job job: Job,
-  held held: Set(#(Int, Int)),
-  looks looks: spawn.Looks,
-  factions factions: Factions,
-) -> List(Row) {
+/// The stands of one job, world by world in the order its markers first show them.
+fn stands_of(job job: Job, held held: Set(#(Int, Int))) -> List(Stand) {
   job.markers
   |> list.map(fn(marker) { marker.row.world_id })
   |> list.unique
@@ -659,19 +755,17 @@ fn rows_of(
       })
     let markers =
       list.filter(job.markers, fn(marker) { marker.row.world_id == world_id })
-    rows_in_world(creatures:, markers:, count: job.count, looks:, factions:)
+    stands_in_world(creatures:, markers:, count: job.count)
   })
 }
 
-/// The rows of one world: the count dealt to the markers one at a time, and the
-/// creatures to the places in that order, cycling.
-fn rows_in_world(
+/// The stands of one world: the count dealt to the markers one at a time, and the
+/// creatures to the places in that order, cycling. A marker dealt none has no stand.
+fn stands_in_world(
   creatures creatures: List(Creature2),
   markers markers: List(Marker),
   count count: Int,
-  looks looks: spawn.Looks,
-  factions factions: Factions,
-) -> List(Row) {
+) -> List(Stand) {
   let creature_count = list.length(creatures)
   let marker_count = list.length(markers)
   let by_turn =
@@ -689,34 +783,36 @@ fn rows_in_world(
             True -> 1
             False -> 0
           }
-        list.repeat(Nil, slots)
-        |> list.index_map(fn(_, slot) { slot })
-        |> list.filter_map(fn(slot) {
-          // The place the count's dealing gives this slot: marker `index` is
-          // dealt places index, index + markers, index + 2 markers, ...
-          let turn = index + slot * marker_count
-          use creature <- result.map(dict.get(by_turn, turn % creature_count))
-          spawn.creature_row(
-            looks:,
-            factions:,
-            id: SpawnId(0),
-            creature:,
-            place: slot_place(marker:, slot:, slots:),
-            level: None,
-          )
-        })
+        let dealt =
+          list.repeat(Nil, slots)
+          |> list.index_map(fn(_, slot) { slot })
+          |> list.filter_map(fn(slot) {
+            // The place the count's dealing gives this slot: marker `index` is
+            // dealt places index, index + markers, index + 2 markers, ...
+            let turn = index + slot * marker_count
+            dict.get(by_turn, turn % creature_count)
+          })
+        Stand(marker:, creatures: dealt)
       })
-      |> list.flatten
+      |> list.filter(fn(stand) { stand.creatures != [] })
   }
 }
 
-/// The place of slot `slot` of the `slots` a marker holds: the marker's own
-/// place for one, else a point of the circle of half its radius, facing the
-/// centre. Positions and the facing are 32-bit floats, as a row's are.
+/// How far above a unit the client's ground reaches to lift it: a unit at most this
+/// far below the ground is lifted onto it (`unit.ground_lift`).
+const ground_lift_reach = 2.0
+
+/// The place of slot `slot` of the `slots` a marker's ring holds: the marker's own
+/// place for one, else a point of the circle of half its radius, facing the centre.
+/// Positions and the facing are 32-bit floats, as a row's are. A ring slot stands at
+/// the ground read at its point when the marker's centre stands on the ground (the
+/// marker's height within the client's lift of the ground read at its centre) and
+/// the ground has a read at the point; any other slot keeps the marker's height.
 fn slot_place(
   marker marker: Marker,
   slot slot: Int,
   slots slots: Int,
+  grounds grounds: Dict(Int, Ground),
 ) -> Place {
   case slots {
     1 -> marker.place
@@ -724,11 +820,15 @@ fn slot_place(
       let angle = 2.0 *. maths.pi() *. int.to_float(slot) /. int.to_float(slots)
       let reach = marker.row.radius /. 2.0
       let centre = marker.place
+      let slot_x =
+        float32.rounded(start_place.x(centre) +. reach *. maths.cos(angle))
+      let slot_z =
+        float32.rounded(start_place.z(centre) +. reach *. maths.sin(angle))
       start_place.moved(
         place: centre,
-        x: float32.rounded(start_place.x(centre) +. reach *. maths.cos(angle)),
-        y: start_place.y(centre),
-        z: float32.rounded(start_place.z(centre) +. reach *. maths.sin(angle)),
+        x: slot_x,
+        y: ring_height(marker:, slot_x:, slot_z:, grounds:),
+        z: slot_z,
       )
       |> start_place.turned(
         // The unit faces (-sin yaw, -cos yaw) in (x, z): towards the centre, from
@@ -740,6 +840,53 @@ fn slot_place(
         ),
       )
     }
+  }
+}
+
+/// The height a ring slot at (`slot_x`, `slot_z`) stands at: the ground read there
+/// when the marker's centre stands on the ground and the read is within the ring's
+/// band of the marker's height (the ring's radius plus the client's lift: the ground
+/// of a slope no steeper than 45 degrees from the centre, a server choice), else the
+/// marker's height. A read outside the band is a pit, a cliff or terrain under props.
+fn ring_height(
+  marker marker: Marker,
+  slot_x slot_x: Float,
+  slot_z slot_z: Float,
+  grounds grounds: Dict(Int, Ground),
+) -> Float {
+  let centre = marker.place
+  let marker_height = start_place.y(centre)
+  let band = marker.row.radius /. 2.0 +. ground_lift_reach
+  let on_the_ground = {
+    use ground <- result.try(
+      dict.get(grounds, marker.row.world_id)
+      |> result.replace_error(Nil),
+    )
+    use under_centre <- result.try(
+      terrain.height_at(
+        ground:,
+        x: start_place.x(centre),
+        z: start_place.z(centre),
+      )
+      |> result.replace_error(Nil),
+    )
+    use <- bool.guard(
+      when: float.absolute_value(marker_height -. under_centre)
+        >. ground_lift_reach,
+      return: Error(Nil),
+    )
+    use under_slot <- result.try(
+      terrain.height_at(ground:, x: slot_x, z: slot_z)
+      |> result.replace_error(Nil),
+    )
+    case float.absolute_value(under_slot -. marker_height) <=. band {
+      True -> Ok(under_slot)
+      False -> Error(Nil)
+    }
+  }
+  case on_the_ground {
+    Ok(height) -> float32.rounded(height)
+    Error(Nil) -> marker_height
   }
 }
 
@@ -882,4 +1029,18 @@ pub fn labelled(
 fn number_of(row row: Row) -> Int {
   let SpawnId(number) = row.id
   number
+}
+
+/// What the placement leaves at the height of a marker, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Objective creature placement",
+      missing: "the ground under the ring of a marker whose centre is not on the ground (an interior, a cave, a prop) or has no ground read: its creatures stand at the marker's height, which may be off the ground the client draws",
+    ),
+    gap.Entry(
+      area: "Objective creature placement",
+      missing: "the ground at a ring slot that has no ground read (a hole cell, a chunk with no layer) or whose ground is farther from the marker's height than the ring's radius plus 2: the creature stands at the marker's height, which may be off the ground the client draws",
+    ),
+  ]
 }

@@ -8,15 +8,24 @@ import content_support
 import database_support
 import envoy
 import genesis_prime/content/terrain as content_terrain
+import genesis_prime/game/click_objective
+import genesis_prime/game/kill_objective
+import genesis_prime/game/place_objective
+import genesis_prime/game/start_place
 import genesis_prime/import_world_data
+import genesis_prime/table/id
+import genesis_prime/table/quest_objective
+import genesis_prime/table/world_location2
 import genesis_prime/terrain.{type Ground}
+import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn.{type Row}
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
 import gleam/result
 import owned_test
+import spawn_support
 import terrain_support
 import unitest
 
@@ -67,6 +76,206 @@ pub fn the_real_ground_answers_the_retail_spawns_of_every_served_world_test() ->
   list.each([22, 51], fn(world_id) {
     chunk_borders_agree(ground_of(world_id), samples: 100)
   })
+}
+
+/// What the placement made over the real tables, world database and ground files: every
+/// placed row, kill and click, the markers of the objectives, and the ground of each world.
+type RealPlacement {
+  RealPlacement(
+    rows: List(Row),
+    markers: List(world_location2.WorldLocation2),
+    grounds: Dict(Int, Ground),
+  )
+}
+
+fn placed_over_the_real_ground() -> RealPlacement {
+  let assert Ok(world_data) = envoy.get("GENESIS_WORLD_DATA")
+    as "the guard saw the variable"
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(_) =
+    import_world_data.import_spawns(
+      db: content_support.connect(database:),
+      folder: world_data,
+    )
+    as "the world database imports"
+  let stored = content_support.stored_spawns(database:)
+  let tables = client_tables.with_content_tables()
+  let assert Ok(grounds) =
+    content_terrain.grounds(
+      tables:,
+      rows: stored,
+      read: content_terrain.folder_reader(terrain_support.real_folder()),
+    )
+    as "every spawn row of the world database has its ground file"
+  let placed =
+    objective_spawn.place(
+      tables:,
+      stored:,
+      factions: spawn_support.the_boss_is_given_233(tables:),
+      kinds: spawn_support.turret_kinds(),
+      kills: content_support.objective_ids(table: kill_objective.table),
+      clicks: content_support.objective_ids(table: click_objective.table),
+      grounds:,
+    )
+  let markers =
+    quest_objective.all(tables)
+    |> list.flat_map(fn(objective) { place_objective.marker_ids(objective:) })
+    |> list.unique
+    |> list.filter_map(fn(marker_id) {
+      world_location2.get(tables:, id: id.WorldLocation2Id(marker_id))
+    })
+  RealPlacement(
+    rows: list.append(placed.rows, placed.click_rows),
+    markers:,
+    grounds:,
+  )
+}
+
+/// The creatures a kill or click objective's marker places on the marker's ring, over
+/// the real ground files. For each marker whose centre stands on the ground (its
+/// height within 2 of the ground read at the centre, the band the client lifts a unit
+/// by), every placed row on the marker's half-radius ring whose place has a ground read
+/// stands within 0.001 of that read when the read is within the ring's radius plus 2
+/// of the marker's height (a slope no steeper than 45 degrees from the centre, and the
+/// client's lift), and within 0.001 of the marker's own height when it is not; so no
+/// ring row stands farther from the marker's height than that band.
+/// World 22's markers 29628 and 45150 (ring radii 79.9 and 115, height -798.837) have
+/// rings that reach raw 0x1FFF cells, a floor 225 below the marker.
+pub fn a_ring_creature_of_a_surface_marker_stands_on_the_real_ground_within_the_ring_band_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("world_data")
+  use <- unitest.guard(client_tables.present())
+  use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
+  use <- unitest.guard(terrain_support.real_folder_present())
+  let RealPlacement(rows:, markers:, grounds:) = placed_over_the_real_ground()
+  let on_surface_rings =
+    list.flat_map(markers, fn(marker) {
+      ring_rows_of(marker:, rows:, grounds:, standing: OnTheGround)
+    })
+    |> list.filter_map(fn(ring_row) {
+      let #(row, marker) = ring_row
+      let assert Ok(ground) = dict.get(grounds, marker.world_id)
+        as "a marker with ring rows is in a world with a ground"
+      terrain.height_at(ground:, x: row.x, z: row.z)
+      |> result.map(fn(height) { #(row, marker, height) })
+      |> result.replace_error(Nil)
+    })
+  assert on_surface_rings != []
+    as "some placed rows stand on the ring of a surface marker, at a place with a ground read"
+  let stands_wrongly =
+    list.filter(on_surface_rings, fn(ring_row) {
+      let #(row, marker, ground) = ring_row
+      let expected = case
+        float.absolute_value(ground -. marker.position1)
+        <=. marker.radius /. 2.0 +. 2.0
+      {
+        True -> ground
+        False -> marker.position1
+      }
+      float.absolute_value(row.y -. expected) >=. 0.001
+    })
+    |> list.map(fn(ring_row) {
+      let #(row, marker, ground) = ring_row
+      #(marker.id, row.creature_id, row.y, marker.position1, ground)
+    })
+  assert stands_wrongly == []
+    as "a ring row of a surface marker stands on the ground read at its place when that read is within the ring's radius plus 2 of the marker's height, and at the marker's height when it is not"
+  let at_pinned_markers =
+    list.filter(on_surface_rings, fn(ring_row) {
+      list.contains([29_628, 45_150], { ring_row.1 }.id)
+    })
+  assert at_pinned_markers != []
+    as "World 22's markers 29628 and 45150 hold ring rows at a place with a ground read"
+  assert list.all(at_pinned_markers, fn(ring_row) {
+    let #(row, marker, _ground) = ring_row
+    float.absolute_value(row.y -. marker.position1)
+    <=. marker.radius /. 2.0 +. 2.0
+  })
+    as "those rows stand within the ring's radius plus 2 of the marker's height, -798.837, not on the floor of raw 0x1FFF, -1024.094"
+}
+
+/// A marker below or above the ground at its centre (an interior, a cave, a prop) is not
+/// asked to stand on the ground: every placed row on its ring, over the real ground
+/// files, keeps the marker's height whatever ground lies under or over the slot.
+pub fn a_ring_creature_of_a_marker_off_the_ground_keeps_the_markers_height_over_the_real_ground_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("world_data")
+  use <- unitest.guard(client_tables.present())
+  use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
+  use <- unitest.guard(terrain_support.real_folder_present())
+  let RealPlacement(rows:, markers:, grounds:) = placed_over_the_real_ground()
+  let off_the_ground_rings =
+    list.flat_map(markers, fn(marker) {
+      ring_rows_of(marker:, rows:, grounds:, standing: OffTheGround)
+    })
+  assert off_the_ground_rings != []
+    as "some placed rows stand on the ring of a marker above or below its centre's ground"
+  assert list.filter(off_the_ground_rings, fn(ring_row) {
+      let #(row, marker) = ring_row
+      float.absolute_value(row.y -. marker.position1) >=. 0.001
+    })
+    |> list.map(fn(ring_row) {
+      let #(row, marker) = ring_row
+      #(marker.id, row.creature_id, row.y, marker.position1)
+    })
+    == []
+    as "a ring row of a marker above or below its centre's ground keeps the marker's height"
+}
+
+/// Whether a marker's centre stands on the ground: its height is within 2 of the ground
+/// read there (the band the client lifts a unit by).
+type Standing {
+  OnTheGround
+  OffTheGround
+}
+
+/// The rows on the half-radius ring of the marker, each with the marker, when its centre
+/// has a ground read and stands as `standing` says; none for a marker whose centre has
+/// no ground read.
+fn ring_rows_of(
+  marker marker: world_location2.WorldLocation2,
+  rows rows: List(Row),
+  grounds grounds: Dict(Int, Ground),
+  standing standing: Standing,
+) -> List(#(Row, world_location2.WorldLocation2)) {
+  let assert Ok(centre) = start_place.of_row(row: marker)
+    as "a marker with a placed row has a start place"
+  let centre_x = start_place.x(centre)
+  let centre_z = start_place.z(centre)
+  let found_standing = {
+    use ground <- result.try(
+      dict.get(grounds, marker.world_id) |> result.replace_error(Nil),
+    )
+    use under_centre <- result.try(
+      terrain.height_at(ground:, x: centre_x, z: centre_z)
+      |> result.replace_error(Nil),
+    )
+    case float.absolute_value(start_place.y(centre) -. under_centre) <=. 2.0 {
+      True -> Ok(OnTheGround)
+      False -> Ok(OffTheGround)
+    }
+  }
+  case found_standing {
+    Ok(found) if found == standing ->
+      list.filter_map(rows, fn(row: Row) {
+        let across =
+          distance(across: row.x -. centre_x, down: row.z -. centre_z)
+        case
+          row.world_id == marker.world_id
+          && float.absolute_value(across -. marker.radius /. 2.0) <. 0.001
+        {
+          True -> Ok(#(row, marker))
+          False -> Error(Nil)
+        }
+      })
+    Ok(_) | Error(Nil) -> []
+  }
+}
+
+fn distance(across across: Float, down down: Float) -> Float {
+  let assert Ok(root) = float.square_root(across *. across +. down *. down)
+    as "a sum of squares has a root"
+  root
 }
 
 fn landing_area_of_world_426(ground: Ground, creatures: List(Row)) -> Nil {
