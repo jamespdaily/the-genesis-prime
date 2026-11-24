@@ -26,6 +26,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import spell_tables
+import unitest
 
 const esper = 3
 
@@ -401,6 +402,7 @@ pub fn a_spell_with_a_class_cost_and_a_focus_cost_pays_both_and_is_refused_with_
 
 pub fn the_unread_focus_uses_are_listed_as_gaps_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("gaps")
   let listed =
     list.map(cast_cost.gaps(), fn(entry) { string.lowercase(entry.missing) })
   // What each gap names, and why the server leaves it.

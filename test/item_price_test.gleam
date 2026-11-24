@@ -468,6 +468,7 @@ pub fn an_item_with_a_buy_currency_in_either_slot_has_no_credit_price_test() -> 
 /// item one, so the entry says the item has no buy price.
 pub fn the_additive_entry_names_the_buy_price_only_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("gaps")
   let sentences = list.map(item_price.gaps(), fn(entry) { entry.missing })
   assert list.any(sentences, fn(sentence) {
     string.contains(sentence, "trade skill additive")

@@ -735,6 +735,7 @@ pub fn a_pvp_or_proxy_rune_is_still_refused_with_its_gap_test() -> Nil {
 /// entry's sentence carries the reason an unread item is logged with.
 pub fn the_item_property_branches_the_code_does_not_follow_have_entries_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("gaps")
   let sentences = list.map(item_property.gaps(), fn(entry) { entry.missing })
   let entry_for = fn(kind) {
     "the properties of an item, which the server does not give when "
@@ -1355,6 +1356,7 @@ pub fn binds_on_equip_of_each_kind_of_row_test() -> Nil {
 /// item GameFormula 1214 names (FillItemInfo 0x1404445d0), so they are an entry.
 pub fn the_proxy_items_stack_and_delete_decisions_have_an_entry_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("gaps")
   assert list.any(item_property.gaps(), fn(entry) {
     string.contains(
       entry.missing,

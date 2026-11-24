@@ -296,7 +296,7 @@ fn limits() -> List(Limit) {
 
 pub fn the_cast_gaps_list_the_five_cases_the_issue_type_named_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["registry", "coverage"])
+  use <- unitest.tags(["registry", "coverage", "gaps"])
   let printed = list.map(gaps.registry(), fn(entry) { entry.missing })
   list.each(
     [
@@ -321,7 +321,7 @@ pub fn the_cast_gaps_list_the_five_cases_the_issue_type_named_test() -> Nil {
 
 pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["registry", "coverage"])
+  use <- unitest.tags(["registry", "coverage", "gaps"])
   list.each(limits(), fn(limit) {
     let matching =
       list.filter(limit.entries, fn(entry) {
@@ -358,7 +358,7 @@ pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Ni
 /// only the states the press does not test.
 pub fn the_press_entry_names_only_the_creature_states_a_press_does_not_test_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.tags(["registry", "coverage"])
+  use <- unitest.tags(["registry", "coverage", "gaps"])
   assert list.contains(
     cast_press.gaps(),
     gap.Entry(

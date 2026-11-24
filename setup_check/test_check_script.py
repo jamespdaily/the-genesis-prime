@@ -31,7 +31,8 @@ the real toolchain, the real database or the real client:
   rows planted for it in $PLANT_LOG.table.workers (the run with workers) or
   $PLANT_LOG.table.serial, in unitest's own layout, and then unitest's `N passed` line
   (N is PLANT_PASSED_FIRST for the run with no tag, PLANT_PASSED_SERIAL for the serial run);
-  a run given GENESIS_TEST_DIRECTORY lists what that folder holds in $PLANT_LOG.shard;
+  a run given GENESIS_TEST_DIRECTORY lists what that folder holds in $PLANT_LOG.shard (a run of
+  a tag but gaps does not);
 - `python3.13` is the real one, except for the run the stub stands in for:
   check_facts.py, which succeeds at once, and fails when the fact file holds
   PLANTED_FACT_ERROR;
@@ -47,7 +48,7 @@ the real toolchain, the real database or the real client:
 A planted run costs about two seconds, so tests that only read what one run
 printed or logged share it (`shared_run`), the whole file stays under a minute,
 and tests of what does not depend on the parts' work run `./check fast`, which
-has four parts instead of all of them.
+has five parts instead of all of them.
 
 The part names are the ones ./check prints.
 
@@ -137,12 +138,17 @@ if [ "$1" = test ]; then
     *) echo "Seed: 111" ;;
   esac
   echo "$as $* peak_file=${GENESIS_LITERAL_PEAK_FILE:+given}" >>"$PLANT_LOG.peak"
-  # A run given a shard's folder (GENESIS_TEST_DIRECTORY) lists what the folder holds when
-  # it starts: `link PATH TARGET` for each symlink to a file that exists, `stray PATH` for
+  # A run given a shard's folder (GENESIS_TEST_DIRECTORY), and the run of the tests tagged gaps,
+  # lists what the folder holds when it starts: `link PATH TARGET` for each symlink to a file that exists, `stray PATH` for
   # anything else, PATH below the folder.
   if [ -n "$GENESIS_TEST_DIRECTORY" ]; then
     case "$*" in
-      *"--tag"*) ;;
+      *"--tag gaps"*) listed=yes ;;
+      *"--tag"*) listed= ;;
+      *) listed=yes ;;
+    esac
+    case "$listed" in
+      "") ;;
       *)
         echo "shard $GENESIS_TEST_DIRECTORY" >>"$PLANT_LOG.shard"
         [ -d "$GENESIS_TEST_DIRECTORY" ] || echo "missing $GENESIS_TEST_DIRECTORY" >>"$PLANT_LOG.shard"
@@ -230,6 +236,10 @@ runs_tag() {
 }
 if runs_tag registry "$@" && grep -rq PLANTED_REGISTRY_FAILURE test 2>/dev/null; then
   echo "planted registry test failure"
+  exit 1
+fi
+if runs_tag gaps "$@" && grep -rq PLANTED_GAP_FAILURE test 2>/dev/null; then
+  echo "planted gap test failure"
   exit 1
 fi
 if runs_tag code_rule "$@" && grep -rq PLANTED_BREACH test/code_rule 2>/dev/null; then
@@ -346,7 +356,7 @@ class PlantedCheckCase(unittest.TestCase):
             (repository / folder).mkdir(parents=True)
         # The real script, which the migrations part runs; the planted psql answers its questions.
         executable(repository / "dev" / "apply_migrations.sh", (REPOSITORY / "dev" / "apply_migrations.sh").read_text())
-        (repository / "test" / "code_rule" / "planted_test.gleam").write_text("// a code-rule test\n")
+        (repository / "test" / "code_rule" / "planted_test.gleam").write_text('// a code-rule test, which names the tag "gaps"\n')
         scripts = repository / SCRIPTS
         scripts.mkdir(parents=True)
         for name in ("check_support.py", "query_client.py", "ghidra_env.py", "formulas_by_hand.py"):
@@ -980,13 +990,14 @@ class BranchHoldsMainTest(unittest.TestCase):
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class FastModeTest(unittest.TestCase):
     """`./check fast` is the format check, the build with
-    warnings as errors, glinter and the fact checker, and nothing else: no run of
-    tests, so none of the tests tagged code_rule or registry.
+    warnings as errors, glinter, the run of the tests tagged gaps and the fact
+    checker, and nothing else: no other run of tests, so none of the tests tagged
+    code_rule or registry that are not also tagged gaps.
 
     The planted `gleam` stands for the tools: it fails the format check on a
-    planted format error, and the fact checker on a planted fact-file error. What
-    these tests hold is that the fast check runs each of those four and fails,
-    naming the part, when one fails."""
+    planted format error, the gap tests on a planted gap-test failure and the fact
+    checker on a planted fact-file error. What these tests hold is that the fast
+    check runs each of those five and fails, naming the part, when one fails."""
 
     def test_a_planted_format_error_fails_the_fast_check_naming_the_format_part(self):
         run = shared_run("fast-format-error", "fast", prepare=lambda case: (case.repository / "src" / "planted.gleam").write_text("// PLANTED_FORMAT_ERROR\n"))
@@ -998,11 +1009,43 @@ class FastModeTest(unittest.TestCase):
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bfact-checker\b")
 
-    def test_the_fast_check_runs_the_four_parts_and_no_other(self):
+    def test_a_planted_gap_test_failure_fails_the_fast_check_naming_the_gap_tests_part(self):
+        def plant(case):
+            (case.repository / "test").mkdir(exist_ok=True)
+            (case.repository / "test" / "planted_gaps_test.gleam").write_text("// PLANTED_GAP_FAILURE\n")
+
+        run = shared_run("fast-gap-failure", "fast", prepare=plant)
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bgap-tests\b")
+        self.assertNotRegex(failed_line(self, run.output), r"\b(format|glinter|fact-checker)\b")
+
+    def test_a_fast_check_in_which_no_test_file_names_the_gaps_tag_fails_naming_the_gap_tests_part(self):
+        run = shared_run("fast-no-gap-file", "fast", prepare=lambda case: (case.repository / "test" / "code_rule" / "planted_test.gleam").write_text("// no tag\n"))
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bgap-tests\b")
+        self.assertIn("no test file names the tag gaps", run.output)
+        self.assertFalse([c for c in run.commands if c.startswith("built test")], run.commands)
+
+    def test_the_gap_tests_read_a_folder_holding_the_files_that_name_the_tag_and_no_other(self):
+        def plant(case):
+            for name, text in (("named_test", '// tagged "gaps"\n'), ("spells/also_named_test", '// "gaps"\n'), ("other_test", "// a test\n")):
+                file = case.repository / "test" / (name + ".gleam")
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(text)
+
+        run = shared_run("fast-gap-folder", "fast", prepare=plant)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        held = sorted(path for path, _ in shard_listing(run))
+        self.assertEqual(held, ["code_rule/planted_test.gleam", "named_test.gleam", "spells/also_named_test.gleam"])
+        for path, target in shard_listing(run):
+            self.assertRegex(target, r"^/.*/test/%s$" % re.escape(path), "each link goes to the file at its own path below test")
+        self.assertEqual(set(directories_given(run).values()), {"build/chosen_tests/gap-tests/test"})
+
+    def test_the_fast_check_runs_the_five_parts_and_no_other(self):
         run = shared_run("fast", "fast")
         self.assertEqual(run.done.returncode, 0, run.output)
         listed = re.findall(r"^\s*([a-z-]+)\s+(?:ok|FAILED)\b", run.output, re.MULTILINE)
-        self.assertEqual(sorted(listed), ["fact-checker", "format", "gleam-build", "glinter"])
+        self.assertEqual(sorted(listed), ["fact-checker", "format", "gap-tests", "gleam-build", "glinter"])
         commands = run.commands
         self.assertTrue(any(c.startswith("gleam format --check") for c in commands), commands)
         self.assertIn("gleam build --warnings-as-errors", commands)
@@ -1015,9 +1058,13 @@ class FastModeTest(unittest.TestCase):
             if module != "glinter":
                 self.assertFalse([c for c in commands if module in c], commands)
 
-    def test_the_fast_check_runs_no_test(self):
-        tests = [c for c in shared_run("fast", "fast").commands if c.startswith("built test")]
-        self.assertEqual(tests, [], "the tests tagged code_rule and registry run in the full check")
+    def test_the_fast_check_runs_the_tests_tagged_gaps_and_no_other_test(self):
+        run = shared_run("fast", "fast")
+        tests = [c for c in run.commands if c.startswith("built test")]
+        self.assertEqual(tests, ["built test -- --tag gaps"], "the other tests run in the full check")
+        self.assertLess(
+            run.commands.index("gleam build --warnings-as-errors"), run.commands.index("built test -- --tag gaps"),
+            "the gap tests run on the built code, after gleam-build")
 
     def test_a_failing_build_fails_the_fast_check_naming_it(self):
         def plant(case):
@@ -1151,7 +1198,7 @@ class LightScopeTest(unittest.TestCase):
         run = self.light()
         self.assert_light(run)
         self.assertFalse(foreign_commands(run.commands), run.commands)
-        self.assertEqual([c for c in run.commands if re.fullmatch(r"built test( -- --workers \d+)?", c)], [])
+        self.assertEqual([c for c in run.commands if c.startswith("built test")], [], "no test run, the gap tests' either")
 
     def test_a_branch_changing_only_light_files_says_the_scope_and_why(self):
         line = scope_line(self.light().output)
@@ -1667,7 +1714,7 @@ class BuiltCodeTest(unittest.TestCase):
         self.assertEqual(self.compiles_after_the_build(run.commands), [])
         self.assertEqual(
             sorted(c for c in run.commands if c.startswith("built ")),
-            ["built run -m glinter"])
+            ["built run -m glinter", "built test -- --tag gaps"])
 
     def test_a_part_is_started_with_the_packages_built_and_its_arguments_after_extra(self):
         lines = [line for line in shared_run("full").erl.splitlines() if line.endswith("--tag serial --reporter table --no-color")]

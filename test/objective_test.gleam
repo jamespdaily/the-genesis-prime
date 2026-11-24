@@ -124,6 +124,7 @@ import place_support
 import planted_table.{Integer}
 import quest_support
 import spawn_support
+import unitest
 
 const talk_target = 12_484
 
@@ -3772,6 +3773,7 @@ pub fn a_departures_terminal_counts_and_releases_nothing_test() -> Nil {
 /// entry, since a stand-in that marks a case done is reported as a guess.
 pub fn the_scripted_objective_stand_ins_have_an_entry_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("gaps")
   assert list.any(objective.gaps(), fn(entry) {
     string.contains(entry.missing, "as a guess")
   })
