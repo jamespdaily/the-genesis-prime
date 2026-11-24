@@ -432,11 +432,24 @@ fn newline_offsets(
   }
 }
 
-/// A call in a module: where its function is written, and its arguments. A
-/// capture such as `f(1, _)` is a call whose arguments are those before and
-/// after the hole.
+/// What a call names as its function: `f(...)` names a variable, `m.f(...)`
+/// names a function `f` of a variable `m` (an imported module, or a value with
+/// a field), and any other function expression is another.
+pub type Called {
+  CalledByName(name: String)
+  CalledThroughVariable(variable: String, label: String)
+  CalledOtherwise
+}
+
+/// A call in a module: where its function is written, what it names, and its
+/// arguments. A capture such as `f(1, _)` is a call whose arguments are those
+/// before and after the hole.
 pub type Call {
-  Call(function: glance.Span, arguments: List(glance.Field(Expression)))
+  Call(
+    function: glance.Span,
+    called: Called,
+    arguments: List(glance.Field(Expression)),
+  )
 }
 
 /// Every call and capture in the module's functions, in the order
@@ -445,10 +458,15 @@ pub fn calls(module: glance.Module) -> List(Call) {
   list.filter_map(expressions(module), fn(expression) {
     case expression {
       glance.Call(function:, arguments:, ..) ->
-        Ok(Call(function: span_of(function), arguments:))
+        Ok(Call(
+          function: span_of(function),
+          called: called(function),
+          arguments:,
+        ))
       glance.FnCapture(function:, arguments_before:, arguments_after:, ..) ->
         Ok(Call(
           function: span_of(function),
+          called: called(function),
           arguments: list.append(arguments_before, arguments_after),
         ))
       glance.Int(..)
@@ -472,6 +490,37 @@ pub fn calls(module: glance.Module) -> List(Call) {
       | glance.Echo(..) -> Error(Nil)
     }
   })
+}
+
+fn called(function: Expression) -> Called {
+  case function {
+    glance.Variable(name:, ..) -> CalledByName(name)
+    glance.FieldAccess(
+      container: glance.Variable(name: variable, ..),
+      label:,
+      ..,
+    ) -> CalledThroughVariable(variable:, label:)
+    glance.FieldAccess(..)
+    | glance.Int(..)
+    | glance.Float(..)
+    | glance.String(..)
+    | glance.NegateInt(..)
+    | glance.NegateBool(..)
+    | glance.Block(..)
+    | glance.Panic(..)
+    | glance.Todo(..)
+    | glance.Tuple(..)
+    | glance.List(..)
+    | glance.Fn(..)
+    | glance.RecordUpdate(..)
+    | glance.Call(..)
+    | glance.TupleIndex(..)
+    | glance.FnCapture(..)
+    | glance.BitString(..)
+    | glance.Case(..)
+    | glance.BinaryOperator(..)
+    | glance.Echo(..) -> CalledOtherwise
+  }
 }
 
 /// Which unlabelled argument stands for a value a call may give by label.

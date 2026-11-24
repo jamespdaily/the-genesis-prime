@@ -2,10 +2,10 @@
 # The full check, run locally; CI runs each part of it as a job of its own (.github/workflows/check.yml).
 #
 # Usage: ./check          every part, the gate before a merge
-#        ./check fast     format, gleam-build, glinter and fact-checker only, for the
-#                         loop while editing and the gate before a push; the tests
-#                         tagged code_rule and registry run in the full check's
-#                         gleam-test part, so in CI, not here
+#        ./check fast     format, gleam-build, glinter, gap-tests and fact-checker only,
+#                         for the loop while editing and the gate before a push; the
+#                         other tests, the code_rule and registry ones too, run in the
+#                         full check's gleam-test part, so in CI, not here
 #        ./check part NAME [K/N]
 #                         one part of the full check alone (NAME is any part below
 #                         but literal-area) with the parts it needs: gleam-build for
@@ -171,6 +171,14 @@
 #                  the client's tables                  (after gleam-build)
 #   fact-checker   check_facts.py over the fact file; ./check fast runs it too
 #
+# ./check fast has one part more, gap-tests: the tests tagged gaps (`gleam test -- --tag
+# gaps`), started on the built code after gleam-build, beside glinter. A test that reads a
+# gap registry (`<module>.gaps()` or `gaps.registry()`, itself or through a helper of its
+# file) carries the tag, which test/code_rule/gap_test_tag.gleam enforces, so a new gap test
+# joins the part on its own. The full check does not list it: its gleam-test part runs these
+# tests with the others, so `./check part gap-tests` is refused; nor does a light-scope
+# check, whose parts are CI's fast legs.
+#
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
 # /tmp, 5433 and postgres: the native Postgres 18 on the development machine)
 # and is dropped on exit, also on failure. squirrel connects over TCP only:
@@ -205,7 +213,7 @@ started=$(date +%s)
 full_parts="format gleam-build glinter generated-tables gleam-test real-start real-tables world-data literal-area migrations squirrel client-suite fact-checker"
 
 # The parts that start the code gleam-build built (run_built), in the order the chain starts them.
-built_parts="glinter generated-tables squirrel real-start real-tables world-data gleam-test"
+built_parts="glinter gap-tests generated-tables squirrel real-start real-tables world-data gleam-test"
 
 # in_list WORD LIST: succeeds when WORD is one of the words of LIST.
 in_list() {
@@ -317,8 +325,13 @@ literal_limit_percent=85
 : "${PGUSER:=postgres}"
 export PGHOST PGPORT PGUSER
 
-# The parts of ./check fast, which a full check whose branch is light also runs.
+# The parts of ./check fast that are parts of the full check too, which a full check whose
+# branch is light also runs (CI's fast legs).
 fast_parts="format gleam-build glinter fact-checker"
+
+# The part ./check fast runs besides them, and no other check does: the full check's
+# gleam-test part runs its tests with the others, and CI's legs are the parts of the full check.
+gap_parts="gap-tests"
 
 # The light set: the paths whose change no part beyond the fast parts reads. Each
 # entry is "pattern|reason". A pattern is a shell glob in which `**` crosses
@@ -468,7 +481,7 @@ work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
   full) parts=$full_parts ;;
-  fast) parts=$fast_parts ;;
+  fast) parts="$fast_parts $gap_parts" ;;
   part)
     needed="$part_name $(prerequisites_of "$part_name")"
     parts=""
@@ -779,13 +792,12 @@ shard_files() {
       }'
 }
 
-# shard_directory NUMBER COUNT: makes build/chosen_tests/shard-NUMBER-of-COUNT/test, empty
-# first, holding a symlink to each file shard_files names, at the same path below test, so
-# module names stay the same. The folder's path is left in shard_folder.
-shard_directory() {
-  local root="build/chosen_tests/shard-$1-of-$2" files relative
+# link_test_folder ROOT FILES: makes ROOT/test, empty first, holding a symlink to each file of
+# FILES (paths below test, one a line), at the same path below test, so module names stay the
+# same. The folder's path is left in shard_folder.
+link_test_folder() {
+  local root=$1 files=$2 relative
   shard_folder="$root/test"
-  files=$(shard_files "$1" "$2") || return 1
   rm -rf "$root"
   mkdir -p "$shard_folder" || return 1
   while IFS= read -r relative; do
@@ -795,6 +807,14 @@ shard_directory() {
     esac
     ln -s "$PWD/test/$relative" "$shard_folder/$relative" || return 1
   done <<<"$files"
+}
+
+# shard_directory NUMBER COUNT: the folder of the files shard_files names for shard NUMBER
+# of COUNT, build/chosen_tests/shard-NUMBER-of-COUNT/test.
+shard_directory() {
+  local files
+  files=$(shard_files "$1" "$2") || return 1
+  link_test_folder "build/chosen_tests/shard-$1-of-$2" "$files"
 }
 
 # test_run NAME [VARIABLE=VALUE...] -- ARGUMENTS...: one run of the built tests, in a shell
@@ -875,6 +895,25 @@ tagged_part_test() {
     settings=(GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-$part")
   fi
   test_run "$part" "${settings[@]}" -- --tag "${part//-/_}"
+}
+
+# gap_test_run: the tests tagged gaps alone, in a run of their own beside glinter. unitest
+# parses every file of its test folder before it picks a tag, so the run reads a folder of
+# symlinks to the files that name the tag (`"gaps"`), which hold every test of it. A run
+# that counts no passed test fails, as a shard's does: a folder that came out empty, or a
+# tag no test carries, must not pass.
+gap_test_run() {
+  local files
+  files=$(cd test && grep -rl --include='*.gleam' '"gaps"' . | sed 's|^\./||' | sort) || return 1
+  link_test_folder build/chosen_tests/gap-tests "$files" || return 1
+  local status=0
+  test_run gap-tests GENESIS_TEST_DIRECTORY="$shard_folder" -- --tag gaps --no-color | tee "$work/gap-tests.run"
+  [ "${PIPESTATUS[0]}" = 0 ] || status=1
+  if ! ran_a_test "$work/gap-tests.run"; then
+    echo "no gap test ran: the run counted no passed test"
+    status=1
+  fi
+  return $status
 }
 
 # running_tests PART: prints the tests the part's run had started and not ended, from
@@ -1011,6 +1050,7 @@ squirrel_after_migrations() {
 start_built_part() {
   case "$1" in
     glinter) ( step glinter run_built glinter ) & ;;
+    gap-tests) ( step gap-tests gap_test_run ) & ;;
     generated-tables)
       if [ "${GENESIS_NO_CLIENT:-}" = 1 ]; then
         skip generated-tables "the tables are compared with the client's tables (GENESIS_NO_CLIENT=1 here)"
@@ -1114,7 +1154,7 @@ for part in $parts; do
     failed="$failed $part"
     if [ "$hung" = yes ] && [ -f "$work/$part.started" ]; then
       printf '  %-18s FAILED  hung: still running at three times its budget\n' "$part"
-      if [ "$part" = gleam-test ] || [ "$part" = client-suite ] || in_list "$part" "$tagged_parts"; then
+      if [ "$part" = gleam-test ] || [ "$part" = gap-tests ] || [ "$part" = client-suite ] || in_list "$part" "$tagged_parts"; then
         running_tests "$part" | sed 's/^/                       still running: /'
       fi
       hung_names="${hung_names:+$hung_names, }$part"
@@ -1171,7 +1211,7 @@ if [ -f "$work/literal-area.log" ]; then
 fi
 # A test's warning follows the dots the reporter printed on its line, so it is
 # cut out of the line rather than matched at its start.
-for part in gleam-test $tagged_parts; do
+for part in gleam-test gap-tests $tagged_parts; do
   if [ -f "$work/$part.log" ]; then
     grep -ho 'check WARNING: test .*' "$work/$part.log"
   fi

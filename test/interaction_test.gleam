@@ -73,6 +73,7 @@ import planted_table.{Integer}
 import quest_support
 import simple_unit_support
 import spawn_support
+import unitest
 import vendor_support
 
 /// The edge gap a request is answered up to: 6.0 for a quest kind, plus the 3.0 a
@@ -1312,6 +1313,7 @@ pub fn two_buys_of_a_random_stat_item_on_one_connection_make_different_words_tes
 /// the control states (60, 61) and the combat refusal.
 pub fn the_vendor_checks_left_to_the_client_have_entries_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("gaps")
   let sentences = list.map(interaction.gaps(), fn(entry) { entry.missing })
   list.each(
     ["a player in a control state (60, 61)", "a player in combat"],

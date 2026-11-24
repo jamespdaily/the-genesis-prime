@@ -417,7 +417,7 @@ pub fn type_15_rows_are_each_read_left_out_or_refused_by_name_test() -> Nil {
 
 pub fn types_1_4_8_and_26_state_their_gap_test() -> Nil {
   use <- owned_test.run(10_000)
-  use <- unitest.tag("coverage")
+  use <- unitest.tags(["coverage", "gaps"])
   let assert Ok(facts) =
     simplifile.read(
       ".claude/skills/decoding-the-client/references/client-facts.toml",

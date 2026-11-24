@@ -194,3 +194,48 @@ pub fn a_capture_is_a_call_with_the_arguments_around_its_hole_test() -> Nil {
   assert list.length(syntax.calls(module)) == 1
     as "a capture is one call, not a call and a capture"
 }
+
+pub fn a_call_names_a_variable_or_a_function_of_a_variable_or_another_expression_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  list.each(
+    [
+      #("f(1)", syntax.CalledByName("f"), "a plain call names its variable"),
+      #(
+        "m.f(1)",
+        syntax.CalledThroughVariable(variable: "m", label: "f"),
+        "a call through a module names the module's variable and the label",
+      ),
+      #(
+        "f(_)",
+        syntax.CalledByName("f"),
+        "a capture names its function as a call does",
+      ),
+      #(
+        "m.f(_)",
+        syntax.CalledThroughVariable(variable: "m", label: "f"),
+        "a capture through a module names it as a call does",
+      ),
+      #(
+        "m.n.f(1)",
+        syntax.CalledOtherwise,
+        "a field of a field is no variable's function",
+      ),
+      #("f(1)(2)", syntax.CalledOtherwise, "a call's result called again"),
+      #(
+        "fn(x) { x }(1)",
+        syntax.CalledOtherwise,
+        "an anonymous function called in place",
+      ),
+    ],
+    fn(row) {
+      let #(call, expected, reason) = row
+      let module =
+        syntax.parse(
+          planted.file("src/planted.gleam", ["pub fn f() { " <> call <> " }"]),
+        )
+      let assert [first, ..] = syntax.calls(module) as "the body holds a call"
+      assert first.called == expected as reason
+    },
+  )
+}
