@@ -15,7 +15,7 @@
 
 import cast_support as support
 import class_resource_support
-import genesis_prime/client_connection.{CastFinished, CastStarted}
+import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -842,40 +842,7 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
     |> list.filter(fn(news) {
       case news {
         CastFinished(..) -> True
-        CastStarted(..)
-        | client_connection.CastWent(..)
-        | client_connection.Appeared(..)
-        | client_connection.CreatureAppeared(..)
-        | client_connection.Moving(..)
-        | client_connection.CastMissed(..)
-        | client_connection.CastTicked(..)
-        | client_connection.CastTargetsRemoved(..)
-        | client_connection.CastStackRemoved(..)
-        | client_connection.CastInterrupted(..)
-        | client_connection.Health(..)
-        | client_connection.Died
-        | client_connection.Removed
-        | client_connection.CreatureMoved(..)
-        | client_connection.CreaturePlaced(..)
-        | client_connection.CreatureFaces(..)
-        | client_connection.Targeting(..)
-        | client_connection.Threat(..)
-        | client_connection.CombatState(..)
-        | client_connection.CameBack
-        | client_connection.DeathLogged
-        | client_connection.CameBackLogged
-        | client_connection.Shield(..)
-        | client_connection.CrowdControlApplied(..)
-        | client_connection.CrowdControlEnded(..)
-        | client_connection.UnitStateHeld(..)
-        | client_connection.UnitStateEnded(..)
-        | client_connection.InterruptArmor(..)
-        | client_connection.Absorption(..)
-        | client_connection.Level(..)
-        | client_connection.PropertiesChanged(..)
-        | client_connection.Stealth(..)
-        | client_connection.LookChanged(..)
-        | client_connection.HeldCastEnded(..) -> False
+        _ -> False
       }
     })
     |> list.length
@@ -1038,29 +1005,7 @@ fn count_logs(effects effects: List(cast_state.Effect)) -> Int {
   list.filter(effects, fn(effect) {
     case effect {
       cast_state.Log(..) -> True
-      cast_state.Send(..)
-      | cast_state.Tell(..)
-      | cast_state.StartTimer(..)
-      | cast_state.Strike(..)
-      | cast_state.CancelTimer(..)
-      | cast_state.Pay(..)
-      | cast_state.Gain(..)
-      | cast_state.CasterChangeStarts(..)
-      | cast_state.CasterChangeEnds(..)
-      | cast_state.OtherPlayerChangeStarts(..)
-      | cast_state.OtherPlayerChangeEnds(..)
-      | cast_state.TargetChangeStarts(..)
-      | cast_state.TargetChangeEnds(..)
-      | cast_state.ForcedMoveStarts(..)
-      | cast_state.CreatureDespawns(..)
-      | cast_state.CreatureHoldsUnitStates(..)
-      | cast_state.CreatureControlsEnd(..)
-      | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..)
-      | cast_state.QuestAdvanced(..)
-      | cast_state.TickStrike(..)
-      | cast_state.FindProxyTickUnits(..)
-      | cast_state.StealthChanged(..) -> False
+      _ -> False
     }
   })
   |> list.length

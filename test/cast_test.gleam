@@ -438,37 +438,7 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               CastWent(..) -> "go"
               CastFinished(..) -> "finish"
               client_connection.CastInterrupted(..) -> "interrupt"
-              client_connection.Appeared(..)
-              | client_connection.CreatureAppeared(..)
-              | client_connection.Moving(..)
-              | client_connection.Health(..)
-              | client_connection.Died
-              | client_connection.CastMissed(..)
-              | client_connection.CastTicked(..)
-              | client_connection.CastTargetsRemoved(..)
-              | client_connection.CastStackRemoved(..)
-              | client_connection.Removed
-              | client_connection.CreatureMoved(..)
-              | client_connection.CreaturePlaced(..)
-              | client_connection.CreatureFaces(..)
-              | client_connection.Targeting(..)
-              | client_connection.Threat(..)
-              | client_connection.CombatState(..)
-              | client_connection.CameBack
-              | client_connection.DeathLogged
-              | client_connection.CameBackLogged
-              | client_connection.Shield(..)
-              | client_connection.CrowdControlApplied(..)
-              | client_connection.CrowdControlEnded(..)
-              | client_connection.UnitStateHeld(..)
-              | client_connection.UnitStateEnded(..)
-              | client_connection.InterruptArmor(..)
-              | client_connection.Absorption(..)
-              | client_connection.Level(..)
-              | client_connection.PropertiesChanged(..)
-              | client_connection.Stealth(..)
-              | client_connection.LookChanged(..)
-              | client_connection.HeldCastEnded(..) -> "other"
+              _ -> "other"
             })
           False -> Error(Nil)
         }
@@ -767,29 +737,7 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
     list.filter(effects, fn(effect) {
       case effect {
         cast_state.Log(..) -> True
-        cast_state.Send(..)
-        | cast_state.Tell(..)
-        | cast_state.StartTimer(..)
-        | cast_state.CancelTimer(..)
-        | cast_state.Strike(..)
-        | cast_state.Pay(..)
-        | cast_state.Gain(..)
-        | cast_state.CasterChangeStarts(..)
-        | cast_state.CasterChangeEnds(..)
-        | cast_state.OtherPlayerChangeStarts(..)
-        | cast_state.OtherPlayerChangeEnds(..)
-        | cast_state.TargetChangeStarts(..)
-        | cast_state.TargetChangeEnds(..)
-        | cast_state.ForcedMoveStarts(..)
-        | cast_state.CreatureDespawns(..)
-        | cast_state.CreatureHoldsUnitStates(..)
-        | cast_state.CreatureControlsEnd(..)
-        | cast_state.Activated(..)
-        | cast_state.ShortcutCast(..)
-        | cast_state.QuestAdvanced(..)
-        | cast_state.TickStrike(..)
-        | cast_state.FindProxyTickUnits(..)
-        | cast_state.StealthChanged(..) -> False
+        _ -> False
       }
     })
   }

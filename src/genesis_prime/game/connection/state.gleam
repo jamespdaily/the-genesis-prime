@@ -727,9 +727,20 @@ pub fn news_to_viewers(
   entered entered: world_entry.Entered,
   news news: client_connection.News,
 ) -> List(Effect(ConnectionEffect(Request))) {
-  list.map(sorted_viewers(entered:), fn(viewer) {
-    news_to(entered:, viewer:, news:)
+  news_to_viewers_but(entered:, left_out: set.new(), news:)
+}
+
+/// The tell of `news` about the player's own unit to each player who sees it, in
+/// connection order, except the connections in `left_out`.
+pub fn news_to_viewers_but(
+  entered entered: world_entry.Entered,
+  left_out left_out: Set(ConnectionId),
+  news news: client_connection.News,
+) -> List(Effect(ConnectionEffect(Request))) {
+  list.filter(sorted_viewers(entered:), fn(viewer) {
+    !set.contains(left_out, viewer.0)
   })
+  |> list.map(fn(viewer) { news_to(entered:, viewer:, news:) })
 }
 
 /// The tell of `request` to the run of the player's map, which no answer follows

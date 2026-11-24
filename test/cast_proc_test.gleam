@@ -280,28 +280,7 @@ fn trace(
         }
       cast_state.StealthChanged(stealthed: True) -> ["stealth on"]
       cast_state.StealthChanged(stealthed: False) -> ["stealth off"]
-      cast_state.Tell(..)
-      | cast_state.StartTimer(..)
-      | cast_state.CancelTimer(..)
-      | cast_state.Strike(..)
-      | cast_state.TickStrike(..)
-      | cast_state.FindProxyTickUnits(..)
-      | cast_state.Log(..)
-      | cast_state.Pay(..)
-      | cast_state.Gain(..)
-      | cast_state.CasterChangeStarts(..)
-      | cast_state.CasterChangeEnds(..)
-      | cast_state.OtherPlayerChangeStarts(..)
-      | cast_state.OtherPlayerChangeEnds(..)
-      | cast_state.TargetChangeStarts(..)
-      | cast_state.TargetChangeEnds(..)
-      | cast_state.ForcedMoveStarts(..)
-      | cast_state.CreatureDespawns(..)
-      | cast_state.CreatureHoldsUnitStates(..)
-      | cast_state.CreatureControlsEnd(..)
-      | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..)
-      | cast_state.QuestAdvanced(..) -> []
+      _ -> []
     }
   })
 }
@@ -327,29 +306,7 @@ fn listed_on_the_caster(effects effects: List(Effect)) -> List(Int) {
 fn is_strike(effect effect: Effect) -> Bool {
   case effect {
     cast_state.Strike(..) -> True
-    cast_state.Send(..)
-    | cast_state.Tell(..)
-    | cast_state.StartTimer(..)
-    | cast_state.CancelTimer(..)
-    | cast_state.Log(..)
-    | cast_state.Pay(..)
-    | cast_state.Gain(..)
-    | cast_state.CasterChangeStarts(..)
-    | cast_state.CasterChangeEnds(..)
-    | cast_state.OtherPlayerChangeStarts(..)
-    | cast_state.OtherPlayerChangeEnds(..)
-    | cast_state.TargetChangeStarts(..)
-    | cast_state.TargetChangeEnds(..)
-    | cast_state.ForcedMoveStarts(..)
-    | cast_state.CreatureDespawns(..)
-    | cast_state.CreatureHoldsUnitStates(..)
-    | cast_state.CreatureControlsEnd(..)
-    | cast_state.Activated(..)
-    | cast_state.ShortcutCast(..)
-    | cast_state.QuestAdvanced(..)
-    | cast_state.TickStrike(..)
-    | cast_state.FindProxyTickUnits(..)
-    | cast_state.StealthChanged(..) -> False
+    _ -> False
   }
 }
 
