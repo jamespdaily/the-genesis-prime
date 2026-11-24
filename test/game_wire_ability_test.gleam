@@ -16,9 +16,9 @@ import game_client
 import game_wire_support.{
   a_medic_of_a_level_at_the_marker_ring, a_player_of_a_level_at_the_marker_ring,
   destroyed_units, kills_the_target_at_slot_0, location_4_items,
-  new_player_at_level, on_rows_without_paralytic_surges_recharge, press_and_fire,
-  refusals, ring_slot, send_play, targets_in, the_target_at_slot_0,
-  world_with_numbers, world_with_the_markers_creatures,
+  new_player_at_level, on_rows_without_paralytic_surges_recharge, refusals,
+  ring_slot, send_play, targets_in, the_target_at_slot_0, world_with_numbers,
+  world_with_the_markers_creatures,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -44,6 +44,7 @@ import level_up_support
 import limited_action_set_support as limited
 import login_support
 import owned_test
+import planted_table
 import pog
 
 /// The Medic of the marker ring that levels from 3 to 4 on the kill at slot 0: its abilities
@@ -807,17 +808,23 @@ fn blow_effect_ids(frames frames: List(Frame)) -> List(Int) {
 
 /// A Medic of level 10 (one ability point) saves Paralytic Surge at tier 2 with the client's
 /// own 0xB1 (the class's bar, 38201, 16322 and 26543, and the tier change), faces the creature at
-/// ring slot 0 and presses Paralytic Surge at bag index 2 (`fight_bot.paralytic_surge`). The
-/// press is confirmed by 0x7fd, and its 0x7f4 lists the damage effect of the tier 2 row (Spell4
-/// 51979 holds Spell4Effects 122793 and 122794, `table_rows -- Spell4Effects spellId=51979`), not
-/// tier 1's 96125. Tier 2 needs level 10 and costs 1 point (`Spell4TierRequirements`,
+/// ring slot 0 and presses Paralytic Surge at bag index 2 (`fight_bot.paralytic_surge`) until the
+/// creature dies, since a creature of the client's rows deflects some strikes and a deflected
+/// press has a 0x7f4 with no blow. The presses are confirmed by 0x7fd, and the 0x7f4 blows hold
+/// the damage effect of the tier 2 row (Spell4 51979 holds Spell4Effects 122793 and 122794,
+/// `table_rows -- Spell4Effects spellId=51979`), never tier 1's 96125. Tier 2 needs level 10 and costs 1 point (`Spell4TierRequirements`,
 /// `XpPerLevel`). The clock is driven and nothing waits on real time.
 pub fn a_medic_that_saves_tier_2_of_paralytic_surge_casts_the_tier_2_spell_test() -> Nil {
   use <- owned_test.run(10_000)
-  use tables <- on_rows_without_paralytic_surges_recharge()
+  // The tier 2 row has its own recharge (51979, 25000 ms like tier 1's 42352), which would refuse
+  // every press after the first: both rows' recharge is taken off.
+  use tables <- fixture_tables.changes(edits: [
+    #("Spell4", 42_352, [#("spellCoolDown", planted_table.Integer(0))]),
+    #("Spell4", 51_979, [#("spellCoolDown", planted_table.Integer(0))]),
+  ])
   let time = driven_time.new()
   let started = world_with_the_markers_creatures(tables:, time:)
-  let #(game, _frames, have, _character) =
+  let #(game, entry, have, _character) =
     a_medic_of_a_level_at_the_marker_ring(
       started:,
       sixth: 0,
@@ -840,26 +847,10 @@ pub fn a_medic_that_saves_tier_2_of_paralytic_surge_casts_the_tier_2_spell_test(
     })
   assert limited.the_action_set(frames: answer).result == 1
     as "the save is accepted: tier 2 needs level 10 and costs the level's one point"
-  let slot = ring_slot(index: 0)
-  game_client.face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
-      slot.0,
-      slot.2,
-    )),
-    clock: 100,
-  )
   let #(cast, _) =
-    press_and_fire(
-      time:,
-      game:,
-      have:,
-      bag_index: 2,
-      cast_ms: fight_bot.paralytic_surge_cast_ms,
-      cast_id: 1,
-    )
+    kills_the_target_at_slot_0(game:, have:, frames: entry, time:)
   assert refusals(frames: cast) == []
-    as "opcode.0x7fc: the press of the held tier is not refused"
+    as "opcode.0x7fc: no press of the held tier is refused"
   assert list.any(cast, fn(frame) { frame.message_id == 0x07FD })
     as "opcode.0x7fd: the press is confirmed"
   let effects = blow_effect_ids(frames: cast)
