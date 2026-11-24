@@ -587,10 +587,11 @@ pub fn read_row(
   reading
 }
 
-/// Every Proc row (effect type 14) of these tables with what the plan makes of it in the
-/// place its spell gives it (`spell_plan.read_row`, `effect_row_read.places`), in table order.
-pub fn proc_rows_read(
+/// Every row of `effect_type` in these tables with what the plan makes of it in the place its
+/// spell gives it (`spell_plan.read_row`, `effect_row_read.places`), in table order.
+pub fn rows_read(
   tables tables: table_store.Tables,
+  effect_type effect_type: Int,
 ) -> List(
   #(
     spell4_effects.Spell4Effects,
@@ -601,7 +602,7 @@ pub fn proc_rows_read(
   let place_of = effect_row_read.places(tables:, effects:)
   let sources = spell_plan.sources_of(tables:)
   effects
-  |> list.filter(fn(effect) { effect.effect_type == 14 })
+  |> list.filter(fn(effect) { effect.effect_type == effect_type })
   |> list.map(fn(effect) {
     #(
       effect,

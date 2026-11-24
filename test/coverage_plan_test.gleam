@@ -27,30 +27,8 @@ import gleam/set
 import gleam/string
 import owned_test
 import simplifile
+import spell_tables
 import unitest
-
-/// Each row of the client's tables of effect type `type_number`, with the plan's reading
-/// of it in its place.
-fn readings(
-  type_number type_number: Int,
-) -> List(#(Spell4Effects, Result(spell_plan.RowReading, spell_plan.PlanError))) {
-  let tables = client_tables.shared()
-  let effects = spell4_effects.all(tables)
-  let sources = spell_plan.sources_of(tables:)
-  let place_of = effect_row_read.places(tables:, effects:)
-  list.filter(effects, fn(row) { row.effect_type == type_number })
-  |> list.map(fn(row) {
-    #(
-      row,
-      spell_plan.read_row(
-        tables:,
-        sources:,
-        place: place_of(row.spell_id),
-        effect: row,
-      ),
-    )
-  })
-}
 
 /// Whether a Proxy row names no Spell4 row: its dataBits00 is 0 and its dataBits01 is 0 or
 /// an id the table lacks (`Spell4Effects.effectType.26.periodic`).
@@ -164,66 +142,72 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_is_for_allies_as_not_re
     int.bitwise_and(mechanic.flags, 1) == 1
   }
   let classes =
-    list.map(readings(type_number: 26), fn(read) {
-      let #(row, reading) = read
-      case
-        proxy_names_no_spell(tables:, row:),
-        row.tick_time > 0 && list.contains([4, 6], row.target_flags),
-        int.bitwise_and(row.target_flags, 8) != 0
-      {
-        True, _, _ -> {
-          assert reading
-            == Ok(spell_plan.LeftOut(why: spell_plan.ProxyNamesNoSpell))
-            as {
-              "row "
-              <> int.to_string(row.id)
-              <> " names no Spell4 row, so the plan leaves it out"
-            }
-          "names no spell"
-        }
-        False, True, _ ->
-          case beneficial(row) {
-            True -> {
-              assert reading
-                == Error(spell_plan.PeriodicProxyAtAlliesNotRead(
-                  spell4_id: row.spell_id,
-                  effect_id: row.id,
-                  named_spell4_id: spell_plan.proxy_named(tables:, effect: row),
-                ))
-                as {
-                  "row "
-                  <> int.to_string(row.id)
-                  <> " ticks on the area for allies, whom the server does not find, so the plan refuses it"
-                }
-              "for allies"
-            }
-            False -> {
-              let assert Ok(spell_plan.Applied(..)) = reading
-                as {
-                  "row "
-                  <> int.to_string(row.id)
-                  <> " ticks on the foes in the area, so the plan reads it"
-                }
-              "for foes"
-            }
+    list.map(
+      spell_tables.rows_read(tables: client_tables.shared(), effect_type: 26),
+      fn(read) {
+        let #(row, reading) = read
+        case
+          proxy_names_no_spell(tables:, row:),
+          row.tick_time > 0 && list.contains([4, 6], row.target_flags),
+          int.bitwise_and(row.target_flags, 8) != 0
+        {
+          True, _, _ -> {
+            assert reading
+              == Ok(spell_plan.LeftOut(why: spell_plan.ProxyNamesNoSpell))
+              as {
+                "row "
+                <> int.to_string(row.id)
+                <> " names no Spell4 row, so the plan leaves it out"
+              }
+            "names no spell"
           }
-        False, False, True -> {
-          let assert Error(spell_plan.ProxyAimNotRead(
-            effect_id:,
-            target_flags:,
-            ..,
-          )) = reading
-            as {
-              "row "
-              <> int.to_string(row.id)
-              <> " is aimed by a flag with bit 8, which the plan refuses"
+          False, True, _ ->
+            case beneficial(row) {
+              True -> {
+                assert reading
+                  == Error(spell_plan.PeriodicProxyAtAlliesNotRead(
+                    spell4_id: row.spell_id,
+                    effect_id: row.id,
+                    named_spell4_id: spell_plan.proxy_named(
+                      tables:,
+                      effect: row,
+                    ),
+                  ))
+                  as {
+                    "row "
+                    <> int.to_string(row.id)
+                    <> " ticks on the area for allies, whom the server does not find, so the plan refuses it"
+                  }
+                "for allies"
+              }
+              False -> {
+                let assert Ok(spell_plan.Applied(..)) = reading
+                  as {
+                    "row "
+                    <> int.to_string(row.id)
+                    <> " ticks on the foes in the area, so the plan reads it"
+                  }
+                "for foes"
+              }
             }
-          assert effect_id == row.id && target_flags == row.target_flags
-          "aimed by bit 8"
+          False, False, True -> {
+            let assert Error(spell_plan.ProxyAimNotRead(
+              effect_id:,
+              target_flags:,
+              ..,
+            )) = reading
+              as {
+                "row "
+                <> int.to_string(row.id)
+                <> " is aimed by a flag with bit 8, which the plan refuses"
+              }
+            assert effect_id == row.id && target_flags == row.target_flags
+            "aimed by bit 8"
+          }
+          False, False, False -> "another"
         }
-        False, False, False -> "another"
-      }
-    })
+      },
+    )
   list.each(
     ["names no spell", "for allies", "for foes", "aimed by bit 8"],
     fn(class) {
@@ -232,12 +216,15 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_is_for_allies_as_not_re
     },
   )
   let not_read =
-    list.count(readings(type_number: 26), fn(read) {
-      case read.1 {
-        Ok(spell_plan.Applied(..)) -> False
-        _ -> True
-      }
-    })
+    list.count(
+      spell_tables.rows_read(tables: client_tables.shared(), effect_type: 26),
+      fn(read) {
+        case read.1 {
+          Ok(spell_plan.Applied(..)) -> False
+          _ -> True
+        }
+      },
+    )
   let assert HandledWithGap(unread_rows:, ..) = line.status
     as "type 26 is handled with a stated gap"
   assert unread_rows == not_read
@@ -291,9 +278,13 @@ pub fn a_row_aimed_by_3_5_or_7_is_never_refused_for_its_aim_test() -> Nil {
   let tables = client_tables.shared()
   let rows =
     list.flat_map([4, 8, 17, 18, 26, 80, 81], fn(type_number) {
-      list.filter(readings(type_number:), fn(read) {
-        list.contains([3, 5, 7], { read.0 }.target_flags)
-      })
+      list.filter(
+        spell_tables.rows_read(
+          tables: client_tables.shared(),
+          effect_type: type_number,
+        ),
+        fn(read) { list.contains([3, 5, 7], { read.0 }.target_flags) },
+      )
     })
   assert rows != []
     as "the client holds rows of these types aimed by 3, 5 or 7 (the caster and other units)"
@@ -343,7 +334,8 @@ pub fn type_97_rows_are_each_read_left_out_or_refused_by_name_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
-  let rows = readings(type_number: 97)
+  let rows =
+    spell_tables.rows_read(tables: client_tables.shared(), effect_type: 97)
   assert list.length(rows) == 855
     as "table_rows -- Spell4Effects effectType=97: 855 rows"
   list.each(rows, fn(read) {
@@ -384,7 +376,8 @@ pub fn type_15_rows_are_each_read_left_out_or_refused_by_name_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tag("coverage")
   use <- unitest.guard(client_tables.present())
-  let rows = readings(type_number: 15)
+  let rows =
+    spell_tables.rows_read(tables: client_tables.shared(), effect_type: 15)
   assert list.length(rows) == 752
     as "table_rows -- Spell4Effects effectType=15: 752 rows"
   list.each(rows, fn(read) {

@@ -1052,7 +1052,7 @@ pub fn no_proc_row_fails_the_load_unless_its_kind_is_not_read_test() -> Nil {
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let read = spell_tables.proc_rows_read(tables:)
+  let read = spell_tables.rows_read(tables:, effect_type: 14)
   assert read != [] as "the client's tables hold Proc rows"
   list.each(read, fn(found) {
     let #(effect, reading) = found
@@ -1098,7 +1098,7 @@ pub fn each_ally_proc_row_the_plan_reads_waits_for_a_trigger_a_creatures_blow_ra
     list.flat_map(blows, fn(blow) { cast_proc.blow_events(blow:) })
     |> list.map(fn(event) { event.trigger })
   let ally_rows_read =
-    spell_tables.proc_rows_read(tables: client_tables.shared())
+    spell_tables.rows_read(tables: client_tables.shared(), effect_type: 14)
     |> list.filter_map(fn(found) {
       case found {
         #(effect, Ok(spell_plan.Applied(spell_plan.ReadProc(reading:, ..))))
