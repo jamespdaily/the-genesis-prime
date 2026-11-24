@@ -49,7 +49,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
-import genesis_prime/store.{type Character, ActionSets, HeldItem}
+import genesis_prime/store.{type Character, HeldItem}
 import genesis_prime/table/character_creation
 import genesis_prime/table/id.{ClassId, Item2Id, Spell4BaseId}
 import genesis_prime/world_map/unit_fields
@@ -310,7 +310,7 @@ pub fn an_entry_with_saved_rows_sends_the_saved_bar_and_one_with_no_rows_sends_t
     world_entry_support.joined_with_action_sets(
       class_id: 7,
       level: 4,
-      action_sets: ActionSets(slots: rows),
+      action_sets: limited_action_set_support.with_slots(slots: rows),
       unset:,
     )
   }

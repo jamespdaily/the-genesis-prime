@@ -27,6 +27,7 @@
 
 import character_support
 import genesis_prime/client_connection.{Unwritten}
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/movement.{
   type Command, type Refusal, type State, BelowTheWorld, Fault, Mode, Moves,
   NotFinite, NotWritten, Note, Other, Position, Rotation, Standing, StateFlags,
@@ -69,8 +70,8 @@ import genesis_prime/message/movement_velocity.{MovementVelocity}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/store.{
-  AccountId, ActionSetRefused, ActionSets, CharacterId, ExperienceRefused,
-  HealthRefused, NothingSaved, PlaceRefused, PlaceSaved, SavePlace,
+  AccountId, ActionSetRefused, CharacterId, ExperienceRefused, HealthRefused,
+  NothingSaved, PlaceRefused, PlaceSaved, SavePlace,
 }
 import gleam/int
 import gleam/list
@@ -916,7 +917,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       experience: 1234,
       level: 3,
       quests: [],
-      action_sets: ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )
   assert first
     == SavePlace(
@@ -929,7 +930,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       experience: 1234,
       level: 3,
       quests: [],
-      action_sets: ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )
     as "the save names the epoch the login was told (3 here) and is the login's first"
   let state = kept(state:, commands: [position(x: 5.0, y: 6.0, z: 7.0)])
@@ -942,7 +943,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       experience: 1300,
       level: 3,
       quests: [],
-      action_sets: ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )
   assert second
     == SavePlace(
@@ -955,7 +956,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       experience: 1300,
       level: 3,
       quests: [],
-      action_sets: ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )
     as "the next save carries the place the moves since put the player at, numbered 2: the store keeps only a newer save of a login"
   assert at(state) == #(5.0, 6.0, 7.0)
@@ -968,7 +969,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       experience: 1,
       level: 1,
       quests: [],
-      action_sets: ActionSets(slots: []),
+      action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     )
   let assert SavePlace(save_sequence: 3, ..) = third
     as "a save asked and never answered still took its number, so an answer that comes late is never taken for a newer save"

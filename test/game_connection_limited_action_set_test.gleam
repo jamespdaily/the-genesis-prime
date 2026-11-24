@@ -22,9 +22,10 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{AskStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/strike_tell
 import genesis_prime/step.{OwnEvent, TimerFired, TimerId, WatchEnded, WatchId}
-import genesis_prime/store.{ActionSets, CharacterId, Move, SavePlace}
+import genesis_prime/store.{CharacterId, Move, SavePlace}
 import genesis_prime/table/id.{ClassId}
 import gleam/bit_array
 import gleam/list
@@ -242,7 +243,7 @@ fn timer_save(
 
 /// The slots of a saved set the way the store holds them: twelve rows of set 0.
 fn slots_of_set_0(ids ids: List(Int)) -> store.ActionSets {
-  ActionSets(slots: limited.rows_of(set: 0, ids:))
+  limited.with_slots(slots: limited.rows_of(set: 0, ids:))
 }
 
 pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carried_again_test() -> Nil {
@@ -287,7 +288,8 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
       as "(e) the save asked again after one with no answer holds the same twelve rows"
   })
   let #(_, taken) = timer_save(state: in_world_at_level(level: 4))
-  assert action_sets_asked(taken:) == ActionSets(slots: [])
+  assert action_sets_asked(taken:)
+    == limited_action_set.rows(saved: limited_action_set.none())
     as "(f) a player who saved nothing saves no row, so the class's bar stays the default"
 }
 
@@ -307,7 +309,7 @@ pub fn a_refused_save_leaves_what_the_next_place_save_carries_unchanged_test() -
     sent(state: in_world_at_level(level: 4), body: refused)
   assert limited.the_action_set(frames:).result == 2
   assert action_sets_asked(taken: timer_save(state: from_nothing).1)
-    == ActionSets(slots: [])
+    == limited_action_set.rows(saved: limited_action_set.none())
     as "a refusal from no saved set leaves no rows to save"
   let #(state, taken) = timer_save(state: in_world_at_level(level: 4))
   let #(state, held) =

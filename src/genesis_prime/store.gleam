@@ -228,15 +228,26 @@ pub type ActionSlotRow {
   ActionSlotRow(action_set: Int, slot: Int, spell4_base_id: Option(Int))
 }
 
-/// The slots of every action set a character has saved, whole sets in set then slot
-/// order, twelve rows for each; none for a character that never saved a bar. It is
-/// one record so that what the builder keeps later (tiers, AMPs) joins it without a
-/// new field on the requests and answers that carry it. A save is refused by name
-/// only for a row the table's checks refuse. Two rows for one slot, or a set or slot
-/// beyond 16 bits, fail the statement with an error no check names, which crashes the
-/// worker; `limited_action_set.rows` never builds either.
+/// One ability held above tier 1 in an action set as the character_ability_tier table
+/// keeps it: the set (0 to 3), the Spell4Base id of the ability (18 bits) and the tier it
+/// is held at (2 to 15, the 4 bits of the ability book's message, `opcode.0x1a0`). The
+/// table's checks hold the ranges; which tiers a base has and the level and points allow is
+/// the ability builder's rule (genesis_prime/game/limited_action_set).
+pub type AbilityTierRow {
+  AbilityTierRow(action_set: Int, spell4_base_id: Int, tier: Int)
+}
+
+/// What a character has saved of its action sets: the slots of every set it has placed a
+/// bar in, whole sets in set then slot order, twelve rows for each (none for a character that
+/// never saved a bar), and the tiers it holds above tier 1, in set then Spell4Base order. Both
+/// lists are whole: a save that carries a shorter tier list deletes the tier rows it leaves out
+/// (a tier returned to 1 is no row), and an empty one deletes them all, so every request that
+/// saves the place carries the whole held list. A save is refused by name only for a row the
+/// table's checks refuse. Two rows for one slot or for one ability of one set, or a set or
+/// slot beyond 16 bits, fail the statement with an error no check names, which crashes the
+/// worker; `limited_action_set.rows` never builds any.
 pub type ActionSets {
-  ActionSets(slots: List(ActionSlotRow))
+  ActionSets(slots: List(ActionSlotRow), tiers: List(AbilityTierRow))
 }
 
 /// The entry the client's active list carries for a quest (opcode.0x35f): the
@@ -505,8 +516,9 @@ pub type ItemsRequest {
     held: Int,
     after: Int,
   )
-  /// A quest turned in, all or none: the place, experience, level and quest rows saved as
-  /// `SavePlace` saves them (the quest log then holds the quest Completed), and then
+  /// A quest turned in, all or none: the place, experience, level, quest rows and action
+  /// sets saved as `SavePlace` saves them (the quest log then holds the quest Completed, and
+  /// the action sets are the whole held list, as a place save's), and then
   /// the credits set to `credits_after` only while the character holds exactly
   /// `credits_held` of them (a missing row reads as 0) and each stack of `placed` raised and
   /// made as `BuyFromVendor` does it, in one transaction. Answered by `TurnedIn` with the
@@ -521,6 +533,7 @@ pub type ItemsRequest {
     experience: Int,
     level: Int,
     quests: List(QuestRow),
+    action_sets: ActionSets,
     credits_held: Int,
     credits_after: Int,
     placed: List(Placed),

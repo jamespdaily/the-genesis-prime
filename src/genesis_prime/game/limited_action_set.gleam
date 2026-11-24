@@ -215,17 +215,18 @@ pub type RowError {
 pub fn rows(saved saved: Saved) -> ActionSets {
   ActionSets(
     slots: dict.to_list(saved.bars)
-    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-    |> list.flat_map(fn(saved_set) {
-      let #(action_set, bar) = saved_set
-      list.index_map(bar.slots, fn(slot_held, slot) {
-        ActionSlotRow(
-          action_set:,
-          slot:,
-          spell4_base_id: option.map(slot_held, fn(base) { base.value }),
-        )
-      })
-    }),
+      |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+      |> list.flat_map(fn(saved_set) {
+        let #(action_set, bar) = saved_set
+        list.index_map(bar.slots, fn(slot_held, slot) {
+          ActionSlotRow(
+            action_set:,
+            slot:,
+            spell4_base_id: option.map(slot_held, fn(base) { base.value }),
+          )
+        })
+      }),
+    tiers: [],
   )
 }
 
@@ -236,6 +237,8 @@ pub fn rows(saved saved: Saved) -> ActionSets {
 /// a saved set is empty. `Error` for a row the table's checks cannot hold.
 pub fn entering(
   unlocks unlocks: Unlocks,
+  tiers _tiers: spell_tier.SpellTiers,
+  points_total _points_total: Int,
   level level: Int,
   book book: List(Spell4BaseId),
   rows rows: ActionSets,

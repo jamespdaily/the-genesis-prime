@@ -71,6 +71,14 @@ pub fn rows_of(set set: Int, ids ids: List(Int)) -> List(store.ActionSlotRow) {
   })
 }
 
+/// The action sets of a save that holds these slot rows and no tier above 1.
+pub fn with_slots(slots slots: List(store.ActionSlotRow)) -> store.ActionSets {
+  store.ActionSets(
+    ..limited_action_set.rows(saved: limited_action_set.none()),
+    slots:,
+  )
+}
+
 /// The bytes of a vector written as hexadecimal.
 pub fn hex(text text: String) -> BitArray {
   message_support.hex(text)

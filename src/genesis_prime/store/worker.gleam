@@ -160,16 +160,20 @@ const quest_checks = [
   "character_quest_kill_mask_has_six_slots",
 ]
 
-/// The checks and the unique key of the character_action_slot table (migration 0049), one
-/// for each limit of the client's an action slot row can break. A save one of them
-/// refuses answers `ActionSetRefused` with its own name. The table's primary key and its
-/// foreign key to the character are not among them: neither is a limit of the client's,
-/// and a refused one is a refused place.
-const action_slot_checks = [
+/// The checks and the unique key of the character_action_slot table (migration 0049) and
+/// the checks of the character_ability_tier table (migration 0050), one for each limit of
+/// the client's an action slot row or a tier row can break. A save one of them refuses
+/// answers `ActionSetRefused` with its own name. The tables' primary keys and their
+/// foreign keys to the character are not among them: none is a limit of the client's, and
+/// a refused one is a refused place.
+const action_set_checks = [
   "character_action_slot_set_is_one_of_four",
   "character_action_slot_slot_is_one_of_twelve",
   "character_action_slot_ability_fits_the_message",
   "character_action_slot_one_place_per_ability",
+  "character_ability_tier_set_is_one_of_four",
+  "character_ability_tier_ability_fits_the_message",
+  "character_ability_tier_is_above_the_first_and_fits_the_message",
 ]
 
 /// Every constraint or unique index the worker answers for by name. The schema
@@ -180,7 +184,7 @@ pub fn mapped_constraints() -> List(String) {
     character_name_follows_rule_0,
     character_health_is_not_negative,
     character_experience_is_not_negative,
-    ..list.append(quest_checks, action_slot_checks)
+    ..list.append(quest_checks, action_set_checks)
   ]
 }
 
@@ -483,6 +487,7 @@ fn items(
       experience:,
       level:,
       quests:,
+      action_sets:,
       credits_held:,
       credits_after:,
       placed:,
@@ -498,6 +503,7 @@ fn items(
         experience:,
         level:,
         quests:,
+        action_sets:,
         credits_held:,
         credits_after:,
         placed:,
@@ -521,6 +527,7 @@ fn turn_in_quest(
   experience experience: Int,
   level level: Int,
   quests quests: List(store.QuestRow),
+  action_sets action_sets: store.ActionSets,
   credits_held credits_held: Int,
   credits_after credits_after: Int,
   placed placed: List(store.Placed),
@@ -536,7 +543,7 @@ fn turn_in_quest(
       experience:,
       level:,
       quests:,
-      action_sets: store.ActionSets(slots: []),
+      action_sets:,
     )
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
@@ -1155,7 +1162,7 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
     Error(Refused(constraint:, ..)) ->
       case
         list.contains(quest_checks, constraint),
-        list.contains(action_slot_checks, constraint)
+        list.contains(action_set_checks, constraint)
       {
         True, _ -> Ok(QuestLogRefused(constraint:))
         _, True -> Ok(ActionSetRefused(constraint:))
@@ -1382,6 +1389,7 @@ fn action_sets_of(
         spell4_base_id: row.spell4_base_id,
       )
     }),
+    tiers: [],
   )
 }
 

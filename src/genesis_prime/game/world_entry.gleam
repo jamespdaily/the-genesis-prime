@@ -1265,6 +1265,8 @@ fn with_saved_bars(
   case
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
+      tiers: spell_tier.tiers(tables:),
+      points_total: ability_points.total(tables:, level: character.level),
       level: character.level,
       book:,
       rows:,

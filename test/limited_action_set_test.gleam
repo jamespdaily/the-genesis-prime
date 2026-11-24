@@ -35,7 +35,7 @@ import genesis_prime/message/ability_tier
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/step.{LogDebug, LogWarning}
-import genesis_prime/store.{ActionSets}
+import genesis_prime/store
 import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/character_creation
 import genesis_prime/table/id.{
@@ -1135,7 +1135,9 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
       unlocks: limited_action_set.unlocks(tables:),
       level: level_4.level,
       book: level_4.book,
-      rows: ActionSets(slots: rows),
+      tiers: spell_tier.tiers(tables:),
+      points_total: 0,
+      rows: support.with_slots(slots: rows),
     )
   }
   let no_slots = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -1229,7 +1231,7 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
   let assert Ok(saved) = enter(support.rows_of(set: 2, ids: support.ids_a))
     as "rows of set 2 are rows the table's checks hold"
   assert limited_action_set.rows(saved:)
-    == ActionSets(slots: support.rows_of(set: 2, ids: support.ids_a))
+    == support.with_slots(slots: support.rows_of(set: 2, ids: support.ids_a))
     as "the rows of set 2 are kept as set 2, each in its slot"
   assert support.held_ids(tables:, saved:) == support.class_bar
     as "a player who saved only set 2 has the class's bar in set 0"
@@ -1301,13 +1303,17 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
           unlocks:,
           level: 100,
           book:,
-          rows: ActionSets(slots: rows),
+          tiers: spell_tier.tiers(tables:),
+          points_total: 0,
+          rows: support.with_slots(slots: rows),
         )
         as "rows the table's checks hold are read"
-      assert limited_action_set.rows(saved:) == ActionSets(slots: rows)
+      assert limited_action_set.rows(saved:) == support.with_slots(slots: rows)
         as "a saved set is twelve rows, in set then slot order, and no set gives none"
       assert limited_action_set.entering(
           unlocks:,
+          tiers: spell_tier.tiers(tables:),
+          points_total: 0,
           level: 100,
           book:,
           rows: limited_action_set.rows(saved:),
