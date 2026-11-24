@@ -24,6 +24,7 @@ import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/erlang/atom
+import gleam/erlang/port.{type Port}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/factory_supervisor
@@ -450,6 +451,16 @@ pub fn connections_of(listener: Name(Nil)) -> List(Pid) {
 pub fn acceptors_of(listener: Name(Nil)) -> List(Pid) {
   procs(listener, atom.create("acceptors"))
 }
+
+/// The listening sockets of the listener Ranch knows by `listener`: one while
+/// it accepts, none once it has stopped accepting.
+@external(erlang, "listener_socket_ffi", "listening_sockets_of")
+pub fn listening_sockets_of(listener: Name(Nil)) -> List(Port)
+
+/// Whether the socket is still open in the runtime, which is what the system
+/// answers a connect by: a closed listening socket has no port to reach.
+@external(erlang, "listener_socket_ffi", "is_open")
+pub fn is_open(socket: Port) -> Bool
 
 /// The most connections the listener Ranch knows by `listener` holds.
 @external(erlang, "ranch", "get_max_connections")
