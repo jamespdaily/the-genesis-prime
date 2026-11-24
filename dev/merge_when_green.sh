@@ -12,7 +12,8 @@
 # MERGE_WHEN_GREEN_WORKTREE): made on first use, reused by every later run, and reset to
 # origin/<the pull request's branch> at the start of each run, so it never holds uncommitted
 # work (untracked files are removed; ignored ones stay) and its build/ stays warm. A fresh
-# worktree builds cold, and ./check fast (budget 29 s) is stopped as hung at 3 times that.
+# worktree builds cold, and ./check fast (its fast budget, which includes the gap tests) is
+# stopped as hung at 3 times that.
 # One run at a time uses it: a second run stops at once, naming the first's pid. A run
 # changes no branch, file or worktree of the caller's, except that the fetch updates
 # origin/main and origin/<branch> in the caller's repository and the merge worktree is

@@ -58,6 +58,7 @@ import quest_request_support
 import quest_support
 import quest_walker_support
 import simple_unit_support
+import unitest
 
 const dominion = 166
 
@@ -1276,6 +1277,7 @@ pub fn a_quest_the_server_cannot_check_logs_what_it_does_not_read_and_no_issue_t
 /// variant, so a new kind does not compile until its sentence is written here.
 pub fn every_quest_gap_kind_has_its_static_sentence_in_the_quest_gaps_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("gaps")
   let sentence_of = fn(kind: quest.Gap) {
     case kind {
       quest.Reputation ->
