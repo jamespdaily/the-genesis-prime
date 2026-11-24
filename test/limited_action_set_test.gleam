@@ -247,7 +247,7 @@ const spellslinger_innate = 31_213
 const base_with_a_missing_tier = 26_543
 
 /// The sitting's first bar with these tier changes, set 0.
-fn tiering(changes changes: List(#(Int, Int))) -> BitArray {
+fn tiering(changes: List(#(Int, Int))) -> BitArray {
   support.body_with(
     ids: support.ids_a,
     set: 0,

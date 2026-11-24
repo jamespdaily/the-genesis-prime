@@ -1,16 +1,20 @@
 //// The ability builder's save: the client's 0xB1 holds the twelve Spell4Base ids of the
-//// action set's slots, which the client sends without checking that a slot is open, that
-//// the player holds the ability or that an id appears once. The rule judges it and answers
-//// with the bar the player has, which is the only way the client's bar changes. The
+//// action set's slots and the tier edits of the tier pips, which the client sends without
+//// checking that a slot is open, that the player holds the ability, that an id appears once,
+//// that a tier exists or that the points cover it. The rule judges it and answers with the bar
+//// and the tiers the player has, which is the only way the client's bar and book tiers change.
+//// The
 //// client's name for the builder's set is "limited action set" (`ActionSetLib`); a feature
 //// of the game connection's rule (genesis_prime/game/connection) taken from inside 0x038C
 //// with the player in the world.
 ////
 //// ```
 //// load: ActionSlotPrereq rows + their Prerequisite rows ─▶ Unlocks (slot ─▶ the levels it opens at)
-//// 0xB1 {12 ids, set, tier changes, AMP ids} ─▶ take(unlocks, player, saved, class_bar, body)
+//// load: Spell4 + Spell4TierRequirements ─▶ SpellTiers (genesis_prime/game/spell_tier)
+//// 0xB1 {12 ids, set, tier changes, AMP ids} ─▶ take(unlocks, tiers, player, saved, class_bar, body)
 ////      a body the client's reader refuses ─▶ Refusal: the connection ends
-////      every check passes  ─▶ Saved' and 0x019D (the 12 shortcuts, result 1), 0x00B2 (bit 1)
+////      every check passes  ─▶ Saved' and 0x019D (the 12 shortcuts, result 1), 0x01A0 (the book's tiers
+////                             in set 0), 0x0169 (the points left), 0x00B2 (bit 1)
 ////      a check fails       ─▶ Saved as it was, 0x019D (the held bar, the result), 0x00B2 (bit 0), a warning
 //// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set
 //// entry      ─▶ entering(unlocks, level, book, rows) ─▶ Saved, or a RowError that ends the entry
@@ -30,6 +34,17 @@
 ////   since the client names the checks and does not make them, and the order of 40, 18, 2 and
 ////   13 is the server's own choice too. The code the server picks is invisible to the
 ////   player: the client shows a text only for result 39.
+//// - **The tier checks** come after the bar's, one tier change at a time in the save's order,
+////   then the points: an ability the book does not hold 18, an ability twice 13, a tier the
+////   ability has no row for or the player's level does not reach 41, and tiers costing more
+////   than the level's points 42 (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`; the order and
+////   the mapping are the server's, since the stock client stops below a tier it cannot take,
+////   `0x140748390`). A fall is always allowed, a change to the held tier changes nothing, and the
+////   points are judged on the tiers the save leaves. Any refusal refuses the whole save, bar
+////   included. A tier belongs to the ability in the set, so a save that takes an ability off the
+////   bar keeps its tier. What a tier costs and needs is genesis_prime/game/spell_tier.
+//// - **The tiers last** while the connection holds `Saved`: they are not in `rows`, so a place
+////   save, a map change, a Holocrypt rejoin and a login start every ability at tier 1 (`gaps`).
 //// - **A slot opens** by the client's own reading of its ActionSlotPrereq row's Prerequisite
 ////   row (`ActionSlotPrereq.prerequisiteIdUnlock`): the conditions the client keeps are all
 ////   of type 177 (the unit's level) and each holds at the player's level
@@ -38,8 +53,12 @@
 ////   (genesis_prime/game/ability_book `book`). The gadget and path slots (8 and 9) hold none, so an id there is refused with 18 although the
 ////   client calls it InvalidSlot 24 (`0x1404aacb0`).
 //// - **The answer** is the active set (0) and the held bar of twelve shortcuts, an empty slot
-////   as type 0 so the client clears it, then 0xB2, whose bit is 1 for an accepted save and 0
-////   for a refused one. The bit is a guess: the client only adds a combat log line for it.
+////   as type 0 so the client clears it; for an accepted save then 0x01A0 with every ability of
+////   the book in set 0 at its held tier, and 0x0169 with the points left (the client keeps both
+////   and clears its own edits with the 0xB2 after them, `opcode.0x169`, `opcode.0xb2`); last 0xB2,
+////   whose bit is 1 for an accepted save and 0 for a refused one. The bit is a guess: the client
+////   only adds a combat log line for it. A refused save is answered with the held bar and the
+////   0xB2 only, since the client then reads the book's tiers and the last 0x0169 again.
 //// - **A saved bar is kept at entry** only for the slots still open at the player's level
 ////   and the abilities the book still holds, the same two tests a save passes, so a table
 ////   change or a lower level cannot show an ability the player does not hold; a slot it drops
@@ -53,6 +72,7 @@
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book_frame
+import genesis_prime/game/ability_points
 import genesis_prime/game/prerequisite.{type Relation}
 import genesis_prime/game/spell_tier
 import genesis_prime/gap
@@ -472,6 +492,10 @@ type Fault {
   BadSpellInActionSet(slot: Int, id: Int)
   SlotUnlockPrereqFalse(slot: Int, id: Int, level: Int)
   DuplicateSpell(id: Int)
+  TierOfUnheldAbility(id: Int)
+  TierChangedTwice(id: Int)
+  InvalidSpellTier(id: Int, tier: Int, level: Int)
+  InsufficientAbilityPoints(spent: Int, total: Int)
 }
 
 /// The client's number for the result (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`).
@@ -484,6 +508,10 @@ fn result_of(fault fault: Fault) -> Int {
     BadSpellInActionSet(..) -> 18
     SlotUnlockPrereqFalse(..) -> 2
     DuplicateSpell(..) -> 13
+    TierOfUnheldAbility(..) -> 18
+    TierChangedTwice(..) -> 13
+    InvalidSpellTier(..) -> 41
+    InsufficientAbilityPoints(..) -> 42
   }
 }
 
@@ -517,17 +545,40 @@ fn describe_fault(fault fault: Fault) -> String {
       "Spell4Base "
       <> int.to_string(id)
       <> " is in the save twice (DuplicateSpell)"
+    TierOfUnheldAbility(id:) ->
+      "a tier change names Spell4Base "
+      <> int.to_string(id)
+      <> ", which the player's book does not hold (BadSpellInActionSet)"
+    TierChangedTwice(id:) ->
+      "Spell4Base "
+      <> int.to_string(id)
+      <> " has two tier changes in the save (DuplicateSpell)"
+    InvalidSpellTier(id:, tier:, level:) ->
+      "Spell4Base "
+      <> int.to_string(id)
+      <> " has no tier "
+      <> int.to_string(tier)
+      <> " the player can take at level "
+      <> int.to_string(level)
+      <> " (InvalidSpellTier)"
+    InsufficientAbilityPoints(spent:, total:) ->
+      "the tiers of the save cost "
+      <> int.to_string(spent)
+      <> " ability points and the level gives "
+      <> int.to_string(total)
+      <> " (InsufficientAbilityPoints)"
   }
 }
 
 /// What the client's 0xB1 is answered with: the bar the player has afterwards and the
 /// frames and log lines that say so, or the refusal for a body the client's reader refuses.
 /// `class_bar` is the class's level-1 abilities, the bar a player who has saved none holds.
-/// A save that fails a check leaves the bar as it was and is answered with the result and
-/// the held bar. The tier changes and AMP ids a save carries are read and not applied.
+/// A save that fails a check leaves the bar and the tiers as they were and is answered with
+/// the result and the held bar; an accepted save is answered with the bar, the book's tiers in
+/// set 0 and the points left. The AMP ids a save carries are read and not applied.
 pub fn take(
   unlocks unlocks: Unlocks,
-  tiers _tiers: spell_tier.SpellTiers,
+  tiers tiers: spell_tier.SpellTiers,
   player player: Player,
   saved saved: Saved,
   class_bar class_bar: List(Spell4BaseId),
@@ -537,17 +588,24 @@ pub fn take(
   |> client_connection.decoded(message_id: action_set_save.message_id)
   |> result.map_error(NotDecoded)
   |> result.map(fn(save) {
-    case fault_of(unlocks:, player:, save:) {
-      Ok(Nil) -> accepted(saved:, save:)
+    case
+      fault_of(unlocks:, player:, save:)
+      |> result.try(fn(_) { tiers_after(tiers:, player:, saved:, save:) })
+    {
+      Ok(held) -> accepted(tiers:, player:, saved:, save:, held:)
       Error(fault) -> refused(saved:, class_bar:, fault:)
     }
   })
 }
 
-/// The saved bars with the save's bar in the active set, answered with it.
+/// The saved bars with the save's bar in the active set and the tiers it leaves, answered with
+/// the bar, the book's tiers in the active set and the points left.
 fn accepted(
+  tiers tiers: spell_tier.SpellTiers,
+  player player: Player,
   saved saved: Saved,
   save save: action_set_save.ActionSetSave,
+  held held: Dict(Spell4BaseId, Int),
 ) -> #(Saved, List(Effect)) {
   let bar =
     Bar(
@@ -558,11 +616,29 @@ fn accepted(
         }
       }),
     )
+  let set = first_set().number
+  let saved =
+    Saved(
+      bars: dict.insert(saved.bars, set, bar),
+      tiers: case dict.is_empty(held) {
+        True -> dict.delete(saved.tiers, set)
+        False -> dict.insert(saved.tiers, set, held)
+      },
+    )
+  let spent = points_spent(tiers:, saved:)
   #(
-    Saved(..saved, bars: dict.insert(saved.bars, first_set().number, bar)),
+    saved,
     list.flatten([
       [
         Send(answer(bar:, result: ability_book_frame.action_set_ok)),
+        Send(
+          ability_book_frame.tiers(
+            abilities: player.book,
+            sets: [set],
+            tier_of: fn(set, base) { tier_of(saved:, set:, base:) },
+          ),
+        ),
+        Send(ability_points.points_frame(total: player.points_total, spent:)),
         Send(ability_book_frame.action_set_saved(add_combat_log_line: True)),
       ],
       dropped_edits(save:),
@@ -600,16 +676,14 @@ fn answer(bar bar: Bar, result result: Int) -> Frame {
   )
 }
 
-/// The debug line of the tier changes and AMP ids of an accepted save, which are not applied.
+/// The debug line of the AMP ids of an accepted save, which are not applied.
 fn dropped_edits(save save: action_set_save.ActionSetSave) -> List(Effect) {
-  case save.tier_changes, save.amp_ids {
-    [], [] -> []
-    changes, amps -> [
+  case save.amp_ids {
+    [] -> []
+    amps -> [
       Log(
         level: LogDebug,
         text: "0xB1 carries "
-          <> int.to_string(list.length(changes))
-          <> " tier changes and "
           <> int.to_string(list.length(amps))
           <> " AMPs, which are not applied",
       ),
@@ -645,6 +719,72 @@ fn fault_of(
     Ok(id) -> Error(DuplicateSpell(id:))
     Error(Nil) -> Ok(Nil)
   }
+}
+
+/// The tiers the set holds above tier 1 after the save's tier changes, or the first check
+/// they fail, in the save's order: an ability the book does not hold 18, an ability twice 13, a
+/// tier the ability has no row for or the player's level does not reach 41, and last tiers that
+/// cost more than the level gives 42. A fall is always allowed and the points are judged on the
+/// tiers the save leaves, so one save may free points on one ability and spend them on another.
+/// The tier checks are the server's mapping: the client names the results and does not make
+/// them (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`).
+fn tiers_after(
+  tiers tiers: spell_tier.SpellTiers,
+  player player: Player,
+  saved saved: Saved,
+  save save: action_set_save.ActionSetSave,
+) -> Result(Dict(Spell4BaseId, Int), Fault) {
+  let held =
+    dict.get(saved.tiers, first_set().number) |> result.unwrap(dict.new())
+  use #(after, _) <- result.try(
+    list.try_fold(save.tier_changes, #(held, []), fn(state, change) {
+      let #(now, seen) = state
+      let base = Spell4BaseId(change.spell4_base_id)
+      let tier = change.tier
+      use <- bool.guard(
+        when: !list.contains(player.book, base),
+        return: Error(TierOfUnheldAbility(id: base.value)),
+      )
+      use <- bool.guard(
+        when: list.contains(seen, base),
+        return: Error(TierChangedTwice(id: base.value)),
+      )
+      let held_tier = result.unwrap(dict.get(now, base), 1)
+      let reachable =
+        spell_tier.change_cost(tiers:, base:, from: 1, to: tier) |> result.is_ok
+      let level_reached = case tier > held_tier {
+        True ->
+          case spell_tier.level_needed(tiers:, tier:) {
+            Ok(needed) -> player.level >= needed
+            Error(Nil) -> False
+          }
+        False -> True
+      }
+      use <- bool.guard(
+        when: !reachable || !level_reached,
+        return: Error(InvalidSpellTier(
+          id: base.value,
+          tier:,
+          level: player.level,
+        )),
+      )
+      Ok(
+        #(
+          case tier {
+            1 -> dict.delete(now, base)
+            tier -> dict.insert(now, base, tier)
+          },
+          [base, ..seen],
+        ),
+      )
+    }),
+  )
+  let spent = spell_tier.spent(tiers:, held: dict.to_list(after))
+  use <- bool.guard(
+    when: spent > player.points_total,
+    return: Error(InsufficientAbilityPoints(spent:, total: player.points_total)),
+  )
+  Ok(after)
 }
 
 /// The first slot that holds an id it may not: a gadget or path slot, a slot not open at the
@@ -691,7 +831,11 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Ability builder",
-      missing: "The tier changes and AMP ids a save carries are read and not applied: ability tiers and AMP picks are not built.",
+      missing: "The AMP ids a save carries are read and not applied: AMP picks are not built.",
+    ),
+    gap.Entry(
+      area: "Ability builder",
+      missing: "A press casts the tier 1 spell of an ability whatever tier the player holds, and a tier the plans cannot cast is bought and kept like any other, while the client, told the tier by 0x01A0, shows and predicts the held tier's spell: its cast bar, cooldown, cost and tooltip come from a row the server does not cast.",
     ),
     gap.Entry(
       area: "Ability builder",

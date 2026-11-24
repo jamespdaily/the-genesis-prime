@@ -4,7 +4,7 @@
 ////
 //// ```
 //// a bag slot ─▶ 0x0111 (location 4, reason 49)       the item in its bag slot, a press names the slot
-//// the book   ─▶ 0x01A0 (tier 1 in each action set)   the entry the book window and the bar read
+//// the book   ─▶ 0x01A0 (the held tier in each set)  the entry the book window and the bar read
 //// a bar      ─▶ 0x019D (one action set)              the shortcuts the bar slots hold
 //// a save     ─▶ 0x00B2 (one bit)                     the answer to the builder's Save
 //// ```

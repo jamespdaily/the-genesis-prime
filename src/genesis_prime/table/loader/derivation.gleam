@@ -63,6 +63,9 @@ import gleam/set.{type Set}
 ///   deliver and the creatures that receive each quest (genesis_prime/game/communicator).
 /// - The action bar's slot unlocks: the level each of the twelve slots opens at, whose
 ///   missing rows fail the load (genesis_prime/game/limited_action_set).
+/// - The ability tiers: each base the book can hold with the cost, Spell4 row and level of
+///   its tiers, whose repeated tier, missing level row and missing Spell4 row fail the load
+///   (genesis_prime/game/spell_tier).
 /// - The quest rewards: each quest's Quest2Reward rows, which a turn-in reads
 ///   (genesis_prime/game/quest_turn_in).
 /// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
@@ -78,6 +81,7 @@ import gleam/set.{type Set}
 ///   (genesis_prime/world_map/creature_attack).
 pub fn all() -> List(store.Derivation) {
   [
+    spell_tier.derivation(),
     appearance.derivation(),
     loadout.derivation(left_out: abilities_left_out),
     spell_plan.derivation(area_checked: spell_area.checker),
@@ -90,7 +94,6 @@ pub fn all() -> List(store.Derivation) {
     shortcut_spell.derivation(),
     level_up.derivation(),
     limited_action_set.derivation(),
-    spell_tier.derivation(),
     faction_level.derivation(),
     communicator.derivation(),
     quest_turn_in.derivation(),

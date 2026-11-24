@@ -4,19 +4,21 @@
 //// Abilities button alerts while they are (`lua.Abilities.UpdateInterfaceMenuAlerts`).
 ////
 //// ```
-//// world entry   ─▶ frame(tables, level)                  after 0x092C, before 0x025E
-//// level rise    ─▶ after_rise(tables, from, to)          after the 0x0938 of the new level
+//// world entry   ─▶ frame(tables, level, spent)           after 0x092C, before 0x025E
+//// level rise    ─▶ after_rise(tables, from, to, spent)   after the 0x0938 of the new level
 ////                    [] when the total is the same, else the one frame of the new level
+//// a save        ─▶ points_frame(total, spent)            after the 0x01A0 of the held tiers
 //// ```
 ////
 //// - **The total of a level** is the sum of `XpPerLevel.abilityPointsPerLevel` over the rows
 ////   with ID 1 to the level: 0 up to level 9, one more per level from 10, 41 at 50. The
 ////   client never adds the column up; this sum is the server's.
-//// - **Points spent are 0.** The server saves no tier, so every point a level gives is
-////   unspent and the two fields are equal. A tier button enables on the unspent points, and
-////   the tier edits it makes go to the server in the builder's Save (0x00B1), whose tier
-////   changes the server reads and drops (genesis_prime/game/limited_action_set): tier
-////   spending is not built (`gaps`).
+//// - **The points to spend** are the total less the points the held tiers cost
+////   (genesis_prime/game/spell_tier `spent`, over the tiers the builder's Save (0x00B1) bought:
+////   genesis_prime/game/limited_action_set). A tier button enables on the points to spend, and
+////   the Abilities button alerts while they are above 0.
+//// - **The tiers last** until the next map change, Holocrypt rejoin, camp or login, which
+////   starts every ability at tier 1 and so spends no point (`gaps`).
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/gap
@@ -25,9 +27,6 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import gleam/bool
 import gleam/list
-
-/// The points spent on tiers: none, because the server saves no tier.
-const no_tier_points_spent = 0
 
 /// The points a character of the level has in all: the sum of `abilityPointsPerLevel` over
 /// the XpPerLevel rows from ID 1 to the level. The table load requires a row for every level
@@ -44,15 +43,20 @@ pub fn total(tables tables: table_store.Tables, level level: Int) -> Int {
 pub fn frame(
   tables tables: table_store.Tables,
   level level: Int,
-  spent _spent: Int,
+  spent spent: Int,
 ) -> Frame {
-  let total = total(tables:, level:)
+  points_frame(total: total(tables:, level:), spent:)
+}
+
+/// 0x0169 for a total and the points spent: the rule refuses a save that spends above the total
+/// and the level never falls, so a negative points to spend stops the caller.
+pub fn points_frame(total total: Int, spent spent: Int) -> Frame {
   let assert Ok(body) =
     ability_points.encode(AbilityPoints(
-      ability_points: total - no_tier_points_spent,
+      ability_points: total - spent,
       total_ability_points: total,
     ))
-    as "two points of 32 bits fit the message"
+    as "the rule refuses a save that spends above the total, so the points to spend are 0 or more and fit 32 bits"
   Frame(message_id: ability_points.message_id, body:)
 }
 
@@ -76,7 +80,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Abilities",
-      missing: "Spending ability points on a tier is not built: a tier button enables on the unspent points and the tier changes of the builder's save are read and dropped, so every point a level gives stays unspent.",
+      missing: "The tiers a player buys are kept only until the next map change, Holocrypt rejoin, camp or login: the place save carries the bars and no tier, so each of those starts every ability at tier 1 and gives every point back.",
     ),
   ]
 }

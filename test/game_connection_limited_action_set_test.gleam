@@ -105,7 +105,7 @@ fn raised_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
 }
 
 /// The sitting's first bar with these tier changes, set 0.
-fn tiering(changes changes: List(#(Int, Int))) -> BitArray {
+fn tiering(changes: List(#(Int, Int))) -> BitArray {
   limited.body_with(
     ids: limited.ids_a,
     set: 0,
