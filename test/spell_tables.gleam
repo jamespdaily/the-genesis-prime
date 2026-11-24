@@ -495,6 +495,7 @@ pub const pressed =
     hits_foes: False,
     throws_target: False,
     finds_allies: False,
+    ends_as_aura: False,
   )
 
 /// The place of a spell no Proxy starts on each struck unit, that spends nothing and that
@@ -506,6 +507,7 @@ pub const pressed_hitting_foes =
     hits_foes: True,
     throws_target: False,
     finds_allies: False,
+    ends_as_aura: False,
   )
 
 /// The place of a spell no Proxy starts on each struck unit, that spends nothing, hits no
@@ -517,7 +519,13 @@ pub const pressed_finding_allies =
     hits_foes: False,
     throws_target: False,
     finds_allies: True,
+    ends_as_aura: False,
   )
+
+/// The place of an aura that ends (a castMethod 10 spell with a spellDuration above 0,
+/// `spell_plan.spell_ends_as_aura`) whose area finds the caster's allies and that hits no foes.
+pub const pressed_finding_allies_as_aura =
+  spell_plan.RowPlace(..pressed_finding_allies, ends_as_aura: True)
 
 /// The place of a spell the Proxy effect `proxy_effect_id` of Spell4 `spell4_id` starts on
 /// each unit its area strikes.
@@ -531,6 +539,7 @@ pub fn started_on_each_struck(
     hits_foes: False,
     throws_target: False,
     finds_allies: False,
+    ends_as_aura: False,
   )
 }
 

@@ -404,6 +404,15 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     spell_plan.ProcHeldByAnotherUnit(target_flags:) ->
       "a unit other than the caster holds it, targetFlags "
       <> int.to_string(target_flags)
+    spell_plan.ProcHeldEventNotTold(kind:) ->
+      "an ally holds it and its kind "
+      <> int.to_string(kind)
+      <> " is not an event an ally's connection tells the caster"
+    spell_plan.ProcAllyGateNotRead ->
+      "an ally holds it behind a holder gate or an event gate"
+    spell_plan.ProcAllyDelayNotRead -> "an ally holds it with a delay"
+    spell_plan.ProcAllyUntilRemoved ->
+      "an ally holds it until removed, in a spell that is no aura that ends"
     spell_plan.ProcBehindPersistence ->
       "it sits behind a persistence prerequisite"
     spell_plan.ProcBehindTargetApply ->

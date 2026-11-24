@@ -1035,6 +1035,7 @@ pub type ProcRow {
   ProcRow(
     effect_id: Spell4EffectsId,
     phase_flags: Int,
+    holder: ProcHolder,
     trigger: Trigger,
     spell: Spell,
     chance: Float,
@@ -1050,11 +1051,23 @@ pub type ProcRow {
   )
 }
 
+/// The unit that holds a Proc row, from its targetFlags (`Spell4Effects.targetFlags`): the
+/// caster (flags 1), the player the press named, when that is another player or the caster
+/// (flags 2, `HeldByPrimaryTarget`) or each ally the area the cast selects (flags 4,
+/// `HeldByAreaAllies`). No client code reads a Proc row (`Spell4Effects.effectType.14`), so
+/// who holds a row is its targetFlags and the ability's text (315682, 483043).
+pub type ProcHolder {
+  HeldByCaster
+  HeldByPrimaryTarget
+  HeldByAreaAllies
+}
+
 /// What a Proc row's columns say without a table: everything but the Prerequisite rows
 /// its gates name (`event_gate` is dataBits06 and `holder_gate` dataBits09, 0 for none)
 /// and whether the Spell4 a `OneSpell` filter names exists.
 pub type ProcReading {
   ProcReading(
+    holder: ProcHolder,
     trigger: Trigger,
     chance: Float,
     limit: ProcLimit,
@@ -2164,6 +2177,7 @@ pub type RowPlace {
     hits_foes: Bool,
     throws_target: Bool,
     finds_allies: Bool,
+    ends_as_aura: Bool,
   )
 }
 
@@ -2323,6 +2337,19 @@ pub type LeftOutReason {
   /// or a struck unit, so a unit other than the caster holds it, which no rule of the
   /// server holds.
   ProcHeldByAnotherUnit(target_flags: Int)
+  /// A Proc held by the primary target or the area's allies of a kind whose event the
+  /// ally's connection does not tell the caster, so a row read would never fire
+  /// (`proc_reading`).
+  ProcHeldEventNotTold(kind: Int)
+  /// A Proc held by an ally with a holder gate (dataBits09) or an event gate (dataBits06):
+  /// the caster holds no picture of the ally's state, and the event gate's second unit is
+  /// the caster's pose (`proc_read`).
+  ProcAllyGateNotRead
+  /// A Proc held by an ally with a delay, which no ally's proc is read with (`proc_read`).
+  ProcAllyDelayNotRead
+  /// A Proc held by an ally that lasts until removed, in a spell that is no aura that
+  /// ends: a change on another player ends at a time (`proc_reading`).
+  ProcAllyUntilRemoved
   /// A Proc behind a caster or target persistence prerequisite, which no rule checks
   /// while a proc is held (`Spell4Effects.effectType.14.prerequisites`).
   ProcBehindPersistence
@@ -3852,6 +3879,7 @@ fn spell_of(
       hits_foes: spell_hits_foes(effects:),
       throws_target: spell_throws_target(effects:),
       finds_allies: spell_finds_allies(tables:, row:, effects:),
+      ends_as_aura: spell_ends_as_aura(tables:, row:),
     )
   use Nil <- result.try(
     list.try_each(effects, spend_tag_read(place:, effect: _)),
@@ -5165,6 +5193,7 @@ fn procs_of(
           ProcRow(
             effect_id: Spell4EffectsId(effect.id),
             phase_flags: effect.phase_flags,
+            holder: proc.holder,
             trigger: proc.trigger,
             spell:,
             chance: proc.chance,
@@ -5271,9 +5300,14 @@ fn proc_read_of_a_kind_to_read(
     kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
   })
   let unit_bits = effect.data_bits03
+  let holder = proc_holder_of(target_flags: effect.target_flags)
+  let held_by_an_ally = case holder {
+    Ok(HeldByCaster) -> False
+    Ok(HeldByPrimaryTarget) | Ok(HeldByAreaAllies) | Error(Nil) -> True
+  }
   let left_out = [
     #(
-      effect.target_flags != 1,
+      result.is_error(holder),
       ProcHeldByAnotherUnit(target_flags: effect.target_flags),
     ),
     #(
@@ -5288,6 +5322,11 @@ fn proc_read_of_a_kind_to_read(
     ),
     #(unit_bits >= 32 || unit_bits < 0, ProcAimNotRead(data_bits03: unit_bits)),
     #(
+      held_by_an_ally && { effect.data_bits06 != 0 || effect.data_bits09 != 0 },
+      ProcAllyGateNotRead,
+    ),
+    #(held_by_an_ally && effect.delay_time > 0, ProcAllyDelayNotRead),
+    #(
       effect.duration_time <= 0
         && !spell_effect.has_flag(flags: effect.flags, bit: 2),
       ProcWithoutLife,
@@ -5296,6 +5335,8 @@ fn proc_read_of_a_kind_to_read(
   case list.find(left_out, fn(reason) { reason.0 }) {
     Ok(#(_, why)) -> Ok(ProcIsLeftOut(why:))
     Error(Nil) -> {
+      let assert Ok(holder) = holder
+        as "a row whose targetFlags name no holder is left out above"
       let not_read = fn(column: String, value: Int) {
         Error(ProcNotRead(spell4_id:, effect_id: effect.id, column:, value:))
       }
@@ -5314,6 +5355,7 @@ fn proc_read_of_a_kind_to_read(
         Ok(chance), Ok(limit), Ok(filter) ->
           Ok(
             ProcIsRead(ProcReading(
+              holder:,
               trigger:,
               chance:,
               limit:,
@@ -5331,6 +5373,24 @@ fn proc_read_of_a_kind_to_read(
     }
   }
 }
+
+/// The holder of a Proc row by its targetFlags: 1 the caster, 2 the primary target, 4 the
+/// area's allies; 3, 5, 6 and 7 hold the row on several units at once, which no rule reads,
+/// and any other value names no holder.
+fn proc_holder_of(target_flags target_flags: Int) -> Result(ProcHolder, Nil) {
+  case target_flags {
+    1 -> Ok(HeldByCaster)
+    2 -> Ok(HeldByPrimaryTarget)
+    4 -> Ok(HeldByAreaAllies)
+    _ -> Error(Nil)
+  }
+}
+
+/// The Proc kinds whose event an ally's connection tells the caster: the four events of a
+/// creature's blow on the holder (16 takes damage, 146 a critical, 51 a deflect, 115 a
+/// depleted shield, `Spell4Effects.effectType.14.dataBits00`). A row an ally holds of any
+/// other kind would be read and never fire.
+const kinds_an_ally_tells = [16, 146, 51, 115]
 
 /// A Proc row's limit: a window above 0 is `InWindow`, a window of -1 is `ForLife`; any
 /// other window or a count not above 0 is the column and value the plan does not read.
@@ -5788,7 +5848,7 @@ fn kind_reading(
       )
       heal_reading(tables:, place:, spell4_id:, effect:, vital:)
     }
-    effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
+    effect_kind.Proc -> proc_reading(tables:, place:, spell4_id:, effect:)
     effect_kind.Proxy ->
       proxy_reading(tables:, sources:, place:, spell4_id:, effect:)
     effect_kind.Damage -> Ok(ReadByArea)
@@ -6484,6 +6544,7 @@ fn try_heal(
 /// one-spell filter naming a row the tables lack fails the load.
 fn proc_reading(
   tables tables: table_store.Tables,
+  place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
@@ -6493,12 +6554,64 @@ fn proc_reading(
     Error(error) -> Error(error)
     Ok(ProcIsLeftOut(why:)) -> Ok(LeftOut(why:))
     Ok(ProcIsRead(reading:)) ->
-      case spell4.get(tables:, id: Spell4Id(effect.data_bits01)) {
-        Error(Nil) ->
-          Ok(LeftOut(why: ProcCastsNoSpell(spell4_id: effect.data_bits01)))
-        Ok(_) -> proc_read_with_gates(tables:, effect:, reading:)
+      case proc_place_refusal(place:, effect:, holder: reading.holder) {
+        Some(why) -> Ok(LeftOut(why:))
+        None ->
+          case spell4.get(tables:, id: Spell4Id(effect.data_bits01)) {
+            Error(Nil) ->
+              Ok(LeftOut(why: ProcCastsNoSpell(spell4_id: effect.data_bits01)))
+            Ok(_) -> proc_read_with_gates(tables:, effect:, reading:)
+          }
       }
   }
+}
+
+/// Why a Proc row an ally holds is left out in this place, or none, the first of three:
+/// - a spell a Proxy starts on each struck unit, a spell that hits foes and an area that finds
+///   no ally of the caster give the row to a creature, which holds no proc
+///   (`ProcHeldByAnotherUnit`, a server choice: the client reads no Proc row);
+/// - a kind whose event an ally's connection does not tell the caster would be read and never
+///   fire (`ProcHeldEventNotTold`, `kinds_an_ally_tells`);
+/// - a row that lasts until removed (flags bit 2) is held only in an aura that ends, which
+///   gives the change on the ally its end (`ProcAllyUntilRemoved`, `lasting.row_life`).
+///
+/// The caster's own row is read in any place.
+fn proc_place_refusal(
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+  holder holder: ProcHolder,
+) -> Option(LeftOutReason) {
+  let in_a_struck_units_child = option.is_some(place.struck_by)
+  let held_by_an_ally = case holder {
+    HeldByCaster -> False
+    HeldByPrimaryTarget | HeldByAreaAllies -> True
+  }
+  let held_elsewhere = case holder {
+    HeldByCaster -> False
+    HeldByPrimaryTarget -> in_a_struck_units_child || place.hits_foes
+    HeldByAreaAllies ->
+      in_a_struck_units_child
+      || result.is_error(ally_area_aim(
+        finds_allies: place.finds_allies,
+        effect:,
+      ))
+  }
+  [
+    #(held_elsewhere, ProcHeldByAnotherUnit(target_flags: effect.target_flags)),
+    #(
+      held_by_an_ally && !list.contains(kinds_an_ally_tells, effect.data_bits00),
+      ProcHeldEventNotTold(kind: effect.data_bits00),
+    ),
+    #(
+      held_by_an_ally
+        && lasting_row_of(effect:).until_removed
+        && !place.ends_as_aura,
+      ProcAllyUntilRemoved,
+    ),
+  ]
+  |> list.find(fn(refusal) { refusal.0 })
+  |> result.map(fn(refusal) { refusal.1 })
+  |> option.from_result
 }
 
 /// The reading of a Proc row whose spell has its row, with its condition and its gates.
@@ -7039,6 +7152,24 @@ fn aura_of(
     | Multiphase, _
     | Transactional, _
     -> None
+  }
+}
+
+/// Whether a spell is an aura that ends (`aura_of`), read from its Spell4 and Spell4Base rows.
+/// A row whose Spell4Base the tables lack is no aura here; the plan of the spell fails on it.
+pub fn spell_ends_as_aura(
+  tables tables: table_store.Tables,
+  row row: spell4.Spell4,
+) -> Bool {
+  case
+    spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
+  {
+    Ok(base) ->
+      option.is_some(aura_of(
+        method: method_of(base.cast_method),
+        spell_duration: row.spell_duration,
+      ))
+    Error(Nil) -> False
   }
 }
 

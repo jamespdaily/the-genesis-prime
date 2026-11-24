@@ -33,6 +33,7 @@ import cast_support
 import client_tables
 import fixture_tables
 import genesis_prime/game/effect_kind
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -42,6 +43,7 @@ import genesis_prime/game/spell_plan.{
   OneSpell, ProcIsLeftOut, ProcIsRead, ProcKindNotRead, ProcNotRead, ProcReading,
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import gleam/int
 import gleam/list
@@ -115,10 +117,23 @@ fn row(id id: Int) -> Spell4Effects {
   )
 }
 
+/// A Proc row of this kind and targetFlags that lasts 12 000 ms, as Healing Salve's 86457
+/// does (flags 4, kind 16): the shape of a row an ally holds, with no gate and no delay.
+fn timed(id id: Int, flags flags: Int, kind kind: Int) -> Spell4Effects {
+  Spell4Effects(
+    ..row(id:),
+    target_flags: flags,
+    data_bits00: kind,
+    duration_time: 12_000,
+    flags: 0,
+  )
+}
+
 /// What `row` reads as, with the trigger given: chance 1.0, once in 500 ms, any spell, at
 /// the holder, no gates and no delay.
 fn reading(trigger trigger: spell_plan.Trigger) -> ProcReading {
   ProcReading(
+    holder: spell_plan.HeldByCaster,
     trigger:,
     chance: 1.0,
     limit: InWindow(window_ms: 500, count: 1),
@@ -484,14 +499,188 @@ pub fn a_proc_of_a_kind_the_server_does_not_read_is_skipped_not_failed_test() ->
 
 pub fn a_proc_held_by_a_unit_other_than_its_caster_is_left_out_not_a_load_failure_test() -> Nil {
   use <- owned_test.run(60_000)
-  left_out(
-    effect: Spell4Effects(..row(id: 99_030), target_flags: 2),
-    why: spell_plan.ProcHeldByAnotherUnit(target_flags: 2),
-  )
-  left_out(
-    effect: Spell4Effects(..row(id: 99_031), target_flags: 3),
-    why: spell_plan.ProcHeldByAnotherUnit(target_flags: 3),
-  )
+  // A row the ally's connection tells the caster the event of reads with the unit that
+  // holds it: targetFlags 2 the primary target, 4 the area's allies
+  // (`Spell4Effects.targetFlags`; text 315682 "yourself and N allies").
+  list.each([16, 146, 51, 115], fn(kind) {
+    assert read_of(effect: timed(id: 99_030, flags: 2, kind:)).holder
+      == spell_plan.HeldByPrimaryTarget
+      as "flags 2 is held by the primary target"
+    assert read_of(effect: timed(id: 99_031, flags: 4, kind:)).holder
+      == spell_plan.HeldByAreaAllies
+      as "flags 4 is held by the area's allies"
+  })
+  assert read_of(effect: Spell4Effects(..row(id: 99_032), flags: 2)).holder
+    == spell_plan.HeldByCaster
+    as "flags 1 is the caster's"
+  // The event of any other kind is not told by an ally, so a row read would never fire:
+  // the plan leaves it out in the place that gives the row an ally.
+  list.each([12, 21, 0, 10, 20], fn(kind) {
+    list.each(
+      [
+        #(2, spell_tables.pressed),
+        #(4, spell_tables.pressed_finding_allies),
+      ],
+      fn(found) {
+        let #(flags, place) = found
+        assert spell_tables.read_row(
+            effect: timed(id: 99_033, flags:, kind:),
+            place:,
+          )
+          == Ok(spell_plan.LeftOut(why: spell_plan.ProcHeldEventNotTold(kind:)))
+          as "an ally-held row of a kind no ally tells is left out naming it"
+      },
+    )
+  })
+  // Flags that name several units at once stay with the unit that holds them.
+  list.each([3, 5, 6, 7], fn(flags) {
+    left_out(
+      effect: timed(id: 99_034, flags:, kind: 16),
+      why: spell_plan.ProcHeldByAnotherUnit(target_flags: flags),
+    )
+  })
+  // A kind the texts name and the server does not raise is told so first.
+  assert spell_plan.proc_read(
+      spell4_id: holder,
+      effect: timed(id: 99_035, flags: 2, kind: 23),
+    )
+    == Ok(
+      ProcIsLeftOut(why: spell_plan.ProcKindWaits(
+        kind: 23,
+        event: "the holder taking a blow: direct, magic or critical damage, damage to its shield, an absorb destroyed, or a glance",
+      )),
+    )
+}
+
+/// What the plan made of a Proc row in a place: the unit that holds it when read, or the
+/// reason it is left out.
+type Outcome {
+  ReadFor(holder: spell_plan.ProcHolder)
+  LeftOutFor(why: spell_plan.LeftOutReason)
+}
+
+fn outcome_of(
+  reading reading: Result(spell_plan.RowReading, spell_plan.PlanError),
+) -> Outcome {
+  case reading {
+    Ok(spell_plan.Applied(spell_plan.ReadProc(reading:, ..))) ->
+      ReadFor(holder: reading.holder)
+    Ok(spell_plan.LeftOut(why:)) -> LeftOutFor(why:)
+    Error(error) ->
+      panic as {
+        "a Proc row is read or left out, never a load failure: "
+        <> spell_plan.describe(error:)
+      }
+    Ok(..) -> panic as "a Proc row is read as a Proc row or left out"
+  }
+}
+
+pub fn a_proc_row_is_read_for_the_unit_its_place_gives_it_and_left_out_where_it_gives_none_or_the_row_has_a_gate_or_a_delay_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Healing Salve's 86457 (Spell4 39386: targetFlags 4, kind 16, 12 000 ms, no gate, no
+  // delay) and its caster's own row 86458 (flags 1) are the client's rows; the cases an
+  // edit of 86457 makes are shapes no client row of a spell in the fixture holds:
+  // Analyze Weakness 231582 (a struck unit's child, flags 2), the rows with a gate (dataBits06
+  // or dataBits09), a delay or flags bit 2 that 99 client rows of kinds 16, 146, 51 and 115 hold.
+  let tables = fixture_tables.shared()
+  let salve = spell_tables.effect_row_in(tables:, id: 86_457)
+  let own = spell_tables.effect_row_in(tables:, id: 86_458)
+  let held_by_primary_target = Spell4Effects(..salve, target_flags: 2)
+  let until_removed = Spell4Effects(..salve, flags: 2, duration_time: 0)
+  let struck_child =
+    spell_tables.started_on_each_struck(spell4_id: 39_386, proxy_effect_id: 1)
+  let cases = [
+    #(
+      "flags 4 in a place that finds allies is held by the area's allies",
+      salve,
+      spell_tables.pressed_finding_allies,
+      ReadFor(holder: spell_plan.HeldByAreaAllies),
+    ),
+    #(
+      "flags 4 in a place that hits foes finds no ally: a creature holds it",
+      salve,
+      spell_tables.pressed_hitting_foes,
+      LeftOutFor(why: spell_plan.ProcHeldByAnotherUnit(target_flags: 4)),
+    ),
+    #(
+      "flags 4 in a place that finds no ally holds nobody",
+      salve,
+      spell_tables.pressed,
+      LeftOutFor(why: spell_plan.ProcHeldByAnotherUnit(target_flags: 4)),
+    ),
+    #(
+      "flags 2 in a spell no Proxy starts on a struck unit is held by the primary target",
+      held_by_primary_target,
+      spell_tables.pressed,
+      ReadFor(holder: spell_plan.HeldByPrimaryTarget),
+    ),
+    #(
+      "flags 2 in a struck unit's child is a creature's",
+      held_by_primary_target,
+      struck_child,
+      LeftOutFor(why: spell_plan.ProcHeldByAnotherUnit(target_flags: 2)),
+    ),
+    #(
+      "flags 2 in a place that hits foes is a creature's",
+      held_by_primary_target,
+      spell_tables.pressed_hitting_foes,
+      LeftOutFor(why: spell_plan.ProcHeldByAnotherUnit(target_flags: 2)),
+    ),
+    #(
+      "a holder gate (dataBits09) on an ally's row is left out",
+      Spell4Effects(..salve, data_bits09: 5),
+      spell_tables.pressed_finding_allies,
+      LeftOutFor(why: spell_plan.ProcAllyGateNotRead),
+    ),
+    #(
+      "an event gate (dataBits06) on an ally's row is left out",
+      Spell4Effects(..salve, data_bits06: 5),
+      spell_tables.pressed_finding_allies,
+      LeftOutFor(why: spell_plan.ProcAllyGateNotRead),
+    ),
+    #(
+      "a delay on an ally's row is left out",
+      Spell4Effects(..salve, delay_time: 500),
+      spell_tables.pressed_finding_allies,
+      LeftOutFor(why: spell_plan.ProcAllyDelayNotRead),
+    ),
+    #(
+      "an ally's row that lasts until removed is left out in a spell that is no aura",
+      until_removed,
+      spell_tables.pressed_finding_allies,
+      LeftOutFor(why: spell_plan.ProcAllyUntilRemoved),
+    ),
+    #(
+      "an ally's row that lasts until removed is read in an aura that ends",
+      until_removed,
+      spell_tables.pressed_finding_allies_as_aura,
+      ReadFor(holder: spell_plan.HeldByAreaAllies),
+    ),
+    #(
+      "an ally's row of a kind no ally tells (12) is left out naming it",
+      Spell4Effects(..salve, data_bits00: 12),
+      spell_tables.pressed_finding_allies,
+      LeftOutFor(why: spell_plan.ProcHeldEventNotTold(kind: 12)),
+    ),
+    #(
+      "the caster's own row (flags 1) is read as before, in any place",
+      own,
+      spell_tables.pressed_finding_allies,
+      ReadFor(holder: spell_plan.HeldByCaster),
+    ),
+    #(
+      "the caster's own row that lasts until removed is read in a spell that is no aura",
+      Spell4Effects(..own, flags: 2, duration_time: 0),
+      spell_tables.pressed,
+      ReadFor(holder: spell_plan.HeldByCaster),
+    ),
+  ]
+  list.each(cases, fn(found) {
+    let #(reason, effect, place, expected) = found
+    assert outcome_of(reading: spell_tables.read_row(effect:, place:))
+      == expected
+      as reason
+  })
 }
 
 pub fn a_proc_behind_a_persistence_prerequisite_is_left_out_test() -> Nil {
@@ -716,57 +905,136 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
     as "dataBits04 1000 and dataBits05 1"
 }
 
-pub fn the_proc_rows_read_count_1643_of_the_ten_kinds_and_51_of_the_old_kinds_test() -> Nil {
+/// The Proc rows of the spell `spell4_id` an ability's tree holds, with how the tree starts it.
+fn procs_of_spell(
+  ability ability: Spell,
+  spell4_id spell4_id: Int,
+) -> List(#(spell_plan.ProcRow, spell_plan.Start)) {
+  spell_plan.tree_started_with_alternate(spell: ability)
+  |> list.filter(fn(started) { { started.0 }.spell4_id.value == spell4_id })
+  |> list.flat_map(fn(started) {
+    list.map(
+      spell_plan.payloads(spell: started.0, as_kind: spell_plan.as_proc),
+      fn(row) { #(row, started.1) },
+    )
+  })
+}
+
+pub fn the_proc_rows_of_a_planned_tree_held_by_another_unit_are_read_for_an_ally_or_left_out_for_their_reason_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let plans = spell_plan.plans_with_later(tables:)
+  let ability = fn(spell4_id: Int) {
+    let assert Ok(row) = spell4.get(tables:, id: Spell4Id(spell4_id))
+      as "the ability's press is a Spell4 row"
+    let assert Ok(spell) =
+      spell_plan.in_plans(
+        plans:,
+        base: Spell4BaseId(row.spell4_base_id_base_spell),
+      )
+      as "the plans hold the ability"
+    spell
+  }
+  // Healing Salve (Spellslinger, press 39121): its child 39386 holds 86457 (flags 4) beside
+  // the caster's own 86458 (flags 1); the Surge alternate's child 45100 holds 104567.
+  let salve = ability(39_121)
+  let assert [#(area_row, _)] =
+    procs_of_spell(ability: salve, spell4_id: 39_386)
+    |> list.filter(fn(found) { { found.0 }.effect_id.value == 86_457 })
+    as "39386 holds 86457 as a Proc row"
+  assert area_row.holder == spell_plan.HeldByAreaAllies
+    as "targetFlags 4 is held by the area's allies"
+  let assert [#(surge_row, _)] =
+    procs_of_spell(ability: salve, spell4_id: 45_100)
+    |> list.filter(fn(found) { { found.0 }.effect_id.value == 104_567 })
+    as "the alternate's 45100 holds 104567"
+  assert surge_row.holder == spell_plan.HeldByAreaAllies
+  // Sentinel (Warrior, press 54395): a Proxy at each ally starts 58432, whose 139830 is
+  // held by the primary target, the ally the Proxy started it on.
+  let assert [#(sentinel_row, start)] =
+    procs_of_spell(ability: ability(54_395), spell4_id: 58_432)
+    |> list.filter(fn(found) { { found.0 }.effect_id.value == 139_830 })
+    as "58432 holds 139830 as a Proc row"
+  assert sentinel_row.holder == spell_plan.HeldByPrimaryTarget
+  assert start == spell_plan.Proxied(target: spell_plan.OnEachAlly)
+  // The rows the plan leaves out, each for its reason, in the place their spell has.
+  let effects = spell4_effects.all(tables)
+  let place_of = effect_row_read.places(tables:, effects:)
+  let sources = spell_plan.sources_of(tables:)
+  let read_row = fn(row: Spell4Effects) {
+    spell_plan.read_row(
+      tables:,
+      sources:,
+      place: place_of(row.spell_id),
+      effect: row,
+    )
+  }
+  let read = fn(id: Int) { read_row(spell_tables.effect_row_in(tables:, id:)) }
+  list.each([207_508, 207_874], fn(id) {
+    assert read(id)
+      == Ok(spell_plan.LeftOut(why: spell_plan.ProcHeldEventNotTold(kind: 21)))
+      as "Affinity's rows are kind 21, a heal received, which an ally does not tell"
+  })
+  assert read(231_582)
+    == Ok(
+      spell_plan.LeftOut(why: spell_plan.ProcHeldByAnotherUnit(target_flags: 2)),
+    )
+    as "Analyze Weakness's row is a struck unit's child's: a creature holds it"
+  assert read(85_628)
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 76)))
+    as "kind 76 is no kind the server reads"
+  // Rows of three spells that last until removed (flags bit 2): only the one in an aura that
+  // ends (castMethod 10, spellDuration above 0) is read. Field Probes' field 198781 has
+  // spellDuration 10 000; 141538's spellDuration is -1 and 106000's castMethod is 0, and both
+  // sit behind a persistence prerequisite, which the edit clears to reach the decision.
+  assert outcome_of(reading: read(198_781))
+    == ReadFor(holder: spell_plan.HeldByAreaAllies)
+    as "an aura that ends gives the ally's row its end"
+  list.each([141_538, 106_000], fn(id) {
+    let row = spell_tables.effect_row_in(tables:, id:)
+    assert outcome_of(reading: read_row(
+        Spell4Effects(
+          ..row,
+          prerequisite_id_caster_persistence: 0,
+          prerequisite_id_target_persistence: 0,
+        ),
+      ))
+      == LeftOutFor(why: spell_plan.ProcAllyUntilRemoved)
+      as "a spell that is no aura that ends gives an ally's until-removed row no end"
+  })
+}
+
+pub fn no_proc_row_of_a_read_kind_fails_the_load_and_each_is_read_or_names_its_reason_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let procs =
     spell4_effects.all(client_tables.shared())
     |> list.filter(fn(effect) { effect.effect_type == 14 })
-  let reads = fn(kinds: List(Int), as_kind: fn(Int) -> Int) {
+  let reads = fn(kinds: List(Int)) {
     list.filter(procs, fn(effect) { list.contains(kinds, effect.data_bits00) })
     |> list.map(fn(effect) {
-      spell_plan.proc_read(
-        spell4_id: effect.spell_id,
-        effect: Spell4Effects(
-          ..effect,
-          data_bits00: as_kind(effect.data_bits00),
-        ),
-      )
+      #(effect, spell_plan.proc_read(spell4_id: effect.spell_id, effect:))
     })
   }
-  let read_count = fn(
-    results: List(Result(spell_plan.ProcRead, spell_plan.PlanError)),
-  ) {
-    list.count(results, fn(result) {
-      case result {
-        Ok(ProcIsRead(..)) -> True
-        Ok(ProcIsLeftOut(..)) | Error(..) -> False
-      }
-    })
-  }
-  let own = reads([12, 13, 145, 1, 20, 147], fn(kind) { kind })
-  assert list.all(own, fn(result) {
+  let kinds = [12, 13, 145, 1, 20, 147, 217, 218, 44, 0, 16, 146, 51, 115]
+  let read = reads(kinds)
+  assert read != [] as "the client's tables hold rows of the read kinds"
+  list.each(read, fn(found) {
+    let #(effect, result) = found
+    let id = int.to_string(effect.id)
     case result {
-      Error(..) -> False
-      Ok(..) -> True
+      Ok(ProcIsRead(..)) | Ok(ProcIsLeftOut(..)) -> Nil
+      Error(error) ->
+        panic as {
+          "the Proc row "
+          <> id
+          <> " of a read kind fails the load: "
+          <> spell_plan.describe(error:)
+        }
     }
   })
-    as "no Proc row of a kind read holds a value outside every reading: the load never fails on one"
-  let old = reads([217, 218, 44, 0], fn(kind) { kind })
-  let blows_taken = reads([16, 146, 51, 115], fn(kind) { kind })
-  assert read_count(old) == 51
-    as "the four old kinds hold 83 rows, 51 of them read (a direct read of Spell4Effects)"
-  assert read_count(own) + read_count(blows_taken) == 1643
-    as "the ten kinds hold 1975 rows, 1643 of them read: 332 are left out"
-  assert read_count(own) == 1083
-    as "of those, the six kinds of the holder's own casts and heals"
-  assert list.all(blows_taken, fn(result) {
-    case result {
-      Error(..) -> False
-      Ok(..) -> True
-    }
-  })
-    as "no row of the four kinds of a blow taken holds a value outside every reading"
 }
 
 pub fn the_effect_kind_reads_a_proc_row_aimed_at_the_caster_only_test() -> Nil {

@@ -165,6 +165,7 @@ pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> 
       hits_foes: False,
       throws_target: False,
       finds_allies: False,
+      ends_as_aura: False,
     )
   assert spell_plan.read_row(
       tables:,
