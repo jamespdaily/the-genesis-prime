@@ -57,3 +57,16 @@ pub fn type_35_is_npc_execution_delay_test() -> Nil {
     && !effect_kind.is_row_read(effect_type: 35, target_flags: 4)
     as "19 rows aim at the target and 5 at the area: no creature rule holds another unit"
 }
+
+pub fn type_98_is_summon_pet_and_stays_unread_for_the_coverage_measure_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert effect_kind.kind_of(effect_type: 98) == effect_kind.SummonPet
+    as "Spell4Effects.effectType.98 is SummonPet, enum 0x140c34140"
+  assert !effect_kind.is_read(effect_type: 98)
+    as "the client reads nothing of type 98 and no rule of the server builds a summoned unit"
+  assert !effect_kind.is_row_read(effect_type: 98, target_flags: 1)
+  assert !effect_kind.is_row_read(effect_type: 98, target_flags: 2)
+  assert effect_kind.kind_of(effect_type: 97) == effect_kind.Despawn
+    && effect_kind.kind_of(effect_type: 99) == effect_kind.Unread(99)
+    as "the types around it do not move"
+}

@@ -411,17 +411,24 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     spell_plan.ProcAllyGateNotRead ->
       "an ally holds it behind a holder gate or an event gate"
     spell_plan.ProcAllyDelayNotRead -> "an ally holds it with a delay"
-    spell_plan.ProcAllyFilterNamesNoSpell(spell4_id:) ->
-      "an ally holds it and its filter names Spell4 "
+    spell_plan.ProcFilterNamesNoSpell4(spell4_id:) ->
+      "its filter names Spell4 "
       <> int.to_string(spell4_id)
       <> ", which has no row"
+    spell_plan.ProcFilterNamesNoSpell4Base(spell4_base_id:) ->
+      "its filter names Spell4Base "
+      <> int.to_string(spell4_base_id)
+      <> ", which has no row"
+    spell_plan.ProcFilterNamesNoGroup(group_id:) ->
+      "its filter names spell group "
+      <> int.to_string(group_id)
+      <> ", which no Spell4GroupList row lists"
     spell_plan.ProcAllyUntilRemoved ->
       "an ally holds it until removed, in a spell that is no aura that ends"
     spell_plan.ProcBehindPersistence ->
       "it sits behind a persistence prerequisite"
     spell_plan.ProcBehindTargetApply ->
       "it sits behind a target apply prerequisite"
-    spell_plan.ProcGroupWithoutFilter -> "it names a group with no filter kind"
     spell_plan.ProcAimNotRead(data_bits03:) ->
       "its aim bits are " <> int.to_string(data_bits03)
     spell_plan.ProcWithoutLife -> "it has no duration and no flags bit 2"
@@ -671,6 +678,7 @@ fn counted_namings(
         | effect_kind.Absorption
         | effect_kind.Activate
         | effect_kind.Immunity
+        | effect_kind.SummonPet
         | effect_kind.Despawn
         | effect_kind.UnitState
         | effect_kind.NpcExecutionDelay
@@ -742,6 +750,35 @@ pub fn spells_in(
 ) -> Result(List(Spell), List(MissingRow)) {
   use gates <- result.map(amp_gates(tables:))
   reached_spells(tables:, gates:, plans:)
+}
+
+/// The Spell4Effects rows only the tier 2 to 9 plans' trees reach (the abilities' own trees, tier 1,
+/// reach the others), and how many of them the plan does not read: the rows a held tier's cast
+/// plays that no tier 1 cast does.
+pub fn tier_rows(
+  tables tables: store.Tables,
+) -> Result(#(Int, Int), List(MissingRow)) {
+  let tier_plans =
+    dict.to_list(spell_plan.tier_plans(tables))
+    |> list.map(fn(entry) { #({ entry.0 }.value, entry.1) })
+    |> dict.from_list
+  use tier_spells <- result.try(spells_in(tables:, plans: tier_plans))
+  use own_spells <- result.map(spells_in(
+    tables:,
+    plans: spell_plan.plans_with_later(tables:),
+  ))
+  let own_rows =
+    effects_of(tables:, spells: own_spells)
+    |> list.map(fn(effect) { effect.id })
+    |> set.from_list
+  let only_tiers =
+    effects_of(tables:, spells: tier_spells)
+    |> list.filter(fn(effect) { !set.contains(own_rows, effect.id) })
+  let unread =
+    effect_row.unread_by_type(tables:, effects: only_tiers)
+    |> dict.values
+    |> int.sum
+  #(list.length(only_tiers), unread)
 }
 
 /// The AMP gates the tree walk reads, or the AMP unlock row the table lacks.

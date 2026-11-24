@@ -116,8 +116,8 @@ pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_canno
     == [0x019D, 0x01A0, 0x0169, 0x00B2]
     as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book"
   assert limited.the_action_set(frames:).result == 1
-  assert raised_in(frames:) == [#(27_638, 2)]
-    as "the 0x01A0 names Quick Draw at tier 2 in set 0"
+  assert raised_in(frames:) == [#(27_638, 2), #(52_215, 2)]
+    as "the 0x01A0 names Quick Draw and its alternate at tier 2 in set 0"
   assert ability_points_support.points_in(frames:) == [#(0, 1)]
     as "the one point of level 10 is spent"
   assert support.asked(taken) == None as "nothing waits on the store"
@@ -133,7 +133,7 @@ pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_canno
     sent(state:, body: limited.tiering([#(27_638, 2), #(20_684, 1)]))
   assert limited.the_action_set(frames:).result == 1
     as "the held tier and a tier 1 are accepted"
-  assert raised_in(frames:) == [#(27_638, 2)]
+  assert raised_in(frames:) == [#(27_638, 2), #(52_215, 2)]
     as "the first save's tier is kept in the connection"
   assert ability_points_support.points_in(frames:) == [#(0, 1)]
     as "and its point is still spent"

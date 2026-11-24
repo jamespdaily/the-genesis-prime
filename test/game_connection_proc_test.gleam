@@ -47,7 +47,7 @@ import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
   LogWarning, Now, OwnEvent,
 }
-import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/map
 import gleam/dict
 import gleam/float
@@ -1003,6 +1003,7 @@ fn ally_blow_tell(blows blows: Int) -> strike_tell.PlayerEvent {
         other_unit: Some(31),
         spell: Some(proc.EventSpell(
           spell4_id: Spell4Id(5649),
+          spell4_base_id: Spell4BaseId(4947),
           groups: [6, 9, 134, 333],
           school: 1,
         )),

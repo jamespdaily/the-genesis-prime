@@ -256,12 +256,12 @@ pub fn one_0x1a0_sets_the_held_tier_of_each_ability_in_each_action_set_and_tier_
   assert with_two
     == list.map(with_none, fn(entry) {
       case entry.spell4_base_id, entry.action_set_index {
-        27_638, 0 -> AbilityTier(..entry, tier: 2)
-        20_684, 2 -> AbilityTier(..entry, tier: 3)
+        27_638, 0 | 52_215, 0 -> AbilityTier(..entry, tier: 2)
+        20_684, 2 | 20_685, 2 -> AbilityTier(..entry, tier: 3)
         _, _ -> entry
       }
     })
-    as "opcode.0x1a0: Quick Draw at tier 2 in set 0, Charged Shot at tier 3 in set 2 and tier 1 elsewhere, the entries in the order of the entry with none"
+    as "opcode.0x1a0: Quick Draw and its alternate 52215 at tier 2 in set 0, Charged Shot and its alternate 20685 at tier 3 in set 2 and tier 1 elsewhere, the entries in the order of the entry with none: an alternate shows the tier of the ability that names it"
 }
 
 pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_test() -> Nil {

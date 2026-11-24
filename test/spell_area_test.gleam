@@ -53,6 +53,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Integer}
@@ -3061,6 +3062,28 @@ fn selects_at_any_go(found: spell_area.SpellArea) -> Bool {
   )
 }
 
+/// The areas of the spells the abilities' own trees and the equip spells start, which are the
+/// client's tier 1 spells: `spell_area.areas` without the spells only a tier plan starts, which
+/// a held tier casts (`spell_plan.tier_plans`). The tests that name spells and rows of the tier 1
+/// trees read these.
+fn areas_of_tier_1_trees(
+  tables tables: table_store.Tables,
+) -> List(spell_area.SpellArea) {
+  let ids =
+    list.flatten([
+      dict.values(spell_plan.plans_with_later(tables:)),
+      dict.values(spell_plan.standing_plans(tables:)),
+    ])
+    |> list.flat_map(fn(ability) {
+      spell_plan.tree_started_with_alternate(spell: ability)
+    })
+    |> list.map(fn(started) { { started.0 }.spell4_id.value })
+    |> set.from_list
+  list.filter(dict.values(spell_area.areas(tables:)), fn(found) {
+    set.contains(ids, found.spell4_id.value)
+  })
+}
+
 /// A press at another player centres no area on it. A spell is cast at a unit it names when its
 /// target mechanic is of kind 1, 3, 5 or 8 (`Spell4TargetMechanics.targetType`), and at an ally
 /// when it is beneficial (flags bit 0). Of the spells of the planned trees that are, only two
@@ -3092,7 +3115,7 @@ pub fn the_targeted_spells_of_the_planned_trees_select_no_area_and_the_two_child
     |> list.unique
   }
   let beneficial_and_targeted =
-    list.filter(dict.values(areas), fn(found) {
+    list.filter(areas_of_tier_1_trees(tables:), fn(found) {
       found.spell.targeting.kind == target_mechanic.Targeted
       && target_mechanic.is_beneficial(
         flags: found.spell.targeting.mechanics_flags,
@@ -3166,7 +3189,7 @@ pub fn the_clients_rows_hold_collapse_by_furthest_and_the_friendly_heals_and_all
   // The spells whose area row orders by health (targetSelection 4 or 5, which the spell_area
   // module documents), whichever spells the client's rows give.
   let ordered_by_health =
-    list.filter(dict.values(areas), fn(found) {
+    list.filter(areas_of_tier_1_trees(tables:), fn(found) {
       let assert Ok(row) = spell4.get(tables:, id: found.spell4_id)
         as "the spell of an area has its Spell4 row"
       case
@@ -3314,14 +3337,14 @@ pub fn a_periodic_proxy_aimed_at_the_area_ticks_its_phase_and_selects_nothing_at
   assert !once.ticks_on_area as "and ticks nothing"
 }
 
-pub fn a_periodic_area_proxy_with_no_area_row_fails_the_load_and_one_ordered_by_health_leaves_its_ability_unplanned_and_closest_furthest_and_random_load_test() -> Nil {
+pub fn a_periodic_area_proxy_with_no_area_row_or_one_ordered_by_health_leaves_its_ability_unplanned_and_closest_furthest_and_random_load_test() -> Nil {
   use <- owned_test.run(120_000)
   // Nullifier's field 58868 (area row 119, Closest) holds the periodic Proxy 141450. A
   // periodic Proxy that selected nothing would be an accepted press that does nothing, so
-  // the load refuses what a phase that selects is refused: a spell with no area row is a
-  // fault of the data and stops the fixture's own load, naming the spell; an area ordered by
-  // health is an order the server does not build, so the checker leaves Nullifier's ability
-  // out of the plans with its sentence.
+  // the checker refuses what a phase that selects is refused: a spell with no area row and an
+  // area ordered by health are each a rule the server does not build, so the checker leaves
+  // Nullifier's ability out of the plans with the sentence of its error. (A missing area row
+  // table row is the fault of the data that stops the load.)
   let order = fn(selection) {
     #("Spell4AoeTargetConstraints", 119, [
       #("targetSelection", Integer(selection)),
@@ -3332,10 +3355,18 @@ pub fn a_periodic_area_proxy_with_no_area_row_fails_the_load_and_one_ordered_by_
       #("Spell4", 58_868, [#("spell4AoeTargetConstraintsId", Integer(0))]),
     ])
     as "the edit names a row and a column the fixture holds"
-  let assert Error(refusal) = fixture_tables.load(rows: no_row)
-    as "a periodic area Proxy with no area row has nobody to find"
+  let assert Ok(no_row_tables) = fixture_tables.load(rows: no_row)
+    as "a periodic area Proxy with no area row leaves its ability out: the load goes on"
+  let assert Ok(no_row_left_out) =
+    spell_plan.unplanned(
+      tables: no_row_tables,
+      area_checked: spell_area.checker,
+    )
+  let assert Ok(no_row_nullifier) =
+    list.find(no_row_left_out, fn(one) { one.spell4_id == 70_757 })
+    as "Nullifier is left out of the plans: a periodic area Proxy with no area row has nobody to find"
   assert string.contains(
-    table_store.describe(refusal),
+    spell_plan.describe(error: no_row_nullifier.error),
     spell_area.describe(error: spell_area.NoAreaRow(spell4_id: 58_868)),
   )
   list.each([4, 5], fn(selection) {
@@ -3496,5 +3527,31 @@ pub fn blade_dance_strikes_its_five_damage_rows_together_at_each_of_its_five_pul
     assert damage_ids_at(areas:, spell4_id: 33_009, phase: pulse)
       == [79_030, 219_327, 219_328, 219_329, 219_330]
       as "every damage row strikes at every pulse"
+  })
+}
+
+pub fn every_spell_a_tier_plan_starts_has_an_area_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let areas = spell_area.areas(tables:)
+  let tier_plans = dict.to_list(spell_plan.tier_plans(tables))
+  assert tier_plans != [] as "the planned abilities have tier plans"
+  // The strike reads the area by the Spell4 id of the spell a go starts (`strike.select`), so a
+  // spell of a held tier's tree with no entry would strike nobody.
+  list.each(tier_plans, fn(entry) {
+    let #(tier_spell4_id, plan) = entry
+    list.each(spell_plan.tree_with_alternate(spell: plan), fn(spell) {
+      assert spell_area.of_spell(areas:, spell4_id: spell.spell4_id)
+        |> result.is_ok
+        as {
+          "the tree of tier Spell4 "
+          <> int.to_string(tier_spell4_id.value)
+          <> " starts Spell4 "
+          <> int.to_string(spell.spell4_id.value)
+          <> ", which has no area entry"
+        }
+    })
   })
 }

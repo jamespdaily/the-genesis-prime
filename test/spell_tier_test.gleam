@@ -11,7 +11,9 @@
 ////   never charged.
 //// - `0x1403ba550` and `0x1407a1440`: the client's book walks a base's tiers and stores a cost
 ////   for each, 0 for a tier with no Spell4 row, and a higher tier is taken only when its
-////   spell exists. `table_rows -- Spell4 spell4BaseIdBaseSpell=26543` holds tiers 1 and 9 only.
+////   spell exists. The client's table has a row for every tier, so a base whose tiers have no
+////   row is Paralytic Surge (base 26543, tier 9 is Spell4 51989) with its tiers 2 to 8 taken out
+////   (`spell_tables.with_paralytic_surge_tiers_2_to_8_missing`).
 
 import client_tables
 import fixture_tables
@@ -31,12 +33,12 @@ import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Integer}
+import spell_tables
 import unitest
 
 const quick_draw = Spell4BaseId(27_638)
 
-/// The base of a Medic's level 1 ability whose Spell4 rows hold tiers 1 and 9 only.
-const base_with_a_missing_tier = Spell4BaseId(26_543)
+const paralytic_surge = Spell4BaseId(spell_tables.paralytic_surge)
 
 /// The SpellLevel row of Quick Draw and the Spell4 row of its tier 1.
 const quick_draw_spell_level = 1011
@@ -103,8 +105,38 @@ pub fn the_tiers_of_every_base_the_book_can_hold_have_the_clients_costs_levels_a
       as {
         name <> ": a class ability or alternate holds nine tiers, an innate one"
       }
+    // The alternate the tier rows name: one base for all their tiers, or none.
+    let named_alternates =
+      list.filter_map(tier_rows, fn(row) {
+        case row.spell4_id_mechanic_alternate_spell {
+          0 -> Error(Nil)
+          alternate -> base_of(alternate)
+        }
+      })
+      |> list.unique
+    assert list.length(named_alternates) <= 1
+      as { name <> ": its tier rows name one alternate base or none" }
+    assert spell_tier.alternate_of(tiers:, base: Spell4BaseId(base))
+      == result.map(list.first(named_alternates), Spell4BaseId)
+      as { name <> ": the alternate is the base its tier rows name" }
     list.each(tier_rows, fn(row) {
       let tier = row.tier_index
+      case row.spell4_id_mechanic_alternate_spell {
+        0 -> Nil
+        alternate -> {
+          let assert Ok(named) = dict.get(by_id, alternate)
+            as { name <> ": a tier row names an alternate Spell4 row" }
+          assert named.tier_index == tier
+            as {
+              name
+              <> ": tier "
+              <> int.to_string(tier)
+              <> " names the alternate's own tier "
+              <> int.to_string(tier)
+              <> ", so an alternate shows the tier of its ability"
+            }
+        }
+      }
       assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(base), tier:)
         == Ok(Spell4Id(row.id))
         as {
@@ -144,6 +176,14 @@ pub fn the_tiers_of_every_base_the_book_can_hold_have_the_clients_costs_levels_a
   })
   assert spell_tier.level_needed(tiers:, tier: 1) == Error(Nil)
     as "tier 1 needs no level"
+  // Charged Shot 20684 names the alternate base 20685 and Quick Draw 27638 names 52215
+  // (`table_rows -- Spell4 spell4BaseIdBaseSpell=20684`: each tier row's alternate is the same
+  // tier of 20685); Paralytic Surge, an ability with no alternate, names none.
+  assert spell_tier.alternate_of(tiers:, base: Spell4BaseId(20_684))
+    == Ok(Spell4BaseId(20_685))
+  assert spell_tier.alternate_of(tiers:, base: quick_draw)
+    == Ok(Spell4BaseId(52_215))
+  assert spell_tier.alternate_of(tiers:, base: paralytic_surge) == Error(Nil)
   // A base outside the set has no tier data: it is not a base with one tier.
   let outside =
     list.find(rows, fn(row) {
@@ -186,20 +226,6 @@ pub fn a_change_costs_the_tiers_it_crosses_and_a_fall_gives_them_back_and_a_tier
       Change(quick_draw, 3, 3, Ok(0), "the same tier costs nothing"),
       Change(quick_draw, 1, 10, Error(Nil), "tier 10 is no tier of the book"),
       Change(quick_draw, 1, 0, Error(Nil), "tier 0 is no tier"),
-      Change(
-        base_with_a_missing_tier,
-        1,
-        9,
-        Ok(5),
-        "tiers 2 to 8 have no row and cost 0, tier 9 costs 5",
-      ),
-      Change(
-        base_with_a_missing_tier,
-        1,
-        5,
-        Error(Nil),
-        "a tier with no row cannot be bought",
-      ),
       Change(Spell4BaseId(0), 1, 2, Error(Nil), "a base with no tier data"),
     ],
     fn(case_) {
@@ -207,14 +233,24 @@ pub fn a_change_costs_the_tiers_it_crosses_and_a_fall_gives_them_back_and_a_tier
       assert spell_tier.change_cost(tiers:, base:, from:, to:) == cost as why
     },
   )
-  assert spell_tier.highest(tiers:, base: base_with_a_missing_tier) == Ok(9)
-    as "a base with tiers 1 and 9 holds nine as its highest"
   assert spell_tier.spell4_id(tiers:, base: quick_draw, tier: 3)
     == Ok(Spell4Id(49_025))
     as "there is no Spell4 49024: tier 3 of Quick Draw is 49025"
-  assert spell_tier.spell4_id(tiers:, base: base_with_a_missing_tier, tier: 5)
-    == Error(Nil)
-    as "a tier with no row has no Spell4"
+  // Paralytic Surge's tiers 2 to 8 have no row, tier 9 costs 5 (Spell4 51989).
+  spell_tables.with_paralytic_surge_tiers_2_to_8_missing(fn(missing) {
+    let tiers = spell_tier.tiers(tables: missing)
+    assert spell_tier.highest(tiers:, base: paralytic_surge) == Ok(9)
+      as "a base with tiers 1 and 9 holds nine as its highest"
+    assert spell_tier.change_cost(tiers:, base: paralytic_surge, from: 1, to: 9)
+      == Ok(5)
+      as "tiers 2 to 8 have no row and cost 0, tier 9 costs 5"
+    assert spell_tier.change_cost(tiers:, base: paralytic_surge, from: 1, to: 5)
+      == Error(Nil)
+      as "a tier with no row cannot be bought"
+    assert spell_tier.spell4_id(tiers:, base: paralytic_surge, tier: 5)
+      == Error(Nil)
+      as "a tier with no row has no Spell4"
+  })
   assert spell_tier.level_needed(tiers:, tier: 2) == Ok(10)
     as "Spell4TierRequirements: tier 2 needs level 10"
   assert spell_tier.level_needed(tiers:, tier: 9) == Ok(45)
@@ -239,6 +275,30 @@ pub fn a_change_costs_the_tiers_it_crosses_and_a_fall_gives_them_back_and_a_tier
   assert spell_tier.change_cost(tiers:, base: quick_draw, from: 2, to: 1)
     == Ok(-1)
     as "and never given back"
+}
+
+pub fn the_tiers_above_1_of_a_base_are_its_rows_from_tier_2_lowest_first_and_none_for_a_base_the_book_cannot_hold_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tiers = spell_tier.tiers(tables: fixture_tables.shared())
+  let quick_draw_rows = spell_tier.tiers_above_1(tiers:, base: quick_draw)
+  assert list.map(quick_draw_rows, fn(entry) { entry.0 })
+    == [2, 3, 4, 5, 6, 7, 8, 9]
+    as "Quick Draw's tiers 2 to 9 have a row each, lowest first, and tier 1 is not listed"
+  assert list.contains(quick_draw_rows, #(3, Spell4Id(49_025)))
+    as "tier 3 is the row 49025"
+  assert spell_tier.tiers_above_1(tiers:, base: Spell4BaseId(31_213)) == []
+    as "an innate holds tier 1 only"
+  assert spell_tier.tiers_above_1(tiers:, base: Spell4BaseId(0)) == []
+    as "a base the book cannot hold has no tiers"
+  spell_tables.with_paralytic_surge_tiers_2_to_8_missing(fn(missing) {
+    let tiers = spell_tier.tiers(tables: missing)
+    assert list.map(
+        spell_tier.tiers_above_1(tiers:, base: paralytic_surge),
+        fn(entry) { entry.0 },
+      )
+      == [9]
+      as "a tier with no row is not listed"
+  })
 }
 
 /// A load with edited rows and the words its refusal must hold.

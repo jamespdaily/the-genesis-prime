@@ -1950,7 +1950,7 @@ fn measured_proc_rows(
 }
 
 const proc_gap =
-  "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name are not raised), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses"
+  "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name are not raised), and rows held by another unit, behind a persistence or target apply prerequisite, with an aim of 32 or above, with no life or naming a Spell4 or Spell4Base the tables lack, which the plan leaves out"
 
 pub fn a_proc_row_the_plan_skips_or_refuses_is_counted_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)

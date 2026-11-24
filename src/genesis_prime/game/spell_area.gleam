@@ -115,8 +115,8 @@
 ////   unit is built only as a circle with no offset, which reads no yaw (`start_placed`; a spell that draws no hit shape selects by its area row, built only at 360 degrees), and a pressed
 ////   spell's row on the target only when the spell is cast at the caster, since the press names
 ////   the caster and reads no other target (`targeting_given`, `target_mechanic.takes_caster`).
-//// - **Which spells** are read: the spells of each level-1 ability's tree
-////   (genesis_prime/game/spell_plan), its threshold stages (Spell4Thresholds) included,
+//// - **Which spells** are read: the spells of each ability's tree and of each of its tiers
+////   (genesis_prime/game/spell_plan `tier_plans`), its threshold stages (Spell4Thresholds) included,
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
 ////   with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
@@ -539,8 +539,9 @@ pub fn describe(error error: AreaError) -> String {
   }
 }
 
-/// Every spell of every level-1 ability tree, by Spell4 id, as the load keeps
-/// them.
+/// Every spell of every ability tree the plans hold, by Spell4 id, as the load keeps them: the
+/// level-1 abilities' and the later abilities' trees, the equip spells', and each tier's of
+/// those (`spell_plan.tier_plans`).
 pub type Areas =
   Dict(Int, SpellArea)
 
@@ -559,15 +560,20 @@ pub fn derivation() -> table_store.Derivation {
 
 /// Builds every spell's area from the loaded tables, or why one cannot be built;
 /// the derivation's body, and the function a test of a refused row runs on planted
-/// tables. The ability trees must already be derived
-/// (genesis_prime/game/spell_plan `plans`).
+/// tables. The ability trees and their tiers must already be derived
+/// (genesis_prime/game/spell_plan `plans` and `tier_plans`).
 pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   let started =
     list.append(
-      dict.values(spell_plan.plans_with_later(tables:)),
-      dict.values(spell_plan.standing_plans(tables:)),
+      list.append(
+        dict.values(spell_plan.plans_with_later(tables:)),
+        dict.values(spell_plan.standing_plans(tables:)),
+      )
+        |> list.flat_map(spells_of_tree),
+      // A tier's alternate is planned inside the tier, not among the plans of its own.
+      dict.values(spell_plan.tier_plans(tables:))
+        |> list.flat_map(spell_plan.tree_started_with_alternate),
     )
-    |> list.flat_map(spells_of_tree)
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)
   list.try_fold(started, dict.new(), fn(areas, started) {
@@ -606,17 +612,18 @@ pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
 }
 
 /// An area error as the plan's: the one inside an apply gate as itself, a missing row or a
-/// number that is no number as a fault of the data, and the rest as what the area rule
-/// does not build.
+/// number that is no number as a fault of the data, and the rest, a spell that selects units
+/// with no area row included (Stagger's tier 9 is one), as what the area rule does not build.
 fn plan_error_of(
   error error: AreaError,
   spell4_id spell4_id: Int,
 ) -> spell_plan.PlanError {
   case error {
     ApplyGateNotRead(error: inner) -> inner
-    NoRow(..) | NoAreaRow(..) | MultiplierNotFinite(..) ->
+    NoRow(..) | MultiplierNotFinite(..) ->
       spell_plan.AreaDataFault(spell4_id:, reason: describe(error:))
-    SelectionNotBuilt(..)
+    NoAreaRow(..)
+    | SelectionNotBuilt(..)
     | SelectionNeedsHealth(..)
     | ValidTargetsNotBuilt(..)
     | TelegraphNotOnCaster(..)

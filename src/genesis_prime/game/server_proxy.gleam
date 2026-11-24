@@ -38,6 +38,10 @@
 ////   (`spell_plan.go_count`, the length of `spell_plan.go_times_ms`), or when its spell has no row or its tree cannot be
 ////   planned, for the plan's own reason; a tree that leads back to the ability or to the
 ////   spell that strikes fails as a cycle.
+//// - **Every tier plan of the ability is checked as tier 1's is**, since a player who holds a
+////   tier casts that tier's plan (genesis_prime/game/held_tier): the phase is a go of it, its
+////   Proxy finds the host tier 1's finds, and the child plans in its chain. A refusal names
+////   the row and the tier. `planted_into` plants into whichever plan sits under the base.
 //// - **The areas are the client's.** The planted spell has no area row of its own, so
 ////   its go strikes nobody (genesis_prime/game/strike `select`).
 ////
@@ -47,12 +51,14 @@
 //// |---|---|
 //// | a row names a base with no plan | the load stops, naming `server_proxy` and the row |
 //// | a row names a phase the ability does not go at | the load stops, naming the row |
+//// | a tier of the ability does not go at the phase, or has another host for the Proxy | the load stops, naming the row and the tier |
 //// | a row names a Spell4 the tables lack, or a tree the plan refuses | the load stops, naming the row and the plan's reason |
 //// | the plans hold the base's ability but no go starts a child at once | the Proxy is planted into the ability's own go |
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
+import genesis_prime/game/spell_tier
 import genesis_prime/gap
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
@@ -80,8 +86,14 @@ type NotPlanned {
   NoPlan
   /// Its phase is no go of the ability, which goes `goes` times.
   NotAGo(phase: Int, goes: Int)
+  /// The ability's plan holds a spell started at once for the Proxy to go with at the phase, and
+  /// the plan of one of its tiers holds none (or the other way round), so the Proxy would be
+  /// planted into another go for that tier than for tier 1.
+  HostDiffers(phase: Int)
   /// Its spell has no row, or its tree cannot be planned.
   CannotPlan(error: spell_plan.PlanError)
+  /// The plan of a tier of the ability (the tier's Spell4 row) is refused as `why`.
+  InTier(tier: Int, spell4_id: Int, why: NotPlanned)
 }
 
 fn describe(not_planned not_planned: NotPlanned) -> String {
@@ -94,8 +106,19 @@ fn describe(not_planned not_planned: NotPlanned) -> String {
       <> " is not a go of the ability, which goes "
       <> int.to_string(goes)
       <> " times"
+    HostDiffers(phase:) ->
+      "phase "
+      <> int.to_string(phase)
+      <> " starts no spell at once on the caster in this plan, though the other plans of the ability do (or the other way round), so the Proxy would go with another go"
     CannotPlan(error:) ->
       "its spell cannot be planned: " <> spell_plan.describe(error:)
+    InTier(tier:, spell4_id:, why:) ->
+      "in tier "
+      <> int.to_string(tier)
+      <> " (Spell4 "
+      <> int.to_string(spell4_id)
+      <> "): "
+      <> describe(not_planned: why)
   }
 }
 
@@ -157,6 +180,62 @@ fn planned_of(
     spell_plan.in_plans(plans:, base: Spell4BaseId(row.spell4_base_id))
     |> result.replace_error(NoPlan),
   )
+  use planned <- result.try(planned_in(row:, tables:, sources:, ability:))
+  use Nil <- result.map(tiers_planned(row:, tables:, sources:, ability:))
+  planned
+}
+
+/// The row planned into every tier plan of its ability: a player who holds a tier casts that
+/// tier's plan (genesis_prime/game/held_tier), so the phase must be a go of it, the Proxy must
+/// find the host it finds in tier 1, and the spell must plan in the tier's own chain. A tier the
+/// plans leave out is not checked: it plays a lower tier, which is.
+fn tiers_planned(
+  row row: Row,
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+  ability ability: Spell,
+) -> Result(Nil, NotPlanned) {
+  let tiers = spell_tier.tiers(tables:)
+  let tier_plans = spell_plan.tier_plans(tables)
+  let base = Spell4BaseId(row.spell4_base_id)
+  let has_host = result.is_ok(host_of(ability:, phase: row.phase))
+  spell_tier.tiers_above_1(tiers:, base:)
+  |> list.try_each(fn(entry) {
+    case spell_plan.tier_plan(tier_plans:, tiers:, base:, tier: entry.0) {
+      Error(Nil) -> Ok(Nil)
+      Ok(plan) ->
+        tier_checked(row:, tables:, sources:, plan:, has_host:)
+        |> result.map_error(fn(why) {
+          InTier(tier: entry.0, spell4_id: plan.spell4_id.value, why:)
+        })
+    }
+  })
+}
+
+/// The row planned into the plan of one tier, whose Proxy must find a host exactly when tier 1's
+/// does (`has_host`).
+fn tier_checked(
+  row row: Row,
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+  plan plan: Spell,
+  has_host has_host: Bool,
+) -> Result(Nil, NotPlanned) {
+  use _planned <- result.try(planned_in(row:, tables:, sources:, ability: plan))
+  case result.is_ok(host_of(ability: plan, phase: row.phase)) == has_host {
+    True -> Ok(Nil)
+    False -> Error(HostDiffers(phase: row.phase))
+  }
+}
+
+/// The row planned into one plan of its ability: the phase must be one of its gos, and the
+/// row's spell must plan in the chain of the ability and the spell it goes with.
+fn planned_in(
+  row row: Row,
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+  ability ability: Spell,
+) -> Result(Planned, NotPlanned) {
   let goes = spell_plan.go_count(spell: ability)
   use <- bool.guard(
     when: row.phase < 0 || row.phase >= goes,
@@ -208,7 +287,9 @@ fn last_go_of(spell spell: Spell) -> Int {
 }
 
 /// The plans with each ability's Proxies of the server's added to its tree: after the
-/// ability's own Proxies, in the order of the rows.
+/// ability's own Proxies, in the order of the rows. A Proxy's spell is planned once, in tier 1's
+/// chain, and planted as it is; the per-tier check of `select` only proves that it also plans in
+/// each tier's chain.
 pub fn planted_into(
   plans plans: Plans,
   proxies proxies: ServerProxies,

@@ -29,7 +29,7 @@ import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -268,6 +268,7 @@ fn shield_depleting_blow() -> cast_proc.BlowTaken {
     striker: 31,
     spell: event_proc.EventSpell(
       spell4_id: Spell4Id(5649),
+      spell4_base_id: Spell4BaseId(4947),
       groups: [],
       school: 1,
     ),
