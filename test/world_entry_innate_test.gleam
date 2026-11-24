@@ -24,6 +24,7 @@ import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
+import genesis_prime/game/spell_plan
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
@@ -218,7 +219,7 @@ pub fn the_action_set_keeps_the_three_bar_abilities_and_0x19f_names_slot_0_test(
   })
 }
 
-pub fn the_entry_starts_the_passive_of_a_class_that_has_one_test() -> Nil {
+pub fn the_entry_always_asks_for_the_standing_spells_and_the_wanted_list_holds_the_classs_passive_if_any_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   list.each(classes(), fn(class) {
@@ -296,7 +297,7 @@ pub fn a_class_with_no_innate_is_sent_neither_the_innates_item_nor_0x19f_and_wan
       assert list.last(effects) == Ok(world_entry.StartStanding)
         as "the entry asks for the standing spells whatever the class holds, since a worn item is a source for every class"
       let #(wanted, warnings) =
-        casting.standing_wanted(entered:, plans: cast_support.real_plans())
+        casting.standing_wanted(entered:, plans: spell_plan.plans(tables))
       assert wanted == [] && warnings == []
         as "a class with no passive and no worn spell wants nothing"
       let #(state, written) =

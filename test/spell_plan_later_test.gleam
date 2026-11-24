@@ -353,7 +353,7 @@ fn fold_cases() -> List(FoldCase) {
 }
 
 pub fn every_plan_error_is_a_skip_or_a_load_failure_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   list.each(errors(), fn(case_) {
     assert spell_plan.is_unbuilt(error: case_.0) == case_.1
       as {
@@ -382,7 +382,7 @@ pub fn every_plan_error_is_a_skip_or_a_load_failure_test() -> Nil {
 /// The fold's load-failure half, for both lists, and each list's roots split into planned and
 /// left out with no root in both lists.
 pub fn the_shared_fold_plans_or_leaves_out_a_list_of_roots_as_the_later_abilities_do_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   list.each(fold_cases(), fn(case_) {
     let sentence = refusal(loaded: loaded(added: [], changed: case_.faulted))
     assert sentence != ""

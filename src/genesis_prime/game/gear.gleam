@@ -16,9 +16,11 @@
 ////   listed in `unread` with its reason, which the connection logs once.
 //// - **The equip spells** are those the worn items' specials name, in the order the items are
 ////   worn (bag index), an exact repeat listed once. No other rule decides between items that
-////   name one spell: the 19 spells several items name are each named by items of one slot
-////   (Item2Type 53 is slot 43; types 3, 10 and 17 slot 3; types 45, 46, 48, 51, 79 and 204
-////   slot 20), so two worn items never name one spell at once.
+////   name one spell: the 19 spells several items name are each named by items of one ItemSlot
+////   (Item2Type 53 is ItemSlot 43; types 3, 10 and 17 ItemSlot 3; types 45, 46, 48, 51, 79
+////   and 204 ItemSlot 20), so two worn items never name one spell at once. A second shield's
+////   spell is listed beside its first's, though its properties are not given; the client's move
+////   check lets one shield be worn, so no worn set holds two.
 //// - **A second shield gives nothing**: its properties would share the first's, so it is
 ////   listed in `unread` as `TwoShields`; the client's move check lets one shield be worn.
 //// - **An item with no display is not drawn**, and neither is one whose display or

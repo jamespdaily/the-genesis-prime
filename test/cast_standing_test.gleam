@@ -238,3 +238,40 @@ pub fn a_standing_spell_the_plans_left_out_logs_one_warning_per_spell_for_the_st
   assert list.length(effects) == 1
     as "a spell not logged yet is logged beside those that were"
 }
+
+pub fn a_log_asked_for_under_a_key_is_written_once_per_state_and_another_key_writes_beside_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let log = fn(text) { fn() { cast_state.Log(level: LogWarning, text:) } }
+  let #(state, effects) =
+    cast_state.logged_once(
+      cast: cast_state.new(),
+      key: cast_state.UnbuiltSpell(spell4_id: first),
+      log: log("one"),
+    )
+  assert effects == [cast_state.Log(level: LogWarning, text: "one")]
+    as "the first ask for a key writes its log"
+  let #(again, effects) =
+    cast_state.logged_once(
+      cast: state,
+      key: cast_state.UnbuiltSpell(spell4_id: first),
+      log: log("two"),
+    )
+  assert effects == [] as "the same key asked again writes nothing"
+  assert again == state as "and leaves the state as it was"
+  let #(_, effects) =
+    cast_state.logged_once(
+      cast: state,
+      key: cast_state.UnbuiltStandingSpell(spell4_id: first),
+      log: log("three"),
+    )
+  assert effects == [cast_state.Log(level: LogWarning, text: "three")]
+    as "a key of another case on the same spell is its own log"
+  let #(_, effects) =
+    cast_state.logged_once(
+      cast: cast_state.new(),
+      key: cast_state.UnbuiltSpell(spell4_id: first),
+      log: log("four"),
+    )
+  assert effects == [cast_state.Log(level: LogWarning, text: "four")]
+    as "a new state, the next join's, writes the key again"
+}

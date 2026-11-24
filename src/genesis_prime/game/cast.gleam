@@ -2633,37 +2633,30 @@ fn refused_press(
       cast_press.refused_hold(cast:, client_cast_id:, ability:, effects: [
         refused(result),
       ])
-    PressNotBuilt(result:, why:) ->
-      case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
-        True ->
-          cast_press.refused_hold(cast:, client_cast_id:, ability:, effects: [
-            refused(result),
-          ])
-        False ->
-          cast_press.refused_hold(
-            cast: State(
-              ..cast,
-              logged: set.insert(
-                cast.logged,
-                UnbuiltSpell(spell.spell4_id.value),
-              ),
-            ),
-            client_cast_id:,
-            ability:,
-            effects: [
-              Log(
-                level: LogWarning,
-                text: "the ability with Spell4 "
-                  <> int.to_string(spell.spell4_id.value)
-                  <> " "
-                  <> why
-                  <> ": it is refused with "
-                  <> int.to_string(cast_result.to_value(result)),
-              ),
-              refused(result),
-            ],
-          )
-      }
+    PressNotBuilt(result:, why:) -> {
+      let #(cast, logs) =
+        cast_state.logged_once(
+          cast:,
+          key: UnbuiltSpell(spell.spell4_id.value),
+          log: fn() {
+            Log(
+              level: LogWarning,
+              text: "the ability with Spell4 "
+                <> int.to_string(spell.spell4_id.value)
+                <> " "
+                <> why
+                <> ": it is refused with "
+                <> int.to_string(cast_result.to_value(result)),
+            )
+          },
+        )
+      cast_press.refused_hold(
+        cast:,
+        client_cast_id:,
+        ability:,
+        effects: list.append(logs, [refused(result)]),
+      )
+    }
   }
 }
 
@@ -3878,21 +3871,20 @@ pub fn standing_unbuilt(
 ) -> #(State, List(Effect)) {
   list.fold(spell4_ids, #(cast, []), fn(so_far, spell4_id) {
     let #(cast, effects) = so_far
-    let key = UnbuiltStandingSpell(spell4_id:)
-    case set.contains(cast.logged, key) {
-      True -> so_far
-      False -> #(
-        State(..cast, logged: set.insert(cast.logged, key)),
-        list.append(effects, [
+    let #(cast, logs) =
+      cast_state.logged_once(
+        cast:,
+        key: UnbuiltStandingSpell(spell4_id:),
+        log: fn() {
           Log(
             level: LogWarning,
             text: "the standing spell with Spell4 "
               <> int.to_string(spell4_id)
               <> " is in no plan, so it is not started",
-          ),
-        ]),
+          )
+        },
       )
-    }
+    #(cast, list.append(effects, logs))
   })
 }
 

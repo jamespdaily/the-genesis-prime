@@ -53,6 +53,7 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{
   type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
 }
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -1289,6 +1290,19 @@ pub fn new() -> State {
     item_press_watermark: None,
     creature_told: dict.new(),
   )
+}
+
+/// What `log` writes, the first time `key` is asked for on this state; the state records
+/// the key, so the same key asked again writes nothing and a state from `new` writes again.
+/// A press the server does not build, a drop of effects it does not carry out and a standing
+/// spell the plans leave out each name their case with a key, so each is told once.
+pub fn logged_once(
+  cast cast: State,
+  key key: Unbuilt,
+  log log: fn() -> Effect,
+) -> #(State, List(Effect)) {
+  use <- bool.guard(when: set.contains(cast.logged, key), return: #(cast, []))
+  #(State(..cast, logged: set.insert(cast.logged, key)), [log()])
 }
 
 /// Whether an item press with this client cast id is a repeat: its id is not above the
