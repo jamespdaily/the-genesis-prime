@@ -4325,7 +4325,7 @@ pub fn a_go_tells_a_proc_row_to_each_ally_it_holds_it_on_lists_it_and_sends_one_
       step: #(blown, raised),
       caster: esper_seeing(players: [ally, second_ally]),
       at: 2000,
-      draws: [0],
+      draws: [0, 0, 0],
       rolls: [],
     )
   assert starts_of(
