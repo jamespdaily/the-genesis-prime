@@ -322,7 +322,8 @@ pub fn all_units_ended(
 /// The funnel of every end: a waiting start of a creature on a unit `unit_ids` names has
 /// its timer cancelled and tells nothing; each held change on such a unit that `ending`
 /// accepts is forgotten and told ended, and the end timer of a change on a player is
-/// cancelled with it.
+/// cancelled with it, and the Proc row the caster holds for that player with it
+/// (`State.procs`).
 fn ended_where(
   cast cast: State,
   cast_id cast_id: Int,
@@ -347,17 +348,31 @@ fn ended_where(
     [] -> dict.delete(cast.on_units, cast_id)
     [_, ..] -> dict.insert(cast.on_units, cast_id, kept)
   }
-  let #(cast, end_cancels) =
-    cast_state.cancel_timers(State(..cast, on_units:), matching: fn(due) {
-      case held_timer_of(due:) {
-        Ok(PlayerEnd(unit_id:, source:)) ->
-          list.any(ended, fn(on) {
-            cast_state.held_unit_id(on:) == unit_id
-            && cast_state.held_source(on:) == source
-          })
-        Ok(WaitingStart(..)) | Error(Nil) -> False
+  let procs =
+    list.fold(ended, cast.procs, fn(procs, on) {
+      case on {
+        HeldOnPlayer(source:, address:, ..) ->
+          dict.delete(
+            procs,
+            cast_state.ProcHold(source:, holder: Some(address.unit_id)),
+          )
+        HeldOnCreature(..) -> procs
       }
     })
+  let #(cast, end_cancels) =
+    cast_state.cancel_timers(
+      State(..cast, on_units:, procs:),
+      matching: fn(due) {
+        case held_timer_of(due:) {
+          Ok(PlayerEnd(unit_id:, source:)) ->
+            list.any(ended, fn(on) {
+              cast_state.held_unit_id(on:) == unit_id
+              && cast_state.held_source(on:) == source
+            })
+          Ok(WaitingStart(..)) | Error(Nil) -> False
+        }
+      },
+    )
   #(
     cast,
     list.flatten([
