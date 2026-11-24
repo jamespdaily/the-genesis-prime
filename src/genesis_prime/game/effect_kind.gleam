@@ -305,8 +305,10 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
 /// type `is_read` for, except that a PropertyConversion, CooldownModifier,
-/// Stealth, RemoveStealth, Proc, DisguiseOutfit or FullScreenEffect row is read only when its flags
-/// include the caster (bit 1, `Spell4Effects.targetFlags`), a PropertyModifier or
+/// Stealth, RemoveStealth, DisguiseOutfit or FullScreenEffect row is read only when its flags
+/// include the caster (bit 1, `Spell4Effects.targetFlags`), a Proc row only when they are the
+/// caster, the primary target or the area alone (1, 2 or 4: the units a Proc row is held by,
+/// `spell_plan.ProcHolder`), a PropertyModifier or
 /// ForcedMove row when they include the caster or are 2, 4 or 6 (the units a strike
 /// hits), a Heal,
 /// InterruptArmor, Absorption or QuestAdvance row when they include the caster or are the
@@ -328,9 +330,9 @@ pub fn is_row_read(
     | CooldownModifier
     | Stealth
     | RemoveStealth
-    | Proc
     | DisguiseOutfit
     | FullScreenEffect -> int.bitwise_and(target_flags, 1) == 1
+    Proc -> target_flags == 1 || target_flags == 2 || target_flags == 4
     Heal(..) | InterruptArmor | Absorption | QuestAdvance ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4

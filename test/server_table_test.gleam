@@ -1,6 +1,6 @@
 //// The tables the server loads at its start (`genesis_prime/table/loader/
 //// server_table`). Expected values are these.
-//// - The list: the tables the server's rules read. Of the client's 384,
+//// - The list: the tables the server's rules read, each with a committed fixture file. Of the client's 384,
 ////   the Creature2 table with its ArcheType, Difficulty, DisplayGroupEntry,
 ////   DisplayInfo, OutfitGroupEntry, OverrideProperties, Resist and Tier, with
 ////   InstancePortal and PathMission
@@ -48,7 +48,7 @@ import planted_table
 import simplifile
 import unitest
 
-pub fn the_servers_tables_are_the_seventy_six_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_those_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("registry")
   assert list.map(server_table.entries(), fn(entry) {
@@ -122,6 +122,7 @@ pub fn the_servers_tables_are_the_seventy_six_its_rules_read_test() -> Nil {
       "Spell4TargetMechanics",
       "Spell4Telegraph",
       "Spell4Thresholds",
+      "Spell4TierRequirements",
       "Spell4ValidTargets",
       "SpellCoolDown",
       "SpellLevel",
@@ -135,7 +136,18 @@ pub fn the_servers_tables_are_the_seventy_six_its_rules_read_test() -> Nil {
       "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the level each action bar slot opens at (ActionSlotPrereq, read by `limited_action_set`), the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), how far off the caster's facing a press at a player may stand (Spell4TargetAngle, read by `spell_plan`), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, the arcs a position condition names, the episodes, the quests of each and the periodic groups whose rules the accept check reads (Episode, EpisodeQuest, PeriodicQuestGroup, read by `quest`), the quests and their objectives a saved quest log is checked against (Quest2 and QuestObjective, read by the quest log at a load and a login, and by a prerequisite's quest conditions at a load), whether a type 28 objective is a checklist (PathSoldierActivate), the hit radius of each playable race (Race.hitRadius), the cap of each currency other than credits and Renown (CurrencyType.capAmount, read by `currency`), and the tables an equip check reads (ItemProficiency for an item category's proficiency mask and ItemSpecial for the prerequisite a special gives), the premium rows that give a signature tier its bag and bank slots (RewardPropertyPremiumModifier, read by `reward_property`), the groups of units a kill objective counts (TargetGroup, read by `target_group`), the rewards of a quest and the multipliers of its experience and credits (Quest2Reward, Quest2Difficulty and LevelDifferentialAttribute, read by `quest_turn_in`), and the budget and stat rows an item's properties come from (ItemBudget and ItemStat, read by `item_property`), the rows a random-stat entry may pick by group (ItemRandomStat, read by `random_stat` and `item_property`), and the schematic whose output item a made-item objective counts (TradeskillSchematic2, read by `objective`),, the places a checklist objective counts the unit under (QuestDirection and QuestDirectionEntry, read by `place_objective`), and the aim of the spell a cast-a-spell objective gives as a button (Spell4TargetMechanics.targetType, read by `shortcut_spell`), and the states whose flags stop a creature moving (CCStates, read by `crowd_control.stopping_mask`), and the worlds a `!go` may name (World, read by `dev_command`)"
+    as "the tables the server's rules read: the level each action bar slot opens at (ActionSlotPrereq, read by `limited_action_set`), the create request's row, the look, the bone counts, the start places, the zones' top zones, the starting level, the Novice loadout's gear, what it is drawn with, abilities and health, the stages of an ability's taps and charge levels, the spell groups and stack groups of the spells that last on a unit, whether an ability's caster may be dead (Spell4.spell4ConditionsIdCaster), how far off the caster's facing a press at a player may stand (Spell4TargetAngle, read by `spell_plan`), the training creatures' rows, what each spell strikes, the hit rule's formulas and bases, the prerequisites that gate a spell's resource gains, a Proxy's child and a creature attack's effects, the arcs a position condition names, the episodes, the quests of each and the periodic groups whose rules the accept check reads (Episode, EpisodeQuest, PeriodicQuestGroup, read by `quest`), the quests and their objectives a saved quest log is checked against (Quest2 and QuestObjective, read by the quest log at a load and a login, and by a prerequisite's quest conditions at a load), whether a type 28 objective is a checklist (PathSoldierActivate), the hit radius of each playable race (Race.hitRadius), the cap of each currency other than credits and Renown (CurrencyType.capAmount, read by `currency`), and the tables an equip check reads (ItemProficiency for an item category's proficiency mask and ItemSpecial for the prerequisite a special gives), the premium rows that give a signature tier its bag and bank slots (RewardPropertyPremiumModifier, read by `reward_property`), the groups of units a kill objective counts (TargetGroup, read by `target_group`), the rewards of a quest and the multipliers of its experience and credits (Quest2Reward, Quest2Difficulty and LevelDifferentialAttribute, read by `quest_turn_in`), and the budget and stat rows an item's properties come from (ItemBudget and ItemStat, read by `item_property`), the rows a random-stat entry may pick by group (ItemRandomStat, read by `random_stat` and `item_property`), and the schematic whose output item a made-item objective counts (TradeskillSchematic2, read by `objective`),, the places a checklist objective counts the unit under (QuestDirection and QuestDirectionEntry, read by `place_objective`), and the aim of the spell a cast-a-spell objective gives as a button (Spell4TargetMechanics.targetType, read by `shortcut_spell`), and the states whose flags stop a creature moving (CCStates, read by `crowd_control.stopping_mask`), and the worlds a `!go` may name (World, read by `dev_command`), and the level each ability tier needs (Spell4TierRequirements, read by `spell_tier`)"
+  // The second source: the committed fixture holds a file for each table the server loads.
+  let assert Ok(present) = simplifile.read_directory(fixture_tables.folder)
+    as "the fixture's folder is readable"
+  list.each(server_table.entries(), fn(entry) {
+    let file = table_store.schema(entry).file
+    assert list.contains(present, file <> ".tsv")
+      as {
+        file
+        <> ": the committed fixture holds a file for each table the server loads"
+      }
+  })
 }
 
 /// Runs a function of this module in a fresh node, which must return.

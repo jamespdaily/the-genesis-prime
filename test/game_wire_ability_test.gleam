@@ -640,7 +640,7 @@ fn bar_shortcuts(frames frames: List(Frame)) -> List(#(Int, Int)) {
 /// sitting's saves A and C, whose bytes the part 1 tests hold) and plays again after a camp.
 /// The class loadout is the three level 1 abilities in slots 0 to 2 (SpellLevel 1011, 1036 and
 /// 1236); the saved bar is what the next entry's 0x019D carries (`opcode.0x19d`) and the
-/// answer is 0x019D then 0x00B2 (`opcode.0xb2`).
+/// answer is 0x019D, 0x01A0, 0x0169 then 0x00B2 (`opcode.0xb2`).
 pub fn a_bar_saved_with_the_clients_0xb1_is_back_after_a_relog_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()

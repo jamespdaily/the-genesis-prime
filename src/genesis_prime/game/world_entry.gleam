@@ -169,6 +169,7 @@ import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/reward_property
 import genesis_prime/game/shown
+import genesis_prime/game/spell_tier
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/tutorial
@@ -1145,7 +1146,14 @@ pub fn joined(
                 // Before 0x25E, whose handler raises CharacterCreated, when the
                 // interface menu's Abilities button reads the points
                 // (`lua.Abilities.UpdateInterfaceMenuAlerts`).
-                Send(ability_points.frame(tables:, level: character.level)),
+                Send(ability_points.frame(
+                  tables:,
+                  level: character.level,
+                  spent: limited_action_set.points_spent(
+                    tiers: spell_tier.tiers(tables:),
+                    saved: action_sets,
+                  ),
+                )),
               ],
               character_state_sent(entry:),
               quest_effects,
@@ -1667,7 +1675,15 @@ fn loadout_sent(
   list.flatten([
     abilities,
     [
-      Send(ability_book_frame.tiers(abilities: book)),
+      Send(
+        ability_book_frame.tiers(
+          abilities: book,
+          sets: ability_book_frame.every_set(),
+          tier_of: fn(set, base) {
+            limited_action_set.tier_of(saved: action_sets, set:, base:)
+          },
+        ),
+      ),
       Send(ability_book_frame.action_set(
         set: limited_action_set.set_number(set: limited_action_set.first_set()),
         result: ability_book_frame.action_set_ok,
