@@ -153,9 +153,7 @@ import genesis_prime/message/interaction_result
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/item_use as item_use_message
 import genesis_prime/step.{type Now, type TimerId, LogDebug, LogInfo, LogWarning}
-import genesis_prime/table/id.{
-  type Item2Id, type Spell4BaseId, type Spell4Id, Spell4EffectsId,
-}
+import genesis_prime/table/id.{type Item2Id, type Spell4Id, Spell4EffectsId}
 import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -3560,11 +3558,13 @@ fn round_closed_for(
 /// `0x14045e740`), so the server's 0x7fe is the end its viewers see. Every stealth
 /// source drops, and a stealthed caster's `StealthChanged` comes after the casts'
 /// 0x7fe, followed by the casts of the procs the death fires: the `Died` procs first,
-/// then those for the stealth it ended. The innate passive's cast is the one cast it
-/// leaves: it stays live or lingering with its nodes, its modifiers, its pending timers,
+/// then those for the stealth it ended. The standing spells' casts are the casts it
+/// leaves: each stays live or lingering with its nodes, its modifiers, its pending timers,
 /// its stealth sources and its procs, and nothing is written for it
-/// (`cast_proc.passive_set_aside`); the delayed fires of its procs are the exception, dropped with
+/// (`cast_proc.standing_set_aside`); the delayed fires of its procs are the exception, dropped with
 /// their timers cancelled, since the holder they wait for is gone (`cast_proc.proc_fires_dropped`).
+/// That a spell a source holds outlasts its holder's death is a retail rule the client does
+/// not state: its code ends no node at a death (`cast.target_node_end`, `0x14045e740`).
 pub fn died(
   cast cast: State,
   caster _caster: Caster,
@@ -3667,10 +3667,8 @@ fn persistence_ended(
 }
 
 /// A cast whose persistence failed ends as a death ends one cast: 0x7f9 with the
-/// result, its go, finish, tick and NodesEnd timers cancelled, its property modifiers and
-/// cooldown effects ended, the current cast cleared when it was this one, an open
-/// threshold it is the base cast of closed as a 0x801 closes it, and its 0x7fe to the
-/// caster and the audience.
+/// result, then the end of a live cast (`live_ended`) or of a lingering one
+/// (`lingering_ended`).
 fn persistence_end(
   cast cast: State,
   caster caster: Caster,
@@ -3682,29 +3680,8 @@ fn persistence_end(
     cast_persist.failed_effect(cast_id:, result:, unit_id: caster.unit_id)
   case dict.get(cast.casts, cast_id), dict.get(cast.lingering, cast_id) {
     Ok(live), _ -> {
-      let #(cast, cancels) = cast_press.stop_pending(cast:, cast_id:)
-      let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
-      let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
-      let #(cast, ended) =
-        cast_proc.effects_ended(cast:, cast_id:, spell: live.spell)
-      let #(cast, on_units) = cast_control.all_units_ended(cast:, cast_id:)
-      let #(cast, finished) = case cast_press.open_charge_of(cast:, cast_id:) {
-        Some(threshold) ->
-          close_threshold(cast:, ability: threshold.ability, now_ms:)
-        None -> finish(cast:, cast_id:, live:, now_ms:)
-      }
-      #(
-        cast,
-        list.flatten([
-          [failure],
-          cancels,
-          ticks,
-          nodes,
-          ended,
-          on_units,
-          finished,
-        ]),
-      )
+      let #(cast, ended) = live_ended(cast:, cast_id:, live:, now_ms:)
+      #(cast, [failure, ..ended])
     }
     Error(Nil), Ok(lingering) -> {
       let #(cast, ended) = lingering_ended(cast:, cast_id:, lingering:)
@@ -3712,6 +3689,43 @@ fn persistence_end(
     }
     Error(Nil), Error(Nil) -> #(cast, [])
   }
+}
+
+/// A live cast ends before its go or while it holds, as a death ends one cast: its press,
+/// go, finish, tick and NodesEnd timers are cancelled, its property modifiers, procs and
+/// cooldown effects and its effects on other units end, and an open threshold it is the base
+/// cast of closes as a 0x801 closes it; otherwise `finish` ends it with its 0x7fe to the
+/// caster and the audience.
+fn live_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  live live: Live,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) = cast_press.stop_pending(cast:, cast_id:)
+  let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
+  let #(cast, ended) =
+    nodes_and_effects_ended(cast:, cast_id:, spell: live.spell)
+  let #(cast, finished) = case cast_press.open_charge_of(cast:, cast_id:) {
+    Some(threshold) ->
+      close_threshold(cast:, ability: threshold.ability, now_ms:)
+    None -> finish(cast:, cast_id:, live:, now_ms:)
+  }
+  #(cast, list.flatten([cancels, ticks, ended, finished]))
+}
+
+/// What a cast that ends early shares whether it is live or lingering: its NodesEnd timer is
+/// cancelled, its property modifiers, procs and cooldown effects end, and its effects on
+/// other units end with them.
+fn nodes_and_effects_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  spell spell: Spell,
+) -> #(State, List(Effect)) {
+  let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
+  let #(cast, ended) = cast_proc.effects_ended(cast:, cast_id:, spell:)
+  let #(cast, on_units) = cast_control.all_units_ended(cast:, cast_id:)
+  #(cast, list.flatten([nodes, ended, on_units]))
 }
 
 /// A lingering cast ends before its nodes' time: its ticks stop, its timers are cancelled,
@@ -3723,17 +3737,13 @@ fn lingering_ended(
 ) -> #(State, List(Effect)) {
   let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
   let cast = State(..cast, lingering: dict.delete(cast.lingering, cast_id))
-  let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
   let #(cast, ended) =
-    cast_proc.effects_ended(cast:, cast_id:, spell: lingering.spell)
-  let #(cast, on_units) = cast_control.all_units_ended(cast:, cast_id:)
+    nodes_and_effects_ended(cast:, cast_id:, spell: lingering.spell)
   #(
-    cast_proc.passive_cleared(cast:, cast_id:),
+    cast_proc.standing_cleared(cast:, cast_id:),
     list.flatten([
       ticks,
-      nodes,
       ended,
-      on_units,
       cast_tick.finished_effects(cast_id:, audience: lingering.audience),
     ]),
   )
@@ -3793,32 +3803,58 @@ fn dropped_while_waiting(cast cast: State) -> State {
   }
 }
 
-/// The player's innate passive, the plans' spell of this Spell4Base, starts: a cast of
-/// the player's own with its caster as root, no parent and its primary target, written
-/// as 0x7ff with no 0x7fd, which runs no check of the caster and starts no global
-/// cooldown (`Passive`). It starts at each join, alive or dead. A base the plans do not
-/// hold is a warning and no cast.
-pub fn passive_started(
+/// The player's standing spells become the wanted ones, in the order given: the spells a
+/// source holds for the player while it lasts, which the innate passive is the first of.
+/// Each standing spell no longer wanted ends first, the lowest cast id first, with its 0x7fe
+/// to the caster and the audience (`standing_ended`). Then each wanted spell that does not
+/// stand starts as a cast of the player's own with its caster as root, no parent and its
+/// primary target, written as 0x7ff with no 0x7fd, which runs no check of the caster and
+/// starts no global cooldown (`Passive`); it starts at each join, alive or dead. A spell
+/// wanted twice starts once, and a list equal to what stands changes and writes nothing.
+/// The caster's stealth change is written and recorded as any input's is (`settled`), so
+/// ending a standing spell that holds a stealth source leaves stealth as a cast's end does.
+pub fn standing_changed(
   cast cast: State,
   caster caster: Caster,
-  plans plans: Plans,
-  base base: Spell4BaseId,
+  wanted wanted: List(Spell),
   now now: Now,
 ) -> #(State, List(Effect)) {
-  case spell_plan.in_plans(plans:, base:) {
-    Error(Nil) -> #(cast, [
-      Log(
-        level: LogWarning,
-        text: "the innate passive with Spell4Base "
-          <> int.to_string(base.value)
-          <> " is in no plan, so it is not started",
-      ),
-    ])
-    Ok(spell) ->
+  use <- settled(cast:, own: [])
+  let now_ms = now.monotonic_ms
+  let wanted_ids =
+    set.from_list(list.map(wanted, fn(spell) { spell.spell4_id.value }))
+  let #(cast, ended) =
+    dict.to_list(cast.standing)
+    |> list.filter(fn(entry) { !set.contains(wanted_ids, entry.1) })
+    |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+    |> list.fold(#(cast, []), fn(so_far, entry) {
+      let #(cast, effects) = so_far
+      let #(cast, more) =
+        standing_ended(cast:, cast_id: entry.0, spell4_id: entry.1, now_ms:)
+      #(cast, list.append(effects, more))
+    })
+  let #(_, starting) =
+    list.fold(
+      wanted,
+      #(set.from_list(dict.values(cast.standing)), []),
+      fn(so_far, spell) {
+        let #(known, starting) = so_far
+        case set.contains(known, spell.spell4_id.value) {
+          True -> #(known, starting)
+          False -> #(
+            set.insert(known, spell.spell4_id.value),
+            list.append(starting, [spell]),
+          )
+        }
+      },
+    )
+  list.fold(starting, #(cast, ended), fn(so_far, spell) {
+    let #(cast, effects) = so_far
+    let #(cast, started) =
       start(
         cast:,
         caster:,
-        now_ms: now.monotonic_ms,
+        now_ms:,
         spell:,
         root: spell.spell4_id,
         parent: None,
@@ -3828,7 +3864,33 @@ pub fn passive_started(
         spent: None,
         reserved: [],
       )
+    #(cast, list.append(effects, started))
+  })
+}
+
+/// A standing spell's cast ends because its spell is no longer wanted. A lingering cast
+/// ends as a node taken off does (`lingering_ended`); a cast still live, before its go, as
+/// a persistence failure ends one (`live_ended`) but for the 0x7f9. A child the cast was
+/// about to start does not start: that is the server's choice, since the source that wanted
+/// the cast is gone, and no rule of the client's. A cast the state no longer holds is only
+/// forgotten.
+fn standing_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  spell4_id spell4_id: Int,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(cast, ended) = case
+    dict.get(cast.casts, cast_id),
+    dict.get(cast.lingering, cast_id)
+  {
+    Ok(live), _ -> live_ended(cast:, cast_id:, live:, now_ms:)
+    Error(Nil), Ok(lingering) -> lingering_ended(cast:, cast_id:, lingering:)
+    Error(Nil), Error(Nil) -> #(cast_proc.standing_cleared(cast:, cast_id:), [])
   }
+  let #(cast, children) =
+    cast_proc.standing_timers_cancelled(cast:, cast_id:, spell4_id:)
+  #(cast, list.append(ended, children))
 }
 
 /// A tier of the Level Up spell, which the client's 0x07A5 asks for (genesis_prime/game/level_up),
@@ -3860,7 +3922,7 @@ pub fn level_up_started(
 
 /// The caster's casts, press, hold, thresholds and timers ended by its death.
 fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
-  let #(cast, aside) = cast_proc.passive_set_aside(cast:)
+  let #(cast, aside) = cast_proc.standing_set_aside(cast:)
   let #(aside, fires_dropped) = cast_proc.proc_fires_dropped(aside:)
   let #(cast, ended) =
     dict.to_list(cast.casts)
@@ -3892,7 +3954,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, cancelled) = cast_tick.left(cast:)
   let cast = State(..cast, timers: dict.merge(cast.timers, advance_timers))
   #(
-    cast_proc.passive_restored(cast:, aside:),
+    cast_proc.standing_restored(cast:, aside:),
     list.flatten([
       fires_dropped,
       ended,
@@ -4094,10 +4156,10 @@ fn start(
           ])
         Child(..) | Passive | Activation(..) | Shortcut(..) -> cast.pending
       },
-      passive: case role {
-        Passive -> Some(id)
+      standing: case role {
+        Passive -> dict.insert(cast.standing, id, spell.spell4_id.value)
         Child(..) | Base(..) | Stage(..) | Activation(..) | Shortcut(..) ->
-          cast.passive
+          cast.standing
       },
       current: case
         role != Passive
@@ -6127,7 +6189,7 @@ fn finish(
   let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
   let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)
   #(
-    cast_proc.passive_cleared(cast:, cast_id:),
+    cast_proc.standing_cleared(cast:, cast_id:),
     list.flatten([
       ticks,
       cast_tick.finished_effects(cast_id:, audience: live.audience),
@@ -6178,7 +6240,7 @@ fn finish_steps(
 /// A live cast that has gone for the last time ends, or lingers when a node of it
 /// still has life: every step of its end runs, and only its 0x7fe waits until its
 /// last node ends (`cast.target_node_end`). A node whose life is over when the cast
-/// starts to linger is written 0x811 at once. The innate passive's cast lingers even
+/// starts to linger is written 0x811 at once. A standing spell's cast lingers even
 /// when no node of it lives, so it ends with no 0x7fe, and only when its last node is
 /// taken off.
 fn finish_or_linger(
@@ -6189,7 +6251,7 @@ fn finish_or_linger(
 ) -> #(State, List(Effect)) {
   let #(ended, kept) =
     cast_tick.ended_and_kept(nodes: live.nodes, ticking: live.ticking, now_ms:)
-  case kept, cast.passive == Some(cast_id) {
+  case kept, cast_state.is_standing(cast:, cast_id:) {
     [], False -> finish(cast:, cast_id:, live:, now_ms:)
     [], True | [_, ..], _ -> {
       let #(cast, closed) = finish_steps(cast:, cast_id:, live:, now_ms:)

@@ -1520,7 +1520,7 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
     )
   let plans = support.plans_of([passive])
   let #(state, raw) =
-    cast.passive_started(
+    support.standing_started(
       cast: cast_state.new(),
       caster: healing_caster(),
       plans:,

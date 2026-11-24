@@ -307,7 +307,7 @@
 //// - **The innates.** A slot-0 innate's active spell is held as an ability in the
 ////   bag at the index after the level-1 abilities (genesis_prime/game/loadout), so its
 ////   plan is the ability's. Its passive is never pressed: the server starts it itself
-////   (genesis_prime/game/cast `passive_started`).
+////   (genesis_prime/game/cast `standing_changed`).
 //// - **The caster's death.** Bit 0 of the spell's caster condition row says
 ////   whether its caster must be alive, must be dead or may be either
 ////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other

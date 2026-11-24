@@ -1,5 +1,5 @@
 //// A class's innate passive started at each join (`genesis_prime/game/cast`
-//// `passive_started`, with the plans of the client's tables). The client never
+//// `standing_changed`, with the plans of the client's tables). The client never
 //// casts a passive and shows no buff for it, so the server starts it as a cast
 //// of the player's own with no client press. Expected values come from these
 //// places.
@@ -42,6 +42,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -58,7 +59,7 @@ fn started_in(
   at ms: Int,
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
-    cast.passive_started(
+    support.standing_started(
       cast: cast_state.new(),
       caster:,
       plans:,
@@ -207,7 +208,7 @@ pub fn an_ordinary_press_of_the_planted_spell_is_the_current_cast_and_starts_the
 pub fn a_passive_starts_no_global_cooldown_is_never_the_current_cast_and_opens_no_threshold_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, effects) =
-    cast.passive_started(
+    support.standing_started(
       cast: cast_state.new(),
       caster: caster_of_planted(),
       plans: planted_plans(),
@@ -229,6 +230,29 @@ pub fn a_passive_starts_no_global_cooldown_is_never_the_current_cast_and_opens_n
     as "the passive is not the current cast, so it refuses nothing, and its 1500 ms global cooldown is not started, so the press is not held by it (14)"
   assert support.frames_of(message_id: 0x0816, effects:) == []
     as "opcode.0x816: no threshold opens for a passive"
+  let beside = Spell(..slow_passive(), spell4_id: Spell4Id(250_002))
+  let #(state, effects) =
+    cast.standing_changed(
+      cast: state,
+      caster: caster_of_planted(),
+      wanted: [slow_passive(), beside],
+      now: support.at(ms: 1050),
+    )
+  assert lines(effects:) == ["started k1 250002 root 250002 parent 0"]
+    as "a spell the call adds starts as the first did: 0x7ff alone, no 0x7fd, and the first stands on"
+  let #(_, pressed) =
+    support.pressed_raw_in(
+      plans: planted_plans(),
+      state:,
+      caster: caster_of_planted(),
+      bag_index: 1,
+      target: 0,
+      at: 1100,
+    )
+  assert support.refusal_results(effects: pressed) == []
+    as "neither standing spell is the current cast or starts a global cooldown"
+  assert support.frames_of(message_id: 0x0816, effects:) == []
+    as "and neither opens a threshold"
 }
 
 // ---- death, camp and entry ----
@@ -293,6 +317,69 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
     )
   assert support.frames_of(message_id: 0x07FE, effects: after) == []
     as "a second death still leaves it"
+  let proc_cast =
+    Spell(
+      ..support.child(spell4_id: 250_900, base: 250_900),
+      caster_death: spell_plan.AliveOrDead,
+    )
+  let holder =
+    support.standing_holder(
+      250_101,
+      fires_on: spell_plan.Died,
+      casts: proc_cast,
+    )
+  let #(standing, _) =
+    cast.standing_changed(
+      cast: cast_state.new(),
+      caster: support.caster(),
+      wanted: [holder],
+      now: support.at(ms: 1000),
+    )
+    |> then_answered(caster: support.caster(), at: 1000)
+  let #(standing, first_death) =
+    cast.died(
+      cast: standing,
+      caster: support.dead_caster(),
+      now: support.at(ms: 5000),
+    )
+    |> support.then_procs(caster: support.dead_caster(), at: 5000)
+  assert support.frames_of(message_id: 0x07FE, effects: first_death) == []
+    as "a standing spell is left as the passive is: no 0x7fe, though a spell its proc casts ends"
+  assert support.caster_change_ends(effects: first_death) == []
+    as "its modifier stays on"
+  assert list.map(support.started_in(effects: first_death), fn(start) {
+      start.spell4_id
+    })
+    == [250_900]
+    as "its Died proc fires at the first death"
+  let #(_, second_death) =
+    cast.died(
+      cast: standing,
+      caster: support.dead_caster(),
+      now: support.at(ms: 6000),
+    )
+    |> support.then_procs(caster: support.dead_caster(), at: 6000)
+  assert list.map(support.started_in(effects: second_death), fn(start) {
+      start.spell4_id
+    })
+    == [250_900]
+    as "and is held, so it fires at the next death, the first death's window over"
+}
+
+/// The go of each cast a step started answered with no unit struck.
+fn then_answered(
+  step step: #(State, List(Effect)),
+  caster caster: Caster,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  support.answered_as(
+    caster:,
+    state: step.0,
+    effects: step.1,
+    at: ms,
+    struck: [],
+    rolls: [],
+  )
 }
 
 pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_join_starts_it_again_test() -> Nil {
@@ -302,8 +389,10 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
   let #(dropped, effects) = cast_tick.left(cast: passive)
   assert support.writes(effects:) == []
     as "a camp writes nothing for any cast (cast.left)"
+  assert dict.is_empty(dropped.standing)
+    as "the camp forgets every standing cast, so the next join's list starts them all"
   let #(_, again) =
-    cast.passive_started(
+    support.standing_started(
       cast: dropped,
       caster: support.caster(),
       plans: support.real_plans(),
@@ -312,6 +401,15 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
     )
   assert lines(effects: again) == ["started k1 44926 root 44926 parent 0"]
     as "the next join starts the passive afresh"
+  let #(_, nothing) =
+    cast.standing_changed(
+      cast: dropped,
+      caster: support.caster(),
+      wanted: [],
+      now: support.at(ms: 9100),
+    )
+  assert support.writes(effects: nothing) == []
+    as "the camp dropped every standing cast, so a list that wants none ends none: no 0x7fe for a cast the client no longer holds"
 }
 
 pub fn a_player_saved_dead_starts_the_passive_at_entry_test() -> Nil {
@@ -350,6 +448,18 @@ pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_wi
   assert support.finished_ids(support.writes(effects: removed))
     == started_ids(effects:)
     as "the passive's nodes are on the caster's unit, so the unit's removal leaves the cast with none and writes its 0x7fe: the cast a death left is still the passive's, lingering"
+  let #(_, unwanted) =
+    cast.standing_changed(
+      cast: left,
+      caster: support.dead_caster(),
+      wanted: [],
+      now: support.at(ms: 5200),
+    )
+  let assert [passive_cast] = started_ids(effects:)
+    as "the passive started one cast"
+  assert support.finished_ids(support.writes(effects: unwanted))
+    == [passive_cast]
+    as "a standing spell no longer wanted after a death ends with its 0x7fe, as a lingering cast taken off does"
 }
 
 pub fn the_passives_pending_child_survives_a_death_and_starts_when_its_timer_fires_test() -> Nil {
@@ -454,7 +564,7 @@ pub fn a_passives_go_does_not_clear_the_cast_another_press_made_current_test() -
       Spell4BaseId(19_102),
     ])
   let #(state, started) =
-    cast.passive_started(
+    support.standing_started(
       cast: cast_state.new(),
       caster:,
       plans:,

@@ -473,7 +473,7 @@ pub fn frames_of(effects effects: List(world_entry.Effect)) -> List(Frame) {
       | world_entry.AskMap(..)
       | world_entry.WatchMap(..)
       | world_entry.Life(..)
-      | world_entry.StartPassive(..)
+      | world_entry.StartStanding
       | world_entry.Warn(..) -> Error(Nil)
     }
   })

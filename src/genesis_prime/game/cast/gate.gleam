@@ -1249,7 +1249,10 @@ pub fn clears_current(
   live live: Live,
   cast_id cast_id: Int,
 ) -> Bool {
-  use <- bool.guard(when: cast.passive == Some(cast_id), return: False)
+  use <- bool.guard(
+    when: cast_state.is_standing(cast:, cast_id:),
+    return: False,
+  )
   let spell = live.spell
   let clears_whichever = case spell.method {
     spell_plan.Normal

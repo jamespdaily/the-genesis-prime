@@ -104,6 +104,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
+import genesis_prime/game/innate
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_use
@@ -120,6 +121,7 @@ import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
+import genesis_prime/game/spell_plan
 import genesis_prime/game/spell_surge
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered, type PlayerAnswered}
@@ -132,7 +134,7 @@ import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/random
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
-  OwnEffect, StartTimer,
+  LogWarning, OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
@@ -983,6 +985,55 @@ pub fn with_cast(
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, cast:)
   })
+}
+
+/// The spells the player's standing casts should be, in the order they start, from every
+/// source that names one (the loadout's innate passive), each as its plan, and a warning
+/// for each source whose spell the plans lack, which is then left out of the list.
+pub fn standing_wanted(
+  entered entered: world_entry.Entered,
+  plans plans: spell_plan.Plans,
+) -> #(List(spell_plan.Spell), List(cast_state.Effect)) {
+  case entered.loadout.innate {
+    Some(innate.Innate(passive: Some(passive), ..)) ->
+      case spell_plan.in_plans(plans:, base: passive.spell4_base_id) {
+        Ok(spell) -> #([spell], [])
+        Error(Nil) -> #([], [
+          cast_state.Log(
+            level: LogWarning,
+            text: "the innate passive with Spell4Base "
+              <> int.to_string(passive.spell4_base_id.value)
+              <> " is in no plan, so it is not started",
+          ),
+        ])
+      }
+    Some(innate.Innate(passive: None, ..)) | None -> #([], [])
+  }
+}
+
+/// The player's standing casts made what `standing_wanted` lists: the cast rule starts each
+/// wanted spell that does not stand and ends each standing spell no longer wanted
+/// (`cast.standing_changed`), and its effects are carried out as any cast's are.
+pub fn standing_changed(
+  session session: Session,
+  now now: Now,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let assert Some(entered) = connection_state.entered_of(session.status)
+    as "the standing spells change while the connection holds a player"
+  let #(wanted, warnings) =
+    standing_wanted(entered:, plans: connection_state.plans_of(session:))
+  let #(changed, decided) =
+    cast.standing_changed(
+      cast: entered.cast,
+      caster: caster_of(tables: session.settings.tables, entered:),
+      wanted:,
+      now:,
+    )
+  cast_effects(
+    session: with_cast(session:, cast: changed),
+    now:,
+    effects: list.append(warnings, decided),
+  )
 }
 
 /// What the cast rule decided, carried out in order.

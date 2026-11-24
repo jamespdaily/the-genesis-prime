@@ -314,7 +314,7 @@ fn caster_of_passive() -> Caster {
 /// The passive started at the time, its go answered with no unit struck.
 fn passive_started(plans plans: Plans, at ms: Int) -> #(State, List(Effect)) {
   let #(state, effects) =
-    cast.passive_started(
+    support.standing_started(
       cast: cast_state.new(),
       caster: caster_of_passive(),
       plans:,

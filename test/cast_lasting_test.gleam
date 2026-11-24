@@ -2190,7 +2190,7 @@ pub fn a_holder_gone_or_left_is_told_by_the_compare_test() -> Nil {
     )
   let #(left, _) = cast_tick.left(cast: held)
   let #(passive, passive_effects) =
-    cast.passive_started(
+    support.standing_started(
       cast: cast_state.new(),
       caster: support.caster(),
       plans:,

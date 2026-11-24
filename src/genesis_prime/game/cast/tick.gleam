@@ -1202,7 +1202,7 @@ pub fn left(cast cast: State) -> #(State, List(Effect)) {
       cooldowns: cooldown.drop_all(book: cast.cooldowns),
       stealth: dict.new(),
       procs: dict.new(),
-      passive: None,
+      standing: dict.new(),
       on_units: dict.new(),
       restrictions: dict.new(),
     ),
