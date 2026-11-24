@@ -39,6 +39,18 @@
 ////                         ─▶ Tell(each viewer, PeerNews(T, HeldCastEnded(cast_id))), after T's own writes
 //// ```
 ////
+//// ```
+//// a creature's blow lands on T, T alive, C among T's viewers and waiting for an event it raises
+////   Tell(Connection(C), TellPlayer(stay_C, Event(PlayerEvent(T's unit, the events C waits for))))
+////                      ◀─ events_told: after T's own procs are raised, one tell per waiting caster
+//// ```
+////
+//// - **An ally tells its caster the events of a creature's blow** (`events_told`): the events
+////   `cast_proc.blow_events` gives, those the caster's Proc sources on T wait for
+////   (`held_changes.events_awaited`), to each such caster among T's viewers with the stay the
+////   viewer holds. The tell is never asked and nothing waits for it. The life is checked, not
+////   the ledger: a lethal blow is carried while the life is already dead and before the
+////   death clears the ledger, and a dying ally is not healed.
 //// - **A change is taken only from a caster T sees**: C is among T's viewers with the stay
 ////   the tell names, and T is alive. The caster addresses a tell from the players in its
 ////   own sight, and sight is symmetric. An end is taken from the caster that holds the source
@@ -87,6 +99,7 @@ import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/held_changes
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/proc
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
@@ -137,14 +150,14 @@ pub fn started(
   session session: Session,
   now now: Now,
   source source: unit_properties.Source,
-  change change: held_changes.Change,
+  change change: held_changes.Told,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case change {
-    held_changes.Property(modifier:) ->
+    held_changes.Applies(change: held_changes.Property(modifier:)) ->
       connection_properties.started(session:, now:, source:, modifier:)
-    held_changes.Absorb(amount:, mask:) ->
+    held_changes.Applies(change: held_changes.Absorb(amount:, mask:)) ->
       connection_absorption.started(session:, now:, source:, amount:, mask:)
-    held_changes.Watches(..) -> #(session, [])
+    held_changes.Awaits(..) -> #(session, [])
   }
 }
 
@@ -202,6 +215,7 @@ pub fn changed(
                   sight:,
                   spell4_id:,
                   effect:,
+                  trigger: held_changes.trigger_of(told: change),
                 )
               world_entry.Entered(..entered, held:)
             })
@@ -308,6 +322,41 @@ pub fn caster_removed(
     held: _,
     unit_id:,
   ))
+}
+
+/// What the player tells the casters of Proc rows it holds, for a creature's blow that raised
+/// `events` (`cast_proc.blow_events`): each caster among its viewers whose sources wait for
+/// one of them gets one tell with the stay it holds the viewer by, the player's unit and the
+/// events it waits for in the order they were raised. A dead player tells nobody.
+pub fn events_told(
+  entered entered: world_entry.Entered,
+  events events: List(proc.Event),
+) -> List(Effect(ConnectionEffect(Request))) {
+  use <- bool.guard(
+    when: player_life.state(life: entered.life) != player_life.Alive,
+    return: [],
+  )
+  list.filter_map(held_changes.events_awaited(held: entered.held), fn(awaiting) {
+    let #(caster, triggers) = awaiting
+    let waited_for =
+      list.filter(events, fn(event) { list.contains(triggers, event.trigger) })
+    case dict.get(entered.viewers, caster), waited_for {
+      Ok(viewer), [_, ..] ->
+        Ok(
+          OwnEffect(step.Tell(
+            to: step.Connection(connection: caster),
+            request: client_connection.TellPlayer(
+              stay: viewer.stay,
+              tell: client_connection.Event(event: strike_tell.PlayerEvent(
+                unit_id: entered.unit_id,
+                events: waited_for,
+              )),
+            ),
+          )),
+        )
+      Ok(_), [] | Error(Nil), _ -> Error(Nil)
+    }
+  })
 }
 
 /// The player has died: every source it holds from other players is taken off, in the
@@ -445,7 +494,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A Proc row the caster holds on an ally is told as a change that applies nothing and is listed as the cast's effect on the ally; it is held for the allies the round selected at the go, so an ally who walks into the area later is given none, and it ends with the change on that ally, the ally's death included, a server choice.",
+      missing: "A Proc row the caster holds on an ally is told as a change that applies nothing and is listed as the cast's effect on the ally; it is held for the allies the round selected at the go, so an ally who walks into the area later is given none, and it ends with the change on that ally, the ally's death included, a server choice. An ally whose caster is not among its viewers tells its blows to no one, so the proc it holds fires only once the caster sees it again.",
     ),
     gap.Entry(
       area: "Casting",

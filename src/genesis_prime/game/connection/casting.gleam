@@ -124,7 +124,9 @@ import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spell_surge
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell.{type Answered, type PlayerAnswered}
+import genesis_prime/game/strike_tell.{
+  type Answered, type PlayerAnswered, type PlayerEvent,
+}
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_state
 import genesis_prime/game/world_entry
@@ -734,6 +736,32 @@ pub fn player_taken(
   let #(updated, effects) =
     strike.player_answered(strike: entered.strike, answer: answered, now:)
   round_carried(session:, now:, updated:, effects:)
+}
+
+/// The events of a blow on the ally `event.unit_id` that its connection told this caster
+/// (`PlayerTell.Event`): they are pending as events of that ally, and the pass that draws and
+/// fires follows (`raised`), so the entries the cast holds on that ally take their chance words
+/// from this connection's seed. A tell for a stay this connection has left is dropped by the stay
+/// fence (`connection.stay_sent`), and one for an ally no entry is held on draws and fires nothing.
+pub fn ally_event_taken(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  event event: PlayerEvent,
+) -> client_connection.Handled(Session) {
+  let #(session, fired) =
+    raised(
+      session: with_cast(
+        session:,
+        cast: cast.ally_events_raised(
+          cast: entered.cast,
+          unit_id: event.unit_id,
+          events: event.events,
+        ),
+      ),
+      now:,
+    )
+  Continue(session, fired)
 }
 
 /// The strike state an answer left and the effects it asked for, carried out in order.
@@ -1391,7 +1419,13 @@ fn carried_out(
         change: cast_state.HeldChange(change:),
       ),
         _
-      -> connection_landing.started(session:, now:, source:, change:)
+      ->
+        connection_landing.started(
+          session:,
+          now:,
+          source:,
+          change: held_changes.Applies(change:),
+        )
       cast_state.CasterChangeStarts(
         change: cast_state.Heal(vital:, amount:),
         ..,

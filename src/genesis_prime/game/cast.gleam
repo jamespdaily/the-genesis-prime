@@ -104,18 +104,18 @@ import genesis_prime/game/cast/state.{
   type AimedPress, type Applied, type Caster, type Effect, type Fact,
   type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
   type Lingering, type Listed, type Live, type Message, type Paid,
-  type PressRefusal, type PressTarget, type PressedFrom, type ProxyTickAsked,
-  type Reached, type Refusal, type Resolution, type Restricting, type Role,
-  type State, type Struck, type TargetVerdict, type TickAsked, type Used,
-  type UsedUnit, Accept, Activated, Activating, Activation, ActivationStart,
-  Aimed, AimedPress, AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled,
-  CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
-  Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
-  CooldownModifierStarts, Deflected, Described, Finish, ForcedMoveStart, Frames,
-  GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast,
-  Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed,
-  Live, Log, ModifierEnd, ModifierStart, NoClientCastId, NoInteraction,
-  NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
+  type PressRefusal, type PressTarget, type PressedFrom, type ProcHold,
+  type ProxyTickAsked, type Reached, type Refusal, type Resolution,
+  type Restricting, type Role, type State, type Struck, type TargetVerdict,
+  type TickAsked, type Used, type UsedUnit, Accept, Activated, Activating,
+  Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered,
+  AwaitingAnswer, Base, Cancelled, CannotTell, CastClears, CasterChangeEnds,
+  CasterChangeStarts, ChargeLevel, Child, CooldownEnds, CooldownKept,
+  CooldownModifierEnds, CooldownModifierStarts, Deflected, Described, Finish,
+  ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
+  Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld,
+  Lingering, Listed, Live, Log, ModifierEnd, ModifierStart, NoClientCastId,
+  NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
   NotSentByClient, OnCaster, OnPlayer, Passive, Plain, PlayerChangeEnd,
   PressNotBuilt, PressRefused, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
   QuestAdvanced, QuestButton, Reached, Refuse, RepeatHeld, Resolution,
@@ -1731,9 +1731,19 @@ fn settled(
         True -> spell_plan.EnteredStealth
         False -> spell_plan.LeftStealth
       }
-      #([proc.Event(trigger: change, other_unit: None, spell: None)], [
-        StealthChanged(stealthed:),
-      ])
+      #(
+        [
+          proc.Event(
+            trigger: change,
+            other_unit: None,
+            spell: None,
+            holder: None,
+          ),
+        ],
+        [
+          StealthChanged(stealthed:),
+        ],
+      )
     }
   }
   let before_count = list.length(cast.pending)
@@ -1771,6 +1781,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
             trigger: spell_plan.StartsMoving,
             other_unit: None,
             spell: None,
+            holder: None,
           ),
         ]
         ResourceMoved(slot:, from:, to:) if from != to ->
@@ -1780,6 +1791,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
                 trigger: spell_plan.ResourceCrosses,
                 other_unit: None,
                 spell: None,
+                holder: None,
               ),
             ],
             case slot == cast_state.suit_power_slot && to <. from {
@@ -1788,6 +1800,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
                   trigger: spell_plan.SuitPowerDrops,
                   other_unit: None,
                   spell: None,
+                  holder: None,
                 ),
               ]
               False -> []
@@ -1797,6 +1810,22 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
       }
     })
   State(..cast, pending: list.append(cast.pending, events))
+}
+
+/// The events of a blow on the ally `unit_id`, told by its connection, appended to the pending
+/// ones as events of that ally.
+pub fn ally_events_raised(
+  cast cast: State,
+  unit_id unit_id: Int,
+  events events: List(proc.Event),
+) -> State {
+  State(
+    ..cast,
+    pending: list.append(
+      cast.pending,
+      list.map(events, fn(event) { proc.Event(..event, holder: Some(unit_id)) }),
+    ),
+  )
 }
 
 /// The held procs fire for the pending events, in the order they happened; within an event,
@@ -1821,7 +1850,6 @@ pub fn procs_fire(
   let cast = State(..cast, pending: [])
   let ordered =
     dict.to_list(cast.procs)
-    |> list.filter(fn(entry) { { entry.0 }.holder == None })
     |> list.sort(fn(first, second) {
       int.compare({ first.0 }.source.cast_id, { second.0 }.source.cast_id)
       |> order.break_tie(int.compare(
@@ -1833,12 +1861,11 @@ pub fn procs_fire(
     list.fold(events, #(cast, [], draws, rolls), fn(so_far, event) {
       let #(cast, effects, draws, rolls) = so_far
       list.filter(ordered, fn(entry) {
-        { entry.1 }.row.trigger == event.trigger
+        cast_proc.fires_for(hold: entry.0, held: entry.1, event:)
       })
       |> list.fold(#(cast, effects, draws, rolls), fn(so_far, entry) {
         let #(cast, effects, draws, rolls) = so_far
         let hold = entry.0
-        let source = hold.source
         let row = { entry.1 }.row
         let #(words, roll_count) = proc.draws_needed(row:)
         let #(taken, draws) = list.split(draws, words)
@@ -1851,7 +1878,7 @@ pub fn procs_fire(
               caster:,
               now_ms: now.monotonic_ms,
               event:,
-              source:,
+              hold:,
               held:,
               draw: option.from_result(list.first(taken)),
               rolls: own_rolls,
@@ -1869,13 +1896,14 @@ pub fn procs_fire(
 /// One held proc against one event of its trigger: what `proc.decide` gives, carried out. The
 /// holder's subject is the caster as `cast_tick.subject_of` has it, and the event's the struck unit as
 /// a Proxy's target gate reads it (`cast_tick.struck_subject`), or the caster again for an event with
-/// no other unit.
+/// no other unit. The spell of the cast that holds the proc is the caster's own cast's, or, for an
+/// entry held on an ally, the spell of the change held on that ally (`holder_spell`).
 fn proc_matched(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
   event event: proc.Event,
-  source source: unit_properties.Source,
+  hold hold: ProcHold,
   held held: HeldProc,
   draw draw: Option(Int),
   rolls rolls: List(Int),
@@ -1884,18 +1912,25 @@ fn proc_matched(
   units units: Dict(Int, prerequisite.FirstUnit),
 ) -> #(State, List(Effect)) {
   let row = held.row
-  case cast_state.holder_of(cast:, cast_id: source.cast_id) {
+  case holder_spell(cast:, hold:) {
     Error(Nil) -> #(cast, [
       Log(
         level: LogWarning,
         text: "the Proc effect "
           <> int.to_string(row.effect_id.value)
           <> " is held by the cast "
-          <> int.to_string(source.cast_id)
-          <> ", which is neither live nor lingering, so it does not fire",
+          <> int.to_string(hold.source.cast_id)
+          <> case hold.holder {
+          None -> ", which is neither live nor lingering"
+          Some(unit_id) ->
+            " on the unit "
+            <> int.to_string(unit_id)
+            <> ", which holds no change on it"
+        }
+          <> ", so it does not fire",
       ),
     ])
-    Ok(holder) -> {
+    Ok(holder_spell4_id) -> {
       let holder_subject = cast_tick.subject_of(cast:, caster:)
       let event_subject = case event.other_unit {
         Some(unit) ->
@@ -1915,7 +1950,7 @@ fn proc_matched(
           fires_ms: held.fires_ms,
           now_ms:,
           event:,
-          holder_unit: caster.unit_id,
+          holder_unit: option.unwrap(hold.holder, caster.unit_id),
           holder_subject:,
           event_subject:,
           draw:,
@@ -1927,11 +1962,12 @@ fn proc_matched(
             cast:,
             caster:,
             now_ms:,
-            source:,
+            hold:,
             held:,
-            holder:,
+            holder_spell4_id:,
             at:,
             delay_ms:,
+            poses:,
           )
         proc.CannotTell(why:) -> #(cast, [Log(level: LogDebug, text: why)])
         proc.OutOfLimit
@@ -1944,31 +1980,69 @@ fn proc_matched(
   }
 }
 
+/// The spell of the cast that holds the proc `hold` names: the caster's own entry takes it from
+/// the cast, live or lingering, and an entry held on an ally from the change held on that ally,
+/// which stays when the cast has lost its last node on the ally (a spell with propertyFlags
+/// 0x100).
+fn holder_spell(
+  cast cast: State,
+  hold hold: ProcHold,
+) -> Result(Spell4Id, Nil) {
+  case hold.holder {
+    Some(unit_id) ->
+      cast_state.held_spell_on_player(cast:, source: hold.source, unit_id:)
+    None ->
+      result.map(
+        cast_state.holder_of(cast:, cast_id: hold.source.cast_id),
+        fn(holder) { holder.spell.spell4_id },
+      )
+  }
+}
+
 /// A proc that fires: refused for a caster of a life its spell's caster condition does not
 /// allow (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`), which writes a debug line
-/// and records no fire; else recorded as a fire at the event, and its spell cast at `at` at
-/// once or, with a delay, when `ProcDue` runs out. The cast starts as a child of the holder's
-/// spell does: the holder's spell is its root and parent, no 0x7fd.
+/// and records no fire; refused when it is held on an ally and aimed at the creature that
+/// struck the ally, which the caster's picture does not show, since the caster has no place
+/// for it and the cast would hit nothing; else recorded as a fire at the event on the entry
+/// that fired, and its spell cast at `at` at once or, with a delay, when `ProcDue` runs out. The
+/// cast starts as a child of the holder's spell does: the holder's spell is its root and
+/// parent, no 0x7fd. A fire at the ally the entry is held on names that ally as the child's
+/// player.
 fn proc_fires(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
-  source source: unit_properties.Source,
+  hold hold: ProcHold,
   held held: HeldProc,
-  holder holder: Holder,
+  holder_spell4_id holder_spell4_id: Spell4Id,
   at at: Int,
   delay_ms delay_ms: Int,
+  poses poses: Dict(Int, area.Pose),
 ) -> #(State, List(Effect)) {
   let row = held.row
-  case cast_proc.proc_refusal(caster:, row:, holder:) {
+  let striker_unseen = case hold.holder {
+    Some(ally) -> at != ally && !dict.has_key(poses, at)
+    None -> False
+  }
+  case cast_proc.proc_refusal(caster:, row:, holder_spell4_id:) {
     Some(refusal) -> #(cast, [refusal])
+    None if striker_unseen -> #(cast, [
+      Log(
+        level: LogDebug,
+        text: "the Proc effect "
+          <> int.to_string(row.effect_id.value)
+          <> " is aimed at the unit "
+          <> int.to_string(at)
+          <> ", which is not in the caster's sight, so it does not fire",
+      ),
+    ])
     None -> {
       let cast =
         State(
           ..cast,
           procs: dict.insert(
             cast.procs,
-            cast_state.ProcHold(source:, holder: None),
+            hold,
             HeldProc(row:, fires_ms: [
               now_ms,
               ..proc.counted(limit: row.limit, fires_ms: held.fires_ms, now_ms:)
@@ -1976,12 +2050,24 @@ fn proc_fires(
           ),
         )
       case delay_ms {
-        0 -> proc_started(cast:, caster:, now_ms:, row:, holder:, at:)
+        0 ->
+          proc_started(
+            cast:,
+            caster:,
+            now_ms:,
+            row:,
+            holder_spell4_id:,
+            at:,
+            named_player: case hold.holder {
+              Some(ally) if ally == at -> Some(ally)
+              Some(_) | None -> None
+            },
+          )
         _ -> {
           let #(cast, _, start) =
             cast_state.armed(
               cast:,
-              due: ProcDue(source:, row:, at:),
+              due: ProcDue(source: hold.source, row:, at:),
               after_ms: delay_ms,
             )
           #(cast, [start])
@@ -1997,18 +2083,19 @@ fn proc_started(
   caster caster: Caster,
   now_ms now_ms: Int,
   row row: spell_plan.ProcRow,
-  holder holder: Holder,
+  holder_spell4_id holder_spell4_id: Spell4Id,
   at at: Int,
+  named_player named_player: Option(Int),
 ) -> #(State, List(Effect)) {
   child_started(
     cast:,
     caster:,
     now_ms:,
     spell: row.spell,
-    root: holder.spell.spell4_id,
-    parent: holder.spell.spell4_id,
+    root: holder_spell4_id,
+    parent: holder_spell4_id,
     primary_target: at,
-    named_player: None,
+    named_player:,
     counted_with: WithNothing,
     from: None,
   )
@@ -2046,7 +2133,7 @@ fn child_started(
     Some(player) -> #(cast, [
       Log(
         level: LogDebug,
-        text: "the child of the Proxy to Spell4 "
+        text: "the child cast of Spell4 "
           <> int.to_string(spell.spell4_id.value)
           <> " is not started on unit "
           <> int.to_string(player)
@@ -2083,9 +2170,24 @@ fn proc_due(
   case cast_state.holder_of(cast:, cast_id: source.cast_id) {
     Error(Nil) -> #(cast, [])
     Ok(holder) ->
-      case cast_proc.proc_refusal(caster:, row:, holder:) {
+      case
+        cast_proc.proc_refusal(
+          caster:,
+          row:,
+          holder_spell4_id: holder.spell.spell4_id,
+        )
+      {
         Some(refusal) -> #(cast, [refusal])
-        None -> proc_started(cast:, caster:, now_ms:, row:, holder:, at:)
+        None ->
+          proc_started(
+            cast:,
+            caster:,
+            now_ms:,
+            row:,
+            holder_spell4_id: holder.spell.spell4_id,
+            at:,
+            named_player: None,
+          )
       }
   }
 }
@@ -3564,7 +3666,12 @@ pub fn died(
   now now: Now,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, own: [
-    proc.Event(trigger: spell_plan.Died, other_unit: None, spell: None),
+    proc.Event(
+      trigger: spell_plan.Died,
+      other_unit: None,
+      spell: None,
+      holder: None,
+    ),
   ])
   all_ended(cast:, now:)
 }
@@ -3577,7 +3684,12 @@ pub fn combat_left(
   now _now: Now,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, own: [
-    proc.Event(trigger: spell_plan.LeftCombat, other_unit: None, spell: None),
+    proc.Event(
+      trigger: spell_plan.LeftCombat,
+      other_unit: None,
+      spell: None,
+      holder: None,
+    ),
   ])
   #(cast, [])
 }
@@ -4172,6 +4284,7 @@ fn start(
               trigger: spell_plan.UsesAbility,
               other_unit: None,
               spell: Some(cast_proc.event_spell(spell:)),
+              holder: None,
             ),
           ])
         Child(..) | Passive | Activation(..) | Shortcut(..) -> cast.pending

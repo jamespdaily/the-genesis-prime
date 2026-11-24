@@ -113,8 +113,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Disguise)) {
       cast_state.Look(disguise:) -> Ok(#(start.0, disguise))
       cast_state.HeldChange(held_changes.Property(..))
       | cast_state.Heal(..)
-      | cast_state.HeldChange(held_changes.Absorb(..))
-      | cast_state.HeldChange(held_changes.Watches(..)) -> Error(Nil)
+      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
     }
   })
 }

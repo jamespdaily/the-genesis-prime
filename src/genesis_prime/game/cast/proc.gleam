@@ -58,7 +58,7 @@
 ////   go writes a debug line (the plan cannot tell a standing spell, so the rule enforces it,
 ////   `procs_held`); a camp drops the procs and their fire times.
 ////   A Proc row held by the player the press named or by each ally the round hit is held by that
-////   player: the go tells it as a change that applies nothing (`held_changes.Watches`,
+////   player: the go tells it as a change that applies nothing (`held_changes.Awaits`,
 ////   `cast_control.modifiers_armed`) and the caster keeps one entry for it by source and holder
 ////   (`State.procs`). The caster's own events match its own entries alone (`proc_draws_needed`,
 ////   `cast.procs_fire`); an ally's entry leaves with the change on that ally
@@ -231,8 +231,18 @@ pub fn heals_landed(
             fn(holder) { event_spell(spell: holder.spell) },
           )
         [
-          proc.Event(trigger: spell_plan.LandsHeal, other_unit: None, spell:),
-          proc.Event(trigger: spell_plan.ReceivesHeal, other_unit: None, spell:),
+          proc.Event(
+            trigger: spell_plan.LandsHeal,
+            other_unit: None,
+            spell:,
+            holder: None,
+          ),
+          proc.Event(
+            trigger: spell_plan.ReceivesHeal,
+            other_unit: None,
+            spell:,
+            holder: None,
+          ),
         ]
       }
       CasterChangeStarts(change: HeldChange(..), ..)
@@ -277,6 +287,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
           trigger: spell_plan.SpendsResource,
           other_unit: None,
           spell: None,
+          holder: None,
         ))
       Send(..)
       | Tell(..)
@@ -326,6 +337,7 @@ pub fn hit_events(
       trigger:,
       other_unit: Some(unit_id),
       spell: Some(event_spell(spell:)),
+      holder: None,
     )
   }
   list.flat_map(struck, fn(one) {
@@ -401,6 +413,7 @@ pub fn blow_events(blow blow: BlowTaken) -> List(proc.Event) {
       trigger:,
       other_unit: Some(blow.striker),
       spell: Some(blow.spell),
+      holder: None,
     )
   }
   case blow {
@@ -468,7 +481,7 @@ pub fn proc_draws_needed(cast cast: State) -> #(Int, Int) {
   list.fold(cast.pending, #(0, 0), fn(total, event) {
     list.fold(dict.to_list(cast.procs), total, fn(total, entry) {
       let #(hold, held) = entry
-      case hold.holder == None && held.row.trigger == event.trigger {
+      case fires_for(hold:, held:, event:) {
         True -> {
           let #(words, rolls) = proc.draws_needed(row: held.row)
           #(total.0 + words, total.1 + rolls)
@@ -477,6 +490,18 @@ pub fn proc_draws_needed(cast cast: State) -> #(Int, Int) {
       }
     })
   })
+}
+
+/// Whether the held proc `held`, held as `hold`, is one the event `event` fires: the row waits
+/// for the event's trigger, and the entry is held on the unit the event is of (the caster's own
+/// entry for its own events, the entry for an ally for that ally's). `procs_fire` and
+/// `proc_draws_needed` both ask it, so the entries that fire are the entries that draw.
+pub fn fires_for(
+  hold hold: ProcHold,
+  held held: HeldProc,
+  event event: proc.Event,
+) -> Bool {
+  hold.holder == event.holder && held.row.trigger == event.trigger
 }
 
 /// The units the pending events concern besides the caster, which the event gates read:
@@ -494,12 +519,12 @@ pub fn pending_units(cast cast: State) -> List(Int) {
 pub fn proc_refusal(
   caster caster: Caster,
   row row: spell_plan.ProcRow,
-  holder holder: Holder,
+  holder_spell4_id holder_spell4_id: Spell4Id,
 ) -> Option(Effect) {
   cast_gate.life_refusal(
     kind: "Proc",
     effect_id: row.effect_id,
-    holder_spell4_id: holder.spell.spell4_id,
+    holder_spell4_id:,
     spell: row.spell,
     caster:,
   )

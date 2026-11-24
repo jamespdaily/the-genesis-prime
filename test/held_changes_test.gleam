@@ -16,6 +16,7 @@
 import genesis_prime/game/held_changes.{
   type Held, type Sight, EndsWhenUnseen, KeptWhenUnseen,
 }
+import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_casts.{
   type HeldEffect, CastView, EndsAt, HeldEffect, ViewTarget,
 }
@@ -25,6 +26,7 @@ import genesis_prime/message/spell_target_info
 import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/table/id.{type Spell4Id, Spell4EffectsId, Spell4Id}
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/result
 import owned_test
 import qcheck
@@ -64,6 +66,7 @@ fn held_after(starts starts: List(Start)) -> #(Held, List(Bool)) {
           sight: start.sight,
           spell4_id: any_listing(source: source(cast_id: start.cast_id)).0,
           effect: any_listing(source: source(cast_id: start.cast_id)).1,
+          trigger: None,
         )
       #(held, [started, ..flags])
     })
@@ -138,6 +141,7 @@ pub fn a_source_started_twice_is_held_once_and_each_casters_sources_keep_their_s
       sight: EndsWhenUnseen,
       spell4_id: Spell4Id(spell),
       effect:,
+      trigger: None,
     ).0
   }
   let effect_at = fn(starts, ends) {
@@ -466,6 +470,7 @@ pub fn the_casts_a_player_holds_kept_from_a_caster_unit_and_whether_it_holds_a_c
               cast_id: start.cast_id,
               row: start.row,
             )).1,
+            trigger: None,
           )
         held
       })
@@ -517,6 +522,7 @@ fn held_listed(listed listed: List(Listed)) -> Held {
         starts_ms: one.starts_ms,
         ends: EndsAt(ms: one.ends_ms),
       ),
+      trigger: None,
     ).0
   })
 }
@@ -747,5 +753,130 @@ pub fn the_casts_a_release_leaves_with_no_source_are_named_once_each_in_cast_id_
         #(held, [held_changes.casts_left(held:, released:), ..got])
       })
     assert list.reverse(got) == named as reason
+  })
+}
+
+/// A start of the cast `cast_id` by caster `caster` that waits for `trigger` (none for a
+/// change the player applies), kept when its caster is unseen only when `sight` says so.
+fn waiting(
+  held held: Held,
+  caster caster: Int,
+  cast_id cast_id: Int,
+  trigger trigger: option.Option(spell_plan.Trigger),
+  sight sight: Sight,
+) -> Held {
+  held_changes.started(
+    held:,
+    by: ConnectionId(caster),
+    unit_id: 100 + caster,
+    source: source(cast_id:),
+    sight:,
+    spell4_id: any_listing(source: source(cast_id:)).0,
+    effect: any_listing(source: source(cast_id:)).1,
+    trigger:,
+  ).0
+}
+
+/// What `events_awaited` answers as connection numbers with their triggers.
+fn awaited(held held: Held) -> List(#(Int, List(spell_plan.Trigger))) {
+  list.map(held_changes.events_awaited(held:), fn(waiting) {
+    #(number_of(by: waiting.0), waiting.1)
+  })
+}
+
+pub fn events_awaited_name_each_caster_that_holds_a_proc_source_once_with_the_triggers_it_waits_for_in_start_order_and_none_after_a_release_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Caster 1 waits for TakesDamage (cast 1, kept when unseen), SuffersCritical (cast 3) and
+  // TakesDamage again (cast 5); caster 2 for DeflectsAttack (cast 2, ends when unseen); caster
+  // 3 holds a source it applies (cast 4) and waits for nothing. The ledger names each waiting
+  // caster once in the order its first source started, with its triggers in start order, each
+  // once.
+  let ledger =
+    held_changes.new()
+    |> waiting(
+      caster: 1,
+      cast_id: 1,
+      trigger: Some(spell_plan.TakesDamage),
+      sight: KeptWhenUnseen,
+    )
+    |> waiting(
+      caster: 2,
+      cast_id: 2,
+      trigger: Some(spell_plan.DeflectsAttack),
+      sight: EndsWhenUnseen,
+    )
+    |> waiting(
+      caster: 1,
+      cast_id: 3,
+      trigger: Some(spell_plan.SuffersCritical),
+      sight: KeptWhenUnseen,
+    )
+    |> waiting(caster: 3, cast_id: 4, trigger: None, sight: EndsWhenUnseen)
+    |> waiting(
+      caster: 1,
+      cast_id: 5,
+      trigger: Some(spell_plan.TakesDamage),
+      sight: KeptWhenUnseen,
+    )
+  let everyone = [
+    #(1, [spell_plan.TakesDamage, spell_plan.SuffersCritical]),
+    #(2, [spell_plan.DeflectsAttack]),
+  ]
+  assert awaited(held: ledger) == everyone
+    as "each waiting caster once in the order its first source started, its triggers in start order and each once, and the caster that applies its change not at all"
+  // The same source told again by its holder keeps the trigger it waits for, and told by
+  // another connection changes nothing.
+  let told_again =
+    ledger
+    |> waiting(caster: 1, cast_id: 1, trigger: None, sight: KeptWhenUnseen)
+    |> waiting(
+      caster: 2,
+      cast_id: 1,
+      trigger: Some(spell_plan.DeflectsAttack),
+      sight: KeptWhenUnseen,
+    )
+  assert awaited(held: told_again) == everyone
+    as "a source told again keeps the trigger of its first start, and another caster's start of it is refused"
+  let rows = [
+    #(
+      "a released source is no longer awaited, and its caster keeps the others, now after caster 2 whose source started before its first remaining one",
+      fn(held) {
+        let assert Ok(#(held, _)) =
+          held_changes.released(held:, source: source(cast_id: 1))
+        held
+      },
+      [
+        #(2, [spell_plan.DeflectsAttack]),
+        #(1, [spell_plan.SuffersCritical, spell_plan.TakesDamage]),
+      ],
+    ),
+    #(
+      "the sources of a caster no longer seen that end when it is unseen are not awaited, and a source kept when unseen stays awaited",
+      fn(held) {
+        let #(held, _) =
+          held_changes.released_unseen(held:, by: ConnectionId(2))
+        held_changes.released_unseen(held:, by: ConnectionId(1)).0
+      },
+      [#(1, [spell_plan.TakesDamage, spell_plan.SuffersCritical])],
+    ),
+    #(
+      "a caster's unit gone takes every source of it, kept when unseen or not",
+      fn(held) { held_changes.released_with_unit(held:, unit_id: 101).0 },
+      [#(2, [spell_plan.DeflectsAttack])],
+    ),
+    #(
+      "a caster's connection ending takes every source of it",
+      fn(held) { held_changes.released_by(held:, by: ConnectionId(2)).0 },
+      [#(1, [spell_plan.TakesDamage, spell_plan.SuffersCritical])],
+    ),
+    #(
+      "the holder's death starts a ledger of nothing",
+      fn(_) { held_changes.new() },
+      [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, release, remaining) = row
+    assert awaited(held: release(ledger)) == remaining as reason
   })
 }

@@ -62,7 +62,7 @@ fn row() -> spell_plan.ProcRow {
 }
 
 fn event(spell spell: Option(EventSpell)) -> proc.Event {
-  proc.Event(trigger: LandsHit, other_unit: Some(struck), spell:)
+  proc.Event(trigger: LandsHit, other_unit: Some(struck), spell:, holder: None)
 }
 
 fn spell_of(spell4_id spell4_id: Int, groups groups: List(Int)) -> EventSpell {
@@ -305,7 +305,12 @@ pub fn a_bit_4_proc_fires_at_the_other_unit_and_one_without_at_the_holder_test()
       row: ProcRow(..row(), aim: AtOtherUnit),
       fires_ms: [],
       now_ms: 0,
-      event: proc.Event(trigger: LandsHit, other_unit: None, spell: None),
+      event: proc.Event(
+        trigger: LandsHit,
+        other_unit: None,
+        spell: None,
+        holder: None,
+      ),
       draw: None,
     )
     == Fires(at: holder, delay_ms: 0)

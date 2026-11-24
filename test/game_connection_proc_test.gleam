@@ -21,12 +21,22 @@ import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, CastStarted, PeerNews,
+  type Answer, type Message, type Request, CastStarted, Continue, PeerNews,
 }
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/held_changes
 import genesis_prime/game/hit
+import genesis_prime/game/lasting
+import genesis_prime/game/player_address.{PlayerAddress}
+import genesis_prime/game/proc
+import genesis_prime/game/shown
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_properties.{Source}
+import genesis_prime/game/world_entry
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
@@ -34,19 +44,24 @@ import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/random
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, LogWarning, OwnEvent,
+  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
+  LogWarning, Now, OwnEvent,
 }
-import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/map
+import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/string
+import map_support
 import owned_test
 import planted_table
+import player_state_support
 import spawn_support
 import unitest
+import world_entry_support
 
 /// A press of the bag index at this monotonic time, as the client sends it.
 fn pressed(
@@ -898,4 +913,209 @@ pub fn a_proc_due_timer_starts_the_delayed_cast_test() -> Nil {
   let #(_, due) = connection_support.fired_at(state:, timer: proc_due, ms: 2400)
   assert started_count(taken: due, spell4_id: 63_366) == 1
     as "the timer's firing casts 63366 once, as an ordinary cast"
+}
+
+/// The ally the caster holds Healing Salve's allies' row on: unit 40 of connection 2 in the
+/// stay `map_support` gives it.
+const ally_unit = 40
+
+/// A caster in the world that holds Proc row 86457 on the ally (Healing Salve's allies' row:
+/// Spell4 39386, kind 16, once or twice in 2000 ms as `limit_count` says, casting Spell4 39127)
+/// for the cast `cast_id`, with the ally among its viewers and its picture, and the row's
+/// chance `chance`. Only the change on the ally is held, as the cast holds it when the
+/// ally's node is gone.
+fn caster_holding_an_ally_proc(
+  chance chance: Float,
+  limit_count limit_count: Int,
+) -> state.Session {
+  let entered = world_entry_support.entered_after(clock_origin_ms: 600)
+  let source =
+    Source(cast_id: 2_147_500_000, effect_id: Spell4EffectsId(86_457))
+  let address =
+    PlayerAddress(
+      connection: ConnectionId(2),
+      unit_id: ally_unit,
+      stay: map_support.stay(count: 2),
+    )
+  let row =
+    spell_plan.ProcRow(
+      ..cast_support.held_proc_row(
+        id: 86_457,
+        holder: spell_plan.HeldByAreaAllies,
+        row: lasting.LastingRow(
+          delay_ms: 0,
+          duration_ms: 12_000,
+          until_removed: False,
+        ),
+      ),
+      chance:,
+      limit: spell_plan.InWindow(window_ms: 2000, count: limit_count),
+    )
+  let cast =
+    cast_state.State(
+      ..entered.cast,
+      procs: dict.from_list([
+        #(
+          cast_state.ProcHold(source:, holder: Some(ally_unit)),
+          cast_state.HeldProc(row:, fires_ms: []),
+        ),
+      ]),
+      on_units: dict.from_list([
+        #(source.cast_id, [
+          cast_state.HeldOnPlayer(
+            source:,
+            address:,
+            sight: held_changes.KeptWhenUnseen,
+            spell4_id: Spell4Id(39_386),
+            stack: row.spell.stack,
+            started_ms: 1000,
+          ),
+        ]),
+      ]),
+    )
+  connection_support.session_in(status: state.InWorld(
+    holder: connection_support.holder(),
+    entered: world_entry.Entered(
+      ..entered,
+      cast:,
+      viewers: dict.from_list([
+        #(
+          ConnectionId(2),
+          player_address.Viewer(stay: address.stay, unit_id: ally_unit),
+        ),
+      ]),
+      shown: dict.insert(
+        entered.shown,
+        ally_unit,
+        shown.ShownPlayer(state: player_state_support.a_player()),
+      ),
+    ),
+  ))
+}
+
+/// The event an ally's connection tells of a creature's blow on it, `blows` times in one tell.
+fn ally_blow_tell(blows blows: Int) -> strike_tell.PlayerEvent {
+  strike_tell.PlayerEvent(
+    unit_id: ally_unit,
+    events: list.repeat(
+      proc.Event(
+        trigger: spell_plan.TakesDamage,
+        other_unit: Some(31),
+        spell: Some(proc.EventSpell(
+          spell4_id: Spell4Id(5649),
+          groups: [6, 9, 134, 333],
+          school: 1,
+        )),
+        holder: None,
+      ),
+      blows,
+    ),
+  )
+}
+
+/// The times the caster's entry for the ally has fired, and the Spell4 ids of the casts the
+/// caster has live.
+fn fires_and_casts(session session: state.Session) -> #(List(Int), List(Int)) {
+  let assert Some(entered) = state.entered_of(session.status)
+    as "the caster is in the world"
+  let assert [fired] = dict.values(entered.cast.procs)
+    as "the caster holds one entry"
+  #(
+    fired.fires_ms,
+    list.map(dict.values(entered.cast.casts), fn(live) {
+      live.spell.spell4_id.value
+    })
+      |> list.sort(int.compare),
+  )
+}
+
+pub fn a_tell_of_an_allys_event_draws_its_chance_words_from_the_casters_seed_and_fires_the_entries_whose_word_is_below_the_chance_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The session's seed gives the words: a tell draws what its events need in one draw (a block
+  // of the seed), and a word fires a chance proc when its fraction is below the chance
+  // (`random.fraction`). One tell of two events draws two words, the first event's first, and
+  // a later tell of one event draws one word from the next block. The chance
+  // between the lowest and the middle of the three fractions fires exactly the event whose
+  // word is the lowest, and the chance between the middle and the highest the two lowest, so a
+  // word taken for the wrong event, a repeated word or a word not drawn at all changes who
+  // fires.
+  let source = random.new(seed: <<1>>)
+  let #(source, two_words) = random.bytes(source, 8)
+  let #(_, one_word) = random.bytes(source, 4)
+  let assert [first, second] = random.words(bytes: two_words)
+  let assert [third] = random.words(bytes: one_word)
+  let #(first, second, third) = #(
+    random.fraction(first),
+    random.fraction(second),
+    random.fraction(third),
+  )
+  let ordered = list.sort([first, second, third], float.compare)
+  let assert [lowest, middle, highest] = ordered
+  assert middle -. lowest >. 0.01 && highest -. middle >. 0.01
+    as "the seed's three words are told apart by a chance between them"
+  let rows = [
+    #(
+      "a chance between the lowest and the middle fraction",
+      { lowest +. middle } /. 2.0,
+    ),
+    #(
+      "a chance between the middle and the highest fraction",
+      { middle +. highest } /. 2.0,
+    ),
+    #(
+      "a chance above both words of the first tell",
+      { float.max(first, second) +. 1.0 } /. 2.0,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, chance) = row
+    let session = caster_holding_an_ally_proc(chance:, limit_count: 2)
+    let assert state.InWorld(entered:, ..) = session.status
+    let assert Continue(session, _) =
+      casting.ally_event_taken(
+        session:,
+        now: Now(monotonic_ms: 1500, filetime: 0),
+        entered:,
+        event: ally_blow_tell(blows: 2),
+      )
+    let below = fn(fraction) { fraction <. chance }
+    let fired_by_the_first_tell =
+      list.filter([first, second], below) |> list.map(fn(_) { 1500 })
+    assert fires_and_casts(session:).0 == fired_by_the_first_tell
+      as {
+        reason
+        <> ": the first tell's two events take the first two words in order"
+      }
+    let assert Some(entered) = state.entered_of(session.status)
+    let assert Continue(session, _) =
+      casting.ally_event_taken(
+        session:,
+        now: Now(monotonic_ms: 5000, filetime: 0),
+        entered:,
+        event: ally_blow_tell(blows: 1),
+      )
+    // A fire at 5000 leaves only itself in the 2000 ms window.
+    assert fires_and_casts(session:).0
+      == case below(third) {
+        True -> [5000]
+        False -> fired_by_the_first_tell
+      }
+      as { reason <> ": the second tell takes the third word" }
+  })
+  // A tell for an ally the caster holds no entry for draws nothing and fires nothing.
+  let session = caster_holding_an_ally_proc(chance: 0.5, limit_count: 2)
+  let assert state.InWorld(entered:, ..) = session.status
+  let assert Continue(after, effects) =
+    casting.ally_event_taken(
+      session:,
+      now: Now(monotonic_ms: 1500, filetime: 0),
+      entered:,
+      event: strike_tell.PlayerEvent(..ally_blow_tell(blows: 1), unit_id: 99),
+    )
+  assert fires_and_casts(session: after) == #([], [])
+    as "an event of another unit fires no entry"
+  assert effects == [] as "and writes nothing"
+  assert client_connection.draw(after.link, 4).1
+    == client_connection.draw(session.link, 4).1
+    as "and draws nothing from the seed"
 }

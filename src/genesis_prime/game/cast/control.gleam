@@ -818,7 +818,7 @@ fn modifier_armed(
               effect_id: row.effect_id,
               life: row.row,
               address:,
-              change: held_changes.Property(modifier:),
+              change: held_changes.Applies(held_changes.Property(modifier:)),
               spell:,
               started_ms:,
               now_ms:,
@@ -852,7 +852,7 @@ fn modifier_armed(
               effect_id: row.effect_id,
               life: row.row,
               address:,
-              change: held_changes.Property(modifier:),
+              change: held_changes.Applies(held_changes.Property(modifier:)),
               spell:,
               started_ms:,
               now_ms:,
@@ -896,7 +896,7 @@ fn modifier_armed(
               effect_id: row.effect_id,
               life: row.row,
               address:,
-              change: pool,
+              change: held_changes.Applies(pool),
               spell:,
               started_ms:,
               now_ms:,
@@ -917,7 +917,7 @@ fn modifier_armed(
 
 /// A Proc row a go reached on a unit: the caster's own row is held by the caster itself
 /// (`cast_proc.procs_held`), and a row on another player is told to that player as a change that
-/// applies nothing (`held_changes.Watches`) with an end of its own, and held by the caster for
+/// applies nothing (`held_changes.Awaits`) with an end of its own, and held by the caster for
 /// that player. A later go of the cast keeps the fires of the entry it holds.
 fn proc_armed(
   cast cast: State,
@@ -940,7 +940,7 @@ fn proc_armed(
           effect_id: row.effect_id,
           life: row.row,
           address:,
-          change: held_changes.Watches(trigger: row.trigger),
+          change: held_changes.Awaits(trigger: row.trigger),
           spell:,
           started_ms:,
           now_ms:,
@@ -1036,7 +1036,7 @@ fn player_change_armed(
   effect_id effect_id: Spell4EffectsId,
   life life: lasting.LastingRow,
   address address: PlayerAddress,
-  change change: held_changes.Change,
+  change change: held_changes.Told,
   spell spell: Spell,
   started_ms started_ms: Int,
   now_ms now_ms: Int,

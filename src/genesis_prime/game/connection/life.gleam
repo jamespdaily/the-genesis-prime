@@ -337,7 +337,9 @@ pub fn carried(
 /// creature's unit and attack spell with what the blow did (`player_life.Took`). The spell's
 /// groups and school come from the tables; a spell they cannot be read for is logged and its
 /// procs skipped, while the blow still breaks stealth as it lowers something. A blow of a player
-/// is not one the proc kinds of blows taken read, and tells the cast nothing.
+/// is not one the proc kinds of blows taken read, and tells the cast nothing. After the player's
+/// own procs the blow's events go to the casters that hold a Proc row on the player
+/// (`landing.events_told`).
 fn blow_carried(
   session session: Session,
   now now: Now,
@@ -360,14 +362,21 @@ fn blow_carried(
               groups: facts.groups,
               school: facts.school,
             )
-          cast_carried(
-            session:,
-            now:,
-            taken: cast.blow_taken(
-              cast: entered.cast,
-              caster:,
+          let blow = blow_of(striker: unit_id, spell:, took:)
+          let #(session, own) =
+            cast_carried(
+              session:,
               now:,
-              blow: blow_of(striker: unit_id, spell:, took:),
+              taken: cast.blow_taken(cast: entered.cast, caster:, now:, blow:),
+            )
+          #(
+            session,
+            list.append(
+              own,
+              connection_landing.events_told(
+                entered:,
+                events: cast_proc.blow_events(blow:),
+              ),
             ),
           )
         }

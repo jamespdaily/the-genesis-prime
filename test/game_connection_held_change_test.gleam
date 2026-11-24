@@ -36,9 +36,11 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/held_changes.{
-  type Change, type PlayerChange, type Sight, EndsWhenUnseen, KeptWhenUnseen,
+  type PlayerChange, type Sight, type Told, EndsWhenUnseen, KeptWhenUnseen,
   PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
 }
+import genesis_prime/game/hit
+import genesis_prime/game/proc
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
@@ -67,11 +69,14 @@ import genesis_prime/table/id.{
   type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/map
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/set
 import owned_test
+import place_support
+import spawn_support
 import world_entry_support
 
 /// UnitProperty2 161's default, 1.0, and the value row 203798 gives it, 0.86f.
@@ -80,27 +85,29 @@ const one_bits = 0x3F800000
 const armored_bits = 1_062_836_634
 
 /// The modifier of row 203798.
-fn armor() -> Change {
+fn armor() -> Told {
   let assert Ok(multiplier) = float32.of_column(armored_bits)
     as "dataBits02 of row 203798 is a finite float"
-  held_changes.Property(Change(
-    property: UnitProperty2Id(161),
-    mode: 3,
-    multiplier:,
-    flat: 0.0,
-    per_level: 0.0,
-  ))
+  held_changes.Applies(
+    held_changes.Property(Change(
+      property: UnitProperty2Id(161),
+      mode: 3,
+      multiplier:,
+      flat: 0.0,
+      per_level: 0.0,
+    )),
+  )
 }
 
 /// The pool of an absorb row, `amount` taking every damage type (mask 7, row 62024).
-fn pool(amount amount: Int) -> Change {
-  held_changes.Absorb(amount:, mask: 7)
+fn pool(amount amount: Int) -> Told {
+  held_changes.Applies(held_changes.Absorb(amount:, mask: 7))
 }
 
 /// The Proc row 86457 a caster holds on the player (Healing Salve's allies' row, kind 16 takes
 /// damage, Spell4 39386, 12 000 ms): the player applies nothing of it.
-fn watches() -> Change {
-  held_changes.Watches(trigger: spell_plan.TakesDamage)
+fn watches() -> Told {
+  held_changes.Awaits(trigger: spell_plan.TakesDamage)
 }
 
 fn watch_source(cast_id cast_id: Int) -> Source {
@@ -137,14 +144,16 @@ fn armor_entry(value value: Int) -> UnitProperty {
 
 /// The Interrupt Armor row 199192 (`table_rows -- Spell4Effects 199192`): +1 flat on property
 /// 44, the armor's maximum (default 0.0), for 5000 ms.
-fn interrupt_armor() -> Change {
-  held_changes.Property(unit_properties.Change(
-    property: unit_properties.interrupt_armor_threshold,
-    mode: 0,
-    multiplier: 1.0,
-    flat: 1.0,
-    per_level: 0.0,
-  ))
+fn interrupt_armor() -> Told {
+  held_changes.Applies(
+    held_changes.Property(unit_properties.Change(
+      property: unit_properties.interrupt_armor_threshold,
+      mode: 0,
+      multiplier: 1.0,
+      flat: 1.0,
+      per_level: 0.0,
+    )),
+  )
 }
 
 fn interrupt_armor_source(cast_id cast_id: Int) -> Source {
@@ -165,7 +174,7 @@ type Hold {
   Hold(
     caster: Int,
     source: Source,
-    change: Change,
+    change: Told,
     sight: Sight,
     spell4_id: Spell4Id,
     effect: HeldEffect,
@@ -186,7 +195,7 @@ fn effect_of(source source: Source) -> HeldEffect {
 fn held(
   caster caster: Int,
   source source: Source,
-  change change: Change,
+  change change: Told,
 ) -> Hold {
   Hold(
     caster:,
@@ -986,6 +995,7 @@ pub fn the_allys_ledger_clears_every_caster_at_its_death_test() -> Nil {
             sight: hold.sight,
             spell4_id: hold.spell4_id,
             effect: hold.effect,
+            trigger: None,
           ).0
         }),
       )
@@ -1946,4 +1956,237 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
         }
     },
   )
+}
+
+/// What the player's connection tells casters of a blow on it: each `PlayerTell.Event` a step
+/// sends, as the caster's connection number, the stay it is told for and the tell.
+fn events_told(
+  taken taken: ConnectionStep(Request),
+) -> List(#(Int, Stay, strike_tell.PlayerEvent)) {
+  list.filter_map(support.tells(taken), fn(told) {
+    case told {
+      #(
+        step.Connection(connection: ConnectionId(caster)),
+        client_connection.TellPlayer(
+          stay:,
+          tell: client_connection.Event(event:),
+        ),
+      ) -> Ok(#(caster, stay, event))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The Proc row `trigger` that caster `caster`'s cast `cast_id` holds on the player, kept when
+/// the caster is unseen as Healing Salve's is.
+fn waits(
+  caster caster: Int,
+  cast_id cast_id: Int,
+  trigger trigger: spell_plan.Trigger,
+) -> Hold {
+  Hold(..watch_hold(cast_id:), caster:, change: held_changes.Awaits(trigger:))
+}
+
+/// A creature's strike on the player of the Beast's attack Spell4 5649, each blow dealing
+/// `damage`.
+fn beast_blow(
+  damage damage: Int,
+) -> fn(game_connection.State) -> ConnectionStep(Request) {
+  fn(state) {
+    support.feed(
+      state:,
+      event: support.a_strike_of(
+        striker: spawn_support.beast_striker(),
+        offence: spawn_support.dealing(
+          offence: spawn_support.beast_attack().offence,
+          damage:,
+        ),
+        unit_id: support.own_unit_id,
+      ),
+    ).1
+  }
+}
+
+/// The event of a creature's blow that lowered the player's shield or health, as the Beast's
+/// attack Spell4 5649 raises it: the Beast 7 as the other unit, and the spell's groups 6, 9,
+/// 134 and 333 (Spell4GroupList 657) and school 1 (Spell4Base 4947), read with
+/// `table_rows -- Spell4 5649`, `Spell4GroupList 657` and `Spell4Base 4947`.
+fn beast_takes_damage() -> proc.Event {
+  proc.Event(
+    trigger: spell_plan.TakesDamage,
+    other_unit: Some(7),
+    spell: Some(proc.EventSpell(
+      spell4_id: Spell4Id(5649),
+      groups: [6, 9, 134, 333],
+      school: 1,
+    )),
+    holder: None,
+  )
+}
+
+/// The tell of `events` caster `caster` is sent for the player, as the caster's stay names it.
+fn told_to(
+  caster caster: Int,
+  events events: List(proc.Event),
+) -> #(Int, Stay, strike_tell.PlayerEvent) {
+  #(
+    caster,
+    support.viewer_stay(caster),
+    strike_tell.PlayerEvent(unit_id: support.own_unit_id, events:),
+  )
+}
+
+pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_events_it_waits_for_and_a_lethal_blow_tells_none_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let a_players_blow = fn(state) {
+    support.feed(
+      state:,
+      event: support.a_strike_of(
+        striker: strike_tell.PlayerStriker(
+          unit_id: 9,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: 5967,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+          ),
+          seq: 1,
+          stay: support.viewer_stay(9),
+          hit_radius: place_support.player_hit_radius,
+          rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+        ),
+        offence: spawn_support.beast_attack().offence,
+        unit_id: support.own_unit_id,
+      ),
+    ).1
+  }
+  let the_tables_lack_the_spell = fn(state) {
+    support.feed(
+      state:,
+      event: support.a_strike_of(
+        striker: strike_tell.CreatureStriker(
+          unit_id: 7,
+          spell4_id: Spell4Id(99_999_999),
+        ),
+        offence: spawn_support.beast_attack().offence,
+        unit_id: support.own_unit_id,
+      ),
+    ).1
+  }
+  let a_lethal_blow = fn(state) { support.killed(state).1 }
+  let casters_three_and_two = [
+    waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage),
+    waits(caster: 2, cast_id: 104, trigger: spell_plan.TakesDamage),
+  ]
+  // The holds, the player's blow-taking step, the tells to casters it sends in order, and
+  // the warnings it writes.
+  let rows = [
+    #(
+      "a landed blow that lowered health tells the caster that waits for TakesDamage: its stay, the player's unit and the one event",
+      [waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage)],
+      beast_blow(damage: 12),
+      [told_to(caster: 3, events: [beast_takes_damage()])],
+      0,
+    ),
+    #(
+      "two casters that wait for it get a tell each, in the order their sources started",
+      casters_three_and_two,
+      beast_blow(damage: 12),
+      [
+        told_to(caster: 3, events: [beast_takes_damage()]),
+        told_to(caster: 2, events: [beast_takes_damage()]),
+      ],
+      0,
+    ),
+    #(
+      "a caster that waits for another event is told nothing of a blow that raises none of it",
+      [waits(caster: 3, cast_id: 103, trigger: spell_plan.DeflectsAttack)],
+      beast_blow(damage: 12),
+      [],
+      0,
+    ),
+    #(
+      "a blow that lowered nothing and was no critical raises nothing to tell",
+      casters_three_and_two,
+      beast_blow(damage: 0),
+      [],
+      0,
+    ),
+    #(
+      "a blow of a player is not a creature's blow: nothing is told",
+      casters_three_and_two,
+      a_players_blow,
+      [],
+      0,
+    ),
+    #(
+      "an attack Spell4 the tables cannot read tells nothing and the procs of the blow are logged as skipped",
+      casters_three_and_two,
+      the_tables_lack_the_spell,
+      [],
+      1,
+    ),
+    #(
+      "a lethal blow: the player is dead when its blow is carried, before the death clears the ledger, so no caster is told",
+      casters_three_and_two,
+      a_lethal_blow,
+      [],
+      0,
+    ),
+    #(
+      "a player that holds no Proc source tells nobody",
+      [],
+      beast_blow(damage: 12),
+      [],
+      0,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, holds, blow, told, warnings) = row
+    let taken = blow(holding(holds:))
+    assert events_told(taken:) == told as reason
+    assert list.length(rule_support.logs_of(step: taken, level: step.LogWarning))
+      == warnings
+      as reason
+  })
+  // A tell adds nothing else: the blow's other effects are those of the same blow on a
+  // player that holds nothing.
+  let without_tells = fn(taken) {
+    list.filter(rule_support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(
+          request: client_connection.TellPlayer(
+            tell: client_connection.Event(..),
+            ..,
+          ),
+          ..,
+        )) -> False
+        _ -> True
+      }
+    })
+  }
+  assert without_tells(
+      beast_blow(damage: 12)(holding(holds: casters_three_and_two)),
+    )
+    == without_tells(beast_blow(damage: 12)(holding(holds: [])))
+    as "the blow's other effects do not depend on what the player holds"
+  // A caster that is not among the player's viewers is told nothing, and its source stays: it
+  // is told again once it is back among the viewers.
+  let gone =
+    support.feed(
+      state: holding(holds: [
+        waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage),
+      ]),
+      event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(3))),
+    ).0
+  assert events_told(taken: beast_blow(damage: 12)(gone)) == []
+    as "a caster the player no longer sees is not told, though its source of a spell with propertyFlags 0x100 is kept"
+  assert events_told(
+      taken: beast_blow(damage: 12)(
+        support.watched_by(state: gone, viewers: [3]),
+      ),
+    )
+    == [told_to(caster: 3, events: [beast_takes_damage()])]
+    as "the kept source is awaited again when the caster is back among the viewers"
 }

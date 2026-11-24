@@ -2100,7 +2100,7 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
           from: ConnectionId(3),
           from_stay: game_connection_support.viewer_stay(3),
           source: kept_source,
-          change: held_changes.Absorb(amount: 300, mask: 7),
+          change: held_changes.Applies(held_changes.Absorb(amount: 300, mask: 7)),
           sight: held_changes.KeptWhenUnseen,
           spell4_id: Spell4Id(32_823),
           effect: unit_casts.HeldEffect(

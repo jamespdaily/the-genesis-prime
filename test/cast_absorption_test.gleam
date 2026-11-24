@@ -97,8 +97,7 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
         Ok(#(start.0, amount, mask))
       cast_state.HeldChange(held_changes.Property(..))
       | cast_state.Heal(..)
-      | cast_state.Look(..)
-      | cast_state.HeldChange(held_changes.Watches(..)) -> Error(Nil)
+      | cast_state.Look(..) -> Error(Nil)
     }
   })
 }

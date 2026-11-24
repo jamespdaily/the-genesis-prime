@@ -25,6 +25,7 @@ import attacker_support
 import cast_support as support
 import client_tables
 import genesis_prime/game/activate
+import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate
 import genesis_prime/game/cast/proc as cast_proc
@@ -291,7 +292,7 @@ fn pool_starts(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: absorb_id),
-    change: held_changes.Absorb(amount: 139, mask: 7),
+    change: held_changes.Applies(held_changes.Absorb(amount: 139, mask: 7)),
     sight:,
     spell4_id: Spell4Id(54_806),
     effect: held_effect_of_armor(effect_id: absorb_id, go_ms:),
@@ -313,7 +314,7 @@ fn armor_starts(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: modifier_id),
-    change: held_changes.Property(modifier:),
+    change: held_changes.Applies(held_changes.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(54_806),
     effect: held_effect_of_armor(effect_id: modifier_id, go_ms:),
@@ -2202,7 +2203,9 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
           _ -> Error(Nil)
         }
       })
-      == list.map(row.told, fn(change) { #(ally, change.0, change.1, change.2) })
+      == list.map(row.told, fn(change) {
+        #(ally, change.0, held_changes.Applies(change.1), change.2)
+      })
       as { row.why <> ": the changes told to the ally" }
     assert list.filter_map(support.goes_in(effects: went), fn(go) {
         case go.cast_id == child_id {
@@ -2688,7 +2691,7 @@ fn pool_changed(
     cast_state.OtherPlayerChangeStarts(
       address:,
       source:,
-      change: held_changes.Absorb(amount:, ..),
+      change: held_changes.Applies(held_changes.Absorb(amount:, ..)),
       ..,
     )
       if address.unit_id == ally
@@ -3135,6 +3138,7 @@ fn ledger_told(effects effects: List(Effect)) -> held_changes.Held {
           sight:,
           spell4_id:,
           effect:,
+          trigger: None,
         ).0
       _ -> held
     }
@@ -3661,7 +3665,7 @@ fn barrier_change_of(
   cast_state.OtherPlayerChangeStarts(
     address: PlayerAddress(..address(), unit_id:),
     source: source_of(cast_id:, effect_id: barrier_row),
-    change: held_changes.Property(modifier:),
+    change: held_changes.Applies(held_changes.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(41_369),
     effect: unit_casts.HeldEffect(
@@ -3972,7 +3976,7 @@ fn auger_change_of(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: auger_row),
-    change: held_changes.Property(modifier:),
+    change: held_changes.Applies(held_changes.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(82_830),
     effect: unit_casts.HeldEffect(
@@ -4243,7 +4247,7 @@ fn watch_starts(
   cast_state.OtherPlayerChangeStarts(
     address: PlayerAddress(..address(), unit_id:),
     source: source_of(cast_id:, effect_id:),
-    change: held_changes.Watches(trigger: spell_plan.TakesDamage),
+    change: held_changes.Awaits(trigger: spell_plan.TakesDamage),
     sight: held_changes.KeptWhenUnseen,
     spell4_id: Spell4Id(spell4_id),
     effect: unit_casts.HeldEffect(
@@ -4728,4 +4732,619 @@ pub fn the_caster_drops_the_proc_it_holds_on_an_ally_where_the_change_on_that_al
       #(second_id, salve_own_row, None),
     ]
     as "and the second cast holds both"
+}
+
+/// Sentinel's Proc row 139830 as the tables give it and `sentinel_shaped` leaves it unread: aimed
+/// at the other unit of the event (aim bits 12), for a spell in the group 333, 10 times in 250 ms,
+/// casting Spell4 54400 (`table_rows -- Spell4Effects 139830`).
+fn sentinel_firing() -> Spell {
+  let modifier =
+    spell_plan.PropertyModifier(
+      ..support.armor_modifier_row(
+        id: sentinel_modifier_row,
+        aim: spell_plan.AimsAtPrimaryTarget,
+      ),
+      row: lasting_for(duration_ms: 18_000),
+    )
+  let proc =
+    spell_plan.ProcRow(
+      ..support.held_proc_row(
+        id: sentinel_proc_row,
+        holder: spell_plan.HeldByPrimaryTarget,
+        row: lasting_for(duration_ms: 18_000),
+      ),
+      aim: spell_plan.AtOtherUnit,
+      spell: support.child(spell4_id: 54_400, base: 54_400),
+      limit: spell_plan.InWindow(window_ms: 250, count: 10),
+      filter: spell_plan.InGroup(group_id: 333),
+    )
+  Spell(
+    ..support.with_effects(spell: support.armor_spell(rows: []), kinds: [
+      spell_plan.ModifierEffect(modifier:),
+      spell_plan.ProcEffect(proc:),
+    ]),
+    spell4_id: Spell4Id(58_432),
+    outlives_caster: True,
+  )
+}
+
+/// A creature's blow event on the ally, as the ally's connection tells it: `TakesDamage` by the
+/// creature 31 with an attack spell of the groups `groups`.
+fn creature_blow(groups groups: List(Int)) -> event_proc.Event {
+  event_proc.Event(
+    trigger: spell_plan.TakesDamage,
+    other_unit: Some(31),
+    spell: Some(event_proc.EventSpell(
+      spell4_id: Spell4Id(5649),
+      groups:,
+      school: 1,
+    )),
+    holder: None,
+  )
+}
+
+/// What the caster is told at one time: the events with the ally each is the event of (none
+/// for the caster's own), the units its picture shows (the poses a gate and the striker's guard
+/// read), and the chance words it draws in the order its entries are matched.
+type Raised {
+  Raised(
+    at_ms: Int,
+    events: List(#(option.Option(Int), event_proc.Event)),
+    shown: List(Int),
+    words: List(Int),
+  )
+}
+
+/// What a scene's passes came to, in order: each 0x7ff of the fired spell as (time, primary
+/// target, root, parent), the named player of each child cast it started, the number of words
+/// each pass needed, the fires each held entry counts as (effect id, holder, times), and each
+/// log the passes wrote as (level, text).
+type Fired {
+  Fired(
+    started: List(#(Int, Int, Int, Int)),
+    named: List(option.Option(Int)),
+    words_needed: List(Int),
+    fires: List(#(Int, option.Option(Int), List(Int))),
+    logs: List(#(step.LogLevel, String)),
+  )
+}
+
+/// The caster's passes over `raised` in order, for a caster who sees `sees` and whose cast `state`
+/// the press and its go left: the events pending, the words drawn for them, the fires matched
+/// (`cast.procs_fire`); the children each fire started are not run.
+fn ally_events_fired(
+  state state: State,
+  sees sees: List(Int),
+  raised raised: List(Raised),
+  fired_spell4_id fired_spell4_id: Int,
+) -> #(State, Fired) {
+  let caster = esper_seeing(players: sees)
+  let #(state, effects, started, words_needed) =
+    list.fold(raised, #(state, [], [], []), fn(so_far, one) {
+      let #(state, effects, started, words_needed) = so_far
+      let state =
+        list.fold(one.events, state, fn(state, event) {
+          case event.0 {
+            Some(unit_id) ->
+              cast.ally_events_raised(cast: state, unit_id:, events: [event.1])
+            None ->
+              cast_state.State(
+                ..state,
+                pending: list.append(state.pending, [event.1]),
+              )
+          }
+        })
+      let #(words, _) = cast_proc.proc_draws_needed(cast: state)
+      let #(state, more) =
+        support.then_procs_known(
+          step: #(state, []),
+          caster:,
+          at: one.at_ms,
+          poses: dict.from_list(
+            list.map(one.shown, fn(unit_id) {
+              #(unit_id, area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0))
+            }),
+          ),
+          units: dict.new(),
+          drawn: Some(#(one.words, [])),
+        )
+      let starts =
+        list.filter_map(support.started_in(effects: more), fn(start) {
+          case start.spell4_id == fired_spell4_id {
+            True ->
+              Ok(#(
+                one.at_ms,
+                start.primary_target_unit_id,
+                start.root_spell4_id,
+                start.parent_spell4_id,
+              ))
+            False -> Error(Nil)
+          }
+        })
+      #(state, list.append(effects, more), list.append(started, starts), [
+        words,
+        ..words_needed
+      ])
+    })
+  #(
+    state,
+    Fired(
+      started:,
+      named: list.filter_map(dict.to_list(state.casts), fn(entry) {
+        case { entry.1 }.spell.spell4_id.value == fired_spell4_id {
+          True -> Ok({ entry.1 }.named_player)
+          False -> Error(Nil)
+        }
+      }),
+      words_needed: list.reverse(words_needed),
+      fires: dict.to_list(state.procs)
+        |> list.map(fn(entry) {
+          #(
+            { entry.0 }.source.effect_id.value,
+            { entry.0 }.holder,
+            { entry.1 }.fires_ms,
+          )
+        })
+        |> list.sort(fn(first, second) {
+          int.compare(
+            first.0 * 1000 + option.unwrap(first.1, 0),
+            second.0 * 1000 + option.unwrap(second.1, 0),
+          )
+        }),
+      logs: list.filter_map(effects, fn(effect) {
+        case effect {
+          cast_state.Log(level:, text:) -> Ok(#(level, text))
+          _ -> Error(Nil)
+        }
+      }),
+    ),
+  )
+}
+
+/// One scene of the ally events the caster takes: the press and its go (`pressed_with_round`),
+/// whom the caster sees when the events arrive, whether the cast's changes on the allies have
+/// ended by then, the passes, and what they came to (the logs as fragments the log lines hold).
+type AllyEvents {
+  AllyEvents(
+    why: String,
+    spell: Spell,
+    target: Int,
+    hit: List(cast_state.Struck),
+    sees_at_go: List(Int),
+    sees_at_fire: List(Int),
+    ended: Bool,
+    raised: List(Raised),
+    fired_spell4_id: Int,
+    expected: Fired,
+  )
+}
+
+/// Healing Salve's scene: the press at a creature, whose go hit both allies, so the caster holds
+/// the allies' row for each and its own row.
+fn salve_scene(
+  why why: String,
+  chance chance: Float,
+  raised raised: List(Raised),
+  expected expected: Fired,
+) -> AllyEvents {
+  AllyEvents(
+    why:,
+    spell: salve_shaped(chance:),
+    target: 7,
+    hit: [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)],
+    sees_at_go: [ally, second_ally],
+    sees_at_fire: [ally, second_ally],
+    ended: False,
+    raised:,
+    fired_spell4_id: support.salve_proc_spell4_id,
+    expected:,
+  )
+}
+
+/// Sentinel's scene: the press at the ally, the row 139830 held on it.
+fn sentinel_scene(
+  why why: String,
+  raised raised: List(Raised),
+  expected expected: Fired,
+) -> AllyEvents {
+  AllyEvents(
+    why:,
+    spell: sentinel_firing(),
+    target: ally,
+    hit: [],
+    sees_at_go: [ally],
+    sees_at_fire: [ally],
+    ended: False,
+    raised:,
+    fired_spell4_id: 54_400,
+    expected:,
+  )
+}
+
+/// The entries of the salve scene with the times each has fired: the allies' row on each ally,
+/// then the caster's own row.
+fn salve_fires(
+  ally ally_fires: List(Int),
+  second_ally second_ally_fires: List(Int),
+  own own: List(Int),
+) -> List(#(Int, option.Option(Int), List(Int))) {
+  [
+    #(salve_allies_row, Some(ally), ally_fires),
+    #(salve_allies_row, Some(second_ally), second_ally_fires),
+    #(salve_own_row, None, own),
+  ]
+}
+
+/// Healing Salve's child Spell4 39386, which holds the rows: the root and the parent of what a
+/// fire starts.
+const salve = 39_386
+
+pub fn an_event_an_ally_told_fires_the_proc_the_caster_holds_on_that_ally_and_no_other_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let nothing =
+    Fired(started: [], named: [], words_needed: [], fires: [], logs: [])
+  let blow = creature_blow(groups: [6, 9, 134, 333])
+  let first_word = 0xFFFF_FFFF
+  let rows = [
+    salve_scene(
+      why: "the ally's event fires 39127 once at the ally, as a child of the holder's spell 39386 named for the ally, and the fire is counted on (86457, ally) alone",
+      chance: 1.0,
+      raised: [Raised(1500, [#(Some(ally), blow)], [], [])],
+      expected: Fired(
+        ..nothing,
+        started: [#(1500, ally, salve, salve)],
+        named: [Some(ally)],
+        words_needed: [0],
+        fires: salve_fires(ally: [1500], second_ally: [], own: []),
+      ),
+    ),
+    salve_scene(
+      why: "another ally's event fires that ally's entry only",
+      chance: 1.0,
+      raised: [Raised(1500, [#(Some(second_ally), blow)], [], [])],
+      expected: Fired(
+        ..nothing,
+        started: [#(1500, second_ally, salve, salve)],
+        named: [Some(second_ally)],
+        words_needed: [0],
+        fires: salve_fires(ally: [], second_ally: [1500], own: []),
+      ),
+    ),
+    salve_scene(
+      why: "the events of two allies in one pass each fire their own entry, in the order they happened",
+      chance: 1.0,
+      raised: [
+        Raised(1500, [#(Some(second_ally), blow), #(Some(ally), blow)], [], []),
+      ],
+      expected: Fired(
+        ..nothing,
+        started: [
+          #(1500, second_ally, salve, salve),
+          #(1500, ally, salve, salve),
+        ],
+        named: [Some(second_ally), Some(ally)],
+        words_needed: [0],
+        fires: salve_fires(ally: [1500], second_ally: [1500], own: []),
+      ),
+    ),
+    salve_scene(
+      why: "the caster's own event (no holder) fires its own row 86458 and no entry for an ally",
+      chance: 1.0,
+      raised: [Raised(1500, [#(None, blow)], [], [])],
+      expected: Fired(
+        ..nothing,
+        started: [#(1500, 7, salve, salve)],
+        named: [None],
+        words_needed: [0],
+        fires: salve_fires(ally: [], second_ally: [], own: [1500]),
+      ),
+    ),
+    salve_scene(
+      why: "an event naming a unit the caster holds nothing for draws no word and fires nothing",
+      chance: 0.5,
+      raised: [Raised(1500, [#(Some(99), blow)], [], [])],
+      expected: Fired(
+        ..nothing,
+        words_needed: [0],
+        fires: salve_fires(ally: [], second_ally: [], own: []),
+      ),
+    ),
+    salve_scene(
+      why: "the entries that fire and the entries that draw are the same: two allies' events draw one word each and none for the caster's own row, so the word 0xFFFFFFFF misses the first ally's entry and the word 0 fires the second's",
+      chance: 0.5,
+      raised: [
+        Raised(1500, [#(Some(ally), blow), #(Some(second_ally), blow)], [], [
+          first_word,
+          0,
+        ]),
+      ],
+      expected: Fired(
+        ..nothing,
+        started: [#(1500, second_ally, salve, salve)],
+        named: [Some(second_ally)],
+        words_needed: [2],
+        fires: salve_fires(ally: [], second_ally: [1500], own: []),
+      ),
+    ),
+    salve_scene(
+      why: "the limit counts per ally: a second event of one ally 1000 ms after its fire fires nothing, a second ally's event then fires, and the first ally fires again 2000 ms after its fire",
+      chance: 1.0,
+      raised: [
+        Raised(1500, [#(Some(ally), blow)], [], []),
+        Raised(2500, [#(Some(ally), blow)], [], []),
+        Raised(2500, [#(Some(second_ally), blow)], [], []),
+        Raised(3500, [#(Some(ally), blow)], [], []),
+      ],
+      expected: Fired(
+        ..nothing,
+        started: [
+          #(1500, ally, salve, salve),
+          #(2500, second_ally, salve, salve),
+          #(3500, ally, salve, salve),
+        ],
+        named: [Some(ally), Some(second_ally), Some(ally)],
+        words_needed: [0, 0, 0, 0],
+        fires: salve_fires(ally: [3500], second_ally: [2500], own: []),
+      ),
+    ),
+    AllyEvents(
+      ..salve_scene(
+        why: "an ally the caster does not see: the child is not started, the debug line names the cause, and the fire is counted",
+        chance: 1.0,
+        raised: [Raised(1500, [#(Some(ally), blow)], [], [])],
+        expected: Fired(
+          ..nothing,
+          words_needed: [0],
+          fires: salve_fires(ally: [1500], second_ally: [], own: []),
+          logs: [#(step.LogDebug, "is not in the caster's sight")],
+        ),
+      ),
+      sees_at_fire: [],
+    ),
+    AllyEvents(
+      ..salve_scene(
+        why: "a source the caster no longer holds, dropped by the end of its change: no word, no fire and no warning",
+        chance: 0.5,
+        raised: [Raised(13_500, [#(Some(ally), blow)], [], [])],
+        expected: Fired(..nothing, words_needed: [0], fires: [
+          #(salve_own_row, None, []),
+        ]),
+      ),
+      ended: True,
+    ),
+    sentinel_scene(
+      why: "Sentinel's row aimed at the other unit fires 54400 at the striking creature, which the caster's picture shows, with no named player and the holder's spell 58432 as root and parent",
+      raised: [Raised(1500, [#(Some(ally), blow)], [31], [])],
+      expected: Fired(
+        ..nothing,
+        started: [#(1500, 31, 58_432, 58_432)],
+        named: [None],
+        words_needed: [0],
+        fires: [#(sentinel_proc_row, Some(ally), [1500])],
+      ),
+    ),
+    sentinel_scene(
+      why: "the striker the caster's picture does not show fires nothing, records no fire and writes a debug line",
+      raised: [Raised(1500, [#(Some(ally), blow)], [], [])],
+      expected: Fired(
+        ..nothing,
+        words_needed: [0],
+        fires: [#(sentinel_proc_row, Some(ally), [])],
+        logs: [#(step.LogDebug, "not in the caster's sight")],
+      ),
+    ),
+    sentinel_scene(
+      why: "an attack spell outside the row's group 333 fires nothing",
+      raised: [
+        Raised(
+          1500,
+          [#(Some(ally), creature_blow(groups: [6, 9, 134]))],
+          [31],
+          [],
+        ),
+      ],
+      expected: Fired(..nothing, words_needed: [0], fires: [
+        #(sentinel_proc_row, Some(ally), []),
+      ]),
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(state, _, _) =
+      pressed_with_round(
+        spell: row.spell,
+        target: row.target,
+        hit: row.hit,
+        sees_at_go: row.sees_at_go,
+      )
+    let state = case row.ended {
+      True ->
+        fired_in_order(
+          state:,
+          timers: player_end_timers(state:),
+          seeing: row.sees_at_go,
+          at: 13_000,
+        ).0
+      False -> state
+    }
+    let #(_, got) =
+      ally_events_fired(
+        state:,
+        sees: row.sees_at_fire,
+        raised: row.raised,
+        fired_spell4_id: row.fired_spell4_id,
+      )
+    assert Fired(..got, logs: []) == Fired(..row.expected, logs: []) as row.why
+    assert list.map(got.logs, fn(log) { log.0 })
+      == list.map(row.expected.logs, fn(log) { log.0 })
+      as { row.why <> ": the levels of the lines logged" }
+    list.each(list.zip(got.logs, row.expected.logs), fn(pair) {
+      assert string.contains(pair.0.1, pair.1.1)
+        as { row.why <> ": the log line names " <> pair.1.1 }
+    })
+  })
+  // A second cast of the spell is a new source with a window of its own: a blow just after the
+  // second press heals again though the ally was healed 1000 ms before.
+  let both = [ally, second_ally]
+  let #(state, _, _) =
+    pressed_with_round(
+      spell: salve_shaped(chance: 1.0),
+      target: 7,
+      hit: [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)],
+      sees_at_go: both,
+    )
+  let #(state, first) =
+    ally_events_fired(
+      state:,
+      sees: both,
+      raised: [Raised(1500, [#(Some(ally), blow)], [], [])],
+      fired_spell4_id: support.salve_proc_spell4_id,
+    )
+  assert first.started == [#(1500, ally, salve, salve)]
+    as "the first press's entry fires at 1500"
+  let #(state, second_pressed) =
+    pressed_at_in(
+      plans: plans_of(spell: salve_shaped(chance: 1.0)),
+      bag: bag_of_base_3,
+      target: 7,
+      state:,
+      caster: esper_seeing(players: both),
+      at: 2000,
+    )
+  let #(state, _) =
+    support.answered_each(
+      caster: esper_seeing(players: both),
+      state:,
+      effects: second_pressed,
+      at: 2000,
+      struck_of: fn(asked) {
+        case asked.spell4_id == Spell4Id(salve) {
+          True -> [
+            ally_selected(unit_id: second_ally),
+            ally_selected(unit_id: ally),
+          ]
+          False -> []
+        }
+      },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let #(_, second) =
+    ally_events_fired(
+      state:,
+      sees: both,
+      raised: [Raised(2500, [#(Some(ally), blow)], [], [])],
+      fired_spell4_id: support.salve_proc_spell4_id,
+    )
+  assert second.started == [#(2500, ally, salve, salve)]
+    as "the second press's entry for the ally has a window of its own and fires 1000 ms after the first press's fire"
+}
+
+pub fn a_fire_for_an_ally_whose_cast_is_neither_live_nor_lingering_takes_its_spell_from_the_change_held_on_the_ally_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Sentinel's 58432 holds no node on the caster, so once the ally leaves the caster's sight the
+  // cast is neither live nor lingering, while the change on the ally and the caster's entry for
+  // it stay for the row's 18 000 ms (propertyFlags 0x100). A fire then takes its spell from the
+  // change.
+  let blow = creature_blow(groups: [6, 9, 134, 333])
+  let pressed_sentinel = fn() {
+    pressed_with_round(
+      spell: sentinel_firing(),
+      target: ally,
+      hit: [],
+      sees_at_go: [ally],
+    )
+  }
+  let pressed_salve = fn() {
+    pressed_with_round(
+      spell: salve_shaped(chance: 1.0),
+      target: 7,
+      hit: [ally_selected(unit_id: second_ally), ally_selected(unit_id: ally)],
+      sees_at_go: [ally, second_ally],
+    )
+  }
+  let removed = fn(state, unit_id) {
+    cast_proc.unit_removed(cast: state, unit_id:, now_ms: 1100).0
+  }
+  let sentinel_gone = fn() {
+    let #(state, pressed, _) = pressed_sentinel()
+    let state = removed(state, ally)
+    #(state, support.pressed_id(effects: pressed))
+  }
+  let #(state, id) = sentinel_gone()
+  assert cast_state.holder_of(cast: state, cast_id: id) == Error(Nil)
+    as "the setup: the cast holds no node and is no longer lingering"
+  assert held_procs(state:) == [#(sentinel_proc_row, Some(ally))]
+    as "the setup: the caster's entry for the ally stays"
+  let #(_, fired) =
+    ally_events_fired(
+      state:,
+      sees: [ally],
+      raised: [Raised(5000, [#(Some(ally), blow)], [31], [])],
+      fired_spell4_id: 54_400,
+    )
+  assert fired.started == [#(5000, 31, 58_432, 58_432)]
+    as "the ally's event within the row's life starts 54400 with the change's spell 58432 as root and parent"
+  assert fired.logs == []
+    as "and writes no warning that the cast is neither live nor lingering"
+  assert fired.fires == [#(sentinel_proc_row, Some(ally), [5000])]
+    as "and the fire is recorded on the entry for the ally"
+  // Healing Salve's shape once the caster's own node and the nodes on both allies are gone.
+  let #(state, _, _) = pressed_salve()
+  let state =
+    list.fold([ally, second_ally], state, fn(state, unit_id) {
+      removed(state, unit_id)
+    })
+  let #(_, fired) =
+    ally_events_fired(
+      state:,
+      sees: [ally, second_ally],
+      raised: [Raised(5000, [#(Some(second_ally), blow)], [], [])],
+      fired_spell4_id: support.salve_proc_spell4_id,
+    )
+  assert fired.started == [#(5000, second_ally, salve, salve)]
+    as "Healing Salve's entry for an ally whose node is gone fires from the change held on the ally"
+  assert fired.logs == [] as "and writes no warning"
+  // The end of the change takes the entry with it: an event after it does nothing, with no
+  // warning.
+  let #(state, _) = sentinel_gone()
+  let #(ended, _) =
+    fired_in_order(
+      state:,
+      timers: player_end_timers(state:),
+      seeing: [ally],
+      at: 19_000,
+    )
+  let #(_, fired) =
+    ally_events_fired(
+      state: ended,
+      sees: [ally],
+      raised: [Raised(19_500, [#(Some(ally), blow)], [31], [])],
+      fired_spell4_id: 54_400,
+    )
+  assert fired
+    == Fired(started: [], named: [], words_needed: [0], fires: [], logs: [])
+    as "after the change's end the entry is gone: no word, no fire and no warning"
+  // A caster's own entry whose cast is gone keeps its warning.
+  let #(state, pressed, _) = pressed_salve()
+  let id = support.pressed_id(effects: pressed)
+  let state =
+    cast_state.State(
+      ..state,
+      casts: dict.delete(state.casts, id),
+      lingering: dict.delete(state.lingering, id),
+    )
+  let #(_, fired) =
+    ally_events_fired(
+      state:,
+      sees: [ally, second_ally],
+      raised: [Raised(1500, [#(None, blow)], [], [])],
+      fired_spell4_id: support.salve_proc_spell4_id,
+    )
+  assert fired.started == []
+    as "the caster's own entry of a cast that is gone fires nothing"
+  assert list.map(fired.logs, fn(log) { log.0 }) == [step.LogWarning]
+    as "and writes one warning"
+  let assert [#(_, text)] = fired.logs
+  assert string.contains(text, "neither live nor lingering")
+    as "which says the cast is neither live nor lingering"
 }

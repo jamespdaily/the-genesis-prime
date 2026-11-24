@@ -42,21 +42,39 @@ import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
 
 /// What a caster's cast changes on a player that is not the caster, as it is told: a
 /// property modifier (the UnitPropertyModifier and UnitPropertyConversion rows, and the
-/// Proxy-started Interrupt Armor's property), an absorb pool (an Absorption row) of
+/// Proxy-started Interrupt Armor's property), or an absorb pool (an Absorption row) of
 /// `amount`, as the caster's formula gave it at the go, that takes the damage types of
-/// `mask`, or a Proc row the caster holds on the player (`Watches`), which changes nothing the
-/// player has and is listed in its create as the cast's effect on it.
+/// `mask`.
 pub type Change {
   Property(modifier: unit_properties.Modifier)
   Absorb(amount: Int, mask: Int)
-  /// A Proc row of the event `trigger` that the caster holds on the player: the player
-  /// applies nothing and keeps the source for the caster.
-  Watches(trigger: spell_plan.Trigger)
+}
+
+/// What a start tells a player: a change it applies to itself, or the event of a Proc row
+/// the caster holds on it, which changes nothing the player has and is listed in its create
+/// as the cast's effect on it. A caster's own change is only ever a `Change`, so it cannot
+/// hold a Proc row that applies nothing.
+pub type Told {
+  /// The player applies `change` and holds it for the caster.
+  Applies(change: Change)
+  /// The player applies nothing and keeps the source for the caster, which waits for the
+  /// event `trigger`.
+  Awaits(trigger: spell_plan.Trigger)
+}
+
+/// The event a caster waits for when a start tells `told`, none for a change the player
+/// applies.
+pub fn trigger_of(told told: Told) -> Option(spell_plan.Trigger) {
+  case told {
+    Applies(..) -> None
+    Awaits(trigger:) -> Some(trigger)
+  }
 }
 
 /// Whether a held change ends when its caster leaves the sight of the unit that holds it.
@@ -87,7 +105,7 @@ pub type PlayerChange {
     from: ConnectionId,
     from_stay: Stay,
     source: Source,
-    change: Change,
+    change: Told,
     sight: Sight,
     spell4_id: Spell4Id,
     effect: unit_casts.HeldEffect,
@@ -111,13 +129,16 @@ type Listing {
 
 type Entry {
   /// A source of another player's cast: the caster's connection and unit, how the change
-  /// keeps when the caster leaves sight, and what a create lists of it.
+  /// keeps when the caster leaves sight, what a create lists of it, and the event the
+  /// caster waits for when the source is a Proc row (`Awaits`), none for a change the
+  /// player applies.
   PlayerSource(
     source: Source,
     by: ConnectionId,
     unit_id: Int,
     sight: Sight,
     listing: Listing,
+    trigger: Option(spell_plan.Trigger),
   )
   /// A source of a creature's, held for its connection until the connection ends: no unit,
   /// no sight rule and nothing listed.
@@ -136,8 +157,8 @@ pub fn new() -> Held {
 }
 
 /// The source `source` held for the connection `by` whose unit is `unit_id`, kept as
-/// `sight` says and listed to a viewer as the cast of `spell4_id` with the effect `effect`:
-/// `True` when it was not held. The same source told again by its holder keeps its place
+/// `sight` says and listed to a viewer as the cast of `spell4_id` with the effect `effect`,
+/// the caster waiting for the event `trigger` when there is one: `True` when it was not held. The same source told again by its holder keeps its place
 /// and takes the new spell and effect (a later go of one cast); told by another connection
 /// it changes nothing.
 pub fn started(
@@ -148,6 +169,7 @@ pub fn started(
   sight sight: Sight,
   spell4_id spell4_id: Spell4Id,
   effect effect: unit_casts.HeldEffect,
+  trigger trigger: Option(spell_plan.Trigger),
 ) -> #(Held, Bool) {
   let listing = Listing(spell4_id:, effect:)
   case holder_of(held:, source:) {
@@ -166,7 +188,7 @@ pub fn started(
     Ok(_) | Error(Nil) ->
       added(
         held:,
-        entry: PlayerSource(source:, by:, unit_id:, sight:, listing:),
+        entry: PlayerSource(source:, by:, unit_id:, sight:, listing:, trigger:),
       )
   }
 }
@@ -266,6 +288,32 @@ pub fn kept_casts_of_unit(held held: Held, unit_id unit_id: Int) -> List(Int) {
   })
   |> list.map(fn(entry) { entry.source.cast_id })
   |> list.unique
+}
+
+/// The connections that wait for events, each once in the order its first source started,
+/// with the triggers it waits for in the order its sources started, each once.
+pub fn events_awaited(
+  held held: Held,
+) -> List(#(ConnectionId, List(spell_plan.Trigger))) {
+  let waiting =
+    list.filter_map(held.entries, fn(entry) {
+      case entry {
+        PlayerSource(by:, trigger: Some(trigger), ..) -> Ok(#(by, trigger))
+        PlayerSource(trigger: None, ..) | CreatureSource(..) -> Error(Nil)
+      }
+    })
+  list.map(list.unique(list.map(waiting, fn(one) { one.0 })), fn(by) {
+    #(
+      by,
+      list.filter_map(waiting, fn(one) {
+        case one.0 == by {
+          True -> Ok(one.1)
+          False -> Error(Nil)
+        }
+      })
+        |> list.unique,
+    )
+  })
 }
 
 /// Whether any source of the cast `cast_id` is held.
