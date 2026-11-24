@@ -838,7 +838,7 @@ pub fn a_chance_of_0_or_above_1_fails_the_load_test() -> Nil {
 }
 
 pub fn a_filter_naming_an_id_its_table_lacks_leaves_the_row_out_whoever_holds_it_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   // The client never reads a Proc row, so its tables keep stale ids (Spell4Effects 75724
   // names Spell4 36366, 217742 names Spell4Base 25688, neither of which has a row): no
   // event's spell is one, so the row could never fire, and the holder spell plans all the same.
