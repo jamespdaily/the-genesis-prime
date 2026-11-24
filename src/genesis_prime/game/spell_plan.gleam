@@ -20,6 +20,12 @@
 ////   (`SpellLevel.spell4Id.no_prerequisite`) is planned too, and one whose error
 ////   `is_unbuilt` names is left out and listed by `unplanned`; any other error fails the
 ////   load. A press of a base with no plan is refused unknown (`cast_press.ability_at`).
+//// - **The tiers.** Every tier 2 to 9 row of every ability the plans hold, an alternate's tiers
+////   inside its ability's, is planned as a later ability is, by the Spell4 id of the tier row
+////   (`tier_plans`, `tier_derivation`): the Spell4 row that is a tier is the client's
+////   `GetSpellIdForTier` (genesis_prime/game/spell_tier). A tier whose error `is_unbuilt` names is left
+////   out and listed by `unplanned_tiers`, and a player who holds it casts the best lower tier
+////   (genesis_prime/game/held_tier); any other error fails the load.
 //// - **The equip spells.** The equip spell of each Item2 row that takes a slot
 ////   (genesis_prime/game/equip_spell `roots`) is planned as a spell no ability holds, by Spell4
 ////   id (`standing_plans`): the spells a worn item puts on its wearer. The same fold plans it or
@@ -366,6 +372,7 @@ import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
 import genesis_prime/game/spell_effect.{type PlannedEffect, PlannedEffect}
+import genesis_prime/game/spell_tier
 import genesis_prime/game/spend
 import genesis_prime/game/target_mechanic
 import genesis_prime/game/ticking
@@ -3294,6 +3301,108 @@ pub fn standing_unplanned(
     checker: area_checked(tables),
   ))
   left_out
+}
+
+/// The plan of each tier 2 to 9 spell of the planned abilities, by the Spell4 id of the tier's
+/// row (`spell_tier.spell4_id`, the client's `GetSpellIdForTier`). A player who holds a tier
+/// above 1 casts that tier's plan (genesis_prime/game/held_tier).
+pub type TierPlans =
+  Dict(Spell4Id, Spell)
+
+/// What the tiers' derivation holds: the tier plans and the tier spells the plans leave out.
+type TierPlanSet {
+  TierPlanSet(planned: TierPlans, left_out: List(Unplanned))
+}
+
+const tier_plans_key: table_store.DerivedKey(TierPlanSet) =
+  table_store.DerivedKey("SpellTierPlans")
+
+/// The tier plans as a value the tables' load builds once, under the tables' key, after the
+/// plans and the tiers it reads (`derivation`, genesis_prime/game/spell_tier). Every tier 2 to 9 row
+/// of every ability of the plans is planned as `derivation` plans a later ability: a tier whose
+/// error `is_unbuilt` names is left out and listed (`unplanned_tiers`), and any other error fails
+/// the load. An ability another names as its alternate is planned inside that ability's
+/// tiers, whose rows name the alternate's same tier (`Spell4.spell4IdMechanicAlternateSpell`), so
+/// tier n of an ability holds tier n of its alternate.
+pub fn tier_derivation(
+  area_checked area_checked: fn(table_store.Tables) -> Checker,
+) -> table_store.Derivation {
+  table_store.derivation(key: tier_plans_key, build: fn(tables) {
+    tiers_planned(tables:, checker: area_checked(tables))
+    |> result.map_error(fn(error) { describe(error:) })
+  })
+}
+
+/// The plans of the tier rows 2 to 9 of every ability of the plans that no ability names as
+/// its alternate, in Spell4Base then tier order, and the tiers left out.
+fn tiers_planned(
+  tables tables: table_store.Tables,
+  checker checker: Checker,
+) -> Result(TierPlanSet, PlanError) {
+  let sources = sources_of(tables:)
+  let tiers = spell_tier.tiers(tables:)
+  let abilities = dict.values(plans_with_later(tables:))
+  let alternates =
+    list.filter_map(abilities, fn(spell) {
+      option.to_result(spell.alternate, Nil)
+      |> result.map(fn(alternate) { alternate.spell4_base_id })
+    })
+  let spell4_ids =
+    list.filter(abilities, fn(spell) {
+      !list.contains(alternates, spell.spell4_base_id)
+    })
+    |> list.sort(fn(first, second) {
+      int.compare(first.spell4_base_id.value, second.spell4_base_id.value)
+    })
+    |> list.flat_map(fn(spell) {
+      spell_tier.tiers_above_1(tiers:, base: spell.spell4_base_id)
+      |> list.map(fn(entry) { { entry.1 }.value })
+    })
+  use #(planned, left_out) <- result.map(planned_or_left_out(
+    tables:,
+    sources:,
+    checker:,
+    spell4_ids:,
+  ))
+  TierPlanSet(
+    planned: list.map(planned, fn(spell) { #(spell.spell4_id, spell) })
+      |> dict.from_list,
+    left_out:,
+  )
+}
+
+/// The tier plans the tables' load built.
+pub fn tier_plans(tables tables: table_store.Tables) -> TierPlans {
+  table_store.derived(tables:, key: tier_plans_key).planned
+}
+
+/// The tier 2 to 9 spells of the planned abilities that the plans leave out, by the error that
+/// says what the server does not build (`is_unbuilt`). A player who holds such a tier casts the
+/// best lower tier the plans hold (genesis_prime/game/held_tier).
+pub fn unplanned_tiers(tables tables: table_store.Tables) -> List(Unplanned) {
+  table_store.derived(tables:, key: tier_plans_key).left_out
+}
+
+/// The plan of the tier row with this Spell4 id, or `Error(Nil)` for a row that is tier 1, has
+/// no tier row, or is left out.
+pub fn in_tier_plans(
+  tier_plans tier_plans: TierPlans,
+  spell4_id spell4_id: Spell4Id,
+) -> Result(Spell, Nil) {
+  dict.get(tier_plans, spell4_id)
+}
+
+/// The plan of a tier of a base: the tier plan of the Spell4 row that is the tier
+/// (`spell_tier.spell4_id`). `Error(Nil)` for tier 1, which the plans hold under the base, for
+/// a tier with no row, for a base the book cannot hold, and for a tier left out.
+pub fn tier_plan(
+  tier_plans tier_plans: TierPlans,
+  tiers tiers: spell_tier.SpellTiers,
+  base base: Spell4BaseId,
+  tier tier: Int,
+) -> Result(Spell, Nil) {
+  spell_tier.spell4_id(tiers:, base:, tier:)
+  |> result.try(fn(spell4_id) { in_tier_plans(tier_plans:, spell4_id:) })
 }
 
 /// Whether a plan error names an effect or a rule the server does not build, so the

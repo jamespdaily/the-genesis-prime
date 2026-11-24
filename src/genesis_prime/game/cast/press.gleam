@@ -582,11 +582,14 @@ pub fn surged(
   }
 }
 
-/// Whether the held key is the ability's own or the alternate it is swapped for.
+/// Whether the held key is the ability's own or the alternate it is swapped for. An ability is
+/// the Spell4Base: the key names the bag index (`opcode.0x4db`), and a tier the player saves
+/// between the key down and a later press plays another Spell4 row of the same base
+/// (genesis_prime/game/held_tier).
 fn is_held(held held: Spell, ability ability: Spell) -> Bool {
-  held.spell4_id == ability.spell4_id
-  || option.map(held.alternate, fn(alternate) { alternate.spell4_id })
-  == Some(ability.spell4_id)
+  held.spell4_base_id == ability.spell4_base_id
+  || option.map(held.alternate, fn(alternate) { alternate.spell4_base_id })
+  == Some(ability.spell4_base_id)
 }
 
 /// The ability the player holds at the bag index, as the plans have it.
@@ -661,7 +664,7 @@ pub fn key_down(
 ) -> #(State, List(Effect)) {
   case cast.holding {
     Some(Holding(ability: held, ..) as holding)
-      if held.spell4_id == ability.spell4_id
+      if held.spell4_base_id == ability.spell4_base_id
     -> #(State(..cast, holding: Some(Holding(..holding, target:))), [])
     Some(_) | None -> {
       let #(cast, cancels) = stop_holding(cast:)

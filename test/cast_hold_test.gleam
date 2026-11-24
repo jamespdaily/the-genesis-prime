@@ -13,10 +13,12 @@ import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
+import genesis_prime/game/spell_plan.{type Plans, Spell}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
 import genesis_prime/step.{ConnectionId, LogWarning}
+import genesis_prime/table/id.{Spell4Id}
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -62,6 +64,15 @@ fn key(
     held:,
     at: ms,
   )
+}
+
+/// The plans after the player saved another tier of the ability: the same Spell4Base planted
+/// under another Spell4 id, as `held_tier.plans_of` plants a tier's plan.
+fn plans_at_another_tier(plans plans: Plans, base base: Int) -> Plans {
+  let spell = support.ability_in(plans:, base:)
+  support.with_spells(plans:, spells: [
+    Spell(..spell, spell4_id: Spell4Id(spell.spell4_id.value + 1)),
+  ])
 }
 
 /// The lines a client reads of the writes of these steps, as `cast_lines` makes
@@ -194,6 +205,32 @@ pub fn a_release_before_the_cast_ends_lets_it_finish_and_starts_no_repeat_test()
     as "the cast under way goes and finishes after the release"
   assert support.started_timers(effects: finished) == []
     as "and no repeat follows"
+  // The player saved another tier of the ability between the key down and the key up: the
+  // release names the bag index (`opcode.0x4db`), so it is still the release of this hold,
+  // whatever Spell4 row the plans now hold for the ability.
+  let #(state, down) =
+    key_raw(
+      state: cast_state.new(),
+      bag_index: telekinetic_strike,
+      held: 1,
+      at: 1000,
+    )
+  let assert [#(go, 1250)] = support.started_timers(effects: down)
+  let #(state, up) =
+    support.key_raw_in(
+      plans: plans_at_another_tier(
+        plans: support.plans_with_costless_mind_burst(),
+        base: 19_102,
+      ),
+      state:,
+      bag_index: telekinetic_strike,
+      held: 0,
+      at: 1500,
+    )
+  assert up == []
+  let #(_, finished) = support.fired(state:, timer: go, at: 2250)
+  assert support.started_timers(effects: finished) == []
+    as "the release after a tier change stops the repeats"
 }
 
 pub fn a_repeat_timer_that_fires_after_the_release_starts_nothing_test() -> Nil {
@@ -318,6 +355,28 @@ pub fn a_held_key_down_twice_without_a_release_is_one_hold_test() -> Nil {
   let #(_, up) = key(state:, bag_index: mind_burst, held: 0, at: 2300)
   assert support.cancelled_timers(effects: up) == [next]
     as "one release ends the hold"
+  // The player saved another tier of the ability while the key was held: the plans hold
+  // another Spell4 row under the same Spell4Base, and a second key down is still the same
+  // hold (`opcode.0x4db` names the bag index, never a spell).
+  let #(state, first) =
+    key(state: cast_state.new(), bag_index: mind_burst, held: 1, at: 1000)
+  let assert [#(timer, 1250)] = support.started_timers(effects: first)
+  let #(state, second) =
+    support.key_in(
+      plans: plans_at_another_tier(
+        plans: support.plans_with_costless_mind_burst(),
+        base: 19_019,
+      ),
+      state:,
+      bag_index: mind_burst,
+      held: 1,
+      at: 1100,
+    )
+  assert second == []
+    as "the key down after a tier change starts no cast and no timer"
+  let #(_, repeat) = support.fired(state:, timer:, at: 2250)
+  assert list.length(started_ids(effects: repeat)) == 1
+    as "and the hold repeats once"
 }
 
 pub fn shred_taps_the_first_stage_then_each_next_stage_within_the_window_and_the_release_stops_the_taps_test() -> Nil {

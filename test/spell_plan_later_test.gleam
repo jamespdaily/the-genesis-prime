@@ -18,6 +18,7 @@ import genesis_prime/game/area
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
+import genesis_prime/game/held_tier
 import genesis_prime/game/innate
 import genesis_prime/game/item_property
 import genesis_prime/game/lasting
@@ -25,13 +26,15 @@ import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type PlanError}
+import genesis_prime/game/spell_tier
 import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{
-  type Spell4BaseId, ClassId, Spell4BaseId, Spell4EffectsId, Spell4Id,
-  TelegraphDamageId,
+  type Spell4BaseId, type Spell4Id, ClassId, Spell4BaseId, Spell4EffectsId,
+  Spell4Id, TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell_level
@@ -59,6 +62,12 @@ const later_spell = 57_694
 const later_effect = 138_014
 
 const level_one_spell = 32_078
+
+/// The tier 2 and tier 3 rows of the level-1 ability of Spell4 32078 (Relentless Strikes, base
+/// 18309), whose rows the fixture holds in full: `table_rows -- Spell4 spell4BaseIdBaseSpell=18309`.
+const relentless_strikes_tier_2 = 48_040
+
+const relentless_strikes_tier_3 = 48_044
 
 /// The load of the committed rows with a row added to SpellLevel and the edits to other
 /// rows: the tables, or the load's refusal.
@@ -171,6 +180,12 @@ fn refused_cases() -> List(Refused) {
       ["138014", "dataBits01"],
     ),
     Refused(
+      "a tier 2 row whose Proxy names a child spell row the table lacks fails the load, naming the table and the row: Relentless Strikes' tier 2 row 48040, Proxy 177150",
+      [],
+      [#("Spell4Effects", 177_150, [#("dataBits00", Integer(999_999))])],
+      ["Spell4", "999999"],
+    ),
+    Refused(
       "a later row whose Spell4 names an area row the table lacks fails the load, naming the table and the row",
       [],
       [
@@ -214,6 +229,34 @@ pub fn a_later_ability_whose_row_is_missing_fails_the_load_but_an_unread_effect_
     as "its error is UnreadCost with the Spell4 and the cost type"
   assert dict.get(spell_plan.plans_with_later(tables:), 37_245) == Error(Nil)
     as "no plan holds its base, so a press of it is refused unknown"
+  // A tier 3 row (Relentless Strikes 18309, Spell4 48044) with a cost type no check was read
+  // for: the load goes on, the tier is left out of the tier plans and listed with its error,
+  // and the ability's tier 2 row is planned.
+  let assert Ok(tier_tables) =
+    loaded(added: [], changed: [
+      #("Spell4", relentless_strikes_tier_3, [
+        #("innateCostType0", Integer(2)),
+        #("innateCost0", Integer(10)),
+      ]),
+    ])
+    as "an unread cost on a tier row does not fail the load"
+  assert list.any(spell_plan.unplanned_tiers(tier_tables), fn(one) {
+    one.spell4_id == relentless_strikes_tier_3
+    && one.error
+    == spell_plan.UnreadCost(spell4_id: relentless_strikes_tier_3, cost_type: 2)
+  })
+    as "the tier is listed as not planned, with its error"
+  assert spell_plan.in_tier_plans(
+      tier_plans: spell_plan.tier_plans(tier_tables),
+      spell4_id: Spell4Id(relentless_strikes_tier_3),
+    )
+    == Error(Nil)
+    as "no tier plan holds the tier"
+  assert result.is_ok(spell_plan.in_tier_plans(
+    tier_plans: spell_plan.tier_plans(tier_tables),
+    spell4_id: Spell4Id(relentless_strikes_tier_2),
+  ))
+    as "the ability's tier 2 row is planned"
   let set = case loadout.of(tables:, class_id: ClassId(1), faction_id: 166) {
     Ok(set) -> set
     Error(Nil) -> panic as "the load gives the Warrior a loadout"
@@ -380,6 +423,24 @@ pub fn every_plan_error_is_a_skip_or_a_load_failure_test() -> Nil {
     })
       as { case_.list <> ": the root is left out, listed with its error" }
   })
+  // A spell that selects units and has no area row (Spell4 57694, whose area row is taken
+  // away) is a rule the server does not build, not a fault of the data: the load goes on and
+  // the ability is left out, as for a tier row (Stagger's tier 9 is one).
+  let assert Ok(tables) =
+    loaded(added: [], changed: [
+      #("Spell4", later_spell, [#("spell4AoeTargetConstraintsId", Integer(0))]),
+    ])
+    as "a spell that strikes an area and names no area row does not fail the load"
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  assert list.any(left_out, fn(one) {
+    one.spell4_id == later_spell
+    && case one.error {
+      spell_plan.AreaNotBuilt(..) -> True
+      _ -> False
+    }
+  })
+    as "the ability is left out as an area the server does not build"
 }
 
 /// The fold's load-failure half, for both lists, and each list's roots split into planned and
@@ -1551,4 +1612,251 @@ pub fn the_proxies_of_the_three_targeted_root_abilities_start_the_five_counted_c
     )
       as "its hit shapes are built even where a struck unit's yaw is not known"
   })
+}
+
+/// Every tier 2 to 9 row of every base of the plans that no base names as its alternate, as
+/// the base, the tier and the row's Spell4 id (`spell_tier.spell4_id`, the client's
+/// `GetSpellIdForTier`). The alternates' tiers are planned inside their ability's.
+fn tier_rows_of_planned_abilities(
+  tables tables: table_store.Tables,
+) -> List(#(Spell4BaseId, Int, Spell4Id)) {
+  let tiers = spell_tier.tiers(tables)
+  let plans = dict.values(spell_plan.plans_with_later(tables:))
+  let named_as_alternate =
+    list.filter_map(plans, fn(spell) {
+      option.to_result(spell.alternate, Nil)
+      |> result.map(fn(alternate) { alternate.spell4_base_id })
+    })
+  list.filter(plans, fn(spell) {
+    !list.contains(named_as_alternate, spell.spell4_base_id)
+  })
+  |> list.sort(fn(first, second) {
+    int.compare(first.spell4_base_id.value, second.spell4_base_id.value)
+  })
+  |> list.flat_map(fn(spell) {
+    let base = spell.spell4_base_id
+    list.map(spell_tier.tiers_above_1(tiers:, base:), fn(entry) {
+      #(base, entry.0, entry.1)
+    })
+  })
+}
+
+pub fn every_tier_of_a_planned_ability_is_planned_or_listed_unplanned_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let planned = spell_plan.tier_plans(tables)
+  let left_out = spell_plan.unplanned_tiers(tables)
+  let rows = tier_rows_of_planned_abilities(tables:)
+  assert rows != [] as "the planned abilities have tiers above 1"
+  list.each(rows, fn(row) {
+    let #(base, tier, spell4_id) = row
+    let name =
+      "tier "
+      <> int.to_string(tier)
+      <> " of Spell4Base "
+      <> int.to_string(base.value)
+      <> " (Spell4 "
+      <> int.to_string(spell4_id.value)
+      <> ")"
+    let listed =
+      list.find(left_out, fn(one) { one.spell4_id == spell4_id.value })
+    case spell_plan.in_tier_plans(tier_plans: planned, spell4_id:), listed {
+      Ok(spell), Error(Nil) -> {
+        assert spell.spell4_id == spell4_id
+          as { name <> " is planned from its own row" }
+        assert spell.spell4_base_id == base
+          as { name <> " keeps the ability's Spell4Base" }
+      }
+      Error(Nil), Ok(one) -> {
+        assert spell_plan.is_unbuilt(error: one.error)
+          as { name <> " is left out for a reason the server does not build" }
+      }
+      Ok(_), Ok(_) -> panic as { name <> " is planned and listed unplanned" }
+      Error(Nil), Error(Nil) ->
+        panic as { name <> " is neither planned nor listed unplanned" }
+    }
+  })
+  assert dict.size(planned) + list.length(left_out) == list.length(rows)
+    as "no tier plan or listed tier is outside the planned abilities' tier rows"
+}
+
+/// The Spell4 columns two tiers of one ability may differ in without the client predicting a
+/// cast different from the server's: the text ids, which only a tooltip reads, the stack
+/// priority and the ui flags (display), the builder's point cost (a purchase, not a cast) and
+/// the row's own id, description and tier.
+fn without_display_columns(row row: spell4.Spell4) -> spell4.Spell4 {
+  spell4.Spell4(
+    ..row,
+    id: 0,
+    description: "",
+    tier_index: 0,
+    localized_text_id_action_bar_tooltip: 0,
+    localized_text_id_caster_icon_spell_text: 0,
+    localized_text_id_primary_target_icon_spell_text: 0,
+    localized_text_id_secondary_target_icon_spell_text: 0,
+    localized_text_id_las_tier: 0,
+    localized_text_id_tooltip_cast_info: 0,
+    localized_text_id_tooltip_cost_info: 0,
+    stack_priority: 0,
+    ability_point_cost: 0,
+    ui_flags: 0,
+  )
+}
+
+/// A tier the plans leave out whose row differs from the tier that plays it in a column the
+/// client predicts or the server reads: its base and tier, what the difference does, and the
+/// two rows with the named columns cleared after the columns' values are checked.
+type NamedDifference {
+  NamedDifference(
+    base: Int,
+    tier: Int,
+    reason: String,
+    cleared: fn(spell4.Spell4, spell4.Spell4) -> #(spell4.Spell4, spell4.Spell4),
+  )
+}
+
+fn named_differences() -> List(NamedDifference) {
+  [
+    NamedDifference(
+      base: 23_468,
+      tier: 9,
+      reason: "the alternate spell is 49638 against 49637, spells that differ in tooltip and stackPriority only",
+      cleared: fn(held, played) {
+        assert held.spell4_id_mechanic_alternate_spell == 49_638
+        assert played.spell4_id_mechanic_alternate_spell == 49_637
+        #(
+          spell4.Spell4(..held, spell4_id_mechanic_alternate_spell: 0),
+          spell4.Spell4(..played, spell4_id_mechanic_alternate_spell: 0),
+        )
+      },
+    ),
+    NamedDifference(
+      base: 23_500,
+      tier: 5,
+      reason: "the caster conditions row is 1 against 43, whose bit 0, the only bit the plan reads, is the same",
+      cleared: fn(held, played) {
+        assert held.spell4_conditions_id_caster == 1
+        assert played.spell4_conditions_id_caster == 43
+        #(
+          spell4.Spell4(..held, spell4_conditions_id_caster: 0),
+          spell4.Spell4(..played, spell4_conditions_id_caster: 0),
+        )
+      },
+    ),
+    NamedDifference(
+      base: 38_210,
+      tier: 9,
+      reason: "the area row is 662 (180 degrees, 15 m) against 572 (360 degrees, 20 m) and the stack group 2 against 0, so the server strikes the wider area",
+      cleared: fn(held, played) {
+        assert held.spell4_aoe_target_constraints_id == 662
+        assert played.spell4_aoe_target_constraints_id == 572
+        assert held.spell4_stack_group_id == 2
+        assert played.spell4_stack_group_id == 0
+        #(
+          spell4.Spell4(
+            ..held,
+            spell4_aoe_target_constraints_id: 0,
+            spell4_stack_group_id: 0,
+          ),
+          spell4.Spell4(
+            ..played,
+            spell4_aoe_target_constraints_id: 0,
+            spell4_stack_group_id: 0,
+          ),
+        )
+      },
+    ),
+    NamedDifference(
+      base: 37_245,
+      tier: 9,
+      reason: "the property flags add 0x100, outlives the caster",
+      cleared: fn(held, played) {
+        assert int.bitwise_and(held.property_flags, 0x100) == 0x100
+        assert int.bitwise_and(played.property_flags, 0x100) == 0
+        #(
+          spell4.Spell4(..held, property_flags: 0),
+          spell4.Spell4(..played, property_flags: 0),
+        )
+      },
+    ),
+  ]
+}
+
+pub fn a_tier_the_plans_leave_out_differs_from_the_tier_that_plays_it_only_in_the_columns_each_named_with_its_reason_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let tiers = spell_tier.tiers(tables)
+  let planned = spell_plan.tier_plans(tables)
+  let left_out = spell_plan.unplanned_tiers(tables)
+  let row_of = fn(spell4_id) {
+    let assert Ok(row) = spell4.get(tables:, id: spell4_id)
+      as "a tier row names a Spell4 row"
+    row
+  }
+  // The row that plays a left-out tier: the highest lower tier the plans hold, else tier 1.
+  let playing_row = fn(base: Spell4BaseId, tier: Int) {
+    let played =
+      held_tier.tier_played(tier_plans: planned, tiers:, base:, held_tier: tier)
+    let assert Ok(spell4_id) = spell_tier.spell4_id(tiers:, base:, tier: played)
+      as "the tier that plays has a row"
+    row_of(spell4_id)
+  }
+  let differences = named_differences()
+  let reached =
+    list.filter_map(left_out, fn(one) {
+      let held = row_of(Spell4Id(one.spell4_id))
+      let base = Spell4BaseId(held.spell4_base_id_base_spell)
+      let played = playing_row(base, held.tier_index)
+      let name =
+        "Spell4 "
+        <> int.to_string(held.id)
+        <> " (tier "
+        <> int.to_string(held.tier_index)
+        <> " of "
+        <> int.to_string(base.value)
+        <> ")"
+      let assert Ok(base_row) = spell4_base.get(tables:, id: base)
+        as { name <> " has a Spell4Base row" }
+      assert !list.contains([2, 6, 7], base_row.cast_method)
+        as {
+          name
+          <> ": a threshold ability's stages are read from the row the client names"
+        }
+      let equal =
+        without_display_columns(row: held)
+        == without_display_columns(row: played)
+      case
+        list.find(differences, fn(named) {
+          named.base == base.value && named.tier == held.tier_index
+        })
+      {
+        Ok(named) -> {
+          assert !equal as { name <> " differs: " <> named.reason }
+          let #(held_after, played_after) =
+            named.cleared(
+              without_display_columns(row: held),
+              without_display_columns(row: played),
+            )
+          assert held_after == played_after
+            as {
+              name <> " differs only in the named columns: " <> named.reason
+            }
+          Ok(named)
+        }
+        Error(Nil) -> {
+          assert equal
+            as {
+              name
+              <> " differs from the tier that plays it in a column no one named"
+            }
+          Error(Nil)
+        }
+      }
+    })
+  assert list.length(reached) == list.length(differences)
+    as "every named difference is a tier the plans leave out"
 }

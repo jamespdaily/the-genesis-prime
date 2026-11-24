@@ -14,6 +14,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/dev_command
+import genesis_prime/game/held_tier
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
 import genesis_prime/game/level_up
@@ -28,6 +29,7 @@ import genesis_prime/game/quest_turn_in
 import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_plan
+import genesis_prime/game/spell_tier
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/tutorial.{type Chain}
 import genesis_prime/game/vendor.{type Vendors}
@@ -136,11 +138,34 @@ pub type Settings {
   )
 }
 
-/// The ability trees the cast rule reads: the client's, with the server's Proxies
-/// planted into them (genesis_prime/game/server_proxy).
+/// The ability trees the cast rule reads for the standing spells, every ability at tier 1: the
+/// client's, with the server's Proxies planted into them (genesis_prime/game/server_proxy). A
+/// press reads `held_plans_of`.
 pub fn plans_of(session session: Session) -> spell_plan.Plans {
   server_proxy.planted_into(
     plans: spell_plan.plans_with_later(session.settings.tables),
+    proxies: session.settings.server_proxies,
+  )
+}
+
+/// The ability trees a press reads for a player in the world: `plans_of`'s, with the plan of the
+/// tier the player holds in the active set put under each ability they hold above tier 1
+/// (genesis_prime/game/held_tier), then the server's Proxies planted into those plans.
+pub fn held_plans_of(
+  session session: Session,
+  entered entered: world_entry.Entered,
+) -> spell_plan.Plans {
+  let tables = session.settings.tables
+  server_proxy.planted_into(
+    plans: held_tier.plans_of(
+      plans: spell_plan.plans_with_later(tables),
+      tier_plans: spell_plan.tier_plans(tables),
+      tiers: spell_tier.tiers(tables),
+      held: limited_action_set.held_tiers(
+        saved: entered.action_sets,
+        set: limited_action_set.set_number(set: limited_action_set.first_set()),
+      ),
+    ),
     proxies: session.settings.server_proxies,
   )
 }

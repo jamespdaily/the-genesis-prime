@@ -20,6 +20,7 @@ import cast_support as support
 import genesis_prime/client_connection
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource.{Gain, Payment}
+import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_started
 import genesis_prime/step
@@ -33,6 +34,11 @@ import spell_tables
 /// The damage spell Pulse Blast's second go starts on the caster (`Spell4Effects.effectType.26`:
 /// 95881), which strikes the area in its goes 1 to 3 and nothing in its go 0.
 const striking_spell = 37_302
+
+/// The same damage spell of Pulse Blast's tier 2 row 53409, whose Proxy 126783 starts it
+/// (`table_rows -- Spell4Effects spellId=53409`); its damage rows 133992 to 133994 are in its
+/// goes 1 to 3 as tier 1's are.
+const striking_spell_at_tier_2 = 56_145
 
 /// An Engineer with nothing in its Volatility, in or out of combat.
 fn engineer(in_combat in_combat: Bool) -> Caster {
@@ -49,7 +55,13 @@ fn striking(
   foes foes: List(Int),
 ) -> fn(cast_state.GoAsked) -> List(cast_state.Struck) {
   fn(asked: cast_state.GoAsked) {
-    case asked.spell4_id == Spell4Id(striking_spell) && asked.phase > 0 {
+    case
+      list.contains(
+        [Spell4Id(striking_spell), Spell4Id(striking_spell_at_tier_2)],
+        asked.spell4_id,
+      )
+      && asked.phase > 0
+    {
       True -> support.hits(foes)
       False -> []
     }
@@ -63,9 +75,24 @@ fn pressed_through(
   bag_index bag_index: Int,
   foes foes: List(Int),
 ) -> #(State, List(#(Int, List(Effect)))) {
+  pressed_through_in(
+    plans: spell_tables.plans_with_server_proxies(),
+    caster:,
+    bag_index:,
+    foes:,
+  )
+}
+
+/// The same on these plans.
+fn pressed_through_in(
+  plans plans: spell_plan.Plans,
+  caster caster: Caster,
+  bag_index bag_index: Int,
+  foes foes: List(Int),
+) -> #(State, List(#(Int, List(Effect)))) {
   let #(state, raw) =
     support.pressed_raw_in(
-      plans: spell_tables.plans_with_server_proxies(),
+      plans:,
       state: cast_state.new(),
       caster:,
       bag_index:,
@@ -156,6 +183,25 @@ pub fn a_pulse_blast_that_hits_a_foe_in_combat_gives_15_volatility_at_its_striki
       "finished k",
     ]
     as "42148 starts with the damage spell as its parent and Pulse Blast as its root (opcode.0x7ff.root_parent), goes once and finishes"
+  // The player holds Pulse Blast at tier 2: the plan under its base is the tier 2 row's
+  // (root 53409, whose Proxy 126783 starts 56145), the server's Proxy is planted into it, and
+  // 42148 goes with 56145's last go, so the striking go gives 15 as at tier 1.
+  let tier_2 =
+    pressed_through_in(
+      plans: spell_tables.plans_with_server_proxies_at(base: 26_468, tier: 2),
+      caster: engineer(in_combat: True),
+      bag_index: support.pulse_blast,
+      foes: [10],
+    ).1
+  assert gains_at(tier_2) == [#(2253, [[Gain(slot: 1, amount: 15)]])]
+    as "the tier 2 cast gives its +15 with 56145's last go, 1253 ms after the press"
+  assert lines_of_42148(every(tier_2))
+    == [
+      "started k 42148 root 53409 parent 56145",
+      "went k p0",
+      "finished k",
+    ]
+    as "42148 starts with tier 2's damage spell as its parent and tier 2's root: the server's Proxy is planted into the tier's own plan"
 }
 
 // ---- 3 ----

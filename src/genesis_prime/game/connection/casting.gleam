@@ -176,7 +176,7 @@ pub fn cast_message(
       message:,
       body: inner.body,
       caster:,
-      plans: connection_state.plans_of(session:),
+      plans: connection_state.held_plans_of(session:, entered:),
       target_of:,
       now:,
     )

@@ -44,6 +44,7 @@ import level_up_support
 import limited_action_set_support as limited
 import login_support
 import owned_test
+import planted_table
 import pog
 
 /// The Medic of the marker ring that levels from 3 to 4 on the kill at slot 0: its abilities
@@ -755,12 +756,14 @@ pub fn a_tier_bought_in_the_builder_is_back_after_a_camp_and_a_tier_returned_to_
   assert list.map(answer, fn(frame) { frame.message_id })
     == [0x019D, 0x01A0, 0x0169, 0x00B2]
     as "the answer is the set, the tiers, the points, then 0xB2"
-  assert raised_tiers(frames: answer) == [#(27_638, 0, 2)]
+  assert raised_tiers(frames: answer) == [#(27_638, 0, 2), #(52_215, 0, 2)]
+    as "opcode.0x1a0: Quick Draw at 2 and its alternate 52215, which shows the tier of the ability that names it"
   assert ability_points_support.points_in(frames: answer) == [#(0, 1)]
   let #(second_entry, have) =
     game_client.camp_and_play(game:, have:, character_id: character)
-  assert raised_tiers(frames: second_entry) == [#(27_638, 0, 2)]
-    as "the next entry holds Quick Draw at tier 2 in set 0 and every other entry at tier 1"
+  assert raised_tiers(frames: second_entry)
+    == [#(27_638, 0, 2), #(52_215, 0, 2)]
+    as "the next entry holds Quick Draw and its alternate at tier 2 in set 0 and every other entry at tier 1"
   assert list.map(
       ability_book_support.tiers_in(frames: second_entry),
       fn(entry) { #(entry.spell4_base_id, entry.action_set_index) },
@@ -786,6 +789,74 @@ pub fn a_tier_bought_in_the_builder_is_back_after_a_camp_and_a_tier_returned_to_
     as "a tier returned to 1 is gone after the next camp"
   assert ability_points_support.points_in(frames: third_entry) == [#(1, 1)]
     as "and the point is back"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The Blows the 0x7f4 among the frames list, by Spell4Effects id.
+fn blow_effect_ids(frames frames: List(Frame)) -> List(Int) {
+  list.flat_map(game_client.fight_in(frames:), fn(event) {
+    case event {
+      game_client.Went(targets:, ..) ->
+        list.flat_map(targets, fn(target) {
+          list.map(target.1, fn(blow) { blow.effect_id })
+        })
+      _ -> []
+    }
+  })
+}
+
+/// A Medic of level 10 (one ability point) saves Paralytic Surge at tier 2 with the client's
+/// own 0xB1 (the class's bar, 38201, 16322 and 26543, and the tier change), faces the creature at
+/// ring slot 0 and presses Paralytic Surge at bag index 2 (`fight_bot.paralytic_surge`) until the
+/// creature dies, since a creature of the client's rows deflects some strikes and a deflected
+/// press has a 0x7f4 with no blow. The presses are confirmed by 0x7fd, and the 0x7f4 blows hold
+/// the damage effect of the tier 2 row (Spell4 51979 holds Spell4Effects 122793 and 122794,
+/// `table_rows -- Spell4Effects spellId=51979`), never tier 1's 96125. Tier 2 needs level 10 and costs 1 point (`Spell4TierRequirements`,
+/// `XpPerLevel`). The clock is driven and nothing waits on real time.
+pub fn a_medic_that_saves_tier_2_of_paralytic_surge_casts_the_tier_2_spell_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The tier 2 row has its own recharge (51979, 25000 ms like tier 1's 42352), which would refuse
+  // every press after the first: both rows' recharge is taken off.
+  use tables <- fixture_tables.changes(edits: [
+    #("Spell4", 42_352, [#("spellCoolDown", planted_table.Integer(0))]),
+    #("Spell4", 51_979, [#("spellCoolDown", planted_table.Integer(0))]),
+  ])
+  let time = driven_time.new()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  let #(game, entry, have, _character) =
+    a_medic_of_a_level_at_the_marker_ring(
+      started:,
+      sixth: 0,
+      level: 10,
+      saved_experience: option.None,
+    )
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.body_with(
+      ids: [38_201, 16_322, 26_543, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      set: 0,
+      tier_changes: [#(26_543, 2)],
+      amp_ids: [],
+    ),
+  )
+  let #(answer, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  assert limited.the_action_set(frames: answer).result == 1
+    as "the save is accepted: tier 2 needs level 10 and costs the level's one point"
+  let #(cast, _) =
+    kills_the_target_at_slot_0(game:, have:, frames: entry, time:)
+  assert refusals(frames: cast) == []
+    as "opcode.0x7fc: no press of the held tier is refused"
+  assert list.any(cast, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the press is confirmed"
+  let effects = blow_effect_ids(frames: cast)
+  assert list.contains(effects, 122_793)
+    as "the go strikes with tier 2's damage row 122793"
+  assert !list.contains(effects, 96_125) as "and not with tier 1's 96125"
   game_client.close(game:)
   login_support.stop(started)
 }

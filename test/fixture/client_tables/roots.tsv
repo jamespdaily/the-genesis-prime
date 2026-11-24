@@ -1594,3 +1594,18 @@ Item2	38020	(a worn item with equip spell 62538, whose root holds eight UnitProp
 Item2	13272	(a worn item of power level 10 with equip spell 30116)	world_entry_innate_test
 Item2	42059	(a level-scaled worn item, flags bit 3, power level -1, equip spell 69687)	world_entry_innate_test
 Item2	36382	(a level-scaled worn item, flags bit 3, power level 50, equip spell 58657)	world_entry_innate_test
+Spell4	51979	Medic Paralytic Surge, tier 2	held_tier_test, game_wire_ability_test
+Spell4	51980	Medic Paralytic Surge, tier 3	held_tier_test, game_wire_ability_test
+Spell4	51981	Medic Paralytic Surge, tier 4	held_tier_test, game_wire_ability_test
+Spell4	51982	Medic Paralytic Surge, tier 5	held_tier_test, game_wire_ability_test
+Spell4	51983	Medic Paralytic Surge, tier 6	held_tier_test, game_wire_ability_test
+Spell4	51984	Medic Paralytic Surge, tier 7	held_tier_test, game_wire_ability_test
+Spell4	51988	Medic Paralytic Surge, tier 8	held_tier_test, game_wire_ability_test
+Spell4	53409	Engineer Pulse Blast, tier 2	held_tier_test, cast_volatility_test, content_load_test
+Spell4	56138	Engineer Pulse Blast, tier 3	held_tier_test, cast_volatility_test, content_load_test
+Spell4	56139	Engineer Pulse Blast, tier 4	held_tier_test, cast_volatility_test, content_load_test
+Spell4	56140	Engineer Pulse Blast, tier 5	held_tier_test, cast_volatility_test, content_load_test
+Spell4	56141	Engineer Pulse Blast, tier 6	held_tier_test, cast_volatility_test, content_load_test
+Spell4	56142	Engineer Pulse Blast, tier 7	held_tier_test, cast_volatility_test, content_load_test
+Spell4	56143	Engineer Pulse Blast, tier 8	held_tier_test, cast_volatility_test, content_load_test
+Spell4	56144	Engineer Pulse Blast, tier 9	held_tier_test, cast_volatility_test, content_load_test
