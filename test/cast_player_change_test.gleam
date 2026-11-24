@@ -3565,6 +3565,7 @@ type Area {
     hit: List(cast_state.Struck),
     sees_at_go: List(Int),
     told_to: List(Int),
+    listed: List(#(Int, List(Int))),
     debug: List(String),
   )
 }
@@ -3586,6 +3587,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
       ],
       sees_at_go: [ally, second_ally],
       told_to: [second_ally, ally],
+      listed: [#(ally, [barrier_row]), #(second_ally, [barrier_row])],
       debug: [],
     ),
     Area(
@@ -3597,6 +3599,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
       ],
       sees_at_go: [second_ally],
       told_to: [second_ally],
+      listed: [#(ally, []), #(second_ally, [barrier_row])],
       debug: ["92788", "40", "not in the caster's sight"],
     ),
     Area(
@@ -3605,6 +3608,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
       hit: [],
       sees_at_go: [ally, second_ally],
       told_to: [],
+      listed: [],
       debug: [],
     ),
   ]
@@ -3649,18 +3653,10 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
     assert list.filter(support.listed_by_unit(effects: went), fn(unit) {
         unit.0 != 7
       })
-      == list.map(
-        list.sort(gate.hit_units(struck: row.hit), int.compare),
-        fn(unit_id) {
-          #(unit_id, case list.contains(row.told_to, unit_id) {
-            True -> [barrier_row]
-            False -> []
-          })
-        },
-      )
+      == row.listed
       as {
         row.why
-        <> ": the go's target info lists each ally the round hit, with the row for the ones it landed on"
+        <> ": the go's target info lists each ally the round hit, in unit id order, with the row for the ones it landed on"
       }
     let lines = support.debug_lines(effects: went)
     assert list.all(row.debug, fn(words) {
