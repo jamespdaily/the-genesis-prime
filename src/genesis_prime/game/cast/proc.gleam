@@ -530,7 +530,7 @@ pub fn procs_held(
         level: LogDebug,
         text: "the Proc effect "
           <> int.to_string(row.effect_id.value)
-          <> " of kind 0 is held by a cast that is not a standing spell's, which a death ends before the proc is matched, so it is not held",
+          <> " of kind 0 is held by a cast that is not the innate passive, which a death ends before the proc is matched, so it is not held",
       )
     }),
   )

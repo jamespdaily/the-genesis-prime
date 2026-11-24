@@ -389,6 +389,8 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
   let #(dropped, effects) = cast_tick.left(cast: passive)
   assert support.writes(effects:) == []
     as "a camp writes nothing for any cast (cast.left)"
+  assert dict.is_empty(dropped.standing)
+    as "the camp forgets every standing cast, so the next join's list starts them all"
   let #(_, again) =
     support.standing_started(
       cast: dropped,
@@ -399,8 +401,6 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
     )
   assert lines(effects: again) == ["started k1 44926 root 44926 parent 0"]
     as "the next join starts the passive afresh"
-  assert dict.is_empty(dropped.standing)
-    as "the camp forgets every standing cast, so the next join's list starts them all"
   let #(_, nothing) =
     cast.standing_changed(
       cast: dropped,
