@@ -1946,18 +1946,48 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
       [[Other(0x0355)], []],
     ),
   ]
+  check_written_rows(rows:)
+}
+
+/// Each row is a reason, the events that bring the connection in the world to its setup, the
+/// events then fed one by one, and the writes (as `Written`) each of those events made: the
+/// writes of each step are compared with the expected ones of that step.
+fn check_written_rows(
+  rows rows: List(
+    #(
+      String,
+      List(
+        step.Event(
+          step.ConnectionEvent(
+            client_connection.Message,
+            client_connection.Answer,
+          ),
+        ),
+      ),
+      List(
+        step.Event(
+          step.ConnectionEvent(
+            client_connection.Message,
+            client_connection.Answer,
+          ),
+        ),
+      ),
+      List(List(Written)),
+    ),
+  ),
+) -> Nil {
   list.each(rows, fn(row) {
     let #(reason, setup, steps, expected) = row
-    let state =
-      list.fold(setup, game_connection_support.in_world(), fn(state, event) {
-        game_connection_support.feed(state, event).0
-      })
     let #(_, written) =
-      list.fold(steps, #(state, []), fn(so_far, event) {
-        let #(state, written) = so_far
-        let #(state, taken) = game_connection_support.feed(state, event)
-        #(state, list.append(written, [written_of(taken:)]))
-      })
+      list.fold(
+        steps,
+        #(game_connection_support.fed(events: setup), []),
+        fn(so_far, event) {
+          let #(state, written) = so_far
+          let #(state, taken) = game_connection_support.feed(state, event)
+          #(state, list.append(written, [written_of(taken:)]))
+        },
+      )
     assert written == expected as reason
   })
 }
@@ -2146,20 +2176,7 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
       [[]],
     ),
   ]
-  list.each(rows, fn(row) {
-    let #(reason, setup, steps, expected) = row
-    let state =
-      list.fold(setup, game_connection_support.in_world(), fn(state, event) {
-        game_connection_support.feed(state, event).0
-      })
-    let #(_, taken) =
-      list.fold(steps, #(state, []), fn(so_far, event) {
-        let #(state, taken) = so_far
-        let #(state, one) = game_connection_support.feed(state, event)
-        #(state, list.append(taken, [written_of(taken: one)]))
-      })
-    assert taken == expected as reason
-  })
+  check_written_rows(rows:)
 }
 
 /// Gamma Rays (Spell4 29874: castTime 1250 ms, a Normal cast with a cast bar) and Discharge
@@ -2635,10 +2652,7 @@ pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> 
     ],
     fn(row) {
       let #(name, setup, casts, kept, cast_id, finished) = row
-      let state =
-        list.fold(setup, game_connection_support.in_world(), fn(state, event) {
-          game_connection_support.feed(state, event).0
-        })
+      let state = game_connection_support.fed(events: setup)
       let #(state, taken) =
         game_connection_support.feed(
           state,

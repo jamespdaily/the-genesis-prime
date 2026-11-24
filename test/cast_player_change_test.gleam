@@ -3019,6 +3019,42 @@ fn ledger_told(effects effects: List(Effect)) -> held_changes.Held {
   })
 }
 
+/// The effect ids of the rows of `spell` that would land a change on the ally a press names
+/// (`gate.modifier_applies`: a modifier, an absorb or an Interrupt Armor row aimed at the
+/// primary target), whatever the cast rule decides about the press.
+fn changes_the_plan_would_land_on_the_ally(spell spell: Spell) -> List(Int) {
+  list.filter_map(spell.effects, fn(planned) {
+    case planned.kind {
+      spell_plan.ModifierEffect(modifier:) ->
+        case
+          spell_plan.reaches_primary_target(aim: spell_plan.modifier_aim(
+            modifier:,
+          ))
+          && gate.modifier_applies(
+            row: modifier,
+            unit_id: ally,
+            caster: esper_seeing(players: [ally]),
+            struck: [],
+            press_target: Some(ally),
+          )
+        {
+          True -> Ok(planned.effect_id.value)
+          False -> Error(Nil)
+        }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The effect ids the caster's node lists on the ally in the go.
+fn listed_on_the_ally(gone gone: GoneOnTheAlly) -> List(Int) {
+  list.flat_map(gone.on_the_ally, fn(view) {
+    list.flat_map(view.targets, fn(target) {
+      list.map(target.effects, fn(effect) { effect.effect_id.value })
+    })
+  })
+}
+
 /// One press of `spell` at the ally and its go, as the cast rule runs it for a caster that
 /// sees the ally: the pressed cast's id, the effect ids of the changes the go told the ally,
 /// and the view the ally's ledger lists of the cast from those tells beside the view the
@@ -3031,6 +3067,7 @@ type GoneOnTheAlly {
   )
 }
 
+/// The go of the press, or `Error(Nil)` when the cast rule refuses the press and sends no go.
 fn gone_on_the_ally(spell spell: Spell) -> Result(GoneOnTheAlly, Nil) {
   let #(state, pressed, went) =
     pressed_and_gone(
@@ -3131,12 +3168,15 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
     })
     |> dict.to_list
     |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-    |> list.filter_map(fn(spell) {
-      result.map(gone_on_the_ally(spell: spell.1), fn(gone) { #(spell.1, gone) })
+    |> list.map(fn(spell) { #(spell.1, gone_on_the_ally(spell: spell.1)) })
+  }
+  let gone_only = fn(pressed: List(#(Spell, Result(GoneOnTheAlly, Nil)))) {
+    list.filter_map(pressed, fn(entry) {
+      result.map(entry.1, fn(gone) { #(entry.0, gone) })
     })
   }
-  let told_by = fn(gone: List(#(Spell, GoneOnTheAlly))) {
-    list.flat_map(gone, fn(spell) { { spell.1 }.told })
+  let told_by = fn(pressed: List(#(Spell, Result(GoneOnTheAlly, Nil)))) {
+    list.flat_map(gone_only(pressed), fn(spell) { { spell.1 }.told })
     |> list.unique
     |> list.sort(int.compare)
   }
@@ -3176,7 +3216,20 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
     as "Runes of Protection's child 78708 tells its absorb 206315 to the ally"
   assert list.contains(told_by(widened), 199_194)
     as "Barrier's child 76767 tells its Interrupt Armor row 199194 to the ally"
+  // A press the cast rule refuses sends no go and tells the ally nothing, so the plan of a
+  // refused spell must land no change on the ally: one that did would drop out of the checks
+  // below unseen.
   list.each(widened, fn(entry) {
+    let #(spell, pressed) = entry
+    use <- bool.guard(when: result.is_ok(pressed), return: Nil)
+    assert changes_the_plan_would_land_on_the_ally(spell:) == []
+      as {
+        "Spell4 "
+        <> int.to_string(spell.spell4_id.value)
+        <> " is refused at the grouped ally and its plan lands no change on the ally"
+      }
+  })
+  list.each(gone_only(widened), fn(entry) {
     let #(spell, gone) = entry
     use <- bool.guard(when: gone.told == [], return: Nil)
     let why = "Spell4 " <> int.to_string(spell.spell4_id.value)
@@ -3202,12 +3255,7 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
           _, _ -> Ok(planned.effect_id.value)
         }
       })
-    let listed =
-      list.flat_map(gone.on_the_ally, fn(view) {
-        list.flat_map(view.targets, fn(target) {
-          list.map(target.effects, fn(effect) { effect.effect_id.value })
-        })
-      })
+    let listed = listed_on_the_ally(gone:)
     assert list.all(listed, fn(id) {
       list.contains(gone.told, id) || list.contains(not_changes, id)
     })
@@ -3235,6 +3283,26 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
         <> ": the ledger's view of the cast is the caster's node on the ally, bar the Fluff and heal rows"
       }
   })
+  // Of the heal rows a spell that tells a change lists on the ally, one is no change and
+  // outside the ledger: the HealShields row 145873 of Spell4 60416 (tier 9 of Protection
+  // Probes), which the gap in `landing.gaps` names.
+  let heals_listed =
+    list.flat_map(gone_only(widened), fn(entry) {
+      let #(spell, gone) = entry
+      case gone.told {
+        [] -> []
+        _ ->
+          list.filter(listed_on_the_ally(gone:), fn(id) {
+            list.any(spell.effects, fn(planned) {
+              planned.effect_id.value == id
+              && result.is_ok(spell_plan.as_heal(kind: planned.kind))
+            })
+          })
+      }
+    })
+    |> list.unique
+  assert heals_listed == [145_873]
+    as "the one heal row a spell that tells a change lists on the ally is Spell4 60416's HealShields row 145873"
 }
 
 // ---- a Proxy aimed at the area of a spell that finds allies ----

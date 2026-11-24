@@ -60,9 +60,10 @@
 ////   (`landing.cast_went`), hold its own casts and the casts that other players' casts hold on
 ////   it (`held_changes.cast_views`: an absorb, an Interrupt Armor row or a modifier row a
 ////   press at the player landed); the Fluff rows and heal rows of another player's press
-////   (Spell4 bases 26762, 35526, 63087, 19030's child 54912, 47675's children, and the
-////   children a Proxy starts on each ally, such as Spell4 60416's HealShields row 145873) are
-////   listed on it by the caster's own node and by no ledger.
+////   (Spell4 bases 26762, 35526, 63087, 19030's child 54912, 47675's children) and the one
+////   heal row of a spell that lands a change, the HealShields row 145873 of Spell4 60416
+////   (tier 9 of Protection Probes), are listed on it by the caster's own node and by no
+////   ledger.
 
 import genesis_prime/game/cast/target_info
 import genesis_prime/game/lasting

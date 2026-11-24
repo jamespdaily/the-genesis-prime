@@ -3671,8 +3671,9 @@ pub fn a_player_that_arrives_beside_an_ally_after_its_esper_walked_away_shows_th
 /// never created for it (`cast.unknown_caster`); when the test's clock passes the row's 10 000
 /// ms it reads one 0x811 naming the Medic for that cast, and no 0x7fe of it (`opcode.0x811`).
 /// The Medic's frames to the third are one sender's, so the 0x7ff comes before the 0x7f4 and
-/// the Medic's move after the end bounds the read of the 0x811; the Esper's go and the
-/// third's move are two senders, so nothing reads them in order against each other.
+/// the Medic's move after the go, and after the end, bounds the read of the third's client;
+/// the Esper's move, from the sender of the went, bounds the Medic's connection having
+/// handled the went. No pong bounds a tell, which comes from another sender than the pong.
 pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_armor_buff_when_it_lands_and_until_it_ends_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -3736,9 +3737,13 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
   )
   // The Esper's connection writes the start of the Interrupt Armor child (Spell4 76766) after
   // the tells of the go, so the Esper's read of it means the Medic's connection has the whole
-  // go in its mailbox. The Medic's pong then means it has told the third player's connection,
-  // and the third's pong that the third's client has been written what it told: a read bounded
-  // by what the clients are sent, which fails by its assertions when the third is told nothing.
+  // go in its mailbox. A pong is a message from the client's own socket, another sender than
+  // the connection that tells the Medic's connection the go and than the Medic's connection
+  // that tells the third's, so no pong bounds a tell. Each read is bounded by a message of the
+  // sender whose tell it follows: the Esper's step reaches the Medic's connection from the
+  // Esper's, after the go, so the Medic's client reading it means the Medic's connection
+  // handled the go; the Medic's step then reaches the third's connection from the Medic's,
+  // after the start and the go it told, so the third's client reading it has read them.
   let confirmed = fn(frames) {
     list.filter_map(game_client.casts_in(frames:), fn(event) {
       case event {
@@ -3759,10 +3764,25 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
       )
     })
   let assert [pressed_id] = confirmed(pressed) as "the press is confirmed once"
+  let stepped_to = fn(frames, unit, z) {
+    list.any(game_client.fight_in(frames:), fn(event) {
+      case event {
+        game_client.Moves(unit_id:, ends_at: option.Some(#(_, _, placed)), ..) ->
+          unit_id == unit && float.absolute_value(placed -. z) <. 0.01
+        _ -> False
+      }
+    })
+  }
+  walk_to(game: first, z: 33.0, clock: 2)
   let #(_, second_have) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      stepped_to(frames, esper, 33.0)
+    })
+  walk_to(game: second, z: 3.25, clock: 1)
   let #(third_read, third_have) =
-    game_client.read_until_pong(game: third, have: third_have, number: 1)
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      stepped_to(frames, medic, 3.25)
+    })
   let pressed_start = fn(frames) {
     list.filter(
       connection_support.decoded(
@@ -3827,7 +3847,7 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
       absorptions_in(frames:, unit: medic) == [0]
     })
-  walk_to(game: second, z: 3.0, clock: 1)
+  walk_to(game: second, z: 3.0, clock: 2)
   let #(until_end, _) =
     game_client.read_until(game: third, have: third_have, found: fn(frames) {
       list.any(game_client.fight_in(frames:), fn(event) {
