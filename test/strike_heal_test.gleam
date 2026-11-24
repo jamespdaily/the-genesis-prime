@@ -307,6 +307,35 @@ fn emission_by_health(
   count count: Int,
   min_range min_range: Float,
 ) -> spell_area.Areas {
+  emission_by_health_edited(flags:, count:, min_range:, telegraph: [])
+}
+
+/// The same with Emission's hit row (TelegraphDamage 3063, a cone drawn on the caster) made a
+/// circle of 15 m with no offset drawn on the cast's target, as Warden's and Barrier's children
+/// hold theirs: a spell that centres its area on the unit it is cast on and reads no facing, so
+/// the load builds it for a child started on an ally (`spell_area.start_placed`).
+fn emission_by_health_on_its_target(
+  flags flags: Int,
+  count count: Int,
+  min_range min_range: Float,
+) -> spell_area.Areas {
+  emission_by_health_edited(flags:, count:, min_range:, telegraph: [
+    #("TelegraphDamage", 3063, [
+      #("damageShapeEnum", planted_table.Integer(0)),
+      #("param00", planted_table.Float(15.0)),
+      #("param01", planted_table.Float(0.0)),
+      #("param02", planted_table.Float(0.0)),
+      #("targetTypeFlags", planted_table.Integer(0)),
+    ]),
+  ])
+}
+
+fn emission_by_health_edited(
+  flags flags: Int,
+  count count: Int,
+  min_range min_range: Float,
+  telegraph telegraph: List(#(String, Int, List(#(String, planted_table.Cell)))),
+) -> spell_area.Areas {
   fixture_tables.changes(
     edits: [
       #("Spell4Effects", 141_384, [
@@ -317,6 +346,7 @@ fn emission_by_health(
         #("targetCount", planted_table.Integer(count)),
         #("minRange", planted_table.Float(min_range)),
       ]),
+      ..telegraph
     ],
     body: fn(tables) {
       let assert Ok(areas) = spell_area.build(tables:)
@@ -402,19 +432,7 @@ fn emission_proxying(
 fn emission_changing(count count: Int) -> spell_area.Areas {
   fixture_tables.changes(
     edits: [
-      #("Spell4Effects", 141_384, [
-        #("effectType", planted_table.Integer(11)),
-        #("targetFlags", planted_table.Integer(4)),
-        #("durationTime", planted_table.Integer(5000)),
-        #("dataBits00", planted_table.Integer(100)),
-        #("dataBits01", planted_table.Integer(1)),
-        #("dataBits02", planted_table.Integer(1_065_353_216)),
-        #("dataBits03", planted_table.Integer(1_065_353_216)),
-        #("parameterType00", planted_table.Integer(0)),
-        #("parameterType01", planted_table.Integer(0)),
-        #("parameterType02", planted_table.Integer(0)),
-        #("parameterType03", planted_table.Integer(0)),
-      ]),
+      #("Spell4Effects", 141_384, fixture_tables.area_modifier_cells()),
       #("Spell4AoeTargetConstraints", 662, [
         #("targetCount", planted_table.Integer(count)),
       ]),
@@ -594,7 +612,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
   assert list.map(selection.players, fn(address) { address.unit_id })
     == [32, 33]
     as "a Proxy at the area and no heal row: the two nearest allies, in the area's order"
-  assert selection.answers_allies && selection.heals == []
+  assert selection.acts_on_each_unit && selection.heals == []
     as "the phase starts children and tells no heal"
   assert strike.entropy_needed(selection:) == 0
     as "an ally selected for a Proxy takes no seed byte"
@@ -677,7 +695,7 @@ pub fn a_friendly_area_selects_the_allies_inside_it_by_its_order_and_count_and_a
   assert list.map(selection.players, fn(address) { address.unit_id })
     == [32, 33]
     as "a change of the area's units and no heal or Proxy: the two nearest allies, in the area's order"
-  assert selection.answers_allies && selection.heals == []
+  assert selection.acts_on_each_unit && selection.heals == []
     as "the phase answers its allies and tells no heal"
   assert strike.entropy_needed(selection:) == 0
     as "an ally selected for a change takes no seed byte"
@@ -907,18 +925,6 @@ pub fn a_heal_row_aimed_at_the_area_alone_takes_the_caster_as_a_candidate_by_its
   )
 }
 
-/// The areas with Emission's hit placed on the unit the cast is on, as Warden's child's is,
-/// where the fixture places it on the caster.
-fn emission_on_its_target(areas areas: spell_area.Areas) -> spell_area.Areas {
-  let assert Ok(emission) = dict.get(areas, 58_841)
-    as "Emission is in the areas"
-  dict.insert(
-    areas,
-    58_841,
-    spell_area.SpellArea(..emission, anchor: area.FollowsTarget),
-  )
-}
-
 /// What `strike.select` of the spell selects for a cast on `primary_target`, by a caster at the
 /// origin missing `caster_missing` health, with every unit of the picture in its sight.
 fn selected_around(
@@ -963,7 +969,8 @@ type AllyCentreRow {
 /// the area 766: order 5, 5 targets, a circle of 12 m, TelegraphDamage 1244 on the cast's
 /// target; text 246578: "nearby allies" of "the most injured ally") is cast on the ally 31
 /// by its parent's Proxy. Emission's rows stand in for the two cases Warden's do not hold: its
-/// area placed on the target as Warden's is, with the caster 8 m from the ally inside its cone,
+/// area placed on the target as Warden's is (its hit made a circle of 15 m with no offset, which
+/// the load builds), with the caster 8 m from the ally inside it,
 /// a heal of flags 4 selects the caster and one of flags 5, which names it, never does; and its
 /// area on the caster, as the fixture's is, stays centred on the caster whoever the child is
 /// cast on, so the caster is found at distance 0 beside the allies of the caster's own cone.
@@ -1076,18 +1083,18 @@ pub fn a_child_cast_on_an_ally_selects_its_area_around_that_ally_and_the_caster_
   assert struck
     == [hit_of(unit_id: 32, heals: []), hit_of(unit_id: 31, heals: [])]
     as "each ally selected is answered as a hit, once, in the area's order"
-  // The caster is 8 m ahead of the ally 31 (ahead is toward -z), inside Emission's cone of 1 to
-  // 15 m, and the ally 33 is 6 m ahead of it.
+  // The caster is 8 m ahead of the ally 31 (ahead is toward -z), inside Emission's circle of
+  // 15 m around it, and the ally 33 is 6 m ahead of it.
   let near_caster = [
     #(31, hurt_at(x: 0.0, z: 8.0, missing: 100)),
     #(33, hurt_at(x: 0.0, z: 2.0, missing: 300)),
   ]
   assert selected_around(
-      areas: emission_on_its_target(areas: emission_by_health(
+      areas: emission_by_health_on_its_target(
         flags: 4,
         count: 5,
         min_range: 0.0,
-      )),
+      ),
       spell4_id: 58_841,
       primary_target: 31,
       caster_missing: 4000,
@@ -1096,11 +1103,11 @@ pub fn a_child_cast_on_an_ally_selects_its_area_around_that_ally_and_the_caster_
     == [7, 33, 31]
     as "the control: a heal aimed at the area alone takes the caster inside the cone around the ally, with the ally and the one 6 m on"
   assert selected_around(
-      areas: emission_on_its_target(areas: emission_by_health(
+      areas: emission_by_health_on_its_target(
         flags: 5,
         count: 5,
         min_range: 0.0,
-      )),
+      ),
       spell4_id: 58_841,
       primary_target: 31,
       caster_missing: 4000,
@@ -1192,7 +1199,7 @@ fn selection_of(
     controls: [],
     gates: [],
     players: [ally(unit_id: 9)],
-    answers_allies: False,
+    acts_on_each_unit: False,
     heals:,
   )
 }

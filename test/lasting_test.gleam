@@ -817,6 +817,66 @@ pub fn a_node_that_holds_an_until_removed_row_ends_at_an_aura_after_the_go_whate
   )
 }
 
+pub fn a_rows_life_is_its_own_and_an_until_removed_row_takes_the_end_of_an_aura_after_the_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  let timed = LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
+  let until_removed =
+    LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  let none = LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False)
+  // Each row: why, the row, the aura's end, the life at a go at 1500 (`0x1407180c0`: a buff is
+  // timed from the cast's start by spellDuration; a sum not later than now is no end).
+  list.each(
+    [
+      #(
+        "a timed row ends at the go plus its duration, whatever the aura",
+        timed,
+        Some(2000),
+        EndsAt(ms: 6500),
+      ),
+      #(
+        "an until-removed row ends at the aura's end when it is after the go",
+        until_removed,
+        Some(4000),
+        EndsAt(ms: 4000),
+      ),
+      #(
+        "an until-removed row stays until removed when the aura ends at the go",
+        until_removed,
+        Some(1500),
+        UntilRemoved,
+      ),
+      #(
+        "an until-removed row stays until removed when the aura ended before the go",
+        until_removed,
+        Some(1000),
+        UntilRemoved,
+      ),
+      #(
+        "an until-removed row stays until removed in a spell that is no aura",
+        until_removed,
+        None,
+        UntilRemoved,
+      ),
+      #(
+        "a row with no duration and no flag has no life under any aura",
+        none,
+        Some(4000),
+        NoLife,
+      ),
+    ],
+    fn(row) {
+      assert lasting.row_life(
+          row: row.1,
+          longer_of_delay_and_duration: False,
+          aura_ends_ms: row.2,
+          go_ms: 1500,
+        )
+        == row.3
+        as row.0
+    },
+  )
+}
+
 /// The node `under_aura` gives: unit 7, one count, each row listed, armed at the go.
 fn first_aura_node(
   rows rows: List(lasting.LastingRow),

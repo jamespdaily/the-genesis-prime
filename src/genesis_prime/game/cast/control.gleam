@@ -684,7 +684,9 @@ pub fn controls_landed(
 /// The property modifiers a go applies, each armed from this go: the modifier of an
 /// earlier go of the cast is armed again, its timers cancelled and started anew; a row
 /// with no delay starts in this step, any other on a timer of its delay, and one that
-/// does not last until removed ends on a timer after its delay and duration. After the rows
+/// does not last until removed ends on a timer after its delay and duration. A change told to
+/// another player ends on a timer at its row's life, which for a row that lasts until removed
+/// is the end of the aura the cast is (`started_ms`, `lasting.row_life`). After the rows
 /// the go tells a player, one `OtherPlayerCastWent` for each such player follows with the
 /// cast's `audience`, so the player holds every row of the go when it starts the cast for
 /// its viewers.
@@ -697,6 +699,7 @@ pub fn modifiers_armed(
   struck struck: List(Struck),
   spell spell: Spell,
   audience audience: Set(ConnectionId),
+  started_ms started_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(cast, effects, told) =
@@ -723,6 +726,7 @@ pub fn modifiers_armed(
                     address:,
                     change: held_changes.Property(modifier:),
                     spell:,
+                    started_ms:,
                     now_ms:,
                   ),
                   address:,
@@ -755,6 +759,7 @@ pub fn modifiers_armed(
                     address:,
                     change: held_changes.Property(modifier:),
                     spell:,
+                    started_ms:,
                     now_ms:,
                   ),
                   address:,
@@ -797,6 +802,7 @@ pub fn modifiers_armed(
                     address:,
                     change: pool,
                     spell:,
+                    started_ms:,
                     now_ms:,
                   ),
                   address:,
@@ -892,9 +898,10 @@ fn creature_modifier_armed(
 
 /// A change on the player the press named, armed from this go: the cast tells the player's
 /// connection the change at once (`OtherPlayerChangeStarts`) and keeps it in `on_units` with
-/// the address it was told by, ending it with the cast's node on the player or, for a change
-/// that outlives the caster's sight, on a timer of its own after the row's duration
-/// (`PlayerChangeEnd`). A change of the same source told before is told again and its end
+/// the address it was told by, ending it with the cast's node on the player or on a timer of
+/// its own at the row's life (`PlayerChangeEnd`): the delay plus duration of a timed row, the
+/// aura's end for a row that lasts until removed. The timer is what ends a change that outlives
+/// the caster's sight. A change of the same source told before is told again and its end
 /// timer replaced; the changes of an earlier cast of the same stack that no node holds any
 /// more end first (`kept_pushed_off`).
 fn player_change_armed(
@@ -904,6 +911,7 @@ fn player_change_armed(
   address address: PlayerAddress,
   change change: held_changes.Change,
   spell spell: Spell,
+  started_ms started_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
@@ -917,6 +925,8 @@ fn player_change_armed(
       stack: spell.stack,
       started_ms: now_ms,
     )
+  // The gate landed the row, so it has a life: its own, or the aura's end for a row that lasts
+  // until removed (`cast_gate.player_row`).
   let assert Ok(effect) =
     unit_casts.held_effect_of(
       effect_id: row.effect_id,
@@ -924,26 +934,27 @@ fn player_change_armed(
       longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
       go_ms: now_ms,
     )
-    as "a row landed on a player has no delay and does not last until removed (cast_gate.player_row), and the rows of the spells a press at a player or a Proxy on each ally reaches have a duration, so it has a life"
+    as "a row landed on a player has no delay and a life (cast_gate.player_row)"
+  let assert lasting.EndsAt(ms: ends_ms) =
+    lasting.row_life(
+      row: row.row,
+      longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
+      aura_ends_ms: spell_plan.aura_ends_ms(spell:, started_ms:),
+      go_ms: now_ms,
+    )
+    as "a row landed on a player ends at a time (cast_gate.player_row)"
   let #(cast, pushed) = kept_pushed_off(cast:, cast_id:, on:)
   let #(cast, cancels) =
     cast_state.cancel_timers(cast:, matching: fn(due) {
       held_timer_of(due:) == Ok(PlayerEnd(unit_id: address.unit_id, source:))
     })
   let cast = held_on(cast:, cast_id:, on:)
-  let #(cast, ending) = case row.row.until_removed {
-    True ->
-      panic as "a row that lasts until removed is refused on a player (cast_gate.player_row), so it has no end of its own to arm"
-    False -> {
-      let #(cast, _, start) =
-        cast_state.armed(
-          cast:,
-          due: PlayerChangeEnd(unit_id: address.unit_id, source:),
-          after_ms: row.row.delay_ms + row.row.duration_ms,
-        )
-      #(cast, [start])
-    }
-  }
+  let #(cast, _, ending) =
+    cast_state.armed(
+      cast:,
+      due: PlayerChangeEnd(unit_id: address.unit_id, source:),
+      after_ms: ends_ms - now_ms,
+    )
   #(
     cast,
     list.flatten([
@@ -959,7 +970,7 @@ fn player_change_armed(
           effect:,
         ),
       ],
-      ending,
+      [ending],
     ]),
   )
 }

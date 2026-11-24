@@ -408,15 +408,7 @@ fn freed_and_read(
     })
   let left_out_seen =
     list.flat_map(planned, fn(ability) {
-      let alternate_tree = case ability.alternate {
-        Some(alternate) ->
-          spell_plan.tree(spell: alternate, started: fn(_) { True })
-        None -> []
-      }
-      list.append(
-        spell_plan.tree(spell: ability, started: fn(_) { True }),
-        alternate_tree,
-      )
+      spell_plan.tree_with_alternate(spell: ability)
       |> list.flat_map(fn(spell) {
         spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
         |> list.filter_map(fn(effect) {
@@ -591,15 +583,7 @@ fn unread_rows_of(
         base: base_of(tables:, spell4_id:),
       )
       as "the plans hold the ability"
-    let alternate_tree = case ability.alternate {
-      Some(alternate) ->
-        spell_plan.tree(spell: alternate, started: fn(_) { True })
-      None -> []
-    }
-    list.append(
-      spell_plan.tree(spell: ability, started: fn(_) { True }),
-      alternate_tree,
-    )
+    spell_plan.tree_with_alternate(spell: ability)
     |> list.flat_map(fn(spell) {
       spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
       |> list.filter(fn(effect) {
@@ -754,15 +738,7 @@ pub fn the_five_abilities_refused_only_for_a_friendly_area_proxy_are_planned_tes
 fn proxy_targets_of(
   ability ability: spell_plan.Spell,
 ) -> List(#(Int, spell_plan.ProxyTarget)) {
-  let alternate_tree = case ability.alternate {
-    Some(alternate) ->
-      spell_plan.tree(spell: alternate, started: fn(_) { True })
-    None -> []
-  }
-  list.append(
-    spell_plan.tree(spell: ability, started: fn(_) { True }),
-    alternate_tree,
-  )
+  spell_plan.tree_with_alternate(spell: ability)
   |> list.flat_map(fn(spell) {
     spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy)
   })
@@ -1008,7 +984,7 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
   use <- unitest.guard(client_tables.present())
   // Every row of a spell of a planned tree (an ability's, a Surge alternate's, each spell a Proxy
   // or a stage starts) that names the area (`Spell4Effects.targetFlags` bit 4) in a spell whose
-  // area finds the caster's allies (`RowPlace.finds_allies`), of the kinds the Part 4 reading
+  // area finds the caster's allies (`RowPlace.finds_allies`), of the kinds the allies reading
   // decides: a UnitPropertyModifier reads as a change of the units the area selects and has no
   // target apply prerequisite (the strike checks no gate of a modifier for an ally); no absorb,
   // Interrupt Armor, disguise or conversion row is there (the gate lands only a `StruckChange`
@@ -1022,15 +998,7 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
   let started =
     dict.values(spell_plan.plans_with_later(tables:))
     |> list.flat_map(fn(ability) {
-      let alternate = case ability.alternate {
-        Some(alternate) ->
-          spell_plan.tree_started(spell: alternate, started: fn(_) { True })
-        None -> []
-      }
-      list.append(
-        spell_plan.tree_started(spell: ability, started: fn(_) { True }),
-        alternate,
-      )
+      spell_plan.tree_started_with_alternate(spell: ability)
     })
   let spells =
     list.unique(list.map(started, fn(entry) { { entry.0 }.spell4_id.value }))
@@ -1086,6 +1054,89 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
       }
       _ -> Nil
     }
+  })
+  // A spell with a modifier row aimed at the area whose valid targets find no player reaches no
+  // ally: the mask takes only the caster's group (bit 16), which no player of the server has.
+  list.each(started, fn(entry) {
+    let spell = entry.0
+    let holds_modifier =
+      list.any(area_rows, fn(row) {
+        row.0 == spell.spell4_id.value
+        && effect_kind.kind_of(effect_type: { row.1 }.effect_type)
+        == effect_kind.PropertyModifier
+      })
+    assert !holds_modifier
+      || spell_area.finds_players(valid_targets: spell.targeting.valid_targets)
+      || spell_effect.has_flag(
+        flags: spell.targeting.valid_targets,
+        bit: target_mechanic.valid_same_group_only,
+      )
+      as {
+        "Spell4 "
+        <> int.to_string(spell.spell4_id.value)
+        <> " holds a modifier aimed at the area and reaches no player, though its valid targets are not the party's"
+      }
+  })
+  // The gate lands a row that changes the units the area selects on a player the round hit, in
+  // any spell (`cast_gate.player_row`): a foe's spell, whose place finds no allies, holds none, so
+  // a debuff meant for the foes in its area never lands on an ally one of its rows hit.
+  list.each(started, fn(entry) {
+    let spell = entry.0
+    assert place_of(spell.spell4_id.value).finds_allies
+      || !list.any(spell.effects, fn(planned) {
+        changes_the_units_of_the_area(kind: planned.kind)
+      })
+      as {
+        "Spell4 "
+        <> int.to_string(spell.spell4_id.value)
+        <> " is in a place that finds no allies and changes the units its area selects"
+      }
+  })
+  // A row that lasts until removed has no end of its own, so a change on an ally ends with its
+  // aura (`lasting.row_life`): every such row of the kinds a go can land on a unit that reaches a
+  // unit other than the caster is aimed at the area of a place that finds allies, none names the
+  // primary target (so the press at a player lands none), and its spell is an aura with an end.
+  // A row aimed at the caster alone changes the caster and ends with the cast's node.
+  let lands_on_a_unit = [
+    effect_kind.PropertyModifier,
+    effect_kind.Absorption,
+    effect_kind.InterruptArmor,
+    effect_kind.DisguiseOutfit,
+    effect_kind.PropertyConversion,
+  ]
+  let until_removed_rows =
+    list.flat_map(spells, fn(spell4_id) {
+      spell_plan.effects_of(sources:, spell4_id:)
+      |> list.filter(fn(row) {
+        list.contains(
+          lands_on_a_unit,
+          effect_kind.kind_of(effect_type: row.effect_type),
+        )
+        && spell_plan.lasting_row_of(effect: row).until_removed
+        && int.bitwise_and(row.target_flags, 6) != 0
+      })
+      |> list.map(fn(row) { #(spell4_id, row) })
+    })
+  assert until_removed_rows != []
+    as "the planned trees hold rows that last until removed"
+  list.each(until_removed_rows, fn(entry) {
+    let #(spell4_id, row) = entry
+    let why =
+      "the until-removed row "
+      <> int.to_string(row.id)
+      <> " of Spell4 "
+      <> int.to_string(spell4_id)
+    assert int.bitwise_and(row.target_flags, 4) != 0
+      as { why <> " is aimed at the area" }
+    assert int.bitwise_and(row.target_flags, 2) == 0
+      as { why <> " names the primary target" }
+    assert place_of(spell4_id).finds_allies
+      as { why <> " is in a place that finds allies" }
+    let assert Ok(#(spell, _)) =
+      list.find(started, fn(entry) { { entry.0 }.spell4_id.value == spell4_id })
+      as { why <> " is in a spell of a planned tree" }
+    assert option.is_some(spell_plan.aura_ends_ms(spell:, started_ms: 0))
+      as { why <> " is in a spell that is an aura with an end" }
   })
   // A press at another player selects nothing from its area, which makes the units the area
   // hit the allies it found: no spell cast by a press at a unit (a Targeted mechanic) holds a
@@ -1390,6 +1441,7 @@ pub fn the_proxies_of_the_three_targeted_root_abilities_start_the_five_counted_c
       anchor: area.FixedAtTarget,
       start: spell_plan.Proxied(target: spell_plan.OnEachStruck),
       shapes: found.1,
+      selected_by_row: None,
     )
       as "its hit shapes are built even where a struck unit's yaw is not known"
   })

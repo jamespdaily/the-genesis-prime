@@ -3316,11 +3316,7 @@ fn checked(
   spell spell: Spell,
   checker checker: Checker,
 ) -> Result(Spell, PlanError) {
-  let trees = case spell.alternate {
-    Some(alternate) -> [spell, alternate]
-    None -> [spell]
-  }
-  list.flat_map(trees, tree_started(spell: _, started: fn(_) { True }))
+  tree_started_with_alternate(spell:)
   |> list.try_each(fn(started) { checker(started.0, started.1) })
   |> result.replace(spell)
 }
@@ -7046,6 +7042,17 @@ fn aura_of(
   }
 }
 
+/// The monotonic time an aura cast of the spell, started at `started_ms`, runs out: its start
+/// plus `aura_ms`; none for a spell that is no aura or never runs out. The one derivation of
+/// an aura's end, for the cast's nodes and for a change told to another player
+/// (`0x1407180c0`).
+pub fn aura_ends_ms(
+  spell spell: Spell,
+  started_ms started_ms: Int,
+) -> Option(Int) {
+  option.map(spell.aura_ms, fn(aura_ms) { started_ms + aura_ms })
+}
+
 /// Whether a row of phaseFlags 1 in the spell names every pulse of its channel: a Channeled
 /// spell whose spellChannelFlags lacks bit 1, the complement of `compares_telegraph_phase` for
 /// a Channeled spell (`Spell4Effects.phaseFlags.channel`).
@@ -8215,6 +8222,24 @@ pub type Start {
   FromProc(aim: ProcAim)
 }
 
+/// Every spell of the tree of an ability (`tree`) and of its alternate's tree, every Proxy
+/// taken as started.
+pub fn tree_with_alternate(spell spell: Spell) -> List(Spell) {
+  tree_started_with_alternate(spell:) |> list.map(fn(started) { started.0 })
+}
+
+/// Every spell of the tree of an ability and of its alternate's tree with how it is started
+/// (`tree_started`), every Proxy taken as started.
+pub fn tree_started_with_alternate(
+  spell spell: Spell,
+) -> List(#(Spell, Start)) {
+  let trees = case spell.alternate {
+    Some(alternate) -> [spell, alternate]
+    None -> [spell]
+  }
+  list.flat_map(trees, tree_started(spell: _, started: fn(_) { True }))
+}
+
 /// Every spell of the tree (`tree`) with how it is started, a spell reached two ways once
 /// for each way (a Proxy row aimed at both the caster and the area).
 pub fn tree_started(
@@ -8370,7 +8395,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Spell areas",
-      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row, for a Proxy with no tickTime and for a UnitPropertyModifier row only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; a UnitPropertyModifier row aimed at the area lands on each ally the area selects that the caster sees, through the ally's connection with an end of its own, when it has no delay and a durationTime (Barrier's 92788), and lands on nobody, with a debug line, when it lasts until removed (Energy Auger's 217926 and Defense Grid's three rows) or has a delay, and the area selects once, at the go, so an ally who walks in or out of a field later is neither given nor stripped of the change; such a row behind a target apply prerequisite fails the plan (`AlliesModifierGateNotRead`, no row has one); an absorb, Interrupt Armor, disguise or conversion row aimed at the area is not read for allies, no planned tree holding one; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a Fluff aimed at the area (it has no life in the two planned rows, Emergency Reserves' 117293 and Soothe's 192394), a row of Barrier's child of a type no rule reads (228254), and a heal with a delay or a tickTime aimed at the area (Barrier's 94870, which reaches the caster alone); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and Triage's shield row 174070 (flags 4, delay 10) reaches nobody; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
+      missing: "the allies of the caster in the area of a spell that hits no foes are found for an instant Heal or HealShields row, for a Proxy with no tickTime and for a UnitPropertyModifier row only, and only when the area orders by distance, at random or by missing health (Closest, Furthest, Random, MissingMostHealth; the lowest health, order 4, finds none): every other row has the area's bit left out of an aim that holds the caster's bit too; a Proxy aimed at the area, alone or with the caster, starts its child on each ally the area selects (a player the caster has in sight), and on the caster when it names it, and the child's heal, absorb and Interrupt Armor rows aimed at its primary target land on that ally; a UnitPropertyModifier row aimed at the area lands on each ally the area selects that the caster sees, through the ally's connection with an end of its own, when it has no delay and either a durationTime (Barrier's 92788) or lasts until removed in an aura that ends after the go, which ends it (Energy Auger's 217926 in the aura 82830; Defense Grid's three rows are read the same way and reach nobody, since the spell takes party members only), and lands on nobody, with a debug line, when it has a delay or lasts until removed in a spell that is no aura or in an aura that ends at or before the go, and a field gives its change once, at the go, to the allies its area selects then, so an ally who walks in later gets nothing and one who walks out keeps the change until the field's end; such a row behind a target apply prerequisite fails the plan (`AlliesModifierGateNotRead`, no row has one); an absorb, Interrupt Armor, disguise or conversion row aimed at the area is not read for allies, no planned tree holding one; the rows of such a child that land nowhere are a Proc (Affinity's 207508 and 207874), a Fluff aimed at the area (it has no life in the two planned rows, Emergency Reserves' 117293 and Soothe's 192394), a row of Barrier's child of a type no rule reads (228254), and a heal with a delay or a tickTime aimed at the area (Barrier's 94870, which reaches the caster alone); a Proxy with a tickTime at allies is refused (Field Probes); a delayed or periodic heal in the area reaches the caster alone, and Triage's shield row 174070 (flags 4, delay 10) reaches nobody; an instant heal behind a target apply prerequisite on the casts held on the unit or on its own state (the six healing potions' row 69976, type 15) reaches the caster alone, since the strike knows an ally by its place alone, and one behind a target apply prerequisite on a unit's health percentage (type 40: Regenerative Pulse's rows 204551 and 204560) is read for the players of the caster's sight from the health the caster's client was told of each, and a player whose health the picture does not hold is not told the row, with a debug line; an effect that keeps a state on the area's units (Fluff, ForceRemove, Scale, ItemVisualSwap, RavelSignal) is refused",
     ),
     gap.Entry(
       area: "Spell areas",
@@ -8382,7 +8407,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Auras",
-      missing: "the frames at the end of an aura cast (a castMethod 10 spell with a spellDuration above 0): the 0x7fe alone, as at any timed cast's end, is the server's choice, since no client path times a node and the client's 0x819 is never sent; the timed effects of the node end with the aura; an aura that ends at or before the go leaves the node until removed, and a later go at or after the aura's end leaves the node until removed; a spell of another castMethod never ends by its spellDuration, as the client reads the column for method 10 alone; a viewer that comes into sight mid-aura is told the effect as until removed and counts the buff from its own start, so it shows the aura longer than it is, and gets the 0x7fe with everyone else; the cast bar's reader of the column (`0x14054b1b0`) is not read",
+      missing: "the frames at the end of an aura cast (a castMethod 10 spell with a spellDuration above 0): the 0x7fe alone, as at any timed cast's end, is the server's choice, since no client path times a node and the client's 0x819 is never sent; the timed effects of the node end with the aura, and so does the change an aura gives an ally, which the ally holds listed as until removed as the caster's node lists it; an aura that ends at or before the go leaves the node until removed, and a later go at or after the aura's end leaves the node until removed; a spell of another castMethod never ends by its spellDuration, as the client reads the column for method 10 alone; a viewer that comes into sight mid-aura is told the effect as until removed and counts the buff from its own start, so it shows the aura longer than it is, and gets the 0x7fe with everyone else; the cast bar's reader of the column (`0x14054b1b0`) is not read",
     ),
     gap.Entry(
       area: "Procs",

@@ -4521,6 +4521,7 @@ fn go(
             units:,
           ),
           rolls:,
+          now_ms:,
         )
       // A periodic Proxy ticks from this go, on the caster, on the player the press named or,
       // aimed at the area, on the units inside the area at each tick; it gives its unit's node
@@ -4633,6 +4634,7 @@ fn go(
           struck:,
           spell:,
           audience: live.audience,
+          started_ms: live.started_ms,
           now_ms:,
         )
       let #(cast, throwing) =
@@ -4895,6 +4897,7 @@ fn reached_by(
   gates_passed gates_passed: Dict(Int, List(Int)),
   target_verdict target_verdict: TargetVerdict,
   rolls rolls: List(Int),
+  now_ms now_ms: Int,
 ) -> Walk {
   list.fold(
     applied.passed,
@@ -4955,6 +4958,11 @@ fn reached_by(
           )
         spell_plan.ModifierEffect(modifier: row) -> {
           let press_target = press_target_of(live:, caster:)
+          let aura_ends_ms =
+            spell_plan.aura_ends_ms(
+              spell: live.spell,
+              started_ms: live.started_ms,
+            )
           let what =
             "the "
             <> cast_control.modifier_kind_named(row:)
@@ -4973,6 +4981,8 @@ fn reached_by(
                   caster:,
                   struck:,
                   press_target:,
+                  aura_ends_ms:,
+                  go_ms: now_ms,
                 )
               },
               condition: row.condition,
@@ -4994,6 +5004,8 @@ fn reached_by(
                 live:,
                 struck:,
                 press_target:,
+                aura_ends_ms:,
+                go_ms: now_ms,
               ),
             ),
           )
@@ -5117,9 +5129,10 @@ fn press_target_of(live live: Live, caster caster: Caster) -> Option(Int) {
   }
 }
 
-/// A debug line for each unit that is the player the press named and that the modifier row
-/// aims at but does not land on: it is not in the caster's sight at the go, or the row has a
-/// delay or lasts until removed, which a change on another player does not take.
+/// A debug line for each unit that is the player the press named, or a player the round hit that
+/// the modifier row's area aim names, and that the row does not land on: it is not in the caster's sight at the go, or the row has a
+/// delay or lasts until removed with no aura end after the go, which a change on another player
+/// does not take.
 fn player_modifier_refusals(
   row row: spell_plan.PropertyModifier,
   what what: String,
@@ -5127,6 +5140,8 @@ fn player_modifier_refusals(
   live live: Live,
   struck struck: List(Struck),
   press_target press_target: Option(Int),
+  aura_ends_ms aura_ends_ms: Option(Int),
+  go_ms go_ms: Int,
 ) -> List(Effect) {
   cast_gate.rows_with_units(
     rows: [row],
@@ -5142,6 +5157,8 @@ fn player_modifier_refusals(
       caster:,
       struck:,
       press_target:,
+      aura_ends_ms:,
+      go_ms:,
     )
     |> option.to_result(Nil)
     |> result.map(fn(why) {
@@ -5288,6 +5305,7 @@ pub fn aimed_at(
   restricting restricting: List(Restricting),
   target_verdict target_verdict: TargetVerdict,
   rolls rolls: List(Int),
+  now_ms now_ms: Int,
 ) -> Aimed {
   let walk =
     reached_by(
@@ -5298,6 +5316,7 @@ pub fn aimed_at(
       gates_passed:,
       target_verdict:,
       rolls:,
+      now_ms:,
     )
   let #(reached, heal_logs) =
     products_made(
@@ -6129,7 +6148,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "An absorb or a type 11 row aimed at another player lands nothing when it has a delay or lasts until removed: no ability row has either, and each would need a start timer or an end of its own.",
+      missing: "An absorb or a type 11 row aimed at another player lands nothing when it has a delay, which no ability row has and which would need a start timer of its own, or when it lasts until removed in a spell that is no aura or in an aura that ends at or before the go, which leaves it no end.",
     ),
     gap.Entry(
       area: "Casting",

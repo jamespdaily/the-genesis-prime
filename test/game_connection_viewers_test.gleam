@@ -21,6 +21,7 @@ import genesis_prime/game/connection/viewers
 import genesis_prime/game/effect_kind
 import genesis_prime/game/faction_level
 import genesis_prime/game/held_changes
+import genesis_prime/game/held_state
 import genesis_prime/game/player_address.{PlayerAddress, Viewer}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -3094,6 +3095,36 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
     take(dead, 9, client_connection.Health(health: 3000, dead: False))
   assert copy_of(revived, 9) == #(True, 3000, players_base_health)
     as "a Health news without it sets the player alive again"
+  // A death by the Health news alone (no Died news follows) also empties what the copy holds
+  // (`shown.with_alive`: a dead unit holds no crowd-control state).
+  let held_of = fn(session: connection_state.Session, unit_id: Int) {
+    let assert Some(entered) = connection_state.entered_of(session.status)
+      as "the player is in the world"
+    let assert Ok(shown.ShownPlayer(state:)) = dict.get(entered.shown, unit_id)
+      as "the unit is a shown player"
+    state.held
+  }
+  let stunned =
+    take(
+      revived,
+      9,
+      client_connection.CrowdControlApplied(
+        state: crowd_control_state.Stun,
+        instance_id: 5,
+      ),
+    )
+  assert held_of(stunned, 9)
+    == [held_state.HeldState(state: crowd_control_state.Stun, instance_id: 5)]
+    as "the copy holds the stun its owner's news gave"
+  let stunned_and_hurt =
+    take(stunned, 9, client_connection.Health(health: 2500, dead: False))
+  assert held_of(stunned_and_hurt, 9) != []
+    as "a Health news without the dead bit keeps what the copy holds"
+  let killed = take(stunned, 9, client_connection.Health(health: 0, dead: True))
+  assert copy_of(killed, 9) == #(False, 0, players_base_health)
+    as "a Health news alone with the dead bit sets the player dead"
+  assert held_of(killed, 9) == []
+    as "and the dead player holds no crowd-control state, though no Died news followed"
   let grown = take(revived, 9, property_7(7000))
   assert copy_of(grown, 9) == #(True, 3000, 7000)
     as "a PropertiesChanged news with property 7 sets the maximum and keeps the health"

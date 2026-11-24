@@ -105,7 +105,7 @@
 ////   caster is one more candidate of the area, ranked by the health its vitals miss: at
 ////   distance 0 with no shape test when the area is centred on it (`area.select_ordered_with_caster`),
 ////   and tested with the area's own shape from where it stands when the area is centred on
-////   an ally a child cast was started on (`area.centred_on_the_caster`); it is told nothing, its
+////   an ally a child cast was started on (`area.Centre.on_the_caster`); it is told nothing, its
 ////   place is answered at once with the rows that passed its gates (`cast_state.HitCaster`),
 ////   and the go applies them itself. A row a gate fails or
 ////   cannot tell is left out with a debug line; a player no row reaches has no place and no
@@ -254,7 +254,7 @@ pub type Selection {
     /// Whether the phase acts on each ally the area selected, by a child cast started on each
     /// (a Proxy aimed at the area) or a property change of each (a modifier aimed at the area),
     /// so each ally the area selected is a hit of the go whatever rows reach it.
-    answers_allies: Bool,
+    acts_on_each_unit: Bool,
   )
 }
 
@@ -363,7 +363,7 @@ pub fn select(
       gates: [],
       players: [],
       heals: [],
-      answers_allies: False,
+      acts_on_each_unit: False,
     )
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
@@ -412,7 +412,7 @@ pub fn select(
           attacker:,
           asked:,
           heals: phase.heals,
-          answers_allies: phase.acts_on_each_unit,
+          acts_on_each_unit: phase.acts_on_each_unit,
           allies: case spell_area_found.finds_allies {
             True -> from_area
             False -> []
@@ -434,7 +434,7 @@ pub fn select(
           [] -> []
           [_, ..] -> phase.heals
         },
-        answers_allies: phase.acts_on_each_unit,
+        acts_on_each_unit: phase.acts_on_each_unit,
       )
     }
   }
@@ -443,13 +443,13 @@ pub fn select(
 /// The players a go tells its heal rows to or starts a child on, with the player the cast
 /// names first: the primary target when it is a player in sight and a row aims at it, and the
 /// allies the area selected (`allies`, in selection order) when a row aims at the area or the
-/// phase acts on each ally of the area (`answers_allies`), each once. A player the
+/// phase acts on each ally of the area (`acts_on_each_unit`), each once. A player the
 /// caster has no address for is left out; none when the phase has neither.
 fn players_of_the_phase(
   attacker attacker: Attacker,
   asked asked: GoAsked,
   heals heals: List(spell_area.InstantHeal),
-  answers_allies answers_allies: Bool,
+  acts_on_each_unit acts_on_each_unit: Bool,
   allies allies: List(Int),
 ) -> List(PlayerAddress) {
   let primary = case
@@ -462,7 +462,7 @@ fn players_of_the_phase(
     True, Error(Nil) | False, _ -> []
   }
   let in_the_area = case
-    answers_allies
+    acts_on_each_unit
     || list.any(heals, fn(heal) { spell_plan.reaches_area(aim: heal.aim) })
   {
     True ->
@@ -491,18 +491,13 @@ fn players_of_the_phase(
   }
 }
 
-/// Where a cast's area is centred: the pose, and whether it is centred on the caster.
-type Centre {
-  Centre(pose: Pose, on_the_caster: Bool)
-}
-
 /// Where a cast's area is centred (`area.centre_of`): on the pose the cast started at, the
 /// caster now, or the primary target, which is the caster or another unit the picture shows,
 /// at the place and facing the picture gives it (`shown.strike_centre_of`: a player's place
 /// has no facing). An area fixed at its target stays at `primary_pose`, the pose, facing
 /// included, the target stood in when the cast went, when there is one. A primary target the
 /// picture does not show gives no centre. The area is centred on the caster for an anchor on
-/// the caster and for a primary target that is the caster (`area.centred_on_the_caster`).
+/// the caster and for a primary target that is the caster (`area.Centre.on_the_caster`).
 fn centre_of_cast(
   anchor anchor: area.Anchor,
   attacker attacker: Attacker,
@@ -511,7 +506,7 @@ fn centre_of_cast(
   started_at started_at: Pose,
   primary_pose primary_pose: Option(Pose),
   now_ms now_ms: Int,
-) -> Result(Centre, Nil) {
+) -> Result(area.Centre, Nil) {
   use primary <- result.map(case primary_target == attacker.unit_id {
     True -> Ok(area.TheCaster)
     False ->
@@ -523,19 +518,12 @@ fn centre_of_cast(
       )
       |> result.map(fn(pose) { area.AnotherUnit(pose:) })
   })
-  let primary = case anchor, primary, primary_pose {
-    area.FixedAtTarget, area.AnotherUnit(..), Some(pose) ->
-      area.AnotherUnit(pose:)
-    area.FixedAtTarget, area.AnotherUnit(..), None
-    | area.FixedAtTarget, area.TheCaster, _
-    | area.FollowsCaster, _, _
-    | area.FixedAtCaster, _, _
-    | area.FollowsTarget, _, _
-    -> primary
-  }
-  Centre(
-    pose: area.centre_of(anchor:, caster: attacker.pose, started_at:, primary:),
-    on_the_caster: area.centred_on_the_caster(anchor:, primary:),
+  area.centre_of(
+    anchor:,
+    caster: attacker.pose,
+    started_at:,
+    primary:,
+    stood_at: primary_pose,
   )
 }
 
@@ -600,7 +588,7 @@ fn area_selection(
   area area: spell_area.SpellArea,
   phase phase: Int,
   row row: area.Row,
-  centre centre: Centre,
+  centre centre: area.Centre,
   seed seed: Int,
   caster_candidate caster_candidate: Option(area.Candidate),
   now_ms now_ms: Int,
@@ -714,7 +702,7 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
     gates:,
     players: _,
     heals:,
-    answers_allies: _,
+    acts_on_each_unit: _,
   ) = selection
   case blows, ticking, controls, gates, heals {
     [], [], [], [], [] -> 0
@@ -872,7 +860,7 @@ pub fn begin(
 /// of the rows that reach it, in the plan's order, each with the amount its formula gives
 /// for the caster as it is now. A player no row reaches past its gates has no place and no
 /// tell, and is not in the go, unless the phase acts on each ally the area selected
-/// (`Selection.answers_allies`): such an ally is a hit of the go, answered at once with
+/// (`Selection.acts_on_each_unit`): such an ally is a hit of the go, answered at once with
 /// nothing landed (`cast_state.HitOtherPlayer`), so the go starts the child on it or changes
 /// it. The
 /// caster, when the area took it as a candidate, is told nothing: its place is already
@@ -887,7 +875,7 @@ fn players_told(
     list.filter_map(selection.players, fn(address) {
       let unit_id = address.unit_id
       let selected_for_the_phase =
-        selection.answers_allies
+        selection.acts_on_each_unit
         && unit_id != attacker.unit_id
         && list.contains(selection.area, unit_id)
       case rows_reaching_unit(rows: reach.heals, unit_id:) {

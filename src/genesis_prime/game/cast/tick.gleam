@@ -1545,7 +1545,7 @@ pub fn node_of(
     effects: rows,
     held_until_ms:,
     longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
-    aura_ends_ms: option.map(spell.aura_ms, fn(aura_ms) { started_ms + aura_ms }),
+    aura_ends_ms: spell_plan.aura_ends_ms(spell:, started_ms:),
     go_ms: now_ms,
   )
 }

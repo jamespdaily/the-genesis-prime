@@ -3036,6 +3036,8 @@ fn changes_the_plan_would_land_on_the_ally(spell spell: Spell) -> List(Int) {
             caster: esper_seeing(players: [ally]),
             struck: [],
             press_target: Some(ally),
+            aura_ends_ms: spell_plan.aura_ends_ms(spell:, started_ms: 1000),
+            go_ms: 1000,
           )
         {
           True -> Ok(planned.effect_id.value)
@@ -3563,6 +3565,7 @@ type Area {
     hit: List(cast_state.Struck),
     sees_at_go: List(Int),
     told_to: List(Int),
+    listed: List(#(Int, List(Int))),
     debug: List(String),
   )
 }
@@ -3584,6 +3587,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
       ],
       sees_at_go: [ally, second_ally],
       told_to: [second_ally, ally],
+      listed: [#(ally, [barrier_row]), #(second_ally, [barrier_row])],
       debug: [],
     ),
     Area(
@@ -3595,6 +3599,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
       ],
       sees_at_go: [second_ally],
       told_to: [second_ally],
+      listed: [#(ally, []), #(second_ally, [barrier_row])],
       debug: ["92788", "40", "not in the caster's sight"],
     ),
     Area(
@@ -3603,6 +3608,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
       hit: [],
       sees_at_go: [ally, second_ally],
       told_to: [],
+      listed: [],
       debug: [],
     ),
   ]
@@ -3647,18 +3653,10 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
     assert list.filter(support.listed_by_unit(effects: went), fn(unit) {
         unit.0 != 7
       })
-      == list.map(
-        list.sort(gate.hit_units(struck: row.hit), int.compare),
-        fn(unit_id) {
-          #(unit_id, case list.contains(row.told_to, unit_id) {
-            True -> [barrier_row]
-            False -> []
-          })
-        },
-      )
+      == row.listed
       as {
         row.why
-        <> ": the go's target info lists each ally the round hit, with the row for the ones it landed on"
+        <> ": the go's target info lists each ally the round hit, in unit id order, with the row for the ones it landed on"
       }
     let lines = support.debug_lines(effects: went)
     assert list.all(row.debug, fn(words) {
@@ -3806,5 +3804,231 @@ type AreaPath {
     finishes: Bool,
     removed: List(Int),
     left_after: fn(Int) -> List(Effect),
+  )
+}
+
+// ---- a change that lasts until removed, on an ally, under an aura ----
+
+/// Spell4Effects 217926, Energy Auger's property row (Spell4 82830, aimed at the area, flags 4,
+/// flags bit 2: until removed), whose aura runs 3000 ms and whose propertyFlags are 256 (0x100)
+/// (`table_rows -- Spell4Effects 217926`, `-- Spell4 82830`).
+const auger_row = 217_926
+
+/// A planted spell shaped as Energy Auger's aura 82830: the allies' `StruckChange` of row 217926
+/// that lasts until removed, aimed at the area alone, in a spell that goes `cast_time_ms` after
+/// its start and runs out `aura_ms` after it (none: the spell is no aura).
+fn auger_shaped(
+  outlives_caster outlives_caster: Bool,
+  aura_ms aura_ms: option.Option(Int),
+) -> Spell {
+  let until_removed =
+    lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  let row =
+    spell_plan.PropertyModifier(
+      ..support.armor_modifier_row(id: auger_row, aim: spell_plan.AimsAtArea),
+      row: until_removed,
+    )
+  Spell(
+    ..support.armor_spell(rows: [row]),
+    spell4_id: Spell4Id(82_830),
+    cast_time_ms: 500,
+    aura_ms:,
+    outlives_caster:,
+  )
+}
+
+/// The change the go at `go_ms` tells the ally: listed until removed, as the caster's own node
+/// lists the row.
+fn auger_change_of(
+  cast_id cast_id: Int,
+  sight sight: held_changes.Sight,
+  go_ms go_ms: Int,
+) -> Effect {
+  let assert spell_plan.StruckChange(modifier:, ..) =
+    support.armor_modifier_row(id: auger_row, aim: spell_plan.AimsAtArea).change
+    as "row 217926 is read as a StruckChange"
+  cast_state.OtherPlayerChangeStarts(
+    address: address(),
+    source: source_of(cast_id:, effect_id: auger_row),
+    change: held_changes.Property(modifier:),
+    sight:,
+    spell4_id: Spell4Id(82_830),
+    effect: unit_casts.HeldEffect(
+      effect_id: Spell4EffectsId(auger_row),
+      starts_ms: go_ms,
+      ends: unit_casts.UntilRemoved,
+    ),
+  )
+}
+
+fn auger_change_ends(cast_id cast_id: Int) -> Effect {
+  cast_state.OtherPlayerChangeEnds(
+    address: address(),
+    source: source_of(cast_id:, effect_id: auger_row),
+  )
+}
+
+/// The press of `spell` on the caster, whose go the round answers with the ally selected, run
+/// until `until_ms`: the state, the cast's id and what each step tells the allies.
+fn auger_run_until(
+  spell spell: Spell,
+  until_ms until_ms: Int,
+) -> #(State, Int, List(#(Int, List(Effect)))) {
+  let seen = esper_seeing(players: [ally])
+  let #(state, pressed) =
+    pressed_at_in(
+      plans: plans_of(spell:),
+      bag: bag_of_base_3,
+      target: 7,
+      state: cast_state.new(),
+      caster: seen,
+      at: 1000,
+    )
+  let #(state, fired) =
+    support.run_timers_posed(
+      caster: seen,
+      state:,
+      effects: pressed,
+      from_ms: 1000,
+      struck_at: fn(_, asked) {
+        case asked.spell4_id == spell.spell4_id {
+          True -> [ally_selected(unit_id: ally)]
+          False -> []
+        }
+      },
+      poses: dict.new(),
+      until_ms: Some(until_ms),
+    )
+  #(
+    state,
+    support.pressed_id(effects: pressed),
+    list.map(fired, fn(step) { #(step.at_ms, step.effects) }),
+  )
+}
+
+/// Each step that tells the allies something: its time and what it tells.
+fn auger_told_at(
+  steps steps: List(#(Int, List(Effect))),
+) -> List(#(Int, List(Effect))) {
+  list.filter_map(steps, fn(step) {
+    case told(effects: step.1) {
+      [] -> Error(Nil)
+      changes -> Ok(#(step.0, changes))
+    }
+  })
+}
+
+pub fn a_change_that_lasts_until_removed_on_an_ally_ends_at_the_end_of_the_aura_and_it_ends_once_by_whichever_path_comes_first_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The cast starts at 1000 and goes at 1500, so its aura of 3000 ms runs out at 4000: the
+  // change told at the go has 2500 ms left (`0x1407180c0`: a buff is timed from the cast's start
+  // by the spell's spellDuration).
+  let kept = held_changes.KeptWhenUnseen
+  let aura = auger_shaped(outlives_caster: True, aura_ms: Some(3000))
+  let #(state, id, steps) = auger_run_until(spell: aura, until_ms: 1500)
+  assert auger_told_at(steps: steps)
+    == [#(1500, [auger_change_of(cast_id: id, sight: kept, go_ms: 1500)])]
+    as "a go 500 ms after the cast's start tells the ally the change, listed until removed as the caster's own node lists the row"
+  let assert [end_timer] = player_end_timers(state:)
+    as "and arms one end timer for the change"
+  let go_effects =
+    list.flat_map(steps, fn(step) {
+      case step.0 == 1500 {
+        True -> step.1
+        False -> []
+      }
+    })
+  assert list.filter_map(go_effects, fn(effect) {
+      case effect {
+        cast_state.StartTimer(timer:, after_ms:) if timer == end_timer ->
+          Ok(after_ms)
+        _ -> Error(Nil)
+      }
+    })
+    == [2500]
+    as "the end timer is armed for the 2500 ms the aura has left at the go: it alone ends the ally's change once the caster no longer sees the ally, so the node's end at 4000 cannot stand in for it"
+  // Run to the end: the timer and the node's end are both due at 4000.
+  let #(_, _, whole) = auger_run_until(spell: aura, until_ms: 100_000)
+  assert auger_told_at(steps: whole)
+    == [
+      #(1500, [auger_change_of(cast_id: id, sight: kept, go_ms: 1500)]),
+      #(4000, [auger_change_ends(cast_id: id)]),
+    ]
+    as "the change ends once, at the aura's end 4000 (the go plus the 2500 ms left), though the timer and the node's end are both due then"
+  // Each order of the two ends tells it once, and writes the cast's 0x7fe once.
+  let both_orders = [
+    #(
+      "the timer first",
+      list.append(player_end_timers(state:), nodes_end_timers(state:)),
+    ),
+    #(
+      "the node's end first",
+      list.append(nodes_end_timers(state:), player_end_timers(state:)),
+    ),
+  ]
+  list.each(both_orders, fn(order) {
+    let #(_, ended) =
+      fired_in_order(state:, timers: order.1, seeing: [ally], at: 4000)
+    assert told(effects: ended) == [auger_change_ends(cast_id: id)]
+      as { order.0 <> ": the change ends once" }
+    assert list.filter(
+        support.finished_ids(support.writes(effects: ended)),
+        fn(done) { done == id },
+      )
+      == [id]
+      as { order.0 <> ": the cast's 0x7fe is written once" }
+  })
+  // The caster no longer sees the ally: a spell with propertyFlags 0x100 keeps the change
+  // until its timer.
+  let #(left, removal) =
+    cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 2000)
+  assert told(effects: removal) == []
+    as "the ally leaving the caster's sight before the aura's end ends nothing for a spell with propertyFlags 0x100"
+  let #(_, ended) =
+    fired_in_order(
+      state: left,
+      timers: player_end_timers(state: left),
+      seeing: [],
+      at: 4000,
+    )
+  assert told(effects: ended) == [auger_change_ends(cast_id: id)]
+    as "and the timer ends it at the aura's end, from the go's address"
+  // A spell without propertyFlags 0x100 holds the change only while the caster sees the ally.
+  let unkept = auger_shaped(outlives_caster: False, aura_ms: Some(3000))
+  let #(state, id, _) = auger_run_until(spell: unkept, until_ms: 1500)
+  let #(state, removal) =
+    cast_proc.unit_removed(cast: state, unit_id: ally, now_ms: 2000)
+  assert told(effects: removal) == [auger_change_ends(cast_id: id)]
+    as "a spell without propertyFlags 0x100 ends the change when the ally leaves the caster's sight"
+  let #(_, late) =
+    fired_in_order(
+      state:,
+      timers: player_end_timers(state:),
+      seeing: [],
+      at: 4000,
+    )
+  assert told(effects: late) == []
+    as "and its timer, late, finds nothing to end"
+  // A go at or after the aura's end gives the row no end: nothing is told, no timer is armed and
+  // a debug line says the row lasts until removed. So does a spell that is no aura.
+  list.each(
+    [
+      #("an aura that runs out at the go", Some(500)),
+      #("an aura that ran out before the go", Some(400)),
+      #("a spell that is no aura", None),
+    ],
+    fn(row) {
+      let spell = auger_shaped(outlives_caster: True, aura_ms: row.1)
+      let #(state, _, steps) = auger_run_until(spell:, until_ms: 100_000)
+      assert auger_told_at(steps: steps) == []
+        as { row.0 <> ": the ally is told nothing" }
+      assert player_end_timers(state:) == []
+        as { row.0 <> ": and no end timer is armed" }
+      assert list.any(
+        list.flat_map(steps, fn(step) { support.debug_lines(effects: step.1) }),
+        string.contains(_, "lasts until removed"),
+      )
+        as { row.0 <> ": and a debug line says the row lasts until removed" }
+    },
   )
 }

@@ -138,38 +138,34 @@ pub type Primary {
   AnotherUnit(pose: Pose)
 }
 
+/// Where a cast's area is centred, and whether that is the caster's own place.
+pub type Centre {
+  Centre(pose: Pose, on_the_caster: Bool)
+}
+
 /// Where a player's hit is centred, by the spell's anchor: a row that follows the caster is
 /// on the caster's pose now (`caster`); a row fixed at the caster is on the pose the cast
 /// started at (`started_at`), whatever the caster has done since; a row on the primary
 /// target follows it (the caster's pose now when the caster is the primary target) and a
 /// fixed one stays at the start pose when the caster is the primary target, else on the
-/// pose the picture shows the target at.
+/// pose the target stood in when the cast went (`stood_at`) when there is one, else on the
+/// pose the picture shows the target at. The centre is the caster's for an anchor on the
+/// caster and for a primary target that is the caster.
 pub fn centre_of(
   anchor anchor: Anchor,
   caster caster: Pose,
   started_at started_at: Pose,
   primary primary: Primary,
-) -> Pose {
+  stood_at stood_at: Option(Pose),
+) -> Centre {
   case anchor, primary {
-    FollowsCaster, TheCaster | FollowsCaster, AnotherUnit(..) -> caster
-    FixedAtCaster, TheCaster | FixedAtCaster, AnotherUnit(..) -> started_at
-    FollowsTarget, TheCaster -> caster
-    FixedAtTarget, TheCaster -> started_at
-    FollowsTarget, AnotherUnit(pose:) | FixedAtTarget, AnotherUnit(pose:) ->
-      pose
-  }
-}
-
-/// Whether `centre_of` puts the centre on the caster: an anchor on the caster, or a primary
-/// target that is the caster.
-pub fn centred_on_the_caster(
-  anchor anchor: Anchor,
-  primary primary: Primary,
-) -> Bool {
-  case anchor, primary {
-    FollowsCaster, _ | FixedAtCaster, _ -> True
-    FollowsTarget, TheCaster | FixedAtTarget, TheCaster -> True
-    FollowsTarget, AnotherUnit(..) | FixedAtTarget, AnotherUnit(..) -> False
+    FollowsCaster, _ -> Centre(pose: caster, on_the_caster: True)
+    FixedAtCaster, _ -> Centre(pose: started_at, on_the_caster: True)
+    FollowsTarget, TheCaster -> Centre(pose: caster, on_the_caster: True)
+    FixedAtTarget, TheCaster -> Centre(pose: started_at, on_the_caster: True)
+    FollowsTarget, AnotherUnit(pose:) -> Centre(pose:, on_the_caster: False)
+    FixedAtTarget, AnotherUnit(pose:) ->
+      Centre(pose: option.unwrap(stood_at, pose), on_the_caster: False)
   }
 }
 
@@ -494,7 +490,7 @@ pub fn select_ordered(
 }
 
 /// `select_ordered` with one more candidate, the caster, in an area centred on the caster
-/// (`centred_on_the_caster`) that finds its allies for a heal row that does not name it: it
+/// (`Centre.on_the_caster`) that finds its allies for a heal row that does not name it: it
 /// stands at the centre, at distance 0, and takes no shape test, ranked by the health it misses
 /// as the others are.
 /// Distance 0 ranks the caster first among units missing as much, and first of all when

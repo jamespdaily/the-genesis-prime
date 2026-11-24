@@ -471,7 +471,7 @@ pub fn a_modifier_aimed_at_the_area_of_a_spell_that_finds_allies_keeps_the_areas
         Ok([Caster, Struck(aim: AimsAtPrimaryTargetAndArea)]),
       ),
       #(
-        "92788 with flags 7 in a spell that hits foes: both parts as before",
+        "92788 with flags 7 in a spell that hits foes: both parts",
         modifier_parts_aimed_by(
           id: 92_788,
           flags: 7,
@@ -489,7 +489,7 @@ pub fn a_modifier_aimed_at_the_area_of_a_spell_that_finds_allies_keeps_the_areas
         Ok([Caster]),
       ),
       #(
-        "92788 as read in a spell that hits foes: both parts as before",
+        "92788 as read in a spell that hits foes: both parts",
         modifier_parts_aimed_by(
           id: 92_788,
           flags: 5,
@@ -498,7 +498,7 @@ pub fn a_modifier_aimed_at_the_area_of_a_spell_that_finds_allies_keeps_the_areas
         Ok([Caster, Struck(aim: AimsAtArea)]),
       ),
       #(
-        "217926 as read (flags 4) where the area finds allies: the allies' change alone, which is read so today",
+        "217926 as read (flags 4) where the area finds allies: the allies' change alone",
         modifier_parts_aimed_by(id: 217_926, flags: 4, place: finding),
         Ok([Struck(aim: AimsAtArea)]),
       ),
@@ -508,7 +508,7 @@ pub fn a_modifier_aimed_at_the_area_of_a_spell_that_finds_allies_keeps_the_areas
         Ok([Struck(aim: AimsAtPrimaryTargetAndArea)]),
       ),
       #(
-        "129039 as read (flags 4), Defense Grid's: the allies' change alone, which is read so today",
+        "129039 as read (flags 4), Defense Grid's: the allies' change alone",
         modifier_parts_aimed_by(id: 129_039, flags: 4, place: finding),
         Ok([Struck(aim: AimsAtArea)]),
       ),
@@ -533,12 +533,17 @@ pub fn a_modifier_aimed_at_the_area_of_a_spell_that_finds_allies_keeps_the_areas
   assert read_client_row(id: 49_023, place: finding)
     == read_client_row(id: 49_023, place: spell_tables.pressed)
     as "the change is for type 11 rows only"
-  // The gate: Spell4Effects 92788 with the target apply prerequisite 13985 (type 40).
-  let gated_in = fn(place) {
+  // The gate: Spell4Effects 92788 with the target apply prerequisite 13985 (type 40), aimed by
+  // the flags given: any aim that reaches the area is refused where the area finds allies, since
+  // the strike checks no gate of a modifier for an ally.
+  let gated_in = fn(place, flags) {
     fixture_tables.changed(
       table: "Spell4Effects",
       id: 92_788,
-      with: [#("prerequisiteIdTargetApply", Integer(13_985))],
+      with: [
+        #("prerequisiteIdTargetApply", Integer(13_985)),
+        #("targetFlags", Integer(flags)),
+      ],
       body: fn(tables) {
         spell_plan.read_row(
           tables:,
@@ -549,17 +554,23 @@ pub fn a_modifier_aimed_at_the_area_of_a_spell_that_finds_allies_keeps_the_areas
       },
     )
   }
-  assert gated_in(finding)
-    == Error(spell_plan.AlliesModifierGateNotRead(
-      spell4_id: 41_369,
-      effect_id: 92_788,
-    ))
-    as "a modifier aimed at the area of a spell that finds allies and behind a target apply prerequisite fails the plan"
-  assert case gated_in(spell_tables.pressed) {
+  list.each([4, 5, 6, 7], fn(flags) {
+    assert gated_in(finding, flags)
+      == Error(spell_plan.AlliesModifierGateNotRead(
+        spell4_id: 41_369,
+        effect_id: 92_788,
+      ))
+      as {
+        "a modifier of flags "
+        <> int.to_string(flags)
+        <> " aimed at the area of a spell that finds allies and behind a target apply prerequisite fails the plan"
+      }
+  })
+  assert case gated_in(spell_tables.pressed, 5) {
     Ok(Applied(_)) -> True
     _ -> False
   }
-    as "the same row where the area finds no allies is read as before"
+    as "the same row where the area finds no allies is read, as a modifier of the caster"
 }
 
 pub fn union_proxy_plans_one_child_on_the_caster_and_one_on_each_struck_unit_test() -> Nil {

@@ -961,7 +961,78 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
       let #(starts, anchors, shapes, expected, reason) = row
       list.each(starts, fn(start) {
         list.each(anchors, fn(anchor) {
-          assert spell_area.start_placed(anchor:, start:, shapes:) == expected
+          assert spell_area.start_placed(
+              anchor:,
+              start:,
+              shapes:,
+              selected_by_row: None,
+            )
+            == expected
+            as reason
+        })
+      })
+    },
+  )
+  // A go that draws no hit shape selects by the area row alone, which reads the unit's facing
+  // unless it is all round (360 degrees, `area.in_row`): the same rows with the row given.
+  let row = fn(degrees) {
+    area.Row(
+      min_range: 0.0,
+      max_range: 30.0,
+      degrees:,
+      target_count: 3,
+      order: area.MissingMostHealth,
+    )
+  }
+  list.each(
+    [
+      #(
+        on_each_ally,
+        on_the_target,
+        row(360.0),
+        True,
+        "an all-round row selects the same at any facing: Barrier's 429 and Warden's 766 are 360 degrees",
+      ),
+      #(
+        on_each_ally,
+        on_the_target,
+        row(180.0),
+        False,
+        "a row under 360 degrees on the ally reads the yaw of a player, which the picture does not hold",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        row(100.0),
+        False,
+        "the same for a unit a Proxy or a proc started the spell on",
+      ),
+      #(
+        on_the_caster_or_press,
+        every_anchor,
+        row(100.0),
+        True,
+        "a press or a start on the caster has the caster's own yaw, whatever the anchor",
+      ),
+      #(
+        on_each_ally,
+        on_the_caster,
+        row(100.0),
+        True,
+        "a row centred on the caster is the caster's yaw, whoever the child is started on",
+      ),
+    ],
+    fn(case_) {
+      let #(starts, anchors, selected_by_row, expected, reason) = case_
+      list.each(starts, fn(start) {
+        list.each(anchors, fn(anchor) {
+          assert spell_area.start_placed(
+              anchor:,
+              start:,
+              shapes: [],
+              selected_by_row: Some(selected_by_row),
+            )
+            == expected
             as reason
         })
       })
@@ -1018,6 +1089,7 @@ pub fn a_proc_spell_aimed_at_its_holder_is_placed_as_a_press_and_one_aimed_at_an
           anchor: area.FollowsTarget,
           start:,
           shapes: [circle_aside],
+          selected_by_row: None,
         )
         == built
         as reason
@@ -2854,20 +2926,7 @@ fn kick_changing_the_areas_units(
           }),
         ),
       ]),
-      #("Spell4Effects", 140_383, [
-        #("effectType", Integer(11)),
-        #("delayTime", Integer(0)),
-        #("durationTime", Integer(5000)),
-        #("targetFlags", Integer(4)),
-        #("dataBits00", Integer(100)),
-        #("dataBits01", Integer(1)),
-        #("dataBits02", Integer(1_065_353_216)),
-        #("dataBits03", Integer(1_065_353_216)),
-        #("parameterType00", Integer(0)),
-        #("parameterType01", Integer(0)),
-        #("parameterType02", Integer(0)),
-        #("parameterType03", Integer(0)),
-      ]),
+      #("Spell4Effects", 140_383, fixture_tables.area_modifier_cells()),
       #("Spell4Effects", 140_382, [#("targetFlags", Integer(1))]),
     ])
     as "the edits name rows and columns the fixture holds"
@@ -3007,15 +3066,7 @@ pub fn the_targeted_spells_of_the_planned_trees_select_no_area_and_the_two_child
   let started =
     dict.values(spell_plan.plans_with_later(tables:))
     |> list.flat_map(fn(ability) {
-      let alternate = case ability.alternate {
-        Some(alternate) ->
-          spell_plan.tree_started(spell: alternate, started: fn(_) { True })
-        None -> []
-      }
-      list.append(
-        spell_plan.tree_started(spell: ability, started: fn(_) { True }),
-        alternate,
-      )
+      spell_plan.tree_started_with_alternate(spell: ability)
     })
     |> list.map(fn(started) { #(started.0.spell4_id.value, started.1) })
   let started_as = fn(spell4_id: Int) {
