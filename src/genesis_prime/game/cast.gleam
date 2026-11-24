@@ -4632,6 +4632,7 @@ fn go(
           aimed:,
           struck:,
           spell:,
+          audience: live.audience,
           now_ms:,
         )
       let #(cast, throwing) =

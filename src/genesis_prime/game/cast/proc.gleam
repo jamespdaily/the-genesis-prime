@@ -167,10 +167,10 @@ import genesis_prime/game/cast/state.{
   CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
   FindProxyTickUnits, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal,
   HeldChange, HeldProc, Hit, HitCaster, HitCreature, HitOtherPlayer, HitPlayer,
-  Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerChangeEnds,
-  OtherPlayerChangeStarts, Pay, PlayerChangeEnd, ProcDue, QuestAdvanceDue,
-  QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast, StartChild,
-  StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
+  Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, OtherPlayerCastWent,
+  OtherPlayerChangeEnds, OtherPlayerChangeStarts, Pay, PlayerChangeEnd, ProcDue,
+  QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send, ShortcutCast,
+  StartChild, StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
   TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell, Tick,
   TickStrike, WindowEnd,
 } as cast_state
@@ -242,6 +242,7 @@ pub fn heals_landed(
       | CasterChangeEnds(..)
       | OtherPlayerChangeStarts(..)
       | OtherPlayerChangeEnds(..)
+      | OtherPlayerCastWent(..)
       | TargetChangeStarts(..)
       | TargetChangeEnds(..)
       | CreatureControlsEnd(..)
@@ -282,6 +283,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
       | CasterChangeEnds(..)
       | OtherPlayerChangeStarts(..)
       | OtherPlayerChangeEnds(..)
+      | OtherPlayerCastWent(..)
       | TargetChangeStarts(..)
       | TargetChangeEnds(..)
       | CreatureControlsEnd(..)

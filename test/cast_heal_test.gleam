@@ -145,38 +145,7 @@ fn healed(
         source:,
         change: cast_state.Heal(vital:, amount:),
       ) -> Ok(#(source, vital, amount))
-      cast_state.CasterChangeStarts(
-        change: cast_state.HeldChange(held_changes.Property(..)),
-        ..,
-      )
-      | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
-      | cast_state.CasterChangeStarts(
-          change: cast_state.HeldChange(held_changes.Absorb(..)),
-          ..,
-        )
-      | cast_state.Send(..)
-      | cast_state.Tell(..)
-      | cast_state.StartTimer(..)
-      | cast_state.CancelTimer(..)
-      | cast_state.Log(..)
-      | cast_state.Strike(..)
-      | cast_state.Pay(..)
-      | cast_state.Gain(..)
-      | cast_state.CasterChangeEnds(..)
-      | cast_state.OtherPlayerChangeStarts(..)
-      | cast_state.OtherPlayerChangeEnds(..)
-      | cast_state.TargetChangeStarts(..)
-      | cast_state.TargetChangeEnds(..)
-      | cast_state.ForcedMoveStarts(..)
-      | cast_state.CreatureDespawns(..)
-      | cast_state.CreatureHoldsUnitStates(..)
-      | cast_state.CreatureControlsEnd(..)
-      | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..)
-      | cast_state.QuestAdvanced(..)
-      | cast_state.TickStrike(..)
-      | cast_state.FindProxyTickUnits(..)
-      | cast_state.StealthChanged(..) -> Error(Nil)
+      _ -> Error(Nil)
     }
   })
 }
@@ -254,29 +223,7 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
     position(fn(effect) {
       case effect {
         cast_state.Send(frame:) -> frame.message_id == spell_go.message_id
-        cast_state.CasterChangeStarts(..)
-        | cast_state.Tell(..)
-        | cast_state.StartTimer(..)
-        | cast_state.CancelTimer(..)
-        | cast_state.Log(..)
-        | cast_state.Strike(..)
-        | cast_state.Pay(..)
-        | cast_state.Gain(..)
-        | cast_state.CasterChangeEnds(..)
-        | cast_state.OtherPlayerChangeStarts(..)
-        | cast_state.OtherPlayerChangeEnds(..)
-        | cast_state.TargetChangeStarts(..)
-        | cast_state.TargetChangeEnds(..)
-        | cast_state.ForcedMoveStarts(..)
-        | cast_state.CreatureDespawns(..)
-        | cast_state.CreatureHoldsUnitStates(..)
-        | cast_state.CreatureControlsEnd(..)
-        | cast_state.Activated(..)
-        | cast_state.ShortcutCast(..)
-        | cast_state.QuestAdvanced(..)
-        | cast_state.TickStrike(..)
-        | cast_state.FindProxyTickUnits(..)
-        | cast_state.StealthChanged(..) -> False
+        _ -> False
       }
     })
   let healed = position(fn(effect) { heals(effects: [effect]) != [] })
@@ -358,35 +305,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
         change: cast_state.HeldChange(held_changes.Property(..)),
         ..,
       ) -> True
-      cast_state.CasterChangeStarts(change: cast_state.Heal(..), ..)
-      | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
-      | cast_state.CasterChangeStarts(
-          change: cast_state.HeldChange(held_changes.Absorb(..)),
-          ..,
-        )
-      | cast_state.Send(..)
-      | cast_state.Tell(..)
-      | cast_state.StartTimer(..)
-      | cast_state.CancelTimer(..)
-      | cast_state.Log(..)
-      | cast_state.Strike(..)
-      | cast_state.Pay(..)
-      | cast_state.Gain(..)
-      | cast_state.CasterChangeEnds(..)
-      | cast_state.OtherPlayerChangeStarts(..)
-      | cast_state.OtherPlayerChangeEnds(..)
-      | cast_state.TargetChangeStarts(..)
-      | cast_state.TargetChangeEnds(..)
-      | cast_state.ForcedMoveStarts(..)
-      | cast_state.CreatureDespawns(..)
-      | cast_state.CreatureHoldsUnitStates(..)
-      | cast_state.CreatureControlsEnd(..)
-      | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..)
-      | cast_state.QuestAdvanced(..)
-      | cast_state.TickStrike(..)
-      | cast_state.FindProxyTickUnits(..)
-      | cast_state.StealthChanged(..) -> False
+      _ -> False
     }
   })
     as "and the raised maximum does start in the same go"
@@ -730,40 +649,7 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
     list.filter_map(support.tells(effects:), fn(tell) {
       case tell.1 {
         CastWent(go:) -> Ok(#(tell.0, go))
-        client_connection.CastStarted(..)
-        | client_connection.CastFinished(..)
-        | client_connection.CastInterrupted(..)
-        | client_connection.CastMissed(..)
-        | client_connection.CastTicked(..)
-        | client_connection.CastTargetsRemoved(..)
-        | client_connection.CastStackRemoved(..)
-        | client_connection.Appeared(..)
-        | client_connection.CreatureAppeared(..)
-        | client_connection.Moving(..)
-        | client_connection.Removed
-        | client_connection.Health(..)
-        | client_connection.Died
-        | client_connection.CameBack
-        | client_connection.DeathLogged
-        | client_connection.CameBackLogged
-        | client_connection.CreatureMoved(..)
-        | client_connection.CreaturePlaced(..)
-        | client_connection.CreatureFaces(..)
-        | client_connection.Targeting(..)
-        | client_connection.Threat(..)
-        | client_connection.CombatState(..)
-        | client_connection.Shield(..)
-        | client_connection.CrowdControlApplied(..)
-        | client_connection.CrowdControlEnded(..)
-        | client_connection.UnitStateHeld(..)
-        | client_connection.UnitStateEnded(..)
-        | client_connection.InterruptArmor(..)
-        | client_connection.Absorption(..)
-        | client_connection.Level(..)
-        | client_connection.PropertiesChanged(..)
-        | client_connection.Stealth(..)
-        | client_connection.LookChanged(..)
-        | client_connection.HeldCastEnded(..) -> Error(Nil)
+        _ -> Error(Nil)
       }
     })
   assert list.length(told) == 2 as "the caster's audience is two connections"

@@ -49,19 +49,6 @@ pub fn name_of(news: News) -> String {
     client_connection.Died -> "0x88c"
     CreatureAppeared(..) -> "0x262"
     client_connection.Removed -> "0x355"
-    client_connection.Appeared(..)
-    | client_connection.Moving(..)
-    | client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged
-    | client_connection.CastStackRemoved(..)
-    | client_connection.Shield(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..) -> "other"
     client_connection.CrowdControlApplied(..) -> "0x87f"
     client_connection.CrowdControlEnded(..) -> "0x880"
     client_connection.InterruptArmor(armor:) ->
@@ -70,6 +57,7 @@ pub fn name_of(news: News) -> String {
       "0x938(22, " <> int.to_string(absorption) <> ")"
     client_connection.Level(level:) ->
       "0x938(10, " <> int.to_string(level) <> ")"
+    _ -> "other"
   }
 }
 

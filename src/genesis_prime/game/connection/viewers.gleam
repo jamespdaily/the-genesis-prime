@@ -503,7 +503,8 @@ pub fn viewer_takes(
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..) -> False
+    | client_connection.HeldCastEnded(..)
+    | client_connection.HeldCastStarted(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && names_own_unit(entered:, unit_id:),
@@ -707,6 +708,8 @@ pub fn viewer_takes(
         [connection_state.to_client(session, cast_frame.started_frame(start:))],
       )
     }
+    // The start an ally tells for a cast it holds is dropped: no frame is written for it.
+    client_connection.HeldCastStarted(..) -> Continue(session, [])
     client_connection.HeldCastEnded(cast_id:) ->
       case
         client_casts.ally_ended(
@@ -1150,7 +1153,8 @@ fn creature_news(
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..) -> session
+    | client_connection.HeldCastEnded(..)
+    | client_connection.HeldCastStarted(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -1246,7 +1250,8 @@ fn life_news(
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..) -> Continue(session, [])
+    | client_connection.HeldCastEnded(..)
+    | client_connection.HeldCastStarted(..) -> Continue(session, [])
   }
 }
 

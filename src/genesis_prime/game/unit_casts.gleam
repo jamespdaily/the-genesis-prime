@@ -189,14 +189,23 @@ pub fn entry_of(
             True -> 0
             False -> 1
           },
-          targets: list.index_map(view.targets, fn(target, index) {
-            target_of_view(target:, index:, now_ms:)
-          }),
+          targets: targets_of(view:, now_ms:),
           initial_positions: [],
           telegraph_positions: [],
         ),
       )
   }
+}
+
+/// The target infos of the view's targets at `now_ms`, in order: what a create's entry
+/// lists for the cast and what a go that starts it for a viewer lists.
+pub fn targets_of(
+  view view: CastView,
+  now_ms now_ms: Int,
+) -> List(SpellTargetInfo) {
+  list.index_map(view.targets, fn(target, index) {
+    target_of_view(target:, index:, now_ms:)
+  })
 }
 
 /// The entries a create lists at `now_ms`: those of `listed` views.

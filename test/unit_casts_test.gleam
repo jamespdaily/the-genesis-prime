@@ -11,11 +11,15 @@
 
 import cast_support as support
 import fixture_tables
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Node}
 import genesis_prime/game/spell_plan
+import genesis_prime/game/start_place
 import genesis_prime/game/unit_casts.{
-  type CastView, CastView, HeldEffect, UntilRemoved, ViewTarget,
+  type CastView, type HeldEffect, CastView, HeldEffect, UntilRemoved, ViewTarget,
 }
+import genesis_prime/message/spell_position
+import genesis_prime/message/spell_started.{SpellStarted}
 import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
@@ -27,6 +31,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import owned_test
+import place_support
 
 fn view(cast_id cast_id: Int) -> CastView {
   CastView(
@@ -518,4 +523,146 @@ pub fn an_entry_lists_the_target_a_node_makes_test() -> Nil {
         as reason
     },
   )
+}
+
+/// The ally's place of the started cast below: x 1024, y 2, z -512, turned 1.5 radians. Each
+/// is a 32-bit float whose bits are exact (0x44800000, 0x40000000, 0xC4000000, 0x3FC00000).
+fn ally_place() -> start_place.Place {
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: 1024.0,
+    y: 2.0,
+    z: -512.0,
+  )
+  |> start_place.turned(facing: start_place.Facing(
+    yaw: 1.5,
+    pitch: 0.0,
+    roll: 0.0,
+  ))
+}
+
+/// The view of cast 7 of Phantasmal Armor tier 5 (Spell4 52341, `table_rows -- Spell4Effects
+/// spellId=52341`) that caster 21 put on ally 40, holding these effects.
+fn held_view(effects effects: List(HeldEffect)) -> CastView {
+  CastView(
+    caster_unit_id: 21,
+    cast_id: 7,
+    spell4_id: Spell4Id(52_341),
+    primary_target: 40,
+    gone: True,
+    current: False,
+    targets: [ViewTarget(unit_id: 40, count: 1, effects:)],
+  )
+}
+
+fn ten_seconds_from(
+  effect_id effect_id: Int,
+  starts_ms starts_ms: Int,
+) -> HeldEffect {
+  HeldEffect(
+    effect_id: Spell4EffectsId(effect_id),
+    starts_ms:,
+    ends: unit_casts.EndsAt(ms: starts_ms + 10_000),
+  )
+}
+
+pub fn a_held_cast_is_started_and_gone_for_a_viewer_with_the_targets_its_create_lists_test() -> Nil {
+  use <- owned_test.run(5000)
+  let absorb = ten_seconds_from(effect_id: 123_664, starts_ms: 1000)
+  let modifier = ten_seconds_from(effect_id: 203_798, starts_ms: 1000)
+  let view = held_view(effects: [absorb, modifier])
+  let #(started, went) =
+    cast_frame.held_start(view:, place: ally_place(), now_ms: 4000)
+  // opcode.0x7ff: the caster's unit, the cast and its spell, the spell as its own root with
+  // no parent, the ally as primary target at the ally's place and yaw, item level 0 and the
+  // two safe bits (opcode.0x7ff.root_parent, .caster_item_level, .own_cast, .activate); the
+  // place is a guess (0x14053a210.held_position).
+  assert started
+    == SpellStarted(
+      cast_id: 7,
+      spell4_id: 52_341,
+      root_spell4_id: 52_341,
+      parent_spell4_id: 0,
+      caster_unit_id: 21,
+      caster_item_level: 0,
+      primary_target_unit_id: 40,
+      position: spell_position.SpellPosition(
+        x: 1_149_239_296,
+        y: 1_073_741_824,
+        z: 3_288_334_336,
+      ),
+      yaw: 1_069_547_520,
+      initial_positions: [],
+      telegraph_positions: [],
+      own_cast: 1,
+      creature_activate: 0,
+    )
+    as "the 0x7ff names the caster, the cast and the ally and carries the safe values"
+  // opcode.0x7f4: the ally alone with one instance, the ignore-cooldown bit, no positions or
+  // missiles, phase 0, and the ally's place as its destination.
+  assert went.cast_id == 7 && went.phase == 0 && went.ignore_cooldown == 1
+    as "opcode.0x7f4: the go is the cast's, phase 0, with the ignore-cooldown bit set"
+  assert went.destination == started.position
+    as "its destination is the ally's place"
+  assert went.initial_positions == []
+    && went.telegraph_positions == []
+    && went.missiles == []
+    as "it carries no positions and no missiles"
+  assert list.length(went.targets) == 1
+    && list.map(went.targets, fn(target) { target.unit_id }) == [40]
+    && list.map(went.targets, fn(target) { target.instance_count }) == [1]
+    as "it lists the ally alone, with one instance"
+  assert went.targets == targets_at(view:, now_ms: 4000)
+    as "its target is the one the ally's create lists for the same view and clock"
+  // opcode.0x7f4.effect_delay, .effect_time: a cast with two effects lists both in start
+  // order, each with the delay still to run and the time left.
+  let later = ten_seconds_from(effect_id: 203_798, starts_ms: 5000)
+  let #(_, two) =
+    cast_frame.held_start(
+      view: held_view(effects: [absorb, later]),
+      place: ally_place(),
+      now_ms: 4000,
+    )
+  assert two.targets
+    == [
+      support.listed_target_info(unit_id: 40, index: 0, count: 1, effects: [
+        support.listed_effect_info(
+          effect_id: 123_664,
+          instance_id: 1,
+          delay_ms: 0,
+          lifetime_ms: 7000,
+        ),
+        support.listed_effect_info(
+          effect_id: 203_798,
+          instance_id: 2,
+          delay_ms: 1000,
+          lifetime_ms: 11_000,
+        ),
+      ]),
+    ]
+    as "each effect is listed in start order with its delay and its time left"
+  // A negative clock (the monotonic time starts below 0): a change told at the go's time
+  // -5000 for 10 000 ms ends at 5000, so built at -2000 it has no delay left and 7000 ms to
+  // live.
+  let #(_, early) =
+    cast_frame.held_start(
+      view: held_view(effects: [
+        ten_seconds_from(effect_id: 123_664, starts_ms: -5000),
+      ]),
+      place: ally_place(),
+      now_ms: -2000,
+    )
+  assert early.targets
+    == [
+      support.listed_target_info(unit_id: 40, index: 0, count: 1, effects: [
+        support.listed_effect_info(
+          effect_id: 123_664,
+          instance_id: 1,
+          delay_ms: 0,
+          lifetime_ms: 7000,
+        ),
+      ]),
+    ]
+    as "at a negative clock the effect has no delay and 7000 ms left"
 }

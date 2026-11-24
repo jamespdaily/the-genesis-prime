@@ -1367,8 +1367,22 @@ fn carried_out(
           ),
         ],
       )
+      cast_state.OtherPlayerCastWent(address:, cast_id:, audience:), Some(_) -> #(
+        session,
+        [
+          tells_the_player(
+            address:,
+            change: held_changes.PlayerCastWent(
+              from: client_connection.connection(session.link),
+              cast_id:,
+              audience:,
+            ),
+          ),
+        ],
+      )
       cast_state.OtherPlayerChangeStarts(..), None
       | cast_state.OtherPlayerChangeEnds(..), None
+      | cast_state.OtherPlayerCastWent(..), None
       -> #(session, [])
       cast_state.StealthChanged(stealthed:), Some(entered) -> #(
         session,
@@ -2080,6 +2094,7 @@ pub fn creature_news_frames(
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..) -> []
+    | client_connection.HeldCastEnded(..)
+    | client_connection.HeldCastStarted(..) -> []
   }
 }

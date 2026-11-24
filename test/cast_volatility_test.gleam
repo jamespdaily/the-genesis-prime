@@ -275,40 +275,7 @@ fn started_told(
   list.filter_map(support.tells(effects:), fn(tell) {
     case tell.1 {
       client_connection.CastStarted(start:) -> Ok(#(tell.0, start))
-      client_connection.CastWent(..)
-      | client_connection.CastFinished(..)
-      | client_connection.CastInterrupted(..)
-      | client_connection.CastMissed(..)
-      | client_connection.CastTicked(..)
-      | client_connection.CastTargetsRemoved(..)
-      | client_connection.CastStackRemoved(..)
-      | client_connection.Appeared(..)
-      | client_connection.CreatureAppeared(..)
-      | client_connection.Moving(..)
-      | client_connection.Removed
-      | client_connection.Health(..)
-      | client_connection.Died
-      | client_connection.CameBack
-      | client_connection.DeathLogged
-      | client_connection.CameBackLogged
-      | client_connection.CreatureMoved(..)
-      | client_connection.CreaturePlaced(..)
-      | client_connection.CreatureFaces(..)
-      | client_connection.Targeting(..)
-      | client_connection.Threat(..)
-      | client_connection.CombatState(..)
-      | client_connection.Shield(..)
-      | client_connection.CrowdControlApplied(..)
-      | client_connection.CrowdControlEnded(..)
-      | client_connection.UnitStateHeld(..)
-      | client_connection.UnitStateEnded(..)
-      | client_connection.InterruptArmor(..)
-      | client_connection.Absorption(..)
-      | client_connection.Level(..)
-      | client_connection.PropertiesChanged(..)
-      | client_connection.Stealth(..)
-      | client_connection.LookChanged(..)
-      | client_connection.HeldCastEnded(..) -> Error(Nil)
+      _ -> Error(Nil)
     }
   })
 }

@@ -170,40 +170,7 @@ fn news_told(
 fn look_visuals(news news: News) -> Result(List(ItemVisual), Nil) {
   case news {
     LookChanged(item_visuals:) -> Ok(item_visuals)
-    Appeared(..)
-    | client_connection.CreatureAppeared(..)
-    | client_connection.Moving(..)
-    | Removed
-    | client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastInterrupted(..)
-    | client_connection.CastFinished(..)
-    | client_connection.Health(..)
-    | client_connection.Died
-    | client_connection.CreatureMoved(..)
-    | client_connection.CreaturePlaced(..)
-    | client_connection.CreatureFaces(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..)
-    | client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged
-    | client_connection.Shield(..)
-    | client_connection.Absorption(..)
-    | client_connection.Level(..)
-    | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..)
-    | client_connection.InterruptArmor(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.HeldCastEnded(..) -> Error(Nil)
+    _ -> Error(Nil)
   }
 }
 
