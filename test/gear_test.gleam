@@ -719,3 +719,76 @@ pub fn a_worn_items_focus_pool_adds_to_the_classes_base_and_returns_on_unequip_t
       }
   })
 }
+
+/// Items held as `#(Item2 id, location, bag index)`, with the guids 1 up.
+fn held_items(items items: List(#(Int, Int, Int))) -> List(HeldItem) {
+  list.index_map(items, fn(item, index) {
+    let #(item2_id, location, bag_index) = item
+    HeldItem(
+      item_guid: index + 1,
+      item2_id: Item2Id(fixture_tables.root("Item2", item2_id)),
+      location:,
+      bag_index:,
+      stack_count: 1,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
+    )
+  })
+}
+
+/// `ItemSpecial.spell4IdOnEquip` of an item's special: Item2 91747 and 85762 name ItemSpecial
+/// 9402, whose equip spell is Spell4 82325 and whose use spell is none; Item2 12631 names
+/// ItemSpecial 4463, whose only spell is the use spell 42389.
+pub fn a_worn_item_that_names_an_equip_spell_gives_it_and_an_item_in_a_bag_or_with_none_gives_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // Name, the items held as Item2 id, location and bag index, the equip spells given.
+  [
+    #("a worn item that names one", [#(91_747, 0, 15)], [82_325]),
+    #("the same item in a bag", [#(91_747, 1, 0)], []),
+    #("an item whose special names only a use spell", [#(12_631, 0, 5)], []),
+    #(
+      "the item worn beside one that names none",
+      [#(12_631, 0, 5), #(91_747, 0, 15)],
+      [82_325],
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, items, spells) = row
+    let worn = gear.of_items(tables:, level: 1, items: held_items(items:))
+    assert worn.equip_spells == spells
+      as { name <> ": ItemSpecial.spell4IdOnEquip of the worn item's special" }
+  })
+}
+
+/// Item2 91747 and 85762 both name the equip spell 82325 and both are Item2Type 53 (ItemSlot 43, the worn shield slot 15),
+/// so the real data never wears them together; the test wears both to see the spell listed
+/// once. Every one of the 19 roots several items name sits in one slot, which is why no rule
+/// is needed beyond dropping an exact repeat. The order half is a guard: `of_items` sorts the
+/// worn items by bag index, so the list follows the worn order and the half passes without
+/// the list's own sort; Item2 11671 (boots, bag index 5) is edited to name ItemSpecial 9264,
+/// whose equip spell is 82021, since no two slotted rows of the fixture name different
+/// equip spells.
+pub fn the_list_drops_an_exact_repeat_and_keeps_the_worn_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let twice = held_items(items: [#(91_747, 0, 15), #(85_762, 0, 16)])
+  let worn =
+    gear.of_items(tables: fixture_tables.shared(), level: 1, items: twice)
+  assert worn.equip_spells == [82_325]
+    as "two worn items naming one spell list it once"
+  fixture_tables.changed(
+    table: "Item2",
+    id: 11_671,
+    with: [#("itemSpecialId00", Integer(9264))],
+    body: fn(tables) {
+      let reversed = held_items(items: [#(91_747, 0, 15), #(11_671, 0, 5)])
+      let worn = gear.of_items(tables:, level: 1, items: reversed)
+      assert worn.equip_spells == [82_021, 82_325]
+        as "the list follows the worn order, the bag index, whatever order the items are held in"
+    },
+  )
+}

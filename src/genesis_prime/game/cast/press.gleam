@@ -94,9 +94,9 @@ import genesis_prime/game/cast/state.{
   PlayerChangeEnd, PressRefused, ProcDue, QuestAdvanceDue, Refuse, RepeatHeld,
   Resolution, RestrictionEnd, Shortcut, Stage, StartChild, StartHeld, Starts,
   State, StateEnd, TargetModifierStart, Tick, UnbuiltItemSpell,
-  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UnreadSpend, WindowEnd,
+  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, UnbuiltStandingSpell,
+  Unheld, Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UnreadSpend, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/player_state.{type PlayerState}
@@ -536,6 +536,7 @@ pub fn not_built_refusal(
     UnbuiltItemSpell(..) | UnreadItemPrerequisite(..) ->
       "the use of an item whose spell is Spell4 "
     UnbuiltSpell(..)
+    | UnbuiltStandingSpell(..)
     | UnreadPrerequisite(..)
     | UnreadLinkPrerequisite(..)
     | DroppedSignals(..)

@@ -1215,6 +1215,7 @@ fn answered_by_status(
         entered:,
         moving:,
         outcome:,
+        standing: connection_casting.standing_changed,
       )
     SpendingCharge(holder:, entered:, spending:) ->
       connection_item_spend.answered(
@@ -1225,6 +1226,7 @@ fn answered_by_status(
         spending:,
         outcome:,
         release: connection_casting.cast_effects,
+        standing: connection_casting.standing_changed,
       )
     Buying(holder:, entered:, purchase:) ->
       connection_vendor_purchase.buy_answered(
@@ -1261,6 +1263,7 @@ fn answered_by_status(
         entered:,
         sale:,
         outcome:,
+        standing: connection_casting.standing_changed,
       )
     SavingPlace(holder:, entered:, then:) ->
       connection_world.save_answered(

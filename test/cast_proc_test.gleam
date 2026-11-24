@@ -1464,9 +1464,9 @@ pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_t
     as "the persistence end drops the stealth source, and the input that did it fires the 218 proc after its 0x8f5"
 }
 
-pub fn a_died_proc_of_a_cast_that_is_not_the_innate_passive_is_not_held_and_says_so_test() -> Nil {
+pub fn a_died_proc_of_a_cast_that_is_not_a_standing_cast_is_not_held_and_says_so_test() -> Nil {
   use <- owned_test.run(60_000)
-  // A death ends every cast but the innate passive before the procs are matched, so the
+  // A death ends every cast but the standing casts before the procs are matched, so the
   // Died proc of any other holder could never fire.
   let died_cast = cast_of_proc(spell4_id: 250_201)
   let holder =
@@ -1478,7 +1478,7 @@ pub fn a_died_proc_of_a_cast_that_is_not_the_innate_passive_is_not_held_and_says
   let #(state, pressed) =
     planted_press(plans:, state: cast_state.new(), bag: bag_of_base_1, at: 1000)
   assert list.any(support.logs(effects: pressed), fn(line) {
-    line.0 == LogDebug && string.contains(line.1, "not the innate passive")
+    line.0 == LogDebug && string.contains(line.1, "not a standing cast")
   })
     as "the go says the proc is not held"
   let #(state, dying) =

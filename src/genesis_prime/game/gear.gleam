@@ -14,6 +14,11 @@
 ////   (`opcode.0x262.worn_visuals`).
 //// - **An item the reader refuses is worn and shown and gives no properties**; it is
 ////   listed in `unread` with its reason, which the connection logs once.
+//// - **The equip spells** are those the worn items' specials name, in the order the items are
+////   worn (bag index), an exact repeat listed once. No other rule decides between items that
+////   name one spell: the 19 spells several items name are each named by items of one slot
+////   (Item2Type 53 is slot 43; types 3, 10 and 17 slot 3; types 45, 46, 48, 51, 79 and 204
+////   slot 20), so two worn items never name one spell at once.
 //// - **A second shield gives nothing**: its properties would share the first's, so it is
 ////   listed in `unread` as `TwoShields`; the client's move check lets one shield be worn.
 //// - **An item with no display is not drawn**, and neither is one whose display or
@@ -29,6 +34,7 @@
 ////   is one of them, with the class's own base pool added (`bases`), so a healer's
 ////   maximum Focus is that pool plus what its items give.
 
+import genesis_prime/game/equip_spell
 import genesis_prime/game/item_property.{
   type ItemProperties, type ItemPropertyError, Shield,
 }
@@ -58,9 +64,10 @@ const worn_location = 0
 const weapon_bag_index = 16
 
 /// What the worn items give: their summed properties, the item visuals of those that
-/// are drawn, in slot order, the item held in the primary weapon slot, if any, and each
-/// worn item whose properties the reader refuses, with the reason, and each worn item
-/// whose visual the tables cannot give, with the reason.
+/// are drawn, in slot order, the item held in the primary weapon slot, if any, each
+/// worn item whose properties the reader refuses, with the reason, each worn item
+/// whose visual the tables cannot give, with the reason, and the equip spells of the worn
+/// items (`equip_spell`) in worn order, each once.
 pub type Gear {
   Gear(
     properties: ItemProperties,
@@ -68,6 +75,7 @@ pub type Gear {
     weapon: Option(Item2Id),
     unread: List(#(Item2Id, ItemPropertyError)),
     undrawn: List(#(Item2Id, WornVisualError)),
+    equip_spells: List(Int),
   )
 }
 
@@ -124,7 +132,13 @@ pub fn of_items(
     list.find(worn, fn(item) { item.bag_index == weapon_bag_index })
     |> result.map(fn(item) { item.item2_id })
     |> option.from_result
-  Gear(properties:, visuals:, weapon:, unread:, undrawn:)
+  let equip_spells =
+    list.filter_map(worn, fn(item) {
+      equip_spell.of_item(tables:, item2_id: item.item2_id.value)
+      |> option.to_result(Nil)
+    })
+    |> list.unique
+  Gear(properties:, visuals:, weapon:, unread:, undrawn:, equip_spells:)
 }
 
 /// What each worn item gives, and each that gives nothing with its reason: an item the

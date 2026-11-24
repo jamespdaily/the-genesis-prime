@@ -122,10 +122,10 @@ import genesis_prime/game/cast/state.{
   ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, StartChild,
   StartHeld, Started, StartedMoving, Starts, State, StateEnd, StealthChanged,
   Strike, TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell,
-  UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
-  WrongAnswerSpell,
+  UnbuiltShortcut, UnbuiltSpell, UnbuiltStandingSpell, UnknownAnswer,
+  UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WithCast,
+  WithNothing, WithUse, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -3804,7 +3804,8 @@ fn dropped_while_waiting(cast cast: State) -> State {
 }
 
 /// The player's standing spells become the wanted ones, in the order given: the spells a
-/// source holds for the player while it lasts, which the innate passive is the first of.
+/// source holds for the player while it lasts, the innate passive first and then the equip
+/// spells of the worn items.
 /// Each standing spell no longer wanted ends first, the lowest cast id first, with its 0x7fe
 /// to the caster and the audience (`standing_ended`). Then each wanted spell that does not
 /// stand starts as a cast of the player's own with its caster as root, no parent and its
@@ -3865,6 +3866,33 @@ pub fn standing_changed(
         reserved: [],
       )
     #(cast, list.append(effects, started))
+  })
+}
+
+/// The standing spells a source wants that the plans leave out, each logged once as a
+/// warning in the cast's `logged` set, which a new cast state (the next join) starts empty:
+/// a spell is named once for the player's stay in the world, however often its source asks.
+pub fn standing_unbuilt(
+  cast cast: State,
+  spell4_ids spell4_ids: List(Int),
+) -> #(State, List(Effect)) {
+  list.fold(spell4_ids, #(cast, []), fn(so_far, spell4_id) {
+    let #(cast, effects) = so_far
+    let key = UnbuiltStandingSpell(spell4_id:)
+    case set.contains(cast.logged, key) {
+      True -> so_far
+      False -> #(
+        State(..cast, logged: set.insert(cast.logged, key)),
+        list.append(effects, [
+          Log(
+            level: LogWarning,
+            text: "the standing spell with Spell4 "
+              <> int.to_string(spell4_id)
+              <> " is in no plan, so it is not started",
+          ),
+        ]),
+      )
+    }
   })
 }
 

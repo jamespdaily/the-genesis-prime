@@ -1442,6 +1442,8 @@ pub type Unbuilt {
   UnbuiltItemSpell(spell4_id: Int)
   /// A prerequisite type the server does not read, in the prerequisite of an item.
   UnreadItemPrerequisite(prerequisite_type: Int)
+  /// A standing spell the plans leave out, by Spell4 id.
+  UnbuiltStandingSpell(spell4_id: Int)
 }
 
 /// A fact about the holder the connection saw outside a cast: it started to move, or a class
