@@ -5,11 +5,12 @@
 //// ```
 //// the creature's 0x262 news ─▶ shown(unit, ShownCreature(creature id, Standing(place), life, alive, hit radius, attackable, hostile to))
 //// its CreatureMoved news   ─▶ path changed          its CreatureFaces news ─▶ face changed
-//// its Health and Died news ─▶ alive changed        its 0x355 ─▶ the unit is no longer shown
+//// its Health and Died news ─▶ alive changed (a player's: and its health)        its 0x355 ─▶ the unit is no longer shown
 //// its CombatState news     ─▶ in combat changed
 //// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
 ////                                              candidates (genesis_prime/game/area)
-//// ally_candidates(picture, caster)          ─▶ the alive Friendly players with a place, as candidates
+//// ally_candidates(picture, caster)          ─▶ the alive Friendly players with a place and the health
+////                                              each misses, as candidates
 //// ```
 ////
 //// - **The picture is one news message stale at worst.** A creature that died in
@@ -35,7 +36,8 @@
 ////   at the last news or move before (`with_resolved`, `ShownCreature.faced_yaw`).
 //// - **An ally** is another player of the picture whose disposition toward the caster is
 ////   Friendly (`GetUnitDispositionTo` 0x14045a950), alive and placed (`ally_candidates`): the
-////   units an area that finds the caster's allies selects from.
+////   units an area that finds the caster's allies selects from. It carries the health it
+////   misses, its copy's maximum less its health (genesis_prime/game/player_state).
 //// - **Another player's unit** keeps what a press at it judges (genesis_prime/game/player_state):
 ////   its life, combat, crowd-control states and the place its last position command gave
 ////   (`with_player_at`), changed by the news the viewer takes; the creatures that face it
@@ -53,6 +55,7 @@ import genesis_prime/game/prerequisite.{
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group.{type Unit, Unit}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
@@ -309,6 +312,7 @@ pub fn candidates(
               unit_id:,
               at: area.point_of(creature_path.place_at(path:, now_ms:)),
               hit_radius:,
+              missing_health: 0,
             ))
           False -> Error(Nil)
         }
@@ -319,7 +323,8 @@ pub fn candidates(
 /// The alive players of the picture whose disposition toward the caster is Friendly
 /// (`GetUnitDispositionTo` 0x14045a950), as candidates for an area that finds the caster's
 /// allies, in unit id order: never the caster `caster_unit_id`, a creature, or a player with
-/// no place yet. A player stands where its last position command put it. An area whose
+/// no place yet. A player stands where its last position command put it, and misses its
+/// maximum health less its health (`player_state.missing_health`). An area whose
 /// valid targets hold no bit 8 strikes only the living (`Spell4ValidTargets.targetBitmask`).
 pub fn ally_candidates(
   picture picture: Picture,
@@ -331,15 +336,22 @@ pub fn ally_candidates(
     let #(unit_id, shown) = entry
     case shown {
       ShownCreature(..) | ShownObject(..) -> Error(Nil)
-      ShownPlayer(state: PlayerState(
-        alive: True,
-        disposition: faction_level.Friendly,
-        place: Some(place),
-        hit_radius:,
-        ..,
-      ))
+      ShownPlayer(
+        state: PlayerState(
+          alive: True,
+          disposition: faction_level.Friendly,
+          place: Some(place),
+          ..,
+        ) as state,
+      )
         if unit_id != caster_unit_id
-      -> Ok(Candidate(unit_id:, at: area.point_of(place), hit_radius:))
+      ->
+        Ok(Candidate(
+          unit_id:,
+          at: area.point_of(place),
+          hit_radius: state.hit_radius,
+          missing_health: player_state.missing_health(state:),
+        ))
       ShownPlayer(..) -> Error(Nil)
     }
   })
@@ -639,6 +651,37 @@ fn with_player_state(
     Ok(ShownPlayer(state:)) ->
       dict.insert(picture, unit_id, ShownPlayer(state: change(state)))
     Ok(ShownCreature(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the shown player's health set by its owner's `Health` news and the player
+/// alive or dead by the news's dead bit; a creature, an object or a unit not shown is as it
+/// was (a creature's life is its own news's).
+pub fn with_player_health(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  health health: Int,
+  dead dead: Bool,
+) -> Picture {
+  with_player_state(picture:, unit_id:, change: fn(state) {
+    PlayerState(..state, health:, alive: !dead)
+  })
+}
+
+/// The picture with the shown player's maximum health set to the Base Health (property 7) the
+/// properties of its owner's `PropertiesChanged` news give; one that names none, a creature,
+/// an object or a unit not shown is as it was.
+pub fn with_base_health(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  properties properties: List(UnitProperty),
+) -> Picture {
+  case player_state.base_health_of(properties:) {
+    Ok(maximum_health) ->
+      with_player_state(picture:, unit_id:, change: fn(state) {
+        PlayerState(..state, maximum_health:)
+      })
+    Error(Nil) -> picture
   }
 }
 

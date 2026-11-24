@@ -6,8 +6,8 @@
 //// ```
 //// candidates (alive foes the client shows)        centre: a unit's place and facing
 ////   keep those inside (the hit shapes capped by the area row's range, or the row alone)
-////   order them by the row's order: nearest or furthest from the centre first (the lower
-////   unit id first on a tie), or at random by a seed
+////   order them by the row's order: nearest or furthest from the centre first, at random by
+////   a seed, or the unit missing the most health first (the lower unit id first on a tie)
 ////   take the row's target count
 //// ```
 ////
@@ -46,7 +46,12 @@
 ////   nearest first and Furthest the farthest first, each the lower unit id first on a tie;
 ////   Random takes the units by a 32-bit mix of a seed and the unit id (`mix`), a guess: the
 ////   client names Random and orders nothing. A player's strike seeds it with its cast id,
-////   so every go of one cast ranks the units alike.
+////   so every go of one cast ranks the units alike. MissingMostHealth takes the unit whose
+////   maximum health less its health is the greatest first, the nearer to the centre first on a
+////   tie, and a unit at full health after every hurt one: the amount, not the fraction, since
+////   Spell4 27181 reads "lowest absolute health" for order 4 and 27182 "missing the most
+////   health" for 5; the client orders nothing, so the order of ties and of the unhurt is the
+////   server's guess.
 //// - **Where a player's strike is centred** is `centre_of`, by the spell's anchor: the caster's
 ////   pose now for a row the client draws on the caster each frame, the pose the cast started at
 ////   for a row it holds there (`0x14054b1b0.follows_caster`, `0x14054b1b0.fixed_placement`,
@@ -171,10 +176,12 @@ pub type Placement {
 }
 
 /// A unit that may be struck, as the connection's picture gives it: the unit id,
-/// its place and its hit radius. The connection leaves out the dead, the units
-/// that are not foes and the caster before it gives candidates.
+/// its place, its hit radius and the health it is missing (its maximum health less its
+/// health, 0 for a unit at full health and for a creature, which no order by health reads).
+/// The connection leaves out the dead, the units that are not foes and the caster before it
+/// gives candidates.
 pub type Candidate {
-  Candidate(unit_id: Int, at: Point, hit_radius: Float)
+  Candidate(unit_id: Int, at: Point, hit_radius: Float, missing_health: Int)
 }
 
 /// The order an area takes the units inside it in (`Spell4AoeTargetConstraints.targetSelection`,
@@ -186,6 +193,9 @@ pub type Order {
   Furthest
   /// Random (3): by `select_ordered`'s seed, a guess marked in `mix`.
   Random
+  /// MissingMostHealth (5): the unit missing the most health first, the nearer to the centre
+  /// first on a tie.
+  MissingMostHealth
 }
 
 /// An area row: `Spell4AoeTargetConstraints` minRange, maxRange, angle, targetCount and
@@ -449,10 +459,10 @@ fn length_of(a: Float, b: Float) -> Float {
 }
 
 /// The unit ids the area strikes in the row's order: the candidates inside, nearest or
-/// farthest from the centre first with the lower unit id first on a tie, or by `mix` of
-/// the seed and the unit id (the lower unit id first on a tie), at most the row's target
-/// count. The seed is read only by Random. A player's strike and a creature's share this
-/// function.
+/// farthest from the centre first, or by `mix` of the seed and the unit id, or the unit
+/// missing the most health first and the nearer first among units missing as much, at most
+/// the row's target count. Every order puts the lower unit id first on a tie. The seed is
+/// read only by Random. A player's strike and a creature's share this function.
 pub fn select_ordered(
   candidates candidates: List(Candidate),
   centre centre: Pose,
@@ -464,27 +474,43 @@ pub fn select_ordered(
     list.filter(candidates, fn(candidate) {
       is_inside(candidate:, centre:, row:, inside:)
     })
-    |> list.map(fn(candidate) {
-      #(distance(from: centre.at, to: candidate.at), candidate.unit_id)
-    })
   let by_order = case row.order {
-    Nearest -> fn(first: #(Float, Int), second: #(Float, Int)) {
-      float.compare(first.0, second.0)
+    Nearest -> fn(first: Found, second: Found) {
+      float.compare(first.distance, second.distance)
     }
-    Furthest -> fn(first: #(Float, Int), second: #(Float, Int)) {
-      float.compare(second.0, first.0)
+    Furthest -> fn(first: Found, second: Found) {
+      float.compare(second.distance, first.distance)
     }
-    Random -> fn(first: #(Float, Int), second: #(Float, Int)) {
-      int.compare(mix(seed:, unit_id: first.1), mix(seed:, unit_id: second.1))
+    Random -> fn(first: Found, second: Found) {
+      int.compare(
+        mix(seed:, unit_id: first.unit_id),
+        mix(seed:, unit_id: second.unit_id),
+      )
+    }
+    MissingMostHealth -> fn(first: Found, second: Found) {
+      int.compare(second.missing_health, first.missing_health)
+      |> order.break_tie(float.compare(first.distance, second.distance))
     }
   }
   let ordered =
-    list.sort(found, fn(first, second) {
+    list.map(found, fn(candidate) {
+      Found(
+        unit_id: candidate.unit_id,
+        distance: distance(from: centre.at, to: candidate.at),
+        missing_health: candidate.missing_health,
+      )
+    })
+    |> list.sort(fn(first, second) {
       by_order(first, second)
-      |> order.break_tie(int.compare(first.1, second.1))
+      |> order.break_tie(int.compare(first.unit_id, second.unit_id))
     })
   list.take(ordered, row.target_count)
-  |> list.map(fn(found) { found.1 })
+  |> list.map(fn(found) { found.unit_id })
+}
+
+/// A candidate inside the area, with its distance from the centre.
+type Found {
+  Found(unit_id: Int, distance: Float, missing_health: Int)
 }
 
 /// A unit's place in a Random order: a 32-bit hash of the seed and the unit id (the

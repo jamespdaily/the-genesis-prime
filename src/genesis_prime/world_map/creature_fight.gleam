@@ -2531,6 +2531,7 @@ fn inside_rectangle(
         unit_id: { found.2 }.unit_id,
         at: area.point_of(place: { found.2 }.place),
         hit_radius: { found.2 }.hit_radius,
+        missing_health: 0,
       )
     }),
     centre:,

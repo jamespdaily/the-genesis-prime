@@ -37,6 +37,7 @@ import genesis_prime/game/start_place
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/order
 import gleam_community/maths
 import owned_test
 import place_support
@@ -79,7 +80,7 @@ fn at(
 }
 
 fn beast(unit_id: Int, at: Point) -> Candidate {
-  Candidate(unit_id:, at:, hit_radius: beast_hit_radius)
+  Candidate(unit_id:, at:, hit_radius: beast_hit_radius, missing_health: 0)
 }
 
 const origin = Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0)
@@ -243,7 +244,9 @@ pub fn paralytic_surge_strikes_a_unit_in_its_box_only_in_its_cone_only_or_in_bot
   // cone reaches 10.75 m within 31.25 degrees of the facing. The units have no body
   // (hit radius 0), so that only the shapes' own geometry is read; a Beast's hit
   // radius of 3 would grow both shapes.
-  let point_unit = fn(unit_id, at) { Candidate(unit_id:, at:, hit_radius: 0.0) }
+  let point_unit = fn(unit_id, at) {
+    Candidate(unit_id:, at:, hit_radius: 0.0, missing_health: 0)
+  }
   let candidates = [
     point_unit(1, at(distance: 2.0, degrees: 0.0, yaw: 0.0)),
     point_unit(2, at(distance: 9.3, degrees: 0.0, yaw: 0.0)),
@@ -617,7 +620,14 @@ pub fn the_origin_of_a_placement_is_the_point_the_hit_measures_from_test() -> Ni
         [Circle(radius: size), Box(width: size, length: size)],
         fn(shape) {
           assert area.select_ordered(
-              candidates: [Candidate(unit_id: 1, at: there, hit_radius: 0.0)],
+              candidates: [
+                Candidate(
+                  unit_id: 1,
+                  at: there,
+                  hit_radius: 0.0,
+                  missing_health: 0,
+                ),
+              ],
               centre: pose,
               row: Row(
                 min_range: 0.0,
@@ -764,7 +774,7 @@ pub fn every_order_selects_only_units_inside_and_at_most_the_target_count_test()
   use <- owned_test.run(60_000)
   qcheck.given(
     qcheck.tuple4(
-      qcheck.bounded_int(from: 0, to: 2),
+      qcheck.bounded_int(from: 0, to: 3),
       qcheck.bounded_int(from: 0, to: 1_000_000_000),
       qcheck.list_from(qcheck.bounded_int(from: 1, to: 40)),
       qcheck.bounded_int(from: 0, to: 6),
@@ -774,15 +784,20 @@ pub fn every_order_selects_only_units_inside_and_at_most_the_target_count_test()
       let order = case order_number {
         0 -> area.Nearest
         1 -> area.Furthest
-        _ -> area.Random
+        2 -> area.Random
+        _ -> area.MissingMostHealth
       }
-      // Unit n stands n m out: the 30 m row holds units 1 to 30 and not 31 to 40.
+      // Unit n stands n m out and misses n mod 7 health: the 30 m row holds units 1 to 30
+      // and not 31 to 40.
       let candidates =
         list.unique(unit_ids)
         |> list.map(fn(unit_id) {
-          beast(
-            unit_id,
-            at(distance: int.to_float(unit_id), degrees: 0.0, yaw: 0.0),
+          Candidate(
+            ..beast(
+              unit_id,
+              at(distance: int.to_float(unit_id), degrees: 0.0, yaw: 0.0),
+            ),
+            missing_health: unit_id % 7,
           )
         })
       let row = ordered_row(order:, target_count:)
@@ -816,9 +831,93 @@ pub fn every_order_selects_only_units_inside_and_at_most_the_target_count_test()
         area.Random -> {
           assert list.unique(found) == found as "Random takes no unit twice"
         }
+        area.MissingMostHealth -> {
+          let by_missing_then_nearest =
+            list.sort(inside_ids, fn(first, second) {
+              int.compare(second % 7, first % 7)
+              |> order.break_tie(int.compare(first, second))
+            })
+          assert found == list.take(by_missing_then_nearest, target_count)
+            as "MissingMostHealth takes the units missing the most first, the nearer first on a tie"
+        }
       }
     },
   )
+}
+
+pub fn missing_most_health_takes_the_unit_missing_the_most_first_and_a_tie_goes_to_the_nearer_then_the_lower_unit_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4 27181 reads "lowest absolute health" for order 4 and 27182 "missing the most
+  // health" for order 5 (texts 361096 and 245146 say "missing the most health" and "most
+  // injured"), so 5 is the maximum health less the health, an amount and not a fraction of the
+  // maximum. The client orders nothing (`Spell4AoeTargetConstraints.targetSelection`), so the
+  // order of ties and of the units missing nothing is the server's guess.
+  // A unit is #(unit id, metres from the centre, health it misses).
+  let candidates_of = fn(units: List(#(Int, Float, Int))) {
+    list.map(units, fn(unit) {
+      Candidate(
+        ..beast(unit.0, at(distance: unit.1, degrees: 0.0, yaw: 0.0)),
+        missing_health: unit.2,
+      )
+    })
+  }
+  let cases = [
+    #(
+      // 50 of 100 misses 50 and 150 of 400 misses 250: the amount, not the fraction (50% against
+      // 37.5%), decides.
+      [#(1, 5.0, 100 - 50), #(2, 5.0, 400 - 150)],
+      5,
+      [2, 1],
+      "the unit missing the most by amount first, though its fraction missing is the smaller",
+    ),
+    #(
+      [#(1, 1.0, 0), #(2, 9.0, 5), #(3, 4.0, 1)],
+      5,
+      [2, 3, 1],
+      "a unit at full health comes after every hurt one, though it stands nearest, and is still selected when the count allows",
+    ),
+    #(
+      [#(1, 1.0, 0), #(2, 9.0, 5), #(3, 4.0, 1)],
+      2,
+      [2, 3],
+      "a unit at full health is the last the count takes",
+    ),
+    #(
+      [#(3, 10.0, 40), #(7, 5.0, 40)],
+      5,
+      [7, 3],
+      "equal missing health: the nearer to the centre first, whatever the unit ids",
+    ),
+    #(
+      [#(9, 5.0, 40), #(4, 5.0, 40)],
+      5,
+      [4, 9],
+      "equal missing health and distance: the lower unit id first",
+    ),
+    #(
+      [#(1, 2.0, 10), #(2, 3.0, 20), #(3, 4.0, 30), #(4, 5.0, 40)],
+      2,
+      [4, 3],
+      "at most the target count",
+    ),
+    #(
+      [#(1, 40.0, 999), #(2, 3.0, 1)],
+      5,
+      [2],
+      "a unit outside the area is never selected, whatever health it misses",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(units, target_count, expected, reason) = row
+    assert ordered(
+        candidates: candidates_of(units),
+        order: area.MissingMostHealth,
+        target_count:,
+        seed: 0,
+      )
+      == expected
+      as reason
+  })
 }
 
 /// The ids the placements hold among `units` (id, distance, degrees off the facing), for a
@@ -834,6 +933,7 @@ fn held(
         unit_id: unit.0,
         at: at(distance: unit.1, degrees: unit.2, yaw: 0.0),
         hit_radius:,
+        missing_health: 0,
       )
     }),
     centre: origin,

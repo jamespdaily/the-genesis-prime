@@ -262,8 +262,8 @@ pub fn the_new_ability_is_in_the_casters_bag_and_the_ability_known_prerequisite_
 pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test() -> Nil {
   use <- owned_test.run(60_000)
   // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191, Mending Probes), 25579 at slot
-  // 7 (1194, Crisis Wave: its area row is ordered by health, read as no area, and its heal
-  // reaches the caster) and 38210 at slot 8 (1221, Emission), each with a plan: Mending
+  // 7 (1194, Crisis Wave: its area row is ordered by missing health, which a friendly area
+  // builds, and its heal reaches the caster and the allies in the area) and 38210 at slot 8 (1221, Emission), each with a plan: Mending
   // Probes' Proxy 92693 reads as the caster alone. The Spellslinger's 5 to 6 gives 23012
   // (SpellLevel 1155, Runic Healing, Spell4 38507), which has none: its Spell4 row 70180 holds
   // a VitalModifier of vital 9, which the plan does not read.
@@ -284,7 +284,7 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
   )
     as "the plan refuses Spell4 38507 for its vital modifier"
   assert !list.any(unplanned, fn(one) { one.spell4_id == 41_382 })
-    as "Crisis Wave 41382 is planned: its area row is ordered by health, which is read as no area, and its heal reaches the caster"
+    as "Crisis Wave 41382 is planned: its area row is ordered by missing health, which a friendly area builds, and its heal reaches the caster and the allies in the area"
   let #(state, taken) = support.level_up(class_id: 4, from: 5, to: 6)
   assert list.map(support.added_in(frames: support.written(taken:)), fn(added) {
       added.bag_index

@@ -9,12 +9,17 @@ import gleam/list
 import gleam/option.{None, Some}
 import place_support
 
+/// The health and the maximum `a_player` holds: a player at full health.
+pub const full_health = 5000
+
 /// A player alive and out of combat, holding no crowd-control state, with no position command
 /// yet, the hit radius the Race rows give every player race (`place_support.player_hit_radius`),
 /// Friendly to the viewer, not PvP flagged and in no group.
 pub fn a_player() -> PlayerState {
   PlayerState(
     alive: True,
+    health: full_health,
+    maximum_health: full_health,
     in_combat: False,
     held: [],
     place: None,

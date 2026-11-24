@@ -49,9 +49,9 @@
 ////   caster alone, is not in it.
 //// - **An instant heal row aimed at the area of a spell whose area finds the caster's allies**
 ////   (`SpellArea.finds_allies`, `spell_plan.spell_finds_allies`: a beneficial mechanic, no foe
-////   row, an area ordered Closest, Furthest or Random) is in `heals` too, and makes the phase
-////   select the area: the strike selects the other Friendly players inside it
-////   (`shown.ally_candidates`) and tells each the row.
+////   row, an area ordered Closest, Furthest, Random or by missing health) is in `heals` too,
+////   and makes the phase select the area: the strike selects the other Friendly players inside
+////   it (`shown.ally_candidates`) and tells each the row.
 //// - **A periodic damage row** (a tickTime) strikes the units of its go once for each
 ////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
@@ -70,9 +70,13 @@
 ////   no strike selects a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`). Orders 4 and 5 (by health) need a unit's health,
 ////   which the units a strike chooses from do not hold: a creature's row is refused
-////   (`SelectionNeedsHealth`), and a player's is read as no area (`SpellArea.row` `None`),
-////   refused (`SelectionNeedsHealth`) only for a phase that selects units from it, since the
-////   client's texts name allies for those rows and the server finds none.
+////   (`SelectionNeedsHealth`). A player's order 4 is read as no area (`SpellArea.row` `None`),
+////   refused (`SelectionNeedsHealth`) only for a phase that selects units from it. A player's
+////   order 5 (MissingMostHealth) is built for an area that finds the caster's allies when its
+////   phases select units by the instant heals alone, the units that hold a health being the
+////   allies' copies the caster's connection keeps (`shown.ally_candidates`); a phase that also
+////   selects through a Proxy aimed at the area is refused (`SelectionNeedsHealth`), and a
+////   phase that selects nothing leaves it as no area.
 //// - **Valid targets** (`Spell4ValidTargets.targetBitmask`, `FillSpellRecord` 0x140568540,
 ////   `FillSpellAoeConstraints` 0x1405698c0): bits 1, 2 and 256 act at a press, not in an area,
 ////   and 256 (no pet) excludes no unit of the strike; bits 4 (players only) and 16 (party
@@ -110,7 +114,8 @@
 ////   with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1 to 5 (4 and 5 are refused by `SelectionNeedsHealth` for a
-////   creature and for a player's phase that selects units from the area); a valid-targets
+////   creature, 4 for a player's phase that selects units from the area, and 5 for a player's
+////   phase that selects other than by an instant heal that reaches the caster's allies); a valid-targets
 ////   bitmask holding bit 8, 32 or 64 on a spell with an area row; a hit row placed on anything but the
 ////   caster, the cast's target and the
 ////   held position (`targetTypeFlags` other than 0, 1, 2 and 8; for a creature other than 0 to
@@ -141,7 +146,8 @@
 import genesis_prime/game/area.{
   type Anchor, type Inside, type Placement, type Row, Box, Circle, Cone,
   FixedAtCaster, FixedAtTarget, FollowsCaster, FollowsTarget, Furthest,
-  InsideRow, InsideShapes, Nearest, Placement, Random, Rectangle, Row,
+  InsideRow, InsideShapes, MissingMostHealth, Nearest, Placement, Random,
+  Rectangle, Row,
 }
 import genesis_prime/game/damage.{type Formula}
 import genesis_prime/game/effect_kind
@@ -270,7 +276,7 @@ pub type SpellArea {
   SpellArea(
     spell4_id: Spell4Id,
     /// The area row, `None` for a spell with no `Spell4AoeTargetConstraints` row and for a row
-    /// ordered by health, which no go of the spell selects units from.
+    /// ordered by health that no go of the spell selects units from.
     row: Option(Row),
     /// How a unit counts as inside the area at each go, in go order (`inside`): the hit
     /// rows placed on the caster that the go's phase names, from the never-drawn twins, else
@@ -306,8 +312,9 @@ pub type AreaError {
   /// An area row selects in no order the client names (`targetSelection` 0, None, or above 5).
   SelectionNotBuilt(spell4_id: Int, target_selection: Int)
   /// An area row selects units by a unit's health (`targetSelection` 4, LowestAbsoluteHealth,
-  /// or 5, MissingMostHealth), which the units a strike chooses from do not hold: a creature's
-  /// row, or a player's whose phase selects units from the area.
+  /// or 5, MissingMostHealth) in a case the server does not build: a creature's row, a
+  /// player's order 4, and a player's order 5 whose phase selects units from the area other
+  /// than by an instant heal that reaches the caster's allies (`SpellArea.finds_allies`).
   SelectionNeedsHealth(spell4_id: Int, target_selection: Int)
   /// A spell's valid targets hold a bit of the area record the strike does not read: the area
   /// may strike the dead (8), picks a creature cluster only (32) or units in combat only (64).
@@ -392,7 +399,7 @@ pub fn describe(error error: AreaError) -> String {
       <> int.to_string(spell4_id)
       <> " has an area row that selects in order "
       <> int.to_string(target_selection)
-      <> ", by a unit's health, which the units a strike chooses from do not hold"
+      <> ", by a unit's health, which the server builds only for the allies an instant heal of a friendly area reaches"
     ValidTargetsNotBuilt(spell4_id:, target_bitmask:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -767,7 +774,7 @@ fn area_of(
   })
   let area_row = case read {
     Some(Ordered(row:)) -> Some(row)
-    Some(ByHealth(..)) | None -> None
+    Some(ByMissingHealth(..)) | Some(ByHealth(..)) | None -> None
   }
   use placed <- result.try(placed_rows(
     id:,
@@ -804,20 +811,33 @@ fn area_of(
     )
   // A phase that selects units at some n, every effect chosen being the widest, or ticks on
   // the units of the area, must have an area row, and one that selects units in an order the
-  // server builds.
-  let selects =
-    spell_plan.go_numbers(go_count: phase_count_of(spell:))
-    |> list.any(fn(phase) {
-      let chosen = phase_of(spell: area, phase:, spent: None)
-      chosen.selects_area || chosen.ticks_on_area
-    })
-  use Nil <- result.try(case read, selects {
+  // server builds. An order by missing health is built only for a friendly area whose phases
+  // select units by its instant heals alone.
+  let selects = phases_select(area:)
+  case read, selects {
     None, True -> Error(NoAreaRow(spell4_id: id))
     Some(ByHealth(target_selection:)), True ->
       Error(SelectionNeedsHealth(spell4_id: id, target_selection:))
-    None, False | Some(Ordered(..)), _ | Some(ByHealth(..)), False -> Ok(Nil)
+    Some(ByMissingHealth(row:)), True ->
+      case phases_select(area: SpellArea(..area, finds_allies: False)) {
+        True -> Error(SelectionNeedsHealth(spell4_id: id, target_selection: 5))
+        False -> Ok(SpellArea(..area, row: Some(row)))
+      }
+    None, False
+    | Some(Ordered(..)), _
+    | Some(ByMissingHealth(..)), False
+    | Some(ByHealth(..)), False
+    -> Ok(area)
+  }
+}
+
+/// Whether some phase of the area selects units from it or ticks on the units it holds.
+fn phases_select(area area: SpellArea) -> Bool {
+  spell_plan.go_numbers(go_count: phase_count_of(spell: area.spell))
+  |> list.any(fn(phase) {
+    let chosen = phase_of(spell: area, phase:, spent: None)
+    chosen.selects_area || chosen.ticks_on_area
   })
-  Ok(area)
 }
 
 /// Valid-target bits the area record holds and the strike does not read: the area may strike
@@ -874,9 +894,12 @@ pub fn strikes_creatures(valid_targets valid_targets: Int) -> Bool {
 
 /// What an area row's `targetSelection` reads as.
 type OrderRead {
-  /// An order `area.select_ordered` takes: Closest, Furthest or Random.
+  /// An order `area.select_ordered` takes of every area: Closest, Furthest or Random.
   Ordered(row: Row)
-  /// An order by a unit's health, which no strike chooses by: the row's selection number.
+  /// MissingMostHealth (5), which `area.select_ordered` takes only of the allies a friendly
+  /// area finds, the units that hold a health.
+  ByMissingHealth(row: Row)
+  /// LowestAbsoluteHealth (4), which no strike chooses by: the row's selection number.
   ByHealth(target_selection: Int)
 }
 
@@ -900,25 +923,21 @@ fn area_row_of(
           id: constraints_id,
         )),
       )
-      let ordered = fn(order) {
-        Ok(
-          Some(
-            Ordered(row: Row(
-              min_range: constraints.min_range,
-              max_range: constraints.max_range,
-              degrees: constraints.angle,
-              target_count: constraints.target_count,
-              order:,
-            )),
-          ),
+      let row_of = fn(order) {
+        Row(
+          min_range: constraints.min_range,
+          max_range: constraints.max_range,
+          degrees: constraints.angle,
+          target_count: constraints.target_count,
+          order:,
         )
       }
       case constraints.target_selection {
-        1 -> ordered(Nearest)
-        2 -> ordered(Furthest)
-        3 -> ordered(Random)
-        4 | 5 ->
-          Ok(Some(ByHealth(target_selection: constraints.target_selection)))
+        1 -> Ok(Some(Ordered(row: row_of(Nearest))))
+        2 -> Ok(Some(Ordered(row: row_of(Furthest))))
+        3 -> Ok(Some(Ordered(row: row_of(Random))))
+        4 -> Ok(Some(ByHealth(target_selection: constraints.target_selection)))
+        5 -> Ok(Some(ByMissingHealth(row: row_of(MissingMostHealth))))
         selection ->
           Error(SelectionNotBuilt(spell4_id: id, target_selection: selection))
       }
@@ -1568,6 +1587,8 @@ pub fn area_of_spell(
     None -> Ok(None)
     Some(ByHealth(target_selection:)) ->
       Error(SelectionNeedsHealth(spell4_id: id, target_selection:))
+    Some(ByMissingHealth(..)) ->
+      Error(SelectionNeedsHealth(spell4_id: id, target_selection: 5))
     Some(Ordered(row: area_row)) -> {
       let links = telegraph_links_by_spell(tables:)
       use shapes <- result.try(hit_shapes_of(
@@ -1735,7 +1756,11 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Player area orders",
-      missing: "a player's area ordered by health (Spell4AoeTargetConstraints targetSelection 4 and 5) is read as no area and refused for a phase that selects units from it, since the units a strike chooses from hold no health and the client's texts name allies for those rows; the heal of such a row lands on the caster alone (Crisis Wave, Soothe, Vitality Burst) or on nobody when it is aimed at the area alone (Dual Fire's row 84876 and the row 126516 of its Surge alternate 53286), the allies not being found, so a player who presses Dual Fire or its alternate strikes the foes and heals no ally; an area that finds the caster's allies (an instant heal aimed at it, ordered Closest, Furthest or Random) selects the other Friendly players the caster has in sight and never the caster, so a row aimed at the area alone heals no caster though the texts say \"yourself or an ally\" (Triage, 195454), and an area whose valid targets hold bit 16 (the caster's party only) finds nobody, since every player has the group id 0; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+      missing: "a player's area ordered by lowest health (Spell4AoeTargetConstraints targetSelection 4, which no planned ability names) is read as no area and refused for a phase that selects units from it; an area ordered by missing health (targetSelection 5) is built only for a friendly area (`SpellArea.finds_allies`) whose phases select units by its instant heals alone, and a phase that selects through a Proxy aimed at the area (Sentinel 54395, Warden 33392, Barrier 78081, which start a child on the most injured ally) is refused; the missing health is the maximum less the health as the caster's client was told of each ally, an amount and not a fraction, with ties to the nearer unit then the lower unit id and an ally at full health a candidate after every hurt one, all guesses, the client naming order 5 and ordering nothing; an area that finds the caster's allies (an instant heal aimed at it) selects the other Friendly players the caster has in sight and never the caster, so a row aimed at the area alone heals no caster though the texts say \"yourself or an ally\" (Triage, 195454), and an area whose valid targets hold bit 16 (the caster's party only) finds nobody, since every player has the group id 0; Furthest measures from the area's centre, Random orders by a mix of the cast id and the unit id (and, at a tick of a periodic Proxy, of the tick) and every go of a cast ranks alike, all guesses, the client naming the orders and ordering nothing",
+    ),
+    gap.Entry(
+      area: "Player area around another player",
+      missing: "a cast whose primary target is another player selects nothing from its area, since the picture holds a pose for a creature only (`shown.pose_of`): no planned ability's friendly area is cast at another player (no spell that finds allies has a Targeted mechanic) and a hostile one is refused while no player is PvP flagged, so no press reaches it",
     ),
     gap.Entry(
       area: "Player area valid targets",

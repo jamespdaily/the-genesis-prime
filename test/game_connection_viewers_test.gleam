@@ -16,6 +16,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/connection/viewers
 import genesis_prime/game/effect_kind
 import genesis_prime/game/faction_level
@@ -54,7 +55,7 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
-import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
@@ -2346,8 +2347,18 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
 
 // ---- what a press judges of a player in sight ----
 
-/// The unit 9 as its owner's 0x262 gives it: faction `faction`, health stat `health`, PvP
-/// flags and group as sent, standing at `place`.
+/// The Base Health (property 7) the 0x262 of `player_with` holds.
+const players_base_health = 6000
+
+/// The property 7 entry of a unit whose Base Health is `maximum`, both words the same as the
+/// server sends a player's (`opcode.0x262.health`).
+fn base_health_property(maximum maximum: Int) -> UnitProperty {
+  let bits = float32.to_bits(int.to_float(maximum))
+  UnitProperty(property_id: 7, base: bits, value: bits)
+}
+
+/// The unit 9 as its owner's 0x262 gives it: faction `faction`, health stat `health`, Base
+/// Health `players_base_health`, PvP flags and group as sent, standing at `place`.
 fn player_with(
   faction faction: Int,
   health health: Int,
@@ -2374,6 +2385,7 @@ fn player_with(
         start_movement.Position(position),
         start_movement.Rotation(rotation),
       ],
+      properties: [base_health_property(maximum: players_base_health)],
     ),
   )
 }
@@ -2424,6 +2436,10 @@ pub fn a_player_that_comes_into_sight_is_shown_with_what_a_press_judges_of_it_te
     ),
   ).alive
     as "a health stat of 0 is a player that lies dead"
+  // opcode.0x262.health: the health is stat 0 and the maximum Base Health (property 7), the
+  // value Unit:GetMaxHealth reads (0x1404584b0).
+  assert seen.health == 5000 && seen.maximum_health == players_base_health
+    as "the copy holds the health stat and the Base Health the 0x262 gave"
   assert !seen.in_combat && seen.held == []
     as "a player comes into sight out of combat and holding no state"
   assert seen.hit_radius == place_support.player_hit_radius
@@ -2563,4 +2579,104 @@ fn written_for_news(
       )
     })
   written
+}
+
+/// The copy of another player a viewer keeps holds the health and the maximum its 0x262 gave
+/// (stat 0 and Base Health, property 7), and follows the owner's news: a `Health` news
+/// (0x937) sets the health and the player alive or dead, and a `PropertiesChanged` news
+/// (0x93a) with property 7 sets the maximum. A news for a unit not shown changes nothing.
+/// The picture is one news behind at worst; a maximum that changes with no news (a gear swap
+/// the viewer is not told) is not held.
+pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_and_maximum_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let entered = world_entry_support.entered_after(clock_origin_ms: 600)
+  let there =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 100.0,
+      y: 12.5,
+      z: -40.0,
+    )
+  let take = fn(
+    session: connection_state.Session,
+    unit_id: Int,
+    news: client_connection.News,
+  ) {
+    let assert Some(entered) = connection_state.entered_of(session.status)
+      as "the player is in the world"
+    let assert client_connection.Continue(session:, ..) =
+      viewers.viewer_takes(
+        session:,
+        now: step.Now(monotonic_ms: 0, filetime: 0),
+        entered:,
+        news: PeerNews(unit_id:, news:),
+      )
+      as "a viewer takes the news"
+    session
+  }
+  let copy_of = fn(session: connection_state.Session, unit_id: Int) {
+    let assert Some(entered) = connection_state.entered_of(session.status)
+      as "the player is in the world"
+    let assert Ok(shown.ShownPlayer(state:)) = dict.get(entered.shown, unit_id)
+      as "the unit is a shown player"
+    #(state.alive, state.health, state.maximum_health)
+  }
+  let property_7 = fn(maximum) {
+    client_connection.PropertiesChanged(properties: [
+      base_health_property(maximum:),
+    ])
+  }
+  let session =
+    take(
+      game_connection_support.session_in(status: connection_state.InWorld(
+        holder: game_connection_support.holder(),
+        entered:,
+      )),
+      9,
+      Appeared(unit: player_with(
+        faction: 167,
+        health: 5000,
+        pvp_flags: 0,
+        group_id: 0,
+        place: there,
+      )),
+    )
+  assert copy_of(session, 9) == #(True, 5000, players_base_health)
+    as "the copy holds the health stat and the Base Health of the 0x262"
+  let hurt =
+    take(session, 9, client_connection.Health(health: 4200, dead: False))
+  assert copy_of(hurt, 9) == #(True, 4200, players_base_health)
+    as "a Health news sets the health and keeps the maximum"
+  let dead = take(hurt, 9, client_connection.Health(health: 0, dead: True))
+  assert copy_of(dead, 9) == #(False, 0, players_base_health)
+    as "a Health news with the dead bit sets the player dead at health 0"
+  let revived =
+    take(dead, 9, client_connection.Health(health: 3000, dead: False))
+  assert copy_of(revived, 9) == #(True, 3000, players_base_health)
+    as "a Health news without it sets the player alive again"
+  let grown = take(revived, 9, property_7(7000))
+  assert copy_of(grown, 9) == #(True, 3000, 7000)
+    as "a PropertiesChanged news with property 7 sets the maximum and keeps the health"
+  let other_property =
+    take(
+      grown,
+      9,
+      client_connection.PropertiesChanged(properties: [
+        UnitProperty(property_id: 8, base: 0, value: 0),
+      ]),
+    )
+  assert copy_of(other_property, 9) == #(True, 3000, 7000)
+    as "a PropertiesChanged news without property 7 keeps the maximum"
+  let unshown =
+    take(grown, 77, client_connection.Health(health: 1, dead: False))
+  let assert Some(before) = connection_state.entered_of(grown.status)
+  let assert Some(after) = connection_state.entered_of(unshown.status)
+  assert after.shown == before.shown
+    as "a Health news for a player not shown changes nothing"
+  let unshown_properties = take(grown, 77, property_7(1))
+  let assert Some(after) =
+    connection_state.entered_of(unshown_properties.status)
+  assert after.shown == before.shown
+    as "a PropertiesChanged news for a player not shown changes nothing"
 }
