@@ -75,6 +75,49 @@ pub fn a_test_that_reads_gaps_through_a_helper_of_its_file_is_a_breach_test() ->
   assert planted.lines(gap_test_tag.breaches(file)) == [13]
 }
 
+pub fn a_call_that_is_not_the_registrys_function_is_no_read_of_a_gap_registry_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  list.each(
+    [
+      #("cast_cost.gaps()", True, "a call of a module's gaps with no arguments"),
+      #("gaps.registry()", True, "the registry's own function"),
+      #(
+        "cast_cost.gaps(1)",
+        False,
+        "gaps() takes no arguments, so a call with one is another function",
+      ),
+      #(
+        "gaps.registry(1)",
+        False,
+        "registry() takes no arguments, so a call with one is another function",
+      ),
+      #(
+        "cast_cost.inner.gaps()",
+        False,
+        "a function of a field is no module's gaps",
+      ),
+      #("cast_cost.registry()", False, "registry() of another module"),
+      #("gaps()", False, "a local function of the same name is no module's"),
+    ],
+    fn(row) {
+      let #(call, reads, reason) = row
+      let file =
+        planted.file("test/planted_test.gleam", [
+          "pub fn row_test() {",
+          "  assert " <> call <> " != []",
+          "}",
+        ])
+      assert planted.lines(gap_test_tag.breaches(file))
+        == case reads {
+          True -> [1]
+          False -> []
+        }
+        as reason
+    },
+  )
+}
+
 pub fn a_test_tagged_gaps_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")

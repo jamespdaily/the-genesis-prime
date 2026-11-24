@@ -30,7 +30,8 @@ the real toolchain, the real database or the real client:
   `gleam ...` only for what compiles; a test run given `--reporter table` prints the
   rows planted for it in $PLANT_LOG.table.workers (the run with workers) or
   $PLANT_LOG.table.serial, in unitest's own layout, and then unitest's `N passed` line
-  (N is PLANT_PASSED_FIRST for the run with no tag, PLANT_PASSED_SERIAL for the serial run);
+  (N is PLANT_PASSED_FIRST for the run with no tag, PLANT_PASSED_SERIAL for the serial run,
+  PLANT_PASSED_GAPS for the run of the tag gaps);
   a run given GENESIS_TEST_DIRECTORY lists what that folder holds in $PLANT_LOG.shard (a run of
   a tag but gaps does not);
 - `python3.13` is the real one, except for the run the stub stands in for:
@@ -167,6 +168,7 @@ if [ "$1" = test ]; then
   # with no tag, PLANT_PASSED_SERIAL for the serial run), and the skipped ones.
   case "$*" in
     *"--tag serial"*) passed=${PLANT_PASSED_SERIAL:-3} ;;
+    *"--tag gaps"*) passed=${PLANT_PASSED_GAPS:-1} ;;
     *"--tag"*) passed=1 ;;
     *) passed=${PLANT_PASSED_FIRST:-12} ;;
   esac
@@ -356,7 +358,7 @@ class PlantedCheckCase(unittest.TestCase):
             (repository / folder).mkdir(parents=True)
         # The real script, which the migrations part runs; the planted psql answers its questions.
         executable(repository / "dev" / "apply_migrations.sh", (REPOSITORY / "dev" / "apply_migrations.sh").read_text())
-        (repository / "test" / "code_rule" / "planted_test.gleam").write_text('// a code-rule test, which names the tag "gaps"\n')
+        (repository / "test" / "code_rule" / "planted_test.gleam").write_text("// a code-rule test\n")
         scripts = repository / SCRIPTS
         scripts.mkdir(parents=True)
         for name in ("check_support.py", "query_client.py", "ghidra_env.py", "formulas_by_hand.py"):
@@ -1019,12 +1021,12 @@ class FastModeTest(unittest.TestCase):
         self.assertRegex(failed_line(self, run.output), r"\bgap-tests\b")
         self.assertNotRegex(failed_line(self, run.output), r"\b(format|glinter|fact-checker)\b")
 
-    def test_a_fast_check_in_which_no_test_file_names_the_gaps_tag_fails_naming_the_gap_tests_part(self):
-        run = shared_run("fast-no-gap-file", "fast", prepare=lambda case: (case.repository / "test" / "code_rule" / "planted_test.gleam").write_text("// no tag\n"))
+    def test_a_fast_check_whose_gap_run_counts_no_passed_test_fails_naming_the_gap_tests_part(self):
+        run = shared_run("fast-gap-ran-nothing", "fast", PLANT_PASSED_GAPS="0")
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bgap-tests\b")
-        self.assertIn("no test file names the tag gaps", run.output)
-        self.assertFalse([c for c in run.commands if c.startswith("built test")], run.commands)
+        self.assertNotRegex(failed_line(self, run.output), r"\b(format|glinter|fact-checker)\b")
+        self.assertIn("no gap test ran", run.output)
 
     def test_the_gap_tests_read_a_folder_holding_the_files_that_name_the_tag_and_no_other(self):
         def plant(case):
@@ -1036,7 +1038,7 @@ class FastModeTest(unittest.TestCase):
         run = shared_run("fast-gap-folder", "fast", prepare=plant)
         self.assertEqual(run.done.returncode, 0, run.output)
         held = sorted(path for path, _ in shard_listing(run))
-        self.assertEqual(held, ["code_rule/planted_test.gleam", "named_test.gleam", "spells/also_named_test.gleam"])
+        self.assertEqual(held, ["named_test.gleam", "spells/also_named_test.gleam"])
         for path, target in shard_listing(run):
             self.assertRegex(target, r"^/.*/test/%s$" % re.escape(path), "each link goes to the file at its own path below test")
         self.assertEqual(set(directories_given(run).values()), {"build/chosen_tests/gap-tests/test"})
@@ -1061,9 +1063,9 @@ class FastModeTest(unittest.TestCase):
     def test_the_fast_check_runs_the_tests_tagged_gaps_and_no_other_test(self):
         run = shared_run("fast", "fast")
         tests = [c for c in run.commands if c.startswith("built test")]
-        self.assertEqual(tests, ["built test -- --tag gaps"], "the other tests run in the full check")
+        self.assertEqual(tests, ["built test -- --tag gaps --no-color"], "the other tests run in the full check")
         self.assertLess(
-            run.commands.index("gleam build --warnings-as-errors"), run.commands.index("built test -- --tag gaps"),
+            run.commands.index("gleam build --warnings-as-errors"), run.commands.index("built test -- --tag gaps --no-color"),
             "the gap tests run on the built code, after gleam-build")
 
     def test_a_failing_build_fails_the_fast_check_naming_it(self):
@@ -1714,7 +1716,7 @@ class BuiltCodeTest(unittest.TestCase):
         self.assertEqual(self.compiles_after_the_build(run.commands), [])
         self.assertEqual(
             sorted(c for c in run.commands if c.startswith("built ")),
-            ["built run -m glinter", "built test -- --tag gaps"])
+            ["built run -m glinter", "built test -- --tag gaps --no-color"])
 
     def test_a_part_is_started_with_the_packages_built_and_its_arguments_after_extra(self):
         lines = [line for line in shared_run("full").erl.splitlines() if line.endswith("--tag serial --reporter table --no-color")]
@@ -2071,7 +2073,7 @@ class PartRunTest(unittest.TestCase):
 
     def test_a_part_run_that_names_no_part_or_a_bad_shard_is_refused_with_the_usage_and_runs_nothing(self):
         for arguments in (
-            (), ("nonesuch",), ("literal-area",), ("format", "1/3"), ("gleam-test",), ("gleam-test", "0/3"),
+            (), ("nonesuch",), ("literal-area",), ("gap-tests",), ("format", "1/3"), ("gleam-test",), ("gleam-test", "0/3"),
             ("gleam-test", "4/3"), ("gleam-test", "a/b"), ("gleam-test", "1/0"), ("gleam-test", "1/3", "x"),
         ):
             with self.subTest(arguments=arguments):

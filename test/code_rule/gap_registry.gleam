@@ -75,42 +75,21 @@ fn called_modules(registry: glance.Module) -> List(String) {
   })
 }
 
-/// The qualifier of every call `qualifier.gaps()` in the registry's functions.
-fn called_qualifiers(registry: glance.Module) -> List(String) {
-  list.filter_map(syntax.expressions(registry), fn(expression) {
-    case expression {
-      glance.Call(
-        function: glance.FieldAccess(
-          container: glance.Variable(name: qualifier, ..),
-          label:,
-          ..,
-        ),
+/// The variable of every call `variable.gaps()` in the module's functions: a call
+/// of a function named `gaps` through a variable, with no arguments, as `pub fn gaps()`
+/// takes none. A call with arguments, or through a field of a field, is another
+/// function.
+pub fn called_qualifiers(module: glance.Module) -> List(String) {
+  list.filter_map(syntax.calls(module), fn(call) {
+    case call {
+      syntax.Call(
+        called: syntax.CalledThroughVariable(variable:, label:),
         arguments: [],
         ..,
       )
         if label == function_name
-      -> Ok(qualifier)
-      glance.Call(..)
-      | glance.Int(..)
-      | glance.Float(..)
-      | glance.String(..)
-      | glance.Variable(..)
-      | glance.NegateInt(..)
-      | glance.NegateBool(..)
-      | glance.Block(..)
-      | glance.Panic(..)
-      | glance.Todo(..)
-      | glance.Tuple(..)
-      | glance.List(..)
-      | glance.Fn(..)
-      | glance.RecordUpdate(..)
-      | glance.FieldAccess(..)
-      | glance.TupleIndex(..)
-      | glance.FnCapture(..)
-      | glance.BitString(..)
-      | glance.Case(..)
-      | glance.BinaryOperator(..)
-      | glance.Echo(..) -> Error(Nil)
+      -> Ok(variable)
+      syntax.Call(..) -> Error(Nil)
     }
   })
 }

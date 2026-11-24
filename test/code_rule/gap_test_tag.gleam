@@ -1,8 +1,11 @@
 //// Every test that reads a gap registry is tagged `gaps`, so `./check fast` runs it.
 //// A test reads one when it calls `<module>.gaps()` or `gaps.registry()`, itself or
 //// through a function of its own file (followed to any depth). A helper in another
-//// file is not followed.
+//// file is not followed, nor is the registry module imported under another name than
+//// `gaps`, a `gaps` function imported unqualified, or one passed as a value without a
+//// call; none occurs in `test/`.
 
+import code_rule/gap_registry
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
 import glance
@@ -74,47 +77,29 @@ fn grow(
   }
 }
 
-/// Whether the function calls a gap registry or a function in `readers`.
+/// Whether the function calls a gap registry or a function in `readers`. A registry is
+/// read by a call of a module's `gaps()` (see `gap_registry.called_qualifiers`) or of
+/// `gaps.registry()`, both with no arguments.
 fn reads_gaps(
   module module: glance.Module,
   definition definition: glance.Definition(glance.Function),
   readers readers: Set(String),
 ) -> Bool {
-  syntax.expressions(glance.Module(..module, functions: [definition]))
-  |> list.any(fn(expression) {
-    case expression {
-      glance.Call(function: glance.FieldAccess(label: "gaps", ..), ..) -> True
-      glance.Call(
-        function: glance.FieldAccess(
-          container: glance.Variable(name: "gaps", ..),
+  let function_module = glance.Module(..module, functions: [definition])
+  gap_registry.called_qualifiers(function_module) != []
+  || list.any(syntax.calls(function_module), fn(call) {
+    case call {
+      syntax.Call(
+        called: syntax.CalledThroughVariable(
+          variable: "gaps",
           label: "registry",
-          ..,
         ),
+        arguments: [],
         ..,
       ) -> True
-      glance.Call(function: glance.Variable(name:, ..), ..) ->
+      syntax.Call(called: syntax.CalledByName(name:), ..) ->
         set.contains(readers, name)
-      glance.Call(..)
-      | glance.Int(..)
-      | glance.Float(..)
-      | glance.String(..)
-      | glance.Variable(..)
-      | glance.NegateInt(..)
-      | glance.NegateBool(..)
-      | glance.Block(..)
-      | glance.Panic(..)
-      | glance.Todo(..)
-      | glance.Tuple(..)
-      | glance.List(..)
-      | glance.Fn(..)
-      | glance.RecordUpdate(..)
-      | glance.FieldAccess(..)
-      | glance.TupleIndex(..)
-      | glance.FnCapture(..)
-      | glance.BitString(..)
-      | glance.Case(..)
-      | glance.BinaryOperator(..)
-      | glance.Echo(..) -> False
+      syntax.Call(..) -> False
     }
   })
 }

@@ -899,16 +899,21 @@ tagged_part_test() {
 
 # gap_test_run: the tests tagged gaps alone, in a run of their own beside glinter. unitest
 # parses every file of its test folder before it picks a tag, so the run reads a folder of
-# symlinks to the files that name the tag (`"gaps"`), which hold every test of it.
+# symlinks to the files that name the tag (`"gaps"`), which hold every test of it. A run
+# that counts no passed test fails, as a shard's does: a folder that came out empty, or a
+# tag no test carries, must not pass.
 gap_test_run() {
   local files
   files=$(cd test && grep -rl --include='*.gleam' '"gaps"' . | sed 's|^\./||' | sort) || return 1
-  [ -n "$files" ] || {
-    echo "no test file names the tag gaps"
-    return 1
-  }
   link_test_folder build/chosen_tests/gap-tests "$files" || return 1
-  test_run gap-tests GENESIS_TEST_DIRECTORY="$shard_folder" -- --tag gaps
+  local status=0
+  test_run gap-tests GENESIS_TEST_DIRECTORY="$shard_folder" -- --tag gaps --no-color | tee "$work/gap-tests.run"
+  [ "${PIPESTATUS[0]}" = 0 ] || status=1
+  if ! ran_a_test "$work/gap-tests.run"; then
+    echo "no gap test ran: the run counted no passed test"
+    status=1
+  fi
+  return $status
 }
 
 # running_tests PART: prints the tests the part's run had started and not ended, from
