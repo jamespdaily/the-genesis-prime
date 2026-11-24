@@ -216,7 +216,7 @@
 ////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`),
 ////   and a row whose filter names a Spell4, Spell4Base or spell group the tables lack
 ////   (`ProcFilterNamesNoSpell4`, `ProcFilterNamesNoSpell4Base`, `ProcFilterNamesNoGroup`);
-////   a Proc the caster holds in a spell that also holds a summon effect (type 98) is no
+////   a Proc the caster holds in a spell that also holds a SummonPet effect (type 98) is no
 ////   left-out row but a refusal of its ability, since the summoned unit it belongs to is not
 ////   built (`SummonedProcNotRead`, `proc_beside_a_summon`);
 ////   a row of these kinds with a chance outside 0 to 1.0, a window or
@@ -4704,6 +4704,7 @@ pub fn modifier_of(
     | effect_kind.FullScreenEffect
     | effect_kind.Activate
     | effect_kind.Immunity
+    | effect_kind.SummonPet
     | effect_kind.Despawn
     | effect_kind.UnitState
     | effect_kind.NpcExecutionDelay
@@ -5993,7 +5994,7 @@ fn kind_reading(
       use <- when_reached(reaches:)
       quest_advance_reading(tables:, effect:)
     }
-    effect_kind.Immunity | effect_kind.Unread(..) ->
+    effect_kind.Immunity | effect_kind.SummonPet | effect_kind.Unread(..) ->
       Ok(LeftOut(why: TypeNotRead))
   }
 }
@@ -6748,7 +6749,7 @@ fn proc_beside_a_summon(
 ) -> Result(Nil, PlanError) {
   case
     list.find(effects_of(sources:, spell4_id:), fn(row) {
-      row.effect_type == 98
+      effect_kind.kind_of(effect_type: row.effect_type) == effect_kind.SummonPet
     })
   {
     Ok(summon) ->

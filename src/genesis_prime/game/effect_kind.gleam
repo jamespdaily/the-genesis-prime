@@ -76,6 +76,10 @@
 ////   server reads it and the coverage measure counts it unhandled; only a creature's guard
 ////   spell is checked for it (`immune_to`, genesis_prime/world_map/creature_guard_spells;
 ////   `Spell4Effects.effectType.79`, enum `0x140c34140`).
+//// - **SummonPet** (98) creates the creature `dataBits00` names (a Creature2 row) for the
+////   caster; no rule of the server builds a summoned unit, so it is not read, and
+////   `genesis_prime/game/spell_plan` refuses a spell that holds one beside a Proc the caster
+////   holds (`Spell4Effects.effectType.98`).
 //// - **Despawn** (97) removes the creatures it aims at past the caster after its delay; the
 ////   client reads no row of this type and sees the removal only as 0x355
 ////   (`Spell4Effects.effectType.97`). A row is read when its targetFlags name a unit past the
@@ -208,6 +212,10 @@ pub type Kind {
   /// (`Spell4Effects.effectType.79`). No rule reads it as an effect, so it is not read
   /// (`is_read`); `immune_to` names what a row is immune to.
   Immunity
+  /// A SummonPet effect (98): creates the creature `dataBits00` names for the caster
+  /// (`Spell4Effects.effectType.98`). No rule reads it as an effect, so it is not read
+  /// (`is_read`).
+  SummonPet
   /// A DespawnUnit effect (97): removes the creatures it aims at past the caster after its
   /// delay (`Spell4Effects.effectType.97`).
   Despawn
@@ -258,6 +266,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     29 -> Absorption
     7 -> Activate
     79 -> Immunity
+    98 -> SummonPet
     97 -> Despawn
     15 -> UnitState
     35 -> NpcExecutionDelay
@@ -299,7 +308,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | UnitState
     | NpcExecutionDelay
     | QuestAdvance -> True
-    Immunity | Unread(..) -> False
+    Immunity | SummonPet | Unread(..) -> False
   }
 }
 
@@ -348,7 +357,7 @@ pub fn is_row_read(
     | ItemVisualSwap
     | RavelSignal
     | Activate -> True
-    Immunity | Unread(..) -> False
+    Immunity | SummonPet | Unread(..) -> False
   }
 }
 
