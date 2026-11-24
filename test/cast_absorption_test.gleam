@@ -387,35 +387,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
         change: cast_state.HeldChange(held_changes.Property(..)),
         ..,
       ) -> True
-      cast_state.CasterChangeStarts(
-        change: cast_state.HeldChange(held_changes.Absorb(..)),
-        ..,
-      )
-      | cast_state.CasterChangeStarts(change: cast_state.Heal(..), ..)
-      | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
-      | cast_state.CasterChangeEnds(..)
-      | cast_state.OtherPlayerChangeStarts(..)
-      | cast_state.OtherPlayerChangeEnds(..)
-      | cast_state.Send(..)
-      | cast_state.Tell(..)
-      | cast_state.StartTimer(..)
-      | cast_state.CancelTimer(..)
-      | cast_state.Log(..)
-      | cast_state.Strike(..)
-      | cast_state.TickStrike(..)
-      | cast_state.FindProxyTickUnits(..)
-      | cast_state.Pay(..)
-      | cast_state.TargetChangeStarts(..)
-      | cast_state.TargetChangeEnds(..)
-      | cast_state.ForcedMoveStarts(..)
-      | cast_state.CreatureDespawns(..)
-      | cast_state.CreatureHoldsUnitStates(..)
-      | cast_state.CreatureControlsEnd(..)
-      | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..)
-      | cast_state.QuestAdvanced(..)
-      | cast_state.StealthChanged(..)
-      | cast_state.Gain(..) -> False
+      _ -> False
     }
   })
     as "and the raised rating does start in the same go"

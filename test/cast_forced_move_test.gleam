@@ -81,28 +81,7 @@ fn press(spell spell: Spell) -> #(State, List(cast_state.Effect)) {
 fn changes_a_property(effect effect: cast_state.Effect) -> Bool {
   case effect {
     cast_state.CasterChangeStarts(..) | cast_state.CasterChangeEnds(..) -> True
-    cast_state.Send(..)
-    | cast_state.Tell(..)
-    | cast_state.StartTimer(..)
-    | cast_state.CancelTimer(..)
-    | cast_state.Log(..)
-    | cast_state.Strike(..)
-    | cast_state.TickStrike(..)
-    | cast_state.FindProxyTickUnits(..)
-    | cast_state.Pay(..)
-    | cast_state.TargetChangeStarts(..)
-    | cast_state.TargetChangeEnds(..)
-    | cast_state.OtherPlayerChangeStarts(..)
-    | cast_state.OtherPlayerChangeEnds(..)
-    | cast_state.ForcedMoveStarts(..)
-    | cast_state.CreatureDespawns(..)
-    | cast_state.CreatureHoldsUnitStates(..)
-    | cast_state.CreatureControlsEnd(..)
-    | cast_state.Activated(..)
-    | cast_state.ShortcutCast(..)
-    | cast_state.QuestAdvanced(..)
-    | cast_state.StealthChanged(..)
-    | cast_state.Gain(..) -> False
+    _ -> False
   }
 }
 
@@ -194,29 +173,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
     list.filter_map(raw, fn(effect) {
       case effect {
         cast_state.Strike(asked:) -> Ok(asked)
-        cast_state.Send(..)
-        | cast_state.Tell(..)
-        | cast_state.StartTimer(..)
-        | cast_state.CancelTimer(..)
-        | cast_state.Log(..)
-        | cast_state.Pay(..)
-        | cast_state.Gain(..)
-        | cast_state.CasterChangeStarts(..)
-        | cast_state.CasterChangeEnds(..)
-        | cast_state.OtherPlayerChangeStarts(..)
-        | cast_state.OtherPlayerChangeEnds(..)
-        | cast_state.TargetChangeStarts(..)
-        | cast_state.TargetChangeEnds(..)
-        | cast_state.ForcedMoveStarts(..)
-        | cast_state.CreatureDespawns(..)
-        | cast_state.CreatureHoldsUnitStates(..)
-        | cast_state.CreatureControlsEnd(..)
-        | cast_state.Activated(..)
-        | cast_state.ShortcutCast(..)
-        | cast_state.QuestAdvanced(..)
-        | cast_state.TickStrike(..)
-        | cast_state.FindProxyTickUnits(..)
-        | cast_state.StealthChanged(..) -> Error(Nil)
+        _ -> Error(Nil)
       }
     })
   assert cast_gate.rolls_needed(
