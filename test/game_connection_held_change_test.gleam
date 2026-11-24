@@ -460,8 +460,9 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       as reason
   })
   // The went has a guard of its own, the ledger's, not the rows' (the caster among the
-  // viewers): it starts a cast only for a live ally that holds a source of it from the
-  // connection the went came from.
+  // viewers): it starts a cast only for an ally that holds a source of it from the
+  // connection the went came from. A dead ally holds none because its death clears the
+  // ledger (`the_allys_ledger_clears_every_caster_at_its_death_test` pins that clear).
   let armor_of_three =
     held(caster: 3, source: armor_source(cast_id: 100), change: armor())
   let holding_armor = holding_for_caster_4(holds: [armor_of_three])
@@ -477,7 +478,7 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       went(caster: 3, cast_id: 999, audience: []),
     ),
     #(
-      "a went to a dead ally",
+      "a went to a dead ally, whose death cleared its ledger",
       support.killed(holding_armor).0,
       went(caster: 3, cast_id: 100, audience: []),
     ),
@@ -1762,7 +1763,7 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
     )
   assert told_a_held_cast_start(taken:) == [3]
     as "connection 9 is no viewer and is told nothing; connection 2 left before the went and is told nothing"
-  // Row 4: tier 5's two tells, then the went: one start holding both effects, told once.
+  // Row 4: two rows of one cast, then the went: one start holding both effects, told once.
   let #(_, taken) =
     support.at(
       state: holding_for_caster_4(holds: armor_and_pool_of_4(

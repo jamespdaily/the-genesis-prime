@@ -51,10 +51,11 @@
 ////   (genesis_prime/game/connection/viewers), and this module writes its 0x7fe, once, when
 ////   the last source of it ends, by any of the ends above (`orphans_finished`): the caster's
 ////   own frames no longer reach the client.
-//// - **A cast is started for a viewer only from the ledger**: the went is taken when T is
-////   alive and holds a source of the cast that the connection it came from started, not
-////   when that connection is still among T's viewers, since a source of a spell with
-////   propertyFlags 0x100 stays after its caster left T's sight. The start lists each effect
+//// - **A cast is started for a viewer only from the ledger**: the went is taken when T
+////   holds a source of the cast that the connection it came from started, not when that
+////   connection is still among T's viewers, since a source of a spell with propertyFlags
+////   0x100 stays after its caster left T's sight. T's death clears the ledger
+////   (`ended_at_death`), so a dead T holds none and takes no went. The start lists each effect
 ////   the ledger holds of the cast (`held_changes.cast_views`), at the clock the went is
 ////   taken, and goes to each viewer outside the audience except the caster, whose client
 ////   holds the cast from its own go (`opcode.0x7ff`).
@@ -162,7 +163,8 @@ pub fn ended(
 /// What a caster's connection told the player (`TellPlayerChange`). A start is taken
 /// only while the player is alive and the caster is one of its viewers with the stay the
 /// tell names; it is applied (`started`) and held for the caster. An end is taken only
-/// from the caster that holds the source.
+/// from the caster that holds the source. A went is taken only from the caster that holds
+/// a source of the cast, and starts the cast for the viewers (`cast_went`).
 pub fn changed(
   session session: Session,
   now now: Now,
@@ -233,7 +235,8 @@ pub fn changed(
 
 /// The go of the cast `cast_id` that the caster of connection `from` started has told the
 /// player its changes: the player tells each of its viewers outside `audience`, except
-/// the caster, the cast's start, built from the changes it holds of the cast.
+/// the caster, the cast's start, built from the changes it holds of the cast. The ledger
+/// is the whole guard: a dead player holds nothing (`ended_at_death`).
 fn cast_went(
   session session: Session,
   now now: Now,
@@ -242,40 +245,37 @@ fn cast_went(
   cast_id cast_id: Int,
   audience audience: Set(step.ConnectionId),
 ) -> client_connection.Handled(Session) {
+  use <- bool.guard(
+    when: !held_changes.holds_cast_from(held: entered.held, cast_id:, by: from),
+    return: Continue(session, []),
+  )
   case
-    player_life.state(life: entered.life),
-    held_changes.holds_cast_from(held: entered.held, cast_id:, by: from)
+    list.find(
+      held_changes.cast_views(
+        held: entered.held,
+        holder_unit_id: entered.unit_id,
+        now_ms: now.monotonic_ms,
+      ),
+      fn(view) { view.cast_id == cast_id },
+    )
   {
-    player_life.Alive, True ->
-      case
-        list.find(
-          held_changes.cast_views(
-            held: entered.held,
-            holder_unit_id: entered.unit_id,
-            now_ms: now.monotonic_ms,
-          ),
-          fn(view) { view.cast_id == cast_id },
+    Ok(view) -> {
+      let #(start, go) =
+        cast_frame.held_start(
+          view:,
+          place: movement.place(entered.movement),
+          now_ms: now.monotonic_ms,
         )
-      {
-        Ok(view) -> {
-          let #(start, go) =
-            cast_frame.held_start(
-              view:,
-              place: movement.place(entered.movement),
-              now_ms: now.monotonic_ms,
-            )
-          Continue(
-            session,
-            connection_state.news_to_viewers_but(
-              entered:,
-              left_out: set.insert(audience, from),
-              news: client_connection.HeldCastStarted(start:, go:),
-            ),
-          )
-        }
-        Error(Nil) -> Continue(session, [])
-      }
-    player_life.Alive, False | player_life.Dead, _ -> Continue(session, [])
+      Continue(
+        session,
+        connection_state.news_to_viewers_but(
+          entered:,
+          left_out: set.insert(audience, from),
+          news: client_connection.HeldCastStarted(start:, go:),
+        ),
+      )
+    }
+    Error(Nil) -> Continue(session, [])
   }
 }
 
@@ -421,7 +421,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A viewer is shown the buffs other players' casts hold on a player only when it comes into sight of the player after the change started: a viewer already shown the player when a change starts, and not told the cast by its caster, is shown no buff; a cast that starts after the viewer's create reaches it only through its caster's frames; a tell that reaches the player after its create was written leaves the node missing until the caster's next go; and a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`).",
+      missing: "A viewer is shown the buffs other players' casts hold on a player only when it comes into sight of the player after the change started: a viewer already shown the player when a change starts, and not told the cast by its caster, is shown no buff, although the player tells it the cast's start, which the viewer drops and writes nothing for; a cast that starts after the viewer's create reaches it only through its caster's frames; a tell that reaches the player after its create was written leaves the node missing until the caster's next go; and a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`).",
     ),
     gap.Entry(
       area: "Casting",

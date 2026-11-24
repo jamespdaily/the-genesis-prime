@@ -1734,6 +1734,19 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
   assert [went_ally(first_child), went_ally(second_child)]
     == [[on(ally)], [on(other_ally)]]
     as "each child's went names the ally the child was started on, and no ally is told the other's cast"
+  let absorb_ally = fn(cast_id) {
+    list.filter_map(went, fn(effect) {
+      case effect {
+        cast_state.OtherPlayerChangeStarts(address:, source:, ..)
+          if source.cast_id == cast_id
+        -> Ok(address)
+        _ -> Error(Nil)
+      }
+    })
+  }
+  assert [absorb_ally(first_child), absorb_ally(second_child)]
+    == [[on(ally)], [on(other_ally)]]
+    as "each child tells its absorb to the ally the child was started on, and no ally is told the other's absorb"
 }
 
 /// One child a parent started by its go, and what its rows do: where the press was
