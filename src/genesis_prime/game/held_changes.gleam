@@ -290,6 +290,32 @@ pub fn kept_casts_of_unit(held held: Held, unit_id unit_id: Int) -> List(Int) {
   |> list.unique
 }
 
+/// The connections that wait for events, each once in the order its first source started,
+/// with the triggers it waits for in the order its sources started, each once.
+pub fn events_awaited(
+  held held: Held,
+) -> List(#(ConnectionId, List(spell_plan.Trigger))) {
+  let waiting =
+    list.filter_map(held.entries, fn(entry) {
+      case entry {
+        PlayerSource(by:, trigger: Some(trigger), ..) -> Ok(#(by, trigger))
+        PlayerSource(trigger: None, ..) | CreatureSource(..) -> Error(Nil)
+      }
+    })
+  list.map(list.unique(list.map(waiting, fn(one) { one.0 })), fn(by) {
+    #(
+      by,
+      list.filter_map(waiting, fn(one) {
+        case one.0 == by {
+          True -> Ok(one.1)
+          False -> Error(Nil)
+        }
+      })
+        |> list.unique,
+    )
+  })
+}
+
 /// Whether any source of the cast `cast_id` is held.
 pub fn holds_cast(held held: Held, cast_id cast_id: Int) -> Bool {
   list.any(held.entries, fn(entry) { entry.source.cast_id == cast_id })
