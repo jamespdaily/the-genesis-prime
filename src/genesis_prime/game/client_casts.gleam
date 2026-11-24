@@ -4,7 +4,8 @@
 ////
 //// ```
 //// caster's create or 0x7ff      ─▶ written(cast, caster's unit)      the caster's frames end it
-//// an ally's create lists it      ─▶ borrow(cast, ally's unit)         the ally's HeldCastEnded ends it
+//// an ally's create or start lists it
+////                                ─▶ borrow(cast, ally's unit)         the ally's HeldCastEnded ends it
 //// the caster's unit removed while the player holds a kept source
 ////                                ─▶ orphaned([cast])                  the player's own ledger ends it
 //// the caster shown again, listing an orphaned cast
@@ -16,7 +17,7 @@
 ////   caster's frames (go, tick, finish, 0x811) are written for it, and its removal finishes
 ////   the cast (`cast.target_node_end`: the client finishes a removed caster's casts).
 //// - **A borrowed cast** is one the client holds from an ally's create (`opcode.0x262.casts`)
-////   without its caster telling it (`cast.unknown_caster`: the client makes a cast whose
+////   or from the start the ally tells it (`opcode.0x7ff`) without its caster telling it (`cast.unknown_caster`: the client makes a cast whose
 ////   caster it does not know). Only the ally ends it, with a 0x811 naming the ally
 ////   (`opcode.0x811`); the caster's later create, start, frames and removal write nothing for
 ////   it, so a cast the ally holds a kept change for does not end before the ally's last
@@ -73,8 +74,8 @@ pub fn written(
   Casts(holds: dict.insert(casts.holds, cast_id, hold))
 }
 
-/// The cast `cast_id` as the create of the unit `ally_unit_id` listed it. A cast the client
-/// holds from its caster or with none stays as it is.
+/// The cast `cast_id` as the create of the unit `ally_unit_id` listed it, or as the start it
+/// told. A cast the client holds from its caster or with none stays as it is.
 pub fn borrow(
   casts casts: Casts,
   cast_id cast_id: Int,
@@ -100,7 +101,14 @@ pub fn is_written(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   }
 }
 
-/// Whether the client holds the cast from an ally's create.
+/// Whether the client holds the cast in any state: written by its caster, borrowed from an
+/// ally, held with no caster or listed again by its caster. A cast the client holds is not
+/// started again (`opcode.0x7ff`: a cast id already live restarts that cast).
+pub fn is_held(casts casts: Casts, cast_id cast_id: Int) -> Bool {
+  dict.has_key(casts.holds, cast_id)
+}
+
+/// Whether the client holds the cast from an ally's create or start.
 pub fn is_borrowed(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   case dict.get(casts.holds, cast_id) {
     Ok(Borrowed(..)) -> True

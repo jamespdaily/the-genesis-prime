@@ -118,11 +118,17 @@
 ////
 ////   ```
 ////   ally T's create lists cast X of caster C ─▶ viewer: C told it X? no: X is borrowed from T
+////   T's go-time tell HeldCastStarted(0x7ff, 0x7f4) ─▶ T shown and X held in no state? write both,
+////                                                     borrow X from T
 ////   T's last source of X ends ─▶ Tell(each viewer, HeldCastEnded(X)) ─▶ borrowed? 0x811 {X, [T]}
 ////   ```
 ////
 ////   - A borrowed cast gets none of its caster's later frames, so the caster's removal does not
 ////     end it before T's tell does; T's removal drops it with the client's nodes on T.
+////   - T's start is written when the viewer shows T and holds the cast in no state (written by
+////     its caster, borrowed, or held with no caster): the client restarts a cast id that is
+////     live (`opcode.0x7ff`), so one sender wins and the other's start is dropped. A viewer
+////     that does not show the caster makes the cast too (`cast.unknown_caster`).
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
@@ -708,8 +714,32 @@ pub fn viewer_takes(
         [connection_state.to_client(session, cast_frame.started_frame(start:))],
       )
     }
-    // The start an ally tells for a cast it holds is dropped: no frame is written for it.
-    client_connection.HeldCastStarted(..) -> Continue(session, [])
+    client_connection.HeldCastStarted(start:, go:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      use <- bool.guard(
+        when: client_casts.is_held(
+          casts: entered.client_casts,
+          cast_id: start.cast_id,
+        ),
+        return: Continue(session, []),
+      )
+      Continue(
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(
+            ..entered,
+            client_casts: client_casts.borrow(
+              casts: entered.client_casts,
+              cast_id: start.cast_id,
+              ally_unit_id: unit_id,
+            ),
+          )
+        }),
+        [
+          connection_state.to_client(session, cast_frame.started_frame(start:)),
+          connection_state.to_client(session, cast_frame.went_frame(go:)),
+        ],
+      )
+    }
     client_connection.HeldCastEnded(cast_id:) ->
       case
         client_casts.ally_ended(

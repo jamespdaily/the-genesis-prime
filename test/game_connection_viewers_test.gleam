@@ -20,10 +20,13 @@ import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/connection/viewers
 import genesis_prime/game/effect_kind
 import genesis_prime/game/faction_level
+import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{PlayerAddress, Viewer}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_properties
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
@@ -38,6 +41,8 @@ import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_finished
+import genesis_prime/message/spell_go
+import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_target_info
 import genesis_prime/message/spell_targets_removed
@@ -64,7 +69,7 @@ import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, LogWarning, Map, OwnEffect, OwnEvent, Woken,
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
-import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/id.{ClassId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{
@@ -288,6 +293,7 @@ pub fn news_for_another_stay_is_dropped_for_each_kind_and_this_stays_is_written_
       commands: game_connection_support.moved_unit_commands(),
     ),
     Removed,
+    held_cast_started(cast_id: 2_147_497_985, caster: 7),
   ]
   // The unit is shown first, so that every kind would be written but for its stay.
   let #(shown, _) =
@@ -313,6 +319,16 @@ pub fn news_for_another_stay_is_dropped_for_each_kind_and_this_stays_is_written_
     )
   assert game_connection_support.written_ids(taken) == [0x0355]
     as "the stay the viewer is in"
+  let #(_, taken) =
+    game_connection_support.feed(
+      shown,
+      in_stay(
+        game_connection_support.own_stay(),
+        held_cast_started(cast_id: 2_147_497_985, caster: 7),
+      ),
+    )
+  assert game_connection_support.written_ids(taken) == [0x07FF, 0x07F4]
+    as "the start an ally tells is written in the stay the viewer is in"
 }
 
 pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test() -> Nil {
@@ -1740,6 +1756,10 @@ pub fn a_unit_create_lists_the_casts_of_the_unit_and_the_casts_of_others_it_hold
 type Written {
   TargetsRemoved(cast_id: Int, unit_ids: List(Int))
   Finished(cast_id: Int)
+  /// A 0x7ff as the client reads it.
+  Started(start: spell_started.SpellStarted)
+  /// A 0x7f4 as the client reads it.
+  Went(go: spell_go.SpellGo)
   Other(opcode: Int)
 }
 
@@ -1759,6 +1779,16 @@ fn written_of(
           let assert Ok(finished) = spell_finished.decode(frame.body)
             as "a 0x7fe the viewer wrote decodes"
           Finished(cast_id: finished.cast_id)
+        }
+        0x07FF -> {
+          let assert Ok(start) = spell_started.decode(frame.body)
+            as "a 0x7ff the viewer wrote decodes"
+          Started(start:)
+        }
+        0x07F4 -> {
+          let assert Ok(go) = spell_go.decode(frame.body)
+            as "a 0x7f4 the viewer wrote decodes"
+          Went(go:)
         }
         opcode -> Other(opcode:)
       }
@@ -1916,20 +1946,237 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
       [[Other(0x0355)], []],
     ),
   ]
+  check_written_rows(rows:)
+}
+
+/// Each row is a reason, the events that bring the connection in the world to its setup, the
+/// events then fed one by one, and the writes (as `Written`) each of those events made: the
+/// writes of each step are compared with the expected ones of that step.
+fn check_written_rows(
+  rows rows: List(
+    #(
+      String,
+      List(
+        step.Event(
+          step.ConnectionEvent(
+            client_connection.Message,
+            client_connection.Answer,
+          ),
+        ),
+      ),
+      List(
+        step.Event(
+          step.ConnectionEvent(
+            client_connection.Message,
+            client_connection.Answer,
+          ),
+        ),
+      ),
+      List(List(Written)),
+    ),
+  ),
+) -> Nil {
   list.each(rows, fn(row) {
     let #(reason, setup, steps, expected) = row
-    let state =
-      list.fold(setup, game_connection_support.in_world(), fn(state, event) {
-        game_connection_support.feed(state, event).0
-      })
     let #(_, written) =
-      list.fold(steps, #(state, []), fn(so_far, event) {
-        let #(state, written) = so_far
-        let #(state, taken) = game_connection_support.feed(state, event)
-        #(state, list.append(written, [written_of(taken:)]))
-      })
+      list.fold(
+        steps,
+        #(game_connection_support.fed(events: setup), []),
+        fn(so_far, event) {
+          let #(state, written) = so_far
+          let #(state, taken) = game_connection_support.feed(state, event)
+          #(state, list.append(written, [written_of(taken:)]))
+        },
+      )
     assert written == expected as reason
   })
+}
+
+/// The ally 9's tell of the cast `cast_id` of the unit `caster` it holds, as it builds it
+/// (`landing.cast_went`): the 0x7ff naming the ally as primary target and the 0x7f4 that lists
+/// Spell4Effects 62024 on the ally alone with instance count 1, ignore-cooldown 1 and no
+/// positions (`opcode.0x7ff`, `opcode.0x7f4`), written out here, not built by `held_start`.
+fn held_cast_started(
+  cast_id cast_id: Int,
+  caster caster: Int,
+) -> client_connection.News {
+  client_connection.HeldCastStarted(
+    start: spell_started.SpellStarted(
+      ..game_connection_support.spell_started_of(cast_id:, caster:),
+      spell4_id: 32_823,
+      root_spell4_id: 32_823,
+      primary_target_unit_id: 9,
+    ),
+    go: spell_go.SpellGo(
+      cast_id:,
+      ignore_cooldown: 1,
+      destination: spell_position.SpellPosition(x: 0, y: 0, z: 0),
+      targets: [
+        cast_support.listed_target_info(
+          unit_id: 9,
+          index: 0,
+          count: 1,
+          effects: [
+            cast_support.listed_effect_info(
+              effect_id: 62_024,
+              instance_id: 1,
+              delay_ms: 0,
+              lifetime_ms: 10_000,
+            ),
+          ],
+        ),
+      ],
+      initial_positions: [],
+      telegraph_positions: [],
+      missiles: [],
+      phase: 0,
+    ),
+  )
+}
+
+/// What a viewer writes for the start the ally 9 tells of a cast it holds (`HeldCastStarted`):
+/// the cast's 0x7ff then its 0x7f4, once, when the viewer shows the ally and holds the cast
+/// in no state; the cast is then borrowed from the ally, so the ally's `HeldCastEnded` writes
+/// one 0x811 naming the ally (`opcode.0x811`: the node, and the cast with its last node, for
+/// cast method 0). Nothing is written, and nothing borrowed, when the ally is not shown or is
+/// gone, or when the viewer holds the cast already (`opcode.0x7ff`: a cast id already live
+/// restarts that cast): written by its caster, borrowed from an ally's create or an earlier
+/// start, or held with no caster after its caster left while the viewer held a kept change of
+/// it. A viewer that does not show the caster still makes the cast (`cast.unknown_caster`).
+pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_when_the_viewer_holds_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let ally = 9
+  let caster = 7
+  let cast_id = 2_147_497_985
+  let ally_appears =
+    from_unit(unit_id: ally, news: created_listing(unit_id: ally, casts: []))
+  let ally_starts =
+    from_unit(unit_id: ally, news: held_cast_started(cast_id:, caster:))
+  let ally_ends =
+    from_unit(unit_id: ally, news: client_connection.HeldCastEnded(cast_id:))
+  let ally_lists =
+    from_unit(
+      unit_id: ally,
+      news: created_listing(unit_id: ally, casts: [
+        game_connection_support.listed_cast(cast_id:, caster:),
+      ]),
+    )
+  let caster_appears =
+    from_unit(
+      unit_id: caster,
+      news: created_listing(unit_id: caster, casts: []),
+    )
+  let caster_starts =
+    from_unit(
+      unit_id: caster,
+      news: client_connection.CastStarted(
+        start: game_connection_support.spell_started_of(cast_id:, caster:),
+      ),
+    )
+  let caster_finishes = from_unit(unit_id: caster, news: CastFinished(cast_id:))
+  let assert client_connection.HeldCastStarted(start:, go:) =
+    held_cast_started(cast_id:, caster:)
+  let written = [Started(start:), Went(go:)]
+  // A viewer that holds a kept change of a cast from another player's connection 3 and was
+  // told the cast by its caster, whose unit then leaves: the cast is held with no caster.
+  let orphan_id = 100
+  let orphan_caster = game_connection_support.viewer_unit_id(3)
+  let kept_source =
+    unit_properties.Source(
+      cast_id: orphan_id,
+      effect_id: Spell4EffectsId(62_024),
+    )
+  let orphaned_by_its_caster_leaving = [
+    game_connection_support.sent_by_the_map(SeenBy(
+      by: ConnectionId(3),
+      stay: game_connection_support.viewer_stay(3),
+      unit_id: orphan_caster,
+    )),
+    game_connection_support.for_stay(
+      stay: game_connection_support.own_stay(),
+      sent: client_connection.SentByPlayer(
+        client_connection.Change(change: held_changes.PlayerChangeStarts(
+          from: ConnectionId(3),
+          from_stay: game_connection_support.viewer_stay(3),
+          source: kept_source,
+          change: held_changes.Absorb(amount: 300, mask: 7),
+          sight: held_changes.KeptWhenUnseen,
+          spell4_id: Spell4Id(32_823),
+          effect: unit_casts.HeldEffect(
+            effect_id: kept_source.effect_id,
+            starts_ms: 1000,
+            ends: unit_casts.EndsAt(ms: 11_000),
+          ),
+        )),
+      ),
+    ),
+    from_unit(
+      unit_id: orphan_caster,
+      news: created_listing(unit_id: orphan_caster, casts: []),
+    ),
+    from_unit(
+      unit_id: orphan_caster,
+      news: client_connection.CastStarted(
+        start: game_connection_support.spell_started_of(
+          cast_id: orphan_id,
+          caster: orphan_caster,
+        ),
+      ),
+    ),
+    from_unit(unit_id: orphan_caster, news: Removed),
+    ally_appears,
+  ]
+  // What reaches the viewer before the steps asserted, the steps, and what each writes.
+  let rows = [
+    #(
+      "the ally is shown and the cast is held in no state: the 0x7ff then the 0x7f4, once; the cast is borrowed from the ally, whose end writes one 0x811 and a second writes nothing",
+      [ally_appears],
+      [ally_starts, ally_ends, ally_ends],
+      [written, [TargetsRemoved(cast_id:, unit_ids: [ally])], []],
+    ),
+    #(
+      "the ally was never shown: nothing is written, and nothing is borrowed for its end to write",
+      [],
+      [ally_starts, ally_ends],
+      [[], []],
+    ),
+    #(
+      "the map said the ally is gone: nothing is written, and nothing is borrowed",
+      [ally_appears, game_connection_support.event_of(MapSaysGone)],
+      [ally_starts, ally_ends],
+      [[], []],
+    ),
+    #(
+      "the caster told the viewer the cast first: nothing is written, the ally's end writes nothing and the caster's finish still writes its 0x7fe",
+      [caster_appears, caster_starts, ally_appears],
+      [ally_starts, ally_ends, caster_finishes],
+      [[], [], [Finished(cast_id:)]],
+    ),
+    #(
+      "the ally's create listed the cast, so it is borrowed: the start writes nothing and the end writes the one 0x811",
+      [ally_lists],
+      [ally_starts, ally_ends],
+      [[], [TargetsRemoved(cast_id:, unit_ids: [ally])]],
+    ),
+    #(
+      "the ally started the cast already, as when a cast tells again: the second start writes nothing and one end writes one 0x811",
+      [ally_appears],
+      [ally_starts, ally_starts, ally_ends],
+      [written, [], [TargetsRemoved(cast_id:, unit_ids: [ally])]],
+    ),
+    #(
+      "the cast is held with no caster, because its caster left the viewer's sight while the viewer held a kept change of it: the start writes nothing",
+      orphaned_by_its_caster_leaving,
+      [
+        from_unit(
+          unit_id: ally,
+          news: held_cast_started(cast_id: orphan_id, caster: orphan_caster),
+        ),
+      ],
+      [[]],
+    ),
+  ]
+  check_written_rows(rows:)
 }
 
 /// Gamma Rays (Spell4 29874: castTime 1250 ms, a Normal cast with a cast bar) and Discharge
@@ -2405,10 +2652,7 @@ pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> 
     ],
     fn(row) {
       let #(name, setup, casts, kept, cast_id, finished) = row
-      let state =
-        list.fold(setup, game_connection_support.in_world(), fn(state, event) {
-          game_connection_support.feed(state, event).0
-        })
+      let state = game_connection_support.fed(events: setup)
       let #(state, taken) =
         game_connection_support.feed(
           state,

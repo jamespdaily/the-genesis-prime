@@ -218,14 +218,32 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["comes into sight", "already shown"],
-      "a viewer is shown another player's buffs on a player only when it comes into sight of the player after the change started",
+      ["inside the audience", "next go"],
+      "a viewer inside the audience whose client held no copy of the player when the caster's go reached it is shown no buff until the caster's next go",
     ),
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["borrowed", "client_casts"],
-      "a cast a viewer borrowed from a player's create is ended by that player alone",
+      ["took a cast's changes", "told before it came into sight"],
+      "a viewer that comes into sight of the player between its taking a cast's changes and its taking the cast's go is shown the effects told before it came into sight",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["comes back", "kept change"],
+      "a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["borrowed", "client_casts", "the start the player tells"],
+      "a cast a viewer borrowed from a player's create or from the start the player tells is ended by that player alone, and a second go of a cast does not reach a viewer outside its audience",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["dead viewer", "written the start"],
+      "a dead viewer is written the start a player tells as a live one is",
     ),
     Limit(
       connection_landing.gaps(),
@@ -315,6 +333,10 @@ pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Ni
     })
   })
     as "each gap the landing module states has a row above, held changes and heals alike"
+  assert !list.any(connection_landing.gaps(), fn(entry) {
+    string.contains(entry.missing, "which the viewer drops")
+  })
+    as "a viewer writes the start a player tells it, so no entry says the viewer drops it and shows no buff"
   assert list.all(gaps.registry(), fn(entry) {
     !string.contains(entry.missing, "no description of what the heal applied")
   })

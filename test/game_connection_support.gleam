@@ -197,6 +197,13 @@ pub fn feed(
   feed_at(state:, filetime:, event:)
 }
 
+/// The connection in the world after `events` are fed to it in order.
+pub fn fed(
+  events events: List(Event(ConnectionEvent(Message, Answer))),
+) -> game_connection.State {
+  list.fold(events, in_world(), fn(state, event) { feed(state:, event:).0 })
+}
+
 /// An event that reaches the connection at this system time, as a FILETIME.
 pub fn feed_at(
   state state: game_connection.State,

@@ -3659,6 +3659,221 @@ pub fn a_player_that_arrives_beside_an_ally_after_its_esper_walked_away_shows_th
   login_support.stop(started)
 }
 
+/// A third player, a Medic, stands beside a Medic that an Esper is about to press Phantasmal
+/// Armor at, and out of the Esper's sight: the Esper stands 30 m from the Medic (the spell's
+/// range is 35 m, Spell4 32823 targetMaxRange) and the third 1000 m the other way, 1003.5 m
+/// from the Medic and 1033.5 m from the Esper (sight range 1024, `sight.range`). The third
+/// reads the Esper's removal first, which its connection writes when it has taken the map's
+/// notice that the third no longer sees it, so the Esper's cast is not told to the third. The
+/// third's client is then written, by the Medic's connection alone, the cast's 0x7ff naming the
+/// Esper as its caster and the Medic as its primary target (`opcode.0x7ff`) and the 0x7f4 that
+/// lists Spell4Effects 62024 on the Medic with the time it has left (`opcode.0x7f4`), the Esper
+/// never created for it (`cast.unknown_caster`); when the test's clock passes the row's 10 000
+/// ms it reads one 0x811 naming the Medic for that cast, and no 0x7fe of it (`opcode.0x811`).
+/// The Medic's frames to the third are one sender's, so the 0x7ff comes before the 0x7f4 and
+/// the Medic's move after the go, and after the end, bounds the read of the third's client;
+/// the Esper's move, from the sender of the went, bounds the Medic's connection having
+/// handled the went. No pong bounds a tell, which comes from another sender than the pong.
+pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_armor_buff_when_it_lands_and_until_it_ends_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let time = driven_time.new()
+  let tables = client_tables.shared()
+  let started = started_on(tables:, time:)
+  let TwoEntered(first:, second:, seen_second:, first_have:, second_have:, ..) =
+    two_players_enter(started:, first_class: 3, level: 6)
+  let esper = 1
+  let medic = unit_of(seen_second)
+  assert medic == 2 as "the Medic is the second unit"
+  let bag_index =
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 6,
+      ability: 19_033,
+    )
+  let #(third, third_character) =
+    new_player_at_level(
+      started:,
+      number: 3,
+      character_name: "Third Mc",
+      class_id: 4,
+      level: 6,
+    )
+  send_play(game: third, character_id: third_character)
+  let #(third_entry, third_have) =
+    game_client.read_entry_kept(game: third, have: <<>>)
+  let third_unit =
+    game_client.unit_create_player_in(frames: third_entry).unit_id
+  assert third_unit == 3 as "the third player is the third unit"
+  let created = fn(frames, unit) {
+    list.any(frames, fn(frame) {
+      created_unit_of(frame:) |> result.map(fn(created) { created.0 })
+      == Ok(unit)
+    })
+  }
+  // The third's client has read the creates of the Esper and the Medic, so the Esper's and
+  // the Medic's connections hold the third as a viewer.
+  let #(_, third_have) =
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      created(list.append(third_entry, frames), esper)
+      && created(list.append(third_entry, frames), medic)
+    })
+  walk_to(game: first, z: 33.5, clock: 1)
+  walk_to(game: third, z: -1000.0, clock: 1)
+  let #(_, third_have) =
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), esper)
+    })
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), third_unit)
+    })
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index:,
+    target: medic,
+  )
+  // The Esper's connection writes the start of the Interrupt Armor child (Spell4 76766) after
+  // the tells of the go, so the Esper's read of it means the Medic's connection has the whole
+  // go in its mailbox. A pong is a message from the client's own socket, another sender than
+  // the connection that tells the Medic's connection the go and than the Medic's connection
+  // that tells the third's, so no pong bounds a tell. Each read is bounded by a message of the
+  // sender whose tell it follows: the Esper's step reaches the Medic's connection from the
+  // Esper's, after the go, so the Medic's client reading it means the Medic's connection
+  // handled the go; the Medic's step then reaches the third's connection from the Medic's,
+  // after the start and the go it told, so the third's client reading it has read them.
+  let confirmed = fn(frames) {
+    list.filter_map(game_client.casts_in(frames:), fn(event) {
+      case event {
+        game_client.CastConfirmed(server_cast_id:, ..) -> Ok(server_cast_id)
+        _ -> Error(Nil)
+      }
+    })
+  }
+  let #(pressed, _) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(
+        connection_support.decoded(
+          frames,
+          spell_started.message_id,
+          spell_started.decode,
+        ),
+        fn(start) { start.spell4_id == 76_766 },
+      )
+    })
+  let assert [pressed_id] = confirmed(pressed) as "the press is confirmed once"
+  let stepped_to = fn(frames, unit, z) {
+    list.any(game_client.fight_in(frames:), fn(event) {
+      case event {
+        game_client.Moves(unit_id:, ends_at: option.Some(#(_, _, placed)), ..) ->
+          unit_id == unit && float.absolute_value(placed -. z) <. 0.01
+        _ -> False
+      }
+    })
+  }
+  walk_to(game: first, z: 33.0, clock: 2)
+  let #(_, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      stepped_to(frames, esper, 33.0)
+    })
+  walk_to(game: second, z: 3.25, clock: 1)
+  let #(third_read, third_have) =
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      stepped_to(frames, medic, 3.25)
+    })
+  let pressed_start = fn(frames) {
+    list.filter(
+      connection_support.decoded(
+        frames,
+        spell_started.message_id,
+        spell_started.decode,
+      ),
+      fn(start) { start.cast_id == pressed_id },
+    )
+  }
+  let assert [started_cast] = pressed_start(third_read)
+    as "the third's client is told the pressed cast once, by the Medic"
+  assert started_cast.caster_unit_id == esper
+    && started_cast.primary_target_unit_id == medic
+    && started_cast.spell4_id == 32_823
+    as "opcode.0x7ff: the start names the Esper as its caster and the Medic as its primary target"
+  assert !created(third_read, esper)
+    as "cast.unknown_caster: the Esper is not created again for the third client, which shows the buff for a caster it does not hold"
+  let assert [go] =
+    list.filter(gos_in(frames: third_read), fn(go) {
+      go.cast_id == started_cast.cast_id
+    })
+    as "the third's client is told the cast's go once"
+  let assert [target] = go.targets as "the go lists one target, the Medic"
+  assert target.unit_id == medic as "and it is the Medic"
+  let assert [effect] = target.effects
+    as "the Medic holds the one effect Spell4Effects 62024 of tier 1"
+  assert effect.spell4_effects_id == 62_024
+    && effect.delay_ms == 0
+    && effect.lifetime_ms > 0
+    && effect.lifetime_ms <= 10_000
+    as "opcode.0x7f4.effect_time: the absorb is listed with delay 0 and the time it has left, at most its 10 000 ms"
+  let ordered =
+    list.filter_map(third_read, fn(frame) {
+      case frame.message_id {
+        0x07FF -> {
+          let assert Ok(start) = spell_started.decode(frame.body)
+            as "a 0x7ff decodes"
+          case start.cast_id == started_cast.cast_id {
+            True -> Ok(0x07FF)
+            False -> Error(Nil)
+          }
+        }
+        0x07F4 -> {
+          let assert Ok(went) = spell_go.decode(frame.body) as "a 0x7f4 decodes"
+          case went.cast_id == started_cast.cast_id {
+            True -> Ok(0x07F4)
+            False -> Error(Nil)
+          }
+        }
+        _ -> Error(Nil)
+      }
+    })
+  assert ordered == [0x07FF, 0x07F4]
+    as "the start is written before the go, each once"
+  // The node ends 10 000 ms after the go: the Esper's connection tells the Medic's the end and
+  // the Medic's connection tells the third player's. The Medic's own client is written its
+  // absorption's end in the step that tells the viewers, and the Medic's move after it is told
+  // to the third by the one sender, so the third's read of the move bounds the 0x811.
+  driven_time.advance(time:, ms: 10_000)
+  let #(_, _) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      absorptions_in(frames:, unit: medic) == [0]
+    })
+  walk_to(game: second, z: 3.0, clock: 2)
+  let #(until_end, _) =
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      list.any(game_client.fight_in(frames:), fn(event) {
+        case event {
+          game_client.Moves(unit_id:, ..) -> unit_id == medic
+          _ -> False
+        }
+      })
+    })
+  assert list.count(
+      game_client.targets_removed_in(frames: until_end),
+      fn(removed) { removed == #(started_cast.cast_id, [medic]) },
+    )
+    == 1
+    as "opcode.0x811: the third player's client reads one 0x811 naming the Medic for the cast, which ends the buff"
+  assert !list.contains(
+    finished_casts_in(frames: until_end),
+    started_cast.cast_id,
+  )
+    as "opcode.0x7fe: and no 0x7fe of the cast, which would end its nodes on other units"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  game_client.close(game: third)
+  login_support.stop(started)
+}
+
 /// What a Spellslinger's press of Runes of Protection, with a Medic standing `metres` metres
 /// ahead of it, showed the two clients: each Medic's and the Spellslinger's unit, the absorb the
 /// row 206315 gives, the frames each client read at the go (`caster_read`, `ally_read`) and
