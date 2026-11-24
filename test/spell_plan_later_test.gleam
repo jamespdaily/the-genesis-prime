@@ -18,6 +18,7 @@ import genesis_prime/game/area
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
+import genesis_prime/game/held_tier
 import genesis_prime/game/innate
 import genesis_prime/game/item_property
 import genesis_prime/game/lasting
@@ -1612,11 +1613,6 @@ pub fn the_proxies_of_the_three_targeted_root_abilities_start_the_five_counted_c
   })
 }
 
-/// The tiers from one to another, lowest first.
-fn tiers_from(low low: Int, high high: Int) -> List(Int) {
-  int.range(from: high, to: low - 1, with: [], run: list.prepend)
-}
-
 /// Every tier 2 to 9 row of every base of the plans that no base names as its alternate, as
 /// the base, the tier and the row's Spell4 id (`spell_tier.spell4_id`, the client's
 /// `GetSpellIdForTier`). The alternates' tiers are planned inside their ability's.
@@ -1638,14 +1634,9 @@ fn tier_rows_of_planned_abilities(
   })
   |> list.flat_map(fn(spell) {
     let base = spell.spell4_base_id
-    case spell_tier.highest(tiers:, base:) {
-      Ok(highest) if highest >= 2 ->
-        list.filter_map(tiers_from(low: 2, high: highest), fn(tier) {
-          spell_tier.spell4_id(tiers:, base:, tier:)
-          |> result.map(fn(spell4_id) { #(base, tier, spell4_id) })
-        })
-      Ok(_) | Error(Nil) -> []
-    }
+    list.map(spell_tier.tiers_above_1(tiers:, base:), fn(entry) {
+      #(base, entry.0, entry.1)
+    })
   })
 }
 
@@ -1807,22 +1798,10 @@ pub fn a_tier_the_plans_leave_out_differs_from_the_tier_that_plays_it_only_in_th
   }
   // The row that plays a left-out tier: the highest lower tier the plans hold, else tier 1.
   let playing_row = fn(base: Spell4BaseId, tier: Int) {
-    let assert Ok(spell4_id) =
-      int.range(from: 1, to: tier, with: [], run: list.prepend)
-      |> list.find_map(fn(lower) {
-        let assert Ok(spell4_id) =
-          spell_tier.spell4_id(tiers:, base:, tier: lower)
-          as "a tier below a tier with a row has a row"
-        case
-          lower == 1
-          || spell_plan.in_tier_plans(tier_plans: planned, spell4_id:)
-          != Error(Nil)
-        {
-          True -> Ok(spell4_id)
-          False -> Error(Nil)
-        }
-      })
-      as "tier 1 always plays"
+    let played =
+      held_tier.tier_played(tier_plans: planned, tiers:, base:, held_tier: tier)
+    let assert Ok(spell4_id) = spell_tier.spell4_id(tiers:, base:, tier: played)
+      as "the tier that plays has a row"
     row_of(spell4_id)
   }
   let differences = named_differences()

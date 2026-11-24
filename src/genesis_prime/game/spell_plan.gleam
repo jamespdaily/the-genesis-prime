@@ -3318,16 +3318,8 @@ fn tiers_planned(
       int.compare(first.spell4_base_id.value, second.spell4_base_id.value)
     })
     |> list.flat_map(fn(spell) {
-      let base = spell.spell4_base_id
-      case spell_tier.highest(tiers:, base:) {
-        Ok(highest) ->
-          int.range(from: highest, to: 1, with: [], run: list.prepend)
-          |> list.filter_map(fn(tier) {
-            spell_tier.spell4_id(tiers:, base:, tier:)
-            |> result.map(fn(spell4_id) { spell4_id.value })
-          })
-        Error(Nil) -> []
-      }
+      spell_tier.tiers_above_1(tiers:, base: spell.spell4_base_id)
+      |> list.map(fn(entry) { { entry.1 }.value })
     })
   use #(planned, left_out) <- result.map(planned_or_left_out(
     tables:,
@@ -3361,6 +3353,19 @@ pub fn in_tier_plans(
   spell4_id spell4_id: Spell4Id,
 ) -> Result(Spell, Nil) {
   dict.get(tier_plans, spell4_id)
+}
+
+/// The plan of a tier of a base: the tier plan of the Spell4 row that is the tier
+/// (`spell_tier.spell4_id`). `Error(Nil)` for tier 1, which the plans hold under the base, for
+/// a tier with no row, for a base the book cannot hold, and for a tier left out.
+pub fn tier_plan(
+  tier_plans tier_plans: TierPlans,
+  tiers tiers: spell_tier.SpellTiers,
+  base base: Spell4BaseId,
+  tier tier: Int,
+) -> Result(Spell, Nil) {
+  spell_tier.spell4_id(tiers:, base:, tier:)
+  |> result.try(fn(spell4_id) { in_tier_plans(tier_plans:, spell4_id:) })
 }
 
 /// Whether a plan error names an effect or a rule the server does not build, so the

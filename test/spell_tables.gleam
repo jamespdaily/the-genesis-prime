@@ -363,6 +363,39 @@ pub fn derivation_result(
   }
 }
 
+/// Medic Paralytic Surge, an ability with no alternate and nine tiers in the client's table.
+pub const paralytic_surge = 26_543
+
+/// Runs the body on the fixture's tables without the Spell4 rows of Paralytic Surge's tiers 2 to
+/// 8, so its tiers 1 and 9 are the only rows: the client's table holds a row for every tier, so
+/// this is the case of a base whose tiers have no row, which the fixture cannot hold by itself.
+/// The shared tables are not touched.
+pub fn with_paralytic_surge_tiers_2_to_8_missing(
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let middle =
+    list.filter_map(spell4.all(fixture_tables.shared()), fn(row) {
+      case
+        row.spell4_base_id_base_spell == paralytic_surge
+        && row.tier_index >= 2
+        && row.tier_index <= 8
+      {
+        True -> Ok(row.id)
+        False -> Error(Nil)
+      }
+    })
+  assert middle != []
+    as "the fixture holds Paralytic Surge's tiers 2 to 8, which the client's table holds"
+  let assert Ok(rows) =
+    list.try_fold(middle, fixture_tables.rows(), fn(rows, id) {
+      fixture_tables.remove(rows:, table: "Spell4", id:)
+    })
+    as "the rows are Spell4 rows the fixture holds"
+  let assert Ok(tables) = fixture_tables.load(rows:)
+    as "the fixture loads without Paralytic Surge's tiers 2 to 8"
+  body(tables)
+}
+
 /// The derivations the areas' build reads, in load order: the ability tiers, the plans and the
 /// tier plans. An edit of the shared tables forgets their derived values, so a test that builds
 /// the areas on edited tables runs these first.

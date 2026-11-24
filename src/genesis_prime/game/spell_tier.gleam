@@ -274,6 +274,20 @@ pub fn spell4_id(
   dict.get(held, tier) |> result.map(fn(row) { row.spell4_id })
 }
 
+/// The tiers 2 to 9 of a base that have a Spell4 row, lowest first, each with its row: none for
+/// a base the book cannot hold. A tier with no row is not listed.
+pub fn tiers_above_1(
+  tiers tiers: SpellTiers,
+  base base: Spell4BaseId,
+) -> List(#(Int, Spell4Id)) {
+  dict.get(tiers.bases, base.value)
+  |> result.unwrap(dict.new())
+  |> dict.to_list
+  |> list.filter(fn(entry) { entry.0 >= 2 })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+  |> list.map(fn(entry) { #(entry.0, { entry.1 }.spell4_id) })
+}
+
 /// The level a tier needs, or `Error(Nil)` for tier 1, which needs none, and a number that
 /// is no tier.
 pub fn level_needed(

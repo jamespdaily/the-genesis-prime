@@ -40,7 +40,6 @@ import genesis_prime/game/spell_tier.{type SpellTiers}
 import genesis_prime/table/id.{type Spell4BaseId}
 import gleam/bool
 import gleam/dict
-import gleam/int
 import gleam/list
 import gleam/result
 
@@ -58,12 +57,7 @@ pub fn plans_of(
     let #(base, held_tier) = entry
     use <- bool.guard(when: !dict.has_key(plans, base.value), return: plans)
     let played = tier_played(tier_plans:, tiers:, base:, held_tier:)
-    let plan =
-      spell_tier.spell4_id(tiers:, base:, tier: played)
-      |> result.try(fn(spell4_id) {
-        spell_plan.in_tier_plans(tier_plans:, spell4_id:)
-      })
-    case plan {
+    case spell_plan.tier_plan(tier_plans:, tiers:, base:, tier: played) {
       Ok(spell) -> dict.insert(plans, base.value, spell)
       Error(Nil) -> plans
     }
@@ -78,14 +72,17 @@ pub fn tier_played(
   base base: Spell4BaseId,
   held_tier held_tier: Int,
 ) -> Int {
-  use <- bool.guard(when: held_tier < 2, return: 1)
-  int.range(from: 2, to: held_tier + 1, with: [], run: list.prepend)
-  |> list.find(fn(tier) {
-    spell_tier.spell4_id(tiers:, base:, tier:)
-    |> result.try(fn(spell4_id) {
-      spell_plan.in_tier_plans(tier_plans:, spell4_id:)
-    })
-    |> result.is_ok
+  spell_tier.tiers_above_1(tiers:, base:)
+  |> list.reverse
+  |> list.find(fn(entry) {
+    entry.0 <= held_tier
+    && result.is_ok(spell_plan.tier_plan(
+      tier_plans:,
+      tiers:,
+      base:,
+      tier: entry.0,
+    ))
   })
+  |> result.map(fn(entry) { entry.0 })
   |> result.unwrap(1)
 }

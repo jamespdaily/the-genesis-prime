@@ -1609,4 +1609,3 @@ Spell4	56141	Engineer Pulse Blast, tier 6	held_tier_test, cast_volatility_test, 
 Spell4	56142	Engineer Pulse Blast, tier 7	held_tier_test, cast_volatility_test, content_load_test
 Spell4	56143	Engineer Pulse Blast, tier 8	held_tier_test, cast_volatility_test, content_load_test
 Spell4	56144	Engineer Pulse Blast, tier 9	held_tier_test, cast_volatility_test, content_load_test
-Spell4	52427	Medic Gamma Rays, tier 9 (the fixture holds its tier 1 and 9 rows only: a base with tiers that have no row)	spell_tier_test, limited_action_set_test

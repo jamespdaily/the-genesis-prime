@@ -21,7 +21,6 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
-import gleam/result
 import owned_test
 import spell_tables
 import unitest
@@ -126,6 +125,31 @@ pub fn a_held_tier_plays_its_own_plan_or_the_best_lower_tier_the_plans_cast_and_
     as "the plans' own Quick Draw holds the alternate's tier 1 row"
 }
 
+pub fn the_plan_of_a_tier_is_its_own_tier_plan_and_none_for_tier_1_a_tier_with_no_row_or_a_tier_left_out_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let tier_plans = spell_plan.tier_plans(tables)
+  let tiers = spell_tier.tiers(tables)
+  let plan_of = fn(base, tier, tier_plans) {
+    spell_plan.tier_plan(tier_plans:, tiers:, base: Spell4BaseId(base), tier:)
+  }
+  let assert Ok(tier_2) = plan_of(paralytic_surge, 2, tier_plans)
+    as "Paralytic Surge's tier 2 is planned"
+  assert tier_2.spell4_id == Spell4Id(51_979)
+    as "tier 2 of Paralytic Surge is the row 51979"
+  assert tier_2.spell4_base_id == Spell4BaseId(paralytic_surge)
+    as "and keeps the ability's base"
+  assert plan_of(paralytic_surge, 1, tier_plans) == Error(Nil)
+    as "tier 1 is in the plans under the base, not in the tier plans"
+  assert plan_of(paralytic_surge, 10, tier_plans) == Error(Nil)
+    as "tier 10 has no row"
+  assert plan_of(999_999, 2, tier_plans) == Error(Nil)
+    as "a base the book cannot hold has no tiers"
+  assert plan_of(paralytic_surge, 2, dict.drop(tier_plans, [Spell4Id(51_979)]))
+    == Error(Nil)
+    as "a tier the tier plans leave out has no plan"
+}
+
 pub fn a_held_tier_plan_keeps_the_abilitys_base_and_its_tiers_own_spell4_id_for_every_tier_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("real_tables")
@@ -136,8 +160,8 @@ pub fn a_held_tier_plan_keeps_the_abilitys_base_and_its_tiers_own_spell4_id_for_
   let tiers = spell_tier.tiers(tables)
   list.each(dict.keys(plans), fn(base) {
     let base = Spell4BaseId(base)
-    let highest = result.unwrap(spell_tier.highest(tiers:, base:), 1)
-    list.each(tiers_above_1(highest:), fn(held) {
+    let above_1 = spell_tier.tiers_above_1(tiers:, base:)
+    list.each(list.map(above_1, fn(entry) { entry.0 }), fn(held) {
       let name =
         "Spell4Base "
         <> int.to_string(base.value)
@@ -150,12 +174,11 @@ pub fn a_held_tier_plan_keeps_the_abilitys_base_and_its_tiers_own_spell4_id_for_
         held_tier.tier_played(tier_plans:, tiers:, base:, held_tier: held)
       assert played >= 1 && played <= held
         as { name <> " plays a tier from 1 to the held one" }
-      assert list.all(tiers_between(low: played + 1, high: held), fn(tier) {
-        case spell_tier.spell4_id(tiers:, base:, tier:) {
-          Ok(spell4_id) ->
-            spell_plan.in_tier_plans(tier_plans:, spell4_id:) == Error(Nil)
-          Error(Nil) -> True
-        }
+      assert list.all(above_1, fn(entry) {
+        entry.0 <= played
+        || entry.0 > held
+        || spell_plan.tier_plan(tier_plans:, tiers:, base:, tier: entry.0)
+        == Error(Nil)
       })
         as {
           name
@@ -167,14 +190,4 @@ pub fn a_held_tier_plan_keeps_the_abilitys_base_and_its_tiers_own_spell4_id_for_
         as { name <> " plays the Spell4 row of the tier it plays" }
     })
   })
-}
-
-/// The tiers 2 to `highest`, lowest first.
-fn tiers_above_1(highest highest: Int) -> List(Int) {
-  tiers_between(low: 2, high: highest)
-}
-
-/// The tiers from `low` to `high`, lowest first; none when `low` is above `high`.
-fn tiers_between(low low: Int, high high: Int) -> List(Int) {
-  int.range(from: high, to: low - 1, with: [], run: list.prepend)
 }

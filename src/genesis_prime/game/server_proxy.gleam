@@ -199,26 +199,17 @@ fn tiers_planned(
   let tier_plans = spell_plan.tier_plans(tables)
   let base = Spell4BaseId(row.spell4_base_id)
   let has_host = result.is_ok(host_of(ability:, phase: row.phase))
-  case spell_tier.highest(tiers:, base:) {
-    Ok(highest) if highest >= 2 ->
-      int.range(from: highest, to: 1, with: [], run: list.prepend)
-      |> list.try_each(fn(tier) {
-        let plan =
-          spell_tier.spell4_id(tiers:, base:, tier:)
-          |> result.try(fn(spell4_id) {
-            spell_plan.in_tier_plans(tier_plans:, spell4_id:)
-          })
-        case plan {
-          Error(Nil) -> Ok(Nil)
-          Ok(plan) ->
-            tier_checked(row:, tables:, sources:, plan:, has_host:)
-            |> result.map_error(fn(why) {
-              InTier(tier:, spell4_id: plan.spell4_id.value, why:)
-            })
-        }
-      })
-    Ok(_) | Error(Nil) -> Ok(Nil)
-  }
+  spell_tier.tiers_above_1(tiers:, base:)
+  |> list.try_each(fn(entry) {
+    case spell_plan.tier_plan(tier_plans:, tiers:, base:, tier: entry.0) {
+      Error(Nil) -> Ok(Nil)
+      Ok(plan) ->
+        tier_checked(row:, tables:, sources:, plan:, has_host:)
+        |> result.map_error(fn(why) {
+          InTier(tier: entry.0, spell4_id: plan.spell4_id.value, why:)
+        })
+    }
+  })
 }
 
 /// The row planned into the plan of one tier, whose Proxy must find a host exactly when tier 1's
@@ -296,7 +287,9 @@ fn last_go_of(spell spell: Spell) -> Int {
 }
 
 /// The plans with each ability's Proxies of the server's added to its tree: after the
-/// ability's own Proxies, in the order of the rows.
+/// ability's own Proxies, in the order of the rows. A Proxy's spell is planned once, in tier 1's
+/// chain, and planted as it is; the per-tier check of `select` only proves that it also plans in
+/// each tier's chain.
 pub fn planted_into(
   plans plans: Plans,
   proxies proxies: ServerProxies,

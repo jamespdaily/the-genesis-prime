@@ -39,8 +39,8 @@ import gleam/set.{type Set}
 ///   of a class that the server can plan, and that of each equip spell a worn item puts on
 ///   its wearer (genesis_prime/game/spell_plan).
 /// - The tier plans: the plan of each tier 2 to 9 spell of the planned abilities, built after the
-///   plans and the ability tiers, whose missing rows and cycles fail the load and whose unbuilt
-///   tiers are left out and listed (genesis_prime/game/spell_plan `tier_derivation`).
+///   plans and the ability tiers, whose missing rows fail the load and whose unbuilt tiers
+///   (a cycle among them) are left out and listed (genesis_prime/game/spell_plan `tier_derivation`).
 /// - Spell Surge's spell, GameFormula 913's dataint0, whose missing row fails the load
 ///   (genesis_prime/game/spell_surge).
 /// - The spell areas: what each spell of those trees and of the tier plans strikes

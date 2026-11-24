@@ -862,8 +862,8 @@ fn fault_of(
 }
 
 /// The tiers the set holds above tier 1 after the save's tier changes, or the first check
-/// they fail, in the save's order: an ability the book does not hold, or an alternate given a tier
-/// above 1 (the book holds it only as part of the ability that names it, and shows that ability's
+/// they fail, in the save's order: an ability the book does not hold, or an alternate given any
+/// tier (the book holds it only as part of the ability that names it, and shows that ability's
 /// tier; the stock builder never offers one, `0x140748390`), 18, an ability twice 13, a
 /// tier the ability has no row for or the player's level does not reach 41, and last tiers that
 /// cost more than the level gives 42. A fall is allowed to any tier that has a row, and the
@@ -889,8 +889,7 @@ fn tiers_after(
         return: Error(TierOfUnheldAbility(id: base.value)),
       )
       use <- bool.guard(
-        when: tier != 1
-          && result.is_ok(naming_ability(tiers:, book: player.book, base:)),
+        when: result.is_ok(naming_ability(tiers:, book: player.book, base:)),
         return: Error(TierOfUnheldAbility(id: base.value)),
       )
       use <- bool.guard(
@@ -983,7 +982,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Ability builder",
-      missing: "A held tier the plans cannot cast plays the best lower tier they can: the effects and the tooltip's numbers are the lower tier's (and, for two tiers, an area and a flag) while the client shows the held tier. The coverage measure lists each such tier spell.",
+      missing: "A held tier the plans cannot cast plays the best lower tier they can: the effects and the tooltip's numbers are the lower tier's (and, for two tiers, an area, a stack group and a flag) while the client shows the held tier. The coverage measure lists each such tier spell.",
     ),
     gap.Entry(
       area: "Ability builder",

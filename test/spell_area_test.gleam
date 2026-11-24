@@ -3337,7 +3337,7 @@ pub fn a_periodic_proxy_aimed_at_the_area_ticks_its_phase_and_selects_nothing_at
   assert !once.ticks_on_area as "and ticks nothing"
 }
 
-pub fn a_periodic_area_proxy_with_no_area_row_fails_the_load_and_one_ordered_by_health_leaves_its_ability_unplanned_and_closest_furthest_and_random_load_test() -> Nil {
+pub fn a_periodic_area_proxy_with_no_area_row_or_one_ordered_by_health_leaves_its_ability_unplanned_and_closest_furthest_and_random_load_test() -> Nil {
   use <- owned_test.run(120_000)
   // Nullifier's field 58868 (area row 119, Closest) holds the periodic Proxy 141450. A
   // periodic Proxy that selected nothing would be an accepted press that does nothing, so
