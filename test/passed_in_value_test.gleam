@@ -100,5 +100,7 @@ pub fn no_item_whose_spell_holds_a_type_18_row_has_the_level_1_flag_test() -> Ni
   list.each(item2.all(tables), fn(item) {
     assert item.power_level <= passed_in_value.highest_level
       as "no item's power level is above the curve's end"
+    assert int.bitwise_and(item.flags, 8) != 0 || item.power_level >= 0
+      as "opcode.0x7ff.caster_item_level: the field is 16 bits unsigned, so a worn item's level is never below 0 unless Item2.flags bit 3 hands down none (Item2 42059, power level -1)"
   })
 }

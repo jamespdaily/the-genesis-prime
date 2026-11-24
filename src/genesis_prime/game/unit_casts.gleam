@@ -44,6 +44,10 @@
 ////   is right: the client arms it from the later go).
 //// - The item-use spells' telegraph rows that carry an end replay from the
 ////   viewer's arrival, not from where the cast stood.
+//// - An entry of a cast list names no item level (`ReadUnitCreateCast` 0x140094bf0), and the
+////   client files it with a zeroed cast info (`ApplyUnitCreateCasts` 0x140458fe0), so a viewer
+////   that arrives after a worn item's cast started reads its buff's tooltip at its own
+////   player's level.
 //// - A creature's list holds the casts its viewers' casters told it of (`CastViewSet`),
 ////   not a cast of its own spells. A `CastViewSet` that reaches the creature after its
 ////   create was written leaves the node missing for that viewer until the cast's next

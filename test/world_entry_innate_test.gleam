@@ -24,6 +24,7 @@ import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
+import genesis_prime/game/gear
 import genesis_prime/game/spell_plan
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -37,6 +38,7 @@ import genesis_prime/table/id.{ClassId}
 
 import gleam/bit_array
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -257,7 +259,7 @@ pub fn the_entry_always_asks_for_the_standing_spells_and_the_wanted_list_holds_t
       as "the standing spells' start is the last thing the entry asks, once its writes and the map's watch are out"
     let #(wanted, warnings) =
       casting.standing_wanted(entered:, plans: cast_support.real_plans())
-    assert list.map(wanted, fn(spell) { spell.spell4_base_id.value })
+    assert list.map(wanted, fn(standing) { standing.spell.spell4_base_id.value })
       == case passive {
         Some(base) -> [base]
         None -> []
@@ -327,7 +329,7 @@ pub fn the_wanted_list_holds_the_innate_passive_of_the_loadout_and_leaves_out_a_
   let passive = cast_support.child(spell4_id: 45_000, base: 29_076)
   let plans = cast_support.plans_of([passive])
   let #(wanted, warnings) = casting.standing_wanted(entered:, plans:)
-  assert wanted == [passive]
+  assert wanted == [cast_state.Standing(spell: passive, from: None)]
     as "the loadout's passive is wanted, as the plan of its Spell4Base"
   assert warnings == []
   let #(wanted, warnings) =
@@ -347,6 +349,81 @@ pub fn the_wanted_list_holds_the_innate_passive_of_the_loadout_and_leaves_out_a_
 /// Each frame the passive's start writes, its go answered, as the message id in hex, a
 /// colon and the body's hex: the class's entry names the passive, and the first caster of
 /// the cast tests casts it.
+/// Item 91747, 85762 and 13272 are worn items of the client's with a power level, and 42059 and
+/// 36382 are the two worn items with Item2.flags bit 3, whose curve level the client builds from
+/// the wearer's, so their spells are pressed from no item (`0x14040d060`). Each expected value is
+/// written here with its source: the passed-in value is GameFormula 991 below level 50 (5.0 + 0.3 x
+/// level) and GameFormula 65 above (20 x e^(0.01 x (level - 50))).
+pub fn the_wanted_list_carries_each_worn_items_level_and_a_level_scaled_item_carries_none_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  // Name, the item worn, its equip spell, and what the wanted spell is pressed from: the item's
+  // level with its passed-in value, or none.
+  [
+    #(
+      "Item2 91747, power level 5: 5.0 + 0.3 x 5",
+      91_747,
+      82_325,
+      Some(#(5, 6.5)),
+    ),
+    #(
+      "Item2 85762, power level 116: 20 x e^(0.01 x 66)",
+      85_762,
+      82_325,
+      Some(#(116, 38.6958)),
+    ),
+    #(
+      "Item2 13272, power level 10: 5.0 + 0.3 x 10",
+      13_272,
+      30_116,
+      Some(#(10, 8.0)),
+    ),
+    #("Item2 42059, flags bit 3, power level -1", 42_059, 69_687, None),
+    #("Item2 36382, flags bit 3, power level 50", 36_382, 58_657, None),
+  ]
+  |> list.each(fn(row) {
+    let #(name, item2_id, spell4_id, expected) = row
+    let worn =
+      gear.of_items(
+        tables:,
+        level: 50,
+        items: worn_item_support.held_items(items: [#(item2_id, 0, 15)]),
+      )
+    let plans =
+      dict.from_list([
+        #(spell4_id, cast_support.child(spell4_id:, base: spell4_id)),
+      ])
+    let #(wanted, left_out) =
+      casting.worn_wanted(gear: worn, tables:, equip_plans: plans)
+    assert left_out == [] as name
+    let assert [cast_state.Standing(spell:, from:)] = wanted as name
+    assert spell.spell4_id.value == spell4_id as name
+    let level = case from {
+      Some(cast_state.Item(item_level:, ..)) -> Some(item_level)
+      Some(cast_state.QuestButton) | None -> None
+    }
+    assert level == option.map(expected, fn(item) { item.0 })
+      as { name <> ": the item's level the spell is pressed from" }
+    case from, expected {
+      Some(cast_state.Item(passed_in:, ..)), Some(#(_, value)) -> {
+        assert float.loosely_equals(passed_in, value, tolerating: 0.0001)
+          as { name <> ": the item's passed-in value" }
+      }
+      Some(_), _ | None, _ -> Nil
+    }
+  })
+  let #(_, entered) =
+    world_entry_support.entry(
+      tables:,
+      character: world_entry_support.character(class: 2, faction: 166, level: 1),
+    )
+  let passive = cast_support.child(spell4_id: 45_000, base: 29_076)
+  let #(innate, _) =
+    casting.standing_wanted(entered:, plans: cast_support.plans_of([passive]))
+  assert list.map(innate, fn(standing) { standing.from }) == [None]
+    as "the innate passive is pressed from no item"
+}
+
 fn passive_frames(class_id class_id: Int) -> List(String) {
   let #(_, entered) =
     world_entry_support.entry(
@@ -477,13 +554,18 @@ pub fn the_entry_starts_the_equip_spell_of_each_worn_item_after_the_passive_and_
         ..game_connection_support.world_character(),
         class_id: ClassId(class_id),
       )
-    let started =
-      game_connection_support.started_spells(
-        frames: game_connection_support.written(entered_wearing_the_deflector(
-          character:,
-          saved_health:,
-        )),
-      )
+    let frames =
+      game_connection_support.written(entered_wearing_the_deflector(
+        character:,
+        saved_health:,
+      ))
+    let started = game_connection_support.started_spells(frames:)
+    assert list.last(game_connection_support.started_item_levels(frames:))
+      == Ok(#(worn_item_support.deflector_spell, 5))
+      as {
+        name
+        <> ": opcode.0x7ff.caster_item_level: the equip spell's 0x7ff tells the deflector's level, Item2 91747's powerLevel 5"
+      }
     case passive {
       Some(passive) -> {
         assert list.first(started) == Ok(passive)

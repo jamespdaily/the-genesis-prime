@@ -102,11 +102,13 @@ import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/damage
 import genesis_prime/game/forced_move
+import genesis_prime/game/gear
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
 import genesis_prime/game/innate
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
+import genesis_prime/game/item_property
 import genesis_prime/game/item_use
 
 import genesis_prime/game/held_changes
@@ -140,8 +142,9 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
-  type Creature2Id, Creature2Id, Faction2Id, RaceId, Spell4Id,
+  type Creature2Id, type Item2Id, Creature2Id, Faction2Id, RaceId, Spell4Id,
 }
+import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import gleam/bit_array
@@ -1016,17 +1019,17 @@ pub fn with_cast(
 }
 
 /// The spell the player's standing casts should hold from the loadout's innate passive, as
-/// its plan, and a warning when the plans lack its Spell4Base, which leaves it out of the
-/// list. The warning is also written at each regear, not only at a join; it cannot be
+/// its plan with no item, and a warning when the plans lack its Spell4Base, which leaves it out
+/// of the list. The warning is also written at each regear, not only at a join; it cannot be
 /// reached, since the load fails without a plan for every class's passive.
 pub fn standing_wanted(
   entered entered: world_entry.Entered,
   plans plans: spell_plan.Plans,
-) -> #(List(spell_plan.Spell), List(cast_state.Effect)) {
+) -> #(List(cast_state.Standing), List(cast_state.Effect)) {
   case entered.loadout.innate {
     Some(innate.Innate(passive: Some(passive), ..)) ->
       case spell_plan.in_plans(plans:, base: passive.spell4_base_id) {
-        Ok(spell) -> #([spell], [])
+        Ok(spell) -> #([cast_state.Standing(spell:, from: None)], [])
         Error(Nil) -> #([], [
           cast_state.Log(
             level: LogWarning,
@@ -1041,15 +1044,51 @@ pub fn standing_wanted(
 }
 
 /// The spells the worn items' equip spells put on the player, in worn order, each as its
-/// plan from `equip_plans` (`spell_plan.standing_plans`), and the Spell4 ids of those the
-/// plans leave out, which the cast rule logs once (`cast.standing_unbuilt`).
-fn worn_wanted(
-  entered entered: world_entry.Entered,
+/// plan from `equip_plans` (`spell_plan.standing_plans`) with the item it is worn from, and the
+/// Spell4 ids of those the plans leave out, which the cast rule logs once
+/// (`cast.standing_unbuilt`).
+pub fn worn_wanted(
+  gear gear: gear.Gear,
+  tables tables: table_store.Tables,
   equip_plans equip_plans: dict.Dict(Int, spell_plan.Spell),
-) -> #(List(spell_plan.Spell), List(Int)) {
+) -> #(List(cast_state.Standing), List(Int)) {
   let #(planned, left_out) =
-    list.partition(entered.gear.equip_spells, dict.has_key(equip_plans, _))
-  #(list.filter_map(planned, dict.get(equip_plans, _)), left_out)
+    list.partition(gear.equip_spells, fn(worn) {
+      dict.has_key(equip_plans, worn.spell4_id)
+    })
+  #(
+    list.filter_map(planned, fn(worn) {
+      dict.get(equip_plans, worn.spell4_id)
+      |> result.map(fn(spell) {
+        cast_state.Standing(
+          spell:,
+          from: worn_pressed_from(tables:, item2_id: worn.item2_id),
+        )
+      })
+    }),
+    list.map(left_out, fn(worn) { worn.spell4_id }),
+  )
+}
+
+/// What a worn item's standing spell is pressed from: the item's level and the passed-in value
+/// at it, which the cast tells and its children read. An item with Item2.flags bit 3 has none:
+/// the client's curve level for it is the builder's scaling level, not Item2.powerLevel
+/// (`0x14040d060`), which the server reads at the wearer's level (`item_property`), so its
+/// cast tells 0, as a cast with no item does, and its children read the player's own value.
+fn worn_pressed_from(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Item2Id,
+) -> Option(cast_state.PressedFrom) {
+  let assert Ok(row) = item2.get(tables:, id: item2_id)
+    as "a worn item's Item2 row is in the tables: the gear read it"
+  case item_property.is_level_scaled(flags: row.flags) {
+    True -> None
+    False ->
+      Some(cast_state.Item(
+        item_level: row.power_level,
+        passed_in: passed_in_value.of_item(tables:, item2_id:),
+      ))
+  }
 }
 
 /// The player's standing casts made what `standing_wanted` and `worn_wanted` list, the
@@ -1066,7 +1105,8 @@ pub fn standing_changed(
     standing_wanted(entered:, plans: connection_state.plans_of(session:))
   let #(worn, left_out) =
     worn_wanted(
-      entered:,
+      gear: entered.gear,
+      tables: session.settings.tables,
       equip_plans: spell_plan.standing_plans(session.settings.tables),
     )
   let #(logged, unbuilt) =

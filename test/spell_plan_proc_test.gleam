@@ -1048,7 +1048,7 @@ fn is_a_filter_naming_a_missing_spell4(
 }
 
 pub fn no_proc_row_fails_the_load_unless_its_kind_is_not_read_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -1073,7 +1073,7 @@ pub fn no_proc_row_fails_the_load_unless_its_kind_is_not_read_test() -> Nil {
 }
 
 pub fn each_ally_proc_row_the_plan_reads_waits_for_a_trigger_a_creatures_blow_raises_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let spell =
@@ -1122,7 +1122,7 @@ pub fn each_ally_proc_row_the_plan_reads_waits_for_a_trigger_a_creatures_blow_ra
 }
 
 pub fn the_effect_kind_reads_a_proc_row_aimed_at_the_caster_the_primary_target_or_the_area_alone_test() -> Nil {
-  use <- owned_test.run(120_000)
+  use <- owned_test.run(10_000)
   assert effect_kind.is_read(effect_type: 14)
     as "type 14 is handled, for its rows aimed at the caster, the primary target or the area"
   assert effect_kind.kind_of(effect_type: 14) == effect_kind.Proc
