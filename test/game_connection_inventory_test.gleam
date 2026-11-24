@@ -972,7 +972,7 @@ fn cast_ids_started(frames frames: List(Frame)) -> List(Int) {
 }
 
 /// A worn item with an equip spell: the item and the slot it is worn in, the spell, whether
-/// the spell holds property modifiers, and the frames, as message ids, that come before the
+/// the item's level (Item2.powerLevel), whether the spell holds property modifiers, and the frames, as message ids, that come before the
 /// standing frames in an equip and in an unequip. Both start with the move's 0x569 and the
 /// gear's 0x93a, and a drawn item adds the look's 0x933. An equip then starts the cast, 0x7ff
 /// and its go 0x7f4, and an unequip ends it, 0x7fe; a spell that holds property modifiers
@@ -983,6 +983,7 @@ type WornCase {
     item2_id: Int,
     worn_slot: Int,
     spell4_id: Int,
+    item_level: Int,
     holds_modifiers: Bool,
     equip_gear_ids: List(Int),
     unequip_gear_ids: List(Int),
@@ -996,6 +997,7 @@ fn deflector_cases() -> List(WornCase) {
       worn_item_support.deflector,
       15,
       worn_item_support.deflector_spell,
+      5,
       False,
       [0x0569, 0x093A],
       [0x0569, 0x093A],
@@ -1005,6 +1007,7 @@ fn deflector_cases() -> List(WornCase) {
       38_020,
       16,
       62_538,
+      50,
       True,
       [0x0569, 0x0933, 0x093A],
       [0x0569, 0x0933, 0x093A],
@@ -1071,6 +1074,14 @@ pub fn equipping_an_item_with_an_equip_spell_writes_its_0x7ff_after_the_gear_fra
       )
       == [case_.spell4_id]
       as { name <> ": the equip spell is the one cast the equip starts" }
+    assert game_connection_support.started_item_levels(
+        frames: game_connection_support.written(equipped),
+      )
+      == [#(case_.spell4_id, case_.item_level)]
+      as {
+        name
+        <> ": opcode.0x7ff.caster_item_level: its 0x7ff tells the worn item's level, Item2.powerLevel"
+      }
     let #(state, unequipped) =
       saved_after(state:, message: item_moved(from: slot, to: bag))
     assert modifier_frames_are_only_0x93a(

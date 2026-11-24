@@ -1160,7 +1160,7 @@ pub fn open_charge_of(
 /// release always does, a tap only when it is the last stage.
 pub fn closes_threshold(role role: Role) -> Bool {
   case role {
-    Child(..) | Base(..) | Passive | Activation(..) | Shortcut(..) -> False
+    Child(..) | Base(..) | Passive(..) | Activation(..) | Shortcut(..) -> False
     Stage(ability:, index:) ->
       case ability.method {
         spell_plan.ChargeRelease -> True

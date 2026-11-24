@@ -128,6 +128,7 @@ ID	itemBudgetId	itemStatId	itemRuneInstanceId	itemQualityId	itemSpecialId00	item
 13191	0	0	0	2	0	0	2	12	79	3279	0	0	0	0	5	5	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	8	1	0	0	0	0	0	0	0	0	0	0x00000000	191165	0		IconSprites:Icon_ItemWeapon_Resonator_05	0
 13194	0	0	0	2	0	0	2	22	46	1355	0	0	0	0	5	5	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	8	1	0	0	0	0	0	0	0	0	0	0x00000000	191168	0		Icon_ItemWeaponPsyblade_UI_Item_Psyblade_001	0
 13238	0	0	0	2	0	0	1	3	19	3241	0	0	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x00000000	193912	193913		Icon_ItemArmorFeet_UI_Item_Battle_Boot_001	0
+13272	0	0	0	3	4562	0	2	16	45	22	0	0	0	0	10	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	10	1	0	0	0	0	0	0	0	0	0	0x3e4ccccd	195695	195696		Icon_ItemWeaponPistol_UI_Item_Pistol_001	0
 13328	3	7	0	4	0	3	2	24	48	3382	0	0	0	0	6	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf000000	196065	196066		Icon_ItemWeaponClaw_UI_Item_Claws_001	0
 13332	3	5	0	3	0	0	1	2	12	3847	77	0	0	0	4	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	196074	196075		Icon_ItemArmorFeet_UI_Item_Battle_Boot_001	0
 13375	0	0	0	3	0	0	25	105	199	0	0	0	0	0	10	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0x00000000	196987	196988		Icon_ItemMisc_Crate_of_Cogs	0
@@ -388,6 +389,7 @@ ID	itemBudgetId	itemStatId	itemRuneInstanceId	itemQualityId	itemSpecialId00	item
 30459	3	5	0	3	0	0	1	2	13	3846	77	0	0	0	3	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	465593	465594		Icon_ItemArmorHands_UI_Item_Focal_Glove_001	0
 30460	3	5	0	3	0	0	1	1	5	93	77	0	0	0	3	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	465595	465596		Icon_ItemArmorFeet_UI_Item_Focal_Boot_001	0
 30461	3	5	0	3	0	0	1	3	20	3706	77	0	0	0	3	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	465599	465600		Icon_ItemArmorHands_UI_Item_Battle_Glove_001	0
+36382	0	0	0	3	7450	0	2	108	204	6707	0	2	0	0	50	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	8	10	1	0	0	0	0	0	0	0	0	0	0x00000000	506083	0		Icon_ItemMisc_Magma_Rifle	0
 36600	7	40	0	3	0	0	1	2	8	4051	77	0	0	0	45	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	512031	0		IconSprites:Icon_ItemArmor_Medium_Armor_Chest_03	0
 36601	8	40	0	3	0	0	1	1	2	3970	77	0	0	0	45	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0xbf800000	512032	0		IconSprites:Icon_ItemArmor_Light_Armor_Pants_02	0
 37649	0	0	0	2	7522	0	16	48	328	0	0	0	0	0	15	0	0	0	0	1	1	30	0	0	0	0	0	0	0	0	129	0	1	0	0	0	0	0	0	0	0	0	0x00000000	524056	524057		Icon_ItemMisc_potion_0002	0
@@ -407,6 +409,7 @@ ID	itemBudgetId	itemStatId	itemRuneInstanceId	itemQualityId	itemSpecialId00	item
 40094	64	452	135	7	0	355	2	16	45	7206	0	0	0	0	130	50	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	10	1	0	0	0	0	0	0	0	0	0	0x3f000000	541257	565962		Icon_ItemWeaponPistol_UI_Item_Pistol_001	0
 40095	64	452	135	7	0	357	2	22	46	7204	0	0	0	0	130	50	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	10	1	0	0	0	0	0	0	0	0	0	0x3f000000	541258	565961		Icon_ItemWeaponPsyblade_UI_Item_Psyblade_001	0
 40473	3	29	0	3	0	0	1	2	13	1235	77	0	0	0	15	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x3f800000	544321	0		Icon_ItemArmorHands_UI_Item_Focal_Glove_001	0
+42059	0	0	0	2	8039	0	15	7	300	0	0	0	0	0	-1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	265	9	1	0	0	0	0	0	0	0	0	0	0x00000000	566143	566144		Icon_ItemMisc_UI_Item_Lopp	0
 44445	3	10	0	3	0	0	1	1	2	85	77	0	0	0	7	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x3f800000	581339	0		Icon_ItemArmorLegs_pants_0002	0
 44446	3	10	0	4	0	0	1	1	2	85	77	0	0	0	9	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	8	1	0	0	0	0	0	0	0	0	0	0x3f800000	581360	0		Icon_ItemArmorLegs_pants_0002	0
 44461	4	53	0	3	0	0	15	7	301	0	114	0	0	0	25	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	10	1	0	0	0	0	0	0	0	0	0	0x3f800000	581519	0			0

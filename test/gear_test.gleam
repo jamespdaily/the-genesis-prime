@@ -25,7 +25,7 @@
 ////   0x4000), as `item_property` records.
 
 import fixture_tables
-import genesis_prime/game/gear
+import genesis_prime/game/gear.{EquipSpell}
 import genesis_prime/game/item_property.{ItemProperties}
 import genesis_prime/game/loadout
 import genesis_prime/game/worn_visual
@@ -715,13 +715,15 @@ pub fn a_worn_item_that_names_an_equip_spell_gives_it_and_an_item_in_a_bag_or_wi
   let tables = fixture_tables.shared()
   // Name, the items held as Item2 id, location and bag index, the equip spells given.
   [
-    #("a worn item that names one", [#(91_747, 0, 15)], [82_325]),
+    #("a worn item that names one", [#(91_747, 0, 15)], [
+      EquipSpell(82_325, Item2Id(91_747)),
+    ]),
     #("the same item in a bag", [#(91_747, 1, 0)], []),
     #("an item whose special names only a use spell", [#(12_631, 0, 5)], []),
     #(
       "the item worn beside one that names none",
       [#(12_631, 0, 5), #(91_747, 0, 15)],
-      [82_325],
+      [EquipSpell(82_325, Item2Id(91_747))],
     ),
   ]
   |> list.each(fn(row) {
@@ -738,9 +740,10 @@ pub fn a_worn_item_that_names_an_equip_spell_gives_it_and_an_item_in_a_bag_or_wi
 }
 
 /// Item2 91747 and 85762 both name the equip spell 82325 and both are Item2Type 53 (ItemSlot 43, the worn shield slot 15),
-/// so the real data never wears them together; the test wears both to see the spell listed
-/// once. Every one of the 19 roots several items name sits in one slot, which is why no rule
-/// is needed beyond dropping an exact repeat. The order half is a guard: `of_items` sorts the
+/// so the real data never wears them together; the test wears one twice to see its spell listed
+/// once, and both to see each listed with its own item, as two standing casts. Every one of the
+/// 19 roots several items name sits in one slot, which is why no rule is needed beyond dropping
+/// an exact repeat. The order half is a guard: `of_items` sorts the
 /// worn items by bag index, so the list follows the worn order and the half passes without
 /// the list's own sort; Item2 11671 (boots, bag index 5) is edited to name ItemSpecial 9264,
 /// whose equip spell is 82021, since no two slotted rows of the fixture name different
@@ -748,11 +751,21 @@ pub fn a_worn_item_that_names_an_equip_spell_gives_it_and_an_item_in_a_bag_or_wi
 pub fn the_list_drops_an_exact_repeat_and_keeps_the_worn_order_test() -> Nil {
   use <- owned_test.run(60_000)
   let twice =
-    worn_item_support.held_items(items: [#(91_747, 0, 15), #(85_762, 0, 16)])
+    worn_item_support.held_items(items: [#(91_747, 0, 15), #(91_747, 0, 16)])
   let worn =
     gear.of_items(tables: fixture_tables.shared(), level: 1, items: twice)
-  assert worn.equip_spells == [82_325]
-    as "two worn items naming one spell list it once"
+  assert worn.equip_spells == [EquipSpell(82_325, Item2Id(91_747))]
+    as "the same item worn twice lists its spell once"
+  let both =
+    worn_item_support.held_items(items: [#(91_747, 0, 15), #(85_762, 0, 16)])
+  let worn =
+    gear.of_items(tables: fixture_tables.shared(), level: 1, items: both)
+  assert worn.equip_spells
+    == [
+      EquipSpell(82_325, Item2Id(91_747)),
+      EquipSpell(82_325, Item2Id(85_762)),
+    ]
+    as "two worn items naming one spell list it with each item, since each item's level is its own"
   fixture_tables.changed(
     table: "Item2",
     id: 11_671,
@@ -761,7 +774,11 @@ pub fn the_list_drops_an_exact_repeat_and_keeps_the_worn_order_test() -> Nil {
       let reversed =
         worn_item_support.held_items(items: [#(91_747, 0, 15), #(11_671, 0, 5)])
       let worn = gear.of_items(tables:, level: 1, items: reversed)
-      assert worn.equip_spells == [82_021, 82_325]
+      assert worn.equip_spells
+        == [
+          EquipSpell(82_021, Item2Id(11_671)),
+          EquipSpell(82_325, Item2Id(91_747)),
+        ]
         as "the list follows the worn order, the bag index, whatever order the items are held in"
     },
   )

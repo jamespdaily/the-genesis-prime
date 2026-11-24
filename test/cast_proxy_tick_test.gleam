@@ -514,7 +514,7 @@ pub fn a_periodic_proxy_whose_caster_gate_fails_at_the_go_still_arms_its_ticks_a
     as "a gate that fails is the client's answer, not a gap"
 }
 
-pub fn the_children_of_a_tick_count_no_quest_objective_and_hold_no_item_value_test() -> Nil {
+pub fn the_children_of_a_tick_count_no_quest_objective_and_hold_the_items_value_test() -> Nil {
   use <- owned_test.run(5000)
   let live_child =
     Spell(..child(), cast_time_ms: 5000, cast_bar: spell_plan.ShowsCastBar)
@@ -571,8 +571,8 @@ pub fn the_children_of_a_tick_count_no_quest_objective_and_hold_no_item_value_te
   let assert Ok(from_tick) =
     list.find(lives, fn(live) { live.spell.spell4_id.value == child_spell4_id })
     as "the tick started its child, live for its cast time"
-  assert from_tick.pressed == None
-    as "a tick's child holds no item value: Child(counted_with: WithNothing, from: None), as a proc's"
+  assert from_tick.pressed == Some(item)
+    as "a tick's child reads the item's value the holder's cast was pressed from, as the child a go starts does"
   assert from_tick.counted_with == cast_state.WithNothing
     as "and counts no quest objective"
 }
@@ -1189,7 +1189,58 @@ pub fn a_periodic_proxy_aimed_at_the_area_asks_for_its_units_at_each_tick_and_st
     assert start.parent_spell4_id == holder_spell4_id
       && start.root_spell4_id == ability_spell4_id
       as "opcode.0x7ff.root_parent: the holder is the parent and the pressed spell the root, carried by the holder"
+    assert start.caster_item_level == 0
+      as "opcode.0x7ff.caster_item_level: a press of no item tells 0"
   })
+  // The same press as the use of an item: each child the tick starts tells the item's level, the
+  // one its holder's cast was pressed from (`handed_down`).
+  let item = cast_state.Item(item_level: 5, passed_in: 12.0)
+  let #(pressed_state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast_state.new(),
+      caster: support.caster(),
+      bag_index: support.started_bag_index,
+      target: 0,
+      at: press_ms,
+    )
+  let #(item_state, item_effects) =
+    support.answered_as(
+      caster: support.caster(),
+      state: cast_state.State(
+        ..pressed_state,
+        casts: dict.map_values(pressed_state.casts, fn(_, live) {
+          cast_state.Live(..live, pressed: Some(item))
+        }),
+      ),
+      effects: raw,
+      at: press_ms,
+      struck: [],
+      rolls: [],
+    )
+  let from_item =
+    support.run_timers_finding(
+      caster: support.caster(),
+      state: item_state,
+      effects: item_effects,
+      from_ms: press_ms,
+      until_ms: 2000,
+      units: dict.new(),
+      found_by: found_in(script: [#(1, [21, 22]), #(2, [23])]),
+    ).1
+  let item_children =
+    support.starts_of(
+      steps: as_steps(fired: from_item),
+      spell4_id: child_spell4_id,
+    )
+  assert list.map(item_children, fn(child) {
+      { child.1 }.primary_target_unit_id
+    })
+    == [21, 22, 23]
+    as "the setup: each unit found has a child"
+  assert list.map(item_children, fn(child) { { child.1 }.caster_item_level })
+    == [5, 5, 5]
+    as "opcode.0x7ff.caster_item_level: each child of the area tick tells the item's level 5"
   let ids = list.map(children, fn(child) { { child.1 }.cast_id })
   assert list.unique(ids) == ids && !list.contains(ids, holder_start.cast_id)
     as "each child is a cast of its own"

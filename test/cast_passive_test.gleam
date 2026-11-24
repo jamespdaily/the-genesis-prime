@@ -235,7 +235,7 @@ pub fn a_passive_starts_no_global_cooldown_is_never_the_current_cast_and_opens_n
     cast.standing_changed(
       cast: state,
       caster: caster_of_planted(),
-      wanted: [slow_passive(), beside],
+      wanted: support.without_item([slow_passive(), beside]),
       now: support.at(ms: 1050),
     )
   assert lines(effects:) == ["started k1 250002 root 250002 parent 0"]
@@ -332,7 +332,7 @@ pub fn death_leaves_the_passive_with_its_nodes_and_modifiers_where_it_ends_an_or
     cast.standing_changed(
       cast: cast_state.new(),
       caster: support.caster(),
-      wanted: [holder],
+      wanted: support.without_item([holder]),
       now: support.at(ms: 1000),
     )
     |> then_answered(caster: support.caster(), at: 1000)

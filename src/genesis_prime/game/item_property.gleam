@@ -367,6 +367,11 @@ const unrated_family = 26
 /// Item2.flags bit 3: the item scales with the wearer's level.
 const level_scaled_flag = 8
 
+/// Whether Item2.flags scale the item with the wearer's level (bit 3).
+pub fn is_level_scaled(flags flags: Int) -> Bool {
+  int.bitwise_and(flags, level_scaled_flag) != 0
+}
+
 /// Item2.flags 0x8000: a PvP item.
 const pvp_flag = 0x8000
 
@@ -536,7 +541,7 @@ fn builder(
     Error(Unread(item2_id:, gap: PvpItem)),
   )
   use <- bool.guard(is_proxy(item), Error(Unread(item2_id:, gap: ProxyItem)))
-  Ok(case int.bitwise_and(item.flags, level_scaled_flag) != 0 {
+  Ok(case is_level_scaled(flags: item.flags) {
     True -> Builder(..builder, curve_level: level)
     False -> builder
   })
