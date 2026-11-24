@@ -380,9 +380,11 @@ pub type MoveRequest {
   /// fence, so a refused save changes no quest row. A row a check of the
   /// character_quest table refuses is `QuestLogRefused`, which no log the rule
   /// keeps breaks. The character's `action_sets` are the slots of the bars it has
-  /// saved: the statement writes the slots that changed and no other, under the
-  /// same fence, and none for an empty record; a slot a check of the
-  /// character_action_slot table refuses, or an ability twice in one set, is
+  /// saved and the tiers it holds above tier 1: the statement writes the slots
+  /// that changed and no other, under the same fence, and none for an empty
+  /// record; the tiers are the whole list, so the statement also deletes the
+  /// tier rows it leaves out. A slot or tier a check of the character_action_slot
+  /// or character_ability_tier table refuses, or an ability twice in one set, is
   /// `ActionSetRefused`, which nothing the rule keeps breaks.
   SavePlace(
     account_id: AccountId,
@@ -636,8 +638,8 @@ pub type WorldAnswer {
   /// the rows of its quest log, in quest id order (none for a character with no
   /// quest) and the currencies it holds, by type (none for a character that holds
   /// none). The rows are read in the transaction that raised the epoch, so no
-  /// delete lands between them, and the slots of the action sets it has saved
-  /// (none for a character that never saved a bar). Asking again takes the
+  /// delete lands between them, and the slots and tiers of the action sets it has saved
+  /// (none for a character that never saved a bar or bought a tier). Asking again takes the
   /// character again and raises it again.
   CharacterLoaded(
     character: Character,
@@ -677,9 +679,10 @@ pub type MoveAnswer {
   /// name, which no log the rule keeps breaks: a bug of the server's, so nothing
   /// was saved, neither the quest rows nor the place beside them.
   QuestLogRefused(constraint: String)
-  /// The database refused a slot of the action sets for the check constraint or the
-  /// unique key of this name, which nothing the rule keeps breaks: a bug of the
-  /// server's, so nothing was saved, neither the slots nor the place beside them.
+  /// The database refused a slot or a tier of the action sets for the check constraint
+  /// or the unique key of this name, which nothing the rule keeps breaks: a bug of the
+  /// server's, so nothing was saved, neither the slots and tiers nor the place beside
+  /// them.
   ActionSetRefused(constraint: String)
   /// The database refused the health (`character_health_is_not_negative`),
   /// which the rule never asks to keep below 0: a bug of the server's, so

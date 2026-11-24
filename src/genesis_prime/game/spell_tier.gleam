@@ -302,7 +302,7 @@ pub fn spent(
         <> int.to_string(tier)
         <> " of Spell4Base "
         <> int.to_string(base.value)
-        <> " was judged by the builder's save, so it has a cost"
+        <> " was judged by the builder's save or by the entry, so it has a cost"
       }
     sum + cost
   })

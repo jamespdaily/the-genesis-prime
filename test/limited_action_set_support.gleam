@@ -79,6 +79,19 @@ pub fn with_slots(slots slots: List(store.ActionSlotRow)) -> store.ActionSets {
   )
 }
 
+/// The action sets of a save that holds these tiers (set, Spell4Base, tier) and no bar.
+pub fn with_tiers(tiers tiers: List(#(Int, Int, Int))) -> store.ActionSets {
+  store.ActionSets(
+    ..limited_action_set.rows(saved: limited_action_set.none()),
+    tiers: list.map(tiers, tier_row),
+  )
+}
+
+/// One tier row of a (set, Spell4Base, tier).
+pub fn tier_row(tier tier: #(Int, Int, Int)) -> store.AbilityTierRow {
+  store.AbilityTierRow(action_set: tier.0, spell4_base_id: tier.1, tier: tier.2)
+}
+
 /// The bytes of a vector written as hexadecimal.
 pub fn hex(text text: String) -> BitArray {
   message_support.hex(text)

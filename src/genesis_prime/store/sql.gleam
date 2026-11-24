@@ -976,6 +976,53 @@ returning
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_character_ability_tiers` query
+/// defined in `./src/genesis_prime/store/sql/load_character_ability_tiers.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCharacterAbilityTiersRow {
+  LoadCharacterAbilityTiersRow(action_set: Int, spell4_base_id: Int, tier: Int)
+}
+
+/// The tiers a character holds above tier 1, in set then Spell4Base order, as the load
+/// hands them to the ability builder's entry (genesis_prime/game/limited_action_set).
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_character_ability_tiers(
+  db: pog.Connection,
+  character_id: Int,
+) -> Result(pog.Returned(LoadCharacterAbilityTiersRow), pog.QueryError) {
+  let decoder = {
+    use action_set <- decode.field(0, decode.int)
+    use spell4_base_id <- decode.field(1, decode.int)
+    use tier <- decode.field(2, decode.int)
+    decode.success(LoadCharacterAbilityTiersRow(
+      action_set:,
+      spell4_base_id:,
+      tier:,
+    ))
+  }
+
+  "-- The tiers a character holds above tier 1, in set then Spell4Base order, as the load
+-- hands them to the ability builder's entry (genesis_prime/game/limited_action_set).
+select
+  action_set::int as action_set,
+  spell4_base_id,
+  tier::int as tier
+from character_ability_tier
+where character_id = $1
+order by action_set, spell4_base_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_character_action_slots` query
 /// defined in `./src/genesis_prime/store/sql/load_character_action_slots.sql`.
 ///
@@ -1666,6 +1713,16 @@ pub type SavePlaceRow {
 /// slots in one save are two updates of one statement, which the table's unique
 /// key accepts because it is checked at the statement's end.
 ///
+/// The tiers are $19, a JSON array with one object for each ability held above tier 1
+/// in each action set, whose keys are the columns of `character_ability_tier`. Like the
+/// quest log it is the whole list: a tier row the list leaves out is deleted (a tier
+/// returned to 1 has no row, and an empty array deletes every one), and a row whose tier
+/// changed is written, both only through the row the fence above matched, so a save the
+/// fence refuses writes and deletes no tier row either. A row that did not change is not
+/// written. The rows deleted are not in the list and the rows written are, so the two
+/// never touch one row. Two objects for one set and ability fail the statement with an
+/// error no check names.
+///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
@@ -1689,6 +1746,7 @@ pub fn save_place(
   arg_16: Int,
   arg_17: Json,
   arg_18: Json,
+  arg_19: Json,
 ) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -1732,6 +1790,16 @@ pub fn save_place(
 -- deleted (a saved set is never un-saved). Two abilities swapped between two
 -- slots in one save are two updates of one statement, which the table's unique
 -- key accepts because it is checked at the statement's end.
+--
+-- The tiers are $19, a JSON array with one object for each ability held above tier 1
+-- in each action set, whose keys are the columns of `character_ability_tier`. Like the
+-- quest log it is the whole list: a tier row the list leaves out is deleted (a tier
+-- returned to 1 has no row, and an empty array deletes every one), and a row whose tier
+-- changed is written, both only through the row the fence above matched, so a save the
+-- fence refuses writes and deletes no tier row either. A row that did not change is not
+-- written. The rows deleted are not in the list and the rows written are, so the two
+-- never touch one row. Two objects for one set and ability fail the statement with an
+-- error no check names.
 with saved as (
   update character
   set
@@ -1861,6 +1929,43 @@ put_slots as (
   set spell4_base_id = excluded.spell4_base_id
   where character_action_slot.spell4_base_id
     is distinct from excluded.spell4_base_id
+),
+incoming_tiers as (
+  select *
+  from jsonb_to_recordset($19::jsonb) as tier_row(
+    action_set smallint,
+    spell4_base_id integer,
+    tier smallint
+  )
+),
+gone_tiers as (
+  delete from character_ability_tier as held
+  using saved
+  where held.character_id = saved.character_id
+    and not exists (
+      select 1
+      from incoming_tiers
+      where incoming_tiers.action_set = held.action_set
+        and incoming_tiers.spell4_base_id = held.spell4_base_id
+    )
+),
+put_tiers as (
+  insert into character_ability_tier (
+    character_id,
+    action_set,
+    spell4_base_id,
+    tier
+  )
+  select
+    saved.character_id,
+    incoming_tiers.action_set,
+    incoming_tiers.spell4_base_id,
+    incoming_tiers.tier
+  from saved
+  cross join incoming_tiers
+  on conflict (character_id, action_set, spell4_base_id) do update
+  set tier = excluded.tier
+  where character_ability_tier.tier is distinct from excluded.tier
 )
 select character_id from saved;
 "
@@ -1883,6 +1988,7 @@ select character_id from saved;
   |> pog.parameter(pog.int(arg_16))
   |> pog.parameter(pog.text(json.to_string(arg_17)))
   |> pog.parameter(pog.text(json.to_string(arg_18)))
+  |> pog.parameter(pog.text(json.to_string(arg_19)))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

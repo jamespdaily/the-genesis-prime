@@ -819,7 +819,7 @@ pub fn saved(answer answer: MoveAnswer) -> List(Effect) {
     ]
     ActionSetRefused(constraint:) -> [
       Fault(
-        text: "the database refused a slot of the action sets it was asked to save, by the constraint "
+        text: "the database refused a slot or a tier of the action sets it was asked to save, by the constraint "
         <> constraint,
       ),
     ]

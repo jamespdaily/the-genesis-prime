@@ -1007,13 +1007,25 @@ pub fn the_stores_answer_to_a_save_is_logged_by_what_it_says_test() -> Nil {
     && string.contains(text, "experience")
     && !string.contains(text, "health")
     as "and it names the experience, not the health"
-  let assert [Fault(text:)] =
-    movement.saved(ActionSetRefused(
-      constraint: "character_action_slot_one_place_per_ability",
-    ))
-    as "no bar the rule keeps breaks a check of the slot table: a bug"
-  assert string.contains(text, "refused")
-    && string.contains(text, "action sets")
-    && string.contains(text, "character_action_slot_one_place_per_ability")
-    as "the line names the slots and the constraint that refused them"
+  list.each(
+    [
+      #(
+        "character_action_slot_one_place_per_ability",
+        "no bar the rule keeps breaks a check of the slot table: a bug",
+      ),
+      #(
+        "character_ability_tier_is_above_the_first_and_fits_the_message",
+        "no tier the rule keeps breaks a check of the tier table: a bug",
+      ),
+    ],
+    fn(row) {
+      let #(constraint, why) = row
+      let assert [Fault(text:)] = movement.saved(ActionSetRefused(constraint:))
+        as why
+      assert string.contains(text, "refused")
+        && string.contains(text, "a slot or a tier of the action sets")
+        && string.contains(text, constraint)
+        as "one sentence for every refusal of the action sets, naming the constraint that refused them"
+    },
+  )
 }

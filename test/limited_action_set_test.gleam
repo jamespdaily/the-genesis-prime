@@ -1242,6 +1242,254 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
     as "the sentence names the row's set and slot"
 }
 
+/// What a load of tier rows leads to: the tiers kept as (set, Spell4Base, tier) in set then
+/// Spell4Base order, or the refused row.
+type Tiering {
+  Keeps(tiers: List(#(Int, Int, Int)))
+  RefusesTier(error: limited_action_set.RowError)
+}
+
+/// One row of the entering table: a level, the points the level gives, the saved tiers
+/// (set, Spell4Base, tier) and what the entry keeps, with the reason.
+type TierCase {
+  TierCase(
+    why: String,
+    level: Int,
+    points: Int,
+    saved: List(#(Int, Int, Int)),
+    expected: Tiering,
+  )
+}
+
+pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book_the_tables_the_level_or_the_points_no_longer_allow_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let tiers = spell_tier.tiers(tables:)
+  // Charged Shot, Ignite, a third Spell4Base with nine tiers, the class 4 level 1 ability with
+  // tiers 1 and 9 only, and Quick Draw: the abilities of the book these rows are judged against.
+  let charged_shot = 20_684
+  let ignite = 20_718
+  let nine_tiers = 21_056
+  let two_tiers = 26_543
+  let quick_draw = 27_638
+  let unheld = 23_148
+  let book =
+    list.map(
+      [charged_shot, ignite, nine_tiers, two_tiers, quick_draw],
+      Spell4BaseId,
+    )
+  // Quick Draw, Charged Shot, Ignite and the third base cost 1, 1, 1, 5 for tiers 2 to 5, then
+  // 1, 1, 1, 5 to tier 9: 8 points to tier 5, 2 to tier 3 and 16 to tier 9 (`Spell4.abilityPointCost`),
+  // checked below against the rows. The class 4 ability costs 5 for tier 9.
+  let cost = fn(base, tier) {
+    points_cost(tables:, held: [#(Spell4BaseId(base), tier)])
+  }
+  assert cost(quick_draw, 5) == 8
+  assert cost(quick_draw, 3) == 2
+  assert cost(ignite, 2) == 1
+  assert cost(ignite, 9) == 16
+  assert cost(two_tiers, 9) == 5
+  assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(unheld), tier: 2)
+    |> result.is_ok
+    as "the base the book does not hold has a tier 2 row, so only the book drops it"
+  assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(two_tiers), tier: 5)
+    |> result.is_error
+    as "26543 has no row for tier 5"
+  assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(quick_draw), tier: 10)
+    |> result.is_error
+    as "Quick Draw has no row for tier 10"
+  let outside = fn(set, base, tier) {
+    store.AbilityTierRow(action_set: set, spell4_base_id: base, tier:)
+  }
+  let cases = [
+    TierCase(
+      "level 25 gives 16 points: Quick Draw and Charged Shot at tier 5 cost 8 each, so both stay",
+      25,
+      16,
+      [#(0, quick_draw, 5), #(0, charged_shot, 5)],
+      Keeps([#(0, charged_shot, 5), #(0, quick_draw, 5)]),
+    ),
+    TierCase(
+      "the same with Ignite at tier 2 is 17 of 16: in Spell4Base order Charged Shot (8) and Ignite (9) fit and Quick Draw (17) does not, so it falls to tier 1",
+      25,
+      16,
+      [#(0, quick_draw, 5), #(0, charged_shot, 5), #(0, ignite, 2)],
+      Keeps([#(0, charged_shot, 5), #(0, ignite, 2)]),
+    ),
+    TierCase(
+      "level 45 gives 36 points: tier 9 of Charged Shot and Ignite is 32, the third base's tier 9 would be 48 and falls, and Quick Draw's tier 3 (34 of 36) is kept after it, which a stop at the first misfit would not",
+      45,
+      36,
+      [
+        #(0, charged_shot, 9),
+        #(0, ignite, 9),
+        #(0, nine_tiers, 9),
+        #(0, quick_draw, 3),
+      ],
+      Keeps([#(0, charged_shot, 9), #(0, ignite, 9), #(0, quick_draw, 3)]),
+    ),
+    TierCase(
+      "a base the book does not hold is dropped",
+      25,
+      16,
+      [#(0, unheld, 2)],
+      Keeps([]),
+    ),
+    TierCase(
+      "tier 5 of 26543 has no Spell4 row and is dropped",
+      50,
+      41,
+      [#(0, two_tiers, 5)],
+      Keeps([]),
+    ),
+    TierCase(
+      "tier 9 of 26543 has one and is kept",
+      50,
+      41,
+      [#(0, two_tiers, 9)],
+      Keeps([#(0, two_tiers, 9)]),
+    ),
+    TierCase(
+      "tier 3 needs level 15 (Spell4TierRequirements): dropped at 14, which gives 5 points",
+      14,
+      5,
+      [#(0, quick_draw, 3)],
+      Keeps([]),
+    ),
+    TierCase(
+      "and kept at 15, which gives 6",
+      15,
+      6,
+      [#(0, quick_draw, 3)],
+      Keeps([#(0, quick_draw, 3)]),
+    ),
+    TierCase(
+      "tier 10 of Quick Draw has no Spell4 row, even at level 50",
+      50,
+      41,
+      [#(0, quick_draw, 10)],
+      Keeps([]),
+    ),
+    TierCase(
+      "each set is judged on its own total, so both sets keep what 16 points buy",
+      25,
+      16,
+      [
+        #(0, quick_draw, 5),
+        #(0, charged_shot, 5),
+        #(2, quick_draw, 5),
+        #(2, charged_shot, 5),
+      ],
+      Keeps([
+        #(0, charged_shot, 5),
+        #(0, quick_draw, 5),
+        #(2, charged_shot, 5),
+        #(2, quick_draw, 5),
+      ]),
+    ),
+    TierCase(
+      "a set 3 tier with no saved bar is kept, and its bar stays the class's",
+      10,
+      1,
+      [#(3, quick_draw, 2)],
+      Keeps([#(3, quick_draw, 2)]),
+    ),
+    TierCase(
+      "a tier row of tier 1, which the table's check refuses",
+      50,
+      41,
+      [#(0, quick_draw, 1)],
+      RefusesTier(
+        limited_action_set.TierRowOutsideTable(row: outside(0, quick_draw, 1)),
+      ),
+    ),
+    TierCase(
+      "a tier row of tier 16, wider than the 4 bits of the message",
+      50,
+      41,
+      [#(0, quick_draw, 16)],
+      RefusesTier(
+        limited_action_set.TierRowOutsideTable(row: outside(0, quick_draw, 16)),
+      ),
+    ),
+    TierCase(
+      "a tier row of set 4",
+      50,
+      41,
+      [#(4, quick_draw, 2)],
+      RefusesTier(
+        limited_action_set.TierRowOutsideTable(row: outside(4, quick_draw, 2)),
+      ),
+    ),
+    TierCase(
+      "a tier row of ability 0",
+      50,
+      41,
+      [#(0, 0, 2)],
+      RefusesTier(limited_action_set.TierRowOutsideTable(row: outside(0, 0, 2))),
+    ),
+    TierCase(
+      "a tier row of ability 262144, wider than the 18 bits of the message",
+      50,
+      41,
+      [#(0, 262_144, 2)],
+      RefusesTier(
+        limited_action_set.TierRowOutsideTable(row: outside(0, 262_144, 2)),
+      ),
+    ),
+    TierCase(
+      "two tier rows for one ability of one set, which the primary key refuses",
+      50,
+      41,
+      [#(0, quick_draw, 2), #(0, quick_draw, 3)],
+      RefusesTier(
+        limited_action_set.TierRowRepeated(row: outside(0, quick_draw, 3)),
+      ),
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    assert ability_points.total(tables:, level: case_.level) == case_.points
+      as { case_.why <> " (the points the level gives, XpPerLevel)" }
+    let got =
+      limited_action_set.entering(
+        unlocks: limited_action_set.unlocks(tables:),
+        tiers:,
+        points_total: case_.points,
+        level: case_.level,
+        book:,
+        rows: support.with_tiers(tiers: case_.saved),
+      )
+    let held = case got {
+      Ok(saved) -> {
+        assert limited_action_set.rows(saved:).slots == []
+          as { case_.why <> " (no bar was saved, so none is)" }
+        Keeps(
+          list.flat_map([0, 1, 2, 3], fn(set) {
+            list.map(limited_action_set.held_tiers(saved:, set:), fn(held) {
+              #(set, { held.0 }.value, held.1)
+            })
+          }),
+        )
+      }
+      Error(error) -> RefusesTier(error)
+    }
+    assert held == case_.expected as case_.why
+  })
+  let assert Error(error) =
+    limited_action_set.entering(
+      unlocks: limited_action_set.unlocks(tables:),
+      tiers:,
+      points_total: 41,
+      level: 50,
+      book:,
+      rows: support.with_tiers(tiers: [#(4, quick_draw, 2)]),
+    )
+    as "a tier row of set 4 ends the entry"
+  assert string.contains(limited_action_set.describe_row(error:), "set 4")
+    && string.contains(limited_action_set.describe_row(error:), "tier")
+    as "the sentence names the row's set and says it is a tier row"
+}
+
 /// A drawn set as the slots a player can hold: slots 8 and 9 never open (their
 /// prerequisites are types the server does not read), every other slot is open at level
 /// 100, and an ability is in one place of its set, as the table's unique key holds.
@@ -1265,20 +1513,56 @@ fn holdable(drawn drawn: List(Option(Int))) -> List(Option(Int)) {
   |> list.reverse
 }
 
+/// The Spell4Base ids the Spell4 rows give every tier from 2 to 9, sorted: the abilities a
+/// saved tier can name that the entry keeps.
+fn bases_with_nine_tiers(tables tables: table_store.Tables) -> List(Int) {
+  let tiers = spell_tier.tiers(tables:)
+  spell4.all(tables)
+  |> list.map(fn(row) { row.spell4_base_id_base_spell })
+  |> list.unique
+  |> list.filter(fn(base) {
+    list.all([2, 3, 4, 5, 6, 7, 8, 9], fn(tier) {
+      result.is_ok(spell_tier.spell4_id(tiers:, base: Spell4BaseId(base), tier:))
+    })
+  })
+  |> list.sort(int.compare)
+}
+
 pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
   let unlocks = limited_action_set.unlocks(tables:)
+  let tiered = bases_with_nine_tiers(tables:)
+  let tiered_count = list.length(tiered)
+  assert tiered_count > 4
+    as "the Spell4 rows give several abilities all nine tiers"
+  let level = 100
+  let points_total = ability_points.total(tables:, level:)
   let drawn_set =
     qcheck.option_from(qcheck.fixed_length_list_from(
       qcheck.option_from(qcheck.bounded_int(1, 262_143)),
       12,
     ))
+  // A drawn tier is a set, a place in the list of abilities with nine tiers and a tier from 2
+  // to 9, so every drawn tier has a Spell4 row.
+  let drawn_tier =
+    qcheck.tuple3(
+      qcheck.bounded_int(0, 3),
+      qcheck.bounded_int(0, tiered_count - 1),
+      qcheck.bounded_int(2, 9),
+    )
   qcheck.given(
-    qcheck.tuple4(drawn_set, drawn_set, drawn_set, drawn_set),
+    qcheck.tuple2(
+      qcheck.tuple4(drawn_set, drawn_set, drawn_set, drawn_set),
+      qcheck.generic_list(
+        elements_from: drawn_tier,
+        length_from: qcheck.bounded_int(0, 12),
+      ),
+    ),
     fn(drawn) {
+      let #(sets, drawn_tiers) = drawn
       let rows =
-        [drawn.0, drawn.1, drawn.2, drawn.3]
+        [sets.0, sets.1, sets.2, sets.3]
         |> list.index_map(fn(set, number) { #(number, set) })
         |> list.flat_map(fn(numbered) {
           case numbered.1 {
@@ -1293,28 +1577,67 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
               })
           }
         })
-      let book =
-        list.filter_map(rows, fn(row) {
-          option.to_result(row.spell4_base_id, Nil)
-          |> result.map(Spell4BaseId)
+      // Each set keeps the first draw of an ability and the draws that fit the level's
+      // points, in Spell4Base order: the tiers the entry cannot drop.
+      let tier_rows =
+        list.flat_map([0, 1, 2, 3], fn(set) {
+          let #(_, kept) =
+            list.filter(drawn_tiers, fn(tier) { tier.0 == set })
+            |> list.map(fn(tier) {
+              #(
+                { list.drop(tiered, tier.1) |> list.first |> result.unwrap(0) },
+                tier.2,
+              )
+            })
+            |> list.unique
+            |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+            |> list.fold(#(0, []), fn(so_far, tier) {
+              let #(spent, kept) = so_far
+              let cost =
+                points_cost(tables:, held: [#(Spell4BaseId(tier.0), tier.1)])
+              case
+                spent + cost <= points_total
+                && !list.any(kept, fn(held: #(Int, Int)) { held.0 == tier.0 })
+              {
+                True -> #(spent + cost, [tier, ..kept])
+                False -> so_far
+              }
+            })
+          list.reverse(kept)
+          |> list.map(fn(tier) {
+            store.AbilityTierRow(
+              action_set: set,
+              spell4_base_id: tier.0,
+              tier: tier.1,
+            )
+          })
         })
+      let book =
+        list.append(
+          list.filter_map(rows, fn(row) {
+            option.to_result(row.spell4_base_id, Nil)
+            |> result.map(Spell4BaseId)
+          }),
+          list.map(tiered, Spell4BaseId),
+        )
+      let held = store.ActionSets(slots: rows, tiers: tier_rows)
       let assert Ok(saved) =
         limited_action_set.entering(
           unlocks:,
-          level: 100,
+          level:,
           book:,
           tiers: spell_tier.tiers(tables:),
-          points_total: 0,
-          rows: support.with_slots(slots: rows),
+          points_total:,
+          rows: held,
         )
         as "rows the table's checks hold are read"
-      assert limited_action_set.rows(saved:) == support.with_slots(slots: rows)
-        as "a saved set is twelve rows, in set then slot order, and no set gives none"
+      assert limited_action_set.rows(saved:) == held
+        as "a saved set is twelve rows, in set then slot order, and no set gives none; the tiers are a row for each above tier 1, in set then Spell4Base order"
       assert limited_action_set.entering(
           unlocks:,
           tiers: spell_tier.tiers(tables:),
-          points_total: 0,
-          level: 100,
+          points_total:,
+          level:,
           book:,
           rows: limited_action_set.rows(saved:),
         )

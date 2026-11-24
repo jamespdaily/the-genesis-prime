@@ -15,8 +15,9 @@
 ////      every check passes  ─▶ Saved' and 0x019D (the 12 shortcuts, result 1), 0x01A0 (the book's tiers
 ////                             in set 0), 0x0169 (the points left), 0x00B2 (bit 1)
 ////      a check fails       ─▶ Saved as it was, 0x019D (the held bar, the result), 0x00B2 (bit 0), a warning
-//// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set
-//// entry      ─▶ entering(unlocks, level, book, rows) ─▶ Saved, or a RowError that ends the entry
+//// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set, and tier rows
+//// entry      ─▶ entering(unlocks, tiers, points_total, level, book, rows) ─▶ Saved, or a RowError
+////               that ends the entry
 //// ```
 ////
 //// - **The client checks little before it sends** (`0x1407580e0`): the player exists, the
@@ -43,9 +44,17 @@
 ////   held tier changes nothing, and the points are judged on the tiers the save leaves. Any refusal refuses the whole save, bar
 ////   included. A tier belongs to the ability in the set, so a save that takes an ability off the
 ////   bar keeps its tier. What a tier costs and needs is genesis_prime/game/spell_tier.
-//// - **The tiers last** while the connection holds `Saved`: they are not in `rows`, so a place
-////   save carries none and leaves the tiers held in the session as they are, and a map change,
-////   a Holocrypt rejoin and a login start every ability at tier 1 (`gaps`).
+//// - **The tiers are saved** with the place, as the bars are: `rows` carries a row for each
+////   ability held above tier 1 in each set, whole, so a tier returned to 1 is no row and the
+////   store deletes the stored one. A map change, a Holocrypt rejoin and a login take them
+////   back through `entering`.
+//// - **A saved tier is kept at entry** only while the book holds its ability, the Spell4 rows
+////   hold that tier, the level reaches it and the points cover it (in Spell4Base order, a tier
+////   that does not fit is dropped and a later one that does is kept: the server's guess, since
+////   the client never reads a stored tier), so a table change or a lower level cannot show a
+////   tier the player cannot hold or spend below 0 points. A row outside the table's checks (a
+////   set above 3, an ability of 0 or beyond 18 bits, a tier outside 2 to 15, a second row for
+////   one ability of one set) is a `RowError`.
 //// - **A slot opens** by the client's own reading of its ActionSlotPrereq row's Prerequisite
 ////   row (`ActionSlotPrereq.prerequisiteIdUnlock`): the conditions the client keeps are all
 ////   of type 177 (the unit's level) and each holds at the player's level
@@ -80,7 +89,8 @@ import genesis_prime/gap
 import genesis_prime/message/action_set_save
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
 import genesis_prime/store.{
-  type ActionSets, type ActionSlotRow, ActionSets, ActionSlotRow,
+  type AbilityTierRow, type ActionSets, type ActionSlotRow, AbilityTierRow,
+  ActionSets, ActionSlotRow,
 }
 import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/id.{type Spell4BaseId, PrerequisiteId, Spell4BaseId}
@@ -106,6 +116,9 @@ const action_sets = 4
 
 /// The largest Spell4Base id the 18 bits of the ability messages carry (`opcode.0x1a0`).
 const largest_ability_id = 262_143
+
+/// The largest tier the 4 bits of the ability book's message carry (`opcode.0x1a0`).
+const largest_tier = 15
 
 /// The bar of an action set: twelve slots, slot 0 first, each an ability or empty. Built by
 /// `take`, `bar_of` or `entering`, read by `slots`.
@@ -208,10 +221,17 @@ pub type RowError {
   RowOutsideTable(row: ActionSlotRow)
   /// Two rows for one slot of one set.
   RowRepeated(row: ActionSlotRow)
+  /// A tier row whose set, ability or tier is outside the table's checks.
+  TierRowOutsideTable(row: AbilityTierRow)
+  /// Two tier rows for one ability of one set.
+  TierRowRepeated(row: AbilityTierRow)
 }
 
-/// The rows a player's saved bars are written as: twelve for each saved set, in set then
-/// slot order, an empty slot with no ability; none when nothing is saved.
+/// The rows a player's saved bars and tiers are written as: twelve slot rows for each saved
+/// set, in set then slot order, an empty slot with no ability; and a tier row for each ability
+/// held above tier 1 in each set, in set then Spell4Base order. None when nothing is saved.
+/// Every save of the place carries the whole of it: the store deletes the tier rows a save
+/// leaves out.
 pub fn rows(saved saved: Saved) -> ActionSets {
   ActionSets(
     slots: dict.to_list(saved.bars)
@@ -226,7 +246,17 @@ pub fn rows(saved saved: Saved) -> ActionSets {
           )
         })
       }),
-    tiers: [],
+    tiers: dict.keys(saved.tiers)
+      |> list.sort(int.compare)
+      |> list.flat_map(fn(action_set) {
+        list.map(held_tiers(saved:, set: action_set), fn(held) {
+          AbilityTierRow(
+            action_set:,
+            spell4_base_id: { held.0 }.value,
+            tier: held.1,
+          )
+        })
+      }),
   )
 }
 
@@ -235,15 +265,26 @@ pub fn rows(saved saved: Saved) -> ActionSets {
 /// open at the player's level, and any other slot is empty (the next save writes it so).
 /// A set with rows is saved, even when every slot of it is empty, and a slot with no row in
 /// a saved set is empty. `Error` for a row the table's checks cannot hold.
+///
+/// A saved tier stays only while the player's book holds its ability, the Spell4 rows hold
+/// that tier of it, the player's level reaches the tier (`Spell4TierRequirements`) and the
+/// points the level gives cover it; any other is dropped and the next save deletes its row.
+/// Judging is for each set on its own, taking its tiers in Spell4Base order. Tiers that cost
+/// more points than the level gives (only a changed table or an edited database can make
+/// them) are kept in that order while they fit, a tier that does not fit is dropped and a
+/// later one that does is kept; the client never reads a stored tier, so this is the
+/// server's guess. The entry's points left are never below 0 and every tier it holds has a
+/// cost, which `ability_points.points_frame` and `spell_tier.spent` need.
 pub fn entering(
   unlocks unlocks: Unlocks,
-  tiers _tiers: spell_tier.SpellTiers,
-  points_total _points_total: Int,
+  tiers tiers: spell_tier.SpellTiers,
+  points_total points_total: Int,
   level level: Int,
   book book: List(Spell4BaseId),
   rows rows: ActionSets,
 ) -> Result(Saved, RowError) {
-  use sets <- result.map(sets_of(rows: rows.slots))
+  use sets <- result.try(sets_of(rows: rows.slots))
+  use stored <- result.map(tier_sets_of(rows: rows.tiers))
   let open = open_slots(unlocks:, level:)
   Saved(
     bars: dict.map_values(sets, fn(_, slot_ids) {
@@ -264,8 +305,72 @@ pub fn entering(
         }),
       )
     }),
-    tiers: dict.new(),
+    tiers: dict.map_values(stored, fn(_, held) {
+      tiers_kept(held:, tiers:, points_total:, level:, book:)
+    })
+      |> dict.filter(fn(_, held) { !dict.is_empty(held) }),
   )
+}
+
+/// The tiers of one set the entry keeps: those the book, the Spell4 rows and the level allow,
+/// in Spell4Base order, while the running cost stays within the points the level gives.
+fn tiers_kept(
+  held held: Dict(Spell4BaseId, Int),
+  tiers tiers: spell_tier.SpellTiers,
+  points_total points_total: Int,
+  level level: Int,
+  book book: List(Spell4BaseId),
+) -> Dict(Spell4BaseId, Int) {
+  let allowed =
+    dict.to_list(held)
+    |> list.sort(fn(a, b) { int.compare({ a.0 }.value, { b.0 }.value) })
+    |> list.filter_map(fn(entry) {
+      let #(base, tier) = entry
+      use <- bool.guard(when: !list.contains(book, base), return: Error(Nil))
+      use cost <- result.try(spell_tier.change_cost(
+        tiers:,
+        base:,
+        from: 1,
+        to: tier,
+      ))
+      use needed <- result.try(spell_tier.level_needed(tiers:, tier:))
+      use <- bool.guard(when: level < needed, return: Error(Nil))
+      Ok(#(base, tier, cost))
+    })
+  list.fold(allowed, #(0, dict.new()), fn(state, entry) {
+    let #(spent, kept) = state
+    let #(base, tier, cost) = entry
+    case spent + cost > points_total {
+      True -> state
+      False -> #(spent + cost, dict.insert(kept, base, tier))
+    }
+  }).1
+}
+
+/// The tier rows of each set by ability, or the first row the table's checks cannot hold: a
+/// set above 3, an ability of 0 or beyond 18 bits, a tier outside 2 to 15 (the 4 bits of the
+/// ability book's message, `opcode.0x1a0`) or a second row for one ability of one set.
+fn tier_sets_of(
+  rows rows: List(AbilityTierRow),
+) -> Result(Dict(Int, Dict(Spell4BaseId, Int)), RowError) {
+  list.try_fold(rows, dict.new(), fn(sets, row) {
+    use <- bool.guard(
+      when: row.action_set < 0
+        || row.action_set >= action_sets
+        || row.spell4_base_id < 1
+        || row.spell4_base_id > largest_ability_id
+        || row.tier < 2
+        || row.tier > largest_tier,
+      return: Error(TierRowOutsideTable(row:)),
+    )
+    let base = Spell4BaseId(row.spell4_base_id)
+    let held = result.unwrap(dict.get(sets, row.action_set), dict.new())
+    use <- bool.guard(
+      when: dict.has_key(held, base),
+      return: Error(TierRowRepeated(row:)),
+    )
+    Ok(dict.insert(sets, row.action_set, dict.insert(held, base, row.tier)))
+  })
 }
 
 /// The rows of each set by slot, or the first row the table's checks cannot hold.
@@ -305,18 +410,28 @@ fn fits_the_message(ability ability: Option(Int)) -> Bool {
 
 /// A sentence that says which row the load gave that the table's checks cannot hold.
 pub fn describe_row(error error: RowError) -> String {
-  let row = case error {
-    RowOutsideTable(row:) -> row
-    RowRepeated(row:) -> row
+  case error {
+    RowOutsideTable(row:) ->
+      describe_slot(row:) <> " is outside what the table allows"
+    RowRepeated(row:) -> describe_slot(row:) <> " is there twice"
+    TierRowOutsideTable(row:) ->
+      describe_tier(row:) <> " is outside what the table allows"
+    TierRowRepeated(row:) -> describe_tier(row:) <> " is there twice"
   }
+}
+
+fn describe_slot(row row: ActionSlotRow) -> String {
   "the saved action slot row of set "
   <> int.to_string(row.action_set)
   <> " slot "
   <> int.to_string(row.slot)
-  <> case error {
-    RowOutsideTable(..) -> " is outside what the table allows"
-    RowRepeated(..) -> " is there twice"
-  }
+}
+
+fn describe_tier(row row: AbilityTierRow) -> String {
+  "the saved ability tier row of set "
+  <> int.to_string(row.action_set)
+  <> " ability "
+  <> int.to_string(row.spell4_base_id)
 }
 
 /// What the slots of a bar open at, one for each of the twelve.

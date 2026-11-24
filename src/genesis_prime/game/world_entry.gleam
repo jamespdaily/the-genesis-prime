@@ -1277,7 +1277,7 @@ fn with_saved_bars(
       Ok(ActionSlotFault(
         text: "a play of character "
         <> int.to_string(character_number(character))
-        <> ", whose saved action slots hold a row the table's checks cannot: "
+        <> ", whose saved action slots or tiers hold a row the table's checks cannot: "
         <> limited_action_set.describe_row(error:),
       ))
   }

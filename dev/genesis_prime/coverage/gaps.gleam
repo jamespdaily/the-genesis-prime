@@ -13,7 +13,6 @@
 //// - The render groups the entries by area in the order each area is first met, and keeps
 ////   the entries' order within an area.
 
-import genesis_prime/game/ability_points
 import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
@@ -130,7 +129,6 @@ pub fn registry() -> List(Entry) {
     kill_objective.gaps(),
     cast_press.gaps(),
     activate.gaps(),
-    ability_points.gaps(),
     limited_action_set.gaps(),
     cast.gaps(),
     cast_control.gaps(),

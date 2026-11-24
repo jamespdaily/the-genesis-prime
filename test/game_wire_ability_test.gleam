@@ -4,6 +4,7 @@
 //// Every wait is for bytes the server writes, with a deadline a passing test never
 //// reaches. The tree, the logins and the players come from `game_wire_support`.
 
+import ability_book_support
 import ability_points_support
 import cast_support
 import character_support
@@ -702,6 +703,89 @@ pub fn a_bar_saved_with_the_clients_0xb1_is_back_after_a_relog_on_the_whole_serv
     game_client.camp_and_play(game:, have:, character_id: character)
   assert bar_shortcuts(frames: third_entry) == [#(0, 27_638), #(1, 20_684)]
     as "after the sitting's third save and a relog the entry holds 27638 and 20684 only"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The abilities the one 0x01A0 among frames holds above tier 1, as (Spell4Base, action set,
+/// tier).
+fn raised_tiers(frames frames: List(Frame)) -> List(#(Int, Int, Int)) {
+  ability_book_support.tiers_in(frames:)
+  |> list.filter(fn(entry) { entry.tier > 1 })
+  |> list.map(fn(entry) {
+    #(entry.spell4_base_id, entry.action_set_index, entry.tier)
+  })
+}
+
+/// A Spellslinger of level 10 (one ability point) who buys Quick Draw's tier 2 with the client's
+/// own 0xB1 (the class's bar and the tier change, `opcode.0xb1`), camps and plays again, then
+/// returns Quick Draw to tier 1 and does the same. The entry's 0x01A0 holds the tier in set 0
+/// (`opcode.0x1a0`) and its 0x0169 the point spent (`opcode.0x169`); the answer is 0x019D, 0x01A0,
+/// 0x0169 then 0x00B2 (`opcode.0xb2`). Quick Draw's tier 2 costs 1 (`Spell4.abilityPointCost`).
+pub fn a_tier_bought_in_the_builder_is_back_after_a_camp_and_a_tier_returned_to_1_is_gone_after_the_next_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let started = login_support.start(time:)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: limited.spellslinger,
+      level: 10,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert raised_tiers(frames: entry) == []
+    as "a character that saved nothing enters with every ability at tier 1"
+  assert ability_points_support.points_in(frames: entry) == [#(1, 1)]
+    as "and the level's one point unspent"
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.tiering([#(27_638, 2)]),
+  )
+  let #(answer, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  assert list.map(answer, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A0, 0x0169, 0x00B2]
+    as "the answer is the set, the tiers, the points, then 0xB2"
+  assert raised_tiers(frames: answer) == [#(27_638, 0, 2)]
+  assert ability_points_support.points_in(frames: answer) == [#(0, 1)]
+  let #(second_entry, have) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert raised_tiers(frames: second_entry) == [#(27_638, 0, 2)]
+    as "the next entry holds Quick Draw at tier 2 in set 0 and every other entry at tier 1"
+  assert list.map(
+      ability_book_support.tiers_in(frames: second_entry),
+      fn(entry) { #(entry.spell4_base_id, entry.action_set_index) },
+    )
+    == list.map(ability_book_support.tiers_in(frames: entry), fn(entry) {
+      #(entry.spell4_base_id, entry.action_set_index)
+    })
+    as "the same abilities in the same order as the first entry"
+  assert ability_points_support.points_in(frames: second_entry) == [#(0, 1)]
+    as "and the point stays spent"
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.tiering([#(27_638, 1)]),
+  )
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  let #(third_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert raised_tiers(frames: third_entry) == []
+    as "a tier returned to 1 is gone after the next camp"
+  assert ability_points_support.points_in(frames: third_entry) == [#(1, 1)]
+    as "and the point is back"
   game_client.close(game:)
   login_support.stop(started)
 }

@@ -250,6 +250,49 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
   use <- owned_test.run(120_000)
   let after_a =
     sent(state: in_world_at_level(level: 4), body: limited.hex(limited.save_a)).0
+  // A level 10 player who bought Quick Draw's tier 2 (the one point of the level) holds the
+  // sitting's first bar saved with it and the one tier row.
+  let after_tier =
+    sent(
+      state: in_world_at_level(level: 10),
+      body: limited.tiering([#(27_638, 2)]),
+    ).0
+  let with_tier =
+    store.ActionSets(slots: limited.rows_of(set: 0, ids: limited.ids_a), tiers: [
+      store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2),
+    ])
+  list.each(
+    [
+      #(after_a, slots_of_set_0(ids: limited.ids_a), "a saved bar"),
+      #(after_tier, with_tier, "a saved bar and a tier"),
+    ],
+    fn(scene) {
+      let #(held, expected, what) = scene
+      every_end_of_the_stay_saves(held:, expected:, what:)
+    },
+  )
+  let #(_, taken) = timer_save(state: in_world_at_level(level: 4))
+  assert action_sets_asked(taken:)
+    == limited_action_set.rows(saved: limited_action_set.none())
+    as "(f) a player who saved nothing saves no row, so the class's bar stays the default"
+  let #(_, taken) = timer_save(state: in_world_at_level(level: 10))
+  assert action_sets_asked(taken:).tiers == []
+    as "(f) a player who bought nothing carries no tier row"
+  let #(returned, _, _) =
+    sent(state: after_tier, body: limited.tiering([#(27_638, 1)]))
+  assert action_sets_asked(taken: timer_save(state: returned).1)
+    == limited.with_slots(slots: limited.rows_of(set: 0, ids: limited.ids_a))
+    as "(g) a tier returned to 1 is no row: the next save carries the bar and an empty tier list, which deletes the stored row"
+}
+
+/// Every save of the place the connection makes while it holds `held` carries `expected`:
+/// the 60 s timer, the camp, the map's end, a takeover, and the save asked again after one
+/// that got no answer.
+fn every_end_of_the_stay_saves(
+  held after_a: game_connection.State,
+  expected expected: store.ActionSets,
+  what what: String,
+) -> Nil {
   list.each(
     [
       #("(a) the 60 s timer", fn(state) { timer_save(state:).1 }),
@@ -273,24 +316,22 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
     ],
     fn(row) {
       let #(why, save) = row
-      assert action_sets_asked(taken: save(after_a))
-        == slots_of_set_0(ids: limited.ids_a)
-        as why
+      assert action_sets_asked(taken: save(after_a)) == expected
+        as { what <> ", " <> why }
     },
   )
   list.each(connection_support.no_answers(), fn(outcome) {
     let #(state, taken) = timer_save(state: after_a)
-    assert action_sets_asked(taken:) == slots_of_set_0(ids: limited.ids_a)
-      as "(e) the first timer save carries the set"
+    assert action_sets_asked(taken:) == expected
+      as { what <> ", (e) the first timer save carries the set" }
     let #(state, _) = connection_support.answer(state:, taken:, outcome:)
     let #(_, taken) = timer_save(state:)
-    assert action_sets_asked(taken:) == slots_of_set_0(ids: limited.ids_a)
-      as "(e) the save asked again after one with no answer holds the same twelve rows"
+    assert action_sets_asked(taken:) == expected
+      as {
+        what
+        <> ", (e) the save asked again after one with no answer holds the same rows"
+      }
   })
-  let #(_, taken) = timer_save(state: in_world_at_level(level: 4))
-  assert action_sets_asked(taken:)
-    == limited_action_set.rows(saved: limited_action_set.none())
-    as "(f) a player who saved nothing saves no row, so the class's bar stays the default"
 }
 
 pub fn a_refused_save_leaves_what_the_next_place_save_carries_unchanged_test() -> Nil {

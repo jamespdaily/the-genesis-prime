@@ -6948,19 +6948,6 @@ fn save_sets_and_quests(
   )
 }
 
-/// The action sets of a save that holds these tiers (set, Spell4Base, tier) and no bar.
-fn tiers_of(tiers tiers: List(#(Int, Int, Int))) -> store.ActionSets {
-  store.ActionSets(
-    ..limited_action_set.rows(saved: limited_action_set.none()),
-    tiers: list.map(tiers, tier_row),
-  )
-}
-
-/// One tier row of a (set, Spell4Base, tier).
-fn tier_row(tier tier: #(Int, Int, Int)) -> store.AbilityTierRow {
-  store.AbilityTierRow(action_set: tier.0, spell4_base_id: tier.1, tier: tier.2)
-}
-
 /// The tier rows the table holds for the character, read straight from the database, in
 /// set then Spell4Base order, with the row version each has (`xmin`, which a write of the
 /// row changes).
@@ -7431,7 +7418,7 @@ pub fn a_tier_row_the_table_refuses_is_refused_by_name_and_writes_nothing_of_the
       quests: [completed_quest(quest)],
       action_sets: store.ActionSets(
         ..slots_of(set: 0, ids:),
-        tiers: list.map(tiers, tier_row),
+        tiers: list.map(tiers, limited_action_set_support.tier_row),
       ),
     )
   }
@@ -7481,7 +7468,10 @@ pub fn a_tier_row_the_table_refuses_is_refused_by_name_and_writes_nothing_of_the
     == ForMove(PlaceSaved)
     as "each refusal stored nothing, and a good save after them is written"
   assert stored_tier_rows(store:, character_id: id)
-    == list.map([#(0, 20_684, 3), #(0, 27_638, 2)], tier_row)
+    == list.map(
+      [#(0, 20_684, 3), #(0, 27_638, 2)],
+      limited_action_set_support.tier_row,
+    )
   account_store_support.stop(store)
 }
 
@@ -7521,7 +7511,7 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
       epoch:,
       sequence:,
       place:,
-      action_sets: tiers_of(tiers),
+      action_sets: limited_action_set_support.with_tiers(tiers),
     )
   }
   let three = [#(0, 20_684, 3), #(0, 27_638, 2), #(2, 27_638, 5)]
@@ -7530,16 +7520,18 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
     action_sets_of_load(store:, account:, character_id:)
   assert loaded.tiers == [] as "a character that never saved a tier loads none"
   assert saved(first_login, 1, first, three) == ForMove(PlaceSaved)
-  assert stored_tier_rows(store:, character_id: id) == list.map(three, tier_row)
+  assert stored_tier_rows(store:, character_id: id)
+    == list.map(three, limited_action_set_support.tier_row)
     as "the three tier rows, in set then Spell4Base order"
   let #(second_login, loaded, _) =
     action_sets_of_load(store:, account:, character_id:)
-  assert loaded.tiers == list.map(three, tier_row)
+  assert loaded.tiers == list.map(three, limited_action_set_support.tier_row)
     as "a new login loads them in that order"
   let before = stored_tiers(store:, character_id: id)
   assert saved(second_login, 2, second, quick_draws) == ForMove(PlaceSaved)
   let after = stored_tiers(store:, character_id: id)
-  assert list.map(after, fn(held) { held.0 }) == list.map(quick_draws, tier_row)
+  assert list.map(after, fn(held) { held.0 })
+    == list.map(quick_draws, limited_action_set_support.tier_row)
     as "the whole list replaces the held rows: the Charged Shot row is deleted"
   assert list.drop(before, 1) == after
     as "the Quick Draw rows keep their versions: only a changed row is written"
@@ -7556,7 +7548,7 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
       epoch: third_login,
       sequence:,
       quests: [completed_quest(1001)],
-      action_sets: tiers_of(tiers),
+      action_sets: limited_action_set_support.with_tiers(tiers),
       credits_held:,
       credits_after: credits_held + 145,
       placed: [],
@@ -7567,7 +7559,7 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
     turned_in(1, 1000, with_charged_shot)
     as "a quest turn-in saves the place in its own transaction"
   assert stored_tier_rows(store:, character_id: id)
-    == list.map(with_charged_shot, tier_row)
+    == list.map(with_charged_shot, limited_action_set_support.tier_row)
     as "the turn-in writes the Charged Shot row at tier 2, beside its quest and its place"
   assert quest_states(store:, character_id: id) == [#(1001, 3)]
   assert stored_position_x(store:, character_id: id) == 10.0
