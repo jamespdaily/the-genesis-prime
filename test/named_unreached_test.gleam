@@ -93,7 +93,7 @@ fn named_in(
   spell_tables.with_loaded_deriving(
     rows:,
     reaching: [#("SpellLevel", 1111), #("Spell4", 42_148)],
-    derivations: [spell_plan.derivation(area_checked: spell_area.checker)],
+    derivations: spell_tables.plan_derivations(),
     body: fn(tables) {
       let reached = reached_ids(tables:, proxies:)
       #(named_unreached.find(tables:, tokens:, reached:, left_out:), reached)

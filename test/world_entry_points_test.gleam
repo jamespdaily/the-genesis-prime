@@ -147,6 +147,9 @@ pub fn a_rejoin_sends_the_points_of_the_level_the_session_holds_test() -> Nil {
   assert list.filter(book_support.tiers_in(frames:), fn(entry) {
       entry.tier > 1
     })
-    == [AbilityTier(spell4_base_id: 27_638, tier: 2, action_set_index: 0)]
-    as "and Quick Draw at tier 2 in set 0 and every other ability at tier 1 in each set"
+    == [
+      AbilityTier(spell4_base_id: 27_638, tier: 2, action_set_index: 0),
+      AbilityTier(spell4_base_id: 52_215, tier: 2, action_set_index: 0),
+    ]
+    as "and Quick Draw at tier 2 in set 0 with its alternate 52215, which shows the tier of the ability that names it, and every other ability at tier 1 in each set"
 }
