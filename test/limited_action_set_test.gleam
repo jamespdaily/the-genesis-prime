@@ -333,6 +333,14 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
         "a save that takes Quick Draw off the bar and carries no tier change keeps its tier and its point spent: a tier belongs to the ability in the set",
       ),
       Accepted(
+        15,
+        [support.tiering([#(charged_shot_alternate, 1)])],
+        support.ids_a,
+        [],
+        #(6, 6),
+        "a change of Charged Shot's alternate to tier 1 changes nothing and is accepted (a tier of it stored before the book showed its ability's tier can be returned), while any tier above 1 of it is refused",
+      ),
+      Accepted(
         4,
         [message_support.hex(support.save_a)],
         support.ids_a,

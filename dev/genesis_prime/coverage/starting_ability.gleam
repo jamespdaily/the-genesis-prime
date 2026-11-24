@@ -744,6 +744,35 @@ pub fn spells_in(
   reached_spells(tables:, gates:, plans:)
 }
 
+/// The Spell4Effects rows only the tier 2 to 9 plans' trees reach (the abilities' own trees, tier 1,
+/// reach the others), and how many of them the plan does not read: the rows a held tier's cast
+/// plays that no tier 1 cast does.
+pub fn tier_rows(
+  tables tables: store.Tables,
+) -> Result(#(Int, Int), List(MissingRow)) {
+  let tier_plans =
+    dict.to_list(spell_plan.tier_plans(tables))
+    |> list.map(fn(entry) { #({ entry.0 }.value, entry.1) })
+    |> dict.from_list
+  use tier_spells <- result.try(spells_in(tables:, plans: tier_plans))
+  use own_spells <- result.map(spells_in(
+    tables:,
+    plans: spell_plan.plans_with_later(tables:),
+  ))
+  let own_rows =
+    effects_of(tables:, spells: own_spells)
+    |> list.map(fn(effect) { effect.id })
+    |> set.from_list
+  let only_tiers =
+    effects_of(tables:, spells: tier_spells)
+    |> list.filter(fn(effect) { !set.contains(own_rows, effect.id) })
+  let unread =
+    effect_row.unread_by_type(tables:, effects: only_tiers)
+    |> dict.values
+    |> int.sum
+  #(list.length(only_tiers), unread)
+}
+
 /// The AMP gates the tree walk reads, or the AMP unlock row the table lacks.
 fn amp_gates(
   tables tables: store.Tables,

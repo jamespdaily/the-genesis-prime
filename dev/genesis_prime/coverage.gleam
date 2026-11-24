@@ -23,6 +23,12 @@
 //// does not build. A character is granted each of them; a press of one is refused as an
 //// unknown spell.
 ////
+//// It then counts the tier 2 to 9 spells of the planned abilities (genesis_prime/game/spell_plan
+//// `tier_plans`, `unplanned_tiers`): how many are planned and how many left out, a count for each
+//// class, a line for each left out with its class, level, Spell4Base, tier, Spell4, the tier a
+//// player who holds it casts and the sentence that says what the server does not build, and a
+//// line for the Spell4Effects rows only the tier plans reach.
+////
 //// It then counts the equip spells of the worn items (genesis_prime/game/spell_plan
 //// `standing_plans`, `standing_unplanned`; genesis_prime/coverage/standing_root): how many
 //// are planned, which of those stand only in part, with the first row no cast plays, and
@@ -76,23 +82,29 @@ import genesis_prime/coverage/standing_root
 import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
+import genesis_prime/game/held_tier
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/game/spell_tier
 import genesis_prime/game/vendor
 import genesis_prime/store/worker
 import genesis_prime/table
+import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store
+import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
 import genesis_prime/table_folder
 import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
+import gleam/dict
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, Some}
 import gleam/order
 import gleam/result
 import gleam/string
@@ -135,6 +147,8 @@ pub fn main() -> Nil {
       io.println(left_out)
       io.println("")
       io.println(later_abilities_report(tables:))
+      io.println("")
+      io.println(tier_abilities_report(tables:))
       io.println("")
       io.println(standing_root.report_of(tables:))
       io.println("")
@@ -235,6 +249,153 @@ fn later_abilities_report(tables tables: store.Tables) -> String {
       )
     }
   }
+}
+
+/// A tier 2 to 9 spell of a planned ability that no plan is built for, with the class and level
+/// of the SpellLevel row that gives the ability when it has one (an innate has none), its
+/// Spell4Base, tier and Spell4, the tier a player who holds it casts, and the sentence that says
+/// what the server does not build.
+type LeftOutTier {
+  LeftOutTier(
+    class_id: Option(Int),
+    character_level: Option(Int),
+    spell4_base_id: Int,
+    tier: Int,
+    spell4_id: Int,
+    plays: Int,
+    why: String,
+  )
+}
+
+/// The tier 2 to 9 spells of the planned abilities: how many, how many are planned and how many
+/// left out, the abilities they are of and the class of each, and a line for each left out
+/// with the tier a held one plays (genesis_prime/game/held_tier), so what a player who buys it
+/// gets is read here. A line counts the Spell4Effects rows only the tier plans reach and how
+/// many of them the plan reads.
+fn tier_abilities_report(tables tables: store.Tables) -> String {
+  let tiers = spell_tier.tiers(tables)
+  let tier_plans = spell_plan.tier_plans(tables)
+  let left_out = spell_plan.unplanned_tiers(tables)
+  let found = left_out_tiers_of(tables:, tiers:, tier_plans:, left_out:)
+  let planned = dict.size(tier_plans)
+  let abilities =
+    list.append(
+      list.map(dict.values(tier_plans), fn(spell) { spell.spell4_base_id.value }),
+      list.map(found, fn(one) { one.spell4_base_id }),
+    )
+    |> list.unique
+  let left_out_abilities =
+    list.map(found, fn(one) { one.spell4_base_id }) |> list.unique
+  let classes =
+    list.filter_map(found, fn(one) { option.to_result(one.class_id, Nil) })
+    |> list.unique
+    |> list.sort(int.compare)
+  let by_class =
+    list.map(classes, fn(class_id) {
+      "class "
+      <> int.to_string(class_id)
+      <> " "
+      <> int.to_string(
+        list.count(found, fn(one) { one.class_id == Some(class_id) }),
+      )
+    })
+  let rows = case starting_ability.tier_rows(tables:) {
+    Ok(#(reached, unread)) ->
+      "Ability tiers, Spell4Effects rows only the tier plans reach: "
+      <> int.to_string(reached)
+      <> " ("
+      <> int.to_string(reached - unread)
+      <> " read by the plan, "
+      <> int.to_string(unread)
+      <> " not)"
+    Error(missing) ->
+      "Ability tiers, Spell4Effects rows only the tier plans reach: not counted, "
+      <> string.join(list.map(missing, starting_ability.describe), "; ")
+  }
+  string.join(
+    [
+      "Ability tiers, not cast (a held tier plays the best lower tier the plans can): "
+        <> int.to_string(planned + list.length(found))
+        <> " tier 2 to 9 spells of "
+        <> int.to_string(list.length(abilities))
+        <> " planned abilities, "
+        <> int.to_string(planned)
+        <> " planned, "
+        <> int.to_string(list.length(found))
+        <> " left out in "
+        <> int.to_string(list.length(left_out_abilities))
+        <> " abilities (by class: "
+        <> string.join(by_class, ", ")
+        <> ")",
+      rows,
+      ..list.map(found, fn(one) {
+        "- "
+        <> case one.class_id, one.character_level {
+          Some(class_id), Some(level) ->
+            "class "
+            <> int.to_string(class_id)
+            <> ", level "
+            <> int.to_string(level)
+          _, _ -> "an innate"
+        }
+        <> ", Spell4Base "
+        <> int.to_string(one.spell4_base_id)
+        <> ", tier "
+        <> int.to_string(one.tier)
+        <> ", Spell4 "
+        <> int.to_string(one.spell4_id)
+        <> ", plays tier "
+        <> int.to_string(one.plays)
+        <> ": "
+        <> one.why
+      })
+    ],
+    "\n",
+  )
+}
+
+/// The left-out tier spells with their ability's SpellLevel row, in Spell4Base then tier order.
+fn left_out_tiers_of(
+  tables tables: store.Tables,
+  tiers tiers: spell_tier.SpellTiers,
+  tier_plans tier_plans: spell_plan.TierPlans,
+  left_out left_out: List(spell_plan.Unplanned),
+) -> List(LeftOutTier) {
+  let levels =
+    list.filter_map(spell_level.all(tables), fn(row) {
+      spell4.get(tables:, id: Spell4Id(row.spell4_id))
+      |> result.map(fn(spell) { #(spell.spell4_base_id_base_spell, row) })
+    })
+  list.filter_map(left_out, fn(one) {
+    use row <- result.map(
+      spell4.get(tables:, id: Spell4Id(one.spell4_id))
+      |> result.replace_error(Nil),
+    )
+    let base = Spell4BaseId(row.spell4_base_id_base_spell)
+    let level =
+      list.find(levels, fn(entry) { entry.0 == base.value })
+      |> result.map(fn(entry) { entry.1 })
+    LeftOutTier(
+      class_id: result.map(level, fn(found) { found.class_id })
+        |> option.from_result,
+      character_level: result.map(level, fn(found) { found.character_level })
+        |> option.from_result,
+      spell4_base_id: base.value,
+      tier: row.tier_index,
+      spell4_id: one.spell4_id,
+      plays: held_tier.tier_played(
+        tier_plans:,
+        tiers:,
+        base:,
+        held_tier: row.tier_index,
+      ),
+      why: spell_plan.describe(error: one.error),
+    )
+  })
+  |> list.sort(by: fn(left, right) {
+    int.compare(left.spell4_base_id, right.spell4_base_id)
+    |> order.break_tie(int.compare(left.tier, right.tier))
+  })
 }
 
 /// The unplanned abilities with the SpellLevel row above level 1 that gives each, in class,
