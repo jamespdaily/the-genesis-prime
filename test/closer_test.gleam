@@ -3,7 +3,10 @@
 //// own contract in its doc comment: a listener that cannot be closed is logged
 //// as a warning with the reason Ranch gave, and the "every listener" line is
 //// not logged; Ranch has no listener under a name no listener holds
-//// (`ranch_server`'s table has no entry for it).
+//// (`ranch_server`'s table has no entry for it). A listener closed to new
+//// connections has closed its listening socket; the tests read that socket,
+//// never the system's answer to a connect to its freed port, which any other
+//// listener on the machine can take.
 
 import ask_support
 import asking_rule
@@ -16,7 +19,6 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/string
 import log_capture
 import mailbox_support
-import mug
 import owned_test
 import supervisor_children
 import unitest
@@ -58,6 +60,9 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
   let time = driven_time.new()
   let first = ask_support.started_listener(time:)
   let second = ask_support.started_listener(time:)
+  let second_sockets = ask_support.listening_sockets_of(second.name)
+  assert list.length(second_sockets) == 1
+    as "the second listener holds one listening socket before the closer runs"
   let assert [embedded] = supervisor_children.in_start_order(first.supervisor)
     as "the first listener's tree holds Ranch's embedded supervisor"
   let assert [_proxy, first_supervisor] =
@@ -95,9 +100,10 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
     == ask_support.shutdown()
     as "the closing tree stopped as a stop ends it"
   log_capture.stop(capture)
-  let refused = ask_support.connecting(port: second.port)
-  assert refused == Error(mug.ConnectFailedIpv4(mug.Econnrefused))
-    as "the listener after the one that ended was closed to new connections"
+  assert ask_support.listening_sockets_of(second.name) == []
+    as "the listener after the one that ended holds no listening socket"
+  assert list.all(second_sockets, fn(socket) { !ask_support.is_open(socket) })
+    as "the listener after the one that ended was closed to new connections: its socket is closed"
   let closed =
     mailbox_support.drain(lines)
     |> list.filter(fn(line) { string.contains(line.1, "listener") })
