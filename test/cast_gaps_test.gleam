@@ -333,6 +333,10 @@ pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Ni
     })
   })
     as "each gap the landing module states has a row above, held changes and heals alike"
+  assert !list.any(connection_landing.gaps(), fn(entry) {
+    string.contains(entry.missing, "which the viewer drops")
+  })
+    as "a viewer writes the start a player tells it, so no entry says the viewer drops it and shows no buff"
   assert list.all(gaps.registry(), fn(entry) {
     !string.contains(entry.missing, "no description of what the heal applied")
   })
