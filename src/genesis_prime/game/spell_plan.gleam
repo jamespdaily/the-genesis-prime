@@ -203,8 +203,9 @@
 ////   does a row of a kind the texts name whose event the server does not raise (`ProcKindWaits`,
 ////   which names the event), and a row held by another unit, behind a persistence or target apply prerequisite,
 ////   with a group and no filter kind, with an aim of 32 or above, or with no life
-////   (`ProcIsLeftOut`), and a row whose spell the Spell4 table has no row for, which the
-////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`);
+////   (`ProcIsLeftOut`), a row whose spell the Spell4 table has no row for, which the
+////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`),
+////   and an ally's row whose filter names a Spell4 the table lacks (`ProcAllyFilterNamesNoSpell`);
 ////   a row of these kinds with a chance outside 0 to 1.0, a window or
 ////   count at or below 0 (a window of -1 excepted), a filter kind other than 0, 1 and 2 or a
 ////   negative delay fails the load naming the column (`ProcNotRead`). The spells the procs
@@ -2350,6 +2351,11 @@ pub type LeftOutReason {
   /// A Proc held by an ally that lasts until removed, in a spell that is no aura that
   /// ends: a change on another player ends at a time (`proc_reading`).
   ProcAllyUntilRemoved
+  /// A Proc held by an ally whose filter names a Spell4 the table has no row for (Spell4 0 in
+  /// Proc 107509 of Spell4 45994, a template no row of any client table names): the row is
+  /// left out, where the same filter on the caster's own row fails the load
+  /// (`proc_read_with_gates`).
+  ProcAllyFilterNamesNoSpell(spell4_id: Int)
   /// A Proc behind a caster or target persistence prerequisite, which no rule checks
   /// while a proc is held (`Spell4Effects.effectType.14.prerequisites`).
   ProcBehindPersistence
@@ -5417,10 +5423,11 @@ fn proc_limit_of(
 /// A Proc row's filter: kind 0 is every spell, 1 the Spell4 and 2 the group dataBits08
 /// names; any other kind is the column and value the plan does not read.
 ///
-/// A filter of kind 1 that names Spell4 0 is read like any other and then
-/// refused, because the Spell4 table has no row 0 (`NoRow("Spell4", 0)`). The client never
-/// reads a Proc row, so nothing says whether it means "every spell"; 17 Proc rows have it
-/// (kinds 12, 16 and 117), 4 of them of kind 16 (Procs 92542, 107509, 162927, 189684).
+/// A filter of kind 1 that names Spell4 0 is read like any other and then refused when the
+/// caster holds the row, because the Spell4 table has no row 0 (`NoRow("Spell4", 0)`); an
+/// ally's row is left out instead (`ProcAllyFilterNamesNoSpell`). The client never reads a
+/// Proc row, so nothing says whether it means "every spell"; 17 Proc rows have it (kinds 12,
+/// 16 and 117), 4 of them of kind 16 (Procs 92542, 107509, 162927, 189684).
 fn proc_filter_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ProcFilter, #(String, Int)) {
@@ -6637,14 +6644,19 @@ fn proc_read_with_gates(
   ))
   use event_gate <- result.try(proc_gate_of(tables:, id: reading.event_gate))
   use holder_gate <- result.try(proc_gate_of(tables:, id: reading.holder_gate))
-  use Nil <- result.map(case reading.filter {
+  let applied =
+    Applied(ReadProc(reading:, condition:, event_gate:, holder_gate:))
+  case reading.filter {
     OneSpell(spell4_id: named) ->
-      spell4.get(tables:, id: named)
-      |> result.replace(Nil)
-      |> result.replace_error(NoRow(table: "Spell4", id: named.value))
-    AnySpell | InGroup(..) -> Ok(Nil)
-  })
-  Applied(ReadProc(reading:, condition:, event_gate:, holder_gate:))
+      case spell4.get(tables:, id: named), reading.holder {
+        Ok(_), _ -> Ok(applied)
+        Error(Nil), HeldByCaster ->
+          Error(NoRow(table: "Spell4", id: named.value))
+        Error(Nil), HeldByPrimaryTarget | Error(Nil), HeldByAreaAllies ->
+          Ok(LeftOut(why: ProcAllyFilterNamesNoSpell(spell4_id: named.value)))
+      }
+    AnySpell | InGroup(..) -> Ok(applied)
+  }
 }
 
 /// The Prerequisite a Proc gate column names: none for 0, else its row, which the tables
@@ -8551,7 +8563,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Procs",
-      missing: "a Proc row of kind 16, 146, 51 or 115 with targetFlags 2 or 4 is held by the player the press named (flags 2, or the caster in a press at oneself) or by each ally the area selects (flags 4, Healing Salve's 86457 and Sentinel's 139830), and no event of such a holder fires it, since an ally's connection tells the caster no event; the caster holds one entry for each ally; a row with a holder gate, an event gate or a delay, a row of another kind (Affinity's 207508 and 207874 are kind 21), flags 3, 5, 6 and 7, a row of a struck unit's child or of a spell that hits foes, and a row that lasts until removed in a spell that is no aura that ends are left out, and no creature holds a proc",
+      missing: "a Proc row of kind 16, 146, 51 or 115 with targetFlags 2 or 4 is held by the player the press named (flags 2, or the caster in a press at oneself) or by each ally the area selects (flags 4, Healing Salve's 86457 and Sentinel's 139830), and no event of such a holder fires it, since an ally's connection tells the caster no event; the caster holds one entry for each ally; a row with a holder gate, an event gate or a delay, a row whose filter names a Spell4 the table lacks (Proc 107509), a row of another kind (Affinity's 207508 and 207874 are kind 21), flags 3, 5, 6 and 7, a row of a struck unit's child or of a spell that hits foes, and a row that lasts until removed in a spell that is no aura that ends are left out, and no creature holds a proc",
     ),
     gap.Entry(
       area: "Procs",

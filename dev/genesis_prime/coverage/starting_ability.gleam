@@ -411,6 +411,10 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     spell_plan.ProcAllyGateNotRead ->
       "an ally holds it behind a holder gate or an event gate"
     spell_plan.ProcAllyDelayNotRead -> "an ally holds it with a delay"
+    spell_plan.ProcAllyFilterNamesNoSpell(spell4_id:) ->
+      "an ally holds it and its filter names Spell4 "
+      <> int.to_string(spell4_id)
+      <> ", which has no row"
     spell_plan.ProcAllyUntilRemoved ->
       "an ally holds it until removed, in a spell that is no aura that ends"
     spell_plan.ProcBehindPersistence ->

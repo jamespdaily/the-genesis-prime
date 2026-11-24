@@ -645,6 +645,18 @@ pub fn a_proc_row_is_read_for_the_unit_its_place_gives_it_and_left_out_where_it_
       LeftOutFor(why: spell_plan.ProcAllyDelayNotRead),
     ),
     #(
+      "a filter naming a Spell4 the tables lack on an ally's row is left out, not a load failure",
+      Spell4Effects(..salve, data_bits07: 1, data_bits08: 0),
+      spell_tables.pressed_finding_allies,
+      LeftOutFor(why: spell_plan.ProcAllyFilterNamesNoSpell(spell4_id: 0)),
+    ),
+    #(
+      "the same filter on a row the primary target holds is left out too",
+      Spell4Effects(..held_by_primary_target, data_bits07: 1, data_bits08: 0),
+      spell_tables.pressed,
+      LeftOutFor(why: spell_plan.ProcAllyFilterNamesNoSpell(spell4_id: 0)),
+    ),
+    #(
       "an ally's row that lasts until removed is left out in a spell that is no aura",
       until_removed,
       spell_tables.pressed_finding_allies,
@@ -985,6 +997,13 @@ pub fn the_proc_rows_of_a_planned_tree_held_by_another_unit_are_read_for_an_ally
   assert read(85_628)
     == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 76)))
     as "kind 76 is no kind the server reads"
+  assert read(107_509)
+    == Ok(
+      spell_plan.LeftOut(why: spell_plan.ProcAllyFilterNamesNoSpell(
+        spell4_id: 0,
+      )),
+    )
+    as "Spell4 45994's row has flags 2 and a filter naming Spell4 0, which has no row: left out, not a load failure"
   // Rows of three spells that last until removed (flags bit 2): only the one in an aura that
   // ends (castMethod 10, spellDuration above 0) is read. Field Probes' field 198781 has
   // spellDuration 10 000; 141538's spellDuration is -1 and 106000's castMethod is 0, and both
