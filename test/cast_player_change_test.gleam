@@ -4182,6 +4182,14 @@ fn lasting_for(duration_ms duration_ms: Int) -> lasting.LastingRow {
 /// 256 (0x100, so the change on an ally outlives the caster's sight). `chance` is the chance of
 /// both rows; the client's is 1.0.
 fn salve_shaped(chance chance: Float) -> Spell {
+  salve_shaped_for(trigger: spell_plan.TakesDamage, chance:)
+}
+
+/// `salve_shaped` with both Proc rows of the kind that `trigger` is.
+fn salve_shaped_for(
+  trigger trigger: spell_plan.Trigger,
+  chance chance: Float,
+) -> Spell {
   let proc = fn(id, holder) {
     spell_plan.ProcRow(
       ..support.held_proc_row(
@@ -4189,6 +4197,7 @@ fn salve_shaped(chance chance: Float) -> Spell {
         holder:,
         row: lasting_for(duration_ms: 12_000),
       ),
+      trigger:,
       chance:,
     )
   }
@@ -4771,8 +4780,17 @@ fn sentinel_firing() -> Spell {
 /// A creature's blow event on the ally, as the ally's connection tells it: `TakesDamage` by the
 /// creature 31 with an attack spell of the groups `groups`.
 fn creature_blow(groups groups: List(Int)) -> event_proc.Event {
+  creature_event(trigger: spell_plan.TakesDamage, groups:)
+}
+
+/// An event of a creature's blow on the ally of the kind `trigger`, by the creature 31 with an
+/// attack spell of the groups `groups`.
+fn creature_event(
+  trigger trigger: spell_plan.Trigger,
+  groups groups: List(Int),
+) -> event_proc.Event {
   event_proc.Event(
-    trigger: spell_plan.TakesDamage,
+    trigger:,
     other_unit: Some(31),
     spell: Some(event_proc.EventSpell(
       spell4_id: Spell4Id(5649),
@@ -5148,7 +5166,58 @@ pub fn an_event_an_ally_told_fires_the_proc_the_caster_holds_on_that_ally_and_no
       ]),
     ),
   ]
-  list.each(rows, fn(row) {
+  // Each of the four kinds an ally tells (16 takes damage, 146 a critical, 51 a deflect, 115 a
+  // depleted shield; `spell_plan.kinds_an_ally_tells`) held by a Healing Salve shaped spell: the
+  // four events of one pass fire the row of their own kind once, drawing one word for it, and the
+  // other three draw none.
+  let each_kind = [
+    #(16, spell_plan.TakesDamage),
+    #(146, spell_plan.SuffersCritical),
+    #(51, spell_plan.DeflectsAttack),
+    #(115, spell_plan.ShieldDepleted),
+  ]
+  let kind_rows =
+    list.map(each_kind, fn(kind) {
+      let #(kind, trigger) = kind
+      AllyEvents(
+        ..salve_scene(
+          why: "a Proc row of kind "
+            <> int.to_string(kind)
+            <> " fires on its own event of the ally and the other three kinds' events draw no word and fire nothing",
+          chance: 0.5,
+          raised: [
+            Raised(
+              1500,
+              list.map(
+                [
+                  spell_plan.TakesDamage,
+                  spell_plan.SuffersCritical,
+                  spell_plan.DeflectsAttack,
+                  spell_plan.ShieldDepleted,
+                ],
+                fn(raised) {
+                  #(
+                    Some(ally),
+                    creature_event(trigger: raised, groups: [6, 9, 134, 333]),
+                  )
+                },
+              ),
+              [],
+              [0],
+            ),
+          ],
+          expected: Fired(
+            ..nothing,
+            started: [#(1500, ally, salve, salve)],
+            named: [Some(ally)],
+            words_needed: [1],
+            fires: salve_fires(ally: [1500], second_ally: [], own: []),
+          ),
+        ),
+        spell: salve_shaped_for(trigger:, chance: 0.5),
+      )
+    })
+  list.each(list.append(rows, kind_rows), fn(row) {
     let #(state, _, _) =
       pressed_with_round(
         spell: row.spell,

@@ -39,7 +39,10 @@ import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/game_number.{type GameNumbers}
+import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/unit_fields
 import gleam/erlang/process
@@ -48,10 +51,12 @@ import gleam/function
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/otp/system
 import gleam/result
 import gleam_community/maths
 import item_bot
 import login_support
+import open_wait
 import owned_key
 import place_support
 import planted_table
@@ -958,10 +963,70 @@ pub fn world_with_beasts(
   )
 }
 
+/// A server holding these tables, its game connections and its World taking their time and
+/// their timers from `time`.
+pub fn started_on(
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  login_support.start_with(time:, change: fn(settings) {
+    server.Settings(
+      ..settings,
+      game: server.Served(
+        ..settings.game,
+        settings: connection_state.Settings(..settings.game.settings, tables:),
+      ),
+    )
+  })
+}
+
+/// Where the Dagun stands: 23.5 units along -z from where a new test character
+/// stands in World 1387, zone 1100, at 1.5, 2.5, 3.5.
+pub const dagun_z = -20.0
+
+/// The Dagun's attack tick: the attack interval of the creature kinds the tests'
+/// worlds are planted with. The interval is a server choice (the client's effect
+/// 184741 has no tickTime), so it is read from those kinds.
+pub fn dagun_attack_interval_ms() -> Int {
+  spawn_support.kinds().default.attack_interval_ms
+}
+
+/// A world with one Dagun at x 1.5, z `dagun_z` on the tables given, its blow the `blow` given
+/// when it is `Some` (planted test data) and its own otherwise. Its map's and creature's timers
+/// and the connections' are on the clock `time`, so the Dagun's attack tick and home timer
+/// fire only when the test advances it.
+pub fn world_with_a_dagun_on(
+  tables tables: table_store.Tables,
+  blow blow: Option(Int),
+  time time: driven_time.Time,
+) -> login_support.Started {
+  let dagun = spawn_support.dagun(number: 1, x: 0.0)
+  let dagun = case blow {
+    Some(damage) -> spawn_support.spawn_dealing(spawn: dagun, damage:)
+    None -> dagun
+  }
+  world_with_spawns_respawning(
+    spawns: [spawn.Spawn(..dagun, place: beast_place(x: 1.5, z: dagun_z))],
+    respawn_ms: 60_000,
+    tables:,
+    time:,
+  )
+}
+
 /// A world 1387 with these spawns, which respawn after 1000 ms, on the tables given, its
 /// game connections and World taking their time and timers from `time`.
 pub fn world_with_spawns(
   spawns spawns: List(spawn.Spawn),
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  world_with_spawns_respawning(spawns:, respawn_ms: 1000, tables:, time:)
+}
+
+/// As `world_with_spawns`, the spawns respawning after `respawn_ms`.
+pub fn world_with_spawns_respawning(
+  spawns spawns: List(spawn.Spawn),
+  respawn_ms respawn_ms: Int,
   tables tables: table_store.Tables,
   time time: driven_time.Time,
 ) -> login_support.Started {
@@ -974,10 +1039,64 @@ pub fn world_with_spawns(
       ),
       world: server.World(
         ..settings.world,
-        spawns: spawn_support.key_in(world_id: 1387, spawns:, respawn_ms: 1000),
+        spawns: spawn_support.key_in(world_id: 1387, spawns:, respawn_ms:),
       ),
     )
   })
+}
+
+/// The run of the world 1387 map and the process of the Dagun's creature, unit
+/// `dagun`. The first player's connection takes the map's watch 1, so the first
+/// creature has life 2 (genesis_prime/world_map/map `joined_new`).
+pub fn the_dagun_and_its_map(
+  started started: login_support.Started,
+  dagun dagun: Int,
+) -> #(world_map_registry.MapProcess, process.Pid) {
+  let assert Ok(run) =
+    open_wait.named("Maps to answer the find", fn() {
+      world_map_registry.find_or_start(
+        started.settings.world.maps,
+        MapId(world_id: 1387, instance: 0),
+        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
+      )
+    })
+    as "the map is running, started by the play"
+  let assert Ok(creature) =
+    creature_registry.find(
+      started.settings.world.creatures,
+      map: MapId(world_id: 1387, instance: 0),
+      incarnation: run.incarnation,
+      unit_id: dagun,
+      life: 2,
+    )
+    as "the Dagun runs under its address"
+  #(run, creature)
+}
+
+/// Pings and reads all the server wrote for the connection after what the test sent
+/// has crossed the map and the creature. It rests on one ordering assumption, which
+/// nothing but the first pong links: the connection takes what the test sent (the
+/// first pong is written after its tells to the map), so the map holds the
+/// connection's `Moved` before the test's `get_state` of the map; the map then
+/// holds nothing for the creature that is not already in the creature's mailbox
+/// (a local send lands at once), so the `get_state` of the creature follows its
+/// `Approached`; and the creature has queued what it tells the connection before
+/// the second ping, which the connection takes after it. The frames of both reads.
+pub fn read_after_the_map_and_the_creature_took_it(
+  game game: game_client.Game,
+  have have: BitArray,
+  started started: login_support.Started,
+  dagun dagun: Int,
+  pongs pongs: #(Int, Int),
+) -> #(List(Frame), BitArray) {
+  let #(first, have) =
+    game_client.read_until_pong(game:, have:, number: pongs.0)
+  let #(run, creature) = the_dagun_and_its_map(started:, dagun:)
+  let _map_took_it = system.get_state(run.pid)
+  let _creature_took_it = system.get_state(creature)
+  let #(second, have) =
+    game_client.read_until_pong(game:, have:, number: pongs.1)
+  #(list.append(first, second), have)
 }
 
 /// Runs the body on the client's rows with Paralytic Surge's recharge taken
