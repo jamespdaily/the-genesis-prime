@@ -7,9 +7,11 @@ import database_support
 import fixture_tables
 import genesis_prime/game/area
 import genesis_prime/game/effect_row_read
+import genesis_prime/game/held_tier
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/game/spell_tier
 import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
@@ -359,6 +361,17 @@ pub fn derivation_result(
     Ok(_) -> Ok(Nil)
     Error(error) -> Error(error)
   }
+}
+
+/// The derivations the areas' build reads, in load order: the ability tiers, the plans and the
+/// tier plans. An edit of the shared tables forgets their derived values, so a test that builds
+/// the areas on edited tables runs these first.
+pub fn plan_derivations() -> List(table_store.Derivation) {
+  [
+    spell_tier.derivation(),
+    spell_plan.derivation(area_checked: spell_area.checker),
+    spell_plan.tier_derivation(area_checked: spell_area.checker),
+  ]
 }
 
 /// The spell tables, then the server's other tables, which the spell rows name.
@@ -1268,6 +1281,24 @@ pub fn plans_with_server_proxies() -> spell_plan.Plans {
       as "the fixture's rows build the spell plans"
     server_proxy.planted_into(plans:, proxies:)
   })
+}
+
+/// The plans of the client's rows as a player holding this tier of this Spell4Base casts them
+/// (genesis_prime/game/held_tier), with the server's Proxy planted.
+pub fn plans_with_server_proxies_at(
+  base base: Int,
+  tier tier: Int,
+) -> spell_plan.Plans {
+  let tables = fixture_tables.shared()
+  server_proxy.planted_into(
+    plans: held_tier.plans_of(
+      plans: spell_plan.plans_with_later(tables:),
+      tier_plans: spell_plan.tier_plans(tables),
+      tiers: spell_tier.tiers(tables),
+      held: [#(id.Spell4BaseId(base), tier)],
+    ),
+    proxies: server_proxies(),
+  )
 }
 
 /// The seven abilities whose only refusal was a hit row placed by flag 8, which the player's

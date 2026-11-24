@@ -241,13 +241,16 @@ const charged_shot = 20_684
 
 const charged_shot_alternate = 20_685
 
+const quick_draw_alternate = 52_215
+
 const ignite = 20_718
 
 const spellslinger_innate = 31_213
 
-/// A Medic's level 1 ability whose Spell4 rows hold tiers 1 and 9 only (`table_rows -- Spell4
-/// spell4BaseIdBaseSpell=26543`: 42352 and 51989).
-const base_with_a_missing_tier = 26_543
+/// A Medic's level 1 ability (Gamma Rays) whose Spell4 rows in the fixture hold tiers 1 and 9
+/// only (`table_rows -- Spell4 spell4BaseIdBaseSpell=16322`: 52427 is tier 9; the client's table
+/// holds a row for every tier, so the gap is the fixture's, from its roots).
+const base_with_a_missing_tier = 16_322
 
 /// A row of the accepted table: the level, the bodies sent in turn from no saved set, the
 /// ids the bar holds after them, the tiers above 1 the set holds (Spell4Base, tier) and the
@@ -328,14 +331,6 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
         [#(quick_draw, 2)],
         #(0, 1),
         "a save that takes Quick Draw off the bar and carries no tier change keeps its tier and its point spent: a tier belongs to the ability in the set",
-      ),
-      Accepted(
-        15,
-        [support.tiering([#(charged_shot_alternate, 3)])],
-        support.ids_a,
-        [#(charged_shot_alternate, 3)],
-        #(6, 6),
-        "Charged Shot's alternate costs 0 at every tier (Spell4 abilityPointCost): tier 3 is bought and no point is spent",
       ),
       Accepted(
         4,
@@ -510,6 +505,12 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
         41,
       ),
       refuse_tiers("tier 2 needs level 10", 9, [#(quick_draw, 2)], 41),
+      refuse_tiers(
+        "a tier change of Charged Shot's alternate 20685, which the book holds only as part of Charged Shot: the stock builder never offers it, and its book tier is Charged Shot's",
+        15,
+        [#(charged_shot_alternate, 3)],
+        18,
+      ),
       refuse_tiers("tier 4 needs level 20", 15, [#(quick_draw, 4)], 41),
       refuse_tiers(
         "two abilities to tier 2 cost 2 points and level 10 has 1",
@@ -721,17 +722,83 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     == list.map(book, fn(base) {
       ability_tier.AbilityTier(
         spell4_base_id: base.value,
-        tier: case base.value == quick_draw {
+        tier: case
+          base.value == quick_draw || base.value == quick_draw_alternate
+        {
           True -> 2
           False -> 1
         },
         action_set_index: 0,
       )
     })
-    as "opcode.0x1a0: every ability of the book in set 0 and no other set, Quick Draw at 2"
+    as "opcode.0x1a0: every ability of the book in set 0 and no other set, Quick Draw and its alternate at 2"
   assert ability_points_support.points_in(frames:) == [#(0, 1)]
     as "level 10 gives 1 point, spent"
   assert support.the_answer_bit(frames:) == 1
+  // The book's tier of an ability (`opcode.0x1a0`): the client reads an alternate's tier from its
+  // own book entry (`0x1405e7e50`, `0x140565090`), so the server sends each alternate at the tier
+  // of the ability that names it, whatever tier the alternate's own row holds.
+  let tiers = spell_tier.tiers(tables:)
+  let book_25 = support.player(tables:, level: 25).book
+  list.each(
+    [
+      #(
+        "Quick Draw saved at 5: it and its alternate both show 5",
+        [#(quick_draw, 5)],
+        [#(quick_draw, 5), #(quick_draw_alternate, 5)],
+      ),
+      #(
+        "Quick Draw at tier 1: its alternate shows 1, though the alternate's own stored tier is 3",
+        [#(quick_draw_alternate, 3)],
+        [#(quick_draw, 1), #(quick_draw_alternate, 1)],
+      ),
+      #(
+        "Quick Draw at 5 and the alternate stored at 3: the alternate shows the ability's 5",
+        [#(quick_draw, 5), #(quick_draw_alternate, 3)],
+        [#(quick_draw, 5), #(quick_draw_alternate, 5)],
+      ),
+      #("Charged Shot at 3: its alternate shows 3", [#(charged_shot, 3)], [
+        #(charged_shot, 3),
+        #(charged_shot_alternate, 3),
+      ]),
+      #("an ability with no alternate keeps its own tier", [#(ignite, 3)], [
+        #(ignite, 3),
+      ]),
+    ],
+    fn(row) {
+      let #(why, stored, shown) = row
+      let assert Ok(saved) =
+        limited_action_set.entering(
+          unlocks: limited_action_set.unlocks(tables:),
+          tiers:,
+          points_total: 16,
+          level: 25,
+          book: book_25,
+          rows: store.ActionSets(
+            slots: [],
+            tiers: list.map(stored, fn(held) {
+              store.AbilityTierRow(
+                action_set: 0,
+                spell4_base_id: held.0,
+                tier: held.1,
+              )
+            }),
+          ),
+        )
+        as why
+      list.each(shown, fn(entry) {
+        assert limited_action_set.book_tier_of(
+            tiers:,
+            saved:,
+            set: 0,
+            book: book_25,
+            base: Spell4BaseId(entry.0),
+          )
+          == entry.1
+          as { why <> ": Spell4Base " <> int.to_string(entry.0) }
+      })
+    },
+  )
   assert support.logs_of(effects: accepted) == []
   // The entry's 0x01A0 names every ability in each of the four sets at tier 1.
   assert ability_book_support.tiers_in(frames: [
@@ -1105,7 +1172,22 @@ pub fn every_ability_the_book_offers_has_tier_data_for_every_class_and_faction_a
   let tiers = spell_tier.tiers(tables:)
   list.each(novice_loadouts(tables:), fn(found) {
     let #(class_id, faction_id, held) = found
-    list.each(ability_book.book(tables:, loadout: held, level: 50), fn(base) {
+    let book = ability_book.book(tables:, loadout: held, level: 50)
+    // An alternate shows the tier of the ability that names it, so no book may hold two
+    // abilities that name one alternate: the client keeps one book entry for it. Five
+    // alternates are named by several bases today, and only one of those is in any book
+    // (`table_rows -- Spell4 spell4IdMechanicAlternateSpell`).
+    let named =
+      list.filter_map(book, fn(base) { spell_tier.alternate_of(tiers:, base:) })
+    assert list.length(named) == list.length(list.unique(named))
+      as {
+        "class "
+        <> int.to_string(class_id)
+        <> ", faction "
+        <> int.to_string(faction_id)
+        <> ": two bases of the book name one alternate"
+      }
+    list.each(book, fn(base) {
       assert result.is_ok(spell_tier.highest(tiers:, base:))
         as {
           "class "
@@ -1279,7 +1361,7 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
   let charged_shot = 20_684
   let ignite = 20_718
   let nine_tiers = 23_148
-  let two_tiers = 26_543
+  let two_tiers = 16_322
   let quick_draw = 27_638
   let unheld = 18_309
   let book =
@@ -1310,7 +1392,7 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
     as "the base the book does not hold has a tier 2 row, so only the book drops it"
   assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(two_tiers), tier: 5)
     |> result.is_error
-    as "26543 has no row for tier 5"
+    as "16322 has no row for tier 5 in the fixture"
   assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(quick_draw), tier: 10)
     |> result.is_error
     as "Quick Draw has no row for tier 10"
@@ -1388,14 +1470,14 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
       Keeps([]),
     ),
     TierCase(
-      "tier 5 of 26543 has no Spell4 row and is dropped",
+      "tier 5 of 16322 has no Spell4 row in the fixture and is dropped",
       50,
       41,
       [#(0, two_tiers, 5)],
       Keeps([]),
     ),
     TierCase(
-      "tier 9 of 26543 has one and is kept",
+      "tier 9 of 16322 has one and is kept",
       50,
       41,
       [#(0, two_tiers, 9)],

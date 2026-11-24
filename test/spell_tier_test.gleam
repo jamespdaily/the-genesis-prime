@@ -11,7 +11,9 @@
 ////   never charged.
 //// - `0x1403ba550` and `0x1407a1440`: the client's book walks a base's tiers and stores a cost
 ////   for each, 0 for a tier with no Spell4 row, and a higher tier is taken only when its
-////   spell exists. `table_rows -- Spell4 spell4BaseIdBaseSpell=26543` holds tiers 1 and 9 only.
+////   spell exists. The fixture holds Gamma Rays' (base 16322) tiers 1 and 9 only, from its roots
+////   (`table_rows -- Spell4 spell4BaseIdBaseSpell=16322`: the client's table has a row for every
+////   tier).
 
 import client_tables
 import fixture_tables
@@ -35,8 +37,8 @@ import unitest
 
 const quick_draw = Spell4BaseId(27_638)
 
-/// The base of a Medic's level 1 ability whose Spell4 rows hold tiers 1 and 9 only.
-const base_with_a_missing_tier = Spell4BaseId(26_543)
+/// The base of a Medic's level 1 ability whose Spell4 rows in the fixture hold tiers 1 and 9 only.
+const base_with_a_missing_tier = Spell4BaseId(16_322)
 
 /// The SpellLevel row of Quick Draw and the Spell4 row of its tier 1.
 const quick_draw_spell_level = 1011
@@ -103,6 +105,20 @@ pub fn the_tiers_of_every_base_the_book_can_hold_have_the_clients_costs_levels_a
       as {
         name <> ": a class ability or alternate holds nine tiers, an innate one"
       }
+    // The alternate the tier rows name: one base for all their tiers, or none.
+    let named_alternates =
+      list.filter_map(tier_rows, fn(row) {
+        case row.spell4_id_mechanic_alternate_spell {
+          0 -> Error(Nil)
+          alternate -> base_of(alternate)
+        }
+      })
+      |> list.unique
+    assert list.length(named_alternates) <= 1
+      as { name <> ": its tier rows name one alternate base or none" }
+    assert spell_tier.alternate_of(tiers:, base: Spell4BaseId(base))
+      == result.map(list.first(named_alternates), Spell4BaseId)
+      as { name <> ": the alternate is the base its tier rows name" }
     list.each(tier_rows, fn(row) {
       let tier = row.tier_index
       assert spell_tier.spell4_id(tiers:, base: Spell4BaseId(base), tier:)
@@ -144,6 +160,15 @@ pub fn the_tiers_of_every_base_the_book_can_hold_have_the_clients_costs_levels_a
   })
   assert spell_tier.level_needed(tiers:, tier: 1) == Error(Nil)
     as "tier 1 needs no level"
+  // Charged Shot 20684 names the alternate base 20685 and Quick Draw 27638 names 52215
+  // (`table_rows -- Spell4 spell4BaseIdBaseSpell=20684`: each tier row's alternate is the same
+  // tier of 20685); Paralytic Surge, an ability with no alternate, names none.
+  assert spell_tier.alternate_of(tiers:, base: Spell4BaseId(20_684))
+    == Ok(Spell4BaseId(20_685))
+  assert spell_tier.alternate_of(tiers:, base: quick_draw)
+    == Ok(Spell4BaseId(52_215))
+  assert spell_tier.alternate_of(tiers:, base: base_with_a_missing_tier)
+    == Error(Nil)
   // A base outside the set has no tier data: it is not a base with one tier.
   let outside =
     list.find(rows, fn(row) {

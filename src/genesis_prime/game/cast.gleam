@@ -2414,8 +2414,9 @@ fn key_up(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(cast, cancels) = case cast.holding {
-    Some(Holding(ability: held, ..)) if held.spell4_id == plain.spell4_id ->
-      cast_press.stop_holding(cast:)
+    Some(Holding(ability: held, ..))
+      if held.spell4_base_id == plain.spell4_base_id
+    -> cast_press.stop_holding(cast:)
     Some(_) | None -> #(cast, [])
   }
   let ability = cast_press.surged(cast:, caster:, ability: plain)

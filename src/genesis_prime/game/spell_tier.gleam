@@ -9,6 +9,7 @@
 //// change_cost(base, from, to) ─▶ points a raise costs or a fall gives back
 //// level_needed(tier)          ─▶ the level the tier opens at
 //// spell4_id(base, tier)       ─▶ the Spell4 row that is the tier
+//// alternate_of(base)          ─▶ the base the tier rows name as the ability's alternate
 //// ```
 ////
 //// - **A base's tiers** are its Spell4 rows by `spell4BaseIdBaseSpell` and `tierIndex`, tiers 1
@@ -26,6 +27,13 @@
 ////   cost is never charged (`0x1403bb2b0`).
 //// - **The level** a tier needs is `Spell4TierRequirements.levelRequirement` of its `tierIndex`;
 ////   tier 1 needs none.
+//// - **An alternate** is the Spell4Base that `Spell4.spell4IdMechanicAlternateSpell` of an
+////   ability's tier rows names, the tier n row naming the alternate's tier n row; every base of the
+////   book that names one names one base (`alternate_of`). The reverse is one-to-one only by the
+////   data: five alternates are named by several bases, of which only one is in any class's book
+////   (a table test holds it), and a base the book gains that names an already-named alternate has
+////   no rule here, since the client keeps one book entry for each base and two held tiers cannot
+////   both show in it.
 //// - **The load fails** when two Spell4 rows of a base hold one tierIndex from 1 to 9, a tier from
 ////   2 to 9 that has a row has no Spell4TierRequirements row, two requirement rows name one tier,
 ////   a SpellLevel row or a named alternate names a Spell4 row the table lacks, or a class's innate
@@ -34,7 +42,9 @@
 ////   hold no repeat. A base the book cannot hold is not read, so its rows may repeat a tier.
 
 import genesis_prime/game/innate
-import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id, Spell4Id}
+import genesis_prime/table/id.{
+  type Spell4BaseId, type Spell4Id, Spell4BaseId, Spell4Id,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_tier_requirements
@@ -52,7 +62,11 @@ const highest_tier = 9
 
 /// The tiers of every base the book can hold, and the level each tier needs.
 pub opaque type SpellTiers {
-  SpellTiers(bases: Dict(Int, Dict(Int, Tier)), levels: Dict(Int, Int))
+  SpellTiers(
+    bases: Dict(Int, Dict(Int, Tier)),
+    levels: Dict(Int, Int),
+    alternates: Dict(Int, Int),
+  )
 }
 
 /// One tier of a base: its Spell4 row and what it costs in ability points.
@@ -120,6 +134,12 @@ fn build(tables tables: table_store.Tables) -> Result(SpellTiers, BuildError) {
     }),
   )
   let bases = list.append(named, list.flatten(alternates)) |> list.unique
+  let alternate_by_base =
+    list.zip(named, alternates)
+    |> list.filter_map(fn(pair) {
+      list.first(pair.1) |> result.map(fn(alternate) { #(pair.0, alternate) })
+    })
+    |> dict.from_list
   list.try_fold(bases, dict.new(), fn(held, base) {
     tiers_of(rows: tiers_rows(rows_by_base:, base:), base:, levels:)
     |> result.map(fn(tiers) {
@@ -129,7 +149,9 @@ fn build(tables tables: table_store.Tables) -> Result(SpellTiers, BuildError) {
       }
     })
   })
-  |> result.map(fn(bases) { SpellTiers(bases:, levels:) })
+  |> result.map(fn(bases) {
+    SpellTiers(bases:, levels:, alternates: alternate_by_base)
+  })
 }
 
 /// A base's Spell4 rows from tier 1 to the highest tier.
@@ -306,4 +328,13 @@ pub fn spent(
       }
     sum + cost
   })
+}
+
+/// The Spell4Base the tier rows of this base name as its alternate, or `Error(Nil)` for a base
+/// that names none or that the book cannot hold.
+pub fn alternate_of(
+  tiers tiers: SpellTiers,
+  base base: Spell4BaseId,
+) -> Result(Spell4BaseId, Nil) {
+  dict.get(tiers.alternates, base.value) |> result.map(Spell4BaseId)
 }

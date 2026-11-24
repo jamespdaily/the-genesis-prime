@@ -169,14 +169,42 @@ pub fn none() -> Saved {
 }
 
 /// The tier an ability is at in a set: 1 unless the player raised it.
-pub fn tier_of(
-  saved saved: Saved,
-  set set: Int,
-  base base: Spell4BaseId,
-) -> Int {
+fn tier_of(saved saved: Saved, set set: Int, base base: Spell4BaseId) -> Int {
   dict.get(saved.tiers, set)
   |> result.try(dict.get(_, base))
   |> result.unwrap(1)
+}
+
+/// The tier the book shows for an ability in a set (the 0x01A0 of the entry and of a save): the
+/// tier the player holds, except for an alternate, which shows the tier of the ability of the book
+/// that names it (`spell_tier.alternate_of`), 1 when that ability holds none. The client's surged
+/// press reads the alternate's own book entry (`0x1405e7e50`, `0x140565090`) and the server
+/// casts the alternate inside the held tier's plan (genesis_prime/game/held_tier), so the two
+/// agree only when the alternate shows its ability's tier. The alternate's own saved tier
+/// never counts. The reverse lookup is one-to-one only by the data (genesis_prime/game/spell_tier).
+pub fn book_tier_of(
+  tiers tiers: spell_tier.SpellTiers,
+  saved saved: Saved,
+  set set: Int,
+  book book: List(Spell4BaseId),
+  base base: Spell4BaseId,
+) -> Int {
+  case naming_ability(tiers:, book:, base:) {
+    Ok(ability) -> tier_of(saved:, set:, base: ability)
+    Error(Nil) -> tier_of(saved:, set:, base:)
+  }
+}
+
+/// The ability of the book that names this base as its alternate, or `Error(Nil)` for a base
+/// that is no alternate of the book.
+fn naming_ability(
+  tiers tiers: spell_tier.SpellTiers,
+  book book: List(Spell4BaseId),
+  base base: Spell4BaseId,
+) -> Result(Spell4BaseId, Nil) {
+  list.find(book, fn(ability) {
+    spell_tier.alternate_of(tiers:, base: ability) == Ok(base)
+  })
 }
 
 /// The abilities of a set held above tier 1 with their tiers, in Spell4Base order.
@@ -745,7 +773,9 @@ fn accepted(
           ability_book_frame.tiers(
             abilities: player.book,
             sets: [set],
-            tier_of: fn(set, base) { tier_of(saved:, set:, base:) },
+            tier_of: fn(set, base) {
+              book_tier_of(tiers:, saved:, set:, book: player.book, base:)
+            },
           ),
         ),
         Send(ability_points.points_frame(total: player.points_total, spent:)),
@@ -832,7 +862,9 @@ fn fault_of(
 }
 
 /// The tiers the set holds above tier 1 after the save's tier changes, or the first check
-/// they fail, in the save's order: an ability the book does not hold 18, an ability twice 13, a
+/// they fail, in the save's order: an ability the book does not hold, or an alternate given a tier
+/// above 1 (the book holds it only as part of the ability that names it, and shows that ability's
+/// tier; the stock builder never offers one, `0x140748390`), 18, an ability twice 13, a
 /// tier the ability has no row for or the player's level does not reach 41, and last tiers that
 /// cost more than the level gives 42. A fall is allowed to any tier that has a row, and the
 /// points are judged on the tiers the save leaves, so one save may free points on one ability
@@ -854,6 +886,11 @@ fn tiers_after(
       let tier = change.tier
       use <- bool.guard(
         when: !list.contains(player.book, base),
+        return: Error(TierOfUnheldAbility(id: base.value)),
+      )
+      use <- bool.guard(
+        when: tier != 1
+          && result.is_ok(naming_ability(tiers:, book: player.book, base:)),
         return: Error(TierOfUnheldAbility(id: base.value)),
       )
       use <- bool.guard(
@@ -946,7 +983,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Ability builder",
-      missing: "A press casts the tier 1 spell of an ability whatever tier the player holds, and a tier the plans cannot cast is bought and kept like any other, while the client, told the tier by 0x01A0, shows and predicts the held tier's spell: its cast bar, cooldown, cost and tooltip come from a row the server does not cast.",
+      missing: "A held tier the plans cannot cast plays the best lower tier they can: the effects and the tooltip's numbers are the lower tier's (and, for two tiers, an area and a flag) while the client shows the held tier. The coverage measure lists each such tier spell.",
     ),
     gap.Entry(
       area: "Ability builder",

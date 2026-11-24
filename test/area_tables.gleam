@@ -221,7 +221,7 @@ pub fn built(kick kick: Kick) -> Result(Areas, AreaError) {
   spell_tables.with_loaded_deriving(
     rows: kick_rows(kick:),
     reaching: [#("SpellLevel", 925)],
-    derivations: [spell_plan.derivation(area_checked: spell_area.checker)],
+    derivations: spell_tables.plan_derivations(),
     body: fn(tables) { spell_area.build(tables:) },
   )
 }

@@ -1164,6 +1164,7 @@ pub fn joined(
                 level: character.level,
                 action_sets:,
                 book:,
+                tiers: spell_tier.tiers(tables:),
               ),
               [player_path(character:)],
               control_at_entry(life:, unit_id:),
@@ -1656,7 +1657,8 @@ fn items_sent(
 }
 
 /// The loadout's messages, in order: each ability and the innate, the tiers of the
-/// ability book (the bag and the alternates a surged press casts, `ability_book.book`),
+/// ability book (the bag and the alternates a surged press casts, `ability_book.book`, each
+/// alternate at the tier of the ability that names it, `limited_action_set.book_tier_of`),
 /// action set 0 with the bar the player has (the class's, or the one saved in the builder)
 /// and the innate's index.
 fn loadout_sent(
@@ -1665,6 +1667,7 @@ fn loadout_sent(
   level level: Int,
   action_sets action_sets: limited_action_set.Saved,
   book book: List(Spell4BaseId),
+  tiers tiers: spell_tier.SpellTiers,
 ) -> List(Effect) {
   let abilities =
     list.index_map(ability_book.bag(loadout:, level:), fn(base, bag_index) {
@@ -1682,7 +1685,13 @@ fn loadout_sent(
           abilities: book,
           sets: ability_book_frame.every_set(),
           tier_of: fn(set, base) {
-            limited_action_set.tier_of(saved: action_sets, set:, base:)
+            limited_action_set.book_tier_of(
+              tiers:,
+              saved: action_sets,
+              set:,
+              book:,
+              base:,
+            )
           },
         ),
       ),

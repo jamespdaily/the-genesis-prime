@@ -18,6 +18,7 @@
 import character_tables
 import content_support
 import database_support
+import fixture_tables
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
@@ -40,6 +41,7 @@ import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/projector
+import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/zone_welcome
@@ -62,8 +64,10 @@ import login_support
 import mailbox_support
 import owned_test
 import place_support
+import planted_table
 import server_proxy_support
 import spawn_support
+import spell_tables
 import tutorial_support
 import unitest
 
@@ -747,4 +751,43 @@ pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test
       #("server_proxy", refusal.RowName("99999 0 42148")),
     ]
     as "each bad row is named by its key, in the table's key order, and the seed row is not"
+  // A held tier plays its own plan, so the seed row (Pulse Blast 26468, go 1, spell 42148) must
+  // hold in the plan of every tier. Each case edits the rows of tier 2 (Spell4 53409, whose
+  // Proxy 126783 starts the damage spell 56145) and the load of the proxies names the row and
+  // the tier.
+  list.each(
+    [
+      #(
+        "a tier whose plan has no go 1: its second SpellPhase row (10284) belongs to no spell",
+        [
+          #("SpellPhase", 10_284, [#("spell4IdOwner", planted_table.Integer(0))]),
+        ],
+        "is not a go",
+      ),
+      #(
+        "a tier whose root starts its damage spell after a delay, so no Proxy starts a child at once for the server's Proxy to go with",
+        [
+          #("Spell4Effects", 126_783, [#("delayTime", planted_table.Integer(1))]),
+        ],
+        "starts no spell at once",
+      ),
+    ],
+    fn(case_) {
+      let #(why, edits, sentence) = case_
+      let refused =
+        fixture_tables.changes(edits:, body: fn(tables) {
+          server_proxy.select(
+            rows: [spell_tables.volatility_row()],
+            tables:,
+            plans: spell_plan.plans(tables:),
+          )
+        })
+      let assert Error([refused]) = refused as why
+      assert refused.row == refusal.RowName("26468 1 42148") as why
+      assert string.contains(refused.rule, "tier 2")
+        && string.contains(refused.rule, "53409")
+        && string.contains(refused.rule, sentence)
+        as { why <> ": " <> refused.rule }
+    },
+  )
 }

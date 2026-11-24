@@ -38,10 +38,13 @@ import gleam/set.{type Set}
 ///   missing rows, unread costs and cycles fail the load, that of each later ability
 ///   of a class that the server can plan, and that of each equip spell a worn item puts on
 ///   its wearer (genesis_prime/game/spell_plan).
+/// - The tier plans: the plan of each tier 2 to 9 spell of the planned abilities, built after the
+///   plans and the ability tiers, whose missing rows and cycles fail the load and whose unbuilt
+///   tiers are left out and listed (genesis_prime/game/spell_plan `tier_derivation`).
 /// - Spell Surge's spell, GameFormula 913's dataint0, whose missing row fails the load
 ///   (genesis_prime/game/spell_surge).
-/// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),
-///   built after the trees, which it reads from the built value: the list is in
+/// - The spell areas: what each spell of those trees and of the tier plans strikes
+///   (genesis_prime/game/spell_area), built after the trees, which it reads from the built value: the list is in
 ///   build order, and an edit rebuilds the derivations it is given in that order.
 /// - The activations: the spell each creature's right-click casts and the plans of those
 ///   spells, built after the ability trees' sources, whose missing GameFormula 414 row or
@@ -85,6 +88,7 @@ pub fn all() -> List(store.Derivation) {
     appearance.derivation(),
     loadout.derivation(left_out: abilities_left_out),
     spell_plan.derivation(area_checked: spell_area.checker),
+    spell_plan.tier_derivation(area_checked: spell_area.checker),
     spell_surge.derivation(),
     spell_area.derivation(),
     activate.derivation(),
