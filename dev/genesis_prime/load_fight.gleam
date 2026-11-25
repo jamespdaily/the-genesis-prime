@@ -82,6 +82,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/load_deadline
 import genesis_prime/load_moves
 import genesis_prime/load_round.{
@@ -813,10 +814,10 @@ fn hear(
 
 /// A sign of the creature in a news of it, when it is one that closes a round: its death
 /// or its broken charge.
-fn sign_of(news: client_connection.News) -> Result(load_round.Sign, Nil) {
+fn sign_of(news: unit_news.News) -> Result(load_round.Sign, Nil) {
   case news {
-    client_connection.Died -> Ok(load_round.Died)
-    client_connection.CastInterrupted(..) -> Ok(load_round.Interrupted)
+    unit_news.Died -> Ok(load_round.Died)
+    unit_news.CastInterrupted(..) -> Ok(load_round.Interrupted)
     _ -> Error(Nil)
   }
 }
