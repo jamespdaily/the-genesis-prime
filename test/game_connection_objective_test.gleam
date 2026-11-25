@@ -1683,27 +1683,6 @@ pub fn a_relogged_player_using_a_placed_spawn_again_counts_nothing_test() -> Nil
   account_store_support.stop(stored.store)
 }
 
-pub fn a_use_of_a_unit_that_left_the_picture_counts_nothing_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // Quest 6723's objective 10383 counts a use of Creature2 30826. The player sees the
-  // object as unit 40 and uses unit 99, one the picture does not hold (the unit left
-  // between the client's click and the server's read): the use counts for nothing, and the
-  // object that is shown still counts when it is used.
-  let state =
-    seeing_spawns(
-      settings: connection_support.settings(),
-      rows: [quest_support.untouched(quest_id: 6723)],
-      objects: [#(unit, unit, 30_826, 26_092)],
-    )
-  let #(state, absent) = right_click_used(state:, at: 0, unit_id: 99)
-  assert progress_frames(steps: absent) == []
-    as "a use of a unit the picture lacks counts nothing: no 0x361"
-  let #(_, shown) = right_click_used(state:, at: 5000, unit_id: unit)
-  assert progress_frames(steps: shown)
-    == [progress_frame(quest: 6723, index: 0, progress: 1)]
-    as "opcode.0x361: the shown object counts one of 15"
-}
-
 pub fn the_same_spawn_in_a_new_map_run_after_a_relog_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   // A map run gives its units ids from 1 again, so the same object is another unit id

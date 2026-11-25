@@ -466,46 +466,44 @@ fn used_unit(
   let use_targets = objective.use_targets(log: quests, tables:, scripts:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
-    use unit <- result.try(spawned_unit(picture:, unit_id:))
-    let offered_to = fn(target, checklist_index) {
-      use_targets(target, checklist_index, unit)
-    }
-    let link_of = fn(row, index) { link_of(unit_id, row, index) }
-    case one {
+    use #(unit, alive, body) <- result.try(case one {
       shown.ShownPlayer(..) -> Error(Nil)
-      shown.ShownObject(place:, hit_radius:, ..) ->
-        used_unit_at(
-          tables:,
-          one:,
-          offered_to:,
-          link_of:,
-          alive: True,
-          body: activate.Body(place:, radius: hit_radius),
-        )
-      shown.ShownCreature(path:, hit_radius:, alive:, ..) ->
-        used_unit_at(
-          tables:,
-          one:,
-          offered_to:,
-          link_of:,
-          alive:,
-          body: activate.Body(
+      shown.ShownObject(spawn_id:, place:, hit_radius:, ..) ->
+        Ok(#(
+          objective.SpawnedUnit(unit_id:, spawn_id:),
+          True,
+          activate.Body(place:, radius: hit_radius),
+        ))
+      shown.ShownCreature(spawn_id:, path:, hit_radius:, alive:, ..) ->
+        Ok(#(
+          objective.SpawnedUnit(unit_id:, spawn_id:),
+          alive,
+          activate.Body(
             place: creature_path.place_at(path:, now_ms:),
             radius: hit_radius,
           ),
-        )
-    }
+        ))
+    })
+    used_unit_at(
+      tables:,
+      one:,
+      offered_to: fn(target, checklist_index) {
+        use_targets(target, checklist_index, unit)
+      },
+      link_of: fn(row, index) { link_of(unit_id, row, index) },
+      alive:,
+      body:,
+    )
   }
 }
 
-/// The unit `unit_id` of the player's picture as the quest log remembers a use of it: by
-/// the spawn the picture holds for it (`shown.spawn_of`), with the unit id the release
-/// names. `Error(Nil)` for a unit the picture lacks and for another player's.
+/// The shown unit `unit_id` as the quest log remembers a use of it: by the spawn the
+/// picture holds for it (`shown.spawn_of`), with the unit id the release names.
+/// `Error(Nil)` for another player's.
 pub fn spawned_unit(
-  picture picture: shown.Picture,
+  shown one: shown.Shown,
   unit_id unit_id: Int,
 ) -> Result(objective.SpawnedUnit, Nil) {
-  use one <- result.try(dict.get(picture, unit_id))
   use spawn_id <- result.map(shown.spawn_of(shown: one))
   objective.SpawnedUnit(unit_id:, spawn_id:)
 }
@@ -1218,20 +1216,22 @@ fn carry_cast(
   Continue(session, written)
 }
 
-/// The unit a go's use counts for: a creature or object the player still sees, unless it
-/// lived at the press and is shown dead now (the client cancels the cast of a target that
-/// dies during it, and not one whose target was dead at the press), or `Error(Nil)`.
+/// The unit a go's use counts for, with its checklist index and the shown unit: a creature
+/// or object the player still sees, unless it lived at the press and is shown dead now (the
+/// client cancels the cast of a target that dies during it, and not one whose target was
+/// dead at the press), or `Error(Nil)`.
 fn counted_target(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
   unit_id unit_id: Int,
   alive_at_press alive_at_press: Bool,
-) -> Result(#(target_group.Unit, Int), Nil) {
+) -> Result(#(target_group.Unit, Int, shown.Shown), Nil) {
   use one <- result.try(dict.get(picture, unit_id))
   case one {
     shown.ShownCreature(alive: False, ..) if alive_at_press -> Error(Nil)
     shown.ShownCreature(..) | shown.ShownPlayer(..) | shown.ShownObject(..) ->
       shown.target_of(tables:, shown: one)
+      |> result.map(fn(target) { #(target.0, target.1, one) })
   }
 }
 
@@ -1250,7 +1250,7 @@ fn use_event(
     unit_id:,
     alive_at_press:,
   ))
-  use unit <- result.map(spawned_unit(picture: entered.shown, unit_id:))
+  use unit <- result.map(spawned_unit(shown: counted.2, unit_id:))
   #(
     counted.0,
     counted.1,
@@ -1281,7 +1281,7 @@ fn cast_event(
         unit_id:,
         alive_at_press:,
       ))
-      use ref <- result.map(spawned_unit(picture: entered.shown, unit_id:))
+      use ref <- result.map(spawned_unit(shown: counted.2, unit_id:))
       objective.Cast(
         spell4_id: Spell4Id(spell4_id),
         target: Some(objective.CastTarget(unit: counted.0, ref:)),
@@ -1294,10 +1294,11 @@ fn cast_event(
 /// (`cast_state.AdvanceWith`), as `Activated` and `ShortcutCast` count it, or none when it
 /// counted nothing. A unit that has left the picture since the press counts as it did at its
 /// go, since a delayed row comes after it: a use that counts a unit new to an objective
-/// releases it, so the unit of a delayed row is no longer shown. A use is then rebuilt from the
-/// Creature2 row, which names the creature (the objectives a use counts name the creature, not
-/// its faction), and the unit and spawn the press named, and a cast at the unit as a cast of the spell with no unit, which an objective
-/// of the spell counts all the same. A unit still shown is judged as at the go.
+/// releases it, so the unit of a delayed row is no longer shown. A use is then rebuilt from
+/// the Creature2 row, which names the creature (the objectives a use counts name the
+/// creature, not its faction), and the unit and spawn the press named. A cast at the unit is
+/// rebuilt as a cast of the spell with no unit, which an objective of the spell counts all
+/// the same. A unit still shown is judged as at the go.
 fn advance_event(
   tables tables: table_store.Tables,
   entered entered: world_entry.Entered,
