@@ -861,17 +861,10 @@ pub type Outgoing {
   /// A send to a creature, never to a connection: no player has seen it for the
   /// idle stop, so it ends (genesis_prime/world_map/creature).
   Retire
-  /// A send to a creature: the ready player of connection `by`, its unit
-  /// `unit_id`, entered the creature's ring at `place`, its move `seq`; or stood
-  /// in it when it became ready or when the creature started.
-  Approached(
-    by: ConnectionId,
-    unit_id: Int,
-    place: Place,
-    seq: Int,
-    stay: Stay,
-    hit_radius: Float,
-  )
+  /// A send to a creature: the ready player `member` entered the creature's ring at
+  /// its place and move; or stood in it when it became ready or when the creature
+  /// started.
+  Approached(member: RingMember)
   /// A send to a creature: the player of connection `by` left its ring.
   Withdrew(by: ConnectionId)
   /// A send to a creature: the player of connection `by` died. It leaves the
@@ -1629,13 +1622,31 @@ pub fn ghost_unit_id(unit_id unit_id: Int) -> Int {
   unit_id_limit + unit_id
 }
 
-/// A creature that expired. Nothing changes yet.
+/// A creature told it expired: a live spawn of that unit and life becomes `Respawning`,
+/// holding no relations, with no one told, since the creature removed its unit from every
+/// viewer before it expired. A spawn in any other state, or of another life, is left as it
+/// is: the creature was told to retire or the player's use released it, and its end is
+/// handled as that one's.
 fn expired(
   state state: State,
-  unit_id _unit_id: Int,
-  life _life: Int,
+  unit_id unit_id: Int,
+  life life: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  #(state, Effects([]))
+  case running(state:, unit_id:, life:) {
+    Ok(#(spawn, Live(..))) -> #(
+      State(
+        ..state,
+        spawns: dict.insert(state.spawns, spawn, Respawning(unit_id:, life:)),
+      ),
+      Effects([]),
+    )
+    Ok(#(_, Retiring(..)))
+    | Ok(#(_, Respawning(..)))
+    | Ok(#(_, Releasing(..)))
+    | Ok(#(_, WaitingForRestart))
+    | Ok(#(_, Failed))
+    | Error(Nil) -> #(state, Effects([]))
+  }
 }
 
 /// A creature that did not start: an error line, and its spawn stays empty for
@@ -1816,8 +1827,7 @@ fn creature_ended(
       )
     }
     Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:, ring: [])
-    Ok(Respawning(..)) ->
-      panic as "a creature that expired is respawned by its map: not built yet"
+    Ok(Respawning(..)) -> started_for_those_who_see(state:, spawn:, ring: [])
     Ok(Releasing(unit_id:, wait_ms:, ..)) ->
       waiting_for_restart(state:, spawn:, unit_id:, after_ms: wait_ms)
     Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
@@ -2166,7 +2176,7 @@ fn approaches_at_start(
   case dict.get(state.spawns, spawn) {
     Ok(Live(unit_id:, life:, ..)) ->
       list.map(ring_of(state:, spawn:), fn(member) {
-        tell_creature(state:, unit_id:, life:, message: approached(member:))
+        tell_creature(state:, unit_id:, life:, message: Approached(member:))
       })
     Ok(Retiring(..))
     | Ok(Respawning(..))
@@ -2177,8 +2187,7 @@ fn approaches_at_start(
   }
 }
 
-/// What a creature is told of a player in its ring: its unit, its place, its move's
-/// sequence number, its stay and the hit radius of its race.
+/// What a creature is told of a player in its ring (`step.RingMember`).
 fn ring_member(
   state state: State,
   connection connection: ConnectionId,
@@ -2194,18 +2203,6 @@ fn ring_member(
       tables: state.settings.tables,
       race_id: player_unit.race_id(player.unit),
     ),
-  )
-}
-
-/// The `Approached` of a player of a ring.
-fn approached(member member: RingMember) -> Outgoing {
-  Approached(
-    by: member.by,
-    unit_id: member.unit_id,
-    place: member.place,
-    seq: member.seq,
-    stay: member.stay,
-    hit_radius: member.hit_radius,
   )
 }
 
@@ -3044,7 +3041,7 @@ fn rings_decided(
         tell_live(
           state:,
           spawn:,
-          message: approached(member: ring_member(state:, connection:, player:)),
+          message: Approached(member: ring_member(state:, connection:, player:)),
         )
       }),
       list.flat_map(left, fn(spawn) {

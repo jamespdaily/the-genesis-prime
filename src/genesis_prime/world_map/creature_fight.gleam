@@ -641,16 +641,9 @@ pub type Flight {
 
 /// What the creature's rule turns its messages and timers into for the fight.
 pub type Input {
-  /// The map: the player of `by`, in its stay `stay`, entered the creature's ring,
-  /// at `place` of move `seq`, with the hit radius of its race.
-  Approached(
-    by: ConnectionId,
-    unit_id: Int,
-    place: Place,
-    seq: Int,
-    stay: Stay,
-    hit_radius: Float,
-  )
+  /// The map: the player `member` entered the creature's ring, in its stay, at its
+  /// place of its move, with the hit radius of its race.
+  Approached(member: RingMember)
   /// The map: the player of `by` left the creature's ring.
   Withdrew(by: ConnectionId)
   /// The map: the player of `by` died. It leaves `near` and the threat list.
@@ -687,8 +680,6 @@ pub type Input {
   /// as it does at a death (`Killed`): a path stops, a charge ends, each threatened player is
   /// `Released`.
   Despawned
-  /// creature_life: the corpse timer stood the creature again at its spawn.
-  StoodAgain
   /// The map's start of this life carries the players in the creature's ring: each is
   /// sighted and enters `near`, and one fight starts over those who are viewers
   /// (`aggro`).
@@ -830,15 +821,14 @@ fn stepped(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case input {
-    Approached(by:, unit_id:, place:, seq:, stay:, hit_radius:) -> {
-      let state =
-        State(
-          ..sighted(state:, by:, unit_id:, place:, seq:, stay:, hit_radius:),
-          near: set.insert(state.near, by),
-        )
-      case state.status, alive && in_stay(viewers:, by:, stay:) {
+    Approached(member:) -> {
+      let state = entered(state:, member:)
+      case
+        state.status,
+        alive && in_stay(viewers:, by: member.by, stay: member.stay)
+      {
         Resting, True ->
-          aggro(state:, fighter:, viewers:, players: [by], now_ms:)
+          aggro(state:, fighter:, viewers:, players: [member.by], now_ms:)
         Resting, False | Fighting(..), _ | Returning(..), _ -> #(state, [])
       }
     }
@@ -960,22 +950,20 @@ fn stepped(
     Thrown(throw:) -> thrown(state:, fighter:, alive:, throw:, now_ms:)
     TimerFired(timer: FlightEnds(generation:)) ->
       flight_ended(state:, fighter:, generation:, now_ms:)
-    RingAtStart(..) -> #(state, [])
-    StoodAgain -> {
+    RingAtStart(members:) -> {
       let state =
-        State(
-          ..state,
-          status: Resting,
-          path: Standing(at: fighter.home),
-          turn: Fixed(facing: start_place.facing(fighter.home)),
-        )
-      aggro(
-        state:,
-        fighter:,
-        viewers:,
-        players: near_viewers(state:, viewers:),
-        now_ms:,
-      )
+        list.fold(members, state, fn(state, member) { entered(state:, member:) })
+      case alive {
+        True ->
+          aggro(
+            state:,
+            fighter:,
+            viewers:,
+            players: near_viewers(state:, viewers:),
+            now_ms:,
+          )
+        False -> #(state, [])
+      }
     }
   }
 }
@@ -1406,6 +1394,22 @@ fn sighted(
         ),
       )
   }
+}
+
+/// A player of the ring is sighted where its `member` says and is near.
+fn entered(state state: State, member member: RingMember) -> State {
+  State(
+    ..sighted(
+      state:,
+      by: member.by,
+      unit_id: member.unit_id,
+      place: member.place,
+      seq: member.seq,
+      stay: member.stay,
+      hit_radius: member.hit_radius,
+    ),
+    near: set.insert(state.near, member.by),
+  )
 }
 
 /// The unit the creature last knew the connection's player as, 0 for none.

@@ -1979,14 +1979,14 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
     told(
       state: watched_by_two(),
       at_ms: 6000,
-      message: creature.Approached(
+      message: creature.Approached(member: step.RingMember(
         by: ConnectionId(2),
         unit_id: 20,
         place: map_spawn_support.at(5.0),
         seq: 1,
         stay: map_support.stay(count: 2),
         hit_radius: place_support.player_hit_radius,
-      ),
+      )),
     )
   let #(state, _) =
     told(
@@ -2721,14 +2721,14 @@ pub fn a_despawn_from_an_older_life_is_dropped_test() -> Nil {
 
 /// Player 2, at x = 5, comes near the Beast, which stands at x = 0.
 fn approached_by_2() -> creature.Message {
-  creature.Approached(
+  creature.Approached(member: step.RingMember(
     by: ConnectionId(2),
     unit_id: 20,
     place: map_spawn_support.at(5.0),
     seq: 1,
     stay: map_support.stay(count: 2),
     hit_radius: place_support.player_hit_radius,
-  )
+  ))
 }
 
 /// The connections the step releases from the creature, unit 7, as the number of each.

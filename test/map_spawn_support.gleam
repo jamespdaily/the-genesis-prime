@@ -447,7 +447,7 @@ pub fn said(message: map.Outgoing) -> String {
       "Creature unseen " <> int.to_string(unit_id)
     map.Relayed(..) -> "Relayed"
     map.Retire -> "Retire"
-    map.Approached(by: ConnectionId(number), ..) ->
+    map.Approached(member: step.RingMember(by: ConnectionId(number), ..)) ->
       "Approached by " <> int.to_string(number)
     map.Withdrew(by: ConnectionId(number)) ->
       "Withdrew by " <> int.to_string(number)

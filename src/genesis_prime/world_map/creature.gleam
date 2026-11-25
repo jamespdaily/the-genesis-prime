@@ -281,11 +281,11 @@ import genesis_prime/game/unit_properties.{
 import genesis_prime/game/unit_state
 import genesis_prime/gap
 import genesis_prime/step.{
-  type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
-  type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
-  Connection, CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send,
-  ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
-  WatchId,
+  type ConnectionId, type CreatureStart, type Effect, type RingMember,
+  type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
+  type WatchId, Asked, Connection, CreatureNotStarted, Effects, OwnEffect,
+  OwnEvent, Send, ServiceTimerFired, Started, Stop, Stopping, TimerId, Told,
+  Watch, WatchEnded, WatchId,
 }
 import genesis_prime/table/id.{type Spell4Id, Faction2Id}
 import genesis_prime/world_map/creature_control
@@ -296,8 +296,8 @@ import genesis_prime/world_map/creature_fight.{
 import genesis_prime/world_map/creature_guard
 import genesis_prime/world_map/creature_kind.{type Kind}
 import genesis_prime/world_map/creature_life.{
-  type Body, type Life, Body, Died, Ends, Expires, Health, StandsAgain,
-  StopAtRespawn, StopNow,
+  type Body, type Life, Body, Died, Ends, Expires, Health, StopAtRespawn,
+  StopNow,
 }
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_state
@@ -387,17 +387,8 @@ pub type Message {
   Retire
   /// A caster's connection strikes the creature (genesis_prime/game/strike_tell).
   Strike(tell: StrikeTell)
-  /// The map: the ready player of connection `by`, unit `unit_id`, in its stay
-  /// `stay`, with the hit radius of its race, entered the creature's ring at `place`, its
-  /// connection's move `seq`.
-  Approached(
-    by: ConnectionId,
-    unit_id: Int,
-    place: Place,
-    seq: Int,
-    stay: Stay,
-    hit_radius: Float,
-  )
+  /// The map: the ready player `member` entered the creature's ring.
+  Approached(member: RingMember)
   /// The map: the player of connection `by` left the creature's ring.
   Withdrew(by: ConnectionId)
   /// The map: the player of connection `by` died, so it leaves the creature's ring's
@@ -609,8 +600,7 @@ pub type Viewer {
 /// players' spells on them, the watch on each caster's connection whose modifiers it
 /// holds, the caster's connection of each modifier's source in the order the
 /// modifiers started, the id its next watch on a caster's connection takes, and the
-/// monotonic time it last stood again (none in its first life), and the monotonic time its
-/// pending despawn is due (none when none is pending). `views` holds what players' casts
+/// monotonic time its pending despawn is due (none when none is pending). `views` holds what players' casts
 /// hold on it, by cast id with the caster's connection that told it: its caster's watch
 /// covers them as it covers the modifiers' sources.
 pub opaque type State {
@@ -628,7 +618,6 @@ pub opaque type State {
     held: held_changes.Held,
     views: Dict(Int, #(ConnectionId, unit_casts.CastView)),
     next_watch: Int,
-    stood_again_ms: Option(Int),
     despawn_due_ms: Option(Int),
     unit_state: creature_unit_state.State,
   )
@@ -674,7 +663,6 @@ pub fn new(settings: Settings) -> State {
     held: held_changes.new(),
     views: dict.new(),
     next_watch: first_caster_watch,
-    stood_again_ms: None,
     despawn_due_ms: None,
     unit_state: creature_unit_state.new(),
   )
@@ -734,14 +722,9 @@ pub fn step(
   let run_only = spawn_source.is_run_only(creature.spawn)
   case input.event {
     Stopping(..) -> #(state, Effects([Stop]))
-    OwnEvent(Started) -> #(
-      state,
-      Effects([
-        Watch(
-          watch: run_watch,
-          target: step.Map(map: creature.map, incarnation: creature.incarnation),
-        ),
-        ..list.map(creature.viewers, fn(viewer) {
+    OwnEvent(Started) -> {
+      let snapshots =
+        list.map(creature.viewers, fn(viewer) {
           to_the_map(
             state:,
             message: Snapshot(
@@ -759,8 +742,30 @@ pub fn step(
             ),
           )
         })
-      ]),
-    )
+      let #(state, fought) = case creature.ring {
+        [] -> #(state, [])
+        members ->
+          fought(state:, input: creature_fight.RingAtStart(members:), now_ms:)
+      }
+      #(
+        state,
+        Effects(
+          list.flatten([
+            [
+              Watch(
+                watch: run_watch,
+                target: step.Map(
+                  map: creature.map,
+                  incarnation: creature.incarnation,
+                ),
+              ),
+            ],
+            snapshots,
+            fought,
+          ]),
+        ),
+      )
+    }
     OwnEvent(Told(message: Seen(by:, stay:, generation:))) -> #(
       State(
         ..state,
@@ -812,26 +817,8 @@ pub fn step(
         StopAtRespawn -> #(State(..state, retiring: True), Effects([]))
       }
     OwnEvent(Told(message: Strike(tell:))) -> struck(state:, tell:, now_ms:)
-    OwnEvent(Told(message: Approached(
-      by:,
-      unit_id:,
-      place:,
-      seq:,
-      stay:,
-      hit_radius:,
-    ))) ->
-      fought_alone(
-        state:,
-        input: creature_fight.Approached(
-          by:,
-          unit_id:,
-          place:,
-          seq:,
-          stay:,
-          hit_radius:,
-        ),
-        now_ms:,
-      )
+    OwnEvent(Told(message: Approached(member:))) ->
+      fought_alone(state:, input: creature_fight.Approached(member:), now_ms:)
     OwnEvent(Told(message: Withdrew(by:))) ->
       fought_alone(state:, input: creature_fight.Withdrew(by:), now_ms:)
     OwnEvent(Told(message: PlayerDied(by:))) ->
@@ -850,47 +837,34 @@ pub fn step(
       )
     OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer && run_only -> #(
       state,
-      Effects(
-        list.append(
-          case creature_life.is_shown(life: state.life) {
-            True -> to_viewers(state:, news: Removed)
-            False -> []
-          },
-          [Stop],
-        ),
-      ),
+      Effects(list.append(removed_if_shown(state:), [Stop])),
     )
     OwnEvent(ServiceTimerFired(timer:)) if timer == corpse_timer ->
       case
         creature_life.corpse_timer_fired(
           life: state.life,
-          body: base_body(settings: state.settings),
           retiring: state.retiring,
         )
       {
         Ends -> #(state, Effects([Stop]))
-        Expires ->
-          panic as "the corpse timer expires the creature: not built yet"
-        StandsAgain(life:) -> {
-          let was_shown = creature_life.is_shown(life: state.life)
-          let #(state, unwatched) =
-            stood_again(state: State(..state, life:), now_ms:)
-          let #(state, fought) =
-            fought(state:, input: creature_fight.StoodAgain, now_ms:)
-          let #(state, guarded) =
-            guard_stepped(state:, input: creature_guard.Stands, now_ms:)
-          #(
-            state,
-            Effects(
-              list.flatten([
-                unwatched,
-                shown_again(state:, was_shown:, now_ms:),
-                guarded,
-                fought,
-              ]),
-            ),
-          )
-        }
+        Expires -> #(
+          state,
+          Effects(
+            list.flatten([
+              removed_if_shown(state:),
+              [
+                to_the_map(
+                  state:,
+                  message: Expired(
+                    unit_id: creature.unit_id,
+                    life: creature.life,
+                  ),
+                ),
+                Stop,
+              ],
+            ]),
+          ),
+        )
       }
     OwnEvent(ServiceTimerFired(timer:)) if timer == despawn_timer ->
       despawn_timer_fired(state:, now_ms:)
@@ -918,23 +892,18 @@ pub fn step(
         Error(Nil), Error(Nil), Error(Nil) ->
           panic as "a creature starts no timer but its corpse's, its armor refill's, its fight's, its guard's and its controls'"
       }
-    OwnEvent(Told(message: ModifierStarts(
-      by:,
-      source:,
-      modifier:,
-      struck_at_ms:,
-    ))) ->
-      modifier_started(state:, by:, source:, modifier:, struck_at_ms:, now_ms:)
+    OwnEvent(Told(message: ModifierStarts(by:, source:, modifier:, ..))) ->
+      modifier_started(state:, by:, source:, modifier:, now_ms:)
     OwnEvent(Told(message: ModifierEnds(source:))) ->
       modifier_ended(state:, source:, now_ms:)
-    OwnEvent(Told(message: Thrown(throw:, struck_at_ms:))) ->
-      thrown(state:, throw:, struck_at_ms:, now_ms:)
-    OwnEvent(Told(message: Despawn(delay_ms:, struck_at_ms:, went_at_ms:))) ->
-      despawn_told(state:, delay_ms:, struck_at_ms:, went_at_ms:, now_ms:)
-    OwnEvent(Told(message: UnitStates(rows:, struck_at_ms:, went_at_ms:))) ->
-      unit_states_told(state:, rows:, struck_at_ms:, went_at_ms:, now_ms:)
-    OwnEvent(Told(message: CastViewSet(by:, view:, struck_at_ms:))) ->
-      view_set(state:, by:, view:, struck_at_ms:)
+    OwnEvent(Told(message: Thrown(throw:, ..))) ->
+      thrown(state:, throw:, now_ms:)
+    OwnEvent(Told(message: Despawn(delay_ms:, went_at_ms:, ..))) ->
+      despawn_told(state:, delay_ms:, went_at_ms:, now_ms:)
+    OwnEvent(Told(message: UnitStates(rows:, went_at_ms:, ..))) ->
+      unit_states_told(state:, rows:, went_at_ms:, now_ms:)
+    OwnEvent(Told(message: CastViewSet(by:, view:, ..))) ->
+      view_set(state:, by:, view:)
     OwnEvent(Told(message: CastViewEnds(by:, cast_id:))) ->
       view_ended(state:, by:, cast_id:)
     OwnEvent(Told(message: ControlsEnd(by:, cast_id:))) ->
@@ -946,35 +915,16 @@ pub fn step(
   }
 }
 
-/// Whether a tell struck at `struck_at_ms` struck the creature's life before the one it
-/// is in: the creature stood again after it, at a later time. The registry address is
-/// the same across lives, so the time of the round tells them apart. A creature that
-/// has not stood again is in its first life, and a tell struck at the very time it
-/// stood again struck the new one.
-fn struck_before_this_life(
-  state state: State,
-  struck_at_ms struck_at_ms: Int,
-) -> Bool {
-  case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
-}
-
 /// A ForcedMove effect throws the creature: the fight takes it as `Thrown`, unless the
-/// creature lies dead, has stood again since `struck_at_ms`, the time of the go that
-/// struck its earlier life, which the registry address does not tell apart, or holds a
-/// state that blocks hostile effects, a server guess: a throw is not applied to a creature
-/// that takes no strike.
+/// creature lies dead or holds a state that blocks hostile effects, a server guess: a throw
+/// is not applied to a creature that takes no strike.
 fn thrown(
   state state: State,
   throw throw: forced_move.Throw,
-  struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   use <- bool.guard(
     when: creature_life.is_dead(life: state.life)
-      || struck_before_this_life(state:, struck_at_ms:)
       || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:),
     return: #(state, Effects([])),
   )
@@ -982,7 +932,7 @@ fn thrown(
 }
 
 /// A DespawnUnit effect reaches the creature (`Despawn`): dropped when the creature lies dead
-/// or gone or was struck before it last stood again, else removed now or at the go's time
+/// or gone, else removed now or at the go's time
 /// plus the delay, whichever due time is earlier. Server guesses: a despawn that meets a
 /// corpse is dropped, and of two pending despawns the earlier due time wins; the client's
 /// tables rule neither. The despawn timer is started only when none
@@ -991,19 +941,17 @@ fn thrown(
 fn despawn_told(
   state state: State,
   delay_ms delay_ms: Int,
-  struck_at_ms struck_at_ms: Int,
   went_at_ms went_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let due_ms = went_at_ms + delay_ms
   case
     creature_life.despawned(life: state.life, body: state.body),
-    struck_before_this_life(state:, struck_at_ms:),
     state.despawn_due_ms,
     due_ms <= now_ms
   {
-    None, _, _, _ | _, True, _, _ -> #(state, Effects([]))
-    Some(#(life, corpse_for_ms)), False, pending, True ->
+    None, _, _ -> #(state, Effects([]))
+    Some(#(life, corpse_for_ms)), pending, True ->
       left_the_field(
         state:,
         life:,
@@ -1011,7 +959,7 @@ fn despawn_told(
         timer_running: option.is_some(pending),
         now_ms:,
       )
-    Some(_), False, None, False -> #(
+    Some(_), None, False -> #(
       State(..state, despawn_due_ms: Some(due_ms)),
       Effects([
         OwnEffect(step.StartServiceTimer(
@@ -1020,11 +968,11 @@ fn despawn_told(
         )),
       ]),
     )
-    Some(_), False, Some(pending_ms), False if due_ms >= pending_ms -> #(
+    Some(_), Some(pending_ms), False if due_ms >= pending_ms -> #(
       state,
       Effects([]),
     )
-    Some(_), False, Some(_), False -> #(
+    Some(_), Some(_), False -> #(
       State(..state, despawn_due_ms: Some(due_ms)),
       Effects([
         OwnEffect(step.CancelServiceTimer(timer: despawn_timer)),
@@ -1038,20 +986,18 @@ fn despawn_told(
 }
 
 /// A go's UnitStateSet rows reach the creature (`UnitStates`): dropped when the creature lies
-/// dead or gone or was struck before it last stood again, else each row not yet past is held,
+/// dead or gone, else each row not yet past is held,
 /// told to the viewers from its start, and the timer is armed for the earliest start or end.
 fn unit_states_told(
   state state: State,
   rows rows: List(unit_state.Row),
-  struck_at_ms struck_at_ms: Int,
   went_at_ms went_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  use <- bool.guard(
-    when: creature_life.is_dead(life: state.life)
-      || struck_before_this_life(state:, struck_at_ms:),
-    return: #(state, Effects([])),
-  )
+  use <- bool.guard(when: creature_life.is_dead(life: state.life), return: #(
+    state,
+    Effects([]),
+  ))
   let #(unit_state, effects) =
     creature_unit_state.set(
       state: state.unit_state,
@@ -1186,20 +1132,18 @@ fn left_the_field(
 /// applied to the creature's properties, the entries that changed go to every viewer as
 /// `PropertiesChanged`, the rules that read a changed property take its new value,
 /// and the caster's connection is watched from its first modifier on. The same source
-/// twice is held once. A start struck before the creature last stood again, or one that
-/// reaches it dead, changes nothing; nor does one that reaches a creature holding a state that
-/// blocks hostile effects, a server guess as for a throw (`thrown`).
+/// twice is held once. A start that reaches a dead creature changes nothing; nor does one
+/// that reaches a creature holding a state that blocks hostile effects, a server guess as for a
+/// throw (`thrown`).
 fn modifier_started(
   state state: State,
   by by: ConnectionId,
   source source: Source,
   modifier modifier: Modifier,
-  struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   use <- bool.guard(
     when: creature_life.is_dead(life: state.life)
-      || struck_before_this_life(state:, struck_at_ms:)
       || result.is_ok(held_changes.holder_of(held: state.held, source:))
       || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:),
     return: #(state, Effects([])),
@@ -1217,19 +1161,13 @@ fn modifier_started(
 
 /// The caster of connection `by` tells the creature that its cast holds `view` on it:
 /// kept in place of that cast's earlier view, and `by` is watched from its first view
-/// or modifier on. A set struck before the creature last stood again changes nothing; a
-/// dead creature keeps it, as a corpse keeps its nodes. The holder a replaced entry
+/// or modifier on. A dead creature keeps it, as a corpse keeps its nodes. The holder a replaced entry
 /// belonged to is unwatched when it holds nothing else. No news goes to the viewers.
 fn view_set(
   state state: State,
   by by: ConnectionId,
   view view: unit_casts.CastView,
-  struck_at_ms struck_at_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  use <- bool.guard(
-    when: struck_before_this_life(state:, struck_at_ms:),
-    return: #(state, Effects([])),
-  )
   let replaced = dict.get(state.views, view.cast_id)
   let state =
     State(..state, views: dict.insert(state.views, view.cast_id, #(by, view)))
@@ -1259,50 +1197,15 @@ fn view_ended(
   }
 }
 
-/// What the viewers are sent when the corpse timer stands the creature again, once for all
-/// of them: the creature as new, after a `Removed` for a creature that was shown (a corpse),
-/// and alone for one that was despawned, whose `Removed` went at the removal.
-fn shown_again(
+/// The 0x355 for every viewer of a creature that lies dead, once for all of them; none for
+/// one that was despawned, whose removal went at the despawn.
+fn removed_if_shown(
   state state: State,
-  was_shown was_shown: Bool,
-  now_ms now_ms: Int,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  case was_shown {
-    True ->
-      list.append(
-        to_viewers(state:, news: Removed),
-        to_viewers(state:, news: appeared(state:, now_ms:).news),
-      )
-    False -> to_viewers(state:, news: appeared(state:, now_ms:).news)
+  case creature_life.is_shown(life: state.life) {
+    True -> to_viewers(state:, news: Removed)
+    False -> []
   }
-}
-
-/// The creature stands again at `now_ms`: it holds no source from its life before, its
-/// body and properties are the spawn's again, and a start struck before now is
-/// dropped. The effects drop the watch on each caster whose modifiers it cleared. The
-/// viewers are sent the creature as new, whose 0x262 lists none of them.
-fn stood_again(
-  state state: State,
-  now_ms now_ms: Int,
-) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  let unwatched =
-    holding_connections(state:)
-    |> list.filter_map(fn(by) {
-      dict.get(state.casters, by)
-      |> result.map(fn(watch) { step.Unwatch(watch:) })
-    })
-  #(
-    State(
-      ..state,
-      body: base_body(settings: state.settings),
-      properties: base_properties(settings: state.settings),
-      casters: dict.new(),
-      held: held_changes.new(),
-      views: dict.new(),
-      stood_again_ms: Some(now_ms),
-    ),
-    unwatched,
-  )
 }
 
 /// The creature's properties are now `properties`: its body's combat values and
@@ -1455,17 +1358,6 @@ fn dropped_from(
 fn holds_from(state state: State, by by: ConnectionId) -> Bool {
   list.contains(held_changes.connections(held: state.held), by)
   || list.any(dict.values(state.views), fn(held) { held.0 == by })
-}
-
-/// The connections that hold anything on the creature, each once: those that hold a
-/// modifier source in the order their sources started, then those that hold only views,
-/// by the lowest cast id each holds.
-fn holding_connections(state state: State) -> List(ConnectionId) {
-  let by_view =
-    dict.to_list(state.views)
-    |> list.sort(fn(left, right) { int.compare(left.0, right.0) })
-    |> list.map(fn(entry) { entry.1.0 })
-  list.unique(list.append(held_changes.connections(held: state.held), by_view))
 }
 
 /// The watch on the caster's connection `by`, started with its first modifier: none
@@ -2563,8 +2455,7 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Seen(by:, stay:, generation:) -> Ok(Seen(by:, stay:, generation:))
     map.Unseen(by:, generation:) -> Ok(Unseen(by:, generation:))
-    map.Approached(by:, unit_id:, place:, seq:, stay:, hit_radius:) ->
-      Ok(Approached(by:, unit_id:, place:, seq:, stay:, hit_radius:))
+    map.Approached(member:) -> Ok(Approached(member:))
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.PlayerDied(by:) -> Ok(PlayerDied(by:))
     map.Retire -> Ok(Retire)

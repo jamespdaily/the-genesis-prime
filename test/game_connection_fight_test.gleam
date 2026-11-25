@@ -1448,14 +1448,16 @@ fn an_aggroed_medic() -> #(
       support.input_at_ms(
         ms: 1000,
         event: OwnEvent(
-          step.Told(creature.Approached(
-            by: ConnectionId(1),
-            unit_id: medic_unit,
-            place: medic_place(0.0),
-            seq: 1,
-            stay: game_connection_support.own_stay(),
-            hit_radius: place_support.player_hit_radius,
-          )),
+          step.Told(
+            creature.Approached(member: step.RingMember(
+              by: ConnectionId(1),
+              unit_id: medic_unit,
+              place: medic_place(0.0),
+              seq: 1,
+              stay: game_connection_support.own_stay(),
+              hit_radius: place_support.player_hit_radius,
+            )),
+          ),
         ),
       ),
     )
@@ -1614,14 +1616,16 @@ pub fn a_player_beside_the_crash_site_bodies_is_sent_no_target_combat_state_or_c
         support.input_at_ms(
           ms: 1000,
           event: OwnEvent(
-            step.Told(creature.Approached(
-              by: ConnectionId(1),
-              unit_id: medic_unit,
-              place: medic_place(0.0),
-              seq: 1,
-              stay: game_connection_support.own_stay(),
-              hit_radius: place_support.player_hit_radius,
-            )),
+            step.Told(
+              creature.Approached(member: step.RingMember(
+                by: ConnectionId(1),
+                unit_id: medic_unit,
+                place: medic_place(0.0),
+                seq: 1,
+                stay: game_connection_support.own_stay(),
+                hit_radius: place_support.player_hit_radius,
+              )),
+            ),
           ),
         ),
       )
@@ -1922,14 +1926,16 @@ fn aggroed(
       support.input_at_ms(
         ms: 1000,
         event: OwnEvent(
-          step.Told(creature.Approached(
-            by: ConnectionId(1),
-            unit_id: medic_unit,
-            place: medic_place(0.0),
-            seq: 1,
-            stay: game_connection_support.own_stay(),
-            hit_radius: place_support.player_hit_radius,
-          )),
+          step.Told(
+            creature.Approached(member: step.RingMember(
+              by: ConnectionId(1),
+              unit_id: medic_unit,
+              place: medic_place(0.0),
+              seq: 1,
+              stay: game_connection_support.own_stay(),
+              hit_radius: place_support.player_hit_radius,
+            )),
+          ),
         ),
       ),
     )

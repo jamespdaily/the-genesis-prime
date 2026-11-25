@@ -420,9 +420,6 @@ pub fn on_retire(life life: Life) -> OnRetire {
 
 /// What the corpse timer's firing leads to.
 pub type AtCorpse {
-  /// The creature stands again at full health, and sends each viewer 0x355 and its
-  /// 0x262.
-  StandsAgain(life: Life)
   /// The creature lies dead or despawned and its map starts the next life: it tells the
   /// map it expired and stops.
   Expires
@@ -430,16 +427,17 @@ pub type AtCorpse {
   Ends
 }
 
-/// The corpse timer fired: the creature stands again at full health, or ends when
-/// it was told to retire while dead.
+/// The corpse timer fired: the creature expires, or ends when it was told to retire while
+/// dead (`death.creature_respawn`: the creature comes back full under its map's next life).
+/// The timer is armed only at a kill and a despawn, so a creature that stands is a bug.
 pub fn corpse_timer_fired(
   life life: Life,
-  body body: Body,
   retiring retiring: Bool,
 ) -> AtCorpse {
   case life, retiring {
     Dead, True | Despawned, True -> Ends
-    Dead, False | Despawned, False | Alive(..), _ ->
-      StandsAgain(life: new(body:))
+    Dead, False | Despawned, False -> Expires
+    Alive(..), _ ->
+      panic as "a corpse timer fires only for a creature that lies dead or despawned"
   }
 }

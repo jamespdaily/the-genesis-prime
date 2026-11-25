@@ -280,14 +280,14 @@ fn approached(
   x x: Float,
   seq seq: Int,
 ) -> creature.Message {
-  creature.Approached(
+  creature.Approached(member: step.RingMember(
     by: ConnectionId(number),
     unit_id: unit_of(number),
     place: map_spawn_support.at(x),
     seq:,
     stay: map_support.stay(count: number),
     hit_radius: place_support.player_hit_radius,
-  )
+  ))
 }
 
 fn moved(number number: Int, x x: Float, seq seq: Int) -> creature.Message {
@@ -2192,14 +2192,14 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
     tell(
       state:,
       at_ms: 5000,
-      message: creature.Approached(
+      message: creature.Approached(member: step.RingMember(
         by: ConnectionId(2),
         unit_id: 21,
         place: map_spawn_support.at(5.0),
         seq: 7,
         stay: stay.next(map_support.stay(count: 2)),
         hit_radius: place_support.player_hit_radius,
-      ),
+      )),
     )
   assert list.contains(said(again), "0x908(21, 1) to 2")
     as "the equal sequence number is taken, with the new unit 21"
@@ -3818,14 +3818,14 @@ fn approached_at(
   z z: Float,
   seq seq: Int,
 ) -> creature.Message {
-  creature.Approached(
+  creature.Approached(member: step.RingMember(
     by: ConnectionId(number),
     unit_id: unit_of(number),
     place: at_xz(x:, z:),
     seq:,
     stay: map_support.stay(count: number),
     hit_radius: place_support.player_hit_radius,
-  )
+  ))
 }
 
 fn moved_at(

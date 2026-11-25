@@ -250,8 +250,14 @@ fn approaches_in_full(
 ) -> List(#(Int, Int, Float, Int, Stay)) {
   list.filter_map(map_spawn_support.sends(taken), fn(sent) {
     case sent.1 {
-      map.Approached(by: ConnectionId(by), unit_id:, place:, seq:, stay:, ..) ->
-        Ok(#(by, unit_id, start_place.x(place), seq, stay))
+      map.Approached(member: step.RingMember(
+        by: ConnectionId(by),
+        unit_id:,
+        place:,
+        seq:,
+        stay:,
+        ..,
+      )) -> Ok(#(by, unit_id, start_place.x(place), seq, stay))
       map.Withdrew(..)
       | map.PlayerDied(..)
       | map.Seen(..)

@@ -27,7 +27,7 @@ import genesis_prime/game/strike_tell.{
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/creature_life.{
-  type Life, Body, Died, Health, StandsAgain, StopAtRespawn, StopNow,
+  type Life, Body, Died, Health, StopAtRespawn, StopNow,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -357,35 +357,12 @@ pub fn a_creature_that_stands_stops_at_once_when_told_to_retire_and_a_corpse_wai
     as "the map keeps the spawn retiring until the creature ends, so a corpse is never shown to a later viewer"
 }
 
-fn stands_at(life life: Life) -> Int {
-  creature_life.health(life)
-}
-
-pub fn a_corpse_stands_again_at_full_health_at_its_respawn_and_ends_when_it_was_told_to_retire_test() -> Nil {
-  use <- owned_test.run(5000)
-  let dead =
-    creature_life.struck(
-      life: creature_life.new(body: beast()),
-      body: beast(),
-      strike: strike_of(damage: 52, rolls: no_luck, cast_id: 1),
-    ).life
-  let assert StandsAgain(life:) =
-    creature_life.corpse_timer_fired(life: dead, body: beast(), retiring: False)
-  assert stands_at(life:) == 52 && !creature_life.is_dead(life)
-    as "death.creature_respawn: the creature comes back as the server sends it, full"
-  assert creature_life.corpse_timer_fired(
-      life: dead,
-      body: beast(),
-      retiring: True,
-    )
-    == creature_life.Ends
-}
-
 pub fn a_corpse_timer_expires_a_dead_or_despawned_creature_and_ends_one_told_to_retire_test() -> Nil {
   use <- owned_test.run(5000)
   // `death.creature_respawn`: the creature comes back full under its map's next life, so
   // the timer only ends this one; a creature told to retire while it lay there is not
-  // replaced, its map keeps the spawn retiring (`on_retire`).
+  // replaced, its map keeps the spawn retiring (`on_retire`). No row holds a creature that
+  // stands: its timer is armed only at a kill and a despawn, so the function panics there.
   let dead =
     creature_life.struck(
       life: creature_life.new(body: beast()),
@@ -405,11 +382,7 @@ pub fn a_corpse_timer_expires_a_dead_or_despawned_creature_and_ends_one_told_to_
       ),
     ],
     fn(row) {
-      assert creature_life.corpse_timer_fired(
-          life: row.1,
-          body: beast(),
-          retiring: row.2,
-        )
+      assert creature_life.corpse_timer_fired(life: row.1, retiring: row.2)
         == row.3
         as row.0
     },
@@ -489,18 +462,7 @@ pub fn a_despawned_creature_told_to_retire_stops_at_its_respawn_test() -> Nil {
     as "the map keeps the spawn retiring until the creature ends, so the spawn does not come back early"
   assert creature_life.corpse_timer_fired(
       life: despawned_beast(),
-      body: beast(),
       retiring: True,
     )
     == creature_life.Ends
-  let assert StandsAgain(life:) =
-    creature_life.corpse_timer_fired(
-      life: despawned_beast(),
-      body: beast(),
-      retiring: False,
-    )
-  assert stands_at(life:) == 52
-    && !creature_life.is_dead(life)
-    && creature_life.is_shown(life)
-    as "death.creature_respawn: it comes back full and shown"
 }
