@@ -70,10 +70,13 @@ import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
   UnitProperty2Id,
 }
+import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import map_support
 import owned_test
@@ -6195,4 +6198,137 @@ fn delayed_heal_of_a_fired_spell(
     fires_in(spell4_id: 250_202, steps:) + fires_in(spell4_id: 250_203, steps:),
     pending_count(pending),
   ]
+}
+
+/// The Proc rows of these kinds (`Spell4Effects.effectType.14.dataBits00`) that the plan holds
+/// as an ability's rows, by effect id, each as the plan reads it with its fired spell's tree.
+fn real_proc_rows(
+  tables tables: table_store.Tables,
+  kinds kinds: List(Int),
+) -> List(ProcRow) {
+  let sources = spell_plan.sources_of(tables:)
+  spell4_effects.all(tables)
+  |> list.filter(fn(effect) {
+    effect.effect_type == 14 && list.contains(kinds, effect.data_bits00)
+  })
+  |> list.filter_map(fn(effect) {
+    use spell <- result.try(result.replace_error(
+      spell_plan.ability_alone(tables:, sources:, spell4_id: effect.spell_id),
+      Nil,
+    ))
+    spell_plan.tree_started_with_alternate(spell:)
+    |> list.flat_map(fn(started) {
+      spell_plan.payloads(spell: started.0, as_kind: spell_plan.as_proc)
+    })
+    |> list.find(fn(row) { row.effect_id.value == effect.id })
+  })
+}
+
+/// Whether the row has no gate and a chance of 1.0, so one event fires it for sure.
+fn ungated(row row: ProcRow) -> Bool {
+  row.event_gate == None && row.holder_gate == None && row.chance == 1.0
+}
+
+/// A spell the row's own filter passes, as an event names it.
+fn passing_filter(
+  filter filter: spell_plan.ProcFilter,
+) -> event_proc.EventSpell {
+  let any =
+    event_proc.EventSpell(
+      spell4_id: Spell4Id(hitter_spell4),
+      spell4_base_id: Spell4BaseId(2),
+      groups: [],
+      school: 2,
+    )
+  case filter {
+    spell_plan.AnySpell -> any
+    spell_plan.InGroup(group_id:) ->
+      event_proc.EventSpell(..any, groups: [group_id])
+    spell_plan.OneSpell(spell4_id:) -> event_proc.EventSpell(..any, spell4_id:)
+    spell_plan.OfBase(spell4_base_id:) ->
+      event_proc.EventSpell(..any, spell4_base_id:)
+  }
+}
+
+/// How many casts of the row's fired spell one event of the row's kind starts, when the holder
+/// holds the row (its life and phases planted as the Stalker's passive holds a row) and every go
+/// of the fired spell strikes a critical kill, and its heals and ticks run for 60 s.
+fn real_row_fires(row row: ProcRow) -> Int {
+  let held =
+    ProcRow(
+      ..row,
+      phase_flags: -1,
+      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      condition: Always,
+      tag: spend.always,
+    )
+  let #(_, state) = holder_and_spells(procs: [held], spells: [])
+  let caster = planted_caster()
+  let event =
+    event_proc.Event(
+      trigger: held.trigger,
+      other_unit: Some(31),
+      spell: Some(passing_filter(filter: held.filter)),
+      holder: None,
+    )
+  let #(state, first) =
+    support.then_procs(
+      step: #(cast_state.State(..state, pending: [event]), []),
+      caster:,
+      at: 1000,
+    )
+  let fired = held.spell.spell4_id.value
+  let chain =
+    Chain(
+      ..chain_of(struck_of: fn(_) {
+        [
+          creature_hit(unit_id: 31, descriptions: [
+            blow(result: combat_result.Critical, killed: 1),
+          ]),
+        ]
+      }),
+      fired: [fired],
+    )
+  let #(state, answered) =
+    chained(caster:, state:, effects: first, at: 1000, chain:)
+  let #(_, steps) =
+    chain_loop(
+      caster:,
+      state:,
+      first: answered,
+      at: 1000,
+      chain:,
+      until: 61_000,
+    )
+  fires_in(spell4_id: fired, steps:)
+}
+
+pub fn real_rows_of_the_six_chaining_kinds_fire_once_for_one_event_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  // Every Proc row of kinds 12, 13, 1, 20, 145 and 147 (a hit, a melee hit, a kill, a heal, a
+  // critical, a critical heal) that the plan holds as an ability's, those whose fired spell's
+  // tree could chain (a damage or heal row the row's filter passes) among them, with the fired
+  // spell's real tree: one event
+  // of its kind, which its own filter passes, fires it once at most (a gate it fails or a chance
+  // below 1.0 may stop it) and exactly once when it has no gate and a chance of 1.0, so the test
+  // cannot pass by firing nothing. A fired spell raises no event for any proc
+  // (`Spell4Effects.effectType.14.chaining`). Kind 147 is never raised by the fired spell's
+  // heal (`LandsCriticalHeal` is raised by no go), so its rows are fired by the planted event
+  // alone.
+  let tables = client_tables.shared()
+  let rows = real_proc_rows(tables:, kinds: [12, 13, 1, 20, 145, 147])
+  assert rows != [] as "the plan holds rows of the kinds"
+  assert list.any(rows, ungated) as "some row has no gate and a chance of 1.0"
+  let failures =
+    list.filter_map(rows, fn(row) {
+      let fires = real_row_fires(row:)
+      case fires > 1 || { ungated(row) && fires != 1 } {
+        True -> Ok(#(row.effect_id.value, ungated(row), fires))
+        False -> Error(Nil)
+      }
+    })
+  assert failures == []
+    as "each row: its effect id, whether it has no gate and a chance of 1.0, the casts started"
 }
