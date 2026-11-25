@@ -11,7 +11,7 @@ Each script's header is its contract: what it runs on the PC, what it refuses, a
 
 ## A session by hand
 
-1. Stop the play server's container (`dev/play_service/stop.sh`), then start the server in record mode (server.md, "A server by hand"): `gleam run -m genesis_prime/dev_start -- <folder>`.
+1. Start the server in record mode into `<folder>` as server.md's "A server by hand" says, which first holds the play server's container.
 2. `scripts/client-log.sh start <folder>`.
 3. `scripts/report.sh install`, before the client starts: the client reads its addons when the world starts.
 4. `scripts/client.sh start`.

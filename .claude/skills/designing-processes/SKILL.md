@@ -1,13 +1,11 @@
 ---
 name: designing-processes
-description: Design rules for processes on the BEAM - actors, services, supervisors, handlers, restarts, shutdown, connections, memory, logging. Use before adding or changing a process, actor, service or supervisor.
+description: Sets the design rules for processes on the BEAM here - supervision trees, ownership, messages, shells and rules, restarts, shutdown, connections, logging and memory. Use before adding or changing a process, actor, service, supervisor, rule or shell.
 ---
 
 # Designing processes
 
-The server is designed for the BEAM from the first line: processes, messages, supervision and the runtime's own tools are the building blocks. Design in those terms from the start rather than translating threads, locks, shared objects or a game loop.
-
-These hold for any process change:
+Design in processes, messages and supervision from the start, never by translating threads, locks, shared objects or a game loop. For any process change:
 - Draw the supervision tree before the code: which processes exist, what each owns, how each restarts, and what players see when each dies.
 - Make a process for state, concurrency or failure isolation; anything else is a plain function. Decoding, ciphers and game calculations are calls, not processes.
 - Start each process under a supervisor. One process owns each piece of state; others ask it by message.
