@@ -95,7 +95,9 @@ fn carried(
   })
 }
 
-/// The costs an accepted press pays (genesis_prime/game/cast `Pay`).
+/// The costs an accepted press pays (genesis_prime/game/cast `Pay`). A cast a proc fired is a
+/// child, and a child never pays (`cost.pulse_costs` gives a cast with a parent no cost, and a
+/// child starts with nothing reserved), so the move raises its event.
 pub fn paid(
   session session: Session,
   payments payments: List(class_resource.Payment),

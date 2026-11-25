@@ -1779,6 +1779,36 @@ fn settled(
   )
 }
 
+/// An input's result as `settled` makes it, with the held press and the held key's repeat
+/// that the step's end let start (`released`, `continued`). They are the player's own
+/// presses: when the step belongs to a fired cast, only the step's events are dropped, and
+/// the press's start raises its own (`UsesAbility`, a spend, a stealth change) as it does
+/// after any input.
+fn settled_then_released(
+  cast cast: State,
+  fired fired: Bool,
+  own own: List(proc.Event),
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  step step: fn() -> #(State, List(Effect)),
+) -> #(State, List(Effect)) {
+  let followed = fn(taken) {
+    released(taken:, caster:, now_ms:) |> continued(caster:, now_ms:)
+  }
+  case fired {
+    False -> settled(cast:, fired:, own:, step: fn() { followed(step()) })
+    True -> {
+      let #(after, effects) = settled(cast:, fired:, own:, step:)
+      let #(next, all) = followed(#(after, effects))
+      let #(next, started) =
+        settled(cast: after, fired: False, own: [], step: fn() {
+          #(next, list.drop(all, list.length(effects)))
+        })
+      #(next, list.append(effects, started))
+    }
+  }
+}
+
 /// The state with the events the facts raise appended to the pending ones, in the facts'
 /// order. A resource that changed at all raises `ResourceCrosses`, and a fall of the
 /// Stalker's suit power also `SuitPowerDrops`; the proc's own holder gate then decides
@@ -3009,13 +3039,14 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, fired: cast_proc.timer_fired(cast:, timer:), own: [])
-  released(
-    taken: fire(cast:, timer:, caster:, now:),
+  use <- settled_then_released(
+    cast:,
+    fired: cast_proc.timer_fired(cast:, timer:),
+    own: [],
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  fire(cast:, timer:, caster:, now:)
 }
 
 /// A channel's finish timer fired: the cast ends, or, when a go's strike round is still
@@ -3245,25 +3276,26 @@ pub fn went(
       })
     })
     |> result.unwrap([])
-  use <- settled(cast:, fired:, own:)
-  released(
-    taken: go(
-      cast:,
-      caster:,
-      now_ms: now.monotonic_ms,
-      cast_id:,
-      phase:,
-      struck:,
-      gates_passed:,
-      poses:,
-      indexes:,
-      units:,
-      rolls:,
-    ),
+  use <- settled_then_released(
+    cast:,
+    fired:,
+    own:,
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  go(
+    cast:,
+    caster:,
+    now_ms: now.monotonic_ms,
+    cast_id:,
+    phase:,
+    struck:,
+    gates_passed:,
+    poses:,
+    indexes:,
+    units:,
+    rolls:,
+  )
 }
 
 /// A go of a live cast is asked: its first go pays the cast's reserved costs, a later
@@ -3498,13 +3530,14 @@ pub fn ticked(
   }
   let fired =
     cast_proc.cast_fired(cast:, cast_id: asked.cast_id, removed: False)
-  use <- settled(cast:, fired:, own:)
-  released(
-    taken: tick_closed(cast:, now_ms: now.monotonic_ms, asked:, struck:),
+  use <- settled_then_released(
+    cast:,
+    fired:,
+    own:,
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  tick_closed(cast:, now_ms: now.monotonic_ms, asked:, struck:)
 }
 
 /// The units inside the area of a periodic Proxy's tick are found (the connection's
@@ -3529,22 +3562,23 @@ pub fn proxy_tick_units_found(
 ) -> #(State, List(Effect)) {
   let fired =
     cast_proc.cast_fired(cast:, cast_id: asked.cast_id, removed: False)
-  use <- settled(cast:, fired:, own: [])
-  released(
-    taken: proxy_tick_closed(
-      cast:,
-      caster:,
-      now_ms: now.monotonic_ms,
-      asked:,
-      units:,
-      poses:,
-      indexes:,
-      first_units:,
-    ),
+  use <- settled_then_released(
+    cast:,
+    fired:,
+    own: [],
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  proxy_tick_closed(
+    cast:,
+    caster:,
+    now_ms: now.monotonic_ms,
+    asked:,
+    units:,
+    poses:,
+    indexes:,
+    first_units:,
+  )
 }
 
 /// The children of a periodic Proxy's tick on the units found: the holder's root and spell

@@ -49,7 +49,9 @@
 ////   fires a row once (a guess: the client reads no Proc row,
 ////   `Spell4Effects.effectType.14.chaining`). The fired cast's go, its ticks, its heals and its
 ////   delayed timers are those inputs, and a go answered after the client ended the cast carries
-////   the flag (`GoAsked.fired`). The stealth it ends is still ended and told.
+////   the flag (`GoAsked.fired`). The stealth it ends is still ended and told. A press the
+////   fired input lets start (a held press, a held key's repeat) is the player's own and keeps its
+////   events (`cast.settled_then_released`).
 ////   A creature's blow on the holder raises `TakesDamage` when it lowered the holder's absorbs,
 ////   shield or health, `SuffersCritical` for a critical, `ShieldDepleted` when it took the shield
 ////   to 0 and `DeflectsAttack` for a deflect, each with the creature as the other unit and its
@@ -517,6 +519,8 @@ pub fn timer_fired(cast cast: State, timer timer: TimerId) -> Bool {
         | Tick(cast_id:, ..) -> cast_fired(cast:, cast_id:, removed: False)
         ModifierStart(source:, ..) ->
           cast_fired(cast:, cast_id: source.cast_id, removed: False)
+        // The input that starts a delayed child raises no event today (the child's go is a
+        // later input), so the flag only keeps a start that gains one from firing a proc.
         StartChild(fired:, ..) -> fired
         StateEnd(..)
         | TargetModifierStart(..)

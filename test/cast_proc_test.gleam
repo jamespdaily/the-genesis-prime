@@ -65,7 +65,7 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
-import genesis_prime/step.{type Now, ConnectionId, LogDebug}
+import genesis_prime/step.{type Now, type TimerId, ConnectionId, LogDebug}
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
   UnitProperty2Id,
@@ -2107,11 +2107,31 @@ fn chain_loop(
   chain chain: Chain,
   until until: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
+  let #(state, fired) =
+    chain_drained(
+      caster:,
+      state:,
+      pending: support.due_of(effects: first, now_ms: ms),
+      chain:,
+      until:,
+    )
+  #(state, [#(ms, first), ..fired])
+}
+
+/// The steps of the timers due until `until` ms, earliest first, each answered as `chained`
+/// does, and the state at the end.
+fn chain_drained(
+  caster caster: Caster,
+  state state: State,
+  pending pending: List(#(Int, TimerId)),
+  chain chain: Chain,
+  until until: Int,
+) -> #(State, List(#(Int, List(Effect)))) {
   let #(_, state, fired, _) =
     support.fire_pending(
       context: Nil,
       state:,
-      pending: support.due_of(effects: first, now_ms: ms),
+      pending:,
       until_ms: until,
       step: fn(_, state, due, timer) {
         let #(state, raw) =
@@ -2121,7 +2141,7 @@ fn chain_loop(
         support.Step(context: Nil, state:, effects:, record: #(due, effects))
       },
     )
-  #(state, [#(ms, first), ..fired])
+  #(state, fired)
 }
 
 pub fn a_periodic_tick_raises_a_hit_and_a_kill_by_a_tick_raises_a_kill_test() -> Nil {
@@ -5004,6 +5024,28 @@ fn striking_chain(
   Chain(..chain_of(struck_of:), fired: [fired_spell])
 }
 
+/// A press of the bag index at the time, answered as the chain says, with its timers left
+/// unfired: the state and the press's effects.
+fn pressed_chained(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  chain chain: Chain,
+  bag bag: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag,
+      target: 0,
+      at: ms,
+    )
+  chained(caster:, state:, effects: raw, at: ms, chain:)
+}
+
 /// A press of the bag index at the time, answered as the chain says, and every timer it
 /// starts fired for 10 s: the state and the steps.
 fn pressed_through(
@@ -5014,16 +5056,8 @@ fn pressed_through(
   bag bag: Int,
   at ms: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
-  let #(state, raw) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster:,
-      bag_index: bag,
-      target: 0,
-      at: ms,
-    )
-  let #(state, first) = chained(caster:, state:, effects: raw, at: ms, chain:)
+  let #(state, first) =
+    pressed_chained(plans:, state:, caster:, chain:, bag:, at: ms)
   chain_loop(caster:, state:, first:, at: ms, chain:, until: ms + 10_000)
 }
 
@@ -5624,9 +5658,19 @@ pub fn a_spell_a_proc_fired_raises_no_event_that_fires_a_proc_test() -> Nil {
       [1, 0],
     ),
     #(
-      "a pressed cast of the fired spell keeps its events and fires the row, the fired cast fires nothing",
+      "a pressed cast of the fired spell in flight while the fired cast runs: the hitter's hit and the pressed cast's own hit each fire the row once, the fired go fires nothing",
       an_ordinary_cast_of_the_fired_spell(),
-      [1, 1],
+      [2],
+    ),
+    #(
+      "a press queued behind a fired cast with a bar, started by the fired go that ends it, keeps its UsesAbility",
+      press_queued_behind_a_fired_cast(ending: AtItsGo),
+      [2, 0],
+    ),
+    #(
+      "the same when the fired cast's last go ends it",
+      press_queued_behind_a_fired_cast(ending: AtItsLastGo),
+      [2, 0],
     ),
     #(
       "a delayed self-heal of the fired spell, its heal's timer first: it applies once, no heal event",
@@ -5718,23 +5762,56 @@ fn another_rows_fired_spell() -> List(Int) {
   ]
 }
 
-/// The casts of the fired spell that a press of the hitter starts and that a press of the fired
-/// spell itself starts (a spell the player can press as well as a proc cast), each press's own hit
-/// firing the row once and its cast's fired spell nothing.
-fn an_ordinary_cast_of_the_fired_spell() -> List(Int) {
-  let ability =
+/// How the fired cast a press waits behind ends: at its own go, or at its last go (a
+/// Multiphase spell's, whose end is `finish_or_linger`). A channel's finish timer cannot
+/// start a queued press: a press over a current channel is not held.
+type Ending {
+  AtItsGo
+  AtItsLastGo
+}
+
+/// The casts the UsesAbility row starts and 1 when the press is still queued at the end
+/// (a press's own start is a 0x7fd, which no spell count tells from another), when a press
+/// is made while a fired cast with a cast bar is the caster's current cast (the
+/// press waits for it) and the fired cast's input ends it, which starts the press. The press
+/// is the player's own: its `UsesAbility` fires the row, the fired cast's hit fires nothing.
+fn press_queued_behind_a_fired_cast(ending ending: Ending) -> List(Int) {
+  let barred =
     Spell(
       ..cast_of_proc(spell4_id: fired_spell),
-      spell4_base_id: Spell4BaseId(3),
+      cast_bar: spell_plan.ShowsCastBar,
+      cast_time_ms: 1000,
     )
-  let row =
-    hit_row(trigger: spell_plan.LandsHit, limit: spell_plan.ForLife(count: 60))
+  let fired = case ending {
+    AtItsGo -> barred
+    AtItsLastGo ->
+      Spell(..barred, method: spell_plan.Multiphase, phase_delays_ms: [
+        500,
+        1000,
+      ])
+  }
+  let rows = [
+    ProcRow(
+      ..hit_row(
+        trigger: spell_plan.LandsHit,
+        limit: spell_plan.ForLife(count: 1),
+      ),
+      spell: fired,
+    ),
+    firing(
+      id: 2,
+      trigger: spell_plan.UsesAbility,
+      casts: 250_202,
+      aim: spell_plan.AtHolder,
+    ),
+  ]
+  let queued = support.child(spell4_id: 250_303, base: 3)
   let #(plans, state) =
-    holder_and_spells(procs: [row], spells: [hitter(school: 2), ability])
+    holder_and_spells(procs: rows, spells: [hitter(school: 2), queued])
   let caster = planted_caster()
   let chain = chain_of(struck_of: fn(_) { [plain_hit(unit_id: 31)] })
   let #(state, first) =
-    pressed_through(
+    pressed_chained(
       plans:,
       state:,
       caster:,
@@ -5742,19 +5819,89 @@ fn an_ordinary_cast_of_the_fired_spell() -> List(Int) {
       bag: bag_of_base_2,
       at: 1000,
     )
-  let #(_, second) =
-    pressed_through(
+  let #(state, second) =
+    pressed_chained(
       plans:,
       state:,
       caster:,
       chain:,
       bag: bag_of_base_3,
-      at: 3000,
+      at: 1700,
     )
+  assert option.is_some(state.held) as "the press waits for the fired cast"
+  let #(state, later) =
+    chain_drained(
+      caster:,
+      state:,
+      pending: list.append(
+        support.due_of(effects: first, now_ms: 1000),
+        support.due_of(effects: second, now_ms: 1700),
+      ),
+      chain:,
+      until: 10_000,
+    )
+  let steps = [#(1000, first), #(1700, second), ..later]
   [
-    fires_in(spell4_id: fired_spell, steps: first),
-    fires_in(spell4_id: fired_spell, steps: second),
+    fires_in(spell4_id: 250_202, steps:),
+    pending_count(pending: option.is_some(state.held)),
   ]
+}
+
+/// The fired casts started when the player's own cast of the fired spell (shown a cast bar
+/// when pressed; its own start is a 0x7fd, not counted) is in flight while the fired cast of it
+/// runs: the hitter's hit fires one, the fired go at 2000 fires none, and the in-flight cast's
+/// go at 2500 fires one.
+fn an_ordinary_cast_of_the_fired_spell() -> List(Int) {
+  let ability =
+    Spell(
+      ..cast_of_proc(spell4_id: fired_spell),
+      spell4_base_id: Spell4BaseId(3),
+      cast_bar: spell_plan.ShowsWhenPressed,
+      cast_time_ms: 1000,
+    )
+  let row =
+    ProcRow(
+      ..hit_row(
+        trigger: spell_plan.LandsHit,
+        limit: spell_plan.ForLife(count: 60),
+      ),
+      spell: ability,
+    )
+  let #(plans, state) =
+    holder_and_spells(procs: [row], spells: [hitter(school: 2), ability])
+  let caster = planted_caster()
+  let chain = chain_of(struck_of: fn(_) { [plain_hit(unit_id: 31)] })
+  let #(state, first) =
+    pressed_chained(
+      plans:,
+      state:,
+      caster:,
+      chain:,
+      bag: bag_of_base_2,
+      at: 1000,
+    )
+  let #(state, second) =
+    pressed_chained(
+      plans:,
+      state:,
+      caster:,
+      chain:,
+      bag: bag_of_base_3,
+      at: 1500,
+    )
+  let #(_, later) =
+    chain_drained(
+      caster:,
+      state:,
+      pending: list.append(
+        support.due_of(effects: first, now_ms: 1000),
+        support.due_of(effects: second, now_ms: 1500),
+      ),
+      chain:,
+      until: 10_000,
+    )
+  let steps = [#(1000, first), #(1500, second), ..later]
+  [fires_in(spell4_id: fired_spell, steps:)]
 }
 
 pub fn a_gain_a_go_makes_carries_whether_its_cast_is_fired_test() -> Nil {
@@ -6087,7 +6234,9 @@ pub fn a_fire_with_a_delay_and_a_fire_for_an_ally_are_fired_too_test() -> Nil {
 /// The heals a fired spell's delayed self-heal applies and the casts the rows for a heal
 /// landed and a heal received start, when its two timers (the heal's start and the end of its
 /// node, both due 500 ms after the go) are delivered in this order, and whether either timer's
-/// input left an event pending.
+/// input left an event pending. A heal whose cast is removed before it lands has no input
+/// left to test: removing the cast ends its effects (`effects_ended`), which cancels the
+/// heal's timer (`pending_heals_cancelled`), so no heal timer fires and no event can be raised.
 fn delayed_heal_of_a_fired_spell(
   node_end_first node_end_first: Bool,
 ) -> List(Int) {
@@ -6238,7 +6387,8 @@ fn passing_filter(
 
 /// How many casts of the row's fired spell one event of the row's kind starts, when the holder
 /// holds the row (its life and phases planted as the Stalker's passive holds a row) and every go
-/// of the fired spell strikes a critical kill, and its heals and ticks run for 60 s.
+/// of the fired spell strikes a critical kill and heals the caster with every heal row of its
+/// spell, and its ticks run for 60 s.
 fn real_row_fires(row row: ProcRow) -> Int {
   let held =
     ProcRow(
@@ -6264,14 +6414,36 @@ fn real_row_fires(row row: ProcRow) -> Int {
       at: 1000,
     )
   let fired = held.spell.spell4_id.value
+  let heals_of = fn(spell4_id: Spell4Id) {
+    spell_plan.tree_started_with_alternate(spell: held.spell)
+    |> list.filter(fn(started) { started.0.spell4_id == spell4_id })
+    |> list.flat_map(fn(started) {
+      spell_plan.payloads(spell: started.0, as_kind: spell_plan.as_heal)
+      |> list.map(fn(heal) { heal.effect_id })
+    })
+    |> list.unique
+  }
   let chain =
     Chain(
-      ..chain_of(struck_of: fn(_) {
-        [
+      ..chain_of(struck_of: fn(asked) {
+        let blow =
           creature_hit(unit_id: 31, descriptions: [
             blow(result: combat_result.Critical, killed: 1),
-          ]),
-        ]
+          ])
+        case heals_of(asked.spell4_id) {
+          [] -> [blow]
+          heals -> [
+            blow,
+            cast_state.Hit(
+              unit_id: 7,
+              unit: cast_state.HitCaster(heals:),
+              descriptions: [],
+              controls: [],
+              armor_removed: 0,
+              ticking: [],
+            ),
+          ]
+        }
       }),
       fired: [fired],
     )
@@ -6301,9 +6473,12 @@ pub fn real_rows_of_the_six_chaining_kinds_fire_once_for_one_event_test() -> Nil
   // of its kind, which its own filter passes, fires it once at most (a gate it fails or a chance
   // below 1.0 may stop it) and exactly once when it has no gate and a chance of 1.0, so the test
   // cannot pass by firing nothing. A fired spell raises no event for any proc
-  // (`Spell4Effects.effectType.14.chaining`). Kind 147 is never raised by the fired spell's
-  // heal (`LandsCriticalHeal` is raised by no go), so its rows are fired by the planted event
-  // alone.
+  // (`Spell4Effects.effectType.14.chaining`). Every go of the fired spell also heals the caster
+  // with each heal row of its own spell (a planted `HitCaster`), so a kind 20 row whose fired
+  // spell heals is one a looping `LandsHeal` or `ReceivesHeal` would fire again; a kind 20 row
+  // whose fired spell holds no heal, and a ticking heal aimed at another unit, raise no heal
+  // event here. Kind 147 is never raised by the fired spell's heal (`LandsCriticalHeal` is
+  // raised by no go), so its rows are fired by the planted event alone.
   let tables = client_tables.shared()
   let rows = real_proc_rows(tables:, kinds: [12, 13, 1, 20, 145, 147])
   assert rows != [] as "the plan holds rows of the kinds"
