@@ -50,3 +50,8 @@ pub fn points_of(path path: creature_path.Path) -> List(Place) {
     as "the path is a run"
   [from, ..list.append(via, [to])]
 }
+
+/// The x, y and z of a place.
+pub fn coordinates(place: Place) -> #(Float, Float, Float) {
+  #(start_place.x(place), start_place.y(place), start_place.z(place))
+}

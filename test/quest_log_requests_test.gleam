@@ -64,10 +64,6 @@ import quest_request_support
 import quest_support
 import vendor_support
 
-fn tables() -> table_store.Tables {
-  character_tables.shared()
-}
-
 fn item(location location: Int) -> HeldItem {
   HeldItem(
     item_guid: 1,
@@ -97,7 +93,7 @@ fn took(
       asker:,
       standing: quest_request_support.standing(),
       picture: dict.new(),
-      tables: tables(),
+      tables: character_tables.shared(),
       now_ms: 0,
       logged: set.new(),
     )
@@ -307,11 +303,12 @@ pub fn abandon_keeps_the_quest_abandoned_and_acceptable_test() -> Nil {
       ],
     )
   let target = fn(asker: Asker) {
-    let assert Ok(row) = quest2.get(tables: tables(), id: Quest2Id(2417))
+    let assert Ok(row) =
+      quest2.get(tables: character_tables.shared(), id: Quest2Id(2417))
       as "the fixture holds quest 2417"
     let assert Ok(verdict) =
       quest.can_accept(
-        tables: tables(),
+        tables: character_tables.shared(),
         quest: row,
         asker:,
         mask: quest.every_check,
@@ -613,7 +610,9 @@ fn assert_nothing_offered(taken: interaction.Taken, what what: String) -> Nil {
 
 pub fn giver_dialog_opens_only_for_a_creature_with_a_quest_to_show_test() -> Nil {
   use <- owned_test.run(60_000)
-  let walker = fn(rows) { talked_to_walker(tables: tables(), rows:) }
+  let walker = fn(rows) {
+    talked_to_walker(tables: character_tables.shared(), rows:)
+  }
   let done = quest_support.completed(10_520, at: 1000)
   // 10528 is refused for its prerequisite quest (code 8) within 5 levels, which marks
   // kinds 91 to 93, and 10520 is neither held nor flagged 1: nothing to show.

@@ -64,15 +64,6 @@ const one_kill = 1857
 
 const counted_kill = 4705
 
-fn quest(id id: Int) -> quest_log.Quest {
-  quest_support.quest_of(id:)
-}
-
-/// The saved row of the quest, as the place save writes it.
-fn saved(log log: QuestLog, quest_id quest_id: Int) -> QuestRow {
-  quest_support.saved_row(log:, quest_id:)
-}
-
 fn done_mask_of(row row: QuestRow) -> Int {
   let assert Some(active) = row.active as "the quest is in the active list"
   active.done_mask
@@ -85,7 +76,7 @@ fn progress_of(row row: QuestRow) -> List(Int) {
 
 pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
   use <- owned_test.run(60_000)
-  let counted = quest(id: counted_use)
+  let counted = quest_support.quest_of(id: counted_use)
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: counted_use, progress: [0]),
@@ -94,9 +85,17 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
     quest_log.progressed(log:, quest: counted, index: 0, amount: 1, now_ms: 0)
     as "an open objective takes progress"
   assert first.progress == 1 as "one use adds one"
-  assert progress_of(row: saved(log: first.log, quest_id: counted_use)) == [1]
+  assert progress_of(row: quest_support.saved_row(
+      log: first.log,
+      quest_id: counted_use,
+    ))
+    == [1]
     as "the saved progress is the new count"
-  assert done_mask_of(row: saved(log: first.log, quest_id: counted_use)) == 0
+  assert done_mask_of(row: quest_support.saved_row(
+      log: first.log,
+      quest_id: counted_use,
+    ))
+    == 0
     as "1 of 5 is not done: types 12 need their raw count of 5, not a percentage"
   assert !quest_log.objective_done(log: first.log, quest: counted, index: 0)
     as "the objective is not done below its count"
@@ -109,7 +108,11 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
     quest_log.progressed(log:, quest: counted, index: 0, amount: 1, now_ms: 0)
     as "the objective is still open at 4 of 5"
   assert last.progress == 5 as "the fifth use makes the count"
-  assert done_mask_of(row: saved(log: last.log, quest_id: counted_use)) == 0b1
+  assert done_mask_of(row: quest_support.saved_row(
+      log: last.log,
+      quest_id: counted_use,
+    ))
+    == 0b1
     as "the done bit of index 0 is set at the needed count (0x1406115a0)"
   assert quest_log.objective_done(log: last.log, quest: counted, index: 0)
     as "the log reads the objective done"
@@ -118,14 +121,18 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
     quest_log.progressed(log:, quest: counted, index: 0, amount: 9, now_ms: 0)
     as "a larger amount still applies to an open objective"
   assert capped.progress == 5 as "progress is capped at the needed count of 5"
-  assert progress_of(row: saved(log: capped.log, quest_id: counted_use)) == [5]
+  assert progress_of(row: quest_support.saved_row(
+      log: capped.log,
+      quest_id: counted_use,
+    ))
+    == [5]
     as "the saved progress is capped too"
 }
 
 pub fn progress_reaches_only_open_objectives_test() -> Nil {
   use <- owned_test.run(60_000)
-  let counted = quest(id: counted_use)
-  let chain = quest(id: gated_chain)
+  let counted = quest_support.quest_of(id: counted_use)
+  let chain = quest_support.quest_of(id: gated_chain)
 
   let done =
     quest_support.log_of(rows: [
@@ -234,7 +241,7 @@ pub fn progress_reaches_only_open_objectives_test() -> Nil {
 pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
   use <- owned_test.run(60_000)
 
-  let chain = quest(id: gated_chain)
+  let chain = quest_support.quest_of(id: gated_chain)
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: gated_chain, progress: [0, 0, 0]),
@@ -247,7 +254,7 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
   assert quest_log.stored_state(log: first.log, quest_id: gated_chain) == 1
     as "the stored state stays Accepted"
 
-  let skipped = quest(id: skipped_then_gated)
+  let skipped = quest_support.quest_of(id: skipped_then_gated)
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: skipped_then_gated, progress: [0, 0]),
@@ -262,10 +269,11 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
     as "the stored state becomes Achieved"
   assert quest_log.state(log: only.log, quest: skipped) == 2
     as "the state the client computes agrees with the stored one"
-  assert saved(log: only.log, quest_id: skipped_then_gated).state == 2
+  assert quest_support.saved_row(log: only.log, quest_id: skipped_then_gated).state
+    == 2
     as "the place save writes the Achieved state"
 
-  let pair = quest(id: talk_then_use)
+  let pair = quest_support.quest_of(id: talk_then_use)
   let log =
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: talk_then_use, progress: [0, 0]),
@@ -288,7 +296,10 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
     as "the stored state becomes Achieved"
   assert quest_log.state(log: used.log, quest: pair) == 2
     as "the state the client computes agrees with the stored one"
-  assert done_mask_of(row: saved(log: used.log, quest_id: talk_then_use))
+  assert done_mask_of(row: quest_support.saved_row(
+      log: used.log,
+      quest_id: talk_then_use,
+    ))
     == 0b11
     as "both done bits are saved"
 
@@ -306,7 +317,7 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
 
 /// An Achieved quest takes progress on its optional objectives and stays Achieved.
 fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
-  let optional = quest(id: optional_talk)
+  let optional = quest_support.quest_of(id: optional_talk)
 
   let accepted =
     quest_support.log_of(rows: [
@@ -353,9 +364,13 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
     as "the quest was Achieved already, so the client is not told again"
   assert quest_log.stored_state(log: late.log, quest_id: optional_talk) == 2
     as "the quest stays Achieved"
-  assert saved(log: late.log, quest_id: optional_talk).state == 2
+  assert quest_support.saved_row(log: late.log, quest_id: optional_talk).state
+    == 2
     as "the place save writes Achieved"
-  assert done_mask_of(row: saved(log: late.log, quest_id: optional_talk))
+  assert done_mask_of(row: quest_support.saved_row(
+      log: late.log,
+      quest_id: optional_talk,
+    ))
     == 0b111
     as "the optional objective's done bit joins the others"
   assert quest_log.progressed(
@@ -411,7 +426,7 @@ fn killed(
 
 pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil {
   use <- owned_test.run(60_000)
-  let three = quest(id: percent_kill)
+  let three = quest_support.quest_of(id: percent_kill)
   let log = fresh(quest_id: percent_kill, slots: 1)
   let first = killed(log:, quest: three, kills: 1)
   let second = killed(log:, quest: three, kills: 2)
@@ -421,11 +436,23 @@ pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil
   assert [first.became_achieved, second.became_achieved, third.became_achieved]
     == [False, False, True]
     as "the quest is Achieved by the third kill, not before"
-  assert done_mask_of(row: saved(log: first.log, quest_id: percent_kill)) == 0
+  assert done_mask_of(row: quest_support.saved_row(
+      log: first.log,
+      quest_id: percent_kill,
+    ))
+    == 0
     as "the done bit is not set after one kill, though the stored value is above 1"
-  assert done_mask_of(row: saved(log: second.log, quest_id: percent_kill)) == 0
+  assert done_mask_of(row: quest_support.saved_row(
+      log: second.log,
+      quest_id: percent_kill,
+    ))
+    == 0
     as "nor after two"
-  assert done_mask_of(row: saved(log: third.log, quest_id: percent_kill)) == 1
+  assert done_mask_of(row: quest_support.saved_row(
+      log: third.log,
+      quest_id: percent_kill,
+    ))
+    == 1
     as "the done bit is set on the third kill (0x1406115a0 compares the shown progress with the needed 100)"
   assert list.map([first, second, third], fn(counted) {
       quest_log.objective_progress(log: counted.log, quest: three, index: 0)
@@ -454,7 +481,11 @@ pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil
       as { at(count:, text: "one kill short of the count shows below 100") }
     assert !before.became_achieved
       as { at(count:, text: "one kill short does not finish the quest") }
-    assert done_mask_of(row: saved(log: before.log, quest_id: one_kill)) == 0
+    assert done_mask_of(row: quest_support.saved_row(
+        log: before.log,
+        quest_id: one_kill,
+      ))
+      == 0
       as { at(count:, text: "one kill short leaves the done bit clear") }
     let after = killed(log:, quest:, kills: count)
     assert after.progress == 1000
@@ -463,7 +494,11 @@ pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil
       as { at(count:, text: "1000 shows as 100, the needed count") }
     assert after.became_achieved
       as { at(count:, text: "count kills finish the quest") }
-    assert done_mask_of(row: saved(log: after.log, quest_id: one_kill)) == 1
+    assert done_mask_of(row: quest_support.saved_row(
+        log: after.log,
+        quest_id: one_kill,
+      ))
+      == 1
       as { at(count:, text: "count kills set the done bit") }
   })
 }
@@ -476,7 +511,7 @@ pub fn a_counted_kill_adds_one_per_kill_test() -> Nil {
   use <- owned_test.run(60_000)
   // Flag 0x200 keeps the progress a count (objective 6486 of quest 4705, count 3;
   // the tutorial's objective 21288 holds flags 0x203 the same way).
-  let counted = quest(id: counted_kill)
+  let counted = quest_support.quest_of(id: counted_kill)
   let log = fresh(quest_id: counted_kill, slots: 1)
   let progress =
     list.map([1, 2, 3], fn(kills) {
@@ -484,14 +519,18 @@ pub fn a_counted_kill_adds_one_per_kill_test() -> Nil {
     })
   assert progress == [1, 2, 3]
     as "a kill of a flag 0x200 objective adds one, not a share of a thousand"
-  assert done_mask_of(row: saved(
+  assert done_mask_of(row: quest_support.saved_row(
       log: killed(log:, quest: counted, kills: 2).log,
       quest_id: counted_kill,
     ))
     == 0
     as "two of three is not done"
   let third = killed(log:, quest: counted, kills: 3)
-  assert done_mask_of(row: saved(log: third.log, quest_id: counted_kill)) == 1
+  assert done_mask_of(row: quest_support.saved_row(
+      log: third.log,
+      quest_id: counted_kill,
+    ))
+    == 1
     as "the done bit is set at the count"
   assert third.became_achieved as "and the only objective's quest is Achieved"
   let assert Ok(capped) =
@@ -500,7 +539,7 @@ pub fn a_counted_kill_adds_one_per_kill_test() -> Nil {
   assert capped.progress == 3 as "and stops at the count (0x140551840)"
 
   // A count of 1 is a raw count too: the needed count is the count itself.
-  let single = quest(id: one_kill)
+  let single = quest_support.quest_of(id: one_kill)
   let log = fresh(quest_id: one_kill, slots: 1)
   let one = killed(log:, quest: single, kills: 1)
   assert one.progress == 1

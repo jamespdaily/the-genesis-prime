@@ -21,6 +21,7 @@
 import ask_support
 import asking_rule
 import clock_rule
+import connection_rule_support
 import driven_time
 import event_wait
 import gate_rule
@@ -734,7 +735,7 @@ fn clocked(
       rule: Rule(
         name: "clock",
         settings: Nil,
-        new: clock_rule.new,
+        new: connection_rule_support.new_keeping_nothing,
         step: clock_rule.step,
       ),
       reach: service.Reach(

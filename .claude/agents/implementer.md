@@ -27,6 +27,8 @@ Show every new test, and every test you move to another file, failing when the t
 
 Run `gleam build`, the tests you touch and `./check fast` as you go; before you push a change to a message or frame the client sees, run every test file that asserts it (search test/ for its name or kind); never `./check` and never the whole `gleam test` (CI is the gate: it runs every test on the draft pull request, and its repeat job reruns each test file you changed 40 times). (Builders running the whole suite, about 5 minutes a run and often twice, held both of the machine's test slots, 2026-11-20.) Push after every commit; at your first push, open a draft pull request (title: the issue's title, body: the issue's number) so CI runs. After your last push, run `git switch --detach` in your own worktree, so the next builder of a fix round can check the branch out. (About 8 fix rounds of 2026-11-20 found the branch held by the finished builder's worktree and pushed from a local branch.) Hand back right after that, without waiting for CI: the coordinator watches it. (Builders spent 10 of 118 hours polling CI, 2026-11-17.) A check that fails once is reported with its cause, not rerun until green. Keep each command's output in a log in your scratch subfolder and read only the failing lines.
 
+Before you hand back, review your own diff for repeats: each function, list of variants or `case` you added that does the work of one that already exists (the brief's reuse map names them; search for the rest). Call or extend the existing one instead, and name what you merged in the hand-back. (Reviews of 13 of about 20 steps found a third or later copy and each cost a fix round, 2026-11-24.)
+
 Hand back once, as a comment on the step's issue, then return under 150 words: the commit, and any deviation or finding outside the list, with the comment's link. A lost or compacted message then loses nothing. (A hand-back never arrived and the coordinator waited two hours, 2026-11-06.) Use this block, every field filled or "none":
 
 ```
@@ -36,6 +38,7 @@ Hand back once, as a comment on the step's issue, then return under 150 words: t
 - Passing last: for each test file you touched, the pasted last pass line of its last run
 - Test fixes: <test> - the cause and its evidence (the failing lines and the code that makes them), or none
 - Functions added: <name> - closest existing function or library call, and why it is not used
+- Self-review: <repeat found and what it now calls>, or none
 - Failure-table rows: <row> - <test>
 - Deviations from the brief: <what and why>
 - Found outside the list: <failure, gap or question, with evidence>

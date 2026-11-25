@@ -10,7 +10,7 @@ import simplifile
 /// The folder of the exported release, made by the first caller and the same
 /// for every later one.
 pub fn folder() -> String {
-  once("shipment", export)
+  database_support.once("shipment", export)
 }
 
 /// The script that starts the release in `folder`, which runs the server with
@@ -28,7 +28,3 @@ fn export() -> String {
       panic as { "release/build did not export the shipment: " <> output }
   }
 }
-
-/// Runs `create` once per key in this VM; every caller gets the same value.
-@external(erlang, "database_support_ffi", "once")
-fn once(key: String, create: fn() -> a) -> a

@@ -348,7 +348,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 14,
-        reason: "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name are not raised), and rows held by another unit, behind a persistence or target apply prerequisite, with an aim of 32 or above, with no life or naming a Spell4 or Spell4Base the tables lack, which the plan leaves out",
+        reason: "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills, heals, physical, tech and magic damage and spells the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name are not raised), and rows held by another unit, behind a persistence or target apply prerequisite, with an aim of 32 or above, with no life or naming a Spell4 or Spell4Base the tables lack, which the plan leaves out",
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(

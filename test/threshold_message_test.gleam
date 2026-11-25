@@ -9,7 +9,6 @@ import genesis_prime/message/spell_threshold_closed.{SpellThresholdClosed}
 import genesis_prime/message/spell_threshold_ended.{SpellThresholdEnded}
 import genesis_prime/message/spell_threshold_index.{SpellThresholdIndex}
 import genesis_prime/message/spell_threshold_opened.{SpellThresholdOpened}
-import gleam/result
 import message_support
 import owned_test
 import qcheck
@@ -87,12 +86,12 @@ pub fn every_value_of_the_threshold_messages_round_trips_test() -> Nil {
   let bit = small % 2
   let closed = SpellThresholdClosed(spell4_id: spell, start_cooldowns: bit)
   assert spell_threshold_closed.encode(closed)
-    |> result_decode(spell_threshold_closed.decode)
+    |> message_support.result_decode(spell_threshold_closed.decode)
     == Ok(closed)
     as "opcode.0x814: 18 bits and 1 bit"
   let ended = SpellThresholdEnded(spell4_id: spell)
   assert spell_threshold_ended.encode(ended)
-    |> result_decode(spell_threshold_ended.decode)
+    |> message_support.result_decode(spell_threshold_ended.decode)
     == Ok(ended)
     as "opcode.0x815: 18 bits"
   let opened =
@@ -103,20 +102,12 @@ pub fn every_value_of_the_threshold_messages_round_trips_test() -> Nil {
       cancel_cast_id: cast_id,
     )
   assert spell_threshold_opened.encode(opened)
-    |> result_decode(spell_threshold_opened.decode)
+    |> message_support.result_decode(spell_threshold_opened.decode)
     == Ok(opened)
     as "opcode.0x816: three 18-bit spells and a 32-bit value"
   let index = SpellThresholdIndex(spell4_id: spell, index: small)
   assert spell_threshold_index.encode(index)
-    |> result_decode(spell_threshold_index.decode)
+    |> message_support.result_decode(spell_threshold_index.decode)
     == Ok(index)
     as "opcode.0x817: 18 bits and 8 bits"
-}
-
-fn result_decode(
-  encoded: Result(BitArray, encode_error),
-  decode: fn(BitArray) -> Result(a, decode_error),
-) -> Result(a, Nil) {
-  use body <- result.try(result.replace_error(encoded, Nil))
-  result.replace_error(decode(body), Nil)
 }

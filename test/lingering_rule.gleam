@@ -4,6 +4,7 @@
 //// that a test's directory never gives. A recording of it that ends with the
 //// client's close shows whether the replay waits for the shell to end.
 
+import connection_rule_support
 import genesis_prime/step.{
   type ConnectionInput, type ConnectionRule, type ConnectionStep, Accepted, Ask,
   AskId, Effects, EffectsThenAsk, Input, OwnEvent, PeerClosed, Read, ReadFailed,
@@ -16,12 +17,12 @@ const ask_ms = 60_000
 
 /// The rule as its shell runs it.
 pub fn rule() -> ConnectionRule(Nil, Nil, Nil, Nil, Nil) {
-  Rule(name: "lingering_rule", settings: Nil, new:, step:)
-}
-
-/// The rule keeps nothing between inputs.
-pub fn new(_settings: Nil) -> Nil {
-  Nil
+  Rule(
+    name: "lingering_rule",
+    settings: Nil,
+    new: connection_rule_support.new_keeping_nothing,
+    step:,
+  )
 }
 
 /// The client's close is an ask; every other input has no effect.

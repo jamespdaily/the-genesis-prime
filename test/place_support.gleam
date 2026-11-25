@@ -1,6 +1,7 @@
 //// A place for a test to put a character at, in a world of the test's naming.
 
 import genesis_prime/game/start_place.{type Place}
+import gleam/float
 
 /// The hit radius of a player: the Race row's hitRadius, 1.2 for the eight player races
 /// as the table's 32-bit float reads (genesis_prime/game/hit_radius).
@@ -65,4 +66,9 @@ pub fn assert_landed(
 ) -> Nil {
   let assert Ok(place) = landing as reason
   assert_place(place:, world:, zone:, x:, y:, z:, reason:)
+}
+
+/// Whether two coordinates are within a millionth of each other.
+pub fn near(left left: Float, right right: Float) -> Bool {
+  float.absolute_value(left -. right) <. 0.000_001
 }

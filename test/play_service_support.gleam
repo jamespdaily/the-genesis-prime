@@ -518,3 +518,8 @@ pub fn returned(ran ran: Ran) -> Result(Int, Nil) {
     Error(Nil) -> Error(Nil)
   }
 }
+
+/// The updater's log; empty when it wrote none.
+pub fn log_of(scene: Scene) -> String {
+  result.unwrap(simplifile.read(scene.home <> "/play-service.log"), "")
+}

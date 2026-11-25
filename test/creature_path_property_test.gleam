@@ -141,15 +141,11 @@ fn before_velocity(
     True -> #(0.0, 0.0, 0.0)
     False -> {
       let scale = speed /. length
-      let #(fx, fy, fz) = coordinates(from)
-      let #(tx, ty, tz) = coordinates(to)
+      let #(fx, fy, fz) = support.coordinates(from)
+      let #(tx, ty, tz) = support.coordinates(to)
       #({ tx -. fx } *. scale, { ty -. fy } *. scale, { tz -. fz } *. scale)
     }
   }
-}
-
-fn coordinates(place: Place) -> Point {
-  #(start_place.x(place), start_place.y(place), start_place.z(place))
 }
 
 pub fn a_path_of_two_points_is_what_it_was_property_test() -> Nil {

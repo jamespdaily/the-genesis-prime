@@ -14,6 +14,7 @@
 ////   SecondaryTargetIconSpellText text; no other field prints a text.
 //// The Spell4 rows are planted (`test/spell_tables`); only their text columns differ.
 
+import coverage_support
 import genesis_prime/table/spell4
 import genesis_prime/tooltip_token.{Found, Token}
 import gleam/list
@@ -23,13 +24,6 @@ import planted_table.{Integer}
 import spell_tables
 
 const header = "text_id\tkind\tid\tfield"
-
-fn list_of(rows: List(String)) -> tooltip_token.Tokens {
-  let assert Ok(tokens) =
-    tooltip_token.parse(string.join([header, ..rows], "\n") <> "\n")
-    as "the planted list parses"
-  tokens
-}
 
 /// Telekinetic Strike 32893 and Pulse Blast 42276 with these text columns set.
 fn rows_with_texts(
@@ -82,7 +76,7 @@ pub fn a_spells_tokens_are_read_through_its_seven_text_columns_test() -> Nil {
       blast: [],
     )
   let tokens =
-    list_of([
+    coverage_support.list_of([
       "9001\teff\t1001\tinput0pct",
       "9002\teff\t1002\tinput0pct",
       "9003\tcc\t1003\tdurationms",
@@ -121,7 +115,7 @@ pub fn a_nested_tooltip_field_is_followed_to_the_named_spells_column_test() -> N
       ],
     )
   let tokens =
-    list_of([
+    coverage_support.list_of([
       "9101\tspell\t42276\tabtooltip",
       "9101\tspell\t42276\tctooltip",
       "9101\tspell\t42276\tpttooltip",
@@ -149,7 +143,7 @@ pub fn a_nested_tooltip_that_names_a_spell_already_read_stops_there_test() -> Ni
       blast: [#("localizedTextIdActionBarTooltip", 9302)],
     )
   let tokens =
-    list_of([
+    coverage_support.list_of([
       "9301\tspell\t42276\tabtooltip",
       "9302\tspell\t32893\tabtooltip",
       "9302\teff\t3002\tinput0pct",
@@ -168,7 +162,7 @@ pub fn a_nested_tooltip_that_names_a_spell_the_table_lacks_adds_only_its_own_tok
       strike: [#("localizedTextIdActionBarTooltip", 9401)],
       blast: [],
     )
-  let tokens = list_of(["9401\tspell\t99999999\tabtooltip"])
+  let tokens = coverage_support.list_of(["9401\tspell\t99999999\tabtooltip"])
   assert found_in(rows:, tokens:, spell: 32_893)
     == [
       Found(
@@ -189,7 +183,8 @@ pub fn a_spell_with_no_text_has_no_tokens_test() -> Nil {
       }
     })
   assert list.length(row) == list.length(spell4.schema.columns)
-  assert found_in(rows:, tokens: list_of([]), spell: 32_893) == []
+  assert found_in(rows:, tokens: coverage_support.list_of([]), spell: 32_893)
+    == []
 }
 
 pub fn a_list_row_with_a_missing_column_fails_the_load_naming_the_row_test() -> Nil {
@@ -275,7 +270,7 @@ pub fn a_list_with_another_header_fails_the_load_test() -> Nil {
 
 pub fn a_token_without_a_field_reads_as_a_link_row_test() -> Nil {
   use <- owned_test.run(10_000)
-  let tokens = list_of(["445006\tspell\t72652\t"])
+  let tokens = coverage_support.list_of(["445006\tspell\t72652\t"])
   assert tooltip_token.of_text(tokens:, text_id: 445_006)
     == [Token(tooltip_token.Spell, 72_652, "")]
   assert tooltip_token.of_text(tokens:, text_id: 1) == []
