@@ -1066,8 +1066,9 @@ pub fn worn_wanted(
 /// from `amp_plans` (`spell_plan.amp_plans`) with no item, and the Spell4 ids of those the plans
 /// leave out, which the cast rule logs once (`cast.standing_unbuilt`). Only the active set stands
 /// (`limited_action_set.first_set`): the set a player picks into and the only one the server
-/// judges. A held AMP has a row: the entry drops a stored one without (`limited_action_set.entering`)
-/// and a pick is checked against the rows (`amp_spec.check`).
+/// judges. A held AMP has a row: the entry drops a stored list the check refuses, which holds
+/// an AMP with no row (`limited_action_set.entering`), and a pick is checked against the rows
+/// (`amp_spec.check`).
 fn amp_wanted(
   entered entered: world_entry.Entered,
   tables tables: table_store.Tables,

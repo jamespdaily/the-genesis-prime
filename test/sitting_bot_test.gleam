@@ -282,21 +282,45 @@ fn empty_language() -> language_file.LanguageFile {
   file
 }
 
+/// What a query on the saved rows of the test's characters reads, each row by `row`.
+fn saved_rows(
+  pool pool: pog.Connection,
+  query query: String,
+  row row: decode.Decoder(row),
+) -> List(row) {
+  let assert Ok(returned) =
+    pog.query(query)
+    |> pog.returning(row)
+    |> pog.execute(pool)
+    as "the saved rows read"
+  returned.rows
+}
+
 /// What the character holds of ability tiers: each row's set, Spell4Base and tier.
 fn tier_rows(pool: pog.Connection) -> List(#(Int, Int, Int)) {
-  let assert Ok(returned) =
-    pog.query(
-      "select action_set, spell4_base_id, tier from character_ability_tier order by action_set, spell4_base_id",
-    )
-    |> pog.returning({
+  saved_rows(
+    pool:,
+    query: "select action_set, spell4_base_id, tier from character_ability_tier order by action_set, spell4_base_id",
+    row: {
       use set <- decode.field(0, decode.int)
       use base <- decode.field(1, decode.int)
       use tier <- decode.field(2, decode.int)
       decode.success(#(set, base, tier))
-    })
-    |> pog.execute(pool)
-    as "the tier rows read"
-  returned.rows
+    },
+  )
+}
+
+/// What the character holds of AMPs: each row's set and EldanAugmentation id.
+fn amp_rows(pool: pog.Connection) -> List(#(Int, Int)) {
+  saved_rows(
+    pool:,
+    query: "select action_set, eldan_augmentation_id from character_action_amp order by action_set, eldan_augmentation_id",
+    row: {
+      use set <- decode.field(0, decode.int)
+      use id <- decode.field(1, decode.int)
+      decode.success(#(set, id))
+    },
+  )
 }
 
 pub fn equipping_the_bot_deletes_the_tiers_it_had_saved_so_it_enters_with_no_points_spent_test() -> Nil {
@@ -314,7 +338,18 @@ pub fn equipping_the_bot_deletes_the_tiers_it_had_saved_so_it_enters_with_no_poi
     )
     |> pog.execute(pool)
     as "the bot's saved tiers were inserted"
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_action_amp (character_id, action_set, eldan_augmentation_id) values ("
+      <> int.to_string(seat.character_id)
+      <> ", 0, 220), ("
+      <> int.to_string(seat.character_id)
+      <> ", 2, 221)",
+    )
+    |> pog.execute(pool)
+    as "the bot's saved AMPs were inserted"
   assert tier_rows(pool) == [#(0, 20_684, 3), #(2, 20_718, 2)]
+  assert amp_rows(pool) == [#(0, 220), #(2, 221)]
   let choice =
     ability.Choice(
       class_id: 4,
@@ -337,6 +372,8 @@ pub fn equipping_the_bot_deletes_the_tiers_it_had_saved_so_it_enters_with_no_poi
     as "the bot was equipped as the same class at a higher level"
   assert tier_rows(pool) == []
     as "a tier saved before the equip would count against the new level's points, so the equip takes it with the action bar"
+  assert amp_rows(pool) == []
+    as "an AMP saved before the equip may be of the old class, whose whole list the entry would drop, so the equip takes it too"
 }
 
 // ---- the sitting bot on the whole server ----

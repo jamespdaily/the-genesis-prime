@@ -378,7 +378,7 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
       amps: [],
     )
   // A level 10 Stalker who picked the Assault chain and 863 holds the class's own bar saved and
-  // the four AMPs of set 0 (the store writes none yet).
+  // the four AMPs of set 0.
   let stalker = 5
   let after_amps =
     sent(
@@ -415,6 +415,27 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
     as "(f) a player who bought nothing carries no tier row"
   assert action_sets_asked(taken:).amps == []
     as "(f) a player who picked nothing carries no AMP row"
+  // A Spellslinger who entered with stored AMP rows: at level 10 the check passes the list and
+  // the player saves it as it was; at level 9 the entry dropped it whole, so the player saves
+  // none and the store deletes the rows.
+  let stored =
+    limited.with_rows(slots: [], tiers: [], amps: [#(0, 220), #(0, 221)])
+  let #(_, taken) =
+    timer_save(state: ability_book_support.entered_holding_action_sets(
+      class_id: limited.spellslinger,
+      level: 10,
+      action_sets: stored,
+    ))
+  assert action_sets_asked(taken:).amps == stored.amps
+    as "(h) a stored list the check passes at entry is carried by the next save as it was"
+  let #(_, taken) =
+    timer_save(state: ability_book_support.entered_holding_action_sets(
+      class_id: limited.spellslinger,
+      level: 9,
+      action_sets: stored,
+    ))
+  assert action_sets_asked(taken:).amps == []
+    as "(h) a stored list the check refuses at entry was dropped, so the next save carries an empty list, which deletes the stored rows"
   let #(returned, _, _) =
     sent(state: after_tier, body: limited.tiering([#(27_638, 1)]))
   assert action_sets_asked(taken: timer_save(state: returned).1)

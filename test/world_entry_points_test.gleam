@@ -16,6 +16,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
+import genesis_prime/store
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/list
 import limited_action_set_support as limited
@@ -201,4 +202,25 @@ pub fn a_rejoin_sends_the_points_of_the_level_the_session_holds_test() -> Nil {
   assert list.window(cast_support.ids(frames:), 3)
     |> list.contains([0x092C, 0x0169, 0x01A3])
     as "0x01A3 follows 0x0169"
+  // The join judges the rows again at the level the session holds. GameFormula 942 gives
+  // 7 power at level 10 and 1 more for each level above it, so the five picks of level 11
+  // below (8 power, EldanAugmentation 774 a class 5 tier 0 AMP of cost 1) are kept only by a
+  // judgement at 11, and one at the entry's level 10 drops the whole list.
+  let #(picked_at_11, _) =
+    limited.taken_as(
+      class_id: 5,
+      saved: stalker.action_sets,
+      level: 11,
+      body: limited.amps_body(class_id: 5, amp_ids: [770, 771, 772, 774, 863]),
+    )
+  let frames =
+    world_entry_support.rejoining_from(
+      entered: world_entry.Entered(
+        ..stalker,
+        action_sets: picked_at_11,
+        character: store.Character(..stalker.character, level: 11),
+      ),
+    )
+  assert limited.amp_lists_in(frames:) == [#(0, [770, 771, 772, 774, 863])]
+    as "the join at level 11 keeps the 8 power picked at 11, which a judgement at 10 drops"
 }

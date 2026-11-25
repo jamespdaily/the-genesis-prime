@@ -265,15 +265,26 @@ pub fn held_ids_as(
 
 /// The saved sets of a player of a class at a level as the store hands them to the entry: no
 /// slot and no tier, and these AMPs (set, EldanAugmentation id), as `entering` judges them
-/// against the AMP rows and the class.
+/// against the AMP check of the class at the level.
 pub fn saved_with_amps(
   tables tables: table_store.Tables,
   class_id class_id: Int,
   level level: Int,
   amps amps: List(#(Int, Int)),
 ) -> limited_action_set.Saved {
+  judged_with_amps(tables:, class_id:, level:, amps:).saved
+}
+
+/// What the entry of a player of a class at a level makes of these stored AMPs (set,
+/// EldanAugmentation id) and no slot or tier: the sets it keeps and the lists it drops.
+pub fn judged_with_amps(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+  level level: Int,
+  amps amps: List(#(Int, Int)),
+) -> limited_action_set.Judged {
   let player = player_of(tables:, class_id:, level:)
-  let assert Ok(saved) =
+  let assert Ok(judged) =
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
       tiers: spell_tier.tiers(tables:),
@@ -285,7 +296,7 @@ pub fn saved_with_amps(
       rows: with_rows(slots: [], tiers: [], amps:),
     )
     as "AMP rows of sets 0 to 3 and ids the table holds are rows the entry judges, not refuses"
-  saved
+  judged
 }
 
 /// The body of a 0xB1 that keeps the class's own bar in set 0 and sends these AMP ids.

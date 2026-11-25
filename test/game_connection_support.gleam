@@ -600,10 +600,17 @@ pub fn joining_holding_items(
     quests:,
     items:,
     currencies: [],
+    action_sets: no_action_sets(),
   )
 }
 
-/// `joining_holding_items` for a character whose store holds these currency rows.
+/// The action sets of a character that saved none.
+pub fn no_action_sets() -> store.ActionSets {
+  limited_action_set.rows(saved: limited_action_set.none())
+}
+
+/// `joining_holding_items` for a character whose store holds these currency rows and action
+/// sets.
 pub fn joining_holding_currencies(
   in_character_select in_character_select: game_connection.State,
   character character: store.Character,
@@ -612,6 +619,7 @@ pub fn joining_holding_currencies(
   quests quests: List(store.QuestRow),
   items items: List(store.HeldItem),
   currencies currencies: List(store.HeldCurrency),
+  action_sets action_sets: store.ActionSets,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
@@ -628,7 +636,7 @@ pub fn joining_holding_currencies(
           [],
           quests,
           currencies,
-          limited_action_set.rows(saved: limited_action_set.none()),
+          action_sets,
         )),
       ),
     ),

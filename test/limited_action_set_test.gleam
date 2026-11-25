@@ -33,6 +33,7 @@ import genesis_prime/game/limited_action_set.{
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_tier
+import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
@@ -43,8 +44,8 @@ import genesis_prime/table/character_creation
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Spell4BaseId, ClassId, EldanAugmentationId, GameFormulaId, PrerequisiteId,
-  Spell4BaseId,
+  type ClassId, type Spell4BaseId, ClassId, EldanAugmentationId, GameFormulaId,
+  PrerequisiteId, Spell4BaseId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -54,7 +55,6 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/order
 import gleam/result
 import gleam/string
 import limited_action_set_support as support
@@ -64,6 +64,7 @@ import planted_table.{Integer}
 import qcheck
 import spell_tables
 import unitest
+import world_entry_support
 
 /// The slots 0 to 7 and the level each opens at (`ActionSlotPrereq.prerequisiteIdUnlock`).
 const opening_levels = [
@@ -1093,7 +1094,7 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     ],
     fn(row) {
       let #(why, stored, shown) = row
-      let assert Ok(saved) =
+      let assert Ok(limited_action_set.Judged(saved:, ..)) =
         limited_action_set.entering(
           unlocks: limited_action_set.unlocks(tables:),
           amps: amp_spec.specs(tables:),
@@ -1667,13 +1668,15 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
     fn(row) {
       let #(why, rows, expected) = row
       let held = case enter(rows) {
-        Ok(saved) -> Holds(support.held_ids(tables:, saved:))
+        Ok(limited_action_set.Judged(saved:, ..)) ->
+          Holds(support.held_ids(tables:, saved:))
         Error(error) -> Refuses(error)
       }
       assert held == expected as why
     },
   )
-  let assert Ok(saved) = enter(support.rows_of(set: 2, ids: support.ids_a))
+  let assert Ok(limited_action_set.Judged(saved:, ..)) =
+    enter(support.rows_of(set: 2, ids: support.ids_a))
     as "rows of set 2 are rows the table's checks hold"
   assert limited_action_set.rows(saved:)
     == support.with_rows(
@@ -1765,6 +1768,181 @@ fn amp_row_of(error error: limited_action_set.RowError) -> store.AmpRow {
       row
     _ -> panic as "the error names an AMP row"
   }
+}
+
+/// A stored AMP list the entry judges: who holds it, the AMPs stored (set, EldanAugmentation
+/// id), the sets the entry keeps whole and the result the client's check gives each set it
+/// drops (`amp_spec.result_of`), with the reason.
+type StoredAmps {
+  StoredAmps(
+    class_id: Int,
+    level: Int,
+    stored: List(#(Int, Int)),
+    kept: List(Int),
+    dropped: List(#(Int, Int)),
+    why: String,
+  )
+}
+
+pub fn entering_keeps_a_stored_amp_list_the_check_still_passes_and_drops_the_whole_set_that_it_refuses_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  // Spellslinger 220 to 222 are tier 0 of category 1, cost 1 and chained, 259 is its tier 1
+  // and costs 4; the level gives 7 power at 10 and none at 9 (GameFormula 942); the check
+  // is `0x1403d02a0`, whose results are `amp_spec.result_of`.
+  let chain = [220, 221, 222, 259]
+  let in_sets = fn(sets, ids) {
+    list.flat_map(sets, fn(set) { list.map(ids, fn(id) { #(set, id) }) })
+  }
+  let judge = fn(tables, case_: StoredAmps) {
+    let judged =
+      support.judged_with_amps(
+        tables:,
+        class_id: case_.class_id,
+        level: case_.level,
+        amps: case_.stored,
+      )
+    assert list.filter([0, 1, 2, 3], fn(set) {
+        limited_action_set.held_amps(saved: judged.saved, set:) != []
+      })
+      == case_.kept
+      as case_.why
+    assert list.map(judged.dropped_amps, fn(dropped) {
+        #(dropped.set, amp_spec.result_of(refusal: dropped.refusal))
+      })
+      == case_.dropped
+      as { case_.why <> ": one drop for each set the check refuses" }
+    list.each(case_.kept, fn(set) {
+      assert list.map(
+          limited_action_set.held_amps(saved: judged.saved, set:),
+          fn(id) { id.value },
+        )
+        == list.filter_map(case_.stored, fn(row) {
+          case row.0 == set {
+            True -> Ok(row.1)
+            False -> Error(Nil)
+          }
+        })
+        as { case_.why <> ": a kept list is whole, in id order" }
+    })
+  }
+  list.each(
+    [
+      StoredAmps(
+        7,
+        10,
+        in_sets([0, 2], chain),
+        [0, 2],
+        [],
+        "L10 Spellslinger: 7 of 7 power, in set 0 and set 2 alike",
+      ),
+      StoredAmps(
+        7,
+        9,
+        in_sets([0, 2], chain),
+        [],
+        [#(0, 31), #(2, 31)],
+        "L9 gives no power: each set's list is dropped whole, none is kept",
+      ),
+      StoredAmps(
+        7,
+        10,
+        list.append(in_sets([0], [220, 221, 222]), [#(0, 23)]),
+        [],
+        [#(0, 4)],
+        "23 is a Warrior's AMP among a Spellslinger's: the whole list goes, not 23 alone",
+      ),
+      StoredAmps(
+        7,
+        10,
+        in_sets([0], [259]),
+        [],
+        [#(0, 33)],
+        "259 is a tier 1 AMP with 0 power spent in tier 0, under 3",
+      ),
+      StoredAmps(
+        7,
+        10,
+        [#(0, 259), #(1, 220), #(1, 221)],
+        [1],
+        [#(0, 33)],
+        "judging is for each set: set 0's refused list goes, set 1's good one stays",
+      ),
+      StoredAmps(
+        7,
+        10,
+        [#(0, 220), #(0, 977)],
+        [],
+        [#(0, 35)],
+        "977 has no row (the entry drops what the tables no longer hold, as the check refuses it)",
+      ),
+    ],
+    fn(case_) { judge(tables, case_) },
+  )
+  // A row no client row holds: 221 moved to another class, and a power of 3 at level 10.
+  {
+    use tables <- fixture_tables.changed(
+      table: "EldanAugmentation",
+      id: 221,
+      with: [#("classId", Integer(4))],
+    )
+    judge(
+      tables,
+      StoredAmps(
+        7,
+        10,
+        in_sets([0], chain),
+        [],
+        [#(0, 4)],
+        "221 is changed to Medic's: the table, not the entry, says whose it is",
+      ),
+    )
+  }
+  {
+    use tables <- fixture_tables.changed(table: "GameFormula", id: 942, with: [
+      #("dataint01", Integer(3)),
+    ])
+    judge(
+      tables,
+      StoredAmps(
+        7,
+        10,
+        in_sets([0], chain),
+        [],
+        [#(0, 31)],
+        "the power is 3 and the list costs 7: a changed table drops a list that was saved",
+      ),
+    )
+  }
+  // The entry warns once for each set it drops, and none for a list it keeps.
+  let warnings = fn(level) {
+    let assert world_entry.InTheWorld(effects:, ..) =
+      world_entry_support.joined_with_action_sets(
+        class_id: 7,
+        level:,
+        action_sets: support.with_rows(
+          slots: [],
+          tiers: [],
+          amps: in_sets([0, 2], [220]),
+        ),
+        unset: [],
+      )
+      as "the entry puts the player in the world"
+    list.filter_map(effects, fn(effect) {
+      case effect {
+        world_entry.Warn(text:) -> Ok(text)
+        _ -> Error(Nil)
+      }
+    })
+  }
+  assert warnings(10) == [] as "a list the check passes warns of nothing"
+  let dropped = warnings(9)
+  assert list.length(dropped) == 2
+    as "the entry warns once for each of the two sets it drops"
+  assert list.all(dropped, string.contains(_, "NotEnoughPower"))
+    && list.any(dropped, string.contains(_, "action set 0"))
+    && list.any(dropped, string.contains(_, "action set 2"))
+    as "each warning names its set and the check's refusal"
 }
 
 /// What a load of tier rows leads to: the tiers kept as (set, Spell4Base, tier) in set then
@@ -2029,7 +2207,7 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
         rows: support.with_rows(slots: [], tiers: case_.saved, amps: []),
       )
     let held = case got {
-      Ok(saved) -> {
+      Ok(limited_action_set.Judged(saved:, ..)) -> {
         assert limited_action_set.rows(saved:).slots == []
           as { case_.why <> " (no bar was saved, so none is)" }
         Keeps(kept_tiers(saved:))
@@ -2123,6 +2301,38 @@ fn fitting_tier_rows(
   list.reverse(kept)
   |> list.map(fn(draw) {
     store.AbilityTierRow(action_set: set, spell4_base_id: draw.0, tier: draw.1)
+  })
+}
+
+/// The AMP rows of one set the entry cannot drop from these draws, in id order: each drawn id
+/// is added to the list when the client's check still accepts the list with it (the check is
+/// `amp_spec.check`, which the entry runs on the whole list of a set).
+fn fitting_amp_rows(
+  specs specs: amp_spec.Specs,
+  class_id class_id: ClassId,
+  level level: Int,
+  set set: Int,
+  draws draws: List(Int),
+) -> List(store.AmpRow) {
+  list.unique(draws)
+  |> list.sort(int.compare)
+  |> list.fold([], fn(kept, id) {
+    let listed = list.append(kept, [EldanAugmentationId(id)])
+    case
+      result.is_ok(amp_spec.check(
+        specs:,
+        class_id:,
+        level:,
+        held: [],
+        picks: listed,
+      ))
+    {
+      True -> listed
+      False -> kept
+    }
+  })
+  |> list.map(fn(id) {
+    store.AmpRow(action_set: set, eldan_augmentation_id: id.value)
   })
 }
 
@@ -2307,8 +2517,8 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
       qcheck.bounded_int(0, tiered_count - 1),
       qcheck.bounded_int(2, 9),
     )
-  // A drawn AMP is a set and the id of an AMP row of the player's class, the only ones the
-  // entry keeps (`amp_spec.is_of_class`).
+  // A drawn AMP is a set and the id of an AMP row of the player's class; a set keeps the
+  // draws the client's check accepts as a list (`fitting_amp_rows`).
   let class_amps =
     list.filter_map(eldan_augmentation.all(tables), fn(row) {
       case row.class_id == support.spellslinger {
@@ -2340,17 +2550,22 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
     ),
     fn(drawn) {
       let #(sets, drawn_tiers, drawn_amps) = drawn
-      // One row for each AMP of a set, in set then id order.
+      // Each set keeps the draws the check accepts as a list, in id order: the AMPs the entry
+      // cannot drop.
       let amp_rows =
-        list.unique(drawn_amps)
-        |> list.sort(fn(a, b) {
-          case int.compare(a.0, b.0) {
-            order.Eq -> int.compare(a.1, b.1)
-            other -> other
-          }
-        })
-        |> list.map(fn(amp) {
-          store.AmpRow(action_set: amp.0, eldan_augmentation_id: amp.1)
+        list.flat_map([0, 1, 2, 3], fn(set) {
+          fitting_amp_rows(
+            specs: amp_spec.specs(tables:),
+            class_id: ClassId(support.spellslinger),
+            level:,
+            set:,
+            draws: list.filter_map(drawn_amps, fn(amp) {
+              case amp.0 == set {
+                True -> Ok(amp.1)
+                False -> Error(Nil)
+              }
+            }),
+          )
         })
       let rows =
         [sets.0, sets.1, sets.2, sets.3]
@@ -2389,7 +2604,7 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
           list.map(tiered, Spell4BaseId),
         )
       let held = store.ActionSets(slots: rows, tiers: tier_rows, amps: amp_rows)
-      let assert Ok(saved) =
+      let assert Ok(limited_action_set.Judged(saved:, ..)) =
         limited_action_set.entering(
           unlocks:,
           amps: amp_spec.specs(tables:),
@@ -2403,7 +2618,8 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
         as "rows the table's checks hold are read"
       assert limited_action_set.rows(saved:) == held
         as "a saved set is twelve rows, in set then slot order, and no set gives none; the tiers are a row for each above tier 1, in set then Spell4Base order; the AMPs are a row for each, in set then id order"
-      assert limited_action_set.entering(
+      let assert Ok(limited_action_set.Judged(saved: again, ..)) =
+        limited_action_set.entering(
           unlocks:,
           amps: amp_spec.specs(tables:),
           class_id: ClassId(support.spellslinger),
@@ -2413,8 +2629,7 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
           book:,
           rows: limited_action_set.rows(saved:),
         )
-        == Ok(saved)
-        as "the rows of the sets read back as the same sets"
+      assert again == saved as "the rows of the sets read back as the same sets"
     },
   )
 }

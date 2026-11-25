@@ -151,62 +151,40 @@ where lower(name collate \"und-x-icu\") = lower($1 collate \"und-x-icu\");
   |> pog.execute(db)
 }
 
-/// Takes every spent ability tier saved for the character with this id ($1), of
-/// the account with this login name ($2), so the character enters with no points
-/// spent, as it holds no saved action bar either.
+/// Takes every action bar slot, spent ability tier and held AMP saved for the character with
+/// this id ($1), of the account with this login name ($2), so it shows its new class's bar,
+/// enters with no points spent and holds no AMP of the class it had.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub fn delete_bot_ability_tiers(
+pub fn delete_bot_action_sets(
   db: pog.Connection,
   character_id: Int,
   account_login_name: String,
 ) -> Result(pog.Returned(Nil), pog.QueryError) {
   let decoder = decode.map(decode.dynamic, fn(_) { Nil })
 
-  "-- Takes every spent ability tier saved for the character with this id ($1), of
--- the account with this login name ($2), so the character enters with no points
--- spent, as it holds no saved action bar either.
-delete from character_ability_tier
-where character_id = $1
-  and character_id in (
-    select character_id
-    from character
-    join account using (account_id)
-    where account.login_name = $2
-  );
-"
-  |> pog.query
-  |> pog.parameter(pog.int(character_id))
-  |> pog.parameter(pog.text(account_login_name))
-  |> pog.returning(decoder)
-  |> pog.execute(db)
-}
-
-/// Takes every action bar slot saved for the character with this id ($1), of the
-/// account with this login name ($2), so it shows its new class's bar.
-///
-/// > 🐿️ This function was generated automatically using v4.7.0 of
-/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
-///
-pub fn delete_bot_action_slots(
-  db: pog.Connection,
-  character_id: Int,
-  account_login_name: String,
-) -> Result(pog.Returned(Nil), pog.QueryError) {
-  let decoder = decode.map(decode.dynamic, fn(_) { Nil })
-
-  "-- Takes every action bar slot saved for the character with this id ($1), of the
--- account with this login name ($2), so it shows its new class's bar.
-delete from character_action_slot
-where character_id = $1
-  and character_id in (
-    select character_id
-    from character
-    join account using (account_id)
-    where account.login_name = $2
-  );
+  "-- Takes every action bar slot, spent ability tier and held AMP saved for the character with
+-- this id ($1), of the account with this login name ($2), so it shows its new class's bar,
+-- enters with no points spent and holds no AMP of the class it had.
+with guarded as (
+  select character_id
+  from character
+  join account using (account_id)
+  where character.character_id = $1
+    and account.login_name = $2
+),
+gone_slots as (
+  delete from character_action_slot
+  where character_id in (select character_id from guarded)
+),
+gone_tiers as (
+  delete from character_ability_tier
+  where character_id in (select character_id from guarded)
+)
+delete from character_action_amp
+where character_id in (select character_id from guarded);
 "
   |> pog.query
   |> pog.parameter(pog.int(character_id))
