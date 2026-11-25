@@ -2132,9 +2132,10 @@ fn proc_started(
 /// and `from` are what the child counts its quest rows with and the item whose value it
 /// reads, handed down from the cast that started it (`WithNothing` for a proc and a tick,
 /// which count no quest row). `fired` is true for the cast a proc fire starts and for every
-/// child below a fired cast (`Child.fired`). `named_player` is the player a child of a Proxy aimed at the primary target is
-/// started on (`children`): a player the caster no longer sees starts no child, and a debug
-/// line says so, as the press's own rule refuses a press at a player out of sight.
+/// child below a fired cast (`Child.fired`). `named_player` is the player a child of a Proxy
+/// aimed at the primary target is started on (`children`): a player the caster no longer sees
+/// starts no child, and a debug line says so, as the press's own rule refuses a press at a
+/// player out of sight.
 fn child_started(
   cast cast: State,
   caster caster: Caster,

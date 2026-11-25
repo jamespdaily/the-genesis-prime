@@ -1449,5 +1449,9 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Casting",
       missing: "A heal is never a critical heal: the server rolls no critical for a heal, so a proc that waits for a critical heal never fires.",
     ),
+    gap.Entry(
+      area: "Casting",
+      missing: "Whether a spell a proc casts may fire a proc is a guess: no client code reads a Proc row, so the server fires none from what a proc's spell does (a hit, a kill, a critical, a heal, a landing, a stealth change or a class resource move of a fired cast and the casts below it). An event of a fired cast that no input of the cast raises, the stealth that the client's own cancel of a fired cast ends, is raised as any player's input raises it.",
+    ),
   ]
 }
