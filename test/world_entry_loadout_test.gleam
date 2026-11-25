@@ -233,7 +233,11 @@ pub fn one_0x1a0_sets_the_held_tier_of_each_ability_in_each_action_set_and_tier_
       world_entry_support.joined_with_action_sets(
         class_id: 7,
         level: 15,
-        action_sets: limited_action_set_support.with_tiers(tiers: saved),
+        action_sets: limited_action_set_support.with_rows(
+          slots: [],
+          tiers: saved,
+          amps: [],
+        ),
         unset: [],
       )
       as "the entry puts the player in the world"
@@ -347,7 +351,11 @@ pub fn an_entry_with_saved_rows_sends_the_saved_bar_and_one_with_no_rows_sends_t
     world_entry_support.joined_with_action_sets(
       class_id: 7,
       level: 4,
-      action_sets: limited_action_set_support.with_slots(slots: rows),
+      action_sets: limited_action_set_support.with_rows(
+        slots: rows,
+        tiers: [],
+        amps: [],
+      ),
       unset:,
     )
   }

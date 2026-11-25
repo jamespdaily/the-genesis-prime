@@ -28,6 +28,8 @@ import genesis_prime/table/creature_level
 import genesis_prime/table/currency_type
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
+import genesis_prime/table/eldan_augmentation
+import genesis_prime/table/eldan_augmentation_category
 import genesis_prime/table/episode
 import genesis_prime/table/episode_quest
 import genesis_prime/table/faction2
@@ -113,6 +115,8 @@ import genesis_prime/table/xp_per_level
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
+/// - EldanAugmentation, EldanAugmentationCategory and Class, with GameFormula: the AMPs a
+///   player may pick, their categories and the power a level gives (genesis_prime/game/amp_spec).
 /// - CreatureLevel: a player's Base Health by level (genesis_prime/game/loadout).
 /// - Item2, Item2Category, Item2Family, Item2Type and ItemSlot, with GameFormula:
 ///   the Novice gear's properties (genesis_prime/game/item_property).
@@ -198,6 +202,8 @@ pub fn entries() -> List(store.Entry) {
     currency_type.entry(),
     customization_parameter.entry(),
     customization_parameter_map.entry(),
+    eldan_augmentation.entry(),
+    eldan_augmentation_category.entry(),
     episode.entry(),
     episode_quest.entry(),
     faction2.entry(),

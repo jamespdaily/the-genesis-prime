@@ -237,17 +237,29 @@ pub type AbilityTierRow {
   AbilityTierRow(action_set: Int, spell4_base_id: Int, tier: Int)
 }
 
+/// One AMP held in an action set: the set (0 to 3) and the EldanAugmentation id (the 16 bits
+/// of the AMP lists of messages 0x00B1 and 0x01A3, `opcode.0x1a3`). Which AMPs a level, a class
+/// and the power allow is the ability builder's rule (genesis_prime/game/amp_spec).
+pub type AmpRow {
+  AmpRow(action_set: Int, eldan_augmentation_id: Int)
+}
+
 /// What a character has saved of its action sets: the slots of every set it has placed a
 /// bar in, whole sets in set then slot order, twelve rows for each (none for a character that
-/// never saved a bar), and the tiers it holds above tier 1, in set then Spell4Base order. Both
-/// lists are whole: a save that carries a shorter tier list deletes the tier rows it leaves out
-/// (a tier returned to 1 is no row), and an empty one deletes them all, so every request that
-/// saves the place carries the whole held list. A save is refused by name only for a row the
-/// table's checks refuse. Two rows for one slot or for one ability of one set, or a set, slot
-/// or tier beyond 16 bits, fail the statement with an error no check names, which crashes the
-/// worker; `limited_action_set.rows` never builds any.
+/// never saved a bar), the tiers it holds above tier 1, in set then Spell4Base order, and the
+/// AMPs it holds, in set then EldanAugmentation order. Every list is whole: a save that carries
+/// a shorter tier list deletes the tier rows it leaves out (a tier returned to 1 is no row),
+/// and an empty one deletes them all, so every request that saves the place carries the whole
+/// held list. A save is refused by name only for a row the table's checks refuse. Two rows for
+/// one slot or for one ability of one set, or a set, slot or tier beyond 16 bits, fail the
+/// statement with an error no check names, which crashes the worker;
+/// `limited_action_set.rows` never builds any. The store writes no AMP row.
 pub type ActionSets {
-  ActionSets(slots: List(ActionSlotRow), tiers: List(AbilityTierRow))
+  ActionSets(
+    slots: List(ActionSlotRow),
+    tiers: List(AbilityTierRow),
+    amps: List(AmpRow),
+  )
 }
 
 /// The entry the client's active list carries for a quest (opcode.0x35f): the

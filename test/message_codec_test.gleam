@@ -83,6 +83,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/ability_tiers.gleam",
       "src/genesis_prime/message/account_entitlements.gleam",
       "src/genesis_prime/message/action_set.gleam",
+      "src/genesis_prime/message/action_set_amps.gleam",
       "src/genesis_prime/message/action_set_save.gleam",
       "src/genesis_prime/message/action_set_saved.gleam",
       "src/genesis_prime/message/action_set_tier_change.gleam",
