@@ -136,6 +136,20 @@ pub fn join_hiding(
   alive alive: Bool,
   hidden hidden: Set(PrerequisiteId),
 ) -> #(State, ServiceStep(map.Outgoing)) {
+  join_in_stay(state:, at_ms:, connection:, stay_count: 1, x:, alive:, hidden:)
+}
+
+/// A join of connection `connection` at `x`, at time `at_ms`, naming the stay of its
+/// `stay_count`th join, of a player for whom these visibility prerequisites fail.
+pub fn join_in_stay(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  stay_count stay_count: Int,
+  x x: Float,
+  alive alive: Bool,
+  hidden hidden: Set(PrerequisiteId),
+) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -145,7 +159,7 @@ pub fn join_hiding(
         connection: ConnectionId(connection),
         character: map_support.character(100 + connection),
         place: at(x),
-        stay: map_support.stay(count: 1),
+        stay: map_support.stay(count: stay_count),
         alive:,
         hidden:,
       ),

@@ -18,8 +18,8 @@ import genesis_prime/game/strike_tell.{
 }
 import genesis_prime/game/unit_news.{Health, PeerNews}
 import genesis_prime/step.{
-  type ServiceStep, Asked, CallerId, ConnectionId, Creature, OwnEvent,
-  ServiceTimerFired, TimerId, Told, WatchId,
+  type ServiceStep, ConnectionId, Creature, OwnEvent, ServiceTimerFired, TimerId,
+  Told, WatchId,
 }
 import genesis_prime/table/id.{Creature2Id, Faction2Id, PrerequisiteId}
 import genesis_prime/world_map/creature
@@ -158,31 +158,6 @@ fn a_strike(unit_id unit_id: Int) -> strike_tell.Tell {
     )
     as "the strike message holds a strike"
   tell
-}
-
-/// A join of the connection with the stay of its `stay_count`th join, at `x`.
-fn join_in_stay(
-  state state: State,
-  at_ms at_ms: Int,
-  connection connection: Int,
-  stay_count stay_count: Int,
-  x x: Float,
-) -> #(State, ServiceStep(map.Outgoing)) {
-  spawns.feed(
-    state:,
-    at_ms:,
-    event: OwnEvent(Asked(
-      caller: CallerId(connection),
-      message: map.Join(
-        connection: ConnectionId(connection),
-        character: map_support.character(100 + connection),
-        place: spawns.at(x),
-        stay: map_support.stay(count: stay_count),
-        alive: True,
-        hidden: set.new(),
-      ),
-    )),
-  )
 }
 
 pub fn a_second_join_unsees_then_sees_each_kept_creature_under_a_new_generation_test() -> Nil {
@@ -569,13 +544,45 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       spawn_support.battle_beast(number: 1, x: 0.0),
     ])
   let #(state, _) =
-    join_in_stay(state:, at_ms: 6000, connection: 3, stay_count: 3, x: 0.0)
+    spawns.join_in_stay(
+      state:,
+      at_ms: 6000,
+      connection: 3,
+      stay_count: 3,
+      x: 0.0,
+      alive: True,
+      hidden: set.new(),
+    )
   let #(state, _) =
-    join_in_stay(state:, at_ms: 6100, connection: 1, stay_count: 1, x: 0.0)
+    spawns.join_in_stay(
+      state:,
+      at_ms: 6100,
+      connection: 1,
+      stay_count: 1,
+      x: 0.0,
+      alive: True,
+      hidden: set.new(),
+    )
   let #(state, _) =
-    join_in_stay(state:, at_ms: 6200, connection: 2, stay_count: 2, x: 0.0)
+    spawns.join_in_stay(
+      state:,
+      at_ms: 6200,
+      connection: 2,
+      stay_count: 2,
+      x: 0.0,
+      alive: True,
+      hidden: set.new(),
+    )
   let #(state, _) =
-    join_in_stay(state:, at_ms: 6300, connection: 4, stay_count: 4, x: 0.0)
+    spawns.join_in_stay(
+      state:,
+      at_ms: 6300,
+      connection: 4,
+      stay_count: 4,
+      x: 0.0,
+      alive: True,
+      hidden: set.new(),
+    )
   let #(unit_id, life) = creature_of(state:, spawn: 1)
   let state =
     list.fold([3, 1, 4], state, fn(state, connection) {

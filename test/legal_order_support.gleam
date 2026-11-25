@@ -33,12 +33,15 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import map_spawn_support
+import spawn_support
 
 /// The processes of the scene, each a receiver of mail.
 pub type Receiver {
@@ -510,4 +513,22 @@ pub fn health_shown(
       _, _ -> health
     }
   })
+}
+
+/// The creature the map's start names, as the server builds it at the spawn, and its first
+/// step at `at_ms`: its state and what the step sends.
+pub fn creature_started(
+  start start: step.CreatureStart,
+  spawn spawn: spawn.Spawn,
+  at_ms at_ms: Int,
+) -> #(creature.State, step.ServiceStep(creature.Outgoing)) {
+  creature.step(
+    creature.new(creature.Settings(
+      creature: start,
+      spawn:,
+      kind: map_spawn_support.default_kinds().default,
+      numbers: spawn_support.numbers,
+    )),
+    support.input_at_ms(ms: at_ms, event: OwnEvent(step.Started)),
+  )
 }

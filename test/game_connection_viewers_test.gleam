@@ -103,6 +103,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/set
 import gleam/string
+import legal_order_support
 import map_spawn_support
 import map_support
 import owned_test
@@ -3623,15 +3624,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
   let assert [#(watch, _)] = support.watches(joined)
     as "the join opens the watch on the viewer's connection"
   let #(creature_state, _) =
-    creature.step(
-      creature.new(creature.Settings(
-        creature: start,
-        spawn: beast,
-        kind: map_spawn_support.default_kinds().default,
-        numbers: spawn_support.numbers,
-      )),
-      support.input_at_ms(ms: 6000, event: OwnEvent(step.Started)),
-    )
+    legal_order_support.creature_started(start:, spawn: beast, at_ms: 6000)
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
       unit_id: start.unit_id,

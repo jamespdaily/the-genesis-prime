@@ -12,7 +12,6 @@
 ////   health after a strike is 52 less the strike's damage (the Battle Beast's 52 health,
 ////   `spawn_support`).
 
-import connection_rule_support as support
 import game_connection_support
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/strike_tell
@@ -21,9 +20,9 @@ import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/step.{
-  Connection, ConnectionId, OwnEvent, ServiceTimerFired, Started, TimerId, Told,
+  Connection, ConnectionId, OwnEvent, ServiceTimerFired, TimerId, Told,
 }
-import genesis_prime/world_map/creature.{Settings}
+import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn}
@@ -67,15 +66,7 @@ fn standing() -> Scene {
   let assert [#(_, start)] = spawns.starts(joined)
     as "the first player's join starts the creature"
   let #(state, started) =
-    creature.step(
-      creature.new(Settings(
-        creature: start,
-        spawn: beast(),
-        kind: spawns.default_kinds().default,
-        numbers: spawn_support.numbers,
-      )),
-      support.input_at_ms(ms: 6000, event: OwnEvent(Started)),
-    )
+    legal_order_support.creature_started(start:, spawn: beast(), at_ms: 6000)
   let settled =
     legal_order_support.settle(legal_order_support.scene(
       map: map_state,
