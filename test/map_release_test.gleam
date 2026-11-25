@@ -365,6 +365,32 @@ pub fn a_released_creature_that_was_already_dead_ends_at_its_corpse_timer_and_th
   let #(_, ended) = spawns.feed(state:, at_ms: 27_000, event: WatchEnded(watch))
   assert frames_at_the_end(taken: ended) == released_first
     as "the same frames at the creature's end in both orders: Gone to every player and the release time, no restart"
+
+  // A captive that expired when the use released the unit at its x and z is released too:
+  // the trap is told to retire, the captive, which stops by itself, is told nothing.
+  let state = a_trap_with_its_captive()
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [#(_, trap), #(mordesh_watch, mordesh)] = started_units(taken)
+  let step.WatchId(mordesh_life) = mordesh_watch
+  let #(state, _) =
+    spawns.expired(state:, at_ms: 6500, unit_id: mordesh, life: mordesh_life)
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: trap)
+  assert spawns.creature_sends(taken) == [#(trap, "Retire")]
+    as "the captive that expired is told nothing"
+  assert map.spawn_state(state:, spawn: SpawnId(2))
+    == Ok(map.Releasing(
+      unit_id: mordesh,
+      life: mordesh_life,
+      wait_ms: release_ms,
+      relations: dict.new(),
+    ))
+    as "and waits the release time at its end, with no relation to keep"
+  let #(_, ended) =
+    spawns.feed(state:, at_ms: 7100, event: WatchEnded(mordesh_watch))
+  assert spawns.player_sends(ended) == [#(1, "Gone " <> int.to_string(mordesh))]
+    && spawns.timers(ended) == [#(2, release_ms)]
+    && spawns.starts(ended) == []
+    as "its end gives Gone to every player and the release time, never an immediate restart"
 }
 
 /// What a step that ends a released creature does: what players are sent, the timers it
