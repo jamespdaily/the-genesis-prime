@@ -328,7 +328,6 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
   Play(..play, violations: list.append(play.violations, broken(play)))
 }
 
-/// What the rule breaks in this state, as sentences.
 /// What is wrong with a live spawn's viewers and its idle time, by the players who see it.
 fn live_spawn_problems(
   name name: String,
@@ -362,6 +361,7 @@ fn live_spawn_problems(
   ])
 }
 
+/// What the rule breaks in this state, as sentences.
 fn broken(play: Play) -> List(String) {
   let sees = fn(number: Int) {
     let assert Ok(spawn_x) = list.first(list.drop(spawn_xs, number - 1))

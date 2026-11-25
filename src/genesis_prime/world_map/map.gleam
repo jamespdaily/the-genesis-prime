@@ -483,7 +483,7 @@
 //// pair's sight was given (`generation`, never given twice by a map) and whether the
 //// creature's snapshot of that generation is awaited or relayed (`Relation`). The creature
 //// tells only its map (`Snapshot`, `Broadcast`, `Relay`), and the map relays to the player's
-//// connection (`Relayed`, and the notice `CreatureUnseen`), so a player has one sender for a
+//// connection (`Relayed`, and the notice `UnitUnseen`), so a player has one sender for a
 //// creature and its order is the map's:
 ////
 //// ```
@@ -499,7 +499,7 @@
 ////         spawn is live, retiring or releasing under that life; then the destination check of
 ////         the payload's kind, `relay.kind_of`) ─▶ Relayed(stay, payload)
 //// leave sight, Leave, a viewer's end:
-////         map: the relation is removed in one step ─▶ creature Unseen(V, g), V Noticed(CreatureUnseen(unit, g))
+////         map: the relation is removed in one step ─▶ creature Unseen(V, g), V Noticed(UnitUnseen(unit, g))
 ////         creature: the copy and the threat entry of V go; its release of V is one Relay(Released)
 //// crash:  WatchEnded(life) ─▶ Gone to every player; Live becomes WaitingForRestart; the relations go with Live
 //// re-entry: a Leave and a Join: Seen(g') with a g' never given before
@@ -523,7 +523,13 @@
 //// | an ask (`Join`, `Leave`, `Summon`) waits behind relays | the asker's own `ask_deadline_ms` decides; the load gate keeps the queue near zero |
 //// | a creature never answers `Seen` | the viewer stays `AwaitingSnapshot` and shown nothing until the creature ends (then `Gone`); no deadline |
 //// | a viewer's connection fails a write while it takes a relayed burst | the connection ends (nothing after the failed write is written), its watch ends and the map sends each creature `Unseen` |
-//// | a creature is released while a viewer awaits its snapshot | the relations are kept by `Releasing` as they were: the snapshot and the news still reach the viewer until the creature ends |
+//// | a creature is released while a viewer awaits its snapshot | the relations are kept by `Releasing` as they were, each with the stay it was made in: the snapshot and the news still reach the viewer until the creature ends, and none reaches a player that left and joined again in another stay meanwhile |
+//// | a `Relay` is taken twice | cannot happen: a creature sends each relay once and a mailbox delivers a message once; a relay of a creature that ended or of an earlier life is dropped by `admitted` |
+//// | `WatchEnded` of a creature's watch is taken twice, or after `CreatureNotStarted` | cannot happen after `CreatureNotStarted`, which a creature that never started is the only sender of; a second `WatchEnded` finds no creature watch, is read as a player's end, finds no player, and changes nothing but an error log line |
+//// | the map's end (its process stops) is taken twice | cannot happen: a process stops once; a restarted map is a new process with no relations, and every creature stopped with the run it watched |
+//// | `Unseen` waits past a deadline | the creature has none for it: it drops the copy and the threat entry when it takes the message; the viewer's 0x355 comes from the map's notice, not from the creature |
+//// | the creature's end waits past a deadline | `Gone` goes to every player when the map takes `WatchEnded`, and the respawn time counts from then; the map keeps no deadline for it |
+//// | the map's end waits past a deadline | the shell's `shutdown_ms` bounds it, after which the supervisor kills the map and its relations are lost with it |
 ////
 //// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
 //// owner's process, a player's connection, a creature or, for a static object,
@@ -617,7 +623,7 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
-import genesis_prime/world_map/relay.{type Payload}
+import genesis_prime/world_map/relay.{type Delivered, type Payload}
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn, type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
@@ -846,9 +852,9 @@ pub type Outgoing {
   /// ended, so the creature drops the player from its copy of its viewers and from its
   /// threat list.
   Unseen(by: ConnectionId, generation: Generation)
-  /// A send to a player's connection, never an answer: a payload a creature told it,
-  /// for the player's stay `stay`.
-  Relayed(stay: Stay, payload: Payload)
+  /// A send to a player's connection, never an answer: what a creature told it, news
+  /// through the player's relation or a payload, for the player's stay `stay`.
+  Relayed(stay: Stay, delivered: Delivered)
   /// A send to a creature, never to a connection: no player has seen it for the
   /// idle stop, so it ends (genesis_prime/world_map/creature).
   Retire
@@ -885,7 +891,7 @@ pub type Notice {
   /// The player no longer sees the creature `unit_id`, from the sight `generation`
   /// names: the connection writes the 0x355 of the unit if its client shows it, after
   /// the finishes of its casts.
-  CreatureUnseen(unit_id: Int, generation: Generation)
+  UnitUnseen(unit_id: Int, generation: Generation)
   /// The unit `unit_id` has no owner any more, since its connection or its
   /// creature ended, which sends nothing as it ends. It goes to every player in
   /// the map, also one that stopped seeing the unit a moment before. The
@@ -974,11 +980,13 @@ pub type SpawnState {
 }
 
 /// One sight of a creature by a player: the generation the map gave it when the
-/// pair came into sight, and whether the creature's snapshot of that generation is
+/// pair came into sight, the stay the player was in then (a relation relays only
+/// while the player is still in that stay, so a player that left and joined again
+/// while the creature lies released hears nothing of the earlier stay), and whether the creature's snapshot of that generation is
 /// awaited or has been relayed. The map relays a creature's news only to a viewer that
 /// is `Relaying`.
 pub type Relation {
-  Relation(generation: Generation, state: RelationState)
+  Relation(generation: Generation, stay: Stay, state: RelationState)
 }
 
 /// Where a relation is in the creature's first picture for the viewer.
@@ -1389,7 +1397,10 @@ fn relayed(
       Effects([
         OwnEffect(Send(
           to: Connection(delivery.to),
-          message: Relayed(stay: delivery.stay, payload: delivery.payload),
+          message: Relayed(
+            stay: delivery.stay,
+            delivered: relay.Tell(payload: delivery.payload),
+          ),
         )),
       ]),
     )
@@ -2110,7 +2121,11 @@ fn start_creature(
             list.map(viewers, fn(viewer) {
               #(
                 viewer.0,
-                Relation(generation: viewer.2, state: AwaitingSnapshot),
+                Relation(
+                  generation: viewer.2,
+                  stay: viewer.1,
+                  state: AwaitingSnapshot,
+                ),
               )
             }),
           ),
@@ -2327,7 +2342,7 @@ fn spawns_decided(
                   relations: dict.insert(
                     relations,
                     connection,
-                    Relation(generation:, state: AwaitingSnapshot),
+                    Relation(generation:, stay:, state: AwaitingSnapshot),
                   ),
                   idle_since_ms: option.None,
                 ),

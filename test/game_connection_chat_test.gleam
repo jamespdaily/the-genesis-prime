@@ -833,7 +833,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
   // The same removal from the map's Unseen of the creature, which the creature does not
   // send: written once for a shown creature, and nothing for one the client does not show.
   let unseen =
-    game_connection_support.sent_by_the_map(map.CreatureUnseen(
+    game_connection_support.sent_by_the_map(map.UnitUnseen(
       unit_id: 40,
       generation: generation.first(),
     ))

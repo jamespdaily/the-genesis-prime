@@ -3273,7 +3273,7 @@ type Remover {
   ByRemovedNews
   ByMapsGone
   ByObjectsUnseen
-  ByCreatureUnseen
+  ByUnitUnseen
   Directly(keeping: List(Int))
 }
 
@@ -3292,7 +3292,7 @@ fn remover_name(remover: Remover) -> String {
     ByRemovedNews -> "by a removal news"
     ByMapsGone -> "by the map's gone"
     ByObjectsUnseen -> "by the map's objects unseen"
-    ByCreatureUnseen -> "by the map's creature unseen"
+    ByUnitUnseen -> "by the map's creature unseen"
     Directly(keeping:) ->
       "by the function, keeping "
       <> string.join(list.map(keeping, int.to_string), ", ")
@@ -3382,7 +3382,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
         ByRemovedNews,
         ByMapsGone,
         ByObjectsUnseen,
-        ByCreatureUnseen,
+        ByUnitUnseen,
         Directly(keeping: []),
       ],
       [UnitRemoved(unit)],
@@ -3396,7 +3396,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
         ByRemovedNews,
         ByMapsGone,
         ByObjectsUnseen,
-        ByCreatureUnseen,
+        ByUnitUnseen,
         Directly(keeping: []),
       ],
       [CastFinish(101), CastFinish(102), UnitRemoved(unit)],
@@ -3417,7 +3417,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
       [
         ByMapsGone,
         ByObjectsUnseen,
-        ByCreatureUnseen,
+        ByUnitUnseen,
         Directly(keeping: []),
       ],
       [CastFinish(100), CastFinish(101), UnitRemoved(unit)],
@@ -3431,7 +3431,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
         ByRemovedNews,
         ByMapsGone,
         ByObjectsUnseen,
-        ByCreatureUnseen,
+        ByUnitUnseen,
         Directly(keeping: []),
       ],
       [CastFinish(101), UnitRemoved(unit)],
@@ -3445,7 +3445,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
         ByRemovedNews,
         ByMapsGone,
         ByObjectsUnseen,
-        ByCreatureUnseen,
+        ByUnitUnseen,
         Directly(keeping: []),
       ],
       [],
@@ -3495,13 +3495,13 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
             as reason
           #(session, effects, [])
         }
-        ByCreatureUnseen -> {
+        ByUnitUnseen -> {
           let assert client_connection.Continue(session:, effects:) =
             viewers.map_sent(
               session:,
               now:,
               entered:,
-              notice: map.CreatureUnseen(
+              notice: map.UnitUnseen(
                 unit_id: unit,
                 generation: generation.first(),
               ),

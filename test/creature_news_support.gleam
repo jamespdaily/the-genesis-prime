@@ -113,8 +113,6 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
         "snapshot for " <> int.to_string(number)
       creature.Relay(to: ConnectionId(number), payload:, ..) ->
         case payload {
-          relay.News(news: PeerNews(news:, ..)) ->
-            name_of(news) <> " to " <> int.to_string(number)
           relay.Struck(answered: Answered(outcome: Landed(..), ..)) ->
             "answer to " <> int.to_string(number)
           relay.Struck(answered: Answered(outcome: Refused(why:), ..)) ->

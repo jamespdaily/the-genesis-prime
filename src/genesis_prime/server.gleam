@@ -777,7 +777,7 @@ fn connection_reach(
 pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Noticed(stay:, notice:) -> Ok(ForStay(stay:, sent: SentByMap(notice:)))
-    map.Relayed(stay:, payload:) -> Ok(relayed_message(payload:, stay:))
+    map.Relayed(stay:, delivered:) -> Ok(relayed_message(delivered:, stay:))
     map.Joined(..)
     | map.Summoned(..)
     | map.NotSummoned(..)
@@ -798,12 +798,18 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
 /// news of a unit as `SentByPeer`, the creature's threat, release or strike as
 /// `SentByFoe`, the answer to its strike as `SentByTarget`, and the credit for its
 /// death as `SentByKill`, each for the stay the relay names.
-fn relayed_message(payload payload: relay.Payload, stay stay: Stay) -> Message {
-  case payload {
+fn relayed_message(
+  delivered delivered: relay.Delivered,
+  stay stay: Stay,
+) -> Message {
+  case delivered {
     relay.News(news:) -> ForStay(stay:, sent: SentByPeer(news:))
-    relay.Struck(answered:) -> ForStay(stay:, sent: SentByTarget(answered))
-    relay.KillCredit(credit:) -> ForStay(stay:, sent: SentByKill(credit))
-    relay.Fight(told:) -> ForStay(stay:, sent: SentByFoe(told))
+    relay.Tell(payload: relay.Struck(answered:)) ->
+      ForStay(stay:, sent: SentByTarget(answered))
+    relay.Tell(payload: relay.KillCredit(credit:)) ->
+      ForStay(stay:, sent: SentByKill(credit))
+    relay.Tell(payload: relay.Fight(told:)) ->
+      ForStay(stay:, sent: SentByFoe(told))
   }
 }
 

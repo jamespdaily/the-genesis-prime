@@ -167,9 +167,9 @@ pub type Settings(settings, state, message, outgoing) {
     /// How long it has to stop once the supervisor stops it; the child's
     /// shutdown timeout.
     shutdown_ms: Int,
-    /// The address it is found at and the scope it is told through there, or
-    /// `None` for a service told only by its subject.
-    found_at: Option(FoundAt(message, outgoing)),
+    /// The scope it is told through, with the address it is found at when it joins
+    /// one, or `None` for a service told only by its subject.
+    found_at: Option(Reached(message, outgoing)),
     /// Where it reads the time of each input and starts its timers.
     time: ServiceTime,
   )
@@ -177,7 +177,7 @@ pub type Settings(settings, state, message, outgoing) {
 
 /// How a service is told through a scope of genesis_prime/group_registry. Either way
 /// its selector takes what `deliver_*` and `deliver_to` send it.
-pub type FoundAt(message, outgoing) {
+pub type Reached(message, outgoing) {
   /// Found by an address: the shell joins the address before its rule's first
   /// step, so any process that has what the service sends can find it.
   FoundAt(scope: Scope(Call(message, outgoing)), address: Address)

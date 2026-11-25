@@ -33,6 +33,7 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
@@ -80,7 +81,8 @@ pub type Taken {
 }
 
 /// The three processes' states, what is in flight, the monotonic time the next delivery is
-/// taken at, the deliveries so far in order and the frames the viewer wrote in order.
+/// taken at, the deliveries so far in order, the frames the viewer wrote in order and the
+/// first news the map relayed to the viewer that its relation did not allow (`early`).
 pub type Scene {
   Scene(
     map: map.State,
@@ -90,6 +92,7 @@ pub type Scene {
     now_ms: Int,
     taken: List(Taken),
     frames: List(Frame),
+    early: Option(Violation),
   )
 }
 
@@ -104,6 +107,11 @@ pub type Invariant {
   /// When every message is delivered, the map holds a relation with the viewer exactly
   /// when the viewer's client shows the creature, and no relation awaits its snapshot.
   RelationEndsMatchTheMap
+  /// The map relays the creature's news to the viewer only through its relation: a
+  /// broadcast only while the relation relays, and a snapshot's burst only while the relation
+  /// awaits that very generation. Read from the map's mail to the viewer, which the viewer's
+  /// own frames hide (the viewer drops news of a unit it does not show).
+  NoNewsRelayedOutsideTheRelation
 }
 
 /// The invariant a trace broke, at the frame it broke it (counted from 0, and past the
@@ -119,7 +127,16 @@ pub fn scene(
   viewer viewer: game_connection.State,
   mail mail: List(Mail),
 ) -> Scene {
-  Scene(map:, creature:, viewer:, mail:, now_ms: 10_000, taken: [], frames: [])
+  Scene(
+    map:,
+    creature:,
+    viewer:,
+    mail:,
+    now_ms: 10_000,
+    taken: [],
+    frames: [],
+    early: None,
+  )
 }
 
 /// The deliveries the scene allows now: the head of each queue, one for each receiver and
@@ -207,6 +224,10 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
         ..scene,
         map: state,
         mail: list.append(scene.mail, mail_of_the_map(taken)),
+        early: case scene.early {
+          Some(_) -> scene.early
+          None -> news_outside_the_relation(scene:, event:, taken:)
+        },
       )
     }
     ToCreature(event:) -> {
@@ -230,6 +251,73 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
         ),
       )
     }
+  }
+}
+
+/// The violation of `NoNewsRelayedOutsideTheRelation` a map's step makes, when it relays
+/// the creature's news to the viewer that the relation the map held before the step did not
+/// allow.
+fn news_outside_the_relation(
+  scene scene: Scene,
+  event event: Event(ServiceEvent(map.Message)),
+  taken taken: step.ServiceStep(map.Outgoing),
+) -> Option(Violation) {
+  let relays_news =
+    list.any(support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(Send(
+          to: Connection(ConnectionId(1)),
+          message: map.Relayed(delivered: relay.News(..), ..),
+        )) -> True
+        OwnEffect(_)
+        | step.Watch(..)
+        | step.Unwatch(..)
+        | step.Log(..)
+        | step.Stop -> False
+      }
+    })
+  let held = relation_held(map: scene.map)
+  let allowed = case event, held {
+    OwnEvent(Told(message: map.Broadcast(..))),
+      Some(map.Relation(state: map.Relaying, ..))
+    -> True
+    OwnEvent(Told(message: map.Snapshot(generation:, ..))),
+      Some(map.Relation(
+        generation: held_generation,
+        state: map.AwaitingSnapshot,
+        ..,
+      ))
+    -> generation == held_generation
+    _, _ -> False
+  }
+  case relays_news && !allowed {
+    False -> None
+    True ->
+      Some(Violation(
+        NoNewsRelayedOutsideTheRelation,
+        list.length(scene.frames),
+        unit_of_the_spawn(map: scene.map),
+      ))
+  }
+}
+
+/// The relation the map holds between the viewer and the creature of the scene's spawn,
+/// while the spawn lives or is released.
+fn relation_held(map state: map.State) -> Option(map.Relation) {
+  case map.spawn_state(state:, spawn: SpawnId(1)) {
+    Ok(map.Live(relations:, ..)) | Ok(map.Releasing(relations:, ..)) ->
+      dict_get(relations, ConnectionId(1))
+    Ok(_) | Error(Nil) -> None
+  }
+}
+
+/// The unit id of the creature of the scene's spawn, 0 when it has none.
+fn unit_of_the_spawn(map state: map.State) -> Int {
+  case map.spawn_state(state:, spawn: SpawnId(1)) {
+    Ok(map.Live(unit_id:, ..))
+    | Ok(map.Retiring(unit_id:, ..))
+    | Ok(map.Releasing(unit_id:, ..)) -> unit_id
+    Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) -> 0
   }
 }
 
@@ -350,7 +438,7 @@ fn map_message_name(message: map.Message) -> String {
 fn map_outgoing_name(message: map.Outgoing) -> String {
   case message {
     map.Relayed(..) -> "Relayed"
-    map.Noticed(notice: map.CreatureUnseen(..), ..) -> "Unseen"
+    map.Noticed(notice: map.UnitUnseen(..), ..) -> "Unseen"
     map.Noticed(..) -> "a notice"
     map.Joined(..)
     | map.NotJoined(..)
@@ -454,11 +542,16 @@ fn frame_taken(
   }
 }
 
-/// The first invariant a finished scene breaks: its frames' (`check_frames`), and the end's:
+/// The first invariant a finished scene breaks: its frames' (`check_frames`), the news the map
+/// relayed outside the viewer's relation, and the end's:
 /// the map holds a relation with the viewer exactly when the viewer's client shows the
 /// creature of the spawn, and no relation still awaits its snapshot.
 pub fn check(scene scene: Scene) -> Result(Nil, Violation) {
   use Nil <- result.try(check_frames(frames: scene.frames))
+  use Nil <- result.try(case scene.early {
+    Some(violation) -> Error(violation)
+    None -> Ok(Nil)
+  })
   case map.spawn_state(state: scene.map, spawn: SpawnId(1)) {
     Ok(map.Live(unit_id:, relations:, ..)) -> {
       let shown = shows(frames: scene.frames, unit_id:)

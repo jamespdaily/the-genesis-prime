@@ -157,7 +157,7 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       map.Noticed(notice: map.SeenBy(..), ..)
       | map.Noticed(notice: map.UnseenBy(..), ..)
       | map.Noticed(notice: map.Gone(..), ..)
-      | map.Noticed(notice: map.CreatureUnseen(..), ..)
+      | map.Noticed(notice: map.UnitUnseen(..), ..)
       | map.Joined(..)
       | map.NotJoined(..)
       | map.Left

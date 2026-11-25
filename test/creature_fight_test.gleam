@@ -1443,6 +1443,50 @@ pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the
   assert creature_fight.threatened(state: creature.fight(state: back_state))
     == set.from_list([ConnectionId(2)])
     as "with the player back as a viewer under the new generation, the old entry's threat is not held"
+  // The creature holds the viewer under the new generation, with a threat entry from a
+  // strike in the stay it was seen in: an Unseen of the sight before it is not this
+  // viewer's end, and the Unseen of the sight it holds is.
+  let later = generation.after(generation: generation.first())
+  let #(held, _) =
+    tell(
+      state: unseen_state,
+      at_ms: 300,
+      message: creature.Seen(
+        by: ConnectionId(5),
+        stay: map_support.stay(count: 5),
+        generation: later,
+      ),
+    )
+  let #(held, _) =
+    tell(
+      state: held,
+      at_ms: 400,
+      message: strike_of(number: 5, cast_id: 3, blows: [#(1, 3, 1.0)]),
+    )
+  assert creature_fight.threatened(state: creature.fight(state: held))
+    == set.from_list([ConnectionId(2), ConnectionId(5)])
+    as "the viewer seen under the new generation threatens again"
+  let #(stale, _) =
+    tell(
+      state: held,
+      at_ms: 500,
+      message: creature.Unseen(
+        by: ConnectionId(5),
+        generation: generation.first(),
+      ),
+    )
+  assert creature_fight.threatened(state: creature.fight(state: stale))
+    == set.from_list([ConnectionId(2), ConnectionId(5)])
+    as "an Unseen of the earlier sight finds the viewer held under a later generation and changes nothing"
+  let #(ended, _) =
+    tell(
+      state: stale,
+      at_ms: 600,
+      message: creature.Unseen(by: ConnectionId(5), generation: later),
+    )
+  assert creature_fight.threatened(state: creature.fight(state: ended))
+    == set.from_list([ConnectionId(2)])
+    as "the Unseen of the generation the creature holds ends the viewer and its threat entry"
 }
 
 pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_test() -> Nil {

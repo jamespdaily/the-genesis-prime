@@ -285,7 +285,7 @@ pub fn map_sent(
         ),
       )
     }
-    map.CreatureUnseen(unit_id: _, generation: _) ->
+    map.UnitUnseen(unit_id: _, generation: _) ->
       // The shape of the one removal: the build commit ends the unit here through
       // `unit_removed`, keeping no cast.
       Continue(session, [])

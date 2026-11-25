@@ -113,7 +113,11 @@ pub fn a_join_starts_exactly_the_spawns_within_1024_with_the_player_as_first_vie
           spawn: spawn_of_unit(creatures:, unit_id: { start.1 }.unit_id),
         )
       assert dict.get(relations, ConnectionId(1))
-        == Ok(map.Relation(generation:, state: map.AwaitingSnapshot))
+        == Ok(map.Relation(
+          generation:,
+          stay: map_support.stay(count: 1),
+          state: map.AwaitingSnapshot,
+        ))
         as "the map holds each first viewer's relation under the generation the start names, awaiting the creature's snapshot"
       generation
     })
