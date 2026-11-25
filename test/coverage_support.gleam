@@ -3,32 +3,28 @@
 
 import client_tables
 import database_support
+import fact_file
 import genesis_prime/coverage/engine.{type EngineDeclaration, type Missing}
+import genesis_prime/coverage/fact_record
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
 import genesis_prime/coverage/starting_ability.{type LeftOut}
+import genesis_prime/game/column_reading
 import genesis_prime/tooltip_token
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/string
-import simplifile
 
-/// Whether the fact file's text holds a record under `key`.
-pub fn has_record(facts facts: String, key key: String) -> Bool {
-  string.contains(facts, "[\"" <> key <> "\"]")
+/// Whether the fact file holds a record under `key`.
+pub fn has_record(facts facts: fact_record.Facts, key key: String) -> Bool {
+  fact_record.has_record(facts:, key:)
 }
 
-/// The text of the client's fact file, read once for the run.
-pub fn fact_file() -> String {
-  database_support.once("coverage_fact_file", fn() {
-    let assert Ok(text) =
-      simplifile.read(
-        ".claude/skills/decoding-the-client/references/client-facts.toml",
-      )
-      as "the fact file is in the repository"
-    text
-  })
+/// The records of the client's fact file, read once for the run.
+pub fn fact_file() -> fact_record.Facts {
+  fact_file.records()
 }
 
 /// Checks each gap in `gaps` (the partial or the missing list of `declared`): it states a
@@ -49,6 +45,27 @@ pub fn assert_gaps_stated(
       == handled
       as { label <> ": the engine's handling disagrees with the list it is in" }
   })
+}
+
+/// Checks that a question a refusal names is in the fact file: the record exists, is graded
+/// guess or fairly sure (a sure record leaves nothing open), and its gap holds the question's
+/// marker. `label` says what asked.
+pub fn assert_question_recorded(
+  question question: column_reading.Question,
+  label label: String,
+) -> Nil {
+  let fact = question.fact
+  let assert Ok(grade) = fact_file.grade_of(record: fact)
+    as { label <> ": the fact file holds no record " <> fact }
+  assert grade == Some(fact_record.Guess)
+    || grade == Some(fact_record.FairlySure)
+    as { label <> ": " <> fact <> " is graded guess or fairly sure" }
+  let assert Ok(Some(gap)) = fact_file.gap_of(record: fact)
+    as { label <> ": " <> fact <> " states a gap" }
+  assert string.contains(gap, question.marker)
+    as {
+      label <> ": the gap of " <> fact <> " holds \"" <> question.marker <> "\""
+    }
 }
 
 /// The engine declaration named `name`.

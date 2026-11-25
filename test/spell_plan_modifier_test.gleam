@@ -23,6 +23,8 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/game/column_reading
+import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
@@ -33,6 +35,7 @@ import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/table/loader/store
+import genesis_prime/table/spell4_effects.{Spell4Effects}
 import gleam/list
 import gleam/option.{None}
 import gleam/result
@@ -463,6 +466,27 @@ pub fn a_modifier_row_with_a_parameter_factor_is_not_read_and_one_without_still_
       parameter("3", 10, 16.59),
       Error(10),
     ),
+    #(
+      "a factor on a kind no case of the client's formula names (24)",
+      99_068,
+      1,
+      parameter("0", 24, 0.5),
+      Error(24),
+    ),
+    #(
+      "a factor on a kind the formula names and the plan leaves open (18)",
+      99_069,
+      1,
+      parameter("2", 18, 0.5),
+      Error(18),
+    ),
+    #(
+      "a factor on kind 0 before a factor on a named kind",
+      99_070,
+      1,
+      list.flatten([parameter("0", 0, 0.1), parameter("1", 18, 0.5)]),
+      Error(18),
+    ),
   ]
   list.each(cases, fn(case_) {
     let #(why, id, target_flags, columns, expected) = case_
@@ -489,6 +513,94 @@ pub fn a_modifier_row_with_a_parameter_factor_is_not_read_and_one_without_still_
           as why
       }
     }
+  })
+}
+
+/// The record whose gap holds the questions of a stat modifier's parameters.
+const modifier_fact = "Spell4Effects.effectType.11.change"
+
+pub fn a_stat_modifier_s_first_parameter_kind_reads_opens_a_named_question_or_is_unexplained_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The meaning of each kind is the client's formula's (`0x140566ad0`, sure): 12 and 13 the
+  // Assault Power and Support Power, 1 to 5 and 11 an attribute, 10 the level, 6 and 9 the
+  // weapon, 7, 8, 14 to 17, 19, 21 to 23, 25 and 26 a vital, 18 the passed-in value; 20, 24,
+  // a number above 26 and a negative number are named by no case.
+  let open = fn(marker) {
+    column_reading.Open(column_reading.Question(fact: modifier_fact, marker:))
+  }
+  // Each case: the parameters of a row (kind, factor) in column order, the kind the
+  // reading names, and its verdict.
+  let cases = [
+    #("no parameter", [], 0, column_reading.Reads),
+    #("a kind with no factor", [#(12, 0.0)], 0, column_reading.Reads),
+    #(
+      "a factor on kind 0, which names no parameter (rows 128380 and 128381)",
+      [#(0, 0.1)],
+      0,
+      column_reading.Reads,
+    ),
+    #("the passed-in value", [#(18, 0.5)], 18, open("the passed-in value")),
+    #("Assault Power", [#(12, 0.19)], 12, open("Assault Power")),
+    #("Support Power", [#(13, 0.19)], 13, open("Support Power")),
+    #("Strength", [#(1, 1.0)], 1, open("an attribute")),
+    #("Wisdom", [#(5, 1.0)], 5, open("an attribute")),
+    #("Stamina", [#(11, 1.0)], 11, open("an attribute")),
+    #("the level", [#(10, 16.59)], 10, open("its level")),
+    #("the weapon", [#(6, 2.25)], 6, open("the weapon")),
+    #("the weapon's DPS", [#(9, 5.0)], 9, open("the weapon")),
+    #("the target's shield", [#(15, 0.3)], 15, open("a unit's vital")),
+    #("the caster's health", [#(23, 0.3)], 23, open("a unit's vital")),
+    #(
+      "the first of a set, in column order (row 86849 holds 12, 13 and 10)",
+      [#(12, 0.0656), #(13, 0.0656), #(10, 4.16)],
+      12,
+      open("Assault Power"),
+    ),
+    #(
+      "a zero factor before a factor",
+      [#(12, 0.0), #(13, 0.19)],
+      13,
+      open("Support Power"),
+    ),
+    #(
+      "a kind 0 factor before a named kind",
+      [#(0, 0.1), #(18, 0.5)],
+      18,
+      open("the passed-in value"),
+    ),
+    #("kind 20, named by no case", [#(20, 1.0)], 20, column_reading.Unexplained),
+    #("kind 24, named by no case", [#(24, 1.0)], 24, column_reading.Unexplained),
+    #(
+      "kind 27, above the formula's last",
+      [#(27, 1.0)],
+      27,
+      column_reading.Unexplained,
+    ),
+    #("kind 99", [#(99, 1.0)], 99, column_reading.Unexplained),
+    #("a negative kind", [#(-1, 1.0)], -1, column_reading.Unexplained),
+  ]
+  let base =
+    spell_tables.effect_row_in(tables: fixture_tables.shared(), id: 135_954)
+  list.each(cases, fn(case_) {
+    let #(why, parameters, kind, verdict) = case_
+    let padded =
+      list.append(parameters, [#(0, 0.0), #(0, 0.0), #(0, 0.0), #(0, 0.0)])
+    let assert [first, second, third, fourth, ..] = padded as "four parameters"
+    let effect =
+      Spell4Effects(
+        ..base,
+        parameter_type00: first.0,
+        parameter_value00: first.1,
+        parameter_type01: second.0,
+        parameter_value01: second.1,
+        parameter_type02: third.0,
+        parameter_value02: third.1,
+        parameter_type03: fourth.0,
+        parameter_value03: fourth.1,
+      )
+    assert damage.modifier_parameter_reading(effect:)
+      == damage.ParameterReading(kind:, verdict:)
+      as why
   })
 }
 

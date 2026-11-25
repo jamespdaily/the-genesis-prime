@@ -716,7 +716,7 @@ pub fn a_periodic_proxy_for_allies_is_refused_with_its_sentence_by_bit_0_of_the_
     as "mechanic 4 (flags 11, bit 0 set) is beneficial: the row is refused"
   assert spell_plan.describe(error:)
     == "the Spell4 row 58868 has a Proxy effect 141450 that casts the Spell4 row 77099 every tickTime on the allies in its area, whom the server does not find"
-  assert spell_plan.is_unbuilt(error:)
+  assert spell_plan.refusal_of(error:).outcome == spell_plan.LeavesOut
     as "the refusal leaves its ability out of the plans, as a friendly area's does"
   // A periodic Proxy aimed by flags 5 in a place that finds the caster's allies: the field's
   // own mechanic (Spell4TargetMechanics 6) made beneficial, as the area test does. The allies

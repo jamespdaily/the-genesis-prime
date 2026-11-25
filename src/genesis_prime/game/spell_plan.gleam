@@ -18,19 +18,19 @@
 //// - **Which abilities.** A level-1 ability and an innate must plan or the load fails. An
 ////   ability a class gains above level 1 with no prerequisite
 ////   (`SpellLevel.spell4Id.no_prerequisite`) is planned too, and one whose error
-////   `is_unbuilt` names is left out and listed by `unplanned`; any other error fails the
+////   `refusal_of` says leaves out is left out and listed by `unplanned`; any other error fails the
 ////   load. A press of a base with no plan is refused unknown (`cast_press.ability_at`).
 //// - **The tiers.** Every tier 2 to 9 row of every ability the plans hold, an alternate's tiers
 ////   inside its ability's, is planned as a later ability is, by the Spell4 id of the tier row
 ////   (`tier_plans`, `tier_derivation`): the Spell4 row that is a tier is the client's
-////   `GetSpellIdForTier` (genesis_prime/game/spell_tier). A tier whose error `is_unbuilt` names is left
+////   `GetSpellIdForTier` (genesis_prime/game/spell_tier). A tier whose error `refusal_of` says leaves out is left
 ////   out and listed by `unplanned_tiers`, and a player who holds it casts the best lower tier
 ////   (genesis_prime/game/held_tier); any other error fails the load.
 //// - **The equip spells.** The equip spell of each Item2 row that takes a slot
 ////   (genesis_prime/game/equip_spell `roots`) is planned as a spell no ability holds, by Spell4
 ////   id (`standing_plans`): the spells a worn item puts on its wearer. The same fold plans it or
 ////   leaves it out as it does a later ability (`planned_or_left_out`): one whose error
-////   `is_unbuilt` names is listed by `standing_unplanned`, which is not `unplanned`, so the ability
+////   `refusal_of` says leaves out is listed by `standing_unplanned`, which is not `unplanned`, so the ability
 ////   book and the later abilities' coverage line never name it; any other error fails the load,
 ////   and so does a worn item whose Item2Type, ItemCategory, ItemFamily or ItemSpecial row the
 ////   tables lack (`EquipItemNotRead`), since which spell it puts on its wearer is then unknown.
@@ -361,6 +361,7 @@
 
 import genesis_prime/game/cast_bar_kind
 import genesis_prime/game/class_resource
+import genesis_prime/game/column_reading
 import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -3195,7 +3196,7 @@ pub fn derivation(
 
 /// What a spell of a later ability must also pass to be planned: the area rule builds every
 /// spell of its tree as it is started (genesis_prime/game/spell_area `checker`). Its error is a `PlanError`,
-/// and `is_unbuilt` says whether the ability is left out or the load fails.
+/// and `refusal_of` says whether the ability is left out or the load fails.
 pub type Checker =
   fn(Spell, Start) -> Result(Nil, PlanError)
 
@@ -3268,7 +3269,7 @@ type Phase {
 }
 
 /// A class ability above level 1 that no plan is built for: its Spell4 id and the
-/// error that names what the server does not build (`is_unbuilt`). Its press is refused
+/// error that names what the server does not build (`refusal_of` leaves it out). Its press is refused
 /// as an unknown spell.
 pub type Unplanned {
   Unplanned(spell4_id: Int, error: PlanError)
@@ -3306,7 +3307,7 @@ pub fn standing_plans(tables tables: table_store.Tables) -> Dict(Int, Spell) {
 }
 
 /// The equip spell roots the plans leave out, by the error that says what the server does
-/// not build (`is_unbuilt`); any other error fails the load (`build`). A worn item whose
+/// not build (`refusal_of` leaves them out); any other error fails the load (`build`). A worn item whose
 /// spell is here puts nothing on its wearer, and it is not one of the later abilities
 /// `unplanned` lists.
 pub fn standing_unplanned(
@@ -3337,7 +3338,7 @@ const tier_plans_key: table_store.DerivedKey(TierPlanSet) =
 /// The tier plans as a value the tables' load builds once, under the tables' key, after the
 /// plans and the tiers it reads (`derivation`, genesis_prime/game/spell_tier). Every tier 2 to 9 row
 /// of every ability of the plans is planned as `derivation` plans a later ability: a tier whose
-/// error `is_unbuilt` names is left out and listed (`unplanned_tiers`), and any other error fails
+/// error `refusal_of` says leaves out is left out and listed (`unplanned_tiers`), and any other error fails
 /// the load. An ability another names as its alternate is planned inside that ability's
 /// tiers, whose rows name the alternate's same tier (`Spell4.spell4IdMechanicAlternateSpell`), so
 /// tier n of an ability holds tier n of its alternate.
@@ -3394,7 +3395,7 @@ pub fn tier_plans(tables tables: table_store.Tables) -> TierPlans {
 }
 
 /// The tier 2 to 9 spells of the planned abilities that the plans leave out, by the error that
-/// says what the server does not build (`is_unbuilt`). A player who holds such a tier casts the
+/// says what the server does not build (`refusal_of` leaves it out). A player who holds such a tier casts the
 /// best lower tier the plans hold (genesis_prime/game/held_tier).
 pub fn unplanned_tiers(tables tables: table_store.Tables) -> List(Unplanned) {
   table_store.derived(tables:, key: tier_plans_key).left_out
@@ -3422,53 +3423,140 @@ pub fn tier_plan(
   |> result.try(fn(spell4_id) { in_tier_plans(tier_plans:, spell4_id:) })
 }
 
-/// Whether a plan error names an effect or a rule the server does not build, so the
-/// ability that holds it is left out of the plans without failing the load. A missing row
-/// or a number that is no number is a fault of the data and is not one of these.
-pub fn is_unbuilt(error error: PlanError) -> Bool {
+/// What a refusal does to the plans: the spell that holds it is left out of the plans and
+/// listed, or the load fails.
+pub type Outcome {
+  /// The spell is left out of the plans and the load goes on.
+  LeavesOut
+  /// The load fails.
+  FailsLoad
+}
+
+/// Why the server refuses a value, in four cases that a measure of the refusals tells apart:
+/// a question the fact file records, a value no record or rule names, a value the server
+/// understands and does not build, and a fault of the table's own structure (a missing row,
+/// a cycle, a number that is no number).
+pub type Basis {
+  /// The value is one the record leaves open; the question is the record's.
+  OpenQuestion(question: column_reading.Question)
+  /// No record names the value: `fact` is the record of the column it sits in.
+  Unexplained(fact: String)
+  /// The server understands the value and does not build what it asks for.
+  Unbuilt
+  /// The table's structure is at fault, whatever the value's meaning.
+  Structure
+}
+
+/// A refusal of the plan: what it does to the plans and why.
+pub type PlanRefusal {
+  PlanRefusal(outcome: Outcome, basis: Basis)
+}
+
+/// The outcome and the basis of a plan error, as one decision: an effect or a rule the server
+/// does not build leaves the ability that holds it out of the plans, and a missing row or a
+/// fault of the data fails the load. One exhaustive case, so a new error forces both choices.
+/// The basis reads the value where the value decides it: an aim `aim_of` reads is not built, one
+/// it does not is the open question of `Spell4Effects.targetFlags`; a prerequisite type is the
+/// question of its own record; a stat modifier's parameter takes its verdict from
+/// `damage.modifier_kind_reading`.
+pub fn refusal_of(error error: PlanError) -> PlanRefusal {
   case error {
-    ProxyAimNotRead(..)
-    | ProxyCycle(..)
-    | UnreadCost(..)
+    ProxyAimNotRead(target_flags:, ..)
+    | GainAimNotRead(target_flags:, ..)
+    | LastingAimNotRead(target_flags:, ..)
+    | ControlAimNotRead(target_flags:, ..)
+    | StealthAimNotRead(target_flags:, ..) ->
+      PlanRefusal(outcome: LeavesOut, basis: aim_basis(target_flags:))
+    ApplyPrerequisiteNotRead(prerequisite_type:, ..) ->
+      left_out_asking(
+        fact: "Prerequisite.prerequisiteTypeId."
+          <> int.to_string(prerequisite_type),
+        marker: "",
+      )
+    ForceRemoveSelectorNotRead(..) ->
+      left_out_asking(
+        fact: "Spell4Effects.effectType.80",
+        marker: "selector values",
+      )
+    ForceRemoveCountsDiffer(..) ->
+      left_out_asking(
+        fact: "Spell4Effects.effectType.80",
+        marker: "count of stacks or of casts",
+      )
+    InterruptArmorTakeBackNotRead(..) ->
+      left_out_asking(
+        fact: "Spell4Effects.effectType.52",
+        marker: "The dataBits01 reading rests on two test spell names",
+      )
+    AbsorptionAmountNotRead(..) ->
+      left_out_asking(
+        fact: "Spell4Effects.effectType.29",
+        marker: "Which column is the amount when the other is 0 is not settled",
+      )
+    ProcKindNotRead(..) ->
+      left_out_asking(
+        fact: "Spell4Effects.effectType.14",
+        marker: "the trigger kinds (dataBits00)",
+      )
+    DisguiseNotRead(reason: OutfitNeedsMessage0x905, ..) ->
+      left_out_asking(
+        fact: "Spell4Effects.effectType.112",
+        marker: "Whether the server should use 0x905 for dataBits00 is not read",
+      )
+    ProcNotRead(..) ->
+      PlanRefusal(
+        outcome: FailsLoad,
+        basis: asking(
+          fact: "Spell4Effects.effectType.14",
+          marker: "not settled by client evidence",
+        ),
+      )
+    ParameterNotRead(row: ModifierRow, parameter_kind:, ..) ->
+      PlanRefusal(
+        outcome: LeavesOut,
+        basis: case damage.modifier_kind_reading(kind: parameter_kind) {
+          column_reading.Open(question:) -> OpenQuestion(question)
+          column_reading.Unexplained -> Unexplained(fact: damage.modifier_fact)
+          column_reading.Reads -> Unbuilt
+        },
+      )
+    SpendComparisonNotRead(..) ->
+      left_out_unexplained(fact: "Spell4Effects.emmComparison")
+    StealthBreaksNotRead(..) ->
+      left_out_unexplained(fact: "Spell4Effects.effectType.83")
+    StealthChangeNotRead(..) ->
+      left_out_unexplained(fact: "Spell4.spellCastStealthChange")
+    StruckMoveNotRead(error: forced_move.UnknownKind(..), ..) ->
+      left_out_unexplained(fact: "Spell4Effects.effectType.3")
+    DisguiseNotRead(reason: NamesNoDisplay, ..)
+    | DisguiseNotRead(reason: DisplayHasNoSlot(..), ..) ->
+      left_out_unexplained(fact: "Spell4Effects.effectType.112")
+    ProxyCycle(..) | HealNoTick(..) | ProxyNoTick(..) ->
+      PlanRefusal(outcome: LeavesOut, basis: Structure)
+    UnreadCost(..)
     | UnreadRequirement(..)
-    | GainAimNotRead(..)
     | GainVitalNotRead(..)
     | GainShareNotRead(..)
-    | ApplyPrerequisiteNotRead(..)
     | TargetPrerequisiteReadsStruckUnit(..)
-    | StruckMoveNotRead(error: forced_move.UnknownKind(..), ..)
     | ControlHelperNotRead(..)
-    | SpendComparisonNotRead(..)
-    | ForceRemoveSelectorNotRead(..)
-    | ForceRemoveCountsDiffer(..)
-    | LastingAimNotRead(..)
     | ControlStateNotRead(..)
-    | ControlAimNotRead(..)
     | FriendlyAreaNotRead(..)
     | PeriodicProxyAtAlliesNotRead(..)
     | ProxyOnEachAllyAtSeveralGos(..)
     | AlliesModifierGateNotRead(..)
     | ControlPersistenceNotRead(..)
-    | StealthAimNotRead(..)
     | StealthTimedNotRead(..)
-    | StealthBreaksNotRead(..)
     | StealthConditionNotRead(..)
-    | StealthChangeNotRead(..)
-    | ParameterNotRead(..)
+    | ParameterNotRead(row: HealRow, ..)
+    | ParameterNotRead(row: AbsorptionRow, ..)
     | HealUntilRemovedNotRead(..)
-    | HealNoTick(..)
-    | ProxyNoTick(..)
     | HealOnStruckUnit(..)
-    | InterruptArmorTakeBackNotRead(..)
     | InterruptArmorOnStruckUnit(..)
-    | AbsorptionAmountNotRead(..)
     | AbsorptionPeriodic(..)
     | AbsorptionHasNoLifetime(..)
     | AbsorptionOnStruckUnit(..)
-    | ProcKindNotRead(..)
     | SummonedProcNotRead(..)
-    | DisguiseNotRead(..)
-    | AreaNotBuilt(..) -> True
+    | AreaNotBuilt(..) -> PlanRefusal(outcome: LeavesOut, basis: Unbuilt)
     NoRow(..)
     | StruckMoveNotRead(error: forced_move.NotAFloat(..), ..)
     | ChannelWithoutPulse(..)
@@ -3478,17 +3566,43 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | CooldownNumberNotFinite(..)
     | HealNumberNotFinite(..)
     | AbsorptionNumberNotFinite(..)
-    | ProcNotRead(..)
     | InnateFailed(..)
     | PrerequisiteCycle(..)
     | AreaDataFault(..)
-    | EquipItemNotRead(..) -> False
+    | EquipItemNotRead(..) -> PlanRefusal(outcome: FailsLoad, basis: Structure)
   }
+}
+
+/// The basis of an aim refusal: a flag value `aim_of` reads is an aim the effect's rule does
+/// not build, and one it does not read (0, or a bit 8) is the question the record of
+/// `Spell4Effects.targetFlags` leaves open.
+fn aim_basis(target_flags target_flags: Int) -> Basis {
+  case aim_of(target_flags:) {
+    Ok(_) -> Unbuilt
+    Error(Nil) ->
+      asking(
+        fact: "Spell4Effects.targetFlags",
+        marker: "The meaning of each value is read from rows",
+      )
+  }
+}
+
+/// The question a record leaves open: its key and a phrase of its gap.
+fn asking(fact fact: String, marker marker: String) -> Basis {
+  OpenQuestion(column_reading.Question(fact:, marker:))
+}
+
+fn left_out_asking(fact fact: String, marker marker: String) -> PlanRefusal {
+  PlanRefusal(outcome: LeavesOut, basis: asking(fact:, marker:))
+}
+
+fn left_out_unexplained(fact fact: String) -> PlanRefusal {
+  PlanRefusal(outcome: LeavesOut, basis: Unexplained(fact:))
 }
 
 /// The plans of every level-1 ability and innate, which fail the load on any error, of
 /// every other class ability with no prerequisite, and of every worn item's equip spell
-/// (`equip_spell.roots`): each of those a row `is_unbuilt` names is left out of its plans
+/// (`equip_spell.roots`): each of those a row `refusal_of` says leaves out is left out of its plans
 /// and listed, the later abilities' list first and the equip spells' second. A worn item whose
 /// table row is missing fails the load (`EquipItemNotRead`).
 fn plan_all(
@@ -3562,7 +3676,7 @@ fn plan_all(
 }
 
 /// The plan of each of these spells that passes the checker, in order, and each that does
-/// not with the error that says why, when `is_unbuilt` names it; any other error is the
+/// not with the error that says why, when `refusal_of` says it leaves out; any other error is the
 /// result. The one fold every list of roots that may be left out is planned by.
 fn planned_or_left_out(
   tables tables: table_store.Tables,
@@ -3579,9 +3693,10 @@ fn planned_or_left_out(
       {
         Ok(spell) -> Ok(#([spell, ..planned], left_out))
         Error(error) ->
-          case is_unbuilt(error:) {
-            True -> Ok(#(planned, [Unplanned(spell4_id:, error:), ..left_out]))
-            False -> Error(error)
+          case refusal_of(error:).outcome {
+            LeavesOut ->
+              Ok(#(planned, [Unplanned(spell4_id:, error:), ..left_out]))
+            FailsLoad -> Error(error)
           }
       }
     }),
@@ -5136,15 +5251,16 @@ fn modifier_parameters_read(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Nil, PlanError) {
-  case damage.first_parameter_with_factor(effect:) {
-    Some(damage.Unread(parameter_kind:)) ->
+  let reading = damage.modifier_parameter_reading(effect:)
+  case reading.verdict {
+    column_reading.Reads -> Ok(Nil)
+    column_reading.Open(..) | column_reading.Unexplained ->
       Error(ParameterNotRead(
         spell4_id:,
         effect_id: effect.id,
         row: ModifierRow,
-        parameter_kind:,
+        parameter_kind: reading.kind,
       ))
-    None -> Ok(Nil)
   }
 }
 

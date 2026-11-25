@@ -1,5 +1,5 @@
 //// The abilities a class gains above level 1 and the plans of them
-//// (`genesis_prime/game/spell_plan` `unplanned`, `is_unbuilt`; `genesis_prime/game/loadout`).
+//// (`genesis_prime/game/spell_plan` `unplanned`, `refusal_of`; `genesis_prime/game/loadout`).
 //// Expected values come from these places.
 //// - `SpellLevel.spell4Id.no_prerequisite`: each of the six classes has 27 rows with no
 ////   prerequisite, 3 at level 1 and 24 above it, 162 in all, none naming a class's innate
@@ -9,7 +9,7 @@
 ////   names Spell4 32078 (base 18309); Class 1's first innate is Spell4 46867.
 //// - A load refuses a row the data faults on (a Spell4 row that is not there, a number that is
 ////   no number, an innate that is also an ability), and goes on for an ability whose effect or
-////   rule the server does not build (issue #1003 builds them); `is_unbuilt` is the one place
+////   rule the server does not build (issue #1003 builds them); `refusal_of` is the one place
 ////   that says which.
 
 import client_tables
@@ -17,10 +17,7 @@ import fixture_tables
 import genesis_prime/game/area
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/forced_move
 import genesis_prime/game/held_tier
-import genesis_prime/game/innate
-import genesis_prime/game/item_property
 import genesis_prime/game/lasting
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
@@ -46,6 +43,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import owned_test
+import plan_error_samples
 import planted_table.{type Cell, Float, Integer}
 import spell_tables
 import unitest
@@ -265,72 +263,6 @@ pub fn a_later_ability_whose_row_is_missing_fails_the_load_but_an_unread_effect_
     as "the ability is still granted: the loadout holds it"
 }
 
-/// Every error name the plan can fail with, and whether the load goes on for it: `is_unbuilt`
-/// is an exhaustive match, so a new error forces the choice at compile time, and this table
-/// pins today's.
-fn errors() -> List(#(PlanError, Bool)) {
-  [
-    #(spell_plan.ProxyAimNotRead(1, 2, 3), True),
-    #(spell_plan.ProxyCycle([1]), True),
-    #(spell_plan.UnreadCost(1, 2), True),
-    #(spell_plan.UnreadRequirement(1, 2), True),
-    #(spell_plan.GainAimNotRead(1, 2, 3), True),
-    #(spell_plan.GainVitalNotRead(1, 2, 3), True),
-    #(spell_plan.GainShareNotRead(1, 2, 3, 4), True),
-    #(spell_plan.ApplyPrerequisiteNotRead(1, 2, 3), True),
-    #(spell_plan.TargetPrerequisiteReadsStruckUnit(1, 2, 3), True),
-    #(spell_plan.ControlHelperNotRead(1, 2, 3), True),
-    #(spell_plan.SpendComparisonNotRead(1, 2, 3), True),
-    #(spell_plan.ForceRemoveSelectorNotRead(1, 2, 3), True),
-    #(spell_plan.ForceRemoveCountsDiffer(1, 2, 3, 4), True),
-    #(spell_plan.LastingAimNotRead(1, 2, 3), True),
-    #(spell_plan.ControlStateNotRead(1, 2, 3), True),
-    #(spell_plan.ControlAimNotRead(1, 2, 3), True),
-    #(spell_plan.FriendlyAreaNotRead(1, 2, 3), True),
-    #(spell_plan.AlliesModifierGateNotRead(1, 2), True),
-    #(spell_plan.ControlPersistenceNotRead(1, 2), True),
-    #(spell_plan.StealthAimNotRead(1, 2, 3), True),
-    #(spell_plan.StealthTimedNotRead(1, 2), True),
-    #(spell_plan.StealthBreaksNotRead(1, 2, 3), True),
-    #(spell_plan.StealthConditionNotRead(1, 2), True),
-    #(spell_plan.StealthChangeNotRead(1, 2), True),
-    #(spell_plan.ParameterNotRead(1, 2, spell_plan.ModifierRow, 3), True),
-    #(spell_plan.ParameterNotRead(1, 2, spell_plan.HealRow, 3), True),
-    #(spell_plan.HealUntilRemovedNotRead(1, 2), True),
-    #(spell_plan.HealNoTick(1, 2, 3, 4), True),
-    #(spell_plan.HealOnStruckUnit(1, 2, 3), True),
-    #(spell_plan.InterruptArmorTakeBackNotRead(1, 2, 3), True),
-    #(spell_plan.InterruptArmorOnStruckUnit(1, 2, 3), True),
-    #(spell_plan.ParameterNotRead(1, 2, spell_plan.AbsorptionRow, 3), True),
-    #(spell_plan.AbsorptionAmountNotRead(1, 2), True),
-    #(spell_plan.AbsorptionPeriodic(1, 2, 3), True),
-    #(spell_plan.AbsorptionHasNoLifetime(1, 2), True),
-    #(spell_plan.AbsorptionOnStruckUnit(1, 2, 3), True),
-    #(spell_plan.ProcKindNotRead(1, 2, 3), True),
-    #(spell_plan.SummonedProcNotRead(1, 2, 3, 4), True),
-    #(spell_plan.StruckMoveNotRead(1, 2, forced_move.UnknownKind(2, 16)), True),
-    #(
-      spell_plan.StruckMoveNotRead(1, 2, forced_move.NotAFloat(2, "dataBits01")),
-      False,
-    ),
-    #(spell_plan.DisguiseNotRead(1, 2, spell_plan.NamesNoDisplay), True),
-    #(spell_plan.AreaNotBuilt(1, "an area"), True),
-    #(spell_plan.NoRow("Spell4", 1), False),
-    #(spell_plan.ModifierPropertyHasNoRow(1, 2, 3), False),
-    #(spell_plan.ModifierNumberNotFinite(1, 2, "dataBits02"), False),
-    #(spell_plan.CooldownNumberNotFinite(1, 2), False),
-    #(spell_plan.HealNumberNotFinite(1, 2), False),
-    #(spell_plan.AbsorptionNumberNotFinite(1, 2), False),
-    #(spell_plan.ChannelWithoutPulse(1), False),
-    #(spell_plan.NoThresholdTime(1), False),
-    #(spell_plan.ProcNotRead(1, 2, "dataBits02", 3), False),
-    #(spell_plan.PrerequisiteCycle([1]), False),
-    #(spell_plan.AreaDataFault(1, "an area"), False),
-    #(spell_plan.InnateFailed(innate.NoSpell(1, 2)), False),
-    #(spell_plan.EquipItemNotRead(item_property.NoRow("Item2Type", 1)), False),
-  ]
-}
-
 /// A list of roots the plan folds over, and the edits that give one root a plan error of
 /// each kind: its list of the roots left out, an unbuilt reason (a cost type no check was
 /// read for, `UnreadCost`) and a fault of the data (a row the table lacks).
@@ -400,11 +332,15 @@ fn fold_cases() -> List(FoldCase) {
 
 pub fn every_plan_error_is_a_skip_or_a_load_failure_test() -> Nil {
   use <- owned_test.run(10_000)
-  list.each(errors(), fn(case_) {
-    assert spell_plan.is_unbuilt(error: case_.0) == case_.1
+  list.each(plan_error_samples.samples(), fn(case_) {
+    let leaves_out = case spell_plan.refusal_of(error: case_.error).outcome {
+      spell_plan.LeavesOut -> True
+      spell_plan.FailsLoad -> False
+    }
+    assert leaves_out == case_.leaves_out
       as {
-        spell_plan.describe(error: case_.0)
-        <> case case_.1 {
+        spell_plan.describe(error: case_.error)
+        <> case case_.leaves_out {
           True ->
             " is an effect or rule the server does not build yet: the ability is left out"
           False -> " is a missing row or a fault of the data: the load fails"
@@ -412,7 +348,7 @@ pub fn every_plan_error_is_a_skip_or_a_load_failure_test() -> Nil {
       }
   })
   // Both lists of roots go through one fold, whose skip half is this test's: an error
-  // `is_unbuilt` names leaves the root out and lists it.
+  // `refusal_of` says leaves the ability out leaves the root out and lists it.
   list.each(fold_cases(), fn(case_) {
     let assert Ok(tables) = loaded(added: [], changed: case_.unbuilt)
       as { case_.list <> ": an unread cost does not fail the load" }
@@ -1670,7 +1606,8 @@ pub fn every_tier_of_a_planned_ability_is_planned_or_listed_unplanned_test() -> 
           as { name <> " keeps the ability's Spell4Base" }
       }
       Error(Nil), Ok(one) -> {
-        assert spell_plan.is_unbuilt(error: one.error)
+        assert spell_plan.refusal_of(error: one.error).outcome
+          == spell_plan.LeavesOut
           as { name <> " is left out for a reason the server does not build" }
       }
       Ok(_), Ok(_) -> panic as { name <> " is planned and listed unplanned" }
