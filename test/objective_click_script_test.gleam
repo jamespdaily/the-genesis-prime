@@ -25,8 +25,6 @@ import genesis_prime/game/objective.{
   Advanced, Killed, ReleaseUnit, SendProgress, TalkedTo, Used,
 }
 import genesis_prime/game/quest_log
-import genesis_prime/game/target_group
-import genesis_prime/table/id.{Creature2Id, Faction2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/set
@@ -42,15 +40,6 @@ const the_augmentor = 26_436
 /// A creature of no pane of these quests.
 const a_beast = 73_464
 
-/// A unit of this creature, of faction 0 and race 0: a type 1 pane reads only the creature.
-fn unit_of(creature creature: Int) -> target_group.Unit {
-  target_group.Unit(
-    creature_id: Creature2Id(creature),
-    faction_id: Faction2Id(0),
-    unit_race_id: UnitRaceId(0),
-  )
-}
-
 /// The activation of a creature as unit `unit_id`, by the creature's own activate spell or by
 /// an item's.
 fn activated(
@@ -59,7 +48,7 @@ fn activated(
   by_item by_item: Bool,
 ) -> objective.Event {
   Used(
-    target: unit_of(creature:),
+    target: quest_support.unit_of(creature:),
     checklist_index: 0,
     unit: quest_support.unit_ref(unit_id:),
     by_item:,
@@ -69,19 +58,6 @@ fn activated(
 /// The rows of the click table these tests use: every objective they name.
 fn click_rows(objectives objectives: List(Int)) -> objective.ScriptRows {
   objective.ScriptRows(..objective.no_rows(), clicks: set.from_list(objectives))
-}
-
-/// The quest as the log reads it, with the objective at `index`.
-fn objective_at(
-  tables tables: table_store.Tables,
-  quest_id quest_id: Int,
-  index index: Int,
-) -> quest_log.Objective {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
-    as "the fixture holds the quest"
-  let assert Ok(found) = list.drop(quest.objectives, index) |> list.first
-    as "the quest has an objective at the index"
-  found
 }
 
 /// What `script_of` says of the objective at `index` of a quest, over the fixture with
@@ -157,7 +133,7 @@ pub fn a_type_5_row_in_the_click_table_is_the_click_script_and_never_a_stand_in_
         tables:,
         quest_id: row.quest_id,
         index: row.index,
-        objective: objective_at(
+        objective: quest_support.objective_at(
           tables:,
           quest_id: row.quest_id,
           index: row.index,
@@ -235,13 +211,16 @@ pub fn an_activation_of_a_pane_creature_counts_the_click_script_and_nothing_else
     CountCase(
       ..base,
       why: "a talk to the pane creature",
-      event: TalkedTo(target: unit_of(creature: pyrius), checklist_index: 0),
+      event: TalkedTo(
+        target: quest_support.unit_of(creature: pyrius),
+        checklist_index: 0,
+      ),
       counts: False,
     ),
     CountCase(
       ..base,
       why: "a kill of the pane creature",
-      event: Killed(target: unit_of(creature: pyrius)),
+      event: Killed(target: quest_support.unit_of(creature: pyrius)),
       counts: False,
     ),
     CountCase(
@@ -265,7 +244,7 @@ pub fn an_activation_of_a_pane_creature_counts_the_click_script_and_nothing_else
         event: row.event,
         quest_id: row.quest_id,
         index: row.index,
-        objective: objective_at(
+        objective: quest_support.objective_at(
           tables:,
           quest_id: row.quest_id,
           index: row.index,
@@ -317,7 +296,11 @@ pub fn an_activation_of_a_pane_creature_counts_the_click_script_and_nothing_else
       log: open,
       tables:,
       scripts: click_rows(objectives: clicks),
-    )(unit_of(creature: pyrius), 0, quest_support.unit_ref(unit_id: 7))
+    )(
+      quest_support.unit_of(creature: pyrius),
+      0,
+      quest_support.unit_ref(unit_id: 7),
+    )
   }
   assert offered([16_170])
     as "an open click row offers a use of its pane creature"

@@ -18,7 +18,6 @@
 ////   18, count 1).
 
 import genesis_prime/game/quest_log.{type QuestLog}
-import genesis_prime/store.{type QuestRow}
 import gleam/option.{Some}
 import owned_test
 import quest_support
@@ -29,23 +28,14 @@ const three_singles = 2347
 
 const skipped_first = 3297
 
-fn quest(id id: Int) -> quest_log.Quest {
-  quest_support.quest_of(id:)
-}
-
-/// The saved row of the quest, as the place save writes it.
-fn saved(log log: QuestLog, quest_id quest_id: Int) -> QuestRow {
-  quest_support.saved_row(log:, quest_id:)
-}
-
 fn done_mask_of(log log: QuestLog, quest_id quest_id: Int) -> Int {
-  let assert Some(active) = saved(log:, quest_id:).active
+  let assert Some(active) = quest_support.saved_row(log:, quest_id:).active
     as "the quest is in the active list"
   active.done_mask
 }
 
 fn progress_of(log log: QuestLog, quest_id quest_id: Int) -> List(Int) {
-  let assert Some(active) = saved(log:, quest_id:).active
+  let assert Some(active) = quest_support.saved_row(log:, quest_id:).active
     as "the quest is in the active list"
   active.progress
 }
@@ -59,7 +49,7 @@ fn counted(
   let assert Ok(counted) =
     quest_log.counted(
       log:,
-      quest: quest(id: quest_id),
+      quest: quest_support.quest_of(id: quest_id),
       index:,
       value:,
       now_ms: 0,
@@ -126,7 +116,7 @@ pub fn counted_sets_progress_capped_at_needed_and_the_done_bit_test() -> Nil {
       log: quest_support.log_of(rows: [
         quest_support.completed(quest_id: collect_three, at: 1),
       ]),
-      quest: quest(id: collect_three),
+      quest: quest_support.quest_of(id: collect_three),
       index: 0,
       value: 3,
       now_ms: 0,
@@ -135,7 +125,7 @@ pub fn counted_sets_progress_capped_at_needed_and_the_done_bit_test() -> Nil {
     as "a completed quest takes none (0x1405510d0)"
   assert quest_log.counted(
       log: quest_support.log_of(rows: []),
-      quest: quest(id: collect_three),
+      quest: quest_support.quest_of(id: collect_three),
       index: 0,
       value: 3,
       now_ms: 0,
@@ -174,7 +164,11 @@ pub fn counted_below_needed_undoes_the_objective_and_the_achieved_quest_test() -
     as "the done bit is cleared (0x1406115a0)"
   assert below.moved == quest_log.BecameAccepted
     as "and the Achieved quest returns to Accepted (0x1405fb830)"
-  assert quest_log.state(log: below.log, quest: quest(id: collect_three)) == 1
+  assert quest_log.state(
+      log: below.log,
+      quest: quest_support.quest_of(id: collect_three),
+    )
+    == 1
     as "the log reads the quest Accepted"
 
   let none = counted(log: achieved, quest_id: collect_three, index: 0, value: 0)

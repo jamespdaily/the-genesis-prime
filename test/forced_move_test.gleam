@@ -19,7 +19,6 @@ import genesis_prime/game/forced_move.{
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature_path.{Circle, Standing, Timed}
-import gleam/float
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -82,14 +81,10 @@ fn end_of(
   )
 }
 
-fn close(left: Float, right: Float) -> Bool {
-  float.absolute_value(left -. right) <. 0.000_001
-}
-
 fn assert_at(place place: Place, x x: Float, y y: Float, z z: Float) -> Nil {
-  assert close(start_place.x(place), x) as "x"
-  assert close(start_place.y(place), y) as "y"
-  assert close(start_place.z(place), z) as "z"
+  assert place_support.near(left: start_place.x(place), right: x) as "x"
+  assert place_support.near(left: start_place.y(place), right: y) as "y"
+  assert place_support.near(left: start_place.z(place), right: z) as "z"
 }
 
 fn assert_ends_at(
@@ -568,9 +563,9 @@ pub fn flags_4_faces_the_reference_and_flags_8_faces_along_the_move_test() -> Ni
     turned(4)
   assert time == now
   assert_at(place: end, x: 6.0, y: 0.0, z: 8.0)
-  assert close(toward.yaw, 0.6435011087932844)
+  assert place_support.near(left: toward.yaw, right: 0.6435011087932844)
   let assert Timed(rest: [], turned_to: Some(along), ..) = turned(8)
-  assert close(along.yaw, -2.498091544796509)
+  assert place_support.near(left: along.yaw, right: -2.498091544796509)
   assert toward.pitch == 0.0 && toward.roll == 0.0
 }
 

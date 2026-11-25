@@ -10,16 +10,10 @@
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/result
 import gleam/string
 import owned_test
 import play_service_support.{type Scene, Answer} as support
 import simplifile
-
-/// The updater's log; empty when it wrote none.
-fn log_of(scene: Scene) -> String {
-  result.unwrap(simplifile.read(scene.home <> "/play-service.log"), "")
-}
 
 /// Plants the folder a run makes while it takes a stale update lock over.
 fn plant_takeover(scene: Scene, old old: Bool) -> Nil {
@@ -149,13 +143,13 @@ pub fn update_sh_still_decides_by_the_moved_lock_check_test() -> Nil {
     case row.outcome(scene) {
       Stands(says:) -> {
         assert ran.status == 0 as { row.name <> ": ends well: " <> ran.output }
-        assert string.contains(log_of(scene), says)
+        assert string.contains(support.log_of(scene), says)
           as {
             row.name
             <> ": the log says "
             <> says
             <> ", it holds "
-            <> log_of(scene)
+            <> support.log_of(scene)
           }
       }
       TakesOver -> {
@@ -182,7 +176,7 @@ pub fn machine_up_starts_the_machine_only_when_it_is_down_test() -> Nil {
     let ran = support.run_library(scene:, commands: "machine_up", extra: [])
     assert support.returned(ran) == Ok(0) as ran.output
     assert starts(support.calls(scene)) == 0
-    assert !string.contains(log_of(scene), "starting it")
+    assert !string.contains(support.log_of(scene), "starting it")
   }
   // The machine is down at the first ask and up after one start.
   {
@@ -197,7 +191,7 @@ pub fn machine_up_starts_the_machine_only_when_it_is_down_test() -> Nil {
     assert support.returned(ran) == Ok(0) as ran.output
     assert starts(support.calls(scene)) == 1
     assert string.contains(
-      log_of(scene),
+      support.log_of(scene),
       "the Podman machine is not running; starting it",
     )
   }
@@ -218,7 +212,7 @@ pub fn machine_up_starts_the_machine_only_when_it_is_down_test() -> Nil {
     assert support.returned(ran) == Ok(1) as ran.output
     assert starts(support.calls(scene)) == 1
     assert string.contains(
-      log_of(scene),
+      support.log_of(scene),
       "the Podman machine is not running; starting it",
     )
   }
@@ -259,7 +253,7 @@ pub fn wait_for_postgres_asks_until_ready_or_the_asks_are_spent_test() -> Nil {
     assert support.returned(ran) == Ok(1) as ran.output
     assert asks(support.calls(scene)) == 2
     assert string.contains(
-      log_of(scene),
+      support.log_of(scene),
       "Postgres did not accept a connection in 2 asks",
     )
   }

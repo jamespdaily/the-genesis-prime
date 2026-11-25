@@ -10,6 +10,7 @@ import driven_time
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
+import genesis_prime/game/movement
 import genesis_prime/game/start_place.{Novice, Veteran}
 import genesis_prime/mark_rename/sql as mark_rename_sql
 import genesis_prime/message/create_character.{
@@ -17,6 +18,8 @@ import genesis_prime/message/create_character.{
 }
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
+import genesis_prime/message/item_place
+import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/server
 import genesis_prime/store.{
@@ -451,4 +454,35 @@ pub fn move_to(
     |> pog.execute(pool)
     as "the character moved"
   Nil
+}
+
+/// A player that entered World 3460, zone 6009, at (1.0, 2.0, 3.0), facing 0, 0, 0, as
+/// the login whose epoch is 3.
+pub fn entered() -> movement.State {
+  movement.entered(
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 1.0,
+      y: 2.0,
+      z: 3.0,
+    ),
+    session_epoch: epoch(number: 3),
+  )
+}
+
+/// The body of a 0x17D that splits `count` of the stack `guid` onto a place.
+pub fn split_body(
+  guid guid: Int,
+  to to: #(Int, Int),
+  count count: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    item_split.encode(ItemSplit(
+      item_guid: guid,
+      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
+      count:,
+    ))
+    as "a guid, a place and a count fit 0x17D"
+  body
 }

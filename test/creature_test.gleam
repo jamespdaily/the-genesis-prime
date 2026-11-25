@@ -70,6 +70,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/set
+import map_spawn_support
 import map_support
 import owned_test
 import place_support
@@ -1494,10 +1495,6 @@ pub fn armor_modifier_changes_creature_mitigation_test() -> Nil {
 // The throw of Spell4Effects 73826: kind 4 (away from a unit), 10 m, a flight of 375 ms,
 // flags 0 (the row's columns), the reference unit 5 behind the creature along x.
 
-fn at(x: Float) -> start_place.Place {
-  place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z: 0.0)
-}
-
 /// A throw of that row, struck at `struck_at_ms`.
 fn thrown_at(struck_at_ms: Int) -> creature.Message {
   creature.Thrown(
@@ -1513,7 +1510,10 @@ fn thrown_at(struck_at_ms: Int) -> creature.Message {
         height: 0.0,
       ),
       draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-      reference: forced_move.Reference(place: at(-5.0), radius: 0.0),
+      reference: forced_move.Reference(
+        place: map_spawn_support.at(-5.0),
+        radius: 0.0,
+      ),
     ),
     struck_at_ms:,
   )
@@ -1598,7 +1598,7 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
       message: creature.Approached(
         by: ConnectionId(2),
         unit_id: 20,
-        place: at(5.0),
+        place: map_spawn_support.at(5.0),
         seq: 1,
         stay: map_support.stay(count: 2),
         hit_radius: place_support.player_hit_radius,
@@ -1610,7 +1610,7 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
       at_ms: 6000,
       message: creature.TargetMoved(
         by: ConnectionId(2),
-        place: at(100.0),
+        place: map_spawn_support.at(100.0),
         seq: 2,
         stay: map_support.stay(count: 2),
         hit_radius: place_support.player_hit_radius,
@@ -2334,7 +2334,7 @@ fn approached_by_2() -> creature.Message {
   creature.Approached(
     by: ConnectionId(2),
     unit_id: 20,
-    place: at(5.0),
+    place: map_spawn_support.at(5.0),
     seq: 1,
     stay: map_support.stay(count: 2),
     hit_radius: place_support.player_hit_radius,

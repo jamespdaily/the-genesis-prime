@@ -60,10 +60,6 @@ const gated_timer = 3204
 
 const optional_timer = 4517
 
-fn quest(id id: Int) -> quest_log.Quest {
-  quest_support.quest_of(id:)
-}
-
 fn nothing() -> QuestLog {
   quest_support.log_of(rows: [])
 }
@@ -74,7 +70,12 @@ fn accepted(
   max_time_ms max_time_ms: Int,
   at now_ms: Int,
 ) -> QuestLog {
-  quest_log.accept(log:, quest: quest(id: quest_id), max_time_ms:, now_ms:)
+  quest_log.accept(
+    log:,
+    quest: quest_support.quest_of(id: quest_id),
+    max_time_ms:,
+    now_ms:,
+  )
 }
 
 /// The log after the objective at `index` is advanced by `amount` at this time.
@@ -88,7 +89,7 @@ fn progressed(
   let assert Ok(progressed) =
     quest_log.progressed(
       log:,
-      quest: quest(id: quest_id),
+      quest: quest_support.quest_of(id: quest_id),
       index:,
       amount:,
       now_ms:,
@@ -106,7 +107,13 @@ fn counted(
   at now_ms: Int,
 ) -> QuestLog {
   let assert Ok(counted) =
-    quest_log.counted(log:, quest: quest(id: quest_id), index:, value:, now_ms:)
+    quest_log.counted(
+      log:,
+      quest: quest_support.quest_of(id: quest_id),
+      index:,
+      value:,
+      now_ms:,
+    )
     as "a quest in the active list takes a count"
   counted.log
 }
@@ -199,7 +206,7 @@ pub fn accept_starts_the_reachable_timed_objectives_test() -> Nil {
   let retried =
     quest_log.retry(
       log: botched,
-      quest: quest(id: one_kill),
+      quest: quest_support.quest_of(id: one_kill),
       max_time_ms: 0,
       now_ms: 5000,
     )

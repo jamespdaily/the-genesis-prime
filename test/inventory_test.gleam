@@ -55,7 +55,6 @@ import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_removed.{ItemRemoved}
-import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/message/items_swapped.{ItemsSwapped}
 import genesis_prime/step
 import genesis_prime/store.{
@@ -688,21 +687,6 @@ fn in_bag(
   )
 }
 
-fn body_of_split(
-  guid guid: Int,
-  to to: #(Int, Int),
-  count count: Int,
-) -> BitArray {
-  let assert Ok(body) =
-    item_split.encode(ItemSplit(
-      item_guid: guid,
-      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
-      count:,
-    ))
-    as "a guid, a place and a count fit 0x17D"
-  body
-}
-
 fn body_of_delete(at at: #(Int, Int)) -> BitArray {
   let assert Ok(body) =
     item_delete.encode(
@@ -726,7 +710,7 @@ fn split_taken(
     wearer: equip_requirement_support.engineer(),
     bag_slots: 0,
     message: SplitAsked,
-    body: body_of_split(guid:, to:, count:),
+    body: character_support.split_body(guid:, to:, count:),
   )
 }
 
@@ -886,16 +870,16 @@ pub fn a_merged_stack_runs_out_at_the_earlier_moment_of_the_two_test() -> Nil {
   use <- owned_test.run(10_000)
   // The target keeps the earlier moment of the two stacks, or the one there is; what is
   // left of the source keeps its own moment.
-  // #(the target's moment, the source's moment, the target's moment after the merge)
+  // #(the target's moment, the source's moment, the target's moment after the merge, why)
   let rows = [
-    #(Some(5000), Some(9000), Some(5000)),
-    #(Some(9000), Some(5000), Some(5000)),
-    #(None, Some(5000), Some(5000)),
-    #(Some(5000), None, Some(5000)),
-    #(None, None, None),
+    #(Some(5000), Some(9000), Some(5000), "the target's is the earlier"),
+    #(Some(9000), Some(5000), Some(5000), "the source's is the earlier"),
+    #(None, Some(5000), Some(5000), "only the source has one"),
+    #(Some(5000), None, Some(5000), "only the target has one"),
+    #(None, None, None, "neither has one"),
   ]
   list.each(rows, fn(row) {
-    let #(target_moment, source_moment, expected) = row
+    let #(target_moment, source_moment, expected, why) = row
     let source =
       timed(
         in_bag(guid: 20, item2_id: stackable(), index: 1, count: 5),
@@ -913,10 +897,12 @@ pub fn a_merged_stack_runs_out_at_the_earlier_moment_of_the_two_test() -> Nil {
       inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
     let assert Ok(raised) = list.find(merged, fn(item) { item.item_guid == 21 })
     assert raised.words.expires_at_unix_ms == expected
-      as "the target runs out at the earlier of the moments present"
+      as {
+        why <> ": the target runs out at the earlier of the moments present"
+      }
     let assert Ok(left) = list.find(merged, fn(item) { item.item_guid == 20 })
     assert left.words.expires_at_unix_ms == source_moment
-      as "what is left of the source keeps its own moment"
+      as { why <> ": what is left of the source keeps its own moment" }
   })
 }
 
@@ -968,9 +954,14 @@ pub fn a_split_the_client_would_not_send_is_refused_with_its_code_test() -> Nil 
   })
   // The client's split path has no dead or combat check (opcode.0x17d), so a
   // player in either is asked for.
-  list.each([player_life_support.dead(), fighting()], fn(life) {
+  let lives = [
+    #("dead", player_life_support.dead()),
+    #("in combat", fighting()),
+  ]
+  list.each(lives, fn(row) {
+    let #(state, life) = row
     assert is_ask(split_taken(items:, life:, guid: 20, to: #(1, 2), count: 3))
-      as "a split in combat or dead is asked for"
+      as { state <> ": a split in combat or dead is asked for" }
   })
   let assert Error(NotDecoded(undecoded:)) =
     inventory.take(
@@ -1101,7 +1092,9 @@ pub fn a_move_onto_a_full_stack_or_an_item_that_does_not_stack_swaps_test() -> N
     let #(swapped, effects) =
       inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
     assert at(items: swapped, guid: 20) == #(1, 2)
+      as { what <> ": the first item stands at the second place" }
     assert at(items: swapped, guid: 21) == #(1, 1)
+      as { what <> ": the second item stands at the first place" }
     assert count_of(items: swapped, guid: 20) == first.stack_count
       as { what <> ": no count changed" }
     assert list.map(item_flags_support.sent(effects), fn(frame) {
@@ -1232,6 +1225,7 @@ pub fn a_split_merge_or_delete_the_store_did_not_save_is_refused_db_failure_test
         <> ": a later login or a stale row is an outside failure, a warning"
       }
     assert string.contains(text, word)
+      as { what <> ": the log line names " <> word }
     let #(unchanged, effects) =
       inventory.answered(
         items:,
@@ -1242,6 +1236,9 @@ pub fn a_split_merge_or_delete_the_store_did_not_save_is_refused_db_failure_test
     assert unchanged == items
       as { what <> ": a refused change leaves the items as they were" }
     assert failed_with(effects) == [#(20, 5)]
+      as {
+        what <> ": the refusal of a change the store refused is the same 0x56A"
+      }
     let assert [Log(level:, text:), Send(..)] = effects
       as { what <> ": a log line, then the refusal" }
     assert level == step.LogError
@@ -1357,8 +1354,15 @@ pub fn gear_the_character_cannot_wear_is_refused_with_its_code_test() -> Nil {
         let assert [#(level, text)] = logged(effects)
           as "the refusal is logged once"
         assert level == step.LogWarning
+          as {
+            what
+            <> ": the prerequisite the server cannot read is logged as a warning"
+          }
         assert string.contains(text, "PrerequisiteType 270")
-          as "the log names the condition type of prerequisite 39240, a loyalty"
+          as {
+            what
+            <> ": the log names the condition type of prerequisite 39240, a loyalty"
+          }
       }
       _ -> {
         assert list.length(effects) == 1
@@ -1673,7 +1677,11 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
           flags_set: 1,
         ),
       ]
-      as "a bag goes into each of the four bag slots, and 4753 binds on equip (bindFlags 16)"
+      as {
+        "bag slot "
+        <> int.to_string(slot)
+        <> ": a bag goes into each of the four bag slots, and 4753 binds on equip (bindFlags 16)"
+      }
   })
   let moving = asked(bagged(items:, from: #(1, 1), to: #(0, 17)))
   assert item_flags_support.moves_of(moving)
@@ -2307,26 +2315,29 @@ pub fn item_added_frames_carry_the_time_left_test() -> Nil {
   // runs out and 0 for one that does not (`opcode.0x111.time_left`), whatever its place; an
   // ability, which is never stored, carries 0.
   let now = 1_700_000_000_000
-  // #(the item's moment, the time its 0x111 carries)
+  // #(the item's moment, the time its 0x111 carries, why)
   let cases = [
-    #(None, 0),
-    #(Some(now + 1), 1),
-    #(Some(now), 1),
-    #(Some(now - 5000), 1),
-    #(Some(now + 1_728_000_000), 1_728_000_000),
+    #(None, 0, "an item with no moment"),
+    #(Some(now + 1), 1, "a moment 1 ms ahead"),
+    #(Some(now), 1, "a moment that is now"),
+    #(Some(now - 5000), 1, "a moment already past"),
+    #(Some(now + 1_728_000_000), 1_728_000_000, "a moment 20 days ahead"),
   ]
   list.each(cases, fn(row) {
-    let #(expires_at_unix_ms, expected) = row
+    let #(expires_at_unix_ms, expected, why) = row
     let bag = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
     let item =
       HeldItem(..bag, words: store.ItemWords(..bag.words, expires_at_unix_ms:))
     let frame = inventory.held_item_frame(item:, now_unix_ms: now, reason: 0)
     let assert Ok(added) = item_added.decode(frame.body) as "the 0x111 decodes"
     assert added.held_item.item.time_left_ms == expected
-      as "opcode.0x111.time_left: the milliseconds to the moment, 0 for none, never 0 for a moment"
+      as {
+        why
+        <> ": opcode.0x111.time_left: the milliseconds to the moment, 0 for none, never 0 for a moment"
+      }
     assert added.held_item.item.item_guid == 20
       && added.held_item.item.stack_count == 10
-      as "the item's other words are as before"
+      as { why <> ": the item's other words are as before" }
   })
   let ability =
     ability_book_frame.held_ability(
@@ -2402,6 +2413,6 @@ pub fn a_delete_names_its_reason_test() -> Nil {
     }
       as why
     assert { left == items } == { answer != ItemsSaved }
-      as "the items are as they were unless the delete is saved"
+      as { why <> ": the items are as they were unless the delete is saved" }
   })
 }

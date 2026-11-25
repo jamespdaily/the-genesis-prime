@@ -8,6 +8,7 @@ import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
 import genesis_prime/coverage/starting_ability.{type LeftOut}
+import genesis_prime/tooltip_token
 import gleam/int
 import gleam/list
 import gleam/string
@@ -107,4 +108,14 @@ pub fn partial_line(
       label <> ": the starting rows are within its rows, the unread among them"
     }
   line
+}
+
+const tooltip_header = "text_id\tkind\tid\tfield"
+
+/// The list of tooltip tokens parsed from these rows under the header the client's list has.
+pub fn list_of(rows: List(String)) -> tooltip_token.Tokens {
+  let assert Ok(tokens) =
+    tooltip_token.parse(string.join([tooltip_header, ..rows], "\n") <> "\n")
+    as "the planted list parses"
+  tokens
 }

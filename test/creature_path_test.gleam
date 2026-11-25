@@ -146,11 +146,23 @@ pub fn arrives_ms_refuses_a_speed_of_zero_or_below_test() -> Nil {
       )
     let walk = creature_path.straight(from:, to: target, speed:, now_ms: 5000)
     assert chase == Standing(at: from)
-      as "a chase at that speed leaves the creature where it is"
+      as {
+        "speed "
+        <> float.to_string(speed)
+        <> ": a chase at that speed leaves the creature where it is"
+      }
     assert walk == Standing(at: from)
-      as "a walk at that speed leaves the creature where it is"
+      as {
+        "speed "
+        <> float.to_string(speed)
+        <> ": a walk at that speed leaves the creature where it is"
+      }
     assert creature_path.arrives_ms(path: walk, now_ms: 6000) == 6000
-      as "so no arrival is computed from the speed"
+      as {
+        "speed "
+        <> float.to_string(speed)
+        <> ": so no arrival is computed from the speed"
+      }
   })
   assert creature_path.straight(
       from: target,
@@ -198,10 +210,6 @@ const decimal_run_points = [
   #(1.1, 0.0, 0.0),
 ]
 
-fn coordinates(place: Place) -> Point {
-  #(start_place.x(place), start_place.y(place), start_place.z(place))
-}
-
 fn close(first: Point, second: Point) -> Bool {
   float.absolute_value(first.0 -. second.0) <=. 0.000_000_001
   && float.absolute_value(first.1 -. second.1) <=. 0.000_000_001
@@ -214,7 +222,7 @@ fn walked(
   now_ms now_ms: Int,
 ) -> #(Point, Point, Int) {
   #(
-    coordinates(creature_path.place_at(path:, now_ms:)),
+    support.coordinates(creature_path.place_at(path:, now_ms:)),
     creature_path.velocity(path:, now_ms:),
     creature_path.arrives_ms(path:, now_ms:),
   )
@@ -224,9 +232,9 @@ fn walked(
 /// share whatever the float noise of the walk that made them.
 fn outline(path path: creature_path.Path) -> #(List(Point), Int, Float) {
   case path {
-    Standing(at:) -> #([coordinates(at)], 0, 0.0)
+    Standing(at:) -> #([support.coordinates(at)], 0, 0.0)
     creature_path.Running(started_ms:, speed:, ..) -> #(
-      list.map(support.points_of(path:), coordinates),
+      list.map(support.points_of(path:), support.coordinates),
       started_ms,
       speed,
     )

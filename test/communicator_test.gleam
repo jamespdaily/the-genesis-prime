@@ -30,10 +30,6 @@ import planted_table.{Integer}
 import quest_support
 import quest_turn_in_support as support
 
-fn tables() -> table_store.Tables {
-  character_tables.shared()
-}
-
 /// The scene of a quest held Achieved, in this World.
 fn in_world(quest_id quest_id: Int, world_id world_id: Int) -> support.Scene {
   support.Scene(..support.scene(quest_id:), world_id:)
@@ -66,9 +62,15 @@ pub fn delivering_row_holds_only_in_its_world_test() -> Nil {
   use <- owned_test.run(10_000)
   // Row 1281 has worldId 426; `0x14043d3d0` returns 2 for another World. Row 2081 has
   // flags bit 0 set, so it is not read.
-  assert asked(scene: in_world(quest_id: 3673, world_id: 426), tables: tables())
+  assert asked(
+      scene: in_world(quest_id: 3673, world_id: 426),
+      tables: character_tables.shared(),
+    )
     == Ok(Nil)
-  assert asked(scene: in_world(quest_id: 3673, world_id: 870), tables: tables())
+  assert asked(
+      scene: in_world(quest_id: 3673, world_id: 870),
+      tables: character_tables.shared(),
+    )
     == failed_with(code: 2)
 }
 
@@ -92,9 +94,10 @@ pub fn delivering_row_zone_is_the_player_zone_or_a_parent_test() -> Nil {
   let scene = fn(zones) {
     support.Scene(..in_world(quest_id: 3741, world_id: 51), zones:)
   }
-  assert asked(scene: scene([13]), tables: tables()) == Ok(Nil)
-  assert asked(scene: scene([999, 13]), tables: tables()) == Ok(Nil)
-  assert asked(scene: scene([999, 998]), tables: tables())
+  assert asked(scene: scene([13]), tables: character_tables.shared()) == Ok(Nil)
+  assert asked(scene: scene([999, 13]), tables: character_tables.shared())
+    == Ok(Nil)
+  assert asked(scene: scene([999, 998]), tables: character_tables.shared())
     == Error(NoDeliveringRow(failed: [#(1907, 3)]))
 }
 
@@ -270,55 +273,56 @@ pub fn row_quest_state_reads_as_the_client_test() -> Nil {
     )
   }
   let none = []
-  assert holds(tables(), none, 0, 7) as "quest 0 passes"
-  assert !holds(tables(), none, 99_999_999, 0) as "no Quest2 row fails"
-  assert holds(tables(), none, 3673, 0) as "held 0 is wanted 0"
-  assert !holds(tables(), none, 3673, 2)
+  assert holds(character_tables.shared(), none, 0, 7) as "quest 0 passes"
+  assert !holds(character_tables.shared(), none, 99_999_999, 0)
+    as "no Quest2 row fails"
+  assert holds(character_tables.shared(), none, 3673, 0) as "held 0 is wanted 0"
+  assert !holds(character_tables.shared(), none, 3673, 2)
   assert holds(
-    tables(),
+    character_tables.shared(),
     [quest_support.known(quest_id: 3673, state: 5)],
     3673,
     0,
   )
     as "held 5 reads as 0"
   assert holds(
-    tables(),
+    character_tables.shared(),
     [quest_support.known(quest_id: 3673, state: 7)],
     3673,
     0xb,
   )
     as "held 7 reads as 0, which 0xb takes"
   assert holds(
-    tables(),
+    character_tables.shared(),
     [quest_support.known(quest_id: 3673, state: 4)],
     3673,
     0xb,
   )
-  assert holds(tables(), none, 3673, 0xb)
+  assert holds(character_tables.shared(), none, 3673, 0xb)
   let completed = [quest_support.completed(quest_id: 3673, at: 1)]
-  assert !holds(tables(), completed, 3673, 0xb)
+  assert !holds(character_tables.shared(), completed, 3673, 0xb)
     as "held 3 is not 0xb for a quest that is not repeatable"
-  assert holds(tables(), completed, 3673, 3)
-  assert holds(tables(), completed, 3673, 0xd)
+  assert holds(character_tables.shared(), completed, 3673, 3)
+  assert holds(character_tables.shared(), completed, 3673, 0xd)
   use repeatable <- support.with_changes(changes: [
     #("Quest2", 3673, [#("flags", Integer(0x10020))]),
   ])
   assert holds(repeatable, completed, 3673, 0xb)
     as "held 3 is 0xb for a quest of flags 0x20"
   let achieved = [support.achieved(quest_id: 3673)]
-  assert holds(tables(), achieved, 3673, 2)
-  assert holds(tables(), achieved, 3673, 0xc)
-  assert holds(tables(), achieved, 3673, 0xd)
-  assert !holds(tables(), achieved, 3673, 0xb)
-  assert !holds(tables(), achieved, 3673, 1)
+  assert holds(character_tables.shared(), achieved, 3673, 2)
+  assert holds(character_tables.shared(), achieved, 3673, 0xc)
+  assert holds(character_tables.shared(), achieved, 3673, 0xd)
+  assert !holds(character_tables.shared(), achieved, 3673, 0xb)
+  assert !holds(character_tables.shared(), achieved, 3673, 1)
   let accepted = [
     quest_support.accepted(
       quest_id: 3673,
       progress: list.repeat(0, quest_support.objective_count(quest_id: 3673)),
     ),
   ]
-  assert holds(tables(), accepted, 3673, 0xc)
-  assert !holds(tables(), accepted, 3673, 0xd)
+  assert holds(character_tables.shared(), accepted, 3673, 0xc)
+  assert !holds(character_tables.shared(), accepted, 3673, 0xd)
   // Quest 10520 has five objectives. Objectives 0 and 2 are done.
   let partly = [
     quest_support.active(
@@ -330,13 +334,17 @@ pub fn row_quest_state_reads_as_the_client_test() -> Nil {
       progress: [1, 0, 1, 0, 0],
     ),
   ]
-  assert holds(tables(), partly, 10_520, 5) as "5 is objective 0 done"
-  assert !holds(tables(), partly, 10_520, 6) as "6 is objective 1 done"
-  assert holds(tables(), partly, 10_520, 7) as "7 is objective 2 done"
-  assert !holds(tables(), partly, 10_520, 0xe)
+  assert holds(character_tables.shared(), partly, 10_520, 5)
+    as "5 is objective 0 done"
+  assert !holds(character_tables.shared(), partly, 10_520, 6)
+    as "6 is objective 1 done"
+  assert holds(character_tables.shared(), partly, 10_520, 7)
+    as "7 is objective 2 done"
+  assert !holds(character_tables.shared(), partly, 10_520, 0xe)
     as "0xe wants objective 0 not done, and it is done"
-  assert holds(tables(), partly, 10_520, 0xf) as "0xf is objective 1 not done"
-  assert !holds(tables(), partly, 10_520, 0x10)
+  assert holds(character_tables.shared(), partly, 10_520, 0xf)
+    as "0xf is objective 1 not done"
+  assert !holds(character_tables.shared(), partly, 10_520, 0x10)
     as "0x10 wants objective 2 not done, and it is done"
   Nil
 }

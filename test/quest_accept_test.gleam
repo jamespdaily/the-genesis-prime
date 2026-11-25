@@ -43,7 +43,6 @@ import genesis_prime/store.{
   type HeldItem, type QuestRow, ActiveQuest, HeldItem, QuestRow,
 }
 import genesis_prime/table/id.{Item2Id, Quest2Id}
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2, Quest2}
 import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
@@ -62,12 +61,9 @@ import unitest
 
 const dominion = 166
 
-fn tables() -> table_store.Tables {
-  character_tables.shared()
-}
-
 fn row(quest_id: Int) -> Quest2 {
-  let assert Ok(row) = quest2.get(tables: tables(), id: Quest2Id(quest_id))
+  let assert Ok(row) =
+    quest2.get(tables: character_tables.shared(), id: Quest2Id(quest_id))
     as "the fixture holds the quest"
   row
 }
@@ -126,7 +122,7 @@ fn item(
 fn verdict(quest target: Quest2, asker asker: Asker) -> Verdict {
   let assert Ok(verdict) =
     quest.can_accept(
-      tables: tables(),
+      tables: character_tables.shared(),
       quest: target,
       asker:,
       mask: quest.every_check,
@@ -226,12 +222,16 @@ pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
       )
     assert taken.effects
       == [quest.SendState(quest_id: 2417, state: 1, objective_id: 0)]
-      as "a quest held in state 5 to 7 is accepted"
+      as {
+        "state "
+        <> int.to_string(state)
+        <> ": a quest held in state 5 to 7 is accepted"
+      }
     assert list.map(quest_log.rows(log: taken.log, now_ms: 0), fn(row) {
         row.state
       })
       == [1]
-      as "one entry, now Accepted"
+      as { "state " <> int.to_string(state) <> ": one entry, now Accepted" }
   })
 }
 
@@ -378,7 +378,12 @@ pub fn the_level_and_quest_checks_each_run_on_their_own_mask_bit_test() -> Nil {
   // preq_level 11, preq_flags 2 and preq_quest0 4294; 2575 has preq_level 40 alone.
   let verdict_under = fn(mask, quest_id, asker) {
     let assert Ok(verdict) =
-      quest.can_accept(tables: tables(), quest: row(quest_id), asker:, mask:)
+      quest.can_accept(
+        tables: character_tables.shared(),
+        quest: row(quest_id),
+        asker:,
+        mask:,
+      )
       as "the fixture holds every row the checks read"
     verdict
   }
@@ -583,7 +588,11 @@ pub fn quest_10510_is_acceptable_outside_the_tutorial_worlds_and_refused_inside_
     )
   assert verdict_of(10_510, dominion_at_3) == Acceptable
     as "Quest2.questPlayerFactionEnum 2 is either faction"
-  assert quest.unread_gaps(tables: tables(), quest: row(10_510)) == Ok([])
+  assert quest.unread_gaps(
+      tables: character_tables.shared(),
+      quest: row(10_510),
+    )
+    == Ok([])
     as "type 288 is read, so the quest names no gap"
 }
 
@@ -1268,7 +1277,8 @@ pub fn a_quest_the_server_cannot_check_logs_what_it_does_not_read_and_no_issue_t
       ", which needs " <> sentence <> ": nothing is answered",
     )
       as { "the line says what is not read, for " <> column }
-    assert !string.contains(text, "#") as "the line names no issue"
+    assert !string.contains(text, "#")
+      as { column <> ": the line names no issue" }
   })
 }
 
@@ -1303,16 +1313,16 @@ pub fn every_quest_gap_kind_has_its_static_sentence_in_the_quest_gaps_test() -> 
     fn(kind) {
       let sentence = sentence_of(kind)
       assert quest.gap_kind(gap: kind) == sentence
-        as "the kind's sentence is the one the entry holds"
+        as { sentence <> ": the kind's sentence is the one the entry holds" }
       assert list.any(entries, fn(entry) {
         entry.missing == sentence && entry.area == "Quest acceptance"
       })
         as { "the entry for " <> sentence }
       assert string.contains(quest.describe_gap(gap: kind), sentence)
-        as "the log's description holds the sentence whole"
+        as { sentence <> ": the log's description holds the sentence whole" }
       assert !string.contains(sentence, "118")
         && !string.contains(sentence, "34")
-        as "the sentence names no id"
+        as { sentence <> ": the sentence names no id" }
     },
   )
   assert quest.gap_kind(gap: quest.PrerequisiteType(prerequisite_type: 118))
@@ -1344,7 +1354,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       asker: unchanged,
       standing: quest_request_support.standing(),
       picture: dict.new(),
-      tables: tables(),
+      tables: character_tables.shared(),
       now_ms: 0,
       logged: set.new(),
     )
@@ -1360,7 +1370,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       asker: unchanged,
       standing: quest_request_support.standing(),
       picture: dict.new(),
-      tables: tables(),
+      tables: character_tables.shared(),
       now_ms: 0,
       logged: first.logged,
     )
@@ -1373,7 +1383,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       asker: unchanged,
       standing: quest_request_support.standing(),
       picture: dict.new(),
-      tables: tables(),
+      tables: character_tables.shared(),
       now_ms: 0,
       logged: second.logged,
     )
@@ -1397,7 +1407,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       asker: from_item,
       standing: quest_request_support.standing(),
       picture: dict.new(),
-      tables: tables(),
+      tables: character_tables.shared(),
       now_ms: 0,
       logged: set.new(),
     )
@@ -1412,7 +1422,7 @@ pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Ni
       asker: unchanged,
       standing: quest_request_support.standing(),
       picture: dict.new(),
-      tables: tables(),
+      tables: character_tables.shared(),
       now_ms: 0,
       logged: set.new(),
     )
@@ -1447,7 +1457,7 @@ fn took_in(
       asker:,
       standing: quest_request_support.standing(),
       picture:,
-      tables: tables(),
+      tables: character_tables.shared(),
       now_ms: 0,
       logged: set.new(),
     )
