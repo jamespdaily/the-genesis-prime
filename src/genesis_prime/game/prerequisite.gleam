@@ -486,7 +486,7 @@ type Arc {
 /// A comparison of a condition that asks whether something holds: 1 passes when it
 /// does, 2 when it does not, any other fails (`0x1404a4ec0`,
 /// `Prerequisite.prerequisiteTypeId.28`).
-type Comparison {
+pub type Comparison {
   Found
   NotFound
   OtherComparison(comparison: Int)
@@ -1071,6 +1071,85 @@ pub fn condition_types(row row: prerequisite_table.Prerequisite) -> List(Int) {
 /// bit 0), rather than all of them (`0x1404a1ca0`).
 pub fn is_any(row row: prerequisite_table.Prerequisite) -> Bool {
   row.flags % 2 != 0
+}
+
+/// The Spell4 ids of the live casts the row's kept conditions read (`live_cast_of`), whatever
+/// the comparison.
+pub fn live_cast_spells(
+  row row: prerequisite_table.Prerequisite,
+) -> List(Spell4Id) {
+  list.filter_map(kept_conditions(row:), fn(condition) {
+    live_cast_of(condition:) |> result.map(fn(cast) { cast.1 })
+  })
+}
+
+/// The comparison and the Spell4 of a condition that reads a live cast: type 15, whether a live
+/// cast of the Spell4 has the unit as a target, and type 50, whether a cast of it by the check's
+/// second unit holds a node on the unit (`Prerequisite.prerequisiteTypeId.15` and `.50`). The
+/// condition is one of `kept_conditions`: (type, comparison, objectId, value). Any other type
+/// gives `Error(Nil)`.
+pub fn live_cast_of(
+  condition condition: #(Int, Int, Int, Int),
+) -> Result(#(Comparison, Spell4Id), Nil) {
+  let #(type_id, comparison, object_id, value) = condition
+  case condition_of(type_id:, comparison:, object_id:, value:) {
+    TargetOfLiveCast(comparison:, spell4_id:)
+    | UnderCastBy(comparison:, spell4_id:) -> Ok(#(comparison, spell4_id))
+    StackCount(..)
+    | StackCountByCaster(..)
+    | InCombat(..)
+    | Roll(..)
+    | HealthPercent(..)
+    | VitalPercent(..)
+    | VitalCurrent(..)
+    | Nested(..)
+    | ResourceSlot(..)
+    | UnderGroup(..)
+    | Stealthed(..)
+    | Difficulty(..)
+    | CurrentFaction(..)
+    | BaseFaction(..)
+    | UnitLevel(..)
+    | PlayerRace(..)
+    | UnitClass(..)
+    | InZone(..)
+    | IsPlayer(..)
+    | PlayerPath(..)
+    | Gender(..)
+    | InWorld(..)
+    | QuestState(..)
+    | ObjectiveDone(..)
+    | ObjectiveOpen(..)
+    | TargetCounted(..)
+    | ObjectiveProgress(..)
+    | ChallengeFlag(..)
+    | TitleOwned(..)
+    | NeverMet
+    | ServerGated
+    | IsCreature(..)
+    | SpellKnown(..)
+    | ItemHeld(..)
+    | WorldDifficulty(..)
+    | ObjectiveStatus(..)
+    | CarriesCasterGroup(..)
+    | InArc(..)
+    | Unread(..)
+    | NoCase -> Error(Nil)
+  }
+}
+
+/// The EldanAugmentation ids the row's kept conditions of type 227 name: type 227 asks whether
+/// the player holds the AMP in the active set (`Prerequisite.prerequisiteTypeId.227`). The
+/// server does not evaluate the condition (`is_read` is false for it); this only reads which
+/// AMPs the rows ask for.
+pub fn amps_asked_for(row row: prerequisite_table.Prerequisite) -> List(Int) {
+  list.filter_map(kept_conditions(row:), fn(condition) {
+    let #(type_id, _comparison, object_id, _value) = condition
+    case type_id {
+      227 -> Ok(object_id)
+      _ -> Error(Nil)
+    }
+  })
 }
 
 /// The conditions the client keeps, each as (type, comparison, objectId, value).

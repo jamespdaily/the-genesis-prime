@@ -410,6 +410,51 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
     )
   assert support.writes(effects: nothing) == []
     as "the camp dropped every standing cast, so a list that wants none ends none: no 0x7fe for a cast the client no longer holds"
+  // The spells of AMPs stand beside the passive and a camp drops them with it: the next join
+  // starts every one afresh.
+  let assert Ok(amp_spell) =
+    dict.get(spell_plan.amp_plans(client_tables.shared()), 59_436)
+    as "Spell4 59436, AMP 863's spell, is planned"
+  let assert Ok(passive_spell) =
+    spell_plan.in_plans(plans: support.real_plans(), base: Spell4BaseId(29_035))
+  let wanted = support.without_item(spells: [passive_spell, amp_spell])
+  let join = fn(cast, ms) {
+    let #(state, effects) =
+      cast.standing_changed(
+        cast:,
+        caster: support.caster(),
+        wanted:,
+        now: support.at(ms:),
+      )
+    support.answered_as(
+      caster: support.caster(),
+      state:,
+      effects:,
+      at: ms,
+      struck: [],
+      rolls: [],
+    )
+  }
+  let roots_started = fn(effects) {
+    list.filter(lines(effects:), fn(line) {
+      string.starts_with(line, "started ")
+      && string.ends_with(line, " parent 0")
+    })
+  }
+  let #(with_amp, joined) = join(cast_state.new(), 1000)
+  assert roots_started(joined)
+    == [
+      "started k1 44926 root 44926 parent 0",
+      "started k2 59436 root 59436 parent 0",
+    ]
+    as "the join starts the passive and AMP 863's spell"
+  let #(camped, left) = cast_tick.left(cast: with_amp)
+  assert support.writes(effects: left) == []
+    as "a camp writes nothing for the AMP spell either"
+  assert dict.is_empty(camped.standing) as "and forgets it with the passive"
+  let #(_, again) = join(camped, 9000)
+  assert roots_started(again) == roots_started(joined)
+    as "the next join starts the passive and the AMP spell again"
 }
 
 pub fn a_player_saved_dead_starts_the_passive_at_entry_test() -> Nil {

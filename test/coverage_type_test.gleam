@@ -33,6 +33,7 @@ import genesis_prime/coverage/measurement.{
   type Measurement, HandledWithGap, Measured,
 }
 import genesis_prime/coverage/starting_ability.{MissingRow}
+import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/table/class
@@ -1558,8 +1559,7 @@ pub fn a_prerequisite_a_runner_column_and_another_column_name_is_counted_and_not
 
 /// The spells of the AMPs (`EldanAugmentation.spell4IdAugment`) that a condition of the
 /// Prerequisite row `prerequisite_id` needs a cast of: a type 15 or 50 condition of
-/// comparison 1 (`Prerequisite.prerequisiteTypeId.15`, `.50`), read from the row's own
-/// columns.
+/// comparison 1 (`Prerequisite.prerequisiteTypeId.15`, `.50`), read by `prerequisite.live_cast_of`.
 fn amp_spells_the_gate_needs(
   tables tables: store.Tables,
   prerequisite_id prerequisite_id: Int,
@@ -1568,31 +1568,14 @@ fn amp_spells_the_gate_needs(
     list.map(eldan_augmentation.all(tables), fn(row) { row.spell4_id_augment })
   case prerequisite_table.get(tables:, id: PrerequisiteId(prerequisite_id)) {
     Ok(row) ->
-      [
-        #(
-          row.prerequisite_type_id0,
-          row.prerequisite_comparison_id0,
-          row.value0,
-        ),
-        #(
-          row.prerequisite_type_id1,
-          row.prerequisite_comparison_id1,
-          row.value1,
-        ),
-        #(
-          row.prerequisite_type_id2,
-          row.prerequisite_comparison_id2,
-          row.value2,
-        ),
-      ]
-      |> list.filter_map(fn(condition) {
-        case condition {
-          #(15, 1, value) | #(50, 1, value) ->
-            case list.contains(amps, value) {
-              True -> Ok(value)
+      list.filter_map(prerequisite.kept_conditions(row:), fn(condition) {
+        case prerequisite.live_cast_of(condition:) {
+          Ok(#(prerequisite.Found, spell4_id)) ->
+            case list.contains(amps, spell4_id.value) {
+              True -> Ok(spell4_id.value)
               False -> Error(Nil)
             }
-          _ -> Error(Nil)
+          Ok(_) | Error(Nil) -> Error(Nil)
         }
       })
     Error(Nil) -> []
