@@ -4,7 +4,7 @@
 ////
 //// ```
 //// a message sent to the walker ─▶ told ─▶ Gaps: removals waiting, gaps, deaths
-//// every walker's Gaps, when they stopped ─▶ verdict ─▶ Respawned | NoRespawn | FewerThanKilled
+//// every walker's Gaps, when they stopped ─▶ seen, needed ─▶ the respawns counted, and the fewest the run needs
 //// ```
 ////
 //// - A walker is told a unit's removal in the creature's own news (`Removed`) or the map's
@@ -15,9 +15,9 @@
 ////   the two as the walker was sent them. A creation with no removal before it is no respawn,
 ////   and a second creation after one removal is not another.
 //// - A death is a creature's `Died` news.
-//// - The gate fails a run that saw no respawn, and one that saw fewer respawns than the
-////   creatures killed that were owed one: a death within `settle_us` of the walkers' end is
-////   not, since the corpse timer and the next life are still to come.
+//// - The gate's minimum is 1, or the creatures killed that were owed one if more: a death
+////   within `settle_us` of the walkers' end is not owed one, since the corpse timer and the
+////   next life are still to come.
 
 import genesis_prime/client_connection.{
   type StaySent, SentByFoe, SentByKill, SentByMap, SentByPeer, SentByPlayer,
@@ -27,6 +27,7 @@ import genesis_prime/game/unit_news.{type News, PeerNews}
 import genesis_prime/world_map/map.{type Notice}
 import genesis_prime/world_map/static_object
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/pair
 
@@ -150,33 +151,23 @@ fn of_news(unit_id unit_id: Int, news news: News) -> Told {
   }
 }
 
-/// What the gate says of a run.
-pub type Verdict {
-  /// At least one respawn, and as many as the creatures killed that were owed one.
-  Respawned(respawns: Int)
-  /// No walker was sent a respawn.
-  NoRespawn
-  /// Fewer respawns than the `killed` creatures that were owed one.
-  FewerThanKilled(respawns: Int, killed: Int)
+/// The respawns the walkers counted.
+pub fn seen(all all: List(Gaps)) -> Int {
+  list.fold(all, 0, fn(sum, one) { sum + list.length(one.gaps_us) })
 }
 
-/// The gate over every walker's gaps: `ended_us` is when the walkers stopped, and a death
-/// within `settle_us` of it is not owed a respawn yet.
-pub fn verdict(
+/// The fewest respawns a run needs: as many as the creatures killed that were owed one, and
+/// at least 1. `ended_us` is when the walkers stopped, and a death within `settle_us` of it
+/// is not owed a respawn yet.
+pub fn needed(
   all all: List(Gaps),
   ended_us ended_us: Int,
   settle_us settle_us: Int,
-) -> Verdict {
-  let respawns =
-    list.fold(all, 0, fn(sum, one) { sum + list.length(one.gaps_us) })
+) -> Int {
   let killed =
     list.fold(all, 0, fn(sum, one) {
       sum
       + list.count(one.deaths_at_us, fn(at_us) { at_us <= ended_us - settle_us })
     })
-  case respawns {
-    0 -> NoRespawn
-    _ if respawns < killed -> FewerThanKilled(respawns:, killed:)
-    _ -> Respawned(respawns:)
-  }
+  int.max(1, killed)
 }

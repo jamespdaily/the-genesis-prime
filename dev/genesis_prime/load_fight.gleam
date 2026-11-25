@@ -21,9 +21,7 @@
 ////   starts (`content/creature_kind.put`, which replaces the term); the database is
 ////   untouched. Each walker counts the respawn gap: the time from the removal of a unit it
 ////   was sent to the next creation of the same unit, from the creature's own news or the
-////   map's notices (`genesis_prime/load_respawn`). The run fails if no respawn was seen, or
-////   fewer respawns than the creatures killed that were owed one (a death in the last
-////   `settle_ms` is not), and its gate line says which;
+////   map's notices (`genesis_prime/load_respawn`);
 //// - `unrecorded`: the operating system's timers for every deadline, as the server runs
 ////   without the recorder, and the strike rounds are not counted: the run that shows
 ////   what the recorder costs.
@@ -62,8 +60,13 @@
 ////   state, a broken charge, the leash, or a cancel with no sign of why, or still open;
 //// - with `respawning`, the respawn gaps the walkers counted: how many, their mean and 99th
 ////   percentile in microseconds as the walker was sent them, and the longest, and whether the
-////   mean is under 1 ms; and the respawn gate: passes with the respawns counted, or fails
-////   naming why;
+////   mean is under 1 ms;
+//// - the judged counts (`genesis_prime/load_judged`): the strike rounds and the strike answers
+////   (unless `mutual` and `respawning` together, where each blow kills the creature before it
+////   strikes) and, with `respawning`, the respawns, each with its minimum; the run fails, with exit
+////   status 1, when one is below it. The minimum of the rounds and the answers is 1; the
+////   respawns' is the creatures killed that were owed one (a death in the last `settle_ms` is
+////   not), and at least 1;
 //// - option A's count: for each move, the creatures in the mover's sight, summed
 ////   over the moves, the messages a design that told every seen creature of every
 ////   move would send.
@@ -82,8 +85,8 @@
 //// The walkers all join and are ready before any walks, each starting at its own
 //// offset within one 125 ms interval, as clients' timers are. The run passes when
 //// the map's queue stays bounded: its mean below the moves of one round (the
-//// walkers' count) and its process idle in most samples, and, with `respawning`, the
-//// respawn gate passes. The longest queue is printed beside them.
+//// walkers' count) and its process idle in most samples, and every judged count is at or
+//// above its minimum. The longest queue is printed beside them.
 
 import argv
 import genesis_prime/client_connection.{
@@ -101,6 +104,8 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
 import genesis_prime/load_deadline
+import genesis_prime/load_judged.{Judged}
+import genesis_prime/load_move_delay
 import genesis_prime/load_moves
 import genesis_prime/load_respawn.{type Gaps}
 import genesis_prime/load_round.{
@@ -169,6 +174,13 @@ const respawning_ms = 1500
 /// A death within this many milliseconds of the walkers' end is not owed a respawn: the
 /// corpse timer (`respawning_ms`) and the next life are still to come.
 const settle_ms = 3000
+
+/// Whether a creature of the scene lives to strike: with `mutual` and `respawning` each
+/// blow that lands kills (`killing_blow`), so the strike rounds and the answers are not
+/// there to judge.
+fn creatures_strike(scene scene: Scene) -> Bool {
+  !{ scene.mutual && scene.respawning }
+}
 
 /// The damage of a blow in the `respawning` scene, above a Dagun's 50 health, so each
 /// blow that lands kills.
@@ -911,7 +923,40 @@ fn sign_of(news: unit_news.News) -> Result(load_round.Sign, Nil) {
   case news {
     unit_news.Died -> Ok(load_round.Died)
     unit_news.CastInterrupted(..) -> Ok(load_round.Interrupted)
-    _ -> Error(Nil)
+    unit_news.Removed
+    | unit_news.Appeared(..)
+    | unit_news.Moving(..)
+    | unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastFinished(..)
+    | unit_news.Health(..)
+    | unit_news.CameBack
+    | unit_news.DeathLogged
+    | unit_news.CameBackLogged
+    | unit_news.CreatureAppeared(..)
+    | unit_news.CreatureMoved(..)
+    | unit_news.CreaturePlaced(..)
+    | unit_news.CreatureFaces(..)
+    | unit_news.Targeting(..)
+    | unit_news.Threat(..)
+    | unit_news.CombatState(..)
+    | unit_news.Shield(..)
+    | unit_news.InterruptArmor(..)
+    | unit_news.Absorption(..)
+    | unit_news.Level(..)
+    | unit_news.CrowdControlApplied(..)
+    | unit_news.CrowdControlEnded(..)
+    | unit_news.UnitStateHeld(..)
+    | unit_news.UnitStateEnded(..)
+    | unit_news.PropertiesChanged(..)
+    | unit_news.Stealth(..)
+    | unit_news.LookChanged(..)
+    | unit_news.HeldCastEnded(..)
+    | unit_news.HeldCastStarted(..) -> Error(Nil)
   }
 }
 
@@ -1067,44 +1112,23 @@ fn total_gaps(counts: List(Counts)) -> List(Int) {
 /// What the respawn gaps say: how many, the mean, the 99th percentile and the longest, and
 /// whether the mean is under 1 ms (1,000 microseconds).
 fn respawn_gaps(gaps gaps: List(Int)) -> String {
-  let sorted = list.sort(gaps, int.compare)
-  let count = list.length(sorted)
-  let sum = list.fold(sorted, 0, int.add)
-  let percentile = case list.drop(sorted, { count * 99 + 99 } / 100 - 1) {
-    [found, ..] -> found
-    [] -> 0
-  }
-  let longest = list.fold(sorted, 0, int.max)
+  let summary =
+    load_move_delay.summary(delays: load_move_delay.Delays(
+      microseconds: gaps,
+      expected: list.length(gaps),
+    ))
   "respawn gaps (a removal to the next creation of the unit, as a walker was sent them): "
-  <> int.to_string(count)
+  <> int.to_string(summary.moves)
   <> ", mean "
-  <> load_moves.per(total: sum, count:)
+  <> int.to_string(summary.mean_us)
   <> " us, 99th "
-  <> int.to_string(percentile)
+  <> int.to_string(summary.p99_us)
   <> " us, longest "
-  <> int.to_string(longest)
+  <> int.to_string(summary.longest_us)
   <> " us; "
-  <> case count > 0 && sum < count * 1000 {
+  <> case summary.moves > 0 && summary.mean_us < 1000 {
     True -> "the mean is under 1 ms"
     False -> "the mean is not under 1 ms, or no respawn was seen"
-  }
-}
-
-/// What the respawn gate says, as the run prints it.
-fn gate_text(gate gate: load_respawn.Verdict) -> String {
-  case gate {
-    load_respawn.Respawned(respawns:) ->
-      "passes: "
-      <> int.to_string(respawns)
-      <> " respawns, at least as many as the creatures killed that were owed one"
-    load_respawn.NoRespawn ->
-      "fails: no walker was sent a respawn (a removal, then the next creation of the unit)"
-    load_respawn.FewerThanKilled(respawns:, killed:) ->
-      "fails: "
-      <> int.to_string(respawns)
-      <> " respawns, fewer than the "
-      <> int.to_string(killed)
-      <> " creatures killed that were owed one"
   }
 }
 
@@ -1204,7 +1228,7 @@ fn report(
     <> " strikes of their own",
   )
   case rounds {
-    None -> io.println("strike rounds: not recorded")
+    None -> io.println("the strike rounds were not recorded")
     Some(rounds) -> {
       let closed = rounds.closed
       io.println(
@@ -1227,9 +1251,7 @@ fn report(
         <> " still open",
       )
       io.println(
-        "strike answers: "
-        <> int.to_string(rounds.answers)
-        <> " in all; lost (sent before the deadline fell due, not in the round at its closure): "
+        "strike answers of the walkers: lost (sent before the deadline fell due, not in the round at its closure): "
         <> int.to_string(rounds.lost)
         <> "; late (sent at or after it): "
         <> int.to_string(rounds.late)
@@ -1240,37 +1262,65 @@ fn report(
       )
     }
   }
-  let gate =
-    load_respawn.verdict(
-      all: list.map(counts, fn(one) { one.respawns }),
-      ended_us:,
-      settle_us: settle_ms * 1000,
-    )
   case scene.respawning {
-    True -> {
-      io.println(respawn_gaps(gaps: total_gaps(counts)))
-      io.println("respawn gate: " <> gate_text(gate:))
-    }
+    True -> io.println(respawn_gaps(gaps: total_gaps(counts)))
     False -> Nil
   }
+  let gaps = list.map(counts, fn(one) { one.respawns })
+  let strikes = creatures_strike(scene:)
+  let judged =
+    load_judged.judge(
+      judged: list.flatten([
+        case rounds, strikes {
+          Some(rounds), True -> [
+            Judged(
+              event: load_judged.StrikeRounds,
+              count: load_round.round_count(rounds.closed),
+              minimum: 1,
+            ),
+            Judged(
+              event: load_judged.StrikeAnswers,
+              count: rounds.answers,
+              minimum: 1,
+            ),
+          ]
+          None, _ | _, False -> []
+        },
+        case scene.respawning {
+          True -> [
+            Judged(
+              event: load_judged.Respawns,
+              count: load_respawn.seen(all: gaps),
+              minimum: load_respawn.needed(
+                all: gaps,
+                ended_us:,
+                settle_us: settle_ms * 1000,
+              ),
+            ),
+          ]
+          False -> []
+        },
+      ]),
+    )
+  case strikes {
+    True -> Nil
+    False ->
+      io.println(
+        "strike rounds and strike answers are not judged: each blow kills the creature before it strikes",
+      )
+  }
+  list.each(judged.lines, io.println)
   io.println(
     "option A's count: "
     <> int.to_string(total(fn(one) { one.option_a }))
     <> " (the creatures in sight, summed over the moves)",
   )
-  io.println(
-    case
-      sum < walkers * samples && running * 2 < samples,
-      scene.respawning,
-      gate
-    {
-      False, _, _ ->
-        "fail: the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
-      True, True, load_respawn.NoRespawn
-      | True, True, load_respawn.FewerThanKilled(..)
-      -> "fail: the respawn gate: " <> gate_text(gate:)
-      True, _, _ ->
-        "pass: the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
-    },
-  )
+  io.println(case sum < walkers * samples && running * 2 < samples, judged {
+    False, _ ->
+      "fail: the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
+    True, load_judged.Fails(summary:, ..) -> summary
+    True, load_judged.Passes(..) ->
+      "pass: the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
+  })
+  load_judged.require(verdict: judged)
 }

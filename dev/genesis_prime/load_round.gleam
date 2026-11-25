@@ -102,6 +102,18 @@ pub type Rounds {
   )
 }
 
+/// How many rounds there were, closed any way or still open.
+pub fn round_count(closed: Closed) -> Int {
+  closed.answer
+  + closed.deadline
+  + closed.death
+  + closed.control
+  + closed.leash
+  + closed.interrupt
+  + closed.unexplained
+  + closed.open
+}
+
 /// No round closed any way.
 pub const no_closures =
   Closed(

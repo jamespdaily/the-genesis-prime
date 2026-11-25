@@ -24,10 +24,9 @@ import genesis_prime/client_connection.{type StaySent, SentByMap, SentByPeer}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/unit_news.{PeerNews, Removed}
 import genesis_prime/load_deadline.{type Closure, type Deadline, Deadline}
+import genesis_prime/load_judged.{type Judged, Judged, Respawns}
 import genesis_prime/load_move_delay.{Probed}
-import genesis_prime/load_respawn.{
-  type Gaps, type Verdict, FewerThanKilled, Gaps, NoRespawn, Respawned,
-}
+import genesis_prime/load_respawn.{type Gaps, Gaps}
 import genesis_prime/load_round.{
   type Answer, type Closed, type Mark, type Rounds, Answer, Closed, Controlled,
   Died, Interrupted, Mark, Released, Rounds,
@@ -515,34 +514,47 @@ fn saw(deaths deaths: List(Int), gaps gaps: List(Int)) -> Gaps {
   Gaps(removed_at_us: dict.new(), gaps_us: gaps, deaths_at_us: deaths)
 }
 
-/// Each row is what the walkers counted, when they stopped (10,000,000) and the verdict:
-/// the run fails with no respawn, or with fewer than the creatures killed, not counting a
-/// death within the settle time (3,000,000) of the end, which is not owed one yet.
+/// Each row is what the walkers counted, when they stopped (10,000,000), the respawns seen
+/// and the fewest owed, and whether the run fails: it fails with no respawn, or with fewer
+/// than the creatures killed, not counting a death within the settle time (3,000,000) of
+/// the end, which is not owed one yet.
 pub fn the_respawn_gate_fails_for_no_respawn_or_fewer_than_the_creatures_killed_test() -> Nil {
   use <- owned_test.run(5000)
-  let verdict = fn(all: List(Gaps)) -> Verdict {
-    load_respawn.verdict(all:, ended_us: 10_000_000, settle_us: 3_000_000)
+  let judged = fn(all: List(Gaps)) -> Judged {
+    Judged(
+      event: Respawns,
+      count: load_respawn.seen(all:),
+      minimum: load_respawn.needed(
+        all:,
+        ended_us: 10_000_000,
+        settle_us: 3_000_000,
+      ),
+    )
   }
   let rows = [
     #(
       "no creature died and none respawned: the run saw no respawn",
       [saw(deaths: [], gaps: [])],
-      NoRespawn,
+      Judged(event: Respawns, count: 0, minimum: 1),
+      True,
     ),
     #(
       "creatures died and none respawned: the run saw no respawn",
       [saw(deaths: [1_000_000], gaps: [])],
-      NoRespawn,
+      Judged(event: Respawns, count: 0, minimum: 1),
+      True,
     ),
     #(
       "three deaths long before the end, two respawns: fewer than killed",
       [saw(deaths: [1_000_000, 2_000_000, 3_000_000], gaps: [10, 20])],
-      FewerThanKilled(respawns: 2, killed: 3),
+      Judged(event: Respawns, count: 2, minimum: 3),
+      True,
     ),
     #(
       "a death within the settle time of the end is not owed a respawn",
       [saw(deaths: [1_000_000, 8_000_000], gaps: [10])],
-      Respawned(respawns: 1),
+      Judged(event: Respawns, count: 1, minimum: 1),
+      False,
     ),
     #(
       "the deaths and respawns of two walkers are summed",
@@ -550,17 +562,25 @@ pub fn the_respawn_gate_fails_for_no_respawn_or_fewer_than_the_creatures_killed_
         saw(deaths: [1_000_000], gaps: [10]),
         saw(deaths: [1_000_000, 2_000_000], gaps: [10]),
       ],
-      FewerThanKilled(respawns: 2, killed: 3),
+      Judged(event: Respawns, count: 2, minimum: 3),
+      True,
     ),
     #(
       "as many respawns as deaths owed one",
       [saw(deaths: [1_000_000, 2_000_000], gaps: [10, 20])],
-      Respawned(respawns: 2),
+      Judged(event: Respawns, count: 2, minimum: 2),
+      False,
     ),
   ]
   list.each(rows, fn(row) {
-    let #(reason, all, expected) = row
-    assert verdict(all) == expected as reason
+    let #(reason, all, expected, fails) = row
+    assert judged(all) == expected as reason
+    assert case load_judged.judge(judged: [judged(all)]) {
+        load_judged.Fails(..) -> True
+        load_judged.Passes(..) -> False
+      }
+      == fails
+      as reason
   })
 }
 
