@@ -1331,7 +1331,8 @@ fn removed(others others: Others, body body: BitArray) -> Others {
   dict.delete(others, gone.unit_id)
 }
 
-fn standing(
+/// Where a kind 2 command puts its unit.
+pub fn standing(
   placed: unit_position_command.UnitPositionCommand,
 ) -> #(Float, Float, Float) {
   let value = fn(bits) {

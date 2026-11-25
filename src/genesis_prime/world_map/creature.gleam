@@ -2346,6 +2346,23 @@ pub fn control_of(timer timer: step.TimerId) -> Result(Int, Nil) {
   }
 }
 
+/// Whether a timer id is a creature's strike deadline (`StrikeDeadline`): 2 above a
+/// multiple of 7, from generation 1. The number alone tells it: another service's timer can
+/// carry the same number (the map's restart timer of a spawn is the spawn's number), so
+/// the caller tells the creature's by the process that armed it. For a tool that watches
+/// the deadlines.
+pub fn is_strike_deadline(timer timer: step.TimerId) -> Bool {
+  case fight_timer(timer:) {
+    Ok(StrikeDeadline(..)) -> True
+    Ok(AttackTick(..))
+    | Ok(HomeArrival(..))
+    | Ok(CastEnds(..))
+    | Ok(FlightEnds(..))
+    | Ok(ChaseArrival)
+    | Error(Nil) -> False
+  }
+}
+
 /// The guard timer of a timer id, or `Error(Nil)` for one the guard never starts.
 fn guard_timer(timer timer: step.TimerId) -> Result(creature_guard.Timer, Nil) {
   let TimerId(number) = timer
