@@ -1274,7 +1274,7 @@ fn report(
         <> " still open",
       )
       io.println(
-        "strike answers of the walkers: lost (sent before the deadline fell due, not in the round at its closure): "
+        "strike answers of the walkers: lost (sent before the deadline fell due, the round closed without it): "
         <> int.to_string(rounds.lost)
         <> "; late (sent at or after it): "
         <> int.to_string(rounds.late)
