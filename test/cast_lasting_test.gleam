@@ -2514,6 +2514,7 @@ pub fn nullifiers_field_cast_finishes_at_its_spell_duration_with_the_0x7fe_alone
         proxy:,
         counted_with: cast_state.WithNothing,
         from: option.None,
+        fired: False,
       ),
       after_ms: 2000,
     )

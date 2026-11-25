@@ -39,11 +39,19 @@
 ////   A go also raises `LandsSpell` for the holder's spell: one for each creature or other player it hit,
 ////   and one with no unit when it hit neither (`landed_events`), when the cast's role raises one
 ////   (`role_lands_spell`: a press, a stage and a Proxy's child do; a standing spell, an
-////   activation, a shortcut and the cast a proc fire starts do not), and a go answered after its
-////   cast ended raises none (`go_lands_spell`). A tick is no go and raises none. A fire's own
-////   cast raises none, so a row whose fired spell passes its own filter does not fire itself
-////   again; a Proxy child of a fired spell still lands (guesses:
+////   activation and a shortcut do not), and a go answered after its cast ended raises none
+////   (`go_lands_spell`). A tick is no go and raises none (guesses:
 ////   `Spell4Effects.effectType.14.dataBits00.27`).
+////   A cast a proc fire starts is **fired**, and so is every Proxy child, tick child and delayed
+////   child below it (`Role.Child.fired`, `cast_fired`): an input that belongs to a fired cast adds
+////   no pending event of any kind (`cast.settled`), and a class resource it moves raises none, so
+////   no proc starts from what a proc's spell does, its own row or another's, and a press's event
+////   fires a row once (a guess: the client reads no Proc row,
+////   `Spell4Effects.effectType.14.chaining`). The fired cast's go, its ticks, its heals and its
+////   delayed timers are those inputs, and a go answered after the client ended the cast carries
+////   the flag (`GoAsked.fired`). The stealth it ends is still ended and told. A press the
+////   fired input lets start (a held press, a held key's repeat) is the player's own and keeps its
+////   events (`cast.settled_then_released`).
 ////   A creature's blow on the holder raises `TakesDamage` when it lowered the holder's absorbs,
 ////   shield or health, `SuffersCritical` for a critical, `ShieldDepleted` when it took the shield
 ////   to 0 and `DeflectsAttack` for a deflect, each with the creature as the other unit and its
@@ -205,7 +213,7 @@ import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
-import genesis_prime/step.{LogDebug}
+import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{type Spell4Id, Spell4Id}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -454,17 +462,17 @@ pub fn landed_events(
 }
 
 /// Whether the go of a cast that started with this role raises the landing of its spell: a
-/// press, a stage and a child (a Proxy's, a tick's, one the server starts) do, since the
-/// filter groups of the kind hold Proxy children; a standing spell no press made, an
-/// activation, a shortcut (a quest button or an item's use) and the cast a proc fire starts
-/// (`Child.lands_spell`) do not, so a row whose fired spell passes its own filter, as
+/// press, a stage and a child (a Proxy's, a tick's, a proc fire's, one the server starts) do,
+/// since the filter groups of the kind hold Proxy children; a standing spell no press made, an
+/// activation and a shortcut (a quest button or an item's use) do not. A fired child raises
+/// none all the same (`cast_fired`), so a row whose fired spell passes its own filter, as
 /// Hypercharge's row 222009 does, fires once for each landing and not again for its own. A
 /// guess for each role: no text of kind 27 names them
 /// (`Spell4Effects.effectType.14.dataBits00.27`).
 pub fn role_lands_spell(role role: cast_state.Role) -> Bool {
   case role {
     cast_state.Base(..) | cast_state.Stage(..) -> True
-    cast_state.Child(lands_spell:, ..) -> lands_spell
+    cast_state.Child(..) -> True
     cast_state.Passive(..)
     | cast_state.Activation(..)
     | cast_state.Shortcut(..) -> False
@@ -478,6 +486,57 @@ pub fn go_lands_spell(cast cast: State, cast_id cast_id: Int) -> Bool {
   case dict.get(cast.casts, cast_id) {
     Ok(live) -> live.lands_spell
     Error(Nil) -> False
+  }
+}
+
+/// Whether the cast `cast_id` belongs to a proc's result (`Child.fired`): the cast a proc fire
+/// starts and every Proxy child, tick child and delayed child below it, live or lingering.
+/// `removed` is the answer for a cast that is held no longer, which a go asked of it carries
+/// (`GoAsked.fired`). A fired cast adds no pending event: no proc matches what a proc's spell
+/// does, its own row or another (a guess, `Spell4Effects.effectType.14.chaining`).
+pub fn cast_fired(
+  cast cast: State,
+  cast_id cast_id: Int,
+  removed removed: Bool,
+) -> Bool {
+  case cast_state.holder_of(cast:, cast_id:) {
+    Ok(holder) -> holder.fired
+    Error(Nil) -> removed
+  }
+}
+
+/// Whether the timer belongs to a fired cast: its go, finish, tick, node end or delayed heal,
+/// or the delayed child a fired cast's Proxy started. A timer the cast rule no longer holds,
+/// and any other timer, belongs to none.
+pub fn timer_fired(cast cast: State, timer timer: TimerId) -> Bool {
+  case dict.get(cast.timers, timer) {
+    Error(Nil) -> False
+    Ok(due) ->
+      case due {
+        Go(cast_id:, ..)
+        | Finish(cast_id:)
+        | NodesEnd(cast_id:)
+        | Tick(cast_id:, ..) -> cast_fired(cast:, cast_id:, removed: False)
+        ModifierStart(source:, ..) ->
+          cast_fired(cast:, cast_id: source.cast_id, removed: False)
+        // The input that starts a delayed child raises no event today (the child's go is a
+        // later input), so the flag only keeps a start that gains one from firing a proc.
+        StartChild(fired:, ..) -> fired
+        StateEnd(..)
+        | TargetModifierStart(..)
+        | ForcedMoveStart(..)
+        | ModifierEnd(..)
+        | PlayerChangeEnd(..)
+        | RestrictionEnd(..)
+        | CooldownModifierStarts(..)
+        | CooldownModifierEnds(..)
+        | ProcDue(..)
+        | QuestAdvanceDue(..)
+        | StartHeld
+        | RepeatHeld
+        | WindowEnd(..)
+        | ChargeLevel(..) -> False
+      }
   }
 }
 
@@ -1393,6 +1452,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Casting",
       missing: "A heal is never a critical heal: the server rolls no critical for a heal, so a proc that waits for a critical heal never fires.",
+    ),
+    gap.Entry(
+      area: "Casting",
+      missing: "Whether a spell a proc casts may fire a proc is a guess: no client code reads a Proc row, so the server fires none from what a proc's spell does (a hit, a kill, a critical, a heal, a landing, a stealth change or a class resource move of a fired cast and the casts below it). An event of a fired cast that no input of the cast raises, the stealth that the client's own cancel of a fired cast ends, is raised as any player's input raises it.",
     ),
   ]
 }

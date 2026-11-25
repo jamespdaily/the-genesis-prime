@@ -999,6 +999,7 @@ fn selected(
       primary_target: primary,
       spent: None,
       started_at: strike_support.start_pose(),
+      fired: False,
     ),
     attacker: caster_of_the_go(unit_id: caster),
     picture:,

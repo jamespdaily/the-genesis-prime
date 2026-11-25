@@ -415,7 +415,7 @@ pub fn after_payments(
     resources: list.fold(effects, caster.resources, fn(resources, effect) {
       case effect {
         Pay(payments:) -> class_resource.paid(resources:, payments:)
-        Gain(gains:) -> class_resource.gain(resources:, gains:).0
+        Gain(gains:, ..) -> class_resource.gain(resources:, gains:).0
         Send(..)
         | Tell(..)
         | StartTimer(..)

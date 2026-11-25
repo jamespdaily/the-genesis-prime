@@ -117,6 +117,7 @@ fn struck_by_the_three(
         primary_target: caster.unit_id,
         spent: None,
         started_at: strike_support.start_pose(),
+        fired: False,
       ),
       attacker: caster,
       picture:,

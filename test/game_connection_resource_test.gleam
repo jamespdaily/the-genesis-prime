@@ -15,22 +15,31 @@ import connection_rule_support as support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
+import genesis_prime/connection/cipher
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/casting
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/hit
+import genesis_prime/game/lasting
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
+import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
 import genesis_prime/random
-import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
+import genesis_prime/step.{type ConnectionStep, Now, OwnEvent, TimerFired}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}
 import gleam/list
+import gleam/option.{Some}
 import gleam/result
 import owned_test
 import resource_frames_support
+import world_entry_support
 
 /// The press of the ability at this bag index, as a client sends it.
 fn press(
@@ -420,4 +429,93 @@ pub fn a_go_with_no_type_37_condition_draws_no_bytes_so_the_next_strikes_rolls_f
   assert game_connection_support.strike_rolls([first, second])
     == rolls_of_the_seed(count: 2)
     as "each strike takes the next 12 bytes of the seed: the go between them drew none, which a draw of a roll (4 bytes, a block of the seed) would shift"
+}
+
+pub fn a_gain_of_a_fired_cast_moves_the_resource_and_raises_no_resource_event_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A Warrior's Kinetic Energy (slot 1, 500714) starts at 0, so a gain of 180 moves it, and a
+  // move of the class resource is the event of a ResourceCrosses row (`cast.raised`) unless the
+  // cast that gained it was fired by a proc (`Spell4Effects.effectType.14.chaining`). The
+  // Warrior holds an ungated ResourceCrosses row on its own cast; the starts of
+  // Spell4 39127, the spell the row casts, that the step writes are the row's fires.
+  let #(_, entered) = world_entry_support.entering(class_id: 1, level: 1)
+  let row =
+    spell_plan.ProcRow(
+      ..cast_support.held_proc_row(
+        id: 90_001,
+        holder: spell_plan.HeldByCaster,
+        row: lasting.LastingRow(
+          delay_ms: 0,
+          duration_ms: 0,
+          until_removed: True,
+        ),
+      ),
+      trigger: spell_plan.ResourceCrosses,
+      limit: spell_plan.ForLife(count: 1000),
+    )
+  let holder =
+    cast_support.with_effects(
+      spell: cast_support.child(spell4_id: 250_101, base: 250_101),
+      kinds: [spell_plan.ProcEffect(row)],
+    )
+  let plans = cast_support.plans_of([holder])
+  let caster = cast_support.caster()
+  let #(standing, started) =
+    cast_support.standing_started(
+      cast: cast_state.new(),
+      caster:,
+      plans:,
+      base: holder.spell4_base_id,
+      now: cast_support.at(ms: 500),
+    )
+  let #(held, _) =
+    cast_support.answered_as(
+      caster:,
+      state: standing,
+      effects: started,
+      at: 500,
+      struck: [],
+      rolls: [],
+    )
+  let rows = [
+    #("a gain of a cast a press made", False, 1),
+    #("a gain of a cast a proc fired", True, 0),
+  ]
+  let failures =
+    list.filter_map(rows, fn(row) {
+      let #(name, fired, fires) = row
+      let session =
+        game_connection_support.session_in(status: connection_state.InWorld(
+          holder: game_connection_support.holder(),
+          entered: world_entry.Entered(..entered, cast: held),
+        ))
+      let #(session, written) =
+        casting.cast_effects(
+          session:,
+          now: Now(monotonic_ms: 1000, filetime: 0),
+          effects: [
+            cast_state.Gain(
+              gains: [class_resource.Gain(slot: 1, amount: 180)],
+              fired:,
+            ),
+          ],
+        )
+      let assert Some(after) = connection_state.entered_of(session.status)
+        as "the player is in the world"
+      let moved = class_resource.value(resources: after.resources, slot: 1)
+      let started =
+        game_connection_support.started_spells(
+          frames: game_connection_support.heard(
+            step.Effects(effects: written),
+            cipher.base(),
+          ),
+        )
+        |> list.count(fn(spell4_id) { spell4_id == 39_127 })
+      case moved == 180.0 && started == fires {
+        True -> Error(Nil)
+        False -> Ok(#(name, moved, started))
+      }
+    })
+  assert failures == []
+    as "each row: its name, the Kinetic Energy after the gain (180 whether or not the cast is fired) and the casts the row started"
 }

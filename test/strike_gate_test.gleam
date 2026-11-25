@@ -151,6 +151,7 @@ fn selection(
       primary_target: 7,
       spent: None,
       started_at: strike_support.start_pose(),
+      fired: False,
     ),
     units: list.map(units, fn(unit_id) { Aimed(unit_id:, life: 3) }),
     area: units,
