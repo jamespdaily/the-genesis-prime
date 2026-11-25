@@ -44,6 +44,8 @@ import envoy
 import fixture_tables
 import genesis_prime/content/refusal
 import genesis_prime/game/activate
+import genesis_prime/game/click_objective
+import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/target_group
 import genesis_prime/game/vendor
@@ -55,6 +57,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
 import genesis_prime/terrain.{type Ground}
+import genesis_prime/world_map/checklist_index.{Candidate}
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn.{type Placed}
@@ -72,6 +75,7 @@ import gleam_community/maths
 import owned_test
 import place_support
 import planted_table.{Integer}
+import qcheck
 import rating_support
 import spawn_support
 import terrain_support
@@ -86,6 +90,25 @@ const turret = 74_862
 /// A creature that no kill objective names, which a test stores in World 3460 so
 /// that the world is one the server holds spawns for.
 const filler = 4064
+
+/// The id of the first spawn the server places for a quest: a placed spawn's id is this
+/// plus the rank of its kind, marker, creature and nth (genesis_prime/world_map/objective_spawn).
+const first_placed_id = 1_000_000_000
+
+/// The largest id `spawn.id` and a used spawn hold: both are 32-bit integers (migrations
+/// 0008 and 0052).
+const int4_largest = 2_147_483_647
+
+/// The number of the row's id.
+fn number_of(row: Row) -> Int {
+  let SpawnId(number) = row.id
+  number
+}
+
+/// The numbers of the rows' ids, in the order of the rows.
+fn numbers_of(rows: List(Row)) -> List(Int) {
+  list.map(rows, number_of)
+}
 
 /// The one stored row that makes World 3460 a world with spawns.
 fn the_world_holds_spawns(tables tables: store.Tables) -> List(Row) {
@@ -831,11 +854,11 @@ pub fn a_target_with_no_creature2_row_is_skipped_and_reported_test() -> Nil {
     as "the report names the objective and the creature"
 }
 
-pub fn placement_ids_take_no_stored_or_run_only_id_test() -> Nil {
-  use <- owned_test.run(60_000)
+pub fn placement_ids_are_at_or_above_the_first_placed_id_whatever_the_stored_ids_are_test() -> Nil {
+  use <- owned_test.run(10_000)
   let tables = character_tables.content_tables()
-  // Stored rows of another world hide no placement, and the one in World 3460
-  // makes it a world with spawns.
+  // Stored rows of another world hide no placement, and the one in World 3460 makes it
+  // a world with spawns. Stored ids of 1, 2 and 70,880 move no placed id.
   let held = [
     stored(tables:, id: 1, creature_id: boss, world_id: 1387),
     stored(tables:, id: 70_880, creature_id: boss, world_id: 1387),
@@ -844,19 +867,501 @@ pub fn placement_ids_take_no_stored_or_run_only_id_test() -> Nil {
   let placed =
     placed_by_the_load(tables:, stored: held, factions: creature_faction.none())
   assert placed.rows != []
-  let numbers =
-    list.map(placed.rows, fn(row: Row) {
-      let SpawnId(number) = row.id
-      number
-    })
-  assert list.all(numbers, fn(number) { number > 70_880 })
-    as "above every stored id, which is neither a stored one nor a run-only one"
+  let numbers = numbers_of(list.append(placed.rows, placed.click_rows))
+  assert list.all(numbers, fn(number) {
+    number >= first_placed_id && number <= int4_largest
+  })
+    as "at or above the first placed id and inside the integer column of a stored id and of a used spawn (0008, 0052)"
   assert list.all(numbers, fn(number) {
     !spawn_source.is_run_only_id(SpawnId(number))
   })
+    as "never a run-only id"
   assert list.length(list.unique(numbers)) == list.length(numbers)
     as "each id is once"
-  assert numbers == list.sort(numbers, int.compare) as "counting up"
+}
+
+/// Each rank below is the rank of one (kind, marker, creature, nth) among those every type 5
+/// objective and every kill or linked-use objective of the fixture's rows can ask a placement
+/// for: kills first, then clicks, each sorted by marker and then creature, each triple holding
+/// as many ranks as the most slots any objective gives that creature at that marker (a count
+/// dealt over the objective's markers in one world). The numbers were worked out apart from the
+/// server's code, by a scratch Python script over the committed rows of QuestObjective,
+/// TargetGroup, WorldLocation2, Creature2, Quest2 and Prerequisite, which finds 106 triples
+/// holding 415 ranks.
+fn ranked(ranks ranks: List(Int)) -> List(Int) {
+  list.map(ranks, fn(rank) { first_placed_id + rank })
+}
+
+pub fn a_placed_id_is_the_first_placed_id_plus_the_rank_of_its_kind_marker_creature_and_nth_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = character_tables.content_tables()
+  let placed =
+    placed_by_the_load(
+      tables:,
+      stored: the_world_holds_spawns(tables:),
+      factions: creature_faction.none(),
+    )
+  // Objective 21286 counts 5 of Creature2 73464 at marker 51739: the triple (kill, 51739,
+  // 73464) starts at rank 372 and holds five.
+  assert numbers_of(of_creatures(placed:, creatures: [73_464]))
+    == ranked(ranks: [372, 373, 374, 375, 376])
+    as "the five rows of the boss take the five ranks of its triple, nth 0 to 4"
+  // Objective 21290 counts 3 of TargetGroup 14356 (73492, 73567) at marker 51740: the two
+  // triples hold three each, from 377 and 380, and the cycle stands 73492, 73567, 73492.
+  assert numbers_of(of_creatures(placed:, creatures: [73_492, 73_567]))
+    == ranked(ranks: [377, 380, 378])
+    as "a creature of the group stood twice takes nth 0 and 1 of its own triple"
+  assert numbers_of(of_creatures(placed:, creatures: [boss]))
+    == ranked(ranks: [383])
+    as "objectives 21296 and 21310 name the boss at marker 51744 and place it once"
+  assert numbers_of(of_creatures(placed:, creatures: [turret]))
+    == ranked(ranks: [390, 391])
+    as "one turret at each of markers 52902 and 52903, a triple of their own each"
+  let mines = click_of(placed:, creatures: [mine, mine_medium, mine_hard])
+  assert list.map(mines, fn(row: Row) { row.creature_id })
+    == [mine, mine_medium, mine_hard, mine, mine_medium, mine_hard]
+    as "the click rows are the mines at the Exile markers 51662 to 51664, then the Dominion markers 52899 to 52901"
+  assert numbers_of(mines) == ranked(ranks: [409, 410, 411, 412, 413, 414])
+    as "the click triples come after every kill triple (415 ranks less the click ones)"
+}
+
+/// The (Creature2 id, rank) of the rows placed of these creatures, sorted.
+fn ranks_of(
+  placed placed: Placed,
+  creatures creatures: List(Int),
+) -> List(#(Int, Int)) {
+  of_creatures(placed:, creatures:)
+  |> list.map(fn(row: Row) {
+    #(row.creature_id, number_of(row) - first_placed_id)
+  })
+  |> list.sort(fn(a, b) { int.compare(a.0 * 1000 + a.1, b.0 * 1000 + b.1) })
+}
+
+type Kept {
+  Kept(why: String, stored: List(#(Int, Int, Int)), placed: List(#(Int, Int)))
+}
+
+pub fn adding_or_deleting_stored_rows_leaves_each_surviving_placed_id_unchanged_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = character_tables.content_tables()
+  // The stored rows are (id, creature, world). The expected pairs are (creature, rank) of
+  // the boss 73464 (objective 21286) and of the group 14356's 73492 and 73567 (objective 21290),
+  // the ranks of `a_placed_id_is_the_first_placed_id_plus_the_rank_...`.
+  let whole = [
+    #(73_464, 372),
+    #(73_464, 373),
+    #(73_464, 374),
+    #(73_464, 375),
+    #(73_464, 376),
+    #(73_492, 377),
+    #(73_492, 378),
+    #(73_567, 380),
+  ]
+  let one_row = #(1, filler, world)
+  let cases = [
+    Kept(
+      why: "the world's one row, and an unrelated row in another world",
+      stored: [one_row, #(2, filler, 1387)],
+      placed: whole,
+    ),
+    Kept(
+      why: "a row with a higher id than every other",
+      stored: [one_row, #(2, filler, 1387), #(70_880, filler, 1387)],
+      placed: whole,
+    ),
+    Kept(
+      why: "the world's row deleted and another with id 9 added in the world",
+      stored: [#(9, filler, world)],
+      placed: whole,
+    ),
+    Kept(
+      why: "a stored row of the boss: its five placed rows go, the group's stay",
+      stored: [one_row, #(5, 73_464, world)],
+      placed: [#(73_492, 377), #(73_492, 378), #(73_567, 380)],
+    ),
+    Kept(
+      why: "a stored row of 73567: the group stands 73492 three times, its first two ids unchanged and the third the next of its triple, and 73567's id goes",
+      stored: [one_row, #(5, 73_567, world)],
+      placed: [
+        #(73_464, 372),
+        #(73_464, 373),
+        #(73_464, 374),
+        #(73_464, 375),
+        #(73_464, 376),
+        #(73_492, 377),
+        #(73_492, 378),
+        #(73_492, 379),
+      ],
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let held =
+      list.map(row.stored, fn(one) {
+        stored(tables:, id: one.0, creature_id: one.1, world_id: one.2)
+      })
+    let placed =
+      placed_by_the_load(
+        tables:,
+        stored: held,
+        factions: creature_faction.none(),
+      )
+    assert ranks_of(placed:, creatures: [73_464, 73_492, 73_567]) == row.placed
+      as row.why
+  })
+}
+
+pub fn a_placed_id_names_one_creature_and_world_whatever_stored_rows_are_added_or_deleted_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = character_tables.content_tables()
+  // Creatures the fixture places in Worlds 3460 and 22, as (creature, world).
+  let pool = [
+    #(73_464, world),
+    #(73_492, world),
+    #(73_567, world),
+    #(boss, world),
+    #(51_440, 22),
+    #(26_436, 22),
+  ]
+  // A run's stored rows: one row in each world (so both hold spawns) and the drawn ones,
+  // each with an id of its own below the first placed id.
+  let rows_of = fn(drawn: List(#(Int, Int))) {
+    let drawn_rows =
+      list.index_map(drawn, fn(one, position) {
+        let #(choice, high) = one
+        let assert Ok(#(creature_id, world_id)) =
+          list.drop(pool, choice) |> list.first
+          as "the choice is an index of the pool"
+        stored(tables:, id: 10 + high * 20 + position, creature_id:, world_id:)
+      })
+    [
+      stored(tables:, id: 1, creature_id: filler, world_id: world),
+      stored(tables:, id: 2, creature_id: filler, world_id: 22),
+      ..drawn_rows
+    ]
+  }
+  let rows_drawn =
+    qcheck.generic_list(
+      elements_from: qcheck.tuple2(
+        qcheck.bounded_int(from: 0, to: 5),
+        qcheck.bounded_int(from: 0, to: 9_000_000),
+      ),
+      length_from: qcheck.bounded_int(from: 0, to: 12),
+    )
+  use #(first_run, second_run) <- qcheck.given(qcheck.tuple2(
+    rows_drawn,
+    rows_drawn,
+  ))
+  let named_by_id = fn(drawn) {
+    let placed =
+      placed_by_the_load(
+        tables:,
+        stored: rows_of(drawn),
+        factions: creature_faction.none(),
+      )
+    let rows = list.append(placed.rows, placed.click_rows)
+    let named =
+      list.map(rows, fn(row: Row) {
+        #(number_of(row), #(row.creature_id, row.world_id))
+      })
+    assert list.length(list.unique(list.map(named, fn(one) { one.0 })))
+      == list.length(named)
+      as "an id is once in a run"
+    assert list.all(named, fn(one) { one.0 >= first_placed_id })
+      as "an id is at or above the first placed id"
+    dict.from_list(named)
+  }
+  let first_named = named_by_id(first_run)
+  let second_named = named_by_id(second_run)
+  dict.each(first_named, fn(number, named) {
+    case dict.get(second_named, number) {
+      Ok(other) -> {
+        assert other == named
+          as "an id of both runs names the same creature in the same world"
+        Nil
+      }
+      Error(Nil) -> Nil
+    }
+  })
+}
+
+pub fn a_creature_a_kill_and_a_click_objective_both_stand_at_one_marker_gets_two_ids_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = character_tables.content_tables()
+  // Objective 10256 (quest 6591) is a type 2 kill of Creature2 51440 and objective 16170 a
+  // type 5 click of it, both at marker 40836 in World 22 (`table_rows -- QuestObjective
+  // 10256 16170`): the creature stands as a kill row and as a click row. The triples (kill,
+  // 40836, 51440) and (click, 40836, 51440) are ranks 364 and 408.
+  let placed =
+    placed_with_tables(
+      tables:,
+      stored: [stored(tables:, id: 1, creature_id: filler, world_id: 22)],
+      factions: creature_faction.none(),
+      kills: set.new(),
+      clicks: set.from_list([16_170]),
+    )
+  assert numbers_of(of_creatures(placed:, creatures: [51_440]))
+    == ranked(ranks: [364])
+    as "the kill row takes the rank of the kill triple"
+  assert numbers_of(click_of(placed:, creatures: [51_440]))
+    == ranked(ranks: [408])
+    as "the click row takes the rank of the click triple, above the kill row's"
+}
+
+pub fn a_stored_spawn_at_or_above_the_first_placed_id_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = character_tables.content_tables()
+  let rows =
+    list.map(
+      [first_placed_id - 1, first_placed_id, first_placed_id + 1],
+      fn(id) { stored(tables:, id:, creature_id: filler, world_id: world) },
+    )
+  let rule =
+    "its id is at or above 1000000000, where the spawns the server places begin"
+  assert objective_spawn.refusals(stored: rows)
+    == [
+      refusal.Refusal(
+        table: "spawn",
+        row: refusal.RowId(first_placed_id),
+        rule:,
+      ),
+      refusal.Refusal(
+        table: "spawn",
+        row: refusal.RowId(first_placed_id + 1),
+        rule:,
+      ),
+    ]
+    as "the rows at and above the first placed id are refused, the one below is not"
+}
+
+/// The placement over the client's whole tables and the kill and click rows the migrations
+/// seed, with these stored rows.
+fn placed_over_the_real_tables(
+  tables tables: store.Tables,
+  stored stored: List(Row),
+  kills kills: Set(Int),
+  clicks clicks: Set(Int),
+) -> Placed {
+  placed_with_tables(
+    tables:,
+    stored:,
+    factions: creature_faction.none(),
+    kills:,
+    clicks:,
+  )
+}
+
+/// The creature and the world of each id a placement gives, each id once.
+fn named_ids(placed placed: Placed) -> Dict(Int, #(Int, Int)) {
+  let rows = list.append(placed.rows, placed.click_rows)
+  let named =
+    dict.from_list(
+      list.map(rows, fn(row: Row) {
+        #(number_of(row), #(row.creature_id, row.world_id))
+      }),
+    )
+  assert dict.size(named) == list.length(rows) as "each id is once"
+  named
+}
+
+pub fn a_placed_id_survives_every_change_of_the_real_stored_rows_test() -> Nil {
+  // deadline: 18 s to the first assertion, which imports the world database and places once over the client's tables; 24 placements follow
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("world_data")
+  use <- unitest.guard(client_tables.present())
+  use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
+  let stored = stored_by_the_world_database()
+  let tables = client_tables.with_content_tables()
+  let kills = content_support.objective_ids(table: kill_objective.table)
+  let clicks = content_support.objective_ids(table: click_objective.table)
+  let run = fn(rows) {
+    named_ids(placed: placed_over_the_real_tables(
+      tables:,
+      stored: rows,
+      kills:,
+      clicks:,
+    ))
+  }
+  let baseline = run(stored)
+  let highest =
+    list.fold(stored, 0, fn(highest, row) { int.max(highest, number_of(row)) })
+  let assert Ok(template) =
+    list.find(stored, fn(row: Row) { row.entity_type == 0 })
+    as "the world database holds a creature row"
+  let one_per_world =
+    list.fold(stored, dict.new(), fn(found, row: Row) {
+      case dict.has_key(found, row.world_id) {
+        True -> found
+        False -> dict.insert(found, row.world_id, row)
+      }
+    })
+    |> dict.values
+  // The (world, creature) pairs a change can matter for: stored rows of a creature the
+  // baseline places somewhere, and the pairs the baseline places.
+  let placed_creatures =
+    set.from_list(list.map(dict.values(baseline), fn(named) { named.0 }))
+  let every_nth = fn(items: List(a), step: Int, most: Int) -> List(a) {
+    list.index_map(items, fn(item, index) { #(index, item) })
+    |> list.filter(fn(one) { one.0 % step == 0 })
+    |> list.map(fn(one) { one.1 })
+    |> list.take(most)
+  }
+  let deletions =
+    list.filter_map(stored, fn(row: Row) {
+      case set.contains(placed_creatures, row.creature_id) {
+        True -> Ok(#(row.world_id, row.creature_id))
+        False -> Error(Nil)
+      }
+    })
+    |> list.unique
+    |> list.sort(fn(a, b) {
+      int.compare(a.1 * 100_000 + a.0, b.1 * 100_000 + b.0)
+    })
+    |> every_nth(7, 12)
+  let additions =
+    dict.values(baseline)
+    |> list.unique
+    |> list.sort(fn(a, b) {
+      int.compare(a.0 * 100_000 + a.1, b.0 * 100_000 + b.1)
+    })
+    |> every_nth(9, 8)
+  let changes =
+    list.flatten([
+      [
+        #("one stored row per world", one_per_world),
+        #("a stored row above the highest id", [
+          spawn.Row(..template, id: SpawnId(highest + 1)),
+          ..stored
+        ]),
+        #(
+          "the highest stored row deleted",
+          list.filter(stored, fn(row) { number_of(row) != highest }),
+        ),
+      ],
+      list.map(deletions, fn(pair) {
+        #(
+          "every stored row of creature "
+            <> int.to_string(pair.1)
+            <> " in World "
+            <> int.to_string(pair.0)
+            <> " deleted",
+          list.filter(stored, fn(row: Row) {
+            #(row.world_id, row.creature_id) != pair
+          }),
+        )
+      }),
+      list.map(additions, fn(pair) {
+        #(
+          "a stored row of creature "
+            <> int.to_string(pair.0)
+            <> " in World "
+            <> int.to_string(pair.1)
+            <> " added",
+          [
+            spawn.Row(
+              ..template,
+              id: SpawnId(highest + 1),
+              creature_id: pair.0,
+              world_id: pair.1,
+            ),
+            ..stored
+          ],
+        )
+      }),
+    ])
+  assert list.all(dict.keys(baseline), fn(number) {
+    number >= first_placed_id && number <= int4_largest
+  })
+    as "every placed id is at or above the first placed id and inside the integer column"
+  let after = list.map(changes, fn(change) { #(change.0, run(change.1)) })
+  list.each(after, fn(change) {
+    let #(why, named) = change
+    assert list.all(dict.keys(named), fn(number) {
+      number >= first_placed_id && number <= int4_largest
+    })
+      as {
+        why
+        <> ": every placed id is at or above the first placed id and inside the integer column"
+      }
+    dict.each(baseline, fn(number, was) {
+      case dict.get(named, number) {
+        Ok(now) -> {
+          assert now == was
+            as {
+              why
+              <> ": an id of the baseline names the same creature in the same world"
+            }
+          Nil
+        }
+        Error(Nil) -> Nil
+      }
+    })
+  })
+  assert list.any(after, fn(change) {
+    set.from_list(dict.keys(change.1)) != set.from_list(dict.keys(baseline))
+  })
+    as "some change adds or removes a placed row, so the runs are not the baseline again"
+  let placed = placed_over_the_real_tables(tables:, stored:, kills:, clicks:)
+  let pyrius = 51_440
+  assert numbers_of(of_creatures(placed:, creatures: [pyrius]))
+    != numbers_of(click_of(placed:, creatures: [pyrius]))
+    as "marker 40836's Creature2 51440 is a kill row and a click row, with ids of their own"
+}
+
+pub fn the_placed_checklist_targets_of_the_real_tables_take_the_indexes_after_the_stored_ones_test() -> Nil {
+  // deadline: 20 s, which imports the world database, places once over the client's tables and assigns the checklist indexes of every spawn
+  use <- owned_test.run(600_000)
+  use <- unitest.tag("world_data")
+  use <- unitest.guard(client_tables.present())
+  use <- unitest.guard(envoy.get("GENESIS_WORLD_DATA") != Error(Nil))
+  let stored = stored_by_the_world_database()
+  let tables = client_tables.with_content_tables()
+  let placed =
+    placed_over_the_real_tables(
+      tables:,
+      stored:,
+      kills: content_support.objective_ids(table: kill_objective.table),
+      clicks: content_support.objective_ids(table: click_objective.table),
+    )
+  let placed_rows = list.append(placed.rows, placed.click_rows)
+  let candidates =
+    list.map(list.append(stored, placed_rows), fn(row: Row) {
+      let assert Ok(creature) =
+        creature2.get(tables, Creature2Id(row.creature_id))
+        as "the client holds the creature of every row"
+      Candidate(
+        spawn: row.id,
+        unit: target_group.Unit(
+          creature_id: Creature2Id(row.creature_id),
+          faction_id: id.Faction2Id(row.faction_id),
+          unit_race_id: creature2.unit_race_id(creature),
+        ),
+      )
+    })
+  let indexes = checklist_index.assign(tables:, candidates:)
+  let targets =
+    checklist_index.checklists(tables:, candidates:)
+    |> list.flat_map(fn(checklist) { checklist.targets })
+    |> set.from_list
+  let placed_targets =
+    list.filter(placed_rows, fn(row: Row) { set.contains(targets, row.id) })
+  // Objective 7207 (quest 5070) counts 500 of 16 targets, 15 of them stored: the stored
+  // ones hold 0 to 14 and the placed Creature2 21517 at marker 15289 takes 15. Objective
+  // 16235 (quest 6587) counts 3 of one target, the placed Creature2 30307 at marker 24531,
+  // which takes 0. The same as when placed ids followed the stored ones in stand order.
+  assert list.map(placed_targets, fn(row: Row) { row.creature_id })
+    |> list.sort(int.compare)
+    == [21_517, 30_307]
+    as "only those two placed rows are the target of a checklist"
+  let index_of = fn(creature_id) {
+    let assert Ok(row) =
+      list.find(placed_targets, fn(row: Row) { row.creature_id == creature_id })
+      as "the placed target is there"
+    dict.get(indexes, row.id)
+  }
+  assert index_of(21_517) == Ok(15)
+    as "opcode.0x262: the placed target takes the index after the fifteen stored ones"
+  assert index_of(30_307) == Ok(0)
+    as "opcode.0x262: the lone placed target takes the lowest index"
 }
 
 /// Over the client's real tables and the world database's stored rows (with
@@ -1844,8 +2349,8 @@ pub fn a_click_marker_in_a_world_with_no_stored_spawn_is_skipped_and_reported_te
     as "the report names the objective and the marker's world"
 }
 
-pub fn click_placement_ids_continue_above_stored_and_kill_placed_ids_test() -> Nil {
-  use <- owned_test.run(60_000)
+pub fn click_placement_ids_are_above_every_kill_placement_id_test() -> Nil {
+  use <- owned_test.run(10_000)
   let tables = character_tables.content_tables()
   let held = [
     stored(tables:, id: 70_880, creature_id: filler, world_id: world),
@@ -1856,22 +2361,17 @@ pub fn click_placement_ids_continue_above_stored_and_kill_placed_ids_test() -> N
     as "the boss is placed by the kill path"
   assert click_of(placed:, creatures: [mine, mine_medium, mine_hard]) != []
     as "the mines are placed by the click path"
-  let numbers_of = fn(rows: List(Row)) {
-    list.map(rows, fn(row: Row) {
-      let SpawnId(number) = row.id
-      number
-    })
-  }
-  let highest_kill = list.fold(numbers_of(placed.rows), 70_880, int.max)
+  let highest_kill = list.fold(numbers_of(placed.rows), 0, int.max)
   let clicks = numbers_of(placed.click_rows)
-  assert list.all(clicks, fn(number) { number > highest_kill })
-    as "above every stored id and every kill-placed id"
+  assert list.all(clicks, fn(number) {
+    number > highest_kill && number >= first_placed_id
+  })
+    as "above every kill-placed id, and at or above the first placed id"
   assert list.all(clicks, fn(number) {
     !spawn_source.is_run_only_id(SpawnId(number))
   })
   assert list.length(list.unique(clicks)) == list.length(clicks)
     as "each id is once"
-  assert clicks == list.sort(clicks, int.compare) as "counting up"
 }
 
 pub fn a_refused_click_row_is_labelled_as_a_click_placement_test() -> Nil {

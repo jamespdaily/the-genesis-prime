@@ -113,6 +113,42 @@ fn spawn_number(spawn: SpawnId) -> Int {
   number
 }
 
+pub fn placed_targets_take_the_indexes_after_the_stored_ones_in_the_order_of_their_ids_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The three stored spawns of Creature2 73500 (29338 to 29340, objectives 21294 and 21307,
+  // count 3) hold 0, 1 and 2. Two spawns the server placed for the same creature have ids
+  // far above the stored ones (the first placed id is 1,000,000,000): the one with the lower
+  // id takes 3 and the other 4, whichever order the candidates are given in, because the
+  // client's mask needs the bits apart (0x140611680, opcode.0x361).
+  let tables = fixture_tables.shared()
+  let stored =
+    spawns_of(tables:, creature: 73_500, numbers: [29_338, 29_339, 29_340])
+  let first_placed = 1_000_000_000
+  let placed =
+    spawns_of(tables:, creature: 73_500, numbers: [
+      first_placed + 7,
+      first_placed + 3,
+    ])
+  let numbers = [
+    29_338,
+    29_339,
+    29_340,
+    first_placed + 3,
+    first_placed + 7,
+  ]
+  list.each(
+    [
+      #("the placed spawns after the stored ones", list.append(stored, placed)),
+      #("the placed spawns before the stored ones", list.append(placed, stored)),
+      #("the placed spawns reversed", list.append(list.reverse(placed), stored)),
+    ],
+    fn(row) {
+      let indexes = checklist_index.assign(tables:, candidates: row.1)
+      assert indexes_of(indexes:, numbers:) == [0, 1, 2, 3, 4] as row.0
+    },
+  )
+}
+
 pub fn a_spawn_in_two_objectives_keeps_one_index_distinct_in_both_test() -> Nil {
   use <- owned_test.run(10_000)
   // Objective 21307 (quest 10523) counts the group 14425, which this test gives a second

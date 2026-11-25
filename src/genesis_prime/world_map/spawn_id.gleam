@@ -40,6 +40,17 @@ pub fn stored(ids ids: Set(SpawnId)) -> StoredSpawns {
   StoredSpawns(ids:, highest:)
 }
 
+/// Stub: the spawns with these ids, as the load found them. Until the placed ids are
+/// held it keeps no id from 1,000,000,000 up.
+pub fn loaded(ids ids: Set(SpawnId)) -> StoredSpawns {
+  stored(
+    ids: set.filter(ids, fn(id) {
+      let SpawnId(number) = id
+      number < 1_000_000_000
+    }),
+  )
+}
+
 /// What the spawn is to the stored spawns.
 pub fn presence(stored stored: StoredSpawns, spawn spawn: SpawnId) -> Presence {
   let SpawnId(number) = spawn

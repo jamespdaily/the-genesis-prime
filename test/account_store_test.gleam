@@ -3604,7 +3604,7 @@ pub fn the_used_spawns_round_trip_with_the_quest_save_and_load_test() -> Nil {
   let _login = epoch_of_load(store:, account:, character_id: id)
   let log = [
     completed_quest(1001),
-    accepted_using(1003, [#(0, 5), #(0, 9), #(2, 3)]),
+    accepted_using(1003, [#(0, 5), #(0, 9), #(1, 1_000_038_127), #(2, 3)]),
   ]
   assert save_log(
       store:,
@@ -3616,8 +3616,8 @@ pub fn the_used_spawns_round_trip_with_the_quest_save_and_load_test() -> Nil {
     )
     == ForMove(PlaceSaved)
   assert used_stored(store:, character_id: id)
-    == [#(1001, [], []), #(1003, [0, 0, 2], [5, 9, 3])]
-    as "the objects are two arrays of one length, empty for a row that is not active"
+    == [#(1001, [], []), #(1003, [0, 0, 1, 2], [5, 9, 1_000_038_127, 3])]
+    as "the objects are two arrays of one length, empty for a row that is not active; the last spawn the server places (1,000,000,000 plus the last of 38,128 ranks) fits the integer column"
   assert quests_of_load(store:, account:, character_id: id) == log
     as "the load gives back the rows saved, the used objects equal"
   let done = [completed_quest(1001), accepted_using(1003, [#(2, 3)])]

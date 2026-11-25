@@ -548,6 +548,74 @@ pub fn two_refused_rows_are_both_logged_with_table_id_and_rule_and_stop_the_load
     == "the table spawn row 5 is refused: a rule"
 }
 
+pub fn a_stored_spawn_at_the_first_placed_id_stops_the_load_naming_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("serial")
+  // The spawns the server places for a quest take the ids from 1,000,000,000 up, so a stored
+  // row at that id could be taken for one (`objective_spawn`). The row is a copy of a
+  // migrated one, so the id is the only thing wrong with it.
+  let database = database_support.new_database(on: database_support.shared())
+  content_support.change(
+    database:,
+    sql: "insert into spawn (id, source, source_row, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, active_prop_id, world_socket_id) overriding system value select 1000000000, 'world_database', 999999999, entity_type, creature_id, world_id, area_id, x, y, z, rotation_x, rotation_y, rotation_z, display_info_id, outfit_info_id, faction_id, base_faction_id, active_prop_id, world_socket_id from spawn order by id limit 1",
+  )
+  let lines = process.new_subject()
+  let capture = log_capture.start_all(into: lines)
+  let #(loaded, _key) = content_support.load(database:)
+  log_capture.stop(capture)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a stored spawn at the first placed id stops the start"
+  assert refusals
+    == [
+      Refusal(
+        table: "spawn",
+        row: refusal.RowId(1_000_000_000),
+        rule: "its id is at or above 1000000000, where the spawns the server places begin",
+      ),
+    ]
+    as "the refusal names the table, the row's id and the rule"
+  assert list.any(mailbox_support.drain(lines), fn(line) {
+    line.1
+    == "the table spawn row 1000000000 is refused: its id is at or above 1000000000, where the spawns the server places begin"
+  })
+    as "the refusal is logged before the start stops"
+}
+
+pub fn the_load_puts_every_stored_and_placed_spawn_id_in_the_ids_term_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The migrated database holds the 27 Virtual Defense Daguns of World 3460; the load places
+  // the creatures of the quest markers there that no stored row serves, 16 of which start
+  // (`a_database_that_answers_late_is_waited_for_and_loaded_from_test`). The ids term holds
+  // every stored row's id and every placed row's, so a quest's used objects of either are kept.
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let ids = content_spawn.stored_spawns(key:).ids
+  let stored = content_support.stored_spawns(database:)
+  assert stored != []
+  assert list.all(stored, fn(row) { set.contains(ids, row.id) })
+    as "every stored row's id is in the term"
+  let world = content_spawn.world(key:, world_id: 3460)
+  let started = list.append(dict.keys(world.by_id), dict.keys(world.objects))
+  assert list.all(started, fn(id) { set.contains(ids, id) })
+    as "every spawn and object of the world's term has its id in the ids term"
+  let above_the_stored = fn(ids: List(spawn_id.SpawnId)) {
+    list.filter(ids, fn(id) {
+      let SpawnId(number) = id
+      number >= 1_000_000_000
+    })
+    |> list.sort(fn(a, b) {
+      let SpawnId(a) = a
+      let SpawnId(b) = b
+      int.compare(a, b)
+    })
+  }
+  assert above_the_stored(set.to_list(ids)) == above_the_stored(started)
+    as "an id from 1,000,000,000 up in the term is one of the placed rows the world's term holds, and each of them is there"
+  assert above_the_stored(started) != []
+    as "the load places rows in the migrated database's world"
+}
+
 pub fn a_query_that_fails_stops_the_load_with_the_databases_reason_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())

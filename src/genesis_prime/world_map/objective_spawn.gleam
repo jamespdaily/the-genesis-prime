@@ -1028,6 +1028,11 @@ fn number_of(row row: Row) -> Int {
   number
 }
 
+/// Stub: the stored rows the load refuses because their id is one the server places.
+pub fn refusals(stored _stored: List(Row)) -> List(Refusal) {
+  []
+}
+
 /// What the placement leaves undone, for the coverage measure.
 pub fn gaps() -> List(gap.Entry) {
   [

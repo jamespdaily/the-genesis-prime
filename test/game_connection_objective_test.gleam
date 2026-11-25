@@ -1596,7 +1596,7 @@ pub fn a_relogged_player_using_the_same_spawn_again_counts_nothing_test() -> Nil
   let settings =
     connection_state.Settings(
       ..connection_support.settings(),
-      stored_spawns: spawn_id.stored(
+      stored_spawns: spawn_id.loaded(
         ids: set.from_list([SpawnId(unit), SpawnId(other_unit)]),
       ),
     )
@@ -1633,6 +1633,77 @@ pub fn a_relogged_player_using_the_same_spawn_again_counts_nothing_test() -> Nil
   account_store_support.stop(stored.store)
 }
 
+pub fn a_relogged_player_using_a_placed_spawn_again_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The same as for a stored spawn, for objects the server placed at the markers of quest
+  // 6723's objective 10383 (type 23 on Creature2 30826 and 30827, count 15): their spawn
+  // ids are from 1,000,000,000 up, which the settings' ids hold (the load puts the placed
+  // ids in the term). Jim, 2026-11-25: an object a quest counted counts once for the
+  // objective, also after a relog.
+  let stored = account_store_support.stored_holding(worn: [], items: [])
+  let placed = 1_000_000_040
+  let other_placed = 1_000_000_041
+  let settings =
+    connection_state.Settings(
+      ..connection_support.settings(),
+      stored_spawns: spawn_id.loaded(
+        ids: set.from_list([SpawnId(placed), SpawnId(other_placed)]),
+      ),
+    )
+  let objects = [
+    #(placed, unit, 30_826, 26_092),
+    #(other_placed, other_unit, 30_827, 25_769),
+  ]
+  let state =
+    seeing_spawns(
+      settings:,
+      rows: [quest_support.untouched(quest_id: 6723)],
+      objects:,
+    )
+  let #(state, first) = right_click_used(state:, at: 0, unit_id: unit)
+  assert progress_frames(steps: first)
+    == [progress_frame(quest: 6723, index: 0, progress: 1)]
+    as "opcode.0x361: the first use counts one of 15"
+  let saved = saved_through_the_store(state:, stored:)
+  let loaded = quests_at_the_next_login(stored:)
+  assert loaded == saved
+    as "the next login finds the rows the log saved, with the placed object used"
+  let relogged = seeing_spawns(settings:, rows: loaded, objects:)
+  let #(relogged, again) =
+    right_click_used(state: relogged, at: 5000, unit_id: unit)
+  assert progress_frames(steps: again) == []
+    as "the placed object used before the relog counts nothing again: no 0x361"
+  assert saved_through_the_store(state: relogged, stored:) == loaded
+    as "and the log saves as it was loaded: no progress is written"
+  let #(_, other) =
+    right_click_used(state: relogged, at: 10_000, unit_id: other_unit)
+  assert progress_frames(steps: other)
+    == [progress_frame(quest: 6723, index: 0, progress: 2)]
+    as "opcode.0x361: another placed object counts, 2 of 15"
+  account_store_support.stop(stored.store)
+}
+
+pub fn a_use_of_a_unit_that_left_the_picture_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 6723's objective 10383 counts a use of Creature2 30826. The player sees the
+  // object as unit 40 and uses unit 99, one the picture does not hold (the unit left
+  // between the client's click and the server's read): the use counts for nothing, and the
+  // object that is shown still counts when it is used.
+  let state =
+    seeing_spawns(
+      settings: connection_support.settings(),
+      rows: [quest_support.untouched(quest_id: 6723)],
+      objects: [#(unit, unit, 30_826, 26_092)],
+    )
+  let #(state, absent) = right_click_used(state:, at: 0, unit_id: 99)
+  assert progress_frames(steps: absent) == []
+    as "a use of a unit the picture lacks counts nothing: no 0x361"
+  let #(_, shown) = right_click_used(state:, at: 5000, unit_id: unit)
+  assert progress_frames(steps: shown)
+    == [progress_frame(quest: 6723, index: 0, progress: 1)]
+    as "opcode.0x361: the shown object counts one of 15"
+}
+
 pub fn the_same_spawn_in_a_new_map_run_after_a_relog_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   // A map run gives its units ids from 1 again, so the same object is another unit id
@@ -1642,7 +1713,7 @@ pub fn the_same_spawn_in_a_new_map_run_after_a_relog_counts_nothing_test() -> Ni
   let settings =
     connection_state.Settings(
       ..connection_support.settings(),
-      stored_spawns: spawn_id.stored(ids: set.from_list([SpawnId(unit)])),
+      stored_spawns: spawn_id.loaded(ids: set.from_list([SpawnId(unit)])),
     )
   let state =
     seeing_spawns(
