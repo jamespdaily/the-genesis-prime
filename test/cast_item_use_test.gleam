@@ -24,7 +24,6 @@
 import cast_support as support
 import fixture_tables
 import game_connection_support
-import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
@@ -36,6 +35,7 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_group
+import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse} as use_message

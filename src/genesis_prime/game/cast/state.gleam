@@ -10,7 +10,7 @@
 ////   and charge level waiting, and owns the ids from there up (`owns`).
 ////
 
-import genesis_prime/client_connection.{type News}
+import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/activate
 import genesis_prime/game/area
@@ -38,6 +38,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news.{type News}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result

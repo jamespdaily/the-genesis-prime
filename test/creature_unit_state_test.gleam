@@ -13,7 +13,7 @@
 //// - What state 6 means (it blocks hostile effects) is the reading table in
 ////   `genesis_prime/game/unit_state`, a guess from spell names.
 
-import genesis_prime/client_connection.{UnitStateEnded, UnitStateHeld}
+import genesis_prime/game/unit_news.{UnitStateEnded, UnitStateHeld}
 import genesis_prime/game/unit_state.{Row}
 import genesis_prime/world_map/creature_unit_state.{
   CancelTimer, StartTimer, ToViewers,

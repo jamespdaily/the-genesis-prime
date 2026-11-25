@@ -22,9 +22,10 @@ import connection_rule_support as support
 import departures_support
 import game_client
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{AskStore, FromMap, Removed}
+import genesis_prime/client_connection.{AskStore, FromMap}
 import genesis_prime/game/departures
 import genesis_prime/game/start_place
+import genesis_prime/game/unit_news.{Removed}
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_result

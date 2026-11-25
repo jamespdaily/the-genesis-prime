@@ -34,7 +34,7 @@ import game_connection_support as connection_support
 import genesis_prime/account_session.{Claimed}
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, FromMap, FromSessions, FromStore,
-  Removed, SentByKill,
+  SentByKill,
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
@@ -47,6 +47,7 @@ import genesis_prime/game/proc
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news.{Removed}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -1327,7 +1328,7 @@ pub fn level_by_command_reaches_the_client_as_the_gain_and_the_level_stat_test()
   assert list.all(watchers, fn(viewer) {
     list.contains(
       connection_support.news_told(taken:, viewer:),
-      client_connection.Level(level: 4),
+      unit_news.Level(level: 4),
     )
   })
     as "each connection the map named as a watcher is told the level, to write the same 0x938 under the unit it shows"
@@ -1355,7 +1356,7 @@ pub fn an_xp_command_in_two_steps_reaches_the_level_at_its_minimum_test() -> Nil
     as "level 4 at its minimum"
   assert list.contains(
     connection_support.news_told(taken: reached, viewer: 2),
-    client_connection.Level(level: 4),
+    unit_news.Level(level: 4),
   )
     as "a watcher is told the level"
 }

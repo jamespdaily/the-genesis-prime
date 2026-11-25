@@ -22,6 +22,7 @@ import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/strike_tell.{
   HealLanded, HealsLanded, Key, PlayerAnswered,
 }
+import genesis_prime/game/unit_news
 import genesis_prime/message/player_health.{type PlayerHealth, PlayerHealth}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
@@ -94,8 +95,8 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
     as "735 and 1, to the health's maximum"
   assert support.news_told(taken:, viewer: 2)
     == [
-      client_connection.Shield(shield: 450),
-      client_connection.Health(health: 736, dead: False),
+      unit_news.Shield(shield: 450),
+      unit_news.Health(health: 736, dead: False),
     ]
     as "the viewer is told the Shield and the Health news"
   let answered =

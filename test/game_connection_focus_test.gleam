@@ -21,6 +21,7 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
 import genesis_prime/message/unit_float_stat_changed.{
@@ -368,16 +369,16 @@ pub fn a_dead_healers_timer_is_cancelled_a_late_fire_or_one_after_leaving_writes
 const recharge_base = 26_786
 
 /// What a viewer is told about a cast: its start, goes, ticks and end.
-fn is_cast_news(news: client_connection.News) -> Bool {
+fn is_cast_news(news: unit_news.News) -> Bool {
   case news {
-    client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastFinished(..)
-    | client_connection.CastInterrupted(..) -> True
+    unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastFinished(..)
+    | unit_news.CastInterrupted(..) -> True
     _ -> False
   }
 }

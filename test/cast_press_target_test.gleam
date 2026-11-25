@@ -23,7 +23,6 @@
 
 import cast_support as support
 import class_resource_support
-import genesis_prime/client_connection.{CastTicked}
 import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/heal as cast_heal
@@ -39,6 +38,7 @@ import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
 import genesis_prime/game/target_mechanic.{Targeted, Targeting}
 import genesis_prime/game/ticking.{Schedule, Ticks}
+import genesis_prime/game/unit_news.{CastTicked}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type

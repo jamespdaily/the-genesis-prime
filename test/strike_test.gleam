@@ -22,7 +22,6 @@ import cast_support as support
 import class_resource_support
 import client_tables
 import crowd_control_support
-import genesis_prime/client_connection
 import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast/state.{type GoAsked, GoAsked} as cast_state
 import genesis_prime/game/class_resource.{Resource}
@@ -44,6 +43,7 @@ import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused,
 }
 import genesis_prime/game/target_mechanic
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -784,7 +784,7 @@ pub fn health_news_of_a_unit_of_an_open_round_is_held_until_the_rounds_go_test()
   assert strike.holds(strike: state, unit_id: 10)
     && !strike.holds(strike: state, unit_id: 99)
     as "unit 10 is in the caster's open round, unit 99 is not"
-  let death = client_connection.Died
+  let death = unit_news.Died
   let state = strike.hold(strike: state, unit_id: 10, news: death)
   let #(state, first) =
     answer(
@@ -886,13 +886,9 @@ pub fn the_news_held_for_a_unit_is_dropped_when_the_unit_is_forgotten_test() -> 
     )
   let state =
     strike.hold(
-      strike: strike.hold(
-        strike: state,
-        unit_id: 10,
-        news: client_connection.Died,
-      ),
+      strike: strike.hold(strike: state, unit_id: 10, news: unit_news.Died),
       unit_id: 11,
-      news: client_connection.Health(health: 5, dead: False),
+      news: unit_news.Health(health: 5, dead: False),
     )
   let state = strike.forget(strike: state, unit_id: 10)
   let #(state, _) =

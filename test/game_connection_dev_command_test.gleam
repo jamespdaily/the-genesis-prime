@@ -29,7 +29,7 @@ import game_client
 import game_connection_dev_command_support as dev_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskMap, AskStore, FromStore, Removed, TellMoved,
+  type Answer, type Request, AskMap, AskStore, FromStore, TellMoved,
   TellTargetMoved,
 }
 import genesis_prime/game/chat_channel
@@ -39,6 +39,7 @@ import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{Removed}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,

@@ -22,7 +22,6 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{
   type Target, Activations, Body, CannotBePlanned, Column, Creature,
   HostileToPlayer, InCombat, NoSpell4Row, Planned, Usable,
@@ -33,6 +32,7 @@ import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/objective_link
 import genesis_prime/game/quest_log
 import genesis_prime/game/spell_plan
+import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 

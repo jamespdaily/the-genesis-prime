@@ -18,13 +18,13 @@
 ////   end timer; `cast.died` ends every modifier but the innate passive's.
 
 import cast_support as support
-import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/spend
+import genesis_prime/game/unit_news.{CastFinished}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}

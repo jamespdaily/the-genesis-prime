@@ -17,12 +17,13 @@
 
 import client_tables
 import game_connection_support as support
-import genesis_prime/client_connection.{
-  type News, type Request, InterruptArmor, PropertiesChanged,
-}
+import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{
+  type News, InterruptArmor, PropertiesChanged,
+}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
@@ -86,19 +87,9 @@ fn armor_of(change change: unit_stat_change.UnitStatChange) -> List(Written) {
   }
 }
 
-/// The news the viewer 2 is told in a step, in order.
-fn told_to_the_viewer(taken taken: ConnectionStep(Request)) -> List(News) {
-  list.filter_map(support.peer_tells(taken), fn(tell) {
-    case tell.0 == 2 {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
-}
-
 /// The armor news among what a viewer is told: the maximum's entry and the armor.
 fn armor_news(steps steps: List(ConnectionStep(Request))) -> List(News) {
-  list.flat_map(steps, fn(taken) { told_to_the_viewer(taken:) })
+  list.flat_map(steps, fn(taken) { support.news_told_to_viewer_2(taken:) })
   |> list.filter(fn(news) {
     list.contains(
       [

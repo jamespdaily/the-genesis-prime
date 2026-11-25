@@ -32,6 +32,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/spell_tier
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/tutorial.{type Chain}
+import genesis_prime/game/unit_news
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
@@ -715,13 +716,13 @@ pub fn saves_the_place(status: Status) -> Bool {
 pub fn news_to(
   entered entered: world_entry.Entered,
   viewer viewer: #(ConnectionId, Stay),
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Connection(viewer.0),
     request: TellPeer(
       stay: viewer.1,
-      news: client_connection.PeerNews(unit_id: entered.unit_id, news:),
+      news: unit_news.PeerNews(unit_id: entered.unit_id, news:),
     ),
   ))
 }
@@ -731,7 +732,7 @@ pub fn news_to(
 pub fn news_to_connection(
   entered entered: world_entry.Entered,
   connection connection: ConnectionId,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> List(Effect(ConnectionEffect(Request))) {
   case dict.get(entered.viewers, connection) {
     Ok(viewer) -> [
@@ -748,14 +749,14 @@ pub fn news_to_connection(
 pub fn removes_its_unit_from_the_viewers(
   entered entered: world_entry.Entered,
 ) -> List(Effect(ConnectionEffect(Request))) {
-  news_to_viewers(entered:, news: client_connection.Removed)
+  news_to_viewers(entered:, news: unit_news.Removed)
 }
 
 /// The tell of `news` about the player's own unit to each player who sees it, in
 /// connection order.
 pub fn news_to_viewers(
   entered entered: world_entry.Entered,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> List(Effect(ConnectionEffect(Request))) {
   news_to_viewers_but(entered:, left_out: set.new(), news:)
 }
@@ -765,7 +766,7 @@ pub fn news_to_viewers(
 pub fn news_to_viewers_but(
   entered entered: world_entry.Entered,
   left_out left_out: Set(ConnectionId),
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> List(Effect(ConnectionEffect(Request))) {
   list.filter(sorted_viewers(entered:), fn(viewer) {
     !set.contains(left_out, viewer.0)

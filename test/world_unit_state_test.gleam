@@ -27,15 +27,14 @@ import cast_support
 import driven_time
 import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{
-  type Message, type PeerNews, ForStay, PeerNews, SentByPeer,
-}
+import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
 
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Landed}
+import genesis_prime/game/unit_news.{type PeerNews, PeerNews}
 import genesis_prime/game/unit_state
 import genesis_prime/group_registry
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
@@ -214,7 +213,7 @@ fn state_news(unit_id unit_id: Int) -> fn(Message) -> Result(StateNews, Nil) {
       ForStay(
         sent: SentByPeer(PeerNews(
           unit_id: from,
-          news: client_connection.UnitStateHeld(state:, number:),
+          news: unit_news.UnitStateHeld(state:, number:),
         )),
         ..,
       )
@@ -223,7 +222,7 @@ fn state_news(unit_id unit_id: Int) -> fn(Message) -> Result(StateNews, Nil) {
       ForStay(
         sent: SentByPeer(PeerNews(
           unit_id: from,
-          news: client_connection.UnitStateEnded(number:),
+          news: unit_news.UnitStateEnded(number:),
         )),
         ..,
       )
@@ -271,7 +270,7 @@ fn health_of(
     ForStay(
       sent: SentByPeer(PeerNews(
         unit_id: from,
-        news: client_connection.Health(health:, ..),
+        news: unit_news.Health(health:, ..),
       )),
       ..,
     )
@@ -346,7 +345,7 @@ fn connection_of(
 ) -> game_connection.State {
   let assert PeerNews(
     unit_id:,
-    news: client_connection.CreatureAppeared(hit_radius:, place:, ..),
+    news: unit_news.CreatureAppeared(hit_radius:, place:, ..),
   ) = appeared
     as "the news is a creature's appearance"
   let character =
@@ -381,8 +380,8 @@ fn connection_of(
 /// The unit-state news as the creature sent it.
 fn state_peer_news(unit_id unit_id: Int, news news: StateNews) -> PeerNews {
   PeerNews(unit_id:, news: case news {
-    Held(state:, number:) -> client_connection.UnitStateHeld(state:, number:)
-    Ended(number:) -> client_connection.UnitStateEnded(number:)
+    Held(state:, number:) -> unit_news.UnitStateHeld(state:, number:)
+    Ended(number:) -> unit_news.UnitStateEnded(number:)
   })
 }
 
@@ -433,7 +432,7 @@ fn refused(result result: Int) -> #(List(Int), List(Int)) {
 
 /// The Spell4 id of the cast the effects start (the 0x7ff the caster's audience is told).
 fn started_spell4_id(effects effects: List(cast_state.Effect)) -> Int {
-  let assert [client_connection.CastStarted(start:), ..] =
+  let assert [unit_news.CastStarted(start:), ..] =
     list.map(cast_support.tells(effects:), fn(tell) { tell.1 })
     as "the press starts a cast, the first thing its audience is told"
   start.spell4_id

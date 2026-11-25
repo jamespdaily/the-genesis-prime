@@ -101,6 +101,7 @@ import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/proc
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/gap
@@ -289,7 +290,7 @@ fn cast_went(
         connection_state.news_to_viewers_but(
           entered:,
           left_out: set.insert(audience, from),
-          news: client_connection.HeldCastStarted(start:, go:),
+          news: unit_news.HeldCastStarted(start:, go:),
         ),
       )
     }
@@ -419,7 +420,7 @@ fn viewers_told_ended(
         fn(cast_id) {
           connection_state.news_to_viewers(
             entered:,
-            news: client_connection.HeldCastEnded(cast_id:),
+            news: unit_news.HeldCastEnded(cast_id:),
           )
         },
       )

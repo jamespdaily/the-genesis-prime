@@ -243,9 +243,6 @@
 //// | a chase or a walk home at a run speed of 0 or below | the creature stands where it is, with no path and no arrival timer (`chase_with_zero_run_speed_stands_still_test`, `walk_home_with_zero_run_speed_stands_still_test`, `negative_run_speed_stands_still_test`); it goes on from there when the speed is above 0 again (`run_speed_restored_moves_again_test`, `run_speed_restored_walks_home_again_test`), and not while a state holds it until the state ends (`speed_restored_while_held_stays_until_control_ends_test`) |
 //// | a creature at a run speed of 0 or below is out of reach of a target | it leashes when the target is beyond the leash range from home, as a turret does (`creature_that_cannot_run_leashes_by_the_turret_rule_test`); at home it rests at once (`rooted_creature_leashing_at_home_rests_test`); away from home it holds, since it has no walk (`rooted_creature_at_the_circle_does_not_leash_test`) |
 
-import genesis_prime/client_connection.{
-  type PeerNews, CreatureAppeared, PeerNews, Removed,
-}
 import genesis_prime/game/area
 import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes
@@ -257,6 +254,9 @@ import genesis_prime/game/strike_tell.{
   PlayerStriker, Refused,
 }
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news.{
+  type PeerNews, CreatureAppeared, PeerNews, Removed,
+}
 import genesis_prime/game/unit_properties.{
   type Modifier, type Properties, type Source,
 }
@@ -1289,10 +1289,7 @@ fn revalued(
     True, False ->
       to_viewers(
         state:,
-        news: client_connection.Health(
-          health: creature_life.health(life:),
-          dead: False,
-        ),
+        news: unit_news.Health(health: creature_life.health(life:), dead: False),
       )
     _, _ -> []
   }
@@ -1463,9 +1460,9 @@ fn changed_news(
     _ ->
       to_viewers(
         state:,
-        news: client_connection.PropertiesChanged(
-          properties: unit_properties.entries(changed:),
-        ),
+        news: unit_news.PropertiesChanged(properties: unit_properties.entries(
+          changed:,
+        )),
       )
   }
 }
@@ -2135,7 +2132,7 @@ fn fought_breaking(
             State(..state, life:),
             to_viewers(
               state:,
-              news: client_connection.Health(
+              news: unit_news.Health(
                 health: creature_life.health(life:),
                 dead: False,
               ),
@@ -2394,10 +2391,10 @@ fn fight_timer(timer timer: step.TimerId) -> Result(creature_fight.Timer, Nil) {
 }
 
 /// What a viewer's connection writes of a news of the creature's health.
-fn viewer_news(news: creature_life.News) -> client_connection.News {
+fn viewer_news(news: creature_life.News) -> unit_news.News {
   case news {
-    Health(health:, dead:) -> client_connection.Health(health:, dead:)
-    Died -> client_connection.Died
+    Health(health:, dead:) -> unit_news.Health(health:, dead:)
+    Died -> unit_news.Died
   }
 }
 
@@ -2453,7 +2450,7 @@ fn appeared(
 /// of their connections.
 fn to_viewers(
   state state: State,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
   list.map(sorted_viewers(state:), fn(viewer) {
     news_to(creature: state.settings.creature, viewer:, news:)
@@ -2470,7 +2467,7 @@ fn sorted_viewers(state state: State) -> List(#(ConnectionId, Stay)) {
 fn news_to(
   creature creature: CreatureStart,
   viewer viewer: #(ConnectionId, Stay),
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> Effect(ServiceEffect(Outgoing)) {
   OwnEffect(Send(
     to: Connection(viewer.0),

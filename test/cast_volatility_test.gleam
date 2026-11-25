@@ -17,10 +17,10 @@
 //// The bag indices are `cast_support.abilities`'.
 
 import cast_support as support
-import genesis_prime/client_connection
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource.{Gain, Payment}
 import genesis_prime/game/spell_plan
+import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_started
 import genesis_prime/step
@@ -320,7 +320,7 @@ fn started_told(
 ) -> List(#(step.ConnectionId, spell_started.SpellStarted)) {
   list.filter_map(support.tells(effects:), fn(tell) {
     case tell.1 {
-      client_connection.CastStarted(start:) -> Ok(#(tell.0, start))
+      unit_news.CastStarted(start:) -> Ok(#(tell.0, start))
       _ -> Error(Nil)
     }
   })

@@ -28,6 +28,7 @@ import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -144,7 +145,7 @@ pub fn a_health_tick_writes_0x92f_to_the_player_tells_its_viewers_and_asks_the_n
   assert list.map(game_connection_support.peer_tells(tick), fn(tell) {
       { tell.1 }.news
     })
-    == [client_connection.Health(health: 718, dead: False)]
+    == [unit_news.Health(health: 718, dead: False)]
     as "its viewer is told the health (it writes 0x937)"
   assert started(tick) == [#(health_timer, 500)]
     as "below the maximum: the next tick"
@@ -203,7 +204,7 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
   assert list.map(game_connection_support.peer_tells(first), fn(tell) {
       { tell.1 }.news
     })
-    == [client_connection.Shield(shield: 361)]
+    == [unit_news.Shield(shield: 361)]
     as "its viewer is told the shield (it writes 0x938)"
   assert started(first) == [#(shield_timer, 500)]
     as "ShieldTickTime, UnitProperty2 177's default"

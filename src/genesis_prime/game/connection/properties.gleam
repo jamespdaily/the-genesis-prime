@@ -52,6 +52,7 @@ import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
@@ -208,7 +209,7 @@ fn told(
     ],
     connection_state.news_to_viewers(
       entered:,
-      news: client_connection.PropertiesChanged(properties: sent),
+      news: unit_news.PropertiesChanged(properties: sent),
     ),
     life_effect.life_effects(session:, now:, entered:, effects: life_effects),
   ])

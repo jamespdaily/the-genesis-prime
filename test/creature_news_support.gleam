@@ -1,10 +1,10 @@
 //// The names of the news a creature sends a viewer, by the client frame each becomes, for the
 //// tests that read what a viewer was sent.
 
-import genesis_prime/client_connection.{
-  type Message, type News, CastFinished, CastStarted, CastWent, CombatState,
-  CreatureAppeared, CreatureMoved, CreaturePlaced, ForStay, Health, PeerNews,
-  SentByPeer, Targeting, Threat,
+import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/game/unit_news.{
+  type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
+  CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
 }
 import genesis_prime/world_map/creature_turn
 import gleam/int
@@ -30,33 +30,32 @@ pub fn name_of(news: News) -> String {
     CombatState(in_combat: False) -> "0x89a(0)"
     CreatureMoved(..) -> "0x638"
     CreaturePlaced(..) -> "0x638(placed)"
-    client_connection.CreatureFaces(face: creature_turn.Unit(unit_id:), ..) ->
+    unit_news.CreatureFaces(face: creature_turn.Unit(unit_id:), ..) ->
       "turn(kind 18, unit " <> int.to_string(unit_id) <> ")"
-    client_connection.CreatureFaces(face: creature_turn.Point(..), ..) ->
+    unit_news.CreatureFaces(face: creature_turn.Point(..), ..) ->
       "turn(kind 19, home)"
-    client_connection.CreatureFaces(face: creature_turn.Fixed(..), ..) ->
+    unit_news.CreatureFaces(face: creature_turn.Fixed(..), ..) ->
       "turn(kind 14)"
-    client_connection.CreatureFaces(face: creature_turn.Home(..), ..) ->
+    unit_news.CreatureFaces(face: creature_turn.Home(..), ..) ->
       "turn(kind 19, spawn facing)"
     CastStarted(..) -> "0x7ff"
     CastWent(..) -> "0x7f4"
-    client_connection.CastMissed(..) -> "0x7fb"
-    client_connection.CastTicked(..) -> "0x7f8"
+    unit_news.CastMissed(..) -> "0x7fb"
+    unit_news.CastTicked(..) -> "0x7f8"
     CastFinished(..) -> "0x7fe"
-    client_connection.CastInterrupted(..) -> "0x7f9"
-    client_connection.CastTargetsRemoved(..) -> "0x811"
+    unit_news.CastInterrupted(..) -> "0x7f9"
+    unit_news.CastTargetsRemoved(..) -> "0x811"
     Health(health:, ..) -> "0x937(" <> int.to_string(health) <> ")"
-    client_connection.Died -> "0x88c"
+    unit_news.Died -> "0x88c"
     CreatureAppeared(..) -> "0x262"
-    client_connection.Removed -> "0x355"
-    client_connection.CrowdControlApplied(..) -> "0x87f"
-    client_connection.CrowdControlEnded(..) -> "0x880"
-    client_connection.InterruptArmor(armor:) ->
+    unit_news.Removed -> "0x355"
+    unit_news.CrowdControlApplied(..) -> "0x87f"
+    unit_news.CrowdControlEnded(..) -> "0x880"
+    unit_news.InterruptArmor(armor:) ->
       "0x938(21, " <> int.to_string(armor) <> ")"
-    client_connection.Absorption(absorption:) ->
+    unit_news.Absorption(absorption:) ->
       "0x938(22, " <> int.to_string(absorption) <> ")"
-    client_connection.Level(level:) ->
-      "0x938(10, " <> int.to_string(level) <> ")"
+    unit_news.Level(level:) -> "0x938(10, " <> int.to_string(level) <> ")"
     _ -> "other"
   }
 }

@@ -388,7 +388,6 @@
 //// | a chase starts | the turn goes out before the path | `a_chase_sends_the_turn_before_the_path_test` |
 //// | a viewer arrives in flight | it is sent the rest of the path from where the creature is now | `an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test` |
 
-import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Inside, type Row}
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
@@ -400,6 +399,7 @@ import genesis_prime/game/strike_tell.{
   Released, Threatened,
 }
 import genesis_prime/game/telegraph_entries
+import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/table/id.{type Spell4Id}
@@ -912,7 +912,7 @@ fn stepped(
         Returning(home:) if home == generation -> {
           let arrived = case state.path {
             Running(..) -> [
-              ToViewers(client_connection.CreaturePlaced(
+              ToViewers(unit_news.CreaturePlaced(
                 place: fighter.home,
                 at_ms: now_ms,
               )),
@@ -939,10 +939,7 @@ fn stepped(
         Fighting(..), Running(..) -> {
           let end = creature_path.end(path: state.path)
           #(State(..state, path: Standing(at: end)), [
-            ToViewers(client_connection.CreaturePlaced(
-              place: end,
-              at_ms: now_ms,
-            )),
+            ToViewers(unit_news.CreaturePlaced(place: end, at_ms: now_ms)),
           ])
         }
         Fighting(..), Standing(..)
@@ -1032,7 +1029,7 @@ fn thrown(
   let #(state, moved) = case path {
     Timed(..) -> {
       let until_ms = creature_path.arrives_ms(path:, now_ms:)
-      let news = [ToViewers(client_connection.CreatureMoved(path:))]
+      let news = [ToViewers(unit_news.CreatureMoved(path:))]
       case until_ms > now_ms {
         False -> #(state, news)
         True -> {
@@ -1049,7 +1046,7 @@ fn thrown(
     Standing(at:) ->
       case displaced {
         True -> #(state, [
-          ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
+          ToViewers(unit_news.CreaturePlaced(place: at, at_ms: now_ms)),
         ])
         False -> #(state, [])
       }
@@ -1248,7 +1245,7 @@ fn faced(
   case face == state.turn {
     True -> #(state, [])
     False -> #(State(..state, turn: face), [
-      ToViewers(client_connection.CreatureFaces(face:, at_ms: now_ms)),
+      ToViewers(unit_news.CreatureFaces(face:, at_ms: now_ms)),
     ])
   }
 }
@@ -1274,18 +1271,14 @@ pub fn arrival_news(
         |> list.map(fn(entry) { threat_news(entry.1) })
       let assert Ok(top) = dict.get(threat, target)
         as "the target is on the threat list"
-      [
-        client_connection.CombatState(in_combat: True),
-        targeting_news(top),
-        ..others
-      ]
+      [unit_news.CombatState(in_combat: True), targeting_news(top), ..others]
     }
     Resting | Returning(..) -> []
   }
   let turn = case state.turn {
     Fixed(..) | creature_turn.Home(..) -> []
     creature_turn.Unit(..) as face | creature_turn.Point(..) as face -> [
-      client_connection.CreatureFaces(face:, at_ms: now_ms),
+      unit_news.CreatureFaces(face:, at_ms: now_ms),
     ]
   }
   let charge = case state.status {
@@ -1304,7 +1297,7 @@ pub fn arrival_news(
           }
           let gone = reached - list.length(go_rounds)
           [
-            client_connection.CastStarted(start: cast_frame.creature_started(
+            unit_news.CastStarted(start: cast_frame.creature_started(
               cast_id:,
               spell4_id: spell4_id.value,
               caster_unit_id: fighter.unit_id,
@@ -1313,7 +1306,7 @@ pub fn arrival_news(
               opening: start.opening,
             )),
             ..list.index_map(list.take(gos, gone), fn(_, phase) {
-              client_connection.CastWent(
+              unit_news.CastWent(
                 go: cast_frame.creature_went(
                   cast_id:,
                   phase:,
@@ -1333,14 +1326,14 @@ pub fn arrival_news(
       case creature_path.rest_of(path: state.path, now_ms:) {
         Standing(..) -> []
         Running(..) as rest | Timed(..) as rest -> [
-          client_connection.CreatureMoved(path: rest),
+          unit_news.CreatureMoved(path: rest),
         ]
       }
     Standing(..) -> []
     Timed(..) ->
       case creature_path.arrives_ms(path: state.path, now_ms:) > now_ms {
         True -> [
-          client_connection.CreatureMoved(path: creature_path.rest_of(
+          unit_news.CreatureMoved(path: creature_path.rest_of(
             path: state.path,
             now_ms:,
           )),
@@ -1503,7 +1496,7 @@ fn start_fight(
         state,
         list.flatten([
           named,
-          [ToViewers(client_connection.CombatState(in_combat: True))],
+          [ToViewers(unit_news.CombatState(in_combat: True))],
           told,
           turned,
           chased,
@@ -1593,7 +1586,7 @@ fn targeting(entry: Threat) -> Effect {
 
 /// The news of 0x908 naming the entry as the target, with its threat.
 fn targeting_news(entry: Threat) -> News {
-  client_connection.Targeting(
+  unit_news.Targeting(
     target_unit_id: entry.unit_id,
     threat: whole(entry.amount),
   )
@@ -1601,10 +1594,7 @@ fn targeting_news(entry: Threat) -> News {
 
 /// The news of 0x90a giving another entry's threat.
 fn threat_news(entry: Threat) -> News {
-  client_connection.Threat(
-    other_unit_id: entry.unit_id,
-    threat: whole(entry.amount),
-  )
+  unit_news.Threat(other_unit_id: entry.unit_id, threat: whole(entry.amount))
 }
 
 /// The top entry of a threat list: the most threat, the lowest connection on a tie.
@@ -1891,7 +1881,7 @@ fn strikes(
     ),
     [
       ToViewers(
-        client_connection.CastStarted(start: cast_frame.creature_started(
+        unit_news.CastStarted(start: cast_frame.creature_started(
           cast_id:,
           spell4_id: spell4_id.value,
           caster_unit_id: fighter.unit_id,
@@ -2108,7 +2098,7 @@ fn settled(
       #(
         state,
         list.append(written, [
-          ToViewers(client_connection.CastFinished(cast_id: round.cast_id)),
+          ToViewers(unit_news.CastFinished(cast_id: round.cast_id)),
         ]),
         ticking,
       )
@@ -2130,12 +2120,12 @@ fn written_entry(
 ) -> List(Effect) {
   let cast_id = round.cast_id
   let missed = case cast_frame.creature_missed(cast_id:, struck: entry.struck) {
-    Some(missed) -> [ToViewers(client_connection.CastMissed(missed:))]
+    Some(missed) -> [ToViewers(unit_news.CastMissed(missed:))]
     None -> []
   }
   [
     ToViewers(
-      client_connection.CastWent(go: cast_frame.creature_went(
+      unit_news.CastWent(go: cast_frame.creature_went(
         cast_id:,
         phase: entry.phase,
         place: here,
@@ -2221,7 +2211,7 @@ fn charges(
       turned,
       [
         ToViewers(
-          client_connection.CastStarted(start: cast_frame.creature_started(
+          unit_news.CastStarted(start: cast_frame.creature_started(
             cast_id:,
             spell4_id: spell4_id.value,
             caster_unit_id: fighter.unit_id,
@@ -2665,7 +2655,7 @@ fn turned_to_face(
     creature_turn.toward(from: here, target: target.place, kept: state.facing)
   let path = Timed(first: #(now_ms, here), rest: [], turned_to: Some(facing))
   #(State(..state, path:, turn: Fixed(facing:)), [
-    ToViewers(client_connection.CreatureMoved(path:)),
+    ToViewers(unit_news.CreatureMoved(path:)),
   ])
 }
 
@@ -2684,7 +2674,7 @@ fn round_ended(
     list.flatten([
       cancels_of(round:),
       written_all(round:, here:),
-      [ToViewers(client_connection.CastFinished(cast_id: round.cast_id))],
+      [ToViewers(unit_news.CastFinished(cast_id: round.cast_id))],
     ]),
   )
 }
@@ -2831,15 +2821,15 @@ fn chase_arrival(path path: Path, now_ms now_ms: Int) -> List(Effect) {
 fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
   case now, was {
     Running(..), _ | Timed(..), _ -> [
-      ToViewers(client_connection.CreatureMoved(path: now)),
+      ToViewers(unit_news.CreatureMoved(path: now)),
     ]
     Standing(at:), Running(..) -> [
-      ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
+      ToViewers(unit_news.CreaturePlaced(place: at, at_ms: now_ms)),
     ]
     Standing(at:), Timed(..) ->
       case creature_path.arrives_ms(path: was, now_ms:) > now_ms {
         True -> [
-          ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
+          ToViewers(unit_news.CreaturePlaced(place: at, at_ms: now_ms)),
         ]
         False -> []
       }
@@ -2886,13 +2876,13 @@ fn leash(
     list.flatten([
       closed,
       list.map(entries, fn(entry) {
-        ToViewers(client_connection.Threat(
+        ToViewers(unit_news.Threat(
           other_unit_id: { entry.1 }.unit_id,
           threat: 0,
         ))
       }),
       [
-        ToViewers(client_connection.CombatState(in_combat: False)),
+        ToViewers(unit_news.CombatState(in_combat: False)),
         RestoreHealth,
       ],
       turned,
@@ -3025,7 +3015,7 @@ fn charge_broken(
         list.flatten([
           cancels_of(round:),
           written_all(round:, here:),
-          [ToViewers(client_connection.CastInterrupted(cast_id:))],
+          [ToViewers(unit_news.CastInterrupted(cast_id:))],
           ticked,
           [ChargeInterrupted(cast_id:, spell4_id:)],
         ]),
@@ -3056,7 +3046,7 @@ fn killed(
   let turned = case frozen == state.turn {
     True -> []
     False -> [
-      ToViewers(client_connection.CreatureFaces(face: frozen, at_ms: now_ms)),
+      ToViewers(unit_news.CreatureFaces(face: frozen, at_ms: now_ms)),
     ]
   }
   let state = State(..state, turn: frozen)
@@ -3066,7 +3056,7 @@ fn killed(
       let finished = case round {
         Some(round) ->
           list.append(cancels_of(round:), [
-            ToViewers(client_connection.CastFinished(cast_id: round.cast_id)),
+            ToViewers(unit_news.CastFinished(cast_id: round.cast_id)),
           ])
         None -> []
       }
@@ -3075,7 +3065,7 @@ fn killed(
         list.flatten([
           placed,
           finished,
-          [ToViewers(client_connection.CombatState(in_combat: False))],
+          [ToViewers(unit_news.CombatState(in_combat: False))],
           list.map(map.sorted_by_connection(threat), fn(entry) {
             ToPlayer(
               to: entry.0,

@@ -93,11 +93,11 @@
 //// | Armor is worn down or refills | the creature restarts at full armor; the refill timer is cancelled at the death | two strikes in a row: each wears down what is left, the second restarts the refill | the refill timer fires after the death or at full armor: nothing |
 //// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/game/lasting) | | |
 
-import genesis_prime/client_connection.{type News}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/strike_tell.{
   type ControlLanded, type Tell, ControlLanded,
 }
+import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/step.{type Address}
@@ -253,10 +253,7 @@ fn armored(
         state: State(..state, armor: Some(left)),
         landed: [],
         armor_removed: current - left,
-        effects: [
-          ToViewers(client_connection.InterruptArmor(armor: left)),
-          ..restarted
-        ],
+        effects: [ToViewers(unit_news.InterruptArmor(armor: left)), ..restarted],
       )
     }
   }
@@ -289,7 +286,7 @@ fn held(state state: State, tell tell: Tell, now_ms now_ms: Int) -> Landing {
             interrupted: None,
           ),
           [
-            ToViewers(client_connection.CrowdControlApplied(
+            ToViewers(unit_news.CrowdControlApplied(
               state: told.row.state,
               instance_id: told.instance_id,
             )),
@@ -315,7 +312,7 @@ pub fn refilled(
 ) -> #(State, List(Effect)) {
   case state.armor, armor {
     Some(_), creature_life.Armor(points:) -> #(State(..state, armor: None), [
-      ToViewers(client_connection.InterruptArmor(armor: points)),
+      ToViewers(unit_news.InterruptArmor(armor: points)),
     ])
     Some(_), creature_life.NoArmor | Some(_), creature_life.InfiniteArmor -> #(
       State(..state, armor: None),
@@ -365,7 +362,7 @@ pub fn maximum_changed(
   case shown_after == shown_before {
     True -> #(state, [])
     False -> #(state, [
-      ToViewers(client_connection.InterruptArmor(armor: shown_after)),
+      ToViewers(unit_news.InterruptArmor(armor: shown_after)),
     ])
   }
 }
@@ -388,7 +385,7 @@ pub fn ended(state state: State, number number: Int) -> #(State, List(Effect)) {
         controls: list.filter(state.controls, fn(held) { held.number != number }),
       ),
       [
-        ToViewers(client_connection.CrowdControlEnded(
+        ToViewers(unit_news.CrowdControlEnded(
           state: control.state,
           cast_id: control.cast_id,
           instance_id: control.instance_id,

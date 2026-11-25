@@ -9,7 +9,6 @@
 //// times give its schedule is genesis_prime/game/ticking's.
 
 import cast_support as support
-import genesis_prime/client_connection.{type News, CastTicked}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
@@ -24,6 +23,7 @@ import genesis_prime/game/spell_area.{DamageEffect, TickingDamage}
 import genesis_prime/game/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking.{Schedule, Ticks}
+import genesis_prime/game/unit_news.{type News, CastTicked}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_result

@@ -6,14 +6,14 @@
 
 import cast_support
 import connection_rule_support as support
-import fixture_tables
 import game_connection_support
-import genesis_prime/client_connection.{
-  Appeared, CastFinished, CastStarted, CastWent, Removed,
-}
+import genesis_prime/client_connection
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news.{
+  Appeared, CastFinished, CastStarted, CastWent, Removed,
+}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
@@ -31,7 +31,6 @@ import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{Some}
 import owned_test
-import planted_table
 
 pub fn a_viewer_writes_0x811_and_0x813_only_for_a_cast_whose_start_it_wrote_test() -> Nil {
   use <- owned_test.run(10_000)
@@ -40,7 +39,7 @@ pub fn a_viewer_writes_0x811_and_0x813_only_for_a_cast_whose_start_it_wrote_test
   let removed =
     game_connection_support.news_of(
       unit_id: 9,
-      news: client_connection.CastTargetsRemoved(
+      news: unit_news.CastTargetsRemoved(
         removed: SpellTargetsRemoved(cast_id: start.cast_id, unit_ids: [9]),
         destroyed: False,
       ),
@@ -48,7 +47,7 @@ pub fn a_viewer_writes_0x811_and_0x813_only_for_a_cast_whose_start_it_wrote_test
   let stack =
     game_connection_support.news_of(
       unit_id: 9,
-      news: client_connection.CastStackRemoved(removed: SpellStackRemoved(
+      news: unit_news.CastStackRemoved(removed: SpellStackRemoved(
         cast_id: start.cast_id,
         unit_id: 9,
       )),
@@ -118,7 +117,7 @@ pub fn a_cast_the_client_destroyed_with_a_0x811_is_forgotten_and_no_stale_finish
   let removed =
     game_connection_support.news_of(
       unit_id: 9,
-      news: client_connection.CastTargetsRemoved(
+      news: unit_news.CastTargetsRemoved(
         removed: SpellTargetsRemoved(cast_id: start.cast_id, unit_ids: [9]),
         destroyed: True,
       ),
@@ -150,53 +149,20 @@ pub fn a_cast_the_client_destroyed_with_a_0x811_is_forgotten_and_no_stale_finish
       state,
       game_connection_support.sent_by_a_peer(game_connection_support.news_of(
         unit_id: 9,
-        news: client_connection.Removed,
+        news: unit_news.Removed,
       )),
     )
   assert game_connection_support.written_ids(taken) == [0x0355]
     as "opcode.0x811: a cast left with no target and a method other than 1, 3, 8 and 10 is destroyed on the client, so the unit's removal writes no 0x7fe for it"
 }
 
-/// What the viewer connection 2 is told of a cast, in order.
-fn told_to_the_viewer(
-  taken taken: step.ConnectionStep(client_connection.Request),
-) -> List(client_connection.News) {
-  list.filter_map(game_connection_support.peer_tells(taken), fn(tell) {
-    case tell.0 == 2 {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
-}
-
 pub fn a_creatures_0x355_drops_its_nodes_and_the_lingering_cast_left_with_none_finishes_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Paralytic Surge with the client's Fluff row 66766 (type 17, flags 2: until removed,
-  // aimed at the units the area strikes) added to it: the Beast 40 holds a node of the
-  // cast, which lingers with no 0x7fe. Kept edit: the three type 17 rows of this kind
-  // (66766, 67116, 68647) belong to deprecated spells (34011, 34031, 34620) that no
-  // starting ability reaches, so no level 1 press leaves a lasting effect on a creature.
-  use tables <- fixture_tables.added(
-    table: "Spell4Effects",
-    copy_of: 66_766,
-    id: 99_911,
-    with: [
-      #("spellId", planted_table.Integer(42_352)),
-      #("orderIndex", planted_table.Integer(2)),
-    ],
-  )
-  let state =
-    game_connection_support.watched_by(
-      game_connection_support.medic_with_beast_in_world(tables),
-      [2],
-    )
-  let #(state, pressed) =
-    game_connection_support.press_paralytic_surge(state:, client_cast_id: 1)
-  let assert [client_connection.CastStarted(start:)] =
-    told_to_the_viewer(taken: pressed)
-  let assert [#(40, key)] = game_connection_support.strikes_told(pressed)
-  let #(state, gone) =
-    game_connection_support.feed(state, game_connection_support.landed(key:))
+  // Paralytic Surge with the client's Fluff row 66766 added to it: the Beast 40 holds a
+  // node of the cast, which lingers with no 0x7fe.
+  use tables <- game_connection_support.with_a_lingering_node_row()
+  let #(state, gone, cast_id) =
+    game_connection_support.medic_with_a_lingering_node_on_beast(tables)
   assert !list.contains(game_connection_support.written_ids(gone), 0x07FE)
     as "the Beast's node has no end by time: the cast lingers and writes no 0x7fe (cast.target_node_end)"
   let #(_, removed) =
@@ -204,14 +170,14 @@ pub fn a_creatures_0x355_drops_its_nodes_and_the_lingering_cast_left_with_none_f
       state,
       game_connection_support.sent_by_a_peer(game_connection_support.news_of(
         unit_id: 40,
-        news: client_connection.Removed,
+        news: unit_news.Removed,
       )),
     )
   assert game_connection_support.written_ids(removed) == [0x0355, 0x07FE]
     as "the client dropped the Beast's nodes with its 0x355 (0x1404550d0): the lingering cast has none left and ends with its 0x7fe"
   assert list.contains(
-    told_to_the_viewer(taken: removed),
-    client_connection.CastFinished(cast_id: start.cast_id),
+    game_connection_support.news_told_to_viewer_2(taken: removed),
+    unit_news.CastFinished(cast_id:),
   )
     as "the viewer told the cast's start is told its finish"
 }
@@ -247,7 +213,7 @@ pub fn a_viewer_gets_a_tick_only_for_a_cast_it_was_shown_test() -> Nil {
   let ticked =
     game_connection_support.news_of(
       unit_id: 9,
-      news: client_connection.CastTicked(tick:),
+      news: unit_news.CastTicked(tick:),
     )
   let #(state, _) =
     game_connection_support.feed(
@@ -332,7 +298,7 @@ pub fn a_cast_listed_in_a_unit_create_is_written_and_finished_like_a_watched_one
   let #(_, taken) =
     told(
       state,
-      client_connection.CastTargetsRemoved(
+      unit_news.CastTargetsRemoved(
         removed: SpellTargetsRemoved(cast_id: first, unit_ids: [9]),
         destroyed: False,
       ),
@@ -485,7 +451,7 @@ fn beast_removed() -> step.Event(
 ) {
   game_connection_support.sent_by_a_peer(game_connection_support.news_of(
     unit_id: 40,
-    news: client_connection.Removed,
+    news: unit_news.Removed,
   ))
 }
 

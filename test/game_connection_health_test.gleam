@@ -19,8 +19,9 @@
 
 import connection_rule_support as support
 import game_connection_support
-import genesis_prime/client_connection.{Appeared, FromStore, PeerNews}
+import genesis_prime/client_connection.{FromStore}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/unit_news.{Appeared, PeerNews}
 import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}

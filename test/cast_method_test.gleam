@@ -15,13 +15,13 @@
 
 import cast_support as support
 import class_resource_support
-import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/spell_plan.{AtFirstGo, Spell}
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{CastFinished}
 import genesis_prime/message/cast_result.{
   type CastResult, CasterVitalCostResource1, CasterVitalCostResource3,
   CasterVitalCostResource5, Other, SpellCancelled,

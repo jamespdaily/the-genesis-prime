@@ -17,9 +17,6 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/client_connection.{
-  type News, CastFinished, CastTargetsRemoved,
-}
 import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/creature_view
@@ -39,6 +36,7 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news.{type News, CastFinished, CastTargetsRemoved}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{AbilityRestriction}

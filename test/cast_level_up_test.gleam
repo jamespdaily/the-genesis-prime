@@ -16,11 +16,11 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/client_connection.{CastFinished, CastStarted, CastWent}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/level_up
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/unit_news.{CastFinished, CastStarted, CastWent}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result

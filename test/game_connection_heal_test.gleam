@@ -33,6 +33,7 @@ import genesis_prime/game/held_changes
 import genesis_prime/game/start_place
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
@@ -114,18 +115,6 @@ fn shields(taken taken: ConnectionStep(Request)) -> List(Int) {
   )
 }
 
-/// The news the viewer 2 is told in the step, in order.
-fn told_to_the_viewer(
-  taken taken: ConnectionStep(Request),
-) -> List(client_connection.News) {
-  list.filter_map(connection_support.peer_tells(taken), fn(tell) {
-    case tell.0 == 2 {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
-}
-
 /// The heal description amount the step's 0x7f4 frames carry for Spell4Effects 228914.
 fn described_heals(taken taken: ConnectionStep(Request)) -> List(Int) {
   list.filter(
@@ -202,9 +191,12 @@ pub fn a_struck_medic_pressing_energize_sees_the_heal_and_its_shield_rise_and_so
   }
   assert healed == [expected]
     as "the shield rises by the amount, capped at 450: one 0x938 to the Medic"
-  let told = list.flat_map(landed, fn(taken) { told_to_the_viewer(taken:) })
+  let told =
+    list.flat_map(landed, fn(taken) {
+      connection_support.news_told_to_viewer_2(taken:)
+    })
   assert list.count(told, fn(news) {
-      news == client_connection.Shield(shield: expected)
+      news == unit_news.Shield(shield: expected)
     })
     == 1
     as "and the same shield is told to the viewer, once (beside the properties the go's type 11 rows start)"
@@ -342,9 +334,12 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
   assert list.flat_map(landed, fn(taken) { connection_support.healths(taken:) })
     == [before + 40]
     as "the health rises by 40: one 0x92f to the Medic"
-  let told = list.flat_map(landed, fn(taken) { told_to_the_viewer(taken:) })
+  let told =
+    list.flat_map(landed, fn(taken) {
+      connection_support.news_told_to_viewer_2(taken:)
+    })
   assert list.count(told, fn(news) {
-      news == client_connection.Health(health: before + 40, dead: False)
+      news == unit_news.Health(health: before + 40, dead: False)
     })
     == 1
     as "and the viewer is told the same health once (0x937)"
@@ -840,7 +835,7 @@ fn refusals(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
 /// A news of the unit 9, as its owner's connection sends it to the Esper.
 fn news_from_the_ally(
   state state: game_connection.State,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> game_connection.State {
   connection_support.feed(
     state:,
@@ -882,14 +877,14 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
       state:,
       event: connection_support.event_of(connection_support.Appears),
     )
-  let dead = news_from_the_ally(state:, news: client_connection.Died)
+  let dead = news_from_the_ally(state:, news: unit_news.Died)
   let #(_, refused) = pressed_at(state: dead, bag_index:, ms: 1000, target: 9)
   assert refusals(taken: refused) == [#(1000, 106)]
     as "a Died news: the ally is dead in the picture, so the press is refused 106 (0x1403b2240)"
   assert connection_support.written_ids(refused) == [0x07FC]
     && connection_support.peer_tells(refused) == []
     as "the refusal is the one 0x7fc: no 0x7ff is written and no connection is told"
-  let back = news_from_the_ally(state: dead, news: client_connection.CameBack)
+  let back = news_from_the_ally(state: dead, news: unit_news.CameBack)
   let #(_, started) = pressed_at(state: back, bag_index:, ms: 2000, target: 9)
   assert connection_support.refusal_results(taken: started) == []
     && primary_targets(taken: started) == [9]
@@ -901,7 +896,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
   let walked =
     news_from_the_ally(
       state:,
-      news: client_connection.Moving(server_time_ms: 7, commands: [
+      news: unit_news.Moving(server_time_ms: 7, commands: [
         relayed_movement.Position(UnitPositionCommand(
           x: float32.to_bits(x +. 60.0),
           y: float32.to_bits(y),
@@ -939,7 +934,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
       state:,
       event: connection_support.sent_by_a_peer(connection_support.news_of(
         unit_id: 10,
-        news: client_connection.Appeared(unit: exile),
+        news: unit_news.Appeared(unit: exile),
       )),
     )
   let #(_, hostile) = pressed_at(state:, bag_index:, ms: 4000, target: 10)
@@ -954,7 +949,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
       state:,
       event: connection_support.sent_by_a_peer(connection_support.news_of(
         unit_id: 10,
-        news: client_connection.Removed,
+        news: unit_news.Removed,
       )),
     )
   let #(_, removed) = pressed_at(state: gone, bag_index:, ms: 5000, target: 10)

@@ -25,12 +25,12 @@
 //// - The timer ids 8 (health) and 9 (shield) are the connection's free ids above
 ////   the class resource's 4 to 7.
 
-import genesis_prime/client_connection
 import genesis_prime/game/player_life.{
   type Effect, type Life, CancelTimer, OwnCombatState, OwnHealth, OwnShield,
   Regeneration, StartTimer, ToClient, ToViewers,
 }
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/step.{TimerId}
 import gleam/list
 import gleam/option.{None, Some}
@@ -108,7 +108,7 @@ pub fn out_of_combat_and_below_the_max_a_health_tick_adds_its_share_and_tells_th
   assert effects
     == [
       ToClient(OwnHealth(health: 718)),
-      ToViewers(client_connection.Health(health: 718, dead: False)),
+      ToViewers(unit_news.Health(health: 718, dead: False)),
       StartTimer(timer: health_timer, after_ms: 500),
     ]
     as "0x92f to the player, 0x937 to each viewer, and the next tick while below the maximum"
@@ -147,7 +147,7 @@ pub fn health_never_goes_above_the_max_and_the_last_tick_tops_it_up_exactly_test
   assert effects
     == [
       ToClient(OwnHealth(health: 736)),
-      ToViewers(client_connection.Health(health: 736, dead: False)),
+      ToViewers(unit_news.Health(health: 736, dead: False)),
     ]
     as "the player is full: no next tick"
   let #(after, more) = ticked(life:)
@@ -179,7 +179,7 @@ pub fn in_combat_no_health_tick_runs_leaving_combat_arms_it_and_entering_combat_
   assert last
     == [
       ToClient(OwnCombatState(in_combat: False)),
-      ToViewers(client_connection.CombatState(in_combat: False)),
+      ToViewers(unit_news.CombatState(in_combat: False)),
       player_life.CombatLeft,
       StartTimer(timer: health_timer, after_ms: 500),
     ]
@@ -285,7 +285,7 @@ pub fn after_the_reboot_each_tick_adds_its_share_in_combat_too_until_full_test()
   assert first
     == [
       ToClient(OwnShield(shield: 406)),
-      ToViewers(client_connection.Shield(shield: 406)),
+      ToViewers(unit_news.Shield(shield: 406)),
       StartTimer(timer: player_life_support.shield_timer, after_ms: 500),
     ]
     as "0x938 stat 20 to the player and its viewers, then a tick later again"
@@ -296,7 +296,7 @@ pub fn after_the_reboot_each_tick_adds_its_share_in_combat_too_until_full_test()
   assert last
     == [
       ToClient(OwnShield(shield: 450)),
-      ToViewers(client_connection.Shield(shield: 450)),
+      ToViewers(unit_news.Shield(shield: 450)),
     ]
     as "full: no next tick"
   let #(after, none) =

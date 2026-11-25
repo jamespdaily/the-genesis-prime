@@ -20,8 +20,9 @@
 import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Request, CastStarted}
+import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_result
 import genesis_prime/message/item_count_changed
 import genesis_prime/message/item_place.{ItemPlace}

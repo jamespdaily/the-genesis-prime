@@ -32,6 +32,7 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/routing
+import genesis_prime/game/unit_news
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
@@ -349,7 +350,7 @@ fn unhostile() -> creature_life.Hostile {
 fn told(
   state state: game_connection.State,
   unit_id unit_id: Int,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> game_connection.State {
   told_writing(state:, unit_id:, news:).0
 }
@@ -358,7 +359,7 @@ fn told(
 fn told_writing(
   state state: game_connection.State,
   unit_id unit_id: Int,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> #(game_connection.State, List(Int)) {
   let #(state, taken) =
     connection_support.feed(
@@ -407,7 +408,7 @@ pub fn an_activate_cast_judges_a_creature_where_its_path_puts_it_now_test() -> N
     told_writing(
       state: standing,
       unit_id: nearby,
-      news: client_connection.CreaturePlaced(place: far, at_ms: 0),
+      news: unit_news.CreaturePlaced(place: far, at_ms: 0),
     )
   assert placed == [0x0638]
     as "opcode.0x638: the news that puts the creature at 8.0 is written to the client, which moves its unit there"
@@ -422,7 +423,7 @@ pub fn an_activate_cast_judges_a_creature_where_its_path_puts_it_now_test() -> N
     told_writing(
       state: moved,
       unit_id: nearby,
-      news: client_connection.CreatureMoved(path: creature_path.Running(
+      news: unit_news.CreatureMoved(path: creature_path.Running(
         from: far,
         via: [],
         to: vendor_support.ahead_of_the_player(
@@ -475,7 +476,7 @@ pub fn the_picture_gives_an_activate_cast_the_creatures_life_combat_and_disposit
         ).0
       },
     )
-  let state = told(state:, unit_id: dead, news: client_connection.Died)
+  let state = told(state:, unit_id: dead, news: unit_news.Died)
   assert connection_support.refusal_results(taken: pressed(
       state:,
       unit_id: dead,
@@ -487,7 +488,7 @@ pub fn the_picture_gives_an_activate_cast_the_creatures_life_combat_and_disposit
     told(
       state:,
       unit_id: fighting,
-      news: client_connection.CombatState(in_combat: True),
+      news: unit_news.CombatState(in_combat: True),
     )
   assert connection_support.refusal_results(taken: pressed(
       state:,
@@ -500,7 +501,7 @@ pub fn the_picture_gives_an_activate_cast_the_creatures_life_combat_and_disposit
     told(
       state:,
       unit_id: fighting,
-      news: client_connection.CombatState(in_combat: False),
+      news: unit_news.CombatState(in_combat: False),
     )
   assert connection_support.written_ids(pressed(
       state:,
@@ -757,6 +758,6 @@ pub fn activating_varonia_cazalon_writes_48373s_go_with_its_delayed_item_visual_
       }
     })
   let assert [go, ..] = gos
-  assert list.contains(told, client_connection.CastWent(go:))
+  assert list.contains(told, unit_news.CastWent(go:))
     as "a viewer is told the same go (each row is delayed, so it shows nothing yet: the client applies a delayed effect only when its delay ends)"
 }

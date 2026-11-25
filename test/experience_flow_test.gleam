@@ -20,7 +20,7 @@ import connection_rule_support
 import experience_support as experience
 import fixture_tables
 import game_connection_support as support
-import genesis_prime/client_connection.{PropertiesChanged}
+import genesis_prime/game/unit_news.{PropertiesChanged}
 import genesis_prime/message/experience_gained.{
   type ExperienceGained, ExperienceGained,
 }

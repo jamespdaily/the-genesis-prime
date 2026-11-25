@@ -9,10 +9,10 @@
 ////   and starts another writes the 0x7fe first.
 
 import cast_support as support
-import genesis_prime/client_connection
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/spell_plan.{type Spell, LandsHit}
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/step.{ConnectionId, LogWarning}
 import gleam/dict
@@ -140,7 +140,7 @@ pub fn standing_changed_ends_a_lingering_spell_no_longer_wanted_with_its_0x7fe_a
     as "opcode.0x7fe: the spell no longer wanted ends with its 0x7fe to the caster"
   assert list.filter_map(support.tells(effects: ended), fn(told) {
       case told.1 {
-        client_connection.CastFinished(cast_id:) -> Ok(#(told.0, cast_id))
+        unit_news.CastFinished(cast_id:) -> Ok(#(told.0, cast_id))
         _ -> Error(Nil)
       }
     })

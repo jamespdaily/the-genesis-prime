@@ -28,9 +28,7 @@ import connection_rule_support as rule_support
 import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type News, type Request, Absorption, Appeared,
-  CastFinished, CastStarted, HeldCastEnded, HeldCastStarted, InterruptArmor,
-  PropertiesChanged, Removed, TellPeer,
+  type Answer, type Message, type Request, TellPeer,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
@@ -45,6 +43,10 @@ import genesis_prime/game/proc
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
+import genesis_prime/game/unit_news.{
+  type News, Absorption, Appeared, CastFinished, CastStarted, HeldCastEnded,
+  HeldCastStarted, InterruptArmor, PropertiesChanged, Removed,
+}
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
@@ -839,9 +841,9 @@ pub fn a_caster_the_map_says_no_longer_sees_the_player_ends_each_change_it_held_
             to: step.Connection(connection: ConnectionId(3)),
             request: TellPeer(
               stay: support.viewer_stay(3),
-              news: client_connection.PeerNews(
+              news: unit_news.PeerNews(
                 unit_id: support.own_unit_id,
-                news: client_connection.Removed,
+                news: unit_news.Removed,
               ),
             ),
           ))
@@ -1632,7 +1634,7 @@ fn tells_a_held_cast_ended(
   case effect {
     OwnEffect(step.Tell(
       request: TellPeer(
-        news: client_connection.PeerNews(news: HeldCastEnded(..), ..),
+        news: unit_news.PeerNews(news: HeldCastEnded(..), ..),
         ..,
       ),
       ..,

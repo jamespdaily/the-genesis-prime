@@ -15,9 +15,9 @@
 //// 3 Gate. A Surge cast is a press of Spell Surge 47273 (base 31213) at Spell Power 100.
 
 import cast_support as support
-import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource.{Payment}
+import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{type Spell4BaseId, Spell4BaseId}
 import gleam/list

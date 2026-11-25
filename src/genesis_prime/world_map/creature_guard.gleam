@@ -78,12 +78,12 @@
 //// | The opening's timer fires | its generation is gone: nothing (`an_opening_end_after_death_does_nothing_test`) | n/a | the guard returns (`the_opening_ends_after_15_seconds_and_the_guard_returns_test`) |
 //// | The corpse timer stands the creature | n/a | n/a | `Dormant` takes `Stands`: it stands guarded with a new cast, no opening (`a_respawned_turret_stands_guarded_test`) |
 
-import genesis_prime/client_connection.{type News}
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/lasting
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/telegraph_entries
+import genesis_prime/game/unit_news.{type News}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/world_map/creature_guard_spells.{type Guard}
@@ -248,7 +248,7 @@ pub fn step(
               State(..state, phase: Dormant),
               [
                 CancelTimer(timer: OpeningEnds(generation:)),
-                ToViewers(client_connection.CastFinished(cast_id:)),
+                ToViewers(unit_news.CastFinished(cast_id:)),
               ],
             )
             Bare | Dormant -> #(state, [])
@@ -275,13 +275,13 @@ fn opening_ended(
         state,
         list.flatten([
           list.map(states_of(held:), fn(held) {
-            ToViewers(client_connection.CrowdControlEnded(
+            ToViewers(unit_news.CrowdControlEnded(
               state: held.0,
               cast_id:,
               instance_id: held.1,
             ))
           }),
-          [ToViewers(client_connection.CastFinished(cast_id:))],
+          [ToViewers(unit_news.CastFinished(cast_id:))],
           raising,
         ]),
       )
@@ -368,13 +368,13 @@ fn opens(
         ToViewers,
       ),
       [
-        ToViewers(client_connection.CastTargetsRemoved(
+        ToViewers(unit_news.CastTargetsRemoved(
           removed: SpellTargetsRemoved(cast_id: guard_cast, unit_ids: [unit_id]),
           destroyed: True,
         )),
       ],
       list.map(states_of(held:), fn(held) {
-        ToViewers(client_connection.CrowdControlApplied(
+        ToViewers(unit_news.CrowdControlApplied(
           state: held.0,
           instance_id: held.1,
         ))
@@ -401,7 +401,7 @@ fn guard_cast(
   cast_id cast_id: Int,
 ) -> List(News) {
   [
-    client_connection.CastStarted(start: cast_frame.creature_started(
+    unit_news.CastStarted(start: cast_frame.creature_started(
       cast_id:,
       spell4_id: guard.spell4_id,
       caster_unit_id: unit_id,
@@ -409,7 +409,7 @@ fn guard_cast(
       place:,
       opening: telegraph_entries.none,
     )),
-    client_connection.CastWent(
+    unit_news.CastWent(
       go: cast_frame.creature_applied(
         cast_id:,
         place:,
@@ -437,7 +437,7 @@ fn opening_cast(
   elapsed_ms elapsed_ms: Int,
 ) -> List(News) {
   [
-    client_connection.CastStarted(start: cast_frame.creature_started(
+    unit_news.CastStarted(start: cast_frame.creature_started(
       cast_id:,
       spell4_id: guard.opening.spell4_id,
       caster_unit_id: unit_id,
@@ -445,7 +445,7 @@ fn opening_cast(
       place:,
       opening: telegraph_entries.none,
     )),
-    client_connection.CastWent(go: cast_frame.creature_applied(
+    unit_news.CastWent(go: cast_frame.creature_applied(
       cast_id:,
       place:,
       target_unit_id: unit_id,
@@ -499,10 +499,7 @@ pub fn shown(
               elapsed_ms: guard.opening.ends_after_ms - { ends_at_ms - now_ms },
             ),
             list.map(states_of(held:), fn(held) {
-              client_connection.CrowdControlApplied(
-                state: held.0,
-                instance_id: held.1,
-              )
+              unit_news.CrowdControlApplied(state: held.0, instance_id: held.1)
             }),
           )
       }

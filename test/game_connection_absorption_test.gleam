@@ -22,9 +22,10 @@
 ////   (`support.settings()`): the innate of the Esper, Spell4 58586, at bag index 3.
 
 import game_connection_support as support
-import genesis_prime/client_connection.{type Request, Absorption}
+import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{Absorption}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
@@ -248,7 +249,7 @@ pub fn absorption_news_for_a_unit_the_viewer_does_not_show_writes_nothing_test()
   let #(gone, _) =
     support.feed(
       shown,
-      support.news_sent_by_a_peer(unit_id: 9, news: client_connection.Removed),
+      support.news_sent_by_a_peer(unit_id: 9, news: unit_news.Removed),
     )
   let #(_, late) =
     support.feed(

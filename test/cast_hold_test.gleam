@@ -9,11 +9,11 @@
 //// hidden result 13 (`cast.hold_repeat`): the client holds no repeat timer.
 
 import cast_support as support
-import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/spell_plan.{type Plans, Spell}
+import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started

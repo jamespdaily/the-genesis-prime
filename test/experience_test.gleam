@@ -21,7 +21,7 @@
 
 import experience_support as experience
 import game_connection_support as support
-import genesis_prime/client_connection
+import genesis_prime/game/unit_news
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
@@ -153,8 +153,8 @@ pub fn crossing_a_level_sends_stat_10_to_the_player_and_its_viewers_test() -> Ni
     as "the experience first, then the level it made, then the properties the level moves (a_level_up_sends_property_7_at_the_new_level_test)"
   assert support.news_told(taken:, viewer: 2)
     == [
-      client_connection.Level(level: 2),
-      client_connection.PropertiesChanged(properties: [
+      unit_news.Level(level: 2),
+      unit_news.PropertiesChanged(properties: [
         UnitProperty(
           property_id: 7,
           base: float32.to_bits(817.0),

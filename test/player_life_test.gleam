@@ -21,7 +21,6 @@
 
 import cast_support
 import character_tables
-import genesis_prime/client_connection
 import genesis_prime/game/hit
 import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
@@ -35,6 +34,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
@@ -129,9 +129,9 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     as "Armor 250: 12 mitigated to 3, the shield takes 2, the health 1"
   let assert [
     ToClient(OwnShield(shield: 447)),
-    ToViewers(client_connection.Shield(shield: 447)),
+    ToViewers(unit_news.Shield(shield: 447)),
     ToClient(OwnHealth(health: 734)),
-    ToViewers(client_connection.Health(health: 734, dead: False)),
+    ToViewers(unit_news.Health(health: 734, dead: False)),
     player_life.BlowTaken(
       striker: CreatureStriker(..),
       took: player_life.Landed(
@@ -182,7 +182,7 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
   assert player_life.health(life:) == 0 as "3 against 1 health: floored at 0"
   let assert [
     ToClient(OwnHealth(health: 0)),
-    ToViewers(client_connection.Health(health: 0, dead: True)),
+    ToViewers(unit_news.Health(health: 0, dead: True)),
     player_life.BlowTaken(
       striker: CreatureStriker(..),
       took: player_life.Landed(
@@ -246,7 +246,7 @@ pub fn the_first_threat_sets_the_combat_flag_and_the_last_release_clears_it_test
   assert first
     == [
       ToClient(OwnCombatState(in_combat: True)),
-      ToViewers(client_connection.CombatState(in_combat: True)),
+      ToViewers(unit_news.CombatState(in_combat: True)),
       StreamTo(unit_id: 7, life: 3),
     ]
     as "0x89a (P, 1) to the player and its viewers, then its place to the creature at once"
@@ -262,7 +262,7 @@ pub fn the_first_threat_sets_the_combat_flag_and_the_last_release_clears_it_test
   assert last
     == [
       ToClient(OwnCombatState(in_combat: False)),
-      ToViewers(client_connection.CombatState(in_combat: False)),
+      ToViewers(unit_news.CombatState(in_combat: False)),
       player_life.CombatLeft,
     ]
     as "the last release clears 0x89a: no client timer does; the combat left follows the flag's news (Spell4Effects.effectType.14.dataBits00.0_44, kind 44 'leaves combat')"
@@ -427,16 +427,16 @@ fn chosen(
 fn came_back_effects() -> List(player_life.Effect) {
   [
     ToClient(OwnHealth(health: 736)),
-    ToViewers(client_connection.Health(health: 736, dead: False)),
+    ToViewers(unit_news.Health(health: 736, dead: False)),
     ToClient(OwnShield(shield: 450)),
-    ToViewers(client_connection.Shield(shield: 450)),
+    ToViewers(unit_news.Shield(shield: 450)),
     ToClient(OwnDeathState(dead: False)),
-    ToViewers(client_connection.CameBack),
+    ToViewers(unit_news.CameBack),
     ToClient(OwnResurrectionWindow(dead: False)),
     ToClient(GhostRemoved),
     ToClient(ControlGiven(to: ControlBody)),
     ToClient(OwnCameBackLogged),
-    ToViewers(client_connection.CameBackLogged),
+    ToViewers(unit_news.CameBackLogged),
   ]
 }
 
@@ -446,14 +446,14 @@ pub fn a_player_at_0_dies_ends_its_casts_and_sees_its_ghost_and_the_window_in_th
   assert death
     == [
       ToClient(OwnDeathState(dead: True)),
-      ToViewers(client_connection.Died),
+      ToViewers(unit_news.Died),
       ToClient(OwnCombatState(in_combat: False)),
-      ToViewers(client_connection.CombatState(in_combat: False)),
+      ToViewers(unit_news.CombatState(in_combat: False)),
       player_life.CombatLeft,
       player_life.TellMap(alive: False),
       EndCasts,
       ToClient(OwnDeathLogged),
-      ToViewers(client_connection.DeathLogged),
+      ToViewers(unit_news.DeathLogged),
       ToClient(GhostCreated(place: test_place())),
       ToClient(OwnResurrectionWindow(dead: True)),
       ToClient(ControlGiven(to: ControlGhost)),
@@ -622,7 +622,7 @@ pub fn wake_here_brings_the_player_back_at_full_health_and_full_shield_where_its
     )
   let assert [
     ToClient(OwnShield(shield: 448)),
-    ToViewers(client_connection.Shield(shield: 448)),
+    ToViewers(unit_news.Shield(shield: 448)),
     ToClient(OwnHealth(health: 735)),
     ..
   ] = later
@@ -897,7 +897,7 @@ pub fn a_modifier_of_the_maximum_health_raises_it_keeps_the_health_and_its_end_c
   assert effects
     == [
       player_life.ToClient(player_life.OwnHealth(health: 100)),
-      player_life.ToViewers(client_connection.Health(health: 100, dead: False)),
+      player_life.ToViewers(unit_news.Health(health: 100, dead: False)),
       player_life.CancelTimer(timer: TimerId(8)),
     ]
     as "the lowered health is written to the player and told to its viewers, and the full player's health clock stops"
@@ -979,7 +979,7 @@ pub fn a_creatures_strike_leaves_a_players_interrupt_armor_test() -> Nil {
 fn writes_armor(effect: player_life.Effect) -> Bool {
   case effect {
     ToClient(OwnInterruptArmor(..)) -> True
-    ToViewers(client_connection.InterruptArmor(..)) -> True
+    ToViewers(unit_news.InterruptArmor(..)) -> True
     ToClient(..) -> False
     ToViewers(..) -> False
     Answer(..)

@@ -22,7 +22,6 @@
 import cast_support as support
 import client_tables
 import fixture_tables
-import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
@@ -34,6 +33,7 @@ import genesis_prime/game/shown
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/target_mechanic
+import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 

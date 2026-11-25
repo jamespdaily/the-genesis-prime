@@ -28,7 +28,6 @@ import cast_support as support
 import class_resource_support
 import client_tables
 import fixture_tables
-import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
@@ -41,6 +40,7 @@ import genesis_prime/game/spell_plan.{
 }
 import genesis_prime/game/spend
 import genesis_prime/game/ticking.{Schedule, Ticks}
+import genesis_prime/game/unit_news.{CastFinished}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
 import genesis_prime/step.{type TimerId, ConnectionId, LogDebug}

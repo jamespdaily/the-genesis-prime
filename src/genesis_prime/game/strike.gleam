@@ -150,7 +150,6 @@
 ////   watcher's connection is told the news and the cast's 0x7f4 by two senders, which
 ////   no order holds; the live sitting checks it.
 
-import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
@@ -172,6 +171,7 @@ import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
   type Answered, type PlayerAnswered, type Tell,
 }
+import genesis_prime/game/unit_news.{type News}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/gap
 import genesis_prime/step.{

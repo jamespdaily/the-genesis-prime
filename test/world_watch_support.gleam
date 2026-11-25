@@ -6,14 +6,14 @@ import ask_support
 import cast_support
 import driven_time
 import genesis_prime/client_connection.{
-  type Message, type PeerNews, CreatureAppeared, ForStay, PeerNews, SentByMap,
-  SentByPeer,
+  type Message, ForStay, SentByMap, SentByPeer,
 }
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Key, Strike}
+import genesis_prime/game/unit_news.{type PeerNews, CreatureAppeared, PeerNews}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/server
 import genesis_prime/service
@@ -213,10 +213,8 @@ pub fn left_sight(
 ) -> Nil {
   next(received:, what:, wanted: fn(message) {
     case message {
-      ForStay(
-        sent: SentByPeer(PeerNews(news: client_connection.Removed, ..)),
-        ..,
-      ) -> Ok(Nil)
+      ForStay(sent: SentByPeer(PeerNews(news: unit_news.Removed, ..)), ..) ->
+        Ok(Nil)
       ForStay(..)
       | client_connection.SentBySessions(..)
       | client_connection.SentByChat(..) -> Error(Nil)
@@ -376,8 +374,7 @@ pub fn tally(
 /// Whether the message is a creature's removal from the connection's sight (0x355).
 pub fn is_removal(message: Message) -> Bool {
   case message {
-    ForStay(sent: SentByPeer(PeerNews(news: client_connection.Removed, ..)), ..) ->
-      True
+    ForStay(sent: SentByPeer(PeerNews(news: unit_news.Removed, ..)), ..) -> True
     ForStay(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> False

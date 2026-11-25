@@ -19,10 +19,10 @@
 ////   held once.
 
 import cast_support
-import genesis_prime/client_connection
 import genesis_prime/game/player_life.{
   type Life, OwnInterruptArmor, Regeneration, ToClient, ToViewers,
 }
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties.{
   type Changed, type Properties, type Source, Change, Changed,
 }
@@ -116,7 +116,7 @@ fn ended(
 fn told(armor armor: Int) -> List(player_life.Effect) {
   [
     ToClient(OwnInterruptArmor(armor:)),
-    ToViewers(client_connection.InterruptArmor(armor:)),
+    ToViewers(unit_news.InterruptArmor(armor:)),
   ]
 }
 

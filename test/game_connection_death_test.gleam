@@ -10,14 +10,14 @@ import fixture_tables
 import game_client
 import game_connection_support.{Appears}
 import genesis_prime/client_connection.{
-  type News, type Request, Appeared, AskMap, AskStore, FromMap, PeerNews,
-  TellMoved,
+  type Request, AskMap, AskStore, FromMap, TellMoved,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{type News, Appeared, PeerNews}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/combat_log.{CombatLog}
@@ -194,11 +194,11 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
     ]
     as "the ghost's movement to the client"
   let assert [
-    client_connection.Shield(..),
-    client_connection.Health(health: 0, dead: True),
-    client_connection.Died,
-    client_connection.CombatState(in_combat: False),
-    client_connection.DeathLogged,
+    unit_news.Shield(..),
+    unit_news.Health(health: 0, dead: True),
+    unit_news.Died,
+    unit_news.CombatState(in_combat: False),
+    unit_news.DeathLogged,
   ] = news_told(taken, 2)
     as "the viewer is told the body's death, 0x89a off and the log line, and no ghost"
   Nil
@@ -224,36 +224,36 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_for_a_unit_it_shows_and_n
     )
   }
   assert game_connection_support.decoded(
-      written(client_connection.Died),
+      written(unit_news.Died),
       0x088C,
       unit_death_state.decode,
     )
     == [UnitDeathState(unit_id: 9, dead: 1, unread_3: 0, health: 0)]
   assert game_connection_support.decoded(
-      written(client_connection.CameBack),
+      written(unit_news.CameBack),
       0x088C,
       unit_death_state.decode,
     )
     == [UnitDeathState(unit_id: 9, dead: 0, unread_3: 0, health: 0)]
     as "0x88c dead 0: the unit stands again"
   assert game_connection_support.decoded(
-      written(client_connection.DeathLogged),
+      written(unit_news.DeathLogged),
       0x0247,
       combat_log.decode,
     )
     == [CombatLog(entry: combat_log_entry.Death(CombatLogDeath(9)))]
   assert game_connection_support.decoded(
-      written(client_connection.CameBackLogged),
+      written(unit_news.CameBackLogged),
       0x0247,
       combat_log.decode,
     )
     == [CombatLog(entry: combat_log_entry.Resurrect(CombatLogResurrect(9)))]
   list.each(
     [
-      client_connection.Died,
-      client_connection.CameBack,
-      client_connection.DeathLogged,
-      client_connection.CameBackLogged,
+      unit_news.Died,
+      unit_news.CameBack,
+      unit_news.DeathLogged,
+      unit_news.CameBackLogged,
     ],
     fn(news) {
       let #(_, taken) =
@@ -356,7 +356,7 @@ pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_
     )
   let #(state, pressed) =
     game_connection_support.press_paralytic_surge(state:, client_cast_id: 1)
-  let assert [client_connection.CastStarted(start:)] = news_told(pressed, 2)
+  let assert [unit_news.CastStarted(start:)] = news_told(pressed, 2)
     as "the viewer is told the cast's start; its round waits on the Beast's answer"
   let assert [#(40, key)] = game_connection_support.strikes_told(pressed)
   let #(state, taken) = game_connection_support.killed(state)
@@ -371,7 +371,7 @@ pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_
     as "the client does not end its own casts when it dies: the server's 0x7fe ends the live cast"
   assert list.contains(
     news_told(taken, 2),
-    client_connection.CastFinished(cast_id: start.cast_id),
+    unit_news.CastFinished(cast_id: start.cast_id),
   )
     as "and the viewer told its start is told its finish"
   let #(_, late) =
@@ -666,10 +666,10 @@ pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies
     ]
   assert news_told(taken, 2)
     == [
-      client_connection.Health(health: 736, dead: False),
-      client_connection.Shield(shield: 450),
-      client_connection.CameBack,
-      client_connection.CameBackLogged,
+      unit_news.Health(health: 736, dead: False),
+      unit_news.Shield(shield: 450),
+      unit_news.CameBack,
+      unit_news.CameBackLogged,
     ]
     as "the viewer is told the body's full health and shield, its coming back and the log line"
   let #(_, struck) =
@@ -702,11 +702,11 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
     as "the coming back as Wake Here writes it, where the body lies"
   assert news_told(chosen, 2)
     == [
-      client_connection.Health(health: 736, dead: False),
-      client_connection.Shield(shield: 450),
-      client_connection.CameBack,
-      client_connection.CameBackLogged,
-      client_connection.Removed,
+      unit_news.Health(health: 736, dead: False),
+      unit_news.Shield(shield: 450),
+      unit_news.CameBack,
+      unit_news.CameBackLogged,
+      unit_news.Removed,
     ]
     as "the old viewers are told the coming back, then the unit's 0x355"
   assert game_connection_support.ask_request(chosen)

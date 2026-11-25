@@ -12,10 +12,10 @@
 
 import crowd_control_support
 import fixture_tables
-import genesis_prime/client_connection
 import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{Offence}
 import genesis_prime/game/strike_tell.{type ControlTell, Key, Strike}
+import genesis_prime/game/unit_news
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Fear, Polymorph, Root, Snare, Stun, Tether,
 }
@@ -184,7 +184,7 @@ fn ended_in(
   #(
     list.filter_map(effects, fn(effect) {
       case effect {
-        creature_control.ToViewers(client_connection.CrowdControlEnded(
+        creature_control.ToViewers(unit_news.CrowdControlEnded(
           state:,
           cast_id:,
           instance_id:,
