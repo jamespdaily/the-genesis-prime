@@ -34,6 +34,7 @@
 //// Gaps: no scene of the run throws a creature, so `interrupt` counts only what a
 //// walker did not mark as its own state; a cancel with no sign near it is `unexplained`.
 
+import genesis_prime/client_connection.{type StaySent}
 import genesis_prime/load_deadline.{type Deadline}
 import genesis_prime/load_sample
 import gleam/dict.{type Dict}
@@ -176,6 +177,20 @@ fn in_round(answer answer: Answer, round round: Deadline) -> Bool {
     load_deadline.Cancelled(at_us:) | load_deadline.Fired(at_us:) ->
       answer.arrived_us <= at_us
   }
+}
+
+/// How many strikes of a walker's own are owed an answer: those made at least
+/// `strike_tell.deadline_ms` before `ended_us`, and at least 1. `made_at_us` is when each
+/// was made.
+pub fn owed(made_at_us made_at_us: List(Int), ended_us ended_us: Int) -> Int {
+  let _ = #(made_at_us, ended_us)
+  0
+}
+
+/// Whether what a walker was sent is a creature's answer to a strike of its own.
+pub fn is_answer_to_strike(sent sent: StaySent) -> Bool {
+  let _ = sent
+  False
 }
 
 /// How a round closed.

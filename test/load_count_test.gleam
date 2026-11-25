@@ -20,8 +20,11 @@
 ////   z is -560.18798828125 (World 3460, WorldLocation2 row 51596).
 
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type StaySent, SentByMap, SentByPeer}
+import genesis_prime/client_connection.{
+  type StaySent, SentByFoe, SentByMap, SentByPeer, SentByTarget,
+}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{PeerNews, Removed}
 import genesis_prime/load_deadline.{type Closure, type Deadline, Deadline}
 import genesis_prime/load_judged.{type Judged, Judged, Respawns}
@@ -160,6 +163,15 @@ pub fn a_round_is_lost_late_or_in_by_its_answers_times_against_the_armed_deadlin
     #(
       "sent before the deadline and not in the round: the creature had it after the deadline closed the round",
       [answer(creature:, sent_us: 900_000, arrived_us: 1_100_000)],
+      load_deadline.Fired(at_us: 1_000_000),
+      Rounds(
+        ..answered(one(Closed(..load_round.no_closures, deadline: 1))),
+        lost: 1,
+      ),
+    ),
+    #(
+      "sent before the deadline and stamped arrived before it closed the round: the deadline closed it without the answer, so it is lost whatever the walker stamped",
+      [answer(creature:, sent_us: 900_000, arrived_us: 950_000)],
       load_deadline.Fired(at_us: 1_000_000),
       Rounds(
         ..answered(one(Closed(..load_round.no_closures, deadline: 1))),
@@ -594,4 +606,94 @@ pub fn a_death_the_creature_tells_is_stamped_for_the_gate_test() -> Nil {
     )
   assert gaps.deaths_at_us == [4000]
     as "a creature's Died news is a death, stamped when the walker was sent it"
+}
+
+pub fn a_round_the_deadline_closed_has_lost_every_answer_sent_before_it_fell_due_whatever_the_walker_stamped_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Three creatures, each with one round armed at 0 and due at 1,000,000.
+  let held_by_the_map = creature()
+  let sent_after = creature()
+  let cancelled = creature()
+  let rounds =
+    load_round.rounds_of(
+      answers: [
+        // Sent before the deadline fell due and stamped arrived before the round's
+        // closure, as a walker stamps it just before a send to the map; the creature
+        // has it after the deadline closed the round.
+        answer(creature: held_by_the_map, sent_us: 900_000, arrived_us: 950_000),
+        answer(creature: sent_after, sent_us: 1_100_000, arrived_us: 1_100_000),
+        answer(creature: cancelled, sent_us: 400_000, arrived_us: 410_000),
+      ],
+      strikers: dict.from_list([
+        #(held_by_the_map, 7),
+        #(sent_after, 8),
+        #(cancelled, 9),
+      ]),
+      marks: [],
+      deadlines: [
+        round(
+          creature: held_by_the_map,
+          closure: load_deadline.Fired(at_us: 1_000_000),
+        ),
+        round(
+          creature: sent_after,
+          closure: load_deadline.Fired(at_us: 1_000_000),
+        ),
+        round(
+          creature: cancelled,
+          closure: load_deadline.Cancelled(at_us: 420_000),
+        ),
+      ],
+    )
+  assert rounds.lost == 1
+    as "the answer sent before the deadline fell due is lost, whatever it was stamped"
+  assert rounds.late == 1 as "the answer sent after it is late"
+  assert rounds.closed
+    == Closed(..load_round.no_closures, deadline: 2, answer: 1)
+    as "the cancelled round is closed by its answer, which it has"
+}
+
+pub fn a_strike_the_walkers_made_a_deadline_before_the_end_is_owed_an_answer_and_a_later_one_is_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The deadline is `strike_tell.deadline_ms` = 1,000 ms, 1,000,000 microseconds.
+  let rows = [
+    #("no strike made: at least 1", [], 10_000_000, 1),
+    #(
+      "one strike made exactly a deadline before the end",
+      [9_000_000],
+      10_000_000,
+      1,
+    ),
+    #(
+      "a strike made after that is not owed, and the count is at least 1",
+      [9_000_001],
+      10_000_000,
+      1,
+    ),
+    #(
+      "three early and two within the deadline of the end",
+      [100_000, 4_000_000, 9_000_000, 9_500_000, 10_000_000],
+      10_000_000,
+      3,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, made_at_us, ended_us, owed) = row
+    assert load_round.owed(made_at_us:, ended_us:) == owed as reason
+  })
+  let answered =
+    strike_tell.Answered(
+      key: strike_tell.Key(
+        cast_id: 1,
+        occasion: strike_tell.AtGo(phase: 0),
+        unit_id: 7,
+      ),
+      outcome: strike_tell.Refused(why: strike_tell.Dead),
+    )
+  assert load_round.is_answer_to_strike(sent: SentByTarget(answered:))
+    as "a creature's answer to a walker's strike is heard"
+  assert !load_round.is_answer_to_strike(
+    sent: SentByFoe(fight: strike_tell.Released(unit_id: 7)),
+  )
+    as "a creature's release of the walker is not"
 }

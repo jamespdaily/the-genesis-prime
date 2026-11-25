@@ -124,3 +124,21 @@ pub fn a_run_that_judged_nothing_or_holds_not_a_condition_fails_as_a_whole_test(
     assert told(verdict:).0 == passes as what
   })
 }
+
+pub fn a_run_that_lost_an_answer_to_the_deadline_fails_as_a_whole_and_one_that_lost_none_holds_its_condition_test() -> Nil {
+  use <- owned_test.run(5000)
+  let seen = Judged(event: StrikeRounds, count: 4, minimum: 1)
+  let none_lost = load_judged.nothing_lost(lost: 0)
+  assert none_lost.held as "no answer lost holds the condition"
+  assert none_lost.said == "no answer was lost to the deadline" as "and says so"
+  let three_lost = load_judged.nothing_lost(lost: 3)
+  assert !three_lost.held as "three answers lost do not hold it"
+  assert string.contains(three_lost.said, "3")
+    as "and the sentence says how many"
+  let held = load_judged.judge(judged: [seen], conditions: [none_lost])
+  assert told(verdict: held).0 as "every count enough and none lost passes"
+  let lost = load_judged.judge(judged: [seen], conditions: [three_lost])
+  assert !told(verdict: lost).0 as "three lost fails the run as a whole"
+  assert string.contains(lost.summary, three_lost.said)
+    as "and the summary names the lost count"
+}

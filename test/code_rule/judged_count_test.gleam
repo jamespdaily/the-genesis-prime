@@ -21,11 +21,16 @@ const fight_path = "dev/genesis_prime/load_fight.gleam"
 
 const moves_path = "dev/genesis_prime/load_moves.gleam"
 
-/// Where each gate event is judged, by the variant's name: the fight run's three and the
-/// movement run's one.
+/// Where each gate event is judged, by the variant's name, and which of `load_judged`'s
+/// conditions the file calls: the fight run's four events and its condition that no answer
+/// was lost, and the movement run's one event.
 const gates = [
-  #(fight_path, ["StrikeRounds", "StrikeAnswers", "Respawns"]),
-  #(moves_path, ["MovesRead"]),
+  #(
+    fight_path,
+    ["StrikeRounds", "StrikeAnswers", "StrikesAnswered", "Respawns"],
+    ["nothing_lost"],
+  ),
+  #(moves_path, ["MovesRead"], []),
 ]
 
 /// The printed name of each event, read from the shared function.
@@ -36,8 +41,9 @@ fn printed() -> List(String) {
 fn lines_of(
   file file: SourceFile,
   expected expected: List(String),
+  conditions conditions: List(String),
 ) -> List(Int) {
-  judged_count.breaches(file:, expected:, printed: printed())
+  judged_count.breaches(file:, expected:, conditions:, printed: printed())
   |> planted.lines
 }
 
@@ -171,7 +177,7 @@ pub fn every_gate_line_of_the_load_runs_calls_the_judged_count_test() -> Nil {
   ]
   list.each(rows, fn(row) {
     let #(reason, file, expected, lines) = row
-    assert lines_of(file:, expected:) == lines as reason
+    assert lines_of(file:, expected:, conditions: []) == lines as reason
   })
   // The events the rule expects are the events the shared module has.
   let variants =
@@ -188,10 +194,29 @@ pub fn every_gate_line_of_the_load_runs_calls_the_judged_count_test() -> Nil {
     as "every event of the shared module is a gate of one of the runs"
   assert list.length(load_judged.all()) == list.length(variants)
     as "the shared module's list of events holds each variant, so each has its printed name checked"
+  let planted_condition =
+    planted.file(path: fight_path, lines: [
+      "pub fn report() {",
+      "  let judged = load_judged.judge(judged: [], conditions: [load_judged.nothing_lost(lost: 0)])",
+      required,
+      "}",
+    ])
+  assert lines_of(file: planted_condition, expected: [], conditions: [
+      "nothing_lost",
+    ])
+    == []
+    as "a condition of the file that is called through load_judged is held"
+  assert lines_of(
+      file: run(events: ["Respawns"], require: required, extra: []),
+      expected: ["Respawns"],
+      conditions: ["nothing_lost"],
+    )
+    == [1]
+    as "a condition the file never calls is a breach, at the file's start"
   list.each(gates, fn(gate) {
     let assert [file] =
       repository.sources(["dev"])
       |> list.filter(fn(file) { file.path == gate.0 })
-    assert lines_of(file:, expected: gate.1) == [] as gate.0
+    assert lines_of(file:, expected: gate.1, conditions: gate.2) == [] as gate.0
   })
 }

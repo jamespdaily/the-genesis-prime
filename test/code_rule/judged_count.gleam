@@ -29,8 +29,10 @@ import gleam/string
 pub fn breaches(
   file file: SourceFile,
   expected expected: List(String),
+  conditions conditions: List(String),
   printed printed: List(String),
 ) -> List(Breach) {
+  let _ = conditions
   let module = syntax.parse(file)
   let judged = judged_events(module)
   let not_judged =
