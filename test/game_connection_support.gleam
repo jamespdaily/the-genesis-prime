@@ -2145,6 +2145,53 @@ pub fn medic_with_beast_in_world(
   feed(state: medic_in(tables:), event: beast_appears(unit_id: 40)).0
 }
 
+/// Runs the body on the Medic's tables with Paralytic Surge given the client's Fluff row
+/// 66766 (type 17, flags 2: until removed, aimed at the units the area strikes). Kept
+/// edit: the three type 17 rows of this kind (66766, 67116, 68647) belong to deprecated
+/// spells (34011, 34031, 34620) that no starting ability reaches, so no level 1 press
+/// leaves a lasting effect on a creature.
+pub fn with_a_lingering_node_row(body body: fn(store_tables.Tables) -> a) -> a {
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 66_766,
+    id: 99_911,
+    with: [
+      #("spellId", planted_table.Integer(42_352)),
+      #("orderIndex", planted_table.Integer(2)),
+    ],
+    body:,
+  )
+}
+
+/// The Medic of `with_a_lingering_node_row`'s tables with the Beast 40 in the world and the
+/// connection 2 watching, after a Paralytic Surge pressed and landed: the Beast holds a
+/// node of the cast, which lingers with no 0x7fe. The state, the step of the landing and
+/// the cast's id as the viewer was told it.
+pub fn medic_with_a_lingering_node_on_beast(
+  tables tables: store_tables.Tables,
+) -> #(game_connection.State, ConnectionStep(Request), Int) {
+  let state =
+    watched_by(state: medic_with_beast_in_world(tables:), viewers: [2])
+  let #(state, pressed) = press_paralytic_surge(state:, client_cast_id: 1)
+  let assert [unit_news.CastStarted(start:)] =
+    news_told_to_viewer_2(taken: pressed)
+  let assert [#(40, key)] = strikes_told(pressed)
+  let #(state, landed) = feed(state:, event: landed(key:))
+  #(state, landed, start.cast_id)
+}
+
+/// The news the connection 2, a watching viewer, is told in a step, in order.
+pub fn news_told_to_viewer_2(
+  taken taken: ConnectionStep(Request),
+) -> List(News) {
+  list.filter_map(peer_tells(taken), fn(tell) {
+    case tell.0 == 2 {
+      True -> Ok({ tell.1 }.news)
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// The 0x262 news of a Beast, as its process sends it, standing 3 m ahead of the
 /// Medic, who stands at the place the tests' character is saved at and faces -z.
 pub fn beast_appears(

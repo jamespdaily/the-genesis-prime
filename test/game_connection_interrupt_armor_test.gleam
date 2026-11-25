@@ -87,19 +87,9 @@ fn armor_of(change change: unit_stat_change.UnitStatChange) -> List(Written) {
   }
 }
 
-/// The news the viewer 2 is told in a step, in order.
-fn told_to_the_viewer(taken taken: ConnectionStep(Request)) -> List(News) {
-  list.filter_map(support.peer_tells(taken), fn(tell) {
-    case tell.0 == 2 {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
-}
-
 /// The armor news among what a viewer is told: the maximum's entry and the armor.
 fn armor_news(steps steps: List(ConnectionStep(Request))) -> List(News) {
-  list.flat_map(steps, fn(taken) { told_to_the_viewer(taken:) })
+  list.flat_map(steps, fn(taken) { support.news_told_to_viewer_2(taken:) })
   |> list.filter(fn(news) {
     list.contains(
       [

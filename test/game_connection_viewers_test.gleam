@@ -3260,10 +3260,12 @@ fn removal_wrote(frames frames: List(Frame)) -> List(RemovalWrote) {
 }
 
 /// How a unit's removal reaches the viewer: as the owner's `Removed` news, as the map's
-/// `Gone`, or as a call of the removal function with the casts it is to keep.
+/// `Gone`, as the map's `ObjectsUnseen`, or as a call of the removal function with the
+/// casts it is to keep.
 type Remover {
   ByRemovedNews
   ByMapsGone
+  ByObjectsUnseen
   Directly(keeping: List(Int))
 }
 
@@ -3281,6 +3283,7 @@ fn remover_name(remover: Remover) -> String {
   case remover {
     ByRemovedNews -> "by a removal news"
     ByMapsGone -> "by the map's gone"
+    ByObjectsUnseen -> "by the map's objects unseen"
     Directly(keeping:) ->
       "by the function, keeping "
       <> string.join(list.map(keeping, int.to_string), ", ")
@@ -3349,8 +3352,8 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
   // propertyFlags 0x100 when its caster's unit is removed and keeps no other, so the viewer
   // writes the 0x7fe of each cast of the unit it started, in cast id order, before the
   // unit's 0x355, except the casts a held change keeps, which it holds with no caster
-  // instead. A removal news keeps those; the map's `Gone` ends the held changes too, so it
-  // keeps none. A cast an ally listed is never finished by the unit's frames. Each row: the
+  // instead. A removal news keeps those; the map's `Gone` and `ObjectsUnseen` end the held
+  // changes too, so they keep none. A cast an ally listed is never finished by the unit's frames. Each row: the
   // unit as its client holds it, how it is removed, what is written, and the casts still
   // held (cast ids 100 to 103) and orphaned after. The rows of the two callers are the
   // output of the arms before the removal was one function.
@@ -3366,7 +3369,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "a shown unit with no cast is written its 0x355 only, by each caller",
       casts,
-      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
       [UnitRemoved(unit)],
       [],
       [],
@@ -3374,7 +3377,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "two written casts are finished in cast id order before the 0x355, by each caller",
       two_written,
-      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
       [CastFinish(101), CastFinish(102), UnitRemoved(unit)],
       [],
       [],
@@ -3390,7 +3393,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "the map's gone finishes every written cast, the kept one too, and holds none",
       one_kept,
-      [ByMapsGone, Directly(keeping: [])],
+      [ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
       [CastFinish(100), CastFinish(101), UnitRemoved(unit)],
       [],
       [],
@@ -3398,7 +3401,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "a cast an ally listed is not finished by the unit, and the unit no longer holds it",
       one_borrowed,
-      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
       [CastFinish(101), UnitRemoved(unit)],
       [],
       [],
@@ -3406,7 +3409,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "a unit that is not shown writes nothing",
       not_shown,
-      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
       [],
       [],
       [],
@@ -3439,6 +3442,17 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
               now:,
               entered:,
               notice: map.Gone(unit_id: unit),
+            )
+            as reason
+          #(session, effects, [])
+        }
+        ByObjectsUnseen -> {
+          let assert client_connection.Continue(session:, effects:) =
+            viewers.map_sent(
+              session:,
+              now:,
+              entered:,
+              notice: map.ObjectsUnseen(unit_ids: [unit]),
             )
             as reason
           #(session, effects, [])
@@ -3493,4 +3507,48 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
       as "the player is still in the world"
     assert set.contains(after.gone, unit)
   })
+  // The player's own cast holds a node on the Beast 40 that lingers with no 0x7fe: each
+  // caller that ends the Beast writes the 0x355 and then the cast's 0x7fe the cast rule
+  // asks (`ended`), as the client drops the node with the 0x355 and the lingering cast
+  // then ends with its 0x7fe (`cast.target_node_end`, `0x1404550d0`), and tells the viewer
+  // of the cast its finish. The order of the held changes' finishes among them is the
+  // job of `a_caster_leaving_the_sight_of_a_player_that_holds_its_kept_change_is_not_finished_on_the_players_client_test`.
+  use tables <- game_connection_support.with_a_lingering_node_row()
+  list.each(
+    [
+      #(
+        "by a removal news",
+        game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+          unit_id: 40,
+          news: Removed,
+        )),
+      ),
+      #(
+        "by the map's gone",
+        game_connection_support.sent_by_the_map(map.Gone(unit_id: 40)),
+      ),
+      #(
+        "by the map's objects unseen",
+        game_connection_support.sent_by_the_map(
+          map.ObjectsUnseen(unit_ids: [40]),
+        ),
+      ),
+    ],
+    fn(row) {
+      let #(reason, event) = row
+      let #(state, _, cast_id) =
+        game_connection_support.medic_with_a_lingering_node_on_beast(tables)
+      let #(_, removed) = game_connection_support.feed(state, event)
+      assert game_connection_support.written_ids(removed) == [0x0355, 0x07FE]
+        as {
+          reason
+          <> ": the unit's 0x355, then the 0x7fe of the lingering cast its nodes left"
+        }
+      assert list.contains(
+        game_connection_support.news_told_to_viewer_2(taken: removed),
+        CastFinished(cast_id:),
+      )
+        as { reason <> ": the viewer told the cast's start is told its finish" }
+    },
+  )
 }

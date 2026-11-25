@@ -115,18 +115,6 @@ fn shields(taken taken: ConnectionStep(Request)) -> List(Int) {
   )
 }
 
-/// The news the viewer 2 is told in the step, in order.
-fn told_to_the_viewer(
-  taken taken: ConnectionStep(Request),
-) -> List(unit_news.News) {
-  list.filter_map(connection_support.peer_tells(taken), fn(tell) {
-    case tell.0 == 2 {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
-}
-
 /// The heal description amount the step's 0x7f4 frames carry for Spell4Effects 228914.
 fn described_heals(taken taken: ConnectionStep(Request)) -> List(Int) {
   list.filter(
@@ -203,7 +191,10 @@ pub fn a_struck_medic_pressing_energize_sees_the_heal_and_its_shield_rise_and_so
   }
   assert healed == [expected]
     as "the shield rises by the amount, capped at 450: one 0x938 to the Medic"
-  let told = list.flat_map(landed, fn(taken) { told_to_the_viewer(taken:) })
+  let told =
+    list.flat_map(landed, fn(taken) {
+      connection_support.news_told_to_viewer_2(taken:)
+    })
   assert list.count(told, fn(news) {
       news == unit_news.Shield(shield: expected)
     })
@@ -343,7 +334,10 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
   assert list.flat_map(landed, fn(taken) { connection_support.healths(taken:) })
     == [before + 40]
     as "the health rises by 40: one 0x92f to the Medic"
-  let told = list.flat_map(landed, fn(taken) { told_to_the_viewer(taken:) })
+  let told =
+    list.flat_map(landed, fn(taken) {
+      connection_support.news_told_to_viewer_2(taken:)
+    })
   assert list.count(told, fn(news) {
       news == unit_news.Health(health: before + 40, dead: False)
     })
