@@ -1504,8 +1504,10 @@ pub fn admitted(
     running(state:, unit_id:, life:),
     CreatureEnded,
   ))
-  let relay.Kind(destination: relay.PlayersCurrentStay, ..) =
-    relay.kind_of(payload:)
+  let relay.Kind(
+    destination: relay.PlayersCurrentStay,
+    source: relay.NoSourceCheck,
+  ) = relay.kind_of(payload:)
   case in_current_stay(state:, connection: to, stay:) {
     True -> Ok(Delivery(to:, stay:, payload:))
     False -> Error(DestinationRefused)
