@@ -1827,7 +1827,8 @@ fn creature_ended(
       )
     }
     Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:, ring: [])
-    Ok(Respawning(..)) -> started_for_those_who_see(state:, spawn:, ring: [])
+    Ok(Respawning(..)) ->
+      started_for_those_who_see(state:, spawn:, ring: ring_of(state:, spawn:))
     Ok(Releasing(unit_id:, wait_ms:, ..)) ->
       waiting_for_restart(state:, spawn:, unit_id:, after_ms: wait_ms)
     Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
@@ -1893,16 +1894,20 @@ fn restart_due(
 
 /// A spawn whose creature a release can end, with that creature's unit and life.
 type Releasable {
-  Releasable(
+  /// A live creature: it is told `Retire`, and its relations stay as they were.
+  LiveReleasable(
     spawn: SpawnId,
     unit_id: Int,
     life: Int,
     relations: Dict(ConnectionId, Relation),
   )
+  /// A creature that expired and has not ended: it stops by itself, so it is told
+  /// nothing, and it holds no relations.
+  ExpiredReleasable(spawn: SpawnId, unit_id: Int, life: Int)
 }
 
-/// The spawn's creature when a release can end it: live, and not one of a fight's
-/// run spawns.
+/// The spawn's creature when a release can end it: live or expired, and not one of a
+/// fight's run spawns.
 fn releasable(
   state state: State,
   spawn spawn: SpawnId,
@@ -1913,9 +1918,10 @@ fn releasable(
   )
   case dict.get(state.spawns, spawn) {
     Ok(Live(unit_id:, life:, relations:, ..)) ->
-      Ok(Releasable(spawn:, unit_id:, life:, relations:))
+      Ok(LiveReleasable(spawn:, unit_id:, life:, relations:))
+    Ok(Respawning(unit_id:, life:)) ->
+      Ok(ExpiredReleasable(spawn:, unit_id:, life:))
     Ok(Retiring(..))
-    | Ok(Respawning(..))
     | Ok(Releasing(..))
     | Ok(WaitingForRestart)
     | Ok(Failed)
@@ -1924,14 +1930,15 @@ fn releasable(
 }
 
 /// A player's use released the unit `unit_id` (`Released`). The release goes
-/// ahead only when the unit's own spawn is a live creature or a static object not
-/// yet released; any other spawn (a retiring or releasing creature, a second
+/// ahead only when the unit's own spawn is a live creature, a creature that expired
+/// and has not ended, or a static object not yet released; any other spawn (a retiring or releasing creature, a second
 /// release of an object, a unit the map no longer holds) changes nothing. Then the
 /// unit's spawn and the spawns that stand at its x and z (`spawn.captives`, found
 /// when the map was built) go, each by its kind. A live creature's spawn becomes
 /// `Releasing` with the release time as its wait and its creature is told
 /// `Retire`, as the sweep tells an idle one; `creature_ended` then sends everyone
-/// `Gone`. A static object not yet released joins `released_objects`, every
+/// `Gone`. One that expired becomes `Releasing` with no relations and is told nothing, since it
+/// stops by itself, and `creature_ended` does the same. A static object not yet released joins `released_objects`, every
 /// player's objects are decided again so each who saw it is sent `ObjectsUnseen`,
 /// and its timer starts for the release time. A captive of neither kind, or
 /// already released, is left as it is.
@@ -1942,9 +1949,8 @@ fn released(
 ) -> #(State, ServiceStep(Outgoing)) {
   let held = fn(spawn) {
     case dict.get(state.spawns, spawn) {
-      Ok(Live(..)) -> True
+      Ok(Live(..)) | Ok(Respawning(..)) -> True
       Ok(Retiring(..))
-      | Ok(Respawning(..))
       | Ok(Releasing(..))
       | Ok(WaitingForRestart)
       | Ok(Failed) -> False
@@ -1975,7 +1981,10 @@ fn released(
                 unit_id: found.unit_id,
                 life: found.life,
                 wait_ms:,
-                relations: found.relations,
+                relations: case found {
+                  LiveReleasable(relations:, ..) -> relations
+                  ExpiredReleasable(..) -> dict.new()
+                },
               ),
             )
           }),
@@ -1993,13 +2002,12 @@ fn released(
         state,
         Effects(
           list.flatten([
-            list.map(creatures, fn(found) {
-              tell_creature(
-                state:,
-                unit_id: found.unit_id,
-                life: found.life,
-                message: Retire,
-              )
+            list.filter_map(creatures, fn(found) {
+              case found {
+                LiveReleasable(unit_id:, life:, ..) ->
+                  Ok(tell_creature(state:, unit_id:, life:, message: Retire))
+                ExpiredReleasable(..) -> Error(Nil)
+              }
             }),
             unseen,
             list.map(objects, fn(spawn) {
