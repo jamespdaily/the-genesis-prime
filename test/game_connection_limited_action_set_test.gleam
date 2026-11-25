@@ -89,13 +89,47 @@ pub fn a_0xb1_in_the_world_is_answered_0x19d_then_0xb2_and_kept_in_entered_test(
     as "a player who has saved nothing holds the class's bar"
   let #(state, taken, frames) = sent(state:, body: limited.hex(limited.save_a))
   assert list.map(frames, fn(frame) { frame.message_id })
-    == [0x019D, 0x01A0, 0x0169, 0x00B2]
-    as "opcode.0xb2: the builder redraws from the set, so the set comes first, then the tiers and the points"
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
+    as "opcode.0xb2: the builder redraws from the set, so the set comes first, then the tiers, the points and the AMPs"
   assert support.asked(taken) == None as "nothing waits on the store"
   assert held_ids(state:) == limited.ids_a
     as "the set of the first save is held"
   let #(state, _, _) = sent(state:, body: limited.hex(limited.save_b))
   assert held_ids(state:) == limited.ids_b as "the second save replaces it"
+  // A level 10 Spellslinger picks the chain of category 1 and its tier 1 AMP (7 of 7 power):
+  // the answer is in order and the connection holds the AMPs, which a refusal sends again.
+  let state = in_world_at_level(level: 10)
+  let #(state, taken, frames) =
+    sent(
+      state:,
+      body: limited.amps_body(class_id: limited.spellslinger, amp_ids: [
+        259,
+        220,
+        221,
+        222,
+      ]),
+    )
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
+    as "the AMP list comes after the points and before 0xB2"
+  assert limited.amp_lists_in(frames:) == [#(0, [220, 221, 222, 259])]
+    as "the list, ascending"
+  assert support.asked(taken) == None as "nothing waits on the store"
+  assert held_amps(state:) == [220, 221, 222, 259]
+    as "the AMPs are held in entered"
+}
+
+/// The AMP ids the connection holds in set 0, read from the 0x01A3 of a refusal: a save of
+/// 20718 in slot 4, which opens at level 5, is refused at every level the tests use.
+fn held_amps(state state: game_connection.State) -> List(Int) {
+  let #(_, _, frames) =
+    sent(
+      state:,
+      body: limited.body(ids: [0, 0, 0, 0, 20_718, 0, 0, 0, 0, 0, 0, 0], set: 0),
+    )
+  let assert [#(0, ids)] = limited.amp_lists_in(frames:)
+    as "a refusal carries the held list of set 0"
+  ids
 }
 
 /// The tiers above 1 the 0x01A0 among frames holds in set 0, as (Spell4Base, tier).
@@ -113,7 +147,7 @@ pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_canno
   let #(state, taken, frames) =
     sent(state:, body: limited.tiering([#(27_638, 2)]))
   assert list.map(frames, fn(frame) { frame.message_id })
-    == [0x019D, 0x01A0, 0x0169, 0x00B2]
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
     as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book"
   assert limited.the_action_set(frames:).result == 1
   assert raised_in(frames:) == [#(27_638, 2), #(52_215, 2)]
@@ -123,8 +157,9 @@ pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_canno
   assert support.asked(taken) == None as "nothing waits on the store"
   let #(state, taken, frames) =
     sent(state:, body: limited.tiering([#(20_684, 2)]))
-  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
-    as "a refusal is the held set and 0xB2 only: no 0x01A0 and no 0x0169"
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A3, 0x00B2]
+    as "a refusal is the held set, the held AMPs and 0xB2 only: no 0x01A0 and no 0x0169"
   assert limited.the_action_set(frames:).result == 42
     as "Charged Shot's tier 2 costs 1 point and the one point of level 10 is spent on Quick Draw"
   assert limited.the_answer_bit(frames:) == 0
@@ -147,7 +182,8 @@ pub fn a_refused_save_is_answered_with_the_held_bar_and_the_players_life_and_lev
       state:,
       body: limited.body(ids: [0, 0, 0, 0, 20_718, 0, 0, 0, 0, 0, 0, 0], set: 0),
     )
-  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A3, 0x00B2]
   assert limited.the_action_set(frames:).result == 2
     as "slot 4 opens at level 5"
   assert limited.the_answer_bit(frames:) == 0
@@ -185,6 +221,33 @@ pub fn a_refused_save_is_answered_with_the_held_bar_and_the_players_life_and_lev
     )
   assert result_of(state: risen, body: limited.hex(limited.save_a)) == 1
     as "after the rise slot 3 is open and the level 4 ability is in the book"
+  // A Stalker of level 9 picks AMP 770 (cost 1): the level gives no power, so the pick is refused
+  // 31 with the held bar and the held list sent again; after the rise to level 10 (7 power) the
+  // same body is accepted.
+  let stalker = 5
+  let pick = limited.amps_body(class_id: stalker, amp_ids: [770])
+  let at_nine =
+    ability_book_support.entered_at(
+      class_id: stalker,
+      level: 9,
+      saved_experience: ability_book_support.experience_of(level: 10) - 1,
+    )
+  let #(_, taken, frames) = sent(state: at_nine, body: pick)
+  assert limited.the_action_set(frames:).result == 31
+    as "the total power at level 9 is 0 (GameFormula 942)"
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A3, 0x00B2]
+    as "the held bar, the held list and 0xB2"
+  assert limited.amp_lists_in(frames:) == [#(0, [])]
+    as "nothing is held, so the list is empty"
+  assert !support.stops(taken)
+  let #(risen, _) =
+    ability_book_support.level_up(class_id: stalker, from: 9, to: 10)
+  let #(risen, _, frames) = sent(state: risen, body: pick)
+  assert limited.the_action_set(frames:).result == 1
+    as "after the rise the level gives 7 power: the connection reads the live level"
+  assert limited.amp_lists_in(frames:) == [#(0, [770])]
+  assert held_amps(state: risen) == [770]
 }
 
 pub fn a_0xb1_the_decoder_refuses_ends_the_connection_test() -> Nil {
@@ -265,10 +328,29 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
       ],
       amps: [],
     )
+  // A level 10 Stalker who picked the Assault chain and 863 holds the class's own bar saved and
+  // the four AMPs of set 0 (the store writes none yet).
+  let stalker = 5
+  let after_amps =
+    sent(
+      state: ability_book_support.entered_at(
+        class_id: stalker,
+        level: 10,
+        saved_experience: ability_book_support.experience_of(level: 10),
+      ),
+      body: limited.amps_body(class_id: stalker, amp_ids: [770, 771, 772, 863]),
+    ).0
+  let with_amps =
+    limited.with_rows(
+      slots: limited.rows_of(set: 0, ids: limited.own_bar(class_id: stalker)),
+      tiers: [],
+      amps: [#(0, 770), #(0, 771), #(0, 772), #(0, 863)],
+    )
   list.each(
     [
       #(after_a, slots_of_set_0(ids: limited.ids_a), "a saved bar"),
       #(after_tier, with_tier, "a saved bar and a tier"),
+      #(after_amps, with_amps, "a saved bar and four AMPs"),
     ],
     fn(scene) {
       let #(held, expected, what) = scene
@@ -282,6 +364,8 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
   let #(_, taken) = timer_save(state: in_world_at_level(level: 10))
   assert action_sets_asked(taken:).tiers == []
     as "(f) a player who bought nothing carries no tier row"
+  assert action_sets_asked(taken:).amps == []
+    as "(f) a player who picked nothing carries no AMP row"
   let #(returned, _, _) =
     sent(state: after_tier, body: limited.tiering([#(27_638, 1)]))
   assert action_sets_asked(taken: timer_save(state: returned).1)
@@ -377,7 +461,7 @@ pub fn a_refused_save_leaves_what_the_next_place_save_carries_unchanged_test() -
   assert list.map(connection_support.written(taken:), fn(frame) {
       frame.message_id
     })
-    == [0x019D, 0x01A0, 0x0169, 0x00B2]
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
     as "the 0xB1 that waited is answered after the save"
   assert action_sets_asked(taken: timer_save(state:).1)
     == slots_of_set_0(ids: limited.ids_b)

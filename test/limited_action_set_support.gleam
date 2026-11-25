@@ -13,6 +13,7 @@ import genesis_prime/game/amp_spec
 import genesis_prime/game/limited_action_set.{type Effect, Log, Send}
 import genesis_prime/game/spell_tier
 import genesis_prime/message/action_set.{type ActionSet}
+import genesis_prime/message/action_set_amps
 import genesis_prime/message/action_set_saved
 import genesis_prime/step.{type LogLevel}
 import genesis_prime/store
@@ -213,19 +214,97 @@ pub fn taken(
   level level: Int,
   body body: BitArray,
 ) -> #(limited_action_set.Saved, List(Effect)) {
+  taken_as(class_id: spellslinger, saved:, level:, body:)
+}
+
+/// What a save leads to on the committed rows, for a player of a class at a level who is alive
+/// and out of combat and holds this saved set.
+pub fn taken_as(
+  class_id class_id: Int,
+  saved saved: limited_action_set.Saved,
+  level level: Int,
+  body body: BitArray,
+) -> #(limited_action_set.Saved, List(Effect)) {
   let tables = fixture_tables.shared()
   let assert Ok(result) =
     limited_action_set.take(
       unlocks: limited_action_set.unlocks(tables:),
       tiers: spell_tier.tiers(tables:),
       amps: amp_spec.specs(tables:),
-      player: player(tables:, level:),
+      player: player_of(tables:, class_id:, level:),
       saved:,
-      class_bar: class_abilities(tables:),
+      class_bar: ability_book_support.loadout_of(tables:, class_id:).abilities,
       body:,
     )
     as "the body is one the client's reader accepts"
   result
+}
+
+/// The class's level 1 bar as twelve ids, 0 for an empty slot.
+pub fn own_bar(class_id class_id: Int) -> List(Int) {
+  let bar =
+    list.map(
+      class_abilities_of(tables: fixture_tables.shared(), class_id:),
+      fn(base) { base.value },
+    )
+  list.append(bar, list.repeat(0, 12 - list.length(bar)))
+}
+
+/// The class's level 1 abilities, the bar a player of the class who saved none holds.
+pub fn class_abilities_of(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+) -> List(Spell4BaseId) {
+  ability_book_support.loadout_of(tables:, class_id:).abilities
+}
+
+/// The bar a player of a class holds after a rule step, as ids.
+pub fn held_ids_as(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+  saved saved: limited_action_set.Saved,
+) -> List(Int) {
+  ids_of(bar: limited_action_set.bar_of(
+    saved:,
+    set: limited_action_set.first_set(),
+    class_bar: class_abilities_of(tables:, class_id:),
+  ))
+}
+
+/// The body of a 0xB1 that keeps the class's own bar in set 0 and sends these AMP ids.
+pub fn amps_body(
+  class_id class_id: Int,
+  amp_ids amp_ids: List(Int),
+) -> BitArray {
+  body_with(ids: own_bar(class_id:), set: 0, tier_changes: [], amp_ids:)
+}
+
+/// The AMP ids a set holds after a rule step, in the order it holds them.
+pub fn held_amp_ids(
+  saved saved: limited_action_set.Saved,
+  set set: Int,
+) -> List(Int) {
+  list.map(limited_action_set.held_amps(saved:, set:), fn(id) { id.value })
+}
+
+/// The 0x01A3 among frames, as a set and its ids: each is read by the client's layout.
+pub fn amp_lists_in(frames frames: List(Frame)) -> List(#(Int, List(Int))) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == action_set_amps.message_id {
+      True ->
+        action_set_amps.decode(frame.body)
+        |> result.map(fn(message) {
+          #(message.action_set_index, message.amp_ids)
+        })
+        |> result.replace_error(Nil)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The message numbers of frames, in order.
+pub fn numbers_of(frames frames: List(Frame)) -> List(Int) {
+  list.map(frames, fn(frame) { frame.message_id })
 }
 
 /// The frames among a step's effects, in order.

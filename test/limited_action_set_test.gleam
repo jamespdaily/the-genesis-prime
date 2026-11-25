@@ -27,7 +27,7 @@ import genesis_prime/game/ability_book_frame
 import genesis_prime/game/ability_points
 import genesis_prime/game/amp_spec
 import genesis_prime/game/limited_action_set.{
-  Player, RowOutsideTable, RowRepeated, StoredSlot, StoredTier,
+  Player, RowOutsideTable, RowRepeated, StoredAmp, StoredSlot, StoredTier,
 }
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite
@@ -35,20 +35,25 @@ import genesis_prime/game/spell_tier
 import genesis_prime/message/ability_tier
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
-import genesis_prime/step.{LogDebug, LogWarning}
+import genesis_prime/step.{LogWarning}
 import genesis_prime/store
 import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/character_creation
+import genesis_prime/table/eldan_augmentation
+import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Spell4BaseId, ClassId, PrerequisiteId, Spell4BaseId,
+  type Spell4BaseId, ClassId, EldanAugmentationId, GameFormulaId, PrerequisiteId,
+  Spell4BaseId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/string
 import limited_action_set_support as support
@@ -447,6 +452,42 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
     as "a save of the held bar changes nothing"
   assert support.frames_of(effects: second) == support.frames_of(effects: first)
     as "and answers the same frames"
+  // A level 10 Stalker picks the Assault chain 770 to 772 and the tier 1 AMP 863 (7 of 7 power),
+  // sent with the pick first as the client's list holds them; then, at level 11, adds 782.
+  let stalker = 5
+  let #(four, first) =
+    support.taken_as(
+      class_id: stalker,
+      saved: limited_action_set.none(),
+      level: 10,
+      body: support.amps_body(class_id: stalker, amp_ids: [863, 772, 771, 770]),
+    )
+  assert support.held_amp_ids(saved: four, set: 0) == [770, 771, 772, 863]
+    as "the four AMPs are held, ascending"
+  assert support.numbers_of(frames: support.frames_of(effects: first))
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
+    as "opcode.0x1a3: the AMP list comes after the points (the event follows 0x0169) and before 0xB2"
+  assert support.amp_lists_in(frames: support.frames_of(effects: first))
+    == [#(0, [770, 771, 772, 863])]
+    as "the list of set 0, ascending"
+  let #(five, second) =
+    support.taken_as(
+      class_id: stalker,
+      saved: four,
+      level: 11,
+      body: support.amps_body(class_id: stalker, amp_ids: [
+        770,
+        771,
+        772,
+        863,
+        782,
+      ]),
+    )
+  assert support.held_amp_ids(saved: five, set: 0) == [770, 771, 772, 782, 863]
+    as "the second save keeps the first four and adds the fifth (8 of 8 power)"
+  assert support.amp_lists_in(frames: support.frames_of(effects: second))
+    == [#(0, [770, 771, 772, 782, 863])]
+    as "the answer carries the whole list"
 }
 
 /// A refusal: the level, who the player is, the body and the result the client's name for the
@@ -690,6 +731,271 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
         as { why <> ": the tiers held are unchanged" }
     },
   )
+  // AMP rows: a Stalker (class 5) holding the AMPs of `held` at level 10, then a save that is
+  // refused. `names` is what the one warning says.
+  let stalker = 5
+  // The bar a save sends, from the class's own bar of 12 ids.
+  let keep = fn(own: List(Int)) { own }
+  let swapped = fn(own: List(Int)) {
+    case own {
+      [first, second, ..rest] -> [second, first, ..rest]
+      _ -> panic as "a bar holds twelve ids"
+    }
+  }
+  let twice = fn(own: List(Int)) {
+    case own {
+      [first, _, ..rest] -> [first, first, ..rest]
+      _ -> panic as "a bar holds twelve ids"
+    }
+  }
+  list.each(
+    [
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        keep,
+        0,
+        [863],
+        33,
+        "category 3",
+        False,
+        False,
+        "863 is tier 1 and 0 power is spent in tier 0 of category 3",
+      ),
+      AmpRefused(
+        stalker,
+        9,
+        [],
+        keep,
+        0,
+        [770],
+        31,
+        "770",
+        False,
+        False,
+        "level 9 gives 0 power",
+      ),
+      AmpRefused(
+        1,
+        10,
+        [],
+        keep,
+        0,
+        [863],
+        4,
+        "863",
+        False,
+        False,
+        "863 is a Stalker's, and a Warrior (class 1) picks it",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        keep,
+        0,
+        [12],
+        35,
+        "12",
+        False,
+        False,
+        "12 has no row",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        keep,
+        0,
+        [771],
+        34,
+        "771",
+        False,
+        False,
+        "771 needs 770",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [770, 771, 772],
+        keep,
+        0,
+        [863],
+        43,
+        "770",
+        False,
+        False,
+        "the list drops the held 770, 771 and 772: removing an AMP is the paid reset",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        keep,
+        0,
+        [770, 770],
+        13,
+        "770",
+        False,
+        False,
+        "770 twice: the client never refuses a repeat, the server's mapping does",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        swapped,
+        0,
+        [863],
+        33,
+        "category 3",
+        False,
+        False,
+        "a good bar change with a refused AMP list: the bar is not applied either",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        twice,
+        0,
+        [770],
+        13,
+        "",
+        False,
+        False,
+        "a bad bar with a good AMP list: the bar's result, and no AMP is kept",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        keep,
+        0,
+        [770],
+        27,
+        "",
+        True,
+        False,
+        "a good AMP list while dead",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        keep,
+        0,
+        [770],
+        30,
+        "",
+        False,
+        True,
+        "a good AMP list while in combat",
+      ),
+      AmpRefused(
+        stalker,
+        10,
+        [],
+        keep,
+        1,
+        [770],
+        40,
+        "",
+        False,
+        False,
+        "the list in a save for set 1: only the active set is judged",
+      ),
+    ],
+    fn(row) {
+      let AmpRefused(
+        class_id:,
+        level:,
+        held:,
+        bar:,
+        set:,
+        amp_ids:,
+        result:,
+        names:,
+        dead:,
+        in_combat:,
+        why:,
+      ) = row
+      let #(before, _) =
+        support.taken_as(
+          class_id:,
+          saved: limited_action_set.none(),
+          level:,
+          body: support.amps_body(class_id:, amp_ids: held),
+        )
+      let player =
+        Player(
+          ..support.player_of(tables:, class_id:, level:),
+          dead:,
+          in_combat:,
+        )
+      let assert Ok(#(after, effects)) =
+        limited_action_set.take(
+          unlocks: limited_action_set.unlocks(tables:),
+          tiers: spell_tier.tiers(tables:),
+          amps: amp_spec.specs(tables:),
+          player:,
+          saved: before,
+          class_bar: support.class_abilities_of(tables:, class_id:),
+          body: support.body_with(
+            ids: bar(support.own_bar(class_id:)),
+            set:,
+            tier_changes: [],
+            amp_ids:,
+          ),
+        )
+        as why
+      let frames = support.frames_of(effects:)
+      assert support.the_action_set(frames:).result == result as why
+      assert limited_action_set.rows(saved: after)
+        == limited_action_set.rows(saved: before)
+        as { why <> ": the bar, the tiers and the AMPs are as before" }
+      assert support.numbers_of(frames:) == [0x019D, 0x01A3, 0x00B2]
+        as { why <> ": the held bar, the held list and 0xB2" }
+      assert list.map(support.the_action_set(frames:).shortcuts, fn(shortcut) {
+          shortcut.object_id
+        })
+        == support.held_ids_as(tables:, class_id:, saved: before)
+        as { why <> ": the answer holds the held bar" }
+      assert support.amp_lists_in(frames:)
+        == [#(0, support.held_amp_ids(saved: before, set: 0))]
+        as { why <> ": the answer holds the held list" }
+      assert support.the_answer_bit(frames:) == 0 as why
+      let assert [#(LogWarning, line)] = support.logs_of(effects:)
+        as { why <> ": one warning" }
+      assert string.contains(
+        line,
+        "0xB1 refused with result " <> int.to_string(result),
+      )
+        as why
+      assert string.contains(line, names)
+        as { why <> ": the warning names " <> names }
+    },
+  )
+}
+
+/// A refused AMP save: a Stalker or another class at a level, the AMPs held, the bar and set
+/// the save names, the AMP ids it sends, the result, what the warning names, whether the
+/// player is dead or in combat, and why.
+type AmpRefused {
+  AmpRefused(
+    class_id: Int,
+    level: Int,
+    held: List(Int),
+    bar: fn(List(Int)) -> List(Int),
+    set: Int,
+    amp_ids: List(Int),
+    result: Int,
+    names: String,
+    dead: Bool,
+    in_combat: Bool,
+    why: String,
+  )
 }
 
 pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_held_set_test() -> Nil {
@@ -725,8 +1031,10 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     )
   let frames = support.frames_of(effects: accepted)
   assert list.map(frames, fn(frame) { frame.message_id })
-    == [0x019D, 0x01A0, 0x0169, 0x00B2]
-    as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book"
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
+    as "opcode.0xb2: 0x01A0 and 0x0169 come before 0xB2, so the redraw it triggers already shows the new book; opcode.0x1a3: every answer carries the set's list"
+  assert support.amp_lists_in(frames:) == [#(0, [])]
+    as "a player with no AMPs gets the empty list, as the answer carries the bar"
   assert support.the_action_set(frames:)
     == action_set.ActionSet(
       action_set_index: 0,
@@ -841,7 +1149,10 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
   let too_early = support.body(ids: a_with(slot: 4, id: 20_718), set: 0)
   let #(_, refused) = support.taken(saved: held, level: 4, body: too_early)
   let frames = support.frames_of(effects: refused)
-  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x019D, 0x01A3, 0x00B2]
+  assert support.amp_lists_in(frames:) == [#(0, [])]
+    as "a refusal carries the held list, here empty"
   assert support.the_action_set(frames:)
     == action_set.ActionSet(
       action_set_index: 0,
@@ -861,34 +1172,51 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     as "the class's bar is the held bar of a player who saved none"
 }
 
-pub fn amp_ids_in_a_save_are_dropped_and_the_bar_is_kept_test() -> Nil {
-  use <- owned_test.run(60_000)
+pub fn amp_ids_in_a_save_are_judged_with_the_bar_and_the_tiers_as_one_answer_test() -> Nil {
+  use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
-  let #(saved, effects) =
+  // `save_d` carries the sitting's bar, two tier changes and the AMP ids 101 and 202; 101 is an
+  // AMP of class 0, which no Spellslinger picks.
+  let #(refused, effects) =
     support.taken(
       saved: limited_action_set.none(),
       level: 15,
       body: message_support.hex(support.save_d),
     )
+  assert support.the_action_set(frames: support.frames_of(effects:)).result == 4
+    as "101 is another class's AMP"
+  assert support.held_ids(tables:, saved: refused) == support.class_bar
+    as "the bar of the save is not kept"
+  assert limited_action_set.held_tiers(saved: refused, set: 0) == []
+    as "the two tier changes of the save are not kept either: one answer"
+  assert support.held_amp_ids(saved: refused, set: 0) == []
+  assert support.numbers_of(frames: support.frames_of(effects:))
+    == [0x019D, 0x01A3, 0x00B2]
+  assert support.amp_lists_in(frames: support.frames_of(effects:)) == [#(0, [])]
+  assert support.the_answer_bit(frames: support.frames_of(effects:)) == 0
+  // The same bar and tiers with a Spellslinger's AMPs 175 to 177 (tier 0, category 4) and 198
+  // (tier 1): 7 of 12 power at level 15.
+  let #(saved, effects) =
+    support.taken(
+      saved: limited_action_set.none(),
+      level: 15,
+      body: support.body_with(
+        ids: support.ids_a,
+        set: 0,
+        tier_changes: [#(charged_shot, 2), #(quick_draw, 3)],
+        amp_ids: [175, 176, 177, 198],
+      ),
+    )
+  assert support.the_action_set(frames: support.frames_of(effects:)).result == 1
   assert support.held_ids(tables:, saved:) == support.ids_a
     as "the bar of the save is kept"
   assert limited_action_set.held_tiers(saved:, set: 0)
     == [#(Spell4BaseId(charged_shot), 2), #(Spell4BaseId(quick_draw), 3)]
     as "the two tier changes of the save are applied (opcode.0xb1: (20684, 2) and (27638, 3))"
-  let #(_, without_amps) =
-    support.taken(
-      saved: limited_action_set.none(),
-      level: 15,
-      body: support.tiering([#(charged_shot, 2), #(quick_draw, 3)]),
-    )
-  assert support.frames_of(effects:) == support.frames_of(effects: without_amps)
-    as "the AMP ids change nothing in the answer"
-  assert support.logs_of(effects: without_amps) == []
-    as "a tier change that is applied is not logged as dropped"
-  let assert [#(LogDebug, line)] = support.logs_of(effects:) as "one debug line"
-  assert string.contains(line, "2 AMPs")
-    as "it says how many AMPs were not applied"
-  assert !string.contains(line, "tier") as "and names no tier change"
+  assert support.held_amp_ids(saved:, set: 0) == [175, 176, 177, 198]
+    as "the four AMPs are kept"
+  assert support.logs_of(effects:) == []
+    as "nothing is dropped, so nothing is logged"
 }
 
 /// The points a level gives: 1 a level from level 10 (`XpPerLevel.abilityPointsPerLevel`).
@@ -1360,6 +1688,80 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
   assert string.contains(limited_action_set.describe_row(error:), "set 4")
     && string.contains(limited_action_set.describe_row(error:), "slot 0")
     as "the sentence names the row's set and slot"
+  // AMP rows go through the same fold: a set above 3, an id of 0 or beyond 16 bits and a second
+  // row for one AMP of one set are refused, each with a sentence that names the AMP.
+  let amp = fn(set, id) {
+    store.AmpRow(action_set: set, eldan_augmentation_id: id)
+  }
+  list.each(
+    [
+      #(
+        "set 4",
+        [amp(4, 770)],
+        RowOutsideTable(row: StoredAmp(amp(4, 770))),
+        "outside",
+      ),
+      #(
+        "id 0",
+        [amp(0, 0)],
+        RowOutsideTable(row: StoredAmp(amp(0, 0))),
+        "outside",
+      ),
+      #(
+        "id 65536, wider than the 16 bits of the lists",
+        [amp(0, 65_536)],
+        RowOutsideTable(row: StoredAmp(amp(0, 65_536))),
+        "outside",
+      ),
+      #(
+        "a repeated key",
+        [amp(0, 770), amp(0, 770)],
+        RowRepeated(row: StoredAmp(amp(0, 770))),
+        "twice",
+      ),
+    ],
+    fn(row) {
+      let #(why, amps, expected, says) = row
+      let assert Error(error) =
+        limited_action_set.entering(
+          unlocks: limited_action_set.unlocks(tables:),
+          level: level_4.level,
+          book: level_4.book,
+          tiers: spell_tier.tiers(tables:),
+          points_total: 0,
+          rows: support.with_rows(
+            slots: [],
+            tiers: [],
+            amps: list.map(amps, fn(held) {
+              #(held.action_set, held.eldan_augmentation_id)
+            }),
+          ),
+        )
+        as why
+      assert error == expected as why
+      let sentence = limited_action_set.describe_row(error:)
+      assert string.contains(sentence, "AMP")
+        && string.contains(sentence, says)
+        && string.contains(
+          sentence,
+          "set " <> int.to_string(amp_row_of(error:).action_set),
+        )
+        && string.contains(
+          sentence,
+          "AMP " <> int.to_string(amp_row_of(error:).eldan_augmentation_id),
+        )
+        as { why <> ": the sentence names the AMP, its set and its id" }
+    },
+  )
+}
+
+/// The AMP row an error names.
+fn amp_row_of(error error: limited_action_set.RowError) -> store.AmpRow {
+  case error {
+    RowOutsideTable(row: StoredAmp(row)) | RowRepeated(row: StoredAmp(row)) ->
+      row
+    _ -> panic as "the error names an AMP row"
+  }
 }
 
 /// What a load of tier rows leads to: the tiers kept as (set, Spell4Base, tier) in set then
@@ -1717,6 +2119,113 @@ fn fitting_tier_rows(
   })
 }
 
+pub fn any_accepted_amp_list_stays_within_the_levels_power_the_players_class_and_a_repeat_changes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let classes = [1, 2, 3, 4, 5, 7]
+  // GameFormula 942 as the client reads it (`0x1403cdbf0`): no power below dataint0, else
+  // trunc((level - dataint0) * datafloat0) + dataint01.
+  let assert Ok(formula) = game_formula.get(tables:, id: GameFormulaId(942))
+  let power_at = fn(level) {
+    case level >= formula.dataint0 {
+      True ->
+        float.truncate(
+          int.to_float(level - formula.dataint0) *. formula.datafloat0,
+        )
+        + formula.dataint01
+      False -> 0
+    }
+  }
+  let rows = eldan_augmentation.all(tables)
+  let row_of = fn(id) {
+    let assert Ok(row) =
+      eldan_augmentation.get(tables:, id: EldanAugmentationId(id))
+      as "a held AMP has a row"
+    row
+  }
+  let ids_where = fn(keep) {
+    list.filter(rows, keep) |> list.map(fn(row) { row.id })
+  }
+  // A drawn AMP is a kind and a place: mostly a tier 0 AMP of the player's class (which a list
+  // can hold), else any AMP of the class or one of five of class 0.
+  let drawn_amp =
+    qcheck.tuple2(qcheck.bounded_int(0, 99), qcheck.bounded_int(0, 999))
+  let drawn_list =
+    qcheck.generic_list(
+      elements_from: drawn_amp,
+      length_from: qcheck.bounded_int(0, 6),
+    )
+  qcheck.given(
+    qcheck.tuple4(
+      qcheck.bounded_int(0, 5),
+      qcheck.bounded_int(1, 50),
+      drawn_list,
+      drawn_list,
+    ),
+    fn(drawn) {
+      let #(class_at, level, first, second) = drawn
+      let assert Ok(class_id) = list.drop(classes, class_at) |> list.first
+      let tier_zero =
+        ids_where(fn(row) { row.class_id == class_id && row.category_tier == 0 })
+      let any =
+        list.append(
+          ids_where(fn(row) { row.class_id == class_id }),
+          list.take(ids_where(fn(row) { row.class_id == 0 }), 5),
+        )
+      let ids_of = fn(draws: List(#(Int, Int))) {
+        list.filter_map(draws, fn(draw) {
+          let pool = case draw.0 < 70 {
+            True -> tier_zero
+            False -> any
+          }
+          list.drop(pool, draw.1 % list.length(pool)) |> list.first
+        })
+      }
+      let lists = [ids_of(first), list.append(ids_of(first), ids_of(second))]
+      list.fold(lists, limited_action_set.none(), fn(saved, amp_ids) {
+        let body = support.amps_body(class_id:, amp_ids:)
+        let #(after, effects) =
+          support.taken_as(class_id:, saved:, level:, body:)
+        case
+          support.the_action_set(frames: support.frames_of(effects:)).result
+        {
+          1 -> {
+            let held = support.held_amp_ids(saved: after, set: 0)
+            assert held == list.sort(list.unique(amp_ids), int.compare)
+              as "an accepted save keeps the list it sent, ascending"
+            assert list.fold(held, 0, fn(cost, id) {
+                cost + row_of(id).power_cost
+              })
+              <= power_at(level)
+              as "the AMPs held cost no more than the power the level gives"
+            list.each(held, fn(id) {
+              assert row_of(id).class_id == class_id
+                as "an AMP held is the player's class"
+              assert row_of(id).eldan_augmentation_id_required == 0
+                || list.contains(
+                  held,
+                  row_of(id).eldan_augmentation_id_required,
+                )
+                as "an AMP held has the AMP it requires"
+            })
+            let #(again, repeated) =
+              support.taken_as(class_id:, saved: after, level:, body:)
+            assert limited_action_set.rows(saved: again)
+              == limited_action_set.rows(saved: after)
+              as "the same save again holds the same bar, tiers and AMPs"
+            assert support.frames_of(effects: repeated)
+              == support.frames_of(effects:)
+              as "the same save again answers the same frames"
+          }
+          _ -> Nil
+        }
+        after
+      })
+      Nil
+    },
+  )
+}
+
 pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
@@ -1740,16 +2249,35 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
       qcheck.bounded_int(0, tiered_count - 1),
       qcheck.bounded_int(2, 9),
     )
+  // A drawn AMP is a set and an id of the 16 bits of the AMP lists.
+  let drawn_amp =
+    qcheck.tuple2(qcheck.bounded_int(0, 3), qcheck.bounded_int(1, 65_535))
   qcheck.given(
-    qcheck.tuple2(
+    qcheck.tuple3(
       qcheck.tuple4(drawn_set, drawn_set, drawn_set, drawn_set),
       qcheck.generic_list(
         elements_from: drawn_tier,
         length_from: qcheck.bounded_int(0, 12),
       ),
+      qcheck.generic_list(
+        elements_from: drawn_amp,
+        length_from: qcheck.bounded_int(0, 12),
+      ),
     ),
     fn(drawn) {
-      let #(sets, drawn_tiers) = drawn
+      let #(sets, drawn_tiers, drawn_amps) = drawn
+      // One row for each AMP of a set, in set then id order.
+      let amp_rows =
+        list.unique(drawn_amps)
+        |> list.sort(fn(a, b) {
+          case int.compare(a.0, b.0) {
+            order.Eq -> int.compare(a.1, b.1)
+            other -> other
+          }
+        })
+        |> list.map(fn(amp) {
+          store.AmpRow(action_set: amp.0, eldan_augmentation_id: amp.1)
+        })
       let rows =
         [sets.0, sets.1, sets.2, sets.3]
         |> list.index_map(fn(set, number) { #(number, set) })
@@ -1786,7 +2314,7 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
           }),
           list.map(tiered, Spell4BaseId),
         )
-      let held = store.ActionSets(slots: rows, tiers: tier_rows, amps: [])
+      let held = store.ActionSets(slots: rows, tiers: tier_rows, amps: amp_rows)
       let assert Ok(saved) =
         limited_action_set.entering(
           unlocks:,
@@ -1798,7 +2326,7 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
         )
         as "rows the table's checks hold are read"
       assert limited_action_set.rows(saved:) == held
-        as "a saved set is twelve rows, in set then slot order, and no set gives none; the tiers are a row for each above tier 1, in set then Spell4Base order"
+        as "a saved set is twelve rows, in set then slot order, and no set gives none; the tiers are a row for each above tier 1, in set then Spell4Base order; the AMPs are a row for each, in set then id order"
       assert limited_action_set.entering(
           unlocks:,
           tiers: spell_tier.tiers(tables:),
