@@ -110,6 +110,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_property
 import genesis_prime/game/item_use
+import genesis_prime/game/limited_action_set
 
 import genesis_prime/game/held_changes
 import genesis_prime/game/movement
@@ -141,6 +142,7 @@ import genesis_prime/step.{
   LogWarning, OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
+import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{
   type Creature2Id, type Item2Id, Creature2Id, Faction2Id, RaceId, Spell4Id,
 }
@@ -1052,21 +1054,63 @@ pub fn worn_wanted(
   tables tables: table_store.Tables,
   equip_plans equip_plans: dict.Dict(Int, spell_plan.Spell),
 ) -> #(List(cast_state.Standing), List(Int)) {
+  wanted_from(
+    sources: gear.equip_spells,
+    plans: equip_plans,
+    spell4_id_of: fn(worn) { worn.spell4_id },
+    from: fn(worn) { worn_pressed_from(tables:, item2_id: worn.item2_id) },
+  )
+}
+
+/// The spells the AMPs of the active set put on the player, in AMP id order, each as its plan
+/// from `amp_plans` (`spell_plan.amp_plans`) with no item, and the Spell4 ids of those the plans
+/// leave out, which the cast rule logs once (`cast.standing_unbuilt`). Only the active set stands
+/// (`limited_action_set.first_set`): the set a player picks into and the only one the server
+/// judges. A held AMP has a row: the entry drops a stored one without (`limited_action_set.entering`)
+/// and a pick is checked against the rows (`amp_spec.check`).
+fn amp_wanted(
+  entered entered: world_entry.Entered,
+  tables tables: table_store.Tables,
+  amp_plans amp_plans: dict.Dict(Int, spell_plan.Spell),
+) -> #(List(cast_state.Standing), List(Int)) {
+  wanted_from(
+    sources: list.map(
+      limited_action_set.held_amps(
+        saved: entered.action_sets,
+        set: limited_action_set.set_number(set: limited_action_set.first_set()),
+      ),
+      fn(id) {
+        let assert Ok(row) = eldan_augmentation.get(tables:, id:)
+          as "a held AMP has an EldanAugmentation row: the entry and the pick check it"
+        row
+      },
+    ),
+    plans: amp_plans,
+    spell4_id_of: fn(amp) { amp.spell4_id_augment },
+    from: fn(_) { None },
+  )
+}
+
+/// The sources whose spell the plans hold, as standing spells in the sources' order with what
+/// each is pressed from, and the Spell4 ids of the sources whose spell the plans leave out.
+fn wanted_from(
+  sources sources: List(source),
+  plans plans: dict.Dict(Int, spell_plan.Spell),
+  spell4_id_of spell4_id_of: fn(source) -> Int,
+  from from: fn(source) -> Option(cast_state.PressedFrom),
+) -> #(List(cast_state.Standing), List(Int)) {
   let #(planned, left_out) =
-    list.partition(gear.equip_spells, fn(worn) {
-      dict.has_key(equip_plans, worn.spell4_id)
+    list.partition(sources, fn(source) {
+      dict.has_key(plans, spell4_id_of(source))
     })
   #(
-    list.filter_map(planned, fn(worn) {
-      dict.get(equip_plans, worn.spell4_id)
+    list.filter_map(planned, fn(source) {
+      dict.get(plans, spell4_id_of(source))
       |> result.map(fn(spell) {
-        cast_state.Standing(
-          spell:,
-          from: worn_pressed_from(tables:, item2_id: worn.item2_id),
-        )
+        cast_state.Standing(spell:, from: from(source))
       })
     }),
-    list.map(left_out, fn(worn) { worn.spell4_id }),
+    list.map(left_out, spell4_id_of),
   )
 }
 
@@ -1091,37 +1135,70 @@ fn worn_pressed_from(
   }
 }
 
-/// The player's standing casts made what `standing_wanted` and `worn_wanted` list, the
-/// innate passive first: the cast rule logs each equip spell the plans leave out, starts each
-/// wanted spell that does not stand and ends each standing spell no longer wanted
-/// (`cast.standing_changed`), and its effects are carried out as any cast's are.
+/// What the player's standing casts should be: the spells in the order they start, the
+/// warnings the innate passive's lookup gives, and the Spell4 ids of the worn items' and the
+/// AMPs' spells the plans leave out.
+pub type Wanted {
+  Wanted(
+    standing: List(cast_state.Standing),
+    warnings: List(cast_state.Effect),
+    left_out: List(Int),
+  )
+}
+
+/// The player's standing casts: the innate passive first, then the spells of the worn items,
+/// then the spells of the AMPs the active set holds in AMP id order (`standing_wanted`,
+/// `worn_wanted`, `amp_wanted`).
+pub fn wanted_of(
+  entered entered: world_entry.Entered,
+  tables tables: table_store.Tables,
+  plans plans: spell_plan.Plans,
+) -> Wanted {
+  let #(innate, warnings) = standing_wanted(entered:, plans:)
+  let #(worn, worn_left_out) =
+    worn_wanted(
+      gear: entered.gear,
+      tables:,
+      equip_plans: spell_plan.standing_plans(tables),
+    )
+  let #(amps, amps_left_out) =
+    amp_wanted(entered:, tables:, amp_plans: spell_plan.amp_plans(tables))
+  Wanted(
+    standing: list.flatten([innate, worn, amps]),
+    warnings:,
+    left_out: list.append(worn_left_out, amps_left_out),
+  )
+}
+
+/// The player's standing casts made what `wanted_of` lists: the cast rule logs each spell
+/// the plans leave out, starts each wanted spell that does not stand and ends each standing
+/// spell no longer wanted (`cast.standing_changed`), and its effects are carried out as any
+/// cast's are.
 pub fn standing_changed(
   session session: Session,
   now now: Now,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let assert Some(entered) = connection_state.entered_of(session.status)
     as "the standing spells change while the connection holds a player"
-  let #(innate, warnings) =
-    standing_wanted(entered:, plans: connection_state.plans_of(session:))
-  let #(worn, left_out) =
-    worn_wanted(
-      gear: entered.gear,
+  let wanted =
+    wanted_of(
+      entered:,
       tables: session.settings.tables,
-      equip_plans: spell_plan.standing_plans(session.settings.tables),
+      plans: connection_state.plans_of(session:),
     )
   let #(logged, unbuilt) =
-    cast.standing_unbuilt(cast: entered.cast, spell4_ids: left_out)
+    cast.standing_unbuilt(cast: entered.cast, spell4_ids: wanted.left_out)
   let #(changed, decided) =
     cast.standing_changed(
       cast: logged,
       caster: caster_of(tables: session.settings.tables, entered:),
-      wanted: list.append(innate, worn),
+      wanted: wanted.standing,
       now:,
     )
   cast_effects(
     session: with_cast(session:, cast: changed),
     now:,
-    effects: list.flatten([warnings, unbuilt, decided]),
+    effects: list.flatten([wanted.warnings, unbuilt, decided]),
   )
 }
 

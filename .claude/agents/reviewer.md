@@ -15,6 +15,8 @@ Other skills: read `.claude/skills/<name>/SKILL.md`.
 
 Work only in your own worktree: never check out, switch, reset or detach another folder. (Two builders moved the coordinator's folders, and a full check tested the wrong code, 2026-11-18.)
 
+A result review reads: correctness, evidence, failure paths, restarts, concurrency, OTP fit when the diff touches processes, any new test that depends on timing, a session's length, read boundaries or a mailbox's length, reuse, and each done-when item met with its evidence.
+
 Check each finding against the code before you report it, and name the file and line. A finding that repeats existing code names its replacement and whether its errors and edge cases match.
 
 A step that adds a third or later copy of an existing per-kind shape (a loop, a list, an enumeration) is a finding: merge the copies into one shared function first. (Spell plans grew 16 per-kind lists and about ten copied `_armed` loops, each review seeing one copy, 2026-11-16.)

@@ -178,7 +178,7 @@ pub fn player_of(
 pub fn class_abilities(
   tables tables: table_store.Tables,
 ) -> List(Spell4BaseId) {
-  ability_book_support.loadout_of(tables:, class_id: spellslinger).abilities
+  class_abilities_of(tables:, class_id: spellslinger)
 }
 
 /// The ids of a bar, slot 0 first, 0 for an empty slot.
@@ -196,11 +196,7 @@ pub fn held_ids(
   tables tables: table_store.Tables,
   saved saved: limited_action_set.Saved,
 ) -> List(Int) {
-  ids_of(bar: limited_action_set.bar_of(
-    saved:,
-    set: limited_action_set.first_set(),
-    class_bar: class_abilities(tables:),
-  ))
+  held_ids_as(tables:, class_id: spellslinger, saved:)
 }
 
 /// What a save leads to on the committed rows, for the Spellslinger at a level who is alive and
@@ -229,7 +225,7 @@ pub fn taken_as(
       amps: amp_spec.specs(tables:),
       player: player_of(tables:, class_id:, level:),
       saved:,
-      class_bar: ability_book_support.loadout_of(tables:, class_id:).abilities,
+      class_bar: class_abilities_of(tables:, class_id:),
       body:,
     )
     as "the body is one the client's reader accepts"
@@ -267,6 +263,31 @@ pub fn held_ids_as(
   ))
 }
 
+/// The saved sets of a player of a class at a level as the store hands them to the entry: no
+/// slot and no tier, and these AMPs (set, EldanAugmentation id), as `entering` judges them
+/// against the AMP rows and the class.
+pub fn saved_with_amps(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+  level level: Int,
+  amps amps: List(#(Int, Int)),
+) -> limited_action_set.Saved {
+  let player = player_of(tables:, class_id:, level:)
+  let assert Ok(saved) =
+    limited_action_set.entering(
+      unlocks: limited_action_set.unlocks(tables:),
+      tiers: spell_tier.tiers(tables:),
+      amps: amp_spec.specs(tables:),
+      class_id: player.class_id,
+      points_total: player.points_total,
+      level:,
+      book: player.book,
+      rows: with_rows(slots: [], tiers: [], amps:),
+    )
+    as "AMP rows of sets 0 to 3 and ids the table holds are rows the entry judges, not refuses"
+  saved
+}
+
 /// The body of a 0xB1 that keeps the class's own bar in set 0 and sends these AMP ids.
 pub fn amps_body(
   class_id class_id: Int,
@@ -296,11 +317,6 @@ pub fn amp_lists_in(frames frames: List(Frame)) -> List(#(Int, List(Int))) {
       False -> Error(Nil)
     }
   })
-}
-
-/// The message numbers of frames, in order.
-pub fn numbers_of(frames frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
 }
 
 /// The frames among a step's effects, in order.

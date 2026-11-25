@@ -926,8 +926,8 @@ pub type Role {
   Stage(ability: Spell, index: Int)
   /// A standing spell (genesis_prime/game/cast `standing_changed`), which no press made: no
   /// threshold is touched, no global cooldown starts and it is never the current cast. `from`
-  /// is the worn item whose equip spell it is, none for the innate passive and for a
-  /// level-scaled item (`Standing`).
+  /// is the worn item whose equip spell it is, none for the innate passive, for the spell of
+  /// a held AMP and for a level-scaled item (`Standing`).
   Passive(from: Option(PressedFrom))
   /// The activate cast of a unit the player right-clicked: no threshold is touched.
   Activation(activating: Activating, interaction: Interaction)

@@ -1609,3 +1609,21 @@ Spell4	56141	Engineer Pulse Blast, tier 6	held_tier_test, cast_volatility_test, 
 Spell4	56142	Engineer Pulse Blast, tier 7	held_tier_test, cast_volatility_test, content_load_test
 Spell4	56143	Engineer Pulse Blast, tier 8	held_tier_test, cast_volatility_test, content_load_test
 Spell4	56144	Engineer Pulse Blast, tier 9	held_tier_test, cast_volatility_test, content_load_test
+Prerequisite	24286	type 227 on AMP 643: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24294	type 227 on AMP 708: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24295	type 227 on AMP 675: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24296	type 227 on AMP 424: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24297	type 227 on AMP 520: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24298	type 227 on AMP 552: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24539	type 227 on AMP 40: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24564	type 227 on AMP 66: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24580	type 227 on AMP 98: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24725	type 227 on AMP 196: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24726	type 227 on AMP 470: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24727	type 227 on AMP 254: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24735	type 227 on AMP 937: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24736	type 227 on AMP 938: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24737	type 227 on AMP 939: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24739	type 227 on AMP 940: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24740	type 227 on AMP 941: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Prerequisite	24741	type 227 on AMP 942: the player holds it, so the AMP unlocks a class ability	amp_standing_test

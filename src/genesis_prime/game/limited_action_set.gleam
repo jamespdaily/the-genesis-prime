@@ -19,7 +19,7 @@
 ////      a check fails       ─▶ Saved as it was, 0x019D (the held bar, the result), 0x01A3 (the held AMPs),
 ////                             0x00B2 (bit 0), a warning
 //// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set, tier rows and AMP rows
-//// entry      ─▶ entering(unlocks, tiers, points_total, level, book, rows) ─▶ Saved, or a RowError
+//// entry      ─▶ entering(unlocks, tiers, amps, class_id, points_total, level, book, rows) ─▶ Saved, or a RowError
 ////               that ends the entry
 //// ```
 ////
@@ -55,8 +55,8 @@
 //// - **The tiers and the AMPs are saved** with the place, as the bars are: `rows` carries a row for
 ////   each ability held above tier 1 and each AMP held in each set, whole, so a tier returned to 1 is
 ////   no row and the store deletes the stored one. A map change, a Holocrypt rejoin and a login take
-////   them back through `entering`, which keeps the AMP rows as they are (a stored list is not
-////   judged again) and refuses the ones the table's checks cannot hold.
+////   them back through `entering`, which refuses the rows the table's checks cannot hold and drops a
+////   stored AMP that has no row or is of another class.
 //// - **A saved tier is kept at entry** only while the book holds its ability, the Spell4 rows
 ////   hold that tier and the level reaches it; a set whose kept tiers cost more than the level's
 ////   points has every tier reset to tier 1 and its points refunded (the server's choice, since the
@@ -381,9 +381,15 @@ fn by_set(
 /// the server chooses to reset every tier of the set to tier 1 and refund all its points, so
 /// the player chooses again; the client never reads a stored tier. The entry's points left are never below 0 and every tier it
 /// holds has a cost, which `ability_points.points_frame` and `spell_tier.spent` need.
+///
+/// A saved AMP stays only while its row is in the tables and is of the player's class
+/// (`amp_spec.is_of_class`); any other is dropped and the next save deletes its row, since a
+/// held AMP's spell stands on the player.
 pub fn entering(
   unlocks unlocks: Unlocks,
   tiers tiers: spell_tier.SpellTiers,
+  amps amp_specs: amp_spec.Specs,
+  class_id class_id: ClassId,
   points_total points_total: Int,
   level level: Int,
   book book: List(Spell4BaseId),
@@ -417,7 +423,9 @@ pub fn entering(
     })
       |> dict.filter(fn(_, held) { !dict.is_empty(held) }),
     amps: dict.map_values(amps, fn(_, held) {
-      dict.keys(held) |> list.sort(fn(a, b) { int.compare(a.value, b.value) })
+      dict.keys(held)
+      |> list.filter(amp_spec.is_of_class(specs: amp_specs, class_id:, id: _))
+      |> list.sort(fn(a, b) { int.compare(a.value, b.value) })
     }),
   )
 }
@@ -1115,7 +1123,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Ability builder",
-      missing: "A picked AMP is held and sent to the client, but the spell it names does not stand: no AMP spell starts.",
+      missing: "A picked AMP's spell that the spell plans leave out does not stand: the pick is held and sent to the client and the cast rule warns once for the spell. The coverage measure lists each such AMP spell.",
     ),
     gap.Entry(
       area: "Ability builder",
