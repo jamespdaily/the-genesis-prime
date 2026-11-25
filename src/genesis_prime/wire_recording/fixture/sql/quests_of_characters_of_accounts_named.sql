@@ -18,7 +18,9 @@ select
   progress,
   quest_ms_left,
   objective_ms_left,
-  kill_mask
+  kill_mask,
+  used_objective,
+  used_spawn
 from character_quest
 where character_id in (
   select character_id

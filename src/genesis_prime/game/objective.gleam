@@ -63,11 +63,11 @@
 //// for the use however many objectives and quests counted it. A talk, a kill and a cast
 //// at a unit release nothing, and nor does a use of a departures terminal, which every
 //// player uses (`departures.is_terminal`), or of a creature that gives or receives a quest
-//// none of whose objectives counts it (`stays_for_another_quest`). The used sets are not
-//// saved: a relog lets a unit count again, and an abandoned quest that is retaken starts
-//// them empty. Each player's log is its own, so two players who use a unit before it
-//// vanishes for them both each count it, and once it returns the player whose set holds
-//// it counts nothing while another counts it.
+//// none of whose objectives counts it (`stays_for_another_quest`). The used sets are saved
+//// with the quest by the object's spawn, so a relog does not let an object count again,
+//// and an abandoned quest that is retaken starts them empty. Each player's log is its own,
+//// so two players who use an object before it vanishes for them both each count it, and
+//// once it returns the player whose set holds it counts nothing while another counts it.
 ////
 //// A type 11 objective (`QuestObjective.type.11`) is a cast of the spell in its data. The
 //// client counts nothing for it: it shows the spell as a button (a 0x176 shortcut of kind
@@ -118,6 +118,7 @@ import genesis_prime/table/spell4
 import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -132,6 +133,13 @@ const hidden_flag = 8
 /// The state number of an Achieved quest in 0x035C.
 const achieved_state = 2
 
+/// A creature or object the player's client shows, as a use or a cast counts it: the unit
+/// id the client knows it by, which the release of a used object names, and the id of the
+/// object's spawn, which an objective remembers as used (`quest_log.used`).
+pub type SpawnedUnit {
+  SpawnedUnit(unit_id: Int, spawn_id: SpawnId)
+}
+
 /// What the player did to a creature: talked to it, used it or killed it (the unit as
 /// the client's group test reads it), with the unit's checklist index for the first two
 /// (the bit the unit stands for in a checklist objective's mask), or cast a spell, at a
@@ -144,17 +152,17 @@ pub type Event {
   Used(
     target: target_group.Unit,
     checklist_index: Int,
-    unit: quest_log.UnitRef,
+    unit: SpawnedUnit,
     by_item: Bool,
   )
   Killed(target: target_group.Unit)
   Cast(spell4_id: Spell4Id, target: Option(CastTarget))
 }
 
-/// The unit a cast was at: as the client's group test reads it, and as the map run's
-/// unit that a cast objective counts once.
+/// The unit a cast was at: as the client's group test reads it, and as the object that a
+/// cast objective counts once.
 pub type CastTarget {
-  CastTarget(unit: target_group.Unit, ref: quest_log.UnitRef)
+  CastTarget(unit: target_group.Unit, ref: SpawnedUnit)
 }
 
 /// A spell button the client holds for an open cast objective.
@@ -258,7 +266,7 @@ pub fn use_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
   scripts scripts: ScriptRows,
-) -> fn(target_group.Unit, Int, quest_log.UnitRef) -> Bool {
+) -> fn(target_group.Unit, Int, SpawnedUnit) -> Bool {
   let offered = counted_by(log:, tables:, scripts:)
   fn(unit, checklist_index, ref) {
     offered(Used(target: unit, checklist_index:, unit: ref, by_item: False))
@@ -300,9 +308,9 @@ fn counted_already(
       quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
     Used(checklist_index:, unit:, ..) ->
       quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
-      || quest_log.is_used(log:, quest:, index:, unit:)
-    Cast(target: Some(CastTarget(ref:, ..)), ..) ->
-      quest_log.is_used(log:, quest:, index:, unit: ref)
+      || quest_log.is_used(log:, quest:, index:, unit: unit.spawn_id)
+    Cast(target: Some(CastTarget(ref: SpawnedUnit(spawn_id:, ..), ..)), ..) ->
+      quest_log.is_used(log:, quest:, index:, unit: spawn_id)
     Killed(..) | Cast(target: None, ..) -> False
   }
 }
@@ -363,7 +371,8 @@ pub fn advance(
             },
             used_unit: case event {
               Used(unit:, ..)
-              | Cast(target: Some(CastTarget(ref: unit, ..)), ..) -> Ok(unit)
+              | Cast(target: Some(CastTarget(ref: unit, ..)), ..) ->
+                Ok(unit.spawn_id)
               TalkedTo(..) | Killed(..) | Cast(target: None, ..) -> Error(Nil)
             },
           )
@@ -390,7 +399,7 @@ pub fn advance(
             ]),
           )
       }
-    Used(..), False | TalkedTo(..), _ | Killed(..), _ | Cast(..), _ -> advanced
+    Used(..), _ | TalkedTo(..), _ | Killed(..), _ | Cast(..), _ -> advanced
   }
 }
 
@@ -647,7 +656,7 @@ fn advance_quest(
   counts counts: fn(Int, quest_log.Objective) -> Bool,
   group_member group_member: fn(quest_log.Objective) -> Result(#(Int, Int), Nil),
   checklist_index checklist_index: Int,
-  used_unit used_unit: Result(quest_log.UnitRef, Nil),
+  used_unit used_unit: Result(SpawnId, Nil),
 ) -> #(Advanced, Bool) {
   let named =
     quest_log.open_objectives(log: so_far.log, quest:)

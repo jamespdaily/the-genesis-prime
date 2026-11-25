@@ -156,6 +156,7 @@ import genesis_prime/message/item_use as item_use_message
 import genesis_prime/step.{type Now, type TimerId, LogDebug, LogInfo, LogWarning}
 import genesis_prime/table/id.{type Item2Id, type Spell4Id, Spell4EffectsId}
 import genesis_prime/world_map/map
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -644,6 +645,7 @@ fn item_on_a_unit(
           refusal(spell4_id, cast_result.TargetIsNotUseable)
         activate.Usable(
           creature_id:,
+          spawn_id:,
           creature:,
           checklist_index:,
           body: unit,
@@ -678,6 +680,7 @@ fn item_on_a_unit(
                     client_cast_id:,
                     unit_id:,
                     creature_id:,
+                    spawn_id:,
                     creature:,
                     target: unit,
                     alive:,
@@ -1291,6 +1294,7 @@ fn activation_pressed(
       )
     activate.Usable(
       creature_id:,
+      spawn_id:,
       creature:,
       checklist_index:,
       link: activate.NoLink,
@@ -1303,6 +1307,7 @@ fn activation_pressed(
     )
     | activate.Usable(
         creature_id:,
+        spawn_id:,
         creature:,
         checklist_index:,
         link: activate.OpenLink,
@@ -1361,6 +1366,7 @@ fn activation_pressed(
                 client_cast_id:,
                 unit_id: press.target_unit_id,
                 creature_id:,
+                spawn_id:,
                 creature:,
                 target:,
                 alive:,
@@ -1393,6 +1399,7 @@ fn activation_in_range(
   client_cast_id client_cast_id: Int,
   unit_id unit_id: Int,
   creature_id creature_id: Int,
+  spawn_id spawn_id: SpawnId,
   creature creature: activate.Creature,
   target target: activate.Body,
   alive alive: Bool,
@@ -1424,6 +1431,7 @@ fn activation_in_range(
         client_cast_id:,
         unit_id:,
         creature_id:,
+        spawn_id:,
         creature:,
         target:,
         alive:,
@@ -1454,6 +1462,7 @@ fn activation_reached(
   client_cast_id client_cast_id: Int,
   unit_id unit_id: Int,
   creature_id creature_id: Int,
+  spawn_id spawn_id: SpawnId,
   creature creature: activate.Creature,
   target target: activate.Body,
   alive alive: Bool,
@@ -1492,6 +1501,7 @@ fn activation_reached(
         client_cast_id:,
         unit_id:,
         creature_id:,
+        spawn_id:,
         alive_at_press: alive,
         by_item:,
         spell: cast_press.activation_spell(spell:, cast_time_ms:),
@@ -1513,6 +1523,7 @@ fn activation_checked(
   client_cast_id client_cast_id: Int,
   unit_id unit_id: Int,
   creature_id creature_id: Int,
+  spawn_id spawn_id: SpawnId,
   alive_at_press alive_at_press: Bool,
   by_item by_item: Bool,
   spell spell: Spell,
@@ -1521,7 +1532,14 @@ fn activation_checked(
   dropped dropped: activate.Dropped,
 ) -> Result(ActivationChecked, Refusal) {
   let activating =
-    Activating(unit_id:, creature_id:, alive_at_press:, by_item:, effects:)
+    Activating(
+      unit_id:,
+      creature_id:,
+      spawn_id:,
+      alive_at_press:,
+      by_item:,
+      effects:,
+    )
   case
     press_checked(
       cast:,
@@ -5950,6 +5968,7 @@ fn activation_counted_with(activating activating: Activating) -> AdvanceWith {
   WithUse(
     unit_id: activating.unit_id,
     creature_id: activating.creature_id,
+    spawn_id: activating.spawn_id,
     alive_at_press: activating.alive_at_press,
     by_item: activating.by_item,
   )

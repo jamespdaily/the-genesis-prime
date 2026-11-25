@@ -47,10 +47,12 @@
 //// - A creature stands with what `spawn.creature_row` gives its Creature2 row:
 ////   the unit type (entity type 13 for a turret creature), the faction, the first
 ////   display and outfit of its groups, no stored health and its minLevel.
-//// - A placed row takes an id above every stored one, counting up. No saved
-////   table keys on a spawn id but `spawn_stat` (its own `spawn_id` column,
-////   content that only a stored row has), so a placed row's id is the map's
-////   alone, and its creature respawns at its place as a stored row's does.
+//// - A placed row takes an id above every stored one, counting up. The saved
+////   tables that key on a spawn id are `spawn_stat` (its own `spawn_id` column,
+////   content that only a stored row has) and a quest's used objects
+////   (genesis_prime/game/quest_log), which drops an id above the highest stored one at the
+////   load, so a placed row's id is the map's alone and its used objects are not
+////   kept across a login (`gaps`). Its creature respawns at its place as a stored row's does.
 ////
 //// A pair that is not placed is reported once at the start (`Skipped`): a
 //// creature with no Creature2 row, a group that lists no creature, a marker with
@@ -238,7 +240,7 @@ pub fn place(
   let #(click_stands, click_skipped, unread_links) =
     click_stands(tables:, clicks:, worlds:, stored:)
   let sizes = ring_sizes(stands:, click_stands:)
-  let first = highest_id(stored:) + 1
+  let first = spawn.stored_spawns(rows: stored).highest + 1
   let rows =
     list.flat_map(stands, fn(stand) {
       list.index_map(stand.creatures, fn(creature, slot) {
@@ -738,11 +740,6 @@ pub fn held_by(
   |> set.from_list
 }
 
-/// The highest stored id, 0 when none is stored.
-fn highest_id(stored stored: List(Row)) -> Int {
-  list.fold(stored, 0, fn(highest, row) { int.max(highest, number_of(row:)) })
-}
-
 /// The stands of one job, world by world in the order its markers first show them.
 fn stands_of(job job: Job, held held: Set(#(Int, Int))) -> List(Stand) {
   job.markers
@@ -1031,9 +1028,13 @@ fn number_of(row row: Row) -> Int {
   number
 }
 
-/// What the placement leaves at the height of a marker, for the coverage measure.
+/// What the placement leaves undone, for the coverage measure.
 pub fn gaps() -> List(gap.Entry) {
   [
+    gap.Entry(
+      area: "Objective creature placement",
+      missing: "a placed creature keeps no used-object record across a login: its id is above every stored one and a later import can move it, so a quest object used before a relog counts again after it (42 objectives of the client's tables that list a creature with a placed spawn, and 48 that take any unit)",
+    ),
     gap.Entry(
       area: "Objective creature placement",
       missing: "the ground under the ring of a marker whose centre is not on the ground (an interior, a cave, a prop) or has no ground read: its creatures stand at the marker's height, which may be off the ground the client draws",

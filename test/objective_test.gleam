@@ -102,7 +102,7 @@ import fixture_tables
 import genesis_prime/game/communicator
 import genesis_prime/game/objective.{
   Add, Advanced, Button, Cast, CastTarget, CompleteByServer, Killed, ReleaseUnit,
-  Remove, SendProgress, SendState, TalkedTo, Used,
+  Remove, SendProgress, SendState, SpawnedUnit, TalkedTo, Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
@@ -113,6 +113,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -151,7 +152,7 @@ fn a_use(creature: id.Creature2Id) -> objective.Event {
 /// A use of a creature as this unit of a map run.
 fn a_use_of(
   creature creature: id.Creature2Id,
-  unit unit: quest_log.UnitRef,
+  unit unit: objective.SpawnedUnit,
 ) -> objective.Event {
   Used(target: plain_unit(creature:), checklist_index: 0, unit:, by_item: False)
 }
@@ -2351,6 +2352,123 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_test() -> Nil {
     as "the progress stays 1"
 }
 
+/// One case of what an objective counts and remembers of the objects used: the quest, the
+/// creature used, the objectives that count each use (`reused`), the uses in order (the
+/// spawn used and the checklist index of the unit), the progress objective 0 shows and the
+/// objects its quest's rows keep (objective index and spawn id).
+type Counting {
+  Counting(
+    why: String,
+    quest_id: Int,
+    creature: Int,
+    reused: List(Int),
+    uses: List(#(Int, Int)),
+    progress: Int,
+    kept: List(#(Int, Int)),
+  )
+}
+
+pub fn a_spawn_counts_once_for_an_objective_and_each_use_counts_where_the_objective_reuses_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client keeps no per-spawn record of a non-checklist objective (`0x1405517a0` makes
+  // none a checklist), so counting each object once is the server's choice (Jim,
+  // 2026-11-25), and the object is its spawn's id. Quest 6723's only objective, 10383, is
+  // type 23 on Creature2 30826 and 30827, count 15; quest 3480's objective 4470 is type 12
+  // on Creature2 11070, count 3; quest 10520's first objective is a checklist on Creature2
+  // 73500, whose uses count by the unit's checklist index.
+  use tables <- quest_support.with_objectives(edits: [])
+  let rows = [
+    Counting(
+      why: "the same spawn twice counts once and is remembered",
+      quest_id: 6723,
+      creature: 30_826,
+      reused: [],
+      uses: [#(7, 0), #(7, 0)],
+      progress: 1,
+      kept: [#(0, 7)],
+    ),
+    Counting(
+      why: "two spawns count twice and are kept in spawn order",
+      quest_id: 6723,
+      creature: 30_826,
+      reused: [],
+      uses: [#(9, 0), #(7, 0)],
+      progress: 2,
+      kept: [#(0, 7), #(0, 9)],
+    ),
+    Counting(
+      why: "an objective in reused counts each use and keeps no spawn",
+      quest_id: 6723,
+      creature: 30_826,
+      reused: [10_383],
+      uses: [#(7, 0), #(7, 0)],
+      progress: 2,
+      kept: [],
+    ),
+    Counting(
+      why: "a checklist counts by bit, whatever the spawn, and keeps no spawn",
+      quest_id: 10_520,
+      creature: 73_500,
+      reused: [],
+      uses: [#(7, 1), #(8, 1), #(7, 2)],
+      progress: 2,
+      kept: [],
+    ),
+    Counting(
+      why: "an objective that is done drops its spawns",
+      quest_id: 3480,
+      creature: 11_070,
+      reused: [],
+      uses: [#(7, 0), #(8, 0), #(9, 0)],
+      progress: 3,
+      kept: [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let quest = quest_of(id: row.quest_id, tables:)
+    let log =
+      list.fold(row.uses, fresh(quest_id: row.quest_id), fn(log, use_) {
+        objective.advance(
+          reused: set.from_list(row.reused),
+          log:,
+          tables:,
+          event: Used(
+            target: plain_unit(creature: Creature2Id(row.creature)),
+            checklist_index: use_.1,
+            unit: quest_support.unit_ref(unit_id: use_.0),
+            by_item: False,
+          ),
+          now_ms: 0,
+          scripts: objective.no_rows(),
+        ).log
+      })
+    assert quest_log.objective_progress(log:, quest:, index: 0) == row.progress
+      as row.why
+    assert quest_support.used_of(log:, quest_id: row.quest_id) == row.kept
+      as row.why
+  })
+}
+
+pub fn a_summoned_spawn_counts_each_use_and_is_never_remembered_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A summoned spawn has a negative id that restarts at -1 in each map run
+  // (`world_map/spawn_source`), so it names no object of a later run: each use counts and
+  // none is remembered. A server guess, marked in `quest_log`.
+  use tables <- quest_support.with_objectives(edits: [])
+  let quest = quest_of(id: 6723, tables:)
+  let summoned =
+    a_use_of(
+      creature: Creature2Id(30_826),
+      unit: SpawnedUnit(unit_id: 5, spawn_id: SpawnId(-1)),
+    )
+  let first = used_by(log: fresh(quest_id: 6723), tables:, event: summoned)
+  let second = used_by(log: first.log, tables:, event: summoned)
+  assert quest_log.objective_progress(log: second.log, quest:, index: 0) == 2
+    as "the same summoned spawn counts at each use"
+  assert quest_support.used_of(log: second.log, quest_id: 6723) == []
+    as "and none is remembered"
+}
+
 pub fn units_of_one_creature_each_count_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 6607's objective 10278 (index 0) is type 23 on TargetGroup 3437, whose only
@@ -2381,30 +2499,6 @@ pub fn units_of_one_creature_each_count_test() -> Nil {
   assert progress(four) == 4 as "the fourth unit counts the fourth"
   assert quest_log.objective_done(log: four, quest:, index: 0)
     as "the objective is done at its count of 4 (0x361)"
-}
-
-pub fn the_same_unit_id_in_another_map_run_counts_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Unit ids start at 1 again in each run of a map (`world_map/map`), so unit 7 of
-  // incarnation 2 is another unit than unit 7 of incarnation 1.
-  use tables <- quest_support.with_objectives(edits: [])
-  let first_run = quest_support.unit_ref(unit_id: 7)
-  let second_run = quest_log.UnitRef(..first_run, incarnation: 2)
-  let use_in = fn(log, run) {
-    used_by(
-      log:,
-      tables:,
-      event: a_use_of(creature: Creature2Id(30_826), unit: run),
-    )
-  }
-  let first = use_in(fresh(quest_id: 6723), first_run)
-  let second = use_in(first.log, second_run)
-  assert second.effects
-    == [
-      SendProgress(quest_id: 6723, objective_index: 0, progress: 2),
-      ReleaseUnit(unit_id: 7),
-    ]
-    as "unit 7 of the next run counts as another unit"
 }
 
 pub fn a_fake_drop_in_the_reward_pane_counts_nothing_test() -> Nil {
@@ -2747,7 +2841,7 @@ pub fn a_type_23_use_counts_nothing_for_another_type_on_the_same_group_test() ->
 fn cast_at(
   spell spell: Int,
   creature creature: Int,
-  unit unit: quest_log.UnitRef,
+  unit unit: objective.SpawnedUnit,
 ) -> objective.Event {
   Cast(
     spell4_id: Spell4Id(spell),
@@ -2904,8 +2998,8 @@ pub fn a_second_cast_at_the_same_unit_counts_nothing_test() -> Nil {
 
 pub fn casts_at_two_units_of_one_creature_each_count_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Unit ids start at 1 again in each run of a map (`world_map/map`), so unit 900 of
-  // incarnation 2 is another unit than unit 900 of incarnation 1.
+  // An object is its spawn, so a unit of another spawn counts and the first unit again,
+  // however its unit id is named, does not.
   use tables <- quest_support.with_objectives(edits: [])
   let quest = quest_of(id: 3145, tables:)
   let first_run = quest_support.unit_ref(unit_id: 900)
@@ -2916,10 +3010,10 @@ pub fn casts_at_two_units_of_one_creature_each_count_test() -> Nil {
     quest_log.objective_progress(log:, quest:, index: 0)
   }
   let one = cast_in(fresh(quest_id: 3145), first_run)
-  let two = cast_in(one, quest_log.UnitRef(..first_run, unit_id: 901))
-  let three = cast_in(two, quest_log.UnitRef(..first_run, incarnation: 2))
-  assert [progress(one), progress(two), progress(three)] == [1, 2, 3]
-    as "each unit of the creature counts one, and unit 900 of the next run is another unit"
+  let two = cast_in(one, quest_support.unit_ref(unit_id: 901))
+  let three = cast_in(two, first_run)
+  assert [progress(one), progress(two), progress(three)] == [1, 2, 2]
+    as "each object of the creature counts one, and the first object again counts nothing"
 }
 
 pub fn an_abandoned_and_retaken_quest_forgets_its_cast_units_test() -> Nil {

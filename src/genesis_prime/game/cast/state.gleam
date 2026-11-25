@@ -53,6 +53,7 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{
   type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
 }
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -355,7 +356,13 @@ pub type Effect {
 /// `Activated` raises it, or the quest button's cast, as `ShortcutCast` raises it, or none for
 /// a cast that raises neither.
 pub type AdvanceWith {
-  WithUse(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
+  WithUse(
+    unit_id: Int,
+    creature_id: Int,
+    spawn_id: SpawnId,
+    alive_at_press: Bool,
+    by_item: Bool,
+  )
   WithCast(spell4_id: Int, target: Option(PressedAt))
   WithNothing
 }
@@ -991,6 +998,8 @@ pub type Activating {
     unit_id: Int,
     /// The Creature2 row of the unit.
     creature_id: Int,
+    /// The spawn the unit stands at, which a quest objective remembers a use of it by.
+    spawn_id: SpawnId,
     /// Whether the unit lived at the press. The client cancels the cast only when its
     /// target dies during it (`SetUnitDeathState` 0x14045e740), not when the target was
     /// dead at the press.

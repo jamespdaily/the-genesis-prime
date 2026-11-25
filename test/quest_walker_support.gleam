@@ -18,6 +18,7 @@ import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/spawn.{Spawn}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/option
 import spawn_support
@@ -42,6 +43,7 @@ pub fn walker(
     #(
       40,
       shown.ShownCreature(
+        spawn_id: SpawnId(1),
         creature_id: id.Creature2Id(74_812),
         faction_id: 0,
         checklist_index: 0,
@@ -141,6 +143,7 @@ pub fn creature_appears(
   connection_support.sent_by_a_peer(connection_support.news_of(
     unit_id: 40,
     news: CreatureAppeared(
+      spawn_id: spawned.id,
       unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: spawned,

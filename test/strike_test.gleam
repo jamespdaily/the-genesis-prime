@@ -50,6 +50,7 @@ import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -1207,6 +1208,7 @@ pub fn a_despawn_row_selects_no_player_and_no_static_object_test() -> Nil {
     ])
   let object =
     shown.ShownObject(
+      spawn_id: SpawnId(2),
       creature_id: Creature2Id(73_464),
       faction_id: 0,
       checklist_index: 0,

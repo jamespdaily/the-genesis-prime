@@ -49,13 +49,14 @@ import genesis_prime/store.{
   NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
   NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
   QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SpendItem,
-  SplitItem, Unavailable, World,
+  SplitItem, Unavailable, UsedSpawn, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{
   CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
 }
 import gleam/bool
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
@@ -3111,6 +3112,7 @@ fn accepted_entry() -> ActiveQuest {
     quest_ms_left: 90_000,
     objective_ms_left: [0, 60_000, 0],
     kill_mask: [0, 0, 0, 0, 0, 0],
+    used: [],
   )
 }
 
@@ -3549,6 +3551,421 @@ fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
       as "the waiting statements were counted"
     returned.rows != [0]
   })
+}
+
+// ---- the objects a quest's objectives have counted (migration 0052) ----
+
+/// A quest the character has accepted whose objectives have counted these objects, each an
+/// objective index and a spawn id, in the order the rows hold them.
+fn accepted_using(quest_id: Int, used: List(#(Int, Int))) -> QuestRow {
+  QuestRow(
+    ..accepted_quest(quest_id),
+    active: Some(
+      ActiveQuest(
+        ..accepted_entry(),
+        used: list.map(used, fn(one) {
+          UsedSpawn(objective_index: one.0, spawn_id: one.1)
+        }),
+      ),
+    ),
+  )
+}
+
+/// The two arrays of objects counted that the table holds for each quest of the
+/// character, read straight from the database, in quest id order: the quest id, the
+/// objective indexes and the spawn ids.
+fn used_stored(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(#(Int, List(Int), List(Int))) {
+  let assert Ok(returned) =
+    pog.query(
+      "select quest_id, used_objective, used_spawn from character_quest where character_id = $1 order by quest_id",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning({
+      use quest_id <- decode.field(0, decode.int)
+      use objectives <- decode.field(1, decode.list(decode.int))
+      use spawns <- decode.field(2, decode.list(decode.int))
+      decode.success(#(quest_id, objectives, spawns))
+    })
+    |> pog.execute(store.pool)
+    as "the quest rows read"
+  returned.rows
+}
+
+pub fn the_used_spawns_round_trip_with_the_quest_save_and_load_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `quest_log.used` drops an objective's objects when the objective is done, and an accept
+  // starts a quest with none; the rows the log builds hold what remains, objective then
+  // spawn, and the table keeps and gives back exactly that.
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let log = [
+    completed_quest(1001),
+    accepted_using(1003, [#(0, 5), #(0, 9), #(2, 3)]),
+  ]
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      quests: log,
+    )
+    == ForMove(PlaceSaved)
+  assert used_stored(store:, character_id: id)
+    == [#(1001, [], []), #(1003, [0, 0, 2], [5, 9, 3])]
+    as "the objects are two arrays of one length, empty for a row that is not active"
+  assert quests_of_load(store:, account:, character_id: id) == log
+    as "the load gives back the rows saved, the used objects equal"
+  let done = [completed_quest(1001), accepted_using(1003, [#(2, 3)])]
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 1,
+      quests: done,
+    )
+    == ForMove(PlaceSaved)
+  assert used_stored(store:, character_id: id)
+    == [#(1001, [], []), #(1003, [2], [3])]
+    as "the objective that is done dropped its objects, and the next save wrote that"
+  assert quests_of_load(store:, account:, character_id: id) == done
+  let abandoned =
+    QuestRow(quest_id: 1003, state: 6, completed_at: None, active: None)
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 3,
+      sequence: 1,
+      quests: [completed_quest(1001), abandoned],
+    )
+    == ForMove(PlaceSaved)
+  assert used_stored(store:, character_id: id)
+    == [#(1001, [], []), #(1003, [], [])]
+    as "an abandoned quest keeps no object"
+  assert quests_of_load(store:, account:, character_id: id)
+    == [completed_quest(1001), abandoned]
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 4,
+      sequence: 1,
+      quests: [completed_quest(1001), accepted_using(1003, [])],
+    )
+    == ForMove(PlaceSaved)
+  assert used_stored(store:, character_id: id)
+    == [#(1001, [], []), #(1003, [], [])]
+    as "the quest taken again starts with no object, as its log's rows say"
+  account_store_support.stop(store)
+}
+
+pub fn a_save_with_a_stale_epoch_or_sequence_changes_and_deletes_no_used_spawn_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _first_login = epoch_of_load(store:, account:, character_id: id)
+  let _second_login = epoch_of_load(store:, account:, character_id: id)
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 1,
+      quests: [accepted_using(1003, [#(0, 5), #(0, 9)])],
+    )
+    == ForMove(PlaceSaved)
+  assert used_stored(store:, character_id: id) == [#(1003, [0, 0], [5, 9])]
+    as "the newer login saved two objects"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 5,
+      quests: [accepted_using(1003, [#(0, 5)])],
+    )
+    == ForMove(NothingSaved)
+    as "the first login's epoch is 1 and the character is at 2: its save changes nothing"
+  assert used_stored(store:, character_id: id) == [#(1003, [0, 0], [5, 9])]
+    as "an older epoch with fewer objects deleted none"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 3,
+      quests: [accepted_using(1003, [#(0, 5), #(0, 9), #(1, 4)])],
+    )
+    == ForMove(PlaceSaved)
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 2,
+      quests: [accepted_using(1003, [])],
+    )
+    == ForMove(NothingSaved)
+    as "a save of this login older than the last stored one changes nothing"
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 3,
+      quests: [accepted_using(1003, [#(0, 5)])],
+    )
+    == ForMove(NothingSaved)
+    as "the same sequence twice is no newer"
+  assert used_stored(store:, character_id: id)
+    == [#(1003, [0, 0, 1], [5, 9, 4])]
+    as "an older or repeated save, each with fewer objects, deleted none"
+  account_store_support.stop(store)
+}
+
+pub fn a_save_after_an_unknown_commit_leaves_the_used_spawns_equal_to_the_log_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The connection saves the whole log. When the answer of a save is lost it cannot know
+  // whether the save committed, so it sends the next save, of a higher sequence, with the
+  // log as it is then. The objects the table holds are that log's either way.
+  let run = fn(first_committed: Bool, why: String) {
+    let store = account_store_support.start_store(pool_size: 2)
+    let #(account, id) = one_character(store:)
+    let _login = epoch_of_load(store:, account:, character_id: id)
+    case first_committed {
+      True -> {
+        assert save_log(
+            store:,
+            account:,
+            character_id: id,
+            epoch: 1,
+            sequence: 1,
+            quests: [accepted_using(1003, [#(0, 5), #(0, 6)])],
+          )
+          == ForMove(PlaceSaved)
+        Nil
+      }
+      False -> Nil
+    }
+    assert save_log(
+        store:,
+        account:,
+        character_id: id,
+        epoch: 1,
+        sequence: 2,
+        quests: [accepted_using(1003, [#(0, 6), #(1, 2)])],
+      )
+      == ForMove(PlaceSaved)
+    assert used_stored(store:, character_id: id) == [#(1003, [0, 1], [6, 2])]
+      as why
+    account_store_support.stop(store)
+  }
+  run(True, "the first save committed: the next log replaces its objects")
+  run(False, "the first save did not commit: the next log is written whole")
+}
+
+pub fn two_saves_at_once_leave_the_later_logs_used_spawns_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // One save adds spawn 6 to quest 1003's objects (sequence 2); the other removes spawn 5,
+  // abandons quest 1003 and leaves quest 1005 out (sequence 3). The saves of one character
+  // run one after another (`lock_character_for_save.sql`) and the later sequence is the log
+  // stored, whichever runs first.
+  let first = [
+    accepted_using(1003, [#(0, 5), #(1, 2)]),
+    accepted_using(1004, [#(0, 7)]),
+    accepted_using(1005, [#(0, 8)]),
+  ]
+  let adds = [
+    accepted_using(1003, [#(0, 5), #(0, 6), #(1, 2)]),
+    accepted_using(1004, [#(0, 7)]),
+    accepted_using(1005, [#(0, 8)]),
+  ]
+  let abandoned =
+    QuestRow(quest_id: 1003, state: 6, completed_at: None, active: None)
+  let removes = [abandoned, accepted_using(1004, [#(0, 7)])]
+  let run = fn(at_once: Bool, why: String) {
+    let store = account_store_support.start_store(pool_size: 4)
+    let #(account, id) = one_character(store:)
+    let _login = epoch_of_load(store:, account:, character_id: id)
+    let save = fn(sequence, quests) {
+      save_log(store:, account:, character_id: id, epoch: 1, sequence:, quests:)
+    }
+    assert save(1, first) == ForMove(PlaceSaved)
+    case at_once {
+      True -> {
+        let answers = process.new_subject()
+        let _adding =
+          process.spawn(fn() { process.send(answers, #(2, save(2, adds))) })
+        let _removing =
+          process.spawn(fn() { process.send(answers, #(3, save(3, removes))) })
+        let one = open_wait.received(from: answers, what: "a save's answer")
+        let other =
+          open_wait.received(from: answers, what: "the other save's answer")
+        let by_sequence = dict.from_list([one, other])
+        assert dict.get(by_sequence, 3) == Ok(ForMove(PlaceSaved))
+          as "the later sequence is saved whichever save runs first"
+        assert dict.get(by_sequence, 2) == Ok(ForMove(PlaceSaved))
+          || dict.get(by_sequence, 2) == Ok(ForMove(NothingSaved))
+          as "the earlier sequence is saved before it, or is stale after it"
+      }
+      False -> {
+        assert save(2, adds) == ForMove(PlaceSaved)
+        assert save(3, removes) == ForMove(PlaceSaved)
+      }
+    }
+    assert used_stored(store:, character_id: id)
+      == [#(1003, [], []), #(1004, [0], [7])]
+      as why
+    assert quest_states(store:, character_id: id) == [#(1003, 6), #(1004, 1)]
+      as { why <> ": no row for the quest the later log left out" }
+    account_store_support.stop(store)
+  }
+  run(
+    False,
+    "the later log's objects: none for the abandoned quest, one for 1004",
+  )
+  run(True, "two saves started together leave the later log's objects")
+}
+
+pub fn a_turn_in_saves_the_used_spawns_under_the_same_fence_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [#(1, 10)])
+  let CharacterId(id) = character_id
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
+  assert save_log(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence: 1,
+      quests: [accepted_using(1001, [#(0, 4)]), accepted_using(1003, [#(0, 5)])],
+    )
+    == ForMove(PlaceSaved)
+  let turned_in = [
+    completed_quest(1001),
+    accepted_using(1003, [#(0, 5), #(1, 2)]),
+  ]
+  let assert ForItems(store.TurnedIn(..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 2,
+      quests: turned_in,
+      credits_held: 1000,
+      credits_after: 1100,
+      placed: [],
+    )
+    as "the turn-in is saved"
+  assert used_stored(store:, character_id: id)
+    == [#(1001, [], []), #(1003, [0, 1], [5, 2])]
+    as "the log's objects are saved with the turn-in, and the quest turned in has none"
+  assert turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 2,
+      quests: [completed_quest(1001), accepted_using(1003, [])],
+      credits_held: 1100,
+      credits_after: 1200,
+      placed: [],
+    )
+    == ForItems(ItemsNotSaved)
+    as "a turn-in of a stale sequence is not saved"
+  let #(newer_epoch, _) =
+    account_store_support.login(store:, account:, character_id:)
+  assert turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 3,
+      quests: [completed_quest(1001), accepted_using(1003, [])],
+      credits_held: 1100,
+      credits_after: 1200,
+      placed: [],
+    )
+    == ForItems(ItemsNotSaved)
+    as {
+      "a turn-in of the older login (epoch "
+      <> int.to_string(newer_epoch - 1)
+      <> ") is not saved"
+    }
+  assert used_stored(store:, character_id: id)
+    == [#(1001, [], []), #(1003, [0, 1], [5, 2])]
+    as "a stale turn-in changed and deleted no object"
+  account_store_support.stop(store)
+}
+
+pub fn the_used_spawn_checks_refuse_unequal_arrays_an_objective_above_five_and_a_spawn_below_one_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let refused = fn(used: List(#(Int, Int)), constraint: String, why: String) {
+    assert save_log(
+        store:,
+        account:,
+        character_id: id,
+        epoch: 1,
+        sequence: 1,
+        quests: [accepted_using(1003, used)],
+      )
+      == ForMove(QuestLogRefused(constraint:))
+      as why
+  }
+  refused(
+    [#(6, 5)],
+    "character_quest_used_objective_in_six",
+    "0x1405510d0: a quest has six objective slots (kQuestMaxObjective), so index 6 is none",
+  )
+  refused(
+    [#(-1, 5)],
+    "character_quest_used_objective_in_six",
+    "an objective index is not negative",
+  )
+  refused(
+    [#(0, 0)],
+    "character_quest_used_spawn_is_positive",
+    "a spawn row's id is above 0 (`spawn_id_is_positive`, migration 0008), so 0 names none",
+  )
+  refused(
+    [#(0, -1)],
+    "character_quest_used_spawn_is_positive",
+    "a negative id is a summoned spawn of one map run, which is never saved",
+  )
+  // The save writes the two arrays from one list, so unequal arrays cannot come from a
+  // `QuestRow`: the row is put into the table directly.
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask, used_objective, used_spawn) values ($1, 1009, 1, 0, true, 0, '{0}', 0, '{0}', '{0,0,0,0,0,0}', '{0,1}', '{5}')",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.execute(store.pool)
+    as "the table refused a row of two arrays of different lengths"
+  assert constraint == "character_quest_used_match"
+    as "an object is an objective index and a spawn id, so the arrays have one length"
+  // A completed row holds no entry, so no object; a `QuestRow` of another state than 1 and 2
+  // has none to write, so the row is put into the table directly.
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, completed_at, used_objective, used_spawn) values ($1, 1010, 3, now(), '{0}', '{5}')",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.execute(store.pool)
+    as "the table refused a completed row that holds used objects"
+  assert constraint == "character_quest_used_only_when_active"
+    as "only a quest of the client's active list (states 1 and 2) holds the objects its objectives counted"
+  account_store_support.stop(store)
 }
 
 pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_place_test() -> Nil {

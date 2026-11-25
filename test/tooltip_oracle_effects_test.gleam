@@ -74,6 +74,7 @@ import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
 import gleam/dict
 import gleam/float
@@ -1012,6 +1013,7 @@ fn selected(
 /// A foe a player of either faction may attack, standing still at the depth.
 fn foe_at(z z: Float) -> shown.Shown {
   shown.ShownCreature(
+    spawn_id: SpawnId(1),
     creature_id: Creature2Id(73_464),
     faction_id: 0,
     checklist_index: 0,

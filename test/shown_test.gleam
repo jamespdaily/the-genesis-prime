@@ -25,6 +25,7 @@ import genesis_prime/world_map/creature_life.{
 }
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/float
 import gleam/list
@@ -62,6 +63,7 @@ fn creature(
   alive alive: Bool,
 ) -> shown.Shown {
   ShownCreature(
+    spawn_id: SpawnId(1),
     creature_id: Creature2Id(73_464),
     faction_id: 0,
     checklist_index: 0,
@@ -89,6 +91,7 @@ fn creature(
 /// A static object of no particular creature, standing at the origin.
 fn an_object() -> shown.Shown {
   ShownObject(
+    spawn_id: SpawnId(2),
     creature_id: Creature2Id(26_462),
     faction_id: 0,
     checklist_index: 0,
@@ -294,6 +297,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
       facing: start_place.Facing(yaw: 0.7, pitch: 0.0, roll: 0.0),
     )
   ShownCreature(
+    spawn_id: SpawnId(1),
     creature_id: Creature2Id(73_464),
     faction_id: 0,
     checklist_index: 0,

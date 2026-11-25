@@ -8,6 +8,7 @@
 ////
 //// ```
 //// store rows (CharacterLoaded.quests) ─▶ from_rows  ─▶ the log, or the quest the client would refuse
+//// the log, the stored spawns          ─▶ without_lost_spawns ─▶ the log, the entries the world lost
 //// the log, the clock, the tables      ─▶ login      ─▶ 0x35F: completed, known and active lists, the reset time
 //// the log and the clock               ─▶ reset_due  ─▶ NotYet(wait), or 0x362 with every period that reset since
 //// the log                             ─▶ rows       ─▶ the store's rows (SavePlace.quests)
@@ -38,6 +39,17 @@
 ////   `objective_progress` (0x14049f4d0, 0x1406113b0, 0x140551840, 0x1405517a0). The
 ////   client derives a quest's state from its done objectives rather than storing it,
 ////   so the read derives it the same way.
+//// - **The objects an objective counted** are kept for each objective that counts a use
+////   of a unit or a cast at one, by the object's spawn (`SpawnId`, the id of the spawn
+////   table's row), so a use of the same object counts once and a relog does not let it
+////   count again (`used`, `is_used`). The set is saved with the quest (`rows`, read back
+////   by `from_rows`), dropped when the objective is done and empty when the quest is
+////   taken again. A spawn the loaded world lost is dropped at the load
+////   (`without_lost_spawns`) and the caller reports it; a spawn the server placed (an id above
+////   every stored one) is dropped with no report, since its id is not kept across loads. A
+////   run-only spawn (a negative id,
+////   `world_map/spawn_source`) counts each use and is never remembered: its id restarts
+////   in each map run, so it names no object of a later run (a server guess).
 //// - **The reset time** is the Unix seconds of the latest reset instant. The client
 ////   seeds its offer picks with it and compares it only for change
 ////   (0x140611e30, 0x14048a580); it fixes no unit (reset_schedule).
@@ -63,20 +75,23 @@ import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{type Now}
-import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
+import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow, UsedSpawn}
 import genesis_prime/table/id.{Quest2Id, QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2}
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
 import genesis_prime/world_map/game_number.{type GameNumbers}
-import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/spawn_id.{
+  type SpawnId, type StoredSpawns, SpawnId,
+}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/set.{type Set}
 import gleam/time/calendar.{Date, January, TimeOfDay}
@@ -110,9 +125,10 @@ type Entry {
   /// for each of the six objective slots, a bit for each creature of the objective's
   /// named group that the player's blow has killed (`kill_marked`); the client is never
   /// sent it. `used` holds, for each objective that counts a use of a unit or a cast at one
-  /// and is not a checklist, by its index, the units that have counted (`used`), except for
-  /// an objective the unit may count again for (`objective_units.reused`); it is not saved
-  /// and starts empty.
+  /// and is not a checklist, by its index, the spawns of the objects that have counted
+  /// (`used`), except for an objective the unit may count again for
+  /// (`objective_units.reused`); it is saved with the quest (`rows`) and starts empty for a
+  /// quest accepted.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
@@ -126,7 +142,7 @@ type Entry {
     objective_deadlines_ms: List(Option(Int)),
     optional_mask: Int,
     kill_masks: List(Int),
-    used: Dict(Int, Set(UnitRef)),
+    used: Dict(Int, Set(SpawnId)),
   )
   /// Completed, at this many Unix seconds.
   Completed(at: Int)
@@ -180,7 +196,8 @@ pub type ResetDue {
   Reset(log: QuestLog, frame: Frame, after_ms: Int)
 }
 
-/// The log of the saved rows, or the first quest the client would refuse.
+/// The log of the saved rows, or the first quest the client would refuse. An active row's
+/// used objects (`store.ActiveQuest.used`) are the set `used` keeps.
 pub fn from_rows(
   rows rows: List(QuestRow),
   tables tables: table_store.Tables,
@@ -192,6 +209,88 @@ pub fn from_rows(
     }),
   )
   QuestLog(entries:, told_reset: 0)
+}
+
+/// An object an objective had counted that the loaded world has no spawn for.
+pub type Lost {
+  Lost(quest_id: Int, objective_index: Int, spawn_id: SpawnId)
+}
+
+/// The log without the objects it remembers as used whose spawn is not a row of the
+/// `stored` spawns, and each one lost, in quest, objective and spawn order. A spawn the
+/// world lost (a row deleted and the world imported again) has no object to count, and one
+/// imported later has a new id, so it starts empty; the caller reports the list. A spawn
+/// above the highest stored id is one the server placed (`objective_spawn`): it is dropped
+/// and not listed, since a later import can give its number to a stored row.
+pub fn without_lost_spawns(
+  log log: QuestLog,
+  stored stored: StoredSpawns,
+) -> #(QuestLog, List(Lost)) {
+  let #(entries, lost) =
+    list.fold(in_quest_order(log:), #(log.entries, []), fn(so_far, pair) {
+      let #(entries, lost) = so_far
+      case pair {
+        #(quest_id, Active(used:, ..) as entry) -> {
+          let #(kept, now_lost) = kept_and_lost(used:, stored:, quest_id:)
+          #(
+            dict.insert(entries, quest_id, Active(..entry, used: kept)),
+            list.append(lost, now_lost),
+          )
+        }
+        #(_, Completed(..)) | #(_, Known(..)) -> #(entries, lost)
+      }
+    })
+  #(QuestLog(..log, entries:), lost)
+}
+
+/// The used objects of one quest that are stored spawns, and the ones the world lost.
+fn kept_and_lost(
+  used used: Dict(Int, Set(SpawnId)),
+  stored stored: StoredSpawns,
+  quest_id quest_id: Int,
+) -> #(Dict(Int, Set(SpawnId)), List(Lost)) {
+  list.fold(sorted_objects(used:), #(dict.new(), []), fn(so_far, one) {
+    let #(kept, lost) = so_far
+    let #(objective_index, spawn) = one
+    case spawn_id.presence(stored:, spawn:) {
+      spawn_id.Stored -> #(
+        with_used(used: kept, index: objective_index, spawn:),
+        lost,
+      )
+      spawn_id.Lost -> #(
+        kept,
+        list.append(lost, [
+          Lost(quest_id:, objective_index:, spawn_id: spawn),
+        ]),
+      )
+      spawn_id.Placed -> so_far
+    }
+  })
+}
+
+/// The used spawns with `spawn` added to the set of the objective at `index`, which starts
+/// empty when the objective has none.
+fn with_used(
+  used used: Dict(Int, Set(SpawnId)),
+  index index: Int,
+  spawn spawn: SpawnId,
+) -> Dict(Int, Set(SpawnId)) {
+  dict.upsert(used, index, fn(spawns) {
+    set.insert(option.unwrap(spawns, set.new()), spawn)
+  })
+}
+
+/// The used objects as objective index and spawn, objective then spawn ascending.
+fn sorted_objects(used used: Dict(Int, Set(SpawnId))) -> List(#(Int, SpawnId)) {
+  dict.to_list(used)
+  |> list.flat_map(fn(pair) {
+    list.map(set.to_list(pair.1), fn(spawn) { #(pair.0, spawn) })
+  })
+  |> list.sort(fn(a, b) {
+    let SpawnId(first) = a.1
+    let SpawnId(second) = b.1
+    order.break_tie(int.compare(a.0, b.0), int.compare(first, second))
+  })
 }
 
 /// The entry one saved row is, when the client would take it.
@@ -229,7 +328,13 @@ fn entry_of(
         objective_deadlines_ms: list.map(active.progress, fn(_) { None }),
         optional_mask: 0,
         kill_masks: active.kill_mask,
-        used: dict.new(),
+        used: list.fold(active.used, dict.new(), fn(used, one) {
+          with_used(
+            used:,
+            index: one.objective_index,
+            spawn: SpawnId(one.spawn_id),
+          )
+        }),
       )
     }
     3, Some(at), None -> Ok(Completed(at:))
@@ -343,7 +448,9 @@ pub fn told_reset(log log: QuestLog) -> Int {
 /// order. A running timed quest and each started timed objective is saved with the time
 /// it has left, and never 0, which the client's 0x35F shows as a full timer
 /// (`opcode.0x35f`, `0x1406118a0`); an objective not started is saved with the time the
-/// client was told, 0 for a new entry.
+/// client was told, 0 for a new entry. An active quest's used objects are saved in
+/// objective then spawn order (`store.UsedSpawn`), so a log that did not change saves the
+/// rows it loaded.
 pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
   in_quest_order(log:)
   |> list.map(fn(pair) {
@@ -360,6 +467,7 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
         deadline_ms:,
         objective_deadlines_ms:,
         kill_masks:,
+        used:,
         ..,
       ) -> {
         let quest_ms_left = case deadline_ms {
@@ -384,6 +492,10 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
             quest_ms_left:,
             objective_ms_left:,
             kill_mask: kill_masks,
+            used: list.map(sorted_objects(used:), fn(one) {
+              let SpawnId(spawn_id) = one.1
+              UsedSpawn(objective_index: one.0, spawn_id:)
+            }),
           )),
         )
       }
@@ -1554,29 +1666,23 @@ pub fn is_marked(
   }
 }
 
-/// One unit of a map run, as the player's client shows it. Unit ids start at 1 again in
-/// each run of a map (`world_map/map`), so a unit is named by its map, the run's
-/// incarnation and its id.
-pub type UnitRef {
-  UnitRef(map: MapId, incarnation: Int, unit_id: Int)
-}
-
-/// The log after a use of, or a cast at, `unit` is counted for the quest's objective at
-/// `index`: one more of its count, which `progressed` takes, and the unit remembered as
-/// used, so that a second use of the same unit counts nothing: `changed` is false and the
-/// log is as it was. The caller does not ask this of an objective in `reused`
-/// (`objective_units.reused`) or of a checklist, which counts by bit (`marked`). The client
-/// keeps no per-unit record of a non-checklist objective (`0x1405517a0`, the fact of that
-/// name, makes none a checklist), so one count for each unit is the server's choice. The
-/// set is kept only on the quest's entry in the log: it is not saved (`rows`), so a relog
-/// lets a unit count again, and an abandoned quest that is retaken starts it empty. It is
-/// dropped when the objective is done. `Error(Nil)` when the objective takes no progress
-/// (`progressed`) or is not open.
+/// The log after a use of, or a cast at, the object of the spawn `unit` is counted for the
+/// quest's objective at `index`: one more of its count, which `progressed` takes, and the
+/// spawn remembered as used, so that a second use of the same object counts nothing:
+/// `changed` is false and the log is as it was. The caller does not ask this of an
+/// objective in `reused` (`objective_units.reused`) or of a checklist, which counts by bit
+/// (`marked`). The client keeps no per-unit record of a non-checklist objective
+/// (`0x1405517a0`, the fact of that name, makes none a checklist), so one count for each
+/// object is the server's choice. The set is kept on the quest's entry in the log and saved
+/// with it (`rows`), so a relog does not let an object count again, and an abandoned quest
+/// that is retaken starts it empty. It is dropped when the objective is done. A run-only
+/// spawn (a negative id) counts each use and is never remembered. `Error(Nil)` when the
+/// objective takes no progress (`progressed`) or is not open.
 pub fn used(
   log log: QuestLog,
   quest quest: Quest,
   index index: Int,
-  unit unit: UnitRef,
+  unit unit: SpawnId,
   now_ms now_ms: Int,
 ) -> Result(Counted, Nil) {
   let quest = as_logged(log:, quest:)
@@ -1597,13 +1703,13 @@ pub fn used(
   }
 }
 
-/// The count of a unit this objective has not counted: one more progress and the unit
+/// The count of an object this objective has not counted: one more progress and the spawn
 /// remembered (`used`).
 fn counted_new_unit(
   log log: QuestLog,
   quest quest: Quest,
   index index: Int,
-  unit unit: UnitRef,
+  unit unit: SpawnId,
   now_ms now_ms: Int,
 ) -> Result(Counted, Nil) {
   use counted <- result.map(progressed(log:, quest:, index:, amount: 1, now_ms:))
@@ -1618,22 +1724,21 @@ fn counted_new_unit(
   )
 }
 
-/// The log with `unit` added to the units used for the objective at `index`, or with the
-/// objective's set dropped once the objective is done.
+/// The log with the spawn `unit` added to the spawns used for the objective at `index`, or
+/// with the objective's set dropped once the objective is done.
 fn remember_used(
   log log: QuestLog,
   quest quest: Quest,
   index index: Int,
-  unit unit: UnitRef,
+  unit unit: SpawnId,
 ) -> QuestLog {
+  let SpawnId(number) = unit
   case dict.get(log.entries, quest.id) {
     Ok(Active(used:, ..) as entry) -> {
-      let units = case objective_done(log:, quest:, index:) {
-        True -> dict.delete(used, index)
-        False ->
-          dict.upsert(used, index, fn(units) {
-            set.insert(option.unwrap(units, set.new()), unit)
-          })
+      let units = case objective_done(log:, quest:, index:), number < 0 {
+        True, _ -> dict.delete(used, index)
+        False, True -> used
+        False, False -> with_used(used:, index:, spawn: unit)
       }
       QuestLog(
         ..log,
@@ -1648,14 +1753,14 @@ fn remember_used(
   }
 }
 
-/// Whether `unit` is used already for the quest's objective at `index` (`used`): false for
-/// a quest not in the active list. An objective in `reused` and a checklist keep no set, so
-/// they have none.
+/// Whether the spawn `unit` is used already for the quest's objective at `index` (`used`):
+/// false for a quest not in the active list. An objective in `reused` and a checklist keep
+/// no set, so they have none.
 pub fn is_used(
   log log: QuestLog,
   quest quest: Quest,
   index index: Int,
-  unit unit: UnitRef,
+  unit unit: SpawnId,
 ) -> Bool {
   let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id) {

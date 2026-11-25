@@ -50,6 +50,7 @@ import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
@@ -147,6 +148,7 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
     #(
       unit.unit_id,
       shown.ShownCreature(
+        spawn_id: SpawnId(1),
         creature_id: Creature2Id(unit.creature_id),
         faction_id: unit.faction_id,
         checklist_index: 0,
@@ -191,6 +193,7 @@ fn target_of(scene scene: Scene) -> fn(Int) -> Target {
               )
               as "the creature is a root of the fixture"
             Usable(
+              spawn_id: SpawnId(1),
               creature_id: unit.creature_id,
               creature: activate.creature_of(row:),
               checklist_index: 0,

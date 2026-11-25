@@ -97,21 +97,21 @@ import genesis_prime/store.{
   type ItemFill, type ItemWords, type ItemsAnswer, type ItemsRequest,
   type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
   type NewItem, type QuestRow, type RenameAnswer, type Request,
-  type SelectAnswer, type SelectRequest, type UnsetItem, type WorldAnswer,
-  type WorldRequest, AbilityTierRow, Account, AccountFound, AccountId,
-  ActionSetRefused, ActionSlotRow, ActiveQuest, AmpRow, Bought, BuyFromVendor,
-  Character, CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
-  CharacterRenamed, ChargesFilled, CreateCharacter, CreateForNoSuchAccount,
-  Created, CurrencySet, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused,
-  FillCharges, FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld,
-  HealthRefused, HeldCurrency, HeldItem, ItemMade, ItemWords, Items,
-  ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
-  MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
-  NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
-  NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved,
-  QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused,
-  Select, SellToVendor, SetCurrency, SpendItem, SplitItem, TurnInQuest, TurnedIn,
-  Unavailable, UnsetItem, World,
+  type SelectAnswer, type SelectRequest, type UnsetItem, type UsedSpawn,
+  type WorldAnswer, type WorldRequest, AbilityTierRow, Account, AccountFound,
+  AccountId, ActionSetRefused, ActionSlotRow, ActiveQuest, AmpRow, Bought,
+  BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, ChargesFilled, CreateCharacter,
+  CreateForNoSuchAccount, Created, CurrencySet, DeleteCharacter, DeleteItem,
+  Deleted, ExperienceRefused, FillCharges, FindAccount, ForItems, ForLogin,
+  ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency, HeldItem, ItemMade,
+  ItemWords, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
+  LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
+  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
+  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
+  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
+  SaveRefused, Select, SellToVendor, SetCurrency, SpendItem, SplitItem,
+  TurnInQuest, TurnedIn, Unavailable, UnsetItem, UsedSpawn, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -141,7 +141,7 @@ const character_health_is_not_negative = "character_health_is_not_negative"
 const character_experience_is_not_negative =
   "character_experience_is_not_negative"
 
-/// The checks of the character_quest table (migrations 0021, 0026 and 0028), one for each limit of
+/// The checks of the character_quest table (migrations 0021, 0026, 0028 and 0052), one for each limit of
 /// the client's a quest row can break. A save one of them refuses answers
 /// `QuestLogRefused` with the check's own name. The table's primary key and its
 /// foreign key to the character are not among them: neither is a limit of the
@@ -160,6 +160,10 @@ const quest_checks = [
   "character_quest_kill_mask_fits_7_bits",
   "character_quest_active_has_its_kill_mask",
   "character_quest_kill_mask_has_six_slots",
+  "character_quest_used_match",
+  "character_quest_used_objective_in_six",
+  "character_quest_used_spawn_is_positive",
+  "character_quest_used_only_when_active",
 ]
 
 /// The checks and the unique key of the character_action_slot table (migration 0049), the
@@ -1465,7 +1469,8 @@ fn rows_json(
 /// decode, in the order the query gave them (quest id). A row's completed time is
 /// read only for state 3, and its active columns only for states 1 and 2, where
 /// the table's checks hold them all (`character_quest_completed_has_a_time`,
-/// `character_quest_active_has_its_entry`).
+/// `character_quest_active_has_its_entry`). The objects counted are the two arrays that
+/// `character_quest_used_match` holds to one length, read together.
 fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
   list.map(rows, fn(row) {
     QuestRow(
@@ -1500,6 +1505,12 @@ fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
             quest_ms_left:,
             objective_ms_left:,
             kill_mask:,
+            used: list.map(
+              list.zip(row.used_objective, row.used_spawn),
+              fn(entry) {
+                UsedSpawn(objective_index: entry.0, spawn_id: entry.1)
+              },
+            ),
           ))
         None, None, None, None, None, None, None -> None
         _, _, _, _, _, _, _ ->
@@ -1556,8 +1567,25 @@ fn quests_json(quests: List(QuestRow)) -> Json {
           json.array(active.kill_mask, json.int)
         }),
       ),
+      #(
+        "used_objective",
+        json.array(used_of(quest), fn(used) { json.int(used.objective_index) }),
+      ),
+      #(
+        "used_spawn",
+        json.array(used_of(quest), fn(used) { json.int(used.spawn_id) }),
+      ),
     ])
   })
+}
+
+/// The objects a row's quest has counted: none for a row without an active entry, whose
+/// two arrays are empty, never null (`character_quest_used_only_when_active`).
+fn used_of(quest: QuestRow) -> List(UsedSpawn) {
+  case quest.active {
+    Some(active) -> active.used
+    None -> []
+  }
 }
 
 /// The rows of a character's items as the items they hold, in the order the query gave

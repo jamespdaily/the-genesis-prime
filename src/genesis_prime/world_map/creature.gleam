@@ -2398,6 +2398,7 @@ fn appeared(
     creature:,
     viewer:,
     news: CreatureAppeared(
+      spawn_id: state.settings.spawn.id,
       unit: creature_unit.with_casts(
         unit: creature_unit.overlaid(
           unit: creature_unit.create(

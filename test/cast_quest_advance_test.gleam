@@ -33,6 +33,7 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/spell_go
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/list
 import gleam/option.{None}
 import gleam/set
@@ -449,6 +450,7 @@ pub fn an_advance_carries_the_use_or_cast_it_was_made_with_test() -> Nil {
   }
   let activate_with =
     WithUse(
+      spawn_id: SpawnId(1),
       unit_id: items.its_unit,
       creature_id: 26_462,
       alive_at_press: True,
@@ -509,6 +511,7 @@ pub fn an_advance_carries_the_use_or_cast_it_was_made_with_test() -> Nil {
           #(
             [advance(quest: 3769)],
             WithUse(
+              spawn_id: SpawnId(1),
               unit_id: items.its_unit,
               creature_id: items.a_slaver_shack,
               alive_at_press: True,
@@ -714,6 +717,7 @@ pub fn a_childs_rows_count_with_the_use_or_cast_of_the_cast_that_started_it_test
         "a creature's activate cast: the child carries the use of the unit",
         activated,
         WithUse(
+          spawn_id: SpawnId(1),
           unit_id: items.its_unit,
           creature_id: 26_462,
           alive_at_press: True,

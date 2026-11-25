@@ -795,6 +795,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     game_connection_support.sent_by_a_peer(game_connection_support.news_of(
       unit_id: 40,
       news: CreatureAppeared(
+        spawn_id: beast.id,
         unit_type: NonPlayer,
         unit: creature,
         life: 4,

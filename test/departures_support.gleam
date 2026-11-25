@@ -30,6 +30,7 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/map.{Join, ObjectsSeen}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/list
 import quest_support
@@ -55,8 +56,8 @@ pub fn east_of_the_player(east east: Float) -> Place {
 }
 
 /// The terminal Creature2 `creature_id` as a unit 2.5 east of the player.
-pub fn terminal(creature_id creature_id: Int) -> Created {
-  static_object.create(
+pub fn terminal(creature_id creature_id: Int) -> #(SpawnId, Created) {
+  spawn_support.seen(
     object: StaticObject(
       ..spawn_support.holoring(
         number: terminal_unit,
@@ -66,7 +67,6 @@ pub fn terminal(creature_id creature_id: Int) -> Created {
       display_info_id: display,
     ),
     unit_id: terminal_unit,
-    server_time_estimate_start: 0,
   )
 }
 

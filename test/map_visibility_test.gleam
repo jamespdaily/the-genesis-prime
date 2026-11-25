@@ -149,8 +149,8 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
         Ok(Seen(
           sent.0,
-          list.map(units, fn(unit) { holoring_message(unit).creature_id }),
-          list.map(units, fn(unit) { holoring_message(unit).unit_id }),
+          list.map(units, fn(unit) { holoring_message(unit.1).creature_id }),
+          list.map(units, fn(unit) { holoring_message(unit.1).unit_id }),
         ))
       map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
         Ok(Unseen(sent.0, unit_ids))
