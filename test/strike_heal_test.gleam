@@ -109,6 +109,7 @@ fn go(
     primary_target:,
     spent: None,
     started_at: strike_support.start_pose(),
+    fired: False,
   )
 }
 

@@ -2100,6 +2100,7 @@ fn first_go_answered(
     units: dict.new(),
     rolls: [],
     gates_passed: dict.new(),
+    fired: False,
   )
 }
 

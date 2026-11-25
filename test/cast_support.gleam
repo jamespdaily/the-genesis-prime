@@ -710,7 +710,7 @@ pub fn quest_advances(
 pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast_state.Gain(gains:) -> Ok(gains)
+      cast_state.Gain(gains:, ..) -> Ok(gains)
       _ -> Error(Nil)
     }
   })
@@ -1545,6 +1545,7 @@ pub fn went_of_spell(
     units: dict.new(),
     rolls: [],
     gates_passed: dict.new(),
+    fired: False,
   )
 }
 
@@ -1716,6 +1717,7 @@ pub fn answered_finding(
             units:,
             rolls:,
             gates_passed: dict.new(),
+            fired: asked.fired,
           )
           |> then_procs_known(caster:, at: ms, poses:, units:, drawn: None)
         let #(state, more) =

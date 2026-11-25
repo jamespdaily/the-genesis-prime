@@ -1454,7 +1454,8 @@ fn carried_out(
       cast_state.QuestAdvanced(..), None -> #(session, [])
       cast_state.Pay(payments:), _ ->
         connection_resource.paid(session:, payments:)
-      cast_state.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
+      cast_state.Gain(gains:, fired:), _ ->
+        connection_resource.gained(session:, gains:, fired:)
       cast_state.CasterChangeStarts(
         source:,
         change: cast_state.HeldChange(change:),
@@ -2146,6 +2147,7 @@ fn strike_carried_out(
               caster_unit: entered.unit_id,
             ),
             rolls: prerequisite.rolls_of(bytes:),
+            fired: asked.fired,
           )
         carried_out(
           session: with_cast(session: Session(..session, link:), cast: updated),

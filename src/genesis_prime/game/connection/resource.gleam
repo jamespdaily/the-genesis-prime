@@ -43,6 +43,7 @@ fn stepped(
   session session: Session,
   change change: fn(class_resource.Resources) ->
     #(class_resource.Resources, List(class_resource.Effect)),
+  fired fired: Bool,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.held_in_the_world(session.status) {
     None -> #(session, [])
@@ -54,6 +55,7 @@ fn stepped(
           slot:,
           from: class_resource.value(resources: entered.resources, slot:),
           to: class_resource.value(resources:, slot:),
+          fired:,
         )
       let session =
         connection_state.with_entered(session:, change: fn(entered) {
@@ -98,15 +100,21 @@ pub fn paid(
   session session: Session,
   payments payments: List(class_resource.Payment),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  stepped(session:, change: class_resource.pay(resources: _, payments:))
+  stepped(
+    session:,
+    change: class_resource.pay(resources: _, payments:),
+    fired: False,
+  )
 }
 
-/// The gains a go gives (genesis_prime/game/cast `Gain`).
+/// The gains a go gives (genesis_prime/game/cast `Gain`); the move raises no event when
+/// `fired` (a fired cast's).
 pub fn gained(
   session session: Session,
   gains gains: List(class_resource.Gain),
+  fired fired: Bool,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  stepped(session:, change: class_resource.gain(resources: _, gains:))
+  stepped(session:, change: class_resource.gain(resources: _, gains:), fired:)
 }
 
 /// The player's properties changed: Focus takes the new pool, shares and cost modifier
@@ -117,10 +125,14 @@ pub fn properties_followed(
   case connection_state.entered_of(session.status) {
     None -> #(session, [])
     Some(entered) ->
-      stepped(session:, change: class_resource.properties_followed(
-        resources: _,
-        properties: entered.properties,
-      ))
+      stepped(
+        session:,
+        change: class_resource.properties_followed(
+          resources: _,
+          properties: entered.properties,
+        ),
+        fired: False,
+      )
   }
 }
 
@@ -130,7 +142,11 @@ pub fn resource_due(
   session session: Session,
   timer timer: TimerId,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  stepped(session:, change: class_resource.timer_fired(resources: _, timer:))
+  stepped(
+    session:,
+    change: class_resource.timer_fired(resources: _, timer:),
+    fired: False,
+  )
 }
 
 /// What the effects of a step of the player's life did to the resource, in the
@@ -143,7 +159,7 @@ pub fn life_effects(
   list.fold(effects, #(session, []), fn(so_far, effect) {
     let #(session, written) = so_far
     let apply = fn(change) {
-      let #(session, more) = stepped(session:, change:)
+      let #(session, more) = stepped(session:, change:, fired: False)
       #(session, list.append(written, more))
     }
     case effect {
