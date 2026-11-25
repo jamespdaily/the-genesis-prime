@@ -1312,24 +1312,29 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
     as "the player takes the map's notice of an object"
   let assert Some(entered) = connection_state.entered_of(session.status)
     as "the player is in the world"
-  let assert Ok(shown.ShownCreature(spawn_id: creature_spawn, ..)) =
-    dict.get(entered.shown, 40)
+  let assert Ok(creature) = dict.get(entered.shown, 40)
     as "the creature is shown"
+  let assert shown.ShownCreature(spawn_id: creature_spawn, ..) = creature
+    as "the creature is a shown creature"
   assert creature_spawn == SpawnId(31)
     as "the picture keeps the spawn the creature's news named"
-  let assert Ok(shown.ShownObject(spawn_id: object_spawn, ..)) =
-    dict.get(entered.shown, 20)
-    as "the object is shown"
+  let assert Ok(object) = dict.get(entered.shown, 20) as "the object is shown"
+  let assert shown.ShownObject(spawn_id: object_spawn, ..) = object
+    as "the object is a shown object"
   assert object_spawn == SpawnId(21)
     as "the picture keeps the spawn the map's notice named, which is not its unit id"
-  assert casting.spawned_unit(picture: entered.shown, unit_id: 40)
+  assert casting.spawned_unit(shown: creature, unit_id: 40)
     == Ok(SpawnedUnit(unit_id: 40, spawn_id: SpawnId(31)))
     as "the use of the creature is counted by its spawn"
-  assert casting.spawned_unit(picture: entered.shown, unit_id: 20)
+  assert casting.spawned_unit(shown: object, unit_id: 20)
     == Ok(SpawnedUnit(unit_id: 20, spawn_id: SpawnId(21)))
     as "the use of the object is counted by its spawn"
-  assert casting.spawned_unit(picture: entered.shown, unit_id: 9) == Error(Nil)
-    as "a unit the picture lacks is no use"
+  assert casting.spawned_unit(
+      shown: shown.ShownPlayer(state: player_state_support.a_player()),
+      unit_id: 9,
+    )
+    == Error(Nil)
+    as "another player's unit stands at no spawn"
 }
 
 pub fn objects_seen_writes_a_0x262_for_each_object_not_shown_and_not_gone_and_nothing_twice_test() -> Nil {

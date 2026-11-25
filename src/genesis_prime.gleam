@@ -655,7 +655,7 @@ fn game(
       tutorial_chain: content_tutorial_quest.chain(key: spawns),
       projector_landings: content_projector_landing.landings(key: spawns),
       reused_unit_objectives: content_spawn.reused_unit_objectives(key: spawns),
-      stored_spawns: content_spawn.stored_spawns(key: spawns),
+      loaded_spawns: content_spawn.loaded_spawns(key: spawns),
       arrival_objectives: objective_set.read(
         key: spawns,
         table: arrival_objective.table,

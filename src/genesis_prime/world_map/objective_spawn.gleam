@@ -47,12 +47,14 @@
 //// - A creature stands with what `spawn.creature_row` gives its Creature2 row:
 ////   the unit type (entity type 13 for a turret creature), the faction, the first
 ////   display and outfit of its groups, no stored health and its minLevel.
-//// - A placed row takes an id above every stored one, counting up. The saved
-////   tables that key on a spawn id are `spawn_stat` (its own `spawn_id` column,
-////   content that only a stored row has) and a quest's used objects
-////   (genesis_prime/game/quest_log), which drops an id above the highest stored one at the
-////   load, so a placed row's id is the map's alone and its used objects are not
-////   kept across a login (`gaps`). Its creature respawns at its place as a stored row's does.
+//// - A placed row's id is `first_placed_id` plus the rank of its kind (kill or click),
+////   marker, creature and nth row of that creature at that marker (`rank_space`), fixed by
+////   the client's tables alone, so no stored row added or deleted moves it and a quest's
+////   used objects of it (genesis_prime/game/quest_log) are kept across a login and a
+////   re-import. The load refuses a stored row whose id is at or above `first_placed_id`
+////   (`refusals`). The other saved table that keys on a spawn id is `spawn_stat` (its own
+////   `spawn_id` column, content that only a stored row has). Its creature respawns at its
+////   place as a stored row's does.
 ////
 //// A pair that is not placed is reported once at the start (`Skipped`): a
 //// creature with no Creature2 row, a group that lists no creature, a marker with
@@ -103,13 +105,13 @@ import genesis_prime/world_map/creature_faction.{type Factions}
 import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{type Row}
-import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/set.{type Set}
@@ -187,7 +189,10 @@ type Job {
 /// `kills` is the kill table's objectives (genesis_prime/game/kill_objective), whose reward
 /// pane names the creatures to place as a type 8 or 16 objective's data does, and `clicks`
 /// the click table's (genesis_prime/game/click_objective), whose pane's clickable creatures
-/// stand at the marker as a linked creature does.
+/// stand at the marker as a linked creature does. Both sets hold type 5 objectives only: a
+/// placed spawn's id is the rank of its kind, marker and creature, and the ranks are worked
+/// out for the type 5 objectives, so another type's objective in either set crashes the
+/// placement.
 /// Pure: the tables, the chosen factions, the kinds, the two tables and the stored rows are
 /// all it reads.
 pub fn place(
@@ -199,31 +204,8 @@ pub fn place(
   clicks clicks: Set(Int),
   grounds grounds: Dict(Int, Ground),
 ) -> Placed {
-  let objectives =
-    quest_objective.all(tables)
-    |> list.filter_map(fn(objective) {
-      case set.contains(kills, objective.id) {
-        True ->
-          Ok(#(
-            objective,
-            objective_kind.GroupOf(
-              target_group_id: quest_objective.target_group_id_reward_pane(
-                objective,
-              ),
-            ),
-          ))
-        False ->
-          result.map(
-            objective_kind.placed_target(objective_kind.of_row(objective)),
-            fn(named) { #(objective, named) },
-          )
-      }
-    })
   let worlds = set.from_list(list.map(stored, fn(row) { row.world_id }))
-  let planned =
-    list.map(objectives, fn(pair) {
-      plan(tables:, worlds:, kinds:, objective: pair.0, named: pair.1)
-    })
+  let planned = planned_jobs(tables:, kills:, worlds:, kinds: Some(kinds))
   let skipped =
     planned
     |> list.flat_map(fn(pair) { pair.1 })
@@ -240,14 +222,21 @@ pub fn place(
   let #(click_stands, click_skipped, unread_links) =
     click_stands(tables:, clicks:, worlds:, stored:)
   let sizes = ring_sizes(stands:, click_stands:)
-  let first = spawn.stored_spawns(rows: stored).highest + 1
+  let ranks = rank_space(tables:)
   let rows =
     list.flat_map(stands, fn(stand) {
       list.index_map(stand.creatures, fn(creature, slot) {
         spawn.creature_row(
           looks:,
           factions:,
-          id: SpawnId(0),
+          id: placed_id(
+            blocks: ranks.kills,
+            marker: stand.marker,
+            creature:,
+            nth: list.count(list.take(stand.creatures, slot), fn(earlier) {
+              earlier.id == creature.id
+            }),
+          ),
           creature:,
           place: slot_place(
             marker: stand.marker,
@@ -259,9 +248,6 @@ pub fn place(
         )
       })
     })
-    |> list.index_map(fn(row, index) {
-      spawn.Row(..row, id: SpawnId(first + index))
-    })
   let kill_slots = kill_slot_counts(stands:)
   let click_rows =
     list.flat_map(click_stands, fn(stand) {
@@ -271,7 +257,12 @@ pub fn place(
           ..spawn.creature_row(
             looks:,
             factions:,
-            id: SpawnId(0),
+            id: placed_id(
+              blocks: ranks.clicks,
+              marker: stand.marker,
+              creature: want.creature,
+              nth: 0,
+            ),
             creature: want.creature,
             place: slot_place(
               marker: stand.marker,
@@ -285,10 +276,174 @@ pub fn place(
         )
       })
     })
-    |> list.index_map(fn(row, index) {
-      spawn.Row(..row, id: SpawnId(first + list.length(rows) + index))
-    })
   Placed(rows:, skipped:, click_rows:, click_skipped:, unread_links:)
+}
+
+/// What each kill objective asks for, with what is wrong with it (`plan`): the objectives
+/// of the kill table (`kills`, whose reward pane is the group), and types 2, 8 and 16.
+fn planned_jobs(
+  tables tables: table_store.Tables,
+  kills kills: Set(Int),
+  worlds worlds: Set(Int),
+  kinds kinds: Option(Kinds),
+) -> List(#(Option(Job), List(Skipped))) {
+  quest_objective.all(tables)
+  |> list.filter_map(fn(objective) {
+    case set.contains(kills, objective.id) {
+      True ->
+        Ok(#(
+          objective,
+          objective_kind.GroupOf(
+            target_group_id: quest_objective.target_group_id_reward_pane(
+              objective,
+            ),
+          ),
+        ))
+      False ->
+        result.map(
+          objective_kind.placed_target(objective_kind.of_row(objective)),
+          fn(named) { #(objective, named) },
+        )
+    }
+  })
+  |> list.map(fn(pair) {
+    plan(tables:, worlds:, kinds:, objective: pair.0, named: pair.1)
+  })
+}
+
+/// The id of the first spawn the server places for a quest, 1,000,000,000: a placed
+/// spawn's id is this plus its rank (`rank_space`), above every id a stored row is
+/// allowed (`refusals`) and inside the 32-bit integer of the spawn table's id and of a
+/// quest's used spawns (migrations 0008 and 0052). A spawn a run alone makes has a negative
+/// id (genesis_prime/world_map/spawn_source).
+const first_placed_id = 1_000_000_000
+
+/// The stored rows whose id is one the server places from: each is refused, so that a
+/// placed spawn's id never names a stored row too.
+pub fn refusals(stored stored: List(Row)) -> List(Refusal) {
+  list.filter_map(stored, fn(row) {
+    case number_of(row:) >= first_placed_id {
+      True ->
+        Ok(refusal.Refusal(
+          table: "spawn",
+          row: refusal.RowId(number_of(row:)),
+          rule: "its id is at or above "
+            <> int.to_string(first_placed_id)
+            <> ", where the spawns the server places begin",
+        ))
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// Where the ranks of one (marker, creature) start and how many it holds.
+type Block {
+  Block(start: Int, size: Int)
+}
+
+/// The ranks of every (marker WorldLocation2 id, Creature2 id) a placement can ask for,
+/// the kill rows' and the click rows' apart. A kill row of a creature at a marker takes
+/// the block's `start` plus its nth stand there; a click row stands once.
+type RankSpace {
+  RankSpace(kills: Dict(#(Int, Int), Block), clicks: Dict(#(Int, Int), Block))
+}
+
+/// The ranks of the client's tables alone, so that no stored row, added or deleted, moves
+/// a placed spawn's id and a quest's used objects of it are kept across a login. A triple
+/// of (kind, marker, creature) holds a block of ranks for each creature a kill objective
+/// (types 2, 8 and 16, and every type 5 objective as one that asks to kill) or a click
+/// objective (every type 5 objective that asks to click, and the creatures that
+/// `objective_link.links` ties to an objective of type 5 or 32) can stand at a marker. They
+/// are worked out as the placement works them out, in every world as if it held a stored
+/// row, with no stored row to serve a marker and no turret creature left out, so that no
+/// server table but the client's decides a rank. The kill triples come first, each kind in
+/// marker then creature order. A block holds as many ranks as the most any objective deals
+/// that creature at that marker (`slots_of`), which a marker's stand never exceeds: it
+/// takes the largest count of each creature over its objectives, not their sum.
+fn rank_space(tables tables: table_store.Tables) -> RankSpace {
+  let every_type_5 =
+    quest_objective.all(tables)
+    |> list.filter(fn(objective) {
+      objective_kind.of_row(objective) == objective_kind.Scripted
+    })
+    |> list.map(fn(objective) { objective.id })
+    |> set.from_list
+  let worlds =
+    world_location2.all(tables)
+    |> list.map(fn(row) { row.world_id })
+    |> set.from_list
+  let kill_sizes =
+    planned_jobs(tables:, kills: every_type_5, worlds:, kinds: None)
+    |> list.filter_map(fn(pair) { option.to_result(pair.0, Nil) })
+    |> list.fold(dict.new(), job_sizes)
+  let click_sizes =
+    click_stands(tables:, clicks: every_type_5, worlds:, stored: []).0
+    |> list.flat_map(fn(stand) {
+      list.map(stand.wants, fn(want) {
+        #(stand.marker.row.id, want.creature.id)
+      })
+    })
+    |> list.map(fn(key) { #(key, 1) })
+    |> dict.from_list
+  let #(kills, kill_ranks) = blocks_from(sizes: kill_sizes, start: 0)
+  let #(clicks, _) = blocks_from(sizes: click_sizes, start: kill_ranks)
+  RankSpace(kills:, clicks:)
+}
+
+/// `sizes` with, for each creature of the job at each marker, the ranks the job deals it
+/// there (`slots_of`) when that is more than `sizes` holds.
+fn job_sizes(
+  sizes sizes: Dict(#(Int, Int), Int),
+  job job: Job,
+) -> Dict(#(Int, Int), Int) {
+  list.fold(markers_by_world(job:), sizes, fn(sizes, world) {
+    let markers = world.1
+    list.index_fold(markers, sizes, fn(sizes, marker, index) {
+      let slots =
+        slots_of(count: job.count, markers: list.length(markers), index:)
+      list.fold(job.creatures, sizes, fn(sizes, creature) {
+        dict.upsert(sizes, #(marker.row.id, creature.id), fn(held) {
+          int.max(option.unwrap(held, 0), slots)
+        })
+      })
+    })
+  })
+}
+
+/// The blocks of these sizes in key order, the first starting at `start`, and the rank
+/// the next block would start at.
+fn blocks_from(
+  sizes sizes: Dict(#(Int, Int), Int),
+  start start: Int,
+) -> #(Dict(#(Int, Int), Block), Int) {
+  let #(blocks, next) =
+    dict.to_list(sizes)
+    |> list.sort(fn(a, b) {
+      int.compare(a.0.0, b.0.0)
+      |> order.break_tie(int.compare(a.0.1, b.0.1))
+    })
+    |> list.fold(#([], start), fn(state, entry) {
+      let #(blocks, at) = state
+      #([#(entry.0, Block(start: at, size: entry.1)), ..blocks], at + entry.1)
+    })
+  #(dict.from_list(blocks), next)
+}
+
+/// The id of the `nth` row (from 0) of the creature at the marker among those of its
+/// kind, `blocks` being the kind's. A triple the ranks lack, or an nth past its block,
+/// is a bug of `rank_space`, whose triples hold every row the stands can make.
+fn placed_id(
+  blocks blocks: Dict(#(Int, Int), Block),
+  marker marker: Marker,
+  creature creature: Creature2,
+  nth nth: Int,
+) -> SpawnId {
+  let assert Ok(Block(start:, size:)) =
+    dict.get(blocks, #(marker.row.id, creature.id))
+    as "the rank space holds a block for every creature a marker stands"
+  assert nth < size
+    as "the rank space holds a block as large as the creature's stands at the marker"
+  SpawnId(first_placed_id + start + nth)
 }
 
 /// The creatures one marker stands for the kill objectives, in the order of its
@@ -624,11 +779,12 @@ fn paired_unit_type(creature creature: Creature2) -> Int {
 }
 
 /// What the objective asks for and what is wrong with it. An objective with no
-/// marker asks for nothing and is not reported: it is no pair.
+/// marker asks for nothing and is not reported: it is no pair. With `kinds` of `None` no
+/// creature is left out as a turret with no kind.
 fn plan(
   tables tables: table_store.Tables,
   worlds worlds: Set(Int),
-  kinds kinds: Kinds,
+  kinds kinds: Option(Kinds),
   objective objective: QuestObjective,
   named named: objective_kind.PlacedTarget,
 ) -> #(option.Option(Job), List(Skipped)) {
@@ -714,15 +870,20 @@ fn marker_of(
 }
 
 /// Whether the creature's row makes it a turret (`creature_unit_type.of_creation_type`) the
-/// server has no kind for: it would stand as a static object, not fight.
-fn is_unrun_turret(creature creature: Creature2, kinds kinds: Kinds) -> Bool {
+/// server has no kind for: it would stand as a static object, not fight. Never when there
+/// are no `kinds` to ask.
+fn is_unrun_turret(
+  creature creature: Creature2,
+  kinds kinds: Option(Kinds),
+) -> Bool {
   case
     creature_unit_type.of_creation_type(
       creation_type: creature.creation_type_enum,
-    )
+    ),
+    kinds
   {
-    Turret -> !dict.has_key(kinds.by_creature, creature.id)
-    NonPlayer -> False
+    Turret, Some(kinds) -> !dict.has_key(kinds.by_creature, creature.id)
+    Turret, None | NonPlayer, _ -> False
   }
 }
 
@@ -740,20 +901,41 @@ pub fn held_by(
   |> set.from_list
 }
 
-/// The stands of one job, world by world in the order its markers first show them.
-fn stands_of(job job: Job, held held: Set(#(Int, Int))) -> List(Stand) {
+/// The markers of the job in each world they are in, worlds in the order their markers
+/// first show them and each world's markers in column order.
+fn markers_by_world(job job: Job) -> List(#(Int, List(Marker))) {
   job.markers
   |> list.map(fn(marker) { marker.row.world_id })
   |> list.unique
-  |> list.flat_map(fn(world_id) {
+  |> list.map(fn(world_id) {
+    #(
+      world_id,
+      list.filter(job.markers, fn(marker) { marker.row.world_id == world_id }),
+    )
+  })
+}
+
+/// The stands of one job, world by world.
+fn stands_of(job job: Job, held held: Set(#(Int, Int))) -> List(Stand) {
+  list.flat_map(markers_by_world(job:), fn(world) {
+    let #(world_id, markers) = world
     let creatures =
       list.filter(job.creatures, fn(creature) {
         !set.contains(held, #(world_id, creature.id))
       })
-    let markers =
-      list.filter(job.markers, fn(marker) { marker.row.world_id == world_id })
     stands_in_world(creatures:, markers:, count: job.count)
   })
+}
+
+/// How many of `count` the marker at `index` of `markers` markers is dealt, the count
+/// going to the markers one at a time.
+fn slots_of(count count: Int, markers markers: Int, index index: Int) -> Int {
+  count
+  / markers
+  + case index < count % markers {
+    True -> 1
+    False -> 0
+  }
 }
 
 /// The stands of one world: the count dealt to the markers one at a time, and the
@@ -773,13 +955,7 @@ fn stands_in_world(
     0, _ | _, 0 -> []
     _, _ ->
       list.index_map(markers, fn(marker, index) {
-        let slots =
-          count
-          / marker_count
-          + case index < count % marker_count {
-            True -> 1
-            False -> 0
-          }
+        let slots = slots_of(count:, markers: marker_count, index:)
         let dealt =
           list.repeat(Nil, slots)
           |> list.index_map(fn(_, slot) { slot })
@@ -1031,10 +1207,6 @@ fn number_of(row row: Row) -> Int {
 /// What the placement leaves undone, for the coverage measure.
 pub fn gaps() -> List(gap.Entry) {
   [
-    gap.Entry(
-      area: "Objective creature placement",
-      missing: "a placed creature keeps no used-object record across a login: its id is above every stored one and a later import can move it, so a quest object used before a relog counts again after it (42 objectives of the client's tables that list a creature with a placed spawn, and 48 that take any unit)",
-    ),
     gap.Entry(
       area: "Objective creature placement",
       missing: "the ground under the ring of a marker whose centre is not on the ground (an interior, a cave, a prop) or has no ground read: its creatures stand at the marker's height, which may be off the ground the client draws",
