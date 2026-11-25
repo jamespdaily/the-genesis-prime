@@ -1,6 +1,6 @@
 ---
 name: writing-tests
-description: How to write tests - layers, evidence for expected values, isolation, waiting for events, names. Use when writing or fixing tests.
+description: Sets how this project's tests are written - layers, evidence for expected values, table tests, isolation, waiting for events, names. Use when writing, fixing or reviewing tests.
 ---
 
 # Writing tests
@@ -12,15 +12,36 @@ A test proves the game, not the code. Four layers, most tests at the bottom:
 3. **Processes:** started under a supervisor inside the test, covering failure paths: a service away or restarting, a failed save, a second login.
 4. **The edge:** the client's bytes in and out; recorded sessions replayed through the whole server; the server's messages read by the client's own reader.
 
-- A test's expected value names its source (a client address, a table row, a recording, a retail record, the world database) or states the game rule it checks. It is never computed by the code under test, nor taken from the test support that builds the input: either would pass a check by construction. (Spawn tests expected the very health, faction and display their support fed in, 2026-11-04.) An expected value that seems wrong is checked against its source: a value its source settles is corrected with the source named, and any other is reported. An inventory (a list of tables, message modules, opcodes or world ids) is checked against a second source (the table files present, the schema, the rule's doc comment), never a literal list. (Nine hand-copied lists caused 48 CI failures in 14 days, test audit of 2026-11-20.)
-- Test at the boundary where you can, through public functions: a process's messages, the client's bytes, a recording. Assert on the effect that matters, found by a helper; build test data from defaults with record update.
-- Test each decision at the lowest layer that makes it. A higher layer tests only its own job, one test per path through it, and does not repeat the decisions below. Apply it to each test file a change touches. (The cast and connection tests were 2.4 to 2.6 times their code; a stealth blow was tested in both, and seven character-select outcomes again over the wire, 2026-11-07.)
-- **Table-driven tests with shared scene helpers.** A rule with several cases is tested by one test that runs a table of cases (input, expected result, reason) through one check, not one hand-built test per case. Scenes come from shared helpers in the test support files, so each case states only what differs. A test list names its cases as rows of such tables. (The last 12 steps added 19,726 test lines against 6,678 server lines, mostly hand-built scenes appended in blocks of 500 to 900 lines, 2026-11-17.)
-- Property tests (qcheck) check invariants of pure rules and every codec round-trip. A game rule with an invariant (a unit never counts twice, a channel never spends more than its bar holds) is checked by a property first; a table holds the cases tied to real client rows.
-- Tests share nothing: no fixed names, nodes or ports. A database test runs in its own database, made from the template `test/database_support.gleam` migrates once per run, so database tests are for processes and saves; rules and engines stay pure.
-- A test of logic reads the client's rows from the committed fixture, so it runs without the client's files (a fork's pull request in CI); a test that reads a whole table is guarded by `client_tables.present()`. A planted table is only for the table format itself; an edge case no client row holds edits a real row with `fixture_tables.changed` or `added`, and the test says why.
-- Wait for an event rather than a fixed time, and do not rely on the order of messages from two senders: Erlang orders signals only per sender. Each test body runs in its own process, inside `owned_test.run` (`test/code_rule/test_body.gleam` checks it). When a test fails, stop and name its cause before changing anything; a test that fails once is unexplained until then. A fix names its cause with the evidence (the failing lines and the code that makes them) in the commit and the hand-back; a slower step, a longer wait or a rerun is not a cause, and a test that fails in one run of many rolled a die (`GENESIS_TEST_SEED_SALT`, `test/fixed_seed.gleam`). (A whole-server test assumed every deflect roll misses and failed in about 1 of 15 runs of main, and a sibling was "fixed" by stepping slower with no cause named, 2026-11-20.)
-- A test never runs under a production time limit (a shutdown deadline, a send or ask deadline, a database client's default query timeout): it passes settings that cannot expire in the test. The test's own deadline (`owned_test.run`) warns; it does not end the test, so every wait must end by its own condition (a frame seen, an answer, a driven-clock step). (A wait for a frame sent before the wait began hung CI twice, 2026-11-18.) A whole-world data read (every spawn, every table row) belongs in the part of the check that runs on real data, not in a plain test. (Two tests failed on a loaded machine under borrowed production limits, 2026-11-17.)
-- A test asserts behaviour, not timing, a count that depends on a session's length, or how bytes were split into reads: those change from run to run. A value from a recording is checked by what it means, not by how many there are. A count of what the server handles lives in the coverage run posted on the issue (`gleam run -m genesis_prime/coverage`), never in a test's literal: keep the property (every row is planned or names its reason) and counts that come from the client alone. (168 tests pin hand-kept counts or lists, 2026-11-20.)
+## Expected values
+
+- An expected value names its source (a client address, a table row, a recording, a retail record, the world database) or states the game rule it checks. Never compute it with the code under test or take it from the support that builds the input.
+- An expected value that seems wrong is checked against its source: correct it with the source named if the source settles it, else report it.
+- An inventory (tables, message modules, opcodes, world ids) is checked against a second source (the table files present, the schema, the rule's doc comment), never a literal list.
+- A count of what the server handles lives in the coverage run posted on the issue (`gleam run -m genesis_prime/coverage`), never in a literal: test the property (every row is planned or names its reason), and counts that come from the client alone.
+
+## Shape
+
+- Test at the boundary through public functions: a process's messages, the client's bytes, a recording. Assert on the effect that matters, found by a helper; build test data from defaults with record update.
+- Test each decision at the lowest layer that makes it. A higher layer tests only its own job, one test per path, and never repeats the decisions below. Apply this to each test file a change touches.
+- A rule with several cases is one table test (input, expected, reason) through one check, with scenes from shared helpers in the test support files so each row states only what differs. A test list names its cases as rows.
+- A game rule with an invariant is checked by a qcheck property first; every codec round-trip has one. A table holds the cases tied to real client rows.
 - A test is named as the rule it checks: `a_full_inventory_refuses_a_new_item_test`.
 - Prove a reshape changes nothing by running every table row through old and new code, and prove the harness can fail.
+
+## Data and isolation
+
+- Tests share nothing: no fixed names, nodes or ports. A database test runs in its own database, made from the template `test/database_support.gleam` migrates once per run; database tests are for processes and saves, and rules and engines stay pure.
+- A logic test reads client rows from the committed fixture, so it runs without the client's files; a test that reads a whole table is guarded by `client_tables.present()`. A planted table is only for the table format itself; an edge case no client row holds edits a real row with `fixture_tables.changed` or `added`, and says why.
+- A whole-world data read (every spawn, every table row) belongs in the check's real-data part, not in a plain test.
+
+## Time and order
+
+- Wait for an event, never a fixed time, and never rely on the order of messages from two senders: Erlang orders signals only per sender. Drive timers and the clock; time bounds belong in load runs.
+- Each test body runs in its own process inside `owned_test.run` (`test/code_rule/test_body.gleam`). Its deadline warns and does not end the test, so every wait ends by its own condition: a frame seen, an answer, a driven-clock step.
+- A test never runs under a production time limit (a shutdown, send or ask deadline, a database client's default query timeout): it passes settings that cannot expire.
+- Assert behaviour, never timing, a count that depends on a session's length, or how bytes were split into reads. A recorded value is checked by what it means, not how many there are.
+
+## A failing test
+
+- Stop and name its cause before changing anything; a test that fails once is unexplained until then.
+- A fix names its cause with the evidence (the failing lines and the code that makes them) in the commit and the hand-back. A slower step, a longer wait or a rerun is not a cause. A test that fails in one run of many rolled a die (`GENESIS_TEST_SEED_SALT`, `test/fixed_seed.gleam`).

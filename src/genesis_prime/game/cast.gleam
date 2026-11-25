@@ -191,7 +191,9 @@ pub fn take(
       |> result.map(fn(taken) { released(taken:, caster:, now_ms:) })
   }
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
+  |> result.map(fn(taken) {
+    settled(cast:, fired: False, own: [], step: fn() { taken })
+  })
 }
 
 /// The caster's 0x97, the right-click of a unit, decoded and decided: the client's cast
@@ -221,7 +223,9 @@ pub fn activate(
     now_ms:,
   )
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
+  |> result.map(fn(taken) {
+    settled(cast:, fired: False, own: [], step: fn() { taken })
+  })
 }
 
 /// The caster's 0x943, the use of an item the client sends from StartItemUseCast
@@ -324,7 +328,7 @@ fn item_settled(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let taken = continued(taken:, caster:, now_ms:)
-  settled(cast:, own: [], step: fn() { taken })
+  settled(cast:, fired: False, own: [], step: fn() { taken })
 }
 
 /// What `item_used` decided: the state and effects of an answer that starts nothing, or
@@ -780,7 +784,9 @@ pub fn shortcut(
     now_ms:,
   )
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
+  |> result.map(fn(taken) {
+    settled(cast:, fired: False, own: [], step: fn() { taken })
+  })
 }
 
 fn shortcut_pressed(
@@ -1718,9 +1724,11 @@ fn press_started(
 /// then a heal and a receipt for each `Heal` change the input's effects start on the
 /// caster, then the events the input raised as it ran (`UsesAbility` in `start`), then a
 /// `SpendsResource` for each payment among its effects, then the stealth change. `step` is
-/// the input's own work.
+/// the input's own work. An input that belongs to a fired cast (`fired`) adds no pending event
+/// of any kind, though its effects run: its stealth change is still told to the client.
 fn settled(
   cast cast: State,
+  fired fired: Bool,
   own own: List(proc.Event),
   step step: fn() -> #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
@@ -1751,14 +1759,17 @@ fn settled(
     }
   }
   let before_count = list.length(cast.pending)
-  let events =
-    list.flatten([
-      own,
-      cast_proc.heals_landed(before: cast, after:, effects:),
-      list.drop(after.pending, before_count),
-      cast_proc.resources_spent(effects:),
-      stealth,
-    ])
+  let events = case fired {
+    True -> []
+    False ->
+      list.flatten([
+        own,
+        cast_proc.heals_landed(before: cast, after:, effects:),
+        list.drop(after.pending, before_count),
+        cast_proc.resources_spent(effects:),
+        stealth,
+      ])
+  }
   #(
     State(
       ..after,
@@ -1766,6 +1777,36 @@ fn settled(
     ),
     list.append(effects, moved),
   )
+}
+
+/// An input's result as `settled` makes it, with the held press and the held key's repeat
+/// that the step's end let start (`released`, `continued`). They are the player's own
+/// presses: when the step belongs to a fired cast, only the step's events are dropped, and
+/// the press's start raises its own (`UsesAbility`, a spend, a stealth change) as it does
+/// after any input.
+fn settled_then_released(
+  cast cast: State,
+  fired fired: Bool,
+  own own: List(proc.Event),
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  step step: fn() -> #(State, List(Effect)),
+) -> #(State, List(Effect)) {
+  let followed = fn(taken) {
+    released(taken:, caster:, now_ms:) |> continued(caster:, now_ms:)
+  }
+  case fired {
+    False -> settled(cast:, fired:, own:, step: fn() { followed(step()) })
+    True -> {
+      let #(after, effects) = settled(cast:, fired:, own:, step:)
+      let #(next, all) = followed(#(after, effects))
+      let #(next, started) =
+        settled(cast: after, fired: False, own: [], step: fn() {
+          #(next, list.drop(all, list.length(effects)))
+        })
+      #(next, list.append(effects, started))
+    }
+  }
 }
 
 /// The state with the events the facts raise appended to the pending ones, in the facts'
@@ -1788,7 +1829,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
             holder: None,
           ),
         ]
-        ResourceMoved(slot:, from:, to:) if from != to ->
+        ResourceMoved(slot:, from:, to:, fired: False) if from != to ->
           list.flatten([
             [
               proc.Event(
@@ -2110,7 +2151,7 @@ fn proc_started(
     named_player:,
     counted_with: WithNothing,
     from:,
-    lands_spell: False,
+    fired: True,
   )
 }
 
@@ -2120,9 +2161,11 @@ fn proc_started(
 /// and a global cooldown starts only when the child's spell has one (`start`). `counted_with`
 /// and `from` are what the child counts its quest rows with and the item whose value it
 /// reads, handed down from the cast that started it (`WithNothing` for a proc and a tick,
-/// which count no quest row). `named_player` is the player a child of a Proxy aimed at the primary target is
-/// started on (`children`): a player the caster no longer sees starts no child, and a debug
-/// line says so, as the press's own rule refuses a press at a player out of sight.
+/// which count no quest row). `fired` is true for the cast a proc fire starts and for every
+/// child below a fired cast (`Child.fired`). `named_player` is the player a child of a Proxy
+/// aimed at the primary target is started on (`children`): a player the caster no longer sees
+/// starts no child, and a debug line says so, as the press's own rule refuses a press at a
+/// player out of sight.
 fn child_started(
   cast cast: State,
   caster caster: Caster,
@@ -2134,7 +2177,7 @@ fn child_started(
   named_player named_player: Option(Int),
   counted_with counted_with: AdvanceWith,
   from from: Option(PressedFrom),
-  lands_spell lands_spell: Bool,
+  fired fired: Bool,
 ) -> #(State, List(Effect)) {
   let unseen =
     option.then(named_player, fn(player) {
@@ -2164,7 +2207,7 @@ fn child_started(
         parent: Some(parent),
         primary_target:,
         client_cast_id: None,
-        role: Child(counted_with:, from:, named_player:, lands_spell:),
+        role: Child(counted_with:, from:, named_player:, fired:),
         spent: None,
         reserved: [],
       )
@@ -2996,13 +3039,14 @@ pub fn timer_fired(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: [])
-  released(
-    taken: fire(cast:, timer:, caster:, now:),
+  use <- settled_then_released(
+    cast:,
+    fired: cast_proc.timer_fired(cast:, timer:),
+    own: [],
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  fire(cast:, timer:, caster:, now:)
 }
 
 /// A channel's finish timer fired: the cast ends, or, when a go's strike round is still
@@ -3058,7 +3102,7 @@ fn tick_child_started(
       },
       counted_with: WithNothing,
       from: holder.handed_down,
-      lands_spell: True,
+      fired: holder.fired,
     )
   }
 }
@@ -3093,6 +3137,7 @@ fn fire(
           named_player:,
           counted_with:,
           from:,
+          fired:,
         ) ->
           child_started(
             cast:,
@@ -3105,7 +3150,7 @@ fn fire(
             named_player:,
             counted_with:,
             from:,
-            lands_spell: True,
+            fired:,
           )
         NodesEnd(cast_id:) -> {
           let #(cast, ticks) =
@@ -3186,7 +3231,9 @@ fn fire(
 /// live, because the client ended it while the round was open, has no go and writes
 /// nothing: the hits stand, and they raise their events (`cast_proc.hit_events`) for the spell of the
 /// cast while it is held, else for `spell`, the go's spell as the areas name it by its
-/// Spell4 id (`GoAsked.spell4_id`); a go the areas do not name strikes nobody. `poses` are
+/// Spell4 id (`GoAsked.spell4_id`); a go the areas do not name strikes nobody. A go of a fired
+/// cast raises none, and `fired` is the cast's flag as the go was asked (`GoAsked.fired`), which
+/// answers for a cast the client ended while the round was open. `poses` are
 /// the Hit units' ground points and yaws as the caster's picture holds them when the round
 /// closes, by unit id, which a Proxy's target gate reads (`children`); a Hit unit with none is not shown any more. `indexes` are the
 /// checklist indexes their 0x262 carried, by unit id, which a type 94 condition of that gate
@@ -3214,8 +3261,10 @@ pub fn went(
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
+  fired asked_fired: Bool,
 ) -> #(State, List(Effect)) {
   let lands = cast_proc.go_lands_spell(cast:, cast_id:)
+  let fired = cast_proc.cast_fired(cast:, cast_id:, removed: asked_fired)
   let own =
     cast_state.holder_of(cast:, cast_id:)
     |> result.map(fn(holder) { holder.spell })
@@ -3227,25 +3276,26 @@ pub fn went(
       })
     })
     |> result.unwrap([])
-  use <- settled(cast:, own:)
-  released(
-    taken: go(
-      cast:,
-      caster:,
-      now_ms: now.monotonic_ms,
-      cast_id:,
-      phase:,
-      struck:,
-      gates_passed:,
-      poses:,
-      indexes:,
-      units:,
-      rolls:,
-    ),
+  use <- settled_then_released(
+    cast:,
+    fired:,
+    own:,
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  go(
+    cast:,
+    caster:,
+    now_ms: now.monotonic_ms,
+    cast_id:,
+    phase:,
+    struck:,
+    gates_passed:,
+    poses:,
+    indexes:,
+    units:,
+    rolls:,
+  )
 }
 
 /// A go of a live cast is asked: its first go pays the cast's reserved costs, a later
@@ -3360,6 +3410,7 @@ fn went_asked(
           primary_target: live.primary_target,
           spent: live.spent,
           started_at: live.started_at,
+          fired: live.fired,
         )),
       ]),
     )
@@ -3477,13 +3528,16 @@ pub fn ticked(
       cast_proc.hit_events(spell: holder.spell, struck: [one])
     _, _ -> []
   }
-  use <- settled(cast:, own:)
-  released(
-    taken: tick_closed(cast:, now_ms: now.monotonic_ms, asked:, struck:),
+  let fired =
+    cast_proc.cast_fired(cast:, cast_id: asked.cast_id, removed: False)
+  use <- settled_then_released(
+    cast:,
+    fired:,
+    own:,
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  tick_closed(cast:, now_ms: now.monotonic_ms, asked:, struck:)
 }
 
 /// The units inside the area of a periodic Proxy's tick are found (the connection's
@@ -3506,22 +3560,25 @@ pub fn proxy_tick_units_found(
   indexes indexes: Dict(Int, Int),
   first_units first_units: Dict(Int, prerequisite.FirstUnit),
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: [])
-  released(
-    taken: proxy_tick_closed(
-      cast:,
-      caster:,
-      now_ms: now.monotonic_ms,
-      asked:,
-      units:,
-      poses:,
-      indexes:,
-      first_units:,
-    ),
+  let fired =
+    cast_proc.cast_fired(cast:, cast_id: asked.cast_id, removed: False)
+  use <- settled_then_released(
+    cast:,
+    fired:,
+    own: [],
     caster:,
     now_ms: now.monotonic_ms,
   )
-  |> continued(caster:, now_ms: now.monotonic_ms)
+  proxy_tick_closed(
+    cast:,
+    caster:,
+    now_ms: now.monotonic_ms,
+    asked:,
+    units:,
+    poses:,
+    indexes:,
+    first_units:,
+  )
 }
 
 /// The children of a periodic Proxy's tick on the units found: the holder's root and spell
@@ -3550,6 +3607,7 @@ fn proxy_children_found(
       parent: holder.spell.spell4_id,
       counted_with: WithNothing,
       from: holder.handed_down,
+      fired: holder.fired,
       subject: cast_tick.subject_of(cast:, caster:),
       poses:,
       indexes:,
@@ -3691,7 +3749,7 @@ pub fn died(
   caster _caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: [
+  use <- settled(cast:, fired: False, own: [
     proc.Event(
       trigger: spell_plan.Died,
       other_unit: None,
@@ -3709,7 +3767,7 @@ pub fn combat_left(
   caster _caster: Caster,
   now _now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: [
+  use <- settled(cast:, fired: False, own: [
     proc.Event(
       trigger: spell_plan.LeftCombat,
       other_unit: None,
@@ -3747,7 +3805,7 @@ pub fn persisted(
   caster caster: Caster,
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: [])
+  use <- settled(cast:, fired: False, own: [])
   let now_ms = now.monotonic_ms
   let #(cast, ended) = persistence_ended(cast:, caster:, now_ms:, done: [])
   let #(cast, effects) =
@@ -3911,7 +3969,7 @@ pub fn stopped_by_placement(
     Some(cast_id) -> {
       let cancel =
         CancelCast(cast_id:, reason: cast_result.from_value(6), cancelled: 1)
-      use <- settled(cast:, own: [])
+      use <- settled(cast:, fired: False, own: [])
       let #(unheld, stopped) = cast_press.stop_holding(cast:)
       let #(cast, ended) =
         cancelling(
@@ -3956,7 +4014,7 @@ pub fn standing_changed(
   wanted wanted: List(Standing),
   now now: Now,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: [])
+  use <- settled(cast:, fired: False, own: [])
   let now_ms = now.monotonic_ms
   let wanted_keys =
     set.from_list(list.map(wanted, fn(standing) { standing_key_of(standing:) }))
@@ -4084,7 +4142,7 @@ pub fn level_up_started(
       counted_with: WithNothing,
       from: None,
       named_player: None,
-      lands_spell: True,
+      fired: False,
     ),
     spent: None,
     reserved: [],
@@ -4179,7 +4237,7 @@ fn stealth_after_blow(
   events events: List(proc.Event),
   lowered lowered: Bool,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: events)
+  use <- settled(cast:, fired: False, own: events)
   case lowered {
     True -> cast_proc.broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
     False -> #(cast, [])
@@ -4298,6 +4356,11 @@ fn start(
       finish_due: False,
       goes_asked: 0,
       lands_spell: cast_proc.role_lands_spell(role:),
+      fired: case role {
+        Child(fired:, ..) -> fired
+        Base(..) | Stage(..) | Passive(..) | Activation(..) | Shortcut(..) ->
+          False
+      },
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive(..), _ -> cast.global_cooldown_ends_ms
@@ -4737,6 +4800,7 @@ fn go(
           subject:,
           rolls:,
           spent: live.spent,
+          fired: live.fired,
         )
       let #(applied, lasting_logs, rolls) =
         cast_control.lasting_applied(
@@ -4941,6 +5005,7 @@ fn go(
               parent: live.spell.spell4_id,
               counted_with: live.counted_with,
               from: cast_state.handed_down(live:),
+              fired: live.fired,
               subject:,
               poses:,
               indexes:,
@@ -6264,6 +6329,7 @@ fn children(
   parent parent: Spell4Id,
   counted_with counted_with: AdvanceWith,
   from from: Option(PressedFrom),
+  fired fired: Bool,
   subject subject: prerequisite.Subject,
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
@@ -6301,6 +6367,7 @@ fn children(
             },
             counted_with:,
             from:,
+            fired:,
           )
         #(cast, list.append(effects, more), rolls)
       }
@@ -6327,6 +6394,7 @@ fn child(
   named_player named_player: Option(Int),
   counted_with counted_with: AdvanceWith,
   from from: Option(PressedFrom),
+  fired fired: Bool,
 ) -> #(State, List(Effect)) {
   case proxy.delay_ms > 0 {
     False ->
@@ -6341,7 +6409,7 @@ fn child(
         named_player:,
         counted_with:,
         from:,
-        lands_spell: True,
+        fired:,
       )
     True -> {
       let #(cast, _, start) =
@@ -6355,6 +6423,7 @@ fn child(
             proxy:,
             counted_with:,
             from:,
+            fired:,
           ),
           after_ms: proxy.delay_ms,
         )
@@ -6457,6 +6526,7 @@ fn finish_or_linger(
               nodes: dict.from_list(kept),
               ticking: live.ticking,
               handed_down: cast_state.handed_down(live:),
+              fired: live.fired,
             ),
           ),
         )

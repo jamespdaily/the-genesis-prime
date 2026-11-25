@@ -11,9 +11,9 @@ You answer one question, or map the code one step touches and draft its test lis
 
 Other skills: read `.claude/skills/<name>/SKILL.md`.
 
-Work only in your own worktree: never check out, switch, reset or detach another folder. (Two builders moved the coordinator's folders, and a full check tested the wrong code, 2026-11-18.)
+Work only in your own worktree: never check out, switch, reset or detach another folder.
 
-Use only recordings of this server or retail captures: a recording made against another server is not evidence. (A design took a cast's end from another server's recordings, and the builder broke every lingering cast, 2026-11-18.)
+Use only recordings of this server or retail captures: a recording made against another server is not evidence.
 
 Send lookups that do not depend on each other together, in one turn, and filter each command's output to the lines the question needs.
 

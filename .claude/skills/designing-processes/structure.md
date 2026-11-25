@@ -2,7 +2,6 @@
 
 ## Structure
 
-- Isolated parts of the game get isolated processes.
 - A short-lived job (one query, one task) runs as a supervised worker, such as a factory supervisor's temporary child; gleam_otp has no task module.
 - Data one process writes and many read while the server runs goes in ETS owned by that process, read directly by the others: a spatial grid, a counter. Data nobody changes while running goes in a persistent term ([connections-logging-memory.md](connections-logging-memory.md)).
 - Peers send to each other rather than call: two peers that wait on each other can deadlock. A timed call up the tree, to a registry or a worker, is normal.
@@ -15,8 +14,7 @@
 - When sending more than one message to a named process, look it up once and send to the subject or pid.
 - Database work runs in supervised workers with deadlines, not inside a busy process's handler or an actor's initialiser (the storing-data skill).
 - A process that can fall behind has a measured ceiling and a load test. Keep a producer from outrunning its consumer: batch, shed or look things up instead.
-- Time comes from the monotonic clock and timed messages; a rule takes the time as an input and does not read the wall clock. The monotonic clock can be negative, so 0 does not mean none.
-- Rules are deterministic: they take the current time and the random state as inputs.
+- Time comes from the monotonic clock and timed messages. A rule takes the time and the random state as inputs and never reads a clock. The monotonic clock can be negative, so 0 does not mean none.
 
 ## Restarts and shutdown
 
