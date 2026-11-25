@@ -13,6 +13,13 @@
 ////   from the tenth second to the twentieth, so the creatures lose their targets;
 //// - `delayed MS`: walker 1's answers reach the creature MS ms after it sent them;
 //// - `held MS`: walker 1 sends each answer MS ms after the strike reached it;
+//// - `respawning`: the Daguns' kind (Creature2 73465, which has no row of its own and takes
+////   the default row's 60 s) respawns after `respawn_ms` (1,500, above the strike deadline
+////   the load refuses a kind below), so with `mutual` the Daguns die and their next lives
+////   start in the run. The kinds are put over the load's own before the tree starts
+////   (`content/creature_kind.put`, which replaces the term); the database is untouched. Each
+////   walker counts the respawn gap: the time from the 0x355 a creature's corpse timer sent it
+////   to the next 0x262 of the same unit, which the map's start of the next life sent;
 //// - `unrecorded`: the operating system's timers for every deadline, as the server runs
 ////   without the recorder, and the strike rounds are not counted: the run that shows
 ////   what the recorder costs.
@@ -49,6 +56,9 @@
 ////   due and was not in the round when it closed; **late** when it was sent at or after
 ////   it; the rounds are counted by how they closed: an answer, the deadline, a death, a
 ////   state, a broken charge, the leash, or a cancel with no sign of why, or still open;
+//// - with `respawning`, the respawn gaps the walkers counted: how many, their mean and 99th
+////   percentile in microseconds as the walker was sent them, and the longest, and whether the
+////   mean is under 1 ms;
 //// - option A's count: for each move, the creatures in the mover's sight, summed
 ////   over the moves, the messages a design that told every seen creature of every
 ////   move would send.
@@ -75,6 +85,7 @@ import genesis_prime/client_connection.{
   type Message, ForStay, SentByFoe, SentByMap, SentByPeer, SentByTarget,
 }
 import genesis_prime/connection/registry
+import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/crowd_control
@@ -99,6 +110,7 @@ import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, Creature2Id, RaceId}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
@@ -143,6 +155,10 @@ const dagun = 73_465
 
 const daguns = 27
 
+/// The Daguns' respawn time in the `respawning` scene, in milliseconds: above the strike
+/// deadline (1,000), which a kind may not undercut (`creature_kind.select`).
+const respawning_ms = 1500
+
 /// A walker of the `mutual` scene strikes each creature that threatens it once in this
 /// many moves (a second), and every `stun_every`th strike carries Stagger's stun
 /// (Spell4Effects 83827: delay 0, duration 2,500 ms, 1 armor).
@@ -174,6 +190,8 @@ type Counts {
     by_creature: Dict(Int, Int),
     creature_news: Int,
     map_notices: Int,
+    removed_at_us: Dict(Int, Int),
+    respawn_gaps_us: List(Int),
   )
 }
 
@@ -188,7 +206,14 @@ type Plant {
 /// What a run does: its walkers, the plant of walker 1, and the words that change what
 /// the walkers and the recorder do (see the module's doc).
 type Scene {
-  Scene(walkers: Int, plant: Plant, mutual: Bool, leaving: Bool, recorded: Bool)
+  Scene(
+    walkers: Int,
+    plant: Plant,
+    mutual: Bool,
+    leaving: Bool,
+    respawning: Bool,
+    recorded: Bool,
+  )
 }
 
 @external(erlang, "load_fight_ffi", "reductions")
@@ -199,6 +224,10 @@ pub fn main() -> Nil {
   let recorder = load_deadline.start()
   let settings =
     load_run.start_server_with(change: fn(settings) {
+      case scene.respawning {
+        True -> respawn_daguns_quickly(settings:)
+        False -> Nil
+      }
       server.Settings(
         ..load_run.on_free_ports(settings),
         service_time: case scene.recorded {
@@ -293,6 +322,25 @@ pub fn main() -> Nil {
   )
 }
 
+/// The Daguns' kind with a respawn time of `respawning_ms`, put over the kinds the load put
+/// under the world's key before the tree starts, so the maps and creatures read it. The
+/// kind is the Daguns' own when they have a row, else the default row's.
+fn respawn_daguns_quickly(settings settings: server.Settings) -> Nil {
+  let kinds = content_creature_kind.kinds(settings.world.spawns)
+  let own = creature_kind.kind_of(kinds:, creature2_id: dagun)
+  content_creature_kind.put(
+    key: settings.world.spawns,
+    kinds: Kinds(
+      ..kinds,
+      by_creature: dict.insert(
+        kinds.by_creature,
+        dagun,
+        Kind(..own, respawn_ms: respawning_ms),
+      ),
+    ),
+  )
+}
+
 /// The scene the arguments name: a count of walkers, when the first is a number, and
 /// the words.
 fn scene_of(arguments: List(String)) -> Scene {
@@ -302,6 +350,7 @@ fn scene_of(arguments: List(String)) -> Scene {
       plant: Honest,
       mutual: False,
       leaving: False,
+      respawning: False,
       recorded: True,
     )
   case arguments {
@@ -321,6 +370,8 @@ fn words_of(words words: List(String), scene scene: Scene) -> Scene {
       words_of(words: rest, scene: Scene(..scene, mutual: True))
     ["leaving", ..rest] ->
       words_of(words: rest, scene: Scene(..scene, leaving: True))
+    ["respawning", ..rest] ->
+      words_of(words: rest, scene: Scene(..scene, respawning: True))
     ["unrecorded", ..rest] ->
       words_of(words: rest, scene: Scene(..scene, recorded: False))
     ["delayed", ms, ..rest] ->
@@ -331,7 +382,7 @@ fn words_of(words words: List(String), scene scene: Scene) -> Scene {
     ["held", ms, ..rest] ->
       words_of(words: rest, scene: Scene(..scene, plant: Held(ms: whole(ms))))
     [_, ..] ->
-      panic as "the arguments are: [walkers] [mutual] [leaving] [unrecorded] [delayed|held milliseconds]"
+      panic as "the arguments are: [walkers] [mutual] [leaving] [respawning] [unrecorded] [delayed|held milliseconds]"
   }
 }
 
@@ -480,6 +531,8 @@ fn walker(
             by_creature: dict.new(),
             creature_news: 0,
             map_notices: 0,
+            removed_at_us: dict.new(),
+            respawn_gaps_us: [],
           ),
         )
       let _sent =
@@ -783,6 +836,7 @@ fn hear(
     }
     Ok(ForStay(sent: SentByPeer(news:), ..)) -> {
       let counts = Counts(..counts, creature_news: counts.creature_news + 1)
+      let counts = respawn_gap(counts:, unit_id: news.unit_id, news: news.news)
       case sign_of(news.news) {
         Ok(sign) ->
           again(fighters, marked(counts:, unit_id: news.unit_id, sign:))
@@ -809,6 +863,41 @@ fn hear(
     Ok(ForStay(sent: SentByMap(..), ..)) ->
       again(fighters, Counts(..counts, map_notices: counts.map_notices + 1))
     Ok(_) -> again(fighters, counts)
+  }
+}
+
+/// The counts after a news of the creature `unit_id`: a removal is stamped, and the next
+/// creation of the same unit is one respawn, whose gap is the time between the two as the
+/// walker was sent them.
+fn respawn_gap(
+  counts counts: Counts,
+  unit_id unit_id: Int,
+  news news: unit_news.News,
+) -> Counts {
+  case news {
+    unit_news.Removed ->
+      Counts(
+        ..counts,
+        removed_at_us: dict.insert(
+          counts.removed_at_us,
+          unit_id,
+          load_sample.microseconds(),
+        ),
+      )
+    unit_news.CreatureAppeared(..) ->
+      case dict.get(counts.removed_at_us, unit_id) {
+        Ok(removed_us) ->
+          Counts(
+            ..counts,
+            removed_at_us: dict.delete(counts.removed_at_us, unit_id),
+            respawn_gaps_us: [
+              load_sample.microseconds() - removed_us,
+              ..counts.respawn_gaps_us
+            ],
+          )
+        Error(Nil) -> counts
+      }
+    _ -> counts
   }
 }
 
@@ -966,6 +1055,37 @@ fn character(id: Int) -> store.Character {
   )
 }
 
+/// The respawn gaps of every walker, in microseconds.
+fn total_gaps(counts: List(Counts)) -> List(Int) {
+  list.flat_map(counts, fn(one) { one.respawn_gaps_us })
+}
+
+/// What the respawn gaps say: how many, the mean, the 99th percentile and the longest, and
+/// whether the mean is under 1 ms (1,000 microseconds).
+fn respawn_gaps(gaps gaps: List(Int)) -> String {
+  let sorted = list.sort(gaps, int.compare)
+  let count = list.length(sorted)
+  let sum = list.fold(sorted, 0, int.add)
+  let percentile = case list.drop(sorted, { count * 99 + 99 } / 100 - 1) {
+    [found, ..] -> found
+    [] -> 0
+  }
+  let longest = list.fold(sorted, 0, int.max)
+  "respawn gaps (a 0x355 to the next 0x262 of the unit, as a walker was sent them): "
+  <> int.to_string(count)
+  <> ", mean "
+  <> load_moves.per(total: sum, count:)
+  <> " us, 99th "
+  <> int.to_string(percentile)
+  <> " us, longest "
+  <> int.to_string(longest)
+  <> " us; "
+  <> case count > 0 && sum < count * 1000 {
+    True -> "the mean is under 1 ms"
+    False -> "the mean is not under 1 ms, or no respawn was seen"
+  }
+}
+
 fn report(
   scene scene: Scene,
   rounds rounds: Option(Rounds),
@@ -999,6 +1119,13 @@ fn report(
     }
     <> case scene.leaving {
       True -> ", the walkers leaving sight"
+      False -> ""
+    }
+    <> case scene.respawning {
+      True ->
+        ", the Daguns respawning after "
+        <> int.to_string(respawning_ms)
+        <> " ms"
       False -> ""
     }
     <> case scene.recorded {
@@ -1089,6 +1216,10 @@ fn report(
         <> int.to_string(rounds.unmatched),
       )
     }
+  }
+  case scene.respawning {
+    True -> io.println(respawn_gaps(gaps: total_gaps(counts)))
+    False -> Nil
   }
   io.println(
     "option A's count: "
