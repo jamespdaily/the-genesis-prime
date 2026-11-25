@@ -430,24 +430,30 @@ pub fn a_respawn_is_read_from_every_form_that_tells_a_removal_then_a_creation_te
   let rows = [
     #(
       "a removal then a creation, both the creature's own news: one gap",
-      [#(removed_by_creature(7), 1000), #(created_by_creature(7), 1600)],
+      [
+        #(removed_by_creature(unit_id: 7), 1000),
+        #(created_by_creature(unit_id: 7), 1600),
+      ],
       [600],
     ),
     #(
       "a creation with no removal before it: none",
-      [#(created_by_creature(7), 1600)],
+      [#(created_by_creature(unit_id: 7), 1600)],
       [],
     ),
     #(
       "a removal by the map (Gone), then a creation by the map (ObjectsSeen): one gap",
-      [#(SentByMap(Gone(unit_id: 7)), 1000), #(created_by_map(7), 1250)],
+      [
+        #(SentByMap(Gone(unit_id: 7)), 1000),
+        #(created_by_map(unit_id: 7), 1250),
+      ],
       [250],
     ),
     #(
       "a removal by the map (ObjectsUnseen of two units), then the map's creation of one: one gap",
       [
         #(SentByMap(ObjectsUnseen(unit_ids: [7, 8])), 1000),
-        #(created_by_map(8), 1300),
+        #(created_by_map(unit_id: 8), 1300),
       ],
       [300],
     ),
@@ -458,36 +464,42 @@ pub fn a_respawn_is_read_from_every_form_that_tells_a_removal_then_a_creation_te
           SentByMap(UnitUnseen(unit_id: 7, generation: generation.first())),
           1000,
         ),
-        #(created_by_creature(7), 1100),
+        #(created_by_creature(unit_id: 7), 1100),
       ],
       [100],
     ),
     #(
       "a removal by the creature, then the map's creation: one gap",
-      [#(removed_by_creature(7), 1000), #(created_by_map(7), 1900)],
+      [
+        #(removed_by_creature(unit_id: 7), 1000),
+        #(created_by_map(unit_id: 7), 1900),
+      ],
       [900],
     ),
     #(
       "a removal of another unit before the creation: none",
-      [#(removed_by_creature(8), 1000), #(created_by_creature(7), 1600)],
+      [
+        #(removed_by_creature(unit_id: 8), 1000),
+        #(created_by_creature(unit_id: 7), 1600),
+      ],
       [],
     ),
     #(
       "a second creation after one removal: only the first is a respawn",
       [
-        #(removed_by_creature(7), 1000),
-        #(created_by_creature(7), 1600),
-        #(created_by_creature(7), 2600),
+        #(removed_by_creature(unit_id: 7), 1000),
+        #(created_by_creature(unit_id: 7), 1600),
+        #(created_by_creature(unit_id: 7), 2600),
       ],
       [600],
     ),
     #(
       "two respawns of one unit: two gaps",
       [
-        #(removed_by_creature(7), 1000),
-        #(created_by_creature(7), 1600),
+        #(removed_by_creature(unit_id: 7), 1000),
+        #(created_by_creature(unit_id: 7), 1600),
         #(SentByMap(Gone(unit_id: 7)), 3000),
-        #(created_by_map(7), 3200),
+        #(created_by_map(unit_id: 7), 3200),
       ],
       [200, 600],
     ),
