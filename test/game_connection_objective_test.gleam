@@ -45,13 +45,17 @@
 //// - `QuestObjective.type.32.sources`: a use of Creature2 12919 (quest 3741, objective
 ////   0, VirtualItem 363) counts one; a guess, graded so.
 
+import account_store_support.{type Stored}
 import cast_support
 import connection_rule_support as support
 import experience_support
 import fixture_tables
 import game_client
+import game_connection_dev_command_store_support as store_support
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Answer, type Message, type Request}
+import genesis_prime/client_connection.{
+  type Answer, type Message, type Request, AskStore,
+}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
@@ -70,12 +74,16 @@ import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
-import genesis_prime/store.{type QuestRow, HeldItem}
+import genesis_prime/store.{
+  type QuestRow, CharacterLoaded, ForMove, ForWorld, HeldItem, LoadCharacter,
+  Move, PlaceSaved, SavePlace, World,
+}
 import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen, ObjectsUnseen}
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
 import gleam/option
@@ -247,14 +255,13 @@ fn seeing_a_use_target(
     state:,
     event: connection_support.sent_by_the_map(
       ObjectsSeen(units: [
-        static_object.create(
+        spawn_support.seen(
           object: StaticObject(
             ..spawn_support.holoring(number: unit, place:),
             creature_id: Creature2Id(creature_id),
             display_info_id:,
           ),
           unit_id: unit,
-          server_time_estimate_start: 0,
         ),
       ]),
     ),
@@ -289,12 +296,29 @@ fn activate_unit_on(unit_id unit_id: Int) -> BitArray {
 /// The connection of a player whose log holds this row, which sees each of these units
 /// (unit id, creature id, display info id) 2.7 east of the player: with the player's
 /// Race hitRadius 1.2 and the creatures' display hitRadius 1.0 (`Creature2DisplayInfo`
-/// 25769, 26051 and 26092), 0.5 from the player's edge to theirs.
+/// 25769, 26051 and 26092), 0.5 from the player's edge to theirs. Each stands at the spawn
+/// of its unit id's number.
 fn seeing_units(
   row row: QuestRow,
   units units: List(#(Int, Int, Int)),
 ) -> game_connection.State {
-  let #(state, _) = connection_support.entered_with_quests(quests: [row])
+  seeing_spawns(
+    settings: connection_support.settings(),
+    rows: [row],
+    objects: list.map(units, fn(seen) { #(seen.0, seen.0, seen.1, seen.2) }),
+  )
+}
+
+/// `seeing_units` for a player whose saved log holds these rows, under these settings, which
+/// sees each of these objects (spawn id, unit id, creature id, display info id): the unit
+/// id is the run's, the spawn is the row's.
+fn seeing_spawns(
+  settings settings: connection_state.Settings,
+  rows rows: List(QuestRow),
+  objects objects: List(#(Int, Int, Int, Int)),
+) -> game_connection.State {
+  let #(state, _) =
+    connection_support.entered_with_quests_in(settings:, quests: rows)
   let place =
     connection_support.standing_at(
       x: 29.128599166870117 +. 2.7,
@@ -305,15 +329,14 @@ fn seeing_units(
     state:,
     event: connection_support.sent_by_the_map(
       ObjectsSeen(
-        units: list.map(units, fn(seen) {
-          static_object.create(
+        units: list.map(objects, fn(seen) {
+          spawn_support.seen(
             object: StaticObject(
               ..spawn_support.holoring(number: seen.0, place:),
-              creature_id: Creature2Id(seen.1),
-              display_info_id: seen.2,
+              creature_id: Creature2Id(seen.2),
+              display_info_id: seen.3,
             ),
-            unit_id: seen.0,
-            server_time_estimate_start: 0,
+            unit_id: seen.1,
           )
         }),
       ),
@@ -1425,14 +1448,13 @@ fn seeing_a_slaver_shack_holding_the_grenade() -> game_connection.State {
     state:,
     event: connection_support.sent_by_the_map(
       ObjectsSeen(units: [
-        static_object.create(
+        spawn_support.seen(
           object: StaticObject(
             ..spawn_support.holoring(number: unit, place:),
             creature_id: Creature2Id(slaver_shack),
             display_info_id: slaver_shack_display,
           ),
           unit_id: unit,
-          server_time_estimate_start: 0,
         ),
       ]),
     ),
@@ -1492,38 +1514,152 @@ pub fn using_the_same_unit_twice_sends_progress_once_test() -> Nil {
       #(unit, 30_826, 26_092),
       #(other_unit, 30_827, 25_769),
     ])
-  let use_at = fn(state, at, unit_id) {
-    let #(state, started) =
-      connection_support.at(
-        state:,
-        ms: at,
-        event: OwnEvent(step.Read(right_click_on(unit_id:))),
-      )
-    let #(state, go) =
-      connection_support.casts_run(
-        state:,
-        pending: connection_support.cast_timers(steps: [started], ms: at),
-        until_ms: at + 2000,
-        steps: [],
-      )
-    let steps = [started, ..go]
-    #(state, ids_of(steps:), steps)
-  }
-  let #(state, first_ids, first) = use_at(state, 0, unit)
-  assert first_ids == [0x07FD, 0x07F4, 0x07FE, 0x0361]
+  let #(state, first) = right_click_used(state:, at: 0, unit_id: unit)
+  assert ids_of(steps: first) == [0x07FD, 0x07F4, 0x07FE, 0x0361]
     as "opcode.0x97 and 0x7fd: the cast, its go and finish, then the use counts"
   assert progress_frames(steps: first)
     == [progress_frame(quest: 6723, index: 0, progress: 1)]
     as "opcode.0x361: the first unit counts one of 15"
-  let #(state, again_ids, again) = use_at(state, 5000, unit)
-  assert again_ids == [0x07FD, 0x07F4, 0x07FE]
+  let #(state, again) = right_click_used(state:, at: 5000, unit_id: unit)
+  assert ids_of(steps: again) == [0x07FD, 0x07F4, 0x07FE]
     as "0x1405517a0: no type 23 is a checklist, so the client keeps no unit record and sends a second 0x97, and the cast goes as before"
   assert progress_frames(steps: again) == []
     as "the same unit again counts nothing: no 0x361"
-  let #(_, _, other) = use_at(state, 10_000, other_unit)
+  let #(_, other) = right_click_used(state:, at: 10_000, unit_id: other_unit)
   assert progress_frames(steps: other)
     == [progress_frame(quest: 6723, index: 0, progress: 2)]
     as "opcode.0x361: the other unit counts, 2 of 15"
+}
+
+/// A right-click use of the unit at monotonic time `at` ms, run to the cast's go, which
+/// counts the use: the connection after it and the steps it took.
+fn right_click_used(
+  state state: game_connection.State,
+  at at: Int,
+  unit_id unit_id: Int,
+) -> #(game_connection.State, List(step.ConnectionStep(Request))) {
+  let #(state, started) =
+    connection_support.at(
+      state:,
+      ms: at,
+      event: OwnEvent(step.Read(right_click_on(unit_id:))),
+    )
+  let #(state, go) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms: at),
+      until_ms: at + 2000,
+      steps: [],
+    )
+  #(state, [started, ..go])
+}
+
+/// The quest rows the store gives the stored character at its next login.
+fn quests_at_the_next_login(stored stored: Stored) -> List(QuestRow) {
+  let assert ForWorld(CharacterLoaded(quests:, ..)) =
+    account_store_support.ask(
+      store: stored.store,
+      request: World(LoadCharacter(stored.account, stored.character_id, 0)),
+    )
+    as "the account's character loads"
+  quests
+}
+
+/// What the connection's save timer asks the store, answered by the store: the place saved
+/// with the quest rows the log builds, which are returned.
+fn saved_through_the_store(
+  state state: game_connection.State,
+  stored stored: Stored,
+) -> List(QuestRow) {
+  let #(_, save) =
+    connection_support.feed(
+      state:,
+      event: OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert AskStore(Move(SavePlace(quests:, ..)) as asked) =
+    connection_support.ask_request(save)
+    as "the save timer asks the store to save the place"
+  assert store_support.through_the_store(stored:, request: asked)
+    == ForMove(PlaceSaved)
+    as "the store saved the place"
+  quests
+}
+
+pub fn a_relogged_player_using_the_same_spawn_again_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Jim, 2026-11-25: an object a quest counted counts once for the objective, also after a
+  // relog. Quest 6723's objective 10383 is type 23 on Creature2 30826 and 30827, count 15
+  // (the client keeps no per-object record, `0x1405517a0`). Spawn 40 is used, the place is
+  // saved with the real store, and the next login uses spawn 40 again, then spawn 41.
+  let stored = account_store_support.stored_holding(worn: [], items: [])
+  let settings =
+    connection_state.Settings(
+      ..connection_support.settings(),
+      spawn_ids: set.from_list([SpawnId(unit), SpawnId(other_unit)]),
+    )
+  let objects = [
+    #(unit, unit, 30_826, 26_092),
+    #(other_unit, other_unit, 30_827, 25_769),
+  ]
+  let state =
+    seeing_spawns(
+      settings:,
+      rows: [quest_support.untouched(quest_id: 6723)],
+      objects:,
+    )
+  let #(state, first) = right_click_used(state:, at: 0, unit_id: unit)
+  assert progress_frames(steps: first)
+    == [progress_frame(quest: 6723, index: 0, progress: 1)]
+    as "opcode.0x361: the first use counts one of 15"
+  let saved = saved_through_the_store(state:, stored:)
+  let loaded = quests_at_the_next_login(stored:)
+  assert loaded == saved
+    as "the next login finds the rows the log saved, with the object used"
+  let relogged = seeing_spawns(settings:, rows: loaded, objects:)
+  let #(relogged, again) =
+    right_click_used(state: relogged, at: 5000, unit_id: unit)
+  assert progress_frames(steps: again) == []
+    as "the object used before the relog counts nothing again: no 0x361"
+  assert saved_through_the_store(state: relogged, stored:) == loaded
+    as "and the log saves as it was loaded: no progress is written"
+  let #(_, other) =
+    right_click_used(state: relogged, at: 10_000, unit_id: other_unit)
+  assert progress_frames(steps: other)
+    == [progress_frame(quest: 6723, index: 0, progress: 2)]
+    as "opcode.0x361: another object counts, 2 of 15"
+  account_store_support.stop(stored.store)
+}
+
+pub fn the_same_spawn_in_a_new_map_run_after_a_relog_counts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A map run gives its units ids from 1 again, so the same object is another unit id
+  // after the map restarts: the object is the spawn, which the run keeps. Spawn 40 is used
+  // as unit 40, the place is saved, and the next login sees spawn 40 as unit 7 of a new run.
+  let stored = account_store_support.stored_holding(worn: [], items: [])
+  let settings =
+    connection_state.Settings(
+      ..connection_support.settings(),
+      spawn_ids: set.from_list([SpawnId(unit)]),
+    )
+  let state =
+    seeing_spawns(
+      settings:,
+      rows: [quest_support.untouched(quest_id: 6723)],
+      objects: [#(unit, unit, 30_826, 26_092)],
+    )
+  let #(state, first) = right_click_used(state:, at: 0, unit_id: unit)
+  assert progress_frames(steps: first)
+    == [progress_frame(quest: 6723, index: 0, progress: 1)]
+    as "opcode.0x361: the first use counts one of 15"
+  let _saved = saved_through_the_store(state:, stored:)
+  let relogged =
+    seeing_spawns(settings:, rows: quests_at_the_next_login(stored:), objects: [
+      #(unit, 7, 30_826, 26_092),
+    ])
+  let #(_, again) = right_click_used(state: relogged, at: 5000, unit_id: 7)
+  assert progress_frames(steps: again) == []
+    as "spawn 40 under unit 7 of the new run counts nothing again"
+  account_store_support.stop(stored.store)
 }
 
 pub fn a_second_click_on_a_captive_with_no_activate_spell_counts_nothing_test() -> Nil {
@@ -1594,14 +1730,13 @@ pub fn a_use_of_a_shown_static_object_that_credits_a_type_12_objective_tells_the
       z: -560.18798828125,
     )
   let shown = fn(unit_id, creature_id, display_info_id) {
-    static_object.create(
+    spawn_support.seen(
       object: StaticObject(
         ..spawn_support.holoring(number: unit_id, place:),
         creature_id: Creature2Id(creature_id),
         display_info_id:,
       ),
       unit_id:,
-      server_time_estimate_start: 0,
     )
   }
   let state =
@@ -1655,7 +1790,9 @@ fn seeing_crates(
 }
 
 /// The static objects the map shows for these units: crates 2.7 east of the player.
-fn crates_shown(units units: List(Int)) -> List(static_object.Created) {
+fn crates_shown(
+  units units: List(Int),
+) -> List(#(SpawnId, static_object.Created)) {
   let place =
     connection_support.standing_at(
       x: 29.128599166870117 +. 2.7,
@@ -1663,14 +1800,13 @@ fn crates_shown(units units: List(Int)) -> List(static_object.Created) {
       z: -560.18798828125,
     )
   list.map(units, fn(unit_id) {
-    static_object.create(
+    spawn_support.seen(
       object: StaticObject(
         ..spawn_support.holoring(number: unit_id, place:),
         creature_id: Creature2Id(12_919),
         display_info_id: 26_051,
       ),
       unit_id:,
-      server_time_estimate_start: 0,
     )
   })
 }

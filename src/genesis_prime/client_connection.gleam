@@ -66,6 +66,7 @@ import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
@@ -266,10 +267,12 @@ pub type News {
   /// strikes and requests need of it: its life, which its address needs, the hit
   /// radius of its display, whom it may be attacked by, which player factions it
   /// is Hostile to and whether it takes part in combat (`creature_life.Combat.fights`),
-  /// which an area's candidates read.
+  /// which an area's candidates read, and the id of its spawn, which a quest objective
+  /// remembers a use of it by (`quest_log.used`).
   CreatureAppeared(
     unit: UnitCreateCreature,
     unit_type: CreatureUnitType,
+    spawn_id: SpawnId,
     life: Int,
     place: Place,
     hit_radius: Float,

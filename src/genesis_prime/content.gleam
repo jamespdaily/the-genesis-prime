@@ -515,6 +515,7 @@ fn read(
         Ok(grounds) -> content_terrain.put(key:, grounds:)
         Error(..) -> Nil
       }
+      content_spawn.put_spawn_ids(key:, ids: content_spawn.ids(rows))
       content_spawn.put_reused_unit_objectives(
         key:,
         objectives: objective_units.reused(

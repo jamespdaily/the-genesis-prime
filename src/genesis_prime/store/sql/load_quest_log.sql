@@ -4,7 +4,9 @@
 -- `character_quest_active_has_its_entry`). Only a completed row has a time
 -- (`character_quest_completed_has_a_time`): `completed_at` is its whole Unix seconds,
 -- and 0 for a row of another state, which the decode does not read, since squirrel
--- cannot type a timestamptz or a computed column that may be NULL.
+-- cannot type a timestamptz or a computed column that may be NULL. The objects the
+-- quest's objectives have counted are the two arrays `used_objective` and `used_spawn`,
+-- empty for a row that has none.
 select
   quest_id,
   state::int as state,
@@ -15,7 +17,9 @@ select
   progress,
   quest_ms_left,
   objective_ms_left,
-  kill_mask
+  kill_mask,
+  used_objective,
+  used_spawn
 from character_quest
 where character_id = $1
 order by quest_id;

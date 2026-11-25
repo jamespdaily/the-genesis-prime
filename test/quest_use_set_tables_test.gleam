@@ -29,6 +29,7 @@ import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/set
 import owned_test
 import quest_support
@@ -164,7 +165,7 @@ fn counts_once(
         unit_race_id: creature2.unit_race_id(creature),
       ),
       checklist_index: 0,
-      unit: quest_support.unit_ref(unit_id: 1),
+      unit: Some(quest_support.unit_ref(unit_id: 1)),
       by_item: False,
     )
   let first =

@@ -28,6 +28,7 @@ import genesis_prime/message/quest_completed.{type QuestCompleted}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/step.{LogError, Now}
 import genesis_prime/store.{type QuestRow, QuestRow}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -339,13 +340,44 @@ fn the_use_quest_fresh() -> quest_log.QuestLog {
   quest_support.log_of(rows: [quest_support.untouched(quest_id: 6723)])
 }
 
-pub fn an_abandoned_and_retaken_quest_forgets_its_used_units_test() -> Nil {
-  use <- owned_test.run(60_000)
+pub fn the_quest_rows_carry_the_used_spawns_in_objective_then_spawn_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The rows hold each active quest's used objects as an objective index and a spawn id,
+  // objective then spawn ascending, so a log that did not change saves the rows it
+  // loaded; a quest that is not active holds none.
+  let saved = [
+    quest_support.accepted_with_used(
+      quest_id: quest_support.one_time,
+      progress: [2, 1, 0],
+      used: [#(1, 9), #(0, 7), #(0, 3)],
+    ),
+    quest_support.accepted(quest_id: quest_support.daily, progress: [0]),
+    quest_support.completed(quest_id: quest_support.weekly, at: 1_700_000_000),
+    quest_support.known(quest_id: quest_support.monthly, state: 6),
+  ]
+  let log = quest_support.log_of(rows: saved)
+  assert quest_support.used_of(log:, quest_id: quest_support.one_time)
+    == [#(0, 3), #(0, 7), #(1, 9)]
+    as "a log with used objects builds them in objective then spawn order"
+  assert quest_support.used_of(log:, quest_id: quest_support.daily) == []
+    as "a quest with none used builds none"
+  assert list.map(quest_log.rows(log:, now_ms: 0), fn(row) { row.active })
+    |> list.filter(option.is_none)
+    |> list.length
+    == 2
+    as "a completed and a known quest hold no entry, so no used object"
+  let rows = quest_log.rows(log:, now_ms: 0)
+  assert quest_log.rows(log: quest_support.log_of(rows:), now_ms: 0) == rows
+    as "a log loaded from rows and saved again builds the same rows"
+}
+
+pub fn a_quest_taken_again_starts_with_no_used_spawn_test() -> Nil {
+  use <- owned_test.run(10_000)
   // The used set lives on the quest's `Active` entry, which an abandon replaces by the
   // Known entry (`quest_log.hold`, as the abandon does) and an accept replaces by a new
   // one. That a retaken quest starts afresh is the server's choice.
   let quest = the_use_quest()
-  let unit = quest_support.unit_ref(unit_id: 7)
+  let unit = SpawnId(7)
   let assert Ok(counted) =
     quest_log.used(
       log: the_use_quest_fresh(),
@@ -354,52 +386,20 @@ pub fn an_abandoned_and_retaken_quest_forgets_its_used_units_test() -> Nil {
       unit:,
       now_ms: 0,
     )
-    as "a use of a unit counts for the open type 23 objective"
-  assert quest_log.is_used(log: counted.log, quest:, index: 0, unit:)
-    as "the unit is used"
+    as "a use of an object counts for the open type 23 objective"
+  assert quest_support.used_of(log: counted.log, quest_id: 6723) == [#(0, 7)]
+    as "the quest's rows keep the object used"
   let abandoned =
     quest_log.hold(log: counted.log, quest_id: 6723, state: quest_log.Abandoned)
   let retaken =
     quest_log.accept(log: abandoned, quest:, max_time_ms: 0, now_ms: 0)
-  assert !quest_log.is_used(log: retaken, quest:, index: 0, unit:)
-    as "the retaken quest remembers no used unit"
+  assert quest_support.used_of(log: retaken, quest_id: 6723) == []
+    as "the retaken quest saves no used object"
   let assert Ok(again) =
     quest_log.used(log: retaken, quest:, index: 0, unit:, now_ms: 0)
-    as "the unit counts again in the retaken quest"
+    as "the object counts again in the retaken quest"
   assert again.progress == 1 as "the retaken quest's progress starts at 0"
   assert again.changed as "the count is a change"
-}
-
-pub fn a_saved_and_loaded_log_remembers_no_used_unit_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // A saved quest row holds one progress number for each objective and nothing else of
-  // the used units (`quest_log.rows`); a relog may let a unit count again (Jim,
-  // 2026-11-11).
-  let quest = the_use_quest()
-  let unit = quest_support.unit_ref(unit_id: 7)
-  let assert Ok(counted) =
-    quest_log.used(
-      log: the_use_quest_fresh(),
-      quest:,
-      index: 0,
-      unit:,
-      now_ms: 0,
-    )
-    as "a use of a unit counts for the open type 23 objective"
-  let saved = quest_log.rows(log: counted.log, now_ms: 0)
-  let without_a_used_unit =
-    quest_support.log_of(rows: [
-      quest_support.accepted(quest_id: 6723, progress: [1]),
-    ])
-  assert saved == quest_log.rows(log: without_a_used_unit, now_ms: 0)
-    as "the rows are those of a log that holds progress 1 and no used unit"
-  let assert Ok(loaded) =
-    quest_log.from_rows(rows: saved, tables: character_tables.shared())
-    as "the rows the log saved are ones the client takes"
-  assert !quest_log.is_used(log: loaded, quest:, index: 0, unit:)
-    as "the loaded log remembers no used unit"
-  assert quest_log.objective_progress(log: loaded, quest:, index: 0) == 1
-    as "the loaded log holds the progress"
 }
 
 pub fn used_counts_each_unit_of_an_objective_once_and_refuses_a_closed_one_test() -> Nil {
@@ -412,7 +412,7 @@ pub fn used_counts_each_unit_of_an_objective_once_and_refuses_a_closed_one_test(
   let tables = character_tables.shared()
   let assert Ok(quest) = quest_log.quest_of(tables:, id: 3480)
     as "the fixture holds quest 3480's rows"
-  let unit = quest_support.unit_ref(unit_id: 7)
+  let unit = SpawnId(7)
   let fresh =
     quest_support.log_of(rows: [quest_support.untouched(quest_id: 3480)])
   let assert Ok(first) =
@@ -448,8 +448,7 @@ pub fn the_used_set_of_a_type_12_objective_is_dropped_when_it_is_done_test() -> 
   let tables = character_tables.shared()
   let assert Ok(quest) = quest_log.quest_of(tables:, id: 3480)
     as "the fixture holds quest 3480's rows"
-  let units =
-    [7, 8, 9] |> list.map(fn(id) { quest_support.unit_ref(unit_id: id) })
+  let units = [7, 8, 9] |> list.map(SpawnId)
   let counted =
     list.fold(
       units,
@@ -477,9 +476,7 @@ pub fn the_used_set_of_a_type_32_objective_is_dropped_when_it_is_done_test() -> 
   let tables = character_tables.shared()
   let assert Ok(quest) = quest_log.quest_of(tables:, id: 3741)
     as "the fixture holds quest 3741's rows"
-  let units =
-    [7, 8, 9, 10, 11, 12]
-    |> list.map(fn(id) { quest_support.unit_ref(unit_id: id) })
+  let units = [7, 8, 9, 10, 11, 12] |> list.map(SpawnId)
   let counted =
     list.fold(
       units,

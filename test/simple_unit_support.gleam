@@ -16,6 +16,7 @@ import genesis_prime/game/shown
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life.{type Hostile}
 import genesis_prime/world_map/map.{ObjectsSeen}
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/dict
 import spawn_support
@@ -44,6 +45,7 @@ pub fn picture(
     #(
       unit,
       shown.ShownObject(
+        spawn_id: SpawnId(2),
         creature_id: Creature2Id(creature_id),
         faction_id:,
         checklist_index:,
@@ -60,8 +62,8 @@ pub fn created(
   creature_id creature_id: Int,
   faction_id faction_id: Int,
   gap gap: Float,
-) -> Created {
-  static_object.create(
+) -> #(SpawnId, Created) {
+  spawn_support.seen(
     object: StaticObject(
       ..spawn_support.holoring(
         number: unit,
@@ -73,7 +75,6 @@ pub fn created(
       display_info_id: display_info,
     ),
     unit_id: unit,
-    server_time_estimate_start: 0,
   )
 }
 

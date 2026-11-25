@@ -141,7 +141,7 @@ const character_health_is_not_negative = "character_health_is_not_negative"
 const character_experience_is_not_negative =
   "character_experience_is_not_negative"
 
-/// The checks of the character_quest table (migrations 0021, 0026 and 0028), one for each limit of
+/// The checks of the character_quest table (migrations 0021, 0026, 0028 and 0052), one for each limit of
 /// the client's a quest row can break. A save one of them refuses answers
 /// `QuestLogRefused` with the check's own name. The table's primary key and its
 /// foreign key to the character are not among them: neither is a limit of the
@@ -160,6 +160,9 @@ const quest_checks = [
   "character_quest_kill_mask_fits_7_bits",
   "character_quest_active_has_its_kill_mask",
   "character_quest_kill_mask_has_six_slots",
+  "character_quest_used_match",
+  "character_quest_used_objective_in_six",
+  "character_quest_used_spawn_is_positive",
 ]
 
 /// The checks and the unique key of the character_action_slot table (migration 0049), the
@@ -1465,7 +1468,8 @@ fn rows_json(
 /// decode, in the order the query gave them (quest id). A row's completed time is
 /// read only for state 3, and its active columns only for states 1 and 2, where
 /// the table's checks hold them all (`character_quest_completed_has_a_time`,
-/// `character_quest_active_has_its_entry`).
+/// `character_quest_active_has_its_entry`). The objects counted are the two arrays that
+/// `character_quest_used_match` holds to one length, read together.
 fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
   list.map(rows, fn(row) {
     QuestRow(
@@ -1492,15 +1496,18 @@ fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
           Some(objective_ms_left),
           Some(kill_mask)
         ->
-          Some(ActiveQuest(
-            placeholder_objective_id:,
-            tracked:,
-            done_mask:,
-            progress:,
-            quest_ms_left:,
-            objective_ms_left:,
-            kill_mask:,
-          ))
+          Some(
+            ActiveQuest(
+              placeholder_objective_id:,
+              tracked:,
+              done_mask:,
+              progress:,
+              quest_ms_left:,
+              objective_ms_left:,
+              kill_mask:,
+              used: [],
+            ),
+          )
         None, None, None, None, None, None, None -> None
         _, _, _, _, _, _, _ ->
           panic as "character_quest_active_has_its_entry holds all the active columns or none"
@@ -1556,6 +1563,8 @@ fn quests_json(quests: List(QuestRow)) -> Json {
           json.array(active.kill_mask, json.int)
         }),
       ),
+      #("used_objective", json.array([], json.int)),
+      #("used_spawn", json.array([], json.int)),
     ])
   })
 }

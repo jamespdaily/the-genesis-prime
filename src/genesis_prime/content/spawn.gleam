@@ -12,6 +12,8 @@
 //// the connection's settings ─▶ visibility(key): each world's visibility prerequisites, loaded
 //// the same load  ─▶ counts(rows) ─▶ objective_units.reused ─▶ put_reused_unit_objectives(key)
 //// the connection's settings ─▶ reused_unit_objectives(key): the objectives whose unit counts again
+//// the same load  ─▶ ids(rows) ─▶ put_spawn_ids(key)
+//// the connection's settings ─▶ spawn_ids(key): the stored spawns, which a saved quest's used objects are kept against
 //// ```
 ////
 //// - **The term** of a world is `WorldSpawns(by_id, objects, cells)`, put once for every
@@ -39,7 +41,7 @@ import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, type SummonChecks, type WorldSpawns, Row,
 }
-import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option
@@ -139,6 +141,28 @@ pub fn put_reused_unit_objectives(
 /// the tree starts, so a reader that finds none is a bug and crashes.
 pub fn reused_unit_objectives(key key: Key) -> Set(Int) {
   store.content(key:, table: reused_unit_objectives_table, id: 0)
+}
+
+/// The table name of the stored spawn ids in a term.
+const spawn_ids_table = "spawn_ids"
+
+/// The ids of the stored spawn rows, of every world, whether or not a row starts. A row the
+/// server places for an objective that no stored row serves has no id here: its id is the
+/// map's alone (genesis_prime/world_map/objective_spawn).
+pub fn ids(rows rows: List(Row)) -> Set(SpawnId) {
+  set.from_list(list.map(rows, fn(row) { row.id }))
+}
+
+/// Writes the ids of the stored spawn rows under the key, once.
+pub fn put_spawn_ids(key key: Key, ids ids: Set(SpawnId)) -> Nil {
+  store.put_content(key:, table: spawn_ids_table, id: 0, value: ids)
+}
+
+/// The stored spawn ids the load put under the key: the world a saved quest's used objects
+/// are checked against (genesis_prime/game/quest_log `without_lost_spawns`). The load puts
+/// the term before the tree starts, so a reader that finds none is a bug and crashes.
+pub fn spawn_ids(key key: Key) -> Set(SpawnId) {
+  store.content(key:, table: spawn_ids_table, id: 0)
 }
 
 /// Writes one world's spawns under the key, once.

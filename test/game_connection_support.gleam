@@ -152,6 +152,7 @@ pub fn settings() -> game_connection.Settings {
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.landings(),
     reused_unit_objectives: set.new(),
+    spawn_ids: set.new(),
     arrival_objectives: set.new(),
     held_objectives: set.new(),
     script_rows: objective.no_rows(),
@@ -2233,6 +2234,7 @@ fn beast_appearing(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
+      spawn_id: beast.id,
       unit_type: NonPlayer,
       unit: creature_unit.with_casts(
         creature_unit.create(
@@ -2285,6 +2287,7 @@ pub fn creature_appears(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
+      spawn_id: target.id,
       unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: target,

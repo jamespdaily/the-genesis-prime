@@ -197,6 +197,7 @@ import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object
 import genesis_prime/world_map/unit_fields
 import gleam/bool
@@ -317,7 +318,7 @@ pub fn map_sent(
     map.ObjectsSeen(units:) -> {
       let #(refused, named) =
         units
-        |> list.map(fn(unit) { #(static_object.unit_id(created: unit), unit) })
+        |> list.map(fn(seen) { #(static_object.unit_id(created: seen.1), seen) })
         |> list.partition(fn(unit) { names_own_unit(entered:, unit_id: unit.0) })
       let fresh =
         list.filter(named, fn(unit) {
@@ -327,12 +328,14 @@ pub fn map_sent(
       Continue(
         shown_changed(session:, change: fn(picture) {
           list.fold(fresh, picture, fn(picture, unit) {
+            let #(unit_id, #(_, created)) = unit
             dict.insert(
               picture,
-              unit.0,
+              unit_id,
               object_shown(
                 tables: session.settings.tables,
-                created: unit.1,
+                spawn_id: SpawnId(unit_id),
+                created:,
                 world_place: movement.place(entered.movement),
               ),
             )
@@ -345,7 +348,7 @@ pub fn map_sent(
           list.map(fresh, fn(unit) {
             connection_state.to_client(
               session,
-              connection_frames.object_created_frame(unit: unit.1),
+              connection_frames.object_created_frame(unit: unit.1.1),
             )
           }),
         ),
@@ -566,6 +569,7 @@ pub fn viewer_takes(
     client_connection.CreatureAppeared(
       unit:,
       unit_type:,
+      spawn_id: _,
       life:,
       place:,
       hit_radius:,
@@ -583,6 +587,7 @@ pub fn viewer_takes(
           _,
           unit_id,
           ShownCreature(
+            spawn_id: SpawnId(unit_id),
             creature_id: Creature2Id(unit.creature_id),
             faction_id: unit.tail.faction_id,
             checklist_index: unit.checklist_index,
@@ -1084,7 +1089,7 @@ fn names_own_unit(
   unit_id == 0 || unit_id == entered.unit_id
 }
 
-/// What the picture holds of a static object its 0x262 creates: the 0x262's creature,
+/// What the picture holds of a static object its 0x262 creates: its spawn, the 0x262's creature,
 /// where it puts the unit and its display's hit radius, 0.0 for a display with no
 /// Creature2DisplayInfo row, and which player factions its faction is Hostile to. The
 /// object stands in the world and zone of `world_place`, the player's place. The server
@@ -1092,6 +1097,7 @@ fn names_own_unit(
 /// numbers.
 fn object_shown(
   tables tables: table_store.Tables,
+  spawn_id spawn_id: SpawnId,
   created created: static_object.Created,
   world_place world_place: Place,
 ) -> shown.Shown {
@@ -1106,6 +1112,7 @@ fn object_shown(
     |> result.unwrap(0.0)
   let faction_id = static_object.faction_id(created:)
   ShownObject(
+    spawn_id:,
     creature_id: static_object.creature_id(created:),
     faction_id:,
     checklist_index: static_object.checklist_index(created:),

@@ -269,7 +269,11 @@ pub type ActionSets {
 /// timer for each progress value (`character_quest_timers_match_progress`). `kill_mask`
 /// is the creatures of a named group already killed, one 7-bit value for each of the
 /// six objective slots (`character_quest_kill_mask_fits_7_bits`,
-/// `character_quest_kill_mask_has_six_slots`).
+/// `character_quest_kill_mask_has_six_slots`). `used` is the objects the quest's objectives
+/// have counted, in objective then spawn order (`UsedSpawn`); the table keeps them as two
+/// arrays of one length (`character_quest_used_match`), each entry an objective index 0 to 5
+/// and a spawn id above 0 (`character_quest_used_objective_in_six`,
+/// `character_quest_used_spawn_is_positive`).
 pub type ActiveQuest {
   ActiveQuest(
     placeholder_objective_id: Int,
@@ -279,7 +283,15 @@ pub type ActiveQuest {
     quest_ms_left: Int,
     objective_ms_left: List(Int),
     kill_mask: List(Int),
+    used: List(UsedSpawn),
   )
+}
+
+/// One object the objective at `objective_index` of an active quest has counted: the id
+/// of the spawn table's row of the object or creature, which the world's import keeps when
+/// it runs again. The quest log decodes the id against the loaded world.
+pub type UsedSpawn {
+  UsedSpawn(objective_index: Int, spawn_id: Int)
 }
 
 /// The amount of one currency a character holds, as the character_currency table

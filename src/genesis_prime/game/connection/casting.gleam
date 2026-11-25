@@ -427,7 +427,6 @@ pub fn activate_unit_message(
         picture: entered.shown,
         quests: entered.quests,
         scripts: session.settings.script_rows,
-        entered:,
         link_of: link_of(
           tables:,
           activations: connection_state.activations_of(session:),
@@ -459,14 +458,13 @@ fn used_unit(
   picture picture: shown.Picture,
   quests quests: QuestLog,
   scripts scripts: objective.ScriptRows,
-  entered entered: world_entry.Entered,
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
 ) -> fn(Int) -> Result(cast_state.UsedUnit, Nil) {
   let use_targets = objective.use_targets(log: quests, tables:, scripts:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
-    let unit = unit_ref(entered:, unit_id:)
+    use unit <- result.try(unit_ref(picture:, unit_id:))
     let offered_to = fn(target, checklist_index) {
       use_targets(target, checklist_index, unit)
     }
@@ -498,17 +496,17 @@ fn used_unit(
   }
 }
 
-/// The unit `unit_id` of the player's current map run, as the quest log remembers a use of
-/// it.
-fn unit_ref(
-  entered entered: world_entry.Entered,
+/// The unit `unit_id` of the player's picture as the quest log remembers a use of it: by
+/// the spawn the picture holds for it (`shown.spawn_of`), with the unit id the release
+/// names. `Error(Nil)` for a unit the picture lacks and for another player's. It replaces the
+/// `UnitRef` of a map run, which named a unit by the run and no spawn.
+pub fn unit_ref(
+  picture picture: shown.Picture,
   unit_id unit_id: Int,
-) -> quest_log.UnitRef {
-  quest_log.UnitRef(
-    map: entered.map,
-    incarnation: entered.incarnation,
-    unit_id:,
-  )
+) -> Result(objective.SpawnedUnit, Nil) {
+  use one <- result.try(dict.get(picture, unit_id))
+  use spawn_id <- result.map(shown.spawn_of(shown: one))
+  objective.SpawnedUnit(unit_id:, spawn_id:)
 }
 
 fn used_unit_at(
@@ -1239,19 +1237,23 @@ fn use_event(
   alive_at_press alive_at_press: Bool,
   by_item by_item: Bool,
 ) -> Result(#(target_group.Unit, Int, objective.Event), Nil) {
-  counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
-  |> result.map(fn(counted) {
-    #(
-      counted.0,
-      counted.1,
-      objective.Used(
-        target: counted.0,
-        checklist_index: counted.1,
-        unit: unit_ref(entered:, unit_id:),
-        by_item:,
-      ),
-    )
-  })
+  use counted <- result.try(counted_target(
+    tables:,
+    picture: entered.shown,
+    unit_id:,
+    alive_at_press:,
+  ))
+  use unit <- result.map(unit_ref(picture: entered.shown, unit_id:))
+  #(
+    counted.0,
+    counted.1,
+    objective.Used(
+      target: counted.0,
+      checklist_index: counted.1,
+      unit: Some(unit),
+      by_item:,
+    ),
+  )
 }
 
 /// The objective event of a quest button's cast of the spell at the unit the press named, if it
@@ -1265,17 +1267,19 @@ fn cast_event(
 ) -> Result(objective.Event, Nil) {
   case target {
     None -> Ok(objective.Cast(spell4_id: Spell4Id(spell4_id), target: None))
-    Some(cast_state.PressedAt(unit_id:, alive_at_press:)) ->
-      counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
-      |> result.map(fn(counted) {
-        objective.Cast(
-          spell4_id: Spell4Id(spell4_id),
-          target: Some(objective.CastTarget(
-            unit: counted.0,
-            ref: unit_ref(entered:, unit_id:),
-          )),
-        )
-      })
+    Some(cast_state.PressedAt(unit_id:, alive_at_press:)) -> {
+      use counted <- result.try(counted_target(
+        tables:,
+        picture: entered.shown,
+        unit_id:,
+        alive_at_press:,
+      ))
+      use ref <- result.map(unit_ref(picture: entered.shown, unit_id:))
+      objective.Cast(
+        spell4_id: Spell4Id(spell4_id),
+        target: Some(objective.CastTarget(unit: counted.0, ref:)),
+      )
+    }
   }
 }
 
@@ -1310,7 +1314,7 @@ fn advance_event(
                 unit_race_id: creature2.unit_race_id(row),
               ),
               checklist_index: 0,
-              unit: unit_ref(entered:, unit_id:),
+              unit: None,
               by_item:,
             )
           })

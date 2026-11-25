@@ -39,7 +39,7 @@ import genesis_prime/world_map/creature_special
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
-import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import genesis_prime/world_map/unit_fields
@@ -206,6 +206,18 @@ pub fn holoring(number number: Int, place place: Place) -> StaticObject {
     world_object_id: 0,
     world_socket_id: 0,
     visibility: option.None,
+  )
+}
+
+/// The object as the map tells a player who sees it (`ObjectsSeen`): its spawn's id and
+/// its 0x262 under the unit id `unit_id`, stamped with the time 0.
+pub fn seen(
+  object object: StaticObject,
+  unit_id unit_id: Int,
+) -> #(SpawnId, static_object.Created) {
+  #(
+    object.id,
+    static_object.create(object:, unit_id:, server_time_estimate_start: 0),
   )
 }
 

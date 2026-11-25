@@ -21,7 +21,13 @@
 -- of arrays. The log is the whole log, so a row the character no longer has is
 -- deleted and a row that changed is written, both only through the row the fence
 -- above matched, so a save the fence refuses writes no quest row either. A row
--- that did not change is not written. The statement runs after
+-- that did not change is not written. The objects an objective has counted are two
+-- columns of the row (`used_objective` and `used_spawn`, of one length, one entry
+-- for each object), written, left and deleted with it and by the same statements
+-- (`gone` and `put`, both reading `saved`), so a stale save changes and deletes no
+-- entry, and a quest row the log leaves out takes its entries with it; a row's
+-- entries are the whole set, so a save with fewer replaces the stored ones. A row
+-- that holds none (a quest not active) has two empty arrays. The statement runs after
 -- lock_character_for_save.sql in one transaction: a statement takes its snapshot
 -- before it waits for a row another save holds, so without the lock a save that
 -- waited would delete or keep quest rows by the log the earlier save had not yet
@@ -82,7 +88,9 @@ incoming as (
     progress bigint[],
     quest_ms_left integer,
     objective_ms_left integer[],
-    kill_mask smallint[]
+    kill_mask smallint[],
+    used_objective smallint[],
+    used_spawn integer[]
   )
 ),
 gone as (
@@ -105,7 +113,9 @@ put as (
     progress,
     quest_ms_left,
     objective_ms_left,
-    kill_mask
+    kill_mask,
+    used_objective,
+    used_spawn
   )
   select
     saved.character_id,
@@ -118,7 +128,9 @@ put as (
     incoming.progress,
     incoming.quest_ms_left,
     incoming.objective_ms_left,
-    incoming.kill_mask
+    incoming.kill_mask,
+    incoming.used_objective,
+    incoming.used_spawn
   from saved
   cross join incoming
   on conflict (character_id, quest_id) do update
@@ -131,7 +143,9 @@ put as (
     progress = excluded.progress,
     quest_ms_left = excluded.quest_ms_left,
     objective_ms_left = excluded.objective_ms_left,
-    kill_mask = excluded.kill_mask
+    kill_mask = excluded.kill_mask,
+    used_objective = excluded.used_objective,
+    used_spawn = excluded.used_spawn
   where (
     character_quest.state,
     character_quest.completed_at,
@@ -141,7 +155,9 @@ put as (
     character_quest.progress,
     character_quest.quest_ms_left,
     character_quest.objective_ms_left,
-    character_quest.kill_mask
+    character_quest.kill_mask,
+    character_quest.used_objective,
+    character_quest.used_spawn
   ) is distinct from (
     excluded.state,
     excluded.completed_at,
@@ -151,7 +167,9 @@ put as (
     excluded.progress,
     excluded.quest_ms_left,
     excluded.objective_ms_left,
-    excluded.kill_mask
+    excluded.kill_mask,
+    excluded.used_objective,
+    excluded.used_spawn
   )
 ),
 incoming_slots as (

@@ -202,6 +202,7 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
@@ -212,6 +213,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 
 /// What world entry asks or sends; the game connection's rule turns each into
 /// its own effect.
@@ -679,7 +681,9 @@ pub fn awaiting(state state: State) -> Awaiting {
 /// (`Fill`), and the answer to that ask takes the same road on; a fill the store did not
 /// change (a later login took the character, or the rows were not unset) refuses the play, so
 /// no entry goes on with charges the database does not hold. With no read asked for, it is
-/// none this module asked for and gives an `Error`.
+/// none this module asked for and gives an `Error`. The objects the saved quest log remembers
+/// as used whose spawn is not one of the loaded world's `spawns` are dropped, and the
+/// entry's effects begin with one warning that lists them (`quest_log.without_lost_spawns`).
 pub fn loaded(
   state state: State,
   answer answer: store.WorldAnswer,
@@ -687,6 +691,7 @@ pub fn loaded(
   stay stay: Stay,
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
+  spawns spawns: Set(SpawnId),
 ) -> Result(Loaded, Nil) {
   case state, answer {
     Loading(character_id: CharacterId(character_id), ..), store.NotTheAccounts
@@ -719,7 +724,10 @@ pub fn loaded(
               <> ", which has no saved place",
           )
         Some(place) ->
-          case quest_log.from_rows(rows: quests, tables:) {
+          case
+            quest_log.from_rows(rows: quests, tables:)
+            |> result.map(quest_log.without_lost_spawns(log: _, spawns:))
+          {
             Error(refused) ->
               Fault(
                 text: "a play of character "
@@ -727,7 +735,7 @@ pub fn loaded(
                 <> ", whose saved quest log the client would refuse: "
                 <> quest_log.describe(refused:),
               )
-            Ok(log) ->
+            Ok(#(log, lost)) ->
               case unset {
                 [] ->
                   joining_a_play(
@@ -739,6 +747,7 @@ pub fn loaded(
                     items:,
                     currencies: currency.from_held(held: currencies),
                     quests: log,
+                    lost:,
                     action_sets:,
                     connection:,
                     stay:,
@@ -757,6 +766,7 @@ pub fn loaded(
                     unset:,
                     currencies: currency.from_held(held: currencies),
                     quests: log,
+                    lost:,
                     action_sets:,
                     tables:,
                   )
@@ -778,6 +788,7 @@ pub fn loaded(
       store.ChargesFilled(answer:)
     ->
       Ok(case answer {
+        // The fill that came before this answer carried the warning of the dropped objects.
         store.ItemsSaved ->
           joining_a_play(
             character:,
@@ -788,6 +799,7 @@ pub fn loaded(
             items:,
             currencies:,
             quests:,
+            lost: [],
             action_sets:,
             connection:,
             stay:,
@@ -854,6 +866,7 @@ fn charges_asked(
   unset unset: List(store.UnsetItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
+  lost lost: List(quest_log.Lost),
   action_sets action_sets: store.ActionSets,
   tables tables: table_store.Tables,
 ) -> Loaded {
@@ -884,20 +897,53 @@ fn charges_asked(
           quests:,
           action_sets:,
         ),
-        effects: [
-          AskStore(request: store.FillCharges(
-            account_id:,
-            character_id: character.character_id,
-            session_epoch:,
-            fills: list.map(filled, fn(item) {
-              store.ItemFill(
-                item_guid: item.item_guid,
-                charges: item.words.charges,
-              )
-            }),
-          )),
-        ],
+        effects: list.append(
+          lost_spawns_warned(character_id: character_number(character), lost:),
+          [
+            AskStore(request: store.FillCharges(
+              account_id:,
+              character_id: character.character_id,
+              session_epoch:,
+              fills: list.map(filled, fn(item) {
+                store.ItemFill(
+                  item_guid: item.item_guid,
+                  charges: item.words.charges,
+                )
+              }),
+            )),
+          ],
+        ),
       )
+  }
+}
+
+/// The one warning that names the used objects of a character's saved quests the loaded world
+/// has no spawn for, or none when there are none.
+fn lost_spawns_warned(
+  character_id character_id: Int,
+  lost lost: List(quest_log.Lost),
+) -> List(Effect) {
+  case lost {
+    [] -> []
+    _ -> [
+      Warn(
+        text: "a play of character "
+        <> int.to_string(character_id)
+        <> ", whose saved quests remember objects the loaded world has no spawn for, dropped: "
+        <> string.join(
+          list.map(lost, fn(one) {
+            let SpawnId(spawn) = one.spawn_id
+            "spawn "
+            <> int.to_string(spawn)
+            <> " of objective "
+            <> int.to_string(one.objective_index)
+            <> " of quest "
+            <> int.to_string(one.quest_id)
+          }),
+          ", ",
+        ),
+      ),
+    ]
   }
 }
 
@@ -905,6 +951,8 @@ fn charges_asked(
 /// the save lies between the terminal's count and its move (`departures.recovered`): the
 /// map is asked to take it with its 0x25E ready, or the play is refused for a level with no
 /// XpPerLevel row.
+/// The entry's effects begin with the warning that names the used objects dropped at the load
+/// (`lost`).
 fn joining_a_play(
   character character: Character,
   place saved_place: Place,
@@ -914,6 +962,7 @@ fn joining_a_play(
   items items: List(store.HeldItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
+  lost lost: List(quest_log.Lost),
   action_sets action_sets: store.ActionSets,
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -961,7 +1010,13 @@ fn joining_a_play(
           tables:,
           visibility:,
         )
-      Join(state:, effects:)
+      Join(
+        state:,
+        effects: list.append(
+          lost_spawns_warned(character_id: character_number(character), lost:),
+          effects,
+        ),
+      )
     }
   }
 }

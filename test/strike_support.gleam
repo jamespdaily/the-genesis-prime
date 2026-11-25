@@ -17,6 +17,7 @@ import genesis_prime/step.{type LogLevel, type TimerId, ConnectionId}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/world_map/creature_life.{type Attackable, Hostile}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/list
@@ -129,6 +130,7 @@ pub fn creature_facing(
   faced_yaw faced_yaw: Option(Float),
 ) -> shown.Shown {
   ShownCreature(
+    spawn_id: SpawnId(1),
     creature_id: Creature2Id(73_464),
     faction_id: 0,
     checklist_index: 0,

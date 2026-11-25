@@ -23,15 +23,18 @@ import game_connection_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/objective
 import genesis_prime/game/quest_log
+import genesis_prime/game/world_entry
 import genesis_prime/message/quest_active.{QuestActive}
 import genesis_prime/message/quest_completed.{QuestCompleted}
 import genesis_prime/message/quest_known.{QuestKnown}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Item2Id, Spell4Id}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/list
 import gleam/option
 import gleam/set
+import gleam/string
 import message_support
 import owned_test
 import quest_support
@@ -440,4 +443,52 @@ pub fn a_play_entry_with_an_accepted_quest_queues_nothing_test() -> Nil {
     )
   assert entered.completing == []
     as "an Accepted quest and a Completed one wait for no completion"
+}
+
+pub fn a_used_spawn_the_loaded_world_lacks_is_dropped_at_load_and_reported_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A saved quest keeps the spawns of the objects its objectives counted. A spawn the
+  // loaded world lacks (its row was deleted, and one added later has a new id) has no
+  // object to count: the load drops it and the entry's effects begin with one warning
+  // that names it; the spawns the world has stay.
+  let tables = character_tables.shared()
+  let character =
+    world_entry_support.character(class: 2, faction: 166, level: 1)
+  let #(effects, entered) =
+    world_entry_support.entry_with_spawns(
+      tables:,
+      character:,
+      quests: [
+        quest_support.accepted_with_used(
+          quest_id: quest_support.one_time,
+          progress: [0, 0, 0],
+          used: [#(0, 5), #(1, 6), #(2, 7)],
+        ),
+      ],
+      spawns: set.from_list([SpawnId(5), SpawnId(7)]),
+    )
+  assert quest_support.used_of(
+      log: entered.quests,
+      quest_id: quest_support.one_time,
+    )
+    == [#(0, 5), #(2, 7)]
+    as "the spawns the world has stay and the one it lacks is dropped"
+  let warnings =
+    list.filter_map(effects, fn(effect) {
+      case effect {
+        world_entry.Warn(text:) -> Ok(text)
+        world_entry.AskStore(..)
+        | world_entry.AskMap(..)
+        | world_entry.Send(..)
+        | world_entry.WatchMap(..)
+        | world_entry.Life(..)
+        | world_entry.StartStanding -> Error(Nil)
+      }
+    })
+  let assert [warning] = warnings as "the load reports the dropped spawns once"
+  assert string.contains(warning, "spawn 6 of objective 1 of quest 2347")
+    as "the warning names the spawn the world lacks, its objective and its quest"
+  assert !string.contains(warning, "spawn 5")
+    && !string.contains(warning, "spawn 7")
+    as "and none that the world has"
 }

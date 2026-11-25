@@ -319,7 +319,7 @@ fn used(creature creature: Int, by_item by_item: Bool) -> Option(Event) {
   Some(Used(
     target: quest_support.unit_of(creature:),
     checklist_index: 0,
-    unit: quest_support.unit_ref(unit_id: creature),
+    unit: Some(quest_support.unit_ref(unit_id: creature)),
     by_item:,
   ))
 }

@@ -24,10 +24,11 @@ import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/set
+import gleam/set.{type Set}
 import map_support
 import novice_tables
 import place_support
@@ -118,7 +119,48 @@ pub fn loaded_seeing(
     quests:,
     action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility:,
+    spawns: set.new(),
   )
+}
+
+/// What the store's answer to a play of the character leads to when its saved quests are
+/// these rows and the loaded world's stored spawns are these.
+pub fn loaded_with_spawns(
+  tables tables: table_store.Tables,
+  character character: Character,
+  quests quests: List(QuestRow),
+  spawns spawns: Set(SpawnId),
+) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_answer(
+    tables:,
+    character:,
+    items: [],
+    unset: [],
+    saved_health: None,
+    saved_experience: None,
+    quests:,
+    action_sets: limited_action_set.rows(saved: limited_action_set.none()),
+    visibility: dict.new(),
+    spawns:,
+  )
+}
+
+/// What the load of a character whose saved quests are these rows leads to when the loaded
+/// world's stored spawns are these: the effects the load asks and the player the connection
+/// keeps once the map took it.
+pub fn entry_with_spawns(
+  tables tables: table_store.Tables,
+  character character: Character,
+  quests quests: List(QuestRow),
+  spawns spawns: Set(SpawnId),
+) -> #(List(world_entry.Effect), world_entry.Entered) {
+  let assert #(_, world_entry.Join(state:, effects:)) =
+    loaded_with_spawns(tables:, character:, quests:, spawns:)
+    as "the store holds the character and its place"
+  let assert world_entry.InTheWorld(entered:, ..) =
+    joined_state(state:, tables:, character:, place: join_place(), now: now())
+    as "the map's answer to the join puts the player in the world"
+  #(effects, entered)
 }
 
 /// What the store's answer to a play of the character leads to when the store holds
@@ -139,6 +181,7 @@ pub fn loaded_with_unset(
     quests: [],
     action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility: dict.new(),
+    spawns: set.new(),
   )
 }
 
@@ -160,6 +203,7 @@ pub fn loaded_with_action_sets(
     quests: [],
     action_sets:,
     visibility: dict.new(),
+    spawns: set.new(),
   )
 }
 
@@ -173,6 +217,7 @@ fn loaded_answer(
   quests quests: List(QuestRow),
   action_sets action_sets: store.ActionSets,
   visibility visibility: Dict(Int, List(Prerequisite)),
+  spawns spawns: Set(SpawnId),
 ) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
@@ -201,6 +246,7 @@ fn loaded_answer(
       stay: map_support.stay(count: 1),
       tables:,
       visibility:,
+      spawns:,
     )
     as "the store's answer is the one world entry asked for"
   #(state, loaded)
@@ -234,6 +280,7 @@ pub fn answered(
     stay: map_support.stay(count: 1),
     tables:,
     visibility: dict.new(),
+    spawns: set.new(),
   )
 }
 

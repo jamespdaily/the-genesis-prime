@@ -389,7 +389,8 @@ fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
     columns: [
       "character_id", "quest_id", "state", "completed_at",
       "placeholder_objective_id", "tracked", "done_mask", "progress",
-      "quest_ms_left", "objective_ms_left", "kill_mask",
+      "quest_ms_left", "objective_ms_left", "kill_mask", "used_objective",
+      "used_spawn",
     ],
     values: [
       int.to_string(row.character_id),
@@ -406,6 +407,8 @@ fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
       nullable(row.quest_ms_left, int.to_string),
       nullable(row.objective_ms_left, integers),
       nullable(row.kill_mask, integers),
+      integers([]),
+      integers([]),
     ],
   )
 }

@@ -806,9 +806,10 @@ pub type Notice {
   /// shows it no more.
   Gone(unit_id: Int)
   /// The player sees these static objects now, each as its 0x262 under the unit
-  /// id the map gave its spawn for the run, in spawn order: the connection writes
-  /// each one its client does not show (genesis_prime/world_map/static_object).
-  ObjectsSeen(units: List(static_object.Created))
+  /// id the map gave its spawn for the run, with the spawn's id, in spawn order:
+  /// the connection writes each one its client does not show
+  /// (genesis_prime/world_map/static_object).
+  ObjectsSeen(units: List(#(SpawnId, static_object.Created)))
   /// The player no longer sees the static objects of these unit ids: the
   /// connection writes a 0x355 for each one its client shows.
   ObjectsUnseen(unit_ids: List(Int))
@@ -1990,7 +1991,10 @@ fn objects_decided(
         as "an object in sight is an object of the map's world"
       #(
         state,
-        static_object.create(object:, unit_id:, server_time_estimate_start:),
+        #(
+          spawn,
+          static_object.create(object:, unit_id:, server_time_estimate_start:),
+        ),
       )
     })
   let left =

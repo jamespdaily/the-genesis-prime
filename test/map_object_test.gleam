@@ -82,7 +82,7 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
-        Ok(Seen(sent.0, list.map(units, holoring_message)))
+        Ok(Seen(sent.0, list.map(units, fn(unit) { holoring_message(unit.1) })))
       map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
         Ok(Unseen(sent.0, unit_ids))
       map.Noticed(notice: map.SeenBy(..), ..)

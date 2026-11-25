@@ -3,7 +3,7 @@
 //// each unit and nothing the unit's owner decides.
 ////
 //// ```
-//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(creature id, Standing(place), life, alive, hit radius, attackable, hostile to))
+//// the creature's 0x262 news ─▶ shown(unit, ShownCreature(spawn id, creature id, Standing(place), life, alive, hit radius, attackable, hostile to))
 //// its CreatureMoved news   ─▶ path changed          its CreatureFaces news ─▶ face changed
 //// its Health and Died news ─▶ alive changed (a player's: and its health)        its 0x355 ─▶ the unit is no longer shown
 //// its CombatState news     ─▶ in combat changed
@@ -66,6 +66,7 @@ import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -90,6 +91,8 @@ pub type Shown {
   /// which has no fight state, so no area strikes it. It holds what the
   /// client's range check of a right-click reads of it (`opcode.0x97.range`).
   ShownObject(
+    /// The spawn the object stands at: what a quest objective remembers a use of it by.
+    spawn_id: SpawnId,
     /// The Creature2 row of its 0x262.
     creature_id: Creature2Id,
     /// The Faction2 id its 0x262 gave it, 0 for none.
@@ -107,6 +110,8 @@ pub type Shown {
   )
   /// A creature, as its 0x262 news gave it and its 0x638 news moved it.
   ShownCreature(
+    /// The spawn the creature was started at.
+    spawn_id: SpawnId,
     /// The Creature2 row it was created from.
     creature_id: Creature2Id,
     /// The Faction2 id its 0x262 gave it.
@@ -189,6 +194,15 @@ pub fn target_of(
   }
 }
 
+/// The spawn of a shown creature or object, or `Error(Nil)` for another player's unit,
+/// which stands at none.
+pub fn spawn_of(shown shown: Shown) -> Result(SpawnId, Nil) {
+  case shown {
+    ShownPlayer(..) -> Error(Nil)
+    ShownObject(spawn_id:, ..) | ShownCreature(spawn_id:, ..) -> Ok(spawn_id)
+  }
+}
+
 /// Whether the unit is a shown creature or object the TargetGroup row `group` holds
 /// (`0x1403b4a20`). A unit that is not shown, or another player, is in no group.
 pub fn in_group(
@@ -246,6 +260,7 @@ pub fn talkable(
       place:,
       hit_radius:,
       hostile_to:,
+      ..,
     ) ->
       Ok(Talkable(
         creature_id:,

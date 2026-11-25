@@ -15,6 +15,7 @@ import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
 import gleam/option
@@ -102,6 +103,7 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
     #(
       walker_unit,
       shown.ShownCreature(
+        spawn_id: SpawnId(1),
         creature_id: id.Creature2Id(74_812),
         faction_id: 0,
         checklist_index: 0,
