@@ -87,7 +87,7 @@ fn modifier_source() -> unit_properties.Source {
   cast_support.source_of(cast_id: 1, effect_id: 1921)
 }
 
-fn modifier_starts(scene scene: Scene) -> creature.Message {
+fn modifier_starts() -> creature.Message {
   creature.ModifierStarts(
     by: ConnectionId(1),
     source: modifier_source(),
@@ -98,7 +98,6 @@ fn modifier_starts(scene scene: Scene) -> creature.Message {
       flat: 0.5,
       per_level: 0.0,
     ),
-    struck_at_ms: world_watch_support.clock_ms(time: scene.time),
   )
 }
 
@@ -115,46 +114,38 @@ fn cast_view(scene scene: Scene) -> unit_casts.CastView {
 }
 
 fn cast_view_set(scene scene: Scene) -> creature.Message {
-  creature.CastViewSet(
-    by: ConnectionId(1),
-    view: cast_view(scene:),
-    struck_at_ms: world_watch_support.clock_ms(time: scene.time),
-  )
+  creature.CastViewSet(by: ConnectionId(1), view: cast_view(scene:))
 }
 
-fn thrown(scene scene: Scene) -> creature.Message {
-  creature.Thrown(
-    throw: forced_move.Throw(
-      move: forced_move.Move(
-        way: forced_move.Away,
-        mover: forced_move.Flight,
-        min_distance: 10.0,
-        max_distance: 10.0,
-        flight_ms: 375,
-        gravity: 0.0,
-        flags: 1,
-        height: 2.0,
-      ),
-      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-      reference: forced_move.Reference(
-        place: world_watch_support.sight_place(),
-        radius: 0.5,
-      ),
+fn thrown() -> creature.Message {
+  creature.Thrown(throw: forced_move.Throw(
+    move: forced_move.Move(
+      way: forced_move.Away,
+      mover: forced_move.Flight,
+      min_distance: 10.0,
+      max_distance: 10.0,
+      flight_ms: 375,
+      gravity: 0.0,
+      flags: 1,
+      height: 2.0,
     ),
-    struck_at_ms: world_watch_support.clock_ms(time: scene.time),
-  )
+    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+    reference: forced_move.Reference(
+      place: world_watch_support.sight_place(),
+      radius: 0.5,
+    ),
+  ))
 }
 
 fn despawn(scene scene: Scene) -> creature.Message {
   let now_ms = world_watch_support.clock_ms(time: scene.time)
-  creature.Despawn(delay_ms: 0, struck_at_ms: now_ms, went_at_ms: now_ms)
+  creature.Despawn(delay_ms: 0, went_at_ms: now_ms)
 }
 
 fn unit_states(scene scene: Scene) -> creature.Message {
   let now_ms = world_watch_support.clock_ms(time: scene.time)
   creature.UnitStates(
     rows: [unit_state.Row(state: 6, delay_ms: 0, duration_ms: 8500)],
-    struck_at_ms: now_ms,
     went_at_ms: now_ms,
   )
 }
@@ -444,7 +435,7 @@ fn rows() -> List(Row) {
     Row(
       name: "ModifierStarts",
       kind: Beast,
-      prepare: fn(scene, _life) { modifier_starts(scene:) },
+      prepare: fn(_scene, _life) { modifier_starts() },
       settle: nothing_to_settle,
       changes: "connection 1: PropertiesChanged",
     ),
@@ -452,7 +443,7 @@ fn rows() -> List(Row) {
       name: "ModifierEnds",
       kind: Beast,
       prepare: fn(scene, life) {
-        told_and_taken(scene:, life:, message: modifier_starts(scene:))
+        told_and_taken(scene:, life:, message: modifier_starts())
         creature.ModifierEnds(source: modifier_source())
       },
       settle: nothing_to_settle,
@@ -495,7 +486,7 @@ fn rows() -> List(Row) {
     Row(
       name: "Thrown",
       kind: Beast,
-      prepare: fn(scene, _life) { thrown(scene:) },
+      prepare: fn(_scene, _life) { thrown() },
       settle: nothing_to_settle,
       changes: "connection 1: CreatureMoved",
     ),

@@ -37,8 +37,9 @@ import genesis_prime/game/unit_casts
 /// What the creature is told of one cast.
 pub type Change {
   /// The creature `unit_id` of `life` holds this view of the cast: the caster's cast with
-  /// that creature's target alone and no cast in progress, for the round `struck_at_ms`.
-  ViewSet(unit_id: Int, life: Int, struck_at_ms: Int, view: unit_casts.CastView)
+  /// that creature's target alone and no cast in progress. A later go of the cast on the
+  /// same creature sends it again, whole, for the new round (`Told` holds the round's time).
+  ViewSet(unit_id: Int, life: Int, view: unit_casts.CastView)
   /// The creature holds no node of the cast `cast_id` any more.
   ViewEnds(unit_id: Int, life: Int, cast_id: Int)
 }
@@ -104,15 +105,7 @@ fn set_of(
       && earlier == target
     -> Error(Nil)
     Ok(_) | Error(Nil) ->
-      Ok(#(
-        key,
-        ViewSet(
-          unit_id: key.1,
-          life: struck.life,
-          struck_at_ms: struck.struck_at_ms,
-          view:,
-        ),
-      ))
+      Ok(#(key, ViewSet(unit_id: key.1, life: struck.life, view:)))
   }
 }
 

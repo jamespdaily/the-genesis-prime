@@ -9,14 +9,14 @@
 //// plan: a ForcedMove row aimed at other units (targetFlags 2, 4 or 6) is a `spell_plan.StruckMove`
 ////   (`of_row` decodes its columns when the plan loads; a target apply prerequisite fails the load)
 //// cast go, for each creature the go Hit in the row's aim (`cast_control.struck_moves_armed`):
-////   delay 0: `ForcedMoveStarts(unit_id, life, struck_at_ms, move)` in the go's step
-////   else:    `Due.ForcedMoveStart(on, move, struck_at_ms)`, a cast timer at go + delay_time,
+////   delay 0: `ForcedMoveStarts(unit_id, life, move)` in the go's step
+////   else:    `Due.ForcedMoveStart(on, move)`, a cast timer at go + delay_time,
 ////            which fires `ForcedMoveStarts`; the end of the cast's node on that creature cancels it
 ////            (`ended_where`), as it cancels a modifier's start
 //// casting (the connection) carries out `ForcedMoveStarts`:
 ////   `client_connection.draw(link, draw_bytes)` ─▶ `draws_of` the two fractions,
 ////   the player's place now and race radius ─▶ `Reference`
-////   ─▶ Tell(Creature) ─▶ creature `Thrown(move, draws, reference, struck_at_ms)`
+////   ─▶ Tell(Creature) ─▶ creature `Thrown(move, draws, reference)`
 //// creature_fight `Thrown`: path(move, draws, place now, velocity now, radius, reference,
 ////   Circle(home, leash), now) ─▶ Timed ─▶ 0x638 [kind 0, kind 3 (+ kind 14)] to each viewer
 //// ```
@@ -58,7 +58,8 @@
 //// |---|---|
 //// | the `ForcedMoveStart` timer fires | the cast tells the creature of the life the go struck: a node of the cast on it that ended first has cancelled the timer, as it cancels a modifier's start; a late timer throws from where the creature is then |
 //// | the connection is gone before the timer fires | the timers of the cast go with the connection: nothing is drawn, told or thrown |
-//// | the go struck a creature that is then dead or has stood again | the creature drops the tell (`struck_at_ms`) |
+//// | the go struck a creature that is then dead | the creature drops the tell |
+//// | the go struck a creature that has ended, and its map has started its next life | the registry finds no creature at the address of the life the go struck, and drops the tell |
 //// | the tell is in flight and the creature ended | the creature registry finds no process and drops the tell |
 //// | the tell reaches a creature that walks home | the fight drops it: a leashed creature takes no strike either |
 //// | the tell reaches a creature that does not run (run speed 0) | the fight drops it |

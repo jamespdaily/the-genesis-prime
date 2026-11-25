@@ -114,13 +114,7 @@ fn holding(
   life life: Int,
   rows rows: List(unit_state.Row),
 ) -> cast_state.Effect {
-  cast_state.CreatureHoldsUnitStates(
-    unit_id:,
-    life:,
-    struck_at_ms: 900,
-    went_at_ms: 1000,
-    rows:,
-  )
+  cast_state.CreatureHoldsUnitStates(unit_id:, life:, went_at_ms: 1000, rows:)
 }
 
 fn row_of(

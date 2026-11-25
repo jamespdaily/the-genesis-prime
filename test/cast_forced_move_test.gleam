@@ -259,12 +259,7 @@ fn thrower(rows rows: List(spell_plan.StruckMove)) -> Spell {
 }
 
 fn thrown(unit_id: Int, life: Int) -> cast_state.Effect {
-  cast_state.ForcedMoveStarts(
-    unit_id:,
-    life:,
-    struck_at_ms: 1000,
-    move: knockback(),
-  )
+  cast_state.ForcedMoveStarts(unit_id:, life:, move: knockback())
 }
 
 pub fn a_go_tells_each_hit_creature_its_throw_in_the_same_step_test() -> Nil {

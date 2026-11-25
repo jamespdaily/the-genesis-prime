@@ -1166,16 +1166,10 @@ fn tell_change(
   effect effect: cast_state.Effect,
 ) -> client_connection.TargetChange {
   let #(unit_id, life, change) = case effect {
-    cast_state.TargetChangeStarts(
-      unit_id:,
-      life:,
-      struck_at_ms:,
-      source:,
-      modifier:,
-    ) -> #(
+    cast_state.TargetChangeStarts(unit_id:, life:, source:, modifier:) -> #(
       unit_id,
       life,
-      client_connection.ChangeStarts(source:, modifier:, struck_at_ms:),
+      client_connection.ChangeStarts(source:, modifier:),
     )
     cast_state.TargetChangeEnds(unit_id:, life:, source:) -> #(
       unit_id,
@@ -1739,9 +1733,8 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
       rolls: [],
       poses: dict.new(),
     )
-  let assert [
-    cast_state.ForcedMoveStarts(unit_id: thrown, life:, struck_at_ms:, move:),
-  ] = cast_support.throws(effects: list.append(pressed, answered))
+  let assert [cast_state.ForcedMoveStarts(unit_id: thrown, life:, move:)] =
+    cast_support.throws(effects: list.append(pressed, answered))
     as "the row's delayTime is 0, so the go tells the one creature it hit its throw at once"
   // The client reads the throw's ForcedMove effect from the 0x7f4's target info of the
   // creature it throws (`Spell4Effects.effectType.3`), with the row's delayTime.
@@ -1772,20 +1765,17 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
         unit_id: thrown,
         life:,
       ),
-      request: client_connection.TellThrown(
-        throw: forced_move.Throw(
-          move:,
-          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-          reference: forced_move.Reference(
-            place: world_watch_support.sight_place(),
-            radius: hit_radius.of_playing(
-              tables: character_tables.shared(),
-              race_id:,
-            ),
+      request: client_connection.TellThrown(throw: forced_move.Throw(
+        move:,
+        draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+        reference: forced_move.Reference(
+          place: world_watch_support.sight_place(),
+          radius: hit_radius.of_playing(
+            tables: character_tables.shared(),
+            race_id:,
           ),
         ),
-        struck_at_ms:,
-      ),
+      )),
     )
     as "the creature is found by its address and told"
   let path =
@@ -1866,10 +1856,9 @@ pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
   }
   assert delivered(client_connection.TellDespawn(
       delay_ms: 3000,
-      struck_at_ms: 900,
       went_at_ms: 1000,
     ))
-    == creature.Despawn(delay_ms: 3000, struck_at_ms: 900, went_at_ms: 1000)
+    == creature.Despawn(delay_ms: 3000, went_at_ms: 1000)
     as "a removal is the creature's Despawn, with its delay, the round's time and the go's time"
   let throw =
     forced_move.Throw(
@@ -1889,8 +1878,8 @@ pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
         radius: 0.5,
       ),
     )
-  assert delivered(client_connection.TellThrown(throw:, struck_at_ms: 900))
-    == creature.Thrown(throw:, struck_at_ms: 900)
+  assert delivered(client_connection.TellThrown(throw:))
+    == creature.Thrown(throw:)
     as "a throw is still the creature's Thrown"
   world_support.stop(world:)
 }
@@ -1939,9 +1928,9 @@ pub fn tell_cast_view_reaches_the_creature_as_cast_view_set_and_ends_test() -> N
     )
   assert delivered(client_connection.TellCastView(
       connection: ConnectionId(4),
-      change: client_connection.ViewSet(view:, struck_at_ms: 900),
+      change: client_connection.ViewSet(view:),
     ))
-    == creature.CastViewSet(by: ConnectionId(4), view:, struck_at_ms: 900)
+    == creature.CastViewSet(by: ConnectionId(4), view:)
     as "a set is the creature's CastViewSet, with the connection that told it and the round's time"
   assert delivered(client_connection.TellCastView(
       connection: ConnectionId(4),
@@ -2052,23 +2041,13 @@ fn carried_out(
   list.flat_map(effects, fn(effect) {
     case effect {
       cast_state.Send(frame:) -> [Wrote(message_id: frame.message_id)]
-      cast_state.CreatureDespawns(
-        unit_id:,
-        life:,
-        struck_at_ms:,
-        went_at_ms:,
-        delay_ms:,
-      ) -> {
+      cast_state.CreatureDespawns(unit_id:, life:, went_at_ms:, delay_ms:) -> {
         world_watch_support.told_creature(
           world:,
           run:,
           unit_id:,
           life:,
-          request: client_connection.TellDespawn(
-            delay_ms:,
-            struck_at_ms:,
-            went_at_ms:,
-          ),
+          request: client_connection.TellDespawn(delay_ms:, went_at_ms:),
         )
         [Told(unit_id:)]
       }
@@ -2187,7 +2166,6 @@ pub fn a_despawn_of_delay_0_reaches_the_caster_after_the_go_frame_test() -> Nil 
     cast_state.CreatureDespawns(
       unit_id: watched.beast.unit_id,
       life: 2,
-      struck_at_ms: now_ms,
       went_at_ms: now_ms,
       delay_ms: 0,
     ),

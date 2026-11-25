@@ -912,14 +912,14 @@ pub fn creatures_settled(
     compared,
     list.map(changes, fn(change) {
       case change {
-        creature_view.ViewSet(unit_id:, life:, struck_at_ms:, view:) ->
+        creature_view.ViewSet(unit_id:, life:, view:) ->
           tells_the_creature(
             entered:,
             unit_id:,
             life:,
             request: client_connection.TellCastView(
               connection:,
-              change: client_connection.ViewSet(view:, struck_at_ms:),
+              change: client_connection.ViewSet(view:),
             ),
           )
         creature_view.ViewEnds(unit_id:, life:, cast_id:) ->
@@ -1658,13 +1658,7 @@ fn carried_out(
         ]),
       )
       cast_state.StealthChanged(..), None -> #(session, [])
-      cast_state.TargetChangeStarts(
-        unit_id:,
-        life:,
-        struck_at_ms:,
-        source:,
-        modifier:,
-      ),
+      cast_state.TargetChangeStarts(unit_id:, life:, source:, modifier:),
         Some(entered)
       -> #(session, [
         tells_the_creature(
@@ -1673,11 +1667,7 @@ fn carried_out(
           life:,
           request: client_connection.TellTargetChange(
             connection: client_connection.connection(session.link),
-            change: client_connection.ChangeStarts(
-              source:,
-              modifier:,
-              struck_at_ms:,
-            ),
+            change: client_connection.ChangeStarts(source:, modifier:),
           ),
         ),
       ])
@@ -1697,54 +1687,25 @@ fn carried_out(
         ],
       )
       cast_state.TargetChangeEnds(..), None -> #(session, [])
-      cast_state.ForcedMoveStarts(unit_id:, life:, struck_at_ms:, move:),
-        Some(entered)
-      -> {
+      cast_state.ForcedMoveStarts(unit_id:, life:, move:), Some(entered) -> {
         let #(session, tell) =
-          creature_thrown(
-            session:,
-            entered:,
-            unit_id:,
-            life:,
-            struck_at_ms:,
-            move:,
-          )
+          creature_thrown(session:, entered:, unit_id:, life:, move:)
         #(session, [tell])
       }
       cast_state.ForcedMoveStarts(..), None -> #(session, [])
-      cast_state.CreatureDespawns(
-        unit_id:,
-        life:,
-        struck_at_ms:,
-        went_at_ms:,
-        delay_ms:,
-      ),
+      cast_state.CreatureDespawns(unit_id:, life:, went_at_ms:, delay_ms:),
         Some(entered)
       -> #(session, [
-        creature_despawned(
-          entered:,
-          unit_id:,
-          life:,
-          struck_at_ms:,
-          went_at_ms:,
-          delay_ms:,
-        ),
+        creature_despawned(entered:, unit_id:, life:, went_at_ms:, delay_ms:),
       ])
       cast_state.CreatureDespawns(..), None -> #(session, [])
-      cast_state.CreatureHoldsUnitStates(
-        unit_id:,
-        life:,
-        struck_at_ms:,
-        went_at_ms:,
-        rows:,
-      ),
+      cast_state.CreatureHoldsUnitStates(unit_id:, life:, went_at_ms:, rows:),
         Some(entered)
       -> #(session, [
         creature_holds_unit_states(
           entered:,
           unit_id:,
           life:,
-          struck_at_ms:,
           went_at_ms:,
           rows:,
         ),
@@ -1881,14 +1842,13 @@ fn tells_the_creature(
 /// through the creature registry with no watch, as a strike's tell goes: the
 /// connection draws `forced_move.draw_bytes` from its seed (`client_connection.draw`),
 /// reads the two fractions (`forced_move.draws_of`), takes the player's place now and
-/// race radius as the `Reference` and tells the creature `TellThrown` with
-/// `struck_at_ms`. The session it returns holds the link after the draw.
+/// race radius as the `Reference` and tells the creature `TellThrown`. The session it
+/// returns holds the link after the draw.
 fn creature_thrown(
   session session: Session,
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
   life life: Int,
-  struck_at_ms struck_at_ms: Int,
   move move: forced_move.Move,
 ) -> #(Session, Effect(ConnectionEffect(Request))) {
   let #(link, bytes) =
@@ -1910,27 +1870,22 @@ fn creature_thrown(
         unit_id:,
         life:,
       ),
-      request: client_connection.TellThrown(
-        throw: forced_move.Throw(
-          move:,
-          draws: forced_move.draws_of(bytes:),
-          reference:,
-        ),
-        struck_at_ms:,
-      ),
+      request: client_connection.TellThrown(throw: forced_move.Throw(
+        move:,
+        draws: forced_move.draws_of(bytes:),
+        reference:,
+      )),
     )),
   )
 }
 
 /// The removal of the creature `unit_id` of `life`, in the run of the player's map, through
 /// the creature registry with no watch, as a strike's tell goes: the connection tells the
-/// creature `TellDespawn` with `delay_ms`, `struck_at_ms` and `went_at_ms`, and draws
-/// nothing.
+/// creature `TellDespawn` with `delay_ms` and `went_at_ms`, and draws nothing.
 fn creature_despawned(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
   life life: Int,
-  struck_at_ms struck_at_ms: Int,
   went_at_ms went_at_ms: Int,
   delay_ms delay_ms: Int,
 ) -> Effect(ConnectionEffect(Request)) {
@@ -1941,22 +1896,17 @@ fn creature_despawned(
       unit_id:,
       life:,
     ),
-    request: client_connection.TellDespawn(
-      delay_ms:,
-      struck_at_ms:,
-      went_at_ms:,
-    ),
+    request: client_connection.TellDespawn(delay_ms:, went_at_ms:),
   ))
 }
 
 /// The unit states the go holds on the creature `unit_id` of `life`, in the run of the player's
 /// map, through the creature registry with no watch, as a removal goes: the connection tells
-/// the creature `TellUnitStates` with the go's `rows` and the two times, and draws nothing.
+/// the creature `TellUnitStates` with the go's `rows` and its time, and draws nothing.
 fn creature_holds_unit_states(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
   life life: Int,
-  struck_at_ms struck_at_ms: Int,
   went_at_ms went_at_ms: Int,
   rows rows: List(unit_state.Row),
 ) -> Effect(ConnectionEffect(Request)) {
@@ -1967,7 +1917,7 @@ fn creature_holds_unit_states(
       unit_id:,
       life:,
     ),
-    request: client_connection.TellUnitStates(rows:, struck_at_ms:, went_at_ms:),
+    request: client_connection.TellUnitStates(rows:, went_at_ms:),
   ))
 }
 

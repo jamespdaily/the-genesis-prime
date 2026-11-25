@@ -1728,14 +1728,13 @@ fn creature_view_of(
   )
 }
 
-/// The change that tells the creature `unit_id` of `life` the view, for the round `struck_at_ms`.
+/// The change that tells the creature `unit_id` of `life` the view.
 fn view_set(
   unit_id unit_id: Int,
   life life: Int,
-  struck_at_ms struck_at_ms: Int,
   view view: unit_casts.CastView,
 ) -> creature_view.Change {
-  creature_view.ViewSet(unit_id:, life:, struck_at_ms:, view:)
+  creature_view.ViewSet(unit_id:, life:, view:)
 }
 
 /// The state with the cast's node on each unit given by `change`.
@@ -1987,6 +1986,22 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       cast_id: creature_cast,
       change: fn(node) { lasting.Node(..node, count: 2) },
     )
+  // The same node, struck by a later round (time 2000) that left the target as it was: only
+  // the round differs from `on_a_creature`.
+  let struck_again =
+    with_nodes_changed(
+      state: on_a_creature,
+      cast_id: creature_cast,
+      change: fn(node) {
+        lasting.Node(
+          ..node,
+          struck: option.Some(lasting.StruckCreature(
+            life: 3,
+            struck_at_ms: 2000,
+          )),
+        )
+      },
+    )
   let #(one_off, _) =
     cast_tick.stack_off(
       cast: stacked_twice,
@@ -2009,7 +2024,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       #(
         "a go's node on a creature gives the creature's life and the time of the round that struck it, that creature's target alone and no cast in progress",
         compared_in_turn(states: [on_a_creature]),
-        [[view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)]],
+        [[view_set(unit_id: 20, life: 3, view: a_go)]],
       ),
       #(
         "a node only on the caster is told no creature",
@@ -2029,7 +2044,6 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
             view_set(
               unit_id: 20,
               life: 2,
-              struck_at_ms: 1500,
               view: creature_view_of(
                 cast_id: child,
                 spell4_id: 41_886,
@@ -2049,18 +2063,12 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         compared_in_turn(states: [first_go, again]),
         [
           [
-            view_set(
-              unit_id: 20,
-              life: 1,
-              struck_at_ms: 1000,
-              view: in_a_channel(1000, 6000),
-            ),
+            view_set(unit_id: 20, life: 1, view: in_a_channel(1000, 6000)),
           ],
           [
             view_set(
               unit_id: 20,
               life: 1,
-              struck_at_ms: 2000,
               view: doubled(in_a_channel(2000, 7000)),
             ),
           ],
@@ -2071,18 +2079,12 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         compared_in_turn(states: [first_go, missed]),
         [
           [
-            view_set(
-              unit_id: 20,
-              life: 1,
-              struck_at_ms: 1000,
-              view: in_a_channel(1000, 6000),
-            ),
+            view_set(unit_id: 20, life: 1, view: in_a_channel(1000, 6000)),
           ],
           [
             view_set(
               unit_id: 20,
               life: 1,
-              struck_at_ms: 1000,
               view: doubled(in_a_channel(2000, 7000)),
             ),
           ],
@@ -2092,16 +2094,24 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         "a node whose count changes (hand-built: no cast path gives a count above 1) gives a set with the new count, and one with the count lowered after a stack off",
         compared_in_turn(states: [on_a_creature, stacked_twice, one_off]),
         [
-          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)],
-          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: twice)],
-          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)],
+          [view_set(unit_id: 20, life: 3, view: a_go)],
+          [view_set(unit_id: 20, life: 3, view: twice)],
+          [view_set(unit_id: 20, life: 3, view: a_go)],
+        ],
+      ),
+      #(
+        "a node struck again in a later round with the same target is told again: the round is told with the view, so the creature's view of it is armed again",
+        compared_in_turn(states: [on_a_creature, struck_again]),
+        [
+          [view_set(unit_id: 20, life: 3, view: a_go)],
+          [view_set(unit_id: 20, life: 3, view: a_go)],
         ],
       ),
       #(
         "a second compare with no step between gives none",
         compared_in_turn(states: [on_a_creature, on_a_creature]),
         [
-          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)],
+          [view_set(unit_id: 20, life: 3, view: a_go)],
           [],
         ],
       ),
@@ -2113,7 +2123,6 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
             view_set(
               unit_id: 20,
               life: 3,
-              struck_at_ms: 1000,
               view: creature_view_of(
                 cast_id: asked.cast_id,
                 spell4_id: 58_591,
@@ -2138,7 +2147,6 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
             view_set(
               unit_id:,
               life: 1,
-              struck_at_ms: 1000,
               view: creature_view_of(
                 cast_id: three_cast,
                 spell4_id: 101,
@@ -2238,7 +2246,6 @@ pub fn a_holder_gone_or_left_is_told_by_the_compare_test() -> Nil {
             view_set(
               unit_id: 20,
               life: 3,
-              struck_at_ms: 1000,
               view: creature_view_of(
                 cast_id: passive_cast,
                 spell4_id: 101,
@@ -2267,7 +2274,6 @@ fn told_view(id id: Int, ends_ms ends_ms: Int) -> creature_view.Change {
   view_set(
     unit_id: 20,
     life: 3,
-    struck_at_ms: 1000,
     view: creature_view_of(
       cast_id: id,
       spell4_id: 101,
@@ -2393,13 +2399,13 @@ pub fn the_views_told_equal_what_the_caster_holds_test() -> Nil {
       let applied =
         list.fold(changes, told_before, fn(told, change) {
           case change {
-            creature_view.ViewSet(unit_id:, life:, struck_at_ms:, view:) ->
+            creature_view.ViewSet(unit_id:, life:, view:) ->
               case view.targets {
                 [target] ->
                   dict.insert(
                     told,
                     #(view.cast_id, unit_id),
-                    cast_state.Told(life:, struck_at_ms:, target:),
+                    cast_state.Told(life:, struck_at_ms: life * 100, target:),
                   )
                 [] | [_, ..] -> told
               }

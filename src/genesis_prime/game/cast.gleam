@@ -3200,15 +3200,10 @@ fn fire(
           cast_control.player_change_ended(cast:, unit_id:, source:)
         RestrictionEnd(source:) ->
           cast_control.restriction_ended(cast:, source:)
-        TargetModifierStart(on:, modifier:, struck_at_ms:) ->
-          cast_control.target_modifier_started(
-            cast:,
-            on:,
-            modifier:,
-            struck_at_ms:,
-          )
-        ForcedMoveStart(on:, move:, struck_at_ms:) ->
-          cast_control.throw_started(cast:, on:, move:, struck_at_ms:)
+        TargetModifierStart(on:, modifier:) ->
+          cast_control.target_modifier_started(cast:, on:, modifier:)
+        ForcedMoveStart(on:, move:) ->
+          cast_control.throw_started(cast:, on:, move:)
         CooldownModifierStarts(source:, modifier:, kept:) ->
           cooldown_applied(cast:, source:, modifier:, kept:, now_ms:)
         CooldownModifierEnds(source:) -> #(

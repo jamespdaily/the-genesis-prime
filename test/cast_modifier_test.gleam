@@ -781,7 +781,6 @@ fn started_on_creature(source: unit_properties.Source) -> Effect {
   cast_state.TargetChangeStarts(
     unit_id: creature,
     life: 3,
-    struck_at_ms: 1000,
     source:,
     modifier: slowing_modifier(),
   )

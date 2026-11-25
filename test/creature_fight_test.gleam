@@ -3159,13 +3159,11 @@ fn scaled_by(property property: Int, factor factor: Float) -> Modifier {
 fn modifier_start(
   cast_id cast_id: Int,
   modifier modifier: Modifier,
-  struck_at_ms struck_at_ms: Int,
 ) -> creature.Message {
   creature.ModifierStarts(
     by: ConnectionId(9),
     source: cast_support.source_of(cast_id:, effect_id: 1900 + cast_id),
     modifier:,
-    struck_at_ms:,
   )
 }
 
@@ -3178,7 +3176,6 @@ pub fn move_speed_modifier_slows_chase_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.5),
-        struck_at_ms: 0,
       ),
     )
   let #(_, aggro) =
@@ -3205,7 +3202,6 @@ pub fn move_speed_change_mid_chase_replans_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.5),
-        struck_at_ms: 1000,
       ),
     )
   assert said(slowed)
@@ -3241,7 +3237,6 @@ pub fn move_speed_change_mid_chase_replans_test() -> Nil {
       message: modifier_start(
         cast_id: 2,
         modifier: scaled_by(property: 127, factor: 2.0),
-        struck_at_ms: 2100,
       ),
     )
   assert said(other) == ["other to 2", "other to 5"]
@@ -3254,7 +3249,6 @@ pub fn move_speed_change_mid_chase_replans_test() -> Nil {
       message: modifier_start(
         cast_id: 3,
         modifier: scaled_by(property: 100, factor: 2.0),
-        struck_at_ms: 5000,
       ),
     )
   assert said(after) == ["other to 2", "other to 5"]
@@ -3286,7 +3280,6 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.5),
-        struck_at_ms: 1500,
       ),
     )
   assert list.map(news_to(slowed, 5), creature_news_support.name_of)
@@ -3369,7 +3362,6 @@ pub fn chase_with_zero_run_speed_stands_still_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.0),
-        struck_at_ms: 0,
       ),
     )
   let #(state, aggro) =
@@ -3400,7 +3392,6 @@ pub fn walk_home_with_zero_run_speed_stands_still_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.0),
-        struck_at_ms: 1000,
       ),
     )
   assert list.contains(said(rooted), "0x638(placed) to 5")
@@ -3437,7 +3428,6 @@ pub fn negative_run_speed_stands_still_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: flats_to_negative_move_speed(),
-        struck_at_ms: 0,
       ),
     )
   let #(state, aggro) =
@@ -3458,7 +3448,6 @@ pub fn negative_run_speed_stands_still_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: flats_to_negative_move_speed(),
-        struck_at_ms: 1000,
       ),
     )
   assert list.contains(said(slowed), "0x638(placed) to 5")
@@ -3487,7 +3476,6 @@ pub fn run_speed_restored_moves_again_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.0),
-        struck_at_ms: 1000,
       ),
     )
   let #(_, back) =
@@ -3522,7 +3510,6 @@ pub fn run_speed_restored_walks_home_again_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.0),
-        struck_at_ms: 1000,
       ),
     )
   let #(state, _) =
@@ -3578,7 +3565,6 @@ pub fn creature_that_cannot_run_leashes_by_the_turret_rule_test() -> Nil {
         message: modifier_start(
           cast_id: 1,
           modifier: scaled_by(property: 100, factor: 0.0),
-          struck_at_ms: 0,
         ),
       )
     tell(state:, at_ms: 100, message: approached(number: 2, x:, seq: 1))
@@ -3604,7 +3590,6 @@ pub fn rooted_creature_leashing_at_home_rests_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.0),
-        struck_at_ms: 0,
       ),
     )
   let #(state, aggro) =
@@ -3651,7 +3636,6 @@ pub fn rooted_creature_at_the_circle_does_not_leash_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 0.0),
-        struck_at_ms: 5600,
       ),
     )
   // The tick at 6 s finds the creature at the circle, rooted.
@@ -3693,7 +3677,6 @@ pub fn speed_restored_while_held_stays_until_control_ends_test() -> Nil {
       message: modifier_start(
         cast_id: 2,
         modifier: scaled_by(property: 100, factor: 0.0),
-        struck_at_ms: 600,
       ),
     )
   assert sends_no_path(rooted)
@@ -3726,7 +3709,6 @@ pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 141, factor: 2.0),
-        struck_at_ms: 0,
       ),
     )
   let #(state, aggro) =
@@ -4785,11 +4767,7 @@ pub fn a_despawned_opening_ends_without_a_0x880() -> Nil {
     tell(
       state:,
       at_ms: 5000,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 4900,
-        went_at_ms: 5000,
-      ),
+      message: creature.Despawn(delay_ms: 0, went_at_ms: 5000),
     )
   let assert [_, _, CastStarted(start: opening), ..] = news_named(stunned, 2)
     as "the opening's cast is the third news of the interrupt"
@@ -5173,32 +5151,26 @@ pub fn a_turret_holding_any_other_state_starts_no_charge_test() -> Nil {
 // 10 units a second (`Spell4.5649`'s reach 8, runLand 10.0), and is at x = 10 a second in.
 
 /// The throw of Spell4Effects 73826: 10 m away from a unit at x = -5, over 375 ms.
-fn knockback(at_ms at_ms: Int) -> creature.Message {
-  knockback_from(at_ms:, unit_at: map_spawn_support.at(-5.0))
+fn knockback() -> creature.Message {
+  knockback_from(unit_at: map_spawn_support.at(-5.0))
 }
 
 /// The same throw away from a unit at `unit_at`.
-fn knockback_from(
-  at_ms at_ms: Int,
-  unit_at unit_at: start_place.Place,
-) -> creature.Message {
-  creature.Thrown(
-    throw: forced_move.Throw(
-      move: forced_move.Move(
-        way: forced_move.Away,
-        mover: forced_move.Flight,
-        min_distance: 10.0,
-        max_distance: 10.0,
-        flight_ms: 375,
-        gravity: 0.0,
-        flags: 0,
-        height: 0.0,
-      ),
-      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-      reference: forced_move.Reference(place: unit_at, radius: 0.0),
+fn knockback_from(unit_at unit_at: start_place.Place) -> creature.Message {
+  creature.Thrown(throw: forced_move.Throw(
+    move: forced_move.Move(
+      way: forced_move.Away,
+      mover: forced_move.Flight,
+      min_distance: 10.0,
+      max_distance: 10.0,
+      flight_ms: 375,
+      gravity: 0.0,
+      flags: 0,
+      height: 0.0,
     ),
-    struck_at_ms: start_ms + at_ms,
-  )
+    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+    reference: forced_move.Reference(place: unit_at, radius: 0.0),
+  ))
 }
 
 /// The beast chasing player 2, 30 off, for these viewers, and the step of the aggro.
@@ -5218,8 +5190,7 @@ fn thrown_chasing(
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
   let #(state, _) = chasing(viewers:)
-  let #(state, thrown) =
-    tell(state:, at_ms: 1000, message: knockback(at_ms: 1000))
+  let #(state, thrown) = tell(state:, at_ms: 1000, message: knockback())
   #(state, thrown, timer_for(thrown, 375))
 }
 
@@ -5373,8 +5344,7 @@ pub fn a_thrown_creature_does_not_chase_or_attack_until_it_lands_test() -> Nil {
       at_ms: 0,
       message: approached(number: 2, x: 5.0, seq: 1),
     )
-  let #(state, thrown) =
-    tell(state:, at_ms: 1400, message: knockback(at_ms: 1400))
+  let #(state, thrown) = tell(state:, at_ms: 1400, message: knockback())
   let lands = timer_for(thrown, 375)
   let #(state, ticked) =
     fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
@@ -5441,8 +5411,7 @@ pub fn a_throw_breaks_an_open_charge_test() -> Nil {
       message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
     )
   let #(state, opened, ends) = charge_opened(state:, aggro:)
-  let #(state, thrown) =
-    tell(state:, at_ms: 4000, message: knockback(at_ms: 4000))
+  let #(state, thrown) = tell(state:, at_ms: 4000, message: knockback())
   assert said(thrown) == ["0x7f9 to 2", "0x638 to 2"]
     as "the charge is broken as a state breaks it, then the flight is sent"
   let assert [unit_news.CastInterrupted(cast_id:)] =
@@ -5476,7 +5445,7 @@ pub fn a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test() -> N
     tell(
       state:,
       at_ms: 4000,
-      message: knockback_from(at_ms: 4000, unit_at: map_spawn_support.at(0.0)),
+      message: knockback_from(unit_at: map_spawn_support.at(0.0)),
     )
   assert said(thrown) == [] && timers(thrown) == []
     as "no path, no timer and no 0x7f9: the creature moved nowhere"
@@ -5582,7 +5551,7 @@ pub fn a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test() 
   use <- owned_test.run(5000)
   let #(state, _, first_lands) = thrown_chasing(viewers: [2])
   // 150 ms into the 375 ms flight from x = 10 to 20: 0.4 of the way, at x = 14.
-  let #(_, second) = tell(state:, at_ms: 1150, message: knockback(at_ms: 1150))
+  let #(_, second) = tell(state:, at_ms: 1150, message: knockback())
   assert said(second) == ["0x638 to 2"]
   let assert [CreatureMoved(path:)] = news_to(second, 2)
   let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
@@ -5599,8 +5568,7 @@ pub fn a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test() 
 pub fn a_stale_flight_end_does_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _, first_lands) = thrown_chasing(viewers: [2])
-  let #(state, second) =
-    tell(state:, at_ms: 1150, message: knockback(at_ms: 1150))
+  let #(state, second) = tell(state:, at_ms: 1150, message: knockback())
   let #(state, _) =
     tell(state:, at_ms: 1300, message: moved(number: 2, x: 50.0, seq: 2))
   let #(state, stale) = fire(state:, at_ms: 1375, timer: first_lands)
@@ -5676,8 +5644,7 @@ pub fn a_turret_is_not_thrown_test() -> Nil {
   use <- owned_test.run(5000)
   // The sim turret's run speed is 0: a creature that never moves ignores a throw.
   let #(state, aggro) = fought(viewers: [2])
-  let #(state, thrown) =
-    tell(state:, at_ms: 100, message: knockback(at_ms: 100))
+  let #(state, thrown) = tell(state:, at_ms: 100, message: knockback())
   assert said(thrown) == [] && timers(thrown) == []
     as "no path, no timer, no news"
   let #(_, opened) = fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
@@ -5822,23 +5789,20 @@ pub fn a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_t
       tell(
         state:,
         at_ms: 100,
-        message: creature.Thrown(
-          throw: forced_move.Throw(
-            move: forced_move.Move(
-              way:,
-              mover:,
-              min_distance: 10.0,
-              max_distance: 10.0,
-              flight_ms: 375,
-              gravity: 0.0,
-              flags: 0,
-              height: 0.0,
-            ),
-            draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-            reference: forced_move.Reference(place: unit_at, radius: 0.0),
+        message: creature.Thrown(throw: forced_move.Throw(
+          move: forced_move.Move(
+            way:,
+            mover:,
+            min_distance: 10.0,
+            max_distance: 10.0,
+            flight_ms: 375,
+            gravity: 0.0,
+            flags: 0,
+            height: 0.0,
           ),
-          struck_at_ms: start_ms + 100,
-        ),
+          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+          reference: forced_move.Reference(place: unit_at, radius: 0.0),
+        )),
       )
     assert said(thrown) == [] && timers(thrown) == []
       as { name <> ": no path, no flight timer, no news" }
@@ -6894,11 +6858,7 @@ pub fn a_despawn_between_gos_finishes_the_cast_removes_the_creature_and_starts_i
     tell(
       state:,
       at_ms: 4200,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 4100,
-        went_at_ms: 4200,
-      ),
+      message: creature.Despawn(delay_ms: 0, went_at_ms: 4200),
     )
   let to_2 =
     list.filter(said(gone), fn(line) { string.ends_with(line, " to 2") })
@@ -7186,7 +7146,6 @@ pub fn a_round_naming_an_alternates_spell_finds_its_attack_test() -> Nil {
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 141, factor: 2.0),
-        struck_at_ms: 3100,
       ),
     )
   let #(state, answered) = tell(state:, at_ms: 3200, message: landed(key:))
@@ -7791,11 +7750,7 @@ pub fn a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_followi
     tell(
       state:,
       at_ms: 1000,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 900,
-        went_at_ms: 1000,
-      ),
+      message: creature.Despawn(delay_ms: 0, went_at_ms: 1000),
     )
   assert list.length(faces_to(gone, 2)) == 1
     as "a despawn freezes the facing as a death does"
@@ -7816,11 +7771,7 @@ pub fn a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the
     tell(
       state:,
       at_ms: 1200,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 1100,
-        went_at_ms: 1200,
-      ),
+      message: creature.Despawn(delay_ms: 0, went_at_ms: 1200),
     )
   let assert [face] = faces_to(home_gone, 5)
   assert float.loosely_equals(
@@ -7836,11 +7787,7 @@ pub fn a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the
     tell(
       state:,
       at_ms: 3000,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 2900,
-        went_at_ms: 3000,
-      ),
+      message: creature.Despawn(delay_ms: 0, went_at_ms: 3000),
     )
   assert faces_to(charge_gone, 2) == []
     as "a death in a charge adds no turn to the charge's kind 14"
@@ -7851,11 +7798,7 @@ pub fn a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the
     tell(
       state:,
       at_ms: 1200,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 1100,
-        went_at_ms: 1200,
-      ),
+      message: creature.Despawn(delay_ms: 0, went_at_ms: 1200),
     )
   let assert [face] = faces_to(flight_gone, 2)
     as "dying in flight sends one turn"
@@ -7867,23 +7810,20 @@ pub fn a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the
 
 /// A knockback that turns the creature to face the unit that threw it (the row's flag 4,
 /// `forced_move` `turn_of`).
-fn turning_knockback(at_ms at_ms: Int) -> creature.Message {
-  let assert creature.Thrown(throw:, struck_at_ms:) = knockback(at_ms:)
-    as "a knockback is a throw"
+fn turning_knockback() -> creature.Message {
+  let assert creature.Thrown(throw:) = knockback() as "a knockback is a throw"
   creature.Thrown(
     throw: forced_move.Throw(
       ..throw,
       move: forced_move.Move(..throw.move, flags: 4),
     ),
-    struck_at_ms:,
   )
 }
 
 pub fn a_thrown_creature_is_turned_back_to_its_target_when_it_lands_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) = chasing(viewers: [2])
-  let #(state, thrown) =
-    tell(state:, at_ms: 1000, message: turning_knockback(at_ms: 1000))
+  let #(state, thrown) = tell(state:, at_ms: 1000, message: turning_knockback())
   assert faces_to(thrown, 2) == []
     && list.length(list.filter(said(thrown), fn(line) { line == "0x638 to 2" }))
     == 1
@@ -8122,7 +8062,6 @@ pub fn a_chase_path_cancels_and_restarts_the_arrival_timer_for_the_paths_end_tes
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 2.0),
-        struck_at_ms: 500,
       ),
     )
   let #(_, in_reach) =
@@ -8145,7 +8084,6 @@ pub fn a_chase_path_cancels_and_restarts_the_arrival_timer_for_the_paths_end_tes
       message: modifier_start(
         cast_id: 1,
         modifier: scaled_by(property: 100, factor: 2.0),
-        struck_at_ms: 1500,
       ),
     )
   let cases = [
@@ -8221,7 +8159,7 @@ pub fn the_arrival_timer_of_a_path_that_is_no_longer_run_sends_nothing_test() ->
       ).0,
       200,
     ),
-    #("thrown", tell(state:, at_ms: 100, message: knockback(at_ms: 100)).0, 200),
+    #("thrown", tell(state:, at_ms: 100, message: knockback()).0, 200),
     #("walking home", left_home, 1500),
   ]
   list.each(cases, fn(row) {
@@ -9685,7 +9623,7 @@ fn broken_by(
       tell(
         state:,
         at_ms:,
-        message: knockback_from(at_ms:, unit_at: at_xz(x: 0.0, z: 5.0)),
+        message: knockback_from(unit_at: at_xz(x: 0.0, z: 5.0)),
       )
   }
 }

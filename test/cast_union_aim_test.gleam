@@ -300,12 +300,7 @@ pub fn union_forced_move_moves_the_caster_and_the_struck_creature_test() -> Nil 
   let #(_, effects) = pressed_and_struck(spell:, struck: [21])
   assert support.throws(effects:)
     == [
-      cast_state.ForcedMoveStarts(
-        unit_id: 21,
-        life: 1,
-        struck_at_ms: 0,
-        move: struck_move.move,
-      ),
+      cast_state.ForcedMoveStarts(unit_id: 21, life: 1, move: struck_move.move),
     ]
     as "the creature the go hit is thrown once"
   let assert [#(7, caster_effects), #(21, struck_effects)] =

@@ -109,8 +109,9 @@ pub type Node {
   )
 }
 
-/// The life of a creature a go struck and the monotonic time it struck it, which tells
-/// the creature's lives apart (a creature keeps its address across a stand-again).
+/// The life of a creature a go struck and the monotonic time it struck it: the round, which
+/// tells a later go on the same creature from the earlier one (`creature_view` tells the
+/// creature its view again for each new round).
 pub type StruckCreature {
   StruckCreature(life: Int, struck_at_ms: Int)
 }

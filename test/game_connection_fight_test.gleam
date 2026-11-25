@@ -397,15 +397,7 @@ pub fn a_creature_despawns_effect_becomes_a_tell_to_that_creature_test() -> Nil 
     ])
   assert list.flat_map(steps, despawns_told)
     == [
-      #(
-        40,
-        4,
-        client_connection.TellDespawn(
-          delay_ms: 3000,
-          struck_at_ms: 1000,
-          went_at_ms: 1100,
-        ),
-      ),
+      #(40, 4, client_connection.TellDespawn(delay_ms: 3000, went_at_ms: 1100)),
     ]
     as "the connection tells the creature of that life, with the row's delay, the round's time and the go's time, and tells no other"
 }
@@ -2580,7 +2572,6 @@ pub fn a_creature_holds_unit_states_effect_becomes_a_tell_to_that_creature_test(
         4,
         client_connection.TellUnitStates(
           rows: [unit_state.Row(state: 6, delay_ms: 500, duration_ms: 2000)],
-          struck_at_ms: 1000,
           went_at_ms: 1100,
         ),
       ),

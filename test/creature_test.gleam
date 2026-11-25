@@ -736,7 +736,7 @@ fn run_only_by_two() -> State {
 pub fn the_corpse_timer_removes_a_creature_tells_its_map_it_expired_and_stops_it_test() -> Nil {
   use <- owned_test.run(5000)
   // `death.creature_respawn`: the client sees the 0x355 and then the 0x262 of the same unit; the
-  // 0x262 now comes from the map's next life (Design run A, 4.1), so the creature's last
+  // 0x262 comes from the map's next life (Design run A, 4.1), so the creature's last
   // sends are the removal, once for all its viewers, and its expiry, and then it stops.
   let unwatched_dead = fn() {
     let #(state, _) =
@@ -1006,9 +1006,8 @@ fn told_raw(
 fn starting(
   source source: Source,
   modifier modifier: Modifier,
-  struck_at_ms struck_at_ms: Int,
 ) -> creature.Message {
-  creature.ModifierStarts(by: caster, source:, modifier:, struck_at_ms:)
+  creature.ModifierStarts(by: caster, source:, modifier:)
 }
 
 /// The creature after the caster's start of this modifier, struck as it arrived.
@@ -1018,11 +1017,7 @@ fn holding(
   modifier modifier: Modifier,
   at_ms at_ms: Int,
 ) -> State {
-  told(
-    state:,
-    at_ms:,
-    message: starting(source:, modifier:, struck_at_ms: at_ms),
-  ).0
+  told(state:, at_ms:, message: starting(source:, modifier:)).0
 }
 
 /// The properties the step sends to each viewer, as the number of the viewer and the
@@ -1081,11 +1076,7 @@ pub fn modifier_start_sends_properties_changed_to_viewers_test() -> Nil {
     told(
       state: watched_by_two(),
       at_ms: 6000,
-      message: starting(
-        source: sprint_source(),
-        modifier: sprint(),
-        struck_at_ms: 6000,
-      ),
+      message: starting(source: sprint_source(), modifier: sprint()),
     )
   assert sent(taken)
     == [
@@ -1167,11 +1158,7 @@ pub fn same_source_started_twice_is_held_once_test() -> Nil {
     told(
       state:,
       at_ms: 6100,
-      message: starting(
-        source: sprint_source(),
-        modifier: sprint(),
-        struck_at_ms: 6100,
-      ),
+      message: starting(source: sprint_source(), modifier: sprint()),
     )
   assert support.effects_of(again) == []
     as "the same source is held once: nothing changes, nothing is sent, no second watch"
@@ -1201,7 +1188,6 @@ pub fn caster_connection_end_removes_its_modifiers_test() -> Nil {
         by: other,
         source: doubling_source(),
         modifier: doubling(),
-        struck_at_ms: 6200,
       ),
     )
   assert support.watches(other_start) == [#(WatchId(3), Connection(other))]
@@ -1252,16 +1238,12 @@ pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_des
   let tells = [
     #(
       "a modifier start",
-      starting(
-        source: sprint_source(),
-        modifier: sprint(),
-        struck_at_ms: at_7000,
-      ),
+      starting(source: sprint_source(), modifier: sprint()),
       fn(taken) {
         property_news(taken) == [#(2, [speed_up()]), #(5, [speed_up()])]
       },
     ),
-    #("a throw", thrown_at(at_7000), fn(taken) { flown_to(taken) == [2, 5] }),
+    #("a throw", a_throw(), fn(taken) { flown_to(taken) == [2, 5] }),
     #("a despawn", despawn_at(delay_ms: 0, went_at_ms: at_7000), fn(taken) {
       kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
     }),
@@ -1302,11 +1284,7 @@ pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_des
         told(
           state: body.1,
           at_ms: at_7000,
-          message: creature.CastViewSet(
-            by: ConnectionId(9),
-            view: view_a(),
-            struck_at_ms: at_7000,
-          ),
+          message: creature.CastViewSet(by: ConnectionId(9), view: view_a()),
         )
       assert watch_changes(set) == ["watch 2 of 9"]
         as {
@@ -1355,11 +1333,7 @@ pub fn dead_creature_holds_modifiers_until_end_test() -> Nil {
     told(
       state:,
       at_ms: 8000,
-      message: starting(
-        source: thorns_source(),
-        modifier: thorns(),
-        struck_at_ms: 8000,
-      ),
+      message: starting(source: thorns_source(), modifier: thorns()),
     )
   assert support.effects_of(dropped) == []
     as "a start that reaches the creature while it is dead is dropped"
@@ -1388,7 +1362,7 @@ pub fn base_health_modifier_clamps_health_test() -> Nil {
     told(
       state: watched_by_two(),
       at_ms: 6000,
-      message: starting(source:, modifier: halving, struck_at_ms: 6000),
+      message: starting(source:, modifier: halving),
     )
   assert sent(started)
     == [
@@ -1458,7 +1432,6 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
       message: starting(
         source:,
         modifier: unit_properties.interrupt_armor_modifier(points: 3),
-        struck_at_ms: 6000,
       ),
     )
   assert property_news(started)
@@ -1542,7 +1515,6 @@ pub fn raising_the_maximum_of_a_creature_at_full_armor_shows_the_new_maximum_tes
       message: starting(
         source:,
         modifier: unit_properties.interrupt_armor_modifier(points: 3),
-        struck_at_ms: 6000,
       ),
     )
   assert armor_left(started) == [#(2, 3), #(5, 3)]
@@ -1563,7 +1535,6 @@ pub fn lowering_the_maximum_of_a_creature_at_full_armor_shows_the_new_maximum_an
       message: starting(
         source:,
         modifier: unit_properties.interrupt_armor_modifier(points: -1),
-        struck_at_ms: 6000,
       ),
     )
   assert armor_left(started) == [#(2, 2), #(5, 2)]
@@ -1591,7 +1562,6 @@ pub fn lowering_the_maximum_below_the_armor_a_creature_wears_clamps_it_and_shows
       message: starting(
         source: cast_support.source_of(cast_id: 1, effect_id: 1925),
         modifier: unit_properties.interrupt_armor_modifier(points: -2),
-        struck_at_ms: 7000,
       ),
     )
   assert armor_left(lowered) == [#(2, 1), #(5, 1)]
@@ -1619,7 +1589,6 @@ pub fn raising_the_maximum_of_a_creature_that_wears_armor_down_leaves_the_armor_
       message: starting(
         source: cast_support.source_of(cast_id: 1, effect_id: 1925),
         modifier: unit_properties.interrupt_armor_modifier(points: 2),
-        struck_at_ms: 7000,
       ),
     )
   assert armor_left(raised) == []
@@ -1672,28 +1641,25 @@ pub fn armor_modifier_changes_creature_mitigation_test() -> Nil {
 // The throw of Spell4Effects 73826: kind 4 (away from a unit), 10 m, a flight of 375 ms,
 // flags 0 (the row's columns), the reference unit 5 behind the creature along x.
 
-/// A throw of that row, struck at `struck_at_ms`.
-fn thrown_at(struck_at_ms: Int) -> creature.Message {
-  creature.Thrown(
-    throw: forced_move.Throw(
-      move: forced_move.Move(
-        way: forced_move.Away,
-        mover: forced_move.Flight,
-        min_distance: 10.0,
-        max_distance: 10.0,
-        flight_ms: 375,
-        gravity: 0.0,
-        flags: 0,
-        height: 0.0,
-      ),
-      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-      reference: forced_move.Reference(
-        place: map_spawn_support.at(-5.0),
-        radius: 0.0,
-      ),
+/// A throw of that row.
+fn a_throw() -> creature.Message {
+  creature.Thrown(throw: forced_move.Throw(
+    move: forced_move.Move(
+      way: forced_move.Away,
+      mover: forced_move.Flight,
+      min_distance: 10.0,
+      max_distance: 10.0,
+      flight_ms: 375,
+      gravity: 0.0,
+      flags: 0,
+      height: 0.0,
     ),
-    struck_at_ms:,
-  )
+    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+    reference: forced_move.Reference(
+      place: map_spawn_support.at(-5.0),
+      radius: 0.0,
+    ),
+  ))
 }
 
 /// The numbers of the viewers the step sends a 0x638 flight, in order.
@@ -1731,7 +1697,7 @@ fn fired(
 pub fn a_thrown_creature_sends_one_0x638_to_each_viewer_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) =
-    told(state: watched_by_two(), at_ms: 6000, message: thrown_at(6000))
+    told(state: watched_by_two(), at_ms: 6000, message: a_throw())
   assert flown_to(taken) == [2, 5]
     as "opcode.0x638: one flight to each viewer, in the order they began to watch"
   assert list.length(outgoing(taken)) == 2
@@ -1746,7 +1712,7 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
       at_ms: 6000,
       message: strike_of(damage: 60, cast_id: 1),
     )
-  let #(_, to_dead) = told(state: dead, at_ms: 6500, message: thrown_at(6500))
+  let #(_, to_dead) = told(state: dead, at_ms: 6500, message: a_throw())
   assert support.effects_of(to_dead) == []
     as "a creature that lies dead is not thrown"
   // Player 2 draws the creature into a fight and runs out of its ring: after the leash
@@ -1789,8 +1755,7 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
   let #(state, leashed) = fired(state:, at_ms: 12_000, timer: t4)
   assert list.any(timers_started(leashed), fn(started) { started.1 == 5500 })
     as "the leash starts the walk home, 55 m at 10 m a second: 5500 ms"
-  let #(_, to_returning) =
-    told(state:, at_ms: 12_100, message: thrown_at(12_100))
+  let #(_, to_returning) = told(state:, at_ms: 12_100, message: a_throw())
   assert support.effects_of(to_returning) == []
     as "a creature that walks home is not thrown"
 }
@@ -1798,7 +1763,7 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
 pub fn a_creature_killed_after_a_throw_expires_like_any_other_and_its_next_life_starts_at_home_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, thrown) =
-    told(state: watched_by_two(), at_ms: 6000, message: thrown_at(6000))
+    told(state: watched_by_two(), at_ms: 6000, message: a_throw())
   let assert [#(_, 375)] = timers_started(thrown)
     as "the throw starts one timer, for the landing 375 ms on"
   let #(state, _) =
@@ -1828,7 +1793,7 @@ pub fn a_creature_killed_after_a_throw_expires_like_any_other_and_its_next_life_
 pub fn the_flight_end_timer_has_its_own_id_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, thrown) =
-    told(state: watched_by_two(), at_ms: 6000, message: thrown_at(6000))
+    told(state: watched_by_two(), at_ms: 6000, message: a_throw())
   let assert [#(landing, 375)] = timers_started(thrown)
     as "the throw starts one timer, 375 ms on"
   let TimerId(number) = landing
@@ -2241,7 +2206,7 @@ fn despawn_at(
   delay_ms delay_ms: Int,
   went_at_ms went_at_ms: Int,
 ) -> creature.Message {
-  creature.Despawn(delay_ms:, struck_at_ms: went_at_ms - 100, went_at_ms:)
+  creature.Despawn(delay_ms:, went_at_ms:)
 }
 
 /// The timers the step cancels.
@@ -2592,18 +2557,14 @@ pub fn a_despawn_drops_states_armor_and_an_opening_without_a_0x880_test() -> Nil
 pub fn a_throw_and_a_modifier_at_a_despawned_creature_are_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, thrown) =
-    told(state: despawned_by_two(), at_ms: 6500, message: thrown_at(6500))
+    told(state: despawned_by_two(), at_ms: 6500, message: a_throw())
   assert support.effects_of(thrown) == []
     as "a creature that is gone is not thrown"
   let #(_, modified) =
     told(
       state: despawned_by_two(),
       at_ms: 6500,
-      message: starting(
-        source: thorns_source(),
-        modifier: thorns(),
-        struck_at_ms: 6500,
-      ),
+      message: starting(source: thorns_source(), modifier: thorns()),
     )
   assert support.effects_of(modified) == []
     as "a modifier that reaches the creature while it is gone is dropped"
@@ -2712,7 +2673,7 @@ fn unit_states_at(
   rows rows: List(unit_state.Row),
   went_at_ms went_at_ms: Int,
 ) -> creature.Message {
-  creature.UnitStates(rows:, struck_at_ms: went_at_ms - 100, went_at_ms:)
+  creature.UnitStates(rows:, went_at_ms:)
 }
 
 /// Row 64365: state 6 for 8500 ms, no delay.
@@ -3047,18 +3008,14 @@ pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
 pub fn a_throw_at_an_invulnerable_creature_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, thrown) =
-    told(state: invulnerable_by_two(), at_ms: 7000, message: thrown_at(7000))
+    told(state: invulnerable_by_two(), at_ms: 7000, message: a_throw())
   assert support.effects_of(thrown) == []
     as "a creature that takes no hostile effect is not thrown"
   let #(state, _) = fired(state:, at_ms: 14_500, timer: unit_state_timer)
-  let #(_, after) = told(state:, at_ms: 14_600, message: thrown_at(14_600))
+  let #(_, after) = told(state:, at_ms: 14_600, message: a_throw())
   assert flown_to(after) == [2, 5] as "after the end the throw moves it"
   let #(_, before_timer) =
-    told(
-      state: invulnerable_by_two(),
-      at_ms: 14_500,
-      message: thrown_at(14_500),
-    )
+    told(state: invulnerable_by_two(), at_ms: 14_500, message: a_throw())
   assert flown_to(before_timer) == [2, 5]
     as "a hold past its end blocks no throw, though its timer has not fired"
 }
@@ -3069,11 +3026,7 @@ pub fn a_modifier_at_a_creature_holding_a_blocking_state_is_dropped_test() -> Ni
     told(
       state: invulnerable_by_two(),
       at_ms: 7000,
-      message: starting(
-        source: thorns_source(),
-        modifier: thorns(),
-        struck_at_ms: 7000,
-      ),
+      message: starting(source: thorns_source(), modifier: thorns()),
     )
   assert support.effects_of(modified) == []
     as "a creature that takes no hostile effect takes no struck-change modifier, as it takes no throw"
@@ -3082,11 +3035,7 @@ pub fn a_modifier_at_a_creature_holding_a_blocking_state_is_dropped_test() -> Ni
     told(
       state:,
       at_ms: 14_600,
-      message: starting(
-        source: thorns_source(),
-        modifier: thorns(),
-        struck_at_ms: 14_600,
-      ),
+      message: starting(source: thorns_source(), modifier: thorns()),
     )
   assert support.effects_of(after) != []
     as "once the state has ended the same modifier lands: the earlier one was dropped, not held"
@@ -3223,8 +3172,7 @@ pub fn a_kill_clears_the_held_unit_states_and_cancels_the_timer_test() -> Nil {
 //
 // A cast's view is a node of its go on the creature (`creature.CastViewSet`). Expected
 // values come from `cast.target_node_end` (a corpse keeps its nodes until they end),
-// `creature.modifier_started`'s `struck_at_ms < stood_again_ms` rule, `cast_state.caster_of`
-// (a cast id names its caster) and `opcode.0x262.casts`, `opcode.0x7f4.effect_time` and
+// `cast_state.caster_of` (a cast id names its caster) and `opcode.0x262.casts`, `opcode.0x7f4.effect_time` and
 // `opcode.0x7f4.effect_delay` (the entry's delay is the delay still to run and its
 // lifetime the time left, at the arrival's time).
 
@@ -3273,18 +3221,8 @@ fn view_b() -> CastView {
 type At =
   #(Int, Event(ServiceEvent(creature.Message)))
 
-fn view_set(
-  by by: Int,
-  view view: CastView,
-  struck_at_ms struck_at_ms: Int,
-  at_ms at_ms: Int,
-) -> At {
-  #(
-    at_ms,
-    OwnEvent(
-      Told(creature.CastViewSet(by: ConnectionId(by), view:, struck_at_ms:)),
-    ),
-  )
+fn view_set(by by: Int, view view: CastView, at_ms at_ms: Int) -> At {
+  #(at_ms, OwnEvent(Told(creature.CastViewSet(by: ConnectionId(by), view:))))
 }
 
 fn view_ends(by by: Int, view view: CastView, at_ms at_ms: Int) -> At {
@@ -3305,7 +3243,6 @@ fn sprint_set(by by: Int, at_ms at_ms: Int) -> At {
         by: ConnectionId(by),
         source: sprint_source(),
         modifier: sprint(),
-        struck_at_ms: at_ms,
       )),
     ),
   )
@@ -3385,15 +3322,15 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
     [
       #(
         "a CastViewSet is kept, whatever the time of the go it names",
-        [view_set(by: 9, view: view_a(), struck_at_ms: 0, at_ms: 6000)],
+        [view_set(by: 9, view: view_a(), at_ms: 6000)],
         [#(id_a, 1)],
         ["watch 2 of 9"],
       ),
       #(
         "a second set for the same cast replaces the first: the later count",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
-          view_set(by: 9, view: two_stacks, struck_at_ms: 6500, at_ms: 6500),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
+          view_set(by: 9, view: two_stacks, at_ms: 6500),
         ],
         [#(id_a, 2)],
         [],
@@ -3401,7 +3338,7 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
       #(
         "CastViewEnds removes it, and the connection's watch with its last holding",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
           view_ends(by: 9, view: view_a(), at_ms: 7000),
         ],
         [],
@@ -3410,7 +3347,7 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
       #(
         "an end for a cast it does not hold changes nothing",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
           view_ends(by: 9, view: view_b(), at_ms: 7000),
         ],
         [#(id_a, 1)],
@@ -3419,7 +3356,7 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
       #(
         "an end from another connection than the holder's changes nothing",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
           view_ends(by: 10, view: view_a(), at_ms: 7000),
         ],
         [#(id_a, 1)],
@@ -3429,7 +3366,7 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
         "a set reaching a dead creature is kept, and the corpse's 0x262 lists it",
         [
           killed_at(at_ms: 6000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 7000, at_ms: 7000),
+          view_set(by: 9, view: view_a(), at_ms: 7000),
         ],
         [#(id_a, 1)],
         ["watch 2 of 9"],
@@ -3437,8 +3374,8 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
       #(
         "a set that replaces another connection's entry for the cast id unwatches that connection when it holds nothing else",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
-          view_set(by: 10, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
+          view_set(by: 10, view: view_a(), at_ms: 6100),
         ],
         [#(id_a, 1)],
         ["watch 3 of 10", "unwatch 2"],
@@ -3460,15 +3397,15 @@ pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of
     [
       #(
         "the first view of a connection starts its watch",
-        [view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000)],
+        [view_set(by: 9, view: view_a(), at_ms: 6000)],
         [#(id_a, 1)],
         ["watch 2 of 9"],
       ),
       #(
         "a second view of it starts none",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
-          view_set(by: 9, view: view_b(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
+          view_set(by: 9, view: view_b(), at_ms: 6100),
         ],
         [#(id_a, 1), #(id_b, 1)],
         [],
@@ -3477,7 +3414,7 @@ pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of
         "a view's end keeps the watch while a modifier source of the connection is held",
         [
           sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), at_ms: 6100),
           view_ends(by: 9, view: view_a(), at_ms: 6200),
         ],
         [],
@@ -3487,7 +3424,7 @@ pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of
         "and the modifier's end then unwatches, as no view is held",
         [
           sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), at_ms: 6100),
           view_ends(by: 9, view: view_a(), at_ms: 6200),
           sprint_end(at_ms: 6300),
         ],
@@ -3498,7 +3435,7 @@ pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of
         "a modifier's last end keeps the watch while a view of that connection is held",
         [
           sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), at_ms: 6100),
           sprint_end(at_ms: 6200),
         ],
         [#(id_a, 1)],
@@ -3507,8 +3444,8 @@ pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of
       #(
         "the watch ending drops that connection's views and sources, keeps another connection's view, and is followed by no Unwatch",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
-          view_set(by: 10, view: view_b(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
+          view_set(by: 10, view: view_b(), at_ms: 6100),
           sprint_set(by: 9, at_ms: 6200),
           #(7000, WatchEnded(WatchId(2))),
         ],
@@ -3564,8 +3501,8 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
       #(
         "two casters' views are both listed",
         [
-          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
-          view_set(by: 10, view: second_caster, struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), at_ms: 6000),
+          view_set(by: 10, view: second_caster, at_ms: 6100),
         ],
         10_000,
         [
@@ -3587,7 +3524,7 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
       ),
       #(
         "an effect's lifetime is its end less the arrival's time, not the tell's",
-        [view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000)],
+        [view_set(by: 9, view: view_a(), at_ms: 6000)],
         12_000,
         [
           listed_cast(
@@ -3603,7 +3540,7 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
         "a corpse lists its views",
         [
           killed_at(at_ms: 6000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 7000, at_ms: 7000),
+          view_set(by: 9, view: view_a(), at_ms: 7000),
         ],
         10_000,
         [
@@ -3622,7 +3559,6 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
           view_set(
             by: 9,
             view: CastView(..view_a(), current: True),
-            struck_at_ms: 6000,
             at_ms: 6000,
           ),
         ],

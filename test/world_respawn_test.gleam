@@ -83,7 +83,6 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
           flat: 0.5,
           per_level: 0.0,
         ),
-        struck_at_ms: world_watch_support.clock_ms(time:),
       ),
     )
     as "the creature is found by its address and told"
@@ -119,6 +118,8 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
   assert creature_unit.health_of(unit: again) == 52
     && again.tail.properties == []
     as "at full health and from the base properties: no trace of the modifier the first life held"
+  assert again.tail.movement_commands == first.tail.movement_commands
+    as "the next life stands at its spawn, where the first life was created, not where the corpse lay"
   assert next_life != first_life
     as "a new life: the map numbers every life, so the address of the life that ended is not the next life's"
   let _ended =

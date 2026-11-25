@@ -75,13 +75,7 @@ fn removed(
   life life: Int,
   delay_ms delay_ms: Int,
 ) -> cast_state.Effect {
-  cast_state.CreatureDespawns(
-    unit_id:,
-    life:,
-    struck_at_ms: 900,
-    went_at_ms: 1000,
-    delay_ms:,
-  )
+  cast_state.CreatureDespawns(unit_id:, life:, went_at_ms: 1000, delay_ms:)
 }
 
 pub fn a_despawn_of_delay_0_is_told_in_the_go_step_after_the_go_frames_test() -> Nil {
@@ -144,14 +138,12 @@ pub fn the_tell_carries_the_life_and_the_go_time_the_round_hit_test() -> Nil {
       cast_state.CreatureDespawns(
         unit_id: 21,
         life: 3,
-        struck_at_ms: 900,
         went_at_ms: 1000,
         delay_ms: 0,
       ),
       cast_state.CreatureDespawns(
         unit_id: 23,
         life: 5,
-        struck_at_ms: 900,
         went_at_ms: 1000,
         delay_ms: 0,
       ),
@@ -282,7 +274,6 @@ pub fn each_go_tells_the_despawns_of_its_own_phase_test() -> Nil {
         cast_state.CreatureDespawns(
           unit_id: 21,
           life: 3,
-          struck_at_ms: 900,
           went_at_ms: 1300,
           delay_ms: 500,
         ),
