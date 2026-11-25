@@ -1075,7 +1075,7 @@ fn respawn_gaps(gaps gaps: List(Int)) -> String {
     [] -> 0
   }
   let longest = list.fold(sorted, 0, int.max)
-  "respawn gaps (a 0x355 to the next 0x262 of the unit, as a walker was sent them): "
+  "respawn gaps (a removal to the next creation of the unit, as a walker was sent them): "
   <> int.to_string(count)
   <> ", mean "
   <> load_moves.per(total: sum, count:)
