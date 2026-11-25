@@ -4,18 +4,24 @@
 //// `genesis_prime/load_fight` and `genesis_prime/load_moves` goes through `judge`.
 ////
 //// ```
-//// each gate event's count and the scene's minimum ─▶ judge ─▶ Passes | Fails
-//// a run's last line ─▶ require ─▶ the run's exit status 1 on Fails
+//// each gate event's count and the scene's minimum ─┐
+//// each other condition the run needs ──────────────┴▶ judge ─▶ Passes | Fails
+//// the verdict ─▶ require ─▶ prints the summary, exit status 1 on Fails
 //// ```
 ////
 //// - An event is judged by a `Judged` naming it; its line holds its count and its minimum.
 //// - The run fails when any event's count is below its minimum, and the summary names each.
+//// - A condition that is not a count (the map keeping up, the step's verdict) is a
+////   `Condition`; one not held fails the run, so every verdict of a run is this module's
+////   (`test/code_rule/judged_count_test` refuses a verdict line in the two tools).
+//// - A run that judges no event fails: it measured nothing.
 //// - The minimum is the scene's: the fewest of the event that a run which measured the
 ////   gate's subject would have, so 0 is never enough (`test/code_rule/judged_count_test`
 ////   checks that every gate of the two runs is judged here).
 
 import genesis_prime/dev_exit
 import gleam/int
+import gleam/io
 import gleam/list
 import gleam/string
 
@@ -51,30 +57,62 @@ pub type Judged {
   Judged(event: Event, count: Int, minimum: Int)
 }
 
-/// What the judged counts say of a run: the line of each count, and for a failure the
-/// summary that names the events below their minimum.
+/// A condition of a run that is not a count: whether it held, and the sentence for the
+/// state it is in.
+pub type Condition {
+  Condition(held: Bool, said: String)
+}
+
+/// What the judged counts and conditions say of a run: the line of each count, and the
+/// summary line, which names what failed.
 pub type Verdict {
-  Passes(lines: List(String))
+  Passes(lines: List(String), summary: String)
   Fails(lines: List(String), summary: String)
 }
 
-/// The verdict on the judged counts: a run that has an event below its minimum fails.
-pub fn judge(judged judged: List(Judged)) -> Verdict {
+/// The verdict on a run: it fails when an event is below its minimum, when a condition is
+/// not held, or when it judged no event.
+pub fn judge(
+  judged judged: List(Judged),
+  conditions conditions: List(Condition),
+) -> Verdict {
   let lines = list.map(judged, line)
-  case list.filter(judged, below) {
-    [] -> Passes(lines:)
-    short ->
-      Fails(
-        lines:,
-        summary: "fail: a judged count is below its minimum: "
+  let reasons =
+    list.flatten([
+      case judged {
+        [] -> ["nothing was judged"]
+        [_, ..] -> []
+      },
+      case list.filter(judged, below) {
+        [] -> []
+        short -> [
+          "a judged count is below its minimum: "
           <> string.join(list.map(short, shortfall), ", "),
+        ]
+      },
+      list.filter(conditions, fn(condition) { !condition.held })
+        |> list.map(fn(condition) { condition.said }),
+    ])
+  case reasons {
+    [] ->
+      Passes(
+        lines:,
+        summary: "pass: "
+          <> string.join(
+          list.append(list.map(conditions, fn(condition) { condition.said }), [
+            "every judged count is at or above its minimum",
+          ]),
+          "; ",
+        ),
       )
+    [_, ..] -> Fails(lines:, summary: "fail: " <> string.join(reasons, "; "))
   }
 }
 
-/// Ends the run with the exit status 1 when the verdict fails, after the run's lines are
-/// written.
+/// Prints the verdict's summary and ends the run with the exit status 1 when the verdict
+/// fails, after the run's lines are written.
 pub fn require(verdict verdict: Verdict) -> Nil {
+  io.println(verdict.summary)
   case verdict {
     Passes(..) -> Nil
     Fails(..) -> dev_exit.halt(1)

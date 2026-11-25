@@ -575,7 +575,7 @@ pub fn the_respawn_gate_fails_for_no_respawn_or_fewer_than_the_creatures_killed_
   list.each(rows, fn(row) {
     let #(reason, all, expected, fails) = row
     assert judged(all) == expected as reason
-    assert case load_judged.judge(judged: [judged(all)]) {
+    assert case load_judged.judge(judged: [judged(all)], conditions: []) {
         load_judged.Fails(..) -> True
         load_judged.Passes(..) -> False
       }

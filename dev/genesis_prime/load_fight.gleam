@@ -64,9 +64,11 @@
 //// - the judged counts (`genesis_prime/load_judged`): the strike rounds and the strike answers
 ////   (unless `mutual` and `respawning` together, where each blow kills the creature before it
 ////   strikes) and, with `respawning`, the respawns, each with its minimum; the run fails, with exit
-////   status 1, when one is below it. The minimum of the rounds and the answers is 1; the
-////   respawns' is the creatures killed that were owed one (a death in the last `settle_ms` is
-////   not), and at least 1;
+////   status 1, when one is below it, when the map falls behind, or when it judges none. The
+////   minimum of the rounds and the answers is 1 (without the recorder, only the answers, as the
+////   walkers counted them); the respawns' is the creatures killed that were owed one (a death
+////   in the last `settle_ms` is not), and at least 1. With `mutual` and `respawning` together
+////   a `delayed` or `held` plant has no strike to lose or delay, so it is measured by nothing;
 //// - option A's count: for each move, the creatures in the mover's sight, summed
 ////   over the moves, the messages a design that told every seen creature of every
 ////   move would send.
@@ -1268,6 +1270,7 @@ fn report(
   }
   let gaps = list.map(counts, fn(one) { one.respawns })
   let strikes = creatures_strike(scene:)
+  let keeps_up = sum < walkers * samples && running * 2 < samples
   let judged =
     load_judged.judge(
       judged: list.flatten([
@@ -1284,7 +1287,14 @@ fn report(
               minimum: 1,
             ),
           ]
-          None, _ | _, False -> []
+          None, True -> [
+            Judged(
+              event: load_judged.StrikeAnswers,
+              count: total(fn(one) { one.strikes }),
+              minimum: 1,
+            ),
+          ]
+          Some(_), False | None, False -> []
         },
         case scene.respawning {
           True -> [
@@ -1301,6 +1311,14 @@ fn report(
           False -> []
         },
       ]),
+      conditions: [
+        load_judged.Condition(held: keeps_up, said: case keeps_up {
+          True ->
+            "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
+          False ->
+            "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
+        }),
+      ],
     )
   case strikes {
     True -> Nil
@@ -1315,12 +1333,5 @@ fn report(
     <> int.to_string(total(fn(one) { one.option_a }))
     <> " (the creatures in sight, summed over the moves)",
   )
-  io.println(case sum < walkers * samples && running * 2 < samples, judged {
-    False, _ ->
-      "fail: the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
-    True, load_judged.Fails(summary:, ..) -> summary
-    True, load_judged.Passes(..) ->
-      "pass: the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
-  })
   load_judged.require(verdict: judged)
 }
