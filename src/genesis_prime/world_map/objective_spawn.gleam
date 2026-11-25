@@ -189,7 +189,10 @@ type Job {
 /// `kills` is the kill table's objectives (genesis_prime/game/kill_objective), whose reward
 /// pane names the creatures to place as a type 8 or 16 objective's data does, and `clicks`
 /// the click table's (genesis_prime/game/click_objective), whose pane's clickable creatures
-/// stand at the marker as a linked creature does.
+/// stand at the marker as a linked creature does. Both sets hold type 5 objectives only: a
+/// placed spawn's id is the rank of its kind, marker and creature, and the ranks are worked
+/// out for the type 5 objectives, so another type's objective in either set crashes the
+/// placement.
 /// Pure: the tables, the chosen factions, the kinds, the two tables and the stored rows are
 /// all it reads.
 pub fn place(

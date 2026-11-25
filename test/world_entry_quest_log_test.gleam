@@ -484,7 +484,7 @@ pub fn a_used_spawn_the_loaded_world_lacks_is_dropped_at_load_and_reported_test(
             used: [#(0, 5), #(1, 6), #(2, 7), #(2, placed), #(3, placed + 1)],
           ),
         ],
-        spawns: spawn_id.loaded(
+        spawns: spawn_id.LoadedSpawns(
           ids: set.from_list([SpawnId(5), SpawnId(7), SpawnId(placed)]),
         ),
         unset:,

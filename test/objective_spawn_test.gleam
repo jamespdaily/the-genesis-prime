@@ -1023,22 +1023,17 @@ pub fn a_placed_id_names_one_creature_and_world_whatever_stored_rows_are_added_o
     #(51_440, 22),
     #(26_436, 22),
   ]
-  // A run's stored rows: one row in each world (so both hold spawns) and the drawn ones,
-  // each with an id of its own below the first placed id.
+  // A run's stored rows are the drawn ones alone, each with an id of its own below the first
+  // placed id, so a run holds a row in no world, one world or both, and two runs differ in
+  // which worlds hold a stored row.
   let rows_of = fn(drawn: List(#(Int, Int))) {
-    let drawn_rows =
-      list.index_map(drawn, fn(one, position) {
-        let #(choice, high) = one
-        let assert Ok(#(creature_id, world_id)) =
-          list.drop(pool, choice) |> list.first
-          as "the choice is an index of the pool"
-        stored(tables:, id: 10 + high * 20 + position, creature_id:, world_id:)
-      })
-    [
-      stored(tables:, id: 1, creature_id: filler, world_id: world),
-      stored(tables:, id: 2, creature_id: filler, world_id: 22),
-      ..drawn_rows
-    ]
+    list.index_map(drawn, fn(one, position) {
+      let #(choice, high) = one
+      let assert Ok(#(creature_id, world_id)) =
+        list.drop(pool, choice) |> list.first
+        as "the choice is an index of the pool"
+      stored(tables:, id: 10 + high * 20 + position, creature_id:, world_id:)
+    })
   }
   let rows_drawn =
     qcheck.generic_list(
@@ -1167,7 +1162,7 @@ fn named_ids(placed placed: Placed) -> Dict(Int, #(Int, Int)) {
 }
 
 pub fn a_placed_id_survives_every_change_of_the_real_stored_rows_test() -> Nil {
-  // deadline: 19 s measured: the world database is imported and the client's tables placed over 24 times
+  // deadline: 11 s measured: the world database is imported and the client's tables placed over once for each change
   use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
   use <- unitest.guard(client_tables.present())
@@ -1227,6 +1222,21 @@ pub fn a_placed_id_survives_every_change_of_the_real_stored_rows_test() -> Nil {
       int.compare(a.0 * 100_000 + a.1, b.0 * 100_000 + b.1)
     })
     |> every_nth(9, 8)
+  // The worlds the baseline places rows in, from the lowest: the change that leaves one of
+  // them with no stored row, and the change that leaves it with one row, are the ones that
+  // change which worlds hold a stored row.
+  let placed_worlds =
+    dict.values(baseline)
+    |> list.map(fn(named) { named.1 })
+    |> list.unique
+    |> list.sort(int.compare)
+  let some_placed_worlds =
+    list.flatten([
+      list.take(placed_worlds, 2),
+      every_nth(placed_worlds, 5, 3),
+      list.take(list.reverse(placed_worlds), 2),
+    ])
+    |> list.unique
   let changes =
     list.flatten([
       [
@@ -1250,6 +1260,23 @@ pub fn a_placed_id_survives_every_change_of_the_real_stored_rows_test() -> Nil {
           list.filter(stored, fn(row: Row) {
             #(row.world_id, row.creature_id) != pair
           }),
+        )
+      }),
+      list.map(some_placed_worlds, fn(world_id) {
+        #(
+          "every stored row of World " <> int.to_string(world_id) <> " deleted",
+          list.filter(stored, fn(row: Row) { row.world_id != world_id }),
+        )
+      }),
+      list.map(some_placed_worlds, fn(world_id) {
+        #(
+          "every stored row of World "
+            <> int.to_string(world_id)
+            <> " replaced by one",
+          [
+            spawn.Row(..template, id: SpawnId(highest + 1), world_id:),
+            ..list.filter(stored, fn(row: Row) { row.world_id != world_id })
+          ],
         )
       }),
       list.map(additions, fn(pair) {
@@ -1303,6 +1330,12 @@ pub fn a_placed_id_survives_every_change_of_the_real_stored_rows_test() -> Nil {
     set.from_list(dict.keys(change.1)) != set.from_list(dict.keys(baseline))
   })
     as "some change adds or removes a placed row, so the runs are not the baseline again"
+  assert list.any(after, fn(change) {
+    string.starts_with(change.0, "every stored row of World ")
+    && string.ends_with(change.0, " deleted")
+    && dict.size(change.1) < dict.size(baseline)
+  })
+    as "deleting every stored row of a world that holds placed rows removes placed rows"
   let placed = placed_over_the_real_tables(tables:, stored:, kills:, clicks:)
   let pyrius = 51_440
   assert numbers_of(of_creatures(placed:, creatures: [pyrius]))

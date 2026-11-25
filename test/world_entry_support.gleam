@@ -119,7 +119,7 @@ pub fn loaded_seeing(
     quests:,
     action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility:,
-    spawns: spawn_id.loaded(ids: set.new()),
+    spawns: spawn_id.LoadedSpawns(ids: set.new()),
   )
 }
 
@@ -206,7 +206,7 @@ pub fn loaded_with_unset(
     quests: [],
     action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility: dict.new(),
-    spawns: spawn_id.loaded(ids: set.new()),
+    spawns: spawn_id.LoadedSpawns(ids: set.new()),
   )
 }
 
@@ -228,7 +228,7 @@ pub fn loaded_with_action_sets(
     quests: [],
     action_sets:,
     visibility: dict.new(),
-    spawns: spawn_id.loaded(ids: set.new()),
+    spawns: spawn_id.LoadedSpawns(ids: set.new()),
   )
 }
 
@@ -305,7 +305,7 @@ pub fn answered(
     stay: map_support.stay(count: 1),
     tables:,
     visibility: dict.new(),
-    spawns: spawn_id.loaded(ids: set.new()),
+    spawns: spawn_id.LoadedSpawns(ids: set.new()),
   )
 }
 

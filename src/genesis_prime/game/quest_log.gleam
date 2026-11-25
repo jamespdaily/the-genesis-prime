@@ -8,7 +8,7 @@
 ////
 //// ```
 //// store rows (CharacterLoaded.quests) ─▶ from_rows  ─▶ the log, or the quest the client would refuse
-//// the log, the stored spawns          ─▶ without_lost_spawns ─▶ the log, the entries the world lost
+//// the log, the loaded spawns          ─▶ without_lost_spawns ─▶ the log, the entries the world lost
 //// the log, the clock, the tables      ─▶ login      ─▶ 0x35F: completed, known and active lists, the reset time
 //// the log and the clock               ─▶ reset_due  ─▶ NotYet(wait), or 0x362 with every period that reset since
 //// the log                             ─▶ rows       ─▶ the store's rows (SavePlace.quests)

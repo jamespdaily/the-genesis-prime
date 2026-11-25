@@ -139,7 +139,7 @@ import genesis_prime/world_map/creature_unit_type.{
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{
-  type LoadedSpawns, type SpawnId, SpawnId,
+  type LoadedSpawns, type SpawnId, LoadedSpawns, SpawnId,
 }
 import genesis_prime/world_map/spawn_source.{type Summoned, Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject}
@@ -187,7 +187,7 @@ pub type Row {
 /// server places for the objectives no stored row serves
 /// (genesis_prime/world_map/objective_spawn).
 pub fn loaded_spawns(rows rows: List(Row)) -> LoadedSpawns {
-  spawn_id.loaded(ids: set.from_list(list.map(rows, fn(row) { row.id })))
+  LoadedSpawns(ids: set.from_list(list.map(rows, fn(row) { row.id })))
 }
 
 /// One creature's place and values, as its 0x262 carries them, so the 0x262

@@ -39,7 +39,7 @@ import genesis_prime/world_map/creature_special
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
-import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_id.{type SpawnId, LoadedSpawns, SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
 import genesis_prime/world_map/unit_fields
@@ -853,7 +853,7 @@ fn put_worlds(
   content_spawn.put_reused_unit_objectives(key:, objectives: set.new())
   content_spawn.put_loaded_spawns(
     key:,
-    loaded: spawn_id.loaded(
+    loaded: LoadedSpawns(
       ids: set.from_list(list.append(
         list.map(spawns, fn(spawn) { spawn.id }),
         list.map(objects, fn(object) { object.id }),

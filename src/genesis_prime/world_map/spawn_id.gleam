@@ -28,11 +28,6 @@ pub type Presence {
   Lost
 }
 
-/// The spawns with these ids.
-pub fn loaded(ids ids: Set(SpawnId)) -> LoadedSpawns {
-  LoadedSpawns(ids:)
-}
-
 /// What the spawn is to the loaded spawns.
 pub fn presence(spawns spawns: LoadedSpawns, spawn spawn: SpawnId) -> Presence {
   use <- bool.guard(when: set.contains(spawns.ids, spawn), return: Loaded)

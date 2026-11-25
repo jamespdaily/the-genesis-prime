@@ -584,9 +584,11 @@ pub fn a_stored_spawn_at_the_first_placed_id_stops_the_load_naming_it_test() -> 
 pub fn the_load_puts_every_stored_and_placed_spawn_id_in_the_ids_term_test() -> Nil {
   use <- owned_test.run(10_000)
   // The migrated database holds the 27 Virtual Defense Daguns of World 3460; the load places
-  // the creatures of the quest markers there that no stored row serves, 16 of which start
-  // (`a_database_that_answers_late_is_waited_for_and_loaded_from_test`). The ids term holds
-  // every stored row's id and every placed row's, so a quest's used objects of either are kept.
+  // the creatures of the quest markers there that no stored row serves, and every placed row
+  // there starts (`a_database_that_answers_late_is_waited_for_and_loaded_from_test` counts the
+  // 16 started). The ids term holds every stored row's id and every placed row's, started or
+  // not, so a quest's used objects of either are kept; because every placed row here starts,
+  // the term's ids from the first placed id up equal the started ones.
   let database = database_support.new_database(on: database_support.shared())
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
@@ -611,7 +613,7 @@ pub fn the_load_puts_every_stored_and_placed_spawn_id_in_the_ids_term_test() -> 
     })
   }
   assert above_the_stored(set.to_list(ids)) == above_the_stored(started)
-    as "an id from 1,000,000,000 up in the term is one of the placed rows the world's term holds, and each of them is there"
+    as "an id from 1,000,000,000 up in the term is one of the placed rows the world's term holds, and each of them is there, since every placed row of this world starts"
   assert above_the_stored(started) != []
     as "the load places rows in the migrated database's world"
 }

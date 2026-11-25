@@ -143,17 +143,18 @@ pub fn reused_unit_objectives(key key: Key) -> Set(Int) {
   store.content(key:, table: reused_unit_objectives_table, id: 0)
 }
 
-/// The table name of the stored spawns in a term.
+/// The table name of the loaded spawns in a term.
 const loaded_spawns_table = "loaded_spawns"
 
-/// Writes the stored spawns under the key, once.
+/// Writes the loaded spawns under the key, once.
 pub fn put_loaded_spawns(key key: Key, loaded loaded: LoadedSpawns) -> Nil {
   store.put_content(key:, table: loaded_spawns_table, id: 0, value: loaded)
 }
 
-/// The stored spawns the load put under the key: what a saved quest's used objects are
-/// checked against (genesis_prime/game/quest_log `without_lost_spawns`). The load puts the
-/// term before the tree starts, so a reader that finds none is a bug and crashes.
+/// The loaded spawns the load put under the key, the stored rows and the placed ones: what a
+/// saved quest's used objects are checked against (genesis_prime/game/quest_log
+/// `without_lost_spawns`). The load puts the term before the tree starts, so a reader that
+/// finds none is a bug and crashes.
 pub fn loaded_spawns(key key: Key) -> LoadedSpawns {
   store.content(key:, table: loaded_spawns_table, id: 0)
 }
