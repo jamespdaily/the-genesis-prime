@@ -7,8 +7,9 @@
 ////
 //// WALKERS is 50 when left out. The words, in any order:
 //// - `mutual`: each walker also strikes each creature that threatens it, one strike a
-////   second (a blow of 1; a Dagun has 50 health, so a creature dies only with `respawning`), every fifth with Stagger's stun
-////   (Spell4Effects 83827), so the creatures also die and are stunned;
+////   second (a blow of 1; a Dagun has 50 health, so a creature dies only with
+////   `respawning`), every fifth with Stagger's stun (Spell4Effects 83827), so the
+////   creatures also die and are stunned;
 //// - `leaving`: every walker is shown 2,000 units out of the creatures' sight and leash
 ////   from the tenth second to the twentieth, so the creatures lose their targets;
 //// - `delayed MS`: walker 1's answers reach the creature MS ms after it sent them;
@@ -55,20 +56,28 @@
 ////   answer when it hands it over and just before the creature has it, and the recorded
 ////   deadline of the creature's round gives when the round was armed, fell due and
 ////   closed. An answer is **lost** when it was sent before the round's deadline fell
-////   due and was not in the round when it closed; **late** when it was sent at or after
-////   it; the rounds are counted by how they closed: an answer, the deadline, a death, a
-////   state, a broken charge, the leash, or a cancel with no sign of why, or still open;
+////   due and the round closed without it (a round the deadline closed has no answer in
+////   it, whatever the walker stamped); **late** when it was sent at or after it; the
+////   rounds are counted by how they closed: an answer, the deadline, a death, a state, a
+////   broken charge, the leash, or a cancel with no sign of why, or still open;
 //// - with `respawning`, the respawn gaps the walkers counted: how many, their mean and 99th
 ////   percentile in microseconds as the walker was sent them, and the longest, and whether the
 ////   mean is under 1 ms;
-//// - the judged counts (`genesis_prime/load_judged`): the strike rounds and the strike answers
-////   (unless `mutual` and `respawning` together, where each blow kills the creature before it
-////   strikes) and, with `respawning`, the respawns, each with its minimum; the run fails, with exit
-////   status 1, when one is below it, when the map falls behind, or when it judges none. The
-////   minimum of the rounds and the answers is 1 (without the recorder, only the answers, as the
-////   walkers counted them); the respawns' is the creatures killed that were owed one (a death
-////   in the last `settle_ms` is not), and at least 1. With `mutual` and `respawning` together
-////   a `delayed` or `held` plant has no strike to lose or delay, so it is measured by nothing;
+//// - the judged counts (`genesis_prime/load_judged`): the strike rounds and the strike
+////   answers (unless `mutual` and `respawning` together, where each blow kills the
+////   creature before it strikes), with `mutual` (and the same exception) the walkers' own
+////   strikes that a creature answered with `Struck` and, with `respawning`, the respawns,
+////   each with its minimum, and the condition that no answer was lost. The run fails, with
+////   exit status 1, when a count is below its minimum, when an answer was lost, when the
+////   map falls behind, or when it judges none. The minimum of the rounds and the answers
+////   is 1 (without the recorder, only the answers, as the walkers counted them). A walker
+////   strikes only while it has `strike_tell.deadline_ms` left to hear the answer
+////   (`load_round.may_strike`), and counts a strike only when a creature was told it, since
+////   a creature answers every strike it takes (`Answered`, a `Refused` one too): the
+////   minimum of the strikes answered is the strikes the walkers made, and at least 1. The
+////   respawns' is the creatures killed that were owed one (a death in the last `settle_ms`
+////   is not), and at least 1. With `mutual` and `respawning` together a `delayed` or `held`
+////   plant has no strike to lose or delay, so it is measured by nothing;
 //// - option A's count: for each move, the creatures in the mover's sight, summed
 ////   over the moves, the messages a design that told every seen creature of every
 ////   move would send.
@@ -214,6 +223,7 @@ type Counts {
     option_a: Int,
     strikes: Int,
     made: Int,
+    answered_to_own: Int,
     strikers: Dict(Pid, Int),
     marks: List(Mark),
     by_creature: Dict(Int, Int),
@@ -556,6 +566,7 @@ fn walker(
             option_a: 0,
             strikes: 0,
             made: 0,
+            answered_to_own: 0,
             strikers: dict.new(),
             marks: [],
             by_creature: dict.new(),
@@ -624,6 +635,7 @@ fn walk(
         place: shown,
         step:,
         fighters:,
+        ends_ms:,
         counts:,
       )
     list.each(dict.to_list(fighters), fn(fighter) {
@@ -719,10 +731,13 @@ fn struck_back(
   place place: Place,
   step step: Int,
   fighters fighters: Dict(Int, Int),
+  ends_ms ends_ms: Int,
   counts counts: Counts,
 ) -> Counts {
   use <- bool.guard(
-    when: !scene.mutual || step % strike_every_steps != 0,
+    when: !scene.mutual
+      || step % strike_every_steps != 0
+      || !load_round.may_strike(at_ms: now(), ends_ms:),
     return: counts,
   )
   Counts(
@@ -764,11 +779,11 @@ fn strike_fighters(
       race_id: RaceId(1),
     )
   list.fold(dict.to_list(fighters), made, fn(made, fighter) {
-    let made = made + 1
+    let next = made + 1
     let stun =
       strike_tell.ControlTell(
         effect_id: 83_827,
-        instance_id: crowd_control.instance_id(caster_unit_id: id, count: made),
+        instance_id: crowd_control.instance_id(caster_unit_id: id, count: next),
         row: crowd_control.Row(
           state: crowd_control_state.Stun,
           delay_ms: 0,
@@ -778,7 +793,7 @@ fn strike_fighters(
         ),
         throw: None,
       )
-    let _told =
+    let told =
       creature_registry.tell(
         settings.world.creatures,
         map: MapId(world_id:, instance: 0),
@@ -788,7 +803,7 @@ fn strike_fighters(
         message: creature.Strike(
           tell: strike_tell.Strike(
             key: strike_tell.Key(
-              cast_id: id * 100_000 + made,
+              cast_id: id * 100_000 + next,
               occasion: strike_tell.AtGo(phase: 0),
               unit_id: fighter.0,
             ),
@@ -815,7 +830,7 @@ fn strike_fighters(
               crit_severity: 1.5,
               strikethrough: 0.0,
             ),
-            controls: case made % stun_every {
+            controls: case next % stun_every {
               0 -> [stun]
               _ -> []
             },
@@ -823,7 +838,10 @@ fn strike_fighters(
           ),
         ),
       )
-    made
+    case told {
+      Ok(Nil) -> next
+      Error(Nil) -> made
+    }
   })
 }
 
@@ -842,7 +860,17 @@ fn hear(
   let again = fn(fighters, counts) {
     hear(plant:, answers:, settings:, selector:, until_ms:, fighters:, counts:)
   }
-  case process.selector_receive(selector, int.max(0, until_ms - now())) {
+  let received =
+    process.selector_receive(selector, int.max(0, until_ms - now()))
+  let counts = case received {
+    Ok(ForStay(sent:, ..)) ->
+      case load_round.is_answer_to_strike(sent:) {
+        True -> Counts(..counts, answered_to_own: counts.answered_to_own + 1)
+        False -> counts
+      }
+    Ok(_) | Error(Nil) -> counts
+  }
+  case received {
     Error(Nil) -> #(fighters, counts)
     Ok(ForStay(
       sent: SentByFoe(fight: strike_tell.Threatened(unit_id:, life:)),
@@ -1253,7 +1281,7 @@ fn report(
         <> " still open",
       )
       io.println(
-        "strike answers of the walkers: lost (sent before the deadline fell due, not in the round at its closure): "
+        "strike answers of the walkers: lost (sent before the deadline fell due, the round closed without it): "
         <> int.to_string(rounds.lost)
         <> "; late (sent at or after it): "
         <> int.to_string(rounds.late)
@@ -1296,6 +1324,16 @@ fn report(
           ]
           Some(_), False | None, False -> []
         },
+        case scene.mutual && strikes {
+          True -> [
+            Judged(
+              event: load_judged.StrikesAnswered,
+              count: total(fn(one) { one.answered_to_own }),
+              minimum: int.max(1, total(fn(one) { one.made })),
+            ),
+          ]
+          False -> []
+        },
         case scene.respawning {
           True -> [
             Judged(
@@ -1311,20 +1349,26 @@ fn report(
           False -> []
         },
       ]),
-      conditions: [
-        load_judged.Condition(held: keeps_up, said: case keeps_up {
-          True ->
-            "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
-          False ->
-            "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
-        }),
-      ],
+      conditions: list.flatten([
+        case rounds {
+          Some(rounds) -> [load_judged.nothing_lost(lost: rounds.lost)]
+          None -> []
+        },
+        [
+          load_judged.Condition(held: keeps_up, said: case keeps_up {
+            True ->
+              "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
+            False ->
+              "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
+          }),
+        ],
+      ]),
     )
   case strikes {
     True -> Nil
     False ->
       io.println(
-        "strike rounds and strike answers are not judged: each blow kills the creature before it strikes",
+        "strike rounds, strike answers and strikes answered are not judged: each blow kills the creature before it strikes",
       )
   }
   list.each(judged.lines, io.println)

@@ -31,6 +31,8 @@ pub type Event {
   StrikeRounds
   /// A strike a walker answered.
   StrikeAnswers
+  /// A strike a walker made that a creature answered with `Struck`.
+  StrikesAnswered
   /// A removal of a unit and then its next creation, as a walker was sent them.
   Respawns
   /// A move of one probe that another probe read.
@@ -39,7 +41,7 @@ pub type Event {
 
 /// Every event.
 pub fn all() -> List(Event) {
-  [StrikeRounds, StrikeAnswers, Respawns, MovesRead]
+  [StrikeRounds, StrikeAnswers, StrikesAnswered, Respawns, MovesRead]
 }
 
 /// The event in words, as the run's lines name it.
@@ -47,6 +49,7 @@ pub fn name(event: Event) -> String {
   case event {
     StrikeRounds -> "strike rounds"
     StrikeAnswers -> "strike answers"
+    StrikesAnswered -> "strikes answered"
     Respawns -> "respawns"
     MovesRead -> "moves read by a probe"
   }
@@ -68,6 +71,22 @@ pub type Condition {
 pub type Verdict {
   Passes(lines: List(String), summary: String)
   Fails(lines: List(String), summary: String)
+}
+
+/// The condition that no answer was lost to a deadline: `lost` is how many answers were
+/// sent before their round's deadline fell due and the round closed without them
+/// (`genesis_prime/load_round`).
+pub fn nothing_lost(lost lost: Int) -> Condition {
+  case lost {
+    0 -> Condition(held: True, said: "no answer was lost to the deadline")
+    _ ->
+      Condition(
+        held: False,
+        said: "answers were lost to the deadline: "
+          <> int.to_string(lost)
+          <> " sent before it fell due, and their round closed without them",
+      )
+  }
 }
 
 /// The verdict on a run: it fails when an event is below its minimum, when a condition is
