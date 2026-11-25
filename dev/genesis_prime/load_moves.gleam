@@ -30,12 +30,17 @@
 //// tagged moves (`genesis_prime/load_move_delay`); the run prints the delay from a
 //// probe's send to each other probe's receipt, as its mean and 99th percentile.
 ////
+//// The run fails, with exit status 1, when the step's verdict is a failure or when the probes
+//// read fewer moves than were sent to them (the moves read are judged by
+//// `genesis_prime/load_judged`, with the moves sent to a probe as the minimum, at least 1).
+////
 //// The map falls behind when its queue grows with the hold instead of staying
 //// near zero, or when the share of samples that find its process running
 //// approaches all of them.
 
 import argv
 import genesis_prime
+import genesis_prime/load_judged.{Judged}
 import genesis_prime/load_move_delay
 import genesis_prime/load_player
 import genesis_prime/load_run
@@ -129,11 +134,12 @@ pub fn main() -> Nil {
     )
   let #(longest, queued, samples, running) = load_run.in_peer(peer, stop_probe)
   load_run.stop_peer(peer)
+  let step_verdict = load_step.judge(outcome.observation)
   io.println(load_run.describe(
     players:,
     arrival_ms:,
     outcome:,
-    verdict: load_step.judge(outcome.observation),
+    verdict: step_verdict,
   ))
   io.println(
     "the map's message queue: longest "
@@ -175,6 +181,27 @@ pub fn main() -> Nil {
     <> int.to_string(probe_window_ms / 1000)
     <> " s)",
   )
+  let judged =
+    load_judged.judge(
+      judged: [
+        Judged(
+          event: load_judged.MovesRead,
+          count: summary.moves,
+          minimum: int.max(1, delays.expected),
+        ),
+      ],
+      conditions: [
+        load_judged.Condition(
+          held: case step_verdict {
+            load_step.Failed(..) -> False
+            load_step.Kept | load_step.ClientsLimited -> True
+          },
+          said: "the step's verdict is " <> load_step.describe(step_verdict),
+        ),
+      ],
+    )
+  list.each(judged.lines, io.println)
+  load_judged.require(verdict: judged)
 }
 
 /// A mean of `total` over `count`, to one decimal, or a dash for none.

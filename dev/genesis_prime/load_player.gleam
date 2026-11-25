@@ -150,7 +150,8 @@ pub fn seed(
         login_name: account.login_name,
         password: account.password,
       )
-    let assert Ok(_) = query(pool) as "the database took the account"
+    let assert Ok(_) = query(pool)
+      as "the database took the account (a load run needs a database with no `load-` accounts)"
     Nil
   })
 }

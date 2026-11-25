@@ -14,12 +14,15 @@
 ////   later than `match_slack_us` after the walker took the strike (the creature sends
 ////   the strike and arms the deadline in one step). A round is armed for each strike a
 ////   walker took, answered or not.
-//// - **Lost:** sent before the round's deadline fell due and not in the round when it
-////   closed; **late:** sent at or after it. An answer is in the round when the creature
-////   had it by the closure: the arrival is stamped before the send (`stamped_send`),
-////   so an answer that closed its round is in it. The stamp is not after the true
-////   arrival, so a creature that closes by its deadline in the moment between stamp and
-////   send counts that answer in the round it did not reach.
+//// - **Lost:** sent before the round's deadline fell due and the round closed without it;
+////   **late:** sent at or after it. A round the deadline closed (`Fired`: no cancel reached
+////   the recorder) has no answer in it, whatever the walker stamped as the arrival: an
+////   answer that reached the creature in time would have closed the round by cancelling its
+////   deadline, so an answer sent in time to a round the deadline closed is one the creature
+////   did not have, held wherever it was held. A round closed by a cancel has the answers
+////   that reached the creature no later than the cancel, a cancel after the deadline fired at
+////   the recorder included (`genesis_prime/load_deadline`); the arrival is stamped before
+////   the send (`stamped_send`), so an answer that closed its round is in it.
 //// - The rounds counted are those of the creatures that struck a walker, answered or
 ////   not (`strikers`): a creature none of whose strikes was answered still has its
 ////   rounds counted, and another service's timer with a deadline's number does not.
@@ -34,6 +37,11 @@
 //// Gaps: no scene of the run throws a creature, so `interrupt` counts only what a
 //// walker did not mark as its own state; a cancel with no sign near it is `unexplained`.
 
+import genesis_prime/client_connection.{
+  type StaySent, SentByFoe, SentByKill, SentByMap, SentByPeer, SentByPlayer,
+  SentByTarget,
+}
+import genesis_prime/game/strike_tell
 import genesis_prime/load_deadline.{type Deadline}
 import genesis_prime/load_sample
 import gleam/dict.{type Dict}
@@ -102,6 +110,18 @@ pub type Rounds {
   )
 }
 
+/// How many rounds there were, closed any way or still open.
+pub fn round_count(closed: Closed) -> Int {
+  closed.answer
+  + closed.deadline
+  + closed.death
+  + closed.control
+  + closed.leash
+  + closed.interrupt
+  + closed.unexplained
+  + closed.open
+}
+
 /// No round closed any way.
 pub const no_closures =
   Closed(
@@ -156,13 +176,33 @@ fn round_of(
 }
 
 /// Whether the creature had the answer when the round closed: any answer to a round
-/// that is still open, and one that reached the creature no later than the closure
-/// otherwise.
+/// that is still open, none to a round its deadline closed, and one that reached the
+/// creature no later than the cancel to a round a cancel closed.
 fn in_round(answer answer: Answer, round round: Deadline) -> Bool {
   case round.closure {
     load_deadline.Open -> True
-    load_deadline.Cancelled(at_us:) | load_deadline.Fired(at_us:) ->
-      answer.arrived_us <= at_us
+    load_deadline.Fired(..) -> False
+    load_deadline.Cancelled(at_us:) -> answer.arrived_us <= at_us
+  }
+}
+
+/// Whether a walker that stops hearing at `ends_ms` may make a strike at `at_ms`: only
+/// with `strike_tell.deadline_ms` left to hear its answer, so every strike it makes is
+/// owed one.
+pub fn may_strike(at_ms at_ms: Int, ends_ms ends_ms: Int) -> Bool {
+  at_ms <= ends_ms - strike_tell.deadline_ms
+}
+
+/// Whether what a walker was sent is a creature's answer to a strike of its own: the
+/// `Struck` a creature tells the player who struck it.
+pub fn is_answer_to_strike(sent sent: StaySent) -> Bool {
+  case sent {
+    SentByTarget(..) -> True
+    SentByMap(..)
+    | SentByPeer(..)
+    | SentByFoe(..)
+    | SentByPlayer(..)
+    | SentByKill(..) -> False
   }
 }
 

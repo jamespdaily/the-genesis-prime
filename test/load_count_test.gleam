@@ -20,14 +20,16 @@
 ////   z is -560.18798828125 (World 3460, WorldLocation2 row 51596).
 
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type StaySent, SentByMap, SentByPeer}
+import genesis_prime/client_connection.{
+  type StaySent, SentByFoe, SentByMap, SentByPeer, SentByTarget,
+}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{PeerNews, Removed}
 import genesis_prime/load_deadline.{type Closure, type Deadline, Deadline}
+import genesis_prime/load_judged.{type Judged, Judged, Respawns}
 import genesis_prime/load_move_delay.{Probed}
-import genesis_prime/load_respawn.{
-  type Gaps, type Verdict, FewerThanKilled, Gaps, NoRespawn, Respawned,
-}
+import genesis_prime/load_respawn.{type Gaps, Gaps}
 import genesis_prime/load_round.{
   type Answer, type Closed, type Mark, type Rounds, Answer, Closed, Controlled,
   Died, Interrupted, Mark, Released, Rounds,
@@ -161,6 +163,30 @@ pub fn a_round_is_lost_late_or_in_by_its_answers_times_against_the_armed_deadlin
     #(
       "sent before the deadline and not in the round: the creature had it after the deadline closed the round",
       [answer(creature:, sent_us: 900_000, arrived_us: 1_100_000)],
+      load_deadline.Fired(at_us: 1_000_000),
+      Rounds(
+        ..answered(one(Closed(..load_round.no_closures, deadline: 1))),
+        lost: 1,
+      ),
+    ),
+    #(
+      "sent before the deadline, the deadline fired at the recorder and then the creature cancelled the round: it had the answer first, so the round is closed by the answer",
+      [answer(creature:, sent_us: 900_000, arrived_us: 950_000)],
+      load_deadline.Cancelled(at_us: 1_005_000),
+      answered(one(Closed(..load_round.no_closures, answer: 1))),
+    ),
+    #(
+      "sent before the deadline, the deadline fired at the recorder and then the creature cancelled the round, the answer reaching it after the cancel: lost",
+      [answer(creature:, sent_us: 900_000, arrived_us: 1_100_000)],
+      load_deadline.Cancelled(at_us: 1_005_000),
+      Rounds(
+        ..answered(one(Closed(..load_round.no_closures, unexplained: 1))),
+        lost: 1,
+      ),
+    ),
+    #(
+      "sent before the deadline and stamped arrived before it closed the round, the map having held it after the stamp: the deadline closed the round without the answer, so it is lost whatever the walker stamped",
+      [answer(creature:, sent_us: 900_000, arrived_us: 950_000)],
       load_deadline.Fired(at_us: 1_000_000),
       Rounds(
         ..answered(one(Closed(..load_round.no_closures, deadline: 1))),
@@ -515,34 +541,47 @@ fn saw(deaths deaths: List(Int), gaps gaps: List(Int)) -> Gaps {
   Gaps(removed_at_us: dict.new(), gaps_us: gaps, deaths_at_us: deaths)
 }
 
-/// Each row is what the walkers counted, when they stopped (10,000,000) and the verdict:
-/// the run fails with no respawn, or with fewer than the creatures killed, not counting a
-/// death within the settle time (3,000,000) of the end, which is not owed one yet.
+/// Each row is what the walkers counted, when they stopped (10,000,000), the respawns seen
+/// and the fewest owed, and whether the run fails: it fails with no respawn, or with fewer
+/// than the creatures killed, not counting a death within the settle time (3,000,000) of
+/// the end, which is not owed one yet.
 pub fn the_respawn_gate_fails_for_no_respawn_or_fewer_than_the_creatures_killed_test() -> Nil {
   use <- owned_test.run(5000)
-  let verdict = fn(all: List(Gaps)) -> Verdict {
-    load_respawn.verdict(all:, ended_us: 10_000_000, settle_us: 3_000_000)
+  let judged = fn(all: List(Gaps)) -> Judged {
+    Judged(
+      event: Respawns,
+      count: load_respawn.seen(all:),
+      minimum: load_respawn.needed(
+        all:,
+        ended_us: 10_000_000,
+        settle_us: 3_000_000,
+      ),
+    )
   }
   let rows = [
     #(
       "no creature died and none respawned: the run saw no respawn",
       [saw(deaths: [], gaps: [])],
-      NoRespawn,
+      Judged(event: Respawns, count: 0, minimum: 1),
+      True,
     ),
     #(
       "creatures died and none respawned: the run saw no respawn",
       [saw(deaths: [1_000_000], gaps: [])],
-      NoRespawn,
+      Judged(event: Respawns, count: 0, minimum: 1),
+      True,
     ),
     #(
       "three deaths long before the end, two respawns: fewer than killed",
       [saw(deaths: [1_000_000, 2_000_000, 3_000_000], gaps: [10, 20])],
-      FewerThanKilled(respawns: 2, killed: 3),
+      Judged(event: Respawns, count: 2, minimum: 3),
+      True,
     ),
     #(
       "a death within the settle time of the end is not owed a respawn",
       [saw(deaths: [1_000_000, 8_000_000], gaps: [10])],
-      Respawned(respawns: 1),
+      Judged(event: Respawns, count: 1, minimum: 1),
+      False,
     ),
     #(
       "the deaths and respawns of two walkers are summed",
@@ -550,17 +589,25 @@ pub fn the_respawn_gate_fails_for_no_respawn_or_fewer_than_the_creatures_killed_
         saw(deaths: [1_000_000], gaps: [10]),
         saw(deaths: [1_000_000, 2_000_000], gaps: [10]),
       ],
-      FewerThanKilled(respawns: 2, killed: 3),
+      Judged(event: Respawns, count: 2, minimum: 3),
+      True,
     ),
     #(
       "as many respawns as deaths owed one",
       [saw(deaths: [1_000_000, 2_000_000], gaps: [10, 20])],
-      Respawned(respawns: 2),
+      Judged(event: Respawns, count: 2, minimum: 2),
+      False,
     ),
   ]
   list.each(rows, fn(row) {
-    let #(reason, all, expected) = row
-    assert verdict(all) == expected as reason
+    let #(reason, all, expected, fails) = row
+    assert judged(all) == expected as reason
+    assert case load_judged.judge(judged: [judged(all)], conditions: []) {
+        load_judged.Fails(..) -> True
+        load_judged.Passes(..) -> False
+      }
+      == fails
+      as reason
   })
 }
 
@@ -574,4 +621,86 @@ pub fn a_death_the_creature_tells_is_stamped_for_the_gate_test() -> Nil {
     )
   assert gaps.deaths_at_us == [4000]
     as "a creature's Died news is a death, stamped when the walker was sent it"
+}
+
+pub fn a_round_the_deadline_closed_has_lost_every_answer_sent_before_it_fell_due_whatever_the_walker_stamped_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Three creatures, each with one round armed at 0 and due at 1,000,000.
+  let held_by_the_map = creature()
+  let sent_after = creature()
+  let cancelled = creature()
+  let rounds =
+    load_round.rounds_of(
+      answers: [
+        // Sent before the deadline fell due and stamped arrived before the round's
+        // closure, as a walker stamps it just before a send to the map; the creature
+        // has it after the deadline closed the round.
+        answer(creature: held_by_the_map, sent_us: 900_000, arrived_us: 950_000),
+        answer(creature: sent_after, sent_us: 1_100_000, arrived_us: 1_100_000),
+        answer(creature: cancelled, sent_us: 400_000, arrived_us: 410_000),
+      ],
+      strikers: dict.from_list([
+        #(held_by_the_map, 7),
+        #(sent_after, 8),
+        #(cancelled, 9),
+      ]),
+      marks: [],
+      deadlines: [
+        round(
+          creature: held_by_the_map,
+          closure: load_deadline.Fired(at_us: 1_000_000),
+        ),
+        round(
+          creature: sent_after,
+          closure: load_deadline.Fired(at_us: 1_000_000),
+        ),
+        round(
+          creature: cancelled,
+          closure: load_deadline.Cancelled(at_us: 420_000),
+        ),
+      ],
+    )
+  assert rounds.lost == 1
+    as "the answer sent before the deadline fell due is lost, whatever it was stamped"
+  assert rounds.late == 1 as "the answer sent after it is late"
+  assert rounds.closed
+    == Closed(..load_round.no_closures, deadline: 2, answer: 1)
+    as "the cancelled round is closed by its answer, which it has"
+}
+
+pub fn a_walker_strikes_only_while_a_deadline_is_left_and_each_strike_it_makes_is_owed_an_answer_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A walker may strike while it still has `strike_tell.deadline_ms` = 1,000 ms to hear
+  // the answer, so every strike it makes is owed one: the rows are the strike's time and
+  // the time the walker stops hearing, in milliseconds.
+  let rows = [
+    #("a strike at the start of a long walk", 0, 30_000, True),
+    #(
+      "a strike exactly a deadline before the walker stops",
+      29_000,
+      30_000,
+      True,
+    ),
+    #("a strike a millisecond later is not made", 29_001, 30_000, False),
+    #("a strike at the end is not made", 30_000, 30_000, False),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, at_ms, ends_ms, may) = row
+    assert load_round.may_strike(at_ms:, ends_ms:) == may as reason
+  })
+  let answered =
+    strike_tell.Answered(
+      key: strike_tell.Key(
+        cast_id: 1,
+        occasion: strike_tell.AtGo(phase: 0),
+        unit_id: 7,
+      ),
+      outcome: strike_tell.Refused(why: strike_tell.Dead),
+    )
+  assert load_round.is_answer_to_strike(sent: SentByTarget(answered:))
+    as "a creature's answer to a walker's strike is heard"
+  assert !load_round.is_answer_to_strike(
+    sent: SentByFoe(fight: strike_tell.Released(unit_id: 7)),
+  )
+    as "a creature's release of the walker is not"
 }

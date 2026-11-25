@@ -22,10 +22,11 @@
 ////
 //// A deadline's closure is one of: still open, cancelled (the round closed by an
 //// answer, a death, a crowd-control state, the leash or an interrupt, which the shell's
-//// `CancelServiceTimer` does not tell apart), or fired. A firing the shell cancelled
-//// before it took the firing is still told as fired when the recorder had already
-//// stamped it: the stamp and the cancel are two messages to the recorder, so the run
-//// cannot tell them apart.
+//// `CancelServiceTimer` does not tell apart), or fired. The recorder stamps a firing before
+//// the shell takes its `Elapsed`, and the shell forgets a timer once it takes the firing,
+//// so a cancel that reaches the recorder after the firing is one the shell made before it
+//// took the firing, as when an answer was already ahead of the `Elapsed` in its mailbox:
+//// that deadline is told cancelled, at the cancel's time. One never cancelled is told fired.
 
 import genesis_prime/connection/script.{type Elapsed, type Scheduler, Elapsed}
 import genesis_prime/load_sample
@@ -170,9 +171,10 @@ fn record(
         events:,
         deadlines: dict.upsert(deadlines, reference, fn(found) {
           case found {
-            Some(Deadline(closure: Open, ..) as deadline) ->
+            Some(Deadline(closure: Open, ..) as deadline)
+            | Some(Deadline(closure: Fired(..), ..) as deadline) ->
               Deadline(..deadline, closure: Cancelled(at_us:))
-            Some(deadline) -> deadline
+            Some(Deadline(closure: Cancelled(..), ..) as deadline) -> deadline
             None -> panic as "a deadline closed that was never armed"
           }
         }),
