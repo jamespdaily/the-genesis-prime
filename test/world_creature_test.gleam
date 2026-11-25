@@ -414,24 +414,39 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
     == #([], strike_tell.Refused(why: strike_tell.Dead))
     as "1 ms before the respawn time the creature is still dead: it refuses a strike and shows no creature standing"
   driven_time.advance(time:, ms: 1)
-  world_watch_support.strike_with(
-    world:,
-    run:,
-    unit_id: first.unit_id,
-    life: 2,
-    damage_type: 3,
-    damage: 1,
-    cast_id: 3,
-  )
-  let #(appeared, outcome) = answer_to_strike(received:, cast_id: 3)
-  let assert [again] = appeared
-    as "the creature stood again, once, before it answered the strike"
+  let assert [
+    world_watch_support.Removed,
+    world_watch_support.Created(unit: again, life: next_life),
+  ] = [
+    world_watch_support.next(
+      received:,
+      what: "the corpse's 0x355",
+      wanted: world_watch_support.shown,
+    ),
+    world_watch_support.next(
+      received:,
+      what: "the next life's 0x262",
+      wanted: world_watch_support.shown,
+    ),
+  ]
+    as "death.creature_respawn: the 0x355 and then the 0x262 of the next life"
   assert again.unit_id == first.unit_id
     && list.contains(
       again.tail.stats,
       unit_fields.integer_stat(stat_id: 0, value: 52),
     )
     as "death.creature_respawn: the same unit id at full health, at the respawn time"
+  world_watch_support.strike_with(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: next_life,
+    damage_type: 3,
+    damage: 1,
+    cast_id: 3,
+  )
+  let #(appeared, outcome) = answer_to_strike(received:, cast_id: 3)
+  assert appeared == [] as "the next life is shown once, before the strike"
   let assert Landed(..) = outcome
     as "at the respawn time the creature stands and a strike lands"
   world_support.stop(world:)
@@ -2089,17 +2104,22 @@ fn quest_go_on(
   done
 }
 
-/// A strike of 1 damage on the watched beast, answered to the caster: the 0x262s and the
-/// number of removals the caster was sent before the answer, and the answer.
+/// The life of the first creature a player sees: the first player's connection takes the
+/// map's watch 1, so the creature's watch is 2.
+const first_life = 2
+
+/// A strike of 1 damage on the watched beast of life `life`, answered to the caster: the
+/// 0x262s and the number of removals the caster was sent before the answer, and the answer.
 fn probed(
   watched watched: world_watch_support.Watched,
+  life life: Int,
   cast_id cast_id: Int,
 ) -> #(List(UnitCreateCreature), Int, strike_tell.Outcome) {
   world_watch_support.strike_with(
     world: watched.world,
     run: watched.run,
     unit_id: watched.beast.unit_id,
-    life: 2,
+    life:,
     damage_type: 3,
     damage: 1,
     cast_id:,
@@ -2124,7 +2144,8 @@ pub fn a_quest_spell_despawns_the_creature_after_its_delay_for_the_caster_and_a_
     && list.contains(done, Told(unit_id: watched.beast.unit_id))
     as "the go is written to the caster and the beast is told, in the go's own step"
   driven_time.advance(time: watched.time, ms: 3999)
-  let #(appeared, removals, outcome) = probed(watched:, cast_id: 1)
+  let #(appeared, removals, outcome) =
+    probed(watched:, life: first_life, cast_id: 1)
   assert removals == 0 && appeared == []
     as "nothing is sent to the caster before 4 s after the go"
   let assert Landed(..) = outcome
@@ -2140,7 +2161,7 @@ pub fn a_quest_spell_despawns_the_creature_after_its_delay_for_the_caster_and_a_
     received: watched.viewer,
     what: "the second viewer's removal",
   )
-  let #(_, removals, outcome) = probed(watched:, cast_id: 2)
+  let #(_, removals, outcome) = probed(watched:, life: first_life, cast_id: 2)
   assert removals == 0 as "the caster was sent one removal, not two"
   assert outcome == strike_tell.Refused(why: strike_tell.Despawned)
     as "the creature left the field: it refuses a strike as despawned, not dead"
@@ -2202,7 +2223,7 @@ pub fn a_despawn_of_delay_3000_waits_3_seconds_for_every_viewer_test() -> Nil {
     ])
   let _written = quest_go_on(watched:, row:)
   driven_time.advance(time: watched.time, ms: 2999)
-  let #(_, removals, outcome) = probed(watched:, cast_id: 1)
+  let #(_, removals, outcome) = probed(watched:, life: first_life, cast_id: 1)
   assert removals == 0 as "no 0x355 reaches the caster at 2999 ms after the go"
   let assert Landed(..) = outcome as "the creature still stands"
   assert world_watch_support.removals_waiting(received: watched.viewer) == 0
@@ -2273,22 +2294,30 @@ pub fn a_despawned_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
       place: world_watch_support.sight_place(),
     )
   driven_time.advance(time: watched.time, ms: respawn_ms - 1)
-  let #(appeared, removals, outcome) = probed(watched:, cast_id: 1)
+  let #(appeared, removals, outcome) =
+    probed(watched:, life: first_life, cast_id: 1)
   assert appeared == []
     && removals == 0
     && outcome == strike_tell.Refused(why: strike_tell.Despawned)
     as "1 ms before the respawn time the creature is still gone: it refuses a strike and shows no creature standing"
   driven_time.advance(time: watched.time, ms: 1)
-  let #(appeared, removals, outcome) = probed(watched:, cast_id: 2)
-  let assert [again] = appeared
-    as "the creature stood again, once, before it answered the strike"
+  let assert world_watch_support.Created(unit: again, life: next_life) =
+    world_watch_support.next(
+      received: watched.caster,
+      what: "the next life's 0x262 for the caster",
+      wanted: world_watch_support.shown,
+    )
+    as "the creature the map started at the respawn time is shown to the caster, with no 0x355 before it: it went at the despawn"
   assert again.unit_id == watched.beast.unit_id
     && list.contains(
       again.tail.stats,
       unit_fields.integer_stat(stat_id: 0, value: 52),
     )
     as "death.creature_respawn: the same unit id at full health, at the respawn time"
-  assert removals == 0 as "no second removal came with it"
+  let #(appeared, removals, outcome) =
+    probed(watched:, life: next_life, cast_id: 2)
+  assert appeared == [] && removals == 0
+    as "the next life is shown once, and no second removal came with it"
   let assert Landed(..) = outcome
     as "at the respawn time the creature stands and a strike lands"
   let third_heard =

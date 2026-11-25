@@ -354,14 +354,14 @@ pub fn sends(
   })
 }
 
-/// What the step sends to creatures, by the creature's unit id and what it says
+/// What the step sends to creatures, by the creature's unit id, its life and what it says
 /// (`Watched by 1`), in the order sent.
-pub fn creature_sends(
+pub fn creatures_told(
   taken: ServiceStep(map.Outgoing),
-) -> List(#(Int, String)) {
+) -> List(#(Int, Int, String)) {
   list.filter_map(sends(taken), fn(sent) {
     case sent.0 {
-      Creature(unit_id:, ..) -> Ok(#(unit_id, said(sent.1)))
+      Creature(unit_id:, life:, ..) -> Ok(#(unit_id, life, said(sent.1)))
       Connection(..)
       | step.Sessions
       | step.HandOff
@@ -372,6 +372,14 @@ pub fn creature_sends(
       | step.ZoneChannel(..) -> Error(Nil)
     }
   })
+}
+
+/// What the step sends to creatures, by the creature's unit id and what it says
+/// (`Watched by 1`), in the order sent.
+pub fn creature_sends(
+  taken: ServiceStep(map.Outgoing),
+) -> List(#(Int, String)) {
+  list.map(creatures_told(taken), fn(sent) { #(sent.0, sent.2) })
 }
 
 /// What the step tells creatures of the rings, by the creature's unit id and what
@@ -646,19 +654,7 @@ pub fn ring_of(start start: step.CreatureStart) -> List(Int) {
 /// What the step tells creatures, by the life of the creature told and what it says
 /// (`Approached by 1`), in the order sent.
 pub fn lives_told(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
-  list.filter_map(sends(taken), fn(sent) {
-    case sent.0 {
-      Creature(life:, ..) -> Ok(#(life, said(sent.1)))
-      Connection(..)
-      | step.Sessions
-      | step.HandOff
-      | step.Store
-      | step.Maps
-      | step.Map(..)
-      | step.CharacterNamed(..)
-      | step.ZoneChannel(..) -> Error(Nil)
-    }
-  })
+  list.map(creatures_told(taken), fn(sent) { #(sent.1, sent.2) })
 }
 
 /// How many relays to players the step sends.

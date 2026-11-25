@@ -7,7 +7,8 @@
 ////   of any of them next. A delivery of this scene is the head of one such queue. The
 ////   end of a process reaches a process that monitors it as one more signal of that
 ////   sender, after everything the process sent it (`WatchEnded`), and what is sent to a
-////   process that has ended is lost.
+////   process that has ended is lost: the scene drops mail addressed to a creature that has
+////   stopped, whether it is in flight when the creature stops or sent after.
 //// - A creature that stops is replaced by the next life its map starts when it takes the
 ////   creature's `WatchEnded`: a second creature process, a sender of its own, whose first
 ////   step is its `Started` (the shell takes it before the creature's mailbox).
@@ -91,15 +92,15 @@ pub type Taken {
   Taken(by: Receiver, from: Sender, name: String)
 }
 
-/// The three processes' states, the life of the creature and the creature the map started
-/// after it (`next_creature`, with its life), what is in flight, the monotonic time the
+/// The three processes' states (the creature's none once it stopped), the life of the
+/// creature and the creature the map started after it (`next_creature`, with its life), what is in flight, the monotonic time the
 /// next delivery is taken at, the deliveries so far in order, the frames the viewer wrote
 /// in order and the first news the map relayed to the viewer that its relation did not
 /// allow (`early`).
 pub type Scene {
   Scene(
     map: map.State,
-    creature: creature.State,
+    creature: Option(creature.State),
     life: Int,
     next_creature: Option(creature.State),
     next_life: Option(Int),
@@ -145,7 +146,7 @@ pub fn scene(
 ) -> Scene {
   Scene(
     map:,
-    creature:,
+    creature: Some(creature),
     life: map_spawn_support.creature_of(state: map, spawn: 1).1,
     next_creature: None,
     next_life: None,
@@ -257,7 +258,10 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
             next_life: Some(start.life),
             mail: list.flatten([
               scene.mail,
-              mail_of_the_map_for(taken:, next_life: Some(start.life)),
+              reaching_a_running_creature(
+                scene:,
+                mail: mail_of_the_map_for(taken:, next_life: Some(start.life)),
+              ),
               mail_of_the_creature_as(
                 taken: started,
                 sender: FromNextCreature,
@@ -271,24 +275,33 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
             ..scene,
             mail: list.append(
               scene.mail,
-              mail_of_the_map_for(taken:, next_life: scene.next_life),
+              reaching_a_running_creature(
+                scene:,
+                mail: mail_of_the_map_for(taken:, next_life: scene.next_life),
+              ),
             ),
           )
       }
     }
     ToCreature(event:) -> {
+      let assert Some(held) = scene.creature
+        as "the scene delivers no mail to a creature that stopped"
       let #(state, taken) =
-        creature.step(scene.creature, support.input_at_ms(ms: now_ms, event:))
+        creature.step(held, support.input_at_ms(ms: now_ms, event:))
       let sent = mail_of_the_creature(taken)
       case support.stops(taken) {
         False ->
-          Scene(..scene, creature: state, mail: list.append(scene.mail, sent))
+          Scene(
+            ..scene,
+            creature: Some(state),
+            mail: list.append(scene.mail, sent),
+          )
         True ->
           // The creature ends: what is still in its mailbox is lost, and its map, which
           // watches it, takes its end after what it sent.
           Scene(
             ..scene,
-            creature: state,
+            creature: None,
             mail: list.flatten([
               list.filter(scene.mail, fn(waiting) {
                 waiting.to != CreatureProcess
@@ -390,6 +403,18 @@ fn remove_first(mail: List(Mail), taken: Mail) -> List(Mail) {
         True -> rest
         False -> [first, ..remove_first(rest, taken)]
       }
+  }
+}
+
+/// The mail with what is addressed to a creature that stopped left out: a process that has
+/// ended takes nothing.
+fn reaching_a_running_creature(
+  scene scene: Scene,
+  mail mail: List(Mail),
+) -> List(Mail) {
+  case scene.creature {
+    Some(_) -> mail
+    None -> list.filter(mail, fn(sent) { sent.to != CreatureProcess })
   }
 }
 
@@ -542,7 +567,8 @@ fn creature_message_name(message: creature.Message) -> String {
 
 fn map_message_name(message: map.Message) -> String {
   case message {
-    map.Snapshot(..) -> "Snapshot"
+    map.Snapshot(by: ConnectionId(number), ..) ->
+      "Snapshot for " <> int.to_string(number)
     map.Broadcast(..) -> "Broadcast"
     map.Relay(..) -> "Relay"
     map.Expired(..) -> "Expired"

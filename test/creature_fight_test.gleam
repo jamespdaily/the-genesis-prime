@@ -118,6 +118,19 @@ fn beast_with(
   )
 }
 
+/// The Battle Beast's kind: the 60 s respawn time and the 5649 attack at 1500 ms, with no
+/// guard and no special.
+fn beast_kind() -> Kind {
+  Kind(
+    respawn_ms: 60_000,
+    attack_spell4_id: Spell4Id(5649),
+    alternate_spell4_ids: [],
+    attack_interval_ms: 1500,
+    guard: option.None,
+    specials: [],
+  )
+}
+
 /// A Beast started at this source's spawn, `Started` taken.
 fn beast_from(
   source source: spawn_source.SpawnSource,
@@ -125,20 +138,7 @@ fn beast_from(
   viewers viewers: List(Int),
   armor armor: creature_life.InterruptArmor,
 ) -> State {
-  started_from(
-    source:,
-    spawn:,
-    kind: Kind(
-      respawn_ms: 60_000,
-      attack_spell4_id: Spell4Id(5649),
-      alternate_spell4_ids: [],
-      attack_interval_ms: 1500,
-      guard: option.None,
-      specials: [],
-    ),
-    viewers:,
-    armor:,
-  )
+  started_from(source:, spawn:, kind: beast_kind(), viewers:, armor:)
 }
 
 /// A creature of this kind started at this source's spawn, `Started` taken.
@@ -1218,14 +1218,7 @@ fn started_with_ring(
   started_raw(
     source: spawn_source.Stored(id: SpawnId(1)),
     spawn: Spawn(..spawn, combat: creature_life.Combat(..spawn.combat, fights:)),
-    kind: Kind(
-      respawn_ms: 60_000,
-      attack_spell4_id: Spell4Id(5649),
-      alternate_spell4_ids: [],
-      attack_interval_ms: 1500,
-      guard: option.None,
-      specials: [],
-    ),
+    kind: beast_kind(),
     viewers:,
     ring:,
     armor: creature_life.NoArmor,
@@ -1236,8 +1229,8 @@ pub fn a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_
   use <- owned_test.run(5000)
   // The map starts a respawn with the ring it reads at the start (Design run A, 4.1): the
   // creature answers each viewer's `Seen` first, as every start does, then starts one fight
-  // over the players of the ring that see it, as a creature that stood again did. The
-  // first of them is the target (`opcode.0x908`) and each other is named (`opcode.0x90a`).
+  // over the players of the ring that see it. The first of them is the target
+  // (`opcode.0x908`) and each other is named (`opcode.0x90a`).
   let fight_and_snapshots = fn(taken) {
     list.filter(creature_news_support.said_to_the_map(taken), fn(line) {
       string.starts_with(line, "snapshot")
@@ -1737,18 +1730,10 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
   let assert [CreatureAppeared(place:, ..)] = news_to(watched, 9)
   assert x_of(place) == 10.0
     as "it fell 1 s into its run, 10 units along: the corpse lies there, not where the run would end"
-  let #(_, stood) = fire(state:, at_ms: 61_000, timer: corpse)
-  let appeared =
-    list.filter(news_to(stood, 9), fn(news) {
-      creature_news_support.name_of(news) == "0x262"
-    })
-    |> list.map(fn(news) {
-      let assert CreatureAppeared(place:, ..) = news
-        as "a 0x262 of the creature"
-      x_of(place)
-    })
-  assert appeared == [0.0]
-    as "it stands again at its spawn (death.creature_respawn)"
+  let #(_, expired) = fire(state:, at_ms: 61_000, timer: corpse)
+  assert list.map(news_to(expired, 9), creature_news_support.name_of)
+    == ["0x355"]
+    as "the viewer that saw the corpse is sent its removal at the expiry, and no 0x262: the next life at the spawn is the map's (death.creature_respawn)"
 }
 
 // Test 14: threat only for viewers.
@@ -3022,7 +3007,7 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
     as "a refill timer that fires with the armor full does nothing"
 }
 
-pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_stands_again_at_full_armor_test() -> Nil {
+pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_shows_its_full_armor_at_the_body_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     tell(
@@ -4791,9 +4776,8 @@ pub fn a_turret_killed_while_opened_gives_its_kill_credit_test() -> Nil {
 }
 
 /// A turret that is stunned open and then told to despawn: its opening's cast is finished
-/// with no 0x880, its opening timer is cancelled, and it stands guarded again at its
-/// corpse timer. Called by `creature_test`'s despawn test, which names the three things a
-/// despawn drops.
+/// with no 0x880 and its opening timer is cancelled. Called by `creature_test`'s despawn
+/// test, which names the three things a despawn drops.
 pub fn a_despawned_opening_ends_without_a_0x880() -> Nil {
   let held = guarded_charge(viewers: [2])
   let #(state, stunned) = stunned_at(state: held.state, at_ms: 4000)
@@ -4818,11 +4802,6 @@ pub fn a_despawned_opening_ends_without_a_0x880() -> Nil {
     fire(state: gone, at_ms: 19_000, timer: timer_for(stunned, 15_000))
   assert said(late) == [] && timers(late) == []
     as "the opening's end that fires all the same finds no opening"
-  let #(_, stood) =
-    fire(state: gone, at_ms: 65_000, timer: timer_for(despawned, 60_000))
-  let assert [CastStarted(start: guard), CastWent(..)] = news_named(stood, 2)
-    as "the corpse timer stands the turret guarded, as after a death"
-  assert guard.spell4_id == 85_474
 }
 
 pub fn an_opening_end_after_death_does_nothing_test() -> Nil {
@@ -4854,10 +4833,15 @@ pub fn a_respawned_turret_stands_guarded_test() -> Nil {
   let #(state, _) = stunned_at(state: held.state, at_ms: 4000)
   let #(state, killed) =
     tell(state:, at_ms: 5000, message: damaging(damage: 1_000_000))
-  let #(state, stood) =
+  let #(_, expired) =
     fire(state:, at_ms: 65_000, timer: timer_for(killed, 60_000))
-  let assert [CastStarted(start:), CastWent(go:)] = news_named(stood, 2)
-    as "the corpse timer stands the turret: the guard's cast and nothing of the opening"
+  assert list.map(news_to(expired, 2), creature_news_support.name_of)
+    == ["0x355"]
+    && creature_news_support.said_to_the_map(expired) == ["expired 7 of life 3"]
+    as "the killed turret's corpse timer removes it and expires it: the next life is its map's start"
+  let #(state, stood) = guarded_turret(viewers: [2])
+  let assert [_, CastStarted(start:), CastWent(go:)] = news_to(stood, 2)
+    as "the next life's start: the 0x262, the guard's cast and nothing of the opening"
   assert start.spell4_id == 85_474
     && start.caster_unit_id == unit
     && start.primary_target_unit_id == unit
@@ -5333,14 +5317,7 @@ pub fn an_immune_knockback_does_not_throw_test() -> Nil {
     started_with(
       source: spawn_source.Stored(id: SpawnId(1)),
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
-      kind: Kind(
-        respawn_ms: 60_000,
-        attack_spell4_id: Spell4Id(5649),
-        alternate_spell4_ids: [],
-        attack_interval_ms: 1500,
-        guard: turret.guard,
-        specials: [],
-      ),
+      kind: Kind(..beast_kind(), guard: turret.guard),
       viewers: [2],
       armor: creature_life.NoArmor,
     )
@@ -5922,14 +5899,7 @@ fn rootbrute_with(
       ..spawn,
       combat: creature_life.Combat(..spawn.combat, specials: [special]),
     ),
-    kind: Kind(
-      respawn_ms: 60_000,
-      attack_spell4_id: Spell4Id(5649),
-      alternate_spell4_ids: [],
-      attack_interval_ms: 1500,
-      guard: option.None,
-      specials: [],
-    ),
+    kind: beast_kind(),
     viewers:,
     armor: creature_life.NoArmor,
   )
@@ -7811,10 +7781,10 @@ pub fn a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_followi
     )
   assert said(later) == [] && faces_to(again, 2) == []
     as "a dead creature follows no one, and a second blow or a repeated death turns it no more"
-  let #(_, stood) =
+  let #(_, expired) =
     fire(state:, at_ms: 61_000, timer: timer_for(killed, 60_000))
-  assert faces_to(stood, 2) == [creature_turn.Unit(unit_id: 20)]
-    as "it stands again with the facing of its spawn's 0x262 and aggroes the player near it: its fight turns it afresh"
+  assert faces_to(expired, 2) == []
+    as "the corpse timer turns no one: the next life's fight, which turns it toward the player near it, is its start's"
   // A despawn is a death for the fight.
   let #(state, _) = chasing(viewers: [2])
   let #(_, gone) =

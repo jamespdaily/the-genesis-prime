@@ -420,7 +420,7 @@ pub fn ended_by(
 
 /// The creature died: every control is dropped and its timer cancelled, no 0x880 is sent
 /// (`cc_state.end`), and its armor is back at the maximum with the refill timer cancelled,
-/// as the creature that stands again will be.
+/// as the creature's next life will be.
 pub fn died(state state: State) -> #(State, List(Effect)) {
   #(
     State(..state, controls: [], armor: None),

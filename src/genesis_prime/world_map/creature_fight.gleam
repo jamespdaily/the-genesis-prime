@@ -59,8 +59,8 @@
 ////                                                         P the only entry: the leash, as
 ////                                                         for a release; at home no one is aggroed
 //// C Resting or Returning, P near, takes PlayerDied(P):
-////                                                         P out of near: the home timer and the
-////                                                         corpse timer aggro no one for P
+////                                                         P out of near: the home timer aggros
+////                                                         no one for P
 //// P wakes in C's ring: LifeChanged(P, True) ─Approached(P, ..)─▶ C Resting: aggro, as a walk-in
 //// ```
 ////
@@ -309,10 +309,12 @@
 //// | a timer of a round that closed, or of a fight that ended, fires | it is of an old generation and does nothing | `a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test` |
 //// | C dies while it runs | it rests where it fell, and a viewer that arrives before its respawn is shown it there | `a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_it_where_it_fell_test` |
 //// | P dies and C's killing answer and the map's `PlayerDied` both reach C | two senders, either order: the first drops P from `near` and the threat list, the second finds nothing | `a_creature_told_player_died_for_its_target_erases_its_entry_names_the_next_and_never_strikes_the_body_test`, `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
-//// | P died and C's home timer or corpse timer fires before `PlayerDied` reaches C | C aggroes the body; P drops `Threatened`, C's first strike is refused `Dead`, and C releases P and drops it from `near`: at most one swing, in the window of one map hop | `a_creature_that_kills_its_only_target_in_its_ring_does_not_aggro_the_body_at_its_home_timer_test`, `a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_nor_when_its_corpse_timer_stands_it_test` |
+//// | P died and C's home timer fires before `PlayerDied` reaches C | C aggroes the body; P drops `Threatened`, C's first strike is refused `Dead`, and C releases P and drops it from `near`: at most one swing, in the window of one map hop | `a_creature_that_kills_its_only_target_in_its_ring_does_not_aggro_the_body_at_its_home_timer_test`, `a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_test` |
+//// | P died and C's map starts C's next life: the ring `CreatureStart.ring` holds P only when the map took the death after the start; a death the map took first leaves P out of the ring | P in the ring: the next life aggroes P, the strike is refused `Dead` and `PlayerDied` drops it; P out of it: nothing | `a_death_a_stealth_or_a_wake_decides_the_new_lifes_ring_by_whether_the_map_took_it_before_the_start_test` |
+//// | the map starts C's next life with a ring | every ring player is sighted and near, and one fight starts over those who are viewers: the first is the target, each other is named | `a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_players_it_has_as_viewers_in_one_step_test`, `a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewers_of_the_stay_it_names_in_one_fight_test` |
 //// | a strike P sent before it died reaches C after `PlayerDied` | `StruckBy` adds P to the threat list; C's first strike is refused `Dead` and releases it |  |
 //// | `PlayerDied` for a player on neither `near` nor the threat list (its `Unseen` came first, or the killing answer dropped it) | nothing | `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
-//// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test` |
+//// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_and_one_approached_again_is_test` |
 //// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so it is a Wake Here chosen within that second of the death |  |
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
 //// | Charge start: the attack tick finds the target in reach, no round open, the attack is `Charged` | round Charging, 0x7ff of the spell, `StartTimer(CastEnds, cast time)`, no strike and no next attack tick; the tick's generation moves on | `a_charge_starts_with_its_cast_time_and_telegraph_test` |
@@ -680,9 +682,9 @@ pub type Input {
   /// as it does at a death (`Killed`): a path stops, a charge ends, each threatened player is
   /// `Released`.
   Despawned
-  /// The map's start of this life carries the players in the creature's ring: each is
-  /// sighted and enters `near`, and one fight starts over those who are viewers
-  /// (`aggro`).
+  /// The map's start of this life carries the players in the creature's ring
+  /// (`CreatureStart.ring`): each is sighted and enters `near`, and one fight starts over
+  /// those who are viewers (`aggro`).
   RingAtStart(members: List(RingMember))
   /// creature_control: a state took hold of the creature while it lives. An open charge
   /// breaks; a path it runs stops where it stands (0x638 of kind 2 for its viewers, as at a
@@ -1928,7 +1930,7 @@ fn strikes(
 
 /// A fighter's answer to a strike of the open round: its go names what landed, and a
 /// fighter the strike killed, or found dead, is released and leaves the near players, so
-/// the creature's home timer or corpse timer does not aggro the body. An entry is written
+/// the creature's home timer does not aggro the body. An entry is written
 /// when its last answer is in and every entry before it is written; the round closes with
 /// its last entry, and a charging creature then starts its next attack tick.
 fn answered_strike(

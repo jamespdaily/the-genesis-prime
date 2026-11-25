@@ -16,11 +16,10 @@
 import ask_support
 import cast_support
 import driven_time
-import genesis_prime/client_connection.{type Message, ForStay, SentByFoe}
+import event_wait
+import genesis_prime/client_connection.{ForStay, SentByFoe}
 import genesis_prime/game/strike_tell.{Threatened}
-import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/game/unit_properties.{Change}
-import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{UnitProperty2Id}
@@ -37,25 +36,6 @@ import place_support
 import spawn_support
 import world_support
 import world_watch_support
-
-/// What a connection is shown of a unit, in the order the connection was sent it: the
-/// unit removed (0x355), or created (0x262) with the life it names.
-type Shown {
-  Removed
-  Created(unit: UnitCreateCreature, life: Int)
-}
-
-fn shown(message: Message) -> Result(Shown, Nil) {
-  case world_watch_support.appeared_news(message) {
-    Ok(PeerNews(news: CreatureAppeared(unit:, life:, ..), ..)) ->
-      Ok(Created(unit:, life:))
-    Ok(PeerNews(..)) | Error(Nil) ->
-      case world_watch_support.is_removal(message) {
-        True -> Ok(Removed)
-        False -> Error(Nil)
-      }
-  }
-}
 
 pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_the_same_unit_id_and_the_old_address_finds_no_creature_test() -> Nil {
   use <- owned_test.run(10_000)
@@ -85,7 +65,7 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
       unit_id: first.unit_id,
       life: first_life,
     )
-  // A caster's modifier, which a creature that stood again in its own process cleared.
+  // A caster's modifier on the first life: the next life holds no trace of it.
   let assert Ok(Nil) =
     creature_registry.tell(
       world.creatures,
@@ -122,16 +102,18 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
     world_watch_support.next(
       received:,
       what: "the corpse's 0x355 or the next life's 0x262",
-      wanted: shown,
+      wanted: world_watch_support.shown,
     ),
     world_watch_support.next(
       received:,
       what: "the next of the corpse's 0x355 and the next life's 0x262",
-      wanted: shown,
+      wanted: world_watch_support.shown,
     ),
   ]
-  let assert [Removed, Created(unit: again, life: next_life)] =
-    removal_then_creation
+  let assert [
+    world_watch_support.Removed,
+    world_watch_support.Created(unit: again, life: next_life),
+  ] = removal_then_creation
     as "death.creature_respawn: the 0x355 and then the 0x262, from the map's one stream"
   assert again.unit_id == first.unit_id as "the same unit id"
   assert creature_unit.health_of(unit: again) == 52
@@ -144,15 +126,19 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
       watched: process.monitor(first_pid),
       what: "the creature that expired to be gone",
     )
-  assert creature_registry.find(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id: first.unit_id,
-      life: first_life,
-    )
-    == Error(Nil)
-    as "the registry finds no creature at the old life's address"
+  event_wait.until(
+    "the registry noticed the end of the creature of the old life by itself, so it finds no creature at the old life's address",
+    fn() {
+      creature_registry.find(
+        world.creatures,
+        map: world_watch_support.ship,
+        incarnation: run.incarnation,
+        unit_id: first.unit_id,
+        life: first_life,
+      )
+      == Error(Nil)
+    },
+  )
   let next_pid =
     world_watch_support.creature_pid(
       time:,
@@ -171,8 +157,8 @@ pub fn two_ring_players_are_both_aggroed_by_the_life_that_replaces_their_killed_
   // A Dagun, hostile to the Dominion players, at x = 0; two ready players stand in its
   // ring, 5 units off either side. The first `Approached` makes a creature fight and later
   // ones add no threat, so a respawn that told the creature of the players one by one would
-  // aggro only the first; the batch aggro of a creature that stands again aggroes both
-  // (`creature_fight`, `Approached` and `aggro`).
+  // aggro only the first; the ring a start carries aggroes both (`creature_fight`,
+  // `RingAtStart` and `aggro`).
   let respawn_ms = 1000
   let time = driven_time.new()
   let world =
@@ -231,6 +217,17 @@ pub fn two_ring_players_are_both_aggroed_by_the_life_that_replaces_their_killed_
       )
     })
   driven_time.wait_until_quiet(time)
+  // Both players are read up to the same point, before the strike, so what each hears
+  // afterwards is the replacing life's alone.
+  list.each([#(1, first), #(2, second)], fn(player) {
+    let _before =
+      world_support.sent_before_the_marker(
+        world:,
+        id: player.0,
+        received: player.1,
+      )
+    Nil
+  })
   world_watch_support.strike_with(
     world:,
     run:,

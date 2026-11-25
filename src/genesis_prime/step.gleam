@@ -326,20 +326,19 @@ pub type CreatureStart {
     /// by a burst of `Seen` sends, and names the stay in everything it relays to
     /// the player.
     viewers: List(#(ConnectionId, Stay, Generation)),
-    /// The ready, living, unstealthed players who stand in the spawn's ring as a
-    /// respawn starts, in the order of their connections, each with what the map's
-    /// `Approached` tells a creature of it. The creature takes them all in one step
-    /// and starts one fight over those of them that are its viewers, as a creature
-    /// that stood again did. Empty for every start but the map's respawn of a
-    /// creature that expired: those creatures are told each player of the ring
-    /// with an `Approached` after the start.
+    /// The ready, living, unstealthed players who stand in the spawn's ring as the
+    /// map starts the next life of a creature that expired, in the order of their
+    /// connections. The new creature takes them all in its `Started` step and starts one
+    /// fight over those of them that are its viewers. Empty for every other start: the
+    /// map then sends the creature an `Approached` for each player of the ring after it
+    /// started.
     ring: List(RingMember),
   )
 }
 
-/// A player in the ring of a spawn whose creature starts: what the map's `Approached`
-/// tells a creature of the player's unit, its place and the move's sequence number, its
-/// stay and the hit radius of its race.
+/// A player in the ring of a creature, as the map tells the creature of it with
+/// `Approached` or in `CreatureStart.ring`: the player's connection, its unit, its place
+/// and the move's sequence number, its stay and the hit radius of its race.
 pub type RingMember {
   RingMember(
     by: ConnectionId,

@@ -201,7 +201,7 @@ pub type Refusal {
   /// is there.
   Returning
   /// The creature was removed from the field by a DespawnUnit effect and takes no strike
-  /// until it stands again; `Dead` would name a death that did not happen.
+  /// until its next life; `Dead` would name a death that did not happen.
   Despawned
 }
 

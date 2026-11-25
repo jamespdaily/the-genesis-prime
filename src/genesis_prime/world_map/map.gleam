@@ -110,20 +110,50 @@
 ////   a live spawn, no longer:     Unseen(by: c, g) ─▶ Creature(.., u, w), and c is sent the notice that the
 ////                                 unit is unseen, which writes c's 0x355
 ////                                 the last viewer gone: idle since now
-////   a retiring spawn, seen now:  nothing is sent, nothing starts: c is found among the seers at its end
+////   a retiring or respawning spawn, seen now:
+////                                nothing is sent, nothing starts: c is found among the seers at its end
 //// the sweep fires ─▶ for each live spawn idle for idle_stop_ms or more:
 ////                                 Send(Creature(.., u, w), Retire)     the spawn is retiring
 ////                                 StartServiceTimer(TimerId(0), sweep_ms)
 //// WatchEnded(w) of a retiring creature (or one that crashed while retiring)
 ////                              ─▶ dormant, with u kept; no Gone: the 0x355s went when its viewers did
 ////                                 players who see the spawn now: StartCreature(u, life w', viewers them)
+//// Expired(u, w) of a live creature (its corpse timer; it sent every viewer its 0x355 already)
+////                              ─▶ the spawn is Respawning(u, w): its relations end, no one is sent anything
+//// WatchEnded(w) of a Respawning creature (it stopped after Expired)
+////                              ─▶ players who see the spawn now: StartCreature(u, life w', viewers them, ring)
+////                                 fresh relations, AwaitingSnapshot under generations never given before;
+////                                 ring: each ready, living, unstealthed player in the spawn's ring (`ring_of`),
+////                                 so the new creature aggroes them in one step and gets no Approached;
+////                                 none see it now: dormant, with u kept
 //// WatchEnded(w) of a live creature (a crash)
 ////                              ─▶ Gone(u) to every player in the map (the creature that ended sent nothing)
 ////                                 StartServiceTimer(the spawn's number, its kind's respawn time); u is given up
 //// the spawn's timer fires      ─▶ players see the spawn now: a new unit id, a creature as for a dormant spawn
 ////                                 none: dormant
-//// CreatureNotStarted(w)        ─▶ error line; the spawn stays empty for the run
+//// CreatureNotStarted(w)        ─▶ error line; the spawn stays empty for the run (after a respawn's
+////                                 removal too: the viewers saw it removed and see no new unit)
 //// ```
+////
+//// A creature that lay dead until its corpse timer and the next life the map starts, in the
+//// order the map takes them (the creature's sends and its end are one sender's, in order):
+////
+//// ```
+//// creature (dead, corpse timer fires)          map                                    next life
+////   Broadcast(Removed)  ─▶ relayed to each Relaying viewer (none for a despawned creature)
+////   Expired(unit, life) ─▶ Live ─▶ Respawning(unit, life): relations end (no Unseen, no Gone)
+////   Stop                    WatchEnded(life) ─▶ Respawning: players_seeing ─▶ start_creature:
+////                             fresh relations (g', new life, AwaitingSnapshot), ring = ring_of(inside now)
+////                             StartCreature(viewers (c, stay, g'), ring) ─────────▶ Started: Watch(run),
+////                                                                                   Snapshot(c, g', burst) for each
+////                                                                                   viewer, then one aggro over the
+////                                                                                   ring players who are viewers
+////                           Snapshot relayed in order; later Broadcast relayed ◀────
+//// ```
+////
+//// A creature told `Retire` while dead stops at its corpse timer with no `Expired`: its
+//// spawn is `Retiring`, and its end restarts the spawn as for any retire. A creature that
+//// stops with its run, or a run-only creature at its corpse timer, sends no `Expired`.
 ////
 //// A use releases a unit, a tell with no answer: the connection's count of the use
 //// counted a unit new to an objective that counts each unit once, and the map ends the
@@ -137,6 +167,9 @@
 ////                                         s and each spawn in `spawn.captives` of s, live:
 ////                                           s becomes Releasing(u, life, release time)
 ////                                           Send(Creature(.., u, life), Retire) ─────▶ Stop
+////                                         s or a captive Respawning (its creature expired and stops by
+////                                         itself): Releasing(u, life, release time) with no relations,
+////                                         and no Retire
 ////                                         s a static object, not yet released: it joins `released_objects`;
 ////                                         each player's objects are decided again (ObjectsUnseen of s's unit
 ////                                         to those who saw it); StartServiceTimer(s's number, the release time)
@@ -175,7 +208,8 @@
 ////                                  left, Live:    Withdrew(c) ──────────────────▶
 ////                                  inside before and after, or outside: nothing
 //// a creature starts             each ready, unstealthed, living player in its ring:
-////                               Approached, after the start effects
+////                               Approached, after the start effects; a respawn's start carries
+////                               them as `CreatureStart.ring` instead, and no Approached follows
 ////
 //// connection c                  map                                          creature
 ////   StealthChanged(c, s)      ─▶ Told ─▶ c not in the map: error line, nothing changes
@@ -201,7 +235,8 @@
 //// StealthChanged(c, True), then Ready(c)            ─▶ nothing at Ready; leaving stealth then
 ////                                                      sends Approached to each ring c stands in
 //// a creature starts, restarts or respawns, or a summon starts, with c stealthed in its ring
-////                                                   ─▶ no Approached: `inside` holds no ring for c
+////                                                   ─▶ no Approached, and c is not in the start's ring:
+////                                                      `inside` holds no ring for c
 //// ```
 ////
 //// connection c                  map                                          creature
@@ -229,7 +264,8 @@
 //// Join(.., alive: False), Ready(c)                  ─▶ nothing at Ready; LifeChanged(c, True) then
 ////                                                      sends Approached to each ring c stands in
 //// a creature starts, restarts or respawns, or a summon starts, with c dead in its ring
-////                                                   ─▶ no Approached: `inside` holds no ring for c
+////                                                   ─▶ no Approached, and c is not in the start's ring:
+////                                                      `inside` holds no ring for c
 //// ```
 ////
 //// - **A player is not ready until its client's first 0xF2 of the stay**
@@ -241,8 +277,10 @@
 //// - **Hostile** is a faction level of 0 to 2 toward the player's faction, worked out
 ////   at load (genesis_prime/world_map/creature_life `Hostile`); a Neutral or Friendly
 ////   creature has no ring.
-//// - **Only Live creatures are told.** A retiring, waiting or failed spawn's ring is
-////   kept in `inside` and told when its creature starts.
+//// - **Only Live creatures are told.** A retiring, respawning, waiting or failed spawn's ring is
+////   kept in `inside` and told when its creature starts: a respawn's in `CreatureStart.ring`,
+////   read at the step that takes the creature's end (`ring_of`), so the creature aggroes every
+////   player of it in one step.
 //// - **A stealthed player stands in no ring** (server choice, `StealthChanged`; the
 ////   client holds no rule, `UnitProperty2.stealth_detection`). A creature is told
 ////   `Withdrew` when the player enters stealth and `Approached` when it leaves
@@ -266,12 +304,17 @@
 //// - **When a life tell is late, out of order or lost to a death:**
 ////   - A `LifeChanged` is decided on the state the connection had when it sent it, and
 ////     cannot cross a `Join`, `Moved`, `Ready` or `StealthChanged` of the same connection.
-////   - A creature's home timer or corpse timer that fires before the `PlayerDied` reaches
-////     it aggroes the body: the death tell is one hop behind. The strike is refused `Dead`,
-////     which releases the player and drops it from `near` (genesis_prime/world_map/creature_fight).
+////   - A creature's home timer that fires before the `PlayerDied` reaches it aggroes the
+////     body: the death tell is one hop behind. The strike is refused `Dead`, which releases
+////     the player and drops it from `near` (genesis_prime/world_map/creature_fight).
+////   - A death the map takes before it starts a creature's next life leaves the player out of
+////     the start's ring, so the body is not aggroed; one it takes after the start reaches the
+////     new life as `PlayerDied` and drops the player. A wake before the start puts the player in
+////     the ring, which aggroes it on waking, and after the start it is an `Approached`
+////     (`a_death_a_stealth_or_a_wake_decides_the_new_lifes_ring_by_whether_the_map_took_it_before_the_start_test`).
 ////   - A `PlayerDied` or `Approached` for a creature that died before it is dropped; the
-////     spawn keeps `inside`, which holds no dead player, and `approaches_at_start` reads it
-////     at the creature's next start.
+////     spawn keeps `inside`, which holds no dead player, and `ring_of` reads it at the
+////     creature's next start.
 ////   - A `PlayerDied` that reaches a creature after the player's `Unseen` finds the player
 ////     in neither `near` nor the threat list: nothing.
 ////   - A player whose connection ends while dead is removed as any player is: its creatures
@@ -285,10 +328,13 @@
 //// - **When a stealth tell is late, out of order or lost to a death:**
 ////   - A `StealthChanged` is decided on the state the connection had when it sent it,
 ////     and cannot cross a `Moved` or a `Ready` of the same connection.
-////   - A creature's home timer or corpse timer that fires before the `Withdrew`
-////     reaches it aggroes the player: the stealth tell is one hop behind, as any move is.
+////   - A creature's home timer that fires before the `Withdrew` reaches it aggroes the
+////     player: the stealth tell is one hop behind, as any move is. A stealth the map takes
+////     before it starts the creature's next life leaves the player out of the start's ring;
+////     one it takes after reaches the new life as `Withdrew`, which keeps the player on the
+////     threat list as for any stealth after an aggro.
 ////   - A `Withdrew` or `Approached` for a creature that died before it is dropped; the
-////     spawn keeps `inside`, which `approaches_at_start` reads at the creature's next start.
+////     spawn keeps `inside`, which `ring_of` reads at the creature's next start.
 ////   - An `Approached` that reaches a creature after the player's `Unseen` is no
 ////     aggro: the player is not a viewer in that stay.
 ////   - A player whose connection ends while stealthed in a ring is removed as any
@@ -500,29 +546,43 @@
 //// news:   creature ─▶ Broadcast(unit, life, news) ─▶ map: Relayed to each Relaying viewer, in
 ////         connection order; an AwaitingSnapshot or departed viewer is sent none
 //// tell:   creature ─▶ Relay(unit, life, to, stay, payload) ─▶ map admits it (`admitted`: the
-////         spawn is live, retiring or releasing under that life; then the destination check of
-////         the payload's kind, `relay.kind_of`) ─▶ Relayed(stay, payload)
+////         spawn is live, retiring, respawning or releasing under that life; then the destination
+////         check of the payload's kind, `relay.kind_of`) ─▶ Relayed(stay, payload)
 //// leave sight, Leave, a viewer's end:
 ////         map: the relation is removed in one step ─▶ creature Unseen(V, g), V Noticed(UnitUnseen(unit, g))
 ////         creature: the copy and the threat entry of V go; its release of V is one Relay(Released)
+//// expiry: creature ─▶ Broadcast(Removed), Expired(unit, life), Stop; map: Live becomes Respawning (the
+////         relations end, no one is told); WatchEnded(life) starts the next life, as drawn above
 //// crash:  WatchEnded(life) ─▶ Gone to every player; Live becomes WaitingForRestart; the relations go with Live
 //// re-entry: a Leave and a Join: Seen(g') with a g' never given before
 //// joined_again: per kept Live spawn, in spawn order: Unseen(g) then Seen(g'), AwaitingSnapshot; a
-////         Retiring spawn is told nothing; a newly hidden spawn is told Unseen only
+////         Retiring or Respawning spawn is told nothing (the next life takes the joiner's new stay
+////         from the player's `seen`); a newly hidden spawn is told Unseen only
 //// ```
 ////
 //// | Point | What happens |
 //// |---|---|
 //// | the creature is killed with a viewer `AwaitingSnapshot` | `WatchEnded` gives `Gone` to every player and the spawn waits the respawn time; the relations go with `Live`; a `Snapshot` it sent before it died reaches the map first (one sender's signals arrive in order) and is relayed, then `Gone` follows |
 //// | the creature is killed after the map sent it `Unseen` and before it took it | the same; nothing further of it reaches the viewer |
-//// | the creature is killed while a relay of its is in flight | the relay was sent before the creature died, so it reaches the map before the end does and is admitted (the spawn is still live, retiring or releasing under that life); one taken after the end is dropped |
+//// | the creature is killed while a relay of its is in flight | the relay was sent before the creature died, so it reaches the map before the end does and is admitted (the spawn is still live, retiring, respawning or releasing under that life); one taken after the end is dropped |
 //// | a viewer's connection is killed | the watch ends, the map removes the player and sends each creature it had a relation with `Unseen(g)`; the creature drops the entry and its threat; relays to the dead connection are dropped by the registry |
 //// | the map is killed | creatures stop with their run watch and connections end with the run; relations and relays in flight are lost with it |
 //// | `Seen(V, g)` reaches a creature twice | answered twice; the map relays the first snapshot and drops the second |
-//// | `Snapshot` reaches the map twice, or after `Unseen`, or of an earlier generation or life | dropped |
+//// | `Snapshot` reaches the map twice, or after `Unseen`, or of an earlier generation or life | dropped; the old life's snapshot cannot follow its `Expired`, which the creature sends after it in one queue, and the next life starts only at its end |
+//// | the creature is killed after its `Removed` and before its `Expired` | `WatchEnded` of a `Live` spawn: the crash path, `Gone` to every player, the spawn waits the respawn time and the unit id is given up; the viewers wrote the 0x355 already (`a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test`) |
+//// | the creature is killed after its `Expired` and before it stops | the same as the clean end: the spawn is `Respawning`, and the next life starts at once |
+//// | the next life is killed before its snapshot | `WatchEnded` of a `Live` spawn with an `AwaitingSnapshot` relation: the crash path; no viewer was shown a unit, and `Gone` is sent once |
+//// | the next life's start fails | `CreatureNotStarted`: the spawn is `Failed` for the run with one error line, and no player is told anything; the viewers saw `Removed` and no new unit |
+//// | a child starts and exits before the map's watch | `WatchEnded` as the step's next input: taken as a creature that ended while `Live` |
+//// | `Expired` is taken twice, or of an earlier life or unit | the map ignores an `Expired` for a spawn that is not `Live` under that unit and life; the creature sends one and stops |
+//// | `Expired` is taken while the spawn is `Retiring` or `Releasing` | ignored: the creature's end restarts a retiring spawn, and a releasing one waits the release time |
+//// | `Released` reaches a `Respawning` spawn, or twice | `Releasing` with no relations; at the creature's end `Gone` to every player and the release time; the second finds `Releasing` and changes nothing |
+//// | the map is killed while a spawn is `Respawning` | creatures stop with the run and the spawn is rebuilt from storage with it |
+//// | `Expired` waits past a deadline, or the next life's start waits behind a burst | it waits its turn in the map's one queue and the respawn is late by the queue's length; the creature that expired is dead and nothing can reach it; the supervisor's start deadline decides a start that does not finish |
+//// | a tell is addressed to the life that ended | dropped by the registry, which finds no creature at that life's address |
 //// | `Unseen(V, g)` reaches a creature twice | the second finds no entry and changes nothing |
 //// | a `Broadcast` is sent twice | not guarded (it carries no id); the creature sends each news once per step |
-//// | a `Relay` comes from a creature that ended, or of an earlier life | dropped by `admitted`; a creature that is releasing or retiring is still admitted until it ends |
+//// | a `Relay` comes from a creature that ended, or of an earlier life | dropped by `admitted`; a creature that is releasing, retiring or respawning is still admitted until it ends |
 //// | a relay waits in the map's queue past `strike_tell.deadline_ms` | delivered unchanged; the caster's round decides that it is late; the map keeps no deadline |
 //// | an ask (`Join`, `Leave`, `Summon`) waits behind relays | the asker's own `ask_deadline_ms` decides; the load gate keeps the queue near zero |
 //// | a creature never answers `Seen` | the viewer stays `AwaitingSnapshot` and shown nothing until the creature ends (then `Gone`); no deadline |
@@ -535,15 +595,17 @@
 //// | the creature's end waits past a deadline | `Gone` goes to every player when the map takes `WatchEnded`, and the respawn time counts from then; the map keeps no deadline for it |
 //// | the map's end waits past a deadline | the shell's `shutdown_ms` bounds it, after which the supervisor kills the map and its relations are lost with it |
 ////
-//// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
-//// owner's process, a player's connection, a creature or, for a static object,
-//// the map itself, so for one viewer they
-//// are one sender's messages and
-//// arrive in the order sent (the BEAM orders signals of one sender to one
-//// receiver); the map's `SeenBy` and `UnseenBy` to one owner are one sender's,
-//// so the owner's view of its viewers changes in order. The one case two senders
-//// speak of a unit is `Gone` after an owner's end, which a viewer filters
-//// (genesis_prime/game/connection).
+//// Order, in short: every 0x262, 0x638 and 0x355 about a player's unit comes from its
+//// connection and about a static object from the map, so for one viewer they are one
+//// sender's messages and arrive in the order sent (the BEAM orders signals of one sender to
+//// one receiver); the map's `SeenBy` and `UnseenBy` to one owner are one sender's, so the
+//// owner's view of its viewers changes in order. The one case two senders speak of a
+//// player's unit is `Gone` after its owner's end, which a viewer filters
+//// (genesis_prime/game/connection). About a creature's unit every 0x262, 0x638 and 0x355
+//// comes from the map: the creature tells its map, which relays in the order it takes the
+//// tells, and the map takes a creature's end after everything it sent and starts the next
+//// life only then, so the 0x355 of one life and the 0x262 of the next are one sender's, in
+//// that order. The map's `Gone` of a creature that crashed is the same sender's.
 ////
 //// What happens at each failure point of seeing:
 ////
@@ -561,7 +623,7 @@
 //// | a creature does not start | an error line with the supervisor's reason; the spawn stays empty for the run; the burst's other spawns start |
 //// | the map crashes in the middle of a burst of starts | every creature started sees the run end and stops; the players' connections end with the run |
 //// | a Leave or an end is queued behind a burst of starts | taken next: `Unseen` to each of the player's creatures, each stopped after the idle stop |
-//// | a spawn is seen while its creature retires | waits; a creature starts at its end, with the same unit id and a new life, if a player still sees it |
+//// | a spawn is seen while its creature retires or has expired | waits; a creature starts at its end, with the same unit id and a new life, if a player still sees it, and the viewers are the players who see the spawn then |
 //// | a creature crashes while retiring | taken as retired: the spawn is dormant, or a new creature starts if a player sees it |
 //// | a creature crashes while live | every player is sent `Gone`; the spawn waits the respawn time, then a new unit is started there if a player sees it, and it is dormant if none does |
 //// | the respawn timer fires with no one in sight | the spawn is dormant |
@@ -1499,8 +1561,8 @@ pub type Dropped {
 }
 
 /// Whether a relay of the creature `unit_id` of life `life` is delivered: the spawn
-/// of that unit must be live, retiring or releasing under that life (a creature that
-/// has been told to end may still answer its last strikes), and then the destination
+/// of that unit must be live, retiring, respawning or releasing under that life (a creature
+/// that has been told to end, or has expired, may still answer its last strikes), and then the destination
 /// check of the payload's kind must pass (`relay.kind_of`).
 pub fn admitted(
   state state: State,
@@ -1525,8 +1587,8 @@ pub fn admitted(
 }
 
 /// The spawn whose creature runs as `unit_id` under `life`, with its state, while the
-/// spawn is live, retiring or releasing; the creature's watch names the spawn, and the
-/// watch goes when the creature ends.
+/// spawn is live, retiring, respawning or releasing; the creature's watch names the spawn, and
+/// the watch goes when the creature ends.
 fn running(
   state state: State,
   unit_id unit_id: Int,
@@ -1800,7 +1862,9 @@ fn swept(
 /// player is sent `Gone`, and the run-only spawn is dropped with no timer. A retiring one ended cleanly, whatever the reason: the spawn is
 /// dormant with its unit id kept, or, when a player sees it now, a creature
 /// starts at once under the same unit id and a new life, with those players as
-/// its first viewers.
+/// its first viewers. A respawning one (its creature told `Expired`) starts the same
+/// way, and the players of the spawn's ring (`ring_of`) go in the start for the creature to
+/// aggro in one step. A releasing one gives `Gone` to every player and waits the release time.
 fn creature_ended(
   state state: State,
   spawn spawn: SpawnId,
@@ -1832,7 +1896,7 @@ fn creature_ended(
     Ok(Releasing(unit_id:, wait_ms:, ..)) ->
       waiting_for_restart(state:, spawn:, unit_id:, after_ms: wait_ms)
     Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
-      panic as "a watch ended for a creature the map holds no live, retiring or released spawn for"
+      panic as "a watch ended for a creature the map holds no live, retiring, respawning or released spawn for"
   }
 }
 
@@ -2501,7 +2565,7 @@ fn unit_of(state state: State, spawn spawn: SpawnId) -> #(State, Int) {
 /// `now` after it saw `was`, at monotonic time `now_ms`: a dormant spawn it now
 /// sees starts a creature with the player as its first viewer (the creature
 /// answers the start with its snapshot), a live one is told `Seen` under a generation
-/// of its own, and a retiring, waiting or failed one is not told, for the player is
+/// of its own, and a retiring, respawning, releasing, waiting or failed one is not told, for the player is
 /// found among its viewers when it needs them; for each spawn it no longer sees, a live
 /// creature is told `Unseen` of the generation the pair held, the player is sent the
 /// notice that the unit is unseen, and the spawn is idle from `now_ms` when the player
@@ -2534,36 +2598,18 @@ fn spawns_decided(
           #(state, [start, ..starts], sends)
         }
         Ok(Live(unit_id:, life:, relations:, ..)) -> {
-          let #(state, generation) = issued(state:)
-          #(
-            State(
-              ..state,
-              spawns: dict.insert(
-                state.spawns,
-                spawn,
-                Live(
-                  unit_id:,
-                  life:,
-                  relations: dict.insert(
-                    relations,
-                    connection,
-                    Relation(generation:, stay:, state: AwaitingSnapshot),
-                  ),
-                  idle_since_ms: option.None,
-                ),
-              ),
-            ),
-            starts,
-            [
-              tell_creature(
-                state:,
-                unit_id:,
-                life:,
-                message: Seen(by: connection, stay:, generation:),
-              ),
-              ..sends
-            ],
-          )
+          let #(state, seen) =
+            sight_began(
+              state:,
+              spawn:,
+              unit_id:,
+              life:,
+              relations:,
+              idle_since_ms: option.None,
+              connection:,
+              stay:,
+            )
+          #(state, starts, [seen, ..sends])
         }
         Ok(Retiring(..))
         | Ok(Respawning(..))
@@ -2612,6 +2658,46 @@ fn spawns_decided(
       }
     })
   #(state, list.append(list.reverse(starts), list.reverse(sends)))
+}
+
+/// A player's sight of a live creature begins: under a generation never given before the
+/// pair's relation awaits the creature's snapshot, and the creature is told `Seen`.
+fn sight_began(
+  state state: State,
+  spawn spawn: SpawnId,
+  unit_id unit_id: Int,
+  life life: Int,
+  relations relations: Dict(ConnectionId, Relation),
+  idle_since_ms idle_since_ms: Option(Int),
+  connection connection: ConnectionId,
+  stay stay: Stay,
+) -> #(State, Effect(ServiceEffect(Outgoing))) {
+  let #(state, generation) = issued(state:)
+  #(
+    State(
+      ..state,
+      spawns: dict.insert(
+        state.spawns,
+        spawn,
+        Live(
+          unit_id:,
+          life:,
+          relations: dict.insert(
+            relations,
+            connection,
+            Relation(generation:, stay:, state: AwaitingSnapshot),
+          ),
+          idle_since_ms:,
+        ),
+      ),
+    ),
+    tell_creature(
+      state:,
+      unit_id:,
+      life:,
+      message: Seen(by: connection, stay:, generation:),
+    ),
+  )
 }
 
 /// The sends that end a player's sight of a live creature: the creature is told
@@ -3010,7 +3096,7 @@ fn players_told_of_death(
 }
 
 /// The send of `message` to the creature of the spawn, when its creature is Live: a
-/// spawn waiting for its creature, retiring or failed is sent nothing.
+/// spawn waiting for its creature, retiring, respawning or failed is sent nothing.
 fn tell_live(
   state state: State,
   spawn spawn: SpawnId,
@@ -3236,34 +3322,18 @@ fn sight_renewed(
           stay:,
           relation: dict.get(relations, connection),
         )
-      let #(state, generation) = issued(state:)
-      #(
-        State(
-          ..state,
-          spawns: dict.insert(
-            state.spawns,
-            spawn,
-            Live(
-              unit_id:,
-              life:,
-              relations: dict.insert(
-                relations,
-                connection,
-                Relation(generation:, stay:, state: AwaitingSnapshot),
-              ),
-              idle_since_ms:,
-            ),
-          ),
-        ),
-        list.append(ended, [
-          tell_creature(
-            state:,
-            unit_id:,
-            life:,
-            message: Seen(by: connection, stay:, generation:),
-          ),
-        ]),
-      )
+      let #(state, seen) =
+        sight_began(
+          state:,
+          spawn:,
+          unit_id:,
+          life:,
+          relations:,
+          idle_since_ms:,
+          connection:,
+          stay:,
+        )
+      #(state, list.append(ended, [seen]))
     }
     Ok(Retiring(..))
     | Ok(Respawning(..))

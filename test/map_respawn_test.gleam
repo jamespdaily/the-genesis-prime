@@ -6,7 +6,7 @@
 ////   and starts the next life under the same unit id when the creature ends, for the
 ////   players who see the spawn then, with fresh relations under generations it never gave
 ////   before, and the ring of the spawn in the start (`CreatureStart.ring`), so one fight
-////   starts over every player of it as the in-process respawn did.
+////   starts over every player of it.
 //// - The ring (the doc comment of `genesis_prime/world_map/map`): a ready, living,
 ////   unstealthed player within the creature's aggro range of its spawn, 10 units
 ////   (migration 0010), of a faction the creature is hostile to; the tests' players are
@@ -14,10 +14,9 @@
 ////   (`Creature2.73465`, `0x1403ad540`). Sight is 1024 units.
 //// - Jim's standing decision on races (issue 1410, 7160581745): where a design removes a
 ////   race the server takes the result the race-free order gives: a player whose death or
-////   stealth the map took before the next life starts is not aggroed at the respawn, as
-////   the map's own doc says a corpse timer that fires first would aggro the body (today a
-////   window of one hop); a player who wakes in a ring is aggroed on waking in every
-////   order (Jim, 7154704030).
+////   stealth the map took before the next life starts is not aggroed at the respawn, since
+////   the ring holds no dead and no stealthed player; a player who wakes in a ring is
+////   aggroed on waking in every order (Jim, 7154704030).
 //// - The used-object release time, 30 s (`used_object_release_ms`), which a spawn waits
 ////   instead of its kind's respawn time when a player's use released its creature.
 
@@ -595,8 +594,10 @@ pub fn a_snapshot_a_broadcast_and_a_relay_of_the_life_that_expired_are_dropped_i
   assert relays == [#("a snapshot", 1), #("a broadcast", 1), #("a relay", 1)]
     as "the creature's tells while its spawn is live are relayed"
 
-  // Respawning: the spawn holds no relation, and a relay of the life that is ending is
-  // admitted only as the creature's own answer (`admitted`).
+  // Respawning: the spawn holds no relation, and `running` admits a relay of the life that
+  // is ending (`admitted`). No sender produces these tells for a respawning spawn: the
+  // creature's earlier sends come before its `Expired` in its one queue to the map, and it
+  // sends nothing after it. The rows guard `running` and the relations' absence.
   let #(respawning, _, _) = respawning()
   let #(_, relays) = told(respawning, old, 7500)
   assert relays == [#("a snapshot", 0), #("a broadcast", 0), #("a relay", 1)]

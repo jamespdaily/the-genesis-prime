@@ -2068,14 +2068,13 @@ fn a_player_of(class_id: Int) -> game_connection.State {
 
 pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_come_back_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The Medic kills the Beast, which stands again at its respawn: its corpse
-  // timer of the kind's 60 s fires, and the client is written its 0x355 and its
-  // 0x262 at full health (`death.creature_respawn`).
+  // The Medic kills the Beast, whose next life its map starts at the respawn: the corpse
+  // timer of the kind's 60 s removes the Beast, and the client is written its 0x355 and
+  // then the 0x262 of the next life at full health (`death.creature_respawn`).
+  let beast_spawn =
+    spawn_support.beast_at(number: 1, place: beast_spawn_place())
   let #(medic, beast, _, _) =
-    aggroed(
-      player: a_player_of(4),
-      spawn: spawn_support.beast_at(number: 1, place: beast_spawn_place()),
-    )
+    aggroed(player: a_player_of(4), spawn: beast_spawn)
   let #(medic, beast) =
     presses_until_the_beast_dies(
       player: medic,
@@ -2083,9 +2082,13 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
       client_cast_id: 1,
       ms: 1100,
     )
-  let #(_, respawned) =
-    fire_beast(state: beast, at_ms: 61_100, timer: TimerId(1))
-  let #(_, frames, _) = medic_takes(medic, to_the_medic(respawned))
+  let #(_, expired) = fire_beast(state: beast, at_ms: 61_100, timer: TimerId(1))
+  let #(_, next_life) = a_beast_of(beast_spawn)
+  let #(_, frames, _) =
+    medic_takes(
+      medic,
+      list.append(to_the_medic(expired), to_the_medic(next_life)),
+    )
   assert list.take(cast_support.ids(frames:), 2) == [0x0355, 0x0262]
     && game_connection_support.decoded(frames, 0x0355, unit_destroyed.decode)
     == [UnitDestroyed(unit_id: 7, chest_world_object_delay: 0)]

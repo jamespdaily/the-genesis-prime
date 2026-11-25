@@ -300,35 +300,6 @@ pub fn news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_droppe
     == Some(38)
   })
     as "(c) the viewer ends showing the creature at the health it has, in every order: a snapshot of the earlier generation, built before the strike, is never the picture it keeps"
-  // (d) the corpse timer between `Seen` and its snapshot.
-  let dead =
-    legal_order_support.settle(with_mail(standing(), [strike(damage: 60)]))
-  let corpse =
-    with_mail(joined(scene: legal_order_support.Scene(..dead, taken: [])), [
-      corpse_timer(),
-    ])
-  assert broken_in_each_order(scene: corpse) == []
-    as "(d) no order breaks an invariant"
-  let ended = legal_order_support.orders(scene: corpse)
-  let timer_first = fn(scene: Scene) {
-    legal_order_support.order_at(scene:, receiver: CreatureProcess)
-    == ["Corpse timer", "Seen"]
-  }
-  let #(first, second) = list.partition(ended, timer_first)
-  assert first != [] && second != [] as "both orders are legal"
-  assert list.all(first, fn(scene) {
-    legal_order_support.names(frames: scene.frames) == ["0x262(2)"]
-    && legal_order_support.health_shown(frames: scene.frames, unit_id: 2)
-    == Some(52)
-  })
-    as "(d) the timer first: the removal and the creation it broadcasts are dropped, and the snapshot shows the creature stood again"
-  assert list.all(second, fn(scene) {
-    legal_order_support.names(frames: scene.frames)
-    == ["0x262(2)", "0x355(2)", "0x262(2)"]
-    && legal_order_support.health_shown(frames: scene.frames, unit_id: 2)
-    == Some(52)
-  })
-    as "(d) the snapshot first, of the corpse, then the removal and the creation the timer broadcasts"
 }
 
 /// The health the scene's frames leave the viewer's client showing for the creature, as
@@ -392,12 +363,12 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
           "0x355(2)",
           "0x262(2)",
           "health 52",
-          "Snapshot",
+          "Snapshot for 1",
           "Broadcast",
           "Expired",
           "Creature ended",
-          "Next Snapshot",
-          "Next Snapshot",
+          "Next Snapshot for 1",
+          "Next Snapshot for 2",
         ]
       },
     )
@@ -420,8 +391,8 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
           "Broadcast",
           "Expired",
           "Creature ended",
-          "Next Snapshot",
-          "Next Snapshot",
+          "Next Snapshot for 1",
+          "Next Snapshot for 2",
         ]
       },
     )
@@ -452,11 +423,11 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
       wanted: fn(scene) {
         let map_takes =
           legal_order_support.order_at(scene:, receiver: MapProcess)
-        // The viewer is shown the next life only when the map took its snapshot, which is
-        // the first of the next creature's, before the move out of sight.
+        // The viewer (connection 1) is shown the next life only when the map took its
+        // snapshot before the move out of sight.
         let shown_again = case
           position_of(names: map_takes, name: "Moved out"),
-          position_of(names: map_takes, name: "Next Snapshot")
+          position_of(names: map_takes, name: "Next Snapshot for 1")
         {
           Ok(moved), Ok(snapshot) -> snapshot < moved
           Ok(_), Error(Nil) | Error(Nil), Ok(_) | Error(Nil), Error(Nil) ->
@@ -479,6 +450,42 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
       == list.length(before) + 3
     })
     as "(b) both results are legal: the move before the next life's picture is relayed, and after"
+}
+
+pub fn legal_order_support_delivers_nothing_to_a_creature_that_stopped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A process that has ended takes nothing (the header of `legal_order_support`): the
+  // corpse timer stops the creature, and the map, still holding the spawn live until it
+  // takes the creature's end, tells the creature `Unseen` for the viewer that moves out
+  // of sight. That tell is lost, so the creature's last take is its timer in every order.
+  let shown = legal_order_support.settle(joined(scene: standing()))
+  let corpse =
+    legal_order_support.settle(
+      with_mail(legal_order_support.Scene(..shown, taken: []), [
+        strike(damage: 60),
+      ]),
+    )
+  let scene =
+    with_mail(legal_order_support.Scene(..corpse, taken: []), [
+      moves(x: spawns.far, seq: 1, name: "Moved out"),
+      corpse_timer(),
+    ])
+  let ended = legal_order_support.orders(scene:)
+  assert list.all(ended, fn(scene) {
+    list.last(legal_order_support.order_at(scene:, receiver: CreatureProcess))
+    == Ok("Corpse timer")
+  })
+    as "no order delivers anything to the creature after its timer stopped it"
+  assert list.any(ended, fn(scene) {
+    let map_takes = legal_order_support.order_at(scene:, receiver: MapProcess)
+    let at = fn(name) {
+      result.unwrap(position_of(names: map_takes, name:), or: -1)
+    }
+    legal_order_support.order_at(scene:, receiver: CreatureProcess)
+    == ["Corpse timer"]
+    && at("Moved out") < at("Expired")
+  })
+    as "the planted case is reached: the creature stopped, and the map, still live, takes the move and sends it an Unseen before it takes the creature's Expired"
 }
 
 pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_in_every_legal_order_test() -> Nil {
