@@ -73,11 +73,20 @@ pub type Verdict {
   Fails(lines: List(String), summary: String)
 }
 
-/// The condition that no answer was lost to a deadline: `lost` answers were sent before
-/// their round's deadline fell due and the round closed without them.
+/// The condition that no answer was lost to a deadline: `lost` is how many answers were
+/// sent before their round's deadline fell due and the round closed without them
+/// (`genesis_prime/load_round`).
 pub fn nothing_lost(lost lost: Int) -> Condition {
-  let _ = lost
-  Condition(held: True, said: "")
+  case lost {
+    0 -> Condition(held: True, said: "no answer was lost to the deadline")
+    _ ->
+      Condition(
+        held: False,
+        said: "answers were lost to the deadline: "
+          <> int.to_string(lost)
+          <> " sent before it fell due, and their round closed without them",
+      )
+  }
 }
 
 /// The verdict on a run: it fails when an event is below its minimum, when a condition is

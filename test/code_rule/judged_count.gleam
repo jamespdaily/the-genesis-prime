@@ -5,6 +5,7 @@
 //// ```
 //// a load tool's file ─▶ the events its `Judged(event: ...)` calls name ─▶ each expected
 ////                       event missing from them is a breach, at the file's first line
+//// each condition the run needs ─▶ a call of that `load_judged` function, else a breach
 //// a function that builds a `Judged` ─▶ every `Judged` is inside the `judged:` of a
 ////                       `load_judged.judge` whose result goes to `load_judged.require`
 //// a string literal of the file ─▶ no verdict word, no event's name and a colon
@@ -22,7 +23,9 @@ import gleam/option.{Some}
 import gleam/string
 
 /// The breaches of a load tool's file: each of its `expected` events (variant names of
-/// `load_judged.Event`) that no `Judged(event: ...)` of the file names, each function whose
+/// `load_judged.Event`) that no `Judged(event: ...)` of the file names, each of its
+/// `conditions` (names of `load_judged`'s functions that build a `Condition`) that the file
+/// never calls, each function whose
 /// `Judged` counts do not all reach `load_judged.require` through `load_judged.judge`, and
 /// each string literal that prints a verdict by hand: one with a verdict word, or one that
 /// begins an event's name from `printed`, then a colon.
@@ -32,7 +35,6 @@ pub fn breaches(
   conditions conditions: List(String),
   printed printed: List(String),
 ) -> List(Breach) {
-  let _ = conditions
   let module = syntax.parse(file)
   let judged = judged_events(module)
   let not_judged =
@@ -57,7 +59,19 @@ pub fn breaches(
         rule: "a verdict or gate line printed by hand, not through load_judged.judge",
       )
     })
-  list.flatten([not_judged, unwired(file:, module:), by_hand])
+  let not_called =
+    list.filter(conditions, fn(condition) {
+      !list.any(syntax.calls(module), called_through(condition))
+    })
+    |> list.map(fn(condition) {
+      Breach(
+        path: file.path,
+        line: 1,
+        rule: "a condition of the run is not taken from load_judged: "
+          <> condition,
+      )
+    })
+  list.flatten([not_judged, not_called, unwired(file:, module:), by_hand])
 }
 
 /// The words of a text: its runs of letters, in lower case.

@@ -15,11 +15,15 @@
 ////   the strike and arms the deadline in one step). A round is armed for each strike a
 ////   walker took, answered or not.
 //// - **Lost:** sent before the round's deadline fell due and not in the round when it
-////   closed; **late:** sent at or after it. An answer is in the round when the creature
-////   had it by the closure: the arrival is stamped before the send (`stamped_send`),
-////   so an answer that closed its round is in it. The stamp is not after the true
-////   arrival, so a creature that closes by its deadline in the moment between stamp and
-////   send counts that answer in the round it did not reach.
+////   closed; **late:** sent at or after it. A round the deadline closed (`Fired`) has no
+////   answer in it, whatever the walker stamped as the arrival: an answer that reached the
+////   creature in time would have closed the round by cancelling its deadline, so an answer
+////   sent in time to a round the deadline closed is one the creature did not have, held
+////   wherever it was held. A round closed by a cancel has the answers that reached the
+////   creature no later than the cancel; the arrival is stamped before the send
+////   (`stamped_send`), so an answer that closed its round is in it. A deadline that fires
+////   in the moment between an answer's arrival and its cancel is read as fired, and the
+////   answer counts as lost (`genesis_prime/load_deadline`).
 //// - The rounds counted are those of the creatures that struck a walker, answered or
 ////   not (`strikers`): a creature none of whose strikes was answered still has its
 ////   rounds counted, and another service's timer with a deadline's number does not.
@@ -34,7 +38,11 @@
 //// Gaps: no scene of the run throws a creature, so `interrupt` counts only what a
 //// walker did not mark as its own state; a cancel with no sign near it is `unexplained`.
 
-import genesis_prime/client_connection.{type StaySent}
+import genesis_prime/client_connection.{
+  type StaySent, SentByFoe, SentByKill, SentByMap, SentByPeer, SentByPlayer,
+  SentByTarget,
+}
+import genesis_prime/game/strike_tell
 import genesis_prime/load_deadline.{type Deadline}
 import genesis_prime/load_sample
 import gleam/dict.{type Dict}
@@ -169,13 +177,13 @@ fn round_of(
 }
 
 /// Whether the creature had the answer when the round closed: any answer to a round
-/// that is still open, and one that reached the creature no later than the closure
-/// otherwise.
+/// that is still open, none to a round its deadline closed, and one that reached the
+/// creature no later than the cancel to a round a cancel closed.
 fn in_round(answer answer: Answer, round round: Deadline) -> Bool {
   case round.closure {
     load_deadline.Open -> True
-    load_deadline.Cancelled(at_us:) | load_deadline.Fired(at_us:) ->
-      answer.arrived_us <= at_us
+    load_deadline.Fired(..) -> False
+    load_deadline.Cancelled(at_us:) -> answer.arrived_us <= at_us
   }
 }
 
@@ -183,14 +191,21 @@ fn in_round(answer answer: Answer, round round: Deadline) -> Bool {
 /// `strike_tell.deadline_ms` before `ended_us`, and at least 1. `made_at_us` is when each
 /// was made.
 pub fn owed(made_at_us made_at_us: List(Int), ended_us ended_us: Int) -> Int {
-  let _ = #(made_at_us, ended_us)
-  0
+  let due_us = ended_us - strike_tell.deadline_ms * 1000
+  int.max(1, list.count(made_at_us, fn(at_us) { at_us <= due_us }))
 }
 
-/// Whether what a walker was sent is a creature's answer to a strike of its own.
+/// Whether what a walker was sent is a creature's answer to a strike of its own: the
+/// `Struck` a creature tells the player who struck it.
 pub fn is_answer_to_strike(sent sent: StaySent) -> Bool {
-  let _ = sent
-  False
+  case sent {
+    SentByTarget(..) -> True
+    SentByMap(..)
+    | SentByPeer(..)
+    | SentByFoe(..)
+    | SentByPlayer(..)
+    | SentByKill(..) -> False
+  }
 }
 
 /// How a round closed.

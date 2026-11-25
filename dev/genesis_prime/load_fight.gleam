@@ -55,18 +55,21 @@
 ////   answer when it hands it over and just before the creature has it, and the recorded
 ////   deadline of the creature's round gives when the round was armed, fell due and
 ////   closed. An answer is **lost** when it was sent before the round's deadline fell
-////   due and was not in the round when it closed; **late** when it was sent at or after
-////   it; the rounds are counted by how they closed: an answer, the deadline, a death, a
+////   due and the round closed without it (a round the deadline closed has no answer in it,
+////   whatever the walker stamped); **late** when it was sent at or after it; the rounds are counted by how they closed: an answer, the deadline, a death, a
 ////   state, a broken charge, the leash, or a cancel with no sign of why, or still open;
 //// - with `respawning`, the respawn gaps the walkers counted: how many, their mean and 99th
 ////   percentile in microseconds as the walker was sent them, and the longest, and whether the
 ////   mean is under 1 ms;
 //// - the judged counts (`genesis_prime/load_judged`): the strike rounds and the strike answers
 ////   (unless `mutual` and `respawning` together, where each blow kills the creature before it
-////   strikes) and, with `respawning`, the respawns, each with its minimum; the run fails, with exit
-////   status 1, when one is below it, when the map falls behind, or when it judges none. The
-////   minimum of the rounds and the answers is 1 (without the recorder, only the answers, as the
-////   walkers counted them); the respawns' is the creatures killed that were owed one (a death
+////   strikes), with `mutual` (and the same exception) the walkers' own strikes that a
+////   creature answered with `Struck` and, with `respawning`, the respawns, each with its minimum; the run fails, with exit
+////   status 1, when one is below it, when an answer was lost, when the map falls behind, or
+////   when it judges none. The minimum of the rounds and the answers is 1 (without the
+////   recorder, only the answers, as the walkers counted them); that of the strikes answered
+////   is the strikes the walkers made at least `strike_tell.deadline_ms` before they stopped
+////   (`load_round.owed`), and at least 1; the respawns' is the creatures killed that were owed one (a death
 ////   in the last `settle_ms` is not), and at least 1. With `mutual` and `respawning` together
 ////   a `delayed` or `held` plant has no strike to lose or delay, so it is measured by nothing;
 //// - option A's count: for each move, the creatures in the mover's sight, summed
@@ -213,7 +216,8 @@ type Counts {
     target_moved: Int,
     option_a: Int,
     strikes: Int,
-    made: Int,
+    made_at_us: List(Int),
+    answered_to_own: Int,
     strikers: Dict(Pid, Int),
     marks: List(Mark),
     by_creature: Dict(Int, Int),
@@ -555,7 +559,8 @@ fn walker(
             target_moved: 0,
             option_a: 0,
             strikes: 0,
-            made: 0,
+            made_at_us: [],
+            answered_to_own: 0,
             strikers: dict.new(),
             marks: [],
             by_creature: dict.new(),
@@ -725,9 +730,9 @@ fn struck_back(
     when: !scene.mutual || step % strike_every_steps != 0,
     return: counts,
   )
-  Counts(
-    ..counts,
-    made: strike_fighters(
+  let made = list.length(counts.made_at_us)
+  let made_now =
+    strike_fighters(
       settings:,
       run:,
       connection:,
@@ -735,11 +740,17 @@ fn struck_back(
       place:,
       step:,
       fighters:,
-      made: counts.made,
+      made:,
       damage: case scene.respawning {
         True -> killing_blow
         False -> 1
       },
+    )
+  Counts(
+    ..counts,
+    made_at_us: list.append(
+      list.repeat(load_sample.microseconds(), made_now - made),
+      counts.made_at_us,
     ),
   )
 }
@@ -842,7 +853,17 @@ fn hear(
   let again = fn(fighters, counts) {
     hear(plant:, answers:, settings:, selector:, until_ms:, fighters:, counts:)
   }
-  case process.selector_receive(selector, int.max(0, until_ms - now())) {
+  let received =
+    process.selector_receive(selector, int.max(0, until_ms - now()))
+  let counts = case received {
+    Ok(ForStay(sent:, ..)) ->
+      case load_round.is_answer_to_strike(sent:) {
+        True -> Counts(..counts, answered_to_own: counts.answered_to_own + 1)
+        False -> counts
+      }
+    Ok(_) | Error(Nil) -> counts
+  }
+  case received {
     Error(Nil) -> #(fighters, counts)
     Ok(ForStay(
       sent: SentByFoe(fight: strike_tell.Threatened(unit_id:, life:)),
@@ -1226,7 +1247,7 @@ fn report(
   )
   io.println(
     "the walkers made "
-    <> int.to_string(total(fn(one) { one.made }))
+    <> int.to_string(total(fn(one) { list.length(one.made_at_us) }))
     <> " strikes of their own",
   )
   case rounds {
@@ -1271,6 +1292,10 @@ fn report(
   let gaps = list.map(counts, fn(one) { one.respawns })
   let strikes = creatures_strike(scene:)
   let keeps_up = sum < walkers * samples && running * 2 < samples
+  let lost = case rounds {
+    Some(rounds) -> [load_judged.nothing_lost(lost: rounds.lost)]
+    None -> []
+  }
   let judged =
     load_judged.judge(
       judged: list.flatten([
@@ -1296,6 +1321,19 @@ fn report(
           ]
           Some(_), False | None, False -> []
         },
+        case scene.mutual && strikes {
+          True -> [
+            Judged(
+              event: load_judged.StrikesAnswered,
+              count: total(fn(one) { one.answered_to_own }),
+              minimum: load_round.owed(
+                made_at_us: list.flat_map(counts, fn(one) { one.made_at_us }),
+                ended_us:,
+              ),
+            ),
+          ]
+          False -> []
+        },
         case scene.respawning {
           True -> [
             Judged(
@@ -1311,20 +1349,20 @@ fn report(
           False -> []
         },
       ]),
-      conditions: [
+      conditions: list.append(lost, [
         load_judged.Condition(held: keeps_up, said: case keeps_up {
           True ->
             "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
           False ->
             "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
         }),
-      ],
+      ]),
     )
   case strikes {
     True -> Nil
     False ->
       io.println(
-        "strike rounds and strike answers are not judged: each blow kills the creature before it strikes",
+        "strike rounds, strike answers and strikes answered are not judged: each blow kills the creature before it strikes",
       )
   }
   list.each(judged.lines, io.println)
