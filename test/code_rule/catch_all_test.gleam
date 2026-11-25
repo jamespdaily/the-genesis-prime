@@ -1,5 +1,5 @@
-//// The catch-all rule. Expected values are the rule in the writing-gleam skill,
-//// section Types and data: no catch-all `_` over a type that can gain
+//// The catch-all rule. Expected values are the rule in the writing-code skill,
+//// section Gleam types and data: no catch-all `_` over a type that can gain
 //// variants. A clause that is `_` or a bare variable is refused when a sibling
 //// clause matches a constructor other than `True`, `False`, `Ok`, `Error`,
 //// `Some`, `None` or `Nil`; a catch-all over integers or strings, or beside
