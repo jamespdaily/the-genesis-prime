@@ -2577,20 +2577,7 @@ fn next_strike_told(received received: Subject(Message)) -> strike_tell.Key {
   world_watch_support.next(
     received:,
     what: "the creature's strike",
-    wanted: fn(message) {
-      case message {
-        ForStay(
-          sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
-            key:,
-            ..,
-          ))),
-          ..,
-        ) -> Ok(key)
-        ForStay(..)
-        | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
-      }
-    },
+    wanted: world_watch_support.strike_told,
   )
 }
 
@@ -3497,22 +3484,6 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
   world_support.stop(world:)
 }
 
-/// The key of a strike the creature told the connection's player to take.
-fn strike_told(message: Message) -> Result(strike_tell.Key, Nil) {
-  case message {
-    ForStay(
-      sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
-        key:,
-        ..,
-      ))),
-      ..,
-    ) -> Ok(key)
-    ForStay(..)
-    | client_connection.SentBySessions(..)
-    | client_connection.SentByChat(..) -> Error(Nil)
-  }
-}
-
 /// A fight of the Rootbrute Grimspore with Spell4 63569 as its special, against player 1 (unit
 /// 10, on it) and player 2 (unit 20, 5 aside): the cast id of the special's round and the unit
 /// it struck, after both players have seen the cast and its go.
@@ -3557,13 +3528,13 @@ fn void_blast_fight() -> #(Int, Int) {
         world: roaring.world,
         id: 1,
         received: roaring.received,
-        wanted: strike_told,
+        wanted: world_watch_support.strike_told,
       ),
       sent_so_far(
         world: roaring.world,
         id: 2,
         received: received_2,
-        wanted: strike_told,
+        wanted: world_watch_support.strike_told,
       ),
     )
   let assert [key] = told as "one of the two players is told to take the strike"
@@ -3720,7 +3691,12 @@ pub fn an_eldan_security_construct_draws_its_laser_bolt_circle_under_the_player_
   driven_time.advance(time: roaring.time, ms: 3000)
   driven_time.settled(roaring.pid)
   let told = fn(id, received) {
-    sent_so_far(world: roaring.world, id:, received:, wanted: strike_told)
+    sent_so_far(
+      world: roaring.world,
+      id:,
+      received:,
+      wanted: world_watch_support.strike_told,
+    )
   }
   assert told(1, roaring.received) == []
     as "player 1 stepped out of the circle and is not struck"

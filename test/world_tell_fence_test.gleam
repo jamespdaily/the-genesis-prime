@@ -19,7 +19,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/forced_move
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{type Key, Answered, Landed}
+import genesis_prime/game/strike_tell.{Answered, Landed}
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/game/unit_properties.{Change}
@@ -543,7 +543,7 @@ fn rows() -> List(Row) {
               id: 1,
               received: connection_of(scene:, id: 1),
             ),
-            attack_key,
+            world_watch_support.strike_told,
           )
           as "the creature struck the player once"
         creature.StrikeAnswered(answered: Answered(
@@ -602,17 +602,6 @@ fn connection_of(scene scene: Scene, id id: Int) -> Subject(Message) {
   let assert Ok(#(_, received)) =
     list.find(scene.connections, fn(c) { c.0 == id })
   received
-}
-
-/// The key of the strike a creature sent the player, when the message is that.
-fn attack_key(message: Message) -> Result(Key, Nil) {
-  case message {
-    ForStay(
-      sent: SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(key:, ..))),
-      ..,
-    ) -> Ok(key)
-    _ -> Error(Nil)
-  }
 }
 
 pub fn a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test() -> Nil {

@@ -239,6 +239,23 @@ pub fn left_sight(
   })
 }
 
+/// The key of a strike the creature told the connection's player to take, when the message
+/// is that.
+pub fn strike_told(message: Message) -> Result(strike_tell.Key, Nil) {
+  case message {
+    ForStay(
+      sent: client_connection.SentByFoe(strike_tell.Attacks(tell: Strike(
+        key:,
+        ..,
+      ))),
+      ..,
+    ) -> Ok(key)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
 /// The outcome of the creature's answer to strike `cast_id`, when the message is
 /// that answer.
 pub fn answer_to(
