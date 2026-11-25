@@ -42,6 +42,12 @@
 ////   unit only, a 0x355 ends it; `Gone` writes a 0x355 for a shown unit and marks
 ////   the unit gone, so a 0x262 from the owner that ended, which lands after it,
 ////   shows no ghost.
+//// - **Sight is symmetric.** A pair leaves sight in both directions in one step
+////   (`map.goes_out_of_sight`), so the caster's connection takes the viewer out of its
+////   casts' audiences on the map's `UnseenBy` and on the viewer's `Removed`, whichever
+////   comes first, before any cast the removal ends is finished: the viewer's client
+////   reads a cast's 0x7fe before the unit's 0x355 only for a unit it still shows
+////   (`cast.target_node_end`).
 //// - **Stays.** Every message another process sends for the player's stay in the
 ////   world (the map's notices, a peer's or a creature's news, a creature's threat,
 ////   release and strike) comes in one envelope, `ForStay(stay, ..)`, which names
@@ -254,9 +260,9 @@ pub fn map_sent(
     map.UnseenBy(by:) -> {
       let #(session, ended) =
         connection_landing.caster_unseen(
-          session: connection_casting.with_cast(
+          session: audiences_left(
             session: viewers_changed(session:, change: dict.delete(_, by)),
-            cast: cast_state.audience_left(cast: entered.cast, viewer: by),
+            viewers: [by],
           ),
           now:,
           by:,
@@ -653,6 +659,11 @@ pub fn viewer_takes(
     }
     client_connection.Removed -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session =
+        audiences_left(
+          session:,
+          viewers: viewers_of_unit(viewers: entered.viewers, unit_id:),
+        )
       let kept =
         list.filter(
           client_casts.written_of_unit(casts: entered.client_casts, unit_id:),
@@ -1541,6 +1552,39 @@ fn viewers_changed(
 ) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, viewers: change(entered.viewers))
+  })
+}
+
+/// The connections of the viewers that own the unit `unit_id`.
+fn viewers_of_unit(
+  viewers viewers: Dict(ConnectionId, player_address.Viewer),
+  unit_id unit_id: Int,
+) -> List(ConnectionId) {
+  dict.to_list(viewers)
+  |> list.filter_map(fn(viewer) {
+    case { viewer.1 }.unit_id == unit_id {
+      True -> Ok(viewer.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The session with these connections out of every audience of the caster's casts: a
+/// player that stops seeing the caster has forgotten its casts, so none of their news
+/// goes to it. A player leaves sight in both directions in one step, and the caster's
+/// connection hears of it as the map's `UnseenBy` and as the player's removal in either
+/// order, so both take the player out of the audiences before they end any cast.
+fn audiences_left(
+  session session: Session,
+  viewers viewers: List(ConnectionId),
+) -> Session {
+  connection_state.with_entered(session:, change: fn(entered) {
+    world_entry.Entered(
+      ..entered,
+      cast: list.fold(viewers, entered.cast, fn(cast, viewer) {
+        cast_state.audience_left(cast:, viewer:)
+      }),
+    )
   })
 }
 
