@@ -7,10 +7,10 @@
 ////
 //// WALKERS is 50 when left out. The words, in any order:
 //// - `mutual`: each walker also strikes each creature that threatens it, one strike a
-////   second (a blow of 1), every fifth with Stagger's stun (Spell4Effects 83827), so
-////   the creatures' rounds also end by a death or a state breaking the charge;
-//// - `leaving`: each fourth walker is moved 2,000 units out of the creatures' sight and
-////   leash from the tenth second to the twentieth, so the creatures lose a target;
+////   second (a blow of 1; a Dagun has 50 health), every fifth with Stagger's stun
+////   (Spell4Effects 83827), so the creatures also die and are stunned;
+//// - `leaving`: every walker is shown 2,000 units out of the creatures' sight and leash
+////   from the tenth second to the twentieth, so the creatures lose their targets;
 //// - `delayed MS`: walker 1's answers reach the creature MS ms after it sent them;
 //// - `held MS`: walker 1 sends each answer MS ms after the strike reached it;
 //// - `unrecorded`: the operating system's timers for every deadline, as the server runs
@@ -149,11 +149,9 @@ const strike_every_steps = 8
 
 const stun_every = 5
 
-/// The `leaving` scene: each `leaving_every`th walker is `away_units` along x from where it
-/// walks for the moves from `away_from_step` up to `away_until_step`, which is beyond
-/// the creatures' sight (1,024) and leash.
-const leaving_every = 4
-
+/// The `leaving` scene: each walker is shown `away_units` along x from where it walks
+/// for the moves from `away_from_step` up to `away_until_step`, which is beyond the
+/// creatures' sight (1,024) and leash.
 const away_from_step = 80
 
 const away_until_step = 160
@@ -527,7 +525,7 @@ fn walk(
         counts:,
       )
     let place = step_from(place:, id:, step:, centre:)
-    let shown = shown_at(scene:, place:, id:, step:)
+    let shown = shown_at(scene:, place:, step:)
     let _sent =
       service.tell_subject(
         run.subject,
@@ -612,19 +610,11 @@ fn walk(
 }
 
 /// Where the map and the creatures are told the walker is at this move: where it walks,
-/// or, in the `leaving` scene, for each `leaving_every`th walker between `away_from_step`
-/// and `away_until_step`, `away_units` along x from there.
-fn shown_at(
-  scene scene: Scene,
-  place place: Place,
-  id id: Int,
-  step step: Int,
-) -> Place {
+/// or, in the `leaving` scene, between `away_from_step` and `away_until_step`,
+/// `away_units` along x from there.
+fn shown_at(scene scene: Scene, place place: Place, step step: Int) -> Place {
   use <- bool.guard(
-    when: !scene.leaving
-      || id % leaving_every != 0
-      || step < away_from_step
-      || step >= away_until_step,
+    when: !scene.leaving || step < away_from_step || step >= away_until_step,
     return: place,
   )
   start_place.moved(
@@ -1007,7 +997,7 @@ fn report(
       False -> ""
     }
     <> case scene.leaving {
-      True -> ", a quarter of the walkers leaving sight"
+      True -> ", the walkers leaving sight"
       False -> ""
     }
     <> case scene.recorded {
