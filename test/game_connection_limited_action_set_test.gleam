@@ -166,7 +166,7 @@ pub fn a_pick_starts_the_amp_spell_after_the_answer_and_the_same_save_again_star
   let #(_, _, again) = sent(state: stalker, body:)
   assert connection_support.started_spells(frames: again) == []
     as "the same save again changes no pick, so it starts nothing"
-  // A level 10 Medic picks the chain of category 1 and AMP 440, whose spell 41594 the plans
+  // A level 10 Esper (class 3) picks the chain of category 1 and AMP 440, whose spell 41594 the plans
   // leave out (GainAimNotRead): the pick is kept, the chain's spells start and one warning
   // names the spell.
   let medic = in_world_as(class_id: 3, level: 10)
