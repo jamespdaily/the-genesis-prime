@@ -19,24 +19,11 @@ import genesis_prime/game/movement.{
 import genesis_prime/game/start_place
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import gleam/int
 import gleam/list
 import gleam/result
 import owned_test
 import place_support
-
-/// A player that entered World 3460, zone 6009, at (1.0, 2.0, 3.0).
-fn entered() -> State {
-  movement.entered(
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 1.0,
-      y: 2.0,
-      z: 3.0,
-    ),
-    session_epoch: character_support.epoch(3),
-  )
-}
 
 /// The state after the client's 0xF2 with this zone.
 fn terrain_ready(state state: State, zone zone: Int) -> State {
@@ -74,7 +61,7 @@ fn zone_of(state: State) -> Int {
 
 pub fn a_reported_zone_becomes_the_players_zone_test() -> Nil {
   use <- owned_test.run(5000)
-  let start = entered()
+  let start = character_support.entered()
   assert zone_of(start) == 6009 as "the zone the player entered with"
   let after_terrain = terrain_ready(state: start, zone: 4962)
   assert zone_of(after_terrain) == 4962
@@ -101,17 +88,37 @@ pub fn a_reported_zone_with_no_world_zone_row_is_kept_as_reported_test() -> Nil 
   // them as reported (the saved zone is the last one the client reported), and
   // what it refuses is a body the client's own reader would refuse.
   list.each([0, 99, 32_767], fn(zone) {
-    assert zone_of(terrain_ready(state: entered(), zone:)) == zone
-      as "0xF2's zone is kept as reported"
-    assert zone_of(zone_changed(state: entered(), old: 6009, new: zone)) == zone
-      as "0x63A's new zone is kept as reported"
+    assert zone_of(terrain_ready(state: character_support.entered(), zone:))
+      == zone
+      as {
+        "zone " <> int.to_string(zone) <> ": 0xF2's zone is kept as reported"
+      }
+    assert zone_of(zone_changed(
+        state: character_support.entered(),
+        old: 6009,
+        new: zone,
+      ))
+      == zone
+      as {
+        "zone "
+        <> int.to_string(zone)
+        <> ": 0x63A's new zone is kept as reported"
+      }
   })
   assert result.is_error(
-    movement.take(state: entered(), message: movement.TerrainReady, body: <<>>),
+    movement.take(
+      state: character_support.entered(),
+      message: movement.TerrainReady,
+      body: <<>>,
+    ),
   )
     as "a 0xF2 body shorter than its 15 bits is the refusal that ends the connection"
   let assert Error(NotDecoded(..)) =
-    movement.take(state: entered(), message: movement.ZoneChanged, body: <<>>)
+    movement.take(
+      state: character_support.entered(),
+      message: movement.ZoneChanged,
+      body: <<>>,
+    )
     as "a 0x63A body shorter than its two 15 bits is the refusal that ends the connection"
   Nil
 }

@@ -7,7 +7,9 @@
 ////   no answer.
 
 import genesis_prime/message/statistic_event.{type StatisticEvent}
+import gleam/int
 import gleam/list
+import gleam/string
 
 /// One body the client sent: its message id, the bytes, and where it was seen.
 pub type Recorded {
@@ -393,4 +395,9 @@ pub fn recorded() -> List(Recorded) {
       seen_in: "opcode.0x241",
     ),
   ]
+}
+
+/// The id as the log names it, four hex digits.
+pub fn named(message_id message_id: Int) -> String {
+  "0x" <> string.pad_start(int.to_base16(message_id), 4, "0")
 }

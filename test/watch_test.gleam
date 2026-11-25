@@ -15,9 +15,9 @@ import gleam/erlang/process.{type Monitor}
 import gleam/list
 import gleam/string
 import log_capture
+import mailbox_support
 import open_wait
 import owned_test
-import socket_watch
 
 /// Waits for the next DOWN in the mailbox and gives its monitor.
 fn next_down() -> Monitor {
@@ -114,8 +114,7 @@ pub fn a_closed_watch_gives_no_end_and_a_monitor_held_under_no_watch_gives_none_
   process.kill(target)
   assert next_down() == ours
     as "the one DOWN waiting is the test's own: the closed watch's was dropped"
-  assert socket_watch.mailbox_length(process.self()) == 0
-    as "and none other follows"
+  assert mailbox_support.queued(process.self()) == 0 as "and none other follows"
   assert watch.ended(watches:, monitor: ours) == Error(Nil)
     as "a monitor held under no watch is no watch's end"
   assert watch.close(watches:, watch: WatchId(9)) == watches

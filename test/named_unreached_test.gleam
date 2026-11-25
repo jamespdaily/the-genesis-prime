@@ -41,20 +41,10 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
-import gleam/string
 import owned_test
 import planted_table.{Integer}
 import spell_tables
 import unitest
-
-const header = "text_id\tkind\tid\tfield"
-
-fn list_of(rows: List(String)) -> tooltip_token.Tokens {
-  let assert Ok(tokens) =
-    tooltip_token.parse(string.join([header, ..rows], "\n") <> "\n")
-    as "the planted list parses"
-  tokens
-}
 
 /// The migration 0018 row: Pulse Blast's base 26468, go 1, spell 42148.
 const volatility =
@@ -141,7 +131,7 @@ pub fn a_value_token_naming_a_spell_no_tree_reaches_is_listed_test() -> Nil {
       rows: rows_with_blast_texts([
         #("localizedTextIdActionBarTooltip", 376_222),
       ]),
-      tokens: list_of(pulse_blast_text),
+      tokens: coverage_support.list_of(pulse_blast_text),
       proxies: [],
       left_out: [],
     )
@@ -163,7 +153,7 @@ pub fn a_server_proxy_row_that_casts_the_spell_removes_it_test() -> Nil {
       rows: rows_with_blast_texts([
         #("localizedTextIdActionBarTooltip", 376_222),
       ]),
-      tokens: list_of(pulse_blast_text),
+      tokens: coverage_support.list_of(pulse_blast_text),
       proxies: [volatility],
       left_out: [],
     )
@@ -188,7 +178,7 @@ pub fn an_entry_a_left_out_part_explains_carries_its_reason_test() -> Nil {
       rows: rows_with_blast_texts([
         #("localizedTextIdActionBarTooltip", 376_222),
       ]),
-      tokens: list_of(pulse_blast_text),
+      tokens: coverage_support.list_of(pulse_blast_text),
       proxies: [],
       left_out: [reason],
     )
@@ -211,7 +201,7 @@ pub fn a_link_token_is_listed_apart_and_not_counted_test() -> Nil {
       rows: rows_with_blast_texts([
         #("localizedTextIdCasterIconSpellText", 377_001),
       ]),
-      tokens: list_of(["377001\tspell\t42148\t"]),
+      tokens: coverage_support.list_of(["377001\tspell\t42148\t"]),
       proxies: [],
       left_out: [],
     )
@@ -227,7 +217,10 @@ pub fn a_link_to_a_spell_a_tree_reaches_is_not_listed_test() -> Nil {
       rows: rows_with_blast_texts([
         #("localizedTextIdCasterIconSpellText", 377_001),
       ]),
-      tokens: list_of(["377001\tspell\t37302\t", "377001\tspell\t37302\taoetc"]),
+      tokens: coverage_support.list_of([
+        "377001\tspell\t37302\t",
+        "377001\tspell\t37302\taoetc",
+      ]),
       proxies: [],
       left_out: [],
     )
@@ -241,7 +234,7 @@ pub fn a_token_naming_a_row_the_tables_lack_is_listed_as_naming_no_row_test() ->
       rows: rows_with_blast_texts([
         #("localizedTextIdActionBarTooltip", 378_001),
       ]),
-      tokens: list_of([
+      tokens: coverage_support.list_of([
         "378001\teff\t77777777\tinput0pct", "378001\tcc\t77777778\tdurationms",
         "378001\tspell\t88888888\taoetc",
       ]),
@@ -292,7 +285,7 @@ pub fn an_eff_token_whose_effect_row_is_missing_but_whose_id_is_a_spell_names_th
       rows: rows_with_blast_texts([
         #("localizedTextIdCasterIconSpellText", 377_002),
       ]),
-      tokens: list_of(["377002\teff\t42148\tinput0pct"]),
+      tokens: coverage_support.list_of(["377002\teff\t42148\tinput0pct"]),
       proxies: [],
       left_out: [],
     )
@@ -326,7 +319,7 @@ pub fn a_token_a_nested_tooltip_names_counts_for_the_spell_that_nests_it_test() 
   let #(named, _) =
     named_in(
       rows:,
-      tokens: list_of([
+      tokens: coverage_support.list_of([
         "379001\tspell\t42148\tctooltip",
         "379002\teff\t95337\tdata02rawint",
       ]),

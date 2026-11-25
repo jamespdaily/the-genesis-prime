@@ -59,10 +59,6 @@ import simple_unit_support
 
 const tutorial_quest = 10_520
 
-fn tables() -> table_store.Tables {
-  character_tables.shared()
-}
-
 /// Every refusal in this module is one log line, once per reason on the connection (a
 /// warning, then a debug line), with nothing sent.
 fn assert_refused(
@@ -96,7 +92,8 @@ fn rows_of(log log: QuestLog) -> List(QuestRow) {
 pub fn achieved_quest_at_its_receiver_is_turned_in_test() -> Nil {
   use <- owned_test.run(10_000)
   let scene = support.scene(quest_id: tutorial_quest)
-  let #(turn_in, effects) = support.asked(scene:, tables: tables())
+  let #(turn_in, effects) =
+    support.asked(scene:, tables: character_tables.shared())
   assert turn_in.quest_id == 10_520
   assert rows_of(log: turn_in.log)
     == [
@@ -122,7 +119,8 @@ pub fn achieved_quest_at_its_receiver_is_turned_in_test() -> Nil {
         progress: [1, 1, 1, 1, 1],
       ),
     ])
-  let #(from_done, _) = support.asked(scene: done, tables: tables())
+  let #(from_done, _) =
+    support.asked(scene: done, tables: character_tables.shared())
   assert rows_of(log: from_done.log) == rows_of(log: turn_in.log)
     as "an Accepted entry with every objective done is turned in as an Achieved one"
 }
@@ -144,18 +142,22 @@ pub fn turn_in_of_a_quest_not_achieved_is_refused_test() -> Nil {
     fn(case_) {
       assert_refused(
         scene: support.Scene(..scene, log: case_.1),
-        tables: tables(),
+        tables: character_tables.shared(),
         because: case_.0,
       )
     },
   )
   assert_refused(
     scene: support.Scene(..scene, quest_id: 32_000, log: []),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "a quest with no Quest2 row",
   )
   let assert Error(quest.NotDecoded(..)) =
-    support.taken_from(scene:, body: <<1, 2>>, tables: tables())
+    support.taken_from(
+      scene:,
+      body: <<1, 2>>,
+      tables: character_tables.shared(),
+    )
     as "a body shorter than the 31 bits the client's reader takes ends the connection"
   Nil
 }
@@ -168,31 +170,31 @@ pub fn turn_in_away_from_a_receiver_is_refused_test() -> Nil {
   }
   assert_refused(
     scene: support.Scene(..scene, picture: dict.new()),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "no creature shown",
   )
   assert_refused(
     scene: support.Scene(..scene, picture: walker(1.0, False, False)),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "the receiver is dead",
   )
   assert_refused(
     scene: support.Scene(..scene, picture: walker(1.0, True, True)),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "the receiver is Hostile",
   )
   assert_refused(
     scene: support.Scene(..scene, picture: walker(9.1, True, False)),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "the receiver is beyond 9.0, edge to edge",
   )
   assert_asked(
     scene: support.Scene(..scene, picture: walker(8.9, True, False)),
-    tables: tables(),
+    tables: character_tables.shared(),
   )
   assert_refused(
     scene: support.scene(quest_id: 10_528),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "Dorian Walker gives quest 10528 and does not receive it",
   )
 }
@@ -218,7 +220,10 @@ pub fn a_quest_is_turned_in_to_a_simple_receiver_in_reach_test() -> Nil {
   }
   let friendly = Hostile(exile: False, dominion: False)
   let #(turn_in, _) =
-    support.asked(scene: receiver(8.9, friendly), tables: tables())
+    support.asked(
+      scene: receiver(8.9, friendly),
+      tables: character_tables.shared(),
+    )
   assert turn_in.quest_id == 3689
   assert rows_of(log: turn_in.log)
     == [
@@ -232,16 +237,17 @@ pub fn a_quest_is_turned_in_to_a_simple_receiver_in_reach_test() -> Nil {
     as "the log holds the quest Completed at the Unix second of the turn-in (0x1405fbdc0.state_3)"
   assert_refused(
     scene: receiver(9.1, friendly),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "the Simple receiver is beyond 9.0, edge to edge",
   )
   let hostile = receiver(1.0, Hostile(exile: True, dominion: True))
   assert_refused(
     scene: hostile,
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "the Simple receiver is Hostile",
   )
-  let #(_, logged) = support.refused(scene: hostile, tables: tables())
+  let #(_, logged) =
+    support.refused(scene: hostile, tables: character_tables.shared())
   assert set.contains(logged, "no receiver")
     as "the refusal is the receiver's, not the quest's state"
 }
@@ -393,7 +399,7 @@ pub fn communicator_turn_in_needs_no_creature_near_test() -> Nil {
   // `0x14043c700` opens the dialog and `0x140553030` gives the turn-in.
   let scene = by_communicator(scene: support.scene(quest_id: 10_519))
   assert dict.is_empty(scene.picture) as "no creature is shown"
-  let #(turn_in, _) = support.asked(scene:, tables: tables())
+  let #(turn_in, _) = support.asked(scene:, tables: character_tables.shared())
   assert turn_in.quest_id == 10_519
   assert rows_of(log: turn_in.log)
     == [
@@ -412,11 +418,11 @@ pub fn communicator_turn_in_of_a_quest_without_flag_8_or_0x10000_is_refused_test
   // Quest2 10520 has flags 0x4404: neither bit 3 nor bit 16, so the communicator's dialog
   // gives it no turn-in (`0x140553030`, `0x14043c700`).
   let scene = support.scene(quest_id: tutorial_quest)
-  assert_asked(scene:, tables: tables())
+  assert_asked(scene:, tables: character_tables.shared())
   let text =
     refused_text(
       scene: by_communicator(scene:),
-      tables: tables(),
+      tables: character_tables.shared(),
       because: "a quest of flags 0x4404 over the communicator",
     )
   assert string.contains(text, "neither flag 8 nor flag 0x10000")
@@ -431,7 +437,7 @@ pub fn communicator_turn_in_with_every_receiver_hostile_is_refused_test() -> Nil
   assert string.contains(
     refused_text(
       scene:,
-      tables: tables(),
+      tables: character_tables.shared(),
       because: "the only receiver is Hostile to an Exile",
     ),
     "Hostile",
@@ -442,14 +448,14 @@ pub fn communicator_turn_in_with_every_receiver_hostile_is_refused_test() -> Nil
       ..scene,
       factions: prerequisite.Factions(current: 166, base: 166),
     ),
-    tables: tables(),
+    tables: character_tables.shared(),
   )
   assert_refused(
     scene: support.Scene(
       ..scene,
       factions: prerequisite.Factions(current: 167, base: 166),
     ),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "the check reads the current faction and not the base one",
   )
 }
@@ -467,7 +473,7 @@ pub fn communicator_turn_in_of_a_0x10000_quest_no_row_delivers_is_refused_test()
   assert string.contains(
     refused_text(
       scene:,
-      tables: tables(),
+      tables: character_tables.shared(),
       because: "no row delivers a quest of flags 0x10008",
     ),
     "delivers",
@@ -486,7 +492,7 @@ pub fn communicator_turn_in_of_an_accepted_quest_is_refused_test() -> Nil {
   assert string.contains(
     refused_text(
       scene:,
-      tables: tables(),
+      tables: character_tables.shared(),
       because: "the quest is Accepted with no objective done",
     ),
     "is 1 and not Achieved",
@@ -535,7 +541,8 @@ pub fn each_communicator_refusal_has_its_own_log_key_test() -> Nil {
         ..by_communicator(scene: support.scene(quest_id:)),
         factions:,
       )
-    let #(_, logged) = support.refused(scene:, tables: tables())
+    let #(_, logged) =
+      support.refused(scene:, tables: character_tables.shared())
     let assert [key] = set.to_list(logged) as "one key"
     key
   }
@@ -553,16 +560,20 @@ pub fn each_communicator_refusal_has_its_own_log_key_test() -> Nil {
 /// A dead player's turn-in of `scene`: refused with the client's code 57 and a log line under
 /// the dead player's own key, nothing asked, the same scene alive being accepted.
 fn assert_refused_dead(scene scene: support.Scene) -> Nil {
-  assert_asked(scene:, tables: tables())
+  assert_asked(scene:, tables: character_tables.shared())
   let dead = support.Scene(..scene, life: player_life_support.dead())
-  let #(effects, logged) = support.refused(scene: dead, tables: tables())
+  let #(effects, logged) =
+    support.refused(scene: dead, tables: character_tables.shared())
   let assert [Log(level: LogWarning, text:), Refuse(code: 57)] = effects
     as "a warning, then 0x106 with enum 57 Player_CantDoWhileDead (the client's dialog closes and sends nothing for a dead player)"
   assert string.contains(text, "dead")
   assert logged == set.from_list(["dead player"])
     as "the dead player's own key, not one of the checks the client's dialog passes"
   let #(again, still) =
-    support.refused(scene: support.Scene(..dead, logged:), tables: tables())
+    support.refused(
+      scene: support.Scene(..dead, logged:),
+      tables: character_tables.shared(),
+    )
   let assert [Log(level: LogDebug, ..), Refuse(code: 57)] = again
     as "the same reason is a debug line the second time, and answered again"
   assert still == logged
@@ -585,7 +596,7 @@ pub fn communicator_turn_in_with_a_delivering_row_is_accepted_test() -> Nil {
   // Quest2 3673 has flags 0x18004 (bit 16): CommunicatorMessages row 1281 (flags 0, worldId
   // 426, quest00 3673 in state 2, creatureId 11063, which receives 3673) delivers it.
   let scene = choosing_3673()
-  let #(turn_in, _) = support.asked(scene:, tables: tables())
+  let #(turn_in, _) = support.asked(scene:, tables: character_tables.shared())
   assert turn_in.quest_id == 3673
 }
 
@@ -598,7 +609,7 @@ pub fn communicator_turn_in_of_a_0x10000_quest_reads_no_receiver_faction_test() 
       ..choosing_3673(),
       factions: prerequisite.Factions(current: 166, base: 166),
     )
-  assert_asked(scene:, tables: tables())
+  assert_asked(scene:, tables: character_tables.shared())
 }
 
 pub fn chosen_reward_is_one_the_client_offers_test() -> Nil {
@@ -1073,8 +1084,17 @@ pub fn full_inventory_answers_inventory_full_test() -> Nil {
   list.each([16, 15], fn(slots) {
     let #(effects, logged) = support.refused(scene: scene(slots), tables:)
     assert effects == [Refuse(code: 27)]
-      as "0x106 code 27, Item_InventoryFull, and nothing else"
-    assert logged == set.from_list(["kept"]) as "the log keys are as they were"
+      as {
+        int.to_string(slots)
+        <> " filled slots"
+        <> ": 0x106 code 27, Item_InventoryFull, and nothing else"
+      }
+    assert logged == set.from_list(["kept"])
+      as {
+        int.to_string(slots)
+        <> " filled slots"
+        <> ": the log keys are as they were"
+      }
   })
   assert_asked(scene: scene(14), tables:)
 }
@@ -1263,7 +1283,7 @@ pub fn a_turn_in_with_no_credits_sends_no_gain_test() -> Nil {
   let #(turn_in, _) =
     support.asked(
       scene: support.scene(quest_id: tutorial_quest),
-      tables: tables(),
+      tables: character_tables.shared(),
     )
   let assert quest_turn_in.Saved(then:, ..) =
     quest_turn_in.answered(
@@ -1379,7 +1399,7 @@ pub fn a_quest_a_creature_receives_is_not_completed_by_the_server_test() -> Nil 
   // it in at him.
   assert_server_refused(
     scene: support.scene(quest_id: tutorial_quest),
-    tables: tables(),
+    tables: character_tables.shared(),
     because: "a quest a creature receives",
   )
 }
@@ -1389,7 +1409,10 @@ pub fn a_flag_8_quest_with_no_receiver_is_completed_by_the_server_test() -> Nil 
   // Quest 2417 (flags 8) has no receiver, and the communicator's flag-8 path needs a
   // receiver (`communicator.turn_in`), so nothing else completes it. It has no reward row.
   let #(turn_in, _) =
-    support.server_asked(scene: support.scene(quest_id: 2417), tables: tables())
+    support.server_asked(
+      scene: support.scene(quest_id: 2417),
+      tables: character_tables.shared(),
+    )
   assert turn_in.placed == [] as "no reward row, so nothing to place"
   assert rows_of(log: turn_in.log)
     == [
@@ -1457,7 +1480,10 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
   // and 2369, Item2 6998, flags 1) and a fixed item (2370: Item2 179, one, flags 0). No
   // dialog lets the player pick, so the completion gives the fixed row alone.
   let assert quest_turn_in.Asks(turn_in:, ..) =
-    support.server_taken(scene: support.scene(quest_id: 2909), tables: tables())
+    support.server_taken(
+      scene: support.scene(quest_id: 2909),
+      tables: character_tables.shared(),
+    )
     as "the completion passes every check, so the store is asked"
   assert turn_in.placed
     == [

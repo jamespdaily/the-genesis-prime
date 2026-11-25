@@ -26,10 +26,8 @@ import genesis_prime/store.{
   Character, CharacterId, CharacterLoaded, ForSelect, ForWorld, Listed,
 }
 import gleam/bit_array
-import gleam/int
 import gleam/list
 import gleam/option.{None}
-import gleam/string
 import owned_test
 
 /// The message as the client sends it: 0x0241 on its own, any other inside 0x038C.
@@ -52,16 +50,11 @@ fn in_world_of_the_recorded_sender() -> game_connection.State {
   ).0
 }
 
-/// The id as the log names it, four hex digits.
-fn named(message_id message_id: Int) -> String {
-  "0x" <> string.pad_start(int.to_base16(message_id), 4, "0")
-}
-
 pub fn each_dropped_message_is_taken_with_nothing_logged_or_sent_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(dropped_support.recorded(), fn(recorded: Recorded) {
     let Recorded(message_id:, body:, what:, ..) = recorded
-    let label = named(message_id:) <> ", " <> what
+    let label = dropped_support.named(message_id:) <> ", " <> what
     let #(state, taken) =
       connection_support.read(
         state: in_world_of_the_recorded_sender(),
@@ -78,6 +71,9 @@ pub fn each_dropped_message_is_taken_with_nothing_logged_or_sent_test() -> Nil {
     assert support.logs(again) == []
       as { label <> ": taken each time, with no log line kept for a repeat" }
     assert support.writes(again) == [] && !support.stops(again)
+      as {
+        label <> ": a repeat writes nothing and does not stop the connection"
+      }
   })
 }
 
@@ -101,7 +97,7 @@ pub fn a_body_of_the_wrong_size_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(wrong_sizes(), fn(wrong) {
     let #(message_id, body, what) = wrong
-    let label = named(message_id:) <> ", " <> what
+    let label = dropped_support.named(message_id:) <> ", " <> what
     let #(refusing, taken) =
       connection_support.read(
         state: connection_support.in_world(),
@@ -111,7 +107,7 @@ pub fn a_body_of_the_wrong_size_ends_the_connection_test() -> Nil {
       as {
         label <> ": one error line says the client's reader would refuse it"
       }
-    assert support.says(line, named(message_id:))
+    assert support.says(line, dropped_support.named(message_id:))
       as { label <> ": the line names the message" }
     assert support.says(line, "does not decode")
       as { label <> ": and that its body is not one" }
@@ -119,7 +115,14 @@ pub fn a_body_of_the_wrong_size_ends_the_connection_test() -> Nil {
       == connection_support.save_asked(1, connection_support.entry_place())
       as { label <> ": the place is saved, as for any refused message" }
     assert support.writes(taken) == []
+      as {
+        label
+        <> ": nothing is written to the client before the save is answered"
+      }
     assert !support.stops(taken)
+      as {
+        label <> ": the connection does not stop before the save is answered"
+      }
     let #(_, taken) =
       connection_support.answer(
         state: refusing,
