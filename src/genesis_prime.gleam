@@ -44,6 +44,7 @@ import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/objective
 import genesis_prime/game_settings
+import genesis_prime/group_registry
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
@@ -396,6 +397,7 @@ fn world(spawns: store.Key) -> server.World {
     maps_call_ms: 5000,
     map_shutdown_ms: 5000,
     creatures: creature_registry.new(),
+    map_tells: group_registry.new(label: "map_tells"),
     creature_supervisor: process.new_name("creature_supervisor"),
     creature_shutdown_ms: 5000,
     idle_stop_ms: 60_000,

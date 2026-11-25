@@ -167,19 +167,24 @@ pub type Settings(settings, state, message, outgoing) {
     /// How long it has to stop once the supervisor stops it; the child's
     /// shutdown timeout.
     shutdown_ms: Int,
-    /// The address it is found at and the scope it is told through there, or
-    /// `None` for a service told only by its subject.
-    found_at: Option(FoundAt(message, outgoing)),
+    /// The scope it is told through, with the address it is found at when it joins
+    /// one, or `None` for a service told only by its subject.
+    found_at: Option(Reached(message, outgoing)),
     /// Where it reads the time of each input and starts its timers.
     time: ServiceTime,
   )
 }
 
-/// Where a service is found by an address (genesis_prime/group_registry). The
-/// shell joins the address before its rule's first step, so any process that
-/// has what the service sends can find it.
-pub type FoundAt(message, outgoing) {
+/// How a service is told through a scope of genesis_prime/group_registry. Either way
+/// its selector takes what `deliver_*` and `deliver_to` send it.
+pub type Reached(message, outgoing) {
+  /// Found by an address: the shell joins the address before its rule's first
+  /// step, so any process that has what the service sends can find it.
   FoundAt(scope: Scope(Call(message, outgoing)), address: Address)
+  /// Joins no address: a process that holds the service's pid (a creature holds its
+  /// map's run) tells it with `group_registry.deliver_to`, and the scope fixes the
+  /// type of what it is told.
+  ToldThrough(scope: Scope(Call(message, outgoing)))
 }
 
 /// What reaches the actor: a call, an exit signal it traps, a timer's firing,
@@ -295,7 +300,7 @@ fn initialise(
   case settings.found_at {
     Some(FoundAt(scope:, address:)) ->
       group_registry.join(scope:, group: address, pid: process.self())
-    None -> Nil
+    Some(ToldThrough(..)) | None -> Nil
   }
   process.trap_exits(True)
   let elapsed = process.new_subject()

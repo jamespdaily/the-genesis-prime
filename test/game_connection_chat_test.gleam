@@ -5,6 +5,7 @@
 
 import character_support
 import connection_rule_support as support
+import creature_news_support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
@@ -39,6 +40,7 @@ import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{
   CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
 }
@@ -829,6 +831,29 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     as "opcode.0x355: the creature is removed when its process says so"
   assert unit_destroyed.decode(body)
     == Ok(UnitDestroyed(unit_id: 40, chest_world_object_delay: 0))
+  // The same removal from the map's Unseen of the creature, which the creature does not
+  // send: written once for a shown creature, and nothing for one the client does not show.
+  let unseen =
+    game_connection_support.sent_by_the_map(map.UnitUnseen(
+      unit_id: 40,
+      generation: generation.first(),
+    ))
+  let #(state, taken) = game_connection_support.feed(state:, event: unseen)
+  let assert [Frame(message_id: 0x0355, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "the map's Unseen of a shown creature is written as its 0x355"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 40, chest_world_object_delay: 0))
+  let #(_, taken) = game_connection_support.feed(state:, event: unseen)
+  assert support.writes(taken) == []
+    as "a second Unseen, for a creature the client no longer shows, writes nothing"
+  let #(_, taken) =
+    game_connection_support.feed(
+      state: game_connection_support.in_world(),
+      event: unseen,
+    )
+  assert support.writes(taken) == []
+    as "and one for a creature it never showed writes nothing"
 }
 
 // ---- the development summon ----
@@ -1286,15 +1311,20 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
       support.input(OwnEvent(step.Started)),
     )
   let appeared =
-    list.filter_map(support.effects_of(started), fn(effect) {
-      case effect {
-        OwnEffect(step.Send(to: step.Connection(ConnectionId(1)), message:)) ->
-          Ok(server.creature_message(outgoing: message))
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
-    })
-  let assert [message] = appeared as "the creature sends the player its 0x262"
+    list.map(
+      creature_news_support.relayed_to(
+        taken: started,
+        connection: ConnectionId(1),
+      ),
+      fn(delivered) {
+        server.relayed_message(
+          delivered:,
+          stay: game_connection_support.own_stay(),
+        )
+      },
+    )
+  let assert [message] = appeared
+    as "the creature's snapshot, relayed by the map, is the player's 0x262"
   let #(_, written) =
     game_connection_support.feed(state:, event: OwnEvent(Woken(message)))
   assert game_connection_support.written_ids(written) == [0x0262]

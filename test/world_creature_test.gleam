@@ -300,6 +300,9 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
     as "the spawn returns as a new unit, since the old id was given up with the Gone"
   assert returned.creature_id == first.creature_id
     as "it is the spawn's creature"
+  let rest = world_support.sent_before_the_marker(world:, id: 1, received:)
+  assert list.filter_map(rest, world_watch_support.gone_unit) == []
+    as "a marker through the connection finds no second Gone: the creature's end is told to each player once, by the map"
   world_support.stop(world:)
 }
 
@@ -3748,15 +3751,20 @@ pub fn a_stun_between_the_gos_of_earthen_roar_marks_the_answer_to_the_stunner_al
   use <- owned_test.run(30_000)
   // Rootbrute Grimspore (Creature2 12212) casts Earthen Roar (Spell4 55317) 1500 ms after
   // player 1's strike, its first go 2500 ms after the cast starts. Player 2's Stagger stun
-  // lands 500 ms into the cast. The second row's stunner is a connection the world has no
-  // process for: its answer is dropped, and the creature breaks the cast and goes on all
-  // the same.
+  // lands 500 ms into the cast. The stunner is a player of the map in the first row, so the
+  // map relays the creature's answer to it; the second row's stunner is a connection the world
+  // has no process for and the map no player: its answer is dropped, and the creature breaks
+  // the cast and goes on all the same.
   [#("a stunner that is there", True), #("a stunner that is gone", False)]
   |> list.each(fn(row) {
     let #(reason, there) = row
     let roaring = roaring_fight()
     let received_2 = case there {
-      True -> Some(world_support.connection(world: roaring.world, id: 2))
+      True -> {
+        let received = world_support.connection(world: roaring.world, id: 2)
+        let _unit = world_watch_support.join(run: roaring.run, connection: 2)
+        Some(received)
+      }
       False -> None
     }
     driven_time.advance(time: roaring.time, ms: 1500)

@@ -6,6 +6,7 @@
 
 import cast_support
 import connection_rule_support as support
+import creature_news_support
 import creature_path_support as path_support
 import fixture_tables
 import game_client
@@ -68,6 +69,7 @@ import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{Left}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
@@ -1306,7 +1308,13 @@ fn a_beast_of(
         life: 3,
         spawn: spawn_source.Stored(id: spawn_id.SpawnId(1)),
         clock_origin_ms: 0,
-        viewers: [#(ConnectionId(1), game_connection_support.own_stay())],
+        viewers: [
+          #(
+            ConnectionId(1),
+            game_connection_support.own_stay(),
+            generation.first(),
+          ),
+        ],
       ),
       spawn:,
       kind: Kind(
@@ -1325,17 +1333,18 @@ fn a_beast_of(
   )
 }
 
-/// The creature's sends to the Medic's connection, as the connection takes them
-/// (`server.creature_message`).
+/// What the creature tells the Medic's connection, as the map relays it and the connection
+/// takes it (`server.relayed_message`).
 fn to_the_medic(taken: step.ServiceStep(creature.Outgoing)) -> List(Message) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Send(to: step.Connection(ConnectionId(1)), message:)) ->
-        Ok(server.creature_message(outgoing: message))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
+  list.map(
+    creature_news_support.relayed_to(taken:, connection: ConnectionId(1)),
+    fn(delivered) {
+      server.relayed_message(
+        delivered:,
+        stay: game_connection_support.own_stay(),
+      )
+    },
+  )
 }
 
 /// The connection's tells to the creature, as the creature takes them
@@ -1867,6 +1876,11 @@ pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_ans
     )
   assert gos == [[7], [medic_unit]]
     as "each strike is a tell answered in its owner's own step: the Medic's go names the Beast, the Beast's names the Medic, and no deadline timer fired"
+  assert list.contains(
+    creature_news_support.said_to_the_map(ticked),
+    "Attacks to 1",
+  )
+    as "the Beast's strike on the Medic is told through its map, which delivers it as it delivers an answer: before either deadline"
 }
 
 // ---- the done-when fight: each class against a planted creature, both rules

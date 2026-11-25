@@ -29,7 +29,7 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source
 import gleam/dict
 import gleam/int
@@ -46,6 +46,17 @@ fn the_start(
 ) -> #(step.WatchId, step.CreatureStart) {
   let assert [only] = spawns.starts(taken) as "exactly one creature starts"
   only
+}
+
+/// The spawn whose creature the burst's start of the unit made.
+fn spawn_of_unit(
+  creatures creatures: List(#(step.WatchId, step.CreatureStart)),
+  unit_id unit_id: Int,
+) -> SpawnId {
+  let assert Ok(#(_, start)) =
+    list.find(creatures, fn(start) { { start.1 }.unit_id == unit_id })
+  let assert spawn_source.Stored(id:) = start.spawn
+  id
 }
 
 /// Whether the spawn is dormant: no creature, no wait, no failure.
@@ -88,9 +99,30 @@ pub fn a_join_starts_exactly_the_spawns_within_1024_with_the_player_as_first_vie
   })
     as "a creature's life is the number of the watch it is started under"
   assert list.all(creatures, fn(start) {
-    { start.1 }.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
+    spawns.first_viewers(start: { start.1 })
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
   })
     as "each starts with the player as its first viewer, its unit 1, the map's first id, taken before the starts', and sends the 0x262 as it starts"
+  let generations =
+    list.map(creatures, fn(start) {
+      let assert [#(_, _, generation)] = { start.1 }.viewers
+        as "the player is the one first viewer"
+      let assert Ok(map.Live(relations:, ..)) =
+        map.spawn_state(
+          state:,
+          spawn: spawn_of_unit(creatures:, unit_id: { start.1 }.unit_id),
+        )
+      assert dict.get(relations, ConnectionId(1))
+        == Ok(map.Relation(
+          generation:,
+          stay: map_support.stay(count: 1),
+          state: map.AwaitingSnapshot,
+        ))
+        as "the map holds each first viewer's relation under the generation the start names, awaiting the creature's snapshot"
+      generation
+    })
+  assert list.length(list.unique(generations)) == list.length(generations)
+    as "each relation of the burst has a generation of its own"
   assert list.all(creatures, fn(start) { start.0 != WatchId(1) })
     && list.all(creatures, fn(start) { { start.1 }.life != 1 })
     as "no creature's life is the player's watch, 1: the player's watch is taken before the starts"
@@ -125,7 +157,8 @@ pub fn a_move_into_sight_starts_the_creature_with_the_player_as_first_viewer_tes
   let #(_, taken) = spawns.move(state:, at_ms: 7000, connection: 1, x: 0.0)
   let #(_, creature) = the_start(taken)
   assert creature.spawn == spawn_source.Stored(id: SpawnId(1))
-  assert creature.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: creature)
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
     as "the creature starts for the player and sends its one 0x262 as it starts"
   assert spawns.creature_sends(taken) == []
 }
@@ -137,7 +170,7 @@ pub fn the_last_viewer_leaving_sends_an_unwatched_and_the_creature_stops_between
   let #(_, creature) = the_start(taken)
   let #(state, taken) =
     spawns.move(state:, at_ms: 7000, connection: 1, x: spawns.far)
-  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Unwatched by 1")]
+  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Unseen by 1")]
     as "the player's loss of sight is told to the creature, which sends the 0x355"
   // The sweep timer started at 5000 fires every 10 s: 15000, 25000, ... The
   // creature has been idle since 7000, so it retires at the first sweep at or
@@ -171,7 +204,7 @@ pub fn a_spawn_seen_again_before_the_idle_stop_is_not_restarted_test() -> Nil {
   let #(state, taken) =
     spawns.move(state:, at_ms: 30_000, connection: 1, x: 0.0)
   assert spawns.starts(taken) == [] as "the same creature runs: nothing starts"
-  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Watched by 1")]
+  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Seen by 1")]
     as "it is told the player sees it again, and sends its 0x262 once more"
   let #(_, taken) = spawns.sweep(state:, at_ms: 75_000)
   assert spawns.creature_sends(taken) == []
@@ -200,7 +233,8 @@ pub fn a_spawn_stopped_and_seen_again_keeps_its_unit_id_under_a_new_life_test() 
     as "a spawn has one unit id for the run, reused after a clean stop (death.creature_respawn)"
   assert second_watch != first_watch && second.life != first.life
     as "under a new life, so its address is not the stopped creature's"
-  assert second.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: second)
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
   assert spawns.creature_sends(taken) == []
 }
 
@@ -221,7 +255,8 @@ pub fn a_spawn_seen_while_its_creature_retires_restarts_only_after_the_creatures
   let #(second_watch, second) = the_start(taken)
   assert second.unit_id == first.unit_id && second_watch != first_watch
     as "at its end a creature starts under the same unit id and a new life"
-  assert second.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: second)
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
     as "with the player who sees the spawn now as its first viewer"
 }
 
@@ -338,6 +373,7 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
     spawns.join(state:, at_ms: 6100, connection: 2, x: spawns.far)
   let #(state, taken) =
     spawns.feed(state:, at_ms: 7000, event: WatchEnded(watch))
+  let crashed = taken
   assert spawns.player_sends(taken)
     == [
       #(1, "Gone " <> int.to_string(first.unit_id)),
@@ -356,8 +392,15 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
   let #(_, second) = the_start(taken)
   assert second.unit_id != first.unit_id && second.unit_id > 0
     as "the unit id was given up with the Gone, so the new creature has another"
-  assert second.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: second)
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
     as "the player in sight is the new creature's first viewer"
+  assert spawns.creature_sends(crashed) == []
+    as "the creature that ended is told nothing: no Unseen to a dead creature"
+  let assert [#(_, _, first_generation)] = first.viewers
+  let assert [#(_, _, second_generation)] = second.viewers
+  assert first_generation != second_generation
+    as "the new life's first viewer holds a generation the map never gave before"
 }
 
 pub fn a_restart_timer_that_fires_with_no_one_in_sight_leaves_the_spawn_dormant_test() -> Nil {
@@ -385,8 +428,10 @@ pub fn a_creature_that_does_not_start_leaves_its_spawn_empty_for_the_run_and_the
   let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let assert [#(first_watch, first), #(_, second)] = spawns.starts(taken)
     as "two creatures start in the burst"
-  assert first.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
-    && second.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: first)
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
+    && spawns.first_viewers(start: second)
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
     as "both start for the player, whatever the first's start does"
   let #(state, taken) =
     spawns.feed(
@@ -419,7 +464,7 @@ pub fn a_leave_right_after_a_burst_sends_unwatched_to_each_creature_of_the_playe
   let units = list.map(spawns.starts(taken), fn(start) { { start.1 }.unit_id })
   let #(state, taken) = spawns.leave(state:, at_ms: 6001, connection: 1)
   assert spawns.creature_sends(taken)
-    == list.map(units, fn(unit_id) { #(unit_id, "Unwatched by 1") })
+    == list.map(units, fn(unit_id) { #(unit_id, "Unseen by 1") })
     as "the player's creatures are told it no longer sees them, in the order of the spawns"
   let #(_, taken) = spawns.sweep(state:, at_ms: 75_000)
   assert spawns.creature_sends(taken)

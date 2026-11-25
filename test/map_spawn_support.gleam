@@ -13,14 +13,17 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{type PrerequisiteId, Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
-import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
+import genesis_prime/world_map/generation.{type Generation}
+import genesis_prime/world_map/map.{type State, Join, Leave, Moved}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None}
+import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import gleam/string
 import map_support
@@ -135,6 +138,20 @@ pub fn join_hiding(
   alive alive: Bool,
   hidden hidden: Set(PrerequisiteId),
 ) -> #(State, ServiceStep(map.Outgoing)) {
+  join_in_stay(state:, at_ms:, connection:, stay_count: 1, x:, alive:, hidden:)
+}
+
+/// A join of connection `connection` at `x`, at time `at_ms`, naming the stay of its
+/// `stay_count`th join, of a player for whom these visibility prerequisites fail.
+pub fn join_in_stay(
+  state state: State,
+  at_ms at_ms: Int,
+  connection connection: Int,
+  stay_count stay_count: Int,
+  x x: Float,
+  alive alive: Bool,
+  hidden hidden: Set(PrerequisiteId),
+) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -144,7 +161,7 @@ pub fn join_hiding(
         connection: ConnectionId(connection),
         character: map_support.character(100 + connection),
         place: at(x),
-        stay: map_support.stay(count: 1),
+        stay: map_support.stay(count: stay_count),
         alive:,
         hidden:,
       ),
@@ -230,6 +247,46 @@ pub fn released(
   feed(state:, at_ms:, event: OwnEvent(Told(message: map.Released(unit_id:))))
 }
 
+/// The unit id and life of the creature of the spawn, in any state that runs one.
+pub fn creature_of(state state: State, spawn spawn: Int) -> #(Int, Int) {
+  case map.spawn_state(state:, spawn: SpawnId(spawn)) {
+    Ok(map.Live(unit_id:, life:, ..))
+    | Ok(map.Retiring(unit_id:, life:))
+    | Ok(map.Releasing(unit_id:, life:, ..)) -> #(unit_id, life)
+    Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) ->
+      panic as "the spawn holds no creature"
+  }
+}
+
+/// The relation the map holds between the creature of a spawn and a connection, while the
+/// spawn is live or releasing.
+pub fn relation_of(
+  state state: State,
+  spawn spawn: Int,
+  connection connection: Int,
+) -> Option(map.Relation) {
+  case map.spawn_state(state:, spawn: SpawnId(spawn)) {
+    Ok(map.Live(relations:, ..)) | Ok(map.Releasing(relations:, ..)) ->
+      dict.get(relations, ConnectionId(connection)) |> option.from_result
+    Ok(map.Retiring(..))
+    | Ok(map.WaitingForRestart)
+    | Ok(map.Failed)
+    | Error(Nil) -> None
+  }
+}
+
+/// The generation of the relation the map holds.
+pub fn generation_of(
+  state state: State,
+  spawn spawn: Int,
+  connection connection: Int,
+) -> Generation {
+  let assert Some(map.Relation(generation:, ..)) =
+    relation_of(state:, spawn:, connection:)
+    as "the map holds the relation"
+  generation
+}
+
 /// The creatures a step starts, each with the watch it is to be under, in the
 /// order named.
 pub fn starts(
@@ -248,6 +305,14 @@ pub fn starts(
       | step.Stop -> Error(Nil)
     }
   })
+}
+
+/// The first viewers a creature is started for, each by its connection and its
+/// stay, in the order the map named them.
+pub fn first_viewers(
+  start start: step.CreatureStart,
+) -> List(#(step.ConnectionId, Stay)) {
+  list.map(start.viewers, fn(viewer) { #(viewer.0, viewer.1) })
 }
 
 /// The timers a step starts, each with its id's number and its delay.
@@ -356,8 +421,7 @@ pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
 
 pub fn said(message: map.Outgoing) -> String {
   case message {
-    Watched(by: ConnectionId(number), ..)
-    | map.Noticed(notice: map.SeenBy(by: ConnectionId(number), ..), ..) ->
+    map.Noticed(notice: map.SeenBy(by: ConnectionId(number), ..), ..) ->
       "Watched by " <> int.to_string(number)
     map.Noticed(notice: map.Gone(unit_id:), ..) ->
       "Gone " <> int.to_string(unit_id)
@@ -371,9 +435,15 @@ pub fn said(message: map.Outgoing) -> String {
       )
     map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
       "Objects unseen " <> string.join(list.map(unit_ids, int.to_string), " ")
-    map.Unwatched(by: ConnectionId(number))
-    | map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
+    map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
       "Unwatched by " <> int.to_string(number)
+    map.Seen(by: ConnectionId(number), ..) ->
+      "Seen by " <> int.to_string(number)
+    map.Unseen(by: ConnectionId(number), ..) ->
+      "Unseen by " <> int.to_string(number)
+    map.Noticed(notice: map.UnitUnseen(unit_id:, ..), ..) ->
+      "Creature unseen " <> int.to_string(unit_id)
+    map.Relayed(..) -> "Relayed"
     map.Retire -> "Retire"
     map.Approached(by: ConnectionId(number), ..) ->
       "Approached by " <> int.to_string(number)

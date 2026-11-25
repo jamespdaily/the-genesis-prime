@@ -11,6 +11,7 @@ import genesis_prime/client_connection.{
   type Message, ForStay, SentByChat, SentBySessions,
 }
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/group_registry
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
@@ -21,16 +22,20 @@ import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import open_wait
+import send_gate.{type Gate}
 import spawn_support
 import supervisor_children
 
-/// A running world: its supervisor, Maps, the creatures' registry and the
-/// registry the players' connections are found in.
+/// A running world: its supervisor, Maps, the creatures' registry, the registry the
+/// players' connections are found in and the driven clock its maps and creatures run on.
 pub type World {
   World(
+    time: driven_time.Time,
+    gate: Option(Gate),
     tree: Pid,
     maps: process.Name(world_map_registry.Message),
     creatures: CreatureRegistry,
@@ -46,6 +51,25 @@ pub fn creature_pids(world world: World) -> List(Pid) {
   supervisor_children.in_start_order(supervisor)
 }
 
+/// The world `start` makes, with its maps' sends to connections held at a gate the test
+/// closes and opens (`send_gate`): the gate is open until the test closes it.
+pub fn start_gated(
+  time time: driven_time.Time,
+  spawns spawns: List(Spawn),
+  respawn_ms respawn_ms: Int,
+  idle_stop_ms idle_stop_ms: Int,
+  sweep_ms sweep_ms: Int,
+) -> World {
+  started(
+    time:,
+    spawns:,
+    respawn_ms:,
+    idle_stop_ms:,
+    sweep_ms:,
+    gate: Some(send_gate.start()),
+  )
+}
+
 /// A world whose maps stand a creature at each of the spawns a player sees: the
 /// spawns are put in the world's term (World 3460's), a spawn returns
 /// `respawn_ms` after its creature crashed, a creature that no player has
@@ -59,6 +83,17 @@ pub fn start(
   idle_stop_ms idle_stop_ms: Int,
   sweep_ms sweep_ms: Int,
 ) -> World {
+  started(time:, spawns:, respawn_ms:, idle_stop_ms:, sweep_ms:, gate: None)
+}
+
+fn started(
+  time time: driven_time.Time,
+  spawns spawns: List(Spawn),
+  respawn_ms respawn_ms: Int,
+  idle_stop_ms idle_stop_ms: Int,
+  sweep_ms sweep_ms: Int,
+  gate gate: Option(Gate),
+) -> World {
   let maps = process.new_name("maps")
   let connections = registry.new()
   let creatures = creature_registry.new()
@@ -71,6 +106,7 @@ pub fn start(
       maps_call_ms: ask_support.beyond_the_test_ms,
       map_shutdown_ms: 1000,
       creatures:,
+      map_tells: group_registry.new(label: "map_tells"),
       creature_supervisor:,
       creature_shutdown_ms: 1000,
       idle_stop_ms:,
@@ -90,22 +126,17 @@ pub fn start(
       tables: character_tables.shared(),
       reach: service.Reach(
         locate: fn(address) { locate(connections:, address:) },
-        send: fn(to, outgoing) { send(connections:, to:, outgoing:) },
+        send: fn(to, outgoing) { send(connections:, gate:, to:, outgoing:) },
         start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
       ),
-      to_connection: fn(connection, outgoing) {
-        registry.deliver(
-          connections,
-          connection,
-          server.creature_message(outgoing:),
-        )
-      },
     )
     |> supervisor.start
     as "the world tree started"
   process.unlink(started.pid)
   ask_support.guard(started.pid)
   World(
+    time:,
+    gate:,
     tree: started.pid,
     maps:,
     creatures:,
@@ -141,13 +172,22 @@ fn locate(
 
 fn send(
   connections connections: Registry(Message),
+  gate gate: Option(Gate),
   to to: Address,
   outgoing outgoing: map.Outgoing,
 ) -> Result(Nil, Nil) {
   case to {
     Connection(connection:) ->
-      server.map_message(outgoing:)
-      |> result.try(registry.deliver(connections, connection, _))
+      case gate {
+        None -> deliver(connections:, connection:, outgoing:)
+        Some(gate) -> {
+          send_gate.send(gate:, carry: fn() {
+            let _delivered = deliver(connections:, connection:, outgoing:)
+            Nil
+          })
+          Ok(Nil)
+        }
+      }
     step.Sessions
     | step.HandOff
     | step.Store
@@ -157,6 +197,22 @@ fn send(
     | step.CharacterNamed(..)
     | step.ZoneChannel(..) -> Error(Nil)
   }
+}
+
+fn deliver(
+  connections connections: Registry(Message),
+  connection connection: step.ConnectionId,
+  outgoing outgoing: map.Outgoing,
+) -> Result(Nil, Nil) {
+  server.map_message(outgoing:)
+  |> result.try(registry.deliver(connections, connection, _))
+}
+
+/// The gate the maps' sends to connections pass, of a world made with `start_gated`.
+pub fn gate(world world: World) -> Gate {
+  let assert Some(gate) = world.gate
+    as "the world was started with a gate (`start_gated`)"
+  gate
 }
 
 /// A process that is the connection with this id until the test ends, and hands
@@ -197,15 +253,18 @@ fn join_connection(
 }
 
 /// Everything the world sent the connection `id` (the one `connection` made, whose messages
-/// `received` holds) before this call, in the order it came. A marker goes to the connection
-/// through the registry and the forwarding process hands it to the test after every message it
-/// held, so what comes back before the marker is all that was sent: a check that expects
-/// nothing inspects this batch, never a read that returns when no message is waiting yet.
+/// `received` holds) before this call, in the order it came. The clock's participants are
+/// quiet first, so a message a creature told its map has been relayed by it. A marker then goes
+/// to the connection through the registry and the forwarding process hands it to the test after
+/// every message it held, so what comes back before the marker is all that was sent: a check
+/// that expects nothing inspects this batch, never a read that returns when no message is
+/// waiting yet.
 pub fn sent_before_the_marker(
   world world: World,
   id id: Int,
   received received: Subject(Message),
 ) -> List(Message) {
+  driven_time.wait_until_quiet(world.time)
   let assert Ok(Nil) =
     registry.deliver(
       registry: world.connections,

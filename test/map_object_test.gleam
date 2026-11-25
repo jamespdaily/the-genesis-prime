@@ -89,13 +89,15 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       map.Noticed(notice: map.SeenBy(..), ..)
       | map.Noticed(notice: map.UnseenBy(..), ..)
       | map.Noticed(notice: map.Gone(..), ..)
+      | map.Noticed(notice: map.UnitUnseen(..), ..)
       | map.Joined(..)
       | map.NotJoined(..)
       | map.Left
       | map.Summoned(..)
       | map.NotSummoned(..)
-      | map.Watched(..)
-      | map.Unwatched(..)
+      | map.Seen(..)
+      | map.Unseen(..)
+      | map.Relayed(..)
       | map.Retire
       | map.Approached(..)
       | map.Withdrew(..)
@@ -205,8 +207,9 @@ pub fn objects_creatures_and_players_share_one_id_space_test() -> Nil {
           | map.NotSummoned(..)
           | map.Left
           | map.Noticed(..)
-          | map.Watched(..)
-          | map.Unwatched(..)
+          | map.Seen(..)
+          | map.Unseen(..)
+          | map.Relayed(..)
           | map.Retire
           | map.Approached(..)
           | map.Withdrew(..)

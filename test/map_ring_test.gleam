@@ -252,8 +252,9 @@ fn approaches_in_full(
         Ok(#(by, unit_id, start_place.x(place), seq, stay))
       map.Withdrew(..)
       | map.PlayerDied(..)
-      | map.Watched(..)
-      | map.Unwatched(..)
+      | map.Seen(..)
+      | map.Unseen(..)
+      | map.Relayed(..)
       | map.Noticed(..)
       | map.Retire
       | map.Joined(..)
@@ -659,7 +660,7 @@ pub fn the_watch_of_a_stealthed_player_in_a_ring_ending_sends_its_creatures_unwa
       event: step.WatchEnded(watch: player_watch),
     )
   assert map_spawn_support.creature_sends(ended)
-    == [#(creature.unit_id, "Unwatched by 1")]
+    == [#(creature.unit_id, "Unseen by 1")]
     as "the map's end rule: the creature that saw the player is sent Unwatched, and nothing else (the failure table row 'a player in a ring leaves, camps or its connection ends')"
 }
 
