@@ -821,7 +821,7 @@ fn sign_of(news: client_connection.News) -> Result(load_round.Sign, Nil) {
   }
 }
 
-/// The counts with a sign of the creature `unit_id`, taken now.
+/// The counts with a sign of the creature `unit_id`, stamped when this is called.
 fn marked(
   counts counts: Counts,
   unit_id unit_id: Int,

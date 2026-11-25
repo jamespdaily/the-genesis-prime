@@ -122,7 +122,7 @@ pub fn scheduler(recorder recorder: Recorder) -> Scheduler {
   }
 }
 
-/// Every timer numbered like a strike deadline armed so far, whatever process armed it,
+/// Every timer numbered like a strike deadline the recorder has seen armed, whatever process armed it,
 /// in no order.
 pub fn deadlines(recorder recorder: Recorder) -> List(Deadline) {
   let reply = process.new_subject()
