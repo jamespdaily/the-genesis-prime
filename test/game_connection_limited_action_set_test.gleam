@@ -17,6 +17,7 @@
 
 import ability_book_support
 import ability_points_support
+import cast_support
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{AskStore}
@@ -35,10 +36,18 @@ import owned_test
 
 /// A Spellslinger of the level in the world.
 fn in_world_at_level(level level: Int) -> game_connection.State {
+  in_world_as(class_id: limited.spellslinger, level:)
+}
+
+/// A player of the class and level in the world.
+fn in_world_as(
+  class_id class_id: Int,
+  level level: Int,
+) -> game_connection.State {
   connection_support.entered_as(
     store.Character(
       ..connection_support.world_character(),
-      class_id: ClassId(limited.spellslinger),
+      class_id: ClassId(class_id),
       faction_id: limited.faction,
       level:,
     ),
@@ -109,9 +118,9 @@ pub fn a_0xb1_in_the_world_is_answered_0x19d_then_0xb2_and_kept_in_entered_test(
         222,
       ]),
     )
-  assert list.map(frames, fn(frame) { frame.message_id })
+  assert list.take(cast_support.ids(frames:), 5)
     == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
-    as "the AMP list comes after the points and before 0xB2"
+    as "the AMP list comes after the points and before 0xB2, and the picked AMPs' spells start after them"
   assert limited.amp_lists_in(frames:) == [#(0, [220, 221, 222, 259])]
     as "the list, ascending"
   assert support.asked(taken) == None as "nothing waits on the store"
@@ -137,6 +146,46 @@ fn raised_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
   ability_book_support.tiers_in(frames:)
   |> list.filter(fn(entry) { entry.tier > 1 })
   |> list.map(fn(entry) { #(entry.spell4_base_id, entry.tier) })
+}
+
+pub fn a_pick_starts_the_amp_spell_after_the_answer_and_the_same_save_again_starts_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A level 10 Stalker picks the chain of category 3 and its tier 1 AMP 863 (7 of 7 power):
+  // AMP 770, 771, 772 and 863 name Spell4 56845, 56846, 56847 and 59436 (`EldanAugmentation`).
+  let stalker = in_world_as(class_id: 5, level: 10)
+  let body = limited.amps_body(class_id: 5, amp_ids: [770, 771, 772, 863])
+  let #(stalker, _, frames) = sent(state: stalker, body:)
+  assert list.take(cast_support.ids(frames:), 5)
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
+    as "the answer's frames come first"
+  assert connection_support.started_spells(frames: list.drop(frames, 5))
+    == [56_845, 56_846, 56_847, 59_436, 79_230]
+    as "then the spells of the picked AMPs start, in AMP id order, and 59436's Proxy (Spell4Effects 208250) starts 79230 on the caster"
+  assert connection_support.started_spells(frames: list.take(frames, 5)) == []
+    as "and none starts before the answer"
+  let #(_, _, again) = sent(state: stalker, body:)
+  assert connection_support.started_spells(frames: again) == []
+    as "the same save again changes no pick, so it starts nothing"
+  // A level 10 Medic picks the chain of category 1 and AMP 440, whose spell 41594 the plans
+  // leave out (GainAimNotRead): the pick is kept, the chain's spells start and one warning
+  // names the spell.
+  let medic = in_world_as(class_id: 3, level: 10)
+  let #(medic, taken, frames) =
+    sent(
+      state: medic,
+      body: limited.amps_body(class_id: 3, amp_ids: [447, 448, 449, 440]),
+    )
+  assert limited.amp_lists_in(frames:) == [#(0, [440, 447, 448, 449])]
+    as "the pick is kept and sent back whole"
+  assert connection_support.started_spells(frames:) == [59_198, 59_199, 59_200]
+    as "the three spells of the chain stand, 447, 448 and 449's"
+  assert list.count(support.logs(taken), fn(line) {
+      support.says(line:, words: "41594")
+    })
+    == 1
+    as "the spell the plans leave out is warned about once"
+  assert held_amps(state: medic) == [440, 447, 448, 449]
+    as "the AMPs are held in entered"
 }
 
 pub fn a_0xb1_with_tier_changes_is_answered_in_order_and_a_save_the_points_cannot_cover_is_refused_on_the_connection_test() -> Nil {

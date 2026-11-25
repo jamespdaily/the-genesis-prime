@@ -872,6 +872,78 @@ pub fn an_amp_picked_in_the_builder_is_answered_with_0x1a3_and_a_refused_one_cha
     as "the place save writes no AMP row, so the entry after a camp holds none"
   game_client.close(game:)
   login_support.stop(started)
+  // The Stalker case: a level 10 Stalker picks the chain 770, 771, 772 and 863 and presses
+  // Stagger (Spell4Base 23173, bag index 2). The answer is followed by the starts of the AMPs'
+  // spells (56845, 56846, 56847 and 59436), and Stagger's fourth phase starts 79220 and 79229,
+  // the two Proxies Prerequisite 37037 gates on 59436 (the phases run with no foe struck).
+  let time = driven_time.new()
+  let started =
+    world_with_the_markers_creatures(tables: fixture_tables.shared(), time:)
+  let #(game, entry, have, _) =
+    a_player_of_a_level_at_the_marker_ring(
+      started:,
+      class_id: 5,
+      sixth: 0,
+      level: 10,
+      saved_experience: option.None,
+    )
+  game_client.send_world_then_ping(
+    game:,
+    message_id: 0x00B1,
+    body: limited.amps_body(class_id: 5, amp_ids: [770, 771, 772, 863]),
+    number: 7,
+  )
+  let #(answer, have) = game_client.read_through_pong(game:, have:, number: 7)
+  let amp_spells = [56_845, 56_846, 56_847, 59_436]
+  let started_among = fn(frames, spells) {
+    list.filter_map(game_client.casts_in(frames:), fn(event) {
+      case event {
+        game_client.CastStarted(spell4_id:, ..) ->
+          case list.contains(spells, spell4_id) {
+            True -> Ok(spell4_id)
+            False -> Error(Nil)
+          }
+        _ -> Error(Nil)
+      }
+    })
+  }
+  assert limited.the_action_set(frames: answer).result == 1
+    as "the Stalker's pick is accepted"
+  assert started_among(answer, amp_spells) == amp_spells
+    as "the answer is followed by the starts of the picked AMPs' spells"
+  let #(before_answer, _) =
+    list.split_while(answer, fn(frame) { frame.message_id != 0x00B2 })
+  assert started_among(before_answer, amp_spells) == []
+    as "and none comes before the answer's 0xB2"
+  // The creature at ring slot 0 is the target the phases strike (the Proxy to 79220 starts on a
+  // struck unit; a strike can be deflected, so only the child that needs no struck unit is
+  // asserted here and 79220's start is the cast rule's test).
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 8)
+  let target = the_target_at_slot_0(frames: entry)
+  let slot = ring_slot(index: 0)
+  game_client.face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
+      slot.0,
+      slot.2,
+    )),
+    clock: 100,
+  )
+  game_client.press_ability(
+    game:,
+    client_cast_id: 1,
+    bag_index: 2,
+    target: target.unit_id,
+  )
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 9)
+  assert started_among(pressed, [79_229]) == []
+    as "the press itself starts no Proxy child: they wait for Stagger's fourth phase"
+  driven_time.advance(time:, ms: 1000)
+  let #(phases, _) = game_client.read_until_pong(game:, have:, number: 10)
+  assert started_among(phases, [79_229]) == [79_229]
+    as "Stagger's fourth phase starts the Proxy to 79229 (Spell4Effects 208198, phase 8), which Prerequisite 37037 gates on the AMP's spell standing"
+  game_client.close(game:)
+  login_support.stop(started)
 }
 
 /// The Blows the 0x7f4 among the frames list, by Spell4Effects id.

@@ -1115,7 +1115,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Ability builder",
-      missing: "A picked AMP is held and sent to the client, but the spell it names does not stand: no AMP spell starts.",
+      missing: "A picked AMP's spell that the spell plans leave out does not stand: the pick is held and sent to the client and the cast rule warns once for the spell. The coverage measure lists each such AMP spell.",
     ),
     gap.Entry(
       area: "Ability builder",

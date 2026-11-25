@@ -10,6 +10,7 @@
 //// the code that raises the error says whether the server understands the value and does
 //// not build it, or whether the table's structure is at fault.
 
+import genesis_prime/game/amp_spec
 import genesis_prime/game/column_reading.{Question}
 import genesis_prime/game/forced_move
 import genesis_prime/game/innate
@@ -17,6 +18,7 @@ import genesis_prime/game/item_property
 import genesis_prime/game/spell_plan.{
   type Basis, type PlanError, OpenQuestion, Structure, Unbuilt, Unexplained,
 }
+import genesis_prime/table/id.{EldanAugmentationId, Spell4Id}
 
 /// A plan error, whether it leaves the ability out of the plans (`True`) or fails the load
 /// (`False`), and the basis of the refusal.
@@ -243,6 +245,14 @@ pub fn samples() -> List(Sample) {
     Sample(spell_plan.InnateFailed(innate.NoSpell(1, 2)), False, Structure),
     Sample(
       spell_plan.EquipItemNotRead(item_property.NoRow("Item2Type", 1)),
+      False,
+      Structure,
+    ),
+    Sample(
+      spell_plan.AmpSpellNotRead(amp_spec.AmpSpellNotRead(
+        id: EldanAugmentationId(1),
+        spell4_id: Spell4Id(2),
+      )),
       False,
       Structure,
     ),

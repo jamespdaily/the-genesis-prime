@@ -20,6 +20,7 @@
 
 import ability_book_support
 import ability_points_support
+import cast_support
 import client_tables
 import fixture_tables
 import genesis_prime/game/ability_book
@@ -464,7 +465,7 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
     )
   assert support.held_amp_ids(saved: four, set: 0) == [770, 771, 772, 863]
     as "the four AMPs are held, ascending"
-  assert support.numbers_of(frames: support.frames_of(effects: first))
+  assert cast_support.ids(frames: support.frames_of(effects: first))
     == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
     as "opcode.0x1a3: the AMP list comes after the points (the event follows 0x0169) and before 0xB2"
   assert support.amp_lists_in(frames: support.frames_of(effects: first))
@@ -955,7 +956,7 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
       assert limited_action_set.rows(saved: after)
         == limited_action_set.rows(saved: before)
         as { why <> ": the bar, the tiers and the AMPs are as before" }
-      assert support.numbers_of(frames:) == [0x019D, 0x01A3, 0x00B2]
+      assert cast_support.ids(frames:) == [0x019D, 0x01A3, 0x00B2]
         as { why <> ": the held bar, the held list and 0xB2" }
       assert list.map(support.the_action_set(frames:).shortcuts, fn(shortcut) {
           shortcut.object_id
@@ -1190,7 +1191,7 @@ pub fn amp_ids_in_a_save_are_judged_with_the_bar_and_the_tiers_as_one_answer_tes
   assert limited_action_set.held_tiers(saved: refused, set: 0) == []
     as "the two tier changes of the save are not kept either: one answer"
   assert support.held_amp_ids(saved: refused, set: 0) == []
-  assert support.numbers_of(frames: support.frames_of(effects:))
+  assert cast_support.ids(frames: support.frames_of(effects:))
     == [0x019D, 0x01A3, 0x00B2]
   assert support.amp_lists_in(frames: support.frames_of(effects:)) == [#(0, [])]
   assert support.the_answer_bit(frames: support.frames_of(effects:)) == 0

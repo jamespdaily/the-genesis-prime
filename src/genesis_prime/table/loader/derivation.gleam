@@ -92,6 +92,7 @@ pub fn all() -> List(store.Derivation) {
     loadout.derivation(left_out: abilities_left_out),
     spell_plan.derivation(area_checked: spell_area.checker),
     spell_plan.tier_derivation(area_checked: spell_area.checker),
+    spell_plan.amp_derivation(area_checked: spell_area.checker),
     spell_surge.derivation(),
     spell_area.derivation(),
     activate.derivation(),

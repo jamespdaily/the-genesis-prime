@@ -18,6 +18,7 @@
 import client_tables
 import fixture_tables
 import genesis_prime/coverage/standing_root
+import genesis_prime/game/amp_spec
 import genesis_prime/game/equip_spell
 import genesis_prime/game/item_property
 import genesis_prime/game/spell_area
@@ -171,6 +172,30 @@ pub fn every_standing_root_is_planned_through_the_area_checker_or_left_out_with_
     !list.contains(left_out_ids, one.spell4_id)
   })
     as "a left-out root is not in the later abilities' list, which the ability book and the coverage's later abilities read"
+  // The spells of the AMPs of the playable classes are roots of their own plans.
+  let assert Ok(amp_roots) = amp_spec.roots(tables:)
+  let amp_planned = spell_plan.amp_plans(tables)
+  let amp_left_out = spell_plan.unplanned_amps(tables)
+  let amp_left_out_ids = list.map(amp_left_out, fn(one) { one.spell4_id })
+  assert amp_roots != []
+    as "the client's tables hold AMPs of the playable classes"
+  assert list.all(amp_roots, fn(root) {
+    dict.has_key(amp_planned, root) != list.contains(amp_left_out_ids, root)
+  })
+    as "each AMP spell is planned or left out, never both and never neither"
+  assert list.length(amp_left_out_ids) + dict.size(amp_planned)
+    == list.length(amp_roots)
+    as "the AMP plans and the left-out list hold the AMP spells and nothing else"
+  assert list.all(amp_left_out, fn(one) {
+    spell_plan.refusal_of(error: one.error).outcome == spell_plan.LeavesOut
+  })
+    as "an AMP spell is left out only for what the server does not build"
+  assert list.all(abilities, fn(one) {
+    !list.contains(amp_left_out_ids, one.spell4_id)
+  })
+    as "a left-out AMP spell is not in the later abilities' list"
+  assert list.all(left_out_ids, fn(id) { !list.contains(amp_left_out_ids, id) })
+    as "and not in the equip spells' list"
 }
 
 pub fn the_coverage_lists_a_planned_standing_root_that_stands_only_in_part_test() -> Nil {
@@ -215,4 +240,21 @@ pub fn the_coverage_lists_a_planned_standing_root_that_stands_only_in_part_test(
     as "a left-out root is named with its reason"
   assert string.contains(standing_root.render(report:), "Standing")
     as "the measure prints a line of its own"
+  // The spells of the AMPs the plans leave out are listed the same way, apart from the worn
+  // items' roots.
+  let amps = standing_root.measure_amps(tables:)
+  let assert Ok(amp_roots) = amp_spec.roots(tables:)
+  assert amps.roots == list.length(amp_roots)
+    as "the AMP report's roots are the AMP spells, counted from the AMP rows"
+  assert amps.roots == amps.planned + list.length(amps.left_out)
+  assert list.map(amps.left_out, fn(entry) { entry.0 })
+    == list.map(spell_plan.unplanned_amps(tables), fn(one) { one.spell4_id })
+    as "each AMP spell the plans leave out is listed, with a reason"
+  assert list.all(amps.left_out, fn(entry) { entry.1 != "" })
+  assert list.all(amps.in_part, fn(entry) {
+    dict.has_key(spell_plan.amp_plans(tables), entry.0)
+  })
+    as "only a planned AMP spell stands in part"
+  assert string.contains(standing_root.render(report: amps), "AMP")
+    as "the measure prints a line of its own for the AMPs"
 }

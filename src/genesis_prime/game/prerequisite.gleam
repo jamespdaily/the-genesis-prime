@@ -1073,6 +1073,20 @@ pub fn is_any(row row: prerequisite_table.Prerequisite) -> Bool {
   row.flags % 2 != 0
 }
 
+/// The Spell4 ids of the live casts the row's kept conditions read: a type 15 condition's
+/// spell (a live cast of it has the unit as a target) and a type 50 condition's (a cast of it
+/// by the check's second unit holds a node on the unit), whatever the comparison.
+pub fn live_cast_spells(
+  row row: prerequisite_table.Prerequisite,
+) -> List(Spell4Id) {
+  list.filter_map(kept_conditions(row:), fn(condition) {
+    case condition.0 {
+      15 | 50 -> Ok(Spell4Id(condition.3))
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// The conditions the client keeps, each as (type, comparison, objectId, value).
 pub fn kept_conditions(
   row row: prerequisite_table.Prerequisite,

@@ -570,9 +570,13 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
         dict.values(spell_plan.standing_plans(tables:)),
       )
         |> list.flat_map(spells_of_tree),
-      // A tier's alternate is planned inside the tier, not among the plans of its own.
-      dict.values(spell_plan.tier_plans(tables:))
-        |> list.flat_map(spell_plan.tree_started_with_alternate),
+      list.append(
+        // A tier's alternate is planned inside the tier, not among the plans of its own.
+        dict.values(spell_plan.tier_plans(tables:))
+          |> list.flat_map(spell_plan.tree_started_with_alternate),
+        dict.values(spell_plan.amp_plans(tables:))
+          |> list.flat_map(spells_of_tree),
+      ),
     )
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)
