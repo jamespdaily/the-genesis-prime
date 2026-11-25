@@ -1,10 +1,11 @@
 //// The judged-count rule. Expected values are the gates of the two load runs that decide
-//// a merge: the fight run's strike rounds, strike answers and respawns, and the movement
-//// run's moves read by a probe. Each must be judged through `genesis_prime/load_judged`
-//// (a `Judged(event: ...)` naming it, inside the `judged:` of a `load_judged.judge` whose
-//// verdict is given to `load_judged.require`), and no string of the tools may print a
-//// verdict: a word `pass`, `fail` or `gate` in any form, or an event's name and a colon. The
-//// rule is shown on planted files, then read over the two real ones.
+//// a merge: the fight run's strike rounds, strike answers, strikes answered and respawns,
+//// its condition that no answer was lost, and the movement run's moves read by a probe.
+//// Each must be judged through `genesis_prime/load_judged` (a `Judged(event: ...)` naming
+//// it, inside the `judged:` of a `load_judged.judge` whose verdict is given to
+//// `load_judged.require`), a condition inside its `conditions:`, and no string of the tools
+//// may print a verdict: a word `pass`, `fail` or `gate` in any form, or an event's name and
+//// a colon. The rule is shown on planted files, then read over the two real ones.
 
 import code_rule/judged_count
 import code_rule/planted
@@ -22,8 +23,8 @@ const fight_path = "dev/genesis_prime/load_fight.gleam"
 const moves_path = "dev/genesis_prime/load_moves.gleam"
 
 /// Where each gate event is judged, by the variant's name, and which of `load_judged`'s
-/// conditions the file calls: the fight run's four events and its condition that no answer
-/// was lost, and the movement run's one event.
+/// conditions the file passes to the judge: the fight run's events and its condition that no
+/// answer was lost, and the movement run's event.
 const gates = [
   #(
     fight_path,
@@ -213,6 +214,19 @@ pub fn every_gate_line_of_the_load_runs_calls_the_judged_count_test() -> Nil {
     )
     == [1]
     as "a condition the file never calls is a breach, at the file's start"
+  let computed_not_judged =
+    planted.file(path: fight_path, lines: [
+      "pub fn report() {",
+      "  let _ignored = load_judged.nothing_lost(lost: 0)",
+      "  let judged = load_judged.judge(judged: [], conditions: [])",
+      required,
+      "}",
+    ])
+  assert lines_of(file: computed_not_judged, expected: [], conditions: [
+      "nothing_lost",
+    ])
+    == [2]
+    as "a condition computed but not passed to the judge's conditions is a breach, at the call"
   list.each(gates, fn(gate) {
     let assert [file] =
       repository.sources(["dev"])

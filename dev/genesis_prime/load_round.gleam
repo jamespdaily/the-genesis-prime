@@ -14,16 +14,15 @@
 ////   later than `match_slack_us` after the walker took the strike (the creature sends
 ////   the strike and arms the deadline in one step). A round is armed for each strike a
 ////   walker took, answered or not.
-//// - **Lost:** sent before the round's deadline fell due and not in the round when it
-////   closed; **late:** sent at or after it. A round the deadline closed (`Fired`) has no
-////   answer in it, whatever the walker stamped as the arrival: an answer that reached the
-////   creature in time would have closed the round by cancelling its deadline, so an answer
-////   sent in time to a round the deadline closed is one the creature did not have, held
-////   wherever it was held. A round closed by a cancel has the answers that reached the
-////   creature no later than the cancel; the arrival is stamped before the send
-////   (`stamped_send`), so an answer that closed its round is in it. A deadline that fires
-////   in the moment between an answer's arrival and its cancel is read as fired, and the
-////   answer counts as lost (`genesis_prime/load_deadline`).
+//// - **Lost:** sent before the round's deadline fell due and the round closed without it;
+////   **late:** sent at or after it. A round the deadline closed (`Fired`: no cancel reached
+////   the recorder) has no answer in it, whatever the walker stamped as the arrival: an
+////   answer that reached the creature in time would have closed the round by cancelling its
+////   deadline, so an answer sent in time to a round the deadline closed is one the creature
+////   did not have, held wherever it was held. A round closed by a cancel has the answers
+////   that reached the creature no later than the cancel, a cancel after the deadline fired at
+////   the recorder included (`genesis_prime/load_deadline`); the arrival is stamped before
+////   the send (`stamped_send`), so an answer that closed its round is in it.
 //// - The rounds counted are those of the creatures that struck a walker, answered or
 ////   not (`strikers`): a creature none of whose strikes was answered still has its
 ////   rounds counted, and another service's timer with a deadline's number does not.
@@ -187,12 +186,11 @@ fn in_round(answer answer: Answer, round round: Deadline) -> Bool {
   }
 }
 
-/// How many strikes of a walker's own are owed an answer: those made at least
-/// `strike_tell.deadline_ms` before `ended_us`, and at least 1. `made_at_us` is when each
-/// was made.
-pub fn owed(made_at_us made_at_us: List(Int), ended_us ended_us: Int) -> Int {
-  let due_us = ended_us - strike_tell.deadline_ms * 1000
-  int.max(1, list.count(made_at_us, fn(at_us) { at_us <= due_us }))
+/// Whether a walker that stops hearing at `ends_ms` may make a strike at `at_ms`: only
+/// with `strike_tell.deadline_ms` left to hear its answer, so every strike it makes is
+/// owed one.
+pub fn may_strike(at_ms at_ms: Int, ends_ms ends_ms: Int) -> Bool {
+  at_ms <= ends_ms - strike_tell.deadline_ms
 }
 
 /// Whether what a walker was sent is a creature's answer to a strike of its own: the

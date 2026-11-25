@@ -5,7 +5,8 @@
 //// ```
 //// a load tool's file ─▶ the events its `Judged(event: ...)` calls name ─▶ each expected
 ////                       event missing from them is a breach, at the file's first line
-//// each condition the run needs ─▶ a call of that `load_judged` function, else a breach
+//// each condition the run needs ─▶ a call of that `load_judged` function written inside the
+////                       `conditions:` of a `load_judged.judge`, else a breach
 //// a function that builds a `Judged` ─▶ every `Judged` is inside the `judged:` of a
 ////                       `load_judged.judge` whose result goes to `load_judged.require`
 //// a string literal of the file ─▶ no verdict word, no event's name and a colon
@@ -25,7 +26,7 @@ import gleam/string
 /// The breaches of a load tool's file: each of its `expected` events (variant names of
 /// `load_judged.Event`) that no `Judged(event: ...)` of the file names, each of its
 /// `conditions` (names of `load_judged`'s functions that build a `Condition`) that the file
-/// never calls, each function whose
+/// never calls inside the `conditions:` of a `load_judged.judge`, each function whose
 /// `Judged` counts do not all reach `load_judged.require` through `load_judged.judge`, and
 /// each string literal that prints a verdict by hand: one with a verdict word, or one that
 /// begins an event's name from `printed`, then a colon.
@@ -59,19 +60,42 @@ pub fn breaches(
         rule: "a verdict or gate line printed by hand, not through load_judged.judge",
       )
     })
-  let not_called =
-    list.filter(conditions, fn(condition) {
-      !list.any(syntax.calls(module), called_through(condition))
+  let condition_spans =
+    argument_spans(
+      calls: syntax.calls(module),
+      call: "judge",
+      label: "conditions",
+    )
+  let not_judged_as_condition =
+    list.filter_map(conditions, fn(condition) {
+      let calls = list.filter(syntax.calls(module), called_through(condition))
+      case list.any(calls, inside(spans: condition_spans, call: _)), calls {
+        True, _ -> Error(Nil)
+        False, [] ->
+          Ok(Breach(
+            path: file.path,
+            line: 1,
+            rule: "a condition of the run is not taken from load_judged: "
+              <> condition,
+          ))
+        False, [first, ..] ->
+          Ok(Breach(
+            path: file.path,
+            line: syntax.line_of(
+              text: file.text,
+              byte_offset: first.function.start,
+            ),
+            rule: "a condition of the run is not passed to the conditions of load_judged.judge: "
+              <> condition,
+          ))
+      }
     })
-    |> list.map(fn(condition) {
-      Breach(
-        path: file.path,
-        line: 1,
-        rule: "a condition of the run is not taken from load_judged: "
-          <> condition,
-      )
-    })
-  list.flatten([not_judged, not_called, unwired(file:, module:), by_hand])
+  list.flatten([
+    not_judged,
+    not_judged_as_condition,
+    unwired(file:, module:),
+    by_hand,
+  ])
 }
 
 /// The words of a text: its runs of letters, in lower case.
@@ -141,13 +165,24 @@ fn all_inside_judge(
   judged_calls judged_calls: List(syntax.Call),
   calls calls: List(syntax.Call),
 ) -> Bool {
-  let spans =
-    list.filter(calls, called_through("judge"))
-    |> list.filter_map(fn(call) { argument_span(call:, label: "judged") })
-  list.all(judged_calls, fn(call) {
-    list.any(spans, fn(span) {
-      span.start <= call.function.start && call.function.end <= span.end
-    })
+  let spans = argument_spans(calls:, call: "judge", label: "judged")
+  list.all(judged_calls, inside(spans:, call: _))
+}
+
+/// The spans of the argument `label` of each call of `load_judged`'s function `call`.
+fn argument_spans(
+  calls calls: List(syntax.Call),
+  call call: String,
+  label label: String,
+) -> List(glance.Span) {
+  list.filter(calls, called_through(call))
+  |> list.filter_map(fn(found) { argument_span(call: found, label:) })
+}
+
+/// Whether the call is written inside one of the spans.
+fn inside(spans spans: List(glance.Span), call call: syntax.Call) -> Bool {
+  list.any(spans, fn(span) {
+    span.start <= call.function.start && call.function.end <= span.end
   })
 }
 

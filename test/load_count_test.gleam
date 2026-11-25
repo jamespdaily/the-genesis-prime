@@ -170,7 +170,22 @@ pub fn a_round_is_lost_late_or_in_by_its_answers_times_against_the_armed_deadlin
       ),
     ),
     #(
-      "sent before the deadline and stamped arrived before it closed the round: the deadline closed it without the answer, so it is lost whatever the walker stamped",
+      "sent before the deadline, the deadline fired at the recorder and then the creature cancelled the round: it had the answer first, so the round is closed by the answer",
+      [answer(creature:, sent_us: 900_000, arrived_us: 950_000)],
+      load_deadline.Cancelled(at_us: 1_005_000),
+      answered(one(Closed(..load_round.no_closures, answer: 1))),
+    ),
+    #(
+      "sent before the deadline, the deadline fired at the recorder and then the creature cancelled the round, the answer reaching it after the cancel: lost",
+      [answer(creature:, sent_us: 900_000, arrived_us: 1_100_000)],
+      load_deadline.Cancelled(at_us: 1_005_000),
+      Rounds(
+        ..answered(one(Closed(..load_round.no_closures, unexplained: 1))),
+        lost: 1,
+      ),
+    ),
+    #(
+      "sent before the deadline and stamped arrived before it closed the round, the map having held it after the stamp: the deadline closed the round without the answer, so it is lost whatever the walker stamped",
       [answer(creature:, sent_us: 900_000, arrived_us: 950_000)],
       load_deadline.Fired(at_us: 1_000_000),
       Rounds(
@@ -655,31 +670,23 @@ pub fn a_round_the_deadline_closed_has_lost_every_answer_sent_before_it_fell_due
 
 pub fn a_strike_the_walkers_made_a_deadline_before_the_end_is_owed_an_answer_and_a_later_one_is_not_test() -> Nil {
   use <- owned_test.run(5000)
-  // The deadline is `strike_tell.deadline_ms` = 1,000 ms, 1,000,000 microseconds.
+  // A walker may strike while it still has `strike_tell.deadline_ms` = 1,000 ms to hear
+  // the answer, so every strike it makes is owed one: the rows are the strike's time and
+  // the time the walker stops hearing, in milliseconds.
   let rows = [
-    #("no strike made: at least 1", [], 10_000_000, 1),
+    #("a strike at the start of a long walk", 0, 30_000, True),
     #(
-      "one strike made exactly a deadline before the end",
-      [9_000_000],
-      10_000_000,
-      1,
+      "a strike exactly a deadline before the walker stops",
+      29_000,
+      30_000,
+      True,
     ),
-    #(
-      "a strike made after that is not owed, and the count is at least 1",
-      [9_000_001],
-      10_000_000,
-      1,
-    ),
-    #(
-      "three early and two within the deadline of the end",
-      [100_000, 4_000_000, 9_000_000, 9_500_000, 10_000_000],
-      10_000_000,
-      3,
-    ),
+    #("a strike a millisecond later is not made", 29_001, 30_000, False),
+    #("a strike at the end is not made", 30_000, 30_000, False),
   ]
   list.each(rows, fn(row) {
-    let #(reason, made_at_us, ended_us, owed) = row
-    assert load_round.owed(made_at_us:, ended_us:) == owed as reason
+    let #(reason, at_ms, ends_ms, may) = row
+    assert load_round.may_strike(at_ms:, ends_ms:) == may as reason
   })
   let answered =
     strike_tell.Answered(
