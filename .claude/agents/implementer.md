@@ -18,7 +18,7 @@ Use only recordings of this server or retail captures: a recording made against 
 
 To read the client's code (a function, a check, an opcode), start with `.claude/skills/decoding-the-client/scripts/client_trace.py`; read the saved C by hand only for what it cannot show.
 
-Write the tests from the list first, then the code, running only the named tests.
+Your first commit holds the listed tests and a stub that compiles, and each listed test fails at it; the code comes in later commits. Run only the named tests.
 
 Show every new test, and every test you move to another file, failing when the thing its name promises is broken: break that code, run the test, paste its failing lines, restore. A test edited in place only because a fixture or a pinned value changed needs no break.
 
@@ -30,7 +30,7 @@ Hand back once, as a comment on the step's issue, then return under 150 words: t
 
 ```
 **Hand-back** <branch> @ <commit>
-- Failing first: for each listed test, the pasted failure lines of its first run against its stub
+- Failing first: for each listed test, `NAME` @ <commit>: the pasted failure lines of its run at the commit that adds it
 - Moved: for each test you moved to another file, what you broke and the pasted failure lines, or none
 - Passing last: for each test file you touched, the pasted last pass line of its last run
 - Test fixes: <test> - the cause and its evidence (the failing lines and the code that makes them), or none
