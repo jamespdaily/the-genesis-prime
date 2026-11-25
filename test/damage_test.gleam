@@ -40,7 +40,7 @@ import genesis_prime/table/spell4_effects
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{Some}
 import owned_test
 import properties_support
 import qcheck
@@ -640,19 +640,171 @@ pub fn the_weapon_kinds_6_and_9_are_not_read_test() -> Nil {
     as "Explorer - Offensive Path Ability - Eldan Relic: kind 9 x 7.0"
 }
 
-pub fn unread_reads_the_vital_kinds_and_still_names_6_9_and_18_test() -> Nil {
-  use <- owned_test.run(5000)
-  list.each(
-    [1, 2, 3, 4, 5, 11, 7, 8, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26],
-    fn(kind) {
-      assert damage.unread(formula: one_parameter(kind:, factor: 0.5)) == None
-        as "0x140566ad0 reads the attribute kinds and each vital kind, of the caster or of the target"
-    },
-  )
-  list.each([6, 9, 18], fn(kind) {
-    assert damage.unread(formula: one_parameter(kind:, factor: 0.5))
-      == Some(Unread(parameter_kind: kind))
-      as "6 and 9 are the caster's weapon damage (0x140566ad0 sends them to its default case) and 18 a value passed in, which the area load does not read"
+/// A question the formula's reading of a parameter kind answers.
+type Question {
+  IsStat
+  IsRead
+  IsReadOnCaster
+  IsFlat
+  IsTargetKind
+  IsReadForACreature
+}
+
+/// Each parameter kind from -1 to 40 as the client's formula reads it (`0x140566d40`: the
+/// stat part names 1 to 5 and 11 to 13; `0x140566ad0`: the flat part names the level 10, the
+/// vitals of the caster 8, 14, 16, 23, 25, 26 and of the target 7, 15, 17, 19, 21, 22) with
+/// the questions answered yes. The weapon kinds 6 and 9 and the passed-in value 18 are read
+/// by neither part, and 20, 24 and the numbers above 26 by no case. The player's formula
+/// reads 0, the stats and the flat kinds; an effect on its caster also 18; a creature's
+/// reads 0, Strength (1), the level (10) and Assault Power (12).
+fn kind_table() -> List(#(Int, damage.ParameterKind, List(Question))) {
+  [
+    #(-1, damage.Other(-1), []),
+    #(0, damage.NoParameter, [IsRead, IsReadOnCaster, IsReadForACreature]),
+    #(1, damage.Stat(damage.Strength), [
+      IsStat,
+      IsRead,
+      IsReadOnCaster,
+      IsReadForACreature,
+    ]),
+    #(2, damage.Stat(damage.Dexterity), [IsStat, IsRead, IsReadOnCaster]),
+    #(3, damage.Stat(damage.Technology), [IsStat, IsRead, IsReadOnCaster]),
+    #(4, damage.Stat(damage.Magic), [IsStat, IsRead, IsReadOnCaster]),
+    #(5, damage.Stat(damage.Wisdom), [IsStat, IsRead, IsReadOnCaster]),
+    #(6, damage.Weapon, []),
+    #(7, damage.Vital(unit: damage.TheTarget, vital: damage.MaximumHealth), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+      IsTargetKind,
+    ]),
+    #(8, damage.Vital(unit: damage.TheCaster, vital: damage.MaximumHealth), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+    ]),
+    #(9, damage.WeaponDps, []),
+    #(10, damage.CasterLevel, [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+      IsReadForACreature,
+    ]),
+    #(11, damage.Stat(damage.Stamina), [IsStat, IsRead, IsReadOnCaster]),
+    #(12, damage.Stat(damage.AssaultPower), [
+      IsStat,
+      IsRead,
+      IsReadOnCaster,
+      IsReadForACreature,
+    ]),
+    #(13, damage.Stat(damage.SupportPower), [IsStat, IsRead, IsReadOnCaster]),
+    #(14, damage.Vital(unit: damage.TheCaster, vital: damage.Shield), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+    ]),
+    #(15, damage.Vital(unit: damage.TheTarget, vital: damage.Shield), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+      IsTargetKind,
+    ]),
+    #(16, damage.Vital(unit: damage.TheCaster, vital: damage.MaximumShield), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+    ]),
+    #(17, damage.Vital(unit: damage.TheTarget, vital: damage.MaximumShield), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+      IsTargetKind,
+    ]),
+    #(18, damage.PassedIn, [IsReadOnCaster]),
+    #(19, damage.Vital(unit: damage.TheTarget, vital: damage.Health), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+      IsTargetKind,
+    ]),
+    #(20, damage.Other(20), []),
+    #(21, damage.Vital(unit: damage.TheTarget, vital: damage.MissingHealth), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+      IsTargetKind,
+    ]),
+    #(22, damage.Vital(unit: damage.TheTarget, vital: damage.MissingShield), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+      IsTargetKind,
+    ]),
+    #(23, damage.Vital(unit: damage.TheCaster, vital: damage.Health), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+    ]),
+    #(24, damage.Other(24), []),
+    #(25, damage.Vital(unit: damage.TheCaster, vital: damage.MissingHealth), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+    ]),
+    #(26, damage.Vital(unit: damage.TheCaster, vital: damage.MissingShield), [
+      IsRead,
+      IsReadOnCaster,
+      IsFlat,
+    ]),
+    #(27, damage.Other(27), []),
+    #(28, damage.Other(28), []),
+    #(29, damage.Other(29), []),
+    #(30, damage.Other(30), []),
+    #(31, damage.Other(31), []),
+    #(32, damage.Other(32), []),
+    #(33, damage.Other(33), []),
+    #(34, damage.Other(34), []),
+    #(35, damage.Other(35), []),
+    #(36, damage.Other(36), []),
+    #(37, damage.Other(37), []),
+    #(38, damage.Other(38), []),
+    #(39, damage.Other(39), []),
+    #(40, damage.Other(40), []),
+  ]
+}
+
+pub fn a_parameter_kind_decodes_once_and_each_predicate_answers_as_the_clients_formula_reads_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let table = kind_table()
+  assert list.map(table, fn(row) { row.0 })
+    == int.range(from: -1, to: 41, with: [], run: fn(kinds, kind) {
+      [kind, ..kinds]
+    })
+    |> list.reverse
+    as "the table names every kind from -1 to 40, once"
+  list.each(table, fn(row) {
+    let #(kind, expected, yes) = row
+    let label = "kind " <> int.to_string(kind)
+    assert damage.parameter_kind(kind) == expected
+      as { label <> " decodes to its meaning" }
+    let kind = damage.parameter_kind(kind)
+    let answers = [
+      #("is_stat", IsStat, damage.is_stat(kind)),
+      #("is_read", IsRead, damage.is_read(kind)),
+      #("is_read_on_caster", IsReadOnCaster, damage.is_read_on_caster(kind)),
+      #("is_flat", IsFlat, damage.is_flat(kind)),
+      #("is_target_kind", IsTargetKind, damage.is_target_kind(kind)),
+      #(
+        "is_read_for_a_creature",
+        IsReadForACreature,
+        damage.is_read_for_a_creature(kind),
+      ),
+    ]
+    list.each(answers, fn(answer) {
+      let #(name, question, given) = answer
+      assert given == list.contains(yes, question)
+        as { label <> ": " <> name <> " answers as the formula reads it" }
+    })
   })
 }
 

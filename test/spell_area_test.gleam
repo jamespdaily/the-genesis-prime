@@ -3437,7 +3437,8 @@ pub fn a_spell_that_holds_a_proxy_naming_its_spell_in_data_bits01_beside_a_rando
     assert string.contains(sentence, part)
       as { "Field Probes' refusal names " <> part <> ": " <> sentence }
   })
-  assert spell_plan.is_unbuilt(error: field_probes.error)
+  assert spell_plan.refusal_of(error: field_probes.error).outcome
+    == spell_plan.LeavesOut
 }
 
 pub fn a_shape_8_with_a_box_is_refused_by_name_for_a_creature_test() -> Nil {

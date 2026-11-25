@@ -58,6 +58,9 @@
 ////   player's) are each divided by its fourth value, added and multiplied, every step a
 ////   32-bit float (`0x140565600`, `0x1405659f5`).
 
+import genesis_prime/game/column_reading.{
+  type ColumnVerdict, Open, Question, Reads, Unexplained,
+}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/table/spell4_effects
@@ -65,13 +68,66 @@ import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// One parameter of an effect: the unit value its type names, and the factor it
 /// is multiplied by.
 pub type Parameter {
   Parameter(kind: Int, value: Float)
+}
+
+/// What a parameter's kind names in the client's formula (`0x140566d40` for the stat part,
+/// `0x140566ad0` for the flat part), decoded once from the column's number: the one place
+/// a number of the column becomes a meaning. A number no case of either part names is
+/// `Other`.
+pub type ParameterKind {
+  /// 0: the slot holds no parameter.
+  NoParameter
+  /// 1 to 5, 11, 12 and 13: a stat of the caster.
+  Stat(stat: Stat)
+  /// 6: the caster's weapon (`Spell4Effects.parameterType.6_9`).
+  Weapon
+  /// 9: the caster's weapon DPS (`Spell4Effects.parameterType.6_9`).
+  WeaponDps
+  /// 10: the caster's level.
+  CasterLevel
+  /// 18: the value passed in with the cast (genesis_prime/game/passed_in_value).
+  PassedIn
+  /// 7, 8, 14 to 17, 19, 21 to 23, 25 and 26: a vital of the caster or of the target.
+  Vital(unit: VitalUnit, vital: UnitVital)
+  /// 20, 24, a number above 26 or below 0: no case of the client's formula names it.
+  Other(kind: Int)
+}
+
+/// A caster stat the stat part reads (`0x140566d40`): the six attributes, then the
+/// Assault Power and Support Power, which are a rating times 0.25.
+pub type Stat {
+  Strength
+  Dexterity
+  Technology
+  Magic
+  Wisdom
+  Stamina
+  AssaultPower
+  SupportPower
+}
+
+/// The unit whose vital a flat kind reads: the caster, or the target
+/// (`0x140566ad0`: param_1 is the caster, param_2 the target).
+pub type VitalUnit {
+  TheCaster
+  TheTarget
+}
+
+/// A vital of a unit as the flat part reads it.
+pub type UnitVital {
+  MaximumHealth
+  Shield
+  MaximumShield
+  Health
+  MissingHealth
+  MissingShield
 }
 
 /// An effect's row as the formula reads it: the multiplier dataBits00 as a float, the
@@ -129,11 +185,11 @@ fn parameters_of(
 pub fn gives_nothing(formula formula: Formula) -> Bool {
   let has_value = fn(is_kind) {
     list.any(formula.parameters, fn(parameter) {
-      parameter.value != 0.0 && is_kind(parameter.kind)
+      parameter.value != 0.0 && is_kind(parameter_kind(parameter.kind))
     })
   }
   let stat = has_value(is_stat)
-  let flat = has_value(fn(kind) { kind != 0 && !is_stat(kind) })
+  let flat = has_value(fn(kind) { kind != NoParameter && !is_stat(kind) })
   !stat && { formula.multiplier == 0.0 || { formula.base == 0.0 && !flat } }
 }
 
@@ -143,14 +199,57 @@ pub fn gives_nothing(formula formula: Formula) -> Bool {
 /// shield), by a parameter that has a factor.
 pub fn names_target_kind(formula formula: Formula) -> Bool {
   list.any(formula.parameters, fn(parameter) {
-    parameter.value != 0.0 && is_target_kind(parameter.kind)
+    parameter.value != 0.0 && is_target_kind(parameter_kind(parameter.kind))
   })
 }
 
-fn is_target_kind(kind: Int) -> Bool {
+/// Decodes a parameter's number into what the client's formula makes of it
+/// (`0x140566d40`, `0x140566ad0`).
+pub fn parameter_kind(kind: Int) -> ParameterKind {
   case kind {
-    7 | 15 | 17 | 19 | 21 | 22 -> True
-    _ -> False
+    0 -> NoParameter
+    1 -> Stat(Strength)
+    2 -> Stat(Dexterity)
+    3 -> Stat(Technology)
+    4 -> Stat(Magic)
+    5 -> Stat(Wisdom)
+    6 -> Weapon
+    7 -> Vital(unit: TheTarget, vital: MaximumHealth)
+    8 -> Vital(unit: TheCaster, vital: MaximumHealth)
+    9 -> WeaponDps
+    10 -> CasterLevel
+    11 -> Stat(Stamina)
+    12 -> Stat(AssaultPower)
+    13 -> Stat(SupportPower)
+    14 -> Vital(unit: TheCaster, vital: Shield)
+    15 -> Vital(unit: TheTarget, vital: Shield)
+    16 -> Vital(unit: TheCaster, vital: MaximumShield)
+    17 -> Vital(unit: TheTarget, vital: MaximumShield)
+    18 -> PassedIn
+    19 -> Vital(unit: TheTarget, vital: Health)
+    21 -> Vital(unit: TheTarget, vital: MissingHealth)
+    22 -> Vital(unit: TheTarget, vital: MissingShield)
+    23 -> Vital(unit: TheCaster, vital: Health)
+    25 -> Vital(unit: TheCaster, vital: MissingHealth)
+    26 -> Vital(unit: TheCaster, vital: MissingShield)
+    _ -> Other(kind)
+  }
+}
+
+/// Whether the kind is a vital of the target, not the caster (`0x140566ad0`: 7 the maximum
+/// health, 15 the shield, 17 the maximum shield, 19 the health, 21 the maximum health less
+/// the health, 22 the maximum shield less the shield).
+pub fn is_target_kind(kind: ParameterKind) -> Bool {
+  case kind {
+    Vital(unit: TheTarget, ..) -> True
+    Vital(unit: TheCaster, ..)
+    | NoParameter
+    | Stat(_)
+    | Weapon
+    | WeaponDps
+    | CasterLevel
+    | PassedIn
+    | Other(_) -> False
   }
 }
 
@@ -247,30 +346,19 @@ pub fn holds_passed_in(effect effect: spell4_effects.Spell4Effects) -> Bool {
   case formula_of(effect:) {
     Ok(formula) ->
       list.any(formula.parameters, fn(parameter) {
-        parameter.kind == 18 && parameter.value != 0.0
+        parameter_kind(parameter.kind) == PassedIn && parameter.value != 0.0
       })
     Error(Nil) -> False
   }
 }
 
-/// The first parameter type of the effect row whose factor is not 0.0, whatever its
-/// type but 0, which names no parameter: for a row whose data bits are no formula, such as
-/// a stat modifier's, whose amount the plan takes from its data bits alone.
-pub fn first_parameter_with_factor(
-  effect effect: spell4_effects.Spell4Effects,
-) -> Option(Unread) {
-  first_unread(parameters: parameters_of(effect:), is_read: fn(kind) {
-    kind == 0
-  })
-}
-
 /// The first parameter with a factor whose type `is_read` refuses.
 fn first_unread(
   parameters parameters: List(Parameter),
-  is_read is_read: fn(Int) -> Bool,
+  is_read is_read: fn(ParameterKind) -> Bool,
 ) -> Option(Unread) {
   list.find(parameters, fn(parameter) {
-    parameter.value != 0.0 && !is_read(parameter.kind)
+    parameter.value != 0.0 && !is_read(parameter_kind(parameter.kind))
   })
   |> result.map(fn(parameter) { Unread(parameter_kind: parameter.kind) })
   |> option.from_result
@@ -288,10 +376,8 @@ pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
 /// What the flat part reads of a caster that holds only its level: the level for type 10,
 /// 0.0 for any other type (`0x140566ad0`).
 fn level_value(level level: Int, kind kind: Int) -> Float {
-  case kind {
-    10 -> unsigned_unit_value(number: level)
-    _ -> 0.0
-  }
+  use <- bool.guard(when: parameter_kind(kind) != CasterLevel, return: 0.0)
+  unsigned_unit_value(number: level)
 }
 
 /// The value of a player caster's effect, the flat part reading what `flat_of` gives for
@@ -404,26 +490,37 @@ fn whole_stat_part(stat_part: Float) -> Int {
 /// and 13 the Support Power; 0.0 for any other type, which the stat part skips.
 fn stat_of(attacker attacker: Attacker, kind kind: Int) -> Float {
   let attributes = attacker.attributes
+  case stat_named_by(parameter_kind(kind)) {
+    Some(Strength) -> attributes.strength
+    Some(Dexterity) -> attributes.dexterity
+    Some(Technology) -> attributes.technology
+    Some(Magic) -> attributes.magic
+    Some(Wisdom) -> attributes.wisdom
+    Some(Stamina) -> attributes.stamina
+    Some(AssaultPower) -> power_of(rating: attacker.assault_rating)
+    Some(SupportPower) -> power_of(rating: attacker.support_rating)
+    None -> 0.0
+  }
+}
+
+/// The stat the kind names, when it names one.
+fn stat_named_by(kind: ParameterKind) -> Option(Stat) {
   case kind {
-    1 -> attributes.strength
-    2 -> attributes.dexterity
-    3 -> attributes.technology
-    4 -> attributes.magic
-    5 -> attributes.wisdom
-    11 -> attributes.stamina
-    12 -> power_of(rating: attacker.assault_rating)
-    13 -> power_of(rating: attacker.support_rating)
-    _ -> 0.0
+    Stat(stat) -> Some(stat)
+    NoParameter
+    | Weapon
+    | WeaponDps
+    | CasterLevel
+    | PassedIn
+    | Vital(..)
+    | Other(_) -> None
   }
 }
 
 /// Whether the stat part reads the parameter type (`0x140566d40`): the six attributes
 /// and the two powers.
-fn is_stat(kind: Int) -> Bool {
-  case kind {
-    1 | 2 | 3 | 4 | 5 | 11 | 12 | 13 -> True
-    _ -> False
-  }
+pub fn is_stat(kind: ParameterKind) -> Bool {
+  option.is_some(stat_named_by(kind))
 }
 
 /// What the formula reads of a caster that is also the target of its effect: its
@@ -453,22 +550,24 @@ pub type Vitals {
   Vitals(health: Int, max_health: Int, shield: Int, max_shield: Int)
 }
 
-fn is_read(kind: Int) -> Bool {
-  kind == 0 || is_stat(kind) || is_flat(kind)
+/// Whether a player caster's formula reads the parameter type (`0x140565600`): none, a
+/// stat or a flat kind.
+pub fn is_read(kind: ParameterKind) -> Bool {
+  kind == NoParameter || is_stat(kind) || is_flat(kind)
 }
 
 /// Whether an effect on its caster reads the parameter type: the kinds `is_read` names and
-/// 18, the passed-in value (`0x140565600`).
-fn is_read_on_caster(kind: Int) -> Bool {
-  is_read(kind) || kind == 18
+/// the passed-in value (`0x140565600`).
+pub fn is_read_on_caster(kind: ParameterKind) -> Bool {
+  is_read(kind) || kind == PassedIn
 }
 
 /// Whether the flat part reads the parameter type (`0x140566ad0`): the level and a
 /// vital of the caster or of the target.
-fn is_flat(kind: Int) -> Bool {
+pub fn is_flat(kind: ParameterKind) -> Bool {
   case kind {
-    7 | 8 | 10 | 14 | 15 | 16 | 17 | 19 | 21 | 22 | 23 | 25 | 26 -> True
-    _ -> False
+    CasterLevel | Vital(..) -> True
+    NoParameter | Stat(_) | Weapon | WeaponDps | PassedIn | Other(_) -> False
   }
 }
 
@@ -490,28 +589,28 @@ pub fn value_on_caster(
 /// What a flat kind reads of the caster: the level for 10, the passed-in value for 18,
 /// else the vital the kind names (`0x140566ad0`).
 fn unit_value_of(caster caster: OnCaster, kind kind: Int) -> Float {
-  case kind {
-    10 -> unsigned_unit_value(number: caster.attacker.level)
-    18 -> caster.attacker.passed_in
-    _ -> vital_of(vitals: caster.vitals, kind:)
+  case parameter_kind(kind) {
+    CasterLevel -> unsigned_unit_value(number: caster.attacker.level)
+    PassedIn -> caster.attacker.passed_in
+    Vital(vital:, ..) -> vital_of(vitals: caster.vitals, vital:)
+    NoParameter | Stat(_) | Weapon | WeaponDps | Other(_) -> 0.0
   }
 }
 
-/// The vital a kind names of one unit as the flat part reads it
-/// (`unsigned_unit_value`), 0.0 for a kind that names none (`0x140566ad0`: 7 and 8 the maximum health, 14 and 15 the shield, 16 and 17 the
-/// maximum shield, 19 and 23 the health, 21 and 25 the maximum health less the health,
-/// 22 and 26 the maximum shield less the shield). 7, 15, 17, 19, 21 and 22 are the
-/// target's kinds and 8, 14, 16, 23, 25 and 26 the caster's; the unit passed is the one
-/// read.
-fn vital_of(vitals vitals: Vitals, kind kind: Int) -> Float {
-  case kind {
-    7 | 8 -> unsigned_unit_value(number: vitals.max_health)
-    14 | 15 -> unsigned_unit_value(number: vitals.shield)
-    16 | 17 -> unsigned_unit_value(number: vitals.max_shield)
-    19 | 23 -> unsigned_unit_value(number: vitals.health)
-    21 | 25 -> unsigned_unit_value(number: vitals.max_health - vitals.health)
-    22 | 26 -> unsigned_unit_value(number: vitals.max_shield - vitals.shield)
-    _ -> 0.0
+/// A vital of one unit as the flat part reads it (`unsigned_unit_value`): the unit passed
+/// is the one read (`0x140566ad0`: 7 and 8 the maximum health, 14 and 15 the shield, 16
+/// and 17 the maximum shield, 19 and 23 the health, 21 and 25 the maximum health less the
+/// health, 22 and 26 the maximum shield less the shield).
+fn vital_of(vitals vitals: Vitals, vital vital: UnitVital) -> Float {
+  case vital {
+    MaximumHealth -> unsigned_unit_value(number: vitals.max_health)
+    Shield -> unsigned_unit_value(number: vitals.shield)
+    MaximumShield -> unsigned_unit_value(number: vitals.max_shield)
+    Health -> unsigned_unit_value(number: vitals.health)
+    MissingHealth ->
+      unsigned_unit_value(number: vitals.max_health - vitals.health)
+    MissingShield ->
+      unsigned_unit_value(number: vitals.max_shield - vitals.shield)
   }
 }
 
@@ -546,7 +645,7 @@ pub fn partial(formula formula: Formula, caster caster: OnCaster) -> Partial {
     base: formula.base,
     multiplier: formula.multiplier,
     terms: list.map(formula.parameters, fn(parameter) {
-      case is_target_kind(parameter.kind) {
+      case is_target_kind(parameter_kind(parameter.kind)) {
         True -> OfTarget(kind: parameter.kind, factor: parameter.value)
         False ->
           Known(float32.product(
@@ -569,7 +668,16 @@ pub fn finish(partial partial: Partial, target target: Vitals) -> Float {
       case term {
         Known(known) -> known
         OfTarget(kind:, factor:) ->
-          float32.product(left: factor, right: vital_of(vitals: target, kind:))
+          float32.product(left: factor, right: case parameter_kind(kind) {
+            Vital(vital:, ..) -> vital_of(vitals: target, vital:)
+            NoParameter
+            | Stat(_)
+            | Weapon
+            | WeaponDps
+            | CasterLevel
+            | PassedIn
+            | Other(_) -> 0.0
+          })
       }
     }),
   )
@@ -641,8 +749,13 @@ pub fn creature_unread(formula formula: Formula) -> Option(Unread) {
   first_unread(parameters: formula.parameters, is_read: is_read_for_a_creature)
 }
 
-fn is_read_for_a_creature(kind: Int) -> Bool {
-  kind == 0 || kind == 1 || kind == 10 || kind == 12
+/// Whether the creature formula reads the parameter type: none, Strength, the level and
+/// Assault Power.
+pub fn is_read_for_a_creature(kind: ParameterKind) -> Bool {
+  kind == NoParameter
+  || kind == Stat(Strength)
+  || kind == CasterLevel
+  || kind == Stat(AssaultPower)
 }
 
 /// The effect's value for a creature caster, before any rounding to a whole number
@@ -661,10 +774,16 @@ pub fn creature_value(
 ) -> Float {
   let stat_part =
     stat_part_of(parameters: formula.parameters, stat_of: fn(kind) {
-      case kind {
-        1 -> creature.strength
-        12 -> creature.assault_power
-        _ -> 0.0
+      case stat_named_by(parameter_kind(kind)) {
+        Some(Strength) -> creature.strength
+        Some(AssaultPower) -> creature.assault_power
+        Some(Dexterity)
+        | Some(Technology)
+        | Some(Magic)
+        | Some(Wisdom)
+        | Some(Stamina)
+        | Some(SupportPower)
+        | None -> 0.0
       }
     })
     |> whole_stat_part
@@ -702,7 +821,10 @@ fn cap_of(
   level level: Int,
   scaling scaling: CreatureScaling,
 ) -> Float {
-  let stat_parameters = list.filter(formula.parameters, is_stat_parameter)
+  let stat_parameters =
+    list.filter(formula.parameters, fn(parameter) {
+      is_stat(parameter_kind(parameter.kind))
+    })
   let mean = case stat_parameters {
     [] -> 0.0
     _ ->
@@ -725,9 +847,53 @@ fn cap_of(
   )
 }
 
-/// Whether a parameter's type is one the cap's mean counts (`0x140565683`): 1 to 5, 11, 12
-/// or 13, the stat types of the stat part.
-fn is_stat_parameter(parameter: Parameter) -> Bool {
-  let kind = parameter.kind
-  { kind >= 1 && kind <= 5 } || { kind >= 11 && kind <= 13 }
+/// A stat modifier row's parameters as the plan reads them: the type of the first
+/// parameter with a factor (0 when none names a parameter) and the verdict on it.
+pub type ParameterReading {
+  ParameterReading(kind: Int, verdict: ColumnVerdict)
+}
+
+/// The record whose gap holds the open questions of a stat modifier's parameters.
+pub const modifier_fact = "Spell4Effects.effectType.11.change"
+
+/// The verdict on a UnitPropertyModifier row's parameters, which the plan does not read
+/// (its amount comes from the data bits alone, `Spell4Effects.effectType.11.change`): the
+/// first parameter in column order with a factor and a type but 0. A row with none, or
+/// with a factor only on type 0, which names no parameter, is `Reads`. Any other type is
+/// `Open` with the question of what its meaning adds, or `Unexplained` when no case of the
+/// client's formula names it.
+pub fn modifier_parameter_reading(
+  effect effect: spell4_effects.Spell4Effects,
+) -> ParameterReading {
+  case
+    first_unread(parameters: parameters_of(effect:), is_read: fn(kind) {
+      kind == NoParameter
+    })
+  {
+    None -> ParameterReading(kind: 0, verdict: Reads)
+    Some(Unread(parameter_kind: kind)) ->
+      ParameterReading(kind:, verdict: modifier_kind_reading(kind:))
+  }
+}
+
+/// The verdict on one parameter type of a stat modifier row that carries a factor
+/// (`modifier_parameter_reading`).
+pub fn modifier_kind_reading(kind kind: Int) -> ColumnVerdict {
+  let open = fn(marker) { Open(Question(fact: modifier_fact, marker:)) }
+  case parameter_kind(kind) {
+    NoParameter -> Reads
+    Stat(AssaultPower) -> open("Assault Power")
+    Stat(SupportPower) -> open("Support Power")
+    Stat(Strength)
+    | Stat(Dexterity)
+    | Stat(Technology)
+    | Stat(Magic)
+    | Stat(Wisdom)
+    | Stat(Stamina) -> open("an attribute")
+    CasterLevel -> open("its level")
+    Weapon | WeaponDps -> open("the weapon")
+    Vital(..) -> open("a unit's vital")
+    PassedIn -> open("the passed-in value")
+    Other(_) -> Unexplained
+  }
 }

@@ -1,41 +1,65 @@
 //// The client's fact file read by the tests, so a test that states a client
 //// value takes it from the record that holds it and cannot differ from it.
 
+import genesis_prime/coverage/fact_record
 import gleam/bit_array
 import gleam/bool
+import gleam/dict
 import gleam/list
+import gleam/option.{type Option}
 import gleam/result
 import gleam/string
-import simplifile
-
-/// The fact file.
-pub const path =
-  ".claude/skills/decoding-the-client/references/client-facts.toml"
 
 /// Why a fact could not be read.
 pub type FactError {
-  /// The fact file has not exactly one record of this name, or its record has
-  /// no statement.
+  /// The fact file has no record of this name.
   NoRecord(name: String)
   /// The record's statement does not give these bytes.
   BytesNotGiven(name: String, bytes: BitArray)
 }
 
-/// The statement of the record `name`, as the file writes it between its
-/// quotes: the file is TOML, a record is a `["name"]` line and the line
-/// `statement = "..."` after it, and the fact checker allows no other form.
+/// Runs `create` once per key in this VM (the cache of `database_support.once`, which
+/// this module cannot import: it sits below it).
+@external(erlang, "database_support_ffi", "once")
+fn once(key: String, create: fn() -> a) -> a
+
+/// The records of the fact file, read once for the run
+/// (genesis_prime/coverage/fact_record).
+pub fn records() -> fact_record.Facts {
+  once("fact_records", fn() {
+    let assert Ok(facts) = fact_record.read()
+      as "the fact file is readable TOML"
+    facts
+  })
+}
+
+/// The statement of the record `name`.
 pub fn statement(record name: String) -> Result(String, FactError) {
-  let assert Ok(text) = simplifile.read(path)
-    as "the fact file could not be read"
-  case string.split(text, on: "[\"" <> name <> "\"]\n") {
-    [_, after_key] ->
-      case string.split_once(after_key, on: "\n") {
-        Ok(#("statement = \"" <> rest, _)) ->
-          Ok(string.drop_end(rest, up_to: 1))
-        _ -> Error(NoRecord(name:))
-      }
-    _ -> Error(NoRecord(name:))
-  }
+  dict.get(records(), name)
+  |> result.map(fn(record) { record.statement })
+  |> result.replace_error(NoRecord(name:))
+}
+
+/// How sure the record `name` is, or the error when the file has no record of that
+/// name. `None` when the record states no grade.
+pub fn grade_of(
+  record name: String,
+) -> Result(Option(fact_record.Grade), FactError) {
+  use <- bool.guard(
+    when: !fact_record.has_record(facts: records(), key: name),
+    return: Error(NoRecord(name:)),
+  )
+  Ok(fact_record.grade_of(facts: records(), key: name))
+}
+
+/// The question the record `name` leaves open (its gap), or the error when the file
+/// has no record of that name. `None` when the record states no gap.
+pub fn gap_of(record name: String) -> Result(Option(String), FactError) {
+  use <- bool.guard(
+    when: !fact_record.has_record(facts: records(), key: name),
+    return: Error(NoRecord(name:)),
+  )
+  Ok(fact_record.gap_of(facts: records(), key: name))
 }
 
 /// Whether the record `name` gives `bytes` in its statement (`gives_bytes`).

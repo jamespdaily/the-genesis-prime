@@ -2308,7 +2308,7 @@ pub fn type_23_is_handled_with_no_gap_test() -> Nil {
   assert list.find(declared.partial, fn(gap) { gap.type_number == 23 })
     == Error(Nil)
     as "no gap is open for type 23: each unit of the set counts once"
-  assert string.contains(facts, "[\"QuestObjective.type.23\"]")
+  assert coverage_support.has_record(facts:, key: "QuestObjective.type.23")
     as "the fact the type rests on is a record the fact file holds"
 }
 

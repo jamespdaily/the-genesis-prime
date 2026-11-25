@@ -477,7 +477,7 @@ pub fn a_focus_gain_reads_points_a_share_up_to_1_and_refuses_a_larger_share_or_a
   let text = spell_plan.describe(error:)
   assert string.contains(text, "34776") && string.contains(text, "88371")
     as "the refusal names the spell and the row"
-  assert spell_plan.is_unbuilt(error:)
+  assert spell_plan.refusal_of(error:).outcome == spell_plan.LeavesOut
     as "a later ability with such a row is left out of the plans, not a failed load"
   // No client row holds a share on a class vital, so Recharge's -4 of vital 18 is edited to
   // dataBits02 0 and dataBits05 0.05.

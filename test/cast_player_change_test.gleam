@@ -3281,7 +3281,7 @@ pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledge
       case spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: []) {
         Ok(spell) -> Ok(spell)
         Error(error) -> {
-          assert spell_plan.is_unbuilt(error:)
+          assert spell_plan.refusal_of(error:).outcome == spell_plan.LeavesOut
             as "a tier the plan leaves out names an effect or rule the server does not build, never a fault of the data"
           Error(Nil)
         }

@@ -1035,7 +1035,7 @@ pub fn a_proc_the_caster_holds_beside_a_summon_row_leaves_the_spell_unbuilt_test
       summon_effect_id: planted_summon,
       creature2_id: 63_677,
     )
-  assert spell_plan.is_unbuilt(error:)
+  assert spell_plan.refusal_of(error:).outcome == spell_plan.LeavesOut
     as "the ability is left out and the load goes on"
   assert string.contains(
     spell_plan.describe(error:),
@@ -1278,7 +1278,7 @@ pub fn no_proc_row_fails_the_load_test() -> Nil {
     case reading {
       Ok(_) -> Nil
       Error(spell_plan.SummonedProcNotRead(..) as error) -> {
-        assert spell_plan.is_unbuilt(error:)
+        assert spell_plan.refusal_of(error:).outcome == spell_plan.LeavesOut
           as "a Proc beside a summon leaves its ability out and the load goes on"
       }
       Error(error) ->

@@ -125,7 +125,8 @@ pub fn a_worn_item_whose_type_category_family_or_special_row_is_missing_fails_th
       )
       == Error(spell_plan.EquipItemNotRead(error: expected))
       as { why <> ": the plans fail with the item's error, not an unbuilt one" }
-    assert !spell_plan.is_unbuilt(error: spell_plan.EquipItemNotRead(expected))
+    assert spell_plan.refusal_of(error: spell_plan.EquipItemNotRead(expected)).outcome
+      == spell_plan.FailsLoad
       as { why <> ": it is no unbuilt reason" }
     let assert Error(load_error) =
       fixture_tables.load(rows: fixture_tables.closure(rows:, roots: []))
@@ -160,7 +161,9 @@ pub fn every_standing_root_is_planned_through_the_area_checker_or_left_out_with_
     as "each root is planned or left out, never both and never neither"
   assert list.length(left_out_ids) + dict.size(planned) == list.length(roots)
     as "the plans and the left-out list hold the roots and nothing else"
-  assert list.all(left_out, fn(one) { spell_plan.is_unbuilt(error: one.error) })
+  assert list.all(left_out, fn(one) {
+    spell_plan.refusal_of(error: one.error).outcome == spell_plan.LeavesOut
+  })
     as "a root is left out only for what the server does not build"
   let assert Ok(abilities) =
     spell_plan.unplanned(tables:, area_checked: spell_area.checker)

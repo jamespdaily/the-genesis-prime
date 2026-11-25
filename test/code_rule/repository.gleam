@@ -3,11 +3,11 @@
 
 import code_rule/source.{type SourceFile, SourceFile}
 import database_support
+import fact_file
 import gleam/dict
 import gleam/list
 import gleam/string
 import simplifile
-import tom
 
 @external(erlang, "repository_ffi", "tracked_files")
 fn tracked_files() -> String
@@ -72,16 +72,7 @@ fn tracked_sources(
   files
 }
 
-/// Every key of the client's fact file, read once for the run: the first caller
-/// parses the file and the others take the stored keys.
+/// Every key of the client's fact file, read once for the run.
 pub fn fact_keys() -> List(String) {
-  database_support.once("fact_keys", fn() {
-    let assert Ok(text) =
-      simplifile.read(
-        ".claude/skills/decoding-the-client/references/client-facts.toml",
-      )
-      as "the fact file could not be read"
-    let assert Ok(facts) = tom.parse(text) as "the fact file is TOML"
-    dict.keys(facts)
-  })
+  dict.keys(fact_file.records())
 }
