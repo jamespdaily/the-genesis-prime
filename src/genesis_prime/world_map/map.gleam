@@ -478,6 +478,53 @@
 ////   is the first input that says it did not fail.
 //// - **A map that ends or restarts** loses its run spawns; nothing is saved.
 ////
+//// What a player hears about a creature comes from the map alone. The map keeps, for
+//// each pair of a player and a live creature in sight, a relation: the generation the
+//// pair's sight was given (`generation`, never given twice by a map) and whether the
+//// creature's snapshot of that generation is awaited or relayed (`Relation`). The creature
+//// tells only its map (`Snapshot`, `Broadcast`, `Relay`), and the map relays to the player's
+//// connection (`Relayed`, and the notice `CreatureUnseen`), so a player has one sender for a
+//// creature and its order is the map's:
+////
+//// ```
+//// join:   Join ─▶ Reply(Joined); start_creature: relation(V) = g1, AwaitingSnapshot
+////         StartCreature(viewers [(V, stay, g1)])
+////         creature Started ─▶ Send(map, Snapshot(unit, life, V, g1, burst))
+////         map: (V, g1, life) is current and AwaitingSnapshot ─▶ Relayed(stay, News(item)) per
+////              burst item, in order; the relation is Relaying
+//// later:  map ─▶ creature Seen(W, stay, g2) ─▶ Snapshot(unit, life, W, g2, burst); the copy gains W
+//// news:   creature ─▶ Broadcast(unit, life, news) ─▶ map: Relayed to each Relaying viewer, in
+////         connection order; an AwaitingSnapshot or departed viewer is sent none
+//// tell:   creature ─▶ Relay(unit, life, to, stay, payload) ─▶ map admits it (`admitted`: the
+////         spawn is live, retiring or releasing under that life; then the destination check of
+////         the payload's kind, `relay.kind_of`) ─▶ Relayed(stay, payload)
+//// leave sight, Leave, a viewer's end:
+////         map: the relation is removed in one step ─▶ creature Unseen(V, g), V Noticed(CreatureUnseen(unit, g))
+////         creature: the copy and the threat entry of V go; its release of V is one Relay(Released)
+//// crash:  WatchEnded(life) ─▶ Gone to every player; Live becomes WaitingForRestart; the relations go with Live
+//// re-entry: a Leave and a Join: Seen(g') with a g' never given before
+//// joined_again: per kept Live spawn, in spawn order: Unseen(g) then Seen(g'), AwaitingSnapshot; a
+////         Retiring spawn is told nothing; a newly hidden spawn is told Unseen only
+//// ```
+////
+//// | Point | What happens |
+//// |---|---|
+//// | the creature is killed with a viewer `AwaitingSnapshot` | `WatchEnded` gives `Gone` to every player and the spawn waits the respawn time; the relations go with `Live`; a `Snapshot` it sent before it died reaches the map first (one sender's signals arrive in order) and is relayed, then `Gone` follows |
+//// | the creature is killed after the map sent it `Unseen` and before it took it | the same; nothing further of it reaches the viewer |
+//// | the creature is killed while a relay of its is in flight | the relay was sent before the creature died, so it reaches the map before the end does and is admitted (the spawn is still live, retiring or releasing under that life); one taken after the end is dropped |
+//// | a viewer's connection is killed | the watch ends, the map removes the player and sends each creature it had a relation with `Unseen(g)`; the creature drops the entry and its threat; relays to the dead connection are dropped by the registry |
+//// | the map is killed | creatures stop with their run watch and connections end with the run; relations and relays in flight are lost with it |
+//// | `Seen(V, g)` reaches a creature twice | answered twice; the map relays the first snapshot and drops the second |
+//// | `Snapshot` reaches the map twice, or after `Unseen`, or of an earlier generation or life | dropped |
+//// | `Unseen(V, g)` reaches a creature twice | the second finds no entry and changes nothing |
+//// | a `Broadcast` is sent twice | not guarded (it carries no id); the creature sends each news once per step |
+//// | a `Relay` comes from a creature that ended, or of an earlier life | dropped by `admitted`; a creature that is releasing or retiring is still admitted until it ends |
+//// | a relay waits in the map's queue past `strike_tell.deadline_ms` | delivered unchanged; the caster's round decides that it is late; the map keeps no deadline |
+//// | an ask (`Join`, `Leave`, `Summon`) waits behind relays | the asker's own `ask_deadline_ms` decides; the load gate keeps the queue near zero |
+//// | a creature never answers `Seen` | the viewer stays `AwaitingSnapshot` and shown nothing until the creature ends (then `Gone`); no deadline |
+//// | a viewer's connection fails a write while it takes a relayed burst | the connection ends (nothing after the failed write is written), its watch ends and the map sends each creature `Unseen` |
+//// | a creature is released while a viewer awaits its snapshot | the relations are kept by `Releasing` as they were: the snapshot and the news still reach the viewer until the creature ends |
+////
 //// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
 //// owner's process, a player's connection, a creature or, for a static object,
 //// the map itself, so for one viewer they
@@ -552,6 +599,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/unit_news.{type PeerNews}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
@@ -566,8 +614,10 @@ import genesis_prime/table/id.{type Creature2Id, type PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/game_number.{type GameNumbers}
+import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
+import genesis_prime/world_map/relay.{type Payload}
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn, type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
@@ -581,7 +631,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/order
-import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
 
@@ -705,6 +754,29 @@ pub type Message {
   /// or ends before it answers is the asker's outcome, not a `NotSummoned`.
   /// Taken only from a connection that is in the map.
   Summon(connection: ConnectionId, creature_id: Creature2Id, level: Option(Int))
+  /// A creature's answer to the map's `Seen`: the picture the creature `unit_id` of
+  /// life `life` builds for the player of connection `by` from its state when it took
+  /// the `Seen` of `generation`, `burst` in the order the player's connection writes it
+  /// (empty for a creature that is not shown). A tell, from a creature. The map relays
+  /// the burst when the pair holds that generation and awaits its snapshot, and drops it
+  /// otherwise (`snapshot_taken`).
+  Snapshot(
+    unit_id: Int,
+    life: Int,
+    by: ConnectionId,
+    generation: Generation,
+    burst: List(PeerNews),
+  )
+  /// News of the creature `unit_id` of life `life` for every player that holds a
+  /// relation with it in the state of relaying. A tell, from a creature. The map relays
+  /// it to each such player, in connection order, and to no player awaiting its snapshot
+  /// (`broadcast`).
+  Broadcast(unit_id: Int, life: Int, news: PeerNews)
+  /// A tell of the creature `unit_id` of life `life` to the player of connection `to` in
+  /// its stay `stay`: an answer, a credit or a fight tell (`relay`). A tell, from a
+  /// creature. The map admits it by the creature's state and the payload's kind and sends
+  /// it as `Relayed` (`relayed`).
+  Relay(unit_id: Int, life: Int, to: ConnectionId, stay: Stay, payload: Payload)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -766,6 +838,17 @@ pub type Outgoing {
   /// distance, by leaving the map or by its connection ending, so it sends `by`
   /// its 0x355.
   Unwatched(by: ConnectionId)
+  /// A send to a creature: the player of connection `by`, in its stay `stay`, sees it
+  /// from the sight `generation` names, so it answers with a snapshot of that
+  /// generation.
+  Seen(by: ConnectionId, stay: Stay, generation: Generation)
+  /// A send to a creature: the sight `generation` of the player of connection `by`
+  /// ended, so the creature drops the player from its copy of its viewers and from its
+  /// threat list.
+  Unseen(by: ConnectionId, generation: Generation)
+  /// A send to a player's connection, never an answer: a payload a creature told it,
+  /// for the player's stay `stay`.
+  Relayed(stay: Stay, payload: Payload)
   /// A send to a creature, never to a connection: no player has seen it for the
   /// idle stop, so it ends (genesis_prime/world_map/creature).
   Retire
@@ -799,6 +882,10 @@ pub type Notice {
   /// distance, by leaving the map or by its connection ending, so this connection
   /// sends `by` its 0x355 and no more moves.
   UnseenBy(by: ConnectionId)
+  /// The player no longer sees the creature `unit_id`, from the sight `generation`
+  /// names: the connection writes the 0x355 of the unit if its client shows it, after
+  /// the finishes of its casts.
+  CreatureUnseen(unit_id: Int, generation: Generation)
   /// The unit `unit_id` has no owner any more, since its connection or its
   /// creature ended, which sends nothing as it ends. It goes to every player in
   /// the map, also one that stopped seeing the unit a moment before. The
@@ -822,7 +909,9 @@ pub type Notice {
 /// has had this run, the next unit id and the next watch id, neither of which goes
 /// back, and the monotonic time the map started at, which its clock counts from
 /// (`Joined` carries it). A dormant spawn is a spawn with no entry in `spawns`.
-/// `captives` are the spawns that go with a used object's spawn
+/// `next_generation` is the generation the next sight of a player and a creature gets
+/// (`issued`), which never goes back. `captives` are the spawns that go with a used
+/// object's spawn
 /// (`spawn.captives`), found once when the map is built. `released_objects` are
 /// the static objects a player's use released, each away until its timer fires:
 /// no player sees one.
@@ -841,6 +930,7 @@ pub opaque type State {
     next_run_only_id: SpawnId,
     next_unit_id: Int,
     next_watch: Int,
+    next_generation: Generation,
     started_ms: Int,
   )
 }
@@ -849,14 +939,15 @@ pub opaque type State {
 /// stop, a wait for its restart, or a start that failed. A dormant spawn has
 /// none of these and no entry in the map's state.
 pub type SpawnState {
-  /// A creature runs as `unit_id` under `life` (its watch's number). `viewers` are
-  /// the players who see it, and `idle_since_ms` is the monotonic time the last
-  /// one stopped seeing it, `None` while any does: the sweep retires it when
+  /// A creature runs as `unit_id` under `life` (its watch's number). `relations` are
+  /// the players who see it, each with the generation of its sight and whether its
+  /// snapshot is awaited or relayed, and `idle_since_ms` is the monotonic time the
+  /// last one stopped seeing it, `None` while any does: the sweep retires it when
   /// `idle_stop_ms` has passed.
   Live(
     unit_id: Int,
     life: Int,
-    viewers: Set(ConnectionId),
+    relations: Dict(ConnectionId, Relation),
     idle_since_ms: Option(Int),
   )
   /// The creature was told `Retire` and has not ended. The players who see the
@@ -866,13 +957,39 @@ pub type SpawnState {
   /// (`Released`) and has not ended. When it ends, every player is sent `Gone` and
   /// the spawn waits `wait_ms`, the release time, in place of its kind's respawn
   /// time: the override lasts this one restart, since the spawn's next creature
-  /// is `Live` with no override.
-  Releasing(unit_id: Int, life: Int, wait_ms: Int)
+  /// is `Live` with no override. The relations it held are kept as they were, so
+  /// that its news and its answers reach the players until it ends, and are not
+  /// changed by a player's move meanwhile (the creature is told no more of sight).
+  Releasing(
+    unit_id: Int,
+    life: Int,
+    wait_ms: Int,
+    relations: Dict(ConnectionId, Relation),
+  )
   /// The creature crashed: the unit was sent `Gone`, and the spawn's restart
   /// timer runs.
   WaitingForRestart
   /// The creature did not start: the spawn stays empty for the run.
   Failed
+}
+
+/// One sight of a creature by a player: the generation the map gave it when the
+/// pair came into sight, and whether the creature's snapshot of that generation is
+/// awaited or has been relayed. The map relays a creature's news only to a viewer that
+/// is `Relaying`.
+pub type Relation {
+  Relation(generation: Generation, state: RelationState)
+}
+
+/// Where a relation is in the creature's first picture for the viewer.
+pub type RelationState {
+  /// The map sent the creature `Seen` and has not taken its `Snapshot` of this
+  /// generation: news is dropped, since the snapshot is built after everything the
+  /// creature sent earlier.
+  AwaitingSnapshot
+  /// The snapshot was relayed: the viewer holds the creature's picture, and the
+  /// creature's news follows it in the order the map takes it.
+  Relaying
 }
 
 /// One player in the map: the stay its connection's Join named, its unit, the
@@ -1016,6 +1133,7 @@ pub fn new(settings: Settings) -> State {
     next_run_only_id: spawn_source.first_run_only_id,
     next_unit_id: 1,
     next_watch: 1,
+    next_generation: generation.first(),
     started_ms: 0,
   )
 }
@@ -1071,7 +1189,16 @@ pub fn step(
       released(state:, unit_id:, now_ms: input.now.monotonic_ms)
     OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:, level:))) ->
       summoned(state:, caller:, connection:, creature_id:, level:)
+    OwnEvent(Told(message: Snapshot(unit_id:, life:, by:, generation:, burst:))) ->
+      snapshot_taken(state:, unit_id:, life:, by:, generation:, burst:)
+    OwnEvent(Told(message: Broadcast(unit_id:, life:, news:))) ->
+      broadcast(state:, unit_id:, life:, news:)
+    OwnEvent(Told(message: Relay(unit_id:, life:, to:, stay:, payload:))) ->
+      relayed(state:, unit_id:, life:, to:, stay:, payload:)
     OwnEvent(Asked(message: Moved(..), ..))
+    | OwnEvent(Asked(message: Snapshot(..), ..))
+    | OwnEvent(Asked(message: Broadcast(..), ..))
+    | OwnEvent(Asked(message: Relay(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Asked(message: StealthChanged(..), ..))
     | OwnEvent(Asked(message: LifeChanged(..), ..))
@@ -1080,7 +1207,7 @@ pub fn step(
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..)))
     | OwnEvent(Told(message: Summon(..))) ->
-      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged and Released only"
+      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged, Released, Snapshot, Broadcast and Relay only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
@@ -1211,6 +1338,95 @@ fn summon_settled(
     State(..state, summoning: dict.delete(state.summoning, spawn)),
     Effects([OwnEffect(Reply(caller, Summoned(unit_id:)))]),
   )
+}
+
+/// A creature's snapshot of the sight `generation` of the player of connection `by`:
+/// when the creature `unit_id` of life `life` is running, the player holds a relation
+/// with it of exactly that generation and the relation awaits its snapshot, the burst
+/// is relayed to the player in the order the creature built it, each item as
+/// `Relayed(stay, News(item))` for the player's stay, and the relation is `Relaying`.
+/// Any other snapshot is dropped: one of an earlier generation (the pair left and
+/// came back), one taken twice, one after the player's `Unseen`, one of an earlier life.
+fn snapshot_taken(
+  state state: State,
+  unit_id _unit_id: Int,
+  life _life: Int,
+  by _by: ConnectionId,
+  generation _generation: Generation,
+  burst _burst: List(PeerNews),
+) -> #(State, ServiceStep(Outgoing)) {
+  #(state, Effects([]))
+}
+
+/// News the creature `unit_id` of life `life` tells every viewer: it is relayed to
+/// each player whose relation with the creature is `Relaying`, in connection order,
+/// as `Relayed(stay, News(news))` for that player's stay; a player whose relation
+/// awaits its snapshot is sent none, since the snapshot comes after everything the
+/// creature sent earlier, and a player that is not in the relations is sent none.
+fn broadcast(
+  state state: State,
+  unit_id _unit_id: Int,
+  life _life: Int,
+  news _news: PeerNews,
+) -> #(State, ServiceStep(Outgoing)) {
+  #(state, Effects([]))
+}
+
+/// A creature's tell to one player: sent as `Relayed(stay, payload)` when `admitted`
+/// finds the creature running and the player in the stay the tell names, and dropped
+/// otherwise.
+fn relayed(
+  state state: State,
+  unit_id unit_id: Int,
+  life life: Int,
+  to to: ConnectionId,
+  stay stay: Stay,
+  payload payload: Payload,
+) -> #(State, ServiceStep(Outgoing)) {
+  case admitted(state:, unit_id:, life:, to:, stay:, payload:) {
+    Ok(delivery) -> #(
+      state,
+      Effects([
+        OwnEffect(Send(
+          to: Connection(delivery.to),
+          message: Relayed(stay: delivery.stay, payload: delivery.payload),
+        )),
+      ]),
+    )
+    Error(CreatureEnded) | Error(DestinationRefused) -> #(state, Effects([]))
+  }
+}
+
+/// A relay the map delivers: to the connection, for the stay, the payload.
+pub type Delivery {
+  Delivery(to: ConnectionId, stay: Stay, payload: Payload)
+}
+
+/// Why the map dropped a relay.
+pub type Dropped {
+  /// The spawn of the creature is not running under that unit id and life: it
+  /// ended, or the relay is of an earlier life.
+  CreatureEnded
+  /// The destination check of the payload's kind failed: the player is not in
+  /// the map, or is in another stay than the relay names (`relay.kind_of`).
+  DestinationRefused
+}
+
+/// Whether a relay of the creature `unit_id` of life `life` is delivered: the spawn
+/// of that unit must be live, retiring or releasing under that life (a creature that
+/// has told the map something may be told to end and still answer its last strikes),
+/// and then the destination check of the payload's kind must pass (`relay.kind_of`).
+pub fn admitted(
+  state _state: State,
+  unit_id _unit_id: Int,
+  life _life: Int,
+  to to: ConnectionId,
+  stay stay: Stay,
+  payload payload: Payload,
+) -> Result(Delivery, Dropped) {
+  let relay.Kind(destination: relay.PlayersCurrentStay, ..) =
+    relay.kind_of(payload:)
+  Ok(Delivery(to:, stay:, payload:))
 }
 
 /// A map's start: its clock is set and the sweep timer starts. No creature
@@ -1490,7 +1706,12 @@ fn restart_due(
 
 /// A spawn whose creature a release can end, with that creature's unit and life.
 type Releasable {
-  Releasable(spawn: SpawnId, unit_id: Int, life: Int)
+  Releasable(
+    spawn: SpawnId,
+    unit_id: Int,
+    life: Int,
+    relations: Dict(ConnectionId, Relation),
+  )
 }
 
 /// The spawn's creature when a release can end it: live, and not one of a fight's
@@ -1504,7 +1725,8 @@ fn releasable(
     return: Error(Nil),
   )
   case dict.get(state.spawns, spawn) {
-    Ok(Live(unit_id:, life:, ..)) -> Ok(Releasable(spawn:, unit_id:, life:))
+    Ok(Live(unit_id:, life:, relations:, ..)) ->
+      Ok(Releasable(spawn:, unit_id:, life:, relations:))
     Ok(Retiring(..))
     | Ok(Releasing(..))
     | Ok(WaitingForRestart)
@@ -1560,7 +1782,12 @@ fn released(
             dict.insert(
               spawns,
               found.spawn,
-              Releasing(unit_id: found.unit_id, life: found.life, wait_ms:),
+              Releasing(
+                unit_id: found.unit_id,
+                life: found.life,
+                wait_ms:,
+                relations: found.relations,
+              ),
             )
           }),
           released_objects: list.fold(
@@ -1854,13 +2081,20 @@ fn source_of(
 /// by its connection and its stay: under the spawn's unit id for the run, taken
 /// from the counter when the spawn has had none (the first creature there, or the
 /// first after a crash gave its id up), and a new life, the number of the watch it
-/// is started under. The spawn is then live with those viewers.
+/// is started under. The spawn is then live with those viewers, each in a relation of
+/// a generation of its own that awaits the creature's snapshot, which the creature
+/// answers the start with (`CreatureStart.viewers`).
 fn start_creature(
   state state: State,
   spawn spawn: SpawnId,
   viewers viewers: List(#(ConnectionId, Stay)),
 ) -> #(State, Effect(ServiceEffect(Outgoing))) {
   let #(state, unit_id) = unit_of(state:, spawn:)
+  let #(state, viewers) =
+    list.map_fold(viewers, state, fn(state, viewer) {
+      let #(state, generation) = issued(state:)
+      #(state, #(viewer.0, viewer.1, generation))
+    })
   let watch = WatchId(state.next_watch)
   let WatchId(life) = watch
   #(
@@ -1872,7 +2106,14 @@ fn start_creature(
         Live(
           unit_id:,
           life:,
-          viewers: set.from_list(list.map(viewers, pair.first)),
+          relations: dict.from_list(
+            list.map(viewers, fn(viewer) {
+              #(
+                viewer.0,
+                Relation(generation: viewer.2, state: AwaitingSnapshot),
+              )
+            }),
+          ),
           idle_since_ms: option.None,
         ),
       ),
@@ -1892,6 +2133,12 @@ fn start_creature(
       ),
     )),
   )
+}
+
+/// The next generation, and the map that has given it.
+fn issued(state state: State) -> #(State, Generation) {
+  let given = state.next_generation
+  #(State(..state, next_generation: generation.after(given)), given)
 }
 
 /// What the player at `place` sees of the map's world: the creatures' spawns and
@@ -2066,31 +2313,38 @@ fn spawns_decided(
             start_creature(state:, spawn:, viewers: [#(connection, stay)])
           #(state, [start, ..starts], sends)
         }
-        Ok(Live(unit_id:, life:, viewers:, ..)) -> #(
-          State(
-            ..state,
-            spawns: dict.insert(
-              state.spawns,
-              spawn,
-              Live(
-                unit_id:,
-                life:,
-                viewers: set.insert(viewers, connection),
-                idle_since_ms: option.None,
+        Ok(Live(unit_id:, life:, relations:, ..)) -> {
+          let #(state, generation) = issued(state:)
+          #(
+            State(
+              ..state,
+              spawns: dict.insert(
+                state.spawns,
+                spawn,
+                Live(
+                  unit_id:,
+                  life:,
+                  relations: dict.insert(
+                    relations,
+                    connection,
+                    Relation(generation:, state: AwaitingSnapshot),
+                  ),
+                  idle_since_ms: option.None,
+                ),
               ),
             ),
-          ),
-          starts,
-          [
-            tell_creature(
-              state:,
-              unit_id:,
-              life:,
-              message: Watched(by: connection, stay:),
-            ),
-            ..sends
-          ],
-        )
+            starts,
+            [
+              tell_creature(
+                state:,
+                unit_id:,
+                life:,
+                message: Watched(by: connection, stay:),
+              ),
+              ..sends
+            ],
+          )
+        }
         Ok(Retiring(..))
         | Ok(Releasing(..))
         | Ok(WaitingForRestart)
@@ -2101,9 +2355,9 @@ fn spawns_decided(
     list.fold(left, #(state, sends), fn(held, spawn) {
       let #(state, sends) = held
       case dict.get(state.spawns, spawn) {
-        Ok(Live(unit_id:, life:, viewers:, idle_since_ms:)) -> {
-          let viewers = set.delete(viewers, connection)
-          let idle_since_ms = case set.is_empty(viewers) {
+        Ok(Live(unit_id:, life:, relations:, idle_since_ms:)) -> {
+          let relations = dict.delete(relations, connection)
+          let idle_since_ms = case dict.is_empty(relations) {
             True -> Some(now_ms)
             False -> idle_since_ms
           }
@@ -2113,7 +2367,7 @@ fn spawns_decided(
               spawns: dict.insert(
                 state.spawns,
                 spawn,
-                Live(unit_id:, life:, viewers:, idle_since_ms:),
+                Live(unit_id:, life:, relations:, idle_since_ms:),
               ),
             ),
             [

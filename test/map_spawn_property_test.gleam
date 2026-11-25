@@ -329,6 +329,39 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
 }
 
 /// What the rule breaks in this state, as sentences.
+/// What is wrong with a live spawn's viewers and its idle time, by the players who see it.
+fn live_spawn_problems(
+  name name: String,
+  viewers viewers: set.Set(step.ConnectionId),
+  seen seen: set.Set(step.ConnectionId),
+  idle_since_ms idle_since_ms: option.Option(Int),
+  now_ms now_ms: Int,
+) -> List(String) {
+  list.flatten([
+    case viewers == seen {
+      True -> []
+      False -> [
+        name <> " is live with viewers other than the players who see it",
+      ]
+    },
+    case idle_since_ms, set.is_empty(viewers) {
+      None, True -> [name <> " is live with no viewer and no idle time"]
+      Some(since), True ->
+        case now_ms - since < 70_000 {
+          True -> []
+          False -> [
+            name
+            <> " is live and unseen for "
+            <> int.to_string(now_ms - since)
+            <> " ms",
+          ]
+        }
+      Some(_), False -> [name <> " has viewers and an idle time"]
+      None, False -> []
+    },
+  ])
+}
+
 fn broken(play: Play) -> List(String) {
   let sees = fn(number: Int) {
     let assert Ok(spawn_x) = list.first(list.drop(spawn_xs, number - 1))
@@ -347,31 +380,14 @@ fn broken(play: Play) -> List(String) {
         map.spawn_state(state: play.state, spawn: SpawnId(number)),
         set.is_empty(seen)
       {
-        Ok(Live(viewers:, idle_since_ms:, ..)), _ ->
-          list.flatten([
-            case viewers == seen {
-              True -> []
-              False -> [
-                name
-                <> " is live with viewers other than the players who see it",
-              ]
-            },
-            case idle_since_ms, set.is_empty(viewers) {
-              None, True -> [name <> " is live with no viewer and no idle time"]
-              Some(since), True ->
-                case play.now_ms - since < 70_000 {
-                  True -> []
-                  False -> [
-                    name
-                    <> " is live and unseen for "
-                    <> int.to_string(play.now_ms - since)
-                    <> " ms",
-                  ]
-                }
-              Some(_), False -> [name <> " has viewers and an idle time"]
-              None, False -> []
-            },
-          ])
+        Ok(Live(relations:, idle_since_ms:, ..)), _ ->
+          live_spawn_problems(
+            name:,
+            viewers: set.from_list(dict.keys(relations)),
+            seen:,
+            idle_since_ms:,
+            now_ms: play.now_ms,
+          )
         Ok(Retiring(..)), _
         | Ok(map.Releasing(..)), _
         | Ok(map.WaitingForRestart), _

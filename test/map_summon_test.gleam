@@ -28,6 +28,7 @@ import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{RunOnly, Summoned}
+import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
@@ -105,7 +106,7 @@ pub fn a_summon_starts_the_creature_at_the_players_place_and_facing_for_the_play
     as "the first run-only id, the creature asked for, the Dagun's minLevel 1 (Creature2.73465) the summon had no level to replace, and the asking player's place with its facing"
   assert creature.unit_id == 4
     as "the unit id after the three players', so none is a player's"
-  assert creature.viewers
+  assert spawns.first_viewers(start: creature)
     == [
       #(ConnectionId(1), map_support.stay(count: 1)),
       #(ConnectionId(2), map_support.stay(count: 1)),
@@ -129,13 +130,14 @@ pub fn a_summoned_creature_is_live_under_its_run_only_spawn_with_its_viewers_tes
   use <- owned_test.run(5000)
   let #(state, taken) = summoned_dagun(state: three_players())
   let #(watch, creature) = the_start(taken)
-  let assert Ok(map.Live(unit_id: 4, life:, viewers:, idle_since_ms: None)) =
+  let assert Ok(map.Live(unit_id: 4, life:, relations:, idle_since_ms: None)) =
     map.spawn_state(state:, spawn: SpawnId(-1))
     as "the run-only spawn is live under the unit id the creature started with"
   let WatchId(creature_life) = watch
   assert life == creature_life && creature.life == life
     as "its life is the number of the watch it is started under"
-  assert viewers == set.from_list([ConnectionId(1), ConnectionId(2)])
+  assert set.from_list(dict.keys(relations))
+    == set.from_list([ConnectionId(1), ConnectionId(2)])
   let assert Ok(spawn) = map.run_spawn(state:, spawn: SpawnId(-1))
     as "the map keeps the run-only spawn"
   assert spawn.place == standing()

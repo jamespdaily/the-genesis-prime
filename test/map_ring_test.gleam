@@ -254,6 +254,9 @@ fn approaches_in_full(
       | map.PlayerDied(..)
       | map.Watched(..)
       | map.Unwatched(..)
+      | map.Seen(..)
+      | map.Unseen(..)
+      | map.Relayed(..)
       | map.Noticed(..)
       | map.Retire
       | map.Joined(..)

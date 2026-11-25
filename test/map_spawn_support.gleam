@@ -17,6 +17,7 @@ import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/static_object
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -250,6 +251,14 @@ pub fn starts(
   })
 }
 
+/// The first viewers a creature is started for, each by its connection and its
+/// stay, in the order the map named them.
+pub fn first_viewers(
+  start start: step.CreatureStart,
+) -> List(#(step.ConnectionId, Stay)) {
+  list.map(start.viewers, fn(viewer) { #(viewer.0, viewer.1) })
+}
+
 /// The timers a step starts, each with its id's number and its delay.
 pub fn timers(taken: ServiceStep(map.Outgoing)) -> List(#(Int, Int)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
@@ -374,6 +383,13 @@ pub fn said(message: map.Outgoing) -> String {
     map.Unwatched(by: ConnectionId(number))
     | map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
       "Unwatched by " <> int.to_string(number)
+    map.Seen(by: ConnectionId(number), ..) ->
+      "Seen by " <> int.to_string(number)
+    map.Unseen(by: ConnectionId(number), ..) ->
+      "Unseen by " <> int.to_string(number)
+    map.Noticed(notice: map.CreatureUnseen(unit_id:, ..), ..) ->
+      "Creature unseen " <> int.to_string(unit_id)
+    map.Relayed(..) -> "Relayed"
     map.Retire -> "Retire"
     map.Approached(by: ConnectionId(number), ..) ->
       "Approached by " <> int.to_string(number)

@@ -1258,6 +1258,9 @@ pub fn joined(
         | map.Noticed(..)
         | map.Watched(..)
         | map.Unwatched(..)
+        | map.Seen(..)
+        | map.Unseen(..)
+        | map.Relayed(..)
         | map.Retire
         | map.Approached(..)
         | map.Withdrew(..)

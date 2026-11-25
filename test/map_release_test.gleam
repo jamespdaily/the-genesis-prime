@@ -203,7 +203,8 @@ pub fn a_released_creature_is_gone_for_every_viewer_and_starts_again_after_the_r
   assert again != trap && again > 0
     as "at the timer a creature starts under a new unit id"
   let assert [start] = spawns.starts(taken)
-  assert { start.1 }.viewers == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: { start.1 })
+    == [#(ConnectionId(1), map_support.stay(count: 1))]
     as "with the player in sight as its first viewer"
 }
 

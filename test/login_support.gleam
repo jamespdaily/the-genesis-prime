@@ -21,6 +21,7 @@ import genesis_prime/connection/registry
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/group_registry
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
@@ -78,6 +79,7 @@ fn world() -> server.World {
     maps_call_ms: ask_support.beyond_the_test_ms,
     map_shutdown_ms: 1000,
     creatures: creature_registry.new(),
+    map_tells: group_registry.new(label: "map_tells"),
     creature_supervisor: process.new_name("test_creature_supervisor"),
     creature_shutdown_ms: 1000,
     idle_stop_ms: 60_000,

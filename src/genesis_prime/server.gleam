@@ -120,10 +120,13 @@ import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/experience
+import genesis_prime/group_registry.{type Scope}
 import genesis_prime/hand_off
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
-import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
+import genesis_prime/service.{
+  type Call, type Locate, type Reach, type Sent, TellCall,
+}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionRule, LogError}
 import genesis_prime/step/runtime
@@ -138,8 +141,10 @@ import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_source
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
@@ -209,6 +214,11 @@ pub type World {
     map_shutdown_ms: Int,
     /// Where the creatures are found, made once with `creature_registry.new`.
     creatures: CreatureRegistry,
+    /// The scope that types what a creature tells its map: the creature holds its
+    /// map's run and tells it with `group_registry.deliver_to`, and the map's shell
+    /// takes what the scope's type names (`service_shell.ToldThrough`). Made once
+    /// with `group_registry.new`; nothing joins it.
+    map_tells: Scope(Call(map.Message, map.Outgoing)),
     /// The creature supervisor, whose children are the creatures.
     creature_supervisor: Name(creature_supervisor.CreatureSupervisor),
     /// How long a creature has to stop.
@@ -767,6 +777,7 @@ fn connection_reach(
 pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Noticed(stay:, notice:) -> Ok(ForStay(stay:, sent: SentByMap(notice:)))
+    map.Relayed(stay:, payload:) -> Ok(relayed_message(payload:, stay:))
     map.Joined(..)
     | map.Summoned(..)
     | map.NotSummoned(..)
@@ -774,10 +785,25 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     | map.Left
     | map.Watched(..)
     | map.Unwatched(..)
+    | map.Seen(..)
+    | map.Unseen(..)
     | map.Retire
     | map.Approached(..)
     | map.Withdrew(..)
     | map.PlayerDied(..) -> Error(Nil)
+  }
+}
+
+/// The message a connection takes what a creature told it through the map as: the
+/// news of a unit as `SentByPeer`, the creature's threat, release or strike as
+/// `SentByFoe`, the answer to its strike as `SentByTarget`, and the credit for its
+/// death as `SentByKill`, each for the stay the relay names.
+fn relayed_message(payload payload: relay.Payload, stay stay: Stay) -> Message {
+  case payload {
+    relay.News(news:) -> ForStay(stay:, sent: SentByPeer(news:))
+    relay.Struck(answered:) -> ForStay(stay:, sent: SentByTarget(answered))
+    relay.KillCredit(credit:) -> ForStay(stay:, sent: SentByKill(credit))
+    relay.Fight(told:) -> ForStay(stay:, sent: SentByFoe(told))
   }
 }
 
@@ -861,7 +887,7 @@ pub fn add_world(
           ),
           reach: map_reach(world:, reach:),
           shutdown_ms: world.map_shutdown_ms,
-          found_at: None,
+          found_at: Some(service_shell.ToldThrough(scope: world.map_tells)),
           time:,
         ))
       },
@@ -1037,6 +1063,16 @@ fn creature_reach(
     send: fn(to, news) {
       case to {
         step.Connection(connection:) -> to_connection(connection, news)
+        step.Map(map:, incarnation:)
+          if map == own.map && incarnation == own.incarnation
+        ->
+          creature.told_to_map(outgoing: news)
+          |> result.map(fn(message) {
+            group_registry.deliver_to(
+              pid: start.run,
+              message: TellCall(message:),
+            )
+          })
         step.Sessions
         | step.HandOff
         | step.Store
@@ -1071,6 +1107,8 @@ pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
           level:,
         )),
       )
+    creature.Snapshot(..) | creature.Broadcast(..) | creature.Relay(..) ->
+      panic as "a creature's snapshot, broadcast and relay go to its map, never to a connection"
   }
 }
 

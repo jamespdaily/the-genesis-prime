@@ -24,6 +24,7 @@
 import cast_support
 import connection_rule_support as support
 import creature_fight_test
+import creature_news_support
 import crowd_control_support
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/forced_move
@@ -59,6 +60,8 @@ import genesis_prime/world_map/creature.{
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/generation.{type Generation}
+import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -117,7 +120,7 @@ fn creature_from(
       clock_origin_ms:,
       viewers: list.map(viewers, fn(viewer) {
         let ConnectionId(number) = viewer
-        #(viewer, map_support.stay(count: number))
+        #(viewer, map_support.stay(count: number), generation.first())
       }),
     ),
     spawn:,
@@ -259,6 +262,37 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
       event: OwnEvent(Told(Unwatched(by: ConnectionId(6)))),
     )
   assert sent(taken) == [] as "a connection that never saw it is sent nothing"
+  // The map's `Unseen` is the creature's end of sight: the creature drops the viewer and
+  // sends nothing, since the map tells the viewer's connection its 0x355.
+  let #(state, _) =
+    feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
+  let #(state, _) =
+    feed(
+      state:,
+      at_ms: 6000,
+      event: OwnEvent(
+        Told(creature.Seen(
+          by: ConnectionId(5),
+          stay: map_support.stay(count: 5),
+          generation: generation.first(),
+        )),
+      ),
+    )
+  let #(state, unseen) =
+    feed(
+      state:,
+      at_ms: 7000,
+      event: OwnEvent(
+        Told(creature.Unseen(
+          by: ConnectionId(5),
+          generation: generation.first(),
+        )),
+      ),
+    )
+  assert support.effects_of(unseen) == []
+    as "the creature sends no 0x355 when its viewer's sight ends"
+  assert !set.contains(creature.viewers(state), ConnectionId(5))
+    as "and no longer holds the viewer"
 }
 
 pub fn a_creature_stops_when_its_run_ends_and_when_the_server_stops_test() -> Nil {
@@ -301,6 +335,12 @@ pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -
   assert first.tail.server_time_estimate_start == 1500
     && second.tail.server_time_estimate_start == 1500
     as "stamped from the map's clock at the creature's start"
+  let assert [#(2, first_generation, [first_burst]), #(5, _, [_])] =
+    snapshots(taken)
+    as "the creature answers each first viewer with a snapshot of its picture, in the order the map gave them"
+  assert first_generation == generation.first()
+    as "under the generation the map numbered the viewer with in the start"
+  assert first_burst.unit_id == 7
   let #(_, taken) =
     feed(
       state:,
@@ -329,6 +369,25 @@ fn outgoing(
       | step.Unwatch(..)
       | step.Log(..)
       | Stop -> Error(Nil)
+    }
+  })
+}
+
+/// The snapshots the step sends its map: the viewer's number, the generation and the
+/// burst.
+fn snapshots(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(Int, Generation, List(PeerNews))) {
+  list.filter_map(creature_news_support.to_the_map(taken), fn(sent) {
+    case sent {
+      creature.Snapshot(by: ConnectionId(number), generation:, burst:, ..) ->
+        Ok(#(number, generation, burst))
+      creature.Broadcast(..)
+      | creature.Relay(..)
+      | creature.News(..)
+      | creature.Struck(..)
+      | creature.FightTold(..)
+      | creature.KillCredit(..) -> Error(Nil)
     }
   })
 }
@@ -409,7 +468,11 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
       creature.News(stay: _, news: PeerNews(news: CreatureAppeared(..), ..)) ->
         "creation to " <> int.to_string(one.0)
       creature.KillCredit(..) -> "credit to " <> int.to_string(one.0)
-      creature.News(..) | creature.FightTold(..) -> "other"
+      creature.News(..)
+      | creature.FightTold(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> "other"
     }
   })
 }
@@ -432,6 +495,9 @@ pub fn a_creature_answers_the_caster_before_it_tells_any_viewer_its_health_and_d
       "death to 5",
     ]
     as "the answer goes first, one sender in one order: the caster's connection knows the strike before it is told the health it left, so it can hold the news for the go (genesis_prime/game/strike); the killer's credit follows its answer"
+  assert creature_news_support.said_to_the_map(taken)
+    == ["answer to 2", "credit to 2", "0x937(0) to all", "0x88c to all"]
+    as "to the map, in one step so in one stream: the answer and the credit to the caster, then the health and the death once for every viewer"
   assert support.effects_of(taken)
     |> list.any(fn(effect) {
       effect
@@ -447,7 +513,12 @@ fn credits(
   list.filter(outgoing(taken), fn(one) {
     case one.1 {
       creature.KillCredit(..) -> True
-      creature.Struck(..) | creature.News(..) | creature.FightTold(..) -> False
+      creature.Struck(..)
+      | creature.News(..)
+      | creature.FightTold(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> False
     }
   })
 }
@@ -570,6 +641,17 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
     sent(taken)
   assert creature_unit.health_of(unit:) == 0
     as "opcode.0x262.creature: stat 0 of 0 makes the client create the creature dead"
+  let #(_, seen) =
+    feed(
+      state:,
+      at_ms: 7000,
+      event: OwnEvent(Told(seen_by_nine(generation: generation.first()))),
+    )
+  let assert [
+    #(9, _, [PeerNews(news: CreatureAppeared(unit: seen_unit, ..), ..)]),
+  ] = snapshots(seen)
+    as "the map's Seen is answered with the corpse as a snapshot of one 0x262"
+  assert creature_unit.health_of(unit: seen_unit) == 0
 }
 
 pub fn the_corpse_timer_removes_and_creates_the_creature_again_at_full_health_for_each_viewer_test() -> Nil {
@@ -589,6 +671,9 @@ pub fn the_corpse_timer_removes_and_creates_the_creature_again_at_full_health_fo
   assert kinds_of(outgoing(taken))
     == ["removal to 2", "creation to 2", "removal to 5", "creation to 5"]
     as "death.creature_respawn: 0x355, then a full 0x262 with the same unit id, to each viewer"
+  assert creature_news_support.said_to_the_map(taken)
+    == ["0x355 to all", "0x262 to all"]
+    as "to the map, the removal and then the creation, each once and not for each viewer"
   let assert [
     _,
     #(
@@ -638,6 +723,8 @@ pub fn a_run_only_creatures_corpse_timer_removes_it_for_each_viewer_and_stops_it
     )
   assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
     as "a 0x355 to each viewer, and no 0x262 that stands it again"
+  assert creature_news_support.said_to_the_map(taken) == ["0x355 to all"]
+    as "to the map, the removal once for every viewer, and no creation"
   assert support.stops(taken) as "the creature stops"
 }
 
@@ -1333,7 +1420,10 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
         creature.Struck(..)
         | creature.News(..)
         | creature.FightTold(..)
-        | creature.KillCredit(..) -> []
+        | creature.KillCredit(..)
+        | creature.Snapshot(..)
+        | creature.Broadcast(..)
+        | creature.Relay(..) -> []
       }
     })
   assert landed == [] as "the creature has armor now: the stun lands no state"
@@ -1555,7 +1645,10 @@ fn flown_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
       creature.News(..)
       | creature.Struck(..)
       | creature.KillCredit(..)
-      | creature.FightTold(..) -> Error(Nil)
+      | creature.FightTold(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> Error(Nil)
     }
   })
 }
@@ -2377,7 +2470,10 @@ fn released_unit_7(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
       creature.FightTold(..)
       | creature.News(..)
       | creature.Struck(..)
-      | creature.KillCredit(..) -> Error(Nil)
+      | creature.KillCredit(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> Error(Nil)
     }
   })
 }
@@ -2973,8 +3069,9 @@ pub fn an_immune_strike_threatens_the_creature_as_a_guarded_one_does_test() -> N
   assert timers_started(blocked) != []
 }
 
-pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
-  use <- owned_test.run(5000)
+/// A creature of the guarded turret's kind standing at the Beast's spawn as unit 7, started
+/// for the viewer 2 at 5000 ms.
+fn guarded_by_two() -> State {
   let assert Ok(turret) =
     dict.get(spawn_support.guarded_turret_kinds().by_creature, 73_494)
     as "the guarded turret's kind carries the guard"
@@ -2988,7 +3085,9 @@ pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
           life: 3,
           spawn: spawn_source.Stored(id: SpawnId(1)),
           clock_origin_ms:,
-          viewers: [#(ConnectionId(2), map_support.stay(count: 2))],
+          viewers: [
+            #(ConnectionId(2), map_support.stay(count: 2), generation.first()),
+          ],
         ),
         spawn: spawn_support.battle_beast(number: 1, x: 0.0),
         kind: Kind(
@@ -3004,6 +3103,12 @@ pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
       at_ms: 5000,
       event: OwnEvent(Started),
     )
+  guarded
+}
+
+pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
+  use <- owned_test.run(5000)
+  let guarded = guarded_by_two()
   let with_stun = fn(state) {
     let assert creature.Strike(tell:) = strike_of(damage: 10, cast_id: 1)
     told(
@@ -3664,4 +3769,140 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
       assert unit.tail.cast_id == 0 as row.0
     },
   )
+}
+
+/// The map's `Seen` of the player of connection 9, for the generation, as the creature takes it.
+fn seen_by_nine(generation generation: Generation) -> creature.Message {
+  creature.Seen(
+    by: ConnectionId(9),
+    stay: map_support.stay(count: 9),
+    generation:,
+  )
+}
+
+pub fn a_creature_answers_a_seen_with_a_snapshot_of_its_burst_live_dead_or_despawned_test() -> Nil {
+  use <- owned_test.run(5000)
+  let first_sight = generation.first()
+  let struck = fn(state, damage) {
+    told(state:, at_ms: 6000, message: strike_of(damage:, cast_id: 1)).0
+  }
+  // Each case: the creature as it stands, and the names of the burst it answers the viewer's
+  // `Seen` with, in order: the 0x262 first, then what the viewer is first sent after it.
+  let cases = [
+    #("a standing creature", watched_by_two(), ["0x262"]),
+    #("a creature that holds a state", invulnerable_by_two(), [
+      "0x262",
+      "unit state held",
+    ]),
+    #("a creature with a guard cast", guarded_by_two(), ["0x262", "0x7ff"]),
+    #("a creature in a fight", struck(watched_by_two(), 14), [
+      "0x262",
+      "0x89a(1)",
+      "0x908",
+    ]),
+    #("a creature that lies dead", struck(watched_by_two(), 60), ["0x262"]),
+    #("a despawned creature", despawned_by_two(), []),
+  ]
+  list.each(cases, fn(row) {
+    let #(name, state, burst_names) = row
+    let #(_, taken) =
+      told(state:, at_ms: 7000, message: seen_by_nine(generation: first_sight))
+    let assert [#(9, generation, burst)] = snapshots(taken)
+      as { name <> " answers the Seen with one snapshot for the viewer" }
+    assert generation == first_sight
+      as { name <> ": under the generation the Seen named" }
+    assert list.map(burst, fn(news) { burst_name(news.news) }) == burst_names
+      as { name <> ": the burst, in the order the viewer writes it" }
+    assert support.sends(taken) == []
+      as {
+        name <> ": nothing is sent to a connection, the map relays the burst"
+      }
+  })
+  let #(_, dead) =
+    told(
+      state: struck(watched_by_two(), 60),
+      at_ms: 7000,
+      message: seen_by_nine(generation: first_sight),
+    )
+  let assert [#(9, _, [PeerNews(news: CreatureAppeared(unit:, ..), ..)])] =
+    snapshots(dead)
+  assert creature_unit.health_of(unit:) == 0
+    as "opcode.0x262.creature: a corpse is created dead, with health 0"
+}
+
+/// The name of a news the burst holds: the opcode of the frame the viewer writes for it,
+/// with no value but a combat flag's.
+fn burst_name(news: unit_news.News) -> String {
+  case news {
+    unit_news.UnitStateHeld(..) -> "unit state held"
+    unit_news.Targeting(..) -> "0x908"
+    _ -> creature_news_support.name_of(news)
+  }
+}
+
+pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let first_sight = generation.first()
+  // A `Seen` taken twice is answered twice, and the second answer is the same.
+  let #(state, first) =
+    told(
+      state: watched_by_two(),
+      at_ms: 7000,
+      message: seen_by_nine(generation: first_sight),
+    )
+  let #(state, second) =
+    told(state:, at_ms: 7100, message: seen_by_nine(generation: first_sight))
+  assert snapshots(second) == snapshots(first) && snapshots(first) != []
+    as "a second Seen of the same viewer is answered again with the same snapshot"
+  // An `Unseen` taken twice: the first drops the viewer, the second finds no entry.
+  let #(state, unseen) =
+    told(
+      state:,
+      at_ms: 7200,
+      message: creature.Unseen(by: ConnectionId(9), generation: first_sight),
+    )
+  assert !set.contains(creature.viewers(state), ConnectionId(9))
+    as "the first Unseen drops the viewer"
+  assert support.sends(unseen) == []
+    as "and the creature sends no 0x355: the map tells the viewer"
+  let #(after, again) =
+    told(
+      state:,
+      at_ms: 7300,
+      message: creature.Unseen(by: ConnectionId(9), generation: first_sight),
+    )
+  assert support.effects_of(again) == [] && after == state
+    as "a second Unseen finds no entry and changes nothing"
+  // The map takes the snapshot of its relation twice: the first is relayed, the second is
+  // dropped because the relation no longer awaits it.
+  let map_state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.battle_beast(number: 1, x: 0.0),
+    ])
+  let #(map_state, _) =
+    map_spawn_support.join(state: map_state, at_ms: 6000, connection: 9, x: 0.0)
+  let assert Ok(map.Live(unit_id:, life:, relations:, ..)) =
+    map.spawn_state(state: map_state, spawn: SpawnId(1))
+  let assert Ok(map.Relation(generation: held, ..)) =
+    dict.get(relations, ConnectionId(9))
+  let snapshot =
+    map.Snapshot(unit_id:, life:, by: ConnectionId(9), generation: held, burst: [
+      PeerNews(unit_id:, news: unit_news.Health(health: 52, dead: False)),
+    ])
+  let #(map_state, first_taken) =
+    map_spawn_support.feed(
+      state: map_state,
+      at_ms: 7000,
+      event: OwnEvent(Told(snapshot)),
+    )
+  let #(_, second_taken) =
+    map_spawn_support.feed(
+      state: map_state,
+      at_ms: 7100,
+      event: OwnEvent(Told(snapshot)),
+    )
+  assert list.length(support.sends(first_taken)) == 1
+    as "the map relays the first snapshot"
+  assert support.sends(second_taken) == []
+    as "and drops the second: the relation does not await it"
 }

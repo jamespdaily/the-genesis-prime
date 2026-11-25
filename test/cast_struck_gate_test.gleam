@@ -50,7 +50,7 @@ const ungated_id = 8
 
 const own_id = 9
 
-fn at(ms ms: Int) -> step.Now {
+pub fn at(ms ms: Int) -> step.Now {
   Now(monotonic_ms: ms, filetime: 0)
 }
 
@@ -91,7 +91,7 @@ fn spell_gated_at(gated_aim gated_aim: spell_plan.Aim) -> Spell {
 }
 
 /// The same spell with no gate at all.
-fn spell_ungated() -> Spell {
+pub fn spell_ungated() -> Spell {
   spell_plan.Spell(..spell_gated_at(gated_aim: AimsAtArea), struck_gates: [])
 }
 
@@ -102,7 +102,7 @@ fn listed(effects effects: List(cast_state.Effect)) -> List(#(Int, List(Int))) {
 }
 
 /// The cast pressed on the spell at `target`: its state and the go it asks for.
-fn pressed(
+pub fn pressed(
   spell spell: Spell,
   target target: Int,
 ) -> #(cast_state.State, cast_state.GoAsked) {
@@ -120,7 +120,7 @@ fn pressed(
   #(state, asked)
 }
 
-fn selection_of(
+pub fn selection_of(
   spell spell: Spell,
   asked asked: cast_state.GoAsked,
   units units: List(Int),
@@ -140,7 +140,7 @@ fn selection_of(
 }
 
 /// The strike the go begins on the units, at the time of the go.
-fn begun(
+pub fn begun(
   selection selection: strike.Selection,
 ) -> #(strike.State, List(strike.Effect)) {
   strike.begin(

@@ -75,15 +75,19 @@ import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/server
 import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, LogWarning, Map, OwnEffect, OwnEvent, Woken,
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as store_tables
+import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
 }
@@ -99,6 +103,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/set
 import gleam/string
+import map_spawn_support
 import map_support
 import owned_test
 import place_support
@@ -109,6 +114,7 @@ import server_proxy_support
 import simple_unit_support
 import spawn_support
 import world_entry_support
+import world_watch_support
 
 // ---- other players' units ----
 //
@@ -3260,12 +3266,13 @@ fn removal_wrote(frames frames: List(Frame)) -> List(RemovalWrote) {
 }
 
 /// How a unit's removal reaches the viewer: as the owner's `Removed` news, as the map's
-/// `Gone`, as the map's `ObjectsUnseen`, or as a call of the removal function with the
+/// `Gone`, as the map's `ObjectsUnseen`, as the map's `Unseen` of a creature, or as a call of the removal function with the
 /// casts it is to keep.
 type Remover {
   ByRemovedNews
   ByMapsGone
   ByObjectsUnseen
+  ByCreatureUnseen
   Directly(keeping: List(Int))
 }
 
@@ -3284,6 +3291,7 @@ fn remover_name(remover: Remover) -> String {
     ByRemovedNews -> "by a removal news"
     ByMapsGone -> "by the map's gone"
     ByObjectsUnseen -> "by the map's objects unseen"
+    ByCreatureUnseen -> "by the map's creature unseen"
     Directly(keeping:) ->
       "by the function, keeping "
       <> string.join(list.map(keeping, int.to_string), ", ")
@@ -3369,7 +3377,13 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "a shown unit with no cast is written its 0x355 only, by each caller",
       casts,
-      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
+      [
+        ByRemovedNews,
+        ByMapsGone,
+        ByObjectsUnseen,
+        ByCreatureUnseen,
+        Directly(keeping: []),
+      ],
       [UnitRemoved(unit)],
       [],
       [],
@@ -3377,7 +3391,13 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "two written casts are finished in cast id order before the 0x355, by each caller",
       two_written,
-      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
+      [
+        ByRemovedNews,
+        ByMapsGone,
+        ByObjectsUnseen,
+        ByCreatureUnseen,
+        Directly(keeping: []),
+      ],
       [CastFinish(101), CastFinish(102), UnitRemoved(unit)],
       [],
       [],
@@ -3393,7 +3413,12 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "the map's gone finishes every written cast, the kept one too, and holds none",
       one_kept,
-      [ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
+      [
+        ByMapsGone,
+        ByObjectsUnseen,
+        ByCreatureUnseen,
+        Directly(keeping: []),
+      ],
       [CastFinish(100), CastFinish(101), UnitRemoved(unit)],
       [],
       [],
@@ -3401,7 +3426,13 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "a cast an ally listed is not finished by the unit, and the unit no longer holds it",
       one_borrowed,
-      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
+      [
+        ByRemovedNews,
+        ByMapsGone,
+        ByObjectsUnseen,
+        ByCreatureUnseen,
+        Directly(keeping: []),
+      ],
       [CastFinish(101), UnitRemoved(unit)],
       [],
       [],
@@ -3409,7 +3440,13 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
     #(
       "a unit that is not shown writes nothing",
       not_shown,
-      [ByRemovedNews, ByMapsGone, ByObjectsUnseen, Directly(keeping: [])],
+      [
+        ByRemovedNews,
+        ByMapsGone,
+        ByObjectsUnseen,
+        ByCreatureUnseen,
+        Directly(keeping: []),
+      ],
       [],
       [],
       [],
@@ -3453,6 +3490,20 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
               now:,
               entered:,
               notice: map.ObjectsUnseen(unit_ids: [unit]),
+            )
+            as reason
+          #(session, effects, [])
+        }
+        ByCreatureUnseen -> {
+          let assert client_connection.Continue(session:, effects:) =
+            viewers.map_sent(
+              session:,
+              now:,
+              entered:,
+              notice: map.CreatureUnseen(
+                unit_id: unit,
+                generation: generation.first(),
+              ),
             )
             as reason
           #(session, effects, [])
@@ -3551,4 +3602,131 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
         as { reason <> ": the viewer told the cast's start is told its finish" }
     },
   )
+}
+
+pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_and_the_map_unsees_the_creature_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Expected values: a write of a step that failed leaves the later effects of the step
+  // uncarried and ends the connection (`step.WriteFailed`); a connection that ends is the
+  // watch's end for the map, which removes the player and tells each creature it had a
+  // relation with `Unseen` (the doc comment of `genesis_prime/world_map/map`).
+  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
+  let #(map_state, joined) =
+    map_spawn_support.join(
+      state: map_spawn_support.started_with_spawns(spawns: [beast]),
+      at_ms: 6000,
+      connection: 1,
+      x: 0.0,
+    )
+  let assert [#(_, start)] = map_spawn_support.starts(joined)
+    as "the viewer's join starts the creature"
+  let assert [#(watch, _)] = support.watches(joined)
+    as "the join opens the watch on the viewer's connection"
+  let #(creature_state, _) =
+    creature.step(
+      creature.new(creature.Settings(
+        creature: start,
+        spawn: beast,
+        kind: map_spawn_support.default_kinds().default,
+        numbers: spawn_support.numbers,
+      )),
+      support.input_at_ms(ms: 6000, event: OwnEvent(step.Started)),
+    )
+  let assert creature.Strike(tell:) =
+    world_watch_support.strike_message(
+      unit_id: start.unit_id,
+      damage_type: 3,
+      damage: 5,
+      cast_id: 1,
+      occasion: strike_tell.AtGo(phase: 0),
+    )
+  let #(creature_state, _) =
+    creature.step(
+      creature_state,
+      support.input_at_ms(
+        ms: 6100,
+        event: OwnEvent(step.Told(creature.Strike(tell:))),
+      ),
+    )
+  assert creature_fight.threatened(state: creature.fight(state: creature_state))
+    == set.from_list([ConnectionId(1)])
+    as "the viewer's strike put it on the creature's threat list"
+  // The creature's snapshot reaches the map, which relays its burst, two news, to the viewer.
+  let assert Ok(map.Live(unit_id:, life:, relations:, ..)) =
+    map.spawn_state(state: map_state, spawn: SpawnId(1))
+  let assert Ok(map.Relation(generation: held, ..)) =
+    dict.get(relations, ConnectionId(1))
+  let #(map_state, relayed) =
+    map_spawn_support.feed(
+      state: map_state,
+      at_ms: 6200,
+      event: OwnEvent(
+        step.Told(
+          map.Snapshot(
+            unit_id:,
+            life:,
+            by: ConnectionId(1),
+            generation: held,
+            burst: [
+              PeerNews(
+                unit_id:,
+                news: unit_news.Health(health: 52, dead: False),
+              ),
+              PeerNews(
+                unit_id:,
+                news: unit_news.Health(health: 40, dead: False),
+              ),
+            ],
+          ),
+        ),
+      ),
+    )
+  let assert [first, _second] =
+    list.filter_map(support.sends(relayed), fn(sent) {
+      server.map_message(outgoing: sent.1)
+    })
+    as "the burst is relayed as two messages for the viewer"
+  let #(viewer, _) =
+    game_connection_support.feed(
+      state: game_connection_support.in_world(),
+      event: OwnEvent(Woken(first)),
+    )
+  // The step's write fails: the connection ends, and writes nothing more.
+  let #(_, failed) =
+    game_connection_support.feed(
+      state: viewer,
+      event: OwnEvent(step.WriteFailed(step.SendTimedOut)),
+    )
+  assert support.stops(failed)
+    as "a failed write ends the connection, so the burst's second message is never taken"
+  assert support.writes(failed) == [] as "and no frame follows the failed one"
+  // The map takes the watch's end of the viewer's connection.
+  let #(_, ended) =
+    map_spawn_support.feed(
+      state: map_state,
+      at_ms: 6300,
+      event: step.WatchEnded(watch:),
+    )
+  let assert [#(step.Creature(unit_id: told_unit, ..), unseen)] =
+    list.filter(map_spawn_support.sends(ended), fn(sent) {
+      case sent.0 {
+        step.Creature(..) -> True
+        _ -> False
+      }
+    })
+    as "the map tells the creature the viewer's sight ended"
+  assert told_unit == unit_id
+  let assert Ok(told) = creature.told_by_map(unseen)
+  assert told == creature.Unseen(by: ConnectionId(1), generation: held)
+    as "under the generation of the sight the viewer held"
+  let #(creature_state, _) =
+    creature.step(
+      creature_state,
+      support.input_at_ms(ms: 6400, event: OwnEvent(step.Told(told))),
+    )
+  assert !set.contains(creature.viewers(state: creature_state), ConnectionId(1))
+    as "the creature's copy of its viewers drops the connection"
+  assert creature_fight.threatened(state: creature.fight(state: creature_state))
+    == set.new()
+    as "and its threat entry goes with it"
 }

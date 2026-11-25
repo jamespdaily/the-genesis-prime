@@ -1,12 +1,19 @@
 //// The names of the news a creature sends a viewer, by the client frame each becomes, for the
 //// tests that read what a viewer was sent.
 
+import connection_rule_support as support
 import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/game/strike_tell.{
+  Answered, Attacks, Landed, Refused, Released, Threatened,
+}
 import genesis_prime/game/unit_news.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
   CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
 }
+import genesis_prime/step.{type ServiceStep, ConnectionId, OwnEffect, Send, Stop}
+import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_turn
+import genesis_prime/world_map/relay
 import gleam/int
 import gleam/list
 
@@ -78,5 +85,69 @@ pub fn named_among(
       | client_connection.SentBySessions(..)
       | client_connection.SentByChat(..) -> Error(Nil)
     }
+  }
+}
+
+/// What the step sends the creature's map, in order.
+pub fn to_the_map(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(creature.Outgoing) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(Send(to: step.Map(..), message:)) -> Ok(message)
+      OwnEffect(_) | step.Watch(..) | step.Unwatch(..) | step.Log(..) | Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// What the step sends the creature's map, one line each: news for every viewer by its name
+/// and `to all`; a tell to a player by what it says and the player's number; a snapshot by
+/// the viewer's number.
+pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.map(to_the_map(taken), fn(sent) {
+    case sent {
+      creature.Broadcast(news: PeerNews(news:, ..), ..) ->
+        name_of(news) <> " to all"
+      creature.Snapshot(by: ConnectionId(number), ..) ->
+        "snapshot for " <> int.to_string(number)
+      creature.Relay(to: ConnectionId(number), payload:, ..) ->
+        case payload {
+          relay.News(news: PeerNews(news:, ..)) ->
+            name_of(news) <> " to " <> int.to_string(number)
+          relay.Struck(answered: Answered(outcome: Landed(..), ..)) ->
+            "answer to " <> int.to_string(number)
+          relay.Struck(answered: Answered(outcome: Refused(why:), ..)) ->
+            "Refused(" <> refusal_name(why) <> ") to " <> int.to_string(number)
+          relay.Struck(..) -> "answer to " <> int.to_string(number)
+          relay.KillCredit(..) -> "credit to " <> int.to_string(number)
+          relay.Fight(told: Threatened(unit_id:, life:)) ->
+            "Threatened("
+            <> int.to_string(unit_id)
+            <> ", "
+            <> int.to_string(life)
+            <> ") to "
+            <> int.to_string(number)
+          relay.Fight(told: Released(unit_id:)) ->
+            "Released("
+            <> int.to_string(unit_id)
+            <> ") to "
+            <> int.to_string(number)
+          relay.Fight(told: Attacks(..)) ->
+            "Attacks to " <> int.to_string(number)
+        }
+      creature.News(..)
+      | creature.Struck(..)
+      | creature.FightTold(..)
+      | creature.KillCredit(..) -> "to a connection"
+    }
+  })
+}
+
+fn refusal_name(why: strike_tell.Refusal) -> String {
+  case why {
+    strike_tell.Dead -> "Dead"
+    strike_tell.Returning -> "Returning"
+    strike_tell.Despawned -> "Despawned"
   }
 }

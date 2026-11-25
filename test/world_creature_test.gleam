@@ -300,6 +300,9 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
     as "the spawn returns as a new unit, since the old id was given up with the Gone"
   assert returned.creature_id == first.creature_id
     as "it is the spawn's creature"
+  let rest = world_support.sent_before_the_marker(world:, id: 1, received:)
+  assert list.filter_map(rest, world_watch_support.gone_unit) == []
+    as "a marker through the connection finds no second Gone: the creature's end is told to each player once, by the map"
   world_support.stop(world:)
 }
 

@@ -24,6 +24,7 @@ import character_tables
 import driven_time
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/group_registry
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell.{type ServiceTime} as service_shell
@@ -85,6 +86,7 @@ fn start_world_on(
       maps_call_ms:,
       map_shutdown_ms: 1000,
       creatures: creature_registry.new(),
+      map_tells: group_registry.new(label: "map_tells"),
       creature_supervisor: process.new_name("creature_supervisor"),
       creature_shutdown_ms: 1000,
       idle_stop_ms: 60_000,

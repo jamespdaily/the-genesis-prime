@@ -66,6 +66,7 @@ import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path.{Running, Timed}
 import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/creature_unit_type
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -170,7 +171,11 @@ fn started_with(
         spawn: source,
         clock_origin_ms: 5000,
         viewers: list.map(viewers, fn(viewer) {
-          #(ConnectionId(viewer), map_support.stay(count: viewer))
+          #(
+            ConnectionId(viewer),
+            map_support.stay(count: viewer),
+            generation.first(),
+          )
         }),
       ),
       spawn: Spawn(
@@ -304,8 +309,12 @@ fn fights_told_for(
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       creature.FightTold(stay:, told:) -> Ok(#(sent.0, stay, told))
-      creature.News(..) | creature.Struck(..) | creature.KillCredit(..) ->
-        Error(Nil)
+      creature.News(..)
+      | creature.Struck(..)
+      | creature.KillCredit(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> Error(Nil)
     }
   })
 }
@@ -338,6 +347,9 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
         }
       creature.Struck(..) -> "Deflected" <> to
       creature.KillCredit(..) -> "KillCredit" <> to
+      creature.Snapshot(..) -> "Snapshot" <> to
+      creature.Broadcast(..) -> "Broadcast" <> to
+      creature.Relay(..) -> "Relay" <> to
     }
   })
 }
@@ -1393,6 +1405,44 @@ pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the
       "Released(7) to 5",
     ]
     as "player 5 (threat 3, the target) leaves the list, its entry erased (0x90a 0); player 2 is the target again, and the creature turns to it"
+  // The map's Unseen of the same viewer ends its sight: the fight drops the entry as for an
+  // Unwatched, the creature sends no 0x355 (the map tells the viewer), and the release is one
+  // tell to the player through the map, for the stay the entry held.
+  let #(unseen_state, unseen) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: creature.Unseen(
+        by: ConnectionId(5),
+        generation: generation.first(),
+      ),
+    )
+  assert creature_news_support.said_to_the_map(unseen)
+    == [
+      "0x90a(50, 0) to all",
+      "0x908(20, 1) to all",
+      "turn(kind 18, unit 20) to all",
+      "Released(7) to 5",
+    ]
+    as "the erased entry and the new target are news for every viewer, and player 5 is released through the map: no 0x355 and no news to a connection"
+  assert creature_fight.threatened(state: creature.fight(state: unseen_state))
+    == set.from_list([ConnectionId(2)])
+    as "player 5's threat entry went with its sight"
+  // The same player sees the creature again from a new sight, in a new stay: the earlier
+  // entry's threat is not held.
+  let #(back_state, _) =
+    tell(
+      state: unseen_state,
+      at_ms: 300,
+      message: creature.Seen(
+        by: ConnectionId(5),
+        stay: map_support.stay(count: 6),
+        generation: generation.after(generation: generation.first()),
+      ),
+    )
+  assert creature_fight.threatened(state: creature.fight(state: back_state))
+    == set.from_list([ConnectionId(2)])
+    as "with the player back as a viewer under the new generation, the old entry's threat is not held"
 }
 
 pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_test() -> Nil {
@@ -1605,6 +1655,29 @@ pub fn a_strike_from_a_non_viewer_adds_no_threat_test() -> Nil {
     as "the damage applies: 52 - 10, shown to the viewer"
   assert creature_fight.threatened(state: creature.fight(state:)) == set.new()
     as "no threat for a connection that does not see the creature, so no fight starts"
+  assert creature_news_support.said_to_the_map(taken)
+    == ["answer to 5", "0x937(42) to all"]
+    as "the answer goes to the striker through the map, and the health is one news for every viewer"
+  // A connection the map's Seen names is a viewer: its strike threatens the creature.
+  let #(seen, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: creature.Seen(
+        by: ConnectionId(5),
+        stay: map_support.stay(count: 5),
+        generation: generation.first(),
+      ),
+    )
+  let #(seen, _) =
+    tell(
+      state: seen,
+      at_ms: 100,
+      message: strike_of(number: 5, cast_id: 2, blows: [#(1, 10, 1.0)]),
+    )
+  assert creature_fight.threatened(state: creature.fight(state: seen))
+    == set.from_list([ConnectionId(5)])
+    as "threat for a connection the map's Seen named"
 }
 
 // The review of 0929cb9: what a viewer arriving mid-fight is sent, the erasure of
@@ -2213,7 +2286,10 @@ fn landed_in(
       creature.Struck(..)
       | creature.News(..)
       | creature.FightTold(..)
-      | creature.KillCredit(..) -> []
+      | creature.KillCredit(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> []
     }
   })
 }
@@ -2586,7 +2662,10 @@ fn armor_taken(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
       creature.Struck(..)
       | creature.News(..)
       | creature.FightTold(..)
-      | creature.KillCredit(..) -> []
+      | creature.KillCredit(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> []
     }
   })
 }
@@ -4057,8 +4136,12 @@ fn answers_of(
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       creature.Struck(answered: Answered(outcome:, ..), ..) -> Ok(outcome)
-      creature.News(..) | creature.FightTold(..) | creature.KillCredit(..) ->
-        Error(Nil)
+      creature.News(..)
+      | creature.FightTold(..)
+      | creature.KillCredit(..)
+      | creature.Snapshot(..)
+      | creature.Broadcast(..)
+      | creature.Relay(..) -> Error(Nil)
     }
   })
 }

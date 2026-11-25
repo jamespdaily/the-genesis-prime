@@ -39,6 +39,7 @@ import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{
   CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
 }
@@ -829,6 +830,29 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     as "opcode.0x355: the creature is removed when its process says so"
   assert unit_destroyed.decode(body)
     == Ok(UnitDestroyed(unit_id: 40, chest_world_object_delay: 0))
+  // The same removal from the map's Unseen of the creature, which the creature does not
+  // send: written once for a shown creature, and nothing for one the client does not show.
+  let unseen =
+    game_connection_support.sent_by_the_map(map.CreatureUnseen(
+      unit_id: 40,
+      generation: generation.first(),
+    ))
+  let #(state, taken) = game_connection_support.feed(state:, event: unseen)
+  let assert [Frame(message_id: 0x0355, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+    as "the map's Unseen of a shown creature is written as its 0x355"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 40, chest_world_object_delay: 0))
+  let #(_, taken) = game_connection_support.feed(state:, event: unseen)
+  assert support.writes(taken) == []
+    as "a second Unseen, for a creature the client no longer shows, writes nothing"
+  let #(_, taken) =
+    game_connection_support.feed(
+      state: game_connection_support.in_world(),
+      event: unseen,
+    )
+  assert support.writes(taken) == []
+    as "and one for a creature it never showed writes nothing"
 }
 
 // ---- the development summon ----
