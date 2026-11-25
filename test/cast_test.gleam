@@ -16,7 +16,6 @@
 import cast_support as support
 import character_tables
 import fixture_tables
-import genesis_prime/client_connection.{CastFinished, CastStarted, CastWent}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
@@ -25,6 +24,7 @@ import genesis_prime/game/class_resource.{Gain}
 import genesis_prime/game/connection/casting
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
+import genesis_prime/game/unit_news.{CastFinished, CastStarted, CastWent}
 import genesis_prime/message/cast_result.{
   CasterCannotBeDead, IllegalSpellCast, Other, SpellAlreadyCasting,
   SpellCancelled, SpellCooldown, SpellGlobalCooldown, SpellUnknown, WeaponSlot,
@@ -440,7 +440,7 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
               CastStarted(..) -> "start"
               CastWent(..) -> "go"
               CastFinished(..) -> "finish"
-              client_connection.CastInterrupted(..) -> "interrupt"
+              unit_news.CastInterrupted(..) -> "interrupt"
               _ -> "other"
             })
           False -> Error(Nil)

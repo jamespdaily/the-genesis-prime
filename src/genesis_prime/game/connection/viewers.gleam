@@ -168,6 +168,7 @@ import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
@@ -254,7 +255,7 @@ pub fn map_sent(
           connection_state.news_to(
             entered:,
             viewer: #(by, stay),
-            news: client_connection.Appeared(unit: appearance(entered:, now:)),
+            news: unit_news.Appeared(unit: appearance(entered:, now:)),
           ),
         ],
       )
@@ -274,7 +275,7 @@ pub fn map_sent(
           connection_state.news_to_connection(
             entered:,
             connection: by,
-            news: client_connection.Removed,
+            news: unit_news.Removed,
           ),
           ended,
         ),
@@ -479,54 +480,54 @@ pub fn viewer_takes(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  news news: client_connection.PeerNews,
+  news news: unit_news.PeerNews,
 ) -> client_connection.Handled(Session) {
   let unit_id = news.unit_id
   let shown = dict.has_key(entered.shown, unit_id)
   let creates_or_removes = case news.news {
-    client_connection.Appeared(..)
-    | client_connection.CreatureAppeared(..)
-    | client_connection.Removed -> True
-    client_connection.Moving(..)
-    | client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastFinished(..)
-    | client_connection.CastInterrupted(..)
-    | client_connection.Health(..)
-    | client_connection.Died
-    | client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged
-    | client_connection.CreatureMoved(..)
-    | client_connection.CreaturePlaced(..)
-    | client_connection.CreatureFaces(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..)
-    | client_connection.Shield(..)
-    | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..)
-    | client_connection.InterruptArmor(..)
-    | client_connection.Absorption(..)
-    | client_connection.Level(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..)
-    | client_connection.HeldCastStarted(..) -> False
+    unit_news.Appeared(..)
+    | unit_news.CreatureAppeared(..)
+    | unit_news.Removed -> True
+    unit_news.Moving(..)
+    | unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastFinished(..)
+    | unit_news.CastInterrupted(..)
+    | unit_news.Health(..)
+    | unit_news.Died
+    | unit_news.CameBack
+    | unit_news.DeathLogged
+    | unit_news.CameBackLogged
+    | unit_news.CreatureMoved(..)
+    | unit_news.CreaturePlaced(..)
+    | unit_news.CreatureFaces(..)
+    | unit_news.Targeting(..)
+    | unit_news.Threat(..)
+    | unit_news.CombatState(..)
+    | unit_news.Shield(..)
+    | unit_news.CrowdControlApplied(..)
+    | unit_news.CrowdControlEnded(..)
+    | unit_news.UnitStateHeld(..)
+    | unit_news.UnitStateEnded(..)
+    | unit_news.InterruptArmor(..)
+    | unit_news.Absorption(..)
+    | unit_news.Level(..)
+    | unit_news.PropertiesChanged(..)
+    | unit_news.Stealth(..)
+    | unit_news.LookChanged(..)
+    | unit_news.HeldCastEnded(..)
+    | unit_news.HeldCastStarted(..) -> False
   }
   use <- bool.guard(
     when: creates_or_removes && names_own_unit(entered:, unit_id:),
     return: Continue(session, [refusal_logged(session:, unit_id:)]),
   )
   case news.news {
-    client_connection.Appeared(unit:) -> {
+    unit_news.Appeared(unit:) -> {
       use <- bool.guard(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
@@ -566,7 +567,7 @@ pub fn viewer_takes(
         ],
       )
     }
-    client_connection.CreatureAppeared(
+    unit_news.CreatureAppeared(
       unit:,
       unit_type:,
       spawn_id:,
@@ -613,7 +614,7 @@ pub fn viewer_takes(
         ],
       )
     }
-    client_connection.Moving(server_time_ms:, commands:) -> {
+    unit_news.Moving(server_time_ms:, commands:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session = creatures_resolved(session:, now:)
       let positions =
@@ -662,7 +663,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.Removed -> {
+    unit_news.Removed -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session =
         audiences_left(
@@ -707,7 +708,7 @@ pub fn viewer_takes(
         ]),
       )
     }
-    client_connection.CastStarted(start:) -> {
+    unit_news.CastStarted(start:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       use <- bool.guard(
         when: client_casts.is_borrowed(
@@ -730,7 +731,7 @@ pub fn viewer_takes(
         [connection_state.to_client(session, cast_frame.started_frame(start:))],
       )
     }
-    client_connection.HeldCastStarted(start:, go:) -> {
+    unit_news.HeldCastStarted(start:, go:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       use <- bool.guard(
         when: client_casts.is_held(
@@ -756,7 +757,7 @@ pub fn viewer_takes(
         ],
       )
     }
-    client_connection.HeldCastEnded(cast_id:) ->
+    unit_news.HeldCastEnded(cast_id:) ->
       case
         client_casts.ally_ended(
           casts: entered.client_casts,
@@ -783,7 +784,7 @@ pub fn viewer_takes(
           )
         Error(Nil) -> Continue(session, [])
       }
-    client_connection.CastWent(go:) ->
+    unit_news.CastWent(go:) ->
       written_cast_frame(
         session:,
         entered:,
@@ -791,7 +792,7 @@ pub fn viewer_takes(
         frame: cast_frame.went_frame(go:),
         forgetting: False,
       )
-    client_connection.CastMissed(missed:) ->
+    unit_news.CastMissed(missed:) ->
       written_cast_frame(
         session:,
         entered:,
@@ -799,7 +800,7 @@ pub fn viewer_takes(
         frame: cast_frame.missed_frame(missed:),
         forgetting: False,
       )
-    client_connection.CastTicked(tick:) ->
+    unit_news.CastTicked(tick:) ->
       written_cast_frame(
         session:,
         entered:,
@@ -807,7 +808,7 @@ pub fn viewer_takes(
         frame: cast_frame.ticked_frame(tick:),
         forgetting: False,
       )
-    client_connection.CastTargetsRemoved(removed:, destroyed:) ->
+    unit_news.CastTargetsRemoved(removed:, destroyed:) ->
       written_cast_frame(
         session:,
         entered:,
@@ -815,7 +816,7 @@ pub fn viewer_takes(
         frame: cast_frame.targets_removed_frame(removed:),
         forgetting: destroyed,
       )
-    client_connection.CastStackRemoved(removed:) ->
+    unit_news.CastStackRemoved(removed:) ->
       written_cast_frame(
         session:,
         entered:,
@@ -823,7 +824,7 @@ pub fn viewer_takes(
         frame: cast_frame.stack_removed_frame(removed:),
         forgetting: False,
       )
-    client_connection.CastInterrupted(cast_id:) ->
+    unit_news.CastInterrupted(cast_id:) ->
       written_cast_frames(
         session:,
         entered:,
@@ -834,7 +835,7 @@ pub fn viewer_takes(
         ],
         forgetting: True,
       )
-    client_connection.CastFinished(cast_id:) ->
+    unit_news.CastFinished(cast_id:) ->
       written_cast_frame(
         session:,
         entered:,
@@ -842,20 +843,18 @@ pub fn viewer_takes(
         frame: cast_frame.finished_frame(cast_id:),
         forgetting: True,
       )
-    client_connection.Health(health:, dead:) ->
+    unit_news.Health(health:, dead:) ->
       creature_news(
         session:,
         entered:,
         unit_id:,
-        news: client_connection.Health(health:, dead:),
+        news: unit_news.Health(health:, dead:),
       )
-    client_connection.Died ->
-      creature_news(session:, entered:, unit_id:, news: client_connection.Died)
-    client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged ->
+    unit_news.Died ->
+      creature_news(session:, entered:, unit_id:, news: unit_news.Died)
+    unit_news.CameBack | unit_news.DeathLogged | unit_news.CameBackLogged ->
       life_news(session:, entered:, unit_id:, news: news.news)
-    client_connection.CreatureMoved(path:) -> {
+    unit_news.CreatureMoved(path:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session = creatures_resolved(session:, now:)
       let session =
@@ -877,7 +876,7 @@ pub fn viewer_takes(
         },
       )
     }
-    client_connection.CreaturePlaced(place:, at_ms:) -> {
+    unit_news.CreaturePlaced(place:, at_ms:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session = creatures_resolved(session:, now:)
       let session =
@@ -895,7 +894,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.CreatureFaces(face:, at_ms:) ->
+    unit_news.CreatureFaces(face:, at_ms:) ->
       case shown.place_of(picture: entered.shown, unit_id:, now_ms: at_ms) {
         Error(Nil) -> Continue(session, [])
         Ok(standing_at) -> {
@@ -918,7 +917,7 @@ pub fn viewer_takes(
           ])
         }
       }
-    client_connection.Targeting(target_unit_id:, threat:) -> {
+    unit_news.Targeting(target_unit_id:, threat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let assert Ok(body) =
         unit_target.encode(UnitTarget(unit_id:, target_unit_id:, threat:))
@@ -930,7 +929,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.Threat(other_unit_id:, threat:) -> {
+    unit_news.Threat(other_unit_id:, threat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let assert Ok(body) =
         unit_threat.encode(UnitThreat(unit_id:, other_unit_id:, threat:))
@@ -942,7 +941,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.CombatState(in_combat:) -> {
+    unit_news.CombatState(in_combat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session =
         shown_changed(session:, change: fn(picture) {
@@ -955,7 +954,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.Shield(shield:) -> {
+    unit_news.Shield(shield:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
         connection_state.to_client(
@@ -964,7 +963,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.InterruptArmor(armor:) -> {
+    unit_news.InterruptArmor(armor:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
         connection_state.to_client(
@@ -973,7 +972,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.Absorption(absorption:) -> {
+    unit_news.Absorption(absorption:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
         connection_state.to_client(
@@ -982,7 +981,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.Level(level:) -> {
+    unit_news.Level(level:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
         connection_state.to_client(
@@ -991,7 +990,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.PropertiesChanged(properties:) -> {
+    unit_news.PropertiesChanged(properties:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session =
         shown_changed(session:, change: fn(picture) {
@@ -1004,7 +1003,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.Stealth(stealthed:) -> {
+    unit_news.Stealth(stealthed:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
         connection_state.to_client(
@@ -1017,7 +1016,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.LookChanged(item_visuals:) -> {
+    unit_news.LookChanged(item_visuals:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(session, [
         connection_state.to_client(
@@ -1026,7 +1025,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.CrowdControlApplied(state:, instance_id:) -> {
+    unit_news.CrowdControlApplied(state:, instance_id:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session =
         shown_changed(session:, change: fn(picture) {
@@ -1039,7 +1038,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.CrowdControlEnded(state:, cast_id:, instance_id:) -> {
+    unit_news.CrowdControlEnded(state:, cast_id:, instance_id:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let session =
         shown_changed(session:, change: fn(picture) {
@@ -1057,7 +1056,7 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.UnitStateHeld(state:, number:) -> {
+    unit_news.UnitStateHeld(state:, number:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(
         shown_changed(session:, change: fn(picture) {
@@ -1066,7 +1065,7 @@ pub fn viewer_takes(
         [],
       )
     }
-    client_connection.UnitStateEnded(number:) -> {
+    unit_news.UnitStateEnded(number:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(
         shown_changed(session:, change: fn(picture) {
@@ -1150,14 +1149,14 @@ fn creature_news(
   session session: Session,
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> client_connection.Handled(Session) {
   use <- bool.guard(
     when: !dict.has_key(entered.shown, unit_id),
     return: Continue(session, []),
   )
   let session = case news {
-    client_connection.Health(health:, dead:) ->
+    unit_news.Health(health:, dead:) ->
       shown_changed(session:, change: fn(picture) {
         let picture = case dead {
           True -> shown.with_alive(picture:, unit_id:, alive: False)
@@ -1165,44 +1164,44 @@ fn creature_news(
         }
         shown.with_player_health(picture:, unit_id:, health:, dead:)
       })
-    client_connection.Died ->
+    unit_news.Died ->
       shown_changed(session:, change: fn(picture) {
         shown.with_alive(picture:, unit_id:, alive: False)
       })
-    client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged
-    | client_connection.Appeared(..)
-    | client_connection.CreatureAppeared(..)
-    | client_connection.Moving(..)
-    | client_connection.Removed
-    | client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastFinished(..)
-    | client_connection.CastInterrupted(..)
-    | client_connection.CreatureMoved(..)
-    | client_connection.CreaturePlaced(..)
-    | client_connection.CreatureFaces(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..)
-    | client_connection.Shield(..)
-    | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..)
-    | client_connection.InterruptArmor(..)
-    | client_connection.Absorption(..)
-    | client_connection.Level(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..)
-    | client_connection.HeldCastStarted(..) -> session
+    unit_news.CameBack
+    | unit_news.DeathLogged
+    | unit_news.CameBackLogged
+    | unit_news.Appeared(..)
+    | unit_news.CreatureAppeared(..)
+    | unit_news.Moving(..)
+    | unit_news.Removed
+    | unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastFinished(..)
+    | unit_news.CastInterrupted(..)
+    | unit_news.CreatureMoved(..)
+    | unit_news.CreaturePlaced(..)
+    | unit_news.CreatureFaces(..)
+    | unit_news.Targeting(..)
+    | unit_news.Threat(..)
+    | unit_news.CombatState(..)
+    | unit_news.Shield(..)
+    | unit_news.CrowdControlApplied(..)
+    | unit_news.CrowdControlEnded(..)
+    | unit_news.UnitStateHeld(..)
+    | unit_news.UnitStateEnded(..)
+    | unit_news.InterruptArmor(..)
+    | unit_news.Absorption(..)
+    | unit_news.Level(..)
+    | unit_news.PropertiesChanged(..)
+    | unit_news.Stealth(..)
+    | unit_news.LookChanged(..)
+    | unit_news.HeldCastEnded(..)
+    | unit_news.HeldCastStarted(..) -> session
   }
   case strike.holds(strike: entered.strike, unit_id:) {
     True ->
@@ -1234,14 +1233,14 @@ fn life_news(
   session session: Session,
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> client_connection.Handled(Session) {
   use <- bool.guard(
     when: !dict.has_key(entered.shown, unit_id),
     return: Continue(session, []),
   )
   case news {
-    client_connection.CameBack ->
+    unit_news.CameBack ->
       Continue(
         shown_changed(session:, change: fn(picture) {
           shown.with_alive(picture:, unit_id:, alive: True)
@@ -1253,53 +1252,53 @@ fn life_news(
           ),
         ],
       )
-    client_connection.DeathLogged ->
+    unit_news.DeathLogged ->
       Continue(session, [
         connection_state.to_client(
           session,
           connection_frames.combat_log_frame(unit_id:, died: True),
         ),
       ])
-    client_connection.CameBackLogged ->
+    unit_news.CameBackLogged ->
       Continue(session, [
         connection_state.to_client(
           session,
           connection_frames.combat_log_frame(unit_id:, died: False),
         ),
       ])
-    client_connection.Appeared(..)
-    | client_connection.CreatureAppeared(..)
-    | client_connection.Moving(..)
-    | client_connection.Removed
-    | client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastFinished(..)
-    | client_connection.CastInterrupted(..)
-    | client_connection.Health(..)
-    | client_connection.Died
-    | client_connection.CreatureMoved(..)
-    | client_connection.CreaturePlaced(..)
-    | client_connection.CreatureFaces(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..)
-    | client_connection.Shield(..)
-    | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..)
-    | client_connection.InterruptArmor(..)
-    | client_connection.Absorption(..)
-    | client_connection.Level(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..)
-    | client_connection.HeldCastStarted(..) -> Continue(session, [])
+    unit_news.Appeared(..)
+    | unit_news.CreatureAppeared(..)
+    | unit_news.Moving(..)
+    | unit_news.Removed
+    | unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastFinished(..)
+    | unit_news.CastInterrupted(..)
+    | unit_news.Health(..)
+    | unit_news.Died
+    | unit_news.CreatureMoved(..)
+    | unit_news.CreaturePlaced(..)
+    | unit_news.CreatureFaces(..)
+    | unit_news.Targeting(..)
+    | unit_news.Threat(..)
+    | unit_news.CombatState(..)
+    | unit_news.Shield(..)
+    | unit_news.CrowdControlApplied(..)
+    | unit_news.CrowdControlEnded(..)
+    | unit_news.UnitStateHeld(..)
+    | unit_news.UnitStateEnded(..)
+    | unit_news.InterruptArmor(..)
+    | unit_news.Absorption(..)
+    | unit_news.Level(..)
+    | unit_news.PropertiesChanged(..)
+    | unit_news.Stealth(..)
+    | unit_news.LookChanged(..)
+    | unit_news.HeldCastEnded(..)
+    | unit_news.HeldCastStarted(..) -> Continue(session, [])
   }
 }
 

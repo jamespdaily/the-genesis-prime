@@ -49,6 +49,7 @@ import genesis_prime/game/gear
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spell_tier
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
@@ -193,7 +194,7 @@ fn carried_out(
         ),
         connection_state.news_to_viewers(
           entered:,
-          news: client_connection.Level(level:),
+          news: unit_news.Level(level:),
         ),
       ])
     }

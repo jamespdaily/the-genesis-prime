@@ -25,10 +25,6 @@ import cast_support
 import connection_rule_support as support
 import creature_fight_test
 import crowd_control_support
-import genesis_prime/client_connection.{
-  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
-  Removed,
-}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
@@ -36,6 +32,10 @@ import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
 import genesis_prime/game/unit_casts.{
   type CastView, CastView, EndsAt, HeldEffect, ViewTarget,
+}
+import genesis_prime/game/unit_news.{
+  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
+  Removed,
 }
 import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
 import genesis_prime/game/unit_state
@@ -400,11 +400,9 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
       creature.Struck(answered: Answered(outcome: Landed(..), ..), ..) ->
         "answer to " <> int.to_string(one.0)
       creature.Struck(..) -> "refusal to " <> int.to_string(one.0)
-      creature.News(
-        stay: _,
-        news: PeerNews(news: client_connection.Health(..), ..),
-      ) -> "health to " <> int.to_string(one.0)
-      creature.News(stay: _, news: PeerNews(news: client_connection.Died, ..)) ->
+      creature.News(stay: _, news: PeerNews(news: unit_news.Health(..), ..)) ->
+        "health to " <> int.to_string(one.0)
+      creature.News(stay: _, news: PeerNews(news: unit_news.Died, ..)) ->
         "death to " <> int.to_string(one.0)
       creature.News(stay: _, news: PeerNews(news: Removed, ..)) ->
         "removal to " <> int.to_string(one.0)
@@ -915,7 +913,7 @@ fn health_news(
 ) -> List(#(Int, Int, Bool)) {
   list.filter_map(sent(taken), fn(one) {
     case one.1 {
-      PeerNews(news: client_connection.Health(health:, dead:), ..) ->
+      PeerNews(news: unit_news.Health(health:, dead:), ..) ->
         Ok(#(one.0, health, dead))
       PeerNews(..) -> Error(Nil)
     }
@@ -927,7 +925,7 @@ fn health_news(
 fn armor_left(taken: ServiceStep(creature.Outgoing)) -> List(#(Int, Int)) {
   list.filter_map(sent(taken), fn(one) {
     case one.1 {
-      PeerNews(news: client_connection.InterruptArmor(armor:), ..) ->
+      PeerNews(news: unit_news.InterruptArmor(armor:), ..) ->
         Ok(#(one.0, armor))
       PeerNews(..) -> Error(Nil)
     }
@@ -1254,8 +1252,8 @@ pub fn base_health_modifier_clamps_health_test() -> Nil {
     == [
       #(2, PeerNews(unit_id: 7, news: PropertiesChanged([half]))),
       #(5, PeerNews(unit_id: 7, news: PropertiesChanged([half]))),
-      #(2, PeerNews(unit_id: 7, news: client_connection.Health(26, False))),
-      #(5, PeerNews(unit_id: 7, news: client_connection.Health(26, False))),
+      #(2, PeerNews(unit_id: 7, news: unit_news.Health(26, False))),
+      #(5, PeerNews(unit_id: 7, news: unit_news.Health(26, False))),
     ]
     as "the property first, then the health the lowered maximum leaves"
   let #(_, arrived) =
@@ -2389,8 +2387,7 @@ fn released_unit_7(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
 fn combat_ended_for(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(sent(taken), fn(one) {
     case one.1 {
-      PeerNews(news: client_connection.CombatState(in_combat: False), ..) ->
-        Ok(one.0)
+      PeerNews(news: unit_news.CombatState(in_combat: False), ..) -> Ok(one.0)
       PeerNews(..) -> Error(Nil)
     }
   })
@@ -2419,7 +2416,7 @@ pub fn a_despawn_ends_the_creatures_fight_and_releases_its_players_test() -> Nil
 fn ended_states(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(sent(taken), fn(one) {
     case one.1 {
-      PeerNews(news: client_connection.CrowdControlEnded(..), ..) -> Ok(one.0)
+      PeerNews(news: unit_news.CrowdControlEnded(..), ..) -> Ok(one.0)
       PeerNews(..) -> Error(Nil)
     }
   })
@@ -2689,31 +2686,31 @@ fn holding_state_6(state state: State) -> State {
 /// The unit-state news the step sends, as the viewer's number and the news, in order.
 fn unit_state_news(
   taken: ServiceStep(creature.Outgoing),
-) -> List(#(Int, client_connection.News)) {
+) -> List(#(Int, unit_news.News)) {
   list.filter_map(sent(taken), fn(one) {
     case one.1 {
-      PeerNews(news: client_connection.UnitStateHeld(state:, number:), ..) ->
-        Ok(#(one.0, client_connection.UnitStateHeld(state:, number:)))
-      PeerNews(news: client_connection.UnitStateEnded(number:), ..) ->
-        Ok(#(one.0, client_connection.UnitStateEnded(number:)))
+      PeerNews(news: unit_news.UnitStateHeld(state:, number:), ..) ->
+        Ok(#(one.0, unit_news.UnitStateHeld(state:, number:)))
+      PeerNews(news: unit_news.UnitStateEnded(number:), ..) ->
+        Ok(#(one.0, unit_news.UnitStateEnded(number:)))
       PeerNews(..) -> Error(Nil)
     }
   })
 }
 
-fn held(state state: Int, number number: Int) -> client_connection.News {
-  client_connection.UnitStateHeld(state:, number:)
+fn held(state state: Int, number number: Int) -> unit_news.News {
+  unit_news.UnitStateHeld(state:, number:)
 }
 
-fn unit_state_ended(number number: Int) -> client_connection.News {
-  client_connection.UnitStateEnded(number:)
+fn unit_state_ended(number number: Int) -> unit_news.News {
+  unit_news.UnitStateEnded(number:)
 }
 
 /// The viewers the step sends a state that took hold on the creature.
 fn states_applied_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(sent(taken), fn(one) {
     case one.1 {
-      PeerNews(news: client_connection.CrowdControlApplied(..), ..) -> Ok(one.0)
+      PeerNews(news: unit_news.CrowdControlApplied(..), ..) -> Ok(one.0)
       PeerNews(..) -> Error(Nil)
     }
   })

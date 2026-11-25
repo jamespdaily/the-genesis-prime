@@ -20,6 +20,7 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/message/float32
 import genesis_prime/message/spell_failed
 import genesis_prime/message/unit_float_stat_changed.{
@@ -536,17 +537,17 @@ pub fn three_open_rounds_closed_by_answer_1_the_threat_then_answers_2_and_3_give
 
 /// Whether the news is one of a cast's, or the combat flag's, which the creature's threat
 /// sets (0x89a).
-fn is_cast_or_combat_news(news: client_connection.News) -> Bool {
+fn is_cast_or_combat_news(news: unit_news.News) -> Bool {
   case news {
-    client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastFinished(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastInterrupted(..)
-    | client_connection.CombatState(..) -> True
+    unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastFinished(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastInterrupted(..)
+    | unit_news.CombatState(..) -> True
     _ -> False
   }
 }
@@ -574,7 +575,7 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_tes
     })
   assert list.any(told_viewer, fn(news) {
     case news {
-      client_connection.CastStarted(start:) -> start.spell4_id == 42_148
+      unit_news.CastStarted(start:) -> start.spell4_id == 42_148
       _ -> False
     }
   })

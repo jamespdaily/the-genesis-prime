@@ -26,13 +26,13 @@
 ////   is 0.25 of 450 each 500 ms after 2500 ms (`UnitProperty2.176`): a tick adds 112.
 
 import cast_support
-import genesis_prime/client_connection
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnHealth, OwnShield, ToClient, ToViewers,
 }
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
@@ -120,7 +120,7 @@ pub fn a_shield_heal_raises_the_shield_capped_at_its_maximum_and_tells_the_clien
   assert effects
     == [
       ToClient(OwnShield(shield: 430)),
-      ToViewers(client_connection.Shield(shield: 430)),
+      ToViewers(unit_news.Shield(shield: 430)),
     ]
     as "0x938 stat 20 to the player and to each viewer"
   let #(life, effects) =
@@ -135,7 +135,7 @@ pub fn a_shield_heal_raises_the_shield_capped_at_its_maximum_and_tells_the_clien
   assert effects
     == [
       ToClient(OwnShield(shield: 450)),
-      ToViewers(client_connection.Shield(shield: 450)),
+      ToViewers(unit_news.Shield(shield: 450)),
     ]
     as "the new shield is the capped one"
   assert player_life.health(life:) == 706
@@ -206,7 +206,7 @@ pub fn a_shield_heal_leaves_the_shield_clock_as_it_was_test() -> Nil {
   assert tick
     == [
       ToClient(OwnShield(shield: 450)),
-      ToViewers(client_connection.Shield(shield: 450)),
+      ToViewers(unit_news.Shield(shield: 450)),
     ]
     as "and the shield is full, so no next tick"
 }
@@ -234,7 +234,7 @@ pub fn self_heal_uses_healing_multipliers_test() -> Nil {
   assert effects
     == [
       ToClient(OwnShield(shield: 430)),
-      ToViewers(client_connection.Shield(shield: 430)),
+      ToViewers(unit_news.Shield(shield: 430)),
     ]
     as "the shield told is the healed one"
   let #(life, _) =
@@ -303,7 +303,7 @@ fn struck_from(health health: Int) -> Life {
 fn health_told(health health: Int) -> List(Effect) {
   [
     ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead: False)),
+    ToViewers(unit_news.Health(health:, dead: False)),
   ]
 }
 
@@ -418,9 +418,9 @@ pub fn a_heal_with_shield_conversion_splits_between_shield_and_health_test() -> 
   assert effects
     == [
       ToClient(OwnShield(shield: 450)),
-      ToViewers(client_connection.Shield(shield: 450)),
+      ToViewers(unit_news.Shield(shield: 450)),
       ToClient(OwnHealth(health: 650)),
-      ToViewers(client_connection.Health(health: 650, dead: False)),
+      ToViewers(unit_news.Health(health: 650, dead: False)),
     ]
     as "stat 20 of 0x938 and the Shield news for the shield, then the health"
   // The client works the share with int(), which drops the fraction: 0.5 of 5 is 2.
@@ -453,7 +453,7 @@ pub fn a_heal_with_shield_conversion_splits_between_shield_and_health_test() -> 
   assert effects
     == [
       ToClient(OwnShield(shield: 344)),
-      ToViewers(client_connection.Shield(shield: 344)),
+      ToViewers(unit_news.Shield(shield: 344)),
     ]
     as "only the shield moved"
 }
@@ -518,7 +518,7 @@ fn nearly_full() -> Life {
 fn shield_told(shield shield: Int) -> List(Effect) {
   [
     ToClient(OwnShield(shield:)),
-    ToViewers(client_connection.Shield(shield:)),
+    ToViewers(unit_news.Shield(shield:)),
   ]
 }
 

@@ -28,12 +28,13 @@ import experience_support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Request, AskStore, FromMap, FromStore, LookChanged, PropertiesChanged,
+  type Request, AskStore, FromMap, FromStore,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/gear
+import genesis_prime/game/unit_news.{LookChanged, PropertiesChanged}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
@@ -582,7 +583,7 @@ pub fn health_above_the_new_maximum_is_capped_and_told_test() -> Nil {
   list.each([2, 3], fn(viewer) {
     assert list.contains(
       game_connection_support.news_told(taken: answered, viewer:),
-      client_connection.Health(health: 586, dead: False),
+      unit_news.Health(health: 586, dead: False),
     )
       as "each viewer is told the capped health"
   })

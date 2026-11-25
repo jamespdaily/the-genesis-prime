@@ -30,7 +30,6 @@ import cast_support as support
 import character_support
 import client_tables
 import crowd_control_support
-import genesis_prime/client_connection
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/proc as cast_proc
@@ -56,6 +55,7 @@ import genesis_prime/game/spell_tier
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
@@ -480,7 +480,7 @@ pub fn entering_stealth_by_the_innate_press_casts_60724_at_the_player_after_the_
     as "only the press is confirmed with a 0x7fd: the proc's cast has none"
   let proc_start = started_of(spell4_id: 60_724, effects:)
   assert list.filter_map(support.tells(effects:), fn(told) {
-      case told.1 == client_connection.CastStarted(start: proc_start) {
+      case told.1 == unit_news.CastStarted(start: proc_start) {
         True -> Ok(told.0)
         False -> Error(Nil)
       }

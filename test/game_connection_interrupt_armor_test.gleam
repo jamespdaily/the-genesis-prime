@@ -17,12 +17,13 @@
 
 import client_tables
 import game_connection_support as support
-import genesis_prime/client_connection.{
-  type News, type Request, InterruptArmor, PropertiesChanged,
-}
+import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{
+  type News, InterruptArmor, PropertiesChanged,
+}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}

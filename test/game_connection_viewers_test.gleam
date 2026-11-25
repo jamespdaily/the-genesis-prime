@@ -11,8 +11,7 @@ import fixture_tables
 import game_client
 import game_connection_support.{type Step, Appears, MapSaysGone, Moves, Removes}
 import genesis_prime/client_connection.{
-  Appeared, CastFinished, ForStay, FromMap, FromStore, LookChanged, Moving,
-  PeerNews, PropertiesChanged, Removed, SentByMap, SentByPeer, TellMoved,
+  ForStay, FromMap, FromStore, SentByMap, SentByPeer, TellMoved,
 }
 import genesis_prime/connection/cipher
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -31,6 +30,10 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news.{
+  Appeared, CastFinished, LookChanged, Moving, PeerNews, PropertiesChanged,
+  Removed,
+}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/crowd_control_state
@@ -1271,7 +1274,7 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
       entered:,
       news: PeerNews(
         unit_id: 40,
-        news: client_connection.CreatureAppeared(
+        news: unit_news.CreatureAppeared(
           spawn_id: SpawnId(31),
           unit_type: NonPlayer,
           unit: creature_unit.create(
@@ -1469,12 +1472,12 @@ pub fn a_shown_units_crowd_control_news_is_written_as_0x87f_and_0x880_and_none_f
     )
   }
   let applied =
-    client_connection.CrowdControlApplied(
+    unit_news.CrowdControlApplied(
       state: crowd_control_state.Knockdown,
       instance_id: 28_673,
     )
   let ended =
-    client_connection.CrowdControlEnded(
+    unit_news.CrowdControlEnded(
       state: crowd_control_state.Knockdown,
       cast_id: 2_147_500_000,
       instance_id: 28_673,
@@ -1518,10 +1521,7 @@ pub fn a_shown_units_interrupt_armor_news_is_written_as_0x938_of_stat_21_and_non
   let news_of = fn(unit_id) {
     game_connection_support.for_stay(
       game_connection_support.own_stay(),
-      SentByPeer(PeerNews(
-        unit_id:,
-        news: client_connection.InterruptArmor(armor: 1),
-      )),
+      SentByPeer(PeerNews(unit_id:, news: unit_news.InterruptArmor(armor: 1))),
     )
   }
   let #(_, taken) = game_connection_support.feed(shown, news_of(9))
@@ -1687,7 +1687,7 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
       state,
       game_connection_support.news_sent_by_a_peer(
         unit_id: 40,
-        news: client_connection.CreatureMoved(path: flight),
+        news: unit_news.CreatureMoved(path: flight),
       ),
     )
   let assert [Frame(message_id: 0x0638, body:)] =
@@ -1895,7 +1895,7 @@ fn written_of(
 /// News of the unit `unit_id` as its owner sends it to the viewer.
 fn from_unit(
   unit_id unit_id: Int,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> step.Event(
   step.ConnectionEvent(client_connection.Message, client_connection.Answer),
 ) {
@@ -1909,7 +1909,7 @@ fn from_unit(
 fn created_listing(
   unit_id unit_id: Int,
   casts casts: List(UnitCreateCast),
-) -> client_connection.News {
+) -> unit_news.News {
   Appeared(
     unit_create_player.UnitCreatePlayer(
       ..game_connection_support.another_unit_casting(casts:, cast_id: 0),
@@ -1942,7 +1942,7 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
       news: created_listing(unit_id: ally, casts: listed),
     )
   let ally_ends =
-    from_unit(unit_id: ally, news: client_connection.HeldCastEnded(cast_id:))
+    from_unit(unit_id: ally, news: unit_news.HeldCastEnded(cast_id:))
   let caster_appears =
     from_unit(
       unit_id: caster,
@@ -1951,7 +1951,7 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
   let caster_starts =
     from_unit(
       unit_id: caster,
-      news: client_connection.CastStarted(
+      news: unit_news.CastStarted(
         start: game_connection_support.spell_started_of(cast_id:, caster:),
       ),
     )
@@ -1959,7 +1959,7 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
   let caster_removes_the_ally =
     from_unit(
       unit_id: caster,
-      news: client_connection.CastTargetsRemoved(
+      news: unit_news.CastTargetsRemoved(
         removed: spell_targets_removed.SpellTargetsRemoved(cast_id:, unit_ids: [
           ally,
         ]),
@@ -2028,10 +2028,7 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
       ],
       [
         ally_ends,
-        from_unit(
-          unit_id: other_ally,
-          news: client_connection.HeldCastEnded(cast_id:),
-        ),
+        from_unit(unit_id: other_ally, news: unit_news.HeldCastEnded(cast_id:)),
       ],
       [[ended_on([ally])], [ended_on([other_ally])]],
     ),
@@ -2095,8 +2092,8 @@ fn check_written_rows(
 fn held_cast_started(
   cast_id cast_id: Int,
   caster caster: Int,
-) -> client_connection.News {
-  client_connection.HeldCastStarted(
+) -> unit_news.News {
+  unit_news.HeldCastStarted(
     start: spell_started.SpellStarted(
       ..game_connection_support.spell_started_of(cast_id:, caster:),
       spell4_id: 32_823,
@@ -2149,7 +2146,7 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
   let ally_starts =
     from_unit(unit_id: ally, news: held_cast_started(cast_id:, caster:))
   let ally_ends =
-    from_unit(unit_id: ally, news: client_connection.HeldCastEnded(cast_id:))
+    from_unit(unit_id: ally, news: unit_news.HeldCastEnded(cast_id:))
   let ally_lists =
     from_unit(
       unit_id: ally,
@@ -2165,12 +2162,12 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
   let caster_starts =
     from_unit(
       unit_id: caster,
-      news: client_connection.CastStarted(
+      news: unit_news.CastStarted(
         start: game_connection_support.spell_started_of(cast_id:, caster:),
       ),
     )
   let caster_finishes = from_unit(unit_id: caster, news: CastFinished(cast_id:))
-  let assert client_connection.HeldCastStarted(start:, go:) =
+  let assert unit_news.HeldCastStarted(start:, go:) =
     held_cast_started(cast_id:, caster:)
   let written = [Started(start:), Went(go:)]
   // A viewer that holds a kept change of a cast from another player's connection 3 and was
@@ -2212,7 +2209,7 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
     ),
     from_unit(
       unit_id: orphan_caster,
-      news: client_connection.CastStarted(
+      news: unit_news.CastStarted(
         start: game_connection_support.spell_started_of(
           cast_id: orphan_id,
           caster: orphan_caster,
@@ -2338,7 +2335,7 @@ type Move {
 /// (Spell4 42569) that no go of Discharge ends: its cast lingers until its buff ends.
 fn discharge_told_to_a_viewer(
   moves moves: List(Move),
-) -> #(List(spell_started.SpellStarted), List(client_connection.News)) {
+) -> #(List(spell_started.SpellStarted), List(unit_news.News)) {
   discharge_told_on(tables: character_tables.shared(), moves:)
 }
 
@@ -2346,7 +2343,7 @@ fn discharge_told_to_a_viewer(
 fn discharge_told_on(
   tables tables: store_tables.Tables,
   moves moves: List(Move),
-) -> #(List(spell_started.SpellStarted), List(client_connection.News)) {
+) -> #(List(spell_started.SpellStarted), List(unit_news.News)) {
   let #(state, _, bag_index) =
     game_connection_support.entered_with_server_proxies(
       class_id: 4,
@@ -2418,15 +2415,12 @@ fn discharge_told_on(
 
 /// Whether the news end the cast `cast_id` for the viewer: its 0x811 that takes the Medic's
 /// node off it, or its 0x7fe.
-fn told_of(
-  told told: List(client_connection.News),
-  cast_id cast_id: Int,
-) -> Bool {
+fn told_of(told told: List(unit_news.News), cast_id cast_id: Int) -> Bool {
   list.contains(told, CastFinished(cast_id:))
   || list.any([False, True], fn(destroyed) {
     list.contains(
       told,
-      client_connection.CastTargetsRemoved(
+      unit_news.CastTargetsRemoved(
         removed: spell_targets_removed.SpellTargetsRemoved(cast_id:, unit_ids: [
           game_connection_support.own_unit_id,
         ]),
@@ -2627,7 +2621,7 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
       assert list.count(told, fn(news) {
           list.any([False, True], fn(destroyed) {
             news
-            == client_connection.CastTargetsRemoved(
+            == unit_news.CastTargetsRemoved(
               removed: spell_targets_removed.SpellTargetsRemoved(
                 cast_id: power_charge.cast_id,
                 unit_ids: [game_connection_support.own_unit_id],
@@ -3056,24 +3050,24 @@ pub fn a_player_that_comes_into_sight_is_shown_with_what_a_press_judges_of_it_te
   assert start_place.world_id(place) == 3460
     as "the place is in the viewer's world"
   assert written_for_news(news: [
-      client_connection.Health(health: 0, dead: True),
-      client_connection.CameBack,
-      client_connection.Died,
-      client_connection.CombatState(in_combat: True),
-      client_connection.CrowdControlApplied(
+      unit_news.Health(health: 0, dead: True),
+      unit_news.CameBack,
+      unit_news.Died,
+      unit_news.CombatState(in_combat: True),
+      unit_news.CrowdControlApplied(
         state: crowd_control_state.Stun,
         instance_id: 5,
       ),
-      client_connection.CrowdControlEnded(
+      unit_news.CrowdControlEnded(
         state: crowd_control_state.Stun,
         cast_id: 6,
         instance_id: 5,
       ),
-      client_connection.Moving(
+      unit_news.Moving(
         server_time_ms: 7,
         commands: game_connection_support.moved_unit_commands(),
       ),
-      client_connection.Removed,
+      unit_news.Removed,
     ])
     == [
       [0x0937],
@@ -3090,9 +3084,7 @@ pub fn a_player_that_comes_into_sight_is_shown_with_what_a_press_judges_of_it_te
 
 /// The ids of the messages the viewer writes for each news of the unit 9 in turn, once the
 /// unit's 0x262 has come.
-fn written_for_news(
-  news news: List(client_connection.News),
-) -> List(List(Int)) {
+fn written_for_news(news news: List(unit_news.News)) -> List(List(Int)) {
   let #(shown, _) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -3136,7 +3128,7 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
   let take = fn(
     session: connection_state.Session,
     unit_id: Int,
-    news: client_connection.News,
+    news: unit_news.News,
   ) {
     let assert Some(entered) = connection_state.entered_of(session.status)
       as "the player is in the world"
@@ -3158,7 +3150,7 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
     #(state.alive, state.health, state.maximum_health)
   }
   let property_7 = fn(maximum) {
-    client_connection.PropertiesChanged(properties: [
+    unit_news.PropertiesChanged(properties: [
       base_health_property(maximum:),
     ])
   }
@@ -3179,15 +3171,13 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
     )
   assert copy_of(session, 9) == #(True, 5000, players_base_health)
     as "the copy holds the health stat and the Base Health of the 0x262"
-  let hurt =
-    take(session, 9, client_connection.Health(health: 4200, dead: False))
+  let hurt = take(session, 9, unit_news.Health(health: 4200, dead: False))
   assert copy_of(hurt, 9) == #(True, 4200, players_base_health)
     as "a Health news sets the health and keeps the maximum"
-  let dead = take(hurt, 9, client_connection.Health(health: 0, dead: True))
+  let dead = take(hurt, 9, unit_news.Health(health: 0, dead: True))
   assert copy_of(dead, 9) == #(False, 0, players_base_health)
     as "a Health news with the dead bit sets the player dead at health 0"
-  let revived =
-    take(dead, 9, client_connection.Health(health: 3000, dead: False))
+  let revived = take(dead, 9, unit_news.Health(health: 3000, dead: False))
   assert copy_of(revived, 9) == #(True, 3000, players_base_health)
     as "a Health news without it sets the player alive again"
   // A death by the Health news alone (no Died news follows) also empties what the copy holds
@@ -3203,7 +3193,7 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
     take(
       revived,
       9,
-      client_connection.CrowdControlApplied(
+      unit_news.CrowdControlApplied(
         state: crowd_control_state.Stun,
         instance_id: 5,
       ),
@@ -3212,10 +3202,10 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
     == [held_state.HeldState(state: crowd_control_state.Stun, instance_id: 5)]
     as "the copy holds the stun its owner's news gave"
   let stunned_and_hurt =
-    take(stunned, 9, client_connection.Health(health: 2500, dead: False))
+    take(stunned, 9, unit_news.Health(health: 2500, dead: False))
   assert held_of(stunned_and_hurt, 9) != []
     as "a Health news without the dead bit keeps what the copy holds"
-  let killed = take(stunned, 9, client_connection.Health(health: 0, dead: True))
+  let killed = take(stunned, 9, unit_news.Health(health: 0, dead: True))
   assert copy_of(killed, 9) == #(False, 0, players_base_health)
     as "a Health news alone with the dead bit sets the player dead"
   assert held_of(killed, 9) == []
@@ -3227,14 +3217,13 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
     take(
       grown,
       9,
-      client_connection.PropertiesChanged(properties: [
+      unit_news.PropertiesChanged(properties: [
         UnitProperty(property_id: 8, base: 0, value: 0),
       ]),
     )
   assert copy_of(other_property, 9) == #(True, 3000, 7000)
     as "a PropertiesChanged news without property 7 keeps the maximum"
-  let unshown =
-    take(grown, 77, client_connection.Health(health: 1, dead: False))
+  let unshown = take(grown, 77, unit_news.Health(health: 1, dead: False))
   let assert Some(before) = connection_state.entered_of(grown.status)
   let assert Some(after) = connection_state.entered_of(unshown.status)
   assert after.shown == before.shown

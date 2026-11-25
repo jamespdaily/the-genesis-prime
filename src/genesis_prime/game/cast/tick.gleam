@@ -16,7 +16,6 @@
 ////   unit inside the area when it is aimed at the area, which the connection finds at the
 ////   tick (`FindProxyTickUnits`), `Spell4Effects.effectType.26.periodic`.
 
-import genesis_prime/client_connection
 import genesis_prime/game/area
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
@@ -44,6 +43,7 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/ticking
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_damage_description.{
@@ -767,7 +767,7 @@ fn tick_written(
   [
     Send(frame: cast_frame.ticked_frame(tick:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: client_connection.CastTicked(tick:))
+      Tell(to: viewer, news: unit_news.CastTicked(tick:))
     })
   ]
 }
@@ -1608,10 +1608,7 @@ pub fn targets_removed_effects(
   [
     Send(frame: cast_frame.targets_removed_frame(removed:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(
-        to: viewer,
-        news: client_connection.CastTargetsRemoved(removed:, destroyed:),
-      )
+      Tell(to: viewer, news: unit_news.CastTargetsRemoved(removed:, destroyed:))
     })
   ]
 }
@@ -1626,7 +1623,7 @@ fn stack_removed_effects(
   [
     Send(frame: cast_frame.stack_removed_frame(removed:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: client_connection.CastStackRemoved(removed:))
+      Tell(to: viewer, news: unit_news.CastStackRemoved(removed:))
     })
   ]
 }
@@ -1639,7 +1636,7 @@ pub fn finished_effects(
   [
     Send(frame: cast_frame.finished_frame(cast_id:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: client_connection.CastFinished(cast_id:))
+      Tell(to: viewer, news: unit_news.CastFinished(cast_id:))
     })
   ]
 }

@@ -27,10 +27,6 @@ import connection_rule_support as support
 import creature_news_support
 import crowd_control_support
 import fixture_tables
-import genesis_prime/client_connection.{
-  type News, CastFinished, CastStarted, CastWent, CreatureAppeared,
-  CreatureFaces, CreatureMoved, CreaturePlaced, PeerNews,
-}
 import genesis_prime/game/area
 import genesis_prime/game/crowd_control
 import genesis_prime/game/forced_move
@@ -41,6 +37,10 @@ import genesis_prime/game/strike_tell.{
   PlayerStriker, Refused, Released, Strike, Threatened,
 }
 import genesis_prime/game/telegraph_entries
+import genesis_prime/game/unit_news.{
+  type News, CastFinished, CastStarted, CastWent, CreatureAppeared,
+  CreatureFaces, CreatureMoved, CreaturePlaced, PeerNews,
+}
 import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -2097,7 +2097,7 @@ pub fn a_caster_ending_its_cast_ends_its_states_at_once_and_the_creature_acts_un
       message: creature.ControlsEnd(by: ConnectionId(2), cast_id: 1),
     )
   let over =
-    client_connection.CrowdControlEnded(
+    unit_news.CrowdControlEnded(
       state: crowd_control_state.Stun,
       cast_id: 1,
       instance_id: 28_673,
@@ -2161,7 +2161,7 @@ fn armored(armor armor: creature_life.InterruptArmor) -> State {
 fn state_news(
   taken: ServiceStep(creature.Outgoing),
   number: Int,
-) -> List(client_connection.News) {
+) -> List(unit_news.News) {
   list.filter(news_to(taken, number), fn(news) {
     list.contains(["0x87f", "0x880"], creature_news_support.name_of(news))
   })
@@ -2223,7 +2223,7 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
       ]),
     )
   let applied =
-    client_connection.CrowdControlApplied(
+    unit_news.CrowdControlApplied(
       state: crowd_control_state.Knockdown,
       instance_id: 28_673,
     )
@@ -2258,7 +2258,7 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
     as "no 0x880 comes with the strike: the state ends only at its timer, 3166 ms on (Kick: 166 + 3000)"
   let #(state, ended) = fire(state:, at_ms: 4166, timer: timer_for(taken, 3166))
   let over =
-    client_connection.CrowdControlEnded(
+    unit_news.CrowdControlEnded(
       state: crowd_control_state.Knockdown,
       cast_id: 77,
       instance_id: 28_673,
@@ -2458,10 +2458,10 @@ pub fn a_deflected_stun_only_strike_lands_no_state_and_sends_no_0x87f_test() -> 
 fn armor_news(
   taken: ServiceStep(creature.Outgoing),
   number: Int,
-) -> List(client_connection.News) {
+) -> List(unit_news.News) {
   let armors =
     list.map([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], fn(armor) {
-      client_connection.InterruptArmor(armor:)
+      unit_news.InterruptArmor(armor:)
     })
   list.filter(news_to(taken, number), fn(news) { list.contains(armors, news) })
 }
@@ -2493,8 +2493,8 @@ pub fn armor_wears_down_by_the_rows_points_and_the_state_lands_once_it_is_0_test
     )
   assert landed_in(first) == [] && state_news(first, 2) == []
     as "armor 2: the first strike lands no state"
-  assert armor_news(first, 2) == [client_connection.InterruptArmor(armor: 1)]
-    && armor_news(first, 5) == [client_connection.InterruptArmor(armor: 1)]
+  assert armor_news(first, 2) == [unit_news.InterruptArmor(armor: 1)]
+    && armor_news(first, 5) == [unit_news.InterruptArmor(armor: 1)]
     as "it destroys the row's 1 point and every viewer is told the 1 left"
   assert !creature.controlled(state:)
   let #(state, second) =
@@ -2504,7 +2504,7 @@ pub fn armor_wears_down_by_the_rows_points_and_the_state_lands_once_it_is_0_test
       message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
     )
   assert landed_in(second) == []
-    && armor_news(second, 2) == [client_connection.InterruptArmor(armor: 0)]
+    && armor_news(second, 2) == [unit_news.InterruptArmor(armor: 0)]
     as "the second takes the last point, and still lands nothing: the armor was above 0 when it arrived"
   let #(state, third) =
     tell(
@@ -2537,7 +2537,7 @@ pub fn armor_is_never_destroyed_below_0_test() -> Nil {
         crowd_control_support.stagger_stun(instance_id: 28_674),
       ]),
     )
-  assert armor_news(taken, 2) == [client_connection.InterruptArmor(armor: 0)]
+  assert armor_news(taken, 2) == [unit_news.InterruptArmor(armor: 0)]
     && landed_in(taken) == []
     as "2 points of rows on 1 point of armor leave 0, and none of the strike's states lands"
 }
@@ -2616,8 +2616,8 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
     && refill_timers(second) == [#(step.TimerId(2), 10_000)]
     as "a strike before it cancels the wait and starts it again"
   let #(state, refilled) = fire(state:, at_ms: 15_000, timer: step.TimerId(2))
-  assert armor_news(refilled, 2) == [client_connection.InterruptArmor(armor: 2)]
-    && armor_news(refilled, 5) == [client_connection.InterruptArmor(armor: 2)]
+  assert armor_news(refilled, 2) == [unit_news.InterruptArmor(armor: 2)]
+    && armor_news(refilled, 5) == [unit_news.InterruptArmor(armor: 2)]
     as "armor is back at its maximum 2, told to every viewer"
   let #(_, again) =
     tell(
@@ -2626,7 +2626,7 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
       message: stunning(from: 2, cast_id: 3, instance_id: 28_675),
     )
   assert landed_in(again) == []
-    && armor_news(again, 2) == [client_connection.InterruptArmor(armor: 1)]
+    && armor_news(again, 2) == [unit_news.InterruptArmor(armor: 1)]
     as "the refilled armor wears down again before a state lands"
   let #(_, full) =
     fire(
@@ -2721,7 +2721,7 @@ pub fn a_state_landing_at_armor_0_leaves_the_refill_where_it_is_test() -> Nil {
       at_ms: 1000,
       message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
     )
-  assert armor_news(worn, 2) == [client_connection.InterruptArmor(armor: 0)]
+  assert armor_news(worn, 2) == [unit_news.InterruptArmor(armor: 0)]
   let #(state, landed) =
     tell(
       state:,
@@ -2734,7 +2734,7 @@ pub fn a_state_landing_at_armor_0_leaves_the_refill_where_it_is_test() -> Nil {
     && !list.contains(timers_cancelled(landed), step.TimerId(2))
     as "and leaves the running refill alone: two players stunning every few seconds do not keep armor at 0"
   let #(_, refilled) = fire(state:, at_ms: 11_000, timer: step.TimerId(2))
-  assert armor_news(refilled, 2) == [client_connection.InterruptArmor(armor: 2)]
+  assert armor_news(refilled, 2) == [unit_news.InterruptArmor(armor: 2)]
     as "the refill fires at 11000, 10000 ms after the strike that destroyed the last point"
 }
 
@@ -2762,7 +2762,7 @@ pub fn a_row_that_destroys_no_armor_changes_nothing_on_armor_above_0_test() -> N
       at_ms: 2000,
       message: stunning(from: 2, cast_id: 2, instance_id: 28_674),
     )
-  assert armor_news(next, 2) == [client_connection.InterruptArmor(armor: 1)]
+  assert armor_news(next, 2) == [unit_news.InterruptArmor(armor: 1)]
     as "the armor was left at 2"
 }
 
@@ -3907,7 +3907,7 @@ pub fn a_state_that_takes_hold_during_the_charge_breaks_it_so_the_cast_end_strik
   assert list.contains(said(stunned), "0x7f9 to 2") as "and broke the charge"
   assert list.contains(timers_cancelled(stunned), ends)
     as "the charge's cast end is cancelled"
-  let assert [client_connection.CastInterrupted(cast_id:)] =
+  let assert [unit_news.CastInterrupted(cast_id:)] =
     list.filter(news_to(stunned, 2), fn(news) {
       creature_news_support.name_of(news) == "0x7f9"
     })
@@ -4168,16 +4168,16 @@ pub fn a_stun_during_the_charge_interrupts_it_and_opens_the_turret_test() -> Nil
   let held = guarded_charge(viewers: [2])
   let #(_, stunned) = stunned_at(state: held.state, at_ms: 4000)
   let assert [
-    client_connection.CrowdControlApplied(state: crowd_control_state.Stun, ..),
-    client_connection.CastInterrupted(cast_id: broken),
+    unit_news.CrowdControlApplied(state: crowd_control_state.Stun, ..),
+    unit_news.CastInterrupted(cast_id: broken),
     CastStarted(start: opening),
     CastWent(go:),
-    client_connection.CastTargetsRemoved(removed:, destroyed: True),
-    client_connection.CrowdControlApplied(
+    unit_news.CastTargetsRemoved(removed:, destroyed: True),
+    unit_news.CrowdControlApplied(
       state: crowd_control_state.Vulnerability,
       instance_id: vulnerable,
     ),
-    client_connection.CrowdControlApplied(
+    unit_news.CrowdControlApplied(
       state: crowd_control_state.Disable,
       instance_id: disabled,
     ),
@@ -4232,7 +4232,7 @@ pub fn a_knockdown_during_the_charge_also_interrupts_it_test() -> Nil {
   assert names_of(news_named(knocked, 2))
     == ["0x87f", "0x7f9", "0x7ff", "0x7f4", "0x811", "0x87f", "0x87f"]
     as "the knockdown, the broken charge, the opening, the guard's removal and the opening's states"
-  let assert [client_connection.CrowdControlApplied(state:, ..), ..] =
+  let assert [unit_news.CrowdControlApplied(state:, ..), ..] =
     news_named(knocked, 2)
   assert state == crowd_control_state.Knockdown
   assert openings_ending(knocked) == 1
@@ -4265,12 +4265,12 @@ pub fn the_opening_ends_after_15_seconds_and_the_guard_returns_test() -> Nil {
   let #(state, _) = fire(state:, at_ms: 6500, timer: timer_for(stunned, 2500))
   let #(state, ended) = fire(state:, at_ms: 19_000, timer: opening_ends)
   let assert [
-    client_connection.CrowdControlEnded(
+    unit_news.CrowdControlEnded(
       state: crowd_control_state.Vulnerability,
       cast_id: first_cast,
       instance_id: first_instance,
     ),
-    client_connection.CrowdControlEnded(
+    unit_news.CrowdControlEnded(
       state: crowd_control_state.Disable,
       cast_id: second_cast,
       instance_id: second_instance,
@@ -4495,14 +4495,8 @@ pub fn a_viewer_arriving_while_the_turret_is_opened_is_told_the_opening_with_the
   let assert [
     CastStarted(start:),
     CastWent(go:),
-    client_connection.CrowdControlApplied(
-      state: first_state,
-      instance_id: first_id,
-    ),
-    client_connection.CrowdControlApplied(
-      state: second_state,
-      instance_id: second_id,
-    ),
+    unit_news.CrowdControlApplied(state: first_state, instance_id: first_id),
+    unit_news.CrowdControlApplied(state: second_state, instance_id: second_id),
   ] = news_named(arrived, 9)
     as "the opening's cast, then the two states"
   assert start.spell4_id == 85_472
@@ -5055,7 +5049,7 @@ pub fn a_throw_breaks_an_open_charge_test() -> Nil {
     tell(state:, at_ms: 4000, message: knockback(at_ms: 4000))
   assert said(thrown) == ["0x7f9 to 2", "0x638 to 2"]
     as "the charge is broken as a state breaks it, then the flight is sent"
-  let assert [client_connection.CastInterrupted(cast_id:)] =
+  let assert [unit_news.CastInterrupted(cast_id:)] =
     list.filter(news_to(thrown, 2), fn(news) {
       creature_news_support.name_of(news) == "0x7f9"
     })
@@ -5558,7 +5552,7 @@ fn strike_go_reached(
 fn casts_of(
   taken: ServiceStep(creature.Outgoing),
   number: Int,
-) -> List(client_connection.News) {
+) -> List(unit_news.News) {
   list.filter(news_to(taken, number), fn(news) {
     creature_news_support.name_of(news) == "0x7ff"
   })
@@ -6143,7 +6137,7 @@ pub fn a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test(
   assert list.drop_while(said(stunned), fn(line) { line != "0x87f to 2" })
     == ["0x87f to 2", "0x7f9 to 2"]
     as "the state, then the broken cast: 0x7f9 (the viewer's connection writes the 0x7fe after it)"
-  let assert [client_connection.CastInterrupted(cast_id:)] =
+  let assert [unit_news.CastInterrupted(cast_id:)] =
     list.filter(news_to(stunned, 2), fn(news) {
       creature_news_support.name_of(news) == "0x7f9"
     })
@@ -6208,7 +6202,7 @@ pub fn a_state_that_lands_after_two_gos_at_0_and_1_ms_breaks_only_the_gos_to_com
   assert list.drop_while(said(stunned), fn(line) { line != "0x87f to 2" })
     == ["0x87f to 2", "0x7f9 to 2"]
     as "the state, then the broken cast: 0x7f9 (the viewer's connection writes the 0x7fe after it)"
-  let assert [client_connection.CastInterrupted(cast_id:)] =
+  let assert [unit_news.CastInterrupted(cast_id:)] =
     list.filter(news_to(stunned, 2), fn(news) {
       creature_news_support.name_of(news) == "0x7f9"
     })
@@ -6435,7 +6429,7 @@ pub fn a_control_before_the_first_gos_timer_breaks_the_cast_and_the_late_timer_d
   let #(state, aggro) = roar_fought(viewers: [2])
   let #(state, opened, go) = roar_opened(state:, aggro:)
   let #(state, stunned) = stunned_at(state:, at_ms: 2000)
-  let assert [client_connection.CastInterrupted(cast_id:)] =
+  let assert [unit_news.CastInterrupted(cast_id:)] =
     list.filter(news_to(stunned, 2), fn(news) {
       creature_news_support.name_of(news) == "0x7f9"
     })
@@ -9455,20 +9449,14 @@ pub fn a_stun_between_hits_of_a_guarded_creatures_cast_opens_it_once_after_the_c
     as "the first hit is out, unanswered"
   let #(_, stunned) = stunned_at(state:, at_ms: 6500)
   let assert [
-    client_connection.CrowdControlApplied(state: crowd_control_state.Stun, ..),
+    unit_news.CrowdControlApplied(state: crowd_control_state.Stun, ..),
     CastWent(go: written),
-    client_connection.CastInterrupted(cast_id: broken),
+    unit_news.CastInterrupted(cast_id: broken),
     CastStarted(start: opening),
     CastWent(go: opening_go),
-    client_connection.CastTargetsRemoved(removed:, destroyed: True),
-    client_connection.CrowdControlApplied(
-      state: crowd_control_state.Vulnerability,
-      ..,
-    ),
-    client_connection.CrowdControlApplied(
-      state: crowd_control_state.Disable,
-      ..,
-    ),
+    unit_news.CastTargetsRemoved(removed:, destroyed: True),
+    unit_news.CrowdControlApplied(state: crowd_control_state.Vulnerability, ..),
+    unit_news.CrowdControlApplied(state: crowd_control_state.Disable, ..),
   ] = news_named(stunned, 2)
     as "the stun, the open hit's 0x7f4, the 0x7f9, then the guard's opening: its cast, the guard's removal, its states"
   assert written.cast_id == charge_cast
@@ -10060,7 +10048,7 @@ fn broken_casts(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(news_to(taken, 2), fn(news) {
     case creature_news_support.name_of(news) {
       "0x7f9" -> {
-        let assert client_connection.CastInterrupted(cast_id:) = news
+        let assert unit_news.CastInterrupted(cast_id:) = news
           as "a 0x7f9 is a CastInterrupted"
         Ok(cast_id)
       }

@@ -20,13 +20,13 @@
 //// A Magic blow here has no mitigation: the defence is `hit.unprotected` with the shield's
 //// 0.625.
 
-import genesis_prime/client_connection
 import genesis_prime/game/hit.{type Defence, Defence}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnAbsorption, OwnDeathState, OwnHealth, OwnShield,
   StartTimer, ToClient, ToViewers,
 }
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties.{Source}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
@@ -106,7 +106,7 @@ fn written(effects effects: List(Effect)) -> List(Effect) {
 fn sum_told(sum sum: Int) -> List(Effect) {
   [
     ToClient(OwnAbsorption(absorption: sum)),
-    ToViewers(client_connection.Absorption(absorption: sum)),
+    ToViewers(unit_news.Absorption(absorption: sum)),
   ]
 }
 
@@ -167,11 +167,11 @@ pub fn a_blow_on_an_absorb_tells_stat_22_then_stat_20_then_health_test() -> Nil 
       sum_told(sum: 0),
       [
         ToClient(OwnShield(shield: 427)),
-        ToViewers(client_connection.Shield(shield: 427)),
+        ToViewers(unit_news.Shield(shield: 427)),
       ],
       [
         ToClient(OwnHealth(health: 723)),
-        ToViewers(client_connection.Health(health: 723, dead: False)),
+        ToViewers(unit_news.Health(health: 723, dead: False)),
       ],
     ])
     as "stat 22, then stat 20, then the health"
@@ -255,8 +255,8 @@ pub fn a_death_drops_every_absorb_and_tells_zero_before_the_death_state_test() -
   assert at(ToClient(OwnAbsorption(absorption: 0)))
     < at(ToClient(OwnDeathState(dead: True)))
     as "and comes before the death state"
-  assert at(ToViewers(client_connection.Absorption(absorption: 0)))
-    < at(ToViewers(client_connection.Died))
+  assert at(ToViewers(unit_news.Absorption(absorption: 0)))
+    < at(ToViewers(unit_news.Died))
   let #(unchanged, effects) =
     player_life.absorb_ended(life: dead, source: source(cast_id: 1))
   assert effects == [] && unchanged == dead
@@ -311,7 +311,7 @@ pub fn a_blow_after_the_absorbs_end_goes_to_the_shield_and_health_test() -> Nil 
   assert list.take(written(effects:), 2)
     == [
       ToClient(OwnShield(shield: 387)),
-      ToViewers(client_connection.Shield(shield: 387)),
+      ToViewers(unit_news.Shield(shield: 387)),
     ]
     as "no stat 22: the shield takes round(100 x 0.625) = 63 and the health 37"
   assert player_life.health(life:) == 699
@@ -355,9 +355,9 @@ pub fn a_blow_that_uses_up_two_pools_tells_one_stat_22_test() -> Nil {
       sum_told(sum: 0),
       [
         ToClient(OwnShield(shield: 444)),
-        ToViewers(client_connection.Shield(shield: 444)),
+        ToViewers(unit_news.Shield(shield: 444)),
         ToClient(OwnHealth(health: 732)),
-        ToViewers(client_connection.Health(health: 732, dead: False)),
+        ToViewers(unit_news.Health(health: 732, dead: False)),
       ],
     ])
     as "both pools drop in one blow: stat 22 is written once, with the new sum 0, then stat 20 and the health"

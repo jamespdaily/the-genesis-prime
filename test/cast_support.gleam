@@ -13,7 +13,6 @@ import class_resource_support
 import client_tables
 import fixture_tables
 import game_client
-import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/activate
 import genesis_prime/game/area.{type Pose}
@@ -44,6 +43,7 @@ import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell
 import genesis_prime/game/target_mechanic
 import genesis_prime/game/ticking
+import genesis_prime/game/unit_news.{type News}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/cancel_cast.{CancelCast}
@@ -2791,7 +2791,7 @@ pub fn started_told_to(
 ) -> List(#(Int, Int, Int)) {
   list.filter_map(tells(effects:), fn(tell) {
     case tell {
-      #(ConnectionId(told), client_connection.CastStarted(start:))
+      #(ConnectionId(told), unit_news.CastStarted(start:))
         if told == connection
       -> Ok(#(start.spell4_id, start.root_spell4_id, start.parent_spell4_id))
       _ -> Error(Nil)

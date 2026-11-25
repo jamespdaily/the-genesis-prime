@@ -13,10 +13,9 @@ import fixture_tables
 import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
-  type Answer, type Message, type News, type PeerNews, type Request, Appeared,
-  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, CreatureAppeared,
-  ForStay, FromHandOff, FromMap, FromSessions, FromStore, Moving, PeerNews,
-  Removed, SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved, TellPeer,
+  type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
+  AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions, FromStore,
+  SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -32,6 +31,10 @@ import genesis_prime/game/objective
 import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{
+  type News, type PeerNews, Appeared, CreatureAppeared, Moving, PeerNews,
+  Removed,
+}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, NoHolder, Taken}
@@ -2121,7 +2124,7 @@ pub fn news_told_after_the_map_tell(
 pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
   list.filter_map(news, fn(each) {
     case each {
-      client_connection.CastStarted(start:) -> Ok(start)
+      unit_news.CastStarted(start:) -> Ok(start)
       _ -> Error(Nil)
     }
   })
@@ -2130,7 +2133,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
 /// Whether the news takes a cast off some units (0x0811).
 pub fn is_cast_removal(news: News) -> Bool {
   case news {
-    client_connection.CastTargetsRemoved(..) -> True
+    unit_news.CastTargetsRemoved(..) -> True
     _ -> False
   }
 }

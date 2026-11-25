@@ -15,9 +15,10 @@
 import cast_support
 import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{Appeared, CastFinished, Moving, Removed}
+import genesis_prime/client_connection
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/unit_news.{Appeared, CastFinished, Moving, Removed}
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/loader/store as store_tables
@@ -43,7 +44,7 @@ type Ally {
 
 fn ally_event(
   ally ally: Ally,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> step.Event(
   step.ConnectionEvent(client_connection.Message, client_connection.Answer),
 ) {
@@ -121,7 +122,7 @@ fn armor_held_on_the_ally(
   ).0
 }
 
-fn is_finish(news news: client_connection.News) -> Bool {
+fn is_finish(news news: unit_news.News) -> Bool {
   case news {
     CastFinished(..) -> True
     _ -> False

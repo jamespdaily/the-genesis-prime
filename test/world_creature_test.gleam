@@ -31,7 +31,7 @@ import event_wait
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Message, ForStay, PeerNews, SentByMap, SentByPeer,
+  type Message, ForStay, SentByMap, SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast/state as cast_state
@@ -45,6 +45,7 @@ import genesis_prime/game/spend
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed}
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news.{PeerNews}
 import genesis_prime/game/world_entry
 import genesis_prime/group_registry
 import genesis_prime/message/buyback_list.{BuybackList}
@@ -1206,7 +1207,7 @@ fn properties_changed(message: Message) -> Result(List(UnitProperty), Nil) {
   case message {
     ForStay(
       sent: SentByPeer(PeerNews(
-        news: client_connection.PropertiesChanged(properties:),
+        news: unit_news.PropertiesChanged(properties:),
         ..,
       )),
       ..,
@@ -1646,10 +1647,7 @@ fn knockback_plans() -> spell_plan.Plans {
 fn flight(message: Message) -> Result(creature_path.Path, Nil) {
   case message {
     ForStay(
-      sent: SentByPeer(PeerNews(
-        news: client_connection.CreatureMoved(path:),
-        ..,
-      )),
+      sent: SentByPeer(PeerNews(news: unit_news.CreatureMoved(path:), ..)),
       ..,
     ) -> Ok(path)
     ForStay(..)
@@ -2487,10 +2485,7 @@ fn next_cast_started(
     wanted: fn(message) {
       case message {
         ForStay(
-          sent: SentByPeer(PeerNews(
-            news: client_connection.CastStarted(start:),
-            ..,
-          )),
+          sent: SentByPeer(PeerNews(news: unit_news.CastStarted(start:), ..)),
           ..,
         ) -> Ok(start)
         ForStay(..)
@@ -2509,7 +2504,7 @@ fn next_cast_went(received received: Subject(Message)) -> spell_go.SpellGo {
     wanted: fn(message) {
       case message {
         ForStay(
-          sent: SentByPeer(PeerNews(news: client_connection.CastWent(go:), ..)),
+          sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)),
           ..,
         ) -> Ok(go)
         ForStay(..)
@@ -2532,7 +2527,7 @@ fn next_cast_finished(
       case message {
         ForStay(
           sent: SentByPeer(PeerNews(
-            news: client_connection.CastFinished(cast_id: finished),
+            news: unit_news.CastFinished(cast_id: finished),
             ..,
           )),
           ..,
@@ -2941,7 +2936,7 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
         case message {
           ForStay(
             sent: SentByPeer(PeerNews(
-              news: client_connection.CastInterrupted(cast_id:),
+              news: unit_news.CastInterrupted(cast_id:),
               ..,
             )),
             ..,
@@ -3094,22 +3089,16 @@ type CastFrame {
 fn cast_frame_of(message: Message) -> Result(CastFrame, Nil) {
   case message {
     ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastStarted(start:), ..)),
+      sent: SentByPeer(PeerNews(news: unit_news.CastStarted(start:), ..)),
       ..,
     ) -> Ok(FrameStarted(spell4_id: start.spell4_id))
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastWent(go:), ..)),
-      ..,
-    ) ->
+    ForStay(sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)), ..) ->
       Ok(FrameWent(
         phase: go.phase,
         targets: list.map(go.targets, fn(target) { target.unit_id }),
       ))
     ForStay(
-      sent: SentByPeer(PeerNews(
-        news: client_connection.CastFinished(cast_id:),
-        ..,
-      )),
+      sent: SentByPeer(PeerNews(news: unit_news.CastFinished(cast_id:), ..)),
       ..,
     ) -> Ok(FrameFinished(cast_id:))
     ForStay(
@@ -3303,23 +3292,17 @@ fn seen_of(message: Message) -> Result(Seen, Nil) {
   case message {
     ForStay(
       sent: SentByPeer(PeerNews(
-        news: client_connection.Targeting(target_unit_id:, ..),
+        news: unit_news.Targeting(target_unit_id:, ..),
         ..,
       )),
       ..,
     ) -> Ok(Targeted(target_unit_id))
     ForStay(
-      sent: SentByPeer(PeerNews(
-        news: client_connection.CreatureFaces(face:, ..),
-        ..,
-      )),
+      sent: SentByPeer(PeerNews(news: unit_news.CreatureFaces(face:, ..), ..)),
       ..,
     ) -> Ok(Turned(face))
     ForStay(
-      sent: SentByPeer(PeerNews(
-        news: client_connection.CreatureMoved(path:),
-        ..,
-      )),
+      sent: SentByPeer(PeerNews(news: unit_news.CreatureMoved(path:), ..)),
       ..,
     ) -> Ok(Ran(path))
     ForStay(..)

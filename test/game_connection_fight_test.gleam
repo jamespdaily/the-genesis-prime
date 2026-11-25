@@ -11,8 +11,7 @@ import fixture_tables
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type News, type Request, Appeared, CastFinished,
-  CastStarted, CastWent, ForStay, FromMap, Removed, SentBySessions,
+  type Answer, type Message, type Request, ForStay, FromMap, SentBySessions,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
@@ -20,6 +19,9 @@ import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/loadout
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{
+  type News, Appeared, CastFinished, CastStarted, CastWent, Removed,
+}
 import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
@@ -454,7 +456,7 @@ pub fn the_clients_picture_of_a_creature_follows_its_news_and_only_a_creature_it
   let #(state, taken) =
     game_connection_support.feed(
       state,
-      beast_news(unit_id: 40, news: client_connection.Died),
+      beast_news(unit_id: 40, news: unit_news.Died),
     )
   assert game_connection_support.written_ids(taken) == [0x088C]
   let #(_, struck) = press_and_close(state:, client_cast_id: 4)
@@ -488,17 +490,14 @@ pub fn a_creatures_health_or_death_is_not_written_for_a_unit_the_client_does_not
   let #(state, taken) =
     game_connection_support.feed(
       state,
-      beast_news(
-        unit_id: 41,
-        news: client_connection.Health(health: 5, dead: False),
-      ),
+      beast_news(unit_id: 41, news: unit_news.Health(health: 5, dead: False)),
     )
   assert game_connection_support.written_ids(taken) == []
     as "opcode.0x937: the client has no unit 41, so it is not sent a health for it"
   let #(_, taken) =
     game_connection_support.feed(
       state,
-      beast_news(unit_id: 41, news: client_connection.Died),
+      beast_news(unit_id: 41, news: unit_news.Died),
     )
   assert game_connection_support.written_ids(taken) == []
     as "opcode.0x88c: nor a death"
@@ -518,10 +517,7 @@ pub fn the_news_held_for_a_creature_that_is_removed_and_stands_again_before_the_
   let #(state, taken) =
     game_connection_support.feed(
       state,
-      beast_news(
-        unit_id: 40,
-        news: client_connection.Health(health: 0, dead: True),
-      ),
+      beast_news(unit_id: 40, news: unit_news.Health(health: 0, dead: True)),
     )
   assert game_connection_support.written_ids(taken) == []
     as "the health of a unit of an open round waits for the round's go"
@@ -645,7 +641,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
   assert list.map(game_connection_support.peer_tells(threatened), fn(tell) {
       #(tell.0, { tell.1 }.news)
     })
-    == [#(5, client_connection.CombatState(in_combat: True))]
+    == [#(5, unit_news.CombatState(in_combat: True))]
     as "and to its viewers"
   assert game_connection_support.told_creatures(threatened)
     == [
@@ -791,8 +787,8 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
       { tell.1 }.news
     })
     == [
-      client_connection.Shield(shield: 448),
-      client_connection.Health(health: 735, dead: False),
+      unit_news.Shield(shield: 448),
+      unit_news.Health(health: 735, dead: False),
     ]
     as "its viewers are sent the shield and the health"
   let assert [
@@ -835,7 +831,7 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
       state,
       beast_news(
         unit_id: 40,
-        news: client_connection.CreatureMoved(path: creature_path.Running(
+        news: unit_news.CreatureMoved(path: creature_path.Running(
           from:,
           via: [],
           to:,
@@ -915,7 +911,7 @@ fn bits(points: List(#(Float, Float, Float))) -> List(#(Int, Int, Int)) {
 /// float bits, the speed's half float, type and mode, the commands after the path,
 /// and the frame's size in bytes.
 fn drawn_run(
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> #(
   Int,
   List(#(Int, Int, Int)),
@@ -962,7 +958,7 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
       speed: 7.5,
     )
   let #(time, points, shape, defaults, size) =
-    drawn_run(news: client_connection.CreatureMoved(path:))
+    drawn_run(news: unit_news.CreatureMoved(path:))
   assert time == support.now_ms
     as "kind 0's time is the monotonic start less the origin the tests' map took, 0"
   assert points == bits(staircase()) as "kind 4 holds all 28 points, in order"
@@ -978,7 +974,7 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
   let later = support.now_ms + 3000
   let #(time, points, shape, defaults, _) =
     drawn_run(
-      news: client_connection.CreatureMoved(path: creature_path.rest_of(
+      news: unit_news.CreatureMoved(path: creature_path.rest_of(
         path:,
         now_ms: later,
       )),
@@ -994,8 +990,8 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
 /// The commands after the kind 4 path of the 0x638 a viewer writes for `news` once it has
 /// taken each of `earlier` for the Beast (unit 40), in order.
 fn run_tail_after(
-  earlier earlier: List(client_connection.News),
-  news news: client_connection.News,
+  earlier earlier: List(unit_news.News),
+  news news: unit_news.News,
 ) -> List(relayed_movement.RelayedMovement) {
   let state =
     list.fold(
@@ -1030,7 +1026,7 @@ pub fn a_run_that_faces_a_unit_keeps_kind_18_for_it_and_any_other_run_takes_kind
   // for its target and the player circling the creature after the arrival cannot leave it
   // facing away; every other run takes kind 21.
   let run =
-    client_connection.CreatureMoved(path: creature_path.Running(
+    unit_news.CreatureMoved(path: creature_path.Running(
       from: place_support.at(
         world_id: 3460,
         world_zone_id: 6009,
@@ -1055,9 +1051,7 @@ pub fn a_run_that_faces_a_unit_keeps_kind_18_for_it_and_any_other_run_takes_kind
     relayed_movement.FaceUnit(MovementFaceUnit(unit_id: 20, blends: 1)),
     relayed_movement.StateDefault(MovementKind26(blends: 1)),
   ]
-  let faces = fn(face) {
-    client_connection.CreatureFaces(face:, at_ms: support.now_ms)
-  }
+  let faces = fn(face) { unit_news.CreatureFaces(face:, at_ms: support.now_ms) }
   let cases = [
     #(
       "a run of a creature that faces no one takes kind 21",
@@ -1138,7 +1132,7 @@ pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with
       state,
       beast_news(
         unit_id: 40,
-        news: client_connection.CreaturePlaced(place:, at_ms: support.now_ms),
+        news: unit_news.CreaturePlaced(place:, at_ms: support.now_ms),
       ),
     )
   let assert [Frame(message_id: 0x0638, body:)] =
@@ -1198,7 +1192,7 @@ pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -
       state,
       beast_news(
         unit_id: 40,
-        news: client_connection.CreatureMoved(path: creature_path.Running(
+        news: unit_news.CreatureMoved(path: creature_path.Running(
           from:,
           via: [],
           to:,
@@ -1236,7 +1230,7 @@ pub fn a_press_finds_a_creature_whose_path_brought_it_within_the_area_test() -> 
       state,
       beast_news(
         unit_id: 40,
-        news: client_connection.CreatureMoved(path: creature_path.Running(
+        news: unit_news.CreatureMoved(path: creature_path.Running(
           from: at_z(-583.18798828125),
           via: [],
           to: at_z(-565.18798828125),
@@ -2578,9 +2572,7 @@ pub fn a_creature_holds_unit_states_effect_becomes_a_tell_to_that_creature_test(
 
 pub fn a_viewer_writes_a_creatures_facing_as_0x638_only_when_the_unit_is_shown_test() -> Nil {
   use <- owned_test.run(10_000)
-  let faces = fn(face) {
-    client_connection.CreatureFaces(face:, at_ms: support.now_ms)
-  }
+  let faces = fn(face) { unit_news.CreatureFaces(face:, at_ms: support.now_ms) }
   // Before the creature's 0x262 the client shows no unit 40, and a 0x638 for an unknown unit
   // is ignored by the client (`opcode.0x638`): nothing is written.
   let state = game_connection_support.medic_in_world()

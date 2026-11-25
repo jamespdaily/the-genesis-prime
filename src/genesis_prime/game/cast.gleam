@@ -139,6 +139,7 @@ import genesis_prime/game/quest_advance
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/ability_hold
@@ -4449,10 +4450,7 @@ fn start(
   }
   let told =
     list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(
-        to: viewer,
-        news: client_connection.CastStarted(start: start_message),
-      )
+      Tell(to: viewer, news: unit_news.CastStarted(start: start_message))
     })
   let #(cast, threshold_effects) = threshold_step(cast:, role:, cast_id: id)
   let #(cast, dropped_effects) = cast_press.controls_dropped(cast:, spell:)
@@ -4897,13 +4895,13 @@ fn go(
         list.flatten([
           [Send(frame: cast_frame.went_frame(go: go_message))],
           list.map(map.sorted_connections(live.audience), fn(viewer) {
-            Tell(to: viewer, news: client_connection.CastWent(go: go_message))
+            Tell(to: viewer, news: unit_news.CastWent(go: go_message))
           }),
           case missed {
             Some(missed) -> [
               Send(frame: cast_frame.missed_frame(missed:)),
               ..list.map(map.sorted_connections(live.audience), fn(viewer) {
-                Tell(to: viewer, news: client_connection.CastMissed(missed:))
+                Tell(to: viewer, news: unit_news.CastMissed(missed:))
               })
             ]
             None -> []

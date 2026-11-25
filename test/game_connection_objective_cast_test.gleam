@@ -30,6 +30,7 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/unit_news
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state
@@ -352,7 +353,7 @@ pub fn a_targeted_cast_whose_unit_dies_before_the_go_counts_nothing_test() -> Ni
       ms: 1000,
       event: connection_support.news_sent_by_a_peer(
         unit_id: 40,
-        news: client_connection.Died,
+        news: unit_news.Died,
       ),
     )
   let #(_, after) =
@@ -492,7 +493,7 @@ fn a_masked_target(
 /// The state after the unit's news.
 fn after_news(
   state state: game_connection.State,
-  news news: List(#(Int, client_connection.News)),
+  news news: List(#(Int, unit_news.News)),
 ) -> game_connection.State {
   list.fold(news, state, fn(state, told) {
     connection_support.feed(
@@ -535,7 +536,7 @@ pub fn the_picture_keeps_a_shown_creatures_held_states_test() -> Nil {
   let stun = fn(instance_id) {
     #(
       40,
-      client_connection.CrowdControlApplied(
+      unit_news.CrowdControlApplied(
         state: crowd_control_state.Stun,
         instance_id:,
       ),
@@ -544,7 +545,7 @@ pub fn the_picture_keeps_a_shown_creatures_held_states_test() -> Nil {
   let stun_ended = fn(instance_id) {
     #(
       40,
-      client_connection.CrowdControlEnded(
+      unit_news.CrowdControlEnded(
         state: crowd_control_state.Stun,
         cast_id: 2_147_500_000,
         instance_id:,
@@ -574,7 +575,7 @@ pub fn the_picture_keeps_a_shown_creatures_held_states_test() -> Nil {
     after_news(state:, news: [
       #(
         40,
-        client_connection.CrowdControlApplied(
+        unit_news.CrowdControlApplied(
           state: crowd_control_state.Sleep,
           instance_id: 28_675,
         ),
@@ -586,12 +587,12 @@ pub fn the_picture_keeps_a_shown_creatures_held_states_test() -> Nil {
     after_news(state:, news: [
       #(
         77,
-        client_connection.CrowdControlApplied(
+        unit_news.CrowdControlApplied(
           state: crowd_control_state.Stun,
           instance_id: 28_676,
         ),
       ),
-      #(40, client_connection.Removed),
+      #(40, unit_news.Removed),
     ])
   let state =
     connection_support.feed(
@@ -613,8 +614,8 @@ pub fn the_picture_keeps_a_shown_creatures_held_states_test() -> Nil {
 fn unit_state_held(
   state state: Int,
   number number: Int,
-) -> #(Int, client_connection.News) {
-  #(40, client_connection.UnitStateHeld(state:, number:))
+) -> #(Int, unit_news.News) {
+  #(40, unit_news.UnitStateHeld(state:, number:))
 }
 
 pub fn a_unit_state_news_updates_the_picture_and_writes_no_frame_test() -> Nil {
@@ -633,7 +634,7 @@ pub fn a_unit_state_news_updates_the_picture_and_writes_no_frame_test() -> Nil {
       state:,
       event: connection_support.news_sent_by_a_peer(
         unit_id: 40,
-        news: client_connection.UnitStateHeld(state: 6, number: 1),
+        news: unit_news.UnitStateHeld(state: 6, number: 1),
       ),
     )
   assert connection_support.written_ids(taken) == []
@@ -645,7 +646,7 @@ pub fn a_unit_state_news_updates_the_picture_and_writes_no_frame_test() -> Nil {
       state: held,
       event: connection_support.news_sent_by_a_peer(
         unit_id: 40,
-        news: client_connection.UnitStateEnded(number: 1),
+        news: unit_news.UnitStateEnded(number: 1),
       ),
     )
   assert connection_support.written_ids(taken) == []
@@ -658,7 +659,7 @@ pub fn a_unit_state_news_updates_the_picture_and_writes_no_frame_test() -> Nil {
       state:,
       event: connection_support.news_sent_by_a_peer(
         unit_id: 77,
-        news: client_connection.UnitStateHeld(state: 6, number: 1),
+        news: unit_news.UnitStateHeld(state: 6, number: 1),
       ),
     )
   assert connection_support.written_ids(taken) == []
@@ -691,13 +692,13 @@ pub fn usable_holds_the_pictures_unit_states_test() -> Nil {
     as "state 6 held: the 0x7fc carries 306"
   let state =
     after_news(state:, news: [
-      #(40, client_connection.UnitStateEnded(number: 2)),
+      #(40, unit_news.UnitStateEnded(number: 2)),
     ])
   assert pressed(state:, ms: 2000).0 == [306]
     as "the end names one hold: the creature still holds the other state 6"
   let state =
     after_news(state:, news: [
-      #(40, client_connection.UnitStateEnded(number: 3)),
+      #(40, unit_news.UnitStateEnded(number: 3)),
     ])
   let #(results, written) = pressed(state:, ms: 3000)
   assert results == [] && written == [0x07FD]
@@ -705,7 +706,7 @@ pub fn usable_holds_the_pictures_unit_states_test() -> Nil {
   let state =
     after_news(state:, news: [
       unit_state_held(state: 6, number: 5),
-      #(40, client_connection.Removed),
+      #(40, unit_news.Removed),
     ])
   let state =
     connection_support.feed(

@@ -30,8 +30,7 @@ import experience_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, AskStore, CreatureAppeared, FromStore, LookChanged,
-  PropertiesChanged,
+  type Answer, type Message, AskStore, FromStore,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
@@ -39,6 +38,9 @@ import genesis_prime/game/interaction
 import genesis_prime/game/random_stat_word
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
+import genesis_prime/game/unit_news.{
+  CreatureAppeared, LookChanged, PropertiesChanged,
+}
 import genesis_prime/game/vendor
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/buyback_removed

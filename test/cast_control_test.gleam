@@ -25,7 +25,6 @@
 
 import cast_support as support
 import crowd_control_support
-import genesis_prime/client_connection
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
@@ -36,6 +35,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{type Spell, GlobalCooldown, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
@@ -1193,17 +1193,11 @@ pub fn a_caster_aimed_state_of_any_kind_is_told_and_ends_test() -> Nil {
     as "the caster's own unit holds a Stun"
   assert list.contains(support.tells(effects: pressed), #(
       ConnectionId(2),
-      client_connection.CrowdControlApplied(
-        state: Stun,
-        instance_id: told.instance_id,
-      ),
+      unit_news.CrowdControlApplied(state: Stun, instance_id: told.instance_id),
     ))
     && list.contains(support.tells(effects: pressed), #(
       ConnectionId(3),
-      client_connection.CrowdControlApplied(
-        state: Stun,
-        instance_id: told.instance_id,
-      ),
+      unit_news.CrowdControlApplied(state: Stun, instance_id: told.instance_id),
     ))
     as "and so is each connection of the go's audience, with the same instance id"
   let assert [go] =
@@ -1319,7 +1313,7 @@ pub fn a_tether_tells_its_anchor_before_its_state_test() -> Nil {
     as "the anchor is the caster's own unit: the message sets the anchor of the unit the client controls and names no other unit"
   assert list.contains(support.tells(effects: pressed), #(
     ConnectionId(2),
-    client_connection.CrowdControlApplied(
+    unit_news.CrowdControlApplied(
       state: Tether,
       instance_id: applied_instance(effects: pressed),
     ),

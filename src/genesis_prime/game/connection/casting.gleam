@@ -131,6 +131,7 @@ import genesis_prime/game/strike_tell.{
   type Answered, type PlayerAnswered, type PlayerEvent,
 }
 import genesis_prime/game/target_group
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_state
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
@@ -1639,7 +1640,7 @@ fn carried_out(
           ],
           connection_state.news_to_viewers(
             entered:,
-            news: client_connection.Stealth(stealthed:),
+            news: unit_news.Stealth(stealthed:),
           ),
           // The map keeps a stealthed player out of every creature's ring: Jim's
           // decision, a server choice. Told last, after the owner's 0x8f5 and the
@@ -2282,11 +2283,11 @@ pub fn creature_news_frames(
   session session: Session,
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
-  news news: client_connection.News,
+  news news: unit_news.News,
 ) -> List(Effect(ConnectionEffect(Request))) {
   use <- bool.guard(when: !dict.has_key(entered.shown, unit_id), return: [])
   case news {
-    client_connection.Health(health:, dead:) -> {
+    unit_news.Health(health:, dead:) -> {
       let assert Ok(body) =
         unit_health.encode(UnitHealth(
           unit_id:,
@@ -2301,45 +2302,45 @@ pub fn creature_news_frames(
         ),
       ]
     }
-    client_connection.Died -> [
+    unit_news.Died -> [
       connection_state.to_client(
         session,
         connection_frames.death_state_frame(unit_id:, dead: True),
       ),
     ]
-    client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged
-    | client_connection.Appeared(..)
-    | client_connection.CreatureAppeared(..)
-    | client_connection.Moving(..)
-    | client_connection.Removed
-    | client_connection.CastStarted(..)
-    | client_connection.CastWent(..)
-    | client_connection.CastMissed(..)
-    | client_connection.CastTicked(..)
-    | client_connection.CastTargetsRemoved(..)
-    | client_connection.CastStackRemoved(..)
-    | client_connection.CastFinished(..)
-    | client_connection.CastInterrupted(..)
-    | client_connection.CreatureMoved(..)
-    | client_connection.CreaturePlaced(..)
-    | client_connection.CreatureFaces(..)
-    | client_connection.Targeting(..)
-    | client_connection.Threat(..)
-    | client_connection.CombatState(..)
-    | client_connection.Shield(..)
-    | client_connection.CrowdControlApplied(..)
-    | client_connection.CrowdControlEnded(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..)
-    | client_connection.InterruptArmor(..)
-    | client_connection.Absorption(..)
-    | client_connection.Level(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.LookChanged(..)
-    | client_connection.HeldCastEnded(..)
-    | client_connection.HeldCastStarted(..) -> []
+    unit_news.CameBack
+    | unit_news.DeathLogged
+    | unit_news.CameBackLogged
+    | unit_news.Appeared(..)
+    | unit_news.CreatureAppeared(..)
+    | unit_news.Moving(..)
+    | unit_news.Removed
+    | unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastFinished(..)
+    | unit_news.CastInterrupted(..)
+    | unit_news.CreatureMoved(..)
+    | unit_news.CreaturePlaced(..)
+    | unit_news.CreatureFaces(..)
+    | unit_news.Targeting(..)
+    | unit_news.Threat(..)
+    | unit_news.CombatState(..)
+    | unit_news.Shield(..)
+    | unit_news.CrowdControlApplied(..)
+    | unit_news.CrowdControlEnded(..)
+    | unit_news.UnitStateHeld(..)
+    | unit_news.UnitStateEnded(..)
+    | unit_news.InterruptArmor(..)
+    | unit_news.Absorption(..)
+    | unit_news.Level(..)
+    | unit_news.PropertiesChanged(..)
+    | unit_news.Stealth(..)
+    | unit_news.LookChanged(..)
+    | unit_news.HeldCastEnded(..)
+    | unit_news.HeldCastStarted(..) -> []
   }
 }

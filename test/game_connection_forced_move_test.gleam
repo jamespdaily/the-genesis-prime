@@ -17,8 +17,9 @@
 import cast_support
 import game_client
 import game_connection_support as support
-import genesis_prime/client_connection.{type Request, Moving, TellMoved}
+import genesis_prime/client_connection.{type Request, TellMoved}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/unit_news.{Moving}
 import genesis_prime/message/float32
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_move_asked.{MovementMoveAsked}

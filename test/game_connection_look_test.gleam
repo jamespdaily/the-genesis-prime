@@ -25,12 +25,13 @@
 
 import character_tables
 import game_connection_support as support
-import genesis_prime/client_connection.{
-  type News, type Request, Appeared, FromMap, LookChanged, PeerNews, Removed,
-}
+import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout
+import genesis_prime/game/unit_news.{
+  type News, Appeared, LookChanged, PeerNews, Removed,
+}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}

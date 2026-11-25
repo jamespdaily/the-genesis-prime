@@ -21,7 +21,7 @@ import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, CastStarted, Continue, PeerNews,
+  type Answer, type Message, type Request, Continue,
 }
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
@@ -35,6 +35,7 @@ import genesis_prime/game/proc
 import genesis_prime/game/shown
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{CastStarted, PeerNews}
 import genesis_prime/game/unit_properties.{Source}
 import genesis_prime/game/world_entry
 import genesis_prime/message/spell_finished

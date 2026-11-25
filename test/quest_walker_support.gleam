@@ -2,13 +2,12 @@
 //// 10528 and receives quest 10520, for the quest tests that need a creature in reach.
 
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{
-  type Answer, type Message, CreatureAppeared,
-}
+import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
+import genesis_prime/game/unit_news.{CreatureAppeared}
 import genesis_prime/step.{type ConnectionEvent, type Event}
 import genesis_prime/store
 import genesis_prime/table/id

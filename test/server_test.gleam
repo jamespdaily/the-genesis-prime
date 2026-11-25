@@ -20,9 +20,8 @@
 
 import ask_support
 import driven_time
-import genesis_prime/client_connection.{
-  AskMap, PeerNews, Removed, TellMoved, TellPeer,
-}
+import genesis_prime/client_connection.{AskMap, TellMoved, TellPeer}
+import genesis_prime/game/unit_news.{PeerNews, Removed}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}

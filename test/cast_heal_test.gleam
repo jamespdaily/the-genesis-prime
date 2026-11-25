@@ -23,7 +23,6 @@
 
 import cast_support as support
 import channel_support
-import genesis_prime/client_connection.{CastWent}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state.{type Caster, type Effect} as cast_state
@@ -36,6 +35,7 @@ import genesis_prime/game/spell_plan.{
   type Spell, AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/unit_news.{CastWent}
 import genesis_prime/game/unit_properties.{type Source, Change}
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_info.{

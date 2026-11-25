@@ -20,9 +20,10 @@ import cast_support
 import client_tables
 import connection_rule_support
 import game_connection_support as support
-import genesis_prime/client_connection.{type Request, CastStarted, CastWent}
+import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/unit_news.{CastStarted, CastWent}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/message/unit_properties_changed

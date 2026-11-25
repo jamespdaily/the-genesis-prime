@@ -11,6 +11,7 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
@@ -259,7 +260,7 @@ pub fn seeing_a_runner(
     state:,
     event: connection_support.news_sent_by_a_peer(
       unit_id: shack_unit,
-      news: client_connection.CreatureMoved(path: creature_path.Running(
+      news: unit_news.CreatureMoved(path: creature_path.Running(
         from: vendor_support.ahead_of_the_player(
           hit_radius: runner_radius,
           gap: 29.0,
@@ -285,7 +286,7 @@ pub fn runner_set_down_in_range(
     state:,
     event: connection_support.news_sent_by_a_peer(
       unit_id: shack_unit,
-      news: client_connection.CreaturePlaced(
+      news: unit_news.CreaturePlaced(
         place: vendor_support.ahead_of_the_player(
           hit_radius: runner_radius,
           gap: 10.0,

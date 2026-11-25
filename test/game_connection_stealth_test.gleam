@@ -24,12 +24,11 @@
 import cast_support
 import connection_rule_support
 import game_connection_support as support
-import genesis_prime/client_connection.{
-  type Request, Appeared, FromMap, FromStore, PeerNews, Stealth,
-}
+import genesis_prime/client_connection.{type Request, FromMap, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_news.{Appeared, PeerNews, Stealth}
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
@@ -183,9 +182,9 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
   list.each([2, 3], fn(viewer) {
     let assert [
-      client_connection.Shield(..),
-      client_connection.Health(dead: False, ..),
-      client_connection.CastTargetsRemoved(..),
+      unit_news.Shield(..),
+      unit_news.Health(dead: False, ..),
+      unit_news.CastTargetsRemoved(..),
       Stealth(stealthed: False),
       ..
     ] = support.news_told(taken:, viewer:)
@@ -209,7 +208,7 @@ pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_
   assert unit_stealth.decode(stealth.body)
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
   list.each([2, 3], fn(viewer) {
-    let assert [client_connection.CastTargetsRemoved(..), Stealth(False)] =
+    let assert [unit_news.CastTargetsRemoved(..), Stealth(False)] =
       list.filter(support.news_told(taken:, viewer:), fn(news) {
         support.is_cast_removal(news) || news == Stealth(False)
       })

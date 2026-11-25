@@ -160,7 +160,6 @@
 ////   end and the hold's repeat wait for the new end, a timer of 0 ms when it ended: the
 ////   server's choice. Group cooldowns are not kept.
 
-import genesis_prime/client_connection
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/heal as cast_heal
@@ -188,6 +187,7 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
@@ -566,7 +566,7 @@ pub fn restrictions_shown(
         ..list.map(map.sorted_connections(live.audience), fn(viewer) {
           Tell(
             to: viewer,
-            news: client_connection.CrowdControlApplied(
+            news: unit_news.CrowdControlApplied(
               state:,
               instance_id: one.instance_id,
             ),
@@ -647,7 +647,7 @@ pub fn restrictions_ended(
       ..list.map(map.sorted_connections(restriction.audience), fn(viewer) {
         Tell(
           to: viewer,
-          news: client_connection.CrowdControlEnded(
+          news: unit_news.CrowdControlEnded(
             state: restriction.state,
             cast_id:,
             instance_id: restriction.instance_id,

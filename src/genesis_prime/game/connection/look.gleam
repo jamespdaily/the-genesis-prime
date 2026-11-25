@@ -57,6 +57,7 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/look
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_visual.{type ItemVisual}
@@ -128,7 +129,7 @@ fn told(
     ),
     ..connection_state.news_to_viewers(
       entered:,
-      news: client_connection.LookChanged(item_visuals: visuals),
+      news: unit_news.LookChanged(item_visuals: visuals),
     )
   ]
 }

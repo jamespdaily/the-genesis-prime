@@ -229,7 +229,7 @@
 //// | a heal another player told reaches P during an ask (a save, a purchase, a turn-in) | held and applied when the ask returns, possibly after the caster's round closed | `map_messages_held_while_the_store_works_are_taken_in_arrival_order_test` |
 //// | a heal another player told is held when P's connection ends | dropped with the rest of what is held: no row is applied and no answer is told | `a_connection_that_ends_while_holding_map_messages_takes_none_test` |
 
-import genesis_prime/client_connection.{type News}
+import genesis_prime/client_connection
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
@@ -238,6 +238,7 @@ import genesis_prime/game/item_property
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{type Tell, Answered}
+import genesis_prime/game/unit_news.{type News}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
 import genesis_prime/step.{type Address, type TimerId, TimerId}
@@ -882,16 +883,16 @@ fn died(life life: Life, place place: Place) -> #(Life, List(Effect)) {
       absorption_dropped,
       [
         ToClient(OwnDeathState(dead: True)),
-        ToViewers(client_connection.Died),
+        ToViewers(unit_news.Died),
         ToClient(OwnCombatState(in_combat: False)),
-        ToViewers(client_connection.CombatState(in_combat: False)),
+        ToViewers(unit_news.CombatState(in_combat: False)),
       ],
       combat_left,
       [
         TellMap(alive: False),
         EndCasts,
         ToClient(OwnDeathLogged),
-        ToViewers(client_connection.DeathLogged),
+        ToViewers(unit_news.DeathLogged),
         ToClient(GhostCreated(place:)),
         ToClient(OwnResurrectionWindow(dead: True)),
         ToClient(ControlGiven(to: ControlGhost)),
@@ -970,12 +971,12 @@ fn came_back(life life: Life) -> #(Life, List(Effect)) {
 fn came_back_news() -> List(Effect) {
   [
     ToClient(OwnDeathState(dead: False)),
-    ToViewers(client_connection.CameBack),
+    ToViewers(unit_news.CameBack),
     ToClient(OwnResurrectionWindow(dead: False)),
     ToClient(GhostRemoved),
     ToClient(ControlGiven(to: ControlBody)),
     ToClient(OwnCameBackLogged),
-    ToViewers(client_connection.CameBackLogged),
+    ToViewers(unit_news.CameBackLogged),
   ]
 }
 
@@ -983,14 +984,14 @@ fn came_back_news() -> List(Effect) {
 fn health_told(health health: Int, dead dead: Bool) -> List(Effect) {
   [
     ToClient(OwnHealth(health:)),
-    ToViewers(client_connection.Health(health:, dead:)),
+    ToViewers(unit_news.Health(health:, dead:)),
   ]
 }
 
 /// The player's shield written to its own client and told to its viewers (0x938 of
 /// stat 20).
 fn shield_told(shield shield: Int) -> List(Effect) {
-  [ToClient(OwnShield(shield:)), ToViewers(client_connection.Shield(shield:))]
+  [ToClient(OwnShield(shield:)), ToViewers(unit_news.Shield(shield:))]
 }
 
 /// The player's absorption written to its own client (0x938 of stat 22) and told to its
@@ -998,7 +999,7 @@ fn shield_told(shield shield: Int) -> List(Effect) {
 fn absorption_told(absorption absorption: Int) -> List(Effect) {
   [
     ToClient(OwnAbsorption(absorption:)),
-    ToViewers(client_connection.Absorption(absorption:)),
+    ToViewers(unit_news.Absorption(absorption:)),
   ]
 }
 
@@ -1140,7 +1141,7 @@ pub fn threatened(
   let flag = case dict.is_empty(life.fighters) {
     True -> [
       ToClient(OwnCombatState(in_combat: True)),
-      ToViewers(client_connection.CombatState(in_combat: True)),
+      ToViewers(unit_news.CombatState(in_combat: True)),
     ]
     False -> []
   }
@@ -1171,7 +1172,7 @@ pub fn released(
   let flag = case dict.is_empty(fighters) {
     True -> [
       ToClient(OwnCombatState(in_combat: False)),
-      ToViewers(client_connection.CombatState(in_combat: False)),
+      ToViewers(unit_news.CombatState(in_combat: False)),
       CombatLeft,
     ]
     False -> []
@@ -1434,7 +1435,7 @@ pub fn interrupt_armor(life life: Life) -> Int {
 fn armor_told(armor armor: Int) -> List(Effect) {
   [
     ToClient(OwnInterruptArmor(armor:)),
-    ToViewers(client_connection.InterruptArmor(armor:)),
+    ToViewers(unit_news.InterruptArmor(armor:)),
   ]
 }
 

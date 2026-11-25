@@ -8,14 +8,15 @@ import connection_rule_support as support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, CreatureAppeared, ForStay, FromMap,
-  FromStore, PeerNews, Removed, SentByPeer, TellPeer,
+  type Answer, type Message, type Request, ForStay, FromMap, FromStore,
+  SentByPeer, TellPeer,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/limited_action_set
+import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews, Removed}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
 import genesis_prime/message/disconnect_reason.{LostUserServer}

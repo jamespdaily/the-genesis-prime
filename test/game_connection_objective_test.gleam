@@ -59,6 +59,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/unit_news
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
@@ -440,7 +441,7 @@ fn seeing_the_walking_survivors(
       state:,
       event: connection_support.news_sent_by_a_peer(
         unit_id:,
-        news: client_connection.CreatureMoved(path: creature_path.Running(
+        news: unit_news.CreatureMoved(path: creature_path.Running(
           from: vendor_support.ahead_of_the_player(
             hit_radius: survivors_radius,
             gap: 1.0,
@@ -548,7 +549,7 @@ pub fn a_creature_that_dies_before_the_go_counts_nothing_test() -> Nil {
       ms: 1000,
       event: connection_support.news_sent_by_a_peer(
         unit_id: unit,
-        news: client_connection.Died,
+        news: unit_news.Died,
       ),
     )
   let #(_, go) =
@@ -579,7 +580,7 @@ pub fn a_creature_dead_at_the_press_counts_at_the_go_when_its_spell_allows_the_d
       ms: 0,
       event: connection_support.news_sent_by_a_peer(
         unit_id: unit,
-        news: client_connection.Died,
+        news: unit_news.Died,
       ),
     )
   let #(state, started) =
@@ -645,7 +646,7 @@ pub fn a_creature_that_leaves_the_picture_before_the_go_counts_nothing_test() ->
       ms: 1000,
       event: connection_support.news_sent_by_a_peer(
         unit_id: unit,
-        news: client_connection.Removed,
+        news: unit_news.Removed,
       ),
     )
   let #(_, go) =

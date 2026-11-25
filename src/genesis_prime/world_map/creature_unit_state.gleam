@@ -37,7 +37,7 @@
 //// - A hold's number is the creature's own for its life, so two casters' holds of one state
 ////   are two holds that each end by their own end.
 
-import genesis_prime/client_connection
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_state
 import gleam/int
 import gleam/list
@@ -59,7 +59,7 @@ pub opaque type State {
 /// What the feature asks the creature's rule to do, in order.
 pub type Effect {
   /// News of the creature's own unit for each viewer: its `UnitStateHeld` or `UnitStateEnded`.
-  ToViewers(news: client_connection.News)
+  ToViewers(news: unit_news.News)
   /// The one timer of the held states, which the creature's rule makes an id of
   /// (genesis_prime/world_map/creature): it fires `due`. A start is asked only when
   /// no timer runs, since a timer id already running cannot be started.
@@ -141,11 +141,7 @@ pub fn due(state state: State, now_ms now_ms: Int) -> #(State, List(Effect)) {
       list.filter_map(ended, fn(held) {
         case held.told {
           True ->
-            Ok(
-              ToViewers(news: client_connection.UnitStateEnded(
-                number: held.number,
-              )),
-            )
+            Ok(ToViewers(news: unit_news.UnitStateEnded(number: held.number)))
           False -> Error(Nil)
         }
       }),
@@ -182,10 +178,7 @@ pub fn blocks_hostile(state state: State, now_ms now_ms: Int) -> Bool {
 
 /// The news that tells a viewer who arrives while states are held each hold the viewers were
 /// told and that still runs at `now_ms`, in the order they began.
-pub fn shown(
-  state state: State,
-  now_ms now_ms: Int,
-) -> List(client_connection.News) {
+pub fn shown(state state: State, now_ms now_ms: Int) -> List(unit_news.News) {
   list.filter_map(state.held, fn(held) {
     case held.told && held.ends_at_ms > now_ms {
       True -> Ok(held_news(held:))
@@ -194,8 +187,8 @@ pub fn shown(
   })
 }
 
-fn held_news(held held: Held) -> client_connection.News {
-  client_connection.UnitStateHeld(state: held.state, number: held.number)
+fn held_news(held held: Held) -> unit_news.News {
+  unit_news.UnitStateHeld(state: held.state, number: held.number)
 }
 
 fn held_effect(held held: Held) -> Effect {
