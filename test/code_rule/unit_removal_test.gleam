@@ -25,7 +25,7 @@ const removal_pieces = [
 ]
 
 /// The lines where a function of the file other than the one removal function
-/// names a piece of a removal.
+/// names a piece of a removal; a piece of another module that has the same name is not one.
 fn pieces_outside(file file: SourceFile) -> List(Int) {
   let module = syntax.parse(file)
   module.functions
@@ -36,10 +36,10 @@ fn pieces_outside(file file: SourceFile) -> List(Int) {
         glance.Module(..module, functions: [definition])
         |> syntax.references
         |> list.filter(fn(reference) {
-          let name = case reference {
-            syntax.Unqualified(name:, ..) | syntax.Qualified(name:, ..) -> name
+          case reference {
+            syntax.Unqualified(name:, ..) -> list.contains(removal_pieces, name)
+            syntax.Qualified(..) -> False
           }
-          list.contains(removal_pieces, name)
         })
         |> list.map(fn(reference) {
           syntax.line_of(
@@ -74,9 +74,13 @@ pub fn a_unit_is_removed_only_through_the_one_removal_function_test() -> Nil {
       "fn another() {",
       "  finishes_of_forgotten_casts()",
       "}",
+      "",
+      "fn another_modules_piece() {",
+      "  client_casts.unit_forgotten()",
+      "}",
     ])
   assert pieces_outside(file: planted_file) == [8, 12, 16]
-    as "each piece named outside the one function is found, called or passed on"
+    as "each piece named outside the one function is found, called or passed on, and a module's function of the same name is not one"
   assert pieces_outside(file: SourceFile(
       path: viewers_path,
       text: source.read(viewers_path),

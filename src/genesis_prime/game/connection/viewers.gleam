@@ -42,6 +42,10 @@
 ////   unit only, a 0x355 ends it; `Gone` writes a 0x355 for a shown unit and marks
 ////   the unit gone, so a 0x262 from the owner that ended, which lands after it,
 ////   shows no ghost.
+//// - **One removal.** A unit leaves the viewer's client at one function, `unit_removed`,
+////   whether its owner's `Removed` news, the map's `Gone` or the map's `ObjectsUnseen`
+////   ends it, so a unit's casts are finished before its 0x355 the same way for each
+////   (`cast.target_node_end`).
 //// - **Sight is symmetric.** A pair leaves sight in both directions in one step
 ////   (`map.goes_out_of_sight`), so the caster's connection takes the viewer out of its
 ////   casts' audiences on the map's `UnseenBy` and on the viewer's `Removed`, whichever
@@ -290,30 +294,15 @@ pub fn map_sent(
           }),
           unit_id:,
         )
-      let shown = dict.has_key(entered.shown, unit_id)
-      let #(session, ended) = case shown {
-        True -> cast_loses_unit(session:, now:, unit_id:)
-        False -> #(session, [])
-      }
+      let #(session, removal) =
+        unit_removed(session:, now:, entered:, unit_id:, keeping: [])
       let #(session, released, _) =
         connection_life.carried(session:, now:, effects: by_life)
       let #(session, held_ended) =
         connection_landing.caster_removed(session:, now:, unit_id:)
-      let released = list.append(held_ended, released)
-      use <- bool.guard(when: !shown, return: Continue(session, released))
       Continue(
         session,
-        list.flatten([
-          finishes_of_forgotten_casts(session:, entered:, unit_id:, keeping: []),
-          [
-            connection_state.to_client(
-              session,
-              connection_frames.unit_removed_frame(unit_id:),
-            ),
-          ],
-          ended,
-          released,
-        ]),
+        list.flatten([removal.written, removal.ended, held_ended, released]),
       )
     }
     map.ObjectsSeen(units:) -> {
@@ -361,28 +350,19 @@ pub fn map_sent(
           names_own_unit(entered:, unit_id:)
         })
       let shown_ids = list.filter(named, dict.has_key(entered.shown, _))
-      let #(forgotten, ended) =
+      let #(forgotten, removals) =
         list.fold(shown_ids, #(session, []), fn(so_far, unit_id) {
-          let #(session, ended) = so_far
-          let #(session, more) =
-            cast_loses_unit(
-              session: unit_forgotten(session:, unit_id:),
-              now:,
-              unit_id:,
-            )
-          #(session, list.append(ended, more))
+          let #(session, removals) = so_far
+          let #(session, removal) =
+            unit_removed(session:, now:, entered:, unit_id:, keeping: [])
+          #(session, list.append(removals, [removal]))
         })
       Continue(
         forgotten,
         list.flatten([
           list.map(refused, fn(unit_id) { refusal_logged(session:, unit_id:) }),
-          list.map(shown_ids, fn(unit_id) {
-            connection_state.to_client(
-              session,
-              connection_frames.unit_removed_frame(unit_id:),
-            )
-          }),
-          ended,
+          list.flat_map(removals, fn(removal) { removal.written }),
+          list.flat_map(removals, fn(removal) { removal.ended }),
         ]),
       )
     }
@@ -680,33 +660,9 @@ pub fn viewer_takes(
             )
           },
         )
-      let #(forgotten, ended) =
-        cast_loses_unit(
-          session: casts_orphaned(
-            session: unit_forgotten(session:, unit_id:),
-            cast_ids: kept,
-          ),
-          now:,
-          unit_id:,
-        )
-      Continue(
-        forgotten,
-        list.flatten([
-          finishes_of_forgotten_casts(
-            session:,
-            entered:,
-            unit_id:,
-            keeping: kept,
-          ),
-          [
-            connection_state.to_client(
-              session,
-              connection_frames.unit_removed_frame(unit_id:),
-            ),
-          ],
-          ended,
-        ]),
-      )
+      let #(session, removal) =
+        unit_removed(session:, now:, entered:, unit_id:, keeping: kept)
+      Continue(session, list.append(removal.written, removal.ended))
     }
     unit_news.CastStarted(start:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
@@ -1364,15 +1320,46 @@ pub type Removal {
   )
 }
 
-/// A stand-in: removes nothing.
+/// A unit removed from what the player's client shows: the unit and the casts it listed
+/// are forgotten (`unit_forgotten`), the casts in `keeping` held with no caster instead of
+/// finished (`casts_orphaned`), and, for a unit the client shows, each cast it was sent the
+/// start of is finished before the unit's 0x355 (`finishes_of_forgotten_casts`) and the
+/// player's own casts are told the unit is gone (`cast_loses_unit`). A unit not shown is only
+/// forgotten and writes nothing. The removal news and the map's `Gone` and `ObjectsUnseen`
+/// end a unit through it: the first keeps the casts a held change keeps, the others none.
 pub fn unit_removed(
   session session: Session,
-  now _now: Now,
-  entered _entered: world_entry.Entered,
-  unit_id _unit_id: Int,
-  keeping _keeping: List(Int),
+  now now: Now,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  keeping keeping: List(Int),
 ) -> #(Session, Removal) {
-  #(session, Removal(written: [], ended: []))
+  let forgotten = unit_forgotten(session:, unit_id:)
+  use <- bool.guard(when: !dict.has_key(entered.shown, unit_id), return: #(
+    forgotten,
+    Removal(written: [], ended: []),
+  ))
+  let #(session_after, ended) =
+    cast_loses_unit(
+      session: casts_orphaned(session: forgotten, cast_ids: keeping),
+      now:,
+      unit_id:,
+    )
+  #(
+    session_after,
+    Removal(
+      written: list.append(
+        finishes_of_forgotten_casts(session:, entered:, unit_id:, keeping:),
+        [
+          connection_state.to_client(
+            session,
+            connection_frames.unit_removed_frame(unit_id:),
+          ),
+        ],
+      ),
+      ended:,
+    ),
+  )
 }
 
 /// 0x7fe for each cast of the unit that this client was sent the start of and no
@@ -1677,10 +1664,9 @@ fn cast_loses_unit(
   }
 }
 
-/// The session with the unit marked gone, so it is shown no more, and no longer
-/// shown.
+/// The session with the unit marked gone, so a 0x262 of it that lands after the map's
+/// `Gone` writes nothing.
 fn marked_gone(session session: Session, unit_id unit_id: Int) -> Session {
-  let session = unit_forgotten(session:, unit_id:)
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, gone: set.insert(entered.gone, unit_id))
   })

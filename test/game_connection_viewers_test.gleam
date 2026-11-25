@@ -10,6 +10,7 @@ import connection_rule_support as support
 import fixture_tables
 import game_client
 import game_connection_support.{type Step, Appears, MapSaysGone, Moves, Removes}
+import game_wire_support
 import genesis_prime/client_connection.{
   ForStay, FromMap, FromStore, SentByMap, SentByPeer, TellMoved,
 }
@@ -3246,15 +3247,12 @@ type RemovalWrote {
 fn removal_wrote(frames frames: List(Frame)) -> List(RemovalWrote) {
   list.map(frames, fn(frame) {
     case frame.message_id {
-      0x07FE -> {
-        let assert Ok(finished) = spell_finished.decode(frame.body)
-          as "a 0x7fe the viewer wrote decodes"
-        CastFinish(cast_id: finished.cast_id)
-      }
+      0x07FE -> CastFinish(cast_id: cast_support.finished_cast_id(frame))
       0x0355 -> {
-        let assert Ok(destroyed) = unit_destroyed.decode(frame.body)
-          as "a 0x355 the viewer wrote decodes"
-        UnitRemoved(unit_id: destroyed.unit_id)
+        let assert [unit_id] =
+          game_wire_support.destroyed_units(frames: [frame])
+          as "a 0x355 the viewer wrote removes one unit"
+        UnitRemoved(unit_id:)
       }
       opcode -> RemovalWroteOther(opcode:)
     }
