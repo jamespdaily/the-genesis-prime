@@ -1155,7 +1155,8 @@ pub fn gates_gate(
 
 /// The gains a go gives (`Gain`), and a debug line for each it cannot: the spell's
 /// own of the phase, then once each of the Proxies that start a child aimed at each
-/// struck unit, which `starting` holds only when one unit was Hit.
+/// struck unit, which `starting` holds only when one unit was Hit. `fired` is the go's cast's
+/// (`Live.fired`), which the gain carries to the resource it moves.
 pub fn gains_given(
   spell spell: Spell,
   phase phase: Int,
@@ -1163,6 +1164,7 @@ pub fn gains_given(
   subject subject: prerequisite.Subject,
   rolls rolls: List(Int),
   spent spent: Option(Int),
+  fired fired: Bool,
 ) -> #(List(Effect), List(Int)) {
   let #(rolls, given, logs) =
     list.fold(
@@ -1183,7 +1185,7 @@ pub fn gains_given(
     )
   let gains = case given {
     [] -> []
-    [_, ..] -> [Gain(gains: list.reverse(given))]
+    [_, ..] -> [Gain(gains: list.reverse(given), fired:)]
   }
   #(list.append(list.reverse(logs), gains), rolls)
 }

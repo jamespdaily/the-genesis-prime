@@ -66,6 +66,7 @@ pub fn a_go_with_damage_asks_for_its_targets_and_writes_nothing_until_the_round_
       primary_target: 7,
       spent: None,
       started_at: Pose(at: Point(x: 4605.65, z: 494.996), yaw: 0.0),
+      fired: False,
     )),
   )
     as "the go asks the connection for its targets, with the caster as the primary target"
@@ -450,6 +451,7 @@ pub fn a_go_asked_carries_the_pose_its_cast_started_at_not_where_the_caster_stan
       indexes: dict.new(),
       units: dict.new(),
       rolls: [],
+      fired: False,
     )
   let assert [child_asked] = support.goes_asked(effects: started)
     as "the parent's go starts the child, which asks for its own go"

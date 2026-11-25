@@ -224,6 +224,7 @@ fn went_effects(
       indexes: dict.new(),
       units: dict.new(),
       rolls: [],
+      fired: False,
     )
   effects
 }
@@ -491,6 +492,7 @@ fn primary_target_go(
       indexes: dict.new(),
       units: dict.new(),
       rolls: [],
+      fired: False,
     )
   let assert [asked] = support.goes_asked(effects: started)
     as "the parent's go starts the child, which asks for its own go"

@@ -211,8 +211,10 @@ pub type Effect {
   /// `pay`).
   Pay(payments: List(Payment))
   /// A go's resource gains are given to the caster's class resource
-  /// (genesis_prime/game/class_resource `gain`).
-  Gain(gains: List(class_resource.Gain))
+  /// (genesis_prime/game/class_resource `gain`). `fired` says the cast belongs to a proc's
+  /// result (`Live.fired`), so the move of the resource raises no event
+  /// (`ResourceMoved.fired`).
+  Gain(gains: List(class_resource.Gain), fired: Bool)
   /// A change of the caster's spell on the caster itself starts: the connection applies a
   /// property modifier to the player's properties and tells its client and its viewers
   /// the entries that changed (genesis_prime/game/unit_properties `apply`), and raises
@@ -375,7 +377,8 @@ pub type PressedAt {
 /// base cost, which choose the effects the go strikes with
 /// (genesis_prime/game/spend); none for a cast that spends no more than its cost; and the
 /// pose the cast started at, which a row the client holds at the start is struck at
-/// (genesis_prime/game/area `centre_of`).
+/// (genesis_prime/game/area `centre_of`), and whether the cast is fired (`Live.fired`), so a go
+/// answered after the client ended the cast is muted as its cast was.
 pub type GoAsked {
   GoAsked(
     cast_id: Int,
@@ -384,6 +387,7 @@ pub type GoAsked {
     primary_target: Int,
     spent: Option(Int),
     started_at: area.Pose,
+    fired: Bool,
   )
 }
 
@@ -616,6 +620,7 @@ pub type Due {
     proxy: Proxy,
     counted_with: AdvanceWith,
     from: Option(PressedFrom),
+    fired: Bool,
   )
   /// The earliest node of the lingering cast `cast_id` ends: its units' 0x811, or
   /// the finish when no node is left.
@@ -905,13 +910,15 @@ pub type Role {
   /// that started it, its use or its worn spell (`handed_down`), none otherwise.
   /// `named_player` is the player the child was started on when a bag press named that player
   /// (`Live.named_player`), none for a child on the caster, on a struck unit or started by a
-  /// proc or a tick. `lands_spell` says whether its go raises the landing of its spell for the
-  /// holder's procs (`cast_proc.role_lands_spell`): false for the cast a proc fire starts.
+  /// proc or a tick. `fired` says the cast belongs to a proc's result: the cast a proc fire
+  /// starts and every Proxy child, tick child and delayed child below it. A fired cast raises
+  /// no event for any proc (`cast_proc` module doc, the reading
+  /// `Spell4Effects.effectType.14.chaining`).
   Child(
     counted_with: AdvanceWith,
     from: Option(PressedFrom),
     named_player: Option(Int),
-    lands_spell: Bool,
+    fired: Bool,
   )
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
@@ -1077,6 +1084,9 @@ pub type Live {
     /// Whether the cast's gos raise a landing of its spell for the holder's procs, by the role
     /// the cast started with (`cast_proc.role_lands_spell`).
     lands_spell: Bool,
+    /// Whether the cast belongs to a proc's result (`Child.fired`): no input of it adds a
+    /// pending event.
+    fired: Bool,
     /// The periodic rows the cast's gos armed, by unit and row: each lasts while its
     /// unit's node does (`cast_tick.ticks_dropped`).
     ticking: Dict(TickKey, Ticking),
@@ -1107,6 +1117,8 @@ pub type Lingering {
     /// What the children of the cast take from the item that pressed it (`handed_down` of its
     /// `Live` cast), so a quest button's is never kept.
     handed_down: Option(PressedFrom),
+    /// Whether the cast belongs to a proc's result, as on its `Live` cast.
+    fired: Bool,
   )
 }
 
@@ -1508,10 +1520,11 @@ pub type Unbuilt {
 }
 
 /// A fact about the holder the connection saw outside a cast: it started to move, or a class
-/// resource slot changed from one value to another.
+/// resource slot changed from one value to another; `fired` says a fired cast's payment or gain
+/// moved it, which raises no event.
 pub type Fact {
   StartedMoving
-  ResourceMoved(slot: Int, from: Float, to: Float)
+  ResourceMoved(slot: Int, from: Float, to: Float, fired: Bool)
 }
 
 /// The slot of the Stalker's class resource, suit power: 3 of the class's eight slots
@@ -1594,6 +1607,9 @@ pub type Holder {
     gone: Bool,
     /// What the children of the cast take from the item that pressed it (`handed_down`).
     handed_down: Option(PressedFrom),
+    /// Whether the cast belongs to a proc's result (`Live.fired`), which its children and
+    /// the events of its ticks follow.
+    fired: Bool,
   )
 }
 
@@ -1615,6 +1631,7 @@ pub fn holder_of(
         lingering: False,
         gone: live.gone > 0,
         handed_down: handed_down(live:),
+        fired: live.fired,
       ))
     Error(Nil), Ok(lingering) ->
       Ok(Holder(
@@ -1628,6 +1645,7 @@ pub fn holder_of(
         lingering: True,
         gone: True,
         handed_down: lingering.handed_down,
+        fired: lingering.fired,
       ))
     Error(Nil), Error(Nil) -> Error(Nil)
   }
