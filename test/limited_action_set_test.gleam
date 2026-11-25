@@ -2115,6 +2115,44 @@ fn fitting_tier_rows(
   })
 }
 
+/// The AMPs a list of draws names: a draw under 70 is a place in the tier 0 AMPs of the class,
+/// taken with the AMPs it requires, and any other a place in `any`, taken alone; the first
+/// draw of an id keeps its place.
+fn drawn_amp_ids(
+  tables tables: table_store.Tables,
+  tier_zero tier_zero: List(Int),
+  any any: List(Int),
+  draws draws: List(#(Int, Int)),
+) -> List(Int) {
+  list.flat_map(draws, fn(draw) {
+    let #(kind, place) = draw
+    let ids = case kind < 70 {
+      True -> tier_zero
+      False -> any
+    }
+    case list.drop(ids, place % list.length(ids)) |> list.first {
+      Ok(id) if kind < 70 -> with_requirements(tables:, id:)
+      Ok(id) -> [id]
+      Error(Nil) -> []
+    }
+  })
+  |> list.unique
+}
+
+/// An AMP with the AMPs it requires before it, in the order a list holds them.
+fn with_requirements(
+  tables tables: table_store.Tables,
+  id id: Int,
+) -> List(Int) {
+  let assert Ok(row) =
+    eldan_augmentation.get(tables:, id: EldanAugmentationId(id))
+    as "an AMP of the table has a row"
+  case row.eldan_augmentation_id_required {
+    0 -> [id]
+    required -> list.append(with_requirements(tables:, id: required), [id])
+  }
+}
+
 /// What an accepted AMP save holds, read from the client's rows and GameFormula 942 and not from
 /// the rule: the list it sent in id order, at most the power the level gives (no power below
 /// dataint0, else `trunc((level - dataint0) * datafloat0) + dataint01`, `0x1403cdbf0`), only
@@ -2174,14 +2212,14 @@ pub fn any_accepted_amp_list_stays_within_the_levels_power_the_players_class_and
   let ids_where = fn(keep) {
     list.filter(rows, keep) |> list.map(fn(row) { row.id })
   }
-  // A drawn AMP is a kind and a place: mostly a tier 0 AMP of the player's class (which a list
-  // can hold), else any AMP of the class or one of five of class 0.
+  // A drawn AMP is a kind and a place: mostly a tier 0 AMP of the player's class with the AMPs it
+  // requires (which a list can hold), else any AMP of the class or one of five of class 0.
   let drawn_amp =
     qcheck.tuple2(qcheck.bounded_int(0, 99), qcheck.bounded_int(0, 999))
   let drawn_list =
     qcheck.generic_list(
       elements_from: drawn_amp,
-      length_from: qcheck.bounded_int(0, 6),
+      length_from: qcheck.bounded_int(0, 14),
     )
   qcheck.given(
     qcheck.tuple4(
@@ -2200,18 +2238,15 @@ pub fn any_accepted_amp_list_stays_within_the_levels_power_the_players_class_and
           ids_where(fn(row) { row.class_id == class_id }),
           list.take(ids_where(fn(row) { row.class_id == 0 }), 5),
         )
-      let ids_of = fn(draws: List(#(Int, Int))) {
-        list.filter_map(draws, fn(draw) {
-          let pool = case draw.0 < 70 {
-            True -> tier_zero
-            False -> any
-          }
-          list.drop(pool, draw.1 % list.length(pool)) |> list.first
-        })
+      let ids_of = fn(draws) {
+        drawn_amp_ids(tables:, tier_zero:, any:, draws:)
       }
       // The first save is judged on no AMPs held; the second holds whatever the first left and
       // sends the first list with more.
-      let lists = [ids_of(first), list.append(ids_of(first), ids_of(second))]
+      let lists = [
+        ids_of(first),
+        list.unique(list.append(ids_of(first), ids_of(second))),
+      ]
       list.fold(lists, limited_action_set.none(), fn(saved, amp_ids) {
         let body = support.amps_body(class_id:, amp_ids:)
         let #(after, effects) =
