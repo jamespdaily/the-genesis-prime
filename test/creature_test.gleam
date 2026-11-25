@@ -278,6 +278,8 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
         )),
       ),
     )
+  assert set.contains(creature.viewers(state), ConnectionId(5))
+    as "the map's Seen makes the connection a viewer"
   let #(state, unseen) =
     feed(
       state:,
