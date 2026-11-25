@@ -20,6 +20,7 @@
 
 import ability_book_support
 import ability_points_support
+import cast_support
 import client_tables
 import fixture_tables
 import genesis_prime/game/ability_book
@@ -464,7 +465,7 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
     )
   assert support.held_amp_ids(saved: four, set: 0) == [770, 771, 772, 863]
     as "the four AMPs are held, ascending"
-  assert support.numbers_of(frames: support.frames_of(effects: first))
+  assert cast_support.ids(frames: support.frames_of(effects: first))
     == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
     as "opcode.0x1a3: the AMP list comes after the points (the event follows 0x0169) and before 0xB2"
   assert support.amp_lists_in(frames: support.frames_of(effects: first))
@@ -955,7 +956,7 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
       assert limited_action_set.rows(saved: after)
         == limited_action_set.rows(saved: before)
         as { why <> ": the bar, the tiers and the AMPs are as before" }
-      assert support.numbers_of(frames:) == [0x019D, 0x01A3, 0x00B2]
+      assert cast_support.ids(frames:) == [0x019D, 0x01A3, 0x00B2]
         as { why <> ": the held bar, the held list and 0xB2" }
       assert list.map(support.the_action_set(frames:).shortcuts, fn(shortcut) {
           shortcut.object_id
@@ -1095,6 +1096,8 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
       let assert Ok(saved) =
         limited_action_set.entering(
           unlocks: limited_action_set.unlocks(tables:),
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           tiers:,
           points_total: 16,
           level: 25,
@@ -1190,7 +1193,7 @@ pub fn amp_ids_in_a_save_are_judged_with_the_bar_and_the_tiers_as_one_answer_tes
   assert limited_action_set.held_tiers(saved: refused, set: 0) == []
     as "the two tier changes of the save are not kept either: one answer"
   assert support.held_amp_ids(saved: refused, set: 0) == []
-  assert support.numbers_of(frames: support.frames_of(effects:))
+  assert cast_support.ids(frames: support.frames_of(effects:))
     == [0x019D, 0x01A3, 0x00B2]
   assert support.amp_lists_in(frames: support.frames_of(effects:)) == [#(0, [])]
   assert support.the_answer_bit(frames: support.frames_of(effects:)) == 0
@@ -1573,6 +1576,8 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
   let enter = fn(rows) {
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
+      amps: amp_spec.specs(tables:),
+      class_id: ClassId(support.spellslinger),
       level: level_4.level,
       book: level_4.book,
       tiers: spell_tier.tiers(tables:),
@@ -1721,6 +1726,8 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
       let assert Error(error) =
         limited_action_set.entering(
           unlocks: limited_action_set.unlocks(tables:),
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           level: level_4.level,
           book: level_4.book,
           tiers: spell_tier.tiers(tables:),
@@ -2013,6 +2020,8 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
     let got =
       limited_action_set.entering(
         unlocks: limited_action_set.unlocks(tables:),
+        amps: amp_spec.specs(tables:),
+        class_id: ClassId(support.spellslinger),
         tiers:,
         points_total: case_.points,
         level: case_.level,
@@ -2032,6 +2041,8 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
   let assert Error(error) =
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
+      amps: amp_spec.specs(tables:),
+      class_id: ClassId(support.spellslinger),
       tiers:,
       points_total: 41,
       level: 50,
@@ -2296,9 +2307,25 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
       qcheck.bounded_int(0, tiered_count - 1),
       qcheck.bounded_int(2, 9),
     )
-  // A drawn AMP is a set and an id of the 16 bits of the AMP lists.
+  // A drawn AMP is a set and the id of an AMP row of the player's class, the only ones the
+  // entry keeps (`amp_spec.is_of_class`).
+  let class_amps =
+    list.filter_map(eldan_augmentation.all(tables), fn(row) {
+      case row.class_id == support.spellslinger {
+        True -> Ok(row.id)
+        False -> Error(Nil)
+      }
+    })
+  assert class_amps != [] as "the client's rows hold AMPs of the Spellslinger"
   let drawn_amp =
-    qcheck.tuple2(qcheck.bounded_int(0, 3), qcheck.bounded_int(1, 65_535))
+    qcheck.tuple2(
+      qcheck.bounded_int(0, 3),
+      qcheck.map(qcheck.bounded_int(0, list.length(class_amps) - 1), fn(place) {
+        let assert [id, ..] = list.drop(class_amps, place)
+          as "the place is inside the list"
+        id
+      }),
+    )
   qcheck.given(
     qcheck.tuple3(
       qcheck.tuple4(drawn_set, drawn_set, drawn_set, drawn_set),
@@ -2365,6 +2392,8 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
       let assert Ok(saved) =
         limited_action_set.entering(
           unlocks:,
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           level:,
           book:,
           tiers: spell_tier.tiers(tables:),
@@ -2376,6 +2405,8 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
         as "a saved set is twelve rows, in set then slot order, and no set gives none; the tiers are a row for each above tier 1, in set then Spell4Base order; the AMPs are a row for each, in set then id order"
       assert limited_action_set.entering(
           unlocks:,
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           tiers: spell_tier.tiers(tables:),
           points_total:,
           level:,

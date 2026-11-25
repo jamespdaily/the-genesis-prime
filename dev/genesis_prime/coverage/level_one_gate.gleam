@@ -132,20 +132,24 @@ fn condition_closed(
   condition condition: #(Int, Int, Int, Int),
 ) -> Result(Closed, Nil) {
   let #(type_id, comparison, _object_id, value) = condition
-  case type_id, comparison {
-    15, 1 | 50, 1 -> {
-      use eldan_augmentation_id <- result.try(dict.get(gates.amps, value))
+  case prerequisite.live_cast_of(condition:), type_id {
+    Ok(#(prerequisite.Found, spell4_id)), _ -> {
+      use eldan_augmentation_id <- result.try(dict.get(
+        gates.amps,
+        spell4_id.value,
+      ))
       case gates.amp_level > starting_level {
         True ->
           Ok(NeedsAmp(
-            spell4_id: value,
+            spell4_id: spell4_id.value,
             eldan_augmentation_id:,
             level: gates.amp_level,
           ))
         False -> Error(Nil)
       }
     }
-    1, _ ->
+    Ok(_), _ -> Error(Nil)
+    Error(Nil), 1 ->
       case
         prerequisite.compare(
           relation: prerequisite.relation_of(code: comparison),
@@ -156,7 +160,7 @@ fn condition_closed(
         True -> Error(Nil)
         False -> Ok(FailsAtLevelOne(comparison:, value:))
       }
-    _, _ -> Error(Nil)
+    Error(Nil), _ -> Error(Nil)
   }
 }
 

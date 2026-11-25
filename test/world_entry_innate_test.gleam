@@ -21,6 +21,7 @@ import client_tables
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Request, FromMap}
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
@@ -44,6 +45,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
+import limited_action_set_support as limited_support
 import owned_test
 import planted_table
 import unitest
@@ -346,6 +348,83 @@ pub fn the_wanted_list_holds_the_innate_passive_of_the_loadout_and_leaves_out_a_
     as "and is one warning"
 }
 
+pub fn the_wanted_list_holds_the_amp_spells_of_set_0_in_id_order_after_the_worn_items_and_leaves_out_one_the_plans_lack_with_a_warning_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let plans = spell_plan.plans_with_later(tables)
+  let worn =
+    gear.of_items(
+      tables:,
+      level: 50,
+      items: worn_item_support.held_items(items: [#(85_762, 0, 15)]),
+    )
+  // AMP 770's spell is 56845 and 863's 59436 (class 5); AMP 440 of class 3 names 41594, which
+  // the plans leave out (GainAimNotRead); the class 7 AMP 220 names 57379.
+  let entered_of = fn(class_id, amps) {
+    let #(_, entered) =
+      world_entry_support.entry(
+        tables:,
+        character: world_entry_support.character(
+          class: class_id,
+          faction: 166,
+          level: 10,
+        ),
+      )
+    world_entry.Entered(
+      ..entered,
+      gear: worn,
+      action_sets: limited_support.saved_with_amps(
+        tables:,
+        class_id:,
+        level: 10,
+        amps:,
+      ),
+    )
+  }
+  let spells_of = fn(wanted: casting.Wanted) {
+    list.map(wanted.standing, fn(standing) { standing.spell.spell4_id.value })
+  }
+  [
+    #(
+      "set 0 holds 863 and 770: the innate passive, the worn spell, then 770's and 863's",
+      entered_of(5, [#(0, 863), #(0, 770)]),
+      [45_057, 82_325, 56_845, 59_436],
+      [],
+    ),
+    #(
+      "AMP 440's spell is left out of the plans: not in the list, named for the warning",
+      entered_of(3, [#(0, 440)]),
+      [82_325],
+      [41_594],
+    ),
+    #(
+      "only the active set stands: a list in set 2 adds nothing",
+      entered_of(5, [#(2, 863)]),
+      [45_057, 82_325],
+      [],
+    ),
+    #("no AMP adds nothing", entered_of(5, []), [45_057, 82_325], []),
+    #(
+      "a stored AMP with no EldanAugmentation row (60000) is dropped at entry, not wanted",
+      entered_of(5, [#(0, 863), #(0, 60_000)]),
+      [45_057, 82_325, 59_436],
+      [],
+    ),
+    #(
+      "a stored AMP of another class (220 is class 7's, the player is class 5) is dropped at entry",
+      entered_of(5, [#(0, 220), #(0, 770)]),
+      [45_057, 82_325, 56_845],
+      [],
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(why, entered, expected, left_out) = row
+    let wanted = casting.wanted_of(entered:, tables:, plans:)
+    assert spells_of(wanted) == expected as why
+    assert wanted.left_out == left_out as why
+  })
+}
+
 /// Each frame the passive's start writes, its go answered, as the message id in hex, a
 /// colon and the body's hex: the class's entry names the passive, and the first caster of
 /// the cast tests casts it.
@@ -424,24 +503,40 @@ pub fn the_wanted_list_carries_each_worn_items_level_and_a_level_scaled_item_car
     as "the innate passive is pressed from no item"
 }
 
-fn passive_frames(class_id class_id: Int) -> List(String) {
+/// The frames the entry's standing spells write, their go answered, for a character of the
+/// class at level 10 who holds these AMPs (set, EldanAugmentation id).
+fn standing_frames(
+  class_id class_id: Int,
+  amps amps: List(#(Int, Int)),
+) -> List(Frame) {
+  let tables = client_tables.shared()
   let #(_, entered) =
     world_entry_support.entry(
-      tables: client_tables.shared(),
+      tables:,
       character: world_entry_support.character(
         class: class_id,
         faction: 166,
-        level: 1,
+        level: 10,
       ),
     )
-  let #(wanted, _) =
-    casting.standing_wanted(entered:, plans: cast_support.real_plans())
+  let entered =
+    world_entry.Entered(
+      ..entered,
+      action_sets: limited_support.saved_with_amps(
+        tables:,
+        class_id:,
+        level: 10,
+        amps:,
+      ),
+    )
+  let wanted =
+    casting.wanted_of(entered:, tables:, plans: cast_support.real_plans())
   let caster = cast_support.caster()
   let #(state, effects) =
     cast.standing_changed(
       cast: cast_state.new(),
       caster:,
-      wanted:,
+      wanted: wanted.standing,
       now: cast_support.at(ms: 1000),
     )
   let #(_, effects) =
@@ -453,7 +548,11 @@ fn passive_frames(class_id class_id: Int) -> List(String) {
       struck: [],
       rolls: [],
     )
-  list.map(cast_support.writes(effects:), fn(frame) {
+  cast_support.writes(effects:)
+}
+
+fn passive_frames(class_id class_id: Int) -> List(String) {
+  list.map(standing_frames(class_id:, amps: []), fn(frame) {
     int.to_base16(frame.message_id)
     <> ":"
     <> string.lowercase(bit_array.base16_encode(frame.body))
@@ -493,6 +592,27 @@ pub fn the_entry_starts_the_passive_of_classes_1_2_and_5_with_the_frames_the_sin
         <> ": the passive's frames are the bytes the single passive cast wrote"
       }
   })
+  // A Stalker holding the chain 770, 771, 772 and 863 in set 0: after the passive (Spell4 45057)
+  // the AMPs' spells start in AMP id order, each a root of its own with no parent.
+  let roots_started =
+    cast_support.cast_lines(
+      frames: standing_frames(class_id: 5, amps: [
+        #(0, 863),
+        #(0, 770),
+        #(0, 772),
+        #(0, 771),
+      ]),
+    )
+    |> list.filter(fn(line) {
+      string.starts_with(line, "started ")
+      && string.ends_with(line, " parent 0")
+    })
+    |> list.map(fn(line) {
+      let assert [_, _, spell4_id, ..] = string.split(line, " ")
+      spell4_id
+    })
+  assert roots_started == ["45057", "56845", "56846", "56847", "59436"]
+    as "AMP 770, 771, 772 and 863 name Spell4 56845, 56846, 56847 and 59436: the entry starts them after the passive"
 }
 
 /// The character's Novice set with the deflector worn in its shield's slot 15 (ItemSlot 43,

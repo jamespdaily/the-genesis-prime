@@ -15,11 +15,13 @@
 
 import cast_support as support
 import character_tables
+import fixture_tables
 import genesis_prime/client_connection.{CastFinished, CastStarted, CastWent}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
+import genesis_prime/game/class_resource.{Gain}
 import genesis_prime/game/connection/casting
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
@@ -35,6 +37,7 @@ import genesis_prime/step.{ConnectionId, LogDebug}
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/bool
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -653,6 +656,97 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
   assert list.length(list.unique([support.pressed_id(effects:), ..every_start]))
     == 7
     as "Stagger, 38780, 48585 and the four 38781 are seven casts of one caster, each with an id of its own (0x140561c30: one table for every unit)"
+}
+
+pub fn a_stalker_standing_under_amp_863s_spell_casts_stagger_with_the_two_proxies_prerequisite_37037_gates_and_without_it_with_neither_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let amp_plans = spell_plan.amp_plans(tables)
+  let caster = support.caster()
+  // The state of a player whose standing casts are the AMP spells (Spell4 ids) with their go answered.
+  let standing_under = fn(spell4_ids: List(Int)) {
+    let spells =
+      list.map(spell4_ids, fn(spell4_id) {
+        let assert Ok(spell) = dict.get(amp_plans, spell4_id)
+          as "the plans hold the AMP's spell"
+        spell
+      })
+    let #(state, effects) =
+      cast.standing_changed(
+        cast: cast_state.new(),
+        caster:,
+        wanted: support.without_item(spells:),
+        now: support.at(ms: 1000),
+      )
+    let #(state, _) =
+      support.answered_as(
+        caster:,
+        state:,
+        effects:,
+        at: 1000,
+        struck: [],
+        rolls: [],
+      )
+    state
+  }
+  let foe = support.hits([10])
+  // Spell4 ids started by the press of Stagger after the AMP spell stands: the press's own
+  // two starts, then each timer's, with the time they started at.
+  let starts_of_stagger = fn(state: cast_state.State) {
+    let #(state, effects) =
+      support.pressed_striking(state:, bag_index: 4, struck: foe, at: 2000)
+    let #(_, fired) =
+      support.run_timers_striking(state:, effects:, from_ms: 2000, struck: foe)
+    list.flat_map(fired, fn(step) {
+      list.filter_map(support.writes(effects: step.1), fn(frame) {
+        case frame.message_id == 0x07FF {
+          True -> Ok(#(step.0 - 2000, started_of(frame).spell4_id))
+          False -> Error(Nil)
+        }
+      })
+    })
+  }
+  let without = starts_of_stagger(cast_state.new())
+  assert list.map(without, fn(start) { start.1 })
+    == [38_781, 38_781, 38_781, 38_781]
+    as "Spell4Effects 208128 and 208198 sit behind Prerequisite 37037, a type 15 condition on Spell4 59436, which no cast of the caster is: only the four 38781 start"
+  let with = starts_of_stagger(standing_under([59_436]))
+  assert list.sort(list.map(with, fn(start) { start.1 }), int.compare)
+    == [38_781, 38_781, 38_781, 38_781, 79_220, 79_229]
+    as "with 59436 standing (AMP 863's spell), Spell4Effects 208128 starts 79220 and 208198 starts 79229, once each, beside the four 38781"
+  assert list.filter(with, fn(start) { start.1 == 79_220 || start.1 == 79_229 })
+    == [#(700, 79_220), #(700, 79_229)]
+    as "both are phase 8 effects: they start at the fourth phase's go, 700 ms after the press"
+  // Relentless Strikes: Spell4Effects 147972 (+200 of slot 1, Spell4 53865) is behind Prerequisite
+  // 24582, which needs the caster under 59208 (AMP 102's spell); 127603 (+180) is not gated by it.
+  let gains_of = fn(state: cast_state.State) {
+    let #(state, raw) =
+      support.pressed_raw_in(
+        plans: support.plans(),
+        state:,
+        caster:,
+        bag_index: support.relentless_strikes,
+        target: 0,
+        at: 2000,
+      )
+    let #(state, effects) =
+      support.answered_by(state:, effects: raw, at: 2000, struck: foe)
+    let #(_, fired) =
+      support.run_timers_striking(state:, effects:, from_ms: 2000, struck: foe)
+    list.flatten(
+      support.gains(effects: list.append(
+        effects,
+        list.flat_map(fired, fn(step) { step.1 }),
+      )),
+    )
+  }
+  assert gains_of(cast_state.new()) == [Gain(slot: 1, amount: 180)]
+    as "without 59208 standing, 24582 fails and only 127603's +180 is given"
+  let with_amp = gains_of(standing_under([59_208]))
+  assert list.length(with_amp) == 2
+    && list.contains(with_amp, Gain(slot: 1, amount: 180))
+    && list.contains(with_amp, Gain(slot: 1, amount: 200))
+    as "with 59208 standing 24582 passes and 147972's +200 is given too"
 }
 
 pub fn gate_casts_starts_its_cooldown_and_names_only_the_caster_in_its_go_test() -> Nil {

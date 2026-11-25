@@ -34,6 +34,14 @@
 ////   book and the later abilities' coverage line never name it; any other error fails the load,
 ////   and so does a worn item whose Item2Type, ItemCategory, ItemFamily or ItemSpecial row the
 ////   tables lack (`EquipItemNotRead`), since which spell it puts on its wearer is then unknown.
+//// - **The AMP spells.** The spell of each AMP of a playable class is planned the same way under
+////   a key of its own (`amp_plans`, `amp_derivation`), apart from the equip spells: no worn item
+////   holds it and it stands while the AMP is picked. An AMP that a type 227 Prerequisite
+////   condition names unlocks a class ability and its spell is that ability's: it is left out
+////   with `AmpUnlocksClassAbility`, as "unlocks a class ability, not built"
+////   (genesis_prime/game/amp_spec `roots`; the unlock itself is not built). Another one whose
+////   error `refusal_of` says leaves out is listed by `unplanned_amps`; any other error fails
+////   the load, and so does an AMP naming a Spell4 the table lacks (`AmpSpellNotRead`).
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
 ////   Spell4Effects row in the place its spell is planned (`RowPlace`): in the effects of its
 ////   spell and applied by a go (`Applied`), in the effects and applied by none (`Held`: a
@@ -359,6 +367,7 @@
 ////   aimed at the caster or by other flags, of Ability Restriction aimed anywhere but at
 ////   the caster, or behind an apply prerequisite.
 
+import genesis_prime/game/amp_spec
 import genesis_prime/game/cast_bar_kind
 import genesis_prime/game/class_resource
 import genesis_prime/game/column_reading
@@ -2733,6 +2742,11 @@ pub type PlanError {
   /// A worn item's table row is missing or the item cannot be read, so which spell it puts
   /// on its wearer is not known.
   EquipItemNotRead(error: item_property.ItemPropertyError)
+  /// An AMP of a playable class names a spell the Spell4 table has no row for.
+  AmpSpellNotRead(error: amp_spec.RootError)
+  /// An AMP that a type 227 Prerequisite condition names unlocks a class ability, and its spell
+  /// is that ability's own, so it is not a standing spell.
+  AmpUnlocksClassAbility(unlocking: amp_spec.Unlocking)
 }
 
 /// What an aim refusal says of the flag values `aim_of` reads: 1 to 7, and for a value with
@@ -3109,6 +3123,9 @@ pub fn describe(error error: PlanError) -> String {
       <> " whose aim names that unit, and an absorb on a struck unit is not built"
     AreaNotBuilt(reason:, ..) | AreaDataFault(reason:, ..) -> reason
     EquipItemNotRead(error:) -> item_property.describe(error:)
+    AmpSpellNotRead(error:) -> amp_spec.describe_root(error:)
+    AmpUnlocksClassAbility(unlocking:) ->
+      amp_spec.describe_unlocking(unlocking:)
     ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3319,6 +3336,75 @@ pub fn standing_unplanned(
     checker: area_checked(tables),
   ))
   left_out
+}
+
+/// What the AMPs' derivation holds: the plan of each AMP spell by Spell4 id, and the AMP spells
+/// the plans leave out.
+type AmpPlanSet {
+  AmpPlanSet(planned: Dict(Int, Spell), left_out: List(Unplanned))
+}
+
+const amp_plans_key: table_store.DerivedKey(AmpPlanSet) =
+  table_store.DerivedKey("SpellAmpPlans")
+
+/// The AMP plans as a value the tables' load builds once, under the tables' key, after the
+/// plans (`derivation`): every AMP spell (`amp_spec.roots`) is planned as `derivation` plans a
+/// later ability. One whose error `refusal_of` says leaves out is left out and listed
+/// (`unplanned_amps`); any other error fails the load.
+pub fn amp_derivation(
+  area_checked area_checked: fn(table_store.Tables) -> Checker,
+) -> table_store.Derivation {
+  table_store.derivation(key: amp_plans_key, build: fn(tables) {
+    amps_planned(tables:, checker: area_checked(tables))
+    |> result.map_error(fn(error) { describe(error:) })
+  })
+}
+
+/// The plans of the AMP spells and the AMP spells left out, each in Spell4 id order. An AMP that
+/// unlocks a class ability (`amp_spec.roots`) is left out with its own error, not planned.
+fn amps_planned(
+  tables tables: table_store.Tables,
+  checker checker: Checker,
+) -> Result(AmpPlanSet, PlanError) {
+  use roots <- result.try(
+    amp_spec.roots(tables:) |> result.map_error(AmpSpellNotRead),
+  )
+  use #(planned, left_out) <- result.map(planned_or_left_out(
+    tables:,
+    sources: sources_of(tables:),
+    checker:,
+    spell4_ids: roots.spells,
+  ))
+  AmpPlanSet(
+    planned: dict.from_list(
+      list.map(planned, fn(spell) { #(spell.spell4_id.value, spell) }),
+    ),
+    left_out: list.append(
+      left_out,
+      list.map(roots.unlocking, fn(unlocking) {
+        Unplanned(
+          spell4_id: unlocking.spell4_id.value,
+          error: AmpUnlocksClassAbility(unlocking:),
+        )
+      }),
+    )
+      |> list.sort(fn(first, second) {
+        int.compare(first.spell4_id, second.spell4_id)
+      }),
+  )
+}
+
+/// The plan of the spell of each AMP of a playable class, by Spell4 id, which the player's
+/// standing casts start from while the AMP is picked. It is no ability: no press, bag or book
+/// holds it.
+pub fn amp_plans(tables tables: table_store.Tables) -> Dict(Int, Spell) {
+  table_store.derived(tables:, key: amp_plans_key).planned
+}
+
+/// The AMP spells the plans leave out, by the error that says what the server does not build
+/// (`refusal_of` leaves them out). A player who holds such an AMP has no spell standing for it.
+pub fn unplanned_amps(tables tables: table_store.Tables) -> List(Unplanned) {
+  table_store.derived(tables:, key: amp_plans_key).left_out
 }
 
 /// The plan of each tier 2 to 9 spell of the planned abilities, by the Spell4 id of the tier's
@@ -3556,6 +3642,7 @@ pub fn refusal_of(error error: PlanError) -> PlanRefusal {
     | AbsorptionHasNoLifetime(..)
     | AbsorptionOnStruckUnit(..)
     | SummonedProcNotRead(..)
+    | AmpUnlocksClassAbility(..)
     | AreaNotBuilt(..) -> PlanRefusal(outcome: LeavesOut, basis: Unbuilt)
     NoRow(..)
     | StruckMoveNotRead(error: forced_move.NotAFloat(..), ..)
@@ -3569,7 +3656,8 @@ pub fn refusal_of(error error: PlanError) -> PlanRefusal {
     | InnateFailed(..)
     | PrerequisiteCycle(..)
     | AreaDataFault(..)
-    | EquipItemNotRead(..) -> PlanRefusal(outcome: FailsLoad, basis: Structure)
+    | EquipItemNotRead(..)
+    | AmpSpellNotRead(..) -> PlanRefusal(outcome: FailsLoad, basis: Structure)
   }
 }
 

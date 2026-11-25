@@ -144,6 +144,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/ability_points
+import genesis_prime/game/amp_spec
 import genesis_prime/game/camp
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_state
@@ -1271,6 +1272,8 @@ fn with_saved_bars(
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
       tiers: spell_tier.tiers(tables:),
+      amps: amp_spec.specs(tables:),
+      class_id: character.class_id,
       points_total: ability_points.total(tables:, level: character.level),
       level: character.level,
       book:,

@@ -10,12 +10,14 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_points
 import genesis_prime/game/amp_spec
+import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/player_life
 import genesis_prime/game/spell_tier
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
+import gleam/list
 
 /// What the 0xB1 taken from inside 0x038C with the player in the world does.
 pub fn take_message(
@@ -53,19 +55,33 @@ pub fn take_message(
       body: inner.body,
     )
   {
-    Ok(#(saved, effects)) ->
-      Continue(
-        connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, action_sets: saved)
-        }),
+    Ok(#(saved, effects)) -> {
+      let answered =
         connection_state.told_effects(session:, effects:, told: fn(effect) {
           case effect {
             limited_action_set.Send(frame:) -> connection_state.Sent(frame:)
             limited_action_set.Log(level:, text:) ->
               connection_state.Logged(level:, text:)
           }
-        }),
-      )
+        })
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(..entered, action_sets: saved)
+        })
+      let set =
+        limited_action_set.set_number(set: limited_action_set.first_set())
+      case
+        limited_action_set.held_amps(saved:, set:)
+        == limited_action_set.held_amps(saved: entered.action_sets, set:)
+      {
+        True -> Continue(session, answered)
+        False -> {
+          let #(session, standing) =
+            connection_casting.standing_changed(session:, now:)
+          Continue(session, list.append(answered, standing))
+        }
+      }
+    }
     Error(refusal) ->
       connection_state.end_for(
         session:,

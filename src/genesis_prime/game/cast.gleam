@@ -3935,8 +3935,9 @@ fn dropped_while_waiting(cast cast: State) -> State {
 }
 
 /// The player's standing spells become the wanted ones, in the order given: the spells a
-/// source holds for the player while it lasts, the innate passive first and then the equip
-/// spells of the worn items, each with the item it is worn from (`Standing`). A standing
+/// source holds for the player while it lasts, the innate passive first, then the equip
+/// spells of the worn items, each with the item it is worn from (`Standing`), then the spells
+/// of the AMPs the player holds, which come from no item. A standing
 /// cast is told by its spell and its item, so the same spell from an item of another level is
 /// another cast.
 /// Each standing spell no longer wanted ends first, the lowest cast id first, with its 0x7fe
