@@ -2195,6 +2195,17 @@ fields = [
 ]
 
 [[message]]
+id = 0x01A3
+name = "action_set_amps"
+direction = "server_to_client"
+evidence = "opcode.0x1a3"
+summary = "one action set's AMPs: the set's index, which the client refuses above 3 (the whole message), and the EldanAugmentation ids the set holds, which replace the client's list for that set and its unsaved picks"
+fields = [
+  { name = "action_set_index", kind = "unsigned_below", bits = 3, limit = 4, evidence = "opcode.0x1a3", named_by = "opcode.0x1a3" },
+  { name = "amp_ids", kind = "array", count_bits = 7, element = "unsigned", element_bits = 16, evidence = "opcode.0x1a3", named_by = "opcode.0x1a3" },
+]
+
+[[message]]
 id = 0x0169
 name = "ability_points"
 direction = "server_to_client"

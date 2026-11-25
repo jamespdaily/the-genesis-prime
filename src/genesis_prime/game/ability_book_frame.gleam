@@ -6,6 +6,7 @@
 //// a bag slot ─▶ 0x0111 (location 4, reason 49)       the item in its bag slot, a press names the slot
 //// the book   ─▶ 0x01A0 (the held tier in each set)  the entry the book window and the bar read
 //// a bar      ─▶ 0x019D (one action set)              the shortcuts the bar slots hold
+//// the AMPs   ─▶ 0x01A3 (one action set)              the AMPs the set holds, which replace the client's list
 //// a save     ─▶ 0x00B2 (one bit)                     the answer to the builder's Save
 //// ```
 
@@ -17,9 +18,10 @@ import genesis_prime/game/spell_plan
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set
+import genesis_prime/message/action_set_amps.{ActionSetAmps}
 import genesis_prime/message/action_set_saved.{ActionSetSaved}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
-import genesis_prime/table/id.{type Spell4BaseId}
+import genesis_prime/table/id.{type EldanAugmentationId, type Spell4BaseId}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 
@@ -102,6 +104,18 @@ pub fn action_set(
     ))
     as "a set below 8, a result of 6 bits, a bar slot below 48 and an id of 32 bits fit the message"
   Frame(message_id: action_set.message_id, body:)
+}
+
+/// 0x01A3 of one action set's AMPs, in the order given: the client replaces the set's list with
+/// it and forgets its unsaved picks (`opcode.0x1a3`).
+pub fn amp_list(set set: Int, ids ids: List(EldanAugmentationId)) -> Frame {
+  let assert Ok(body) =
+    action_set_amps.encode(ActionSetAmps(
+      action_set_index: set,
+      amp_ids: list.map(ids, fn(id) { id.value }),
+    ))
+    as "a set below 4 and at most 127 ids of 16 bits fit the message"
+  Frame(message_id: action_set_amps.message_id, body:)
 }
 
 /// 0x00B2, the answer to the builder's Save: the bit asks the client for a combat log

@@ -2,6 +2,7 @@
 //// tables a rule reads, and stores under the tables' key.
 
 import genesis_prime/game/activate
+import genesis_prime/game/amp_spec
 import genesis_prime/game/appearance
 import genesis_prime/game/communicator
 import genesis_prime/game/faction_level
@@ -69,6 +70,8 @@ import gleam/set.{type Set}
 /// - The ability tiers: each base the book can hold with the cost, Spell4 row and level of
 ///   its tiers, whose repeated tier, missing level row and missing Spell4 row fail the load
 ///   (genesis_prime/game/spell_tier).
+/// - The AMP specs: the EldanAugmentation rows with their categories and GameFormula 942's
+///   power, whose missing or unread rows fail the load (genesis_prime/game/amp_spec).
 /// - The quest rewards: each quest's Quest2Reward rows, which a turn-in reads
 ///   (genesis_prime/game/quest_turn_in).
 /// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
@@ -98,6 +101,7 @@ pub fn all() -> List(store.Derivation) {
     shortcut_spell.derivation(),
     level_up.derivation(),
     limited_action_set.derivation(),
+    amp_spec.derivation(),
     faction_level.derivation(),
     communicator.derivation(),
     quest_turn_in.derivation(),

@@ -78,6 +78,8 @@ pub fn the_servers_tables_are_those_its_rules_read_test() -> Nil {
       "CurrencyType",
       "CustomizationParameter",
       "CustomizationParameterMap",
+      "EldanAugmentation",
+      "EldanAugmentationCategory",
       "Episode",
       "EpisodeQuest",
       "Faction2",

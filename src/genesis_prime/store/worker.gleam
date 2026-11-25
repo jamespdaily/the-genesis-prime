@@ -1410,6 +1410,7 @@ fn action_sets_of(
         tier: row.tier,
       )
     }),
+    amps: [],
   )
 }
 

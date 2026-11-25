@@ -2110,6 +2110,7 @@ fn proc_started(
     named_player:,
     counted_with: WithNothing,
     from:,
+    lands_spell: False,
   )
 }
 
@@ -2133,6 +2134,7 @@ fn child_started(
   named_player named_player: Option(Int),
   counted_with counted_with: AdvanceWith,
   from from: Option(PressedFrom),
+  lands_spell lands_spell: Bool,
 ) -> #(State, List(Effect)) {
   let unseen =
     option.then(named_player, fn(player) {
@@ -2162,7 +2164,7 @@ fn child_started(
         parent: Some(parent),
         primary_target:,
         client_cast_id: None,
-        role: Child(counted_with:, from:, named_player:),
+        role: Child(counted_with:, from:, named_player:, lands_spell:),
         spent: None,
         reserved: [],
       )
@@ -3056,6 +3058,7 @@ fn tick_child_started(
       },
       counted_with: WithNothing,
       from: holder.handed_down,
+      lands_spell: True,
     )
   }
 }
@@ -3102,6 +3105,7 @@ fn fire(
             named_player:,
             counted_with:,
             from:,
+            lands_spell: True,
           )
         NodesEnd(cast_id:) -> {
           let #(cast, ticks) =
@@ -3211,11 +3215,17 @@ pub fn went(
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
+  let lands = cast_proc.go_lands_spell(cast:, cast_id:)
   let own =
     cast_state.holder_of(cast:, cast_id:)
     |> result.map(fn(holder) { holder.spell })
     |> result.lazy_or(fn() { asked_spell })
-    |> result.map(fn(spell) { cast_proc.hit_events(spell:, struck:) })
+    |> result.map(fn(spell) {
+      list.append(cast_proc.hit_events(spell:, struck:), case lands {
+        True -> cast_proc.landed_events(spell:, struck:)
+        False -> []
+      })
+    })
     |> result.unwrap([])
   use <- settled(cast:, own:)
   released(
@@ -4069,7 +4079,12 @@ pub fn level_up_started(
     parent: None,
     primary_target: caster.unit_id,
     client_cast_id: None,
-    role: Child(counted_with: WithNothing, from: None, named_player: None),
+    role: Child(
+      counted_with: WithNothing,
+      from: None,
+      named_player: None,
+      lands_spell: True,
+    ),
     spent: None,
     reserved: [],
   )
@@ -4281,6 +4296,7 @@ fn start(
       advance_rows_applied: set.new(),
       finish_due: False,
       goes_asked: 0,
+      lands_spell: cast_proc.role_lands_spell(role:),
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive(..), _ -> cast.global_cooldown_ends_ms
@@ -6324,6 +6340,7 @@ fn child(
         named_player:,
         counted_with:,
         from:,
+        lands_spell: True,
       )
     True -> {
       let #(cast, _, start) =

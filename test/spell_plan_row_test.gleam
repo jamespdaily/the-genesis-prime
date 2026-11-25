@@ -114,7 +114,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
         read(first_of(effects:, id: 90_011))
         as "the Proc of kind 217 is read and its spell is planned from the reading"
       assert read(first_of(effects:, id: 90_015))
-        == Ok(LeftOut(why: ProcOfAnotherKind(kind: 27)))
+        == Ok(LeftOut(why: ProcOfAnotherKind(kind: 3)))
       assert read(first_of(effects:, id: 90_016))
         == Ok(LeftOut(why: ProxyNamesNoSpell))
       let assert Ok(Applied(ReadProxy(..))) =

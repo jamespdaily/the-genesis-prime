@@ -156,7 +156,12 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
       state: spellslinger,
       bytes: game_connection_support.world_message(
         message_id: 0x00B1,
-        body: limited.tiering([#(27_638, 2)]),
+        body: limited.body_with(
+          ids: limited.ids_a,
+          set: 0,
+          tier_changes: [#(27_638, 2)],
+          amp_ids: [220, 221, 222, 259],
+        ),
       ),
     )
   let #(_, taken) =
@@ -172,8 +177,14 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
       tiers: [
         store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2),
       ],
+      amps: [
+        store.AmpRow(action_set: 0, eldan_augmentation_id: 220),
+        store.AmpRow(action_set: 0, eldan_augmentation_id: 221),
+        store.AmpRow(action_set: 0, eldan_augmentation_id: 222),
+        store.AmpRow(action_set: 0, eldan_augmentation_id: 259),
+      ],
     )
-    as "the ask carries the 12 slot rows of the bar and the tier row, the whole list a place save carries"
+    as "the ask carries the 12 slot rows of the bar, the tier row and the four AMP rows, the whole list a place save carries"
 }
 
 /// The items a turn-in's stacks become once the store has saved them: one stack of each Item2,

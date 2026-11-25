@@ -1155,6 +1155,10 @@ pub fn joined(
                   ),
                 )),
               ],
+              // The AMPs of each set that holds any, before 0x25E: the 0x01A3 handler raises
+              // the event the power counter reads (`opcode.0x1a3`), and a set with none needs
+              // no message, since the client's lists start empty (`0x140034330`).
+              amp_lists_sent(action_sets:),
               character_state_sent(entry:),
               quest_effects,
               items_sent(items:, now_unix_ms: step.unix_milliseconds(now:)),
@@ -1653,6 +1657,18 @@ fn items_sent(
       now_unix_ms:,
       reason: ability_book_frame.held_from_the_start,
     ))
+  })
+}
+
+/// The 0x01A3 of each action set that holds AMPs, in set order.
+fn amp_lists_sent(
+  action_sets action_sets: limited_action_set.Saved,
+) -> List(Effect) {
+  list.filter_map(ability_book_frame.every_set(), fn(set) {
+    case limited_action_set.held_amps(saved: action_sets, set:) {
+      [] -> Error(Nil)
+      ids -> Ok(Send(ability_book_frame.amp_list(set:, ids:)))
+    }
   })
 }
 

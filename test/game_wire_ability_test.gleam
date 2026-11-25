@@ -754,8 +754,8 @@ pub fn a_tier_bought_in_the_builder_is_back_after_a_camp_and_a_tier_returned_to_
       list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
     })
   assert list.map(answer, fn(frame) { frame.message_id })
-    == [0x019D, 0x01A0, 0x0169, 0x00B2]
-    as "the answer is the set, the tiers, the points, then 0xB2"
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
+    as "the answer is the set, the tiers, the points, the AMPs, then 0xB2"
   assert raised_tiers(frames: answer) == [#(27_638, 0, 2), #(52_215, 0, 2)]
     as "opcode.0x1a0: Quick Draw at 2 and its alternate 52215, which shows the tier of the ability that names it"
   assert ability_points_support.points_in(frames: answer) == [#(0, 1)]
@@ -789,6 +789,87 @@ pub fn a_tier_bought_in_the_builder_is_back_after_a_camp_and_a_tier_returned_to_
     as "a tier returned to 1 is gone after the next camp"
   assert ability_points_support.points_in(frames: third_entry) == [#(1, 1)]
     as "and the point is back"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The frames among these that the builder's save is answered with, in order.
+fn builder_answer(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x019D | 0x01A0 | 0x0169 | 0x01A3 | 0x00B2 -> Ok(frame.message_id)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// A Spellslinger of level 10 (7 AMP power) who sends the client's own 0xB1 with the AMP list of
+/// a Stalker (863, a class the Spellslinger is not), then the class's bar with the chain of
+/// category 1 and its tier 1 AMP (220 to 222 and 259, 7 of 7 power), the same again, and 259
+/// alone, then camps and plays again. Each answer is the set, the held list and 0xB2, or for an
+/// accepted save the set, the tiers, the points, the list and 0xB2 (`opcode.0x1a3`,
+/// `opcode.0xb2`). A list the check refuses or one that drops a held AMP changes nothing; a camp
+/// forgets the picks, since the place save writes no AMP row.
+pub fn an_amp_picked_in_the_builder_is_answered_with_0x1a3_and_a_refused_one_changes_nothing_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let time = driven_time.new()
+  let started = login_support.start(time:)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: limited.spellslinger,
+      level: 10,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert limited.amp_lists_in(frames: entry) == []
+    as "a character that holds no AMP enters with no 0x01A3"
+  let save = fn(have, amp_ids) {
+    game_client.send_world(
+      game:,
+      message_id: 0x00B1,
+      body: limited.amps_body(class_id: limited.spellslinger, amp_ids:),
+    )
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  }
+  let #(answer, have) = save(have, [863])
+  assert limited.the_action_set(frames: answer).result == 4
+    as "863 is a Stalker's AMP: the class test is reached, since 4 of 7 power is within the level's"
+  assert builder_answer(frames: answer) == [0x019D, 0x01A3, 0x00B2]
+    as "the held bar, the held list and 0xB2"
+  assert limited.amp_lists_in(frames: answer) == [#(0, [])]
+    as "nothing is held, so the list is empty"
+  assert limited.the_answer_bit(frames: answer) == 0
+  let #(answer, have) = save(have, [259, 220, 221, 222])
+  assert limited.the_action_set(frames: answer).result == 1
+  assert builder_answer(frames: answer)
+    == [0x019D, 0x01A0, 0x0169, 0x01A3, 0x00B2]
+    as "the set, the tiers, the points, the AMPs, then 0xB2"
+  assert limited.amp_lists_in(frames: answer) == [#(0, [220, 221, 222, 259])]
+    as "the list of set 0, ascending"
+  assert limited.the_answer_bit(frames: answer) == 1
+  let #(again, have) = save(have, [220, 221, 222, 259])
+  assert builder_answer(frames: again) == builder_answer(frames: answer)
+    as "the same save again is answered the same"
+  assert limited.amp_lists_in(frames: again)
+    == limited.amp_lists_in(frames: answer)
+  let #(dropped, have) = save(have, [259])
+  assert limited.the_action_set(frames: dropped).result == 43
+    as "259 alone drops the held 220 to 222: removing an AMP is the paid reset"
+  assert limited.amp_lists_in(frames: dropped) == [#(0, [220, 221, 222, 259])]
+    as "the held list is sent again"
+  assert limited.the_answer_bit(frames: dropped) == 0
+  let #(second_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert limited.amp_lists_in(frames: second_entry) == []
+    as "the place save writes no AMP row, so the entry after a camp holds none"
   game_client.close(game:)
   login_support.stop(started)
 }

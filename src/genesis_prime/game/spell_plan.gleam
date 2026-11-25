@@ -205,7 +205,10 @@
 ////   or a builder, 11 starting to move, 87 the class resource changing (the holder's gate
 ////   says to what), 105 the Stalker's suit power dropping and 182 landing a taunt, and the
 ////   blows a creature lands on the holder: 16 taking damage, 146 a critical, 51 a deflect
-////   and 115 a depleted shield (`Trigger`, a guess: the client never reads a Proc row). It holds the
+////   and 115 a depleted shield, and four kinds read from rows and texts (`.229_230_231`, `.27`): 229,
+////   230 and 231 the holder landing Physical, Tech or Magic damage, and 27 the holder's spell
+////   landing; kinds 69 (a cast ending) and 76 (a spell landing on the holder) are left out naming
+////   their event (`Trigger`, a guess: the client never reads a Proc row). It holds the
 ////   spell it casts (dataBits01), planned as a Proxy's child is and on the same chain, so a
 ////   proc that leads back to a spell on the way fails as a cycle, its chance (dataBits02,
 ////   a float32: above 0 and at most 1.0), its limit, dataBits05 fires in dataBits04 ms or
@@ -1006,6 +1009,20 @@ pub type Trigger {
   /// 115: a creature's blow takes the holder's shield from above 0 to 0. A guess
   /// (`.dataBits00`, 53 rows).
   ShieldDepleted
+  /// 229: a damage description of the holder's strike that dealt Physical damage lands on
+  /// a creature. A guess for what counts, a tick included
+  /// (`Spell4Effects.effectType.14.dataBits00.229_230_231`).
+  LandsPhysicalDamage
+  /// 230: a damage description of the holder's strike that dealt Tech damage lands on a
+  /// creature (`.229_230_231`).
+  LandsTechDamage
+  /// 231: a damage description of the holder's strike that dealt Magic damage lands on a
+  /// creature (`.229_230_231`).
+  LandsMagicDamage
+  /// 27: a spell of the holder's goes and strikes a unit, or strikes none. A guess for
+  /// what counts: one event per creature or player the go hit, and one with no unit for
+  /// a go that hit neither (`Spell4Effects.effectType.14.dataBits00.27`).
+  LandsSpell
 }
 
 /// How often a Proc fires (dataBits04 and dataBits05,
@@ -5629,6 +5646,8 @@ fn proc_waits_on(kind kind: Int) -> Result(String, Nil) {
     2 -> Ok("the holder killing a player")
     148 -> Ok("the holder receiving a critical heal")
     251 | 253 -> Ok("the holder landing a multi-hit strike or heal")
+    69 -> Ok("a cast of a spell ending")
+    76 -> Ok("a spell of another unit landing on the holder")
     _ -> Error(Nil)
   }
 }
@@ -5661,6 +5680,10 @@ fn proc_read_of_a_kind_to_read(
     146 -> Ok(SuffersCritical)
     51 -> Ok(DeflectsAttack)
     115 -> Ok(ShieldDepleted)
+    229 -> Ok(LandsPhysicalDamage)
+    230 -> Ok(LandsTechDamage)
+    231 -> Ok(LandsMagicDamage)
+    27 -> Ok(LandsSpell)
     kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
   })
   let unit_bits = effect.data_bits03
