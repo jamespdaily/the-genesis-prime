@@ -75,7 +75,7 @@ fn entry_frames(case_ case_: Entry) -> List(Frame) {
         world_entry_support.joined_with_action_sets(
           class_id: case_.class_id,
           level: case_.level,
-          action_sets: limited.with_tiers(tiers:),
+          action_sets: limited.with_rows(slots: [], tiers:, amps: []),
           unset: [],
         )
         as "the entry puts the player in the world"

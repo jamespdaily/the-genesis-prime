@@ -25,8 +25,9 @@ import fixture_tables
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/ability_points
+import genesis_prime/game/amp_spec
 import genesis_prime/game/limited_action_set.{
-  Player, RowOutsideTable, RowRepeated,
+  Player, RowOutsideTable, RowRepeated, StoredSlot, StoredTier,
 }
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite
@@ -671,6 +672,7 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
         limited_action_set.take(
           unlocks: limited_action_set.unlocks(tables:),
           tiers: spell_tier.tiers(tables:),
+          amps: amp_spec.specs(tables:),
           player:,
           saved: held,
           class_bar: support.class_abilities(tables:),
@@ -798,6 +800,7 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
                 tier: held.1,
               )
             }),
+            amps: [],
           ),
         )
         as why
@@ -1101,7 +1104,12 @@ pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_
       let player =
         Player(
           level:,
+          class_id: ClassId(class_id),
           points_total: ability_points.total(tables:, level:),
+          amp_power_total: amp_spec.power_total(
+            specs: amp_spec.specs(tables:),
+            level:,
+          ),
           book: ability_book.book(tables:, loadout: held, level:),
           dead: False,
           in_combat: False,
@@ -1110,6 +1118,7 @@ pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_
         limited_action_set.take(
           unlocks:,
           tiers: spell_tier.tiers(tables:),
+          amps: amp_spec.specs(tables:),
           player:,
           saved: limited_action_set.none(),
           class_bar: held.abilities,
@@ -1244,7 +1253,7 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
       book: level_4.book,
       tiers: spell_tier.tiers(tables:),
       points_total: 0,
-      rows: support.with_slots(slots: rows),
+      rows: support.with_rows(slots: rows, tiers: [], amps: []),
     )
   }
   let no_slots = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -1306,24 +1315,24 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
       #(
         "a row of set 4, which the table's check refuses",
         [outside(4, 0, Some(27_638))],
-        Refuses(RowOutsideTable(row: outside(4, 0, Some(27_638)))),
+        Refuses(RowOutsideTable(row: StoredSlot(outside(4, 0, Some(27_638))))),
       ),
       #(
         "a row of slot 12, which the table's check refuses",
         list.append(support.rows_of(set: 0, ids: support.ids_a), [
           outside(0, 12, Some(27_638)),
         ]),
-        Refuses(RowOutsideTable(row: outside(0, 12, Some(27_638)))),
+        Refuses(RowOutsideTable(row: StoredSlot(outside(0, 12, Some(27_638))))),
       ),
       #(
         "an ability of id 262144, wider than the 18 bits of the message",
         [outside(0, 0, Some(262_144))],
-        Refuses(RowOutsideTable(row: outside(0, 0, Some(262_144)))),
+        Refuses(RowOutsideTable(row: StoredSlot(outside(0, 0, Some(262_144))))),
       ),
       #(
         "two rows for slot 0 of set 0, which the primary key refuses",
         [outside(0, 0, Some(27_638)), outside(0, 0, Some(20_684))],
-        Refuses(RowRepeated(row: outside(0, 0, Some(20_684)))),
+        Refuses(RowRepeated(row: StoredSlot(outside(0, 0, Some(20_684))))),
       ),
     ],
     fn(row) {
@@ -1338,7 +1347,11 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
   let assert Ok(saved) = enter(support.rows_of(set: 2, ids: support.ids_a))
     as "rows of set 2 are rows the table's checks hold"
   assert limited_action_set.rows(saved:)
-    == support.with_slots(slots: support.rows_of(set: 2, ids: support.ids_a))
+    == support.with_rows(
+      slots: support.rows_of(set: 2, ids: support.ids_a),
+      tiers: [],
+      amps: [],
+    )
     as "the rows of set 2 are kept as set 2, each in its slot"
   assert support.held_ids(tables:, saved:) == support.class_bar
     as "a player who saved only set 2 has the class's bar in set 0"
@@ -1558,52 +1571,42 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
       50,
       41,
       [#(0, quick_draw, 1)],
-      RefusesTier(
-        limited_action_set.TierRowOutsideTable(row: outside(0, quick_draw, 1)),
-      ),
+      RefusesTier(RowOutsideTable(row: StoredTier(outside(0, quick_draw, 1)))),
     ),
     TierCase(
       "a tier row of tier 16, wider than the 4 bits of the message",
       50,
       41,
       [#(0, quick_draw, 16)],
-      RefusesTier(
-        limited_action_set.TierRowOutsideTable(row: outside(0, quick_draw, 16)),
-      ),
+      RefusesTier(RowOutsideTable(row: StoredTier(outside(0, quick_draw, 16)))),
     ),
     TierCase(
       "a tier row of set 4",
       50,
       41,
       [#(4, quick_draw, 2)],
-      RefusesTier(
-        limited_action_set.TierRowOutsideTable(row: outside(4, quick_draw, 2)),
-      ),
+      RefusesTier(RowOutsideTable(row: StoredTier(outside(4, quick_draw, 2)))),
     ),
     TierCase(
       "a tier row of ability 0",
       50,
       41,
       [#(0, 0, 2)],
-      RefusesTier(limited_action_set.TierRowOutsideTable(row: outside(0, 0, 2))),
+      RefusesTier(RowOutsideTable(row: StoredTier(outside(0, 0, 2)))),
     ),
     TierCase(
       "a tier row of ability 262144, wider than the 18 bits of the message",
       50,
       41,
       [#(0, 262_144, 2)],
-      RefusesTier(
-        limited_action_set.TierRowOutsideTable(row: outside(0, 262_144, 2)),
-      ),
+      RefusesTier(RowOutsideTable(row: StoredTier(outside(0, 262_144, 2)))),
     ),
     TierCase(
       "two tier rows for one ability of one set, which the primary key refuses",
       50,
       41,
       [#(0, quick_draw, 2), #(0, quick_draw, 3)],
-      RefusesTier(
-        limited_action_set.TierRowRepeated(row: outside(0, quick_draw, 3)),
-      ),
+      RefusesTier(RowRepeated(row: StoredTier(outside(0, quick_draw, 3)))),
     ),
   ]
   list.each(cases, fn(case_) {
@@ -1616,7 +1619,7 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
         points_total: case_.points,
         level: case_.level,
         book:,
-        rows: support.with_tiers(tiers: case_.saved),
+        rows: support.with_rows(slots: [], tiers: case_.saved, amps: []),
       )
     let held = case got {
       Ok(saved) -> {
@@ -1635,7 +1638,7 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
       points_total: 41,
       level: 50,
       book:,
-      rows: support.with_tiers(tiers: [#(4, quick_draw, 2)]),
+      rows: support.with_rows(slots: [], tiers: [#(4, quick_draw, 2)], amps: []),
     )
     as "a tier row of set 4 ends the entry"
   assert string.contains(limited_action_set.describe_row(error:), "set 4")
@@ -1783,7 +1786,7 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
           }),
           list.map(tiered, Spell4BaseId),
         )
-      let held = store.ActionSets(slots: rows, tiers: tier_rows)
+      let held = store.ActionSets(slots: rows, tiers: tier_rows, amps: [])
       let assert Ok(saved) =
         limited_action_set.entering(
           unlocks:,

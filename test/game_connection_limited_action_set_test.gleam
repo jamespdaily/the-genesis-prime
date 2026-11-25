@@ -243,7 +243,7 @@ fn timer_save(
 
 /// The slots of a saved set the way the store holds them: twelve rows of set 0.
 fn slots_of_set_0(ids ids: List(Int)) -> store.ActionSets {
-  limited.with_slots(slots: limited.rows_of(set: 0, ids:))
+  limited.with_rows(slots: limited.rows_of(set: 0, ids:), tiers: [], amps: [])
 }
 
 pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carried_again_test() -> Nil {
@@ -258,9 +258,13 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
       body: limited.tiering([#(27_638, 2)]),
     ).0
   let with_tier =
-    store.ActionSets(slots: limited.rows_of(set: 0, ids: limited.ids_a), tiers: [
-      store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2),
-    ])
+    store.ActionSets(
+      slots: limited.rows_of(set: 0, ids: limited.ids_a),
+      tiers: [
+        store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2),
+      ],
+      amps: [],
+    )
   list.each(
     [
       #(after_a, slots_of_set_0(ids: limited.ids_a), "a saved bar"),
@@ -281,7 +285,11 @@ pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carr
   let #(returned, _, _) =
     sent(state: after_tier, body: limited.tiering([#(27_638, 1)]))
   assert action_sets_asked(taken: timer_save(state: returned).1)
-    == limited.with_slots(slots: limited.rows_of(set: 0, ids: limited.ids_a))
+    == limited.with_rows(
+      slots: limited.rows_of(set: 0, ids: limited.ids_a),
+      tiers: [],
+      amps: [],
+    )
     as "(g) a tier returned to 1 is no row: the next save carries the bar and an empty tier list, which deletes the stored row"
 }
 

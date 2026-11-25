@@ -14,6 +14,7 @@ import genesis_prime/message/ability_points.{type AbilityPoints}
 import genesis_prime/message/ability_tiers.{type AbilityTiers}
 import genesis_prime/message/account_entitlements.{type AccountEntitlements}
 import genesis_prime/message/action_set.{type ActionSet}
+import genesis_prime/message/action_set_amps.{type ActionSetAmps}
 import genesis_prime/message/action_set_saved.{type ActionSetSaved}
 import genesis_prime/message/bit_stream.{type DecodeError}
 import genesis_prime/message/buyback_added.{type BuybackAdded}
@@ -175,6 +176,7 @@ pub type ServerMessage {
   ItemsSwapped(message: ItemsSwapped)
   ItemActionFailed(message: ItemActionFailed)
   AbilityTiers(message: AbilityTiers)
+  ActionSetAmps(message: ActionSetAmps)
   AbilityPoints(message: AbilityPoints)
   ActionSet(message: ActionSet)
   ActionSetSaved(message: ActionSetSaved)
@@ -395,6 +397,7 @@ pub fn decode(
     0x056A ->
       decoded(body, message_id, item_action_failed.decode, ItemActionFailed)
     0x01A0 -> decoded(body, message_id, ability_tiers.decode, AbilityTiers)
+    0x01A3 -> decoded(body, message_id, action_set_amps.decode, ActionSetAmps)
     0x0169 -> decoded(body, message_id, ability_points.decode, AbilityPoints)
     0x019D -> decoded(body, message_id, action_set.decode, ActionSet)
     0x00B2 -> decoded(body, message_id, action_set_saved.decode, ActionSetSaved)
@@ -563,6 +566,7 @@ pub fn name(message: ServerMessage) -> String {
     ItemsSwapped(..) -> "items_swapped"
     ItemActionFailed(..) -> "item_action_failed"
     AbilityTiers(..) -> "ability_tiers"
+    ActionSetAmps(..) -> "action_set_amps"
     AbilityPoints(..) -> "ability_points"
     ActionSet(..) -> "action_set"
     ActionSetSaved(..) -> "action_set_saved"

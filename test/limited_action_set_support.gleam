@@ -9,13 +9,14 @@ import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_points
+import genesis_prime/game/amp_spec
 import genesis_prime/game/limited_action_set.{type Effect, Log, Send}
 import genesis_prime/game/spell_tier
 import genesis_prime/message/action_set.{type ActionSet}
 import genesis_prime/message/action_set_saved
 import genesis_prime/step.{type LogLevel}
 import genesis_prime/store
-import genesis_prime/table/id.{type Spell4BaseId}
+import genesis_prime/table/id.{type Spell4BaseId, ClassId}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
@@ -71,20 +72,23 @@ pub fn rows_of(set set: Int, ids ids: List(Int)) -> List(store.ActionSlotRow) {
   })
 }
 
-/// The action sets of a save that holds these slot rows and no tier above 1.
-pub fn with_slots(slots slots: List(store.ActionSlotRow)) -> store.ActionSets {
+/// The action sets of a save that holds these slot rows, these tiers (set, Spell4Base, tier)
+/// and these AMPs (set, EldanAugmentation id), and nothing else.
+pub fn with_rows(
+  slots slots: List(store.ActionSlotRow),
+  tiers tiers: List(#(Int, Int, Int)),
+  amps amps: List(#(Int, Int)),
+) -> store.ActionSets {
   store.ActionSets(
-    ..limited_action_set.rows(saved: limited_action_set.none()),
     slots:,
+    tiers: list.map(tiers, tier_row),
+    amps: list.map(amps, amp_row),
   )
 }
 
-/// The action sets of a save that holds these tiers (set, Spell4Base, tier) and no bar.
-pub fn with_tiers(tiers tiers: List(#(Int, Int, Int))) -> store.ActionSets {
-  store.ActionSets(
-    ..limited_action_set.rows(saved: limited_action_set.none()),
-    tiers: list.map(tiers, tier_row),
-  )
+/// One AMP row of a (set, EldanAugmentation id).
+pub fn amp_row(amp amp: #(Int, Int)) -> store.AmpRow {
+  store.AmpRow(action_set: amp.0, eldan_augmentation_id: amp.1)
 }
 
 /// One tier row of a (set, Spell4Base, tier).
@@ -146,12 +150,26 @@ pub fn player(
   tables tables: table_store.Tables,
   level level: Int,
 ) -> limited_action_set.Player {
+  player_of(tables:, class_id: spellslinger, level:)
+}
+
+/// The player of a class at a level: alive, out of combat, holding the book the level gives.
+pub fn player_of(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+  level level: Int,
+) -> limited_action_set.Player {
   limited_action_set.Player(
     level:,
+    class_id: ClassId(class_id),
     points_total: ability_points.total(tables:, level:),
+    amp_power_total: amp_spec.power_total(
+      specs: amp_spec.specs(tables:),
+      level:,
+    ),
     book: ability_book.book(
       tables:,
-      loadout: ability_book_support.loadout_of(tables:, class_id: spellslinger),
+      loadout: ability_book_support.loadout_of(tables:, class_id:),
       level:,
     ),
     dead: False,
@@ -200,6 +218,7 @@ pub fn taken(
     limited_action_set.take(
       unlocks: limited_action_set.unlocks(tables:),
       tiers: spell_tier.tiers(tables:),
+      amps: amp_spec.specs(tables:),
       player: player(tables:, level:),
       saved:,
       class_bar: class_abilities(tables:),

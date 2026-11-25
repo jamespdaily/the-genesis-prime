@@ -6985,8 +6985,10 @@ fn stored_tier_rows(
 
 /// The slots of a saved set as the store holds them: the rows of `ids` in set `set`.
 fn slots_of(set set: Int, ids ids: List(Int)) -> store.ActionSets {
-  limited_action_set_support.with_slots(
+  limited_action_set_support.with_rows(
     slots: limited_action_set_support.rows_of(set:, ids:),
+    tiers: [],
+    amps: [],
   )
 }
 
@@ -7245,7 +7247,10 @@ pub fn a_slot_row_the_table_refuses_is_refused_by_name_and_a_swap_in_one_save_is
   ]
   list.each(refusals, fn(refusal) {
     let #(why, rows, constraint) = refusal
-    assert saved(1, limited_action_set_support.with_slots(slots: rows))
+    assert saved(
+        1,
+        limited_action_set_support.with_rows(slots: rows, tiers: [], amps: []),
+      )
       == ForMove(ActionSetRefused(constraint:))
       as why
     assert stored_rows(store:, character_id: id) == []
@@ -7267,11 +7272,17 @@ pub fn a_slot_row_the_table_refuses_is_refused_by_name_and_a_swap_in_one_save_is
     ])
     as "the swap is saved"
   let refused = [row(0, 0, Some(27_638)), row(0, 1, Some(27_638))]
-  assert saved(3, limited_action_set_support.with_slots(slots: refused))
+  assert saved(
+      3,
+      limited_action_set_support.with_rows(slots: refused, tiers: [], amps: []),
+    )
     == ForMove(ActionSetRefused(
       constraint: "character_action_slot_one_place_per_ability",
     ))
-  assert saved(4, limited_action_set_support.with_slots(slots: refused))
+  assert saved(
+      4,
+      limited_action_set_support.with_rows(slots: refused, tiers: [], amps: []),
+    )
     == ForMove(ActionSetRefused(
       constraint: "character_action_slot_one_place_per_ability",
     ))
@@ -7496,7 +7507,11 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
       epoch:,
       sequence:,
       place:,
-      action_sets: limited_action_set_support.with_tiers(tiers),
+      action_sets: limited_action_set_support.with_rows(
+        slots: [],
+        tiers:,
+        amps: [],
+      ),
     )
   }
   let three = [#(0, 20_684, 3), #(0, 27_638, 2), #(2, 27_638, 5)]
@@ -7533,7 +7548,11 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
       epoch: third_login,
       sequence:,
       quests: [completed_quest(1001)],
-      action_sets: limited_action_set_support.with_tiers(tiers),
+      action_sets: limited_action_set_support.with_rows(
+        slots: [],
+        tiers:,
+        amps: [],
+      ),
       credits_held:,
       credits_after: credits_held + 145,
       placed: [],

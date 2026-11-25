@@ -172,6 +172,7 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
       tiers: [
         store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2),
       ],
+      amps: [],
     )
     as "the ask carries the 12 slot rows of the bar and the tier row, the whole list a place save carries"
 }
