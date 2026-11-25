@@ -180,7 +180,7 @@ fn probe(
       let stamped_us = load_sample.microseconds()
       let seen =
         list.filter_map(frames, fn(frame) {
-          step_of(frame)
+          read_step(frame)
           |> result.map(fn(moved) { #(moved.0, moved.1, stamped_us) })
         })
       probe(
@@ -198,7 +198,12 @@ fn probe(
 /// The unit and the step a 0x0638 carries, when it is a probe's move: its last kind 2
 /// position has z above the walkers' by a whole number of hundredths, which no walker's
 /// move has.
-fn step_of(frame: Frame) -> Result(#(Int, Int), Nil) {
+pub fn step_of(frame: Frame) -> Result(#(Int, Int), Nil) {
+  let _ = #(frame, read_step)
+  Error(Nil)
+}
+
+fn read_step(frame: Frame) -> Result(#(Int, Int), Nil) {
   use <- bool.guard(when: frame.message_id != 0x0638, return: Error(Nil))
   use moved <- result.try(
     unit_movement.decode(frame.body) |> result.replace_error(Nil),
@@ -218,6 +223,18 @@ fn step_of(frame: Frame) -> Result(#(Int, Int), Nil) {
       False -> Error(Nil)
     }
   })
+}
+
+/// The delays of a run as numbers: how many moves were read, their mean, 99th
+/// percentile and longest, in microseconds.
+pub type Summary {
+  Summary(moves: Int, mean_us: Int, p99_us: Int, longest_us: Int)
+}
+
+/// The mean, 99th percentile and longest of the delays.
+pub fn summary(delays delays: Delays) -> Summary {
+  let _ = delays
+  Summary(moves: 0, mean_us: 0, p99_us: 0, longest_us: 0)
 }
 
 /// The delay of each move a probe read: its stamp minus the stamp of the send of the

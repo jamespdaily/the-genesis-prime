@@ -2349,6 +2349,12 @@ pub fn control_of(timer timer: step.TimerId) -> Result(Int, Nil) {
   }
 }
 
+/// Whether a timer id is a creature's strike deadline.
+pub fn is_strike_deadline(timer timer: step.TimerId) -> Bool {
+  let _ = timer
+  False
+}
+
 /// The guard timer of a timer id, or `Error(Nil)` for one the guard never starts.
 fn guard_timer(timer timer: step.TimerId) -> Result(creature_guard.Timer, Nil) {
   let TimerId(number) = timer

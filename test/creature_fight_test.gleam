@@ -785,6 +785,39 @@ pub fn an_answer_after_the_deadline_is_left_out_of_the_go_test() -> Nil {
   assert said(answer) == [] as "the round is closed: the late answer is dropped"
 }
 
+pub fn only_a_creatures_strike_deadline_is_recorded_and_a_maps_restart_timer_is_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, ticked) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let #(_, stunned) =
+    tell(
+      state:,
+      at_ms: 1600,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let started = list.flatten([timers(aggro), timers(ticked), timers(stunned)])
+  assert list.filter(started, fn(timer) {
+      creature.is_strike_deadline(timer: timer.0)
+    })
+    == [#(timer_for(ticked, 1000), 1000)]
+    as "of the attack tick, the strike's deadline and the state's timer a creature starts, only the deadline is one"
+  assert list.filter([0, 1, 2, 3, 4, 5, 6, 7, 8], fn(number) {
+      creature.is_strike_deadline(timer: step.TimerId(number))
+    })
+    == []
+    as "a map's restart timer of a spawn numbered 0 to 8, and the creature's corpse (1), refill (2) and despawn (3) timers, are no deadline: the first is 7 + 2"
+  assert creature.is_strike_deadline(timer: step.TimerId(9))
+    as "generation 1's deadline is 9: the number alone cannot tell it from the map's restart timer of the spawn numbered 9, which only the process that armed it does"
+}
+
 pub fn a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
