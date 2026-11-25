@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # SessionStart hook: holds `caffeinate -ims -w <pid>` on the session's claude process, so the
-# Mac does not idle-sleep while builders run and the lock ends with the session. (A builder ran
-# 7.0 h of clock time, 5.9 h of it asleep, 2026-11-08.) It walks up from its own parent to the
-# first process named claude, starts one caffeinate in the background unless one already waits
-# on that pid, and prints nothing. Where there is no caffeinate or no claude process it does
-# nothing. It always exits 0.
+# Mac does not idle-sleep while builders run and the lock ends with the session. It walks up
+# from its own parent to the first process named claude, starts one caffeinate in the
+# background unless one already waits on that pid, and prints nothing. Where there is no
+# caffeinate or no claude process it does nothing. It always exits 0.
 command -v caffeinate >/dev/null || exit 0
 pid=$PPID
 while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do

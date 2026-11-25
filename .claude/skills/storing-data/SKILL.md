@@ -1,6 +1,6 @@
 ---
 name: storing-data
-description: Rules for Postgres - SQL, migrations, constraints, saves and transfers. Use for any change that reads or writes the database or changes its schema.
+description: Sets the rules for Postgres here - SQL files, migrations, constraints, saves, transfers and server-owned content tables. Use for any change that reads or writes the database or changes its schema.
 ---
 
 # Storing data
@@ -11,6 +11,6 @@ description: Rules for Postgres - SQL, migrations, constraints, saves and transf
 - A failed write reports which constraint failed, mapped to its own error, not one error for every failure.
 - Saves are versioned, so an older save never overwrites a newer one, and idempotent, so a retry is safe.
 - Moves between two owners (trade, mail with an item, auction, group loot) have one source of truth: a database transaction or a coordinator. Each transfer has a test, including failure halfway.
-- Data the server owns (spawns, patrol paths, per-creature values, vendor stock, loot, server-choice numbers such as aggro range) goes in content tables with a source and a reason on each row, loaded once into persistent terms at start; client tables stay files, and rules and formulas stay in code. (Jim, 2026-11-04: "anything that can be put into the database instead of in code is always a win".)
-- A table's or column's comment says what it is and means in plain words: no sources, scripts, paths, id lists, step names or history. (The client-rows fixture's helper docs listed grafted ids and generator paths, 2026-11-07.)
+- Data the server owns (spawns, patrol paths, per-creature values, vendor stock, loot, server-choice numbers such as aggro range) goes in content tables with a source and a reason on each row, loaded once into persistent terms at start; client tables stay files, and rules and formulas stay in code. Anything that can live in the database instead of code goes there.
+- A table's or column's comment says what it is and means in plain words: no sources, scripts, paths, id lists, step names or history.
 - A step that touches Postgres shows Jim, in its Design and closing summary, each table touched as a DDL block (columns, keys, checks), its indexes with the query each serves, and the Postgres features used (constraints, transactions, upserts, partial indexes); narrow enough for Discord.
