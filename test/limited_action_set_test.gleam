@@ -1096,6 +1096,8 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
       let assert Ok(saved) =
         limited_action_set.entering(
           unlocks: limited_action_set.unlocks(tables:),
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           tiers:,
           points_total: 16,
           level: 25,
@@ -1574,6 +1576,8 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
   let enter = fn(rows) {
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
+      amps: amp_spec.specs(tables:),
+      class_id: ClassId(support.spellslinger),
       level: level_4.level,
       book: level_4.book,
       tiers: spell_tier.tiers(tables:),
@@ -1722,6 +1726,8 @@ pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_p
       let assert Error(error) =
         limited_action_set.entering(
           unlocks: limited_action_set.unlocks(tables:),
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           level: level_4.level,
           book: level_4.book,
           tiers: spell_tier.tiers(tables:),
@@ -2014,6 +2020,8 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
     let got =
       limited_action_set.entering(
         unlocks: limited_action_set.unlocks(tables:),
+        amps: amp_spec.specs(tables:),
+        class_id: ClassId(support.spellslinger),
         tiers:,
         points_total: case_.points,
         level: case_.level,
@@ -2033,6 +2041,8 @@ pub fn entering_keeps_a_saved_tier_the_player_still_holds_and_drops_one_the_book
   let assert Error(error) =
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
+      amps: amp_spec.specs(tables:),
+      class_id: ClassId(support.spellslinger),
       tiers:,
       points_total: 41,
       level: 50,
@@ -2297,9 +2307,25 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
       qcheck.bounded_int(0, tiered_count - 1),
       qcheck.bounded_int(2, 9),
     )
-  // A drawn AMP is a set and an id of the 16 bits of the AMP lists.
+  // A drawn AMP is a set and the id of an AMP row of the player's class, the only ones the
+  // entry keeps (`amp_spec.is_of_class`).
+  let class_amps =
+    list.filter_map(eldan_augmentation.all(tables), fn(row) {
+      case row.class_id == support.spellslinger {
+        True -> Ok(row.id)
+        False -> Error(Nil)
+      }
+    })
+  assert class_amps != [] as "the client's rows hold AMPs of the Spellslinger"
   let drawn_amp =
-    qcheck.tuple2(qcheck.bounded_int(0, 3), qcheck.bounded_int(1, 65_535))
+    qcheck.tuple2(
+      qcheck.bounded_int(0, 3),
+      qcheck.map(qcheck.bounded_int(0, list.length(class_amps) - 1), fn(place) {
+        let assert [id, ..] = list.drop(class_amps, place)
+          as "the place is inside the list"
+        id
+      }),
+    )
   qcheck.given(
     qcheck.tuple3(
       qcheck.tuple4(drawn_set, drawn_set, drawn_set, drawn_set),
@@ -2366,6 +2392,8 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
       let assert Ok(saved) =
         limited_action_set.entering(
           unlocks:,
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           level:,
           book:,
           tiers: spell_tier.tiers(tables:),
@@ -2377,6 +2405,8 @@ pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
         as "a saved set is twelve rows, in set then slot order, and no set gives none; the tiers are a row for each above tier 1, in set then Spell4Base order; the AMPs are a row for each, in set then id order"
       assert limited_action_set.entering(
           unlocks:,
+          amps: amp_spec.specs(tables:),
+          class_id: ClassId(support.spellslinger),
           tiers: spell_tier.tiers(tables:),
           points_total:,
           level:,

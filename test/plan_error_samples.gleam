@@ -256,5 +256,13 @@ pub fn samples() -> List(Sample) {
       False,
       Structure,
     ),
+    Sample(
+      spell_plan.AmpUnlocksClassAbility(amp_spec.Unlocking(
+        id: EldanAugmentationId(1),
+        spell4_id: Spell4Id(2),
+      )),
+      True,
+      Unbuilt,
+    ),
   ]
 }

@@ -560,8 +560,8 @@ pub fn derivation() -> table_store.Derivation {
 
 /// Builds every spell's area from the loaded tables, or why one cannot be built;
 /// the derivation's body, and the function a test of a refused row runs on planted
-/// tables. The ability trees and their tiers must already be derived
-/// (genesis_prime/game/spell_plan `plans` and `tier_plans`).
+/// tables. The ability trees, their tiers and the AMP spells must already be derived
+/// (genesis_prime/game/spell_plan `plans`, `tier_plans` and `amp_plans`).
 pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   let started =
     list.append(

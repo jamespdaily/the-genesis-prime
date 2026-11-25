@@ -264,7 +264,8 @@ pub fn held_ids_as(
 }
 
 /// The saved sets of a player of a class at a level as the store hands them to the entry: no
-/// slot and no tier, and these AMPs (set, EldanAugmentation id), which the entry keeps as stored.
+/// slot and no tier, and these AMPs (set, EldanAugmentation id), as `entering` judges them
+/// against the AMP rows and the class.
 pub fn saved_with_amps(
   tables tables: table_store.Tables,
   class_id class_id: Int,
@@ -276,12 +277,14 @@ pub fn saved_with_amps(
     limited_action_set.entering(
       unlocks: limited_action_set.unlocks(tables:),
       tiers: spell_tier.tiers(tables:),
+      amps: amp_spec.specs(tables:),
+      class_id: player.class_id,
       points_total: player.points_total,
       level:,
       book: player.book,
       rows: with_rows(slots: [], tiers: [], amps:),
     )
-    as "AMP rows of sets 0 to 3 and ids the table holds are rows the entry keeps"
+    as "AMP rows of sets 0 to 3 and ids the table holds are rows the entry judges, not refuses"
   saved
 }
 

@@ -5,6 +5,7 @@
 import client_tables
 import database_support
 import fixture_tables
+import genesis_prime/game/amp_spec
 import genesis_prime/game/area
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/held_tier
@@ -396,14 +397,15 @@ pub fn with_paralytic_surge_tiers_2_to_8_missing(
   body(tables)
 }
 
-/// The derivations the areas' build reads, in load order: the ability tiers, the plans and the
-/// tier plans. An edit of the shared tables forgets their derived values, so a test that builds
+/// The derivations the areas' build reads, in load order: the ability tiers, the plans, the
+/// tier plans and the AMP plans. An edit of the shared tables forgets their derived values, so a test that builds
 /// the areas on edited tables runs these first.
 pub fn plan_derivations() -> List(table_store.Derivation) {
   [
     spell_tier.derivation(),
     spell_plan.derivation(area_checked: spell_area.checker),
     spell_plan.tier_derivation(area_checked: spell_area.checker),
+    spell_plan.amp_derivation(area_checked: spell_area.checker),
   ]
 }
 
@@ -439,8 +441,21 @@ fn edited(
       let assert [Integer(id), ..] = row as "a client row holds its ID first"
       #(class.schema.table, id)
     })
+  // The AMP plans start from the spell of every AMP of a playable class, and the load refuses
+  // an AMP row whose Spell4 row is missing.
+  let assert Ok(amps) = amp_spec.roots(tables: fixture_tables.shared())
+    as "the client's rows give the AMP roots"
+  let amp_spells =
+    list.append(
+      amps.spells,
+      list.map(amps.unlocking, fn(unlocking) { unlocking.spell4_id.value }),
+    )
+    |> list.map(fn(spell4_id) { #(spell4.schema.table, spell4_id) })
   let kept =
-    fixture_tables.reached(rows: given, roots: list.append(roots, classes))
+    fixture_tables.reached(
+      rows: given,
+      roots: list.flatten([roots, classes, amp_spells]),
+    )
   fixture_tables.edited(
     rows: kept,
     entries: server_entries(),

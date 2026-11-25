@@ -1066,19 +1066,24 @@ pub fn worn_wanted(
 /// from `amp_plans` (`spell_plan.amp_plans`) with no item, and the Spell4 ids of those the plans
 /// leave out, which the cast rule logs once (`cast.standing_unbuilt`). Only the active set stands
 /// (`limited_action_set.first_set`): the set a player picks into and the only one the server
-/// judges.
+/// judges. A held AMP has a row: the entry drops a stored one without (`limited_action_set.entering`)
+/// and a pick is checked against the rows (`amp_spec.check`).
 fn amp_wanted(
   entered entered: world_entry.Entered,
   tables tables: table_store.Tables,
   amp_plans amp_plans: dict.Dict(Int, spell_plan.Spell),
 ) -> #(List(cast_state.Standing), List(Int)) {
   wanted_from(
-    sources: list.filter_map(
+    sources: list.map(
       limited_action_set.held_amps(
         saved: entered.action_sets,
         set: limited_action_set.set_number(set: limited_action_set.first_set()),
       ),
-      fn(id) { eldan_augmentation.get(tables:, id:) },
+      fn(id) {
+        let assert Ok(row) = eldan_augmentation.get(tables:, id:)
+          as "a held AMP has an EldanAugmentation row: the entry and the pick check it"
+        row
+      },
     ),
     plans: amp_plans,
     spell4_id_of: fn(amp) { amp.spell4_id_augment },

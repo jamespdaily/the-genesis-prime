@@ -4,9 +4,12 @@
 //// - `EldanAugmentation.spell4IdAugment`: AMP 863 (class 5) names 59436, 770 names 56845, 220
 ////   (class 7) names 57379; the class 0 AMP 20 names 59052; the class 16 AMPs 1 to 12 name
 ////   Spell4 4 or 33, and class 16 has no Class row (`table_rows -- EldanAugmentation`).
-//// - The AMPs of class 5 and 3 whose spells share a Spell4Base with a class ability: 938 (39642,
-////   base 23955), 939 (39497, 23829), 941 (33366, 19362), 942 (33272, 19273) and 937 (38973,
-////   23337).
+//// - `Prerequisite.prerequisiteTypeId.227` (`table_rows -- Prerequisite prerequisiteTypeId0=227`):
+////   18 rows, each one condition naming an AMP id in objectId0 (comparison 1): 937 to 942 (class 5
+////   and 3, the spells of 39642, 39497, 33366, 33272 and 38973 among them, each the spell of a
+////   class ability of SpellLevel 984, 1065, 1071, 1159 and 1174 behind that Prerequisite), 40, 66,
+////   98, 196, 254, 424, 470, 520, 552, 643, 675 and 708. The client reads the condition as "the
+////   player holds the AMP in the active set" (`0x14049d760`).
 //// - `Prerequisite.prerequisiteTypeId.15` and `.50`: a gate reads a live cast of its Spell4 on
 ////   the unit; Prerequisite 37037 names 59436.
 
@@ -19,7 +22,7 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan
-import genesis_prime/table/id.{EldanAugmentationId, Spell4BaseId, Spell4Id}
+import genesis_prime/table/id.{EldanAugmentationId, Spell4Id}
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -52,36 +55,66 @@ fn rows() -> List(Row) {
     Row(33, False, "only the AMPs of class 16, which has no Class row, name it"),
     Row(
       39_642,
-      True,
-      "AMP 938 of class 5 names it, though its base is a class ability's",
+      False,
+      "AMP 938 names it and Prerequisite 24736 (type 227) names AMP 938: it unlocks a class ability",
     ),
     Row(
       39_497,
-      True,
-      "AMP 939 of class 5 names it, though its base is a class ability's",
+      False,
+      "AMP 939 names it and Prerequisite 24737 (type 227) names AMP 939: it unlocks a class ability",
     ),
     Row(
       33_366,
-      True,
-      "AMP 941 of class 3 names it, though its base is a class ability's",
+      False,
+      "AMP 941 names it and Prerequisite 24740 (type 227) names AMP 941: it unlocks a class ability",
     ),
     Row(
       33_272,
-      True,
-      "AMP 942 of class 3 names it, though its base is a class ability's",
+      False,
+      "AMP 942 names it and Prerequisite 24741 (type 227) names AMP 942: it unlocks a class ability",
     ),
     Row(
       38_973,
-      True,
-      "AMP 937 of class 5 names it, though its base is a class ability's",
+      False,
+      "AMP 937 names it and Prerequisite 24735 (type 227) names AMP 937: it unlocks a class ability",
     ),
   ]
+}
+
+/// The AMP ids the type 227 conditions of the Prerequisite rows name, read from the first
+/// condition's own columns (every one of the client's 18 rows holds one condition).
+fn amps_a_type_227_names(tables tables: table_store.Tables) -> List(Int) {
+  prerequisite_table.all(tables)
+  |> list.filter(fn(row) { row.prerequisite_type_id0 == 227 })
+  |> list.map(fn(row) { row.object_id0 })
+  |> list.sort(int.compare)
+}
+
+/// The fixture's rows with Prerequisite `id`'s objectId0 changed to `amp_id`, loaded without
+/// derivations.
+fn naming(
+  prerequisite_id prerequisite_id: Int,
+  amp_id amp_id: Int,
+) -> table_store.Tables {
+  let assert Ok(rows) =
+    fixture_tables.change_all(rows: fixture_tables.rows(), edits: [
+      #("Prerequisite", prerequisite_id, [#("objectId0", Integer(amp_id))]),
+    ])
+  let assert Ok(tables) =
+    fixture_tables.edited(
+      rows:,
+      entries: server_table.entries(),
+      requirements: [],
+      derivations: [],
+    )
+  tables
 }
 
 pub fn which_amp_spells_are_standing_roots_test() -> Nil {
   use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
-  let assert Ok(roots) = amp_spec.roots(tables:)
+  let assert Ok(found) = amp_spec.roots(tables:)
+  let roots = found.spells
   list.each(rows(), fn(row) {
     assert list.contains(roots, row.spell4_id) == row.root
       as {
@@ -96,37 +129,53 @@ pub fn which_amp_spells_are_standing_roots_test() -> Nil {
   })
   assert roots == list.unique(roots) && roots == list.sort(roots, int.compare)
     as "each root is listed once, lowest Spell4 id first"
-  assert list.length(roots) == 303
-    as "the 522 AMP rows of the six playable classes name 303 spells (EldanAugmentation)"
-  // The five AMP spells are the Spell4 of class abilities (SpellLevel 984, 1065, 1071, 1159 and
-  // 1174, level 16, each behind a Prerequisite), which the plans of the book do not hold: the
-  // AMP plans are by Spell4 id and take nothing from the book's plans by base.
-  let book = spell_plan.plans_with_later(tables)
+  // The AMPs a type 227 condition names are the ones left out as unlocking, read from the
+  // table's own columns, and each of their spells is an unlocking AMP's, not a root's.
+  let unlocking_ids =
+    list.map(found.unlocking, fn(unlocking) { unlocking.id.value })
+  assert unlocking_ids == amps_a_type_227_names(tables:)
+    as "an AMP is left out as unlocking exactly when a type 227 condition names it"
+  assert list.length(unlocking_ids) == 18
+    as "the client's 18 type 227 Prerequisite rows name 18 AMPs (Prerequisite)"
+  assert list.all(found.unlocking, fn(unlocking) {
+    !list.contains(roots, unlocking.spell4_id.value)
+  })
+    as "an unlocking AMP's spell is no root, as no other AMP names it"
+  assert list.length(roots)
+    + list.length(
+      list.unique(
+        list.map(found.unlocking, fn(unlocking) { unlocking.spell4_id.value }),
+      ),
+    )
+    == 303
+    as "the 522 AMP rows of the six playable classes name 303 spells, each a root or an unlocking AMP's (EldanAugmentation)"
+  // The five spells above are of class abilities; the plans leave their AMPs out with the
+  // reason, and the plans of the book hold none of those abilities, since the ability's own
+  // Prerequisite names a type the server does not read (type 227).
   let amp_plans = spell_plan.amp_plans(tables)
   let left_out = spell_plan.unplanned_amps(tables)
-  list.each(
-    [
-      #(23_955, 39_642),
-      #(23_829, 39_497),
-      #(19_362, 33_366),
-      #(19_273, 33_272),
-      #(23_337, 38_973),
-    ],
-    fn(shared) {
-      let #(base, amp_spell) = shared
-      let spell = int.to_string(amp_spell)
-      assert spell_plan.in_plans(plans: book, base: Spell4BaseId(base))
-        == Error(Nil)
-        as {
-          "the class ability of Spell4 "
-          <> spell
-          <> " is in no plan of the book"
-        }
-      assert dict.has_key(amp_plans, amp_spell)
-        != list.any(left_out, fn(one) { one.spell4_id == amp_spell })
-        as { "Spell4 " <> spell <> " is planned by its Spell4 id or left out" }
-    },
-  )
+  list.each([39_642, 39_497, 33_366, 33_272, 38_973], fn(amp_spell) {
+    let spell = int.to_string(amp_spell)
+    assert !dict.has_key(amp_plans, amp_spell)
+      as { "Spell4 " <> spell <> " is not an AMP plan" }
+  })
+  let assert Ok(reason) =
+    list.find(left_out, fn(one) { one.spell4_id == 39_497 })
+    as "Spell4 39497 is listed as left out"
+  assert spell_plan.describe(error: reason.error)
+    == "EldanAugmentation 939 unlocks a class ability, not built"
+    as "the reason is stated"
+  assert spell_plan.refusal_of(error: reason.error).outcome
+    == spell_plan.LeavesOut
+    as "and it leaves the spell out, not fails the load"
+  // A type 227 condition that names another AMP makes that one unlocking, and the one it left
+  // is a root again.
+  let assert Ok(changed) =
+    amp_spec.roots(tables: naming(prerequisite_id: 24_737, amp_id: 863))
+  assert !list.contains(changed.spells, 59_436)
+    as "AMP 863 named by a type 227 condition is no root"
+  assert list.contains(changed.spells, 39_497)
+    as "AMP 939, named by no type 227 condition now, is a root"
   let edit = fn(amp_id) {
     let assert Ok(rows) =
       fixture_tables.change_all(rows: fixture_tables.rows(), edits: [
@@ -162,16 +211,17 @@ pub fn which_amp_spells_are_standing_roots_test() -> Nil {
       requirements: [],
       derivations: [],
     )
-  let assert Ok(roots) = amp_spec.roots(tables:)
+  let assert Ok(found) = amp_spec.roots(tables:)
     as "AMP 20 is of class 0: no root, so its spell is never read"
-  assert !list.contains(roots, 999_001)
+  assert !list.contains(found.spells, 999_001)
 }
 
 /// The AMP spells that a kept condition of type 15 or 50 of a Prerequisite names, among the
 /// Prerequisites a Spell4Effects row uses as a gate: its apply, persistence and suspend
 /// columns and a Proxy's dataBits06 gate.
 fn gate_named(tables tables: table_store.Tables) -> List(Int) {
-  let assert Ok(roots) = amp_spec.roots(tables:)
+  let assert Ok(found) = amp_spec.roots(tables:)
+  let roots = found.spells
   let gates =
     list.flat_map(spell4_effects.all(tables), fn(effect) {
       [

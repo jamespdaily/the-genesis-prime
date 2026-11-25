@@ -13,6 +13,8 @@
 ////
 //// - A planned root whose tree holds a row no rule reads stands with the rows that are read,
 ////   as a later ability does, and is listed with that row.
+//// - An AMP that a type 227 Prerequisite condition names unlocks a class ability: it is left out
+////   with "unlocks a class ability, not built" and counts among the AMP line's left-out spells.
 
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/spell_area

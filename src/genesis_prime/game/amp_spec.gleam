@@ -20,7 +20,8 @@
 ////   another class 4; then each category whose highest picked tier is 1 or 2 needs
 ////   `tier2CostAmount00` power spent in its tier 0 AMPs (33), and one whose highest tier is 2 needs
 ////   `tier3CostAmount00` spent in its tiers 0 and 1 (33), an equal spend passing; last every AMP
-////   an AMP requires must be in the list (34). A repeated id is not refused.
+////   an AMP requires must be in the list (34). A repeated id is not refused, and a repeated tier 1
+////   id is one member of the tier 1 set, so its cost counts once.
 //// - **A gap**: a repeated tier 1 id adds its cost to its category's spent power each time it
 ////   is listed, where the client keeps the tier 1 AMPs in a set and adds each once
 ////   (`0x1403d02a0`, saved C lines 323 to 331 and 580 to 621). `limited_action_set.take` refuses
@@ -31,6 +32,7 @@
 ////
 //// A refusal's number is the client's (`ktAugmentationValidationResult`).
 
+import genesis_prime/game/prerequisite
 import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/eldan_augmentation_category
@@ -41,6 +43,7 @@ import genesis_prime/table/id.{
   GameFormulaId,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -48,6 +51,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/set
 
 /// The AMP rows, their categories and the power formula, read once at the tables' load.
 pub opaque type Specs {
@@ -130,26 +134,58 @@ pub type RootError {
   AmpSpellNotRead(id: EldanAugmentationId, spell4_id: Spell4Id)
 }
 
-/// The spell of every AMP of a playable class (`EldanAugmentation.spell4IdAugment`), each once,
-/// lowest Spell4 id first: the spells that stand while the AMP is held. Read from the tables
-/// directly, so the plans can start from them before the specs are derived.
-pub fn roots(
-  tables tables: table_store.Tables,
-) -> Result(List(Int), RootError) {
-  use spells <- result.map(
+/// The AMPs of a playable class split by what their spell does.
+pub type Roots {
+  Roots(
+    /// The spells that stand while their AMP is held, each once, lowest Spell4 id first.
+    spells: List(Int),
+    /// The AMPs a type 227 Prerequisite condition names, lowest id first: they unlock a class
+    /// ability, and their spell is not a root.
+    unlocking: List(Unlocking),
+  )
+}
+
+/// An AMP that unlocks a class ability and the spell its row names (the ability's own spell).
+pub type Unlocking {
+  Unlocking(id: EldanAugmentationId, spell4_id: Spell4Id)
+}
+
+/// The spell of every AMP of a playable class (`EldanAugmentation.spell4IdAugment`), read from the
+/// tables directly so the plans can start from them before the specs are derived. An AMP whose
+/// id a type 227 Prerequisite condition names unlocks a class ability: it is left out of the
+/// roots, with its spell, as "unlocks a class ability, not built" (`describe_unlocking`). The
+/// AMP spell stands while the AMP is held only for the rest. The ability unlock is not built.
+pub fn roots(tables tables: table_store.Tables) -> Result(Roots, RootError) {
+  let asked_for =
+    prerequisite_table.all(tables)
+    |> list.flat_map(fn(row) { prerequisite.amps_asked_for(row:) })
+    |> set.from_list
+  use rows <- result.map(
     list.try_map(
       list.filter(eldan_augmentation.all(tables), is_playable(tables:, row: _)),
       fn(row) {
         let spell4_id = eldan_augmentation.spell4_id_augment(row)
         case spell4.get(tables:, id: spell4_id) {
-          Ok(_) -> Ok(spell4_id.value)
+          Ok(_) -> Ok(#(row, spell4_id))
           Error(Nil) ->
             Error(AmpSpellNotRead(id: EldanAugmentationId(row.id), spell4_id:))
         }
       },
     ),
   )
-  spells |> list.unique |> list.sort(int.compare)
+  let #(unlocking, standing) =
+    list.partition(rows, fn(entry) { set.contains(asked_for, { entry.0 }.id) })
+  Roots(
+    spells: list.map(standing, fn(entry) { { entry.1 }.value })
+      |> list.unique
+      |> list.sort(int.compare),
+    unlocking: list.map(unlocking, fn(entry) {
+      Unlocking(id: EldanAugmentationId({ entry.0 }.id), spell4_id: entry.1)
+    })
+      |> list.sort(fn(first, second) {
+        int.compare(first.id.value, second.id.value)
+      }),
+  )
 }
 
 /// Whether the AMP's class is one a player can be: it has a Class row. The AMPs of the other
@@ -169,6 +205,26 @@ pub fn describe_root(error error: RootError) -> String {
   <> " names Spell4 "
   <> int.to_string(spell4_id.value)
   <> ", which Spell4 has no row for"
+}
+
+/// A sentence for why an AMP's spell is no root: the AMP unlocks a class ability.
+pub fn describe_unlocking(unlocking unlocking: Unlocking) -> String {
+  "EldanAugmentation "
+  <> int.to_string(unlocking.id.value)
+  <> " unlocks a class ability, not built"
+}
+
+/// Whether the AMP has a row, and one of the class: the client's check refuses an AMP with no
+/// row (35) and one of another class (4), and the entry drops a stored one it would refuse.
+pub fn is_of_class(
+  specs specs: Specs,
+  class_id class_id: ClassId,
+  id id: EldanAugmentationId,
+) -> Bool {
+  case dict.get(specs.amps, id.value) {
+    Ok(amp) -> amp.class_id == class_id.value
+    Error(Nil) -> False
+  }
 }
 
 /// The specs as a value the tables' load builds once, under the tables' key

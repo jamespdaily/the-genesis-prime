@@ -874,8 +874,10 @@ pub fn an_amp_picked_in_the_builder_is_answered_with_0x1a3_and_a_refused_one_cha
   login_support.stop(started)
   // The Stalker case: a level 10 Stalker picks the chain 770, 771, 772 and 863 and presses
   // Stagger (Spell4Base 23173, bag index 2). The answer is followed by the starts of the AMPs'
-  // spells (56845, 56846, 56847 and 59436), and Stagger's fourth phase starts 79220 and 79229,
-  // the two Proxies Prerequisite 37037 gates on 59436 (the phases run with no foe struck).
+  // spells (56845, 56846, 56847 and 59436), and Stagger's fourth phase starts 79229, the Proxy
+  // Prerequisite 37037 gates on 59436. The other Proxy it gates, 79220, starts on a struck unit
+  // and a strike can be deflected on a seed the repeat job salts, so the cast rule's test holds
+  // 79220 and this one asserts 79229 alone.
   let time = driven_time.new()
   let started =
     world_with_the_markers_creatures(tables: fixture_tables.shared(), time:)

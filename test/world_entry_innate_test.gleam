@@ -404,6 +404,18 @@ pub fn the_wanted_list_holds_the_amp_spells_of_set_0_in_id_order_after_the_worn_
       [],
     ),
     #("no AMP adds nothing", entered_of(5, []), [45_057, 82_325], []),
+    #(
+      "a stored AMP with no EldanAugmentation row (60000) is dropped at entry, not wanted",
+      entered_of(5, [#(0, 863), #(0, 60_000)]),
+      [45_057, 82_325, 59_436],
+      [],
+    ),
+    #(
+      "a stored AMP of another class (220 is class 7's, the player is class 5) is dropped at entry",
+      entered_of(5, [#(0, 220), #(0, 770)]),
+      [45_057, 82_325, 56_845],
+      [],
+    ),
   ]
   |> list.each(fn(row) {
     let #(why, entered, expected, left_out) = row
