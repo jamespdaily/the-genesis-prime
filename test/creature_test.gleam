@@ -2991,25 +2991,9 @@ pub fn a_creature_retiring_with_a_despawn_pending_stops_now_test() -> Nil {
 
 pub fn a_run_only_creature_that_is_despawned_stops_at_its_corpse_timer_test() -> Nil {
   use <- owned_test.run(5000)
-  let beast = spawn_support.battle_beast(number: -1, x: 0.0)
-  let #(state, _) =
-    feed(
-      state: creature_from(
-        source: spawn_source.RunOnly(spawn_source.Summoned(
-          id: SpawnId(-1),
-          creature_id: beast.creature_id,
-          level: None,
-          place: beast.place,
-        )),
-        spawn: beast,
-        viewers: [ConnectionId(2), ConnectionId(5)],
-      ),
-      at_ms: 5000,
-      event: OwnEvent(Started),
-    )
   let #(state, removed) =
     told(
-      state:,
+      state: run_only_by_two(),
       at_ms: 6000,
       message: despawn_at(delay_ms: 0, went_at_ms: 6000),
     )

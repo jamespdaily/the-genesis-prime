@@ -514,7 +514,7 @@ fn started_by(
 }
 
 /// The Battle Beast of the scenes, which every creature of them is.
-fn the_beast() -> spawn.Spawn {
+pub fn the_beast() -> spawn.Spawn {
   spawn_support.battle_beast(number: 1, x: 0.0)
 }
 

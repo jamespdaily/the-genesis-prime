@@ -37,7 +37,6 @@ import legal_order_support.{
 }
 import map_spawn_support as spawns
 import owned_test
-import spawn_support
 import world_watch_support
 
 /// The unit id the Battle Beast has in these scenes: the first player's is 1 and the
@@ -51,7 +50,7 @@ const first_player = 2
 const viewer = 1
 
 fn beast() -> Spawn {
-  spawn_support.battle_beast(number: 1, x: 0.0)
+  legal_order_support.the_beast()
 }
 
 /// The Battle Beast, started for the first player, its first snapshot taken by the map: a
