@@ -14,7 +14,9 @@ import genesis_prime/client_connection.{
   Appeared, CastFinished, ForStay, FromMap, FromStore, LookChanged, Moving,
   PeerNews, PropertiesChanged, Removed, SentByMap, SentByPeer, TellMoved,
 }
-import genesis_prime/connection/frame.{Frame}
+import genesis_prime/connection/cipher
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/client_casts
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state as connection_state
@@ -30,6 +32,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties
+import genesis_prime/game/world_entry
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
@@ -88,8 +91,10 @@ import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/result
+import gleam/set
+import gleam/string
 import map_support
 import owned_test
 import place_support
@@ -3239,4 +3244,266 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
     connection_state.entered_of(unshown_properties.status)
   assert after.shown == before.shown
     as "a PropertiesChanged news for a player not shown changes nothing"
+}
+
+/// What a unit's removal writes to the client, as the tests tell it apart: the finish of a
+/// cast, the 0x355 of a unit, or any other frame by its opcode.
+type RemovalWrote {
+  CastFinish(cast_id: Int)
+  UnitRemoved(unit_id: Int)
+  RemovalWroteOther(opcode: Int)
+}
+
+fn removal_wrote(frames frames: List(Frame)) -> List(RemovalWrote) {
+  list.map(frames, fn(frame) {
+    case frame.message_id {
+      0x07FE -> {
+        let assert Ok(finished) = spell_finished.decode(frame.body)
+          as "a 0x7fe the viewer wrote decodes"
+        CastFinish(cast_id: finished.cast_id)
+      }
+      0x0355 -> {
+        let assert Ok(destroyed) = unit_destroyed.decode(frame.body)
+          as "a 0x355 the viewer wrote decodes"
+        UnitRemoved(unit_id: destroyed.unit_id)
+      }
+      opcode -> RemovalWroteOther(opcode:)
+    }
+  })
+}
+
+/// How a unit's removal reaches the viewer: as the owner's `Removed` news, as the map's
+/// `Gone`, or as a call of the removal function with the casts it is to keep.
+type Remover {
+  ByRemovedNews
+  ByMapsGone
+  Directly(keeping: List(Int))
+}
+
+/// The unit shown to the player of the tests, and the casts of the unit its client holds.
+type RemovedScene {
+  RemovedScene(
+    shown: Bool,
+    written: List(Int),
+    borrowed: List(Int),
+    kept_when_unseen: List(Int),
+  )
+}
+
+fn remover_name(remover: Remover) -> String {
+  case remover {
+    ByRemovedNews -> "by a removal news"
+    ByMapsGone -> "by the map's gone"
+    Directly(keeping:) ->
+      "by the function, keeping "
+      <> string.join(list.map(keeping, int.to_string), ", ")
+  }
+}
+
+const removed_unit_id = 40
+
+/// The player in the world, its client holding what the scene says of unit 40: the casts the
+/// unit's own frames started, the casts an ally listed, and a held change of a spell that
+/// outlives its caster's sight for each cast in `kept_when_unseen`.
+fn viewer_of(scene scene: RemovedScene) -> connection_state.Session {
+  let entered = world_entry_support.entered_after(clock_origin_ms: 600)
+  let casts =
+    list.fold(scene.written, client_casts.new(), fn(casts, cast_id) {
+      client_casts.written(casts:, cast_id:, caster_unit_id: removed_unit_id)
+    })
+  let casts =
+    list.fold(scene.borrowed, casts, fn(casts, cast_id) {
+      client_casts.borrow(casts:, cast_id:, ally_unit_id: removed_unit_id)
+    })
+  let held =
+    list.fold(scene.kept_when_unseen, held_changes.new(), fn(held, cast_id) {
+      held_changes.started(
+        held:,
+        by: ConnectionId(3),
+        unit_id: removed_unit_id,
+        source: unit_properties.Source(
+          cast_id:,
+          effect_id: Spell4EffectsId(62_024),
+        ),
+        sight: held_changes.KeptWhenUnseen,
+        spell4_id: Spell4Id(32_823),
+        effect: unit_casts.HeldEffect(
+          effect_id: Spell4EffectsId(62_024),
+          starts_ms: 1000,
+          ends: unit_casts.EndsAt(ms: 11_000),
+        ),
+        trigger: None,
+      ).0
+    })
+  let entered =
+    world_entry.Entered(
+      ..entered,
+      shown: case scene.shown {
+        True ->
+          dict.insert(
+            entered.shown,
+            removed_unit_id,
+            shown.ShownPlayer(state: player_state_support.a_player()),
+          )
+        False -> entered.shown
+      },
+      client_casts: casts,
+      held:,
+    )
+  game_connection_support.session_in(status: connection_state.InWorld(
+    holder: game_connection_support.holder(),
+    entered:,
+  ))
+}
+
+pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller_and_keeps_only_what_a_removal_keeps_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Client fact `cast.target_node_end`: the client keeps a cast of a spell with
+  // propertyFlags 0x100 when its caster's unit is removed and keeps no other, so the viewer
+  // writes the 0x7fe of each cast of the unit it started, in cast id order, before the
+  // unit's 0x355, except the casts a held change keeps, which it holds with no caster
+  // instead. A removal news keeps those; the map's `Gone` ends the held changes too, so it
+  // keeps none. A cast an ally listed is never finished by the unit's frames. Each row: the
+  // unit as its client holds it, how it is removed, what is written, and the casts still
+  // held (cast ids 100 to 103) and orphaned after. The rows of the two callers are the
+  // output of the arms before the removal was one function.
+  let unit = removed_unit_id
+  let casts =
+    RemovedScene(shown: True, written: [], borrowed: [], kept_when_unseen: [])
+  let two_written = RemovedScene(..casts, written: [102, 101])
+  let one_kept =
+    RemovedScene(..casts, written: [101, 100], kept_when_unseen: [100])
+  let one_borrowed = RemovedScene(..casts, written: [101], borrowed: [103])
+  let not_shown = RemovedScene(..casts, shown: False)
+  let rows = [
+    #(
+      "a shown unit with no cast is written its 0x355 only, by each caller",
+      casts,
+      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [UnitRemoved(unit)],
+      [],
+      [],
+    ),
+    #(
+      "two written casts are finished in cast id order before the 0x355, by each caller",
+      two_written,
+      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [CastFinish(101), CastFinish(102), UnitRemoved(unit)],
+      [],
+      [],
+    ),
+    #(
+      "a removal news keeps the cast a held change keeps: no finish, and the cast is held with no caster",
+      one_kept,
+      [ByRemovedNews, Directly(keeping: [100])],
+      [CastFinish(101), UnitRemoved(unit)],
+      [100],
+      [100],
+    ),
+    #(
+      "the map's gone finishes every written cast, the kept one too, and holds none",
+      one_kept,
+      [ByMapsGone, Directly(keeping: [])],
+      [CastFinish(100), CastFinish(101), UnitRemoved(unit)],
+      [],
+      [],
+    ),
+    #(
+      "a cast an ally listed is not finished by the unit, and the unit no longer holds it",
+      one_borrowed,
+      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [CastFinish(101), UnitRemoved(unit)],
+      [],
+      [],
+    ),
+    #(
+      "a unit that is not shown writes nothing",
+      not_shown,
+      [ByRemovedNews, ByMapsGone, Directly(keeping: [])],
+      [],
+      [],
+      [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, scene, removers, written, held_after, orphans_after) = row
+    list.each(removers, fn(remover) {
+      let reason = reason <> " (" <> remover_name(remover) <> ")"
+      let session = viewer_of(scene:)
+      let assert Some(entered) = connection_state.entered_of(session.status)
+        as "the player is in the world"
+      let now = step.Now(monotonic_ms: 0, filetime: 0)
+      let #(session, effects, ended) = case remover {
+        ByRemovedNews -> {
+          let assert client_connection.Continue(session:, effects:) =
+            viewers.viewer_takes(
+              session:,
+              now:,
+              entered:,
+              news: PeerNews(unit_id: unit, news: Removed),
+            )
+            as reason
+          #(session, effects, [])
+        }
+        ByMapsGone -> {
+          let assert client_connection.Continue(session:, effects:) =
+            viewers.map_sent(
+              session:,
+              now:,
+              entered:,
+              notice: map.Gone(unit_id: unit),
+            )
+            as reason
+          #(session, effects, [])
+        }
+        Directly(keeping:) -> {
+          let #(session, removal) =
+            viewers.unit_removed(
+              session:,
+              now:,
+              entered:,
+              unit_id: unit,
+              keeping:,
+            )
+          #(session, removal.written, removal.ended)
+        }
+      }
+      assert removal_wrote(frames: game_connection_support.heard(
+          taken: step.Effects(effects:),
+          cipher: cipher.base(),
+        ))
+        == written
+        as reason
+      assert ended == []
+        as { reason <> ": the player's casts hold no node on the unit" }
+      let assert Some(after) = connection_state.entered_of(session.status)
+        as "the player is still in the world"
+      assert list.filter([100, 101, 102, 103], fn(cast_id) {
+          client_casts.is_held(casts: after.client_casts, cast_id:)
+        })
+        == held_after
+        as { reason <> ": the casts the client still holds" }
+      assert client_casts.orphans(casts: after.client_casts) == orphans_after
+        as { reason <> ": the casts held with no caster" }
+      assert !dict.has_key(after.shown, unit)
+        as { reason <> ": the unit is no longer shown" }
+    })
+  })
+  // The map's `Gone` marks the unit gone whether or not it was shown, so a 0x262 of the
+  // owner that ended, which lands after it, shows no ghost.
+  list.each([casts, not_shown], fn(scene) {
+    let session = viewer_of(scene:)
+    let assert Some(entered) = connection_state.entered_of(session.status)
+      as "the player is in the world"
+    let assert client_connection.Continue(session:, ..) =
+      viewers.map_sent(
+        session:,
+        now: step.Now(monotonic_ms: 0, filetime: 0),
+        entered:,
+        notice: map.Gone(unit_id: unit),
+      )
+    let assert Some(after) = connection_state.entered_of(session.status)
+      as "the player is still in the world"
+    assert set.contains(after.gone, unit)
+  })
 }

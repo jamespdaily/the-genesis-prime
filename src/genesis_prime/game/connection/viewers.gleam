@@ -1355,6 +1355,27 @@ fn written_cast_frames(
   )
 }
 
+/// What a unit's removal gives the client and the cast rule, in the order they go out: the
+/// frames written to the client (the finish of each cast, then the unit's 0x355), then what
+/// the cast rule asks when the player's casts lose the unit.
+pub type Removal {
+  Removal(
+    written: List(Effect(ConnectionEffect(Request))),
+    ended: List(Effect(ConnectionEffect(Request))),
+  )
+}
+
+/// A stand-in: removes nothing.
+pub fn unit_removed(
+  session session: Session,
+  now _now: Now,
+  entered _entered: world_entry.Entered,
+  unit_id _unit_id: Int,
+  keeping _keeping: List(Int),
+) -> #(Session, Removal) {
+  #(session, Removal(written: [], ended: []))
+}
+
 /// 0x7fe for each cast of the unit that this client was sent the start of and no
 /// finish, in cast id order, written before the unit's 0x355: the client keeps a
 /// cast that never gets its 0x7fe live (`cast.no_answer`), and a cast id used
