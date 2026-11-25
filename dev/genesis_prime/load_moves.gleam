@@ -10,8 +10,8 @@
 //// (`genesis_prime/load_run`): a migrated database empty of accounts (the run
 //// seeds `load-0`, `load-1`, ...), the client's tables and ground, the server in a
 //// node of its own and the players in this one, limited to the clients' schedulers
-//// (`load_run.start_clients`). The server listens on ports of its own (`sts_port`,
-//// `auth_port`, `game_port`), not the client's defaults, so a server may be running.
+//// (`load_run.start_clients`). The server listens on ports the operating system picks
+//// (`load_run.on_free_ports`), so another server may be running.
 //// All the players log in, create a character and enter the same map, where
 //// every character starts at the same place, so each is in sight of every other;
 //// each then sends a 0x0637 every 125 ms (`genesis_prime/load_player`, walking)
@@ -41,9 +41,6 @@ import genesis_prime/load_player
 import genesis_prime/load_run
 import genesis_prime/load_sample
 import genesis_prime/load_step
-import genesis_prime/login/auth_connection
-import genesis_prime/message/bit_stream.{Endpoint}
-import genesis_prime/server
 import genesis_prime/step/runtime
 import gleam/erlang/process
 import gleam/float
@@ -70,14 +67,6 @@ const probes_in_world_ms = 6000
 
 const probe_window_ms = 10_000
 
-/// The server's ports, which are not the client's defaults (6600, 23115 and 24000):
-/// another server, a play container's forwards for one, may hold those.
-const sts_port = 16_600
-
-const auth_port = 33_115
-
-const game_port = 34_000
-
 /// What the map showed, as the server's node sampled it: the longest message
 /// queue, the sum of the queue of each sample, how many samples there were and
 /// how many of them found the map's process running.
@@ -103,7 +92,7 @@ pub fn main() -> Nil {
   let peer = load_run.start_peer()
   let settings =
     load_run.in_peer(peer, fn() {
-      load_run.start_server_with(change: on_its_own_ports)
+      load_run.start_server_with(change: load_run.on_free_ports)
     })
   let assert Ok(started) = pog.start(genesis_prime.pool())
     as "the pool for the accounts started"
@@ -112,7 +101,7 @@ pub fn main() -> Nil {
   load_player.seed(pool: started.data, accounts:)
   load_player.seed(pool: started.data, accounts: probe_accounts)
   load_run.in_peer(peer, fn() { start_probe(settings.world.map_supervisor) })
-  let ports = load_run.ports_of(settings)
+  let ports = load_run.in_peer(peer, fn() { load_run.ports_of(settings) })
   let begin_ms = runtime.now().monotonic_ms
   let probed = process.new_subject()
   list.each(probe_accounts, fn(account) {
@@ -166,23 +155,18 @@ pub fn main() -> Nil {
         load_move_delay.reported(report: probed, within_ms: 1000)
       }),
     )
+  let summary = load_move_delay.summary(delays:)
   io.println(
     "mover-to-viewer delay, from a probe's send to another probe's receipt among "
     <> int.to_string(players)
     <> " walkers: mean "
-    <> per(
-      total: int.sum(delays.microseconds),
-      count: list.length(delays.microseconds) * 1000,
-    )
+    <> per(total: summary.mean_us, count: 1000)
     <> " ms, 99th percentile "
-    <> per(
-      total: load_step.percentile(values: delays.microseconds, percent: 99),
-      count: 1000,
-    )
+    <> per(total: summary.p99_us, count: 1000)
     <> " ms, longest "
-    <> per(total: list.fold(delays.microseconds, 0, int.max), count: 1000)
+    <> per(total: summary.longest_us, count: 1000)
     <> " ms, over "
-    <> int.to_string(list.length(delays.microseconds))
+    <> int.to_string(summary.moves)
     <> " moves read of "
     <> int.to_string(delays.expected)
     <> " sent to a probe ("
@@ -190,34 +174,6 @@ pub fn main() -> Nil {
     <> " probes, one move every 125 ms for "
     <> int.to_string(probe_window_ms / 1000)
     <> " s)",
-  )
-}
-
-/// The server's settings with its listeners on `sts_port`, `auth_port` and
-/// `game_port`, and the auth server handing the client to the game port.
-fn on_its_own_ports(settings: server.Settings) -> server.Settings {
-  let login = settings.login
-  let auth_settings = login.auth.settings
-  server.Settings(
-    ..settings,
-    login: server.Login(
-      sts: server.Served(..login.sts, port: sts_port),
-      auth: server.Served(
-        ..login.auth,
-        port: auth_port,
-        settings: auth_connection.Settings(
-          ..auth_settings,
-          realm: auth_connection.Realm(
-            ..auth_settings.realm,
-            game_server: Endpoint(
-              ..auth_settings.realm.game_server,
-              port: game_port,
-            ),
-          ),
-        ),
-      ),
-    ),
-    game: server.Served(..settings.game, port: game_port),
   )
 }
 

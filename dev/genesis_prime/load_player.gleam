@@ -430,6 +430,14 @@ fn keep_playing(
   }
 }
 
+/// Where the characters start in World 3460 (WorldLocation2 row 51596) and where a
+/// walking player walks out and back along x.
+pub const walk_x = 29.128599166870117
+
+pub const walk_y = -853.87158203125
+
+pub const walk_z = -560.18798828125
+
 /// The 0x0637 of a walking player's `moves`th step: one kind 2 command at a
 /// place a few units along x from where the characters start (World 3460, the
 /// WorldLocation2 row 51596 position), out and back.
@@ -441,9 +449,9 @@ fn step_of_the_walk(moves: Int) -> BitArray {
   }
   game_client.moves_body(client_clock: moves * move_every_ms, commands: [
     game_client.position_command(
-      x: 29.128599166870117 +. int.to_float(offset),
-      y: -853.87158203125,
-      z: -560.18798828125,
+      x: walk_x +. int.to_float(offset),
+      y: walk_y,
+      z: walk_z,
     ),
   ])
 }

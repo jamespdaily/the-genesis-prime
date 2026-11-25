@@ -30,6 +30,7 @@ import game_client
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/load_player.{type Account}
 import genesis_prime/load_sample
+import genesis_prime/load_step
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_movement
 import genesis_prime/step/runtime
@@ -46,10 +47,6 @@ import mug
 
 /// How often a probe sends a move: the walkers' and the client's.
 const move_every_ms = 125
-
-/// The z of the walkers' moves (World 3460, WorldLocation2 row 51596), which a
-/// probe's step `k` adds 0.01 `k` to.
-const base_z = -560.18798828125
 
 /// What a probe saw of the others and sent itself, when it finished: its unit, the
 /// microsecond it stamped for the send of each step, and the moves of other probes it
@@ -150,9 +147,9 @@ fn probe(
           client_clock: step * move_every_ms,
           commands: [
             game_client.position_command(
-              x: 29.128599166870117 +. int.to_float(step % 10),
-              y: -853.87158203125,
-              z: base_z +. int.to_float(step) *. 0.01,
+              x: load_player.walk_x +. int.to_float(step % 10),
+              y: load_player.walk_y,
+              z: load_player.walk_z +. int.to_float(step) *. 0.01,
             ),
           ],
         ),
@@ -180,7 +177,7 @@ fn probe(
       let stamped_us = load_sample.microseconds()
       let seen =
         list.filter_map(frames, fn(frame) {
-          read_step(frame)
+          step_of(frame)
           |> result.map(fn(moved) { #(moved.0, moved.1, stamped_us) })
         })
       probe(
@@ -199,11 +196,6 @@ fn probe(
 /// position has z above the walkers' by a whole number of hundredths, which no walker's
 /// move has.
 pub fn step_of(frame: Frame) -> Result(#(Int, Int), Nil) {
-  let _ = #(frame, read_step)
-  Error(Nil)
-}
-
-fn read_step(frame: Frame) -> Result(#(Int, Int), Nil) {
   use <- bool.guard(when: frame.message_id != 0x0638, return: Error(Nil))
   use moved <- result.try(
     unit_movement.decode(frame.body) |> result.replace_error(Nil),
@@ -217,7 +209,7 @@ fn read_step(frame: Frame) -> Result(#(Int, Int), Nil) {
   |> list.last
   |> result.try(fn(placed) {
     let #(_x, _y, z) = game_client.standing(placed)
-    let step = float.round({ z -. base_z } /. 0.01)
+    let step = float.round({ z -. load_player.walk_z } /. 0.01)
     case step >= 1 {
       True -> Ok(#(moved.unit_id, step))
       False -> Error(Nil)
@@ -231,10 +223,16 @@ pub type Summary {
   Summary(moves: Int, mean_us: Int, p99_us: Int, longest_us: Int)
 }
 
-/// The mean, 99th percentile and longest of the delays.
+/// The mean, 99th percentile (nearest rank, `load_step.percentile`) and longest of the
+/// delays, 0 for no move.
 pub fn summary(delays delays: Delays) -> Summary {
-  let _ = delays
-  Summary(moves: 0, mean_us: 0, p99_us: 0, longest_us: 0)
+  let moves = list.length(delays.microseconds)
+  Summary(
+    moves:,
+    mean_us: int.sum(delays.microseconds) / int.max(moves, 1),
+    p99_us: load_step.percentile(values: delays.microseconds, percent: 99),
+    longest_us: list.fold(delays.microseconds, 0, int.max),
+  )
 }
 
 /// The delay of each move a probe read: its stamp minus the stamp of the send of the

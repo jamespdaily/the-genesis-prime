@@ -11,23 +11,27 @@
 //// ```
 ////
 //// The recorder is the `Scheduler` of the server's `ServiceTime` (the service shell's
-//// `schedule`). It gives every timer that is not a creature's strike deadline to the
-//// operating system's timer unchanged; a strike deadline (`creature.gleam`'s
-//// `timer_id`: `7 * generation + 2`, from generation 1) is set to fire at the recorder
-//// instead, which stamps the firing and sends the shell its `Elapsed` at once, so the
-//// shell takes the same message a moment later. A deadline is told by the process that
-//// armed it, which is the creature's own: the scheduler runs in the shell.
+//// `schedule`). It gives every timer that is not numbered like a creature's strike
+//// deadline (`creature.is_strike_deadline`) to the operating system's timer unchanged;
+//// one that is is set to fire at the recorder instead, which stamps the firing and
+//// sends the shell its `Elapsed` at once, so the shell takes the same message a moment
+//// later. The number does not tell whose the timer is: the map arms a timer numbered by
+//// the spawn for its restart, which can carry a deadline's number. So the recorder keeps
+//// the process that armed each one (the scheduler runs in the shell), and a caller
+//// picks the creatures' by their processes (`of_creature`).
 ////
 //// A deadline's closure is one of: still open, cancelled (the round closed by an
-//// answer, or by a death or a control, which the shell's `CancelServiceTimer` does not
-//// tell apart), or fired. A firing the shell cancelled before it took the firing is
-//// still told as fired when the recorder had already stamped it: the stamp and the
-//// cancel are two messages to the recorder, so the run cannot tell them apart.
+//// answer, a death, a crowd-control state, the leash or an interrupt, which the shell's
+//// `CancelServiceTimer` does not tell apart), or fired. A firing the shell cancelled
+//// before it took the firing is still told as fired when the recorder had already
+//// stamped it: the stamp and the cancel are two messages to the recorder, so the run
+//// cannot tell them apart.
 
 import genesis_prime/connection/script.{type Elapsed, type Scheduler, Elapsed}
 import genesis_prime/load_sample
-import genesis_prime/step.{type TimerId, TimerId}
+import genesis_prime/step.{type TimerId}
 import genesis_prime/step/timer
+import genesis_prime/world_map/creature
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/erlang/reference.{type Reference}
@@ -42,8 +46,9 @@ pub type Closure {
   Fired(at_us: Int)
 }
 
-/// A strike deadline of a creature: when it was armed, when it falls due, and how
-/// it ended, on the monotonic clock in microseconds.
+/// A timer numbered like a strike deadline: `creature`, the process that armed it (a
+/// creature's, when the deadline is), when it was armed, when it falls due, and how it
+/// ended, on the monotonic clock in microseconds.
 pub type Deadline {
   Deadline(creature: Pid, armed_us: Int, due_us: Int, closure: Closure)
 }
@@ -75,7 +80,7 @@ pub fn start() -> Recorder {
 }
 
 /// The scheduler to give the server's `ServiceTime`: the operating system's timer
-/// for every timer but a creature's strike deadline, which the recorder sees.
+/// for every timer not numbered like a creature's strike deadline, which the recorder sees.
 pub fn scheduler(recorder recorder: Recorder) -> Scheduler {
   fn(
     shell: Subject(Elapsed),
@@ -83,7 +88,7 @@ pub fn scheduler(recorder recorder: Recorder) -> Scheduler {
     reference: Reference,
     after_ms: Int,
   ) -> timer.Cancel {
-    case is_strike_deadline(timer) {
+    case creature.is_strike_deadline(timer:) {
       False -> script.operating_system_timer(shell, timer, reference, after_ms)
       True -> {
         let armed_us = load_sample.microseconds()
@@ -117,7 +122,8 @@ pub fn scheduler(recorder recorder: Recorder) -> Scheduler {
   }
 }
 
-/// Every strike deadline armed so far, whatever process armed it, in no order.
+/// Every timer numbered like a strike deadline armed so far, whatever process armed it,
+/// in no order.
 pub fn deadlines(recorder recorder: Recorder) -> List(Deadline) {
   let reply = process.new_subject()
   process.send(recorder.events, Collect(reply:))
@@ -176,11 +182,4 @@ fn record(
       record(events:, deadlines:)
     }
   }
-}
-
-/// Whether the timer is a creature's strike deadline: 2 above a multiple of 7,
-/// from generation 1 (`7 * generation + 2`).
-fn is_strike_deadline(timer: TimerId) -> Bool {
-  let TimerId(number) = timer
-  number >= 9 && number % 7 == 2
 }

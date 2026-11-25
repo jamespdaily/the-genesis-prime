@@ -123,18 +123,7 @@ fn now_us() -> Int {
 
 pub fn main() -> Nil {
   let started_at = now()
-  let settings =
-    load_run.start_server_with(change: fn(settings) {
-      let login = settings.login
-      server.Settings(
-        ..settings,
-        login: server.Login(
-          sts: server.Served(..login.sts, port: 0),
-          auth: server.Served(..login.auth, port: 0),
-        ),
-        game: server.Served(..settings.game, port: 0),
-      )
-    })
+  let settings = load_run.start_server_with(change: load_run.on_free_ports)
   io.println(
     "the server started in "
     <> int.to_string(now() - started_at)

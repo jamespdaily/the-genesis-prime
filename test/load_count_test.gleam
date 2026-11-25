@@ -27,6 +27,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import gleam/bool
 import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/int
@@ -68,19 +69,31 @@ fn counted(
   )
 }
 
+/// Returns when the clock has run `microseconds` on.
+fn clock_runs_on(microseconds microseconds: Int) -> Nil {
+  let until_us = load_sample.microseconds() + microseconds
+  clock_reaches(until_us:)
+}
+
+fn clock_reaches(until_us until_us: Int) -> Nil {
+  use <- bool.guard(when: load_sample.microseconds() >= until_us, return: Nil)
+  clock_reaches(until_us:)
+}
+
 pub fn an_answer_stamped_before_its_send_is_in_the_round_it_closed_whatever_the_walkers_pause_test() -> Nil {
   use <- owned_test.run(5000)
   // The creature takes the answer, cancels the round and stamps the closure while the
   // send runs; a walker that is not scheduled again until after that stamps its
   // arrival after the closure if it stamps after the send. Each row is how long the
-  // creature takes, in milliseconds.
-  list.each([0, 2, 20], fn(creature_takes_ms) {
+  // walker is paused after the send, in microseconds.
+  list.each([1, 2000, 20_000], fn(pause_us) {
     let creature = creature()
     let closed = process.new_subject()
     let #(arrived_us, delivered) =
       load_round.stamped_send(send: fn() {
-        process.sleep(creature_takes_ms)
+        clock_runs_on(microseconds: 1)
         process.send(closed, load_sample.microseconds())
+        clock_runs_on(microseconds: pause_us)
         True
       })
     let assert Ok(closed_us) = process.receive(closed, within: 0)
@@ -89,22 +102,31 @@ pub fn an_answer_stamped_before_its_send_is_in_the_round_it_closed_whatever_the_
     assert arrived_us <= closed_us
       as "the arrival is stamped before the send, so it is never after the closure"
     let rounds =
-      counted(
-        creature:,
+      load_round.rounds_of(
         answers: [
           Answer(
             creature:,
-            taken_us: closed_us - 2_000_000,
+            taken_us: closed_us - 400_000,
             sent_us: closed_us - 1000,
             arrived_us:,
             delivered:,
           ),
         ],
+        strikers: dict.from_list([#(creature, 7)]),
         marks: [],
-        closure: load_deadline.Cancelled(at_us: closed_us),
+        deadlines: [
+          Deadline(
+            creature:,
+            armed_us: closed_us - 500_000,
+            due_us: closed_us + 500_000,
+            closure: load_deadline.Cancelled(at_us: closed_us),
+          ),
+        ],
       )
-    assert rounds.lost == 0 && rounds.late == 0
+    assert rounds.unmatched == 0 && rounds.lost == 0 && rounds.late == 0
       as "an answer that closed its round is in it, not lost"
+    assert rounds.closed == Closed(..load_round.no_closures, answer: 1)
+      as "and the round is closed by the answer"
   })
 }
 

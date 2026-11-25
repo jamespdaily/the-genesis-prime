@@ -2,26 +2,32 @@
 //// walk among a pack of creatures that fight them.
 ////
 //// ```
-//// gleam run -m genesis_prime/load_fight                    50 walkers
-//// gleam run -m genesis_prime/load_fight -- 200             200 walkers
-//// gleam run -m genesis_prime/load_fight -- 200 delayed 1100
-////                      walker 1's answers reach the creature 1,100 ms after it sent them
-//// gleam run -m genesis_prime/load_fight -- 200 held 1100
-////                      walker 1 sends each answer 1,100 ms after the strike reached it
+//// gleam run -m genesis_prime/load_fight -- [WALKERS] [WORD ...]
 //// ```
 ////
+//// WALKERS is 50 when left out. The words, in any order:
+//// - `mutual`: each walker also strikes each creature that threatens it, one strike a
+////   second (a blow of 1), every fifth with Stagger's stun (Spell4Effects 83827), so
+////   the creatures' rounds also end by a death or a state breaking the charge;
+//// - `leaving`: each fourth walker is moved 2,000 units out of the creatures' sight and
+////   leash from the tenth second to the twentieth, so the creatures lose a target;
+//// - `delayed MS`: walker 1's answers reach the creature MS ms after it sent them;
+//// - `held MS`: walker 1 sends each answer MS ms after the strike reached it;
+//// - `unrecorded`: the operating system's timers for every deadline, as the server runs
+////   without the recorder, and the strike rounds are not counted: the run that shows
+////   what the recorder costs.
+////
 //// The environment is the server's own: PGHOST, PGPORT, PGUSER, PGPASSWORD and
-//// PGDATABASE name a migrated database, whose 27 Virtual Defense Daguns of
-//// migration 0008 stand in World 3460; GENESIS_TABLE_DIR names the client's tables
-//// and GENESIS_TERRAIN_DIR the ground's. The server listens on no port of its own
-//// (port 0), so another server may be running.
+//// PGDATABASE name a migrated database, whose 27 Virtual Defense Daguns (Creature2
+//// 73465) of migration 0008 stand in World 3460; GENESIS_TABLE_DIR names the client's
+//// tables and GENESIS_TERRAIN_DIR the ground's. The server listens on no port of its
+//// own (port 0), so another server may be running.
 ////
 //// The server's whole tree runs in this node, with the strike deadlines recorded
 //// (`genesis_prime/load_deadline`). The walkers are processes of this node that are
 //// connections in the server's registry: each is a Dominion player (faction 166, to
-//// which the Daguns are hostile) that joins the map at the centre of the pack (the
-//// hostile spawns of the creature that has the most of them: the Daguns), tells it
-//// Ready, and for `hold_ms` sends a `Moved` with its next move sequence number every
+//// which the Daguns are hostile) that joins the map at the centre of the Daguns, tells
+//// it Ready, and for `hold_ms` sends a `Moved` with its next move sequence number every
 //// 125 ms, walking at 7 units a second within 40 units of the centre. It does what a
 //// player's connection does in a fight: it tells each creature that threatens it each
 //// move (`TargetMoved`), answers each strike as landed, and forgets a creature that
@@ -36,22 +42,20 @@
 ////   creature;
 //// - what the creatures sent the walkers: each news of a unit (a send to one viewer),
 ////   in all and a second, beside the map's notices;
-//// - the strike rounds: each walker stamps a strike's answer when it hands it over
-////   and when the creature has it, and the recorded deadline of the creature's round
-////   gives when the round was armed, fell due and closed. An answer is **lost** when
-////   it was sent before the round's deadline fell due and was not in the round when it
-////   closed; **late** when it was sent at or after the deadline and so was not in the
-////   round; the rounds are counted by how they closed: answered, deadline, cancelled
-////   with no answer (a death or a control), or still open. A strike is matched to the
-////   creature's latest round armed no later than 20 ms after the walker took the
-////   strike; an answer that matches none is counted as unmatched;
+//// - the strike rounds (`genesis_prime/load_round`): each walker stamps a strike's
+////   answer when it hands it over and just before the creature has it, and the recorded
+////   deadline of the creature's round gives when the round was armed, fell due and
+////   closed. An answer is **lost** when it was sent before the round's deadline fell
+////   due and was not in the round when it closed; **late** when it was sent at or after
+////   it; the rounds are counted by how they closed: an answer, the deadline, a death, a
+////   state, a broken charge, the leash, or a cancel with no sign of why, or still open;
 //// - option A's count: for each move, the creatures in the mover's sight, summed
 ////   over the moves, the messages a design that told every seen creature of every
 ////   move would send.
 //// The ring crossings and option A's count are worked out by each walker from the
 //// same positions the map decides on, by the map's rule (a 10-unit ring of each
-//// hostile spawn, sight of 1024 units, every seen spawn Live while a walker sees
-//// it), so the map's state carries no counter for a load run.
+//// Dagun, sight of 1024 units, every seen spawn Live while a walker sees it), so the
+//// map's state carries no counter for a load run.
 ////
 //// **The planted failure.** `delayed MS` makes walker 1 hand its answers to a process
 //// that tells the creature MS ms later: they are sent before the deadline and reach
@@ -68,25 +72,31 @@
 
 import argv
 import genesis_prime/client_connection.{
-  type Message, ForStay, SentByFoe, SentByMap, SentByPeer,
+  type Message, ForStay, SentByFoe, SentByMap, SentByPeer, SentByTarget,
 }
 import genesis_prime/connection/registry
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/crowd_control
+import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
-import genesis_prime/load_deadline.{type Deadline}
+import genesis_prime/load_deadline
 import genesis_prime/load_moves
+import genesis_prime/load_round.{
+  type Answer, type Mark, type Rounds, Answer, Mark,
+}
 import genesis_prime/load_run
 import genesis_prime/load_sample
+import genesis_prime/message/crowd_control_state
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/table/id.{ClassId, Creature2Id, RaceId}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
@@ -103,7 +113,7 @@ import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
 import gleam_community/maths
@@ -126,6 +136,30 @@ const radius = 40.0
 /// How long the walkers walk.
 const hold_ms = 30_000
 
+/// The creature the walkers fight: the Virtual Defense Daguns (Creature2 73465) of
+/// migration 0008, and how many of them it places in the world.
+const dagun = 73_465
+
+const daguns = 27
+
+/// A walker of the `mutual` scene strikes each creature that threatens it once in this
+/// many moves (a second), and every `stun_every`th strike carries Stagger's stun
+/// (Spell4Effects 83827: delay 0, duration 2,500 ms, 1 armor).
+const strike_every_steps = 8
+
+const stun_every = 5
+
+/// The `leaving` scene: each `leaving_every`th walker is `away_units` along x from where it
+/// walks for the moves from `away_from_step` up to `away_until_step`, which is beyond
+/// the creatures' sight (1,024) and leash.
+const leaving_every = 4
+
+const away_from_step = 80
+
+const away_until_step = 160
+
+const away_units = 2000.0
+
 /// What one walker counted.
 type Counts {
   Counts(
@@ -135,6 +169,9 @@ type Counts {
     target_moved: Int,
     option_a: Int,
     strikes: Int,
+    made: Int,
+    strikers: Dict(Pid, Int),
+    marks: List(Mark),
     by_creature: Dict(Int, Int),
     creature_news: Int,
     map_notices: Int,
@@ -149,46 +186,30 @@ type Plant {
   Held(ms: Int)
 }
 
-/// One strike a walker was told and answered, on the monotonic clock in
-/// microseconds: when it took the strike, when it handed the answer over, and when the
-/// creature had it (`delivered` is false when no creature was left to tell). The
-/// creature is the process of the creature that struck.
-type Answer {
-  Answer(
-    creature: Pid,
-    taken_us: Int,
-    sent_us: Int,
-    arrived_us: Int,
-    delivered: Bool,
-  )
+/// What a run does: its walkers, the plant of walker 1, and the words that change what
+/// the walkers and the recorder do (see the module's doc).
+type Scene {
+  Scene(walkers: Int, plant: Plant, mutual: Bool, leaving: Bool, recorded: Bool)
 }
 
 @external(erlang, "load_fight_ffi", "reductions")
 fn reductions(pid: Pid) -> Int
 
 pub fn main() -> Nil {
-  let #(walkers, plant) = case argv.load().arguments {
-    [count] -> #(whole(count), Honest)
-    [count, "delayed", ms] -> #(whole(count), Delayed(ms: whole(ms)))
-    [count, "held", ms] -> #(whole(count), Held(ms: whole(ms)))
-    [] -> #(50, Honest)
-    _ -> panic as "the arguments are: [walkers [delayed|held milliseconds]]"
-  }
+  let scene = scene_of(argv.load().arguments)
   let recorder = load_deadline.start()
   let settings =
     load_run.start_server_with(change: fn(settings) {
-      let login = settings.login
       server.Settings(
-        ..settings,
-        login: server.Login(
-          sts: server.Served(..login.sts, port: 0),
-          auth: server.Served(..login.auth, port: 0),
-        ),
-        game: server.Served(..settings.game, port: 0),
-        service_time: service_shell.ServiceTime(
-          ..service_shell.real_time(),
-          schedule: load_deadline.scheduler(recorder:),
-        ),
+        ..load_run.on_free_ports(settings),
+        service_time: case scene.recorded {
+          True ->
+            service_shell.ServiceTime(
+              ..service_shell.real_time(),
+              schedule: load_deadline.scheduler(recorder:),
+            )
+          False -> service_shell.real_time()
+        },
       )
     })
   let numbers = content_game_number.numbers(key: settings.world.spawns)
@@ -196,7 +217,7 @@ pub fn main() -> Nil {
     dict.values(
       content_spawn.world(key: settings.world.spawns, world_id:).by_id,
     )
-  let pack = largest_pack(spawns)
+  let pack = daguns_of(spawns)
   let centre = centre_of(pack)
   let assert Ok(run) =
     world_map_registry.find_or_start(
@@ -208,12 +229,13 @@ pub fn main() -> Nil {
   let done = process.new_subject()
   let joined = process.new_subject()
   let answers = process.new_subject()
-  list.each(ids(walkers), fn(id) {
+  list.each(ids(scene.walkers), fn(id) {
     walker(
       plant: case id {
-        1 -> plant
+        1 -> scene.plant
         _ -> Honest
       },
+      scene:,
       answers:,
       settings:,
       run:,
@@ -222,7 +244,6 @@ pub fn main() -> Nil {
       spawns:,
       pack:,
       aggro_range: numbers.aggro_range,
-      walkers:,
       joined:,
       done:,
     )
@@ -230,7 +251,7 @@ pub fn main() -> Nil {
   // Every walker joins and is ready before any walks, so the probe and the
   // reductions measure the walk and not the joins' creature starts.
   let starts =
-    list.map(ids(walkers), fn(_) {
+    list.map(ids(scene.walkers), fn(_) {
       let assert Ok(start) = process.receive(joined, within: 60_000)
         as "every walker joined"
       start
@@ -239,22 +260,30 @@ pub fn main() -> Nil {
   let before = reductions(run.pid)
   list.each(starts, fn(start) { process.send(start, Nil) })
   let counts =
-    list.map(ids(walkers), fn(_) {
+    list.map(ids(scene.walkers), fn(_) {
       let assert Ok(counts) = process.receive(done, within: hold_ms + 60_000)
         as "every walker finished"
       counts
     })
   let after = reductions(run.pid)
   let #(longest, sum, samples, running) = load_moves.stop_probe()
-  // A planted answer is delivered up to its delay after the walker finished.
-  process.sleep(2 * strike_tell.deadline_ms)
-  let rounds =
-    rounds_of(
-      answers: drain(answers, []),
-      deadlines: load_deadline.deadlines(recorder:),
-    )
+  // A planted answer is delivered up to its delay after the walkers finish, and the
+  // round it was sent in falls due a deadline after that.
+  process.sleep(planted_ms(scene.plant) + strike_tell.deadline_ms)
+  let rounds = case scene.recorded {
+    True ->
+      Some(load_round.rounds_of(
+        answers: drain(answers, []),
+        strikers: list.fold(counts, dict.new(), fn(all, one) {
+          dict.merge(all, one.strikers)
+        }),
+        marks: list.flat_map(counts, fn(one) { one.marks }),
+        deadlines: load_deadline.deadlines(recorder:),
+      ))
+    False -> None
+  }
   report(
-    walkers:,
+    scene:,
     counts:,
     rounds:,
     reductions: after - before,
@@ -265,6 +294,56 @@ pub fn main() -> Nil {
   )
 }
 
+/// The scene the arguments name: a count of walkers, when the first is a number, and
+/// the words.
+fn scene_of(arguments: List(String)) -> Scene {
+  let scene =
+    Scene(
+      walkers: 50,
+      plant: Honest,
+      mutual: False,
+      leaving: False,
+      recorded: True,
+    )
+  case arguments {
+    [count, ..words] ->
+      case int.parse(count) {
+        Ok(walkers) -> words_of(words:, scene: Scene(..scene, walkers:))
+        Error(Nil) -> words_of(words: arguments, scene:)
+      }
+    [] -> scene
+  }
+}
+
+fn words_of(words words: List(String), scene scene: Scene) -> Scene {
+  case words {
+    [] -> scene
+    ["mutual", ..rest] ->
+      words_of(words: rest, scene: Scene(..scene, mutual: True))
+    ["leaving", ..rest] ->
+      words_of(words: rest, scene: Scene(..scene, leaving: True))
+    ["unrecorded", ..rest] ->
+      words_of(words: rest, scene: Scene(..scene, recorded: False))
+    ["delayed", ms, ..rest] ->
+      words_of(
+        words: rest,
+        scene: Scene(..scene, plant: Delayed(ms: whole(ms))),
+      )
+    ["held", ms, ..rest] ->
+      words_of(words: rest, scene: Scene(..scene, plant: Held(ms: whole(ms))))
+    [_, ..] ->
+      panic as "the arguments are: [walkers] [mutual] [leaving] [unrecorded] [delayed|held milliseconds]"
+  }
+}
+
+/// How long after the walkers finish the plant's answers are still to be delivered.
+fn planted_ms(plant: Plant) -> Int {
+  case plant {
+    Honest -> 0
+    Delayed(ms:) | Held(ms:) -> ms
+  }
+}
+
 /// The whole number the text names, for an argument.
 fn whole(text: String) -> Int {
   let assert Ok(number) = int.parse(text)
@@ -272,22 +351,17 @@ fn whole(text: String) -> Int {
   number
 }
 
-/// The hostile spawns of the creature that has the most hostile spawns: the pack the
-/// walkers walk among. The world also holds hostile spawns far from it, which would
-/// pull the pack's centre out of the walkers' reach.
-fn largest_pack(spawns: List(Spawn)) -> List(Spawn) {
-  let hostile =
-    list.filter(spawns, fn(found) { found.combat.hostile_to.dominion })
-  let assert Ok(pack) =
-    list.group(hostile, fn(found) { found.creature_id })
-    |> dict.values
-    |> list.reduce(fn(best, group) {
-      case list.length(group) > list.length(best) {
-        True -> group
-        False -> best
-      }
+/// The Daguns' spawns, the pack the walkers walk among: the world also holds hostile
+/// spawns far from it, which would pull the pack's centre out of the walkers' reach.
+/// The world must place exactly the 27 of migration 0008.
+fn daguns_of(spawns: List(Spawn)) -> List(Spawn) {
+  let pack =
+    list.filter(spawns, fn(found) {
+      found.creature_id == Creature2Id(dagun)
+      && found.combat.hostile_to.dominion
     })
-    as "the world holds creatures hostile to the Dominion"
+  assert list.length(pack) == daguns
+    as "migration 0008 places 27 Daguns hostile to the Dominion in World 3460"
   pack
 }
 
@@ -327,6 +401,7 @@ fn centre_of(pack: List(Spawn)) -> Place {
 /// what it counted to `done`.
 fn walker(
   plant plant: Plant,
+  scene scene: Scene,
   answers answers: Subject(Answer),
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
@@ -335,7 +410,6 @@ fn walker(
   spawns spawns: List(Spawn),
   pack pack: List(Spawn),
   aggro_range aggro_range: Float,
-  walkers walkers: Int,
   joined joined: Subject(Subject(Nil)),
   done done: Subject(Counts),
 ) -> Nil {
@@ -374,10 +448,11 @@ fn walker(
         as "the run let the walkers walk"
       // Clients' send timers are not in step: each walker starts at its own
       // offset within one interval.
-      process.sleep(id * move_every_ms / walkers)
+      process.sleep(id * move_every_ms / scene.walkers)
       let counts =
         walk(
           plant:,
+          scene:,
           answers:,
           settings:,
           run:,
@@ -400,6 +475,9 @@ fn walker(
             target_moved: 0,
             option_a: 0,
             strikes: 0,
+            made: 0,
+            strikers: dict.new(),
+            marks: [],
             by_creature: dict.new(),
             creature_news: 0,
             map_notices: 0,
@@ -417,6 +495,7 @@ fn walker(
 
 fn walk(
   plant plant: Plant,
+  scene scene: Scene,
   answers answers: Subject(Answer),
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
@@ -448,10 +527,23 @@ fn walk(
         counts:,
       )
     let place = step_from(place:, id:, step:, centre:)
+    let shown = shown_at(scene:, place:, id:, step:)
     let _sent =
       service.tell_subject(
         run.subject,
-        map.Moved(connection:, place:, seq: step),
+        map.Moved(connection:, place: shown, seq: step),
+      )
+    let counts =
+      struck_back(
+        scene:,
+        settings:,
+        run:,
+        connection:,
+        id:,
+        place: shown,
+        step:,
+        fighters:,
+        counts:,
       )
     list.each(dict.to_list(fighters), fn(fighter) {
       creature_registry.tell(
@@ -462,7 +554,7 @@ fn walk(
         life: fighter.1,
         message: creature.TargetMoved(
           by: connection,
-          place:,
+          place: shown,
           seq: step,
           stay: stay.next(stay.none_yet()),
           hit_radius: hit_radius.of_playing(
@@ -474,11 +566,11 @@ fn walk(
     })
     let now_inside =
       list.filter(pack, fn(found) {
-        creature_path.distance(from: place, to: found.place) <=. aggro_range
+        creature_path.distance(from: shown, to: found.place) <=. aggro_range
       })
       |> list.map(fn(found) { found.id })
       |> set.from_list
-    let seen = list.count(spawns, fn(found) { sight.sees(place, found.place) })
+    let seen = list.count(spawns, fn(found) { sight.sees(shown, found.place) })
     let counts =
       Counts(
         ..counts,
@@ -498,6 +590,7 @@ fn walk(
       )
     walk(
       plant:,
+      scene:,
       answers:,
       settings:,
       run:,
@@ -516,6 +609,144 @@ fn walk(
       counts:,
     )
   }
+}
+
+/// Where the map and the creatures are told the walker is at this move: where it walks,
+/// or, in the `leaving` scene, for each `leaving_every`th walker between `away_from_step`
+/// and `away_until_step`, `away_units` along x from there.
+fn shown_at(
+  scene scene: Scene,
+  place place: Place,
+  id id: Int,
+  step step: Int,
+) -> Place {
+  use <- bool.guard(
+    when: !scene.leaving
+      || id % leaving_every != 0
+      || step < away_from_step
+      || step >= away_until_step,
+    return: place,
+  )
+  start_place.moved(
+    place:,
+    x: start_place.x(place) +. away_units,
+    y: start_place.y(place),
+    z: start_place.z(place),
+  )
+}
+
+/// The counts after the walker's strikes of this move: in the `mutual` scene, once a
+/// second, a strike of each creature it fights.
+fn struck_back(
+  scene scene: Scene,
+  settings settings: server.Settings,
+  run run: world_map_registry.MapProcess,
+  connection connection: ConnectionId,
+  id id: Int,
+  place place: Place,
+  step step: Int,
+  fighters fighters: Dict(Int, Int),
+  counts counts: Counts,
+) -> Counts {
+  use <- bool.guard(
+    when: !scene.mutual || step % strike_every_steps != 0,
+    return: counts,
+  )
+  Counts(
+    ..counts,
+    made: strike_fighters(
+      settings:,
+      run:,
+      connection:,
+      id:,
+      place:,
+      step:,
+      fighters:,
+      made: counts.made,
+    ),
+  )
+}
+
+/// Strikes each creature the walker fights as the walker's connection does: one blow of 1
+/// (Spell4Effects 184741), and Stagger's stun with every `stun_every`th strike. `made` is
+/// the strikes the walker has made; it gives the count after these.
+fn strike_fighters(
+  settings settings: server.Settings,
+  run run: world_map_registry.MapProcess,
+  connection connection: ConnectionId,
+  id id: Int,
+  place place: Place,
+  step step: Int,
+  fighters fighters: Dict(Int, Int),
+  made made: Int,
+) -> Int {
+  let hit_radius =
+    hit_radius.of_playing(
+      tables: settings.game.settings.tables,
+      race_id: RaceId(1),
+    )
+  list.fold(dict.to_list(fighters), made, fn(made, fighter) {
+    let made = made + 1
+    let stun =
+      strike_tell.ControlTell(
+        effect_id: 83_827,
+        instance_id: crowd_control.instance_id(caster_unit_id: id, count: made),
+        row: crowd_control.Row(
+          state: crowd_control_state.Stun,
+          delay_ms: 0,
+          duration_ms: 2500,
+          armor_removed: 1,
+          until_removed: False,
+        ),
+        throw: None,
+      )
+    let _told =
+      creature_registry.tell(
+        settings.world.creatures,
+        map: MapId(world_id:, instance: 0),
+        incarnation: run.incarnation,
+        unit_id: fighter.0,
+        life: fighter.1,
+        message: creature.Strike(
+          tell: strike_tell.Strike(
+            key: strike_tell.Key(
+              cast_id: id * 100_000 + made,
+              occasion: strike_tell.AtGo(phase: 0),
+              unit_id: fighter.0,
+            ),
+            from: step.Connection(connection),
+            striker: strike_tell.PlayerStriker(
+              unit_id: id,
+              place:,
+              seq: step,
+              stay: stay.next(stay.none_yet()),
+              hit_radius:,
+              rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
+            ),
+            offence: hit.Offence(
+              blows: [
+                hit.Blow(
+                  spell4_effects_id: 184_741,
+                  damage_type: 3,
+                  damage: hit.Worked(1),
+                  delay_ms: 0,
+                  threat_multiplier: 1.0,
+                ),
+              ],
+              crit_chance: 0.0,
+              crit_severity: 1.5,
+              strikethrough: 0.0,
+            ),
+            controls: case made % stun_every {
+              0 -> [stun]
+              _ -> []
+            },
+            gates: [],
+          ),
+        ),
+      )
+    made
+  })
 }
 
 /// What the walker hears until the next move: a creature's threat makes it a
@@ -540,83 +771,138 @@ fn hear(
       ..,
     )) -> again(dict.insert(fighters, unit_id, life), counts)
     Ok(ForStay(sent: SentByFoe(fight: strike_tell.Released(unit_id:)), ..)) ->
-      again(dict.delete(fighters, unit_id), counts)
+      again(
+        dict.delete(fighters, unit_id),
+        marked(counts:, unit_id:, sign: load_round.Released),
+      )
     Ok(ForStay(sent: SentByFoe(fight: strike_tell.Attacks(tell:)), ..)) -> {
       let taken_us = load_sample.microseconds()
-      answered(plant:, answers:, settings:, tell:, taken_us:)
-      again(fighters, Counts(..counts, strikes: counts.strikes + 1))
+      let counts = Counts(..counts, strikes: counts.strikes + 1)
+      case answered(plant:, answers:, settings:, tell:, taken_us:) {
+        Ok(#(creature, unit_id)) ->
+          again(
+            fighters,
+            Counts(
+              ..counts,
+              strikers: dict.insert(counts.strikers, creature, unit_id),
+            ),
+          )
+        Error(Nil) -> again(fighters, counts)
+      }
     }
-    Ok(ForStay(sent: SentByPeer(..), ..)) ->
-      again(fighters, Counts(..counts, creature_news: counts.creature_news + 1))
+    Ok(ForStay(sent: SentByPeer(news:), ..)) -> {
+      let counts = Counts(..counts, creature_news: counts.creature_news + 1)
+      case sign_of(news.news) {
+        Ok(sign) ->
+          again(fighters, marked(counts:, unit_id: news.unit_id, sign:))
+        Error(Nil) -> again(fighters, counts)
+      }
+    }
+    Ok(ForStay(
+      sent: SentByTarget(answered: strike_tell.Answered(
+        key:,
+        outcome: strike_tell.Landed(controls:, ..),
+      )),
+      ..,
+    )) ->
+      case
+        list.any(controls, fn(control) { option.is_some(control.interrupted) })
+      {
+        True ->
+          again(
+            fighters,
+            marked(counts:, unit_id: key.unit_id, sign: load_round.Controlled),
+          )
+        False -> again(fighters, counts)
+      }
     Ok(ForStay(sent: SentByMap(..), ..)) ->
       again(fighters, Counts(..counts, map_notices: counts.map_notices + 1))
     Ok(_) -> again(fighters, counts)
   }
 }
 
-/// Answers the strike as landed, as the walker's plant says, and tells `answers` when
-/// it handed the answer over and when the creature had it. A strike of anything but a
-/// creature, or of one no longer running, is left unanswered and not recorded.
+/// A sign of the creature in a news of it, when it is one that closes a round: its death
+/// or its broken charge.
+fn sign_of(news: client_connection.News) -> Result(load_round.Sign, Nil) {
+  case news {
+    client_connection.Died -> Ok(load_round.Died)
+    client_connection.CastInterrupted(..) -> Ok(load_round.Interrupted)
+    _ -> Error(Nil)
+  }
+}
+
+/// The counts with a sign of the creature `unit_id`, taken now.
+fn marked(
+  counts counts: Counts,
+  unit_id unit_id: Int,
+  sign sign: load_round.Sign,
+) -> Counts {
+  Counts(..counts, marks: [
+    Mark(unit_id:, sign:, at_us: load_sample.microseconds()),
+    ..counts.marks
+  ])
+}
+
+/// Answers the strike as landed, as the walker's plant says, and tells `answers` when it
+/// handed the answer over and when the creature had it, and gives the creature's process
+/// and unit. A strike of anything but a creature that is running is left unanswered, and
+/// not recorded.
 fn answered(
   plant plant: Plant,
   answers answers: Subject(Answer),
   settings settings: server.Settings,
   tell tell: strike_tell.Tell,
   taken_us taken_us: Int,
-) -> Nil {
+) -> Result(#(Pid, Int), Nil) {
   case tell.from {
     step.Creature(map:, incarnation:, unit_id:, life:) -> {
       let tell_creature = fn() {
-        let told =
-          creature_registry.tell(
-            settings.world.creatures,
-            map:,
-            incarnation:,
-            unit_id:,
-            life:,
-            message: creature.StrikeAnswered(answered: strike_tell.Answered(
-              key: tell.key,
-              outcome: strike_tell.Landed(
-                descriptions: [],
-                controls: [],
-                armor_removed: 0,
-                gates_passed: [],
-              ),
-            )),
-          )
-        #(load_sample.microseconds(), told == Ok(Nil))
-      }
-      case
-        creature_registry.find(
+        creature_registry.tell(
           settings.world.creatures,
           map:,
           incarnation:,
           unit_id:,
           life:,
+          message: creature.StrikeAnswered(answered: strike_tell.Answered(
+            key: tell.key,
+            outcome: strike_tell.Landed(
+              descriptions: [],
+              controls: [],
+              armor_removed: 0,
+              gates_passed: [],
+            ),
+          )),
         )
-      {
-        Ok(creature) ->
-          handed_over(plant:, answers:, creature:, taken_us:, tell_creature:)
-        Error(Nil) -> Nil
+        == Ok(Nil)
       }
+      use creature <- result.map(creature_registry.find(
+        settings.world.creatures,
+        map:,
+        incarnation:,
+        unit_id:,
+        life:,
+      ))
+      handed_over(plant:, answers:, creature:, taken_us:, tell_creature:)
+      #(creature, unit_id)
     }
-    _ -> Nil
+    _ -> Error(Nil)
   }
 }
 
 /// Hands the answer to the creature as the plant says and records it: at once; after
 /// `ms` with the send stamped before the wait (`Delayed`: sent early, reaching the
-/// creature late); or after `ms` with the send stamped after it (`Held`). `tell_creature`
-/// tells the creature and gives the microsecond it had the answer and whether it was told.
+/// creature late); or after `ms` with the send stamped after it (`Held`). The arrival
+/// is stamped just before the send to the creature (`load_round.stamped_send`).
+/// `tell_creature` tells the creature and says whether it was told.
 fn handed_over(
   plant plant: Plant,
   answers answers: Subject(Answer),
   creature creature: Pid,
   taken_us taken_us: Int,
-  tell_creature tell_creature: fn() -> #(Int, Bool),
+  tell_creature tell_creature: fn() -> Bool,
 ) -> Nil {
   let record = fn(sent_us: Int) {
-    let #(arrived_us, delivered) = tell_creature()
+    let #(arrived_us, delivered) = load_round.stamped_send(send: tell_creature)
     process.send(
       answers,
       Answer(creature:, taken_us:, sent_us:, arrived_us:, delivered:),
@@ -689,132 +975,9 @@ fn character(id: Int) -> store.Character {
   )
 }
 
-/// What the strike rounds came to, from the walkers' answers and the recorded
-/// deadlines.
-type Rounds {
-  Rounds(
-    answers: Int,
-    undelivered: Int,
-    unmatched: Int,
-    lost: Int,
-    late: Int,
-    closed_by_answer: Int,
-    closed_by_deadline: Int,
-    cancelled_without_answer: Int,
-    open: Int,
-  )
-}
-
-/// How far from a round's arming a walker's taking of its strike may be, in
-/// microseconds, for the strike to be matched to the round: the creature sends the
-/// strike and then arms the deadline in one step, and the walker stamps the strike
-/// when it takes it.
-const match_slack_us = 20_000
-
-/// The round each answer belongs to: the latest round of the creature that struck,
-/// armed no later than `match_slack_us` after the walker took the strike, and not
-/// fallen due more than `match_slack_us` before it.
-fn round_of(
-  answer answer: Answer,
-  rounds rounds: List(Deadline),
-) -> Result(Deadline, Nil) {
-  list.filter(rounds, fn(round) {
-    round.armed_us <= answer.taken_us + match_slack_us
-  })
-  |> list.last
-  |> result.try(fn(round) {
-    case answer.taken_us <= round.due_us + match_slack_us {
-      True -> Ok(round)
-      False -> Error(Nil)
-    }
-  })
-}
-
-/// Whether the creature had the answer when the round closed: any answer to a round
-/// that is still open, and one that reached the creature no later than the closure
-/// otherwise.
-fn in_round(answer answer: Answer, round round: Deadline) -> Bool {
-  case round.closure {
-    load_deadline.Open -> True
-    load_deadline.Cancelled(at_us:) | load_deadline.Fired(at_us:) ->
-      answer.arrived_us <= at_us
-  }
-}
-
-fn rounds_of(
-  answers answers: List(Answer),
-  deadlines deadlines: List(Deadline),
-) -> Rounds {
-  let by_creature = list.group(answers, fn(answer) { answer.creature })
-  let matched =
-    list.flat_map(dict.to_list(by_creature), fn(group) {
-      let rounds = load_deadline.of_creature(deadlines:, creature: group.0)
-      list.map(group.1, fn(answer) { #(answer, round_of(answer:, rounds:)) })
-    })
-  let #(undelivered, delivered) =
-    list.partition(matched, fn(pair) { !{ pair.0 }.delivered })
-  let #(unmatched, in_a_round) =
-    list.partition(delivered, fn(pair) { result.is_error(pair.1) })
-  let judged =
-    list.filter_map(in_a_round, fn(pair) {
-      result.map(pair.1, fn(round) { #(pair.0, round) })
-    })
-  let not_in_round =
-    list.filter(judged, fn(pair) { !in_round(answer: pair.0, round: pair.1) })
-  let lost =
-    list.count(not_in_round, fn(pair) { { pair.0 }.sent_us < { pair.1 }.due_us })
-  // The first answer to reach each round, by the creature and the round's arming.
-  let first_arrival =
-    list.fold(judged, dict.new(), fn(first, pair) {
-      dict.upsert(first, #({ pair.1 }.creature, { pair.1 }.armed_us), fn(found) {
-        case found {
-          Some(earlier) -> int.min(earlier, { pair.0 }.arrived_us)
-          None -> { pair.0 }.arrived_us
-        }
-      })
-    })
-  let closures =
-    list.flat_map(dict.keys(by_creature), fn(creature) {
-      load_deadline.of_creature(deadlines:, creature:)
-    })
-  Rounds(
-    answers: list.length(answers),
-    undelivered: list.length(undelivered),
-    unmatched: list.length(unmatched),
-    lost:,
-    late: list.length(not_in_round) - lost,
-    closed_by_answer: list.count(closures, fn(round) {
-      case
-        round.closure,
-        dict.get(first_arrival, #(round.creature, round.armed_us))
-      {
-        load_deadline.Cancelled(at_us:), Ok(arrived_us) -> arrived_us <= at_us
-        _, _ -> False
-      }
-    }),
-    closed_by_deadline: list.count(closures, fn(round) {
-      case round.closure {
-        load_deadline.Fired(..) -> True
-        load_deadline.Open | load_deadline.Cancelled(..) -> False
-      }
-    }),
-    cancelled_without_answer: list.count(closures, fn(round) {
-      case
-        round.closure,
-        dict.get(first_arrival, #(round.creature, round.armed_us))
-      {
-        load_deadline.Cancelled(at_us:), Ok(arrived_us) -> arrived_us > at_us
-        load_deadline.Cancelled(..), Error(Nil) -> True
-        _, _ -> False
-      }
-    }),
-    open: list.count(closures, fn(round) { round.closure == load_deadline.Open }),
-  )
-}
-
 fn report(
-  walkers walkers: Int,
-  rounds rounds: Rounds,
+  scene scene: Scene,
+  rounds rounds: Option(Rounds),
   counts counts: List(Counts),
   reductions reductions: Int,
   longest longest: Int,
@@ -833,11 +996,24 @@ fn report(
       })
     })
   let most = list.fold(dict.values(by_creature), 0, int.max)
+  let walkers = scene.walkers
   io.println(
     int.to_string(walkers)
     <> " walkers, "
     <> int.to_string(hold_ms / 1000)
-    <> " s",
+    <> " s"
+    <> case scene.mutual {
+      True -> ", mutual strikes"
+      False -> ""
+    }
+    <> case scene.leaving {
+      True -> ", a quarter of the walkers leaving sight"
+      False -> ""
+    }
+    <> case scene.recorded {
+      True -> ""
+      False -> ", deadlines not recorded"
+    },
   )
   io.println(
     "the map: longest queue "
@@ -882,28 +1058,47 @@ fn report(
     <> " a second)",
   )
   io.println(
-    "strike rounds: "
-    <> int.to_string(rounds.closed_by_answer)
-    <> " closed by an answer, "
-    <> int.to_string(rounds.closed_by_deadline)
-    <> " by the deadline, "
-    <> int.to_string(rounds.cancelled_without_answer)
-    <> " cancelled with no answer, "
-    <> int.to_string(rounds.open)
-    <> " still open",
+    "the walkers made "
+    <> int.to_string(total(fn(one) { one.made }))
+    <> " strikes of their own",
   )
-  io.println(
-    "strike answers: "
-    <> int.to_string(rounds.answers)
-    <> " in all; lost (sent before the deadline fell due, not in the round at its closure): "
-    <> int.to_string(rounds.lost)
-    <> "; late (sent at or after it): "
-    <> int.to_string(rounds.late)
-    <> "; told to no creature: "
-    <> int.to_string(rounds.undelivered)
-    <> "; matched to no round: "
-    <> int.to_string(rounds.unmatched),
-  )
+  case rounds {
+    None -> io.println("strike rounds: not recorded")
+    Some(rounds) -> {
+      let closed = rounds.closed
+      io.println(
+        "strike rounds closed: "
+        <> int.to_string(closed.answer)
+        <> " by an answer, "
+        <> int.to_string(closed.deadline)
+        <> " by the deadline, "
+        <> int.to_string(closed.death)
+        <> " by a death, "
+        <> int.to_string(closed.control)
+        <> " by a state, "
+        <> int.to_string(closed.leash)
+        <> " by the leash, "
+        <> int.to_string(closed.interrupt)
+        <> " by a broken charge, "
+        <> int.to_string(closed.unexplained)
+        <> " cancelled with no sign of why, "
+        <> int.to_string(closed.open)
+        <> " still open",
+      )
+      io.println(
+        "strike answers: "
+        <> int.to_string(rounds.answers)
+        <> " in all; lost (sent before the deadline fell due, not in the round at its closure): "
+        <> int.to_string(rounds.lost)
+        <> "; late (sent at or after it): "
+        <> int.to_string(rounds.late)
+        <> "; told to no creature: "
+        <> int.to_string(rounds.undelivered)
+        <> "; matched to no round: "
+        <> int.to_string(rounds.unmatched),
+      )
+    }
+  }
   io.println(
     "option A's count: "
     <> int.to_string(total(fn(one) { one.option_a }))

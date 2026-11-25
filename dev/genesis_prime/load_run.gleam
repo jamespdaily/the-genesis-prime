@@ -41,6 +41,7 @@
 
 import genesis_prime
 import genesis_prime/application
+import genesis_prime/connection/listener
 import genesis_prime/load_player.{type Account, type Report, type Stage}
 import genesis_prime/load_sample.{type Sample}
 import genesis_prime/load_step.{
@@ -421,13 +422,30 @@ pub fn start_server_with(change change: fn(Settings) -> Settings) -> Settings {
   settings
 }
 
-/// The ports the settings' listeners listen on.
-pub fn ports_of(settings: Settings) -> Ports {
-  Ports(
-    sts_port: settings.login.sts.port,
-    auth_port: settings.login.auth.port,
-    game_port: settings.game.port,
+/// The settings with the three listeners on a port the operating system picks (port 0),
+/// so no number is fixed and another server may be running (`ports_of` reads them).
+pub fn on_free_ports(settings: Settings) -> Settings {
+  let login = settings.login
+  server.Settings(
+    ..settings,
+    login: server.Login(
+      sts: server.Served(..login.sts, port: 0),
+      auth: server.Served(..login.auth, port: 0),
+    ),
+    game: server.Served(..settings.game, port: 0),
   )
+}
+
+/// The ports the settings' listeners listen on, as the listeners bound them. Run in the
+/// node the server runs in.
+pub fn ports_of(settings: Settings) -> Ports {
+  let assert Ok(sts_port) = listener.port(settings.login.sts.listener)
+    as "the STS listener has a port"
+  let assert Ok(auth_port) = listener.port(settings.login.auth.listener)
+    as "the auth listener has a port"
+  let assert Ok(game_port) = listener.port(settings.game.listener)
+    as "the game listener has a port"
+  Ports(sts_port:, auth_port:, game_port:)
 }
 
 /// The server's node, started by `start_peer`.
@@ -533,7 +551,7 @@ fn climb(
       let arrival_ms = int.max(10_000, players * 1000 / arrivals_per_second)
       let outcome =
         run_step(
-          ports: ports_of(settings),
+          ports: in_peer(peer, fn() { ports_of(settings) }),
           accounts:,
           arrival_ms:,
           hold_ms:,
