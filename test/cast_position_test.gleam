@@ -156,7 +156,7 @@ fn plans_with(spell spell: Spell) -> Plans {
 // ---- the units ----
 
 fn hit(unit_id unit_id: Int) -> cast_state.Struck {
-  support.creature_hit(unit_id:, life: 1, struck_at_ms: 0)
+  support.creature_hit(unit_id:, life: 1)
 }
 
 /// The child casts a step started, each as (Spell4 id, primary target unit id).

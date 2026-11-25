@@ -758,7 +758,7 @@ fn immediate_row(effect_id effect_id: Int) -> spell_plan.PropertyModifier {
 
 /// The creature 21 in its life 3, struck at the monotonic time 1000.
 fn creature_struck() -> List(cast_state.Struck) {
-  [support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)]
+  [support.creature_hit(unit_id: creature, life: 3)]
 }
 
 fn pressed_striking(

@@ -915,7 +915,7 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
       struck: [
         cast_state.Hit(
           unit_id: 99,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,

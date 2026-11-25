@@ -4378,7 +4378,7 @@ pub fn a_go_tells_a_proc_row_to_each_ally_it_holds_it_on_lists_it_and_sends_one_
       spell: salve_shaped(chance: 1.0),
       target: 7,
       hit: [
-        support.creature_hit(unit_id: 21, life: 3, struck_at_ms: 1000),
+        support.creature_hit(unit_id: 21, life: 3),
         ally_selected(unit_id: second_ally),
         ally_selected(unit_id: ally),
       ],

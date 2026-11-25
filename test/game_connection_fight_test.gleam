@@ -399,7 +399,7 @@ pub fn a_creature_despawns_effect_becomes_a_tell_to_that_creature_test() -> Nil 
     == [
       #(40, 4, client_connection.TellDespawn(delay_ms: 3000, went_at_ms: 1100)),
     ]
-    as "the connection tells the creature of that life, with the row's delay, the round's time and the go's time, and tells no other"
+    as "the connection tells the creature of that life, with the row's delay and the go's time, and tells no other"
 }
 
 pub fn a_despawn_aimed_at_the_caster_never_removes_the_players_unit_test() -> Nil {
@@ -2576,7 +2576,7 @@ pub fn a_creature_holds_unit_states_effect_becomes_a_tell_to_that_creature_test(
         ),
       ),
     ]
-    as "the connection tells the creature of that life, with the row's state, delay and duration, the round's time and the go's time, and tells no other"
+    as "the connection tells the creature of that life, with the row's state, delay and duration and the go's time, and tells no other"
   assert list.all(steps, fn(taken) {
     list.all(game_connection_support.written_ids(taken), fn(id) {
       id != 0x0355 && id != 0x087F

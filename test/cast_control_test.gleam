@@ -108,7 +108,7 @@ fn kicked(
   kick_answered(go_ms:, struck: [
     cast_state.Hit(
       unit_id: 20,
-      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1),
       descriptions: [],
       controls: [
         crowd_control_support.kick_landed(ends_at_ms:),
@@ -172,7 +172,7 @@ pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
     kick_answered(go_ms: 1000, struck: [
       cast_state.Hit(
         unit_id: 20,
-        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1),
         descriptions: [],
         controls: [],
         armor_removed: 0,
@@ -298,7 +298,7 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
     support.answered_by(state:, effects: pressed, at: 1000, struck: [
       cast_state.Hit(
         unit_id: 20,
-        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1),
         descriptions: [],
         controls: [
           crowd_control_support.kick_landed(ends_at_ms: 4000),
@@ -317,7 +317,7 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
     support.answered_by(state:, effects: going, at: 2000, struck: [
       cast_state.Hit(
         unit_id: 20,
-        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1),
         descriptions: [],
         controls: [],
         armor_removed: 0,
@@ -341,7 +341,7 @@ fn creature_20_took(
   [
     support.hit_with(
       unit_id: 20,
-      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1),
       descriptions: [],
       controls:,
       ticking: [],
@@ -1242,7 +1242,7 @@ fn struck_for_armor(
   armor_removed armor_removed: Int,
   immune immune: Bool,
 ) -> List(combat_log_entry.CombatLogEntry) {
-  let unit = cast_state.HitCreature(life: 1, struck_at_ms: 0)
+  let unit = cast_state.HitCreature(life: 1)
   let #(_, effects) =
     kick_answered(go_ms: 1000, struck: [
       case immune {
@@ -1420,7 +1420,7 @@ type InterruptRow {
 
 pub fn a_go_logs_type_19_after_the_type_1_of_the_state_that_broke_a_cast_test() -> Nil {
   use <- owned_test.run(5000)
-  let unit = cast_state.HitCreature(life: 1, struck_at_ms: 0)
+  let unit = cast_state.HitCreature(life: 1)
   let hit = fn(unit_id, broke) {
     cast_state.Hit(
       unit_id:,

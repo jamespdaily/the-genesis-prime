@@ -470,11 +470,10 @@ pub type Struck {
 /// What kind of unit a `Hit` names.
 pub type HitUnit {
   /// A creature a player's go struck, in the life the go aimed at
-  /// (genesis_prime/game/strike `Aimed`), at the monotonic time `struck_at_ms` the go
-  /// struck it: a property modifier the go starts on it is told for that life
-  /// (`TargetChangeStarts`), and the round's time tells the caster's later go on the
-  /// same creature from this one (`lasting.StruckCreature`).
-  HitCreature(life: Int, struck_at_ms: Int)
+  /// (genesis_prime/game/strike `Aimed`): a property modifier the go starts on it is told
+  /// for that life (`TargetChangeStarts`), and its view is told to that life
+  /// (`lasting.StruckCreature`).
+  HitCreature(life: Int)
   /// A player a creature's attack struck (genesis_prime/world_map/creature_fight).
   HitPlayer
   /// A player another player's cast healed (genesis_prime/game/strike `player_answered`):
@@ -1282,10 +1281,10 @@ pub type State {
   )
 }
 
-/// What the caster last told a creature of one cast's node on it: the life and round
-/// it was told for and the target (count, effects with absolute starts and ends).
+/// What the caster last told a creature of one cast's node on it: the life it was told
+/// for and the target (count, effects with absolute starts and ends).
 pub type Told {
-  Told(life: Int, struck_at_ms: Int, target: unit_casts.ViewTarget)
+  Told(life: Int, target: unit_casts.ViewTarget)
 }
 
 /// A crowd-control state the caster holds on itself: the state, the instance id the 0x87f
@@ -1699,7 +1698,7 @@ pub fn views(
 }
 
 /// Each node of the unit `caster_unit_id`'s casts that a round struck as a creature and
-/// that `views` lists as a target, as the round's stamp, that creature's view of the cast
+/// that `views` lists as a target, with the creature's life, that creature's view of the cast
 /// (the cast with the creature's target alone and no cast in progress: a creature shows no
 /// player's cast bar) and the target. In cast id order, then unit id order.
 pub fn creature_views(

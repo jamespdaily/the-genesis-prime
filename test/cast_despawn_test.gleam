@@ -50,9 +50,9 @@ fn despawner(rows rows: List(spell_plan.Despawn)) -> Spell {
   )
 }
 
-/// A creature the round hit in `life` at the monotonic time 900, before the go at 1000.
+/// A creature the round hit in `life`.
 fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
-  support.creature_hit(unit_id:, life:, struck_at_ms: 900)
+  support.creature_hit(unit_id:, life:)
 }
 
 /// The press of the spell at 1000 aimed at `target`, and the go its round answers at 1000.
@@ -148,7 +148,7 @@ pub fn the_tell_carries_the_life_and_the_go_time_the_round_hit_test() -> Nil {
         delay_ms: 0,
       ),
     ]
-    as "each creature in the life the round hit, struck_at_ms the round's time 900 and went_at_ms the go's time 1000, in the order the round hit them"
+    as "each creature in the life the round hit and went_at_ms the go's time 1000, in the order the round hit them"
 }
 
 pub fn a_deflected_creature_is_not_despawned_test() -> Nil {

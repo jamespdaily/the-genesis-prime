@@ -232,9 +232,9 @@ fn throwing_row(delay_ms delay_ms: Int) -> spell_plan.StruckMove {
   )
 }
 
-/// A creature the round hit in `life` at the monotonic time 1000.
+/// A creature the round hit in `life`.
 fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
-  support.creature_hit(unit_id:, life:, struck_at_ms: 1000)
+  support.creature_hit(unit_id:, life:)
 }
 
 /// The effects of the press and of the go that the round `struck` answers.

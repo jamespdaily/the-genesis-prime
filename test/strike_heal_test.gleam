@@ -1571,7 +1571,7 @@ fn hit_of(
 fn creature_hit() -> cast_state.Struck {
   cast_state.Hit(
     unit_id: 10,
-    unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+    unit: cast_state.HitCreature(life: 3),
     descriptions: [],
     controls: [],
     armor_removed: 0,

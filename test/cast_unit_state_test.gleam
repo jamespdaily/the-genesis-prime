@@ -89,9 +89,9 @@ fn holder(rows rows: List(spell_plan.UnitState)) -> Spell {
   )
 }
 
-/// A creature the round hit in `life` at the monotonic time 900, before the go at 1000.
+/// A creature the round hit in `life`.
 fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
-  support.creature_hit(unit_id:, life:, struck_at_ms: 900)
+  support.creature_hit(unit_id:, life:)
 }
 
 /// The press of the spell at 1000 aimed at `target`, and the go its round answers at 1000.
@@ -168,7 +168,7 @@ pub fn a_go_tells_a_hit_creature_its_unit_states_once_after_the_go_frames_test()
     as "the go's frame is written before the creature is told, so the caster sees the go first"
 }
 
-pub fn the_tell_carries_the_life_and_both_times_test() -> Nil {
+pub fn the_tell_carries_the_life_and_the_gos_time_test() -> Nil {
   use <- owned_test.run(5000)
   // Spell4Effects 204411's shape: delay 500, duration 2000.
   let #(_, effects) =
@@ -188,7 +188,7 @@ pub fn the_tell_carries_the_life_and_both_times_test() -> Nil {
         row_of(state: 6, delay_ms: 500, duration_ms: 2000),
       ]),
     ]
-    as "each creature in the life the round hit, struck_at_ms the round's time 900, went_at_ms the go's time 1000, and the row's delay and duration as the plan read them"
+    as "each creature in the life the round hit, went_at_ms the go's time 1000, and the row's delay and duration as the plan read them"
 }
 
 pub fn a_unit_the_round_left_out_or_deflected_is_told_no_state_test() -> Nil {
@@ -733,7 +733,7 @@ pub fn an_area_go_logs_type_18_for_the_immune_creature_only_test() -> Nil {
   // Creature 23 answered the strike `Immune` (it holds state 6, which the creature decides),
   // creature 21 took it: the 0x7f4 names both, the immune one with no effect, and the caster
   // is written one 0x247 of type 18 for the immune one alone (`opcode.0x247.immunity`).
-  let unit = cast_state.HitCreature(life: 5, struck_at_ms: 900)
+  let unit = cast_state.HitCreature(life: 5)
   let #(_, effects) =
     went(spell: support.child(spell4_id: 58_591, base: 3), target: 0, struck: [
       hit(unit_id: 21, life: 3),

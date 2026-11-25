@@ -14,16 +14,14 @@
 ////   by a creature that starts.
 
 import ask_support
-import cast_support
 import driven_time
-import event_wait
 import genesis_prime/client_connection.{ForStay, SentByFoe}
+import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Threatened}
-import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
@@ -73,19 +71,34 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
       incarnation: run.incarnation,
       unit_id: first.unit_id,
       life: first_life,
-      message: creature.ModifierStarts(
-        by: ConnectionId(1),
-        source: cast_support.source_of(cast_id: 1, effect_id: 1921),
-        modifier: Change(
-          property: UnitProperty2Id(100),
-          mode: 3,
-          multiplier: 1.0,
-          flat: 0.5,
-          per_level: 0.0,
-        ),
-      ),
+      message: world_watch_support.modifier_starts(),
     )
     as "the creature is found by its address and told"
+  // A throw of the first life, so its corpse lies off its spawn.
+  let assert Ok(Nil) =
+    creature_registry.tell(
+      world.creatures,
+      map: world_watch_support.ship,
+      incarnation: run.incarnation,
+      unit_id: first.unit_id,
+      life: first_life,
+      message: creature.Thrown(throw: world_watch_support.throw()),
+    )
+    as "the creature is found by its address and thrown"
+  let thrown_path =
+    world_watch_support.next(
+      received:,
+      what: "the thrown creature's 0x638",
+      wanted: world_watch_support.moved,
+    )
+  let assert creature_path.Timed(first: #(_, from), rest: points, ..) =
+    thrown_path
+    as "a throw is a timed path"
+  let assert Ok(#(_, corpse_place)) = list.last(points)
+    as "the throw's path has a point after its first"
+  assert start_place.x(corpse_place) != start_place.x(from)
+    as "the corpse lies off the place the creature stood at"
+  driven_time.advance(time:, ms: 400)
   world_watch_support.strike_with(
     world:,
     run:,
@@ -119,7 +132,7 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
     && again.tail.properties == []
     as "at full health and from the base properties: no trace of the modifier the first life held"
   assert again.tail.movement_commands == first.tail.movement_commands
-    as "the next life stands at its spawn, where the first life was created, not where the corpse lay"
+    as "the next life stands at its spawn, where the first life was created, and the corpse lay off it"
   assert next_life != first_life
     as "a new life: the map numbers every life, so the address of the life that ended is not the next life's"
   let _ended =
@@ -127,18 +140,11 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
       watched: process.monitor(first_pid),
       what: "the creature that expired to be gone",
     )
-  event_wait.until(
-    "the registry noticed the end of the creature of the old life by itself, so it finds no creature at the old life's address",
-    fn() {
-      creature_registry.find(
-        world.creatures,
-        map: world_watch_support.ship,
-        incarnation: run.incarnation,
-        unit_id: first.unit_id,
-        life: first_life,
-      )
-      == Error(Nil)
-    },
+  world_watch_support.address_dropped(
+    world:,
+    run:,
+    unit_id: first.unit_id,
+    life: first_life,
   )
   let next_pid =
     world_watch_support.creature_pid(

@@ -193,7 +193,7 @@ pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck
       struck: [
         cast_state.Hit(
           unit_id: 20,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -362,7 +362,7 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
       struck: [
         cast_state.Hit(
           unit_id: 20,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -418,7 +418,7 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
       struck: [
         cast_state.Hit(
           unit_id: 20,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -426,7 +426,7 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
         ),
         cast_state.Hit(
           unit_id: 21,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -741,7 +741,7 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
       struck: [
         cast_state.Hit(
           unit_id: 20,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -794,7 +794,7 @@ pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
       struck: [
         cast_state.Hit(
           unit_id: 20,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -1764,7 +1764,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       plans: area_buff(duration_ms: 3000),
       state: cast_state.new(),
       bag: bag_of_base_3,
-      struck: [support.creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)],
+      struck: [support.creature_hit(unit_id: 20, life: 3)],
       at: 1000,
     )
   let creature_cast = support.pressed_id(effects: creature_effects)
@@ -1833,9 +1833,9 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       struck_of: fn(asked) {
         case asked.spell4_id.value {
           41_886 -> [
-            support.creature_hit(unit_id: 20, life: 2, struck_at_ms: 1500),
+            support.creature_hit(unit_id: 20, life: 2),
           ]
-          _ -> [support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)]
+          _ -> [support.creature_hit(unit_id: 20, life: 1)]
         }
       },
       rolls: [],
@@ -1866,7 +1866,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         plans: two_gos_of_an_area_buff(),
         state: cast_state.new(),
         bag: bag_of_base_3,
-        struck: [support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)],
+        struck: [support.creature_hit(unit_id: 20, life: 1)],
         at: 1000,
       )
     let #(second, _) =
@@ -1882,7 +1882,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
     #(first, second, support.pressed_id(effects:))
   }
   let #(first_go, again, channel_cast) =
-    two_gos([support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 2000)])
+    two_gos([support.creature_hit(unit_id: 20, life: 1)])
   let #(_, missed, _) = two_gos([support.player_hit(unit_id: 20)])
   let in_a_channel = fn(starts_ms, ends_ms) {
     creature_view_of(
@@ -1939,7 +1939,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       struck: [
         cast_state.Hit(
           unit_id: 20,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -1969,9 +1969,9 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       state: cast_state.new(),
       bag: bag_of_base_3,
       struck: [
-        support.creature_hit(unit_id: 22, life: 1, struck_at_ms: 1000),
-        support.creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000),
-        support.creature_hit(unit_id: 21, life: 1, struck_at_ms: 1000),
+        support.creature_hit(unit_id: 22, life: 1),
+        support.creature_hit(unit_id: 20, life: 1),
+        support.creature_hit(unit_id: 21, life: 1),
       ],
       at: 1000,
     )
@@ -1985,22 +1985,6 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       state: on_a_creature,
       cast_id: creature_cast,
       change: fn(node) { lasting.Node(..node, count: 2) },
-    )
-  // The same node, struck by a later round (time 2000) that left the target as it was: only
-  // the round differs from `on_a_creature`.
-  let struck_again =
-    with_nodes_changed(
-      state: on_a_creature,
-      cast_id: creature_cast,
-      change: fn(node) {
-        lasting.Node(
-          ..node,
-          struck: option.Some(lasting.StruckCreature(
-            life: 3,
-            struck_at_ms: 2000,
-          )),
-        )
-      },
     )
   let #(one_off, _) =
     cast_tick.stack_off(
@@ -2059,7 +2043,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         ],
       ),
       #(
-        "a later go on the same creature gives a whole new set, its start and end armed again and the new round's time",
+        "a later go on the same creature gives a whole new set, its start and end armed again",
         compared_in_turn(states: [first_go, again]),
         [
           [
@@ -2096,14 +2080,6 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         [
           [view_set(unit_id: 20, life: 3, view: a_go)],
           [view_set(unit_id: 20, life: 3, view: twice)],
-          [view_set(unit_id: 20, life: 3, view: a_go)],
-        ],
-      ),
-      #(
-        "a node struck again in a later round with the same target is told again: the round is told with the view, so the creature's view of it is armed again",
-        compared_in_turn(states: [on_a_creature, struck_again]),
-        [
-          [view_set(unit_id: 20, life: 3, view: a_go)],
           [view_set(unit_id: 20, life: 3, view: a_go)],
         ],
       ),
@@ -2176,7 +2152,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
 pub fn a_holder_gone_or_left_is_told_by_the_compare_test() -> Nil {
   use <- owned_test.run(5000)
   let plans = area_buff(duration_ms: 3000)
-  let struck = [support.creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)]
+  let struck = [support.creature_hit(unit_id: 20, life: 3)]
   let #(held, effects) =
     press_striking(
       plans:,
@@ -2289,7 +2265,7 @@ fn told_view(id id: Int, ends_ms ends_ms: Int) -> creature_view.Change {
 
 /// The cast's live node on each of units 20 to 24 as the draw says: its effects (none, a
 /// listed one with a life, or one that only gives the node its life), whether a round
-/// struck it as a creature (and its life and time), and its count.
+/// struck it as a creature (and its life), and its count.
 fn node_drawn(
   unit_id unit_id: Int,
   draw draw: #(Int, Bool, Int, Int),
@@ -2318,8 +2294,7 @@ fn node_drawn(
     armed_ms: 1000,
     held_until_ms: option.None,
     struck: case stamped {
-      True ->
-        option.Some(lasting.StruckCreature(life:, struck_at_ms: life * 100))
+      True -> option.Some(lasting.StruckCreature(life:))
       False -> option.None
     },
   )
@@ -2385,7 +2360,6 @@ pub fn the_views_told_equal_what_the_caster_holds_test() -> Nil {
               ),
               cast_state.Told(
                 life:,
-                struck_at_ms: life * 100,
                 target: unit_casts.ViewTarget(unit_id:, count:, effects: []),
               ),
             )
@@ -2405,7 +2379,7 @@ pub fn the_views_told_equal_what_the_caster_holds_test() -> Nil {
                   dict.insert(
                     told,
                     #(view.cast_id, unit_id),
-                    cast_state.Told(life:, struck_at_ms: life * 100, target:),
+                    cast_state.Told(life:, target:),
                   )
                 [] | [_, ..] -> told
               }
@@ -2423,15 +2397,12 @@ pub fn the_views_told_equal_what_the_caster_holds_test() -> Nil {
         |> dict.to_list
         |> list.filter_map(fn(entry) {
           case entry.1 {
-            #(1, True, life) -> Ok(#(#(id, entry.0), #(life, life * 100)))
+            #(1, True, life) -> Ok(#(#(id, entry.0), life))
             _ -> Error(Nil)
           }
         })
         |> dict.from_list
-      assert dict.map_values(applied, fn(_, told) {
-          #(told.life, told.struck_at_ms)
-        })
-        == expected
+      assert dict.map_values(applied, fn(_, told) { told.life }) == expected
         as "the changes take the told map to the nodes that list a target and a creature round"
       assert compared.creature_told == applied
         as "the state records what it told"

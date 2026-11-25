@@ -628,7 +628,7 @@ pub fn heal_and_modifier_behind_target_gate_reach_only_passing_units_test() -> N
     list.map([21, 22], fn(unit_id) {
       cast_state.Hit(
         unit_id:,
-        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1),
         descriptions: [],
         controls: [],
         armor_removed: 0,

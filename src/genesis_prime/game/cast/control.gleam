@@ -299,7 +299,7 @@ pub fn creature_controls_ended(
         list.find(holds, fn(hold) { hold.cast_id == cast_id })
         |> result.try(fn(hold) {
           case hold.node.held_until_ms, hold.node.struck {
-            Some(_), Some(lasting.StruckCreature(life:, ..)) ->
+            Some(_), Some(lasting.StruckCreature(life:)) ->
               Ok(CreatureControlsEnd(unit_id:, life:, cast_id:))
             Some(_), None | None, _ -> Error(Nil)
           }
@@ -992,7 +992,7 @@ fn creature_modifier_armed(
 ) -> #(State, List(Effect)) {
   case cast_gate.creature_hit(struck:, unit_id:) {
     Error(Nil) -> #(cast, [])
-    Ok(#(life, _round)) -> {
+    Ok(life) -> {
       let on =
         OnCreature(
           unit_id:,
@@ -1265,7 +1265,7 @@ pub fn despawns_told(
       let #(entry, row) = found
       case cast_gate.creature_hit(struck:, unit_id: entry.unit_id) {
         Error(Nil) -> []
-        Ok(#(life, _round)) -> [
+        Ok(life) -> [
           CreatureDespawns(
             unit_id: entry.unit_id,
             life:,
@@ -1323,7 +1323,7 @@ pub fn unit_states_told(
       cast_state.rows_reached(reached:, as_kind: spell_plan.as_unit_state),
       fn(found) {
         let #(entry, row) = found
-        use #(life, _round) <- result.map(cast_gate.creature_hit(
+        use life <- result.map(cast_gate.creature_hit(
           struck:,
           unit_id: entry.unit_id,
         ))
@@ -1357,7 +1357,7 @@ fn struck_move_armed(
 ) -> #(State, List(Effect)) {
   case cast_gate.creature_hit(struck:, unit_id:) {
     Error(Nil) -> #(cast, [])
-    Ok(#(life, _round)) -> {
+    Ok(life) -> {
       let on =
         OnCreature(
           unit_id:,

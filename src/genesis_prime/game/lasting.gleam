@@ -95,8 +95,8 @@ pub type Life {
 /// they were last armed from (the cast's latest go on the unit), and the latest time
 /// a crowd-control state of the cast lasts to there. A state's end is the creature's
 /// own time, so it is kept apart from the effects a later go arms again. `struck` is
-/// the round that last struck the unit as a creature, which the creature is told the
-/// node for; a node on the caster or on a unit no round hit as a creature holds `None`.
+/// the life of the creature that the last round struck the unit as, which the creature is
+/// told the node for; a node on the caster or on a unit no round hit as a creature holds `None`.
 pub type Node {
   Node(
     unit_id: Int,
@@ -109,11 +109,9 @@ pub type Node {
   )
 }
 
-/// The life of a creature a go struck and the monotonic time it struck it: the round, which
-/// tells a later go on the same creature from the earlier one (`creature_view` tells the
-/// creature its view again for each new round).
+/// The life of a creature a go struck: the life `creature_view` tells its view to.
 pub type StruckCreature {
-  StruckCreature(life: Int, struck_at_ms: Int)
+  StruckCreature(life: Int)
 }
 
 /// One effect a node holds. A `Listed` effect is one a unit create tells a viewer that
@@ -203,8 +201,8 @@ pub fn lifetime_of(
 /// holds no node (`opcode.0x7f4.instance_count`, `Spell4Effects.effectType.17`). The
 /// crowd-control states the go landed (`held_until_ms`, absolute times) are not armed
 /// again by a later go: the node lasts at least until the latest of them that is still
-/// to come, and at least as long as the effects do. The node keeps the round that struck
-/// the unit before (`struck`); the caller stamps the go's own. An aura cast's node that
+/// to come, and at least as long as the effects do. The node keeps the creature life the
+/// unit was struck as before (`struck`); the caller sets the go's own. An aura cast's node that
 /// holds an effect until removed ends at `aura_ends_ms` (`life_under_aura`).
 pub fn given(
   held held: Option(Node),

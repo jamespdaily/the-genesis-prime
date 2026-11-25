@@ -2,7 +2,7 @@
 //// into sight of the creature later is listed the buff with its time left.
 ////
 //// ```
-//// cast state (nodes, each stamped with the round that struck its creature)
+//// cast state (nodes, each with the life of the creature a round struck)
 ////   |  cast_state.creature_views
 ////   v
 //// compared  ---- against creature_told ---->  ViewSet / ViewEnds, creature_told replaced
@@ -37,14 +37,14 @@ import genesis_prime/game/unit_casts
 /// What the creature is told of one cast.
 pub type Change {
   /// The creature `unit_id` of `life` holds this view of the cast: the caster's cast with
-  /// that creature's target alone and no cast in progress. A later go of the cast on the
-  /// same creature sends it again, whole, for the new round (`Told` holds the round's time).
+  /// that creature's target alone and no cast in progress. It is sent again, whole, whenever
+  /// the creature's life or target (its effects' starts and ends) differs from what it was told.
   ViewSet(unit_id: Int, life: Int, view: unit_casts.CastView)
   /// The creature holds no node of the cast `cast_id` any more.
   ViewEnds(unit_id: Int, life: Int, cast_id: Int)
 }
 
-/// The nodes the caster holds on creatures now, each with the round that struck it, its view
+/// The nodes the caster holds on creatures now, each with the life of the creature a round struck, its view
 /// and its target, by cast id and unit id.
 type Held =
   Dict(
@@ -54,7 +54,7 @@ type Held =
 
 /// Compares what the player's casts hold on creatures (`cast_state.creature_views`) with
 /// what the creatures were last told (`creature_told`): a `ViewSet` for each node that is
-/// new or differs in life, round or target, and a `ViewEnds` for each told node the state
+/// new or differs in life or target, and a `ViewEnds` for each told node the state
 /// no longer holds, in cast id then unit id order. The state records the result, so a
 /// second call with no step between returns no change. A state with nothing told and no
 /// stamped node is returned as it is.
@@ -99,10 +99,8 @@ fn set_of(
 ) -> Result(#(#(Int, Int), Change), Nil) {
   let #(struck, view, target) = held
   case dict.get(told, key) {
-    Ok(Told(life:, struck_at_ms:, target: earlier))
-      if life == struck.life
-      && struck_at_ms == struck.struck_at_ms
-      && earlier == target
+    Ok(Told(life:, target: earlier))
+      if life == struck.life && earlier == target
     -> Error(Nil)
     Ok(_) | Error(Nil) ->
       Ok(#(key, ViewSet(unit_id: key.1, life: struck.life, view:)))
@@ -122,11 +120,11 @@ fn ends_of(
   })
 }
 
-/// What the creatures are told once the held nodes are: each node's round and target.
+/// What the creatures are told once the held nodes are: each node's life and target.
 fn told_of(held held: Held) -> Dict(#(Int, Int), Told) {
   dict.map_values(held, fn(_, entry) {
     let #(struck, _, target) = entry
-    Told(life: struck.life, struck_at_ms: struck.struck_at_ms, target:)
+    Told(life: struck.life, target:)
   })
 }
 

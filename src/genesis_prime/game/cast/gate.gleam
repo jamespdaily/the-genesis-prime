@@ -684,19 +684,17 @@ pub fn modifier_refusal(
   }
 }
 
-/// The life of the creature `unit_id` the round hit and the time it was struck.
+/// The life of the creature `unit_id` the round hit.
 pub fn creature_hit(
   struck struck: List(Struck),
   unit_id unit_id: Int,
-) -> Result(#(Int, Int), Nil) {
+) -> Result(Int, Nil) {
   list.find_map(struck, fn(one) {
     case one {
-      Hit(unit_id: hit, unit: HitCreature(life:, struck_at_ms:), ..)
-        if hit == unit_id
-      -> Ok(#(life, struck_at_ms))
-      Immune(unit_id: hit, unit: HitCreature(life:, struck_at_ms:), ..)
-        if hit == unit_id
-      -> Ok(#(life, struck_at_ms))
+      Hit(unit_id: hit, unit: HitCreature(life:), ..) if hit == unit_id ->
+        Ok(life)
+      Immune(unit_id: hit, unit: HitCreature(life:), ..) if hit == unit_id ->
+        Ok(life)
       Hit(..) | Immune(..) | Deflected(..) -> Error(Nil)
     }
   })

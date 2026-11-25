@@ -470,7 +470,7 @@ pub fn tell_unit_states_reaches_the_creature_as_unit_states_test() -> Nil {
   ]
   assert delivered(client_connection.TellUnitStates(rows:, went_at_ms: 1000))
     == creature.UnitStates(rows:, went_at_ms: 1000)
-    as "held states are the creature's UnitStates, with their rows, the round's time and the go's time"
+    as "held states are the creature's UnitStates, with their rows and the go's time"
   assert delivered(client_connection.TellDespawn(
       delay_ms: 3000,
       went_at_ms: 1000,
@@ -713,8 +713,7 @@ pub fn an_area_go_skips_the_invulnerable_creature_and_logs_type_18_for_it_test()
   let assert Landed(descriptions: [_], ..) = other_outcome
     as "the other creature takes the blow"
   let struck_unit = fn(unit: #(Int, Int), outcome) {
-    let hit_unit =
-      cast_state.HitCreature(life: unit.1, struck_at_ms: went_at_ms)
+    let hit_unit = cast_state.HitCreature(life: unit.1)
     case outcome {
       strike_tell.Immune(controls: _, ..) ->
         cast_state.Immune(

@@ -4,28 +4,26 @@
 //// - The creature registry (`creature_registry`): an address is one creature process in one
 ////   run, so a tell addressed to the life that ended finds no creature, whatever the tell
 ////   says, and the same tell to the life that replaced it is taken.
-//// - The Design of run A (issue 1410), 9.2: a tell holds no time of the life it is for.
+//// - The design of run A, 9.2: a tell holds no time of the life it is for.
 //// A tell is shown to change nothing when the frames the players are sent after it equal
 //// those of a world that was told nothing, and to change something when they differ in the
 //// frame the row names. Each row is run in three worlds that differ only in what is told
 //// after the next life stands: nothing, the tell by the old life's address, and that and
 //// the same tell by the new life's address.
 
-import cast_support
+import code_rule/source
 import crowd_control_support
 import driven_time
 import genesis_prime/client_connection.{
   type Message, ForStay, SentByFoe, SentByMap, SentByPeer, SentByTarget,
 }
-import genesis_prime/game/forced_move
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Answered, Landed}
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews}
-import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/game/unit_state
 import genesis_prime/step.{ConnectionId, RingMember}
-import genesis_prime/table/id.{Spell4Id, UnitProperty2Id}
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/registry.{type MapProcess}
@@ -83,24 +81,6 @@ type Row {
   )
 }
 
-fn modifier_source() -> unit_properties.Source {
-  cast_support.source_of(cast_id: 1, effect_id: 1921)
-}
-
-fn modifier_starts() -> creature.Message {
-  creature.ModifierStarts(
-    by: ConnectionId(1),
-    source: modifier_source(),
-    modifier: Change(
-      property: UnitProperty2Id(100),
-      mode: 3,
-      multiplier: 1.0,
-      flat: 0.5,
-      per_level: 0.0,
-    ),
-  )
-}
-
 fn cast_view(scene scene: Scene) -> unit_casts.CastView {
   unit_casts.CastView(
     caster_unit_id: 10,
@@ -118,23 +98,7 @@ fn cast_view_set(scene scene: Scene) -> creature.Message {
 }
 
 fn thrown() -> creature.Message {
-  creature.Thrown(throw: forced_move.Throw(
-    move: forced_move.Move(
-      way: forced_move.Away,
-      mover: forced_move.Flight,
-      min_distance: 10.0,
-      max_distance: 10.0,
-      flight_ms: 375,
-      gravity: 0.0,
-      flags: 1,
-      height: 2.0,
-    ),
-    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-    reference: forced_move.Reference(
-      place: world_watch_support.sight_place(),
-      radius: 0.5,
-    ),
-  ))
+  creature.Thrown(throw: world_watch_support.throw())
 }
 
 fn despawn(scene scene: Scene) -> creature.Message {
@@ -361,6 +325,12 @@ fn scene_of(
       life: next_life,
     )
   let scene = Scene(..scene, next_life:)
+  world_watch_support.address_dropped(
+    world:,
+    run:,
+    unit_id: scene.unit_id,
+    life: first_life,
+  )
   let _dropped = heard(scene:)
   scene
 }
@@ -435,7 +405,7 @@ fn rows() -> List(Row) {
     Row(
       name: "ModifierStarts",
       kind: Beast,
-      prepare: fn(_scene, _life) { modifier_starts() },
+      prepare: fn(_scene, _life) { world_watch_support.modifier_starts() },
       settle: nothing_to_settle,
       changes: "connection 1: PropertiesChanged",
     ),
@@ -443,8 +413,12 @@ fn rows() -> List(Row) {
       name: "ModifierEnds",
       kind: Beast,
       prepare: fn(scene, life) {
-        told_and_taken(scene:, life:, message: modifier_starts())
-        creature.ModifierEnds(source: modifier_source())
+        told_and_taken(
+          scene:,
+          life:,
+          message: world_watch_support.modifier_starts(),
+        )
+        creature.ModifierEnds(source: world_watch_support.modifier_source())
       },
       settle: nothing_to_settle,
       changes: "connection 1: PropertiesChanged",
@@ -604,10 +578,44 @@ fn connection_of(scene scene: Scene, id id: Int) -> Subject(Message) {
   received
 }
 
+/// The variants of `creature.Message` as the type's source declares them.
+fn message_variants() -> List(String) {
+  let assert [_, declaration, ..] =
+    string.split(
+      source.read("src/genesis_prime/world_map/creature.gleam"),
+      "pub type Message {\n",
+    )
+    as "the creature's module declares its Message"
+  let assert [body, ..] = string.split(declaration, "\n}\n")
+    as "the type ends at a closing brace"
+  string.split(body, "\n")
+  |> list.filter(fn(line) {
+    string.starts_with(line, "  ")
+    && !string.starts_with(line, "   ")
+    && !string.starts_with(string.trim(line), "///")
+    && !string.starts_with(string.trim(line), ")")
+  })
+  |> list.map(fn(line) {
+    let assert [name, ..] = string.split(string.trim(line), "(")
+    name
+  })
+}
+
+/// The variants of `creature.Message` no row tells: the map's lifecycle. `Seen` and `Unseen`
+/// carry the generation the map gave the viewer, which fences them, and `Retire` is the
+/// map's own end of a creature.
+const lifecycle_variants = ["Seen", "Unseen", "Retire"]
+
 pub fn a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert list.length(rows()) == 14
-    as "one row for each message a connection or the map tells a creature that changes it, from creature.Message"
+  assert list.sort(list.map(rows(), fn(row) { row.name }), string.compare)
+    == list.sort(
+      list.filter(message_variants(), fn(name) {
+        !list.contains(lifecycle_variants, name)
+      }),
+      string.compare,
+    )
+    as "one row for each variant of creature.Message but the map's lifecycle, as the type declares them"
   list.each(rows(), fn(row) {
     let nothing = heard_after(row:, telling: ToNoOne)
     let by_the_old_address = heard_after(row:, telling: ToTheLifeThatEnded)

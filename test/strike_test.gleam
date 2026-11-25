@@ -446,7 +446,7 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
         cast_state.Deflected(unit_id: 10),
         cast_state.Hit(
           unit_id: 11,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -454,7 +454,7 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
         ),
         cast_state.Hit(
           unit_id: 12,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -488,7 +488,7 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
       #(5, 0, [
         cast_state.Hit(
           unit_id: 11,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -496,7 +496,7 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
         ),
         cast_state.Hit(
           unit_id: 12,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -532,7 +532,7 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
       #(5, 0, [
         cast_state.Hit(
           unit_id: 10,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -732,7 +732,7 @@ pub fn a_spell_that_only_selects_names_each_unit_at_once_without_a_tell_test() -
       #(5, 0, [
         cast_state.Hit(
           unit_id: 10,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -2124,7 +2124,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
       #(5, 0, [
         cast_state.Hit(
           unit_id: 10,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -2132,7 +2132,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
         ),
         cast_state.Hit(
           unit_id: 11,
-          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3),
           descriptions: [],
           controls: [landed],
           armor_removed: 0,
@@ -2406,7 +2406,7 @@ pub fn each_tick_rolls_the_hit_rule_on_the_value_of_its_time_test() -> Nil {
         Some(
           cast_state.Hit(
             unit_id: 10,
-            unit: cast_state.HitCreature(life: 3, struck_at_ms: 2000),
+            unit: cast_state.HitCreature(life: 3),
             descriptions: [],
             controls: [],
             armor_removed: 0,

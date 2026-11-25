@@ -67,8 +67,8 @@ import gleam/result
 pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
   list.flat_map(struck, fn(one) {
     case one {
-      Hit(unit_id:, unit: HitCreature(life:, ..), ticking:, ..)
-      | Immune(unit_id:, unit: HitCreature(life:, ..), ticking:, ..) ->
+      Hit(unit_id:, unit: HitCreature(life:), ticking:, ..)
+      | Immune(unit_id:, unit: HitCreature(life:), ticking:, ..) ->
         list.map(ticking, fn(row: spell_area.TickingDamage) {
           TickingOn(
             unit_id:,

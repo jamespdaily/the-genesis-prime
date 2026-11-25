@@ -1283,7 +1283,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
   let struck = [
     cast_state.Hit(
       unit_id:,
-      unit: cast_state.HitCreature(life: 2, struck_at_ms: 1000),
+      unit: cast_state.HitCreature(life: 2),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -1707,7 +1707,7 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
   let struck = [
     cast_state.Hit(
       unit_id:,
-      unit: cast_state.HitCreature(life: 2, struck_at_ms: go_ms),
+      unit: cast_state.HitCreature(life: 2),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -1859,25 +1859,8 @@ pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
       went_at_ms: 1000,
     ))
     == creature.Despawn(delay_ms: 3000, went_at_ms: 1000)
-    as "a removal is the creature's Despawn, with its delay, the round's time and the go's time"
-  let throw =
-    forced_move.Throw(
-      move: forced_move.Move(
-        way: forced_move.Away,
-        mover: forced_move.Flight,
-        min_distance: 10.0,
-        max_distance: 10.0,
-        flight_ms: 375,
-        gravity: 0.0,
-        flags: 1,
-        height: 2.0,
-      ),
-      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-      reference: forced_move.Reference(
-        place: world_watch_support.sight_place(),
-        radius: 0.5,
-      ),
-    )
+    as "a removal is the creature's Despawn, with its delay and the go's time"
+  let throw = world_watch_support.throw()
   assert delivered(client_connection.TellThrown(throw:))
     == creature.Thrown(throw:)
     as "a throw is still the creature's Thrown"
@@ -1931,7 +1914,7 @@ pub fn tell_cast_view_reaches_the_creature_as_cast_view_set_and_ends_test() -> N
       change: client_connection.ViewSet(view:),
     ))
     == creature.CastViewSet(by: ConnectionId(4), view:)
-    as "a set is the creature's CastViewSet, with the connection that told it and the round's time"
+    as "a set is the creature's CastViewSet, with the connection that told it"
   assert delivered(client_connection.TellCastView(
       connection: ConnectionId(4),
       change: client_connection.ViewEnds(cast_id: view.cast_id),
