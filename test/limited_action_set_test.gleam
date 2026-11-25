@@ -1434,10 +1434,6 @@ pub fn every_classs_entry_bar_fits_the_slots_open_at_level_1_and_is_accepted_at_
           level:,
           class_id: ClassId(class_id),
           points_total: ability_points.total(tables:, level:),
-          amp_power_total: amp_spec.power_total(
-            specs: amp_spec.specs(tables:),
-            level:,
-          ),
           book: ability_book.book(tables:, loadout: held, level:),
           dead: False,
           in_combat: False,
@@ -2119,30 +2115,62 @@ fn fitting_tier_rows(
   })
 }
 
-pub fn any_accepted_amp_list_stays_within_the_levels_power_the_players_class_and_a_repeat_changes_nothing_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let tables = fixture_tables.shared()
-  let classes = [1, 2, 3, 4, 5, 7]
-  // GameFormula 942 as the client reads it (`0x1403cdbf0`): no power below dataint0, else
-  // trunc((level - dataint0) * datafloat0) + dataint01.
+/// What an accepted AMP save holds, read from the client's rows and GameFormula 942 and not from
+/// the rule: the list it sent in id order, at most the power the level gives (no power below
+/// dataint0, else `trunc((level - dataint0) * datafloat0) + dataint01`, `0x1403cdbf0`), only
+/// AMPs of the player's class, every AMP an AMP requires, and the same save again changing
+/// nothing and answering the same frames.
+fn assert_an_accepted_amp_save_is_sound(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+  level level: Int,
+  amp_ids amp_ids: List(Int),
+  body body: BitArray,
+  after after: limited_action_set.Saved,
+  effects effects: List(limited_action_set.Effect),
+) -> Nil {
   let assert Ok(formula) = game_formula.get(tables:, id: GameFormulaId(942))
-  let power_at = fn(level) {
-    case level >= formula.dataint0 {
-      True ->
-        float.truncate(
-          int.to_float(level - formula.dataint0) *. formula.datafloat0,
-        )
-        + formula.dataint01
-      False -> 0
-    }
+  let power = case level >= formula.dataint0 {
+    True ->
+      float.truncate(
+        int.to_float(level - formula.dataint0) *. formula.datafloat0,
+      )
+      + formula.dataint01
+    False -> 0
   }
-  let rows = eldan_augmentation.all(tables)
   let row_of = fn(id) {
     let assert Ok(row) =
       eldan_augmentation.get(tables:, id: EldanAugmentationId(id))
       as "a held AMP has a row"
     row
   }
+  let held = support.held_amp_ids(saved: after, set: 0)
+  assert held == list.sort(list.unique(amp_ids), int.compare)
+    as "an accepted save keeps the list it sent, ascending"
+  assert list.fold(held, 0, fn(cost, id) { cost + row_of(id).power_cost })
+    <= power
+    as "the AMPs held cost no more than the power the level gives"
+  list.each(held, fn(id) {
+    assert row_of(id).class_id == class_id
+      as "an AMP held is the player's class"
+    assert row_of(id).eldan_augmentation_id_required == 0
+      || list.contains(held, row_of(id).eldan_augmentation_id_required)
+      as "an AMP held has the AMP it requires"
+  })
+  let #(again, repeated) =
+    support.taken_as(class_id:, saved: after, level:, body:)
+  assert limited_action_set.rows(saved: again)
+    == limited_action_set.rows(saved: after)
+    as "the same save again holds the same bar, tiers and AMPs"
+  assert support.frames_of(effects: repeated) == support.frames_of(effects:)
+    as "the same save again answers the same frames"
+}
+
+pub fn any_accepted_amp_list_stays_within_the_levels_power_the_players_class_and_a_repeat_changes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let classes = [1, 2, 3, 4, 5, 7]
+  let rows = eldan_augmentation.all(tables)
   let ids_where = fn(keep) {
     list.filter(rows, keep) |> list.map(fn(row) { row.id })
   }
@@ -2181,6 +2209,8 @@ pub fn any_accepted_amp_list_stays_within_the_levels_power_the_players_class_and
           list.drop(pool, draw.1 % list.length(pool)) |> list.first
         })
       }
+      // The first save is judged on no AMPs held; the second holds whatever the first left and
+      // sends the first list with more.
       let lists = [ids_of(first), list.append(ids_of(first), ids_of(second))]
       list.fold(lists, limited_action_set.none(), fn(saved, amp_ids) {
         let body = support.amps_body(class_id:, amp_ids:)
@@ -2189,34 +2219,16 @@ pub fn any_accepted_amp_list_stays_within_the_levels_power_the_players_class_and
         case
           support.the_action_set(frames: support.frames_of(effects:)).result
         {
-          1 -> {
-            let held = support.held_amp_ids(saved: after, set: 0)
-            assert held == list.sort(list.unique(amp_ids), int.compare)
-              as "an accepted save keeps the list it sent, ascending"
-            assert list.fold(held, 0, fn(cost, id) {
-                cost + row_of(id).power_cost
-              })
-              <= power_at(level)
-              as "the AMPs held cost no more than the power the level gives"
-            list.each(held, fn(id) {
-              assert row_of(id).class_id == class_id
-                as "an AMP held is the player's class"
-              assert row_of(id).eldan_augmentation_id_required == 0
-                || list.contains(
-                  held,
-                  row_of(id).eldan_augmentation_id_required,
-                )
-                as "an AMP held has the AMP it requires"
-            })
-            let #(again, repeated) =
-              support.taken_as(class_id:, saved: after, level:, body:)
-            assert limited_action_set.rows(saved: again)
-              == limited_action_set.rows(saved: after)
-              as "the same save again holds the same bar, tiers and AMPs"
-            assert support.frames_of(effects: repeated)
-              == support.frames_of(effects:)
-              as "the same save again answers the same frames"
-          }
+          1 ->
+            assert_an_accepted_amp_save_is_sound(
+              tables:,
+              class_id:,
+              level:,
+              amp_ids:,
+              body:,
+              after:,
+              effects:,
+            )
           _ -> Nil
         }
         after

@@ -34,7 +34,6 @@ pub fn take_message(
         tables: session.settings.tables,
         level:,
       ),
-      amp_power_total: amp_spec.power_total(specs: amps, level:),
       book: ability_book.book(
         tables: session.settings.tables,
         loadout: entered.loadout,

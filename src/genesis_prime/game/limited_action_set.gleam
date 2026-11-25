@@ -1,8 +1,9 @@
 //// The ability builder's save: the client's 0xB1 holds the twelve Spell4Base ids of the
-//// action set's slots and the tier edits of the tier pips, which the client sends without
-//// checking that a slot is open, that the player holds the ability, that an id appears once,
-//// that a tier exists or that the points cover it. The rule judges it and answers with the bar
-//// and the tiers the player has, which is the only way the client's bar and book tiers change.
+//// action set's slots, the tier edits of the tier pips and the AMPs of the set, which the client
+//// sends without checking that a slot is open, that the player holds the ability, that an id
+//// appears once, that a tier exists, that the points cover it or that the AMPs pass its own
+//// check. The rule judges it and answers with the bar, the tiers and the AMPs the player has,
+//// which is the only way the client's bar, book tiers and AMP list change.
 //// The client's name for the builder's set is "limited action set" (`ActionSetLib`); a feature
 //// of the game connection's rule (genesis_prime/game/connection) taken from inside 0x038C
 //// with the player in the world.
@@ -10,12 +11,14 @@
 //// ```
 //// load: ActionSlotPrereq rows + their Prerequisite rows ─▶ Unlocks (slot ─▶ the levels it opens at)
 //// load: Spell4 + Spell4TierRequirements ─▶ SpellTiers (genesis_prime/game/spell_tier)
-//// 0xB1 {12 ids, set, tier changes, AMP ids} ─▶ take(unlocks, tiers, player, saved, class_bar, body)
+//// load: the AMP rows, categories and power ─▶ amp_spec.Specs (genesis_prime/game/amp_spec)
+//// 0xB1 {12 ids, set, tier changes, AMP ids} ─▶ take(unlocks, tiers, amps, player, saved, class_bar, body)
 ////      a body the client's reader refuses ─▶ Refusal: the connection ends
 ////      every check passes  ─▶ Saved' and 0x019D (the 12 shortcuts, result 1), 0x01A0 (the book's tiers
-////                             in set 0), 0x0169 (the points left), 0x00B2 (bit 1)
-////      a check fails       ─▶ Saved as it was, 0x019D (the held bar, the result), 0x00B2 (bit 0), a warning
-//// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set, and tier rows
+////                             in set 0), 0x0169 (the points left), 0x01A3 (the set's AMPs), 0x00B2 (bit 1)
+////      a check fails       ─▶ Saved as it was, 0x019D (the held bar, the result), 0x01A3 (the held AMPs),
+////                             0x00B2 (bit 0), a warning
+//// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set, tier rows and AMP rows
 //// entry      ─▶ entering(unlocks, tiers, points_total, level, book, rows) ─▶ Saved, or a RowError
 ////               that ends the entry
 //// ```
@@ -44,10 +47,16 @@
 ////   held tier changes nothing, and the points are judged on the tiers the save leaves. Any refusal refuses the whole save, bar
 ////   included. A tier belongs to the ability in the set, so a save that takes an ability off the
 ////   bar keeps its tier. What a tier costs and needs is genesis_prime/game/spell_tier.
-//// - **The tiers are saved** with the place, as the bars are: `rows` carries a row for each
-////   ability held above tier 1 in each set, whole, so a tier returned to 1 is no row and the
-////   store deletes the stored one. A map change, a Holocrypt rejoin and a login take them
-////   back through `entering`.
+//// - **The AMP checks** come after the tiers': an id twice 13, a held AMP the list leaves out 43
+////   (removing an AMP is the paid reset, which the stock client cannot send, `opcode.0x151`; both are
+////   the server's mapping, since the client never refuses a repeat), then the client's own check of
+////   the held AMPs and the picks (genesis_prime/game/amp_spec). A pick is an id of the list the set
+////   does not hold; a list that adds none passes whatever the level.
+//// - **The tiers and the AMPs are saved** with the place, as the bars are: `rows` carries a row for
+////   each ability held above tier 1 and each AMP held in each set, whole, so a tier returned to 1 is
+////   no row and the store deletes the stored one. A map change, a Holocrypt rejoin and a login take
+////   them back through `entering`, which keeps the AMP rows as they are (a stored list is not
+////   judged again) and refuses the ones the table's checks cannot hold.
 //// - **A saved tier is kept at entry** only while the book holds its ability, the Spell4 rows
 ////   hold that tier and the level reaches it; a set whose kept tiers cost more than the level's
 ////   points has every tier reset to tier 1 and its points refunded (the server's choice, since the
@@ -65,10 +74,12 @@
 //// - **The answer** is the active set (0) and the held bar of twelve shortcuts, an empty slot
 ////   as type 0 so the client clears it; for an accepted save then 0x01A0 with every ability of
 ////   the book in set 0 at its held tier, and 0x0169 with the points left (the client keeps both
-////   and clears its own edits with the 0xB2 after them, `opcode.0x169`, `opcode.0xb2`); last 0xB2,
-////   whose bit is 1 for an accepted save and 0 for a refused one. The bit is a guess: the client
-////   only adds a combat log line for it. A refused save is answered with the held bar and the
-////   0xB2 only, since the client then reads the book's tiers and the last 0x0169 again.
+////   and clears its own edits with the 0xB2 after them, `opcode.0x169`, `opcode.0xb2`); then 0x01A3
+////   with the set's AMPs in id order, which replaces the client's list and forgets its picks
+////   (`opcode.0x1a3`); last 0xB2, whose bit is 1 for an accepted save and 0 for a refused one.
+////   The bit is a guess: the client only adds a combat log line for it. A refused save is answered
+////   with the held bar, the held AMPs and the 0xB2, since the client forgot its picks at the send
+////   and then reads the book's tiers and the last 0x0169 again.
 //// - **A saved bar is kept at entry** only for the slots still open at the player's level
 ////   and the abilities the book still holds, the same two tests a save passes, so a table
 ////   change or a lower level cannot show an ability the player does not hold; a slot it drops
@@ -88,7 +99,7 @@ import genesis_prime/game/prerequisite.{type Relation}
 import genesis_prime/game/spell_tier
 import genesis_prime/gap
 import genesis_prime/message/action_set_save
-import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
+import genesis_prime/step.{type LogLevel, LogWarning}
 import genesis_prime/store.{
   type AbilityTierRow, type ActionSets, type ActionSlotRow, type AmpRow,
   AbilityTierRow, ActionSets, ActionSlotRow, AmpRow,
@@ -676,15 +687,14 @@ fn opens(opening opening: Opening, level level: Int) -> Bool {
   }
 }
 
-/// What the rule knows of the player: the level that opens slots, its class, the ability
-/// points and the AMP power its level gives, the book of abilities it holds, and whether it is
-/// dead or in combat.
+/// What the rule knows of the player: the level that opens slots and gives the AMP power, its
+/// class, the ability points, the book of abilities it holds, and whether it is dead or in
+/// combat.
 pub type Player {
   Player(
     level: Int,
     class_id: ClassId,
     points_total: Int,
-    amp_power_total: Int,
     book: List(Spell4BaseId),
     dead: Bool,
     in_combat: Bool,
@@ -718,6 +728,9 @@ type Fault {
   TierChangedTwice(id: Int)
   InvalidSpellTier(id: Int, tier: Int, level: Int)
   InsufficientAbilityPoints(spent: Int, total: Int)
+  AmpTwice(id: Int)
+  HeldAmpMissing(id: Int)
+  AmpRefused(refusal: amp_spec.Refusal)
 }
 
 /// The client's number for the result (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`).
@@ -734,6 +747,9 @@ fn result_of(fault fault: Fault) -> Int {
     TierChangedTwice(..) -> 13
     InvalidSpellTier(..) -> 41
     InsufficientAbilityPoints(..) -> 42
+    AmpTwice(..) -> 13
+    HeldAmpMissing(..) -> 43
+    AmpRefused(refusal:) -> amp_spec.result_of(refusal:)
   }
 }
 
@@ -789,19 +805,26 @@ fn describe_fault(fault fault: Fault) -> String {
       <> " ability points and the level gives "
       <> int.to_string(total)
       <> " (InsufficientAbilityPoints)"
+    AmpTwice(id:) ->
+      "AMP " <> int.to_string(id) <> " is in the save twice (DuplicateSpell)"
+    HeldAmpMissing(id:) ->
+      "the held AMP "
+      <> int.to_string(id)
+      <> " is missing from the save's list, and a held AMP leaves only by the paid reset (EldanAugmentation_VersionMismatch)"
+    AmpRefused(refusal:) -> amp_spec.describe(refusal:)
   }
 }
 
 /// What the client's 0xB1 is answered with: the bar the player has afterwards and the
 /// frames and log lines that say so, or the refusal for a body the client's reader refuses.
 /// `class_bar` is the class's level-1 abilities, the bar a player who has saved none holds.
-/// A save that fails a check leaves the bar and the tiers as they were and is answered with
-/// the result and the held bar; an accepted save is answered with the bar, the book's tiers in
-/// set 0 and the points left. The AMP ids a save carries are read and not applied.
+/// A save that fails a check leaves the bar, the tiers and the AMPs as they were and is answered
+/// with the result, the held bar and the held AMPs; an accepted save is answered with the bar,
+/// the book's tiers in set 0, the points left and the AMPs.
 pub fn take(
   unlocks unlocks: Unlocks,
   tiers tiers: spell_tier.SpellTiers,
-  amps _amps: amp_spec.Specs,
+  amps amps: amp_spec.Specs,
   player player: Player,
   saved saved: Saved,
   class_bar class_bar: List(Spell4BaseId),
@@ -814,21 +837,27 @@ pub fn take(
     case
       fault_of(unlocks:, player:, save:)
       |> result.try(fn(_) { tiers_after(tiers:, player:, saved:, save:) })
+      |> result.try(fn(held) {
+        amps_after(amps:, player:, saved:, save:)
+        |> result.map(fn(held_amps) { #(held, held_amps) })
+      })
     {
-      Ok(held) -> accepted(tiers:, player:, saved:, save:, held:)
+      Ok(#(held, held_amps)) ->
+        accepted(tiers:, player:, saved:, save:, held:, held_amps:)
       Error(fault) -> refused(saved:, class_bar:, fault:)
     }
   })
 }
 
-/// The saved bars with the save's bar in the active set and the tiers it leaves, answered with
-/// the bar, the book's tiers in the active set and the points left.
+/// The saved bars with the save's bar in the active set, the tiers it leaves and its AMPs,
+/// answered with the bar, the book's tiers in the active set, the points left and the AMPs.
 fn accepted(
   tiers tiers: spell_tier.SpellTiers,
   player player: Player,
   saved saved: Saved,
   save save: action_set_save.ActionSetSave,
   held held: Dict(Spell4BaseId, Int),
+  held_amps held_amps: List(EldanAugmentationId),
 ) -> #(Saved, List(Effect)) {
   let bar =
     Bar(
@@ -842,37 +871,36 @@ fn accepted(
   let set = first_set().number
   let saved =
     Saved(
-      ..saved,
       bars: dict.insert(saved.bars, set, bar),
       tiers: case dict.is_empty(held) {
         True -> dict.delete(saved.tiers, set)
         False -> dict.insert(saved.tiers, set, held)
       },
+      amps: case held_amps {
+        [] -> dict.delete(saved.amps, set)
+        held_amps -> dict.insert(saved.amps, set, held_amps)
+      },
     )
   let spent = points_spent(tiers:, saved:)
-  #(
-    saved,
-    list.flatten([
-      [
-        Send(answer(bar:, result: ability_book_frame.action_set_ok)),
-        Send(
-          ability_book_frame.tiers(
-            abilities: player.book,
-            sets: [set],
-            tier_of: fn(set, base) {
-              book_tier_of(tiers:, saved:, set:, book: player.book, base:)
-            },
-          ),
-        ),
-        Send(ability_points.points_frame(total: player.points_total, spent:)),
-        Send(ability_book_frame.action_set_saved(add_combat_log_line: True)),
-      ],
-      dropped_edits(save:),
-    ]),
-  )
+  #(saved, [
+    Send(answer(bar:, result: ability_book_frame.action_set_ok)),
+    Send(
+      ability_book_frame.tiers(
+        abilities: player.book,
+        sets: [set],
+        tier_of: fn(set, base) {
+          book_tier_of(tiers:, saved:, set:, book: player.book, base:)
+        },
+      ),
+    ),
+    Send(ability_points.points_frame(total: player.points_total, spent:)),
+    Send(ability_book_frame.amp_list(set:, ids: held_amps)),
+    Send(ability_book_frame.action_set_saved(add_combat_log_line: True)),
+  ])
 }
 
-/// The saved bars as they were, answered with the held bar and the check the save failed.
+/// The saved bars as they were, answered with the held bar, the held AMPs and the check the
+/// save failed.
 fn refused(
   saved saved: Saved,
   class_bar class_bar: List(Spell4BaseId),
@@ -881,6 +909,10 @@ fn refused(
   let held = bar_of(saved:, set: first_set(), class_bar:)
   #(saved, [
     Send(answer(bar: held, result: result_of(fault:))),
+    Send(ability_book_frame.amp_list(
+      set: first_set().number,
+      ids: held_amps(saved:, set: first_set().number),
+    )),
     Send(ability_book_frame.action_set_saved(add_combat_log_line: False)),
     Log(
       level: LogWarning,
@@ -900,21 +932,6 @@ fn answer(bar bar: Bar, result result: Int) -> Frame {
     slots: bar.slots,
     shortcuts: ability_book_frame.EverySlot,
   )
-}
-
-/// The debug line of the AMP ids of an accepted save, which are not applied.
-fn dropped_edits(save save: action_set_save.ActionSetSave) -> List(Effect) {
-  case save.amp_ids {
-    [] -> []
-    amps -> [
-      Log(
-        level: LogDebug,
-        text: "0xB1 carries "
-          <> int.to_string(list.length(amps))
-          <> " AMPs, which are not applied",
-      ),
-    ]
-  }
 }
 
 /// The first check the save fails, in the order of the rule's doc. Only 25 before 27 before
@@ -1020,6 +1037,40 @@ fn tiers_after(
   Ok(after)
 }
 
+/// The AMPs the active set holds after the save, in id order, or the first check the list
+/// fails: an id twice 13, a held AMP the list leaves out 43 (removing an AMP is the paid reset,
+/// which the stock client cannot send, `opcode.0x151`), then the client's own check of the held
+/// AMPs and the ones the list adds (`amp_spec.check`). Both server checks are the server's
+/// mapping: the client never refuses a repeat and makes no check of the list it sends.
+fn amps_after(
+  amps amps: amp_spec.Specs,
+  player player: Player,
+  saved saved: Saved,
+  save save: action_set_save.ActionSetSave,
+) -> Result(List(EldanAugmentationId), Fault) {
+  let sent = list.map(save.amp_ids, EldanAugmentationId)
+  let held = held_amps(saved:, set: first_set().number)
+  case
+    list.find(sent, fn(id) { list.count(sent, fn(other) { other == id }) > 1 }),
+    list.find(held, fn(id) { !list.contains(sent, id) })
+  {
+    Ok(id), _ -> Error(AmpTwice(id: id.value))
+    Error(Nil), Ok(id) -> Error(HeldAmpMissing(id: id.value))
+    Error(Nil), Error(Nil) ->
+      amp_spec.check(
+        specs: amps,
+        class_id: player.class_id,
+        level: player.level,
+        held:,
+        picks: list.filter(sent, fn(id) { !list.contains(held, id) }),
+      )
+      |> result.map_error(fn(refusal) { AmpRefused(refusal:) })
+      |> result.map(fn(_) {
+        list.sort(sent, fn(a, b) { int.compare(a.value, b.value) })
+      })
+  }
+}
+
 /// The first slot that holds an id it may not: a gadget or path slot, a slot not open at the
 /// player's level, or an id the book does not hold.
 fn slot_fault(
@@ -1064,7 +1115,15 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Ability builder",
-      missing: "The AMP ids a save carries are read and not applied: AMP picks are not built.",
+      missing: "A picked AMP is held and sent to the client, but the spell it names does not stand: no AMP spell starts.",
+    ),
+    gap.Entry(
+      area: "Ability builder",
+      missing: "A pick lasts until the next camp or login: the place save writes no AMP row, so the stored AMP rows are none.",
+    ),
+    gap.Entry(
+      area: "Ability builder",
+      missing: "The Primal Matrix's bonus AMP power and the AMPs an item unlocks are never given (the power bonus is 0 and the unlocked list is empty), and the AMP reset (0x0151) and commit (0x01A2) messages are not read.",
     ),
     gap.Entry(
       area: "Ability builder",
@@ -1076,7 +1135,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Ability builder",
-      missing: "Only action set 0 is judged: a save for another set is refused, since the other sets are bought unlocks the server does not give.",
+      missing: "Only action set 0 is judged, its bar, tiers and AMP list: a save for another set is refused, since the other sets are bought unlocks the server does not give.",
     ),
     gap.Entry(
       area: "Ability builder",

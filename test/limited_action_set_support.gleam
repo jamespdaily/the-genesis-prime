@@ -164,10 +164,6 @@ pub fn player_of(
     level:,
     class_id: ClassId(class_id),
     points_total: ability_points.total(tables:, level:),
-    amp_power_total: amp_spec.power_total(
-      specs: amp_spec.specs(tables:),
-      level:,
-    ),
     book: ability_book.book(
       tables:,
       loadout: ability_book_support.loadout_of(tables:, class_id:),
