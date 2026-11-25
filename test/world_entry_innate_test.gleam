@@ -358,7 +358,7 @@ pub fn the_wanted_list_holds_the_amp_spells_of_set_0_in_id_order_after_the_worn_
       level: 50,
       items: worn_item_support.held_items(items: [#(85_762, 0, 15)]),
     )
-  // AMP 770's spell is 56845 and 863's 59436 (class 5); AMP 440 of class 3 names 41594, which
+  // AMP 770's spell is 56845, 771's 56846, 772's 56847 and 863's 59436 (class 5); AMP 440 of class 3 names 41594, which
   // the plans leave out (GainAimNotRead); the class 7 AMP 220 names 57379.
   let entered_of = fn(class_id, amps) {
     let #(_, entered) =
@@ -386,34 +386,34 @@ pub fn the_wanted_list_holds_the_amp_spells_of_set_0_in_id_order_after_the_worn_
   }
   [
     #(
-      "set 0 holds 863 and 770: the innate passive, the worn spell, then 770's and 863's",
-      entered_of(5, [#(0, 863), #(0, 770)]),
-      [45_057, 82_325, 56_845, 59_436],
+      "set 0 holds the chain 770 to 772 and 863 (7 of 7 power, which the check accepts), stored out of order: the innate passive, the worn spell, then the AMPs' in id order",
+      entered_of(5, [#(0, 863), #(0, 772), #(0, 771), #(0, 770)]),
+      [45_057, 82_325, 56_845, 56_846, 56_847, 59_436],
       [],
     ),
     #(
-      "AMP 440's spell is left out of the plans: not in the list, named for the warning",
-      entered_of(3, [#(0, 440)]),
-      [82_325],
+      "AMP 440's spell is left out of the plans, though its list passes the check (447 to 449 give the 3 power in tier 0 that 440's tier 1 needs): not in the list, named for the warning",
+      entered_of(3, [#(0, 447), #(0, 448), #(0, 449), #(0, 440)]),
+      [82_325, 59_198, 59_199, 59_200],
       [41_594],
     ),
     #(
-      "only the active set stands: a list in set 2 adds nothing",
-      entered_of(5, [#(2, 863)]),
+      "only the active set stands: a list in set 2 that the check accepts adds nothing",
+      entered_of(5, [#(2, 770)]),
       [45_057, 82_325],
       [],
     ),
     #("no AMP adds nothing", entered_of(5, []), [45_057, 82_325], []),
     #(
-      "a stored AMP with no EldanAugmentation row (60000) is dropped at entry, not wanted",
-      entered_of(5, [#(0, 863), #(0, 60_000)]),
-      [45_057, 82_325, 59_436],
+      "a stored list holding an AMP with no EldanAugmentation row (60000) is dropped whole at entry, not wanted",
+      entered_of(5, [#(0, 770), #(0, 60_000)]),
+      [45_057, 82_325],
       [],
     ),
     #(
-      "a stored AMP of another class (220 is class 7's, the player is class 5) is dropped at entry",
+      "a stored list holding an AMP of another class (220 is class 7's, the player is class 5) is dropped whole at entry",
       entered_of(5, [#(0, 220), #(0, 770)]),
-      [45_057, 82_325, 56_845],
+      [45_057, 82_325],
       [],
     ),
   ]

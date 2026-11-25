@@ -251,9 +251,8 @@ pub type AmpRow {
 /// a shorter tier list deletes the tier rows it leaves out (a tier returned to 1 is no row),
 /// and an empty one deletes them all, so every request that saves the place carries the whole
 /// held list. A save is refused by name only for a row the table's checks refuse. Two rows for
-/// one slot or for one ability of one set, or a set, slot or tier beyond 16 bits, fail the
-/// statement with an error no check names, which crashes the worker;
-/// `limited_action_set.rows` never builds any. The store writes no AMP row.
+/// one slot, one ability or one AMP of one set fail the statement with an error no check
+/// names, which crashes the worker; `limited_action_set.rows` never builds any.
 pub type ActionSets {
   ActionSets(
     slots: List(ActionSlotRow),
@@ -392,12 +391,13 @@ pub type MoveRequest {
   /// fence, so a refused save changes no quest row. A row a check of the
   /// character_quest table refuses is `QuestLogRefused`, which no log the rule
   /// keeps breaks. The character's `action_sets` are the slots of the bars it has
-  /// saved and the tiers it holds above tier 1: the statement writes the slots
-  /// that changed and no other, under the same fence, and none for an empty
-  /// record; the tiers are the whole list, so the statement also deletes the
-  /// tier rows it leaves out. A slot or tier a check of the character_action_slot
-  /// or character_ability_tier table refuses, or an ability twice in one set, is
-  /// `ActionSetRefused`, which nothing the rule keeps breaks.
+  /// saved, the tiers it holds above tier 1 and the AMPs it holds: the statement
+  /// writes the slots that changed and no other, under the same fence, and none
+  /// for an empty record; the tiers and the AMPs are the whole lists, so the
+  /// statement also deletes the rows it leaves out. A slot, tier or AMP a check of
+  /// the character_action_slot, character_ability_tier or character_action_amp
+  /// table refuses, or an ability twice in one set, is `ActionSetRefused`, which
+  /// nothing the rule keeps breaks.
   SavePlace(
     account_id: AccountId,
     character_id: CharacterId,
@@ -691,10 +691,10 @@ pub type MoveAnswer {
   /// name, which no log the rule keeps breaks: a bug of the server's, so nothing
   /// was saved, neither the quest rows nor the place beside them.
   QuestLogRefused(constraint: String)
-  /// The database refused a slot or a tier of the action sets for the check constraint
-  /// or the unique key of this name, which nothing the rule keeps breaks: a bug of the
-  /// server's, so nothing was saved, neither the slots and tiers nor the place beside
-  /// them.
+  /// The database refused a slot, a tier or an AMP of the action sets for the check
+  /// constraint or the unique key of this name, which nothing the rule keeps breaks: a
+  /// bug of the server's, so nothing was saved, neither the slots, tiers and AMPs nor
+  /// the place beside them.
   ActionSetRefused(constraint: String)
   /// The database refused the health (`character_health_is_not_negative`),
   /// which the rule never asks to keep below 0: a bug of the server's, so

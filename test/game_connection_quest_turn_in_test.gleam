@@ -31,7 +31,8 @@ import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step
 import genesis_prime/store.{
   type QuestRow, AccountId, Character, CharacterId, ForItems, HeldItem, Items,
-  ItemsNotSaved, NewStack, QuestRow, SaveRefused, TurnInQuest, TurnedIn,
+  ItemsNotSaved, Move, NewStack, QuestRow, SavePlace, SaveRefused, TurnInQuest,
+  TurnedIn,
 }
 import genesis_prime/table/id.{ClassId, Item2Id}
 import gleam/list
@@ -164,7 +165,7 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
         ),
       ),
     )
-  let #(_, taken) =
+  let #(asked, taken) =
     game_connection_support.read(
       state: spellslinger,
       bytes: turn_in_of(quest_id: 10_520),
@@ -185,6 +186,23 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
       ],
     )
     as "the ask carries the 12 slot rows of the bar, the tier row and the four AMP rows, the whole list a place save carries"
+  // The turn-in neither loses nor erases the picks: the next timer's save carries the same rows.
+  let #(answered, _) =
+    game_connection_support.answer(
+      state: asked,
+      taken:,
+      outcome: step.Answer(FromStore(ForItems(TurnedIn(credits: 0, made: [])))),
+    )
+  let #(_, later) =
+    game_connection_support.feed(
+      state: answered,
+      event: step.OwnEvent(step.TimerFired(step.TimerId(2))),
+    )
+  let assert AskStore(Move(SavePlace(action_sets: later_sets, ..))) =
+    game_connection_support.ask_request(later)
+    as "the timer asks the store to save the place"
+  assert later_sets == action_sets
+    as "after the turn-in's answer the next place save carries the same slots, tier and AMP rows"
 }
 
 /// The items a turn-in's stacks become once the store has saved them: one stack of each Item2,

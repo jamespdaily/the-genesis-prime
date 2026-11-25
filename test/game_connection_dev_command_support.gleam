@@ -71,6 +71,7 @@ pub fn in_world_holding_currencies(
       quests: [],
       items: world_entry_support.novice_items(character:),
       currencies:,
+      action_sets: support.no_action_sets(),
     )
   support.answer(
     state:,

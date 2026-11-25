@@ -806,10 +806,9 @@ fn builder_answer(frames frames: List(Frame)) -> List(Int) {
 /// A Spellslinger of level 10 (7 AMP power) who sends the client's own 0xB1 with the AMP list of
 /// a Stalker (863, a class the Spellslinger is not), then the class's bar with the chain of
 /// category 1 and its tier 1 AMP (220 to 222 and 259, 7 of 7 power), the same again, and 259
-/// alone, then camps and plays again. Each answer is the set, the held list and 0xB2, or for an
-/// accepted save the set, the tiers, the points, the list and 0xB2 (`opcode.0x1a3`,
-/// `opcode.0xb2`). A list the check refuses or one that drops a held AMP changes nothing; a camp
-/// forgets the picks, since the place save writes no AMP row.
+/// alone. Each answer is the set, the held list and 0xB2, or for an accepted save the set, the
+/// tiers, the points, the list and 0xB2 (`opcode.0x1a3`, `opcode.0xb2`). A list the check
+/// refuses or one that drops a held AMP changes nothing.
 pub fn an_amp_picked_in_the_builder_is_answered_with_0x1a3_and_a_refused_one_changes_nothing_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(10_000)
   let time = driven_time.new()
@@ -860,16 +859,12 @@ pub fn an_amp_picked_in_the_builder_is_answered_with_0x1a3_and_a_refused_one_cha
     as "the same save again is answered the same"
   assert limited.amp_lists_in(frames: again)
     == limited.amp_lists_in(frames: answer)
-  let #(dropped, have) = save(have, [259])
+  let #(dropped, _) = save(have, [259])
   assert limited.the_action_set(frames: dropped).result == 43
     as "259 alone drops the held 220 to 222: removing an AMP is the paid reset"
   assert limited.amp_lists_in(frames: dropped) == [#(0, [220, 221, 222, 259])]
     as "the held list is sent again"
   assert limited.the_answer_bit(frames: dropped) == 0
-  let #(second_entry, _) =
-    game_client.camp_and_play(game:, have:, character_id: character)
-  assert limited.amp_lists_in(frames: second_entry) == []
-    as "the place save writes no AMP row, so the entry after a camp holds none"
   game_client.close(game:)
   login_support.stop(started)
   // The Stalker case: a level 10 Stalker picks the chain 770, 771, 772 and 863 and presses
@@ -944,6 +939,56 @@ pub fn an_amp_picked_in_the_builder_is_answered_with_0x1a3_and_a_refused_one_cha
   let #(phases, _) = game_client.read_until_pong(game:, have:, number: 10)
   assert started_among(phases, [79_229]) == [79_229]
     as "Stagger's fourth phase starts the Proxy to 79229 (Spell4Effects 208198, phase 8), which Prerequisite 37037 gates on the AMP's spell standing"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// A Spellslinger of level 10 (7 AMP power) who picks the chain of category 1 and its tier 1 AMP
+/// (220 to 222 and 259, 7 of 7 power), camps and plays again: the camp's place save writes the
+/// four AMP rows and the entry holds one 0x01A3 with them in id order after the points
+/// (`opcode.0x1a3`), which is the list the client's power counter and lit AMPs read.
+pub fn an_amp_picked_in_the_builder_is_back_after_a_camp_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let time = driven_time.new()
+  let started = login_support.start(time:)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: limited.spellslinger,
+      level: 10,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert limited.amp_lists_in(frames: entry) == []
+    as "a character that holds no AMP enters with no 0x01A3"
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.amps_body(class_id: limited.spellslinger, amp_ids: [
+      259,
+      220,
+      221,
+      222,
+    ]),
+  )
+  let #(answer, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  assert limited.the_answer_bit(frames: answer) == 1 as "the pick is accepted"
+  let #(second_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert limited.amp_lists_in(frames: second_entry)
+    == [#(0, [220, 221, 222, 259])]
+    as "the camp's place save wrote the four AMP rows, so the next entry holds the one list, ascending"
+  assert list.window(cast_support.ids(frames: second_entry), 3)
+    |> list.any(fn(ids) { ids == [0x0169, 0x01A3, 0x025E] })
+    as "the list comes after the points and before 0x025E, whose handler raises CharacterCreated"
   game_client.close(game:)
   login_support.stop(started)
 }

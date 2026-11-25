@@ -1063,13 +1063,17 @@ pub fn the_stores_answer_to_a_save_is_logged_by_what_it_says_test() -> Nil {
         "character_ability_tier_is_above_the_first_and_fits_the_message",
         "no tier the rule keeps breaks a check of the tier table: a bug",
       ),
+      #(
+        "character_action_amp_id_fits_the_message",
+        "no AMP the rule keeps breaks a check of the AMP table: a bug",
+      ),
     ],
     fn(row) {
       let #(constraint, why) = row
       let assert [Fault(text:)] = movement.saved(ActionSetRefused(constraint:))
         as why
       assert string.contains(text, "refused")
-        && string.contains(text, "a slot or a tier of the action sets")
+        && string.contains(text, "a slot, a tier or an AMP of the action sets")
         && string.contains(text, constraint)
         as {
           constraint

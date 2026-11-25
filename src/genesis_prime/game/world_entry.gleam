@@ -1016,12 +1016,13 @@ pub fn joined(
           )
           let book =
             ability_book.book(tables:, loadout:, level: character.level)
-          use action_sets <- with_saved_bars(
+          use judged <- with_saved_bars(
             tables:,
             character:,
             book:,
             rows: action_sets,
           )
+          let action_sets = judged.saved
           let assert Ok(max_health) =
             gear.max_health(tables:, gear: worn, level: character.level)
             as "the bases are found only for a level with a Base Health row"
@@ -1181,6 +1182,10 @@ pub fn joined(
               ],
               standing_started(),
               unread_warned(gear: worn),
+              dropped_amps_warned(
+                character:,
+                dropped: judged.dropped_amps,
+              ),
             ]),
             told: told_after(entry:),
           ))
@@ -1215,6 +1220,24 @@ pub fn joined(
 /// none is known yet.
 fn unread_warned(gear gear: gear.Gear) -> List(Effect) {
   list.map(gear.warnings(gear:, known: None), fn(text) { Warn(text:) })
+}
+
+/// One warning for each action set whose stored AMP list the client's check refuses, which the
+/// entry drops whole; the next save deletes its rows.
+fn dropped_amps_warned(
+  character character: Character,
+  dropped dropped: List(limited_action_set.DroppedAmps),
+) -> List(Effect) {
+  list.map(dropped, fn(dropped) {
+    Warn(
+      text: "a play of character "
+      <> int.to_string(character_number(character))
+      <> " drops the AMPs stored in action set "
+      <> int.to_string(dropped.set)
+      <> ": "
+      <> amp_spec.describe(refusal: dropped.refusal),
+    )
+  })
 }
 
 /// The health the character enters at against its maximum, as `player_life.entering`
@@ -1266,7 +1289,7 @@ fn with_saved_bars(
   character character: Character,
   book book: List(Spell4BaseId),
   rows rows: store.ActionSets,
-  next next: fn(limited_action_set.Saved) -> Result(Joined, Nil),
+  next next: fn(limited_action_set.Judged) -> Result(Joined, Nil),
 ) -> Result(Joined, Nil) {
   case
     limited_action_set.entering(
@@ -1280,12 +1303,12 @@ fn with_saved_bars(
       rows:,
     )
   {
-    Ok(saved) -> next(saved)
+    Ok(judged) -> next(judged)
     Error(error) ->
       Ok(ActionSlotFault(
         text: "a play of character "
         <> int.to_string(character_number(character))
-        <> ", whose saved action slots or tiers hold a row the table's checks cannot: "
+        <> ", whose saved action slots, tiers or AMPs hold a row the table's checks cannot: "
         <> limited_action_set.describe_row(error:),
       ))
   }

@@ -1023,6 +1023,50 @@ order by action_set, spell4_base_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_character_action_amps` query
+/// defined in `./src/genesis_prime/store/sql/load_character_action_amps.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCharacterActionAmpsRow {
+  LoadCharacterActionAmpsRow(action_set: Int, eldan_augmentation_id: Int)
+}
+
+/// The AMPs a character holds, in set then EldanAugmentation order, as the load hands them
+/// to the ability builder's entry (genesis_prime/game/limited_action_set).
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_character_action_amps(
+  db: pog.Connection,
+  character_id: Int,
+) -> Result(pog.Returned(LoadCharacterActionAmpsRow), pog.QueryError) {
+  let decoder = {
+    use action_set <- decode.field(0, decode.int)
+    use eldan_augmentation_id <- decode.field(1, decode.int)
+    decode.success(LoadCharacterActionAmpsRow(
+      action_set:,
+      eldan_augmentation_id:,
+    ))
+  }
+
+  "-- The AMPs a character holds, in set then EldanAugmentation order, as the load hands them
+-- to the ability builder's entry (genesis_prime/game/limited_action_set).
+select
+  action_set::int as action_set,
+  eldan_augmentation_id
+from character_action_amp
+where character_id = $1
+order by action_set, eldan_augmentation_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_character_action_slots` query
 /// defined in `./src/genesis_prime/store/sql/load_character_action_slots.sql`.
 ///
@@ -1723,6 +1767,12 @@ pub type SavePlaceRow {
 /// never touch one row. Two objects for one set and ability fail the statement with an
 /// error no check names.
 ///
+/// The AMPs are $20, a JSON array with one object for each AMP held in each action set,
+/// whose keys are the columns of `character_action_amp`. It is the whole list as the tiers
+/// are: an AMP row the list leaves out is deleted (an empty array deletes every one) and one
+/// it names is written, both only through the row the fence above matched. A row has no
+/// value but its key, so one already held is not written.
+///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
@@ -1747,6 +1797,7 @@ pub fn save_place(
   arg_17: Json,
   arg_18: Json,
   arg_19: Json,
+  arg_20: Json,
 ) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -1800,6 +1851,12 @@ pub fn save_place(
 -- written. The rows deleted are not in the list and the rows written are, so the two
 -- never touch one row. Two objects for one set and ability fail the statement with an
 -- error no check names.
+--
+-- The AMPs are $20, a JSON array with one object for each AMP held in each action set,
+-- whose keys are the columns of `character_action_amp`. It is the whole list as the tiers
+-- are: an AMP row the list leaves out is deleted (an empty array deletes every one) and one
+-- it names is written, both only through the row the fence above matched. A row has no
+-- value but its key, so one already held is not written.
 with saved as (
   update character
   set
@@ -1966,6 +2023,38 @@ put_tiers as (
   on conflict (character_id, action_set, spell4_base_id) do update
   set tier = excluded.tier
   where character_ability_tier.tier is distinct from excluded.tier
+),
+incoming_amps as (
+  select *
+  from jsonb_to_recordset($20::jsonb) as amp_row(
+    action_set smallint,
+    eldan_augmentation_id integer
+  )
+),
+gone_amps as (
+  delete from character_action_amp as held
+  using saved
+  where held.character_id = saved.character_id
+    and not exists (
+      select 1
+      from incoming_amps
+      where incoming_amps.action_set = held.action_set
+        and incoming_amps.eldan_augmentation_id = held.eldan_augmentation_id
+    )
+),
+put_amps as (
+  insert into character_action_amp (
+    character_id,
+    action_set,
+    eldan_augmentation_id
+  )
+  select
+    saved.character_id,
+    incoming_amps.action_set,
+    incoming_amps.eldan_augmentation_id
+  from saved
+  cross join incoming_amps
+  on conflict (character_id, action_set, eldan_augmentation_id) do nothing
 )
 select character_id from saved;
 "
@@ -1989,6 +2078,7 @@ select character_id from saved;
   |> pog.parameter(pog.text(json.to_string(arg_17)))
   |> pog.parameter(pog.text(json.to_string(arg_18)))
   |> pog.parameter(pog.text(json.to_string(arg_19)))
+  |> pog.parameter(pog.text(json.to_string(arg_20)))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

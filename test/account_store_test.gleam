@@ -6948,31 +6948,83 @@ fn save_sets_and_quests(
   )
 }
 
-/// The tier rows the table holds for the character, read straight from the database, in
-/// set then Spell4Base order, with the row version each has (`xmin`, which a write of the
-/// row changes).
+/// The rows of a table that hangs off `character`, read straight from the database in the
+/// order given, each with the row version it has (`xmin`, which a write of the row changes).
+/// `row` reads the columns `columns` names, from index 1 on: the version is column 0.
+fn versioned(
+  store store: Store,
+  character_id character_id: Int,
+  table table: String,
+  columns columns: String,
+  order order: String,
+  row row: decode.Decoder(row),
+) -> List(#(row, String)) {
+  let assert Ok(returned) =
+    pog.query(
+      "select xmin::text, "
+      <> columns
+      <> " from "
+      <> table
+      <> " where character_id = $1 order by "
+      <> order,
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning({
+      use version <- decode.field(0, decode.string)
+      use row <- decode.then(row)
+      decode.success(#(row, version))
+    })
+    |> pog.execute(store.pool)
+    as "the rows were read"
+  returned.rows
+}
+
+/// The tier rows the table holds for the character, in set then Spell4Base order, with their
+/// versions.
 fn stored_tiers(
   store store: Store,
   character_id character_id: Int,
 ) -> List(#(store.AbilityTierRow, String)) {
-  let assert Ok(returned) =
-    pog.query(
-      "select action_set::int, spell4_base_id, tier::int, xmin::text from character_ability_tier where character_id = $1 order by action_set, spell4_base_id",
-    )
-    |> pog.parameter(pog.int(character_id))
-    |> pog.returning({
-      use action_set <- decode.field(0, decode.int)
-      use spell4_base_id <- decode.field(1, decode.int)
-      use tier <- decode.field(2, decode.int)
-      use version <- decode.field(3, decode.string)
-      decode.success(#(
-        store.AbilityTierRow(action_set:, spell4_base_id:, tier:),
-        version,
-      ))
-    })
-    |> pog.execute(store.pool)
-    as "the tier rows read"
-  returned.rows
+  versioned(
+    store:,
+    character_id:,
+    table: "character_ability_tier",
+    columns: "action_set::int, spell4_base_id, tier::int",
+    order: "action_set, spell4_base_id",
+    row: {
+      use action_set <- decode.field(1, decode.int)
+      use spell4_base_id <- decode.field(2, decode.int)
+      use tier <- decode.field(3, decode.int)
+      decode.success(store.AbilityTierRow(action_set:, spell4_base_id:, tier:))
+    },
+  )
+}
+
+/// The AMP rows the table holds for the character, in set then id order, with their versions.
+fn stored_amps(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(#(store.AmpRow, String)) {
+  versioned(
+    store:,
+    character_id:,
+    table: "character_action_amp",
+    columns: "action_set::int, eldan_augmentation_id",
+    order: "action_set, eldan_augmentation_id",
+    row: {
+      use action_set <- decode.field(1, decode.int)
+      use eldan_augmentation_id <- decode.field(2, decode.int)
+      decode.success(store.AmpRow(action_set:, eldan_augmentation_id:))
+    },
+  )
+}
+
+/// The AMP rows without their versions.
+fn stored_amp_rows(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(store.AmpRow) {
+  list.map(stored_amps(store:, character_id:), fn(held) { held.0 })
 }
 
 /// The tier rows without their versions.
@@ -7013,30 +7065,25 @@ fn action_sets_of_load(
   #(store.session_epoch_number(session_epoch), action_sets, character.place)
 }
 
-/// The slot rows the table holds for the character, read straight from the database, in set
-/// then slot order, with the row version each has (`xmin`, which a write of the row changes).
+/// The slot rows the table holds for the character, in set then slot order, with their
+/// versions.
 fn stored_slots(
   store store: Store,
   character_id character_id: Int,
 ) -> List(#(ActionSlotRow, String)) {
-  let assert Ok(returned) =
-    pog.query(
-      "select action_set::int, slot::int, spell4_base_id, xmin::text from character_action_slot where character_id = $1 order by action_set, slot",
-    )
-    |> pog.parameter(pog.int(character_id))
-    |> pog.returning({
-      use action_set <- decode.field(0, decode.int)
-      use slot <- decode.field(1, decode.int)
-      use spell4_base_id <- decode.field(2, decode.optional(decode.int))
-      use version <- decode.field(3, decode.string)
-      decode.success(#(
-        ActionSlotRow(action_set:, slot:, spell4_base_id:),
-        version,
-      ))
-    })
-    |> pog.execute(store.pool)
-    as "the slot rows read"
-  returned.rows
+  versioned(
+    store:,
+    character_id:,
+    table: "character_action_slot",
+    columns: "action_set::int, slot::int, spell4_base_id",
+    order: "action_set, slot",
+    row: {
+      use action_set <- decode.field(1, decode.int)
+      use slot <- decode.field(2, decode.int)
+      use spell4_base_id <- decode.field(3, decode.optional(decode.int))
+      decode.success(ActionSlotRow(action_set:, slot:, spell4_base_id:))
+    },
+  )
 }
 
 /// The slot rows without their versions.
@@ -7045,6 +7092,28 @@ fn stored_rows(
   character_id character_id: Int,
 ) -> List(ActionSlotRow) {
   list.map(stored_slots(store:, character_id:), fn(held) { held.0 })
+}
+
+/// The constraints a table holds, by name, each with whether it is deferrable and deferred,
+/// read from the catalogue.
+fn constraints_of(
+  store store: Store,
+  table table: String,
+) -> List(#(String, Bool, Bool)) {
+  let assert Ok(returned) =
+    pog.query(
+      "select conname::text, condeferrable, condeferred from pg_constraint where conrelid = $1::text::regclass and contype <> 'n' order by conname",
+    )
+    |> pog.parameter(pog.text(table))
+    |> pog.returning({
+      use name <- decode.field(0, decode.string)
+      use deferrable <- decode.field(1, decode.bool)
+      use deferred <- decode.field(2, decode.bool)
+      decode.success(#(name, deferrable, deferred))
+    })
+    |> pog.execute(store.pool)
+    as "the catalogue was read"
+  returned.rows
 }
 
 /// The save sequence the character's row holds.
@@ -7296,22 +7365,7 @@ pub fn the_action_slot_migration_makes_the_table_with_its_named_checks_and_casca
   use <- owned_test.run(60_000)
   let store = account_store_support.start_store(pool_size: 2)
   let #(_, id) = one_character(store:)
-  let constraints = fn() {
-    let assert Ok(returned) =
-      pog.query(
-        "select conname::text, condeferrable, condeferred from pg_constraint where conrelid = 'character_action_slot'::regclass and contype <> 'n' order by conname",
-      )
-      |> pog.returning({
-        use name <- decode.field(0, decode.string)
-        use deferrable <- decode.field(1, decode.bool)
-        use deferred <- decode.field(2, decode.bool)
-        decode.success(#(name, deferrable, deferred))
-      })
-      |> pog.execute(store.pool)
-      as "the catalogue was read"
-    returned.rows
-  }
-  assert constraints()
+  assert constraints_of(store:, table: "character_action_slot")
     == [
       #("character_action_slot_ability_fits_the_message", False, False),
       #("character_action_slot_character_exists", False, False),
@@ -7346,19 +7400,7 @@ pub fn the_ability_tier_migration_makes_the_table_with_its_named_checks_and_casc
   use <- owned_test.run(10_000)
   let store = account_store_support.start_store(pool_size: 2)
   let #(_, id) = one_character(store:)
-  let assert Ok(returned) =
-    pog.query(
-      "select conname::text, condeferrable, condeferred from pg_constraint where conrelid = 'character_ability_tier'::regclass and contype <> 'n' order by conname",
-    )
-    |> pog.returning({
-      use name <- decode.field(0, decode.string)
-      use deferrable <- decode.field(1, decode.bool)
-      use deferred <- decode.field(2, decode.bool)
-      decode.success(#(name, deferrable, deferred))
-    })
-    |> pog.execute(store.pool)
-    as "the catalogue was read"
-  assert returned.rows
+  assert constraints_of(store:, table: "character_ability_tier")
     == [
       #("character_ability_tier_ability_fits_the_message", False, False),
       #("character_ability_tier_character_exists", False, False),
@@ -7591,6 +7633,250 @@ pub fn saved_tiers_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_
   assert stored_tier_rows(store:, character_id: id) == []
     as "the empty list deletes the character's rows"
   assert stored_tier_rows(store:, character_id: other) == others_row
+    as "and no one else's"
+  account_store_support.stop(store)
+}
+
+pub fn the_action_amp_migration_makes_the_table_with_its_named_checks_and_cascades_with_the_character_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(_, id) = one_character(store:)
+  assert constraints_of(store:, table: "character_action_amp")
+    == [
+      #("character_action_amp_character_exists", False, False),
+      #("character_action_amp_id_fits_the_message", False, False),
+      #("character_action_amp_pkey", False, False),
+      #("character_action_amp_set_is_one_of_four", False, False),
+    ]
+    as "the primary key and the three named constraints, none deferrable"
+  let insert = fn(character_id) {
+    pog.query(
+      "insert into character_action_amp (character_id, action_set, eldan_augmentation_id) values ($1, 0, 220)",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.execute(store.pool)
+  }
+  let assert Ok(_) = insert(id) as "a row for a character that exists"
+  assert list.length(stored_amp_rows(store:, character_id: id)) == 1
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) = insert(id + 1000)
+    as "a row for no character is refused"
+  assert constraint == "character_action_amp_character_exists"
+  execute(
+    store.pool,
+    "delete from character where character_id = " <> int.to_string(id),
+  )
+  assert stored_amp_rows(store:, character_id: id) == []
+    as "deleting the character deletes its AMP rows"
+  account_store_support.stop(store)
+}
+
+pub fn an_amp_row_the_table_refuses_is_refused_by_name_and_writes_nothing_of_the_save_and_deletes_no_held_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let epoch = epoch_of_load(store:, account:, character_id: id)
+  let first =
+    place_facing(x: 1.0, y: 2.0, z: 3.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let second =
+    place_facing(x: 4.0, y: 5.0, z: 6.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let saved = fn(sequence, place, quest, ids, tiers, amps) {
+    save_sets_and_quests(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence:,
+      place:,
+      quests: [completed_quest(quest)],
+      action_sets: limited_action_set_support.with_rows(
+        slots: limited_action_set_support.rows_of(set: 0, ids:),
+        tiers:,
+        amps:,
+      ),
+    )
+  }
+  let set_check = "character_action_amp_set_is_one_of_four"
+  let id_check = "character_action_amp_id_fits_the_message"
+  assert saved(
+      1,
+      first,
+      1001,
+      limited_action_set_support.ids_a,
+      [#(0, 27_638, 2)],
+      [#(0, 220)],
+    )
+    == ForMove(PlaceSaved)
+  let held_row = store.AmpRow(action_set: 0, eldan_augmentation_id: 220)
+  let refusals = [
+    #("a set of 4: the client has four sets", #(4, 221), set_check),
+    #("id 0: no AMP has it", #(0, 0), id_check),
+    #("id 65536: the message carries 16 bits", #(0, 65_536), id_check),
+  ]
+  list.each(refusals, fn(refusal) {
+    let #(why, row, constraint) = refusal
+    assert list.contains(worker.mapped_constraints(), constraint)
+      as "the worker maps the constraint it names"
+    assert saved(
+        2,
+        second,
+        1002,
+        limited_action_set_support.ids_b,
+        [#(0, 20_684, 3)],
+        [row],
+      )
+      == ForMove(ActionSetRefused(constraint:))
+      as why
+    assert stored_rows(store:, character_id: id)
+      == limited_action_set_support.rows_of(
+        set: 0,
+        ids: limited_action_set_support.ids_a,
+      )
+      as "the new bar of the refused save is not written"
+    assert stored_tier_rows(store:, character_id: id)
+      == [
+        store.AbilityTierRow(action_set: 0, spell4_base_id: 27_638, tier: 2),
+      ]
+      as "nor its tier"
+    assert quest_states(store:, character_id: id) == [#(1001, 3)]
+      as "nor its quest"
+    assert character_support.place_row(pool: store.pool, character_id: id).position.0
+      == 1.0
+      as "nor its place"
+    assert stored_sequence(store:, character_id: id) == 1
+      as "the save took no sequence"
+    assert stored_amp_rows(store:, character_id: id) == [held_row]
+      as "the held AMP row, which the refused save's list left out, was not deleted: the delete in the same statement rolled back too"
+  })
+  assert saved(
+      2,
+      second,
+      1002,
+      limited_action_set_support.ids_b,
+      [#(0, 20_684, 3)],
+      [#(0, 220), #(0, 221)],
+    )
+    == ForMove(PlaceSaved)
+    as "each refusal stored nothing, and a good save after them is written"
+  assert stored_amp_rows(store:, character_id: id)
+    == list.map([#(0, 220), #(0, 221)], limited_action_set_support.amp_row)
+  account_store_support.stop(store)
+}
+
+pub fn saved_amps_are_loaded_after_a_login_a_whole_list_replaces_the_held_rows_and_a_turn_in_writes_its_rows_while_a_stale_save_changes_none_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [#(1, 10)])
+  let CharacterId(id) = character_id
+  let other =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Other One",
+      class_id: 4,
+      path: 2,
+    )
+  execute(
+    store.pool,
+    "insert into character_action_amp (character_id, action_set, eldan_augmentation_id) values ("
+      <> int.to_string(other)
+      <> ", 1, 770)",
+  )
+  let others_row = [store.AmpRow(action_set: 1, eldan_augmentation_id: 770)]
+  let first =
+    place_facing(x: 1.0, y: 2.0, z: 3.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let second =
+    place_facing(x: 4.0, y: 5.0, z: 6.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let elsewhere =
+    place_facing(x: 7.0, y: 8.0, z: 9.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let saved = fn(epoch, sequence, place, amps) {
+    save_slots(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence:,
+      place:,
+      action_sets: limited_action_set_support.with_rows(
+        slots: [],
+        tiers: [],
+        amps:,
+      ),
+    )
+  }
+  let four = [#(0, 220), #(0, 221), #(0, 222), #(0, 259), #(2, 220)]
+  let two = [#(0, 220), #(0, 221), #(2, 220)]
+  let #(first_login, loaded, _) =
+    action_sets_of_load(store:, account:, character_id:)
+  assert loaded.amps == [] as "a character that never saved an AMP loads none"
+  assert saved(first_login, 1, first, four) == ForMove(PlaceSaved)
+  assert stored_amp_rows(store:, character_id: id)
+    == list.map(four, limited_action_set_support.amp_row)
+    as "the five AMP rows, in set then id order"
+  let #(second_login, loaded, _) =
+    action_sets_of_load(store:, account:, character_id:)
+  assert loaded.amps == list.map(four, limited_action_set_support.amp_row)
+    as "a new login loads them in that order"
+  let before = stored_amps(store:, character_id: id)
+  assert saved(second_login, 2, second, two) == ForMove(PlaceSaved)
+  let after = stored_amps(store:, character_id: id)
+  assert list.map(after, fn(held) { held.0 })
+    == list.map(two, limited_action_set_support.amp_row)
+    as "the whole list replaces the held rows: the rows of 222 and 259 are deleted"
+  assert list.take(before, 2) == list.take(after, 2)
+    && list.drop(before, 4) == list.drop(after, 2)
+    as "the rows that stay keep their versions: only a changed row is written"
+  assert saved(second_login, 3, second, two) == ForMove(PlaceSaved)
+  assert stored_amps(store:, character_id: id) == after
+    as "the same list again writes no row"
+  let #(third_login, _, _) =
+    action_sets_of_load(store:, account:, character_id:)
+  let turned_in = fn(sequence, credits_held, amps) {
+    turn_in_saving(
+      store:,
+      account:,
+      character_id:,
+      epoch: third_login,
+      sequence:,
+      quests: [completed_quest(1001)],
+      action_sets: limited_action_set_support.with_rows(
+        slots: [],
+        tiers: [],
+        amps:,
+      ),
+      credits_held:,
+      credits_after: credits_held + 145,
+      placed: [],
+    )
+  }
+  let with_222 = [#(0, 220), #(0, 221), #(0, 222), #(2, 220)]
+  let assert ForItems(store.TurnedIn(..)) = turned_in(1, 1000, with_222)
+    as "a quest turn-in saves the place in its own transaction"
+  assert stored_amp_rows(store:, character_id: id)
+    == list.map(with_222, limited_action_set_support.amp_row)
+    as "the turn-in writes the row of 222, beside its quest and its place"
+  assert quest_states(store:, character_id: id) == [#(1001, 3)]
+  assert character_support.place_row(pool: store.pool, character_id: id).position.0
+    == 10.0
+  let assert ForItems(store.TurnedIn(..)) = turned_in(2, 1145, [#(0, 220)])
+    as "a second turn-in"
+  assert stored_amp_rows(store:, character_id: id)
+    == [store.AmpRow(action_set: 0, eldan_augmentation_id: 220)]
+    as "a turn-in saves the whole list: the rows it does not carry are deleted"
+  let held = stored_amps(store:, character_id: id)
+  assert saved(third_login, 2, elsewhere, [#(1, 770)]) == ForMove(NothingSaved)
+    as "a save older than the last stored one writes and deletes no AMP row"
+  assert saved(first_login, 99, elsewhere, [#(1, 770)]) == ForMove(NothingSaved)
+    as "a save under the epoch of a login another login has replaced writes and deletes none"
+  assert stored_amps(store:, character_id: id) == held
+  assert character_support.place_row(pool: store.pool, character_id: id).position.0
+    == 10.0
+    as "and moves no place"
+  assert stored_amp_rows(store:, character_id: other) == others_row
+    as "the other character's row was untouched by every save and turn-in"
+  assert saved(third_login, 3, second, []) == ForMove(PlaceSaved)
+  assert stored_amp_rows(store:, character_id: id) == []
+    as "the empty list deletes the character's rows"
+  assert stored_amp_rows(store:, character_id: other) == others_row
     as "and no one else's"
   account_store_support.stop(store)
 }

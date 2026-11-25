@@ -7,7 +7,7 @@ import cast_support
 import experience_support
 import fixture_tables
 import game_connection_support as support
-import genesis_prime/client_connection.{type Request}
+import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout.{type Loadout}
@@ -20,7 +20,8 @@ import genesis_prime/table/id.{ClassId, XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
+import world_entry_support
 
 /// The Creature2 and its level a kill is credited for: a creature of Creature2Difficulty 1
 /// (`experience_test`), which gives experience at the levels the tests rise from.
@@ -94,6 +95,38 @@ pub fn entered_at(
       level:,
     ),
     saved_experience: Some(saved_experience),
+  ).0
+}
+
+/// The tests' character of this class and level in the world after the store gave it these
+/// action sets and the map took it.
+pub fn entered_holding_action_sets(
+  class_id class_id: Int,
+  level level: Int,
+  action_sets action_sets: store.ActionSets,
+) -> game_connection.State {
+  let character =
+    store.Character(
+      ..support.world_character(),
+      class_id: ClassId(class_id),
+      faction_id: faction,
+      level:,
+    )
+  let #(state, taken) =
+    support.joining_holding_currencies(
+      in_character_select: support.in_select(),
+      character:,
+      saved_health: None,
+      saved_experience: Some(experience_of(level:)),
+      quests: [],
+      items: world_entry_support.novice_items(character:),
+      currencies: [],
+      action_sets:,
+    )
+  support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromMap(support.map_answer(taken))),
   ).0
 }
 

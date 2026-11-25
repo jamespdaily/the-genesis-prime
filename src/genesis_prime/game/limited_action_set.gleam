@@ -55,8 +55,9 @@
 //// - **The tiers and the AMPs are saved** with the place, as the bars are: `rows` carries a row for
 ////   each ability held above tier 1 and each AMP held in each set, whole, so a tier returned to 1 is
 ////   no row and the store deletes the stored one. A map change, a Holocrypt rejoin and a login take
-////   them back through `entering`, which refuses the rows the table's checks cannot hold and drops a
-////   stored AMP that has no row or is of another class.
+////   them back through `entering`, which refuses the rows the table's checks cannot hold and drops
+////   the whole stored AMP list of a set that the client's check refuses (the server's choice, as for
+////   tiers over the points; the entry warns once for the set).
 //// - **A saved tier is kept at entry** only while the book holds its ability, the Spell4 rows
 ////   hold that tier and the level reaches it; a set whose kept tiers cost more than the level's
 ////   points has every tier reset to tier 1 and its points refunded (the server's choice, since the
@@ -284,6 +285,17 @@ pub type StoredRow {
   StoredAmp(row: AmpRow)
 }
 
+/// What the entry made of the stored rows: the player's saved sets, and each set whose stored
+/// AMP list the client's check refuses, which `saved` leaves out.
+pub type Judged {
+  Judged(saved: Saved, dropped_amps: List(DroppedAmps))
+}
+
+/// A stored AMP list the entry dropped whole, and the client's refusal that dropped it.
+pub type DroppedAmps {
+  DroppedAmps(set: Int, refusal: amp_spec.Refusal)
+}
+
 /// A saved row the table's checks cannot hold, which the load never gives.
 pub type RowError {
   /// A row whose set, key or value is outside the table's checks.
@@ -296,8 +308,8 @@ pub type RowError {
 /// saved set, in set then slot order, an empty slot with no ability; a tier row for each
 /// ability held above tier 1 in each set, in set then Spell4Base order; and an AMP row for each
 /// AMP held in each set, in set then EldanAugmentation order. None when nothing is saved.
-/// Every save of the place carries the whole of it: the store deletes the tier rows a save
-/// leaves out.
+/// Every save of the place carries the whole of it: the store deletes the tier and AMP rows a
+/// save leaves out.
 pub fn rows(saved saved: Saved) -> ActionSets {
   ActionSets(
     slots: in_set_order(sets: saved.bars, rows_of: fn(action_set, bar) {
@@ -382,9 +394,12 @@ fn by_set(
 /// the player chooses again; the client never reads a stored tier. The entry's points left are never below 0 and every tier it
 /// holds has a cost, which `ability_points.points_frame` and `spell_tier.spent` need.
 ///
-/// A saved AMP stays only while its row is in the tables and is of the player's class
-/// (`amp_spec.is_of_class`); any other is dropped and the next save deletes its row, since a
-/// held AMP's spell stands on the player.
+/// A saved AMP list stays only while the client's own check accepts it whole for the player's
+/// class and level (`amp_spec.check` with nothing held and the set's AMPs as the picks); a set
+/// the check refuses has its whole list dropped, with the refusal, and the next save deletes its
+/// rows (the server's choice, as for a set's tiers over the points), since a held AMP's spell
+/// stands on the player and a list the check refuses holds an AMP with no row, of another
+/// class or over the power.
 pub fn entering(
   unlocks unlocks: Unlocks,
   tiers tiers: spell_tier.SpellTiers,
@@ -394,40 +409,65 @@ pub fn entering(
   level level: Int,
   book book: List(Spell4BaseId),
   rows rows: ActionSets,
-) -> Result(Saved, RowError) {
+) -> Result(Judged, RowError) {
   use sets <- result.try(slot_sets_of(rows: rows.slots))
   use stored <- result.try(tier_sets_of(rows: rows.tiers))
-  use amps <- result.map(amp_sets_of(rows: rows.amps))
+  use stored_amps <- result.map(amp_sets_of(rows: rows.amps))
+  let #(amps, dropped_amps) =
+    amps_kept(stored: stored_amps, specs: amp_specs, class_id:, level:)
   let open = open_slots(unlocks:, level:)
-  Saved(
-    bars: dict.map_values(sets, fn(_, slot_ids) {
-      Bar(
-        slots: list.repeat(Nil, slots_in_a_bar)
-        |> list.index_map(fn(_, slot) {
-          case dict.get(slot_ids, slot) {
-            Ok(Some(id)) ->
-              case
-                list.contains(open, slot),
-                list.contains(book, Spell4BaseId(id))
-              {
-                True, True -> Some(Spell4BaseId(id))
-                _, _ -> None
-              }
-            _ -> None
-          }
-        }),
-      )
-    }),
-    tiers: dict.map_values(stored, fn(_, held) {
-      tiers_kept(held:, tiers:, points_total:, level:, book:)
+  let saved =
+    Saved(
+      bars: dict.map_values(sets, fn(_, slot_ids) {
+        Bar(
+          slots: list.repeat(Nil, slots_in_a_bar)
+          |> list.index_map(fn(_, slot) {
+            case dict.get(slot_ids, slot) {
+              Ok(Some(id)) ->
+                case
+                  list.contains(open, slot),
+                  list.contains(book, Spell4BaseId(id))
+                {
+                  True, True -> Some(Spell4BaseId(id))
+                  _, _ -> None
+                }
+              _ -> None
+            }
+          }),
+        )
+      }),
+      tiers: dict.map_values(stored, fn(_, held) {
+        tiers_kept(held:, tiers:, points_total:, level:, book:)
+      })
+        |> dict.filter(fn(_, held) { !dict.is_empty(held) }),
+      amps:,
+    )
+  Judged(saved:, dropped_amps:)
+}
+
+/// The AMP lists of the sets the client's check accepts, in id order, and the sets whose list
+/// it refuses with the refusal, in set order.
+fn amps_kept(
+  stored stored: Dict(Int, Dict(EldanAugmentationId, Nil)),
+  specs specs: amp_spec.Specs,
+  class_id class_id: ClassId,
+  level level: Int,
+) -> #(Dict(Int, List(EldanAugmentationId)), List(DroppedAmps)) {
+  let #(kept, dropped) =
+    dict.to_list(stored)
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+    |> list.map(fn(set_held) {
+      let #(set, held) = set_held
+      let ids =
+        dict.keys(held)
+        |> list.sort(fn(a, b) { int.compare(a.value, b.value) })
+      case amp_spec.check(specs:, class_id:, level:, held: [], picks: ids) {
+        Ok(Nil) -> Ok(#(set, ids))
+        Error(refusal) -> Error(DroppedAmps(set:, refusal:))
+      }
     })
-      |> dict.filter(fn(_, held) { !dict.is_empty(held) }),
-    amps: dict.map_values(amps, fn(_, held) {
-      dict.keys(held)
-      |> list.filter(amp_spec.is_of_class(specs: amp_specs, class_id:, id: _))
-      |> list.sort(fn(a, b) { int.compare(a.value, b.value) })
-    }),
-  )
+    |> result.partition
+  #(dict.from_list(kept), list.reverse(dropped))
 }
 
 /// The tiers of one set the entry keeps: those the book, the Spell4 rows and the level allow,
@@ -1127,10 +1167,6 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Ability builder",
-      missing: "A pick lasts until the next camp or login: the place save writes no AMP row, so the stored AMP rows are none.",
-    ),
-    gap.Entry(
-      area: "Ability builder",
       missing: "The Primal Matrix's bonus AMP power and the AMPs an item unlocks are never given (the power bonus is 0 and the unlocked list is empty), and the AMP reset (0x0151) and commit (0x01A2) messages are not read.",
     ),
     gap.Entry(
@@ -1143,7 +1179,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Ability builder",
-      missing: "Only action set 0 is judged, its bar, tiers and AMP list: a save for another set is refused, since the other sets are bought unlocks the server does not give.",
+      missing: "Only action set 0 is judged, its bar, tiers and AMP list: a save for another set is refused, since the other sets are bought unlocks the server does not give. The rows stored for sets 1 to 3 are judged at entry as the rows of set 0 are, and kept or dropped the same way.",
     ),
     gap.Entry(
       area: "Ability builder",

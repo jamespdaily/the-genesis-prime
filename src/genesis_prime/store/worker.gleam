@@ -66,7 +66,9 @@
 ////   refuses a quest row is `QuestLogRefused` with that check's name.
 ////   The same statement writes the changed slots of the character's action sets
 ////   (save_place.sql); a check or the unique key of the character_action_slot table
-////   that refuses a slot is `ActionSetRefused` with its name.
+////   that refuses a slot, a check of the character_ability_tier table that refuses a tier
+////   and a check of the character_action_amp table that refuses an AMP is
+////   `ActionSetRefused` with its name.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
@@ -97,8 +99,8 @@ import genesis_prime/store.{
   type NewItem, type QuestRow, type RenameAnswer, type Request,
   type SelectAnswer, type SelectRequest, type UnsetItem, type WorldAnswer,
   type WorldRequest, AbilityTierRow, Account, AccountFound, AccountId,
-  ActionSetRefused, ActionSlotRow, ActiveQuest, Bought, BuyFromVendor, Character,
-  CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
+  ActionSetRefused, ActionSlotRow, ActiveQuest, AmpRow, Bought, BuyFromVendor,
+  Character, CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
   CharacterRenamed, ChargesFilled, CreateCharacter, CreateForNoSuchAccount,
   Created, CurrencySet, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused,
   FillCharges, FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld,
@@ -160,9 +162,10 @@ const quest_checks = [
   "character_quest_kill_mask_has_six_slots",
 ]
 
-/// The checks and the unique key of the character_action_slot table (migration 0049) and
-/// the checks of the character_ability_tier table (migration 0050), one for each limit of
-/// the client's an action slot row or a tier row can break. A save one of them refuses
+/// The checks and the unique key of the character_action_slot table (migration 0049), the
+/// checks of the character_ability_tier table (migration 0050) and those of the
+/// character_action_amp table (migration 0051), one for each limit of the client's an action
+/// slot row, a tier row or an AMP row can break. A save one of them refuses
 /// answers `ActionSetRefused` with its own name. The tables' primary keys and their
 /// foreign keys to the character are not among them: none is a limit of the client's, and
 /// a refused one is a refused place.
@@ -174,6 +177,8 @@ const action_set_checks = [
   "character_ability_tier_set_is_one_of_four",
   "character_ability_tier_ability_fits_the_message",
   "character_ability_tier_is_above_the_first_and_fits_the_message",
+  "character_action_amp_set_is_one_of_four",
+  "character_action_amp_id_fits_the_message",
 ]
 
 /// Every constraint or unique index the worker answers for by name. The schema
@@ -1216,8 +1221,26 @@ fn save_place(
     experience,
     level,
     quests_json(quests),
-    action_slots_json(action_sets:),
-    ability_tiers_json(action_sets:),
+    rows_json(rows: action_sets.slots, fields: fn(slot) {
+      [
+        #("action_set", json.int(slot.action_set)),
+        #("slot", json.int(slot.slot)),
+        #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
+      ]
+    }),
+    rows_json(rows: action_sets.tiers, fields: fn(tier) {
+      [
+        #("action_set", json.int(tier.action_set)),
+        #("spell4_base_id", json.int(tier.spell4_base_id)),
+        #("tier", json.int(tier.tier)),
+      ]
+    }),
+    rows_json(rows: action_sets.amps, fields: fn(amp) {
+      [
+        #("action_set", json.int(amp.action_set)),
+        #("eldan_augmentation_id", json.int(amp.eldan_augmentation_id)),
+      ]
+    }),
   )
 }
 
@@ -1294,9 +1317,14 @@ fn load_character(
           sql.load_character_action_slots(connection, character_id)
         }),
       )
-      use ability_tier_rows <- result.map(
+      use ability_tier_rows <- result.try(
         of_the_loaded(characters: loaded.rows, read: fn() {
           sql.load_character_ability_tiers(connection, character_id)
+        }),
+      )
+      use action_amp_rows <- result.map(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_character_action_amps(connection, character_id)
         }),
       )
       pog.Returned(
@@ -1309,6 +1337,7 @@ fn load_character(
             currencies: currency_rows.rows,
             action_slots: action_slot_rows.rows,
             ability_tiers: ability_tier_rows.rows,
+            action_amps: action_amp_rows.rows,
           )
         }),
       )
@@ -1324,6 +1353,7 @@ fn load_character(
         currencies: currency_rows,
         action_slots: action_slot_rows,
         ability_tiers: ability_tier_rows,
+        action_amps: action_amp_rows,
       ),
     ] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
@@ -1368,6 +1398,7 @@ fn load_character(
         action_sets: action_sets_of(
           slots: action_slot_rows,
           tiers: ability_tier_rows,
+          amps: action_amp_rows,
         ),
       )
     }
@@ -1377,7 +1408,7 @@ fn load_character(
 }
 
 /// The one row a load's transaction gives: the character whose epoch the
-/// update raised, with its items, quest log, currencies, action slots and ability tiers.
+/// update raised, with its items, quest log, currencies, action slots, ability tiers and AMPs.
 type LoadRow {
   LoadedRow(
     row: sql.LoadCharacterRow,
@@ -1386,14 +1417,16 @@ type LoadRow {
     currencies: List(sql.LoadCharacterCurrenciesRow),
     action_slots: List(sql.LoadCharacterActionSlotsRow),
     ability_tiers: List(sql.LoadCharacterAbilityTiersRow),
+    action_amps: List(sql.LoadCharacterActionAmpsRow),
   )
 }
 
 /// The action sets a load's rows hold, in the order the queries gave them (set, then slot;
-/// set, then Spell4Base).
+/// set, then Spell4Base; set, then EldanAugmentation).
 fn action_sets_of(
   slots slots: List(sql.LoadCharacterActionSlotsRow),
   tiers tiers: List(sql.LoadCharacterAbilityTiersRow),
+  amps amps: List(sql.LoadCharacterActionAmpsRow),
 ) -> store.ActionSets {
   store.ActionSets(
     slots: list.map(slots, fn(row) {
@@ -1410,32 +1443,22 @@ fn action_sets_of(
         tier: row.tier,
       )
     }),
-    amps: [],
+    amps: list.map(amps, fn(row) {
+      AmpRow(
+        action_set: row.action_set,
+        eldan_augmentation_id: row.eldan_augmentation_id,
+      )
+    }),
   )
 }
 
-/// The action slots as the JSON array save_place.sql unpacks, one object for each slot
-/// whose keys are the character_action_slot columns, a null ability for an empty slot.
-fn action_slots_json(action_sets action_sets: store.ActionSets) -> Json {
-  json.array(from: action_sets.slots, of: fn(slot) {
-    json.object([
-      #("action_set", json.int(slot.action_set)),
-      #("slot", json.int(slot.slot)),
-      #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
-    ])
-  })
-}
-
-/// The ability tiers as the JSON array save_place.sql unpacks, one object for each ability
-/// held above tier 1 whose keys are the character_ability_tier columns.
-fn ability_tiers_json(action_sets action_sets: store.ActionSets) -> Json {
-  json.array(from: action_sets.tiers, of: fn(tier) {
-    json.object([
-      #("action_set", json.int(tier.action_set)),
-      #("spell4_base_id", json.int(tier.spell4_base_id)),
-      #("tier", json.int(tier.tier)),
-    ])
-  })
+/// The rows of one table as the JSON array save_place.sql unpacks: one object for each row,
+/// whose keys are the table's columns, which `fields` gives (a null for an empty slot).
+fn rows_json(
+  rows rows: List(row),
+  fields fields: fn(row) -> List(#(String, Json)),
+) -> Json {
+  json.array(from: rows, of: fn(row) { json.object(fields(row)) })
 }
 
 /// The rows of a character's quest log as the rows the store hands the quest log's

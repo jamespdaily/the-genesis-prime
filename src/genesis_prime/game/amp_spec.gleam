@@ -214,19 +214,6 @@ pub fn describe_unlocking(unlocking unlocking: Unlocking) -> String {
   <> " unlocks a class ability, not built"
 }
 
-/// Whether the AMP has a row, and one of the class: the client's check refuses an AMP with no
-/// row (35) and one of another class (4), and the entry drops a stored one it would refuse.
-pub fn is_of_class(
-  specs specs: Specs,
-  class_id class_id: ClassId,
-  id id: EldanAugmentationId,
-) -> Bool {
-  case dict.get(specs.amps, id.value) {
-    Ok(amp) -> amp.class_id == class_id.value
-    Error(Nil) -> False
-  }
-}
-
 /// The specs as a value the tables' load builds once, under the tables' key
 /// (genesis_prime/table/loader/store `derived`).
 pub fn derivation() -> table_store.Derivation {

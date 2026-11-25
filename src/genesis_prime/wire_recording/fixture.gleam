@@ -9,8 +9,8 @@
 ////   characters and the items, currencies, quests and action slots those
 ////   characters hold, never the rest of the database, and every column of the six
 ////   tables but
-////   `created_at`, which no flow reads. The ability tiers a character holds
-////   (`character_ability_tier`) are not kept (a gap, listed in `gaps`). The ids and an item's guid are identity
+////   `created_at`, which no flow reads. The ability tiers and the AMPs a character holds
+////   (`character_ability_tier`, `character_action_amp`) are not kept (a gap, listed in `gaps`). The ids and an item's guid are identity
 ////   columns, so each insert overrides its own. A statement after the rows of each table sets its
 ////   sequence to where the live database's stood (its last value and whether it
 ////   had given one), so a row a replay makes gets the id or guid it got live,
@@ -49,7 +49,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Recorded sessions",
-      missing: "a replay's starting rows hold no ability tier, so a character that held spent tiers when the session was recorded enters every ability at tier 1 and the replay shows it with its points unspent.",
+      missing: "a replay's starting rows hold no ability tier and no AMP, so a character that held spent tiers or picked AMPs when the session was recorded enters every ability at tier 1 with no AMP and the replay shows it with its points unspent.",
     ),
   ]
 }

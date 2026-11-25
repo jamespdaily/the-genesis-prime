@@ -45,6 +45,12 @@
 -- written. The rows deleted are not in the list and the rows written are, so the two
 -- never touch one row. Two objects for one set and ability fail the statement with an
 -- error no check names.
+--
+-- The AMPs are $20, a JSON array with one object for each AMP held in each action set,
+-- whose keys are the columns of `character_action_amp`. It is the whole list as the tiers
+-- are: an AMP row the list leaves out is deleted (an empty array deletes every one) and one
+-- it names is written, both only through the row the fence above matched. A row has no
+-- value but its key, so one already held is not written.
 with saved as (
   update character
   set
@@ -211,5 +217,37 @@ put_tiers as (
   on conflict (character_id, action_set, spell4_base_id) do update
   set tier = excluded.tier
   where character_ability_tier.tier is distinct from excluded.tier
+),
+incoming_amps as (
+  select *
+  from jsonb_to_recordset($20::jsonb) as amp_row(
+    action_set smallint,
+    eldan_augmentation_id integer
+  )
+),
+gone_amps as (
+  delete from character_action_amp as held
+  using saved
+  where held.character_id = saved.character_id
+    and not exists (
+      select 1
+      from incoming_amps
+      where incoming_amps.action_set = held.action_set
+        and incoming_amps.eldan_augmentation_id = held.eldan_augmentation_id
+    )
+),
+put_amps as (
+  insert into character_action_amp (
+    character_id,
+    action_set,
+    eldan_augmentation_id
+  )
+  select
+    saved.character_id,
+    incoming_amps.action_set,
+    incoming_amps.eldan_augmentation_id
+  from saved
+  cross join incoming_amps
+  on conflict (character_id, action_set, eldan_augmentation_id) do nothing
 )
 select character_id from saved;

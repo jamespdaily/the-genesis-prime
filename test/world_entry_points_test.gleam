@@ -16,6 +16,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
+import genesis_prime/store
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/list
 import limited_action_set_support as limited
@@ -201,4 +202,16 @@ pub fn a_rejoin_sends_the_points_of_the_level_the_session_holds_test() -> Nil {
   assert list.window(cast_support.ids(frames:), 3)
     |> list.contains([0x092C, 0x0169, 0x01A3])
     as "0x01A3 follows 0x0169"
+  // The join judges the rows again at the level the session holds: a list that passed at 10
+  // passes at 11, whose power is one more, so a rise in the session keeps the picks.
+  let frames =
+    world_entry_support.rejoining_from(
+      entered: world_entry.Entered(
+        ..stalker,
+        action_sets: picked,
+        character: store.Character(..stalker.character, level: 11),
+      ),
+    )
+  assert limited.amp_lists_in(frames:) == [#(0, [770, 771, 772, 863])]
+    as "the join at level 11 sends the picks of level 10"
 }
