@@ -276,7 +276,8 @@ fn news_outside_the_relation(
         | step.Stop -> False
       }
     })
-  let held = relation_held(map: scene.map)
+  let held =
+    map_spawn_support.relation_of(state: scene.map, spawn: 1, connection: 1)
   let allowed = case event, held {
     OwnEvent(Told(message: map.Broadcast(..))),
       Some(map.Relation(state: map.Relaying, ..))
@@ -296,28 +297,8 @@ fn news_outside_the_relation(
       Some(Violation(
         NoNewsRelayedOutsideTheRelation,
         list.length(scene.frames),
-        unit_of_the_spawn(map: scene.map),
+        map_spawn_support.creature_of(state: scene.map, spawn: 1).0,
       ))
-  }
-}
-
-/// The relation the map holds between the viewer and the creature of the scene's spawn,
-/// while the spawn lives or is released.
-fn relation_held(map state: map.State) -> Option(map.Relation) {
-  case map.spawn_state(state:, spawn: SpawnId(1)) {
-    Ok(map.Live(relations:, ..)) | Ok(map.Releasing(relations:, ..)) ->
-      dict_get(relations, ConnectionId(1))
-    Ok(_) | Error(Nil) -> None
-  }
-}
-
-/// The unit id of the creature of the scene's spawn, 0 when it has none.
-fn unit_of_the_spawn(map state: map.State) -> Int {
-  case map.spawn_state(state:, spawn: SpawnId(1)) {
-    Ok(map.Live(unit_id:, ..))
-    | Ok(map.Retiring(unit_id:, ..))
-    | Ok(map.Releasing(unit_id:, ..)) -> unit_id
-    Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) -> 0
   }
 }
 

@@ -29,10 +29,9 @@ import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
-import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleam/order
 import gleam/result
 import gleam/set
@@ -73,57 +72,6 @@ fn told(taken: ServiceStep(map.Outgoing)) -> List(Told) {
       }
     })
   list.append(started, sent)
-}
-
-/// The relation the map holds between the creature of a spawn and a connection.
-fn relation_of(
-  state state: State,
-  spawn spawn: Int,
-  connection connection: Int,
-) -> Option(map.Relation) {
-  case map.spawn_state(state:, spawn: SpawnId(spawn)) {
-    Ok(map.Live(relations:, ..)) ->
-      dict.get(relations, ConnectionId(connection)) |> option.from_result
-    Ok(_) | Error(Nil) -> None
-  }
-}
-
-/// The generation of the relation the map holds.
-fn generation_of(
-  state state: State,
-  spawn spawn: Int,
-  connection connection: Int,
-) -> Generation {
-  let assert Some(map.Relation(generation:, ..)) =
-    relation_of(state:, spawn:, connection:)
-    as "the map holds the relation"
-  generation
-}
-
-/// The generation of the relation a releasing spawn holds.
-fn generation_of_released(
-  state state: State,
-  spawn spawn: Int,
-  connection connection: Int,
-) -> Generation {
-  let assert Ok(map.Releasing(relations:, ..)) =
-    map.spawn_state(state:, spawn: SpawnId(spawn))
-    as "the spawn is releasing"
-  let assert Ok(map.Relation(generation:, ..)) =
-    dict.get(relations, ConnectionId(connection))
-    as "the map holds the relation"
-  generation
-}
-
-/// The unit id and life of the creature of the spawn, in any state that runs one.
-fn creature_of(state state: State, spawn spawn: Int) -> #(Int, Int) {
-  case map.spawn_state(state:, spawn: SpawnId(spawn)) {
-    Ok(map.Live(unit_id:, life:, ..))
-    | Ok(map.Retiring(unit_id:, life:))
-    | Ok(map.Releasing(unit_id:, life:, ..)) -> #(unit_id, life)
-    Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) ->
-      panic as "the spawn holds no creature"
-  }
 }
 
 /// A creature's tell, as its shell gives it to the map.
@@ -190,14 +138,14 @@ pub fn a_second_join_unsees_then_sees_each_kept_creature_under_a_new_generation_
   let #(state, _) = spawns.move(state:, at_ms: 7000, connection: 1, x: 3000.0)
   let #(state, _) = spawns.join(state:, at_ms: 8000, connection: 2, x: 0.0)
   let #(state, swept) = spawns.sweep(state:, at_ms: 70_000)
-  let #(unit_3, _) = creature_of(state:, spawn: 3)
+  let #(unit_3, _) = spawns.creature_of(state:, spawn: 3)
   assert spawns.creature_sends(swept) == [#(unit_3, "Retire")]
     as "only the spawn that no one sees retires"
   let #(state, _) = spawns.move(state:, at_ms: 71_000, connection: 1, x: 1200.0)
   let #(first, second, fourth) = #(
-    generation_of(state:, spawn: 1, connection: 1),
-    generation_of(state:, spawn: 2, connection: 1),
-    generation_of(state:, spawn: 4, connection: 1),
+    spawns.generation_of(state:, spawn: 1, connection: 1),
+    spawns.generation_of(state:, spawn: 2, connection: 1),
+    spawns.generation_of(state:, spawn: 4, connection: 1),
   )
   let #(state, taken) =
     spawns.join_hiding(
@@ -208,12 +156,12 @@ pub fn a_second_join_unsees_then_sees_each_kept_creature_under_a_new_generation_
       alive: True,
       hidden: set.from_list([PrerequisiteId(41_803)]),
     )
-  let #(unit_1, _) = creature_of(state:, spawn: 1)
-  let #(unit_2, _) = creature_of(state:, spawn: 2)
-  let #(unit_4, _) = creature_of(state:, spawn: 4)
+  let #(unit_1, _) = spawns.creature_of(state:, spawn: 1)
+  let #(unit_2, _) = spawns.creature_of(state:, spawn: 2)
+  let #(unit_4, _) = spawns.creature_of(state:, spawn: 4)
   let #(now_1, now_2) = #(
-    generation_of(state:, spawn: 1, connection: 1),
-    generation_of(state:, spawn: 2, connection: 1),
+    spawns.generation_of(state:, spawn: 1, connection: 1),
+    spawns.generation_of(state:, spawn: 2, connection: 1),
   )
   assert told(taken)
     == [
@@ -228,7 +176,7 @@ pub fn a_second_join_unsees_then_sees_each_kept_creature_under_a_new_generation_
     && generation.compare(now_2, second) == order.Gt
     && now_1 != now_2
     as "each new sight has a generation the map never gave before"
-  assert relation_of(state:, spawn: 1, connection: 1)
+  assert spawns.relation_of(state:, spawn: 1, connection: 1)
     == Some(map.Relation(
       generation: now_1,
       stay: map_support.stay(count: 1),
@@ -246,7 +194,7 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
   let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let #(state, _) =
     spawns.join(state:, at_ms: 6100, connection: 2, x: spawns.far)
-  let #(unit_id, life) = creature_of(state:, spawn: 1)
+  let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
   let payloads = [
     #(
       "Struck",
@@ -337,17 +285,17 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
   }
   let releasing = fn() {
     let state = live()
-    let #(unit_id, _) = creature_of(state:, spawn: 1)
+    let #(unit_id, _) = spawns.creature_of(state:, spawn: 1)
     spawns.released(state:, at_ms: 7000, unit_id:).0
   }
   let ended = fn() {
     let state = live()
-    let #(_, life) = creature_of(state:, spawn: 1)
+    let #(_, life) = spawns.creature_of(state:, spawn: 1)
     spawns.creature_ended(state:, at_ms: 7000, watch: WatchId(life)).0
   }
   let failed = fn() {
     let state = live()
-    let #(_, life) = creature_of(state:, spawn: 1)
+    let #(_, life) = spawns.creature_of(state:, spawn: 1)
     spawns.creature_not_started(
       state:,
       at_ms: 7000,
@@ -377,7 +325,7 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
     // a spawn that held none.
     let #(unit_id, life) = case spawn_state {
       "no spawn state" -> #(1, 1)
-      _ -> creature_of(state: live(), spawn: 1)
+      _ -> spawns.creature_of(state: live(), spawn: 1)
     }
     list.each(
       [
@@ -437,8 +385,8 @@ pub fn a_snapshot_in_the_maps_mailbox_when_its_creature_ends_is_relayed_and_gone
   let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let #(state, _) =
     spawns.join(state:, at_ms: 6100, connection: 2, x: spawns.far)
-  let #(unit_id, life) = creature_of(state:, spawn: 1)
-  let generation = generation_of(state:, spawn: 1, connection: 1)
+  let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
+  let generation = spawns.generation_of(state:, spawn: 1, connection: 1)
   let #(state, snapshot) =
     told_by_a_creature(
       state:,
@@ -478,7 +426,7 @@ pub fn a_snapshot_in_the_maps_mailbox_when_its_creature_ends_is_relayed_and_gone
     as "then the end of the creature is Gone to every player, once"
   assert map.spawn_state(state:, spawn: SpawnId(1)) == Ok(map.WaitingForRestart)
     as "and the relations went with the live spawn"
-  assert relation_of(state:, spawn: 1, connection: 1) == None
+  assert spawns.relation_of(state:, spawn: 1, connection: 1) == None
 }
 
 pub fn the_map_numbers_each_creature_relation_through_join_move_leave_crash_re_entry_and_hide_test() -> Nil {
@@ -487,13 +435,13 @@ pub fn the_map_numbers_each_creature_relation_through_join_move_leave_crash_re_e
     spawns.started_with_spawns(spawns: [hideable_beast(number: 1, x: 0.0)])
   // 1. the first viewer: its generation is in the creature's start.
   let #(state, joined) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
-  let #(unit_id, life) = creature_of(state:, spawn: 1)
-  let a_first = generation_of(state:, spawn: 1, connection: 1)
+  let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
+  let a_first = spawns.generation_of(state:, spawn: 1, connection: 1)
   assert told(joined) == [Started(unit_id:, by: 1, generation: a_first)]
     as "the first viewer's start carries the generation the map holds for it"
   // 2. a later joiner is told to the creature.
   let #(state, later) = spawns.join(state:, at_ms: 6100, connection: 2, x: 0.0)
-  let b_first = generation_of(state:, spawn: 1, connection: 2)
+  let b_first = spawns.generation_of(state:, spawn: 1, connection: 2)
   assert told(later) == [Seen(unit_id:, by: 2, generation: b_first)]
   // 3. a move out of sight, and 4. back.
   let #(state, out) =
@@ -501,13 +449,13 @@ pub fn the_map_numbers_each_creature_relation_through_join_move_leave_crash_re_e
   assert told(out) == [Unseen(unit_id:, by: 2, generation: b_first)]
     as "the pair ends under the generation it began with"
   let #(state, back) = spawns.move(state:, at_ms: 6300, connection: 2, x: 0.0)
-  let b_second = generation_of(state:, spawn: 1, connection: 2)
+  let b_second = spawns.generation_of(state:, spawn: 1, connection: 2)
   assert told(back) == [Seen(unit_id:, by: 2, generation: b_second)]
   // 5. a leave, and 6. a join again.
   let #(state, left) = spawns.leave(state:, at_ms: 6400, connection: 1)
   assert told(left) == [Unseen(unit_id:, by: 1, generation: a_first)]
   let #(state, again) = spawns.join(state:, at_ms: 6500, connection: 1, x: 0.0)
-  let a_second = generation_of(state:, spawn: 1, connection: 1)
+  let a_second = spawns.generation_of(state:, spawn: 1, connection: 1)
   assert told(again) == [Seen(unit_id:, by: 1, generation: a_second)]
   // 7. the creature's prerequisite enters the player's hidden set, and 8. leaves it.
   let #(state, hidden) =
@@ -525,7 +473,7 @@ pub fn the_map_numbers_each_creature_relation_through_join_move_leave_crash_re_e
       connection: 2,
       hidden: set.new(),
     )
-  let b_third = generation_of(state:, spawn: 1, connection: 2)
+  let b_third = spawns.generation_of(state:, spawn: 1, connection: 2)
   assert told(shown) == [Seen(unit_id:, by: 2, generation: b_third)]
   // Every generation the map gave is one it never gave before.
   let all = [a_first, b_first, b_second, a_second, b_third]
@@ -608,7 +556,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       alive: True,
       hidden: set.new(),
     )
-  let #(unit_id, life) = creature_of(state:, spawn: 1)
+  let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
   let state =
     list.fold([3, 1, 4], state, fn(state, connection) {
       told_by_a_creature(
@@ -618,7 +566,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
           unit_id:,
           life:,
           by: ConnectionId(connection),
-          generation: generation_of(state:, spawn: 1, connection:),
+          generation: spawns.generation_of(state:, spawn: 1, connection:),
           burst: [],
         ),
       ).0
@@ -648,7 +596,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
         unit_id:,
         life:,
         by: ConnectionId(2),
-        generation: generation_of_released(
+        generation: spawns.generation_of(
           state: released,
           spawn: 1,
           connection: 2,
@@ -696,7 +644,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
         unit_id:,
         life:,
         by: ConnectionId(2),
-        generation: generation_of_released(
+        generation: spawns.generation_of(
           state: released,
           spawn: 1,
           connection: 2,
@@ -725,12 +673,12 @@ pub fn a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relatio
     ])
   let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let #(state, _) = spawns.join(state:, at_ms: 6100, connection: 2, x: 0.0)
-  let #(unit_id, life) = creature_of(state:, spawn: 1)
-  let earlier = generation_of(state:, spawn: 1, connection: 2)
+  let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
+  let earlier = spawns.generation_of(state:, spawn: 1, connection: 2)
   let #(state, _) =
     spawns.move(state:, at_ms: 6200, connection: 2, x: spawns.far)
   let #(state, _) = spawns.move(state:, at_ms: 6300, connection: 2, x: 0.0)
-  let current = generation_of(state:, spawn: 1, connection: 2)
+  let current = spawns.generation_of(state:, spawn: 1, connection: 2)
   assert earlier != current
     as "the pair that came back holds a generation of its own"
   let news = health_news(unit_id:, health: 40)
@@ -748,7 +696,7 @@ pub fn a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relatio
     )
   assert relayed(stale) == []
     as "a snapshot of the sight that ended is dropped, whatever it carries"
-  assert relation_of(state:, spawn: 1, connection: 2)
+  assert spawns.relation_of(state:, spawn: 1, connection: 2)
     == Some(map.Relation(
       generation: current,
       stay: map_support.stay(count: 1),

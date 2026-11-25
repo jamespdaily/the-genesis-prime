@@ -13,15 +13,17 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{type PrerequisiteId, Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
+import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State, Join, Leave, Moved}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None}
+import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import gleam/string
 import map_support
@@ -243,6 +245,46 @@ pub fn released(
   unit_id unit_id: Int,
 ) -> #(State, ServiceStep(map.Outgoing)) {
   feed(state:, at_ms:, event: OwnEvent(Told(message: map.Released(unit_id:))))
+}
+
+/// The unit id and life of the creature of the spawn, in any state that runs one.
+pub fn creature_of(state state: State, spawn spawn: Int) -> #(Int, Int) {
+  case map.spawn_state(state:, spawn: SpawnId(spawn)) {
+    Ok(map.Live(unit_id:, life:, ..))
+    | Ok(map.Retiring(unit_id:, life:))
+    | Ok(map.Releasing(unit_id:, life:, ..)) -> #(unit_id, life)
+    Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) ->
+      panic as "the spawn holds no creature"
+  }
+}
+
+/// The relation the map holds between the creature of a spawn and a connection, while the
+/// spawn is live or releasing.
+pub fn relation_of(
+  state state: State,
+  spawn spawn: Int,
+  connection connection: Int,
+) -> Option(map.Relation) {
+  case map.spawn_state(state:, spawn: SpawnId(spawn)) {
+    Ok(map.Live(relations:, ..)) | Ok(map.Releasing(relations:, ..)) ->
+      dict.get(relations, ConnectionId(connection)) |> option.from_result
+    Ok(map.Retiring(..))
+    | Ok(map.WaitingForRestart)
+    | Ok(map.Failed)
+    | Error(Nil) -> None
+  }
+}
+
+/// The generation of the relation the map holds.
+pub fn generation_of(
+  state state: State,
+  spawn spawn: Int,
+  connection connection: Int,
+) -> Generation {
+  let assert Some(map.Relation(generation:, ..)) =
+    relation_of(state:, spawn:, connection:)
+    as "the map holds the relation"
+  generation
 }
 
 /// The creatures a step starts, each with the watch it is to be under, in the
