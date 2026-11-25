@@ -2110,6 +2110,7 @@ fn proc_started(
     named_player:,
     counted_with: WithNothing,
     from:,
+    lands_spell: False,
   )
 }
 
@@ -2133,6 +2134,7 @@ fn child_started(
   named_player named_player: Option(Int),
   counted_with counted_with: AdvanceWith,
   from from: Option(PressedFrom),
+  lands_spell lands_spell: Bool,
 ) -> #(State, List(Effect)) {
   let unseen =
     option.then(named_player, fn(player) {
@@ -2162,7 +2164,7 @@ fn child_started(
         parent: Some(parent),
         primary_target:,
         client_cast_id: None,
-        role: Child(counted_with:, from:, named_player:),
+        role: Child(counted_with:, from:, named_player:, lands_spell:),
         spent: None,
         reserved: [],
       )
@@ -3056,6 +3058,7 @@ fn tick_child_started(
       },
       counted_with: WithNothing,
       from: holder.handed_down,
+      lands_spell: True,
     )
   }
 }
@@ -3102,6 +3105,7 @@ fn fire(
             named_player:,
             counted_with:,
             from:,
+            lands_spell: True,
           )
         NodesEnd(cast_id:) -> {
           let #(cast, ticks) =
@@ -4075,7 +4079,12 @@ pub fn level_up_started(
     parent: None,
     primary_target: caster.unit_id,
     client_cast_id: None,
-    role: Child(counted_with: WithNothing, from: None, named_player: None),
+    role: Child(
+      counted_with: WithNothing,
+      from: None,
+      named_player: None,
+      lands_spell: True,
+    ),
     spent: None,
     reserved: [],
   )
@@ -6331,6 +6340,7 @@ fn child(
         named_player:,
         counted_with:,
         from:,
+        lands_spell: True,
       )
     True -> {
       let #(cast, _, start) =

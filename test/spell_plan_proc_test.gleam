@@ -1551,6 +1551,43 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
         <> " lasts as its durationTime says"
       }
   })
+  // Kinds 27, 229, 230 and 231: every client row is read but the two the plan leaves out,
+  // each for its reason (`Spell4Effects.effectType.14.dataBits00.27`: 59894 is held by the
+  // primary target, which an ally's event does not tell for kind 27; 198593 has dataBits03 36).
+  let landing_rows =
+    list.filter(read, fn(found) {
+      list.contains([27, 229, 230, 231], { found.0 }.data_bits00)
+    })
+  assert landing_rows != [] as "the tables hold rows of the landing kinds"
+  list.each(landing_rows, fn(found) {
+    let #(effect, outcome) = found
+    case effect.id {
+      59_894 -> {
+        assert outcome
+          == Ok(
+            spell_plan.LeftOut(why: spell_plan.ProcHeldEventNotTold(kind: 27)),
+          )
+          as "row 59894 is left out for the unit that holds it"
+      }
+      198_593 -> {
+        assert outcome
+          == Ok(
+            spell_plan.LeftOut(why: spell_plan.ProcAimNotRead(data_bits03: 36)),
+          )
+          as "row 198593 is left out for its aim"
+      }
+      id ->
+        case outcome {
+          Ok(spell_plan.Applied(spell_plan.ReadProc(..))) -> Nil
+          Ok(..) | Error(..) ->
+            panic as {
+              "the Proc row "
+              <> int.to_string(id)
+              <> " of a landing kind is read, or left out naming a reason above"
+            }
+        }
+    }
+  })
 }
 
 pub fn each_ally_proc_row_the_plan_reads_waits_for_a_trigger_a_creatures_blow_raises_test() -> Nil {
@@ -1716,6 +1753,10 @@ fn kinds_read() -> List(#(Int, spell_plan.Trigger, String)) {
     #(1, Kills, ""),
     #(20, LandsHeal, ""),
     #(147, LandsCriticalHeal, ""),
+    #(16, spell_plan.TakesDamage, ""),
+    #(146, spell_plan.SuffersCritical, ""),
+    #(51, spell_plan.DeflectsAttack, ""),
+    #(115, spell_plan.ShieldDepleted, ""),
     #(10, spell_plan.UsesAbility, ".fairly_sure"),
     #(103, spell_plan.SpendsResource, ".fairly_sure"),
     #(21, spell_plan.ReceivesHeal, ".fairly_sure"),
@@ -1779,19 +1820,6 @@ fn kinds_waiting() -> List(#(Int, String, String)) {
 
 pub fn proc_every_kind_read_or_refused_test() -> Nil {
   use <- owned_test.run(120_000)
-  list.each(kinds_read(), fn(kind) {
-    assert read_of(
-        effect: Spell4Effects(..row(id: 99_020), data_bits00: kind.0),
-      )
-      == reading(trigger: kind.1)
-      as {
-        "Spell4Effects.effectType.14.dataBits00"
-        <> kind.2
-        <> ": kind "
-        <> int.to_string(kind.0)
-        <> " is read"
-      }
-  })
   use <- unitest.guard(client_tables.present())
   let named =
     list.append(
@@ -1807,44 +1835,6 @@ pub fn proc_every_kind_read_or_refused_test() -> Nil {
       Error(ProcKindNotRead(..)) ->
         panic as "a row of a named kind falls to ProcKindNotRead"
       Error(..) | Ok(..) -> Nil
-    }
-  })
-  // Kinds 27, 229, 230 and 231: every client row is read but the two the plan leaves out,
-  // each for its reason (`Spell4Effects.effectType.14.dataBits00.27`: 59894 is held by the
-  // primary target, which an ally's event does not tell for kind 27; 198593 has dataBits03 36).
-  let landing_rows =
-    spell_tables.rows_read(tables: client_tables.shared(), effect_type: 14)
-    |> list.filter(fn(found) {
-      list.contains([27, 229, 230, 231], { found.0 }.data_bits00)
-    })
-  assert landing_rows != [] as "the tables hold rows of the landing kinds"
-  list.each(landing_rows, fn(found) {
-    let #(effect, outcome) = found
-    case effect.id {
-      59_894 -> {
-        assert outcome
-          == Ok(
-            spell_plan.LeftOut(why: spell_plan.ProcHeldEventNotTold(kind: 27)),
-          )
-          as "row 59894 is left out for the unit that holds it"
-      }
-      198_593 -> {
-        assert outcome
-          == Ok(
-            spell_plan.LeftOut(why: spell_plan.ProcAimNotRead(data_bits03: 36)),
-          )
-          as "row 198593 is left out for its aim"
-      }
-      id ->
-        case outcome {
-          Ok(spell_plan.Applied(spell_plan.ReadProc(..))) -> Nil
-          Ok(..) | Error(..) ->
-            panic as {
-              "the Proc row "
-              <> int.to_string(id)
-              <> " of a landing kind is read, or left out naming a reason above"
-            }
-        }
     }
   })
 }

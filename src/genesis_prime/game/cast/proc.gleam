@@ -38,10 +38,12 @@
 ////   `Spell4Effects.effectType.14.dataBits00.229_230_231`); a spell that only selects a unit raises none.
 ////   A go also raises `LandsSpell` for the holder's spell: one for each creature or other player it hit,
 ////   and one with no unit when it hit neither (`landed_events`), when the cast's role raises one
-////   (`role_lands_spell`: a press, a stage and a child do; a standing spell, an activation and a
-////   shortcut do not). A tick is no go and raises none. A fired spell's own go raises a landing,
-////   so a proc with no filter on this kind fires again at the next input, bounded by its limit
-////   (guesses: `Spell4Effects.effectType.14.dataBits00.27`).
+////   (`role_lands_spell`: a press, a stage and a Proxy's child do; a standing spell, an
+////   activation, a shortcut and the cast a proc fire starts do not), and a go answered after its
+////   cast ended raises none (`go_lands_spell`). A tick is no go and raises none. A fire's own
+////   cast raises none, so a row whose fired spell passes its own filter does not fire itself
+////   again; a Proxy child of a fired spell still lands (guesses:
+////   `Spell4Effects.effectType.14.dataBits00.27`).
 ////   A creature's blow on the holder raises `TakesDamage` when it lowered the holder's absorbs,
 ////   shield or health, `SuffersCritical` for a critical, `ShieldDepleted` when it took the shield
 ////   to 0 and `DeflectsAttack` for a deflect, each with the creature as the other unit and its
@@ -387,7 +389,8 @@ fn event_of_spell(
 type Landing {
   /// A creature or another player the go hit: one landing naming it.
   LandsOn(unit_id: Int)
-  /// A creature that deflected or was immune: it raises no landing, and the go has hit a unit.
+  /// A creature or another player that deflected or was immune: it raises no landing, and the
+  /// go has hit a unit, so a caster listed beside it lands nothing either.
   LandsNowhere
   /// The caster itself or a player a creature's attack struck: no unit of the go to name.
   LandsOnNobody
@@ -396,9 +399,11 @@ type Landing {
 /// The landings of a go's spell for the holder, in the round's order: one `LandsSpell` for
 /// each creature or other player the go hit, naming it, and when the round holds no
 /// creature and no other player (it strikes nobody, lists only the caster, or lists a
-/// player a creature's attack struck) one with no unit, so a spell of the caster alone lands
-/// too. A deflected or immune creature raises none, as it raises no hit. A go that heals an
-/// ally and the caster lands once, naming the ally. A guess for each case: no client code
+/// player a creature's attack struck, or the caster itself, immune or not) one with no unit,
+/// so a spell of the caster alone lands too. A deflected or immune creature or other player
+/// raises none, as it raises no hit, and the go has still hit a unit, so a go that deflected
+/// a creature and lists the caster raises none. A go that heals an ally and the caster lands
+/// once, naming the ally. A guess for each case: no client code
 /// reads a Proc row, and the texts and rows leave open whether one landing is raised for the
 /// go or for each unit it hits (`Spell4Effects.effectType.14.dataBits00.27`).
 pub fn landed_events(
@@ -449,26 +454,30 @@ pub fn landed_events(
 }
 
 /// Whether the go of a cast that started with this role raises the landing of its spell: a
-/// press, a stage and a child (a Proxy's, a tick's, a proc fire's, one the server starts) do,
-/// since the filter groups of the kind hold Proxy children and a proc's own cast fires procs
-/// as it hits; a standing spell no press made, an activation and a shortcut (a quest button
-/// or an item's use) do not. A guess for each role: no text of kind 27 names them
+/// press, a stage and a child (a Proxy's, a tick's, one the server starts) do, since the
+/// filter groups of the kind hold Proxy children; a standing spell no press made, an
+/// activation, a shortcut (a quest button or an item's use) and the cast a proc fire starts
+/// (`Child.lands_spell`) do not, so a row whose fired spell passes its own filter, as
+/// Hypercharge's row 222009 does, fires once for each landing and not again for its own. A
+/// guess for each role: no text of kind 27 names them
 /// (`Spell4Effects.effectType.14.dataBits00.27`).
 pub fn role_lands_spell(role role: cast_state.Role) -> Bool {
   case role {
-    cast_state.Base(..) | cast_state.Stage(..) | cast_state.Child(..) -> True
+    cast_state.Base(..) | cast_state.Stage(..) -> True
+    cast_state.Child(lands_spell:, ..) -> lands_spell
     cast_state.Passive(..)
     | cast_state.Activation(..)
     | cast_state.Shortcut(..) -> False
   }
 }
 
-/// Whether the go of this cast raises the landing of its spell: by the role it started with,
-/// or, for a go answered after the client ended the cast, unless it is a standing cast.
+/// Whether the go of this cast raises the landing of its spell: by the role it started with.
+/// A go answered after the client ended the cast has no role to read, and its hits stand but
+/// its spell lands nothing (a guess: the client saw the cast end before its go).
 pub fn go_lands_spell(cast cast: State, cast_id cast_id: Int) -> Bool {
   case dict.get(cast.casts, cast_id) {
     Ok(live) -> live.lands_spell
-    Error(Nil) -> !cast_state.is_standing(cast:, cast_id:)
+    Error(Nil) -> False
   }
 }
 

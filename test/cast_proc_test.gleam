@@ -1630,6 +1630,24 @@ fn striking(
   struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(State, List(Effect)) {
+  striking_each(
+    plans:,
+    state:,
+    bag:,
+    struck_of: only(spell4_id:, struck:),
+    at: ms,
+  )
+}
+
+/// A press of the bag index whose gos, the cast's and those of the casts it starts, strike
+/// what `struck_of` says of each.
+fn striking_each(
+  plans plans: Plans,
+  state state: State,
+  bag bag: Int,
+  struck_of struck_of: fn(cast_state.GoAsked) -> List(cast_state.Struck),
+  at ms: Int,
+) -> #(State, List(Effect)) {
   let caster = planted_caster()
   let #(state, effects) =
     support.pressed_raw_in(
@@ -1645,7 +1663,7 @@ fn striking(
     state:,
     effects:,
     at: ms,
-    struck_of: only(spell4_id:, struck:),
+    struck_of:,
     rolls: [],
     poses: dict.new(),
   )
@@ -2345,14 +2363,15 @@ pub fn a_go_raises_a_landing_for_each_creature_or_player_it_hits_and_one_with_no
   let caster_alone =
     player_hit(unit_id: 40, unit: cast_state.HitCaster(heals: []))
   let landing = fn(unit) { #(spell_plan.LandsSpell, unit) }
-  let immune =
+  let immune = fn(unit) {
     cast_state.Immune(
       unit_id: 32,
-      unit: support.first_life,
+      unit:,
       controls: [],
       armor_removed: 0,
       ticking: [],
     )
+  }
   let rows = [
     #(
       "a creature the go only selects (no description) lands the spell",
@@ -2387,7 +2406,27 @@ pub fn a_go_raises_a_landing_for_each_creature_or_player_it_hits_and_one_with_no
       [cast_state.Deflected(unit_id: 31)],
       [],
     ),
-    #("an immune creature lands nothing", [immune], []),
+    #(
+      "a deflected creature and the caster lands nothing: the go hit a unit",
+      [cast_state.Deflected(unit_id: 31), caster_alone],
+      [],
+    ),
+    #("an immune creature lands nothing", [immune(support.first_life)], []),
+    #(
+      "an immune other player lands nothing",
+      [immune(cast_state.HitOtherPlayer(heals: []))],
+      [],
+    ),
+    #(
+      "an immune caster lands it with no unit",
+      [immune(cast_state.HitCaster(heals: []))],
+      [landing(None)],
+    ),
+    #(
+      "an immune player a creature's attack struck lands it with no unit",
+      [immune(cast_state.HitPlayer)],
+      [landing(None)],
+    ),
   ]
   list.each(rows, fn(row) {
     let #(why, struck, expected) = row
@@ -2409,13 +2448,24 @@ pub fn a_casts_role_decides_whether_its_go_raises_a_landing_test() -> Nil {
     ),
     #("a stage raises a landing", cast_state.Stage(ability:, index: 1), True),
     #(
-      "a child (a Proxy's, a tick's, a proc fire's) raises a landing",
+      "a child (a Proxy's, a tick's, the server's) raises a landing",
       cast_state.Child(
         counted_with: cast_state.WithNothing,
         from: None,
         named_player: None,
+        lands_spell: True,
       ),
       True,
+    ),
+    #(
+      "the cast a proc fire starts raises none",
+      cast_state.Child(
+        counted_with: cast_state.WithNothing,
+        from: None,
+        named_player: None,
+        lands_spell: False,
+      ),
+      False,
     ),
     #("a standing spell raises none", cast_state.Passive(from: None), False),
     #(
@@ -2446,33 +2496,16 @@ pub fn a_casts_role_decides_whether_its_go_raises_a_landing_test() -> Nil {
     let #(why, role, expected) = row
     assert cast_proc.role_lands_spell(role:) == expected as why
   })
-  // A go answered after the client ended its cast has no cast to read the role from: it
-  // raises a landing unless the cast is a standing one.
-  let standing =
-    cast_state.State(
-      ..cast_state.new(),
-      standing: dict.from_list([
-        #(7, cast_state.StandingKey(spell4_id: 250_301, from: None)),
-      ]),
-    )
-  assert cast_proc.go_lands_spell(cast: cast_state.new(), cast_id: 5)
-    as "a cast no longer live raises a landing"
-  assert !cast_proc.go_lands_spell(cast: standing, cast_id: 7)
-    as "a standing cast no longer live raises none"
   // The table above, through the whole rule: the holder's passive (a standing spell) goes
   // at the join and raises no landing; a press of the hitter, a base cast whose go strikes
   // nobody, raises one with no unit and fires the proc at the holder.
-  // The proc's own cast is a child, whose go lands a spell too: the proc's limit stops it.
   let holder =
     holding(spell4_id: 250_101, procs: [
-      ProcRow(
-        ..firing(
-          id: 1,
-          trigger: spell_plan.LandsSpell,
-          casts: 250_201,
-          aim: spell_plan.AtHolder,
-        ),
-        limit: InWindow(window_ms: 500, count: 1),
+      firing(
+        id: 1,
+        trigger: spell_plan.LandsSpell,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
       ),
     ])
   let plans = support.plans_of([holder, hitter(school: 2)])
@@ -2482,6 +2515,121 @@ pub fn a_casts_role_decides_whether_its_go_raises_a_landing_test() -> Nil {
   let #(_, pressed) = hit_with(plans:, state:, struck: [], at: 1000)
   assert starts_of(spell4_id: 250_201, effects: pressed) == 1
     as "a press whose go strikes nobody raises one landing with no unit"
+  // A go answered after the client ended its cast (0x801) has no role to read: its hit
+  // stands, and its spell lands nothing.
+  let caster = planted_caster()
+  let #(state, asked) = pressed_then_cancelled(plans:, state:, at: 2000)
+  let #(_, late) =
+    support.then_procs(
+      step: support.went_of_spell(
+        cast: state,
+        caster:,
+        now: support.at(ms: 2200),
+        cast_id: asked.cast_id,
+        phase: asked.phase,
+        spell: Ok(hitter(school: 2)),
+        struck: [],
+      ),
+      caster:,
+      at: 2200,
+    )
+  assert starts_of(spell4_id: 250_201, effects: late) == 0
+    as "a go answered after the cast ended raises no landing"
+}
+
+/// How many casts of the spell 250_201 a press of the hitter starts when the holder's passive
+/// holds `row` (a kind 27 row that casts 250_201 at the holder) and every go, the fired
+/// spell's and a child's included, strikes the creature 31.
+fn fires_of_a_row_on_a_press_of(row row: ProcRow, hitter hitter: Spell) -> Int {
+  let holder = holding(spell4_id: 250_101, procs: [row])
+  let plans = support.plans_of([holder, hitter])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let #(_, effects) =
+    striking_each(
+      plans:,
+      state:,
+      bag: bag_of_base_2,
+      struck_of: fn(_) { [plain_hit(unit_id: 31)] },
+      at: 1000,
+    )
+  starts_of(spell4_id: 250_201, effects:)
+}
+
+pub fn a_proc_fires_own_cast_raises_no_landing_so_a_landing_row_does_not_chain_but_a_proxy_child_still_lands_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects.effectType.14.dataBits00.27: a guess for each row (the record's gap): the
+  // cast a Proc row starts raises no landing of the holder's spell, so a row whose own
+  // spell passes its filter does not fire itself again. Row 40779 (Spell4 25342, no filter,
+  // life 60) fires 'Item - Knockdown Proxy' 25072 at the other unit, whose go strikes that
+  // unit; row 222009 (Hypercharge 58946, group 496, 10 in 50 ms) fires 83918, which is in
+  // group 496 itself (Spell4GroupList 1512). A Proxy's child still lands: row 122737 (Psi
+  // Charge, group of its child 51964) needs the child's landing.
+  let unfiltered =
+    ProcRow(
+      ..firing(
+        id: 40_779,
+        trigger: spell_plan.LandsSpell,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+      limit: spell_plan.ForLife(count: 60),
+    )
+  let hypercharge =
+    ProcRow(
+      ..unfiltered,
+      effect_id: Spell4EffectsId(222_009),
+      spell: Spell(..unfiltered.spell, groups: [692, 496]),
+      limit: InWindow(window_ms: 50, count: 10),
+      filter: spell_plan.InGroup(group_id: 496),
+    )
+  let in_496 = Spell(..hitter(school: 2), groups: [496])
+  let child_in_333 = Spell(..cast_of_proc(spell4_id: 250_401), groups: [333])
+  let with_child =
+    spell_plan.with_proxies(spell: hitter(school: 2), proxies: [
+      spell_plan.Proxy(
+        period: None,
+        effect_id: Spell4EffectsId(90_002),
+        delay_ms: 0,
+        phase_flags: -1,
+        condition: Always,
+        tag: spend.always,
+        target: spell_plan.OnPrimaryTarget,
+        spell: child_in_333,
+        gains: [],
+      ),
+    ])
+  let rows = [
+    #(
+      "a row with no filter and life 60 fires once for the press, not once for each landing",
+      unfiltered,
+      hitter(school: 2),
+      1,
+    ),
+    #(
+      "Hypercharge's row, whose fired spell is in its own group 496, fires once for a press of group 496",
+      hypercharge,
+      in_496,
+      1,
+    ),
+    #(
+      "a press outside the group lands nothing the row passes, and the fire's own cast adds none",
+      hypercharge,
+      hitter(school: 2),
+      0,
+    ),
+    #(
+      "a Proxy's child in the row's group lands, and fires it once",
+      ProcRow(..unfiltered, filter: spell_plan.InGroup(group_id: 333)),
+      with_child,
+      1,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(why, proc_row, press, expected) = row
+    assert fires_of_a_row_on_a_press_of(row: proc_row, hitter: press)
+      == expected
+      as why
+  })
 }
 
 // ---- the landing kinds, held through the tiers of the client's abilities ----
@@ -2553,15 +2701,6 @@ fn played(
   #(state, list.append(first, list.flat_map(fired, fn(step) { step.effects })))
 }
 
-/// The ability of this Spell4Base id as the plans hold it.
-fn ability_of(plans plans: Plans, base base: Int) -> Spell {
-  let assert Ok(spell) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
-    as {
-      "the plans hold the ability of the Spell4Base " <> int.to_string(base)
-    }
-  spell
-}
-
 /// The groups of a Spell4 in the client's tables (`Spell4.spell4GroupListId`).
 fn groups_of(spell4_id spell4_id: Int) -> List(Int) {
   let assert Ok(facts) =
@@ -2602,7 +2741,9 @@ const particle_ejector = 34_658
 
 const engineer_pulse_blast = 26_468
 
-const pulse_blast = 42_276
+/// Pulse Blast (Spell4 42276) holds a Proxy to 37302 and no damage row of its own; the
+/// Physical damage is 37302's.
+const pulse_blast_damage = 37_302
 
 pub fn a_thresher_hit_fires_the_229_cdr_and_a_particle_ejector_hit_the_230_cdr_test() -> Nil {
   use <- owned_test.run(10_000)
@@ -2626,9 +2767,9 @@ pub fn a_thresher_hit_fires_the_229_cdr_and_a_particle_ejector_hit_the_230_cdr_t
     as "Thresher's damage spell is in group 491"
   assert list.contains(groups_of(spell4_id: particle_ejector), 492)
     as "Particle Ejector's spell is in group 492"
-  assert !list.contains(groups_of(spell4_id: pulse_blast), 491)
-    && !list.contains(groups_of(spell4_id: pulse_blast), 492)
-    as "Pulse Blast is in neither group"
+  assert !list.contains(groups_of(spell4_id: pulse_blast_damage), 491)
+    && !list.contains(groups_of(spell4_id: pulse_blast_damage), 492)
+    as "Pulse Blast's damage spell is in neither group"
   let #(held, _) =
     played(
       plans:,
@@ -2667,7 +2808,8 @@ pub fn a_thresher_hit_fires_the_229_cdr_and_a_particle_ejector_hit_the_230_cdr_t
   let #(_, started) = fires(held, 2, particle_ejector, [damage_type.Tech], 3000)
   assert started == #(0, 1)
     as "a Particle Ejector hit lands Tech damage: 70465 is cast and 70466 is not"
-  let #(_, started) = fires(held, 3, pulse_blast, [damage_type.Physical], 3000)
+  let #(_, started) =
+    fires(held, 3, pulse_blast_damage, [damage_type.Physical], 3000)
   assert started == #(0, 0)
     as "a Physical hit of a spell outside group 491 fires neither"
   let #(_, started) =
@@ -2709,9 +2851,9 @@ pub fn a_landing_proc_on_group_747_fires_when_crisis_wave_lands_with_or_without_
       ..bag_of(bases: [medic_barrier, medic_crisis_wave]),
       resources: support.holding_focus(class_id: 4, focus: 1000.0),
     )
-  let wave = ability_of(plans:, base: medic_crisis_wave)
+  let wave = support.ability_in(plans:, base: medic_crisis_wave)
   assert list.contains(wave.groups, 747) as "Crisis Wave is in group 747"
-  let outsider = ability_of(plans:, base: medic_barrier)
+  let outsider = support.ability_in(plans:, base: medic_barrier)
   assert !list.contains(outsider.groups, 747)
     as "Barrier's own spell is outside group 747"
   let held =
@@ -3336,6 +3478,44 @@ pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_
     as "the lingering cast's own proc fires for the hit it landed"
 }
 
+/// A press of the hitter at the time, whose one go asks for its targets, and the client's
+/// cancel of the cast (0x801, reason 6) 100 ms later, while the go's round is open: the state
+/// and the go asked.
+fn pressed_then_cancelled(
+  plans plans: Plans,
+  state state: State,
+  at ms: Int,
+) -> #(State, cast_state.GoAsked) {
+  let caster = planted_caster()
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: ms,
+    )
+  let assert [cast_state.Strike(asked)] = list.filter(pressed, is_strike)
+    as "the press asks for the targets of its one go"
+  let assert Ok(#(state, _)) =
+    cast.take(
+      target_of: support.nothing_shown,
+      cast: state,
+      message: cast_state.Cancelled,
+      body: support.cancel_body(
+        cast_id: support.pressed_id(effects: pressed),
+        reason: cast_result.SpellCancelled,
+        bit: 1,
+      ),
+      caster:,
+      plans:,
+      now: support.at(ms: ms + 100),
+    )
+    as "the client ends the cast with reason 6 (opcode.0x801)"
+  #(state, asked)
+}
+
 pub fn a_hit_answered_after_the_client_ended_a_cast_that_holds_no_node_still_fires_the_holders_proc_test() -> Nil {
   use <- owned_test.run(60_000)
   // The hitter is a one-phase spell with no lasting row, so its cast is gone from the
@@ -3354,33 +3534,7 @@ pub fn a_hit_answered_after_the_client_ended_a_cast_that_holds_no_node_still_fir
       school: 2,
     )
   let caster = planted_caster()
-  let #(state, pressed) =
-    support.pressed_raw_in(
-      plans:,
-      state:,
-      caster:,
-      bag_index: bag_of_base_2,
-      target: 0,
-      at: 1000,
-    )
-  let cast_id = support.pressed_id(effects: pressed)
-  let assert [cast_state.Strike(asked)] = list.filter(pressed, is_strike)
-    as "the press asks for the targets of its one go"
-  let assert Ok(#(state, _)) =
-    cast.take(
-      target_of: support.nothing_shown,
-      cast: state,
-      message: cast_state.Cancelled,
-      body: support.cancel_body(
-        cast_id:,
-        reason: cast_result.SpellCancelled,
-        bit: 1,
-      ),
-      caster:,
-      plans:,
-      now: support.at(ms: 1100),
-    )
-    as "the client ends the cast with reason 6 (opcode.0x801)"
+  let #(state, asked) = pressed_then_cancelled(plans:, state:, at: 1000)
   let #(_, late) =
     support.then_procs(
       step: support.went_of_spell(

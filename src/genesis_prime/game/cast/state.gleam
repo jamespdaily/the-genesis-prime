@@ -905,11 +905,13 @@ pub type Role {
   /// that started it, its use or its worn spell (`handed_down`), none otherwise.
   /// `named_player` is the player the child was started on when a bag press named that player
   /// (`Live.named_player`), none for a child on the caster, on a struck unit or started by a
-  /// proc or a tick.
+  /// proc or a tick. `lands_spell` says whether its go raises the landing of its spell for the
+  /// holder's procs (`cast_proc.role_lands_spell`): false for the cast a proc fire starts.
   Child(
     counted_with: AdvanceWith,
     from: Option(PressedFrom),
     named_player: Option(Int),
+    lands_spell: Bool,
   )
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
