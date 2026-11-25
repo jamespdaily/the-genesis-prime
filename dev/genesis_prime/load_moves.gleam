@@ -8,9 +8,10 @@
 ////
 //// The environment, the two nodes and the step are the load run's
 //// (`genesis_prime/load_run`): a migrated database empty of accounts (the run
-//// seeds `load-0`, `load-1`, ...), the client's tables, the server's ports (so
-//// no server may be running), the server in a node of its own and the players
-//// in this one, limited to the clients' schedulers (`load_run.start_clients`).
+//// seeds `load-0`, `load-1`, ...), the client's tables and ground, the server in a
+//// node of its own and the players in this one, limited to the clients' schedulers
+//// (`load_run.start_clients`). The server listens on ports of its own (`sts_port`,
+//// `auth_port`, `game_port`), not the client's defaults, so a server may be running.
 //// All the players log in, create a character and enter the same map, where
 //// every character starts at the same place, so each is in sight of every other;
 //// each then sends a 0x0637 every 125 ms (`genesis_prime/load_player`, walking)
@@ -25,19 +26,30 @@
 //// functions slowed it enough to fall behind at 200 players, where the same run
 //// untraced keeps up.
 ////
+//// Beside the walkers, `probes` clients of the real protocol join the map and send
+//// tagged moves (`genesis_prime/load_move_delay`); the run prints the delay from a
+//// probe's send to each other probe's receipt, as its mean and 99th percentile.
+////
 //// The map falls behind when its queue grows with the hold instead of staying
 //// near zero, or when the share of samples that find its process running
 //// approaches all of them.
 
 import argv
 import genesis_prime
+import genesis_prime/load_move_delay
 import genesis_prime/load_player
 import genesis_prime/load_run
 import genesis_prime/load_sample
 import genesis_prime/load_step
+import genesis_prime/login/auth_connection
+import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/server
+import genesis_prime/step/runtime
+import gleam/erlang/process
 import gleam/float
 import gleam/int
 import gleam/io
+import gleam/list
 import gleam/result
 import pog
 
@@ -49,6 +61,22 @@ const default_players = 50
 const arrival_ms = 5000
 
 const hold_ms = 20_000
+
+/// The clients that measure the delay, when the walkers have all arrived, how long
+/// after that all are in the world, and how long they send moves.
+const probes = 4
+
+const probes_in_world_ms = 6000
+
+const probe_window_ms = 10_000
+
+/// The server's ports, which are not the client's defaults (6600, 23115 and 24000):
+/// another server, a play container's forwards for one, may hold those.
+const sts_port = 16_600
+
+const auth_port = 33_115
+
+const game_port = 34_000
 
 /// What the map showed, as the server's node sampled it: the longest message
 /// queue, the sum of the queue of each sample, how many samples there were and
@@ -73,15 +101,35 @@ pub fn main() -> Nil {
   }
   load_run.start_clients()
   let peer = load_run.start_peer()
-  let settings = load_run.in_peer(peer, load_run.start_server)
+  let settings =
+    load_run.in_peer(peer, fn() {
+      load_run.start_server_with(change: on_its_own_ports)
+    })
   let assert Ok(started) = pog.start(genesis_prime.pool())
     as "the pool for the accounts started"
   let accounts = load_player.accounts(first: 0, count: players)
+  let probe_accounts = load_player.accounts(first: players, count: probes)
   load_player.seed(pool: started.data, accounts:)
+  load_player.seed(pool: started.data, accounts: probe_accounts)
   load_run.in_peer(peer, fn() { start_probe(settings.world.map_supervisor) })
+  let ports = load_run.ports_of(settings)
+  let begin_ms = runtime.now().monotonic_ms
+  let probed = process.new_subject()
+  list.each(probe_accounts, fn(account) {
+    load_move_delay.start(
+      plan: load_move_delay.Plan(
+        account:,
+        begin_ms: begin_ms + arrival_ms,
+        sync_ms: begin_ms + arrival_ms + probes_in_world_ms,
+        window_ms: probe_window_ms,
+      ),
+      ports:,
+      report: probed,
+    )
+  })
   let outcome =
     load_run.run_step_walking(
-      ports: load_run.ports_of(settings),
+      ports:,
       accounts:,
       arrival_ms:,
       hold_ms:,
@@ -111,6 +159,65 @@ pub fn main() -> Nil {
     "the map's process was found running in "
     <> percent(part: running, whole: samples)
     <> " of the samples",
+  )
+  let delays =
+    load_move_delay.delays(
+      probed: list.map(probe_accounts, fn(_) {
+        load_move_delay.reported(report: probed, within_ms: 1000)
+      }),
+    )
+  io.println(
+    "mover-to-viewer delay, from a probe's send to another probe's receipt among "
+    <> int.to_string(players)
+    <> " walkers: mean "
+    <> per(
+      total: int.sum(delays.microseconds),
+      count: list.length(delays.microseconds) * 1000,
+    )
+    <> " ms, 99th percentile "
+    <> per(
+      total: load_step.percentile(values: delays.microseconds, percent: 99),
+      count: 1000,
+    )
+    <> " ms, longest "
+    <> per(total: list.fold(delays.microseconds, 0, int.max), count: 1000)
+    <> " ms, over "
+    <> int.to_string(list.length(delays.microseconds))
+    <> " moves read of "
+    <> int.to_string(delays.expected)
+    <> " sent to a probe ("
+    <> int.to_string(probes)
+    <> " probes, one move every 125 ms for "
+    <> int.to_string(probe_window_ms / 1000)
+    <> " s)",
+  )
+}
+
+/// The server's settings with its listeners on `sts_port`, `auth_port` and
+/// `game_port`, and the auth server handing the client to the game port.
+fn on_its_own_ports(settings: server.Settings) -> server.Settings {
+  let login = settings.login
+  let auth_settings = login.auth.settings
+  server.Settings(
+    ..settings,
+    login: server.Login(
+      sts: server.Served(..login.sts, port: sts_port),
+      auth: server.Served(
+        ..login.auth,
+        port: auth_port,
+        settings: auth_connection.Settings(
+          ..auth_settings,
+          realm: auth_connection.Realm(
+            ..auth_settings.realm,
+            game_server: Endpoint(
+              ..auth_settings.realm.game_server,
+              port: game_port,
+            ),
+          ),
+        ),
+      ),
+    ),
+    game: server.Served(..settings.game, port: game_port),
   )
 }
 

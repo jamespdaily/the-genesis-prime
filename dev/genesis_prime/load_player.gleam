@@ -299,7 +299,7 @@ pub fn list_characters(game: game_client.Game) -> Nil {
 }
 
 /// Creates the player's character, and its id.
-fn create_character(game game: game_client.Game, name name: String) -> Int {
+pub fn create_character(game game: game_client.Game, name name: String) -> Int {
   game_client.send_create(game:, body: create_request(name))
   let assert [created] = game_client.read(game:, count: 1)
     as "one 0x00DC answers a create"
@@ -313,15 +313,24 @@ fn create_character(game game: game_client.Game, name name: String) -> Int {
 /// Plays the character into the world, and the messages that put it there,
 /// with the bytes the server wrote after them. The messages are the ones of a
 /// character that holds the Novice set of a level-1 class: 11 items
-/// (`game_client.world_entry_ids`).
+/// (`game_client.world_entry_ids`), and, on a server that holds the tutorial's
+/// quests, the 0x35C that begins the tutorial's first quest right after the quest
+/// log's 0x35F (`genesis_prime/game/quest`).
 fn enter_world(
   game game: game_client.Game,
   character_id character_id: Int,
 ) -> #(List(Frame), BitArray) {
   let #(burst, have) = play_into_world(game:, character_id:)
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
-    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
+  let with_the_first_quest =
+    list.flat_map(game_client.world_entry_ids, fn(id) {
+      case id {
+        0x035F -> [id, 0x035C]
+        _ -> [id]
+      }
+    })
+  let ids = list.map(burst, fn(frame) { frame.message_id })
+  assert ids == game_client.world_entry_ids || ids == with_the_first_quest
+    as "the player enters the world with the messages of game_client.world_entry_ids, and the 0x35C that begins the first quest where the server holds the tutorial"
   #(burst, have)
 }
 

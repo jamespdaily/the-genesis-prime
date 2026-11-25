@@ -379,7 +379,7 @@ fn maximum(history: List(#(Int, Verdict))) -> Int {
 /// the database the environment names, with every listener's cap raised for the
 /// run, waits until the database answers and its migrations are the files', and
 /// gives the settings it started with.
-pub fn start_server() -> Settings {
+fn start_server() -> Settings {
   start_server_with(change: fn(settings) { settings })
 }
 
