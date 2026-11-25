@@ -668,7 +668,7 @@ pub fn a_round_the_deadline_closed_has_lost_every_answer_sent_before_it_fell_due
     as "the cancelled round is closed by its answer, which it has"
 }
 
-pub fn a_strike_the_walkers_made_a_deadline_before_the_end_is_owed_an_answer_and_a_later_one_is_not_test() -> Nil {
+pub fn a_walker_strikes_only_while_a_deadline_is_left_and_each_strike_it_makes_is_owed_an_answer_test() -> Nil {
   use <- owned_test.run(5000)
   // A walker may strike while it still has `strike_tell.deadline_ms` = 1,000 ms to hear
   // the answer, so every strike it makes is owed one: the rows are the strike's time and
