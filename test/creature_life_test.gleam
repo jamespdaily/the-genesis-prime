@@ -381,6 +381,41 @@ pub fn a_corpse_stands_again_at_full_health_at_its_respawn_and_ends_when_it_was_
     == creature_life.Ends
 }
 
+pub fn a_corpse_timer_expires_a_dead_or_despawned_creature_and_ends_one_told_to_retire_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `death.creature_respawn`: the creature comes back full under its map's next life, so
+  // the timer only ends this one; a creature told to retire while it lay there is not
+  // replaced, its map keeps the spawn retiring (`on_retire`).
+  let dead =
+    creature_life.struck(
+      life: creature_life.new(body: beast()),
+      body: beast(),
+      strike: strike_of(damage: 52, rolls: no_luck, cast_id: 1),
+    ).life
+  list.each(
+    [
+      #("a dead creature", dead, False, creature_life.Expires),
+      #("a despawned creature", despawned_beast(), False, creature_life.Expires),
+      #("a dead creature told to retire", dead, True, creature_life.Ends),
+      #(
+        "a despawned creature told to retire",
+        despawned_beast(),
+        True,
+        creature_life.Ends,
+      ),
+    ],
+    fn(row) {
+      assert creature_life.corpse_timer_fired(
+          life: row.1,
+          body: beast(),
+          retiring: row.2,
+        )
+        == row.3
+        as row.0
+    },
+  )
+}
+
 pub fn a_creature_that_lies_dead_is_created_dead_for_a_viewer_that_arrives_test() -> Nil {
   use <- owned_test.run(5000)
   let dead =

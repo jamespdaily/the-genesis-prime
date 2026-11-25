@@ -37,6 +37,7 @@ pub fn a_creature() -> step.CreatureStart {
     spawn: spawn_source.Stored(id: SpawnId(1)),
     clock_origin_ms: 0,
     viewers: [],
+    ring: [],
   )
 }
 
@@ -329,6 +330,50 @@ pub fn a_creature_timer_started_in_the_step_that_started_it_fires_when_the_drive
     == Ok(gate_rule.Opened(gate_rule.timer_key_base + 9))
     as "the timer of the step that started a running creature fires when the clock reaches its time, not before"
   process.kill(target)
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+pub fn a_creature_that_exits_before_the_shell_watches_it_comes_back_as_watch_ended_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The supervisor started the creature (`Ok`) and it had left its address by the time the
+  // shell looked for it: no process holds the address, so the watch's end is the rule's next
+  // input after the step's effects (`genesis_prime/service/shell` `take`), as for a creature
+  // that ends later. A map takes it as a creature that ended while live.
+  let time = driven_time.new()
+  let gate = process.new_name("gate")
+  let started = process.new_subject()
+  let tree =
+    ask_support.start_tree(ask_support.reaching(
+      name: gate,
+      shutdown_ms: 1000,
+      reach: service.Reach(
+        locate: fn(_address) { Error(Nil) },
+        send: fn(_to, _message) { Error(Nil) },
+        start_creature: fn(creature) {
+          process.send(started, creature)
+          Ok(Nil)
+        },
+      ),
+      time:,
+    ))
+  let ended = awaiting(gate:, key: 5)
+  assert ask_support.call_gate(
+      gate,
+      gate_rule.StartCreatureAs(watch: 5, creature: a_creature()),
+    )
+    == gate_rule.Echoed(5)
+    as "the step went on to its reply"
+  assert open_wait.received(
+      from: started,
+      what: "the shell's ask to reach to start the creature",
+    )
+    == a_creature()
+  // The clock's barrier waits for the shell to be quiet: what the step caused is in the
+  // rule's mailbox by then.
+  driven_time.advance(time:, ms: 0)
+  assert process.receive(ended, within: 0) == Ok(gate_rule.Opened(5))
+    as "the end of the watch the step opened reached the rule as WatchEnded with the watch's id"
   let _reason = ask_support.stop_tree(tree)
   Nil
 }

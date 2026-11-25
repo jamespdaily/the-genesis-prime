@@ -423,6 +423,9 @@ pub type AtCorpse {
   /// The creature stands again at full health, and sends each viewer 0x355 and its
   /// 0x262.
   StandsAgain(life: Life)
+  /// The creature lies dead or despawned and its map starts the next life: it tells the
+  /// map it expired and stops.
+  Expires
   /// The creature was told to retire while dead: it stops, with no viewer to tell.
   Ends
 }

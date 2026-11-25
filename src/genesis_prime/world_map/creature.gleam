@@ -296,8 +296,8 @@ import genesis_prime/world_map/creature_fight.{
 import genesis_prime/world_map/creature_guard
 import genesis_prime/world_map/creature_kind.{type Kind}
 import genesis_prime/world_map/creature_life.{
-  type Body, type Life, Body, Died, Ends, Health, StandsAgain, StopAtRespawn,
-  StopNow,
+  type Body, type Life, Body, Died, Ends, Expires, Health, StandsAgain,
+  StopAtRespawn, StopNow,
 }
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_state
@@ -591,6 +591,10 @@ pub type Outgoing {
     stay: Stay,
     payload: relay.Payload,
   )
+  /// To the creature's map: the creature of `unit_id` and `life` lay dead or despawned
+  /// until its corpse timer and stops now; the map starts the creature's next life
+  /// under the same unit id when it ends (`map.Expired`).
+  Expired(unit_id: Int, life: Int)
 }
 
 /// A player in sight of a creature: the stay the map named it for and the generation
@@ -865,6 +869,8 @@ pub fn step(
         )
       {
         Ends -> #(state, Effects([Stop]))
+        Expires ->
+          panic as "the corpse timer expires the creature: not built yet"
         StandsAgain(life:) -> {
           let was_shown = creature_life.is_shown(life: state.life)
           let #(state, unwatched) =
@@ -2572,8 +2578,8 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   }
 }
 
-/// What a creature's `Outgoing` means to its map: `Snapshot`, `Broadcast` and `Relay`,
-/// each as the map's message of the same name.
+/// What a creature's `Outgoing` means to its map: `Snapshot`, `Broadcast`, `Relay` and
+/// `Expired`, each as the map's message of the same name.
 pub fn told_to_map(outgoing outgoing: Outgoing) -> map.Message {
   case outgoing {
     Snapshot(unit_id:, life:, by:, generation:, burst:) ->
@@ -2581,6 +2587,7 @@ pub fn told_to_map(outgoing outgoing: Outgoing) -> map.Message {
     Broadcast(unit_id:, life:, news:) -> map.Broadcast(unit_id:, life:, news:)
     Relay(unit_id:, life:, to:, stay:, payload:) ->
       map.Relay(unit_id:, life:, to:, stay:, payload:)
+    Expired(unit_id:, life:) -> map.Expired(unit_id:, life:)
   }
 }
 

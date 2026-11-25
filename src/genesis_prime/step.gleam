@@ -35,6 +35,7 @@
 //// the rule chooses, and a process that asks this one by an id the shell
 //// chooses.
 
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/spawn_source.{type SpawnSource}
@@ -325,6 +326,28 @@ pub type CreatureStart {
     /// by a burst of `Seen` sends, and names the stay in everything it relays to
     /// the player.
     viewers: List(#(ConnectionId, Stay, Generation)),
+    /// The ready, living, unstealthed players who stand in the spawn's ring as a
+    /// respawn starts, in the order of their connections, each with what the map's
+    /// `Approached` tells a creature of it. The creature takes them all in one step
+    /// and starts one fight over those of them that are its viewers, as a creature
+    /// that stood again did. Empty for every start but the map's respawn of a
+    /// creature that expired: those creatures are told each player of the ring
+    /// with an `Approached` after the start.
+    ring: List(RingMember),
+  )
+}
+
+/// A player in the ring of a spawn whose creature starts: what the map's `Approached`
+/// tells a creature of the player's unit, its place and the move's sequence number, its
+/// stay and the hit radius of its race.
+pub type RingMember {
+  RingMember(
+    by: ConnectionId,
+    unit_id: Int,
+    place: Place,
+    seq: Int,
+    stay: Stay,
+    hit_radius: Float,
   )
 }
 

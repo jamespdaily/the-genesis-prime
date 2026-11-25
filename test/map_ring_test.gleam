@@ -188,6 +188,8 @@ pub fn a_creature_starting_where_a_ready_player_stands_in_its_ring_is_sent_one_a
       event: OwnEvent(step.ServiceTimerFired(timer: step.TimerId(1))),
     )
   let assert [#(_, creature)] = map_spawn_support.starts(restarted)
+  assert map_spawn_support.ring_of(start: creature) == []
+    as "a start after a crash carries no ring: the creature is told with an Approached, as a first creature is"
   assert map_spawn_support.ring_sends(restarted)
     == [#(creature.unit_id, "Approached by 1")]
     as "the new creature is told the player stands in its ring"

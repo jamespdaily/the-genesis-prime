@@ -72,6 +72,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/set
+import gleam/string
 import map_spawn_support
 import map_support
 import owned_test
@@ -121,6 +122,7 @@ fn creature_from(
         let ConnectionId(number) = viewer
         #(viewer, map_support.stay(count: number), generation.first())
       }),
+      ring: [],
     ),
     spawn:,
     kind: Kind(
@@ -352,6 +354,8 @@ pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -
   assert first_generation == generation.first()
     as "under the generation the map numbered the viewer with in the start"
   assert first_burst.unit_id == 7
+  assert effects_named(taken) == ["other", "snapshot for 2", "snapshot for 5"]
+    as "a start with an empty ring does no more: the watch on its run and a snapshot for each viewer, no fight"
   let #(state, taken) =
     feed(
       state:,
@@ -393,7 +397,8 @@ fn snapshots(
     case sent {
       creature.Snapshot(by: ConnectionId(number), generation:, burst:, ..) ->
         Ok(#(number, generation, burst))
-      creature.Broadcast(..) | creature.Relay(..) -> Error(Nil)
+      creature.Broadcast(..) | creature.Relay(..) | creature.Expired(..) ->
+        Error(Nil)
     }
   })
 }
@@ -480,6 +485,7 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
         "credit to " <> int.to_string(one.0)
       creature.Broadcast(..)
       | creature.Relay(payload: relay.Fight(..), ..)
+      | creature.Expired(..)
       | creature.Snapshot(..) -> "other"
     }
   })
@@ -525,6 +531,7 @@ fn credits(
       creature.Relay(payload: relay.Struck(..), ..)
       | creature.Relay(payload: relay.Fight(..), ..)
       | creature.Snapshot(..)
+      | creature.Expired(..)
       | creature.Broadcast(..) -> False
     }
   })
@@ -673,6 +680,114 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
   ] = snapshots(seen)
     as "the map's Seen is answered with the corpse as a snapshot of one 0x262"
   assert creature_unit.health_of(unit: seen_unit) == 0
+}
+
+/// What a step does, one entry for each effect in order: what the creature tells its map
+/// by name (`creature_news_support.said_to_the_map`), `stop`, and `other` for any other.
+fn effects_named(taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(Send(to: step.Map(..), ..)) ->
+        string.join(
+          creature_news_support.said_to_the_map(step.Effects([effect])),
+          ", ",
+        )
+      Stop -> "stop"
+      OwnEffect(Send(..))
+      | OwnEffect(Reply(..))
+      | OwnEffect(StartCreature(..))
+      | OwnEffect(StartServiceTimer(..))
+      | OwnEffect(step.CancelServiceTimer(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..) -> "other"
+    }
+  })
+}
+
+/// The Beast, unit 7 of life 3, struck dead at 6000 with the viewers 2 and 5.
+fn dead_by_two() -> State {
+  told(
+    state: watched_by_two(),
+    at_ms: 6000,
+    message: strike_of(damage: 60, cast_id: 1),
+  ).0
+}
+
+/// A run-only Beast, unit 7 of life 3, started for the viewers 2 and 5.
+fn run_only_by_two() -> State {
+  let beast = spawn_support.battle_beast(number: -1, x: 0.0)
+  feed(
+    state: creature_from(
+      source: spawn_source.RunOnly(spawn_source.Summoned(
+        id: SpawnId(-1),
+        creature_id: beast.creature_id,
+        level: None,
+        place: beast.place,
+      )),
+      spawn: beast,
+      viewers: [ConnectionId(2), ConnectionId(5)],
+    ),
+    at_ms: 5000,
+    event: OwnEvent(Started),
+  ).0
+}
+
+pub fn the_corpse_timer_removes_a_creature_tells_its_map_it_expired_and_stops_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `death.creature_respawn`: the client sees the 0x355 and then the 0x262 of the same unit; the
+  // 0x262 now comes from the map's next life (Design run A, 4.1), so the creature's last
+  // sends are the removal, once for all its viewers, and its expiry, and then it stops.
+  let unwatched_dead = fn() {
+    let #(state, _) =
+      feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
+    told(state:, at_ms: 6000, message: strike_of(damage: 60, cast_id: 1)).0
+  }
+  let to_retire = told(state: dead_by_two(), at_ms: 80_000, message: Retire).0
+  let run_only_dead =
+    told(
+      state: run_only_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    ).0
+  list.each(
+    [
+      #(
+        "a dead creature with two viewers: the removal, once for both, then the expiry",
+        dead_by_two(),
+        ["0x355 to all", "expired 7 of life 3", "stop"],
+      ),
+      #(
+        "a despawned creature: its 0x355 went at the despawn, so only the expiry",
+        despawned_by_two(),
+        ["expired 7 of life 3", "stop"],
+      ),
+      #(
+        "a dead creature with no viewer: no removal to broadcast",
+        unwatched_dead(),
+        ["expired 7 of life 3", "stop"],
+      ),
+      #(
+        "a dead creature told to retire: it stops and tells the map no expiry, which would start a life",
+        to_retire,
+        ["stop"],
+      ),
+      #(
+        "a run-only creature: no expiry, its map ends the spawn when it stops",
+        run_only_dead,
+        ["0x355 to all", "stop"],
+      ),
+    ],
+    fn(row) {
+      let #(_, taken) =
+        feed_raw(
+          state: row.1,
+          at_ms: 90_000,
+          event: OwnEvent(step.ServiceTimerFired(corpse_timer)),
+        )
+      assert effects_named(taken) == row.2 as row.0
+    },
+  )
 }
 
 pub fn the_corpse_timer_removes_and_creates_the_creature_again_at_full_health_for_each_viewer_test() -> Nil {
@@ -1259,6 +1374,110 @@ pub fn caster_connection_end_removes_its_modifiers_test() -> Nil {
     as "the other caster's modifier was held all along"
 }
 
+pub fn a_modifier_end_removes_the_source_whichever_go_started_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A caster's end names only the source: the caster keeps one node for each unit, so an
+  // end sent for an earlier go reaches the creature after a later go started the same
+  // source, and is that start's own (`cast/state`, `cast/control`).
+  let #(state, started) =
+    told(
+      state: watched_by_two(),
+      at_ms: 8000,
+      message: starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: 8000,
+      ),
+    )
+  assert property_news(started) == [#(2, [speed_up()]), #(5, [speed_up()])]
+    as "the source of the later go is held"
+  let #(_, ended) =
+    told(state:, at_ms: 8100, message: creature.ModifierEnds(sprint_source()))
+  assert property_news(ended) == [#(2, [speed_back()]), #(5, [speed_back()])]
+    as "an end of the earlier go removes it"
+}
+
+pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_despawned_creature_and_taken_by_a_living_one_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A tell is addressed to the creature's life by the registry's address, so the creature
+  // reads no time: what it refuses is a tell that reaches a body (`creature_life.is_dead`).
+  // `CastViewSet` is kept by a corpse, which keeps its nodes (`cast.target_node_end`).
+  let at_7000 = 7000
+  let tells = [
+    #(
+      "a modifier start",
+      starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: at_7000,
+      ),
+      fn(taken) {
+        property_news(taken) == [#(2, [speed_up()]), #(5, [speed_up()])]
+      },
+    ),
+    #("a throw", thrown_at(at_7000), fn(taken) { flown_to(taken) == [2, 5] }),
+    #("a despawn", despawn_at(delay_ms: 0, went_at_ms: at_7000), fn(taken) {
+      kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
+    }),
+    #(
+      "unit states",
+      unit_states_at(rows: [state_6_for_8500()], went_at_ms: at_7000),
+      fn(taken) {
+        unit_state_news(taken)
+        == [#(2, held(state: 6, number: 1)), #(5, held(state: 6, number: 1))]
+      },
+    ),
+  ]
+  let bodies = [
+    #("a dead creature", dead_by_two()),
+    #("a despawned creature", despawned_by_two()),
+  ]
+  list.each(tells, fn(tell) {
+    let #(name, message, taken_as_expected) = tell
+    let #(_, taken) = told(state: watched_by_two(), at_ms: at_7000, message:)
+    assert taken_as_expected(taken)
+      as { name <> " to a living creature is taken" }
+    list.each(bodies, fn(body) {
+      let #(state, dropped) = told(state: body.1, at_ms: at_7000, message:)
+      assert support.effects_of(dropped) == []
+        as { name <> " to " <> body.0 <> " sends nothing" }
+      assert state == body.1
+        as { name <> " to " <> body.0 <> " changes nothing" }
+    })
+  })
+  list.each(
+    [
+      #("a living", watched_by_two(), True),
+      #("a dead", dead_by_two(), True),
+      #("a despawned", despawned_by_two(), False),
+    ],
+    fn(body) {
+      let #(state, set) =
+        told(
+          state: body.1,
+          at_ms: at_7000,
+          message: creature.CastViewSet(
+            by: ConnectionId(9),
+            view: view_a(),
+            struck_at_ms: at_7000,
+          ),
+        )
+      assert watch_changes(set) == ["watch 2 of 9"]
+        as {
+          "a cast view reaching "
+          <> body.0
+          <> " creature is kept and its caster watched"
+        }
+      // A despawned creature shows no 0x262, so no arrival lists the view it holds.
+      assert !body.2 || arrival_holds(state:) == [#(view_a().cast_id, 1)]
+        as {
+          body.0
+          <> " creature lists the view it was told to a viewer that arrives"
+        }
+    },
+  )
+}
+
 pub fn run_watch_end_still_stops_creature_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
@@ -1470,6 +1689,7 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
         | creature.Relay(payload: relay.Fight(..), ..)
         | creature.Relay(payload: relay.KillCredit(..), ..)
         | creature.Snapshot(..)
+        | creature.Expired(..)
         | creature.Broadcast(..) -> []
       }
     })
@@ -1689,8 +1909,10 @@ fn flown_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
     case one.1 {
       creature.Broadcast(news: PeerNews(news: CreatureMoved(..), ..), ..) ->
         Ok(one.0)
-      creature.Broadcast(..) | creature.Relay(..) | creature.Snapshot(..) ->
-        Error(Nil)
+      creature.Broadcast(..)
+      | creature.Relay(..)
+      | creature.Expired(..)
+      | creature.Snapshot(..) -> Error(Nil)
     }
   })
 }
@@ -2517,8 +2739,10 @@ fn released_unit_7(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
         payload: relay.Fight(told: strike_tell.Released(unit_id: 7)),
         ..,
       ) -> Ok(one.0)
-      creature.Relay(..) | creature.Snapshot(..) | creature.Broadcast(..) ->
-        Error(Nil)
+      creature.Relay(..)
+      | creature.Snapshot(..)
+      | creature.Expired(..)
+      | creature.Broadcast(..) -> Error(Nil)
     }
   })
 }
@@ -3142,6 +3366,7 @@ fn guarded_by_two() -> State {
           viewers: [
             #(ConnectionId(2), map_support.stay(count: 2), generation.first()),
           ],
+          ring: [],
         ),
         spawn: spawn_support.battle_beast(number: 1, x: 0.0),
         kind: Kind(

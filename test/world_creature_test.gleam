@@ -290,19 +290,17 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
   assert gone == first.unit_id
     as "the map speaks of the unit once its owner has ended"
   driven_time.advance(time:, ms: respawn_ms)
-  let returned =
-    world_watch_support.next(
-      received:,
-      what: "the returned creature's 0x262",
-      wanted: world_watch_support.appearance,
-    )
+  // Everything the connection was sent after the first Gone, up to the marker: a second
+  // Gone before the returned creature's 0x262 is in it as well.
+  let rest = world_support.sent_before_the_marker(world:, id: 1, received:)
+  assert list.filter_map(rest, world_watch_support.gone_unit) == []
+    as "a marker through the connection finds no second Gone: the creature's end is told to each player once, by the map"
+  let assert [returned] = list.filter_map(rest, world_watch_support.appearance)
+    as "the returned creature's 0x262, once"
   assert returned.unit_id != first.unit_id && returned.unit_id != player
     as "the spawn returns as a new unit, since the old id was given up with the Gone"
   assert returned.creature_id == first.creature_id
     as "it is the spawn's creature"
-  let rest = world_support.sent_before_the_marker(world:, id: 1, received:)
-  assert list.filter_map(rest, world_watch_support.gone_unit) == []
-    as "a marker through the connection finds no second Gone: the creature's end is told to each player once, by the map"
   world_support.stop(world:)
 }
 
@@ -2264,6 +2262,16 @@ pub fn a_despawned_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
     received: watched.caster,
     what: "the caster's removal of the beast",
   )
+  // A third player comes into sight while the creature is gone: the creature's snapshot
+  // for it is empty, so it is shown the creature when the next life starts.
+  let third = world_support.connection(world: watched.world, id: 3)
+  let _third_unit =
+    world_watch_support.join_at(
+      run: watched.run,
+      connection: 3,
+      character: map_support.character(number: 103),
+      place: world_watch_support.sight_place(),
+    )
   driven_time.advance(time: watched.time, ms: respawn_ms - 1)
   let #(appeared, removals, outcome) = probed(watched:, cast_id: 1)
   assert appeared == []
@@ -2283,6 +2291,18 @@ pub fn a_despawned_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
   assert removals == 0 as "no second removal came with it"
   let assert Landed(..) = outcome
     as "at the respawn time the creature stands and a strike lands"
+  let third_heard =
+    world_support.sent_before_the_marker(
+      world: watched.world,
+      id: 3,
+      received: third,
+    )
+  assert list.count(third_heard, world_watch_support.is_removal) == 0
+    as "a viewer that saw the empty snapshot of the despawned creature is sent no 0x355: it went at the despawn"
+  assert list.filter_map(third_heard, world_watch_support.appearance)
+    |> list.map(fn(unit) { unit.unit_id })
+    == [watched.beast.unit_id]
+    as "and is shown the creature once, from the next life"
   world_support.stop(world: watched.world)
 }
 

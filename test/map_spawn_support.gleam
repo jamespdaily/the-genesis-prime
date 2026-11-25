@@ -252,6 +252,7 @@ pub fn creature_of(state state: State, spawn spawn: Int) -> #(Int, Int) {
   case map.spawn_state(state:, spawn: SpawnId(spawn)) {
     Ok(map.Live(unit_id:, life:, ..))
     | Ok(map.Retiring(unit_id:, life:))
+    | Ok(map.Respawning(unit_id:, life:))
     | Ok(map.Releasing(unit_id:, life:, ..)) -> #(unit_id, life)
     Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) ->
       panic as "the spawn holds no creature"
@@ -269,6 +270,7 @@ pub fn relation_of(
     Ok(map.Live(relations:, ..)) | Ok(map.Releasing(relations:, ..)) ->
       dict.get(relations, ConnectionId(connection)) |> option.from_result
     Ok(map.Retiring(..))
+    | Ok(map.Respawning(..))
     | Ok(map.WaitingForRestart)
     | Ok(map.Failed)
     | Error(Nil) -> None
@@ -615,4 +617,51 @@ pub fn creature_not_started(
     at_ms:,
     event: OwnEvent(step.CreatureNotStarted(watch:, reason:)),
   )
+}
+
+/// A creature's tell that it lay dead or despawned until its corpse timer and stops now,
+/// at time `at_ms`.
+pub fn expired(
+  state state: State,
+  at_ms at_ms: Int,
+  unit_id unit_id: Int,
+  life life: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(Told(message: map.Expired(unit_id:, life:))),
+  )
+}
+
+/// The connections of the players a creature's start carries in its ring, in the order
+/// carried.
+pub fn ring_of(start start: step.CreatureStart) -> List(Int) {
+  list.map(start.ring, fn(member) {
+    let ConnectionId(number) = member.by
+    number
+  })
+}
+
+/// What the step tells creatures, by the life of the creature told and what it says
+/// (`Approached by 1`), in the order sent.
+pub fn lives_told(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+  list.filter_map(sends(taken), fn(sent) {
+    case sent.0 {
+      Creature(life:, ..) -> Ok(#(life, said(sent.1)))
+      Connection(..)
+      | step.Sessions
+      | step.HandOff
+      | step.Store
+      | step.Maps
+      | step.Map(..)
+      | step.CharacterNamed(..)
+      | step.ZoneChannel(..) -> Error(Nil)
+    }
+  })
+}
+
+/// How many relays to players the step sends.
+pub fn relays_sent(taken: ServiceStep(map.Outgoing)) -> Int {
+  list.count(player_sends(taken), fn(sent) { sent.1 == "Relayed" })
 }

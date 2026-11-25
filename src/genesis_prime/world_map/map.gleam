@@ -612,12 +612,13 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_news.{type PeerNews}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
-  type CallerId, type ConnectionId, type Effect, type ServiceEffect,
-  type ServiceInput, type ServiceRule, type ServiceStep, type TimerId,
-  type WatchId, Asked, CancelServiceTimer, Connection, ConnectionId,
-  CreatureStart, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply,
-  Send, ServiceTimerFired, StartCreature, StartServiceTimer, Started, Stop,
-  Stopping, TimerId, Told, Unwatch, Watch, WatchEnded, WatchId,
+  type CallerId, type ConnectionId, type Effect, type RingMember,
+  type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
+  type TimerId, type WatchId, Asked, CancelServiceTimer, Connection,
+  ConnectionId, CreatureStart, Effects, Log, LogError, LogLine, OwnEffect,
+  OwnEvent, Reply, RingMember, Send, ServiceTimerFired, StartCreature,
+  StartServiceTimer, Started, Stop, Stopping, TimerId, Told, Unwatch, Watch,
+  WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/id.{type Creature2Id, type PrerequisiteId}
@@ -787,6 +788,11 @@ pub type Message {
   /// creature. The map admits it by the creature's state and the payload's kind and sends
   /// it as `Relayed` (`relayed`).
   Relay(unit_id: Int, life: Int, to: ConnectionId, stay: Stay, payload: Payload)
+  /// The creature `unit_id` of life `life` lay dead or despawned until its corpse timer
+  /// and stops now. A tell, from a creature. A live spawn of that unit and life becomes
+  /// `Respawning`; when the creature has ended the map starts its next life
+  /// (`expired`).
+  Expired(unit_id: Int, life: Int)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -956,6 +962,13 @@ pub type SpawnState {
   /// The creature was told `Retire` and has not ended. The players who see the
   /// spawn meanwhile are the players whose `seen` holds it, found when it ends.
   Retiring(unit_id: Int, life: Int)
+  /// The creature lay dead or despawned until its corpse timer, told the map it expired
+  /// (`Expired`) and is stopping: when it ends, the map starts the spawn's next life
+  /// under the same unit id for the players who see the spawn then. It holds no
+  /// relations, since the creature removed its unit from every viewer before it
+  /// expired, and the creature's news and answers meanwhile are dropped, but a relay of
+  /// the life that expired is admitted until its end.
+  Respawning(unit_id: Int, life: Int)
   /// The creature was told `Retire` because a player's use released its unit
   /// (`Released`) and has not ended. When it ends, every player is sent `Gone` and
   /// the spawn waits `wait_ms`, the release time, in place of its kind's respawn
@@ -1200,10 +1213,13 @@ pub fn step(
       broadcast(state:, unit_id:, life:, news:)
     OwnEvent(Told(message: Relay(unit_id:, life:, to:, stay:, payload:))) ->
       relayed(state:, unit_id:, life:, to:, stay:, payload:)
+    OwnEvent(Told(message: Expired(unit_id:, life:))) ->
+      expired(state:, unit_id:, life:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Snapshot(..), ..))
     | OwnEvent(Asked(message: Broadcast(..), ..))
     | OwnEvent(Asked(message: Relay(..), ..))
+    | OwnEvent(Asked(message: Expired(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Asked(message: StealthChanged(..), ..))
     | OwnEvent(Asked(message: LifeChanged(..), ..))
@@ -1266,7 +1282,8 @@ fn summoned(
               next_run_only_id: spawn_source.run_only_id_after(id:),
             )
           let state = standing_for_players(state:, spawn: id, run_spawn:)
-          let #(state, started) = started_for_those_who_see(state:, spawn: id)
+          let #(state, started) =
+            started_for_those_who_see(state:, spawn: id, ring: [])
           let assert Effects(started_effects) = started
             as "a service rule's step makes no ask"
           let assert Ok(unit_id) = dict.get(state.unit_of_spawn, id)
@@ -1527,6 +1544,7 @@ fn running(
   case spawn_state {
     Live(unit_id: held, life: held_life, ..)
     | Retiring(unit_id: held, life: held_life)
+    | Respawning(unit_id: held, life: held_life)
     | Releasing(unit_id: held, life: held_life, ..) ->
       case held == unit_id && held_life == life {
         True -> Ok(#(spawn, spawn_state))
@@ -1544,7 +1562,7 @@ fn relations_of(
 ) -> Result(Dict(ConnectionId, Relation), Nil) {
   case spawn_state {
     Live(relations:, ..) | Releasing(relations:, ..) -> Ok(relations)
-    Retiring(..) | WaitingForRestart | Failed -> Error(Nil)
+    Retiring(..) | Respawning(..) | WaitingForRestart | Failed -> Error(Nil)
   }
 }
 
@@ -1556,7 +1574,7 @@ fn with_relations(
   case spawn_state {
     Live(..) -> Live(..spawn_state, relations:)
     Releasing(..) -> Releasing(..spawn_state, relations:)
-    Retiring(..) | WaitingForRestart | Failed -> spawn_state
+    Retiring(..) | Respawning(..) | WaitingForRestart | Failed -> spawn_state
   }
 }
 
@@ -1609,6 +1627,15 @@ fn take_unit_id(state: State) -> #(State, Int) {
 /// 2^20 (`0x140561c30`).
 pub fn ghost_unit_id(unit_id unit_id: Int) -> Int {
   unit_id_limit + unit_id
+}
+
+/// A creature that expired. Nothing changes yet.
+fn expired(
+  state state: State,
+  unit_id _unit_id: Int,
+  life _life: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  #(state, Effects([]))
 }
 
 /// A creature that did not start: an error line, and its spawn stays empty for
@@ -1715,8 +1742,12 @@ fn swept(
         Live(unit_id:, life:, idle_since_ms: Some(since_ms), ..)
           if now_ms - since_ms >= state.settings.idle_stop_ms
         -> Ok(#(entry.0, unit_id, life))
-        Live(..) | Retiring(..) | Releasing(..) | WaitingForRestart | Failed ->
-          Error(Nil)
+        Live(..)
+        | Retiring(..)
+        | Respawning(..)
+        | Releasing(..)
+        | WaitingForRestart
+        | Failed -> Error(Nil)
       }
     })
     |> list.filter(fn(idle) { !dict.has_key(state.run_spawns, idle.0) })
@@ -1784,7 +1815,9 @@ fn creature_ended(
         after_ms: restart_ms(state:, spawn:),
       )
     }
-    Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:)
+    Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:, ring: [])
+    Ok(Respawning(..)) ->
+      panic as "a creature that expired is respawned by its map: not built yet"
     Ok(Releasing(unit_id:, wait_ms:, ..)) ->
       waiting_for_restart(state:, spawn:, unit_id:, after_ms: wait_ms)
     Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
@@ -1837,9 +1870,10 @@ fn restart_due(
   spawn spawn: SpawnId,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.spawns, spawn) {
-    Ok(WaitingForRestart) -> started_for_those_who_see(state:, spawn:)
+    Ok(WaitingForRestart) -> started_for_those_who_see(state:, spawn:, ring: [])
     Ok(Live(..))
     | Ok(Retiring(..))
+    | Ok(Respawning(..))
     | Ok(Releasing(..))
     | Ok(Failed)
     | Error(Nil) ->
@@ -1871,6 +1905,7 @@ fn releasable(
     Ok(Live(unit_id:, life:, relations:, ..)) ->
       Ok(Releasable(spawn:, unit_id:, life:, relations:))
     Ok(Retiring(..))
+    | Ok(Respawning(..))
     | Ok(Releasing(..))
     | Ok(WaitingForRestart)
     | Ok(Failed)
@@ -1899,6 +1934,7 @@ fn released(
     case dict.get(state.spawns, spawn) {
       Ok(Live(..)) -> True
       Ok(Retiring(..))
+      | Ok(Respawning(..))
       | Ok(Releasing(..))
       | Ok(WaitingForRestart)
       | Ok(Failed) -> False
@@ -2082,10 +2118,14 @@ fn gone_to_every_player(
 }
 
 /// The spawn is dormant when no player sees it from where it stands, and
-/// otherwise a creature starts there with those players as its first viewers.
+/// otherwise a creature starts there with those players as its first viewers. A
+/// respawn passes the `ring` of the start, which the creature takes in one step; every
+/// other start passes none and sends the creature an `Approached` for each player of
+/// the ring after its start (`approaches_at_start`).
 fn started_for_those_who_see(
   state state: State,
   spawn spawn: SpawnId,
+  ring ring: List(RingMember),
 ) -> #(State, ServiceStep(Outgoing)) {
   case players_seeing(state:, spawn:) {
     [] -> #(
@@ -2093,35 +2133,43 @@ fn started_for_those_who_see(
       Effects([]),
     )
     viewers -> {
-      let #(state, start) = start_creature(state:, spawn:, viewers:)
-      #(state, Effects([start, ..approaches_at_start(state:, spawn:)]))
+      let #(state, start) = start_creature(state:, spawn:, viewers:, ring:)
+      let approaches = case ring {
+        [] -> approaches_at_start(state:, spawn:)
+        [_, ..] -> []
+      }
+      #(state, Effects([start, ..approaches]))
     }
   }
 }
 
-/// `Approached` to the creature just started at the spawn from each ready player
-/// that stands in its ring, in the order of their connections: the ring was kept
-/// while no creature stood there to tell.
+/// The players in the ring of the spawn that a creature starting there is told of: each
+/// ready player whose `inside` holds the spawn, in the order of their connections. The
+/// ring was kept while no creature stood there to tell, and `inside` holds no dead and
+/// no stealthed player (`noticeable_by_rings`).
+fn ring_of(state state: State, spawn spawn: SpawnId) -> List(RingMember) {
+  players_in_order(state)
+  |> list.filter(fn(player) {
+    { player.1 }.readiness == Loaded && set.contains({ player.1 }.inside, spawn)
+  })
+  |> list.map(fn(player) {
+    ring_member(state:, connection: player.0, player: player.1)
+  })
+}
+
+/// `Approached` to the creature just started at the spawn from each player of its ring
+/// (`ring_of`).
 fn approaches_at_start(
   state state: State,
   spawn spawn: SpawnId,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
   case dict.get(state.spawns, spawn) {
     Ok(Live(unit_id:, life:, ..)) ->
-      players_in_order(state)
-      |> list.filter(fn(player) {
-        { player.1 }.readiness == Loaded
-        && set.contains({ player.1 }.inside, spawn)
-      })
-      |> list.map(fn(player) {
-        tell_creature(
-          state:,
-          unit_id:,
-          life:,
-          message: approached(state:, connection: player.0, player: player.1),
-        )
+      list.map(ring_of(state:, spawn:), fn(member) {
+        tell_creature(state:, unit_id:, life:, message: approached(member:))
       })
     Ok(Retiring(..))
+    | Ok(Respawning(..))
     | Ok(Releasing(..))
     | Ok(WaitingForRestart)
     | Ok(Failed)
@@ -2129,14 +2177,14 @@ fn approaches_at_start(
   }
 }
 
-/// The `Approached` of a player: its unit, its place, its move's sequence
-/// number, its stay and the hit radius of its race.
-fn approached(
+/// What a creature is told of a player in its ring: its unit, its place, its move's
+/// sequence number, its stay and the hit radius of its race.
+fn ring_member(
   state state: State,
   connection connection: ConnectionId,
   player player: Player,
-) -> Outgoing {
-  Approached(
+) -> RingMember {
+  RingMember(
     by: connection,
     unit_id: player_unit.unit_id(player.unit),
     place: player_unit.place(player.unit),
@@ -2146,6 +2194,18 @@ fn approached(
       tables: state.settings.tables,
       race_id: player_unit.race_id(player.unit),
     ),
+  )
+}
+
+/// The `Approached` of a player of a ring.
+fn approached(member member: RingMember) -> Outgoing {
+  Approached(
+    by: member.by,
+    unit_id: member.unit_id,
+    place: member.place,
+    seq: member.seq,
+    stay: member.stay,
+    hit_radius: member.hit_radius,
   )
 }
 
@@ -2231,6 +2291,7 @@ fn start_creature(
   state state: State,
   spawn spawn: SpawnId,
   viewers viewers: List(#(ConnectionId, Stay)),
+  ring ring: List(RingMember),
 ) -> #(State, Effect(ServiceEffect(Outgoing))) {
   let #(state, unit_id) = unit_of(state:, spawn:)
   let #(state, viewers) =
@@ -2277,6 +2338,7 @@ fn start_creature(
         spawn: source_of(state:, spawn:),
         clock_origin_ms: state.started_ms,
         viewers:,
+        ring:,
       ),
     )),
   )
@@ -2458,7 +2520,12 @@ fn spawns_decided(
       case dict.get(state.spawns, spawn) {
         Error(Nil) -> {
           let #(state, start) =
-            start_creature(state:, spawn:, viewers: [#(connection, stay)])
+            start_creature(
+              state:,
+              spawn:,
+              viewers: [#(connection, stay)],
+              ring: [],
+            )
           #(state, [start, ..starts], sends)
         }
         Ok(Live(unit_id:, life:, relations:, ..)) -> {
@@ -2494,6 +2561,7 @@ fn spawns_decided(
           )
         }
         Ok(Retiring(..))
+        | Ok(Respawning(..))
         | Ok(Releasing(..))
         | Ok(WaitingForRestart)
         | Ok(Failed) -> held
@@ -2531,6 +2599,7 @@ fn spawns_decided(
           )
         }
         Ok(Retiring(..))
+        | Ok(Respawning(..))
         | Ok(Releasing(..))
         | Ok(WaitingForRestart)
         | Ok(Failed)
@@ -2947,6 +3016,7 @@ fn tell_live(
       tell_creature(state:, unit_id:, life:, message:),
     ]
     Ok(Retiring(..))
+    | Ok(Respawning(..))
     | Ok(Releasing(..))
     | Ok(WaitingForRestart)
     | Ok(Failed)
@@ -2974,7 +3044,7 @@ fn rings_decided(
         tell_live(
           state:,
           spawn:,
-          message: approached(state:, connection:, player:),
+          message: approached(member: ring_member(state:, connection:, player:)),
         )
       }),
       list.flat_map(left, fn(spawn) {
@@ -3191,6 +3261,7 @@ fn sight_renewed(
       )
     }
     Ok(Retiring(..))
+    | Ok(Respawning(..))
     | Ok(Releasing(..))
     | Ok(WaitingForRestart)
     | Ok(Failed)

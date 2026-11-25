@@ -36,6 +36,7 @@ import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -322,12 +323,60 @@ pub fn a_released_creature_that_was_already_dead_ends_at_its_corpse_timer_and_th
   assert spawns.creature_sends(taken) == [#(trap, "Retire")]
   let #(state, taken) =
     spawns.feed(state:, at_ms: 27_000, event: WatchEnded(watch))
+  let ended_at_corpse_timer = taken
   assert spawns.player_sends(taken) == [#(1, "Gone " <> int.to_string(trap))]
     as "the unit is gone when the corpse timer ends the creature"
   assert spawns.timers(taken) == [#(1, release_ms)]
     as "and the spawn waits the release time from then, not the respawn time"
   let #(_, taken) = timer_fired(state:, at_ms: 57_000, spawn: 1)
   assert list.length(spawns.starts(taken)) == 1
+  let released_first = frames_at_the_end(taken: ended_at_corpse_timer)
+
+  // The other order: the creature's corpse timer fired first and it told the map it
+  // expired, and the use reaches the spawn before the creature has stopped. The spawn is
+  // released all the same: when the creature ends, the same frames, never a restart at
+  // once.
+  let state =
+    spawns.started_with_spawns(spawns: [
+      spawn_of(
+        number: 1,
+        creature: bramble_trap,
+        place: standing(x: 0.0, y: 0.0),
+      ),
+    ])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [#(watch, trap)] = started_units(taken)
+  let step.WatchId(life) = watch
+  let #(state, _) = spawns.expired(state:, at_ms: 6500, unit_id: trap, life:)
+  assert map.spawn_state(state:, spawn: SpawnId(1))
+    == Ok(map.Respawning(unit_id: trap, life:))
+    as "the creature expired"
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: trap)
+  assert map.spawn_state(state:, spawn: SpawnId(1))
+    == Ok(map.Releasing(
+      unit_id: trap,
+      life:,
+      wait_ms: release_ms,
+      relations: dict.new(),
+    ))
+    as "the released spawn waits the release time at the creature's end, with no relation to keep"
+  assert spawns.creature_sends(taken) == []
+    as "the creature is stopping already: it is not told to retire"
+  let #(_, ended) = spawns.feed(state:, at_ms: 27_000, event: WatchEnded(watch))
+  assert frames_at_the_end(taken: ended) == released_first
+    as "the same frames at the creature's end in both orders: Gone to every player and the release time, no restart"
+}
+
+/// What a step that ends a released creature does: what players are sent, the timers it
+/// starts and whether it starts a creature.
+fn frames_at_the_end(
+  taken taken: ServiceStep(map.Outgoing),
+) -> #(List(#(Int, String)), List(#(Int, Int)), Bool) {
+  #(
+    spawns.player_sends(taken),
+    spawns.timers(taken),
+    spawns.starts(taken) != [],
+  )
 }
 
 pub fn a_use_that_lands_while_its_creature_is_retiring_changes_nothing_test() -> Nil {

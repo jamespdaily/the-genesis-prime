@@ -401,7 +401,7 @@ import genesis_prime/game/strike_tell.{
 import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
-import genesis_prime/step.{type Address, type ConnectionId}
+import genesis_prime/step.{type Address, type ConnectionId, type RingMember}
 import genesis_prime/table/id.{type Spell4Id}
 import genesis_prime/world_map/creature_life.{
   type Attack, type Special, Charged, Instant,
@@ -689,6 +689,10 @@ pub type Input {
   Despawned
   /// creature_life: the corpse timer stood the creature again at its spawn.
   StoodAgain
+  /// The map's start of this life carries the players in the creature's ring: each is
+  /// sighted and enters `near`, and one fight starts over those who are viewers
+  /// (`aggro`).
+  RingAtStart(members: List(RingMember))
   /// creature_control: a state took hold of the creature while it lives. An open charge
   /// breaks; a path it runs stops where it stands (0x638 of kind 2 for its viewers, as at a
   /// death) when its states stop its run (`Fighter.still`).
@@ -956,6 +960,7 @@ fn stepped(
     Thrown(throw:) -> thrown(state:, fighter:, alive:, throw:, now_ms:)
     TimerFired(timer: FlightEnds(generation:)) ->
       flight_ended(state:, fighter:, generation:, now_ms:)
+    RingAtStart(..) -> #(state, [])
     StoodAgain -> {
       let state =
         State(
@@ -1117,6 +1122,11 @@ pub fn in_combat(state state: State) -> Bool {
     Fighting(..) -> True
     Resting | Returning(..) -> False
   }
+}
+
+/// The connections of the players in the creature's ring that it holds as near, for a test.
+pub fn near(state state: State) -> Set(ConnectionId) {
+  state.near
 }
 
 /// The connections on the threat list: none unless Fighting.

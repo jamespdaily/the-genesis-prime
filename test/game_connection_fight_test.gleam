@@ -1315,6 +1315,7 @@ fn a_beast_of(
             generation.first(),
           ),
         ],
+        ring: [],
       ),
       spawn:,
       kind: Kind(

@@ -4,7 +4,13 @@
 //// keep. Expected values come from these places.
 //// - OTP orders the signals of one sender to one receiver, and no others: a receiver's
 ////   mailbox holds one first-in-first-out queue for each sender, and it takes the head
-////   of any of them next. A delivery of this scene is the head of one such queue.
+////   of any of them next. A delivery of this scene is the head of one such queue. The
+////   end of a process reaches a process that monitors it as one more signal of that
+////   sender, after everything the process sent it (`WatchEnded`), and what is sent to a
+////   process that has ended is lost.
+//// - A creature that stops is replaced by the next life its map starts when it takes the
+////   creature's `WatchEnded`: a second creature process, a sender of its own, whose first
+////   step is its `Started` (the shell takes it before the creature's mailbox).
 //// - The invariants are the client's: a unit is created once and removed once, and it is
 ////   told no frame before its 0x262 or after its 0x355 (`opcode.0x262`, `opcode.0x355`).
 ////
@@ -36,6 +42,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -48,15 +55,18 @@ import spawn_support
 pub type Receiver {
   MapProcess
   CreatureProcess
+  NextCreatureProcess
   ViewerProcess
 }
 
 /// The senders whose queues a receiver's mailbox keeps apart: the map, the creature, the
-/// connection of the player the viewer stands for, a caster that strikes the creature, and
-/// a timer, which is the receiver's own.
+/// creature the map started when the first one ended, the connection of the player the
+/// viewer stands for, a caster that strikes the creature, and a timer, which is the
+/// receiver's own.
 pub type Sender {
   FromMap
   FromCreature
+  FromNextCreature
   FromConnection
   FromCaster
   FromTimer
@@ -66,6 +76,7 @@ pub type Sender {
 pub type Input {
   ToMap(event: Event(ServiceEvent(map.Message)))
   ToCreature(event: Event(ServiceEvent(creature.Message)))
+  ToNextCreature(event: Event(ServiceEvent(creature.Message)))
   ToViewer(event: Event(ConnectionEvent(Message, Answer)))
 }
 
@@ -80,13 +91,18 @@ pub type Taken {
   Taken(by: Receiver, from: Sender, name: String)
 }
 
-/// The three processes' states, what is in flight, the monotonic time the next delivery is
-/// taken at, the deliveries so far in order, the frames the viewer wrote in order and the
-/// first news the map relayed to the viewer that its relation did not allow (`early`).
+/// The three processes' states, the life of the creature and the creature the map started
+/// after it (`next_creature`, with its life), what is in flight, the monotonic time the
+/// next delivery is taken at, the deliveries so far in order, the frames the viewer wrote
+/// in order and the first news the map relayed to the viewer that its relation did not
+/// allow (`early`).
 pub type Scene {
   Scene(
     map: map.State,
     creature: creature.State,
+    life: Int,
+    next_creature: Option(creature.State),
+    next_life: Option(Int),
     viewer: game_connection.State,
     mail: List(Mail),
     now_ms: Int,
@@ -130,6 +146,9 @@ pub fn scene(
   Scene(
     map:,
     creature:,
+    life: map_spawn_support.creature_of(state: map, spawn: 1).1,
+    next_creature: None,
+    next_life: None,
     viewer:,
     mail:,
     now_ms: 10_000,
@@ -183,7 +202,7 @@ pub fn settle(scene scene: Scene) -> Scene {
 
 /// Whether the mail's receiver has only this queue now and no process that sends to it
 /// has mail to take, so no other message can reach the receiver before this one: the map
-/// is sent to by the creature, the creature by the map, the viewer by the map.
+/// is sent to by the creatures, a creature by the map, the viewer by the map.
 fn has_no_rival(
   scene scene: Scene,
   mail mail: Mail,
@@ -191,8 +210,11 @@ fn has_no_rival(
 ) -> Bool {
   let alone = list.count(heads, fn(head) { head.to == mail.to }) == 1
   let sender_is_busy = case mail.to {
-    MapProcess -> has_mail(scene:, receiver: CreatureProcess)
-    CreatureProcess -> has_mail(scene:, receiver: MapProcess)
+    MapProcess ->
+      has_mail(scene:, receiver: CreatureProcess)
+      || has_mail(scene:, receiver: NextCreatureProcess)
+    CreatureProcess | NextCreatureProcess ->
+      has_mail(scene:, receiver: MapProcess)
     ViewerProcess -> False
   }
   alone && !sender_is_busy
@@ -220,25 +242,83 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
     ToMap(event:) -> {
       let #(state, taken) =
         map.step(scene.map, support.input_at_ms(ms: now_ms, event:))
-      Scene(
-        ..scene,
-        map: state,
-        mail: list.append(scene.mail, mail_of_the_map(taken)),
-        early: case scene.early {
+      let scene =
+        Scene(..scene, map: state, early: case scene.early {
           Some(_) -> scene.early
           None -> news_outside_the_relation(scene:, event:, taken:)
-        },
-      )
+        })
+      case started_by(taken:) {
+        Ok(start) -> {
+          let #(next, started) =
+            creature_started(start:, spawn: the_beast(), at_ms: now_ms)
+          Scene(
+            ..scene,
+            next_creature: Some(next),
+            next_life: Some(start.life),
+            mail: list.flatten([
+              scene.mail,
+              mail_of_the_map_for(taken:, next_life: Some(start.life)),
+              mail_of_the_creature_as(
+                taken: started,
+                sender: FromNextCreature,
+                prefix: "Next ",
+              ),
+            ]),
+          )
+        }
+        Error(Nil) ->
+          Scene(
+            ..scene,
+            mail: list.append(
+              scene.mail,
+              mail_of_the_map_for(taken:, next_life: scene.next_life),
+            ),
+          )
+      }
     }
     ToCreature(event:) -> {
       let #(state, taken) =
         creature.step(scene.creature, support.input_at_ms(ms: now_ms, event:))
-      Scene(
-        ..scene,
-        creature: state,
-        mail: list.append(scene.mail, mail_of_the_creature(taken)),
-      )
+      let sent = mail_of_the_creature(taken)
+      case support.stops(taken) {
+        False ->
+          Scene(..scene, creature: state, mail: list.append(scene.mail, sent))
+        True ->
+          // The creature ends: what is still in its mailbox is lost, and its map, which
+          // watches it, takes its end after what it sent.
+          Scene(
+            ..scene,
+            creature: state,
+            mail: list.flatten([
+              list.filter(scene.mail, fn(waiting) {
+                waiting.to != CreatureProcess
+              }),
+              sent,
+              [creature_ended(life: scene.life)],
+            ]),
+          )
+      }
     }
+    ToNextCreature(event:) ->
+      case scene.next_creature {
+        Some(held) -> {
+          let #(state, taken) =
+            creature.step(held, support.input_at_ms(ms: now_ms, event:))
+          Scene(
+            ..scene,
+            next_creature: Some(state),
+            mail: list.append(
+              scene.mail,
+              mail_of_the_creature_as(
+                taken:,
+                sender: FromNextCreature,
+                prefix: "Next ",
+              ),
+            ),
+          )
+        }
+        None -> panic as "no creature was started to take mail"
+      }
     ToViewer(event:) -> {
       let #(state, taken) =
         game_connection_support.feed(state: scene.viewer, event:)
@@ -316,19 +396,21 @@ fn remove_first(mail: List(Mail), taken: Mail) -> List(Mail) {
 /// What a map's step sends to the creatures and to the viewer's connection, in order, as
 /// mail.
 pub fn mail_of_the_map(taken: step.ServiceStep(map.Outgoing)) -> List(Mail) {
+  mail_of_the_map_for(taken:, next_life: None)
+}
+
+/// The same when a creature of life `next_life` runs after the first: what the map sends
+/// to the creature of that life is the next creature's mail.
+pub fn mail_of_the_map_for(
+  taken taken: step.ServiceStep(map.Outgoing),
+  next_life next_life: Option(Int),
+) -> List(Mail) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(Send(to: Creature(..), message:)) ->
-        case creature.told_by_map(message) {
-          Ok(told) ->
-            Ok(Mail(
-              to: CreatureProcess,
-              from: FromMap,
-              input: ToCreature(OwnEvent(Told(told))),
-              name: creature_message_name(told),
-            ))
-          Error(Nil) -> Error(Nil)
-        }
+      OwnEffect(Send(to: Creature(life:, ..), message:)) ->
+        result.map(creature.told_by_map(message), fn(told) {
+          creature_mail(told:, to_the_next: next_life == Some(life))
+        })
       OwnEffect(Send(to: Connection(ConnectionId(1)), message:)) ->
         case server.map_message(outgoing: message) {
           Ok(sent) ->
@@ -353,15 +435,24 @@ pub fn mail_of_the_map(taken: step.ServiceStep(map.Outgoing)) -> List(Mail) {
 pub fn mail_of_the_creature(
   taken: step.ServiceStep(creature.Outgoing),
 ) -> List(Mail) {
+  mail_of_the_creature_as(taken:, sender: FromCreature, prefix: "")
+}
+
+/// The same for the creature that is `sender`, each mail named after `prefix`.
+fn mail_of_the_creature_as(
+  taken taken: step.ServiceStep(creature.Outgoing),
+  sender sender: Sender,
+  prefix prefix: String,
+) -> List(Mail) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(Send(to: step.Map(..), message:)) -> {
         let told = creature.told_to_map(outgoing: message)
         Ok(Mail(
           to: MapProcess,
-          from: FromCreature,
+          from: sender,
           input: ToMap(OwnEvent(Told(told))),
-          name: map_message_name(told),
+          name: prefix <> map_message_name(told),
         ))
       }
       OwnEffect(_)
@@ -371,6 +462,60 @@ pub fn mail_of_the_creature(
       | step.Stop -> Error(Nil)
     }
   })
+}
+
+/// The map's tell to the creature, as mail to the next creature or to the first.
+fn creature_mail(
+  told told: creature.Message,
+  to_the_next to_the_next: Bool,
+) -> Mail {
+  use <- bool.guard(
+    when: to_the_next,
+    return: Mail(
+      to: NextCreatureProcess,
+      from: FromMap,
+      input: ToNextCreature(OwnEvent(Told(told))),
+      name: creature_message_name(told),
+    ),
+  )
+  Mail(
+    to: CreatureProcess,
+    from: FromMap,
+    input: ToCreature(OwnEvent(Told(told))),
+    name: creature_message_name(told),
+  )
+}
+
+/// The end of the creature of `life`, which its map watches: the watch's end, as one more
+/// signal of the creature.
+fn creature_ended(life life: Int) -> Mail {
+  Mail(
+    to: MapProcess,
+    from: FromCreature,
+    input: ToMap(step.WatchEnded(step.WatchId(life))),
+    name: "Creature ended",
+  )
+}
+
+/// The creature the step starts, if it starts one.
+fn started_by(
+  taken taken: step.ServiceStep(map.Outgoing),
+) -> Result(step.CreatureStart, Nil) {
+  list.find_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.StartCreature(creature:, ..)) -> Ok(creature)
+      OwnEffect(_)
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | step.Stop -> Error(Nil)
+    }
+  })
+}
+
+/// The Battle Beast of the scenes, which every creature of them is.
+fn the_beast() -> spawn.Spawn {
+  spawn_support.battle_beast(number: 1, x: 0.0)
 }
 
 fn creature_message_name(message: creature.Message) -> String {
@@ -400,6 +545,7 @@ fn map_message_name(message: map.Message) -> String {
     map.Snapshot(..) -> "Snapshot"
     map.Broadcast(..) -> "Broadcast"
     map.Relay(..) -> "Relay"
+    map.Expired(..) -> "Expired"
     map.Join(..)
     | map.Leave(..)
     | map.Moved(..)
@@ -438,6 +584,38 @@ pub fn order_at(
 ) -> List(String) {
   list.filter(scene.taken, fn(taken) { taken.by == receiver })
   |> list.map(fn(taken) { taken.name })
+}
+
+/// A scene whose result a test did not expect, as what the test reads of it: what each
+/// process took, in order, and the result against the one wanted.
+pub type Deviation {
+  Deviation(
+    taken_by_the_map: List(String),
+    taken_by_the_creature: List(String),
+    observed: List(String),
+    wanted: List(String),
+  )
+}
+
+/// The scenes whose `observed` result is not the one `wanted` names for them, at most three,
+/// each as a `Deviation`: a test that asserts this is empty prints what went wrong in a few
+/// scenes, not all of them.
+pub fn deviations(
+  scenes scenes: List(Scene),
+  observed observed: fn(Scene) -> List(String),
+  wanted wanted: fn(Scene) -> List(String),
+) -> List(Deviation) {
+  scenes
+  |> list.filter(fn(scene) { observed(scene) != wanted(scene) })
+  |> list.take(3)
+  |> list.map(fn(scene) {
+    Deviation(
+      taken_by_the_map: order_at(scene:, receiver: MapProcess),
+      taken_by_the_creature: order_at(scene:, receiver: CreatureProcess),
+      observed: observed(scene),
+      wanted: wanted(scene),
+    )
+  })
 }
 
 /// What the frames that name a unit the scene follows say, one line each: the opcode and
