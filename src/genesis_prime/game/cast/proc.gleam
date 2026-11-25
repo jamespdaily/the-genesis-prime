@@ -31,8 +31,19 @@
 ////   settles, `hit_events`), a `LandsHeal` for each Heal change its effects start on the caster,
 ////   and its stealth change (`EnteredStealth` or `LeftStealth`). A hit is an event for each
 ////   damage description that landed on a creature: `LandsHit`, `LandsMeleeHit` when the spell is of
-////   school 1, `LandsCritical` for a critical and `Kills` for a kill (a guess:
-////   `Spell4Effects.effectType.14.client_evaluation`); a spell that only selects a unit raises none.
+////   school 1, `LandsCritical` for a critical, `Kills` for a kill (a guess:
+////   `Spell4Effects.effectType.14.client_evaluation`) and the event of the description's damage type,
+////   `LandsPhysicalDamage`, `LandsTechDamage` or `LandsMagicDamage` (a heal, a fall and the other
+////   types raise none; a guess for a tick counting as a hit,
+////   `Spell4Effects.effectType.14.dataBits00.229_230_231`); a spell that only selects a unit raises none.
+////   A go also raises `LandsSpell` for the holder's spell: one for each creature or other player it hit,
+////   and one with no unit when it hit neither (`landed_events`), when the cast's role raises one
+////   (`role_lands_spell`: a press, a stage and a Proxy's child do; a standing spell, an
+////   activation, a shortcut and the cast a proc fire starts do not), and a go answered after its
+////   cast ended raises none (`go_lands_spell`). A tick is no go and raises none. A fire's own
+////   cast raises none, so a row whose fired spell passes its own filter does not fire itself
+////   again; a Proxy child of a fired spell still lands (guesses:
+////   `Spell4Effects.effectType.14.dataBits00.27`).
 ////   A creature's blow on the holder raises `TakesDamage` when it lowered the holder's absorbs,
 ////   shield or health, `SuffersCritical` for a critical, `ShieldDepleted` when it took the shield
 ////   to 0 and `DeflectsAttack` for a deflect, each with the creature as the other unit and its
@@ -193,6 +204,7 @@ import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
+import genesis_prime/message/damage_type
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4Id, Spell4Id}
 import gleam/bool
@@ -321,8 +333,8 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
 /// The events a strike round's units give the holder, in the round's order: for each
 /// description of the damage that landed on a creature, a hit, a melee hit when the spell is
 /// of school 1, a critical when the description's combat result is a critical (and a finisher
-/// critical, which the row's group filter narrows to finishers) and a kill
-/// when it killed the creature, so a go with two damage rows on one creature raises two
+/// critical, which the row's group filter narrows to finishers), a kill
+/// when it killed the creature and the event of the damage type it dealt, so a go with two damage rows on one creature raises two
 /// hits and a spell that only selects a unit (no description) raises none; then a taunt
 /// landed for each Taunt state the creature took, a guarded creature's included. A
 /// deflected unit raises a deflect and no hit, and an immune one no hit, and a player
@@ -334,12 +346,7 @@ pub fn hit_events(
   struck struck: List(Struck),
 ) -> List(proc.Event) {
   let on = fn(unit_id, trigger) {
-    proc.Event(
-      trigger:,
-      other_unit: Some(unit_id),
-      spell: Some(event_spell(spell:)),
-      holder: None,
-    )
+    event_of_spell(spell:, other_unit: Some(unit_id), trigger:)
   }
   list.flat_map(struck, fn(one) {
     case one {
@@ -361,6 +368,117 @@ pub fn hit_events(
       | Immune(unit: HitCaster(..), ..) -> []
     }
   })
+}
+
+/// An event of the holder's own spell: its trigger, the unit it is of, if any, and the spell as
+/// a proc's filter reads it. The one shape `hit_events` and `landed_events` raise.
+fn event_of_spell(
+  spell spell: Spell,
+  other_unit other_unit: Option(Int),
+  trigger trigger: spell_plan.Trigger,
+) -> proc.Event {
+  proc.Event(
+    trigger:,
+    other_unit:,
+    spell: Some(event_spell(spell:)),
+    holder: None,
+  )
+}
+
+/// What one unit of a go's round is to the landing of its spell.
+type Landing {
+  /// A creature or another player the go hit: one landing naming it.
+  LandsOn(unit_id: Int)
+  /// A creature or another player that deflected or was immune: it raises no landing, and the
+  /// go has hit a unit, so a caster listed beside it lands nothing either.
+  LandsNowhere
+  /// The caster itself or a player a creature's attack struck: no unit of the go to name.
+  LandsOnNobody
+}
+
+/// The landings of a go's spell for the holder, in the round's order: one `LandsSpell` for
+/// each creature or other player the go hit, naming it, and when the round holds no
+/// creature and no other player (it strikes nobody, lists only the caster, or lists a
+/// player a creature's attack struck, or the caster itself, immune or not) one with no unit,
+/// so a spell of the caster alone lands too. A deflected or immune creature or other player
+/// raises none, as it raises no hit, and the go has still hit a unit, so a go that deflected
+/// a creature and lists the caster raises none. A go that heals an ally and the caster lands
+/// once, naming the ally. A guess for each case: no client code
+/// reads a Proc row, and the texts and rows leave open whether one landing is raised for the
+/// go or for each unit it hits (`Spell4Effects.effectType.14.dataBits00.27`).
+pub fn landed_events(
+  spell spell: Spell,
+  struck struck: List(Struck),
+) -> List(proc.Event) {
+  let landings =
+    list.map(struck, fn(one) {
+      case one {
+        Hit(unit_id:, unit: HitCreature(..), ..)
+        | Hit(unit_id:, unit: HitOtherPlayer(..), ..) -> LandsOn(unit_id:)
+        Deflected(..)
+        | Immune(unit: HitCreature(..), ..)
+        | Immune(unit: HitOtherPlayer(..), ..) -> LandsNowhere
+        Hit(unit: HitPlayer, ..)
+        | Hit(unit: HitCaster(..), ..)
+        | Immune(unit: HitPlayer, ..)
+        | Immune(unit: HitCaster(..), ..) -> LandsOnNobody
+      }
+    })
+  let on_a_unit =
+    list.filter_map(landings, fn(landing) {
+      case landing {
+        LandsOn(unit_id:) -> Ok(unit_id)
+        LandsNowhere | LandsOnNobody -> Error(Nil)
+      }
+    })
+  let hit_a_unit =
+    list.any(landings, fn(landing) {
+      case landing {
+        LandsOn(..) | LandsNowhere -> True
+        LandsOnNobody -> False
+      }
+    })
+  case on_a_unit, hit_a_unit {
+    [], False -> [
+      event_of_spell(spell:, other_unit: None, trigger: spell_plan.LandsSpell),
+    ]
+    units, _ ->
+      list.map(units, fn(unit_id) {
+        event_of_spell(
+          spell:,
+          other_unit: Some(unit_id),
+          trigger: spell_plan.LandsSpell,
+        )
+      })
+  }
+}
+
+/// Whether the go of a cast that started with this role raises the landing of its spell: a
+/// press, a stage and a child (a Proxy's, a tick's, one the server starts) do, since the
+/// filter groups of the kind hold Proxy children; a standing spell no press made, an
+/// activation, a shortcut (a quest button or an item's use) and the cast a proc fire starts
+/// (`Child.lands_spell`) do not, so a row whose fired spell passes its own filter, as
+/// Hypercharge's row 222009 does, fires once for each landing and not again for its own. A
+/// guess for each role: no text of kind 27 names them
+/// (`Spell4Effects.effectType.14.dataBits00.27`).
+pub fn role_lands_spell(role role: cast_state.Role) -> Bool {
+  case role {
+    cast_state.Base(..) | cast_state.Stage(..) -> True
+    cast_state.Child(lands_spell:, ..) -> lands_spell
+    cast_state.Passive(..)
+    | cast_state.Activation(..)
+    | cast_state.Shortcut(..) -> False
+  }
+}
+
+/// Whether the go of this cast raises the landing of its spell: by the role it started with.
+/// A go answered after the client ended the cast has no role to read, and its hits stand but
+/// its spell lands nothing (a guess: the client saw the cast end before its go).
+pub fn go_lands_spell(cast cast: State, cast_id cast_id: Int) -> Bool {
+  case dict.get(cast.casts, cast_id) {
+    Ok(live) -> live.lands_spell
+    Error(Nil) -> False
+  }
 }
 
 /// A taunt landed event for each Taunt state a unit took.
@@ -480,6 +598,16 @@ fn hit_triggers(
     case description.damage.killed != 0 {
       True -> [spell_plan.Kills]
       False -> []
+    },
+    case description.damage.damage_type {
+      damage_type.Physical -> [spell_plan.LandsPhysicalDamage]
+      damage_type.Tech -> [spell_plan.LandsTechDamage]
+      damage_type.Magic -> [spell_plan.LandsMagicDamage]
+      damage_type.Heal
+      | damage_type.HealShields
+      | damage_type.Fall
+      | damage_type.Suffocate
+      | damage_type.Other(_) -> []
     },
   ])
 }

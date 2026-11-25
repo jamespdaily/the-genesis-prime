@@ -905,11 +905,13 @@ pub type Role {
   /// that started it, its use or its worn spell (`handed_down`), none otherwise.
   /// `named_player` is the player the child was started on when a bag press named that player
   /// (`Live.named_player`), none for a child on the caster, on a struck unit or started by a
-  /// proc or a tick.
+  /// proc or a tick. `lands_spell` says whether its go raises the landing of its spell for the
+  /// holder's procs (`cast_proc.role_lands_spell`): false for the cast a proc fire starts.
   Child(
     counted_with: AdvanceWith,
     from: Option(PressedFrom),
     named_player: Option(Int),
+    lands_spell: Bool,
   )
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
@@ -1072,6 +1074,9 @@ pub type Live {
     /// the cast ends when its last go is written, which a round's deadline bounds
     /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
     finish_due: Bool,
+    /// Whether the cast's gos raise a landing of its spell for the holder's procs, by the role
+    /// the cast started with (`cast_proc.role_lands_spell`).
+    lands_spell: Bool,
     /// The periodic rows the cast's gos armed, by unit and row: each lasts while its
     /// unit's node does (`cast_tick.ticks_dropped`).
     ticking: Dict(TickKey, Ticking),
