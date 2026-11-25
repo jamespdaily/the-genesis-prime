@@ -27,7 +27,6 @@ import genesis_prime/coverage/sent_message
 import genesis_prime/game/connection as game_connection
 import genesis_prime/unhandled_ranking
 import genesis_prime/wire_recording.{Accepted, Client, Read}
-import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
@@ -52,10 +51,6 @@ const partial_ids = [
   #(0x012B, "opcode.0x12b", "shared-challenge"),
 ]
 
-fn named(message_id message_id: Int) -> String {
-  "0x" <> string.pad_start(int.to_base16(message_id), 4, "0")
-}
-
 /// What the client sent, each recorded body of the thirteen ids, as it sends it:
 /// 0x0241 on its own and the rest inside 0x038C.
 fn as_sent(recorded: Recorded) -> BitArray {
@@ -74,7 +69,8 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
   list.each(dropped_ids, fn(id) {
     assert list.contains(handled, id)
       as {
-        named(message_id: id) <> " is a routing row, so the measure counts it"
+        dropped_support.named(message_id: id)
+        <> " is a routing row, so the measure counts it"
       }
   })
   assert !list.contains(handled, 0x0072) as "0x0072 has no row"
@@ -88,7 +84,7 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
   assert breaches == [] as "every handled id is one the client sends"
   list.each(partial_ids, fn(entry) {
     let #(id, fact_key, words) = entry
-    let label = named(message_id: id)
+    let label = dropped_support.named(message_id: id)
     let assert Ok(TypeLine(status:, ..)) =
       list.find(types, fn(line) { line.type_number == id })
       as { label <> " is an id the client sends" }
@@ -110,9 +106,15 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
       False -> {
         let assert Ok(TypeLine(status:, ..)) =
           list.find(types, fn(line) { line.type_number == id })
-          as { named(message_id: id) <> " is an id the client sends" }
+          as {
+            dropped_support.named(message_id: id)
+            <> " is an id the client sends"
+          }
         assert status == Handled
-          as { named(message_id: id) <> " needs nothing the engine lacks" }
+          as {
+            dropped_support.named(message_id: id)
+            <> " needs nothing the engine lacks"
+          }
       }
     }
   })

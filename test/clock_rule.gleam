@@ -26,11 +26,6 @@ pub type Command {
   WatchAddress(watch: Int, target: Address)
 }
 
-/// The rule keeps nothing.
-pub fn new(_settings: Nil) -> Nil {
-  Nil
-}
-
 /// One input in: an ask is answered with the input as it came, once its command
 /// is carried out; any other input is sent to the `Sessions` address as it came,
 /// and a `Stopping` ends the service.

@@ -79,7 +79,6 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import owned_test
-import place_support
 
 /// The infinity, minus infinity and not-a-number patterns of a 32-bit float.
 const not_finite = [0x7F800000, 0xFF800000, 0x7FC00000, 0x7F800001]
@@ -92,21 +91,6 @@ fn unwritten(kind kind: Int, field field: String, value value: Int) -> Refusal {
     field: "kind " <> int.to_string(kind) <> "'s " <> field,
     value:,
   ))
-}
-
-/// A player who entered World 3460, zone 6009, at (1.0, 2.0, 3.0), facing
-/// 0, 0, 0, as the login whose epoch is 3.
-fn entered() -> State {
-  movement.entered(
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 1.0,
-      y: 2.0,
-      z: 3.0,
-    ),
-    session_epoch: character_support.epoch(3),
-  )
 }
 
 /// The 32 bits of a float the test writes.
@@ -164,7 +148,7 @@ fn faces(state: State) -> Facing {
 pub fn the_position_kept_is_the_last_kind_2_sent_while_kind_1_is_0_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
-    kept(state: entered(), commands: [
+    kept(state: character_support.entered(), commands: [
       position(x: 10.5, y: -20.25, z: 30.0),
       position(x: 11.5, y: -21.25, z: 31.0),
     ])
@@ -182,7 +166,12 @@ pub fn the_position_kept_is_the_last_kind_2_sent_while_kind_1_is_0_test() -> Nil
 
 pub fn a_message_with_no_position_leaves_the_place_test() -> Nil {
   use <- owned_test.run(5000)
-  let state = kept(state: entered(), commands: [Other(0), Other(8), Other(11)])
+  let state =
+    kept(state: character_support.entered(), commands: [
+      Other(0),
+      Other(8),
+      Other(11),
+    ])
   assert at(state) == #(1.0, 2.0, 3.0)
     as "opcode.0x637: only the commands that changed are sent, so a message without kind 2 changes no position"
   assert faces(state) == start_place.unturned
@@ -191,7 +180,7 @@ pub fn a_message_with_no_position_leaves_the_place_test() -> Nil {
 pub fn a_position_sent_under_a_platform_is_in_that_units_frame_and_is_not_kept_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
-    kept(state: entered(), commands: [
+    kept(state: character_support.entered(), commands: [
       footing(0x01020304),
       position(x: 10.0, y: 20.0, z: 30.0),
     ])
@@ -203,7 +192,7 @@ pub fn a_position_sent_under_a_platform_is_in_that_units_frame_and_is_not_kept_t
 
 pub fn the_last_kind_1_stands_across_messages_and_a_position_or_rotation_is_kept_only_in_the_worlds_frame_test() -> Nil {
   use <- owned_test.run(5000)
-  let state = kept(state: entered(), commands: [footing(7)])
+  let state = kept(state: character_support.entered(), commands: [footing(7)])
   let state =
     kept(state:, commands: [
       position(x: 50.0, y: 60.0, z: 70.0),
@@ -230,7 +219,7 @@ pub fn the_last_kind_1_stands_across_messages_and_a_position_or_rotation_is_kept
 pub fn a_height_below_minus_2048_in_a_platforms_frame_is_neither_kept_nor_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
-    kept(state: entered(), commands: [
+    kept(state: character_support.entered(), commands: [
       footing(7),
       position(x: 0.0, y: -3000.0, z: 0.0),
     ])
@@ -247,14 +236,21 @@ pub fn a_position_that_is_not_finite_is_refused_in_each_axis_test() -> Nil {
     let good = single(1.0)
     list.each(
       [
-        Position(x: bad, y: good, z: good),
-        Position(x: good, y: bad, z: good),
-        Position(x: good, y: good, z: bad),
+        #("x", Position(x: bad, y: good, z: good)),
+        #("y", Position(x: good, y: bad, z: good)),
+        #("z", Position(x: good, y: good, z: bad)),
       ],
-      fn(command) {
-        assert moved(state: entered(), commands: [command])
+      fn(row) {
+        let #(axis, command) = row
+        assert moved(state: character_support.entered(), commands: [command])
           == Error(NotFinite(kind: 2))
-          as "IEEE 754 binary32: infinity and not-a-number are no position, which the client's own movement never sends"
+          as {
+            "pattern 0x"
+            <> int.to_base16(pattern)
+            <> " in "
+            <> axis
+            <> ": IEEE 754 binary32: infinity and not-a-number are no position, which the client's own movement never sends"
+          }
       },
     )
   })
@@ -264,13 +260,13 @@ pub fn a_position_or_rotation_that_is_not_finite_is_refused_under_a_platform_too
   use <- owned_test.run(5000)
   let bad = raw(0x7FC00000)
   let good = single(1.0)
-  assert moved(state: entered(), commands: [
+  assert moved(state: character_support.entered(), commands: [
       footing(7),
       Position(x: bad, y: good, z: good),
     ])
     == Error(NotFinite(kind: 2))
     as "IEEE 754 binary32: not-a-number is no position in any frame, and the client's own movement never sends one, so the platform's frame does not excuse it"
-  assert moved(state: entered(), commands: [
+  assert moved(state: character_support.entered(), commands: [
       footing(7),
       Rotation(yaw: good, pitch: bad, roll: good),
     ])
@@ -280,13 +276,15 @@ pub fn a_position_or_rotation_that_is_not_finite_is_refused_under_a_platform_too
 
 pub fn a_height_below_minus_2048_is_refused_and_minus_2048_and_above_are_kept_test() -> Nil {
   use <- owned_test.run(5000)
-  assert moved(state: entered(), commands: [
+  assert moved(state: character_support.entered(), commands: [
       position(x: 0.0, y: -2048.5, z: 0.0),
     ])
     == Error(BelowTheWorld(y: -2048.5))
     as "movement_command.position_bound: the client raises a height below -2048 to -2048 before it sends, so it never sends one"
   let state =
-    kept(state: entered(), commands: [position(x: 0.0, y: -2048.0, z: 0.0)])
+    kept(state: character_support.entered(), commands: [
+      position(x: 0.0, y: -2048.0, z: 0.0),
+    ])
   assert at(state) == #(0.0, -2048.0, 0.0)
     as "-2048 is what the client sends at the bottom"
 }
@@ -294,7 +292,7 @@ pub fn a_height_below_minus_2048_is_refused_and_minus_2048_and_above_are_kept_te
 pub fn x_and_z_beyond_32768_and_y_above_2048_are_kept_as_sent_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
-    kept(state: entered(), commands: [
+    kept(state: character_support.entered(), commands: [
       position(x: 40_000.0, y: 3000.0, z: -40_000.0),
     ])
   assert at(state) == #(40_000.0, 3000.0, -40_000.0)
@@ -309,7 +307,7 @@ pub fn x_and_z_beyond_32768_and_y_above_2048_are_kept_as_sent_test() -> Nil {
 
 pub fn a_refused_message_keeps_nothing_of_itself_test() -> Nil {
   use <- owned_test.run(5000)
-  let state = entered()
+  let state = character_support.entered()
   assert result.is_error(
     moved(state:, commands: [
       position(x: 9.0, y: 9.0, z: 9.0),
@@ -330,14 +328,21 @@ pub fn a_rotation_that_is_not_finite_is_refused_in_each_angle_test() -> Nil {
     let good = single(0.5)
     list.each(
       [
-        Rotation(yaw: bad, pitch: good, roll: good),
-        Rotation(yaw: good, pitch: bad, roll: good),
-        Rotation(yaw: good, pitch: good, roll: bad),
+        #("yaw", Rotation(yaw: bad, pitch: good, roll: good)),
+        #("pitch", Rotation(yaw: good, pitch: bad, roll: good)),
+        #("roll", Rotation(yaw: good, pitch: good, roll: bad)),
       ],
-      fn(command) {
-        assert moved(state: entered(), commands: [command])
+      fn(row) {
+        let #(angle, command) = row
+        assert moved(state: character_support.entered(), commands: [command])
           == Error(NotFinite(kind: 14))
-          as "IEEE 754 binary32: the client turns the unit by these angles, and its own movement never sends one that is not a number"
+          as {
+            "pattern 0x"
+            <> int.to_base16(pattern)
+            <> " in "
+            <> angle
+            <> ": IEEE 754 binary32: the client turns the unit by these angles, and its own movement never sends one that is not a number"
+          }
       },
     )
   })
@@ -346,7 +351,7 @@ pub fn a_rotation_that_is_not_finite_is_refused_in_each_angle_test() -> Nil {
 pub fn the_rotation_kept_is_the_last_kind_14_in_the_worlds_frame_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
-    kept(state: entered(), commands: [
+    kept(state: character_support.entered(), commands: [
       rotation(yaw: 0.25, pitch: 0.0, roll: 0.0),
       rotation(yaw: -3.0, pitch: 0.5, roll: -0.125),
     ])
@@ -360,26 +365,48 @@ pub fn the_rotation_kept_is_the_last_kind_14_in_the_worlds_frame_test() -> Nil {
 pub fn state_flags_above_0x3ffff_are_refused_and_up_to_it_are_kept_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([0, 1, 0x3FFFF], fn(flags) {
-    assert result.is_ok(moved(state: entered(), commands: [StateFlags(flags:)]))
-      as "movement_command.kind_24: the client's builders send bits 0 to 17"
+    assert result.is_ok(
+      moved(state: character_support.entered(), commands: [StateFlags(flags:)]),
+    )
+      as {
+        "flags 0x"
+        <> int.to_base16(flags)
+        <> ": movement_command.kind_24: the client's builders send bits 0 to 17"
+      }
   })
   list.each([0x40000, 0x80000000, 0xFFFFFFFF], fn(flags) {
-    assert moved(state: entered(), commands: [StateFlags(flags:)])
+    assert moved(state: character_support.entered(), commands: [
+        StateFlags(flags:),
+      ])
       == Error(UnknownStateFlags(flags:))
-      as "movement_command.kind_24: a bit above 17 is one no builder of the client sets"
+      as {
+        "flags 0x"
+        <> int.to_base16(flags)
+        <> ": movement_command.kind_24: a bit above 17 is one no builder of the client sets"
+      }
   })
 }
 
 pub fn a_mode_other_than_0_1_and_3_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([0, 1, 3], fn(mode) {
-    assert result.is_ok(moved(state: entered(), commands: [Mode(mode:)]))
-      as "movement_command.kind_27: the client sends 0, 1 or 3"
+    assert result.is_ok(
+      moved(state: character_support.entered(), commands: [Mode(mode:)]),
+    )
+      as {
+        "mode "
+        <> int.to_string(mode)
+        <> ": movement_command.kind_27: the client sends 0, 1 or 3"
+      }
   })
   list.each([2, 4, 31, 0xFFFFFFFF], fn(mode) {
-    assert moved(state: entered(), commands: [Mode(mode:)])
+    assert moved(state: character_support.entered(), commands: [Mode(mode:)])
       == Error(UnknownMode(mode:))
-      as "movement_command.kind_27: no other mode is sent"
+      as {
+        "mode "
+        <> int.to_string(mode)
+        <> ": movement_command.kind_27: no other mode is sent"
+      }
   })
 }
 
@@ -389,12 +416,20 @@ pub fn a_move_speed_setting_above_2_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([0, 1, 2], fn(setting) {
     assert movement.speed_setting(setting) == Ok(Nil)
-      as "0x140c45dd0: the setting holds 0 to 2"
+      as {
+        "setting "
+        <> int.to_string(setting)
+        <> ": 0x140c45dd0: the setting holds 0 to 2"
+      }
   })
   list.each([3, 255, 0xFFFFFFFF], fn(setting) {
     assert movement.speed_setting(setting)
       == Error(UnknownSpeedSetting(setting:))
-      as "0x140c45dd0: a value above 2 is none the client's setting has"
+      as {
+        "setting "
+        <> int.to_string(setting)
+        <> ": 0x140c45dd0: a value above 2 is none the client's setting has"
+      }
   })
 }
 
@@ -586,8 +621,13 @@ pub fn a_command_kind_the_clients_code_never_sends_is_refused_test() -> Nil {
           command,
         ]),
       )
-    assert movement.moved(state: entered(), moves:) == Error(UnsentKind(kind:))
-      as "opcode.0x637.sent_kinds: the kind is refused, and the position before it is not kept"
+    assert movement.moved(state: character_support.entered(), moves:)
+      == Error(UnsentKind(kind:))
+      as {
+        "kind "
+        <> int.to_string(kind)
+        <> ": opcode.0x637.sent_kinds: the kind is refused, and the position before it is not kept"
+      }
   })
 }
 
@@ -597,7 +637,7 @@ pub fn a_command_kind_the_clients_code_never_sends_is_refused_test() -> Nil {
 fn alone(command: MovementCommand) -> Result(State, Refusal) {
   let moves =
     movement.moves(PlayerMovement(client_clock: 0x1234, commands: [command]))
-  movement.moved(state: entered(), moves:)
+  movement.moved(state: character_support.entered(), moves:)
 }
 
 /// A kind 3 of `points` points, whose times and points the rule does not read.
@@ -810,7 +850,10 @@ pub fn each_kind_the_client_sends_in_its_own_form_is_taken_test() -> Nil {
     let #(name, command) = row
     let moves =
       movement.moves(PlayerMovement(client_clock: 0x1234, commands: [command]))
-    assert result.is_ok(movement.moved(state: entered(), moves:))
+    assert result.is_ok(movement.moved(
+      state: character_support.entered(),
+      moves:,
+    ))
       as {
         name
         <> ": the client writes this form (opcode.0x637.sent_kinds, and the kind's record)"
@@ -830,10 +873,13 @@ pub fn the_clock_of_the_message_and_the_time_command_change_nothing_test() -> Ni
   use <- owned_test.run(5000)
   let commands = [Other(0), position(x: 5.0, y: 6.0, z: 7.0)]
   let early =
-    movement.moved(state: entered(), moves: Moves(client_clock: 0, commands:))
+    movement.moved(
+      state: character_support.entered(),
+      moves: Moves(client_clock: 0, commands:),
+    )
   let late =
     movement.moved(
-      state: entered(),
+      state: character_support.entered(),
       moves: Moves(client_clock: 0xFFFFFFFF, commands:),
     )
   assert early == late && result.is_ok(early)
@@ -910,7 +956,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
   use <- owned_test.run(5000)
   let #(state, first) =
     movement.save(
-      state: entered(),
+      state: character_support.entered(),
       account_id: AccountId(7),
       character_id: CharacterId(42),
       health: Some(512),
@@ -925,7 +971,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(3),
       save_sequence: 1,
-      place: movement.place(entered()),
+      place: movement.place(character_support.entered()),
       health: Some(512),
       experience: 1234,
       level: 3,
@@ -1025,7 +1071,10 @@ pub fn the_stores_answer_to_a_save_is_logged_by_what_it_says_test() -> Nil {
       assert string.contains(text, "refused")
         && string.contains(text, "a slot or a tier of the action sets")
         && string.contains(text, constraint)
-        as "one sentence for every refusal of the action sets, naming the constraint that refused them"
+        as {
+          constraint
+          <> ": one sentence for every refusal of the action sets, naming the constraint that refused them"
+        }
     },
   )
 }

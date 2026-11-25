@@ -80,6 +80,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/set
 import gleam/string
 import gleam_community/maths
+import map_spawn_support
 import map_support
 import owned_test
 import place_support
@@ -190,10 +191,6 @@ fn address() -> step.Address {
   step.Creature(map: ship, incarnation: 1, unit_id: unit, life:)
 }
 
-fn at(x: Float) -> start_place.Place {
-  place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z: 0.0)
-}
-
 /// The unit of the player of connection `number`: ten times it.
 fn unit_of(number: Int) -> Int {
   number * 10
@@ -232,7 +229,7 @@ fn approached(
   creature.Approached(
     by: ConnectionId(number),
     unit_id: unit_of(number),
-    place: at(x),
+    place: map_spawn_support.at(x),
     seq:,
     stay: map_support.stay(count: number),
     hit_radius: place_support.player_hit_radius,
@@ -242,7 +239,7 @@ fn approached(
 fn moved(number number: Int, x x: Float, seq seq: Int) -> creature.Message {
   creature.TargetMoved(
     by: ConnectionId(number),
-    place: at(x),
+    place: map_spawn_support.at(x),
     seq:,
     stay: map_support.stay(count: number),
     hit_radius: place_support.player_hit_radius,
@@ -262,7 +259,7 @@ fn strike_of(
       from: Connection(ConnectionId(number)),
       striker: PlayerStriker(
         unit_id: unit_of(number),
-        place: at(2.0),
+        place: map_spawn_support.at(2.0),
         seq: 1,
         stay: map_support.stay(count: number),
         hit_radius: place_support.player_hit_radius,
@@ -1832,7 +1829,7 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
       message: creature.Approached(
         by: ConnectionId(2),
         unit_id: 21,
-        place: at(5.0),
+        place: map_spawn_support.at(5.0),
         seq: 7,
         stay: stay.next(map_support.stay(count: 2)),
         hit_radius: place_support.player_hit_radius,
@@ -3396,7 +3393,8 @@ fn turret_in(
   viewers viewers: List(Int),
   armor armor: creature_life.InterruptArmor,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
-  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let spawn =
+    spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
   let assert Ok(kind) = dict.get(kinds.by_creature, 73_494)
     as "migrations 0029 and 0030 give the Exile turret its kind"
   started_with(
@@ -4244,7 +4242,8 @@ pub fn a_damaging_strike_on_an_opened_turret_takes_health_test() -> Nil {
   use <- owned_test.run(5000)
   let held = guarded_charge(viewers: [2])
   let #(state, _) = stunned_at(state: held.state, at_ms: 4000)
-  let max_health = spawn_support.sim_turret(number: 1, place: at(0.0)).health
+  let max_health =
+    spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0)).health
   let #(_, struck) = tell(state:, at_ms: 5000, message: damaging(damage: 10))
   assert list.contains(
     said(struck),
@@ -4640,11 +4639,12 @@ pub fn any_state_landing_breaks_a_charge_test() -> Nil {
   // stop movement.
   list.each(
     [
-      crowd_control_state.Snare,
-      crowd_control_state.Fear,
-      crowd_control_state.Polymorph,
+      #("Snare", crowd_control_state.Snare),
+      #("Fear", crowd_control_state.Fear),
+      #("Polymorph", crowd_control_state.Polymorph),
     ],
-    fn(held) {
+    fn(row) {
+      let #(name, held) = row
       let #(state, aggro) = fought(viewers: [2])
       let #(state, _, ends) = charge_opened(state:, aggro:)
       let #(state, landed) =
@@ -4661,12 +4661,18 @@ pub fn any_state_landing_breaks_a_charge_test() -> Nil {
         )
       assert list.contains(said(landed), "0x87f to 2")
         && list.contains(said(landed), "0x7f9 to 2")
-        as "the state took hold and broke the charge"
+        as {
+          "holding " <> name <> ": the state took hold and broke the charge"
+        }
       assert list.contains(timers_cancelled(landed), ends)
-        as "the charge's cast end is cancelled"
+        as { "holding " <> name <> ": the charge's cast end is cancelled" }
       let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
       assert said(went) == [] && timers(went) == []
-        as "the cast end that fires all the same strikes nobody"
+        as {
+          "holding "
+          <> name
+          <> ": the cast end that fires all the same strikes nobody"
+        }
     },
   )
 }
@@ -4692,11 +4698,12 @@ pub fn a_creature_holding_hard_crowd_control_starts_no_cast_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(
     [
-      crowd_control_state.Stun,
-      crowd_control_state.Knockdown,
-      crowd_control_state.Knockback,
+      #("Stun", crowd_control_state.Stun),
+      #("Knockdown", crowd_control_state.Knockdown),
+      #("Knockback", crowd_control_state.Knockback),
     ],
-    fn(held) {
+    fn(row) {
+      let #(name, held) = row
       let holding =
         controlling(number: 2, cast_id: 1, controls: [
           crowd_control_support.holding(
@@ -4724,7 +4731,11 @@ pub fn a_creature_holding_hard_crowd_control_starts_no_cast_test() -> Nil {
         fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
       assert !list.contains(said(ticked), "0x7ff to 2")
         && fights_told(ticked) == []
-        as "and the creature holding the state strikes nothing"
+        as {
+          "holding "
+          <> name
+          <> ": and the creature holding the state strikes nothing"
+        }
     },
   )
 }
@@ -4766,7 +4777,7 @@ pub fn a_turret_holding_any_other_state_starts_no_charge_test() -> Nil {
 
 /// The throw of Spell4Effects 73826: 10 m away from a unit at x = -5, over 375 ms.
 fn knockback(at_ms at_ms: Int) -> creature.Message {
-  knockback_from(at_ms:, unit_at: at(-5.0))
+  knockback_from(at_ms:, unit_at: map_spawn_support.at(-5.0))
 }
 
 /// The same throw away from a unit at `unit_at`.
@@ -4791,10 +4802,6 @@ fn knockback_from(
     ),
     struck_at_ms: start_ms + at_ms,
   )
-}
-
-fn near(left: Float, right: Float) -> Bool {
-  float.absolute_value(left -. right) <. 0.000_001
 }
 
 /// The beast chasing player 2, 30 off, for these viewers, and the step of the aggro.
@@ -4846,7 +4853,10 @@ fn knockback_state(instance_id instance_id: Int) -> strike_tell.ControlTell {
         height: 2.0,
       ),
       draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-      reference: forced_move.Reference(place: at(-5.0), radius: 0.0),
+      reference: forced_move.Reference(
+        place: map_spawn_support.at(-5.0),
+        radius: 0.0,
+      ),
     )),
   )
 }
@@ -4880,9 +4890,9 @@ pub fn a_landed_knockback_throws_the_creature_in_the_same_step_test() -> Nil {
     as "the viewer is sent one flight"
   let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
   assert first_ms == start_ms + 1000
-    && near(first_x, 10.0)
+    && place_support.near(left: first_x, right: 10.0)
     && last_ms == start_ms + 1375
-    && near(last_x, 20.0)
+    && place_support.near(left: last_x, right: 20.0)
     as "from where the creature is, 1 s into its run at x = 10, to 10 further away from the unit behind it, 375 ms later"
   assert list.any(timers(struck), fn(timer) { timer.1 == 375 })
     as "the flight's end is a timer"
@@ -4949,9 +4959,9 @@ pub fn a_thrown_creature_sends_its_viewers_the_flight_once_test() -> Nil {
   let assert [CreatureMoved(path:)] = news_to(thrown, 2)
   let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
   assert first_ms == start_ms + 1000
-    && near(first_x, 10.0)
+    && place_support.near(left: first_x, right: 10.0)
     && last_ms == start_ms + 1375
-    && near(last_x, 20.0)
+    && place_support.near(left: last_x, right: 20.0)
     as "from where the creature is, 1 s into its run at x = 10, to 10 further away from the unit behind it, 375 ms later"
   assert news_to(thrown, 5) == news_to(thrown, 2)
     as "both viewers read the same path"
@@ -5001,7 +5011,7 @@ pub fn a_bare_throw_resumes_the_chase_from_the_landing_test() -> Nil {
   assert said(landed) == ["0x638 to 2"]
     as "the landing sends no kind 2: the one 0x638 is the new chase"
   let assert Running(from:, to:, started_ms:, speed:, ..) = path_sent(landed)
-  assert near(x_of(from), 20.0)
+  assert place_support.near(left: x_of(from), right: 20.0)
     && x_of(to) == 26.0
     && started_ms == start_ms + 1375
     && speed == 10.0
@@ -5011,7 +5021,8 @@ pub fn a_bare_throw_resumes_the_chase_from_the_landing_test() -> Nil {
 /// The creature the sim turret is, but running at 10 and of an ordinary unit type, so
 /// that a throw moves it: Spell4 85469's charge, opened at 3000 ms, ending 8000 ms later.
 fn charger(viewers viewers: List(Int)) -> State {
-  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let spawn =
+    spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
   let assert Ok(kind) =
     dict.get(spawn_support.turret_kinds().by_creature, 73_494)
     as "migrations 0029 gives the Exile turret its kind"
@@ -5075,7 +5086,7 @@ pub fn a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test() -> N
     tell(
       state:,
       at_ms: 4000,
-      message: knockback_from(at_ms: 4000, unit_at: at(0.0)),
+      message: knockback_from(at_ms: 4000, unit_at: map_spawn_support.at(0.0)),
     )
   assert said(thrown) == [] && timers(thrown) == []
     as "no path, no timer and no 0x7f9: the creature moved nowhere"
@@ -5119,7 +5130,8 @@ pub fn a_flight_ending_while_a_state_holds_does_not_resume_test() -> Nil {
   let #(_, ended) = fire(state:, at_ms: 3700, timer: timer_for(stunned, 2500))
   let assert Running(from:, ..) = path_sent(ended)
     as "when the state ends it chases again"
-  assert near(x_of(from), 20.0) as "from where it landed"
+  assert place_support.near(left: x_of(from), right: 20.0)
+    as "from where it landed"
 }
 
 pub fn a_state_ending_mid_flight_does_not_resume_until_the_landing_test() -> Nil {
@@ -5165,7 +5177,7 @@ pub fn a_leash_in_flight_walks_home_from_the_landing_test() -> Nil {
     CreatureMoved(path: Running(from:, to:, started_ms:, ..)),
   ] = news_to(landed, 5)
     as "at the landing the creature turns to home and walks home, and the one watcher left is sent them"
-  assert near(x_of(from), 20.0)
+  assert place_support.near(left: x_of(from), right: 20.0)
     && x_of(to) == 0.0
     && started_ms == start_ms + 1375
     as "from the landing at x = 20 to its spawn"
@@ -5181,9 +5193,9 @@ pub fn a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test() 
   let assert [CreatureMoved(path:)] = news_to(second, 2)
   let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
   assert first_ms == start_ms + 1150
-    && near(first_x, 14.0)
+    && place_support.near(left: first_x, right: 14.0)
     && last_ms == start_ms + 1525
-    && near(last_x, 24.0)
+    && place_support.near(left: last_x, right: 24.0)
     as "from x = 14 to 10 further, over 375 ms from the second throw"
   assert timers_cancelled(second) == [first_lands]
     as "the first flight's end is cancelled"
@@ -5231,7 +5243,7 @@ pub fn a_creature_killed_mid_flight_lies_at_the_landing_test() -> Nil {
       ),
     )
   let assert [CreatureAppeared(place:, ..), ..] = news_to(watched, 9)
-  assert near(x_of(place), 20.0)
+  assert place_support.near(left: x_of(place), right: 20.0)
     as "a viewer arriving later finds the corpse at the landing"
 }
 
@@ -5253,13 +5265,16 @@ pub fn an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test() -> Nil 
     as "the creature in combat, its target, the turn to it, and its flight"
   let assert [CreatureAppeared(place:, ..), _, _, _, CreatureMoved(path:)] =
     news_to(watched, 9)
-  assert near(x_of(place), 10.0 +. 10.0 *. 100.0 /. 375.0)
+  assert place_support.near(
+    left: x_of(place),
+    right: 10.0 +. 10.0 *. 100.0 /. 375.0,
+  )
     as "it appears where it is in the flight"
   let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
   assert first_ms == start_ms + 1100
-    && near(first_x, 10.0 +. 10.0 *. 100.0 /. 375.0)
+    && place_support.near(left: first_x, right: 10.0 +. 10.0 *. 100.0 /. 375.0)
     && last_ms == start_ms + 1375
-    && near(last_x, 20.0)
+    && place_support.near(left: last_x, right: 20.0)
     as "the rest of the path: from there, now, to the landing"
 }
 
@@ -5383,9 +5398,19 @@ pub fn a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_t
   // Its run speed is 10, so only its link keeps it where it is: a knockback (away, in
   // flight), a pull (toward a unit at x = 20, in flight) and a push (away, at once).
   let moves = [
-    #("knockback", forced_move.Away, forced_move.Flight, at(-5.0)),
-    #("pull", forced_move.Toward, forced_move.Flight, at(20.0)),
-    #("push", forced_move.Away, forced_move.AtOnce, at(-5.0)),
+    #(
+      "knockback",
+      forced_move.Away,
+      forced_move.Flight,
+      map_spawn_support.at(-5.0),
+    ),
+    #(
+      "pull",
+      forced_move.Toward,
+      forced_move.Flight,
+      map_spawn_support.at(20.0),
+    ),
+    #("push", forced_move.Away, forced_move.AtOnce, map_spawn_support.at(-5.0)),
   ]
   list.each(moves, fn(one) {
     let #(name, way, mover, unit_at) = one
@@ -5498,17 +5523,7 @@ fn rootbrute(viewers viewers: List(Int)) -> State {
 fn roar_fought(
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
-  roar_fought_by(state: rootbrute(viewers:))
-}
-
-fn roar_fought_by(
-  state state: State,
-) -> #(State, ServiceStep(creature.Outgoing)) {
-  tell(
-    state:,
-    at_ms: 0,
-    message: approached_at(number: 2, x: 0.0, z: -4.0, seq: 1),
-  )
+  turn_fought(state: rootbrute(viewers:))
 }
 
 /// The attack tick of 1500 ms opens the special: the state, the step of its start and the
@@ -5631,7 +5646,7 @@ pub fn a_creature_that_can_move_turns_to_face_its_target_before_the_special_test
     ..
   ] = news_to(opened, 2)
     as "a one-point timed path that turns the creature"
-  assert near(facing.yaw, 0.785_398_163_397_448_3)
+  assert place_support.near(left: facing.yaw, right: 0.785_398_163_397_448_3)
     && start_place.x(first.1) == 0.0
     as "turned along the bearing to the target, in place"
 }
@@ -5932,7 +5947,7 @@ pub fn the_next_attack_tick_waits_the_delay_rows_hold_after_a_special_test() -> 
 pub fn a_special_with_no_delay_row_waits_the_attack_interval_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    roar_fought_by(
+    turn_fought(
       state: rootbrute_with(
         special: spawn_support.earthen_roar(hold_ms: 0),
         viewers: [2],
@@ -6015,32 +6030,29 @@ pub fn no_path_starts_while_a_charged_round_strikes_or_holds_test() -> Nil {
   // a fighter that is not the target leaves, a state that held it ends, and the answer that
   // kills a fighter retargets.
   let #(striking, key) = roar_striking_with_a_far_target()
-  let no_path = fn(taken: ServiceStep(creature.Outgoing)) {
-    !list.any(said(taken), fn(line) { string.starts_with(line, "0x638") })
-  }
   let #(_, moved) =
     tell(
       state: striking,
       at_ms: 4600,
       message: moved_at(number: 3, x: 0.0, z: -31.0, seq: 4),
     )
-  assert no_path(moved) as "the target moves while the strikes are out"
+  assert sends_no_path(moved) as "the target moves while the strikes are out"
   let #(_, left) =
     tell(
       state: striking,
       at_ms: 4600,
       message: creature.Unwatched(by: ConnectionId(2)),
     )
-  assert no_path(left) as "a fighter leaves while the strikes are out"
+  assert sends_no_path(left) as "a fighter leaves while the strikes are out"
   let #(stunned_state, stunned) = stunned_at(state: striking, at_ms: 4550)
   let assert [#(control_ends, _), ..] = control_timers(stunned)
     as "the stun starts its own timer"
   let #(_, ended) = fire(state: stunned_state, at_ms: 4700, timer: control_ends)
-  assert no_path(ended)
+  assert sends_no_path(ended)
     as "the state that held it ends while the strikes are out"
   let #(held_state, killed) =
     tell(state: striking, at_ms: 4600, message: killing_answer(key:))
-  assert no_path(killed)
+  assert sends_no_path(killed)
     as "the answer that kills fighter 2 closes the round and retargets, with the hold set first"
   let #(_, in_hold) =
     tell(
@@ -6048,7 +6060,7 @@ pub fn no_path_starts_while_a_charged_round_strikes_or_holds_test() -> Nil {
       at_ms: 4700,
       message: moved_at(number: 3, x: 0.0, z: -32.0, seq: 5),
     )
-  assert no_path(in_hold) as "the target moves in the hold"
+  assert sends_no_path(in_hold) as "the target moves in the hold"
 }
 
 pub fn a_ready_special_closes_to_its_own_reach_test() -> Nil {
@@ -6105,7 +6117,7 @@ pub fn a_special_that_adds_the_targets_radius_casts_from_that_much_farther_test(
         )
       case ends_within {
         None -> {
-          assert no_path(aggro) as reason
+          assert sends_no_path(aggro) as reason
           let #(_, cast) =
             fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
           let assert [CastStarted(start:)] = casts_of(cast, 2)
@@ -6179,7 +6191,7 @@ fn roar_with_gos_at_0_and_1_ms() -> creature_life.Special {
 pub fn a_state_that_lands_after_two_gos_at_0_and_1_ms_breaks_only_the_gos_to_come_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) =
-    roar_fought_by(
+    turn_fought(
       state: rootbrute_with(special: roar_with_gos_at_0_and_1_ms(), viewers: [2]),
     )
   let #(state, opened) =
@@ -6335,7 +6347,8 @@ pub fn the_sim_turrets_charge_has_one_go_that_strikes_test() -> Nil {
   use <- owned_test.run(5000)
   // Spell4 85469: castTime 8000 and no phases (Spell4 85469, 86978): one go, at the cast time,
   // that strikes, and no hold.
-  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let spawn =
+    spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
   let assert creature_life.Charged(cast_ms:, gos:, hold_ms:, inside:, ..) =
     spawn.combat.attack.cast
   assert cast_ms == 8000 && hold_ms == 0 as "the cast time 8000, and no hold"
@@ -6661,7 +6674,7 @@ pub fn a_special_between_autos_leaves_the_turn_unchanged_test() -> Nil {
       viewers: [2],
       armor: creature_life.NoArmor,
     )
-  let #(state, aggro) = roar_fought_by(state:)
+  let #(state, aggro) = turn_fought(state:)
   let #(state, _, go) = roar_opened(state:, aggro:)
   let #(state, _, strike) = first_go_passed(state:, go:)
   let #(state, struck) = strike_go_reached(state:, strike:)
@@ -6815,10 +6828,6 @@ fn turns_and_paths(taken: ServiceStep(creature.Outgoing)) -> List(String) {
   list.filter(said(taken), fn(line) {
     string.starts_with(line, "turn(") || string.starts_with(line, "0x638")
   })
-}
-
-fn no_path(taken: ServiceStep(creature.Outgoing)) -> Bool {
-  !list.any(said(taken), fn(line) { string.starts_with(line, "0x638") })
 }
 
 pub fn a_creature_that_takes_its_target_faces_it_before_it_runs_test() -> Nil {
@@ -7019,7 +7028,7 @@ pub fn a_creature_in_the_hold_after_a_special_stands_still_and_faces_its_target_
       message: strike_of(number: 5, cast_id: 9, blows: [#(1, 30, 1.0)]),
     )
   assert faces_to(topped, 2) == [creature_turn.Unit(unit_id: 50)]
-    && no_path(topped)
+    && sends_no_path(topped)
     as "a new target in the hold is faced, and no path starts"
   let #(_, ticked) = fire(state:, at_ms: 5600, timer: hold)
   assert list.contains(said(ticked), "0x7ff to 2")
@@ -7091,7 +7100,7 @@ pub fn a_rooted_creature_still_turns_to_its_target_test() -> Nil {
       message: strike_of(number: 5, cast_id: 2, blows: [#(1, 30, 1.0)]),
     )
   assert faces_to(topped, 2) == [creature_turn.Unit(unit_id: 50)]
-    && no_path(topped)
+    && sends_no_path(topped)
     as "the rooted creature still turns to a new target, and starts no path"
 }
 
@@ -7125,12 +7134,13 @@ pub fn a_stun_ending_while_a_root_holds_turns_the_creature_again_and_starts_no_p
   let #(_, ended) = fire(state:, at_ms: 3700, timer: timer_for(stunned, 2500))
   assert faces_to(ended, 2) == [creature_turn.Unit(unit_id: 20)]
     as "the Stun ends while the Root holds: the creature turns to the player again"
-  assert no_path(ended) as "and starts no path, the Root holding"
+  assert sends_no_path(ended) as "and starts no path, the Root holding"
 }
 
 /// The charger (a turret that moves) guarded as migration 0030 guards the turrets.
 fn guarded_charger(viewers viewers: List(Int)) -> State {
-  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let spawn =
+    spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
   let assert Ok(kind) =
     dict.get(spawn_support.guarded_turret_kinds().by_creature, 73_494)
     as "migration 0030 gives the Exile turret its guarded kind"
@@ -7834,7 +7844,7 @@ fn turret_over(tables tables: store.Tables) -> State {
     spawn_support.sim_turret_over(
       tables: character_tables.content_over(tables:),
       number: 1,
-      place: at(0.0),
+      place: map_spawn_support.at(0.0),
     )
   let assert Ok(kind) =
     dict.get(spawn_support.turret_kinds().by_creature, 73_494)
@@ -8043,7 +8053,7 @@ fn roar_in_order(order order: area.Order) -> creature_life.Special {
 /// ahead and 0.3 the other aside), and the cast id of its round.
 fn struck_in_order(order order: area.Order) -> #(List(Int), Int) {
   let #(state, aggro) =
-    roar_fought_by(
+    turn_fought(
       state: rootbrute_with(special: roar_in_order(order:), viewers: [
         2,
         4,
@@ -8514,7 +8524,7 @@ fn ice_fought_with(
   special special: creature_life.Special,
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
-  roar_fought_by(state: rootbrute_with(special:, viewers:))
+  turn_fought(state: rootbrute_with(special:, viewers:))
 }
 
 /// The attack tick of 1,500 ms opens Ice Breath: the state, the step of its start and the
@@ -9380,7 +9390,8 @@ fn guarded_turret_with(
   gos gos: List(creature_life.Go),
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
-  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let spawn =
+    spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
   let kinds = spawn_support.guarded_turret_kinds()
   let assert Ok(kind) = dict.get(kinds.by_creature, 73_494)
     as "migrations 0029 and 0030 give the Exile turret its kind"
@@ -9411,7 +9422,8 @@ pub fn a_stun_between_hits_of_a_guarded_creatures_cast_opens_it_once_after_the_c
   // The Sim-Turret's charge with its one strike replaced by two strikes (at 3,000 and 5,000
   // ms) and a last go (8,000 ms): no client turret casts a multi-hit cast, so this cast is
   // planted. The charge opens at 3,000 ms, so the gos fall at 6,000, 8,000 and 11,000 ms.
-  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let spawn =
+    spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
   let assert creature_life.Charged(
     gos: [creature_life.Go(strike: Some(strike), ..)],
     ..,
@@ -9899,6 +9911,12 @@ pub fn two_players_stunning_one_charge_mark_only_the_first_strike_the_creature_t
   [#(2, 5), #(5, 2)]
   |> list.each(fn(order) {
     let #(first, second) = order
+    let order =
+      "player "
+      <> int.to_string(first)
+      <> "'s strike first, then player "
+      <> int.to_string(second)
+      <> "'s"
     let #(state, aggro) = fought(viewers: [2, 5])
     let #(state, _, _) = charge_opened(state:, aggro:)
     let #(state, first_taken) =
@@ -9916,16 +9934,16 @@ pub fn two_players_stunning_one_charge_mark_only_the_first_strike_the_creature_t
         ]),
       )
     assert marks_of(first_taken) == [marked(spell4_id: turret_charge)]
-      as "the strike the creature took first is marked"
+      as { order <> ": the strike the creature took first is marked" }
     assert marks_of(second_taken) == [None]
-      as "the second strike's state lands and is not marked"
+      as { order <> ": the second strike's state lands and is not marked" }
     assert list.contains(
       said(second_taken),
       "0x87f to " <> int.to_string(first),
     )
-      as "the second state is shown to the viewers (0x87f)"
+      as { order <> ": the second state is shown to the viewers (0x87f)" }
     assert !list.contains(said(second_taken), "0x7f9 to 2")
-      as "and breaks nothing more"
+      as { order <> ": and breaks nothing more" }
   })
 }
 

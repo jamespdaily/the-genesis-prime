@@ -14,6 +14,7 @@ import fixture_tables
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_log.{type QuestLog, type UnitRef, UnitRef}
+import genesis_prime/game/target_group
 import genesis_prime/store.{type HeldItem, type QuestRow, ActiveQuest, QuestRow}
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
@@ -352,4 +353,26 @@ pub fn saved_row(log log: QuestLog, quest_id quest_id: Int) -> QuestRow {
     |> list.find(fn(row) { row.quest_id == quest_id })
     as "the log holds the quest"
   row
+}
+
+/// The quest as the log reads it, with the objective at `index`.
+pub fn objective_at(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  index index: Int,
+) -> quest_log.Objective {
+  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+    as "the fixture holds the quest"
+  let assert Ok(found) = list.drop(quest.objectives, index) |> list.first
+    as "the quest has an objective at the index"
+  found
+}
+
+/// A unit of this creature, of faction 0 and race 0: a type 1 pane reads only the creature.
+pub fn unit_of(creature creature: Int) -> target_group.Unit {
+  target_group.Unit(
+    creature_id: id.Creature2Id(creature),
+    faction_id: id.Faction2Id(0),
+    unit_race_id: id.UnitRaceId(0),
+  )
 }

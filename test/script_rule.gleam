@@ -25,12 +25,12 @@ pub const read = 0x72
 
 /// The rule as its shell runs it.
 pub fn rule() -> ConnectionRule(Nil, Nil, Nil, Nil, Nil) {
-  Rule(name: "script_rule", settings: Nil, new:, step:)
-}
-
-/// The rule keeps nothing between inputs.
-pub fn new(_settings: Nil) -> Nil {
-  Nil
+  Rule(
+    name: "script_rule",
+    settings: Nil,
+    new: connection_rule_support.new_keeping_nothing,
+    step:,
+  )
 }
 
 /// One input in, the record of the seed or the time it carried out.

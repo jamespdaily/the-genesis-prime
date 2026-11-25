@@ -8,6 +8,7 @@ import genesis_prime/message/choose_resurrection.{ChooseResurrection}
 import gleam/bit_array
 import gleam/int
 import gleam/list
+import gleam/result
 import gleam/string
 
 /// The bytes of a vector written as hexadecimal groups, spaces ignored, as the
@@ -138,4 +139,13 @@ pub fn quest_state_frame(
   state state: Int,
 ) -> #(Int, BitArray) {
   #(0x035C, packed([#(15, quest), #(32, state), #(32, 0)]))
+}
+
+/// The result of decoding what an encoder made, with either failure reduced to `Nil`.
+pub fn result_decode(
+  encoded: Result(BitArray, encode_error),
+  decode: fn(BitArray) -> Result(a, decode_error),
+) -> Result(a, Nil) {
+  use body <- result.try(result.replace_error(encoded, Nil))
+  result.replace_error(decode(body), Nil)
 }

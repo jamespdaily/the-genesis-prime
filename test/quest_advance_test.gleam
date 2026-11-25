@@ -27,11 +27,8 @@ import genesis_prime/game/objective.{
 }
 import genesis_prime/game/quest_advance.{type Advance, Advance}
 import genesis_prime/game/quest_log.{type QuestLog}
-import genesis_prime/game/target_group
 import genesis_prime/store.{type QuestRow}
-import genesis_prime/table/id.{
-  Creature2Id, Faction2Id, Quest2Id, Spell4Id, UnitRaceId,
-}
+import genesis_prime/table/id.{Quest2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import gleam/int
@@ -318,17 +315,9 @@ pub fn a_spell_advance_changes_nothing_for_an_objective_that_takes_no_progress_t
   )
 }
 
-fn plain_unit(creature creature: Int) -> target_group.Unit {
-  target_group.Unit(
-    creature_id: Creature2Id(creature),
-    faction_id: Faction2Id(0),
-    unit_race_id: UnitRaceId(0),
-  )
-}
-
 fn used(creature creature: Int, by_item by_item: Bool) -> Option(Event) {
   Some(Used(
-    target: plain_unit(creature:),
+    target: quest_support.unit_of(creature:),
     checklist_index: 0,
     unit: quest_support.unit_ref(unit_id: creature),
     by_item:,
@@ -422,7 +411,7 @@ pub fn a_spell_advance_skips_the_objective_its_own_cast_event_counts_test() -> N
     Some(Cast(
       spell4_id: Spell4Id(35_424),
       target: Some(CastTarget(
-        unit: plain_unit(creature: 31_734),
+        unit: quest_support.unit_of(creature: 31_734),
         ref: quest_support.unit_ref(unit_id: 5),
       )),
     ))

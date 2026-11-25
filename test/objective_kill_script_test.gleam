@@ -59,19 +59,6 @@ fn kill_rows(objectives objectives: List(Int)) -> objective.ScriptRows {
   objective.ScriptRows(..objective.no_rows(), kills: set.from_list(objectives))
 }
 
-/// The quest as the log reads it, with the objective at `index`.
-fn objective_at(
-  tables tables: table_store.Tables,
-  quest_id quest_id: Int,
-  index index: Int,
-) -> quest_log.Objective {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
-    as "the fixture holds the quest"
-  let assert Ok(found) = list.drop(quest.objectives, index) |> list.first
-    as "the quest has an objective at the index"
-  found
-}
-
 /// What `script_of` says of the objective at `index` of a quest, over the fixture with
 /// these QuestObjective cells edited (objective, column, value).
 type ScriptCase {
@@ -145,7 +132,7 @@ pub fn a_type_5_row_in_the_kill_table_is_the_kill_script_and_never_a_stand_in_te
         tables:,
         quest_id: row.quest_id,
         index: row.index,
-        objective: objective_at(
+        objective: quest_support.objective_at(
           tables:,
           quest_id: row.quest_id,
           index: row.index,
@@ -228,7 +215,7 @@ pub fn a_kill_of_a_pane_creature_counts_the_kill_script_and_no_other_kill_does_t
         event: row.killed,
         quest_id: row.quest_id,
         index: row.index,
-        objective: objective_at(
+        objective: quest_support.objective_at(
           tables:,
           quest_id: row.quest_id,
           index: row.index,

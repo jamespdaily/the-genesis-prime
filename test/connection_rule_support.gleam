@@ -361,3 +361,8 @@ pub fn record(
 ) -> Effect(ConnectionEffect(Nil)) {
   OwnEffect(Write(<<letter, number:64>>))
 }
+
+/// The `new` of a rule that keeps nothing between inputs: its state is `Nil`.
+pub fn new_keeping_nothing(_settings: Nil) -> Nil {
+  Nil
+}

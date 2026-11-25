@@ -17,20 +17,16 @@ import fresh_node
 import genesis_prime/application.{Fatal, Orderly, Tree}
 import genesis_prime/server
 import gleam/dynamic
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/otp/actor
 import login_support
 import owned_test
 import pog
 
-fn shutdown() -> process.ExitReason {
-  process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
-}
-
 pub fn a_tree_that_ends_while_the_node_stops_ends_in_order_whatever_the_reason_test() -> Nil {
   use <- owned_test.run(5000)
-  assert application.ending(reason: shutdown(), node_stopping: True) == Orderly
+  assert application.ending(reason: ask_support.shutdown(), node_stopping: True)
+    == Orderly
   assert application.ending(reason: process.Normal, node_stopping: True)
     == Orderly
   assert application.ending(reason: process.Killed, node_stopping: True)
@@ -39,8 +35,11 @@ pub fn a_tree_that_ends_while_the_node_stops_ends_in_order_whatever_the_reason_t
 
 pub fn a_tree_that_ends_while_the_node_runs_is_fatal_whatever_the_reason_test() -> Nil {
   use <- owned_test.run(5000)
-  assert application.ending(reason: shutdown(), node_stopping: False)
-    == Fatal(reason: shutdown())
+  assert application.ending(
+      reason: ask_support.shutdown(),
+      node_stopping: False,
+    )
+    == Fatal(reason: ask_support.shutdown())
     as "a tree past its restart intensity ends with shutdown, which is no stop"
   assert application.ending(reason: process.Normal, node_stopping: False)
     == Fatal(reason: process.Normal)
@@ -53,7 +52,8 @@ pub fn a_tree_that_ends_while_the_node_runs_is_fatal_whatever_the_reason_test() 
 
 pub fn the_end_of_the_tree_while_the_node_runs_crashes_the_process_that_takes_it_test() -> Nil {
   use <- owned_test.run(10_000)
-  let taker = process.spawn_unlinked(fn() { application.end_of(shutdown()) })
+  let taker =
+    process.spawn_unlinked(fn() { application.end_of(ask_support.shutdown()) })
   let assert process.Abnormal(_) =
     ask_support.ended(
       watched: process.monitor(taker),

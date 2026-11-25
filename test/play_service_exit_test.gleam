@@ -8,7 +8,6 @@
 
 import gleam/list
 import gleam/option.{Some}
-import gleam/result
 import gleam/string
 import owned_test
 import play_service_support.{type Scene} as support
@@ -59,10 +58,6 @@ fn plant_missing(scene scene: Scene, missing missing: String) -> Nil {
   )
 }
 
-fn log_of(scene: Scene) -> String {
-  result.unwrap(simplifile.read(scene.home <> "/play-service.log"), "")
-}
-
 type Row {
   /// One value left out of the file that holds it.
   Unset(name: String)
@@ -97,7 +92,9 @@ fn plant_row(scene scene: Scene, row row: Row) -> #(String, String) {
 }
 
 fn log_lines(scene: Scene) -> List(String) {
-  log_of(scene) |> string.split("\n") |> list.filter(fn(line) { line != "" })
+  support.log_of(scene)
+  |> string.split("\n")
+  |> list.filter(fn(line) { line != "" })
 }
 
 pub fn a_missing_environment_value_ends_update_sh_non_zero_under_bash_3_2_test() -> Nil {
@@ -112,8 +109,8 @@ pub fn a_missing_environment_value_ends_update_sh_non_zero_under_bash_3_2_test()
         extra: [],
       )
     assert ran.status != 0 as { label <> ": ends well: " <> ran.output }
-    assert string.contains(log_of(scene), says)
-      as { label <> ": the log names it, it holds " <> log_of(scene) }
+    assert string.contains(support.log_of(scene), says)
+      as { label <> ": the log names it, it holds " <> support.log_of(scene) }
     assert support.calls(scene) == []
       as { label <> ": a tool was called, so a step ran on" }
   })
@@ -139,7 +136,7 @@ pub fn a_refusal_the_next_run_repeats_is_written_once_test() -> Nil {
     assert first.status != 0 && second.status != 0
       as { label <> ": a run ends well" }
     assert list.length(log_lines(scene)) == 1
-      as { label <> ": two runs wrote " <> log_of(scene) }
+      as { label <> ": two runs wrote " <> support.log_of(scene) }
     assert second.output == ""
       as { label <> ": the repeat printed " <> second.output }
   })
@@ -171,10 +168,12 @@ pub fn a_stale_stand_with_an_incomplete_config_leaves_the_stand_line_written_onc
     })
     let lines = log_lines(scene)
     assert list.length(lines) == 1
-      as { pair.0 <> ": three runs wrote " <> log_of(scene) }
-    assert string.contains(log_of(scene), "a live session holds")
+      as { pair.0 <> ": three runs wrote " <> support.log_of(scene) }
+    assert string.contains(support.log_of(scene), "a live session holds")
       as {
-        pair.0 <> ": the one line is the lock's, it holds " <> log_of(scene)
+        pair.0
+        <> ": the one line is the lock's, it holds "
+        <> support.log_of(scene)
       }
   })
 }
