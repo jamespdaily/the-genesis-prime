@@ -11,15 +11,18 @@
 
 import character_tables
 import fixture_tables
+import genesis_prime/game/objective.{type SpawnedUnit, SpawnedUnit}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest.{type Asker, Asker}
-import genesis_prime/game/quest_log.{type QuestLog, type UnitRef, UnitRef}
+import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/target_group
-import genesis_prime/store.{type HeldItem, type QuestRow, ActiveQuest, QuestRow}
+import genesis_prime/store.{
+  type HeldItem, type QuestRow, ActiveQuest, QuestRow, UsedSpawn,
+}
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
-import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -102,10 +105,9 @@ pub fn log_of(rows rows: List(QuestRow)) -> QuestLog {
   log
 }
 
-/// The unit of this id in the first run of the map the tests' players stand in (world 22,
-/// instance 1, incarnation 1).
-pub fn unit_ref(unit_id unit_id: Int) -> UnitRef {
-  UnitRef(map: MapId(world_id: 22, instance: 1), incarnation: 1, unit_id:)
+/// The unit of this id of the picture, standing at the spawn of the same number.
+pub fn unit_ref(unit_id unit_id: Int) -> SpawnedUnit {
+  SpawnedUnit(unit_id:, spawn_id: SpawnId(unit_id))
 }
 
 /// A quest completed at this many Unix seconds.
@@ -131,15 +133,18 @@ pub fn active(
     quest_id:,
     state:,
     completed_at: None,
-    active: Some(ActiveQuest(
-      placeholder_objective_id:,
-      tracked:,
-      done_mask:,
-      progress:,
-      quest_ms_left: 0,
-      objective_ms_left: list.map(progress, fn(_) { 0 }),
-      kill_mask: no_kills(),
-    )),
+    active: Some(
+      ActiveQuest(
+        placeholder_objective_id:,
+        tracked:,
+        done_mask:,
+        progress:,
+        quest_ms_left: 0,
+        objective_ms_left: list.map(progress, fn(_) { 0 }),
+        kill_mask: no_kills(),
+        used: [],
+      ),
+    ),
   )
 }
 
@@ -176,6 +181,43 @@ pub fn accepted_with_kills(
   let assert Some(entry) = accepted.active
     as "an accepted quest holds its entry"
   QuestRow(..accepted, active: Some(ActiveQuest(..entry, kill_mask:)))
+}
+
+/// An accepted quest with no placeholder, untracked, with these progress values and these
+/// objects already counted (`used`: objective index and spawn id), in the order given.
+pub fn accepted_with_used(
+  quest_id quest_id: Int,
+  progress progress: List(Int),
+  used used: List(#(Int, Int)),
+) -> QuestRow {
+  let accepted = accepted(quest_id:, progress:)
+  let assert Some(entry) = accepted.active
+    as "an accepted quest holds its entry"
+  QuestRow(
+    ..accepted,
+    active: Some(
+      ActiveQuest(
+        ..entry,
+        used: list.map(used, fn(one) {
+          UsedSpawn(objective_index: one.0, spawn_id: one.1)
+        }),
+      ),
+    ),
+  )
+}
+
+/// The objects the log's rows say the quest's objectives have counted, as objective index
+/// and spawn id in the order the rows hold them: none for a quest that is not active.
+pub fn used_of(log log: QuestLog, quest_id quest_id: Int) -> List(#(Int, Int)) {
+  case
+    list.find(quest_log.rows(log:, now_ms: 0), fn(row) {
+      row.quest_id == quest_id
+    })
+  {
+    Ok(QuestRow(active: Some(ActiveQuest(used:, ..)), ..)) ->
+      list.map(used, fn(one) { #(one.objective_index, one.spawn_id) })
+    Ok(QuestRow(active: None, ..)) | Error(Nil) -> []
+  }
 }
 
 /// The number of objectives the quest's Quest2 row names.
@@ -217,15 +259,18 @@ pub fn timed(
     quest_id:,
     state: 1,
     completed_at: None,
-    active: Some(ActiveQuest(
-      placeholder_objective_id: 0,
-      tracked: True,
-      done_mask: 0,
-      progress:,
-      quest_ms_left:,
-      objective_ms_left: list.map(progress, fn(_) { 0 }),
-      kill_mask: no_kills(),
-    )),
+    active: Some(
+      ActiveQuest(
+        placeholder_objective_id: 0,
+        tracked: True,
+        done_mask: 0,
+        progress:,
+        quest_ms_left:,
+        objective_ms_left: list.map(progress, fn(_) { 0 }),
+        kill_mask: no_kills(),
+        used: [],
+      ),
+    ),
   )
 }
 
@@ -242,15 +287,18 @@ pub fn with_objective_time(
     quest_id:,
     state: 1,
     completed_at: None,
-    active: Some(ActiveQuest(
-      placeholder_objective_id: 0,
-      tracked: True,
-      done_mask:,
-      progress:,
-      quest_ms_left: 0,
-      objective_ms_left:,
-      kill_mask: no_kills(),
-    )),
+    active: Some(
+      ActiveQuest(
+        placeholder_objective_id: 0,
+        tracked: True,
+        done_mask:,
+        progress:,
+        quest_ms_left: 0,
+        objective_ms_left:,
+        kill_mask: no_kills(),
+        used: [],
+      ),
+    ),
   )
 }
 

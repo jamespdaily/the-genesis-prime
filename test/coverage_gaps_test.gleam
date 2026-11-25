@@ -216,6 +216,15 @@ pub fn the_registry_holds_the_objective_placement_ground_gaps_test() -> Nil {
       "a creature on the ring of a marker not on the ground, or with no ground read at its centre, stands at the marker's height",
     ),
     #(
+      [
+        "placed creature",
+        "used-object record",
+        "across a login",
+        "counts again",
+      ],
+      "a quest object that is a placed creature, used before a relog, counts again after it",
+    ),
+    #(
       ["ring slot", "no ground read", "farther", "ring's radius plus 2"],
       "a ring slot with no ground read, or whose ground is outside the band of the ring's radius plus 2, stands at the marker's height",
     ),

@@ -83,6 +83,7 @@ import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4EffectsId, Creature2Id, Item2Id, ItemDisplayId,
   ItemSlotId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -1065,6 +1066,7 @@ pub const creature_in_sight_unit_id = 1000
 /// A creature of the picture, which a press of a Targeted spell may name.
 pub fn a_creature() -> activate.Target {
   activate.Usable(
+    spawn_id: SpawnId(1),
     creature_id: 26_462,
     creature: activate.Creature(
       columns: [],
@@ -3091,6 +3093,7 @@ pub fn usable_at(
   radius radius: Float,
 ) -> activate.Target {
   activate.Usable(
+    spawn_id: SpawnId(1),
     creature_id:,
     creature: creature_of(creature_id:),
     checklist_index: 0,

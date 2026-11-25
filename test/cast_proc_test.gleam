@@ -72,6 +72,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_effects
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -2533,6 +2534,7 @@ pub fn a_casts_role_decides_whether_its_go_raises_a_landing_test() -> Nil {
       "an activation raises none",
       cast_state.Activation(
         activating: cast_state.Activating(
+          spawn_id: SpawnId(1),
           unit_id: 31,
           creature_id: 1,
           alive_at_press: True,

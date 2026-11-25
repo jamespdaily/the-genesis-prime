@@ -149,6 +149,7 @@ import genesis_prime/table/id.{
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bit_array
 import gleam/bool
 import gleam/dict
@@ -427,7 +428,6 @@ pub fn activate_unit_message(
         picture: entered.shown,
         quests: entered.quests,
         scripts: session.settings.script_rows,
-        entered:,
         link_of: link_of(
           tables:,
           activations: connection_state.activations_of(session:),
@@ -459,14 +459,13 @@ fn used_unit(
   picture picture: shown.Picture,
   quests quests: QuestLog,
   scripts scripts: objective.ScriptRows,
-  entered entered: world_entry.Entered,
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
 ) -> fn(Int) -> Result(cast_state.UsedUnit, Nil) {
   let use_targets = objective.use_targets(log: quests, tables:, scripts:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
-    let unit = unit_ref(entered:, unit_id:)
+    use unit <- result.try(spawned_unit(picture:, unit_id:))
     let offered_to = fn(target, checklist_index) {
       use_targets(target, checklist_index, unit)
     }
@@ -498,17 +497,16 @@ fn used_unit(
   }
 }
 
-/// The unit `unit_id` of the player's current map run, as the quest log remembers a use of
-/// it.
-fn unit_ref(
-  entered entered: world_entry.Entered,
+/// The unit `unit_id` of the player's picture as the quest log remembers a use of it: by
+/// the spawn the picture holds for it (`shown.spawn_of`), with the unit id the release
+/// names. `Error(Nil)` for a unit the picture lacks and for another player's.
+pub fn spawned_unit(
+  picture picture: shown.Picture,
   unit_id unit_id: Int,
-) -> quest_log.UnitRef {
-  quest_log.UnitRef(
-    map: entered.map,
-    incarnation: entered.incarnation,
-    unit_id:,
-  )
+) -> Result(objective.SpawnedUnit, Nil) {
+  use one <- result.try(dict.get(picture, unit_id))
+  use spawn_id <- result.map(shown.spawn_of(shown: one))
+  objective.SpawnedUnit(unit_id:, spawn_id:)
 }
 
 fn used_unit_at(
@@ -616,6 +614,7 @@ fn activate_target(
       Error(Nil) -> activate.Unseen
       Ok(shown.ShownPlayer(..)) -> activate.AnotherPlayer
       Ok(shown.ShownCreature(
+        spawn_id:,
         creature_id:,
         checklist_index:,
         path:,
@@ -630,6 +629,7 @@ fn activate_target(
         usable(
           tables:,
           creature_id:,
+          spawn_id:,
           unit_id:,
           checklist_index:,
           link_of:,
@@ -651,6 +651,7 @@ fn activate_target(
           },
         )
       Ok(shown.ShownObject(
+        spawn_id:,
         creature_id:,
         checklist_index:,
         place:,
@@ -660,6 +661,7 @@ fn activate_target(
         usable(
           tables:,
           creature_id:,
+          spawn_id:,
           unit_id:,
           checklist_index:,
           link_of:,
@@ -679,6 +681,7 @@ fn activate_target(
 fn usable(
   tables tables: table_store.Tables,
   creature_id creature_id: Creature2Id,
+  spawn_id spawn_id: SpawnId,
   unit_id unit_id: Int,
   checklist_index checklist_index: Int,
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
@@ -700,6 +703,7 @@ fn usable(
     Ok(#(creature, link)) ->
       activate.Usable(
         creature_id: creature_id.value,
+        spawn_id:,
         creature:,
         checklist_index:,
         link:,
@@ -1239,19 +1243,23 @@ fn use_event(
   alive_at_press alive_at_press: Bool,
   by_item by_item: Bool,
 ) -> Result(#(target_group.Unit, Int, objective.Event), Nil) {
-  counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
-  |> result.map(fn(counted) {
-    #(
-      counted.0,
-      counted.1,
-      objective.Used(
-        target: counted.0,
-        checklist_index: counted.1,
-        unit: unit_ref(entered:, unit_id:),
-        by_item:,
-      ),
-    )
-  })
+  use counted <- result.try(counted_target(
+    tables:,
+    picture: entered.shown,
+    unit_id:,
+    alive_at_press:,
+  ))
+  use unit <- result.map(spawned_unit(picture: entered.shown, unit_id:))
+  #(
+    counted.0,
+    counted.1,
+    objective.Used(
+      target: counted.0,
+      checklist_index: counted.1,
+      unit:,
+      by_item:,
+    ),
+  )
 }
 
 /// The objective event of a quest button's cast of the spell at the unit the press named, if it
@@ -1265,17 +1273,19 @@ fn cast_event(
 ) -> Result(objective.Event, Nil) {
   case target {
     None -> Ok(objective.Cast(spell4_id: Spell4Id(spell4_id), target: None))
-    Some(cast_state.PressedAt(unit_id:, alive_at_press:)) ->
-      counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
-      |> result.map(fn(counted) {
-        objective.Cast(
-          spell4_id: Spell4Id(spell4_id),
-          target: Some(objective.CastTarget(
-            unit: counted.0,
-            ref: unit_ref(entered:, unit_id:),
-          )),
-        )
-      })
+    Some(cast_state.PressedAt(unit_id:, alive_at_press:)) -> {
+      use counted <- result.try(counted_target(
+        tables:,
+        picture: entered.shown,
+        unit_id:,
+        alive_at_press:,
+      ))
+      use ref <- result.map(spawned_unit(picture: entered.shown, unit_id:))
+      objective.Cast(
+        spell4_id: Spell4Id(spell4_id),
+        target: Some(objective.CastTarget(unit: counted.0, ref:)),
+      )
+    }
   }
 }
 
@@ -1285,7 +1295,7 @@ fn cast_event(
 /// go, since a delayed row comes after it: a use that counts a unit new to an objective
 /// releases it, so the unit of a delayed row is no longer shown. A use is then rebuilt from the
 /// Creature2 row, which names the creature (the objectives a use counts name the creature, not
-/// its faction), and a cast at the unit as a cast of the spell with no unit, which an objective
+/// its faction), and the unit and spawn the press named, and a cast at the unit as a cast of the spell with no unit, which an objective
 /// of the spell counts all the same. A unit still shown is judged as at the go.
 fn advance_event(
   tables tables: table_store.Tables,
@@ -1294,7 +1304,13 @@ fn advance_event(
 ) -> Option(objective.Event) {
   case with {
     cast_state.WithNothing -> None
-    cast_state.WithUse(unit_id:, creature_id:, alive_at_press:, by_item:) ->
+    cast_state.WithUse(
+      unit_id:,
+      creature_id:,
+      spawn_id:,
+      alive_at_press:,
+      by_item:,
+    ) ->
       case dict.has_key(entered.shown, unit_id) {
         True ->
           use_event(tables:, entered:, unit_id:, alive_at_press:, by_item:)
@@ -1310,7 +1326,7 @@ fn advance_event(
                 unit_race_id: creature2.unit_race_id(row),
               ),
               checklist_index: 0,
-              unit: unit_ref(entered:, unit_id:),
+              unit: objective.SpawnedUnit(unit_id:, spawn_id:),
               by_item:,
             )
           })

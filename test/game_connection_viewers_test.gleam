@@ -16,12 +16,14 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/connection/viewers
 import genesis_prime/game/effect_kind
 import genesis_prime/game/faction_level
 import genesis_prime/game/held_changes
 import genesis_prime/game/held_state
+import genesis_prime/game/objective.{SpawnedUnit}
 import genesis_prime/game/player_address.{PlayerAddress, Viewer}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -73,10 +75,13 @@ import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
 }
 import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
@@ -1216,8 +1221,8 @@ pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the
 
 /// The 0x262 of a Holoring (Creature2 73416, a type 10 object of world 3460's
 /// start) as unit `unit_id`.
-fn object_unit(unit_id: Int) -> Created {
-  static_object.create(
+fn object_unit(unit_id: Int) -> #(SpawnId, Created) {
+  spawn_support.seen(
     object: spawn_support.holoring(
       number: unit_id,
       place: place_support.at(
@@ -1229,8 +1234,93 @@ fn object_unit(unit_id: Int) -> Created {
       ),
     ),
     unit_id:,
-    server_time_estimate_start: 0,
   )
+}
+
+pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A quest objective remembers a use by the spawn of the object used, so the picture keeps
+  // the spawn of each creature (its 0x262 news names it) and each static object (the map's
+  // `ObjectsSeen` names it), and the use of a unit reads it from the picture
+  // (`casting.spawned_unit`), with the unit id the use is released by.
+  let entered = world_entry_support.entered_after(clock_origin_ms: 600)
+  let session =
+    game_connection_support.session_in(status: connection_state.InWorld(
+      holder: game_connection_support.holder(),
+      entered:,
+    ))
+  let now = step.Now(monotonic_ms: 0, filetime: 0)
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 100.0,
+      y: 12.5,
+      z: -40.0,
+    )
+  let beast = spawn_support.beast_at(number: 31, place:)
+  let assert client_connection.Continue(session:, ..) =
+    viewers.viewer_takes(
+      session:,
+      now:,
+      entered:,
+      news: PeerNews(
+        unit_id: 40,
+        news: client_connection.CreatureAppeared(
+          spawn_id: SpawnId(31),
+          unit_type: NonPlayer,
+          unit: creature_unit.create(
+            spawn: beast,
+            unit_id: 40,
+            health: 52,
+            interrupt_armor: option.None,
+            server_time_estimate_start: 0,
+          ),
+          life: 4,
+          place:,
+          hit_radius: beast.combat.hit_radius,
+          attackable: beast.combat.attackable,
+          hostile_to: beast.combat.hostile_to,
+          fights: beast.combat.fights,
+        ),
+      ),
+    )
+    as "a viewer takes the creature's 0x262 news"
+  let assert Some(entered) = connection_state.entered_of(session.status)
+    as "the player is in the world"
+  let assert client_connection.Continue(session:, ..) =
+    viewers.map_sent(
+      session:,
+      now:,
+      entered:,
+      notice: map.ObjectsSeen(units: [
+        spawn_support.seen(
+          object: spawn_support.holoring(number: 21, place:),
+          unit_id: 20,
+        ),
+      ]),
+    )
+    as "the player takes the map's notice of an object"
+  let assert Some(entered) = connection_state.entered_of(session.status)
+    as "the player is in the world"
+  let assert Ok(shown.ShownCreature(spawn_id: creature_spawn, ..)) =
+    dict.get(entered.shown, 40)
+    as "the creature is shown"
+  assert creature_spawn == SpawnId(31)
+    as "the picture keeps the spawn the creature's news named"
+  let assert Ok(shown.ShownObject(spawn_id: object_spawn, ..)) =
+    dict.get(entered.shown, 20)
+    as "the object is shown"
+  assert object_spawn == SpawnId(21)
+    as "the picture keeps the spawn the map's notice named, which is not its unit id"
+  assert casting.spawned_unit(picture: entered.shown, unit_id: 40)
+    == Ok(SpawnedUnit(unit_id: 40, spawn_id: SpawnId(31)))
+    as "the use of the creature is counted by its spawn"
+  assert casting.spawned_unit(picture: entered.shown, unit_id: 20)
+    == Ok(SpawnedUnit(unit_id: 20, spawn_id: SpawnId(21)))
+    as "the use of the object is counted by its spawn"
+  assert casting.spawned_unit(picture: entered.shown, unit_id: 9) == Error(Nil)
+    as "a unit the picture lacks is no use"
 }
 
 pub fn objects_seen_writes_a_0x262_for_each_object_not_shown_and_not_gone_and_nothing_twice_test() -> Nil {

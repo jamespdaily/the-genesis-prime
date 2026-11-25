@@ -138,7 +138,9 @@ import genesis_prime/world_map/creature_unit_type.{
 }
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn_cell.{type Cells}
-import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_id.{
+  type SpawnId, type StoredSpawns, SpawnId,
+}
 import genesis_prime/world_map/spawn_source.{type Summoned, Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject}
 import genesis_prime/world_map/unit_fields.{
@@ -179,6 +181,13 @@ pub type Row {
     health: Option(Float),
     level: Option(Float),
   )
+}
+
+/// The stored spawns of these rows, whether or not a row starts. A row the server places for
+/// an objective that no stored row serves is not among them: its id is above the highest
+/// stored one and the map's alone (genesis_prime/world_map/objective_spawn).
+pub fn stored_spawns(rows rows: List(Row)) -> StoredSpawns {
+  spawn_id.stored(ids: set.from_list(list.map(rows, fn(row) { row.id })))
 }
 
 /// One creature's place and values, as its 0x262 carries them, so the 0x262

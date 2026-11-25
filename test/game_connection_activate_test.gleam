@@ -46,6 +46,7 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/list
 import gleam/option
@@ -73,8 +74,8 @@ fn mollusk(
   unit_id unit_id: Int,
   east east: Float,
   display display: Int,
-) -> Created {
-  static_object.create(
+) -> #(SpawnId, Created) {
+  spawn_support.seen(
     object: StaticObject(
       ..spawn_support.holoring(
         number: unit_id,
@@ -84,7 +85,6 @@ fn mollusk(
       display_info_id: display,
     ),
     unit_id:,
-    server_time_estimate_start: 0,
   )
 }
 
@@ -189,8 +189,8 @@ pub fn activate_frame_reaches_the_cast_rule_test() -> Nil {
 }
 
 /// The Departures Terminal (Creature2 73605) as unit `nearby`, 3.0 east of the player.
-fn terminal() -> Created {
-  static_object.create(
+fn terminal() -> #(SpawnId, Created) {
+  spawn_support.seen(
     object: StaticObject(
       ..spawn_support.holoring(
         number: nearby,
@@ -200,7 +200,6 @@ fn terminal() -> Created {
       display_info_id: mollusk_display,
     ),
     unit_id: nearby,
-    server_time_estimate_start: 0,
   )
 }
 
@@ -520,8 +519,8 @@ pub fn the_picture_gives_an_activate_cast_the_creatures_life_combat_and_disposit
 }
 
 /// A Scanning Crystal (Creature2 8047) as unit `nearby`, 1.0 east of the player.
-fn crystal() -> Created {
-  static_object.create(
+fn crystal() -> #(SpawnId, Created) {
+  spawn_support.seen(
     object: StaticObject(
       ..spawn_support.holoring(
         number: nearby,
@@ -531,7 +530,6 @@ fn crystal() -> Created {
       display_info_id: mollusk_display,
     ),
     unit_id: nearby,
-    server_time_estimate_start: 0,
   )
 }
 
@@ -657,8 +655,8 @@ pub fn a_cast_go_firing_while_the_place_is_saving_is_taken_once_the_save_is_answ
 }
 
 /// Varonia Cazalon (Creature2 32852) as unit `nearby`, 1.0 east of the player.
-fn varonia_cazalon() -> Created {
-  static_object.create(
+fn varonia_cazalon() -> #(SpawnId, Created) {
+  spawn_support.seen(
     object: StaticObject(
       ..spawn_support.holoring(
         number: nearby,
@@ -668,7 +666,6 @@ fn varonia_cazalon() -> Created {
       display_info_id: mollusk_display,
     ),
     unit_id: nearby,
-    server_time_estimate_start: 0,
   )
 }
 

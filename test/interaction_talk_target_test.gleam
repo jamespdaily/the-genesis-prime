@@ -43,6 +43,7 @@ import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/option
 import gleam/set
@@ -94,6 +95,7 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
     #(
       unit,
       shown.ShownCreature(
+        spawn_id: SpawnId(1),
         creature_id: id.Creature2Id(creature_id),
         faction_id: 0,
         checklist_index: 0,

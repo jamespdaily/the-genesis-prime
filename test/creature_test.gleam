@@ -195,6 +195,35 @@ pub fn a_creature_watches_its_run_and_sends_its_0x262_to_each_player_who_sees_it
     as "stamped from the map's clock: 6500 ms on the monotonic clock, 1500 after the map started"
 }
 
+pub fn a_creatures_0x262_names_its_spawn_and_not_its_unit_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A quest objective remembers a use by the spawn of the creature used, so the news the
+  // viewer takes carries the creature's spawn (31 here), which is not its unit (7).
+  let spawn = spawn_support.battle_beast(number: 31, x: 0.0)
+  let #(state, _) =
+    feed(
+      state: creature_from(
+        source: spawn_source.Stored(id: SpawnId(31)),
+        spawn:,
+        viewers: [],
+      ),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  let #(_, taken) =
+    feed(
+      state:,
+      at_ms: 6500,
+      event: OwnEvent(
+        Told(Watched(by: ConnectionId(5), stay: map_support.stay(count: 5))),
+      ),
+    )
+  let assert [#(5, PeerNews(unit_id: 7, news: CreatureAppeared(spawn_id:, ..)))] =
+    sent(taken)
+    as "one 0x262 of the creature, unit 7"
+  assert spawn_id == SpawnId(31) as "it names the spawn the creature stands at"
+}
+
 pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothing_to_one_that_never_saw_it_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =

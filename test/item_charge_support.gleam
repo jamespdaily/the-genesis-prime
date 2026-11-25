@@ -212,14 +212,13 @@ pub fn seeing_a_shack(
     state:,
     event: connection_support.sent_by_the_map(
       ObjectsSeen(units: [
-        static_object.create(
+        spawn_support.seen(
           object: StaticObject(
             ..spawn_support.holoring(number: shack_unit, place:),
             creature_id: Creature2Id(shack_creature),
             display_info_id: shack_display,
           ),
           unit_id: shack_unit,
-          server_time_estimate_start: 0,
         ),
       ]),
     ),

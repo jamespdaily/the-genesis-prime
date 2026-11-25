@@ -23,6 +23,7 @@ import genesis_prime/step.{
   Send, Started,
 }
 import genesis_prime/world_map/map.{type State}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object.{CreatedWithChecklist}
 import gleam/list
 import gleam/set
@@ -82,7 +83,7 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
-        Ok(Seen(sent.0, list.map(units, holoring_message)))
+        Ok(Seen(sent.0, list.map(units, fn(unit) { holoring_message(unit.1) })))
       map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
         Ok(Unseen(sent.0, unit_ids))
       map.Noticed(notice: map.SeenBy(..), ..)
@@ -147,6 +148,22 @@ pub fn a_join_in_sight_of_objects_answers_joined_then_tells_each_object_in_spawn
   let assert [start] = spawns.starts(taken) as "the creature in sight starts"
   assert { start.1 }.unit_id == 4
     as "the creature takes the id after the objects'"
+}
+
+pub fn an_object_notice_names_the_objects_spawn_and_not_its_unit_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A quest objective remembers a use by the spawn of the object used, so the connection needs the
+  // spawn of each object it is told of: spawns 101 and 102 here, under unit ids 2 and 3.
+  let state = started(creatures: [], objects: [0.0, 1.0])
+  let #(_, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [map.Noticed(notice: map.ObjectsSeen(units:), ..)] =
+    list.map(support.sends(taken), fn(sent) { sent.1 })
+    as "one notice of objects"
+  assert list.map(units, fn(unit) { unit.0 }) == [SpawnId(101), SpawnId(102)]
+    as "each object under its own spawn's id"
+  assert list.map(units, fn(unit) { static_object.unit_id(created: unit.1) })
+    == [2, 3]
+    as "which are not the unit ids the objects were given"
 }
 
 pub fn moving_out_of_sight_unsees_the_objects_and_back_sees_them_under_the_same_ids_test() -> Nil {

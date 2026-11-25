@@ -48,6 +48,7 @@ import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/step.{ConnectionId, LogDebug, LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -137,6 +138,7 @@ fn usable_in_state(
   withheld withheld: option.Option(activate.Withheld),
 ) -> Target {
   Usable(
+    spawn_id: SpawnId(1),
     creature_id:,
     creature:,
     checklist_index:,

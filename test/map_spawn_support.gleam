@@ -365,7 +365,7 @@ pub fn said(message: map.Outgoing) -> String {
       "Objects seen "
       <> string.join(
         list.map(units, fn(unit) {
-          int.to_string(static_object.unit_id(created: unit))
+          int.to_string(static_object.unit_id(created: unit.1))
         }),
         " ",
       )

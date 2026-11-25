@@ -46,6 +46,7 @@ import genesis_prime/game/shown.{ShownObject}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Hostile}
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
 import gleam/set
@@ -80,6 +81,7 @@ fn object_at(
   at position: #(Float, Float, Float),
 ) -> shown.Shown {
   ShownObject(
+    spawn_id: SpawnId(2),
     creature_id: Creature2Id(creature),
     faction_id: 0,
     checklist_index:,

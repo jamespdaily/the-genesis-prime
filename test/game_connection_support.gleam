@@ -108,6 +108,7 @@ import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/int
@@ -152,6 +153,7 @@ pub fn settings() -> game_connection.Settings {
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.landings(),
     reused_unit_objectives: set.new(),
+    stored_spawns: spawn_id.stored(ids: set.new()),
     arrival_objectives: set.new(),
     held_objectives: set.new(),
     script_rows: objective.no_rows(),
@@ -2233,6 +2235,7 @@ fn beast_appearing(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
+      spawn_id: SpawnId(unit_id),
       unit_type: NonPlayer,
       unit: creature_unit.with_casts(
         creature_unit.create(
@@ -2255,10 +2258,10 @@ fn beast_appearing(
 }
 
 /// The 0x262 news of the creature `creature_id` as unit `unit_id` at `place`, alive, as
-/// its process sends it. The creature's number, health and the rest of its spawn are
-/// Dorian Walker's; the identity the client's marking reads (creature id, display, outfit
-/// and hit radius) is the creature's own, and it is hostile to the factions `hostile_to`
-/// names.
+/// its process sends it. Its spawn is numbered as the unit, so the news and the unit name
+/// one spawn; its health and the rest of its spawn are Dorian Walker's; the identity the
+/// client's marking reads (creature id, display, outfit and hit radius) is the creature's
+/// own, and it is hostile to the factions `hostile_to` names.
 pub fn creature_appears(
   unit_id unit_id: Int,
   creature_id creature_id: Int,
@@ -2268,7 +2271,7 @@ pub fn creature_appears(
   place place: Place,
   hostile_to hostile_to: creature_life.Hostile,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  let walker = spawn_support.dorian_walker(number: 1, place:)
+  let walker = spawn_support.dorian_walker(number: unit_id, place:)
   let target =
     spawn.Spawn(
       ..walker,
@@ -2285,6 +2288,7 @@ pub fn creature_appears(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
+      spawn_id: SpawnId(unit_id),
       unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: target,

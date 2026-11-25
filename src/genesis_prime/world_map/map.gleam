@@ -62,7 +62,7 @@
 ////   VisibilityChanged(c1, hidden) ─▶ Told ─▶ player of c1 holds hidden already: nothing
 ////                                          for each object and spawn in c1's sight whose
 ////                                          visibility prerequisite left the set (shown):
-////                                            ObjectsSeen(its 0x262)          ─▶ send to c1
+////                                            ObjectsSeen(its spawn, its 0x262) ─▶ send to c1
 ////                                            Watched(c1) to its creature     ─▶ (a creature is started
 ////                                                                               if none lives)
 ////                                          for each whose prerequisite entered the set (hidden):
@@ -806,9 +806,10 @@ pub type Notice {
   /// shows it no more.
   Gone(unit_id: Int)
   /// The player sees these static objects now, each as its 0x262 under the unit
-  /// id the map gave its spawn for the run, in spawn order: the connection writes
-  /// each one its client does not show (genesis_prime/world_map/static_object).
-  ObjectsSeen(units: List(static_object.Created))
+  /// id the map gave its spawn for the run, with the spawn's id, in spawn order:
+  /// the connection writes each one its client does not show
+  /// (genesis_prime/world_map/static_object).
+  ObjectsSeen(units: List(#(SpawnId, static_object.Created)))
   /// The player no longer sees the static objects of these unit ids: the
   /// connection writes a 0x355 for each one its client shows.
   ObjectsUnseen(unit_ids: List(Int))
@@ -1990,7 +1991,10 @@ fn objects_decided(
         as "an object in sight is an object of the map's world"
       #(
         state,
-        static_object.create(object:, unit_id:, server_time_estimate_start:),
+        #(
+          spawn,
+          static_object.create(object:, unit_id:, server_time_estimate_start:),
+        ),
       )
     })
   let left =
