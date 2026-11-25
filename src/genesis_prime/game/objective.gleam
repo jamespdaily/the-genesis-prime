@@ -146,14 +146,13 @@ pub type SpawnedUnit {
 /// unit or, for a spell aimed at the caster, at none. A use is by an item (`by_item`) when
 /// the player's item spell hit the creature and not the creature's own activate spell: the
 /// objectives that count the creature's own activate cast (types 5 and 32) take only the
-/// latter. A use names its unit (`unit`) unless the unit has left the picture, as the use of
-/// a delayed row of a cast does: only the objectives it counts (`counts`) are read of it.
+/// latter.
 pub type Event {
   TalkedTo(target: target_group.Unit, checklist_index: Int)
   Used(
     target: target_group.Unit,
     checklist_index: Int,
-    unit: Option(SpawnedUnit),
+    unit: SpawnedUnit,
     by_item: Bool,
   )
   Killed(target: target_group.Unit)
@@ -270,12 +269,7 @@ pub fn use_targets(
 ) -> fn(target_group.Unit, Int, SpawnedUnit) -> Bool {
   let offered = counted_by(log:, tables:, scripts:)
   fn(unit, checklist_index, ref) {
-    offered(Used(
-      target: unit,
-      checklist_index:,
-      unit: Some(ref),
-      by_item: False,
-    ))
+    offered(Used(target: unit, checklist_index:, unit: ref, by_item: False))
   }
 }
 
@@ -314,11 +308,7 @@ fn counted_already(
       quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
     Used(checklist_index:, unit:, ..) ->
       quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
-      || case unit {
-        Some(SpawnedUnit(spawn_id:, ..)) ->
-          quest_log.is_used(log:, quest:, index:, unit: spawn_id)
-        None -> False
-      }
+      || quest_log.is_used(log:, quest:, index:, unit: unit.spawn_id)
     Cast(target: Some(CastTarget(ref: SpawnedUnit(spawn_id:, ..), ..)), ..) ->
       quest_log.is_used(log:, quest:, index:, unit: spawn_id)
     Killed(..) | Cast(target: None, ..) -> False
@@ -380,20 +370,17 @@ pub fn advance(
               Killed(..) | Cast(..) -> -1
             },
             used_unit: case event {
-              Used(unit: Some(unit), ..)
+              Used(unit:, ..)
               | Cast(target: Some(CastTarget(ref: unit, ..)), ..) ->
                 Ok(unit.spawn_id)
-              TalkedTo(..)
-              | Killed(..)
-              | Used(unit: None, ..)
-              | Cast(target: None, ..) -> Error(Nil)
+              TalkedTo(..) | Killed(..) | Cast(target: None, ..) -> Error(Nil)
             },
           )
         #(advanced, credited_before || credited)
       },
     )
   case event, credited_a_new_unit {
-    Used(target:, unit: Some(unit), ..), True ->
+    Used(target:, unit:, ..), True ->
       case
         departures.is_terminal(creature_id: target.creature_id)
         || stays_for_another_quest(

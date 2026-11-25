@@ -64,7 +64,7 @@ fn used(
   Used(
     target: unit_of(tables:, creature:),
     checklist_index: index,
-    unit: Some(quest_support.unit_ref(unit_id: index)),
+    unit: quest_support.unit_ref(unit_id: index),
     by_item: False,
   )
 }

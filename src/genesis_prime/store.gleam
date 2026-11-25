@@ -273,7 +273,8 @@ pub type ActionSets {
 /// have counted, in objective then spawn order (`UsedSpawn`); the table keeps them as two
 /// arrays of one length (`character_quest_used_match`), each entry an objective index 0 to 5
 /// and a spawn id above 0 (`character_quest_used_objective_in_six`,
-/// `character_quest_used_spawn_is_positive`).
+/// `character_quest_used_spawn_is_positive`); a row that is not active holds none
+/// (`character_quest_used_only_when_active`).
 pub type ActiveQuest {
   ActiveQuest(
     placeholder_objective_id: Int,

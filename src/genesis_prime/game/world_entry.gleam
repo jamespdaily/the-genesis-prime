@@ -202,7 +202,7 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_id.{type StoredSpawns, SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
@@ -682,8 +682,8 @@ pub fn awaiting(state state: State) -> Awaiting {
 /// change (a later login took the character, or the rows were not unset) refuses the play, so
 /// no entry goes on with charges the database does not hold. With no read asked for, it is
 /// none this module asked for and gives an `Error`. The objects the saved quest log remembers
-/// as used whose spawn is not one of the loaded world's `spawns` are dropped, and the
-/// entry's effects begin with one warning that lists them (`quest_log.without_lost_spawns`).
+/// as used whose spawn the loaded world's `stored` spawns lost are dropped, and the entry's
+/// effects begin with one warning that lists them (`quest_log.without_lost_spawns`).
 pub fn loaded(
   state state: State,
   answer answer: store.WorldAnswer,
@@ -691,7 +691,7 @@ pub fn loaded(
   stay stay: Stay,
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
-  spawns spawns: Set(SpawnId),
+  stored stored: StoredSpawns,
 ) -> Result(Loaded, Nil) {
   case state, answer {
     Loading(character_id: CharacterId(character_id), ..), store.NotTheAccounts
@@ -726,7 +726,7 @@ pub fn loaded(
         Some(place) ->
           case
             quest_log.from_rows(rows: quests, tables:)
-            |> result.map(quest_log.without_lost_spawns(log: _, spawns:))
+            |> result.map(quest_log.without_lost_spawns(log: _, stored:))
           {
             Error(refused) ->
               Fault(

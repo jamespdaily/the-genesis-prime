@@ -3954,6 +3954,17 @@ pub fn the_used_spawn_checks_refuse_unequal_arrays_an_objective_above_five_and_a
     as "the table refused a row of two arrays of different lengths"
   assert constraint == "character_quest_used_match"
     as "an object is an objective index and a spawn id, so the arrays have one length"
+  // A completed row holds no entry, so no object; a `QuestRow` of another state than 1 and 2
+  // has none to write, so the row is put into the table directly.
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, completed_at, used_objective, used_spawn) values ($1, 1010, 3, now(), '{0}', '{5}')",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.execute(store.pool)
+    as "the table refused a completed row that holds used objects"
+  assert constraint == "character_quest_used_only_when_active"
+    as "only a quest of the client's active list (states 1 and 2) holds the objects its objectives counted"
   account_store_support.stop(store)
 }
 

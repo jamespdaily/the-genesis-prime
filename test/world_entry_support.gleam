@@ -24,11 +24,11 @@ import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/spawn_id.{type SpawnId}
+import genesis_prime/world_map/spawn_id.{type StoredSpawns}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/set.{type Set}
+import gleam/set
 import map_support
 import novice_tables
 import place_support
@@ -119,7 +119,7 @@ pub fn loaded_seeing(
     quests:,
     action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility:,
-    spawns: set.new(),
+    stored: spawn_id.stored(ids: set.new()),
   )
 }
 
@@ -129,7 +129,7 @@ pub fn loaded_with_spawns(
   tables tables: table_store.Tables,
   character character: Character,
   quests quests: List(QuestRow),
-  spawns spawns: Set(SpawnId),
+  stored stored: StoredSpawns,
 ) -> #(world_entry.State, world_entry.Loaded) {
   loaded_answer(
     tables:,
@@ -141,7 +141,7 @@ pub fn loaded_with_spawns(
     quests:,
     action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility: dict.new(),
-    spawns:,
+    stored:,
   )
 }
 
@@ -152,10 +152,10 @@ pub fn entry_with_spawns(
   tables tables: table_store.Tables,
   character character: Character,
   quests quests: List(QuestRow),
-  spawns spawns: Set(SpawnId),
+  stored stored: StoredSpawns,
 ) -> #(List(world_entry.Effect), world_entry.Entered) {
   let assert #(_, world_entry.Join(state:, effects:)) =
-    loaded_with_spawns(tables:, character:, quests:, spawns:)
+    loaded_with_spawns(tables:, character:, quests:, stored:)
     as "the store holds the character and its place"
   let assert world_entry.InTheWorld(entered:, ..) =
     joined_state(state:, tables:, character:, place: join_place(), now: now())
@@ -181,7 +181,7 @@ pub fn loaded_with_unset(
     quests: [],
     action_sets: limited_action_set.rows(saved: limited_action_set.none()),
     visibility: dict.new(),
-    spawns: set.new(),
+    stored: spawn_id.stored(ids: set.new()),
   )
 }
 
@@ -203,7 +203,7 @@ pub fn loaded_with_action_sets(
     quests: [],
     action_sets:,
     visibility: dict.new(),
-    spawns: set.new(),
+    stored: spawn_id.stored(ids: set.new()),
   )
 }
 
@@ -217,7 +217,7 @@ fn loaded_answer(
   quests quests: List(QuestRow),
   action_sets action_sets: store.ActionSets,
   visibility visibility: Dict(Int, List(Prerequisite)),
-  spawns spawns: Set(SpawnId),
+  stored stored: StoredSpawns,
 ) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
@@ -246,7 +246,7 @@ fn loaded_answer(
       stay: map_support.stay(count: 1),
       tables:,
       visibility:,
-      spawns:,
+      stored:,
     )
     as "the store's answer is the one world entry asked for"
   #(state, loaded)
@@ -280,7 +280,7 @@ pub fn answered(
     stay: map_support.stay(count: 1),
     tables:,
     visibility: dict.new(),
-    spawns: set.new(),
+    stored: spawn_id.stored(ids: set.new()),
   )
 }
 

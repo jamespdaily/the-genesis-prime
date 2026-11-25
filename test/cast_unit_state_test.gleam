@@ -452,6 +452,7 @@ fn target_of(shown shown: Shown) -> fn(Int) -> activate.Target {
           )
           as "the creature is a root of the fixture"
         Usable(
+          spawn_id: SpawnId(1),
           creature_id: a_creature_of_its_group,
           creature: activate.creature_of(row:),
           checklist_index: 0,
@@ -644,6 +645,7 @@ fn right_clicked(
         case unit_id == 5000 {
           True ->
             Usable(
+              spawn_id: SpawnId(1),
               creature_id: 26_462,
               creature: activate.creature_of(row:),
               checklist_index: 0,

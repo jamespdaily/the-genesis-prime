@@ -407,8 +407,8 @@ fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
       nullable(row.quest_ms_left, int.to_string),
       nullable(row.objective_ms_left, integers),
       nullable(row.kill_mask, integers),
-      integers([]),
-      integers([]),
+      integers(row.used_objective),
+      integers(row.used_spawn),
     ],
   )
 }

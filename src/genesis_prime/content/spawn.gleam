@@ -12,8 +12,8 @@
 //// the connection's settings ─▶ visibility(key): each world's visibility prerequisites, loaded
 //// the same load  ─▶ counts(rows) ─▶ objective_units.reused ─▶ put_reused_unit_objectives(key)
 //// the connection's settings ─▶ reused_unit_objectives(key): the objectives whose unit counts again
-//// the same load  ─▶ ids(rows) ─▶ put_spawn_ids(key)
-//// the connection's settings ─▶ spawn_ids(key): the stored spawns, which a saved quest's used objects are kept against
+//// the same load  ─▶ stored(rows) ─▶ put_stored_spawns(key)
+//// the connection's settings ─▶ stored_spawns(key): the stored spawns, which a saved quest's used objects are kept against
 //// ```
 ////
 //// - **The term** of a world is `WorldSpawns(by_id, objects, cells)`, put once for every
@@ -41,7 +41,7 @@ import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, type SummonChecks, type WorldSpawns, Row,
 }
-import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_id.{type StoredSpawns, SpawnId}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option
@@ -143,26 +143,26 @@ pub fn reused_unit_objectives(key key: Key) -> Set(Int) {
   store.content(key:, table: reused_unit_objectives_table, id: 0)
 }
 
-/// The table name of the stored spawn ids in a term.
-const spawn_ids_table = "spawn_ids"
+/// The table name of the stored spawns in a term.
+const stored_spawns_table = "stored_spawns"
 
-/// The ids of the stored spawn rows, of every world, whether or not a row starts. A row the
-/// server places for an objective that no stored row serves has no id here: its id is the
-/// map's alone (genesis_prime/world_map/objective_spawn).
-pub fn ids(rows rows: List(Row)) -> Set(SpawnId) {
-  set.from_list(list.map(rows, fn(row) { row.id }))
+/// The stored spawn rows, of every world, whether or not a row starts. A row the server
+/// places for an objective that no stored row serves is not among them: its id is above the
+/// highest stored one and the map's alone (genesis_prime/world_map/objective_spawn).
+pub fn stored(rows rows: List(Row)) -> StoredSpawns {
+  spawn_id.stored(ids: set.from_list(list.map(rows, fn(row) { row.id })))
 }
 
-/// Writes the ids of the stored spawn rows under the key, once.
-pub fn put_spawn_ids(key key: Key, ids ids: Set(SpawnId)) -> Nil {
-  store.put_content(key:, table: spawn_ids_table, id: 0, value: ids)
+/// Writes the stored spawns under the key, once.
+pub fn put_stored_spawns(key key: Key, stored stored: StoredSpawns) -> Nil {
+  store.put_content(key:, table: stored_spawns_table, id: 0, value: stored)
 }
 
-/// The stored spawn ids the load put under the key: the world a saved quest's used objects
-/// are checked against (genesis_prime/game/quest_log `without_lost_spawns`). The load puts
-/// the term before the tree starts, so a reader that finds none is a bug and crashes.
-pub fn spawn_ids(key key: Key) -> Set(SpawnId) {
-  store.content(key:, table: spawn_ids_table, id: 0)
+/// The stored spawns the load put under the key: what a saved quest's used objects are
+/// checked against (genesis_prime/game/quest_log `without_lost_spawns`). The load puts the
+/// term before the tree starts, so a reader that finds none is a bug and crashes.
+pub fn stored_spawns(key key: Key) -> StoredSpawns {
+  store.content(key:, table: stored_spawns_table, id: 0)
 }
 
 /// Writes one world's spawns under the key, once.

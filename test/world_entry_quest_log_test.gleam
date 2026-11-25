@@ -450,7 +450,8 @@ pub fn a_used_spawn_the_loaded_world_lacks_is_dropped_at_load_and_reported_test(
   // A saved quest keeps the spawns of the objects its objectives counted. A spawn the
   // loaded world lacks (its row was deleted, and one added later has a new id) has no
   // object to count: the load drops it and the entry's effects begin with one warning
-  // that names it; the spawns the world has stay.
+  // that names it; the spawns the world has stay. A spawn above the highest stored id is one
+  // the server placed: it is dropped and not reported.
   let tables = character_tables.shared()
   let character =
     world_entry_support.character(class: 2, faction: 166, level: 1)
@@ -462,17 +463,17 @@ pub fn a_used_spawn_the_loaded_world_lacks_is_dropped_at_load_and_reported_test(
         quest_support.accepted_with_used(
           quest_id: quest_support.one_time,
           progress: [0, 0, 0],
-          used: [#(0, 5), #(1, 6), #(2, 7)],
+          used: [#(0, 5), #(1, 6), #(2, 7), #(2, 9)],
         ),
       ],
-      spawns: set.from_list([SpawnId(5), SpawnId(7)]),
+      stored: spawn_id.stored(ids: set.from_list([SpawnId(5), SpawnId(7)])),
     )
   assert quest_support.used_of(
       log: entered.quests,
       quest_id: quest_support.one_time,
     )
     == [#(0, 5), #(2, 7)]
-    as "the spawns the world has stay and the one it lacks is dropped"
+    as "the spawns the world has stay; the one it lost and the one placed above the stored ids are dropped"
   let warnings =
     list.filter_map(effects, fn(effect) {
       case effect {
@@ -490,5 +491,6 @@ pub fn a_used_spawn_the_loaded_world_lacks_is_dropped_at_load_and_reported_test(
     as "the warning names the spawn the world lacks, its objective and its quest"
   assert !string.contains(warning, "spawn 5")
     && !string.contains(warning, "spawn 7")
-    as "and none that the world has"
+    && !string.contains(warning, "spawn 9")
+    as "and none that the world has or that was placed"
 }

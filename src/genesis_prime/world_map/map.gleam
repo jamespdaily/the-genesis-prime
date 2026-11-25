@@ -62,7 +62,7 @@
 ////   VisibilityChanged(c1, hidden) ─▶ Told ─▶ player of c1 holds hidden already: nothing
 ////                                          for each object and spawn in c1's sight whose
 ////                                          visibility prerequisite left the set (shown):
-////                                            ObjectsSeen(its 0x262)          ─▶ send to c1
+////                                            ObjectsSeen(its spawn, its 0x262) ─▶ send to c1
 ////                                            Watched(c1) to its creature     ─▶ (a creature is started
 ////                                                                               if none lives)
 ////                                          for each whose prerequisite entered the set (hidden):

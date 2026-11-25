@@ -193,6 +193,7 @@ fn target_of(scene scene: Scene) -> fn(Int) -> Target {
               )
               as "the creature is a root of the fixture"
             Usable(
+              spawn_id: SpawnId(1),
               creature_id: unit.creature_id,
               creature: activate.creature_of(row:),
               checklist_index: 0,

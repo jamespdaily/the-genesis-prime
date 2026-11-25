@@ -94,12 +94,7 @@ fn event_for(
     Ok(spell4_id) ->
       rule.Cast(spell4_id:, target: Some(rule.CastTarget(unit:, ref:)))
     Error(Nil) ->
-      rule.Used(
-        target: unit,
-        checklist_index: 0,
-        unit: Some(ref),
-        by_item: False,
-      )
+      rule.Used(target: unit, checklist_index: 0, unit: ref, by_item: False)
   }
 }
 

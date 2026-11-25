@@ -25,6 +25,7 @@ import genesis_prime/table/id.{Spell4ConditionsId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -245,6 +246,7 @@ fn activated(
       activations:,
       target_of: fn(_) {
         activate.Usable(
+          spawn_id: SpawnId(1),
           creature_id: 26_462,
           creature: activate.Creature(
             columns: [activate.Column(prerequisite_id: 0, spell4_id:)],
@@ -577,6 +579,7 @@ fn pressed_with(
       activations:,
       target_of: fn(_) {
         activate.Usable(
+          spawn_id: SpawnId(1),
           creature_id: 26_462,
           creature: activate.Creature(
             columns: [activate.Column(prerequisite_id: 0, spell4_id: 1817)],

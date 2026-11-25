@@ -184,9 +184,7 @@ pub fn no_activate_spell_is_refused_for_a_type_42_row_and_the_use_rule_counts_th
                 unit_race_id: creature2.unit_race_id(row),
               ),
               checklist_index: 0,
-              unit: Some(quest_support.unit_ref(
-                unit_id: { creature2.id(row) }.value,
-              )),
+              unit: quest_support.unit_ref(unit_id: { creature2.id(row) }.value),
               by_item: False,
             ),
             quest_id: quest.id,

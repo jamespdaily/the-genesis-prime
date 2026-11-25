@@ -108,6 +108,7 @@ import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
 import gleam/int
@@ -152,7 +153,7 @@ pub fn settings() -> game_connection.Settings {
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.landings(),
     reused_unit_objectives: set.new(),
-    spawn_ids: set.new(),
+    stored_spawns: spawn_id.stored(ids: set.new()),
     arrival_objectives: set.new(),
     held_objectives: set.new(),
     script_rows: objective.no_rows(),
@@ -2234,7 +2235,7 @@ fn beast_appearing(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
-      spawn_id: beast.id,
+      spawn_id: SpawnId(unit_id),
       unit_type: NonPlayer,
       unit: creature_unit.with_casts(
         creature_unit.create(
@@ -2287,7 +2288,7 @@ pub fn creature_appears(
   sent_by_a_peer(news_of(
     unit_id:,
     news: CreatureAppeared(
-      spawn_id: target.id,
+      spawn_id: SpawnId(unit_id),
       unit_type: NonPlayer,
       unit: creature_unit.create(
         spawn: target,

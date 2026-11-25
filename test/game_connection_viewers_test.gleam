@@ -1242,7 +1242,7 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
   // A quest objective remembers a use by the spawn of the object used, so the picture keeps
   // the spawn of each creature (its 0x262 news names it) and each static object (the map's
   // `ObjectsSeen` names it), and the use of a unit reads it from the picture
-  // (`casting.unit_ref`), with the unit id the use is released by.
+  // (`casting.spawned_unit`), with the unit id the use is released by.
   let entered = world_entry_support.entered_after(clock_origin_ms: 600)
   let session =
     game_connection_support.session_in(status: connection_state.InWorld(
@@ -1293,7 +1293,12 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
       session:,
       now:,
       entered:,
-      notice: map.ObjectsSeen(units: [object_unit(20)]),
+      notice: map.ObjectsSeen(units: [
+        spawn_support.seen(
+          object: spawn_support.holoring(number: 21, place:),
+          unit_id: 20,
+        ),
+      ]),
     )
     as "the player takes the map's notice of an object"
   let assert Some(entered) = connection_state.entered_of(session.status)
@@ -1306,15 +1311,15 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
   let assert Ok(shown.ShownObject(spawn_id: object_spawn, ..)) =
     dict.get(entered.shown, 20)
     as "the object is shown"
-  assert object_spawn == SpawnId(20)
-    as "the picture keeps the spawn the map's notice named"
-  assert casting.unit_ref(picture: entered.shown, unit_id: 40)
+  assert object_spawn == SpawnId(21)
+    as "the picture keeps the spawn the map's notice named, which is not its unit id"
+  assert casting.spawned_unit(picture: entered.shown, unit_id: 40)
     == Ok(SpawnedUnit(unit_id: 40, spawn_id: SpawnId(31)))
     as "the use of the creature is counted by its spawn"
-  assert casting.unit_ref(picture: entered.shown, unit_id: 20)
-    == Ok(SpawnedUnit(unit_id: 20, spawn_id: SpawnId(20)))
+  assert casting.spawned_unit(picture: entered.shown, unit_id: 20)
+    == Ok(SpawnedUnit(unit_id: 20, spawn_id: SpawnId(21)))
     as "the use of the object is counted by its spawn"
-  assert casting.unit_ref(picture: entered.shown, unit_id: 9) == Error(Nil)
+  assert casting.spawned_unit(picture: entered.shown, unit_id: 9) == Error(Nil)
     as "a unit the picture lacks is no use"
 }
 

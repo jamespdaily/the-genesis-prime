@@ -8,7 +8,7 @@
 ////
 //// ```
 //// store rows (CharacterLoaded.quests) ─▶ from_rows  ─▶ the log, or the quest the client would refuse
-//// the log, the loaded world's spawns ─▶ without_lost_spawns ─▶ the log, the entries the world lacks
+//// the log, the stored spawns          ─▶ without_lost_spawns ─▶ the log, the entries the world lost
 //// the log, the clock, the tables      ─▶ login      ─▶ 0x35F: completed, known and active lists, the reset time
 //// the log and the clock               ─▶ reset_due  ─▶ NotYet(wait), or 0x362 with every period that reset since
 //// the log                             ─▶ rows       ─▶ the store's rows (SavePlace.quests)
@@ -44,8 +44,10 @@
 ////   table's row), so a use of the same object counts once and a relog does not let it
 ////   count again (`used`, `is_used`). The set is saved with the quest (`rows`, read back
 ////   by `from_rows`), dropped when the objective is done and empty when the quest is
-////   taken again. A spawn the loaded world lacks is dropped at the load
-////   (`without_lost_spawns`) and the caller reports it. A run-only spawn (a negative id,
+////   taken again. A spawn the loaded world lost is dropped at the load
+////   (`without_lost_spawns`) and the caller reports it; a spawn the server placed (an id above
+////   every stored one) is dropped with no report, since its id is not kept across loads. A
+////   run-only spawn (a negative id,
 ////   `world_map/spawn_source`) counts each use and is never remembered: its id restarts
 ////   in each map run, so it names no object of a later run (a server guess).
 //// - **The reset time** is the Unix seconds of the latest reset instant. The client
@@ -73,20 +75,23 @@ import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{type Now}
-import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
+import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow, UsedSpawn}
 import genesis_prime/table/id.{Quest2Id, QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2}
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
 import genesis_prime/world_map/game_number.{type GameNumbers}
-import genesis_prime/world_map/spawn_id.{type SpawnId}
+import genesis_prime/world_map/spawn_id.{
+  type SpawnId, type StoredSpawns, SpawnId,
+}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/set.{type Set}
 import gleam/time/calendar.{Date, January, TimeOfDay}
@@ -211,15 +216,71 @@ pub type Lost {
   Lost(quest_id: Int, objective_index: Int, spawn_id: SpawnId)
 }
 
-/// The log without the objects it remembers as used whose spawn is not one of the loaded
-/// world's `spawns`, and each one dropped, in quest, objective and spawn order. A spawn the
+/// The log without the objects it remembers as used whose spawn is not a row of the
+/// `stored` spawns, and each one lost, in quest, objective and spawn order. A spawn the
 /// world lost (a row deleted and the world imported again) has no object to count, and one
-/// imported later has a new id, so it starts empty. The caller reports the list.
+/// imported later has a new id, so it starts empty; the caller reports the list. A spawn
+/// above the highest stored id is one the server placed (`objective_spawn`): it is dropped
+/// and not listed, since a later import can give its number to a stored row.
 pub fn without_lost_spawns(
   log log: QuestLog,
-  spawns _spawns: Set(SpawnId),
+  stored stored: StoredSpawns,
 ) -> #(QuestLog, List(Lost)) {
-  #(log, [])
+  let #(entries, lost) =
+    list.fold(in_quest_order(log:), #(log.entries, []), fn(so_far, pair) {
+      let #(entries, lost) = so_far
+      case pair {
+        #(quest_id, Active(used:, ..) as entry) -> {
+          let #(kept, now_lost) = kept_and_lost(used:, stored:, quest_id:)
+          #(
+            dict.insert(entries, quest_id, Active(..entry, used: kept)),
+            list.append(lost, now_lost),
+          )
+        }
+        #(_, Completed(..)) | #(_, Known(..)) -> #(entries, lost)
+      }
+    })
+  #(QuestLog(..log, entries:), lost)
+}
+
+/// The used objects of one quest that are stored spawns, and the ones the world lost.
+fn kept_and_lost(
+  used used: Dict(Int, Set(SpawnId)),
+  stored stored: StoredSpawns,
+  quest_id quest_id: Int,
+) -> #(Dict(Int, Set(SpawnId)), List(Lost)) {
+  list.fold(sorted_objects(used:), #(dict.new(), []), fn(so_far, one) {
+    let #(kept, lost) = so_far
+    let #(objective_index, spawn) = one
+    case spawn_id.standing(stored:, spawn:) {
+      spawn_id.Stored -> #(
+        dict.upsert(kept, objective_index, fn(spawns) {
+          set.insert(option.unwrap(spawns, set.new()), spawn)
+        }),
+        lost,
+      )
+      spawn_id.Lost -> #(
+        kept,
+        list.append(lost, [
+          Lost(quest_id:, objective_index:, spawn_id: spawn),
+        ]),
+      )
+      spawn_id.Placed -> so_far
+    }
+  })
+}
+
+/// The used objects as objective index and spawn, objective then spawn ascending.
+fn sorted_objects(used used: Dict(Int, Set(SpawnId))) -> List(#(Int, SpawnId)) {
+  dict.to_list(used)
+  |> list.flat_map(fn(pair) {
+    list.map(set.to_list(pair.1), fn(spawn) { #(pair.0, spawn) })
+  })
+  |> list.sort(fn(a, b) {
+    let SpawnId(first) = a.1
+    let SpawnId(second) = b.1
+    order.break_tie(int.compare(a.0, b.0), int.compare(first, second))
+  })
 }
 
 /// The entry one saved row is, when the client would take it.
@@ -257,7 +318,11 @@ fn entry_of(
         objective_deadlines_ms: list.map(active.progress, fn(_) { None }),
         optional_mask: 0,
         kill_masks: active.kill_mask,
-        used: dict.new(),
+        used: list.fold(active.used, dict.new(), fn(used, one) {
+          dict.upsert(used, one.objective_index, fn(spawns) {
+            set.insert(option.unwrap(spawns, set.new()), SpawnId(one.spawn_id))
+          })
+        }),
       )
     }
     3, Some(at), None -> Ok(Completed(at:))
@@ -390,6 +455,7 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
         deadline_ms:,
         objective_deadlines_ms:,
         kill_masks:,
+        used:,
         ..,
       ) -> {
         let quest_ms_left = case deadline_ms {
@@ -406,18 +472,19 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
           quest_id:,
           state: active_state_number(state:),
           completed_at: None,
-          active: Some(
-            ActiveQuest(
-              placeholder_objective_id:,
-              tracked:,
-              done_mask:,
-              progress:,
-              quest_ms_left:,
-              objective_ms_left:,
-              kill_mask: kill_masks,
-              used: [],
-            ),
-          ),
+          active: Some(ActiveQuest(
+            placeholder_objective_id:,
+            tracked:,
+            done_mask:,
+            progress:,
+            quest_ms_left:,
+            objective_ms_left:,
+            kill_mask: kill_masks,
+            used: list.map(sorted_objects(used:), fn(one) {
+              let SpawnId(spawn_id) = one.1
+              UsedSpawn(objective_index: one.0, spawn_id:)
+            }),
+          )),
         )
       }
       Completed(at:) ->
@@ -1653,11 +1720,13 @@ fn remember_used(
   index index: Int,
   unit unit: SpawnId,
 ) -> QuestLog {
+  let SpawnId(number) = unit
   case dict.get(log.entries, quest.id) {
     Ok(Active(used:, ..) as entry) -> {
-      let units = case objective_done(log:, quest:, index:) {
-        True -> dict.delete(used, index)
-        False ->
+      let units = case objective_done(log:, quest:, index:), number < 0 {
+        True, _ -> dict.delete(used, index)
+        False, True -> used
+        False, False ->
           dict.upsert(used, index, fn(units) {
             set.insert(option.unwrap(units, set.new()), unit)
           })

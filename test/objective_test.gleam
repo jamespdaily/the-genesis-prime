@@ -154,12 +154,7 @@ fn a_use_of(
   creature creature: id.Creature2Id,
   unit unit: objective.SpawnedUnit,
 ) -> objective.Event {
-  Used(
-    target: plain_unit(creature:),
-    checklist_index: 0,
-    unit: Some(unit),
-    by_item: False,
-  )
+  Used(target: plain_unit(creature:), checklist_index: 0, unit:, by_item: False)
 }
 
 const use_target = 58_487
@@ -1485,7 +1480,7 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
       event: Used(
         target: plain_unit(creature: Creature2Id(4989)),
         checklist_index: 0,
-        unit: Some(quest_support.unit_ref(unit_id: 4989)),
+        unit: quest_support.unit_ref(unit_id: 4989),
         by_item: True,
       ),
       now_ms: 0,
@@ -2440,7 +2435,7 @@ pub fn a_spawn_counts_once_for_an_objective_and_each_use_counts_where_the_object
           event: Used(
             target: plain_unit(creature: Creature2Id(row.creature)),
             checklist_index: use_.1,
-            unit: Some(quest_support.unit_ref(unit_id: use_.0)),
+            unit: quest_support.unit_ref(unit_id: use_.0),
             by_item: False,
           ),
           now_ms: 0,
@@ -3065,7 +3060,7 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
       event: Used(
         target: plain_unit(creature: collectible),
         checklist_index: 0,
-        unit: Some(quest_support.unit_ref(unit_id: collectible.value)),
+        unit: quest_support.unit_ref(unit_id: collectible.value),
         by_item: True,
       ),
       now_ms: 0,
@@ -3497,7 +3492,7 @@ pub fn an_items_use_of_a_type_32_unit_releases_nothing_test() -> Nil {
       event: Used(
         target: plain_unit(creature: Creature2Id(12_919)),
         checklist_index: 0,
-        unit: Some(quest_support.unit_ref(unit_id: 40)),
+        unit: quest_support.unit_ref(unit_id: 40),
         by_item: True,
       ),
       now_ms: 0,

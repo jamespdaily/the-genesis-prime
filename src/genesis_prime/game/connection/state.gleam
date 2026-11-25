@@ -52,7 +52,7 @@ import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/spawn_id.{type SpawnId}
+import genesis_prime/world_map/spawn_id.{type StoredSpawns}
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
@@ -123,10 +123,10 @@ pub type Settings {
     /// count a use of a unit or a cast at one count each unit once
     /// (genesis_prime/game/quest_log `used`).
     reused_unit_objectives: Set(Int),
-    /// The ids of the stored spawn rows, from the content load (genesis_prime/content/spawn
-    /// `spawn_ids`): the spawns a saved quest's used objects are kept against at the load
+    /// The stored spawn rows, from the content load (genesis_prime/content/spawn
+    /// `stored_spawns`): what a saved quest's used objects are kept against at the load
     /// (genesis_prime/game/quest_log `without_lost_spawns`).
-    spawn_ids: Set(SpawnId),
+    stored_spawns: StoredSpawns,
     /// The scripted objectives that only an instance run or a PvP match can complete, from
     /// the content load (genesis_prime/content/objective_set, table `held_objective`): the
     /// settle leaves them open (genesis_prime/game/objective `stand_in_scripts`).

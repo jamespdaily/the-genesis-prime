@@ -62,6 +62,7 @@ import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -723,7 +724,7 @@ pub type Target {
   Unseen
   /// Another player's unit.
   AnotherPlayer
-  /// A creature or static object the player can see: the id of its Creature2 row, what
+  /// A creature or static object the player can see: the id of its Creature2 row, its spawn, what
   /// the row says of its activate cast, the checklist index its 0x262 carried (the bit a
   /// type 94 condition of its activate pick reads), whether the player's quest log opens
   /// the creature's link to an objective, where it stands now (a creature that walks a
@@ -731,6 +732,9 @@ pub type Target {
   /// client offers no use of it, if it does not.
   Usable(
     creature_id: Int,
+    /// The spawn the unit stands at, which a use of it is remembered by
+    /// (genesis_prime/game/quest_log `used`).
+    spawn_id: SpawnId,
     creature: Creature,
     checklist_index: Int,
     link: Link,

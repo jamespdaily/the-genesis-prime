@@ -15,6 +15,7 @@ import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/world_map/spawn_id
 import gleam/dict
 import gleam/option.{None}
 import gleam/set
@@ -72,7 +73,7 @@ pub fn game_settings() -> connection_state.Settings {
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.none(),
     reused_unit_objectives: set.new(),
-    spawn_ids: set.new(),
+    stored_spawns: spawn_id.stored(ids: set.new()),
     arrival_objectives: set.new(),
     held_objectives: set.new(),
     script_rows: objective.no_rows(),

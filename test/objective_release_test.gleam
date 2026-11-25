@@ -29,7 +29,6 @@ import genesis_prime/table/quest2
 import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
 import gleam/set
 import owned_test
 import quest_support
@@ -55,7 +54,7 @@ fn a_use(
       unit_race_id: creature2.unit_race_id(creature),
     ),
     checklist_index: 0,
-    unit: Some(quest_support.unit_ref(unit_id: creature_id)),
+    unit: quest_support.unit_ref(unit_id: creature_id),
     by_item: False,
   )
 }

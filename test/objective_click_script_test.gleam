@@ -27,7 +27,6 @@ import genesis_prime/game/objective.{
 import genesis_prime/game/quest_log
 import genesis_prime/table/loader/store as table_store
 import gleam/list
-import gleam/option.{Some}
 import gleam/set
 import owned_test
 import quest_support
@@ -51,7 +50,7 @@ fn activated(
   Used(
     target: quest_support.unit_of(creature:),
     checklist_index: 0,
-    unit: Some(quest_support.unit_ref(unit_id:)),
+    unit: quest_support.unit_ref(unit_id:),
     by_item:,
   )
 }

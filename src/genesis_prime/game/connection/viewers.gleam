@@ -197,7 +197,7 @@ import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
-import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
+import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object
 import genesis_prime/world_map/unit_fields
 import gleam/bool
@@ -328,13 +328,13 @@ pub fn map_sent(
       Continue(
         shown_changed(session:, change: fn(picture) {
           list.fold(fresh, picture, fn(picture, unit) {
-            let #(unit_id, #(_, created)) = unit
+            let #(unit_id, #(spawn_id, created)) = unit
             dict.insert(
               picture,
               unit_id,
               object_shown(
                 tables: session.settings.tables,
-                spawn_id: SpawnId(unit_id),
+                spawn_id:,
                 created:,
                 world_place: movement.place(entered.movement),
               ),
@@ -569,7 +569,7 @@ pub fn viewer_takes(
     client_connection.CreatureAppeared(
       unit:,
       unit_type:,
-      spawn_id: _,
+      spawn_id:,
       life:,
       place:,
       hit_radius:,
@@ -587,7 +587,7 @@ pub fn viewer_takes(
           _,
           unit_id,
           ShownCreature(
-            spawn_id: SpawnId(unit_id),
+            spawn_id:,
             creature_id: Creature2Id(unit.creature_id),
             faction_id: unit.tail.faction_id,
             checklist_index: unit.checklist_index,
