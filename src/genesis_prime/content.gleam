@@ -483,6 +483,7 @@ fn read(
   }
   case
     list.flatten([
+      objective_spawn.refusals(stored: rows),
       objective_spawn.labelled(refusals: selection.refusals, placed:),
       result.unwrap_error(grounds, or: []),
       kind_refusals,
@@ -515,7 +516,12 @@ fn read(
         Ok(grounds) -> content_terrain.put(key:, grounds:)
         Error(..) -> Nil
       }
-      content_spawn.put_stored_spawns(key:, stored: spawn.stored_spawns(rows:))
+      content_spawn.put_loaded_spawns(
+        key:,
+        loaded: spawn.loaded_spawns(
+          rows: list.flatten([rows, placed.rows, placed.click_rows]),
+        ),
+      )
       content_spawn.put_reused_unit_objectives(
         key:,
         objectives: objective_units.reused(

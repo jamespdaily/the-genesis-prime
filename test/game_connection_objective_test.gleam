@@ -1596,7 +1596,7 @@ pub fn a_relogged_player_using_the_same_spawn_again_counts_nothing_test() -> Nil
   let settings =
     connection_state.Settings(
       ..connection_support.settings(),
-      stored_spawns: spawn_id.loaded(
+      loaded_spawns: spawn_id.loaded(
         ids: set.from_list([SpawnId(unit), SpawnId(other_unit)]),
       ),
     )
@@ -1646,7 +1646,7 @@ pub fn a_relogged_player_using_a_placed_spawn_again_counts_nothing_test() -> Nil
   let settings =
     connection_state.Settings(
       ..connection_support.settings(),
-      stored_spawns: spawn_id.loaded(
+      loaded_spawns: spawn_id.loaded(
         ids: set.from_list([SpawnId(placed), SpawnId(other_placed)]),
       ),
     )
@@ -1713,7 +1713,7 @@ pub fn the_same_spawn_in_a_new_map_run_after_a_relog_counts_nothing_test() -> Ni
   let settings =
     connection_state.Settings(
       ..connection_support.settings(),
-      stored_spawns: spawn_id.loaded(ids: set.from_list([SpawnId(unit)])),
+      loaded_spawns: spawn_id.loaded(ids: set.from_list([SpawnId(unit)])),
     )
   let state =
     seeing_spawns(

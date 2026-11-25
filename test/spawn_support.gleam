@@ -851,9 +851,9 @@ fn put_worlds(
   content_spawn.put_summon_checks(key:, checks: summon_checks())
   content_spawn.put_visibility(key:, visibility: dict.new())
   content_spawn.put_reused_unit_objectives(key:, objectives: set.new())
-  content_spawn.put_stored_spawns(
+  content_spawn.put_loaded_spawns(
     key:,
-    stored: spawn_id.stored(
+    loaded: spawn_id.loaded(
       ids: set.from_list(list.append(
         list.map(spawns, fn(spawn) { spawn.id }),
         list.map(objects, fn(object) { object.id }),

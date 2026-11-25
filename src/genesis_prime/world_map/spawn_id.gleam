@@ -2,10 +2,10 @@
 //// keeps when it runs again, and which the map names when it has a creature started
 //// there (genesis_prime/world_map/spawn). A spawn a development command makes for one
 //// run of a map has a negative id (genesis_prime/world_map/spawn_source); one the
-//// server places for a quest objective takes an id above the highest stored one
-//// (genesis_prime/world_map/objective_spawn).
+//// server places for a quest objective has an id fixed by the client's tables alone, from
+//// 1,000,000,000 up, which no stored row may have (genesis_prime/world_map/objective_spawn).
 
-import gleam/int
+import gleam/bool
 import gleam/set.{type Set}
 
 /// One spawn, by its id.
@@ -13,50 +13,28 @@ pub type SpawnId {
   SpawnId(Int)
 }
 
-/// The ids of the spawn table's rows as the load found them, and the highest. A spawn id
-/// above the highest is no stored row's: the server placed it, and a later import can give
-/// the same number to a stored row.
-pub type StoredSpawns {
-  StoredSpawns(ids: Set(SpawnId), highest: Int)
+/// The ids of the spawns the content load found: every row of the spawn table, started or
+/// not, and every spawn the server placed for a quest objective.
+pub type LoadedSpawns {
+  LoadedSpawns(ids: Set(SpawnId))
 }
 
 /// What a spawn id is to the loaded world.
 pub type Presence {
-  /// A row of the spawn table.
-  Stored
-  /// A spawn the table had, and the loaded world lacks.
+  /// A spawn the load found.
+  Loaded
+  /// A spawn the load does not hold: a row that was deleted, or a placed spawn a stored row
+  /// now serves.
   Lost
-  /// A spawn the server placed, which no row names.
-  Placed
 }
 
-/// The stored spawns with these ids.
-pub fn stored(ids ids: Set(SpawnId)) -> StoredSpawns {
-  let highest =
-    set.fold(ids, 0, fn(highest, id) {
-      let SpawnId(number) = id
-      int.max(highest, number)
-    })
-  StoredSpawns(ids:, highest:)
+/// The spawns with these ids.
+pub fn loaded(ids ids: Set(SpawnId)) -> LoadedSpawns {
+  LoadedSpawns(ids:)
 }
 
-/// Stub: the spawns with these ids, as the load found them. Until the placed ids are
-/// held it keeps no id from 1,000,000,000 up.
-pub fn loaded(ids ids: Set(SpawnId)) -> StoredSpawns {
-  stored(
-    ids: set.filter(ids, fn(id) {
-      let SpawnId(number) = id
-      number < 1_000_000_000
-    }),
-  )
-}
-
-/// What the spawn is to the stored spawns.
-pub fn presence(stored stored: StoredSpawns, spawn spawn: SpawnId) -> Presence {
-  let SpawnId(number) = spawn
-  case set.contains(stored.ids, spawn), number > stored.highest {
-    True, _ -> Stored
-    False, True -> Placed
-    False, False -> Lost
-  }
+/// What the spawn is to the loaded spawns.
+pub fn presence(spawns spawns: LoadedSpawns, spawn spawn: SpawnId) -> Presence {
+  use <- bool.guard(when: set.contains(spawns.ids, spawn), return: Loaded)
+  Lost
 }

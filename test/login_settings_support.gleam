@@ -73,7 +73,7 @@ pub fn game_settings() -> connection_state.Settings {
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.none(),
     reused_unit_objectives: set.new(),
-    stored_spawns: spawn_id.stored(ids: set.new()),
+    loaded_spawns: spawn_id.loaded(ids: set.new()),
     arrival_objectives: set.new(),
     held_objectives: set.new(),
     script_rows: objective.no_rows(),

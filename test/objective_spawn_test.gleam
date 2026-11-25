@@ -34,7 +34,8 @@
 ////   above 1 at a marker puts its slots on the circle of half the marker's
 ////   radius, the slot i of k at the angle 2 pi i / k from the +x axis towards +z,
 ////   each facing the centre; the creatures of a group take the slots in the
-////   group's order, cycling; a placed row takes an id above every stored one.
+////   group's order, cycling; a placed row takes the id from 1,000,000,000 up that the
+////   rank of its kind, marker, creature and nth gives (the ranks below).
 
 import character_tables
 import client_tables
@@ -1047,10 +1048,12 @@ pub fn a_placed_id_names_one_creature_and_world_whatever_stored_rows_are_added_o
       ),
       length_from: qcheck.bounded_int(from: 0, to: 12),
     )
-  use #(first_run, second_run) <- qcheck.given(qcheck.tuple2(
-    rows_drawn,
-    rows_drawn,
-  ))
+  // 100 draws: each places twice over the fixture's tables, which takes about 5 ms.
+  use drawn <- qcheck.run(
+    qcheck.default_config() |> qcheck.with_test_count(100),
+    qcheck.tuple2(rows_drawn, rows_drawn),
+  )
+  let #(first_run, second_run) = drawn
   let named_by_id = fn(drawn) {
     let placed =
       placed_by_the_load(
@@ -1164,7 +1167,7 @@ fn named_ids(placed placed: Placed) -> Dict(Int, #(Int, Int)) {
 }
 
 pub fn a_placed_id_survives_every_change_of_the_real_stored_rows_test() -> Nil {
-  // deadline: 18 s to the first assertion, which imports the world database and places once over the client's tables; 24 placements follow
+  // deadline: 19 s measured: the world database is imported and the client's tables placed over 24 times
   use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
   use <- unitest.guard(client_tables.present())
@@ -1308,7 +1311,7 @@ pub fn a_placed_id_survives_every_change_of_the_real_stored_rows_test() -> Nil {
 }
 
 pub fn the_placed_checklist_targets_of_the_real_tables_take_the_indexes_after_the_stored_ones_test() -> Nil {
-  // deadline: 20 s, which imports the world database, places once over the client's tables and assigns the checklist indexes of every spawn
+  // deadline: 20 s measured: the world database is imported, and the client's tables placed over and the checklist indexes of every spawn assigned once
   use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
   use <- unitest.guard(client_tables.present())

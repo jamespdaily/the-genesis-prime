@@ -590,7 +590,7 @@ pub fn the_load_puts_every_stored_and_placed_spawn_id_in_the_ids_term_test() -> 
   let database = database_support.new_database(on: database_support.shared())
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
-  let ids = content_spawn.stored_spawns(key:).ids
+  let ids = content_spawn.loaded_spawns(key:).ids
   let stored = content_support.stored_spawns(database:)
   assert stored != []
   assert list.all(stored, fn(row) { set.contains(ids, row.id) })
