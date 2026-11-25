@@ -1333,17 +1333,18 @@ fn a_beast_of(
   )
 }
 
-/// The creature's sends to the Medic's connection, as the connection takes them
-/// (`server.creature_message`).
+/// What the creature tells the Medic's connection, as the map relays it and the connection
+/// takes it (`server.relayed_message`).
 fn to_the_medic(taken: step.ServiceStep(creature.Outgoing)) -> List(Message) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Send(to: step.Connection(ConnectionId(1)), message:)) ->
-        Ok(server.creature_message(outgoing: message))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
+  list.map(
+    creature_news_support.relayed_to(taken:, connection: ConnectionId(1)),
+    fn(delivered) {
+      server.relayed_message(
+        delivered:,
+        stay: game_connection_support.own_stay(),
+      )
+    },
+  )
 }
 
 /// The connection's tells to the creature, as the creature takes them

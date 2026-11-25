@@ -11,12 +11,13 @@
 ////   answer is late.
 //// - `creature.struck`'s order: the answer, the kill credit, then the health and the death.
 
-import cast_struck_gate_test
+import cast_struck_support
 import driven_time
 import game_connection_support
 import genesis_prime/client_connection.{
   type Message, ForStay, SentByKill, SentByPeer, SentByTarget,
 }
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered, Answered, Landed, Refused}
 import genesis_prime/game/unit_news.{PeerNews}
@@ -102,18 +103,29 @@ pub fn a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the
   send_gate.close(gate: world_support.gate(world:))
   let _player = world_watch_support.join(run:, connection: 1)
   held_at_least(time:, world:, count: 1)
-  // A caster that is not in the map strikes the creature once, which tells the map the
-  // creature's health.
+  // A caster that is not in the map (connection 2) strikes the creature once: the damage
+  // applies and the creature tells the map its health, with no threat for a connection that is
+  // no viewer, so no fight and no path follow.
   let unit_id = 2
-  world_watch_support.strike_with(
-    world:,
-    run:,
-    unit_id:,
-    life: 2,
-    damage_type: 3,
-    damage: 14,
-    cast_id: 1,
-  )
+  let assert creature.Strike(tell:) =
+    world_watch_support.strike_message(
+      unit_id:,
+      damage_type: 3,
+      damage: 14,
+      cast_id: 1,
+      occasion: strike_tell.AtGo(phase: 0),
+    )
+  let assert Ok(Nil) =
+    creature_registry.tell(
+      world.creatures,
+      map: world_watch_support.ship,
+      incarnation: run.incarnation,
+      unit_id:,
+      life: 2,
+      message: creature.Strike(
+        tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
+      ),
+    )
   held_at_least(time:, world:, count: 2)
   send_gate.open(gate: world_support.gate(world:))
   let messages = world_support.sent_before_the_marker(world:, id: 1, received:)
@@ -287,11 +299,12 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
       wanted: world_watch_support.appearance,
     )
   // The caster's round, open at the go for the creature, with its deadline 1,000 ms on.
-  let spell = cast_struck_gate_test.spell_ungated()
-  let #(_, asked) = cast_struck_gate_test.pressed(spell:, target: beast.unit_id)
+  let spell =
+    cast_struck_support.spell_gated_at(gated_aim: spell_plan.AimsAtArea)
+  let #(_, asked) = cast_struck_support.pressed(spell:, target: beast.unit_id)
   let #(round, _) =
-    cast_struck_gate_test.begun(
-      selection: cast_struck_gate_test.selection_of(spell:, asked:, units: [
+    cast_struck_support.begun(
+      selection: cast_struck_support.selection_of(spell:, asked:, units: [
         beast.unit_id,
       ]),
     )
@@ -333,13 +346,13 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
   // The caster's round, whose timer fired at its deadline, leaves the creature out and
   // takes the late answer as dropped.
   let #(round, closed) =
-    strike.timer_fired(strike: round, now: cast_struck_gate_test.at(ms: 2000))
+    strike.timer_fired(strike: round, now: cast_struck_support.at(ms: 2000))
   assert closed != [] as "the round closed at its deadline without the creature"
   let #(after, effects) =
     strike.answered(
       strike: round,
       answer: strike_tell.Answered(..answered, key: tell.key),
-      now: cast_struck_gate_test.at(ms: 2200),
+      now: cast_struck_support.at(ms: 2200),
     )
   assert effects == [] && after == round
     as "the answer that arrives after the round closed changes nothing: the round, not the map, decides that it is late"

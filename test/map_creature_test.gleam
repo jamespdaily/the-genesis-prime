@@ -170,7 +170,7 @@ pub fn the_last_viewer_leaving_sends_an_unwatched_and_the_creature_stops_between
   let #(_, creature) = the_start(taken)
   let #(state, taken) =
     spawns.move(state:, at_ms: 7000, connection: 1, x: spawns.far)
-  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Unwatched by 1")]
+  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Unseen by 1")]
     as "the player's loss of sight is told to the creature, which sends the 0x355"
   // The sweep timer started at 5000 fires every 10 s: 15000, 25000, ... The
   // creature has been idle since 7000, so it retires at the first sweep at or
@@ -204,7 +204,7 @@ pub fn a_spawn_seen_again_before_the_idle_stop_is_not_restarted_test() -> Nil {
   let #(state, taken) =
     spawns.move(state:, at_ms: 30_000, connection: 1, x: 0.0)
   assert spawns.starts(taken) == [] as "the same creature runs: nothing starts"
-  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Watched by 1")]
+  assert spawns.creature_sends(taken) == [#(creature.unit_id, "Seen by 1")]
     as "it is told the player sees it again, and sends its 0x262 once more"
   let #(_, taken) = spawns.sweep(state:, at_ms: 75_000)
   assert spawns.creature_sends(taken) == []
@@ -464,7 +464,7 @@ pub fn a_leave_right_after_a_burst_sends_unwatched_to_each_creature_of_the_playe
   let units = list.map(spawns.starts(taken), fn(start) { { start.1 }.unit_id })
   let #(state, taken) = spawns.leave(state:, at_ms: 6001, connection: 1)
   assert spawns.creature_sends(taken)
-    == list.map(units, fn(unit_id) { #(unit_id, "Unwatched by 1") })
+    == list.map(units, fn(unit_id) { #(unit_id, "Unseen by 1") })
     as "the player's creatures are told it no longer sees them, in the order of the spawns"
   let #(_, taken) = spawns.sweep(state:, at_ms: 75_000)
   assert spawns.creature_sends(taken)

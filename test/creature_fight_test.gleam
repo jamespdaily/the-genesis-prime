@@ -68,6 +68,7 @@ import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
@@ -185,10 +186,12 @@ fn started_with(
       kind:,
       numbers: spawn_support.numbers,
     ))
-  creature.step(
-    state,
-    support.input_at_ms(ms: start_ms, event: OwnEvent(Started)),
-  )
+  let #(state, taken) =
+    creature.step(
+      state,
+      support.input_at_ms(ms: start_ms, event: OwnEvent(Started)),
+    )
+  #(state, creature_news_support.at_each_player(state:, taken:))
 }
 
 /// The creature's address, which its strikes come from.
@@ -206,6 +209,16 @@ fn tell(
   at_ms at_ms: Int,
   message message: creature.Message,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
+  let #(state, taken) = tell_raw(state:, at_ms:, message:)
+  #(state, creature_news_support.at_each_player(state:, taken:))
+}
+
+/// The same, the step as the creature sends it: to its map, news once for all its viewers.
+fn tell_raw(
+  state state: State,
+  at_ms at_ms: Int,
+  message message: creature.Message,
+) -> #(State, ServiceStep(creature.Outgoing)) {
   creature.step(
     state,
     support.input_at_ms(ms: start_ms + at_ms, event: OwnEvent(Told(message))),
@@ -217,13 +230,15 @@ fn fire(
   at_ms at_ms: Int,
   timer timer: step.TimerId,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
-  creature.step(
-    state,
-    support.input_at_ms(
-      ms: start_ms + at_ms,
-      event: OwnEvent(ServiceTimerFired(timer:)),
-    ),
-  )
+  let #(state, taken) =
+    creature.step(
+      state,
+      support.input_at_ms(
+        ms: start_ms + at_ms,
+        event: OwnEvent(ServiceTimerFired(timer:)),
+      ),
+    )
+  #(state, creature_news_support.at_each_player(state:, taken:))
 }
 
 fn approached(
@@ -308,13 +323,12 @@ fn fights_told_for(
 ) -> List(#(Int, Stay, strike_tell.Fight)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      creature.FightTold(stay:, told:) -> Ok(#(sent.0, stay, told))
-      creature.News(..)
-      | creature.Struck(..)
-      | creature.KillCredit(..)
+      creature.Relay(stay:, payload: relay.Fight(told:), ..) ->
+        Ok(#(sent.0, stay, told))
+      creature.Relay(payload: relay.Struck(..), ..)
+      | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> Error(Nil)
+      | creature.Broadcast(..) -> Error(Nil)
     }
   })
 }
@@ -325,31 +339,38 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
   list.map(support.sends(taken), fn(sent) {
     let to = " to " <> int.to_string(sent.0)
     case sent.1 {
-      creature.News(news: PeerNews(news:, ..), ..) ->
+      creature.Broadcast(news: PeerNews(news:, ..), ..) ->
         creature_news_support.name_of(news) <> to
-      creature.FightTold(told: Threatened(unit_id:, life:), ..) ->
+      creature.Relay(
+        payload: relay.Fight(told: Threatened(unit_id:, life:)),
+        ..,
+      ) ->
         "Threatened("
         <> int.to_string(unit_id)
         <> ", "
         <> int.to_string(life)
         <> ")"
         <> to
-      creature.FightTold(told: Released(unit_id:), ..) ->
+      creature.Relay(payload: relay.Fight(told: Released(unit_id:)), ..) ->
         "Released(" <> int.to_string(unit_id) <> ")" <> to
-      creature.FightTold(told: Attacks(..), ..) -> "Attacks" <> to
-      creature.Struck(answered: Answered(outcome: Landed(..), ..), ..) ->
-        "Landed" <> to
-      creature.Struck(answered: Answered(outcome: Refused(why:), ..), ..) ->
+      creature.Relay(payload: relay.Fight(told: Attacks(..)), ..) ->
+        "Attacks" <> to
+      creature.Relay(
+        payload: relay.Struck(answered: Answered(outcome: Landed(..), ..)),
+        ..,
+      ) -> "Landed" <> to
+      creature.Relay(
+        payload: relay.Struck(answered: Answered(outcome: Refused(why:), ..)),
+        ..,
+      ) ->
         case why {
           strike_tell.Dead -> "Refused(Dead)" <> to
           strike_tell.Returning -> "Refused(Returning)" <> to
           strike_tell.Despawned -> "Refused(Despawned)" <> to
         }
-      creature.Struck(..) -> "Deflected" <> to
-      creature.KillCredit(..) -> "KillCredit" <> to
+      creature.Relay(payload: relay.Struck(..), ..) -> "Deflected" <> to
+      creature.Relay(payload: relay.KillCredit(..), ..) -> "KillCredit" <> to
       creature.Snapshot(..) -> "Snapshot" <> to
-      creature.Broadcast(..) -> "Broadcast" <> to
-      creature.Relay(..) -> "Relay" <> to
     }
   })
 }
@@ -358,7 +379,7 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
 fn news_to(taken: ServiceStep(creature.Outgoing), number: Int) -> List(News) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent {
-      #(to, creature.News(news: PeerNews(news:, ..), ..)) if to == number ->
+      #(to, creature.Broadcast(news: PeerNews(news:, ..), ..)) if to == number ->
         Ok(news)
       _ -> Error(Nil)
     }
@@ -671,7 +692,7 @@ pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planne
     tell(
       state:,
       at_ms: 1000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -964,7 +985,11 @@ pub fn a_leash_in_the_millisecond_a_chase_began_still_tells_the_viewers_to_stop_
   assert list.contains(said(chased), "0x638 to 5")
     as "the chase is sent to the viewers: they now run the creature toward x = 26"
   let #(_, leashed) =
-    tell(state:, at_ms: 0, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 0,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x89a(0) to 5")
     as "the only player on the threat list is gone: the creature leashes"
   assert list.contains(said(leashed), "0x638(placed) to 5")
@@ -1009,7 +1034,11 @@ pub fn a_leash_of_a_creature_that_stands_at_home_sends_no_path_test() -> Nil {
   assert !list.contains(said(aggro), "0x638 to 5")
     as "5 is within reach 8 of the spawn: the creature stays at home"
   let #(_, leashed) =
-    tell(state:, at_ms: 700, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 700,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x89a(0) to 5")
     as "the only player on the threat list is gone: the creature leashes"
   assert !list.contains(said(leashed), "0x638 to 5")
@@ -1168,7 +1197,11 @@ pub fn a_creature_fighting_a_player_told_withdrew_for_it_keeps_it_on_its_threat_
   assert list.contains(said(struck), "0x7ff to 2")
     as "the tick finds the player 5 units off, within reach 8: it strikes, with no new aggro"
   let #(_, unwatched) =
-    tell(state:, at_ms: 300, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 300,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(unwatched), "Released(7) to 2")
     as "the player was still on the threat list, so the end of its watch releases it"
 }
@@ -1395,10 +1428,13 @@ pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the
       message: strike_of(number: 5, cast_id: 1, blows: [#(1, 3, 1.0)]),
     )
   let #(_, unwatched) =
-    tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(5)))
+    tell(
+      state:,
+      at_ms: 200,
+      message: creature_news_support.unseen(by: ConnectionId(5)),
+    )
   assert said(unwatched)
     == [
-      "0x355 to 5",
       "0x90a(50, 0) to 2",
       "0x908(20, 1) to 2",
       "turn(kind 18, unit 20) to 2",
@@ -1409,7 +1445,7 @@ pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the
   // Unwatched, the creature sends no 0x355 (the map tells the viewer), and the release is one
   // tell to the player through the map, for the stay the entry held.
   let #(unseen_state, unseen) =
-    tell(
+    tell_raw(
       state:,
       at_ms: 200,
       message: creature.Unseen(
@@ -1537,7 +1573,7 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
     tell(
       state:,
       at_ms: 2000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -1599,7 +1635,7 @@ fn breaches(
             tell(
               state:,
               at_ms:,
-              message: creature.Watched(
+              message: creature_news_support.seen(
                 by: ConnectionId(n),
                 stay: map_support.stay(count: n),
               ),
@@ -1611,7 +1647,7 @@ fn breaches(
             tell(
               state:,
               at_ms:,
-              message: creature.Unwatched(by: ConnectionId(n)),
+              message: creature_news_support.unseen(by: ConnectionId(n)),
             )
           #(state, timers(taken))
         }
@@ -1688,18 +1724,19 @@ pub fn the_harness_names_a_threat_entry_that_is_not_a_viewer_test() -> Nil {
 
 pub fn a_strike_from_a_non_viewer_adds_no_threat_test() -> Nil {
   use <- owned_test.run(5000)
-  // Player 5's strike was on its way when the map's Unwatched of it arrived.
-  let #(state, taken) =
-    tell(
+  // Player 5's strike was on its way when the map's Unseen of it arrived.
+  let #(state, raw) =
+    tell_raw(
       state: beast(viewers: [2]),
       at_ms: 0,
       message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
     )
+  let taken = creature_news_support.at_each_player(state:, taken: raw)
   assert said(taken) == ["Landed to 5", "0x937(42) to 2"]
     as "the damage applies: 52 - 10, shown to the viewer"
   assert creature_fight.threatened(state: creature.fight(state:)) == set.new()
     as "no threat for a connection that does not see the creature, so no fight starts"
-  assert creature_news_support.said_to_the_map(taken)
+  assert creature_news_support.said_to_the_map(raw)
     == ["answer to 5", "0x937(42) to all"]
     as "the answer goes to the striker through the map, and the health is one news for every viewer"
   // A connection the map's Seen names is a viewer: its strike threatens the creature.
@@ -1740,7 +1777,7 @@ pub fn a_viewer_arriving_mid_chase_gets_the_fight_and_the_rest_of_the_path_test(
     tell(
       state:,
       at_ms: 1000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -1777,12 +1814,16 @@ pub fn a_viewer_arriving_mid_return_gets_the_path_home_and_no_fight_test() -> Ni
     )
   // The fighter leaves sight 1 s into the chase: the creature leashes and walks home.
   let #(state, _) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(_, watched) =
     tell(
       state:,
       at_ms: 1500,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -1812,21 +1853,28 @@ pub fn dropping_a_secondary_entry_erases_it_and_dropping_the_top_one_erases_it_a
     )
   // Player 5 (threat 3) is the target, player 2 (threat 1) the other entry.
   let #(_, secondary) =
-    tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 200,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert said(secondary)
     == [
-      "0x355 to 2",
       "0x90a(20, 0) to 5",
       "0x90a(20, 0) to 6",
       "Released(7) to 2",
     ]
     as "opcode.0x90a: a threat of 0 erases player 2's entry for the viewers; the target stays"
   let #(_, top) =
-    tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(5)))
+    tell(
+      state:,
+      at_ms: 200,
+      message: creature_news_support.unseen(by: ConnectionId(5)),
+    )
   assert said(top)
     == [
-      "0x355 to 5", "0x90a(50, 0) to 2", "0x90a(50, 0) to 6",
-      "0x908(20, 1) to 2", "0x908(20, 1) to 6", "turn(kind 18, unit 20) to 2",
+      "0x90a(50, 0) to 2", "0x90a(50, 0) to 6", "0x908(20, 1) to 2",
+      "0x908(20, 1) to 6", "turn(kind 18, unit 20) to 2",
       "turn(kind 18, unit 20) to 6", "Released(7) to 5",
     ]
     as "the top entry is erased too, and the next is named the target and turned to"
@@ -1927,7 +1975,11 @@ pub fn an_attack_tick_of_a_fight_that_ended_does_nothing_test() -> Nil {
     )
   // The fight ends by its last viewer's Unwatched before the tick fires.
   let #(state, _) =
-    tell(state:, at_ms: 500, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 500,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(_, stale) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   assert said(stale) == [] && timers(stale) == []
     as "the tick is of the fight that leashed: an old generation"
@@ -1942,7 +1994,11 @@ pub fn a_home_timer_that_fires_again_does_nothing_test() -> Nil {
       message: approached(number: 2, x: 30.0, seq: 1),
     )
   let #(state, leashed) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let home = timer_for(leashed, 1000)
   let #(state, _) = fire(state:, at_ms: 2000, timer: home)
   let #(_, again) = fire(state:, at_ms: 2100, timer: home)
@@ -1961,13 +2017,17 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
       message: approached(number: 2, x: 30.0, seq: 7),
     )
   let #(state, leashed) =
-    tell(state:, at_ms: 100, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 100,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(state, _) = fire(state:, at_ms: 200, timer: timer_for(leashed, 100))
   let #(state, _) =
     tell(
       state:,
       at_ms: 5000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(2),
         stay: stay.next(map_support.stay(count: 2)),
       ),
@@ -2007,13 +2067,13 @@ pub fn a_strike_of_a_players_earlier_stay_that_reaches_the_creature_after_its_re
     tell(
       state: beast(viewers: [2]),
       at_ms: 0,
-      message: creature.Unwatched(by: ConnectionId(2)),
+      message: creature_news_support.unseen(by: ConnectionId(2)),
     )
   let #(state, _) =
     tell(
       state:,
       at_ms: 100,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(2),
         stay: stay.next(map_support.stay(count: 2)),
       ),
@@ -2039,7 +2099,11 @@ pub fn a_player_that_stops_seeing_the_creature_is_told_its_release_for_the_stay_
       message: approached(number: 2, x: 30.0, seq: 1),
     )
   let #(_, unwatched) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert fights_told_for(unwatched)
     == [#(2, map_support.stay(count: 2), Released(unit_id: unit))]
 }
@@ -2147,7 +2211,11 @@ pub fn a_stunned_creature_whose_threat_is_gone_leashes_but_starts_the_walk_home_
       ]),
     )
   let #(state, leashed) =
-    tell(state:, at_ms: 600, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 600,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x89a(0) to 5")
     && fights_told(leashed) == [#(2, Released(unit_id: unit))]
     as "the leash changes the status and tells as usual"
@@ -2323,17 +2391,18 @@ fn landed_in(
 ) -> List(strike_tell.ControlLanded) {
   list.flat_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      creature.Struck(
-        answered: Answered(outcome: Landed(controls:, ..), ..),
+      creature.Relay(
+        payload: relay.Struck(answered: Answered(
+          outcome: Landed(controls:, ..),
+          ..,
+        )),
         ..,
       ) -> controls
-      creature.Struck(..)
-      | creature.News(..)
-      | creature.FightTold(..)
-      | creature.KillCredit(..)
+      creature.Relay(payload: relay.Struck(..), ..)
+      | creature.Relay(payload: relay.Fight(..), ..)
+      | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> []
+      | creature.Broadcast(..) -> []
     }
   })
 }
@@ -2548,7 +2617,7 @@ pub fn a_viewer_arriving_while_a_state_is_held_is_not_told_it_and_a_new_creature
     tell(
       state:,
       at_ms: 1500,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -2699,17 +2768,18 @@ pub fn armor_is_never_destroyed_below_0_test() -> Nil {
 fn armor_taken(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.flat_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      creature.Struck(
-        answered: Answered(outcome: Landed(armor_removed:, ..), ..),
+      creature.Relay(
+        payload: relay.Struck(answered: Answered(
+          outcome: Landed(armor_removed:, ..),
+          ..,
+        )),
         ..,
       ) -> [armor_removed]
-      creature.Struck(..)
-      | creature.News(..)
-      | creature.FightTold(..)
-      | creature.KillCredit(..)
+      creature.Relay(payload: relay.Struck(..), ..)
+      | creature.Relay(payload: relay.Fight(..), ..)
+      | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> []
+      | creature.Broadcast(..) -> []
     }
   })
 }
@@ -2817,7 +2887,7 @@ pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_stands_again_at_
     tell(
       state:,
       at_ms: 12_000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -2835,7 +2905,7 @@ pub fn a_creatures_0x262_carries_its_current_armor_above_0_and_none_otherwise_te
       tell(
         state:,
         at_ms: 2000,
-        message: creature.Watched(
+        message: creature_news_support.seen(
           by: ConnectionId(9),
           stay: map_support.stay(count: 9),
         ),
@@ -3059,7 +3129,11 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
   // The fighter leaves sight 1 s into the chase: the creature, at 10, walks home at
   // 10 a second and is there at 2 s.
   let #(state, unwatched) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let home = timer_for(unwatched, 1000)
   // Half a second into the walk it has 5 left; at half the speed that takes 1 s.
   let #(state, slowed) =
@@ -3190,7 +3264,11 @@ pub fn walk_home_with_zero_run_speed_stands_still_test() -> Nil {
     as "the run in progress stops where the creature stands"
   // The fighter leaves sight: the creature leashes, with no walk to start.
   let #(state, leashed) =
-    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1100,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x89a(0) to 5")
     && sends_no_path(leashed)
     && timers(leashed) == []
@@ -3242,7 +3320,11 @@ pub fn negative_run_speed_stands_still_test() -> Nil {
     )
   assert list.contains(said(slowed), "0x638(placed) to 5")
   let #(state, leashed) =
-    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1100,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert sends_no_path(leashed) && timers(leashed) == []
   assert stands_at(state:, at_ms: 20_000) == 10.0
 }
@@ -3301,7 +3383,11 @@ pub fn run_speed_restored_walks_home_again_test() -> Nil {
       ),
     )
   let #(state, _) =
-    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1100,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(state, back) =
     tell(
       state:,
@@ -3862,7 +3948,11 @@ pub fn a_turret_never_chases_or_walks_home_test() -> Nil {
   assert list.map(timers(ticked), fn(timer) { timer.1 }) == [3000]
     as "and goes on ticking"
   let #(_, leashed) =
-    tell(state:, at_ms: 3500, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 3500,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x89a(0) to 5")
     as "the target is gone: the turret leashes"
   assert !list.contains(said(leashed), "0x638 to 5")
@@ -3951,7 +4041,11 @@ pub fn leash_during_a_charge_ends_it_test() -> Nil {
   let #(state, aggro) = fought(viewers: [2, 5])
   let #(state, _, ends) = charge_opened(state:, aggro:)
   let #(state, leashed) =
-    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x7fe to 5")
     as "the last threat entry is released: the cast finishes"
   assert !list.contains(said(leashed), "0x7f4 to 5")
@@ -3971,7 +4065,7 @@ pub fn a_viewer_arriving_mid_charge_gets_the_open_cast_test() -> Nil {
     tell(
       state:,
       at_ms: 5000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -4024,7 +4118,7 @@ pub fn a_viewer_arriving_mid_charge_is_told_the_casts_own_target_test() -> Nil {
     tell(
       state:,
       at_ms: 3500,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -4143,7 +4237,11 @@ pub fn a_fighter_released_mid_charge_is_not_struck_test() -> Nil {
   let state = with_player_5_at(state:, x: 0.0, z: -20.0)
   let #(state, _, ends) = charge_opened(state:, aggro:)
   let #(state, _) =
-    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(5)))
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature_news_support.unseen(by: ConnectionId(5)),
+    )
   let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
   assert said(went) == ["Attacks to 2"]
     as "player 5 is off the threat list at the cast's end: only player 2 is struck"
@@ -4179,13 +4277,14 @@ fn answers_of(
 ) -> List(strike_tell.Outcome) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      creature.Struck(answered: Answered(outcome:, ..), ..) -> Ok(outcome)
-      creature.News(..)
-      | creature.FightTold(..)
-      | creature.KillCredit(..)
+      creature.Relay(
+        payload: relay.Struck(answered: Answered(outcome:, ..)),
+        ..,
+      ) -> Ok(outcome)
+      creature.Relay(payload: relay.Fight(..), ..)
+      | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> Error(Nil)
+      | creature.Broadcast(..) -> Error(Nil)
     }
   })
 }
@@ -4581,7 +4680,7 @@ pub fn an_opening_end_after_death_does_nothing_test() -> Nil {
     tell(
       state:,
       at_ms: 20_000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -4647,7 +4746,7 @@ pub fn a_viewer_arriving_while_the_turret_is_opened_is_told_the_opening_with_the
     tell(
       state:,
       at_ms: 9000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -5316,7 +5415,11 @@ pub fn a_leash_in_flight_walks_home_from_the_landing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _, lands) = thrown_chasing(viewers: [2, 5])
   let #(state, leashed) =
-    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1100,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x89a(0) to 5")
     as "the only player on the threat list is gone: the creature leashes"
   assert !list.contains(said(leashed), "0x638 to 5")
@@ -5391,7 +5494,7 @@ pub fn a_creature_killed_mid_flight_lies_at_the_landing_test() -> Nil {
     tell(
       state:,
       at_ms: 3000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -5409,7 +5512,7 @@ pub fn an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test() -> Nil 
     tell(
       state:,
       at_ms: 1100,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -5510,7 +5613,11 @@ pub fn a_creature_placed_as_part_of_a_map_object_leaves_combat_without_a_walk_ho
       message: approached(number: 2, x: 5.0, seq: 1),
     )
   let #(state, leashed) =
-    tell(state:, at_ms: 700, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 700,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(said(leashed), "0x89a(0) to 5")
     as "the only player on the threat list is gone: the creature leaves combat"
   assert sends_no_path(leashed) && timers(leashed) == []
@@ -5847,14 +5954,18 @@ pub fn a_new_fight_starts_with_its_specials_ready_test() -> Nil {
   let #(state, aggro) = roar_fought(viewers: [2])
   let #(state, _, _) = roar_opened(state:, aggro:)
   let #(state, leashed) =
-    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let home = timer_for(leashed, 0)
   let #(state, _) = fire(state:, at_ms: 5000, timer: home)
   let #(state, _) =
     tell(
       state:,
       at_ms: 6500,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(2),
         stay: map_support.stay(count: 2),
       ),
@@ -6195,7 +6306,7 @@ pub fn no_path_starts_while_a_charged_round_strikes_or_holds_test() -> Nil {
     tell(
       state: striking,
       at_ms: 4600,
-      message: creature.Unwatched(by: ConnectionId(2)),
+      message: creature_news_support.unseen(by: ConnectionId(2)),
     )
   assert sends_no_path(left) as "a fighter leaves while the strikes are out"
   let #(stunned_state, stunned) = stunned_at(state: striking, at_ms: 4550)
@@ -6425,7 +6536,11 @@ pub fn leash_between_gos_ends_the_special_test() -> Nil {
   let #(state, _, go) = roar_opened(state:, aggro:)
   let #(state, _, strike) = first_go_passed(state:, go:)
   let #(state, leashed) =
-    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 4200,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert list.contains(timers_cancelled(leashed), strike)
     as "the pending go's timer is cancelled"
   let #(_, late) = strike_go_reached(state:, strike:)
@@ -6467,7 +6582,7 @@ pub fn a_viewer_arriving_between_gos_gets_the_open_cast_and_the_gos_so_far_test(
     tell(
       state:,
       at_ms:,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(number),
         stay: map_support.stay(count: number),
       ),
@@ -6552,7 +6667,11 @@ pub fn a_fighter_who_is_not_the_target_leaving_between_gos_leaves_the_cast_to_th
   // go strikes the one fighter that is left.
   let #(state, strike) = roar_fought_by_two()
   let #(state, left) =
-    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 4200,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert !list.contains(said(left), "0x7f9 to 3")
     && !list.contains(said(left), "0x7fe to 3")
     as "the cast goes on for the viewer that is left"
@@ -6570,7 +6689,11 @@ pub fn the_target_leaving_between_gos_leaves_the_cast_and_the_strike_goes_to_the
   // fight goes on with 2 as its target and the cast is not broken.
   let #(state, strike) = roar_fought_by_two()
   let #(state, left) =
-    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(3)))
+    tell(
+      state:,
+      at_ms: 4200,
+      message: creature_news_support.unseen(by: ConnectionId(3)),
+    )
   assert list.contains(said(left), "0x908(20, 1) to 2")
     as "the creature's target becomes player 2"
   assert !list.contains(said(left), "0x7f9 to 2")
@@ -6673,7 +6796,11 @@ pub fn a_retire_between_gos_stops_the_creature_and_sends_nothing_test() -> Nil {
   assert support.effects_of(retired) == [step.Stop]
     as "stops at once, in the middle of its cast, with no 0x7fe"
   let #(state, _) =
-    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 4200,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(_, retired) = tell(state:, at_ms: 4300, message: creature.Retire)
   assert support.effects_of(retired) == [step.Stop]
     as "the same once the map has removed the viewer"
@@ -6853,13 +6980,17 @@ pub fn a_new_fight_opens_with_the_lead_auto_attack_test() -> Nil {
   let #(state, _, _) =
     tick_strikes(state:, at_ms: 1500, tick: timer_for(aggro, 1500))
   let #(state, leashed) =
-    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(state, _) = fire(state:, at_ms: 5000, timer: timer_for(leashed, 0))
   let #(state, _) =
     tell(
       state:,
       at_ms: 6500,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(2),
         stay: map_support.stay(count: 2),
       ),
@@ -7101,13 +7232,21 @@ pub fn a_target_that_dies_or_is_unwatched_turns_the_creature_to_the_next_entry_a
   assert faces_to(died, 2) == [creature_turn.Unit(unit_id: 20)]
     as "the top entry's player died with another left: the turn is to the next entry"
   let #(_, unwatched) =
-    tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(5)))
+    tell(
+      state:,
+      at_ms: 200,
+      message: creature_news_support.unseen(by: ConnectionId(5)),
+    )
   assert faces_to(unwatched, 2) == [creature_turn.Unit(unit_id: 20)]
     as "and the same when it leaves sight"
   // The last entry leaves while the creature runs: it turns to home before the walk home.
   let #(state, _) = chasing(viewers: [2, 5])
   let #(_, leashed) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert turns_and_paths(leashed) == ["turn(kind 19, home) to 5", "0x638 to 5"]
     as "the leash turns the creature to home, then it runs there"
   assert faces_to(leashed, 5) == [creature_turn.Point(place: home())]
@@ -7380,7 +7519,11 @@ pub fn a_leashed_creature_faces_home_while_it_runs_and_its_spawn_yaw_when_it_arr
   use <- owned_test.run(5000)
   let #(state, _) = chasing(viewers: [2, 5])
   let #(state, leashed) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert turns_and_paths(leashed) == ["turn(kind 19, home) to 5", "0x638 to 5"]
     as "the turn to home goes before the walk home"
   let #(_, arrived) = fire(state:, at_ms: 2000, timer: timer_for(leashed, 1000))
@@ -7399,7 +7542,11 @@ pub fn a_leashed_creature_faces_home_while_it_runs_and_its_spawn_yaw_when_it_arr
       ]),
     )
   let #(state, held) =
-    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1100,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert turns_and_paths(held) == [] && timers(held) == []
     as "leashed in a stun: it stands as it faces and starts no walk"
   let #(_, ended) = fire(state:, at_ms: 3600, timer: timer_for(stunned, 2500))
@@ -7530,7 +7677,11 @@ pub fn a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the
   // freezes it facing +x's opposite, a quarter turn.
   let #(state, _) = chasing(viewers: [2, 5])
   let #(state, _) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(_, home_gone) =
     tell(
       state:,
@@ -7626,7 +7777,7 @@ pub fn a_viewer_arriving_mid_fight_is_sent_the_current_turn_after_the_0x262_test
     tell(
       state:,
       at_ms:,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -7689,7 +7840,11 @@ pub fn a_creatures_pose_follows_its_facing_test() -> Nil {
   )
     as "chasing a player at +x: the bearing to the player's newest sighting"
   let #(leashed, _) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert float.loosely_equals(
     yaw_at(leashed, 1000),
     quarter_turn,
@@ -7716,7 +7871,11 @@ pub fn a_creature_that_walks_home_and_finds_a_player_near_turns_to_the_spawn_bef
   let #(state, _) =
     tell(state:, at_ms: 100, message: approached(number: 5, x: 3.0, seq: 1))
   let #(state, leashed) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(_, arrived) = fire(state:, at_ms: 2000, timer: timer_for(leashed, 1000))
   assert list.filter(said(arrived), fn(line) {
       string.starts_with(line, "turn(") || string.starts_with(line, "0x908")
@@ -7742,7 +7901,11 @@ pub fn a_walk_home_after_a_leash_in_a_state_starts_one_fresh_arrival_timer_test(
       ]),
     )
   let #(state, leashed) =
-    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1100,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert timers(leashed) == [] as "no walk, so no arrival timer"
   let #(state, ended) =
     fire(state:, at_ms: 3600, timer: timer_for(stunned, 2500))
@@ -7799,7 +7962,11 @@ pub fn a_chase_sends_the_turn_before_the_path_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) = chasing(viewers: [2, 5])
   let #(_, leashed) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let cases = [
     #("a fight's start", aggro, "turn(kind 18, unit 20) to 5"),
     #("the walk home after a leash", leashed, "turn(kind 19, home) to 5"),
@@ -7839,7 +8006,7 @@ pub fn a_chase_path_cancels_and_restarts_the_arrival_timer_for_the_paths_end_tes
     tell(
       state: leash_state,
       at_ms: 1000,
-      message: creature.Unwatched(by: ConnectionId(2)),
+      message: creature_news_support.unseen(by: ConnectionId(2)),
     )
   let #(_, home_sped) =
     tell(
@@ -7898,7 +8065,11 @@ pub fn the_arrival_timer_of_a_path_that_is_no_longer_run_sends_nothing_test() ->
   use <- owned_test.run(5000)
   let #(state, _) = chasing(viewers: [2, 5])
   let #(left_home, _) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let cases = [
     #(
       "stood by a state",
@@ -7939,7 +8110,11 @@ pub fn a_run_stood_between_its_end_and_its_arrival_timer_is_stopped_once_test() 
       crowd_control_support.stagger_stun(instance_id: 28_673),
     ])
   let #(walking_home, leashed) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let cases = [
     #("stood by a state", state, 2600, stun, creature.chase_arrival_timer),
     #(
@@ -7969,7 +8144,11 @@ pub fn the_walk_home_arrival_sends_the_creature_placed_at_home_before_the_turn_t
   use <- owned_test.run(5000)
   let #(state, _) = chasing(viewers: [2, 5])
   let #(state, leashed) =
-    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   let #(_, at_home) = fire(state:, at_ms: 2000, timer: timer_for(leashed, 1000))
   let assert [CreaturePlaced(place:, ..), ..] = news_to(at_home, 5)
     as "the first news is the stop"
@@ -8112,7 +8291,7 @@ pub fn a_viewer_arriving_mid_charge_gets_the_entries_of_the_cast_start_test() ->
     tell(
       state:,
       at_ms: 6000,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
@@ -8608,14 +8787,14 @@ pub fn a_target_row_strikes_while_its_cast_target_is_in_the_world_test() -> Nil 
       reason: "a target the creature no longer sees takes the following row with it",
       spell4_id: 46_353,
       anchor: area.FollowsTarget,
-      departure: creature.Unwatched(by: ConnectionId(2)),
+      departure: creature_news_support.unseen(by: ConnectionId(2)),
       struck: [],
     ),
     TargetDeparture(
       reason: "a target the creature no longer sees takes the fixed row with it",
       spell4_id: 55_846,
       anchor: area.FixedAtTarget,
-      departure: creature.Unwatched(by: ConnectionId(2)),
+      departure: creature_news_support.unseen(by: ConnectionId(2)),
       struck: [],
     ),
   ]
@@ -9122,7 +9301,11 @@ pub fn a_hit_that_selects_nobody_is_an_empty_entry_and_the_cast_goes_on_test() -
   let state = with_player_at(state:, number: 5, x: 0.0, z: -3.0)
   let #(state, _, first) = ice_opened(state:, aggro:)
   let #(state, gone) =
-    tell(state:, at_ms: 2000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 2000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert frames_of(taken: gone, number: 5) == []
   let #(state, zero) = fire(state:, at_ms: 4100, timer: first)
   let #(state, one) = fire(state:, at_ms: 4500, timer: timer_for(zero, 400))
@@ -9698,7 +9881,7 @@ pub fn death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_on
         tell(
           state: ice.state,
           at_ms: row.at_ms,
-          message: creature.Unwatched(by: ConnectionId(2)),
+          message: creature_news_support.unseen(by: ConnectionId(2)),
         )
     }
     assert frames_of(taken: ended, number: 3) == row.frames as row.reason
@@ -9748,7 +9931,7 @@ pub fn a_viewer_arriving_between_hits_is_told_only_the_gos_already_written_test(
     tell(
       state:,
       at_ms:,
-      message: creature.Watched(
+      message: creature_news_support.seen(
         by: ConnectionId(number),
         stay: map_support.stay(count: number),
       ),
@@ -10171,7 +10354,11 @@ pub fn a_death_or_a_leash_in_a_charge_marks_no_answer_test() -> Nil {
   assert marks_of(killed) == [] && !list.contains(said(killed), "0x7f9 to 2")
     as "a stun strike that kills in the charge: the states drop with the creature, nothing is marked, nothing is broken"
   let #(_, leashed) =
-    tell(state:, at_ms: 4000, message: creature.Unwatched(by: ConnectionId(2)))
+    tell(
+      state:,
+      at_ms: 4000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
   assert marks_of(leashed) == [] && !list.contains(said(leashed), "0x7f9 to 2")
     as "the last fighter leaving ends the fight with no interrupter: no 0x7f9 and no answer"
 }

@@ -163,8 +163,6 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       | map.Left
       | map.Summoned(..)
       | map.NotSummoned(..)
-      | map.Watched(..)
-      | map.Unwatched(..)
       | map.Seen(..)
       | map.Unseen(..)
       | map.Relayed(..)
@@ -337,7 +335,7 @@ pub fn visibility_changed_shows_and_hides_the_units_in_sight_test() -> Nil {
     )
   assert seen_creatures(shown) == [#(1, [73_707, 73_707])]
     as "the prerequisite passing sends the two arrows in sight, not the one out of sight"
-  assert spawns.creature_sends(shown) == [#(creature, "Watched by 1")]
+  assert spawns.creature_sends(shown) == [#(creature, "Seen by 1")]
     as "and tells the live creature it is watched"
   assert spawns.starts(shown) == [] as "no second creature starts"
   let given = seen_unit_ids(shown)
@@ -350,7 +348,7 @@ pub fn visibility_changed_shows_and_hides_the_units_in_sight_test() -> Nil {
     )
   assert unseen_ids(hid) == [#(1, given)]
     as "the prerequisite failing again removes the same unit ids"
-  assert spawns.creature_sends(hid) == [#(creature, "Unwatched by 1")]
+  assert spawns.creature_sends(hid) == [#(creature, "Unseen by 1")]
     as "and tells the creature it is no longer watched"
   let #(_, again) =
     spawns.visibility_changed(
@@ -441,7 +439,7 @@ pub fn a_hidden_hostile_spawn_takes_no_player_into_its_ring_test() -> Nil {
       hidden: set.new(),
     )
   assert spawns.creature_sends(shown)
-    == [#(creature, "Watched by 1"), #(creature, "Approached by 1")]
+    == [#(creature, "Seen by 1"), #(creature, "Approached by 1")]
     as "shown while standing inside the ring: it is watched, then the player is approached"
   let #(_, hid) =
     spawns.visibility_changed(
@@ -451,7 +449,7 @@ pub fn a_hidden_hostile_spawn_takes_no_player_into_its_ring_test() -> Nil {
       hidden: hidden([start_arrow_prerequisite]),
     )
   assert spawns.creature_sends(hid)
-    == [#(creature, "Unwatched by 1"), #(creature, "Withdrew by 1")]
+    == [#(creature, "Unseen by 1"), #(creature, "Withdrew by 1")]
     as "hidden again in the middle of the ring: unwatched, then withdrawn, as when a player leaves its sight"
 }
 
@@ -532,7 +530,7 @@ pub fn a_second_join_with_a_newly_hidden_unit_removes_it_and_replays_the_rest_te
     as "the replay writes only the object still shown: the arrow, newly hidden, gets no create"
   assert unseen_ids(again) == [#(1, [arrow_unit_id])]
     as "and one ObjectsUnseen removes the arrow the first join showed, under the unit id it was shown with"
-  assert spawns.creature_sends(again) == [#(creature, "Unwatched by 1")]
+  assert spawns.creature_sends(again) == [#(creature, "Unseen by 1")]
     as "and the creature, newly hidden, is told the player no longer watches it, not that it does"
   // The map's sight now matches the hidden set, so showing again sends the arrow.
   let #(_, shown) =
@@ -544,6 +542,6 @@ pub fn a_second_join_with_a_newly_hidden_unit_removes_it_and_replays_the_rest_te
     )
   assert seen_creatures(shown) == [#(1, [73_707])]
     as "a later change sends the arrow the replay left out, so the map held it as unseen"
-  assert spawns.creature_sends(shown) == [#(creature, "Watched by 1")]
+  assert spawns.creature_sends(shown) == [#(creature, "Seen by 1")]
     as "and the creature is watched again"
 }

@@ -5,6 +5,7 @@
 
 import character_support
 import connection_rule_support as support
+import creature_news_support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
@@ -1310,15 +1311,20 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
       support.input(OwnEvent(step.Started)),
     )
   let appeared =
-    list.filter_map(support.effects_of(started), fn(effect) {
-      case effect {
-        OwnEffect(step.Send(to: step.Connection(ConnectionId(1)), message:)) ->
-          Ok(server.creature_message(outgoing: message))
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
-    })
-  let assert [message] = appeared as "the creature sends the player its 0x262"
+    list.map(
+      creature_news_support.relayed_to(
+        taken: started,
+        connection: ConnectionId(1),
+      ),
+      fn(delivered) {
+        server.relayed_message(
+          delivered:,
+          stay: game_connection_support.own_stay(),
+        )
+      },
+    )
+  let assert [message] = appeared
+    as "the creature's snapshot, relayed by the map, is the player's 0x262"
   let #(_, written) =
     game_connection_support.feed(state:, event: OwnEvent(Woken(message)))
   assert game_connection_support.written_ids(written) == [0x0262]

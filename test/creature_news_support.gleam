@@ -10,10 +10,16 @@ import genesis_prime/game/unit_news.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
   CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
 }
-import genesis_prime/step.{type ServiceStep, ConnectionId, OwnEffect, Send, Stop}
+import genesis_prime/step.{
+  type ConnectionId, type ServiceStep, Connection, ConnectionId, Effects,
+  OwnEffect, Send, Stop,
+}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_turn
+import genesis_prime/world_map/generation
+import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
 
@@ -134,10 +140,6 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
           relay.Fight(told: Attacks(..)) ->
             "Attacks to " <> int.to_string(number)
         }
-      creature.News(..)
-      | creature.Struck(..)
-      | creature.FightTold(..)
-      | creature.KillCredit(..) -> "to a connection"
     }
   })
 }
@@ -148,4 +150,83 @@ fn refusal_name(why: strike_tell.Refusal) -> String {
     strike_tell.Returning -> "Returning"
     strike_tell.Despawned -> "Despawned"
   }
+}
+
+/// The map's `Seen` of a viewer that the creature takes, under the generation every first
+/// viewer of the tests' creatures holds, so the `unseen` that follows it ends the sight.
+pub fn seen(by by: ConnectionId, stay stay: Stay) -> creature.Message {
+  creature.Seen(by:, stay:, generation: generation.first())
+}
+
+/// The map's `Unseen` of the sight `seen` or a creature's start began.
+pub fn unseen(by by: ConnectionId) -> creature.Message {
+  creature.Unseen(by:, generation: generation.first())
+}
+
+/// The step as the players it concerns would hear it, one send to each, so the tests that
+/// read what each viewer is told keep their reading while the creature tells its map once:
+/// a broadcast becomes one send to each viewer of `state` (the state after the step) in
+/// connection order, a snapshot one send of each item of its burst to the viewer it is for,
+/// and a relay a send to the player it names; each stays the creature's own message. Other
+/// effects stay as they are.
+pub fn at_each_player(
+  state state: creature.State,
+  taken taken: ServiceStep(creature.Outgoing),
+) -> ServiceStep(creature.Outgoing) {
+  let viewers = map.sorted_connections(creature.viewers(state))
+  Effects(
+    list.flat_map(support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(Send(
+          to: step.Map(..),
+          message: creature.Broadcast(..) as message,
+        )) ->
+          list.map(viewers, fn(viewer) {
+            OwnEffect(Send(to: Connection(viewer), message:))
+          })
+        OwnEffect(Send(
+          to: step.Map(..),
+          message: creature.Snapshot(unit_id:, life:, by:, burst:, ..),
+        )) ->
+          list.map(burst, fn(news) {
+            OwnEffect(Send(
+              to: Connection(by),
+              message: creature.Broadcast(unit_id:, life:, news:),
+            ))
+          })
+        OwnEffect(Send(
+          to: step.Map(..),
+          message: creature.Relay(to:, ..) as message,
+        )) -> [
+          OwnEffect(Send(to: Connection(to), message:)),
+        ]
+        OwnEffect(_)
+        | step.Watch(..)
+        | step.Unwatch(..)
+        | step.Log(..)
+        | Stop -> [effect]
+      }
+    }),
+  )
+}
+
+/// What the creature's step tells the player of connection `connection` once its map has
+/// relayed it, in order, for a player whose relation with the creature is relaying: the
+/// items of a snapshot for it, every broadcast and each relay that names it. The map's checks
+/// are the map's own (`genesis_prime/world_map/map`), tested there.
+pub fn relayed_to(
+  taken taken: ServiceStep(creature.Outgoing),
+  connection connection: ConnectionId,
+) -> List(relay.Delivered) {
+  list.flat_map(to_the_map(taken), fn(sent) {
+    case sent {
+      creature.Snapshot(by:, burst:, ..) if by == connection ->
+        list.map(burst, fn(news) { relay.News(news:) })
+      creature.Broadcast(news:, ..) -> [relay.News(news:)]
+      creature.Relay(to:, payload:, ..) if to == connection -> [
+        relay.Tell(payload:),
+      ]
+      creature.Snapshot(..) | creature.Relay(..) -> []
+    }
+  })
 }

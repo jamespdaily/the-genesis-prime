@@ -119,7 +119,6 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/experience
 import genesis_prime/group_registry.{type Scope}
 import genesis_prime/hand_off
 import genesis_prime/login/auth_connection
@@ -783,8 +782,6 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     | map.NotSummoned(..)
     | map.NotJoined(..)
     | map.Left
-    | map.Watched(..)
-    | map.Unwatched(..)
     | map.Seen(..)
     | map.Unseen(..)
     | map.Retire
@@ -798,7 +795,7 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
 /// news of a unit as `SentByPeer`, the creature's threat, release or strike as
 /// `SentByFoe`, the answer to its strike as `SentByTarget`, and the credit for its
 /// death as `SentByKill`, each for the stay the relay names.
-fn relayed_message(
+pub fn relayed_message(
   delivered delivered: relay.Delivered,
   stay stay: Stay,
 ) -> Message {
@@ -820,7 +817,6 @@ fn world(
   settings: Settings,
 ) -> supervision.ChildSpecification(supervisor.Supervisor) {
   use tree <- subtree(supervisor.RestForOne)
-  let connections = settings.registry
   add_world(
     tree:,
     world: settings.world,
@@ -828,9 +824,6 @@ fn world(
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
     reach: connection_reach(settings, fn(outgoing) { map_message(outgoing:) }),
-    to_connection: fn(connection, outgoing) {
-      registry.deliver(connections, connection, creature_message(outgoing:))
-    },
   )
 }
 
@@ -844,9 +837,8 @@ fn world(
 /// spawns of its world, no name, and a reach that finds what it watches and
 /// sends to its players' connections (`reach`) and to its creatures, and starts
 /// them. A creature is started by the creature supervisor with the rule of its
-/// spawn, no name, and a reach that sends its 0x262 and 0x355 to the connections
-/// of the players who see it (`to_connection`) and finds the run that started it
-/// by that run's pid. The server's tree and the tests start the world with this
+/// spawn, no name, and a reach that sends only its map, through the map's run
+/// (`World.map_tells`), and finds the run that started it by that run's pid. The server's tree and the tests start the world with this
 /// function.
 pub fn add_world(
   tree tree: supervisor.Builder,
@@ -855,8 +847,6 @@ pub fn add_world(
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
   reach reach: Reach(map.Outgoing),
-  to_connection to_connection: fn(step.ConnectionId, creature.Outgoing) ->
-    Result(Nil, Nil),
 ) -> supervisor.Builder {
   tree
   |> supervisor.add(creature_registry.supervised(world.creatures))
@@ -869,7 +859,7 @@ pub fn add_world(
       name: world.creature_supervisor,
       shutdown_ms: world.creature_shutdown_ms,
       start: fn(start: creature_supervisor.CreatureProcessStart) {
-        start_creature_process(world:, time:, reach:, to_connection:, start:)
+        start_creature_process(world:, time:, reach:, start:)
       },
     ),
   )
@@ -968,8 +958,6 @@ fn start_creature_process(
   world world: World,
   time time: service_shell.ServiceTime,
   reach reach: Reach(map.Outgoing),
-  to_connection to_connection: fn(step.ConnectionId, creature.Outgoing) ->
-    Result(Nil, Nil),
   start start: creature_supervisor.CreatureProcessStart,
 ) -> actor.StartResult(Subject(Call(creature.Message, creature.Outgoing))) {
   let wanted = start.creature
@@ -989,7 +977,7 @@ fn start_creature_process(
           ),
           numbers: content_game_number.numbers(world.spawns),
         ),
-        reach: creature_reach(world:, reach:, to_connection:, start:),
+        reach: creature_reach(world:, reach:, start:),
         shutdown_ms: world.creature_shutdown_ms,
         found_at: Some(service_shell.FoundAt(
           scope: creature_registry.scope(world.creatures),
@@ -1032,13 +1020,12 @@ fn spawn_of_start(
 
 /// A creature's reach: it finds the run that started it by that run's pid, since
 /// Maps is waiting on the run's start while the run starts its creatures, finds
-/// any other process as the world's reach does, and sends the connections of the
-/// players who see it what it owns of its unit.
+/// any other process as the world's reach does, and sends its map, through the run's
+/// pid, what a player is to hear of its unit (genesis_prime/world_map/map): it sends
+/// no connection.
 fn creature_reach(
   world world: World,
   reach reach: Reach(map.Outgoing),
-  to_connection to_connection: fn(step.ConnectionId, creature.Outgoing) ->
-    Result(Nil, Nil),
   start start: creature_supervisor.CreatureProcessStart,
 ) -> Reach(creature.Outgoing) {
   let own = start.creature
@@ -1068,22 +1055,19 @@ fn creature_reach(
     },
     send: fn(to, news) {
       case to {
-        step.Connection(connection:) -> to_connection(connection, news)
         step.Map(map:, incarnation:)
           if map == own.map && incarnation == own.incarnation
         ->
-          creature.told_to_map(outgoing: news)
-          |> result.map(fn(message) {
-            group_registry.deliver_to(
-              pid: start.run,
-              message: TellCall(message:),
-            )
-          })
+          Ok(group_registry.deliver_to(
+            pid: start.run,
+            message: TellCall(message: creature.told_to_map(outgoing: news)),
+          ))
         step.Sessions
         | step.HandOff
         | step.Store
         | step.Maps
         | step.Map(..)
+        | step.Connection(..)
         | step.Creature(..)
         | step.CharacterNamed(..)
         | step.ZoneChannel(..) -> Error(Nil)
@@ -1091,31 +1075,6 @@ fn creature_reach(
     },
     start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
   )
-}
-
-/// The message a connection takes what a creature sends it as: the news of a unit
-/// as `SentByPeer`, the creature's threat, release or strike as `SentByFoe`, each
-/// for the viewer's stay, the answer to its strike as `SentByTarget`, and the credit
-/// for its death as `SentByKill`, each for the stay the strike was told for.
-pub fn creature_message(outgoing outgoing: creature.Outgoing) -> Message {
-  case outgoing {
-    creature.News(stay:, news:) -> ForStay(stay:, sent: SentByPeer(news:))
-    creature.Struck(stay:, answered:) ->
-      ForStay(stay:, sent: SentByTarget(answered))
-    creature.FightTold(stay:, told:) -> ForStay(stay:, sent: SentByFoe(told))
-    creature.KillCredit(stay:, unit_id:, creature_id:, faction_id:, level:) ->
-      ForStay(
-        stay:,
-        sent: SentByKill(experience.Credit(
-          unit_id:,
-          creature_id:,
-          faction_id:,
-          level:,
-        )),
-      )
-    creature.Snapshot(..) | creature.Broadcast(..) | creature.Relay(..) ->
-      panic as "a creature's snapshot, broadcast and relay go to its map, never to a connection"
-  }
 }
 
 /// The login subtree: the STS listener, then the auth listener, under a

@@ -95,8 +95,6 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       | map.Left
       | map.Summoned(..)
       | map.NotSummoned(..)
-      | map.Watched(..)
-      | map.Unwatched(..)
       | map.Seen(..)
       | map.Unseen(..)
       | map.Relayed(..)
@@ -209,8 +207,6 @@ pub fn objects_creatures_and_players_share_one_id_space_test() -> Nil {
           | map.NotSummoned(..)
           | map.Left
           | map.Noticed(..)
-          | map.Watched(..)
-          | map.Unwatched(..)
           | map.Seen(..)
           | map.Unseen(..)
           | map.Relayed(..)

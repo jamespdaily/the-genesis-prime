@@ -13,7 +13,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{type PrerequisiteId, Spell4Id}
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
-import genesis_prime/world_map/map.{type State, Join, Leave, Moved, Watched}
+import genesis_prime/world_map/map.{type State, Join, Leave, Moved}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/static_object
@@ -379,8 +379,7 @@ pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
 
 pub fn said(message: map.Outgoing) -> String {
   case message {
-    Watched(by: ConnectionId(number), ..)
-    | map.Noticed(notice: map.SeenBy(by: ConnectionId(number), ..), ..) ->
+    map.Noticed(notice: map.SeenBy(by: ConnectionId(number), ..), ..) ->
       "Watched by " <> int.to_string(number)
     map.Noticed(notice: map.Gone(unit_id:), ..) ->
       "Gone " <> int.to_string(unit_id)
@@ -394,8 +393,7 @@ pub fn said(message: map.Outgoing) -> String {
       )
     map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
       "Objects unseen " <> string.join(list.map(unit_ids, int.to_string), " ")
-    map.Unwatched(by: ConnectionId(number))
-    | map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
+    map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
       "Unwatched by " <> int.to_string(number)
     map.Seen(by: ConnectionId(number), ..) ->
       "Seen by " <> int.to_string(number)

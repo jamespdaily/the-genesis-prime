@@ -162,8 +162,6 @@ fn notices(
       | map.Summoned(..)
       | map.NotSummoned(..)
       | map.Left
-      | map.Watched(..)
-      | map.Unwatched(..)
       | map.Seen(..)
       | map.Unseen(..)
       | map.Relayed(..)
@@ -187,8 +185,6 @@ fn joined_unit_id(taken: ServiceStep(map.Outgoing)) -> Int {
         | map.NotSummoned(..)
         | map.Left
         | Noticed(..)
-        | map.Watched(..)
-        | map.Unwatched(..)
         | map.Seen(..)
         | map.Unseen(..)
         | map.Relayed(..)

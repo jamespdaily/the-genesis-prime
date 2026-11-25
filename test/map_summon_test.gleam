@@ -185,7 +185,7 @@ pub fn a_player_moving_into_and_out_of_sight_of_a_summoned_creature_is_told_watc
   let #(state, _) = summoned_dagun(state: three_players())
   let #(state, into) =
     spawns.move(state:, at_ms: 7000, connection: 3, x: 1000.0)
-  assert spawns.creature_sends(into) == [#(4, "Watched by 3")]
+  assert spawns.creature_sends(into) == [#(4, "Seen by 3")]
     as "900 from the creature at 100 is inside the 1024 sight, as a stored spawn's"
   let #(state, still) =
     spawns.move(state:, at_ms: 7100, connection: 3, x: 1010.0)
@@ -193,9 +193,9 @@ pub fn a_player_moving_into_and_out_of_sight_of_a_summoned_creature_is_told_watc
     as "it saw the creature and still does"
   let #(state, out) =
     spawns.move(state:, at_ms: 7200, connection: 3, x: spawns.far)
-  assert spawns.creature_sends(out) == [#(4, "Unwatched by 3")]
+  assert spawns.creature_sends(out) == [#(4, "Unseen by 3")]
   let #(_, joined) = spawns.join(state:, at_ms: 7300, connection: 4, x: 600.0)
-  assert spawns.creature_sends(joined) == [#(4, "Watched by 4")]
+  assert spawns.creature_sends(joined) == [#(4, "Seen by 4")]
     as "a player that joins in sight of it is told to it as a join near a stored spawn is"
 }
 

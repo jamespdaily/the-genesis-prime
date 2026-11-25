@@ -30,10 +30,11 @@ import send_gate.{type Gate}
 import spawn_support
 import supervisor_children
 
-/// A running world: its supervisor, Maps, the creatures' registry and the
-/// registry the players' connections are found in.
+/// A running world: its supervisor, Maps, the creatures' registry, the registry the
+/// players' connections are found in and the driven clock its maps and creatures run on.
 pub type World {
   World(
+    time: driven_time.Time,
     gate: Option(Gate),
     tree: Pid,
     maps: process.Name(world_map_registry.Message),
@@ -128,19 +129,13 @@ fn started(
         send: fn(to, outgoing) { send(connections:, gate:, to:, outgoing:) },
         start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
       ),
-      to_connection: fn(connection, outgoing) {
-        registry.deliver(
-          connections,
-          connection,
-          server.creature_message(outgoing:),
-        )
-      },
     )
     |> supervisor.start
     as "the world tree started"
   process.unlink(started.pid)
   ask_support.guard(started.pid)
   World(
+    time:,
     gate:,
     tree: started.pid,
     maps:,
@@ -258,15 +253,18 @@ fn join_connection(
 }
 
 /// Everything the world sent the connection `id` (the one `connection` made, whose messages
-/// `received` holds) before this call, in the order it came. A marker goes to the connection
-/// through the registry and the forwarding process hands it to the test after every message it
-/// held, so what comes back before the marker is all that was sent: a check that expects
-/// nothing inspects this batch, never a read that returns when no message is waiting yet.
+/// `received` holds) before this call, in the order it came. The clock's participants are
+/// quiet first, so a message a creature told its map has been relayed by it. A marker then goes
+/// to the connection through the registry and the forwarding process hands it to the test after
+/// every message it held, so what comes back before the marker is all that was sent: a check
+/// that expects nothing inspects this batch, never a read that returns when no message is
+/// waiting yet.
 pub fn sent_before_the_marker(
   world world: World,
   id id: Int,
   received received: Subject(Message),
 ) -> List(Message) {
+  driven_time.wait_until_quiet(world.time)
   let assert Ok(Nil) =
     registry.deliver(
       registry: world.connections,

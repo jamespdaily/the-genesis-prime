@@ -374,17 +374,15 @@ pub fn mail_of_the_creature(
 ) -> List(Mail) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(Send(to: step.Map(..), message:)) ->
-        case creature.told_to_map(outgoing: message) {
-          Ok(told) ->
-            Ok(Mail(
-              to: MapProcess,
-              from: FromCreature,
-              input: ToMap(OwnEvent(Told(told))),
-              name: map_message_name(told),
-            ))
-          Error(Nil) -> Error(Nil)
-        }
+      OwnEffect(Send(to: step.Map(..), message:)) -> {
+        let told = creature.told_to_map(outgoing: message)
+        Ok(Mail(
+          to: MapProcess,
+          from: FromCreature,
+          input: ToMap(OwnEvent(Told(told))),
+          name: map_message_name(told),
+        ))
+      }
       OwnEffect(_)
       | step.Watch(..)
       | step.Unwatch(..)
@@ -398,8 +396,6 @@ fn creature_message_name(message: creature.Message) -> String {
   case message {
     creature.Seen(..) -> "Seen"
     creature.Unseen(..) -> "Unseen"
-    creature.Watched(..) -> "Watched"
-    creature.Unwatched(..) -> "Unwatched"
     creature.Retire
     | creature.Strike(..)
     | creature.Approached(..)
@@ -445,8 +441,6 @@ fn map_outgoing_name(message: map.Outgoing) -> String {
     | map.Summoned(..)
     | map.NotSummoned(..)
     | map.Left
-    | map.Watched(..)
-    | map.Unwatched(..)
     | map.Seen(..)
     | map.Unseen(..)
     | map.Retire

@@ -27,6 +27,7 @@ import creature_fight_test
 import creature_news_support
 import crowd_control_support
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/start_place
@@ -54,19 +55,17 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
-import genesis_prime/world_map/creature.{
-  type State, Retire, Settings, Unwatched, Watched,
-}
+import genesis_prime/world_map/creature.{type State, Retire, Settings}
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/int
@@ -141,25 +140,28 @@ fn feed(
   at_ms at_ms: Int,
   event event: Event(ServiceEvent(creature.Message)),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
+  let #(state, taken) = feed_raw(state:, at_ms:, event:)
+  #(state, creature_news_support.at_each_player(state:, taken:))
+}
+
+/// The same, the step as the creature sends it: to its map, news once for all its viewers.
+fn feed_raw(
+  state state: State,
+  at_ms at_ms: Int,
+  event event: Event(ServiceEvent(creature.Message)),
+) -> #(State, ServiceStep(creature.Outgoing)) {
   creature.step(state, support.input_at_ms(ms: at_ms, event:))
 }
 
-/// What the step sends, to the connection's number: the news it carries.
+/// What the step tells the viewers (`creature_news_support.at_each_player`): the connection's
+/// number and the news it carries.
 fn sent(taken: ServiceStep(creature.Outgoing)) -> List(#(Int, PeerNews)) {
-  list.map(sent_for(taken), fn(sent) { #(sent.0, sent.2) })
-}
-
-/// What the step sends, to the connection's number: the stay it is for and the
-/// news it carries.
-fn sent_for(
-  taken: ServiceStep(creature.Outgoing),
-) -> List(#(Int, Stay, PeerNews)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(Send(
         to: Connection(ConnectionId(number)),
-        message: creature.News(stay:, news:),
-      )) -> Ok(#(number, stay, news))
+        message: creature.Broadcast(news:, ..),
+      )) -> Ok(#(number, news))
       OwnEffect(Send(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
@@ -184,15 +186,16 @@ pub fn a_creature_watches_its_run_and_sends_its_0x262_to_each_player_who_sees_it
       state:,
       at_ms: 6500,
       event: OwnEvent(
-        Told(Watched(by: ConnectionId(5), stay: map_support.stay(count: 5))),
+        Told(creature_news_support.seen(
+          by: ConnectionId(5),
+          stay: map_support.stay(count: 5),
+        )),
       ),
     )
-  let assert [#(5, stay, PeerNews(unit_id:, news: CreatureAppeared(unit:, ..)))] =
-    sent_for(taken)
+  let assert [#(5, PeerNews(unit_id:, news: CreatureAppeared(unit:, ..)))] =
+    sent(taken)
     as "one 0x262, to the connection of the player who sees the creature"
   assert unit_id == 7 as "the news names the creature's unit"
-  assert stay == map_support.stay(count: 5)
-    as "for the viewer's stay the map's Watched named, so a news of an earlier stay is dropped"
   assert unit.unit_id == 7 && unit.creature_id == 73_464
   assert unit.tail.server_time_estimate_start == 1500
     as "stamped from the map's clock: 6500 ms on the monotonic clock, 1500 after the map started"
@@ -218,7 +221,10 @@ pub fn a_creatures_0x262_names_its_spawn_and_not_its_unit_id_test() -> Nil {
       state:,
       at_ms: 6500,
       event: OwnEvent(
-        Told(Watched(by: ConnectionId(5), stay: map_support.stay(count: 5))),
+        Told(creature_news_support.seen(
+          by: ConnectionId(5),
+          stay: map_support.stay(count: 5),
+        )),
       ),
     )
   let assert [#(5, PeerNews(unit_id: 7, news: CreatureAppeared(spawn_id:, ..)))] =
@@ -236,22 +242,25 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
       state:,
       at_ms: 6000,
       event: OwnEvent(
-        Told(Watched(by: ConnectionId(5), stay: map_support.stay(count: 5))),
+        Told(creature_news_support.seen(
+          by: ConnectionId(5),
+          stay: map_support.stay(count: 5),
+        )),
       ),
     )
   let #(state, taken) =
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Unwatched(by: ConnectionId(5)))),
+      event: OwnEvent(Told(creature_news_support.unseen(by: ConnectionId(5)))),
     )
-  let assert [#(5, PeerNews(unit_id: 7, news: Removed))] = sent(taken)
-    as "a player who stops seeing it is sent its 0x355"
+  assert support.effects_of(taken) == []
+    as "a player who stops seeing it is sent nothing: its 0x355 comes from the map's notice, once, whatever the creature held"
   let #(state, taken) =
     feed(
       state:,
       at_ms: 8000,
-      event: OwnEvent(Told(Unwatched(by: ConnectionId(5)))),
+      event: OwnEvent(Told(creature_news_support.unseen(by: ConnectionId(5)))),
     )
   assert sent(taken) == []
     as "a connection that is not a viewer is sent nothing"
@@ -259,7 +268,7 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
     feed(
       state:,
       at_ms: 9000,
-      event: OwnEvent(Told(Unwatched(by: ConnectionId(6)))),
+      event: OwnEvent(Told(creature_news_support.unseen(by: ConnectionId(6)))),
     )
   assert sent(taken) == [] as "a connection that never saw it is sent nothing"
   // The map's `Unseen` is the creature's end of sight: the creature drops the viewer and
@@ -324,7 +333,7 @@ pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -
   // The map's start of a creature names its first viewers (CreatureStart), so a
   // burst of starts is not followed by a burst of Watched sends.
   let #(state, taken) =
-    feed(
+    feed_raw(
       state: creature_for(viewers: [ConnectionId(2), ConnectionId(5)]),
       at_ms: 6500,
       event: OwnEvent(Started),
@@ -332,7 +341,7 @@ pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -
   let assert [
     #(2, PeerNews(unit_id: 7, news: CreatureAppeared(unit: first, ..))),
     #(5, PeerNews(unit_id: 7, news: CreatureAppeared(unit: second, ..))),
-  ] = sent(taken)
+  ] = sent(creature_news_support.at_each_player(state:, taken:))
     as "one 0x262 for each first viewer, in the order the map gave them"
   assert first.tail.server_time_estimate_start == 1500
     && second.tail.server_time_estimate_start == 1500
@@ -343,15 +352,15 @@ pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -
   assert first_generation == generation.first()
     as "under the generation the map numbered the viewer with in the start"
   assert first_burst.unit_id == 7
-  let #(_, taken) =
+  let #(state, taken) =
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(Unwatched(by: ConnectionId(2)))),
+      event: OwnEvent(Told(creature_news_support.unseen(by: ConnectionId(2)))),
     )
-  let assert [#(2, PeerNews(news: Removed, ..))] = sent(taken)
-    as "a first viewer is a viewer: it is sent the 0x355 when it stops seeing the creature"
-  Nil
+  assert support.effects_of(taken) == []
+    as "a first viewer is a viewer: the map's Unseen of the generation its start named ends it, and the creature sends nothing"
+  assert creature.viewers(state) == set.from_list([ConnectionId(5)])
 }
 
 /// What the step sends, in order, as the creature's sends of any kind.
@@ -384,12 +393,7 @@ fn snapshots(
     case sent {
       creature.Snapshot(by: ConnectionId(number), generation:, burst:, ..) ->
         Ok(#(number, generation, burst))
-      creature.Broadcast(..)
-      | creature.Relay(..)
-      | creature.News(..)
-      | creature.Struck(..)
-      | creature.FightTold(..)
-      | creature.KillCredit(..) -> Error(Nil)
+      creature.Broadcast(..) | creature.Relay(..) -> Error(Nil)
     }
   })
 }
@@ -458,35 +462,38 @@ fn watched_by_two() -> State {
 fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
   list.map(sent, fn(one) {
     case one.1 {
-      creature.Struck(answered: Answered(outcome: Landed(..), ..), ..) ->
-        "answer to " <> int.to_string(one.0)
-      creature.Struck(..) -> "refusal to " <> int.to_string(one.0)
-      creature.News(stay: _, news: PeerNews(news: unit_news.Health(..), ..)) ->
+      creature.Relay(
+        payload: relay.Struck(answered: Answered(outcome: Landed(..), ..)),
+        ..,
+      ) -> "answer to " <> int.to_string(one.0)
+      creature.Relay(payload: relay.Struck(..), ..) ->
+        "refusal to " <> int.to_string(one.0)
+      creature.Broadcast(news: PeerNews(news: unit_news.Health(..), ..), ..) ->
         "health to " <> int.to_string(one.0)
-      creature.News(stay: _, news: PeerNews(news: unit_news.Died, ..)) ->
+      creature.Broadcast(news: PeerNews(news: unit_news.Died, ..), ..) ->
         "death to " <> int.to_string(one.0)
-      creature.News(stay: _, news: PeerNews(news: Removed, ..)) ->
+      creature.Broadcast(news: PeerNews(news: Removed, ..), ..) ->
         "removal to " <> int.to_string(one.0)
-      creature.News(stay: _, news: PeerNews(news: CreatureAppeared(..), ..)) ->
+      creature.Broadcast(news: PeerNews(news: CreatureAppeared(..), ..), ..) ->
         "creation to " <> int.to_string(one.0)
-      creature.KillCredit(..) -> "credit to " <> int.to_string(one.0)
-      creature.News(..)
-      | creature.FightTold(..)
-      | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> "other"
+      creature.Relay(payload: relay.KillCredit(..), ..) ->
+        "credit to " <> int.to_string(one.0)
+      creature.Broadcast(..)
+      | creature.Relay(payload: relay.Fight(..), ..)
+      | creature.Snapshot(..) -> "other"
     }
   })
 }
 
 pub fn a_creature_answers_the_caster_before_it_tells_any_viewer_its_health_and_death_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(_, taken) =
-    feed(
+  let #(struck, raw) =
+    feed_raw(
       state: watched_by_two(),
       at_ms: 6000,
       event: OwnEvent(Told(strike_of(damage: 60, cast_id: 1))),
     )
+  let taken = creature_news_support.at_each_player(state: struck, taken: raw)
   assert kinds_of(outgoing(taken))
     == [
       "answer to 2",
@@ -497,7 +504,7 @@ pub fn a_creature_answers_the_caster_before_it_tells_any_viewer_its_health_and_d
       "death to 5",
     ]
     as "the answer goes first, one sender in one order: the caster's connection knows the strike before it is told the health it left, so it can hold the news for the go (genesis_prime/game/strike); the killer's credit follows its answer"
-  assert creature_news_support.said_to_the_map(taken)
+  assert creature_news_support.said_to_the_map(raw)
     == ["answer to 2", "credit to 2", "0x937(0) to all", "0x88c to all"]
     as "to the map, in one step so in one stream: the answer and the credit to the caster, then the health and the death once for every viewer"
   assert support.effects_of(taken)
@@ -514,13 +521,11 @@ fn credits(
 ) -> List(#(Int, creature.Outgoing)) {
   list.filter(outgoing(taken), fn(one) {
     case one.1 {
-      creature.KillCredit(..) -> True
-      creature.Struck(..)
-      | creature.News(..)
-      | creature.FightTold(..)
+      creature.Relay(payload: relay.KillCredit(..), ..) -> True
+      creature.Relay(payload: relay.Struck(..), ..)
+      | creature.Relay(payload: relay.Fight(..), ..)
       | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> False
+      | creature.Broadcast(..) -> False
     }
   })
 }
@@ -547,12 +552,17 @@ pub fn a_killing_strike_sends_the_killer_one_credit_test() -> Nil {
     == [
       #(
         2,
-        creature.KillCredit(
-          stay: map_support.stay(count: 2),
+        creature.Relay(
           unit_id: 7,
-          creature_id: Creature2Id(73_464),
-          faction_id: Faction2Id(1441),
-          level: 1,
+          life: 3,
+          to: ConnectionId(2),
+          stay: map_support.stay(count: 2),
+          payload: relay.KillCredit(credit: Credit(
+            unit_id: 7,
+            creature_id: Creature2Id(73_464),
+            faction_id: Faction2Id(1441),
+            level: 1,
+          )),
         ),
       ),
     ]
@@ -585,16 +595,19 @@ pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {
     == [
       #(
         2,
-        creature.Struck(
+        creature.Relay(
+          unit_id: 7,
+          life: 3,
+          to: ConnectionId(2),
           stay: map_support.stay(count: 2),
-          answered: Answered(
+          payload: relay.Struck(answered: Answered(
             key: Key(
               cast_id: 2,
               occasion: strike_tell.AtGo(phase: 0),
               unit_id: 7,
             ),
             outcome: Refused(why: strike_tell.Dead),
-          ),
+          )),
         ),
       ),
     ]
@@ -614,7 +627,10 @@ pub fn a_viewer_that_arrives_mid_fight_is_sent_the_creature_at_its_current_healt
       state:,
       at_ms: 7000,
       event: OwnEvent(
-        Told(Watched(by: ConnectionId(9), stay: map_support.stay(count: 9))),
+        Told(creature_news_support.seen(
+          by: ConnectionId(9),
+          stay: map_support.stay(count: 9),
+        )),
       ),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
@@ -636,7 +652,10 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
       state:,
       at_ms: 7000,
       event: OwnEvent(
-        Told(Watched(by: ConnectionId(9), stay: map_support.stay(count: 9))),
+        Told(creature_news_support.seen(
+          by: ConnectionId(9),
+          stay: map_support.stay(count: 9),
+        )),
       ),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, life: 3, ..), ..))] =
@@ -644,10 +663,10 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
   assert creature_unit.health_of(unit:) == 0
     as "opcode.0x262.creature: stat 0 of 0 makes the client create the creature dead"
   let #(_, seen) =
-    feed(
+    told_raw(
       state:,
       at_ms: 7000,
-      event: OwnEvent(Told(seen_by_nine(generation: generation.first()))),
+      message: seen_by_nine(generation: generation.first()),
     )
   let assert [
     #(9, _, [PeerNews(news: CreatureAppeared(unit: seen_unit, ..), ..)]),
@@ -664,25 +683,27 @@ pub fn the_corpse_timer_removes_and_creates_the_creature_again_at_full_health_fo
       at_ms: 6000,
       event: OwnEvent(Told(strike_of(damage: 60, cast_id: 1))),
     )
-  let #(_, taken) =
-    feed(
+  let #(stood, raw) =
+    feed_raw(
       state:,
       at_ms: 66_000,
       event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
     )
+  let taken = creature_news_support.at_each_player(state: stood, taken: raw)
   assert kinds_of(outgoing(taken))
-    == ["removal to 2", "creation to 2", "removal to 5", "creation to 5"]
-    as "death.creature_respawn: 0x355, then a full 0x262 with the same unit id, to each viewer"
-  assert creature_news_support.said_to_the_map(taken)
+    == ["removal to 2", "removal to 5", "creation to 2", "creation to 5"]
+    as "death.creature_respawn: 0x355, then a full 0x262 with the same unit id, to each viewer: each news is one broadcast, so each viewer hears the removal and then the creation"
+  assert creature_news_support.said_to_the_map(raw)
     == ["0x355 to all", "0x262 to all"]
     as "to the map, the removal and then the creation, each once and not for each viewer"
   let assert [
     _,
+    _,
     #(
       2,
-      creature.News(
-        stay: _,
+      creature.Broadcast(
         news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
+        ..,
       ),
     ),
     ..
@@ -717,15 +738,16 @@ pub fn a_run_only_creatures_corpse_timer_removes_it_for_each_viewer_and_stops_it
       at_ms: 6000,
       event: OwnEvent(Told(strike_of(damage: 60, cast_id: 1))),
     )
-  let #(_, taken) =
-    feed(
+  let #(stood, raw) =
+    feed_raw(
       state:,
       at_ms: 66_000,
       event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
     )
+  let taken = creature_news_support.at_each_player(state: stood, taken: raw)
   assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
     as "a 0x355 to each viewer, and no 0x262 that stands it again"
-  assert creature_news_support.said_to_the_map(taken) == ["0x355 to all"]
+  assert creature_news_support.said_to_the_map(raw) == ["0x355 to all"]
     as "to the map, the removal once for every viewer, and no creation"
   assert support.stops(taken) as "the creature stops"
 }
@@ -810,7 +832,10 @@ pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_curre
       state:,
       at_ms: 7000,
       event: OwnEvent(
-        Told(Watched(by: ConnectionId(9), stay: map_support.stay(count: 9))),
+        Told(creature_news_support.seen(
+          by: ConnectionId(9),
+          stay: map_support.stay(count: 9),
+        )),
       ),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
@@ -845,9 +870,9 @@ pub fn a_recorded_creature_comes_back_at_its_recorded_health_with_its_recorded_m
     _,
     #(
       2,
-      creature.News(
-        stay: _,
+      creature.Broadcast(
         news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
+        ..,
       ),
     ),
   ] = outgoing(taken)
@@ -947,6 +972,15 @@ fn told(
   message message: creature.Message,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   feed(state:, at_ms:, event: OwnEvent(Told(message)))
+}
+
+/// The same, the step as the creature sends it: to its map.
+fn told_raw(
+  state state: State,
+  at_ms at_ms: Int,
+  message message: creature.Message,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  feed_raw(state:, at_ms:, event: OwnEvent(Told(message)))
 }
 
 fn starting(
@@ -1073,7 +1107,10 @@ pub fn late_viewer_sees_current_value_test() -> Nil {
     told(
       state:,
       at_ms: 7000,
-      message: Watched(by: ConnectionId(8), stay: map_support.stay(count: 8)),
+      message: creature_news_support.seen(
+        by: ConnectionId(8),
+        stay: map_support.stay(count: 8),
+      ),
     )
   let assert [#(8, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
     sent(taken)
@@ -1287,12 +1324,16 @@ pub fn respawn_clears_modifiers_test() -> Nil {
   assert unwatches(stood) == [WatchId(2)]
     as "the creature stops watching a caster whose modifiers it cleared"
   assert kinds_of(outgoing(stood))
-    == ["removal to 2", "creation to 2", "removal to 5", "creation to 5"]
+    == ["removal to 2", "removal to 5", "creation to 2", "creation to 5"]
   let assert [
+    _,
     _,
     #(
       2,
-      creature.News(news: PeerNews(news: CreatureAppeared(unit:, ..), ..), ..),
+      creature.Broadcast(
+        news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
+        ..,
+      ),
     ),
     ..
   ] = outgoing(stood)
@@ -1349,7 +1390,10 @@ pub fn base_health_modifier_clamps_health_test() -> Nil {
     told(
       state:,
       at_ms: 7000,
-      message: Watched(by: ConnectionId(8), stay: map_support.stay(count: 8)),
+      message: creature_news_support.seen(
+        by: ConnectionId(8),
+        stay: map_support.stay(count: 8),
+      ),
     )
   let assert [#(8, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
     sent(arrived)
@@ -1415,17 +1459,18 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
   let landed =
     list.flat_map(support.sends(taken), fn(one) {
       case one.1 {
-        creature.Struck(
-          answered: Answered(outcome: Landed(controls:, ..), ..),
+        creature.Relay(
+          payload: relay.Struck(answered: Answered(
+            outcome: Landed(controls:, ..),
+            ..,
+          )),
           ..,
         ) -> controls
-        creature.Struck(..)
-        | creature.News(..)
-        | creature.FightTold(..)
-        | creature.KillCredit(..)
+        creature.Relay(payload: relay.Struck(..), ..)
+        | creature.Relay(payload: relay.Fight(..), ..)
+        | creature.Relay(payload: relay.KillCredit(..), ..)
         | creature.Snapshot(..)
-        | creature.Broadcast(..)
-        | creature.Relay(..) -> []
+        | creature.Broadcast(..) -> []
       }
     })
   assert landed == [] as "the creature has armor now: the stun lands no state"
@@ -1642,15 +1687,10 @@ fn thrown_at(struck_at_ms: Int) -> creature.Message {
 fn flown_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(outgoing(taken), fn(one) {
     case one.1 {
-      creature.News(stay: _, news: PeerNews(news: CreatureMoved(..), ..)) ->
+      creature.Broadcast(news: PeerNews(news: CreatureMoved(..), ..), ..) ->
         Ok(one.0)
-      creature.News(..)
-      | creature.Struck(..)
-      | creature.KillCredit(..)
-      | creature.FightTold(..)
-      | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> Error(Nil)
+      creature.Broadcast(..) | creature.Relay(..) | creature.Snapshot(..) ->
+        Error(Nil)
     }
   })
 }
@@ -1767,12 +1807,13 @@ pub fn a_creature_respawned_after_a_throw_stands_at_home_test() -> Nil {
     told(state:, at_ms: 6100, message: strike_of(damage: 60, cast_id: 1))
   let #(state, respawned) = fired(state:, at_ms: 66_000, timer: TimerId(1))
   let assert [
-    #(2, creature.News(stay: _, news: PeerNews(news: Removed, ..))),
+    #(2, creature.Broadcast(news: PeerNews(news: Removed, ..), ..)),
+    #(5, creature.Broadcast(news: PeerNews(news: Removed, ..), ..)),
     #(
       2,
-      creature.News(
-        stay: _,
+      creature.Broadcast(
         news: PeerNews(news: CreatureAppeared(place:, ..), ..),
+        ..,
       ),
     ),
     ..
@@ -1834,8 +1875,13 @@ fn answer_of(taken: ServiceStep(creature.Outgoing)) -> strike_tell.Outcome {
   let answers =
     list.filter_map(support.sends(taken), fn(one) {
       case one {
-        #(2, creature.Struck(answered: Answered(outcome:, ..), ..)) ->
-          Ok(outcome)
+        #(
+          2,
+          creature.Relay(
+            payload: relay.Struck(answered: Answered(outcome:, ..)),
+            ..,
+          ),
+        ) -> Ok(outcome)
         _ -> Error(Nil)
       }
     })
@@ -2467,15 +2513,12 @@ fn approached_by_2() -> creature.Message {
 fn released_unit_7(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(outgoing(taken), fn(one) {
     case one.1 {
-      creature.FightTold(told: strike_tell.Released(unit_id: 7), ..) ->
-        Ok(one.0)
-      creature.FightTold(..)
-      | creature.News(..)
-      | creature.Struck(..)
-      | creature.KillCredit(..)
-      | creature.Snapshot(..)
-      | creature.Broadcast(..)
-      | creature.Relay(..) -> Error(Nil)
+      creature.Relay(
+        payload: relay.Fight(told: strike_tell.Released(unit_id: 7)),
+        ..,
+      ) -> Ok(one.0)
+      creature.Relay(..) | creature.Snapshot(..) | creature.Broadcast(..) ->
+        Error(Nil)
     }
   })
 }
@@ -2622,7 +2665,10 @@ pub fn a_viewer_arriving_while_despawned_is_sent_nothing_test() -> Nil {
     told(
       state: despawned_by_two(),
       at_ms: 7000,
-      message: Watched(by: ConnectionId(9), stay: map_support.stay(count: 9)),
+      message: creature_news_support.seen(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   assert support.effects_of(taken) == []
     as "opcode.0x355: the unit is gone to the client, and no 0x262 shows a creature that is not there"
@@ -2636,7 +2682,10 @@ pub fn a_viewer_that_arrived_while_despawned_is_shown_the_creature_at_its_respaw
     told(
       state: despawned_by_two(),
       at_ms: 7000,
-      message: Watched(by: ConnectionId(9), stay: map_support.stay(count: 9)),
+      message: creature_news_support.seen(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   let #(_, taken) = fired(state:, at_ms: 66_000, timer: corpse_timer)
   assert kinds_of(outgoing(taken))
@@ -2665,7 +2714,10 @@ pub fn the_corpse_timer_after_a_despawn_shows_the_creature_again_without_a_secon
   let assert [
     #(
       2,
-      creature.News(news: PeerNews(news: CreatureAppeared(unit:, ..), ..), ..),
+      creature.Broadcast(
+        news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
+        ..,
+      ),
     ),
     ..
   ] = outgoing(taken)
@@ -3211,7 +3263,10 @@ pub fn a_viewer_arriving_while_states_are_held_is_told_them_after_the_0x262_test
     told(
       state:,
       at_ms: 7000,
-      message: Watched(by: nine, stay: map_support.stay(count: 9)),
+      message: creature_news_support.seen(
+        by: nine,
+        stay: map_support.stay(count: 9),
+      ),
     )
   assert kinds_of(outgoing(arrived)) == ["creation to 9", "other", "other"]
     as "the 0x262, then one news per held state"
@@ -3221,7 +3276,10 @@ pub fn a_viewer_arriving_while_states_are_held_is_told_them_after_the_0x262_test
     told(
       state:,
       at_ms: 7500,
-      message: Watched(by: nine, stay: map_support.stay(count: 9)),
+      message: creature_news_support.seen(
+        by: nine,
+        stay: map_support.stay(count: 9),
+      ),
     )
   assert kinds_of(outgoing(again)) == ["creation to 9", "other", "other"]
     as "a repeated Watched is told the creature and its states again"
@@ -3237,13 +3295,17 @@ pub fn a_viewer_arriving_while_states_are_held_is_told_them_after_the_0x262_test
     told(
       state:,
       at_ms: 8100,
-      message: Watched(by: ConnectionId(11), stay: map_support.stay(count: 11)),
+      message: creature_news_support.seen(
+        by: ConnectionId(11),
+        stay: map_support.stay(count: 11),
+      ),
     )
   assert unit_state_news(late) == [#(11, held(state: 6, number: 1))]
     as "only the state still held is told"
-  let #(_, left) = told(state:, at_ms: 8200, message: Unwatched(by: nine))
-  assert kinds_of(outgoing(left)) == ["removal to 9"]
-    as "a viewer that leaves gets its Removed"
+  let #(_, left) =
+    told(state:, at_ms: 8200, message: creature_news_support.unseen(by: nine))
+  assert outgoing(left) == []
+    as "a viewer that leaves is sent nothing by the creature: the map tells it the unit is gone"
 }
 
 pub fn a_viewer_a_creature_starts_with_is_told_the_states_it_holds_test() -> Nil {
@@ -3279,7 +3341,10 @@ pub fn a_despawn_clears_the_held_unit_states_test() -> Nil {
     told(
       state: back,
       at_ms: 67_100,
-      message: Watched(by: ConnectionId(9), stay: map_support.stay(count: 9)),
+      message: creature_news_support.seen(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
     )
   assert unit_state_news(arrived) == []
     as "the creature that stands again holds none"
@@ -3433,12 +3498,18 @@ fn arrival_create(
     told(
       state:,
       at_ms:,
-      message: Watched(by: ConnectionId(20), stay: map_support.stay(count: 20)),
+      message: creature_news_support.seen(
+        by: ConnectionId(20),
+        stay: map_support.stay(count: 20),
+      ),
     )
   let assert [
     #(
       20,
-      creature.News(news: PeerNews(news: CreatureAppeared(unit:, ..), ..), ..),
+      creature.Broadcast(
+        news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
+        ..,
+      ),
     ),
     ..
   ] = outgoing(taken)
@@ -3796,11 +3867,16 @@ pub fn a_creature_answers_a_seen_with_a_snapshot_of_its_burst_live_dead_or_despa
       "0x262",
       "unit state held",
     ]),
-    #("a creature with a guard cast", guarded_by_two(), ["0x262", "0x7ff"]),
+    #("a creature with a guard cast", guarded_by_two(), [
+      "0x262",
+      "0x7ff",
+      "0x7f4",
+    ]),
     #("a creature in a fight", struck(watched_by_two(), 14), [
       "0x262",
       "0x89a(1)",
       "0x908",
+      "turn(kind 18, unit 1)",
     ]),
     #("a creature that lies dead", struck(watched_by_two(), 60), ["0x262"]),
     #("a despawned creature", despawned_by_two(), []),
@@ -3808,7 +3884,11 @@ pub fn a_creature_answers_a_seen_with_a_snapshot_of_its_burst_live_dead_or_despa
   list.each(cases, fn(row) {
     let #(name, state, burst_names) = row
     let #(_, taken) =
-      told(state:, at_ms: 7000, message: seen_by_nine(generation: first_sight))
+      told_raw(
+        state:,
+        at_ms: 7000,
+        message: seen_by_nine(generation: first_sight),
+      )
     let assert [#(9, generation, burst)] = snapshots(taken)
       as { name <> " answers the Seen with one snapshot for the viewer" }
     assert generation == first_sight
@@ -3821,7 +3901,7 @@ pub fn a_creature_answers_a_seen_with_a_snapshot_of_its_burst_live_dead_or_despa
       }
   })
   let #(_, dead) =
-    told(
+    told_raw(
       state: struck(watched_by_two(), 60),
       at_ms: 7000,
       message: seen_by_nine(generation: first_sight),
@@ -3847,18 +3927,31 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
   let first_sight = generation.first()
   // A `Seen` taken twice is answered twice, and the second answer is the same.
   let #(state, first) =
-    told(
+    told_raw(
       state: watched_by_two(),
       at_ms: 7000,
       message: seen_by_nine(generation: first_sight),
     )
   let #(state, second) =
-    told(state:, at_ms: 7100, message: seen_by_nine(generation: first_sight))
-  assert snapshots(second) == snapshots(first) && snapshots(first) != []
-    as "a second Seen of the same viewer is answered again with the same snapshot"
+    told_raw(
+      state:,
+      at_ms: 7100,
+      message: seen_by_nine(generation: first_sight),
+    )
+  let names = fn(taken) {
+    list.map(snapshots(taken), fn(snapshot) {
+      #(
+        snapshot.0,
+        snapshot.1,
+        list.map(snapshot.2, fn(news) { burst_name(news.news) }),
+      )
+    })
+  }
+  assert names(second) == names(first) && names(first) != []
+    as "a second Seen of the same viewer is answered again with a snapshot of the same viewer, generation and picture (its 0x262 carries the time the creature built it at)"
   // An `Unseen` taken twice: the first drops the viewer, the second finds no entry.
   let #(state, unseen) =
-    told(
+    told_raw(
       state:,
       at_ms: 7200,
       message: creature.Unseen(by: ConnectionId(9), generation: first_sight),
@@ -3868,7 +3961,7 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
   assert support.sends(unseen) == []
     as "and the creature sends no 0x355: the map tells the viewer"
   let #(after, again) =
-    told(
+    told_raw(
       state:,
       at_ms: 7300,
       message: creature.Unseen(by: ConnectionId(9), generation: first_sight),

@@ -270,14 +270,17 @@ pub fn news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_droppe
   let #(first, second) = list.partition(ended, strike_first)
   assert first != [] && second != []
     as "both orders of the creature's two senders are legal"
+  // The strike pulls the creature, which chases its caster: its path (0x638) follows the
+  // health in the news and is in the snapshot's burst when the strike came first.
   assert list.all(first, fn(scene) {
-    legal_order_support.names(frames: scene.frames) == ["0x262(2)"]
+    legal_order_support.names(frames: scene.frames) == ["0x262(2)", "0x638(2)"]
     && legal_order_support.health_shown(frames: scene.frames, unit_id: 2)
     == Some(38)
   })
-    as "(a) the strike first: its news reaches the map before the snapshot and is dropped, and the snapshot, built after the strike, shows the health it left"
+    as "(a) the strike first: its news reaches the map before the snapshot and is dropped (no 0x937 is written), and the snapshot, built after the strike, shows the health it left and the path it runs"
   assert list.all(second, fn(scene) {
-    legal_order_support.names(frames: scene.frames) == ["0x262(2)", "0x937(2)"]
+    legal_order_support.names(frames: scene.frames)
+    == ["0x262(2)", "0x937(2)", "0x638(2)"]
     && legal_order_support.health_shown(frames: scene.frames, unit_id: 2)
     == Some(38)
   })
@@ -344,14 +347,17 @@ pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_
     list.map(ended, fn(scene) {
       legal_order_support.names(frames: scene.frames)
     })
+  // The strike pulls the creature, which chases its caster: the news of the strike is the
+  // health and then the path (0x638).
   assert list.all(names, fn(frames) {
     frames == ["0x262(2)", "0x355(2)"]
     || frames == ["0x262(2)", "0x937(2)", "0x355(2)"]
+    || frames == ["0x262(2)", "0x937(2)", "0x638(2)", "0x355(2)"]
   })
     as "the news the map took before the unit left sight is written and then the 0x355; the news it took after is written nowhere: the creature's news sent after the map's Unseen and before the creature took it is one of these"
   assert list.contains(names, ["0x262(2)", "0x355(2)"])
-    && list.contains(names, ["0x262(2)", "0x937(2)", "0x355(2)"])
-    as "both orders at the map are legal"
+    && list.contains(names, ["0x262(2)", "0x937(2)", "0x638(2)", "0x355(2)"])
+    as "both orders at the map are legal: the strike's news reaches the map before the unit leaves sight, or after"
 }
 
 /// The scene with the mail added behind what is in flight.

@@ -3690,8 +3690,8 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
       state: viewer,
       event: OwnEvent(step.WriteFailed(step.SendTimedOut)),
     )
-  assert support.stops(failed)
-    as "a failed write ends the connection, so the burst's second message is never taken"
+  assert support.asked(failed) != None
+    as "a failed write ends the connection that holds a player in the world: it starts with the save of the player's place (`connection_state.end_with`), so the burst's second message is never taken"
   assert support.writes(failed) == [] as "and no frame follows the failed one"
   // The map takes the watch's end of the viewer's connection.
   let #(_, ended) =

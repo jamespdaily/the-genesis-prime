@@ -126,7 +126,7 @@
 ////   `Spell4Effects.threatMultiplier`. The top entry is the target: a change of target
 ////   sends 0x908, and every other entry 0x90a (`opcode.0x908`, `opcode.0x90a`).
 //// - **Threat only for viewers.** A strike or a `TargetMoved` from a connection that
-////   is not a viewer adds no threat, and `Unwatched` drops the viewer's entry, so the
+////   is not a viewer adds no threat, and `Unseen` drops the viewer's entry, so the
 ////   threat list is always within the viewers and the map's sweep, which retires only a
 ////   creature with no viewer, never retires a fighting one.
 //// - **Ordering.** Each accepted 0x637 gets its connection's next move sequence
@@ -301,8 +301,8 @@
 //// | Point | What happens | Test |
 //// |---|---|---|
 //// | P's answer comes after the strike deadline | the go leaves P out; the hit stands and P's 0x92f shows it | `an_answer_after_the_deadline_is_left_out_of_the_go_test` |
-//// | P's connection ends, camps or P goes out of sight | the map's `Unwatched` drops P from threat; with no threat left the creature leashes | `a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test`, `unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the_target_test` |
-//// | a strike or `TargetMoved` from a connection that is not a viewer (a race with `Unwatched`) | the damage applies, no threat is added | `a_strike_from_a_non_viewer_adds_no_threat_test` |
+//// | P's connection ends, camps or P goes out of sight | the map's `Unseen` drops P from threat; with no threat left the creature leashes | `a_player_whose_connection_ends_mid_chase_makes_the_dagun_leash_test`, `unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the_target_test` |
+//// | a strike or `TargetMoved` from a connection that is not a viewer (a race with `Unseen`) | the damage applies, no threat is added | `a_strike_from_a_non_viewer_adds_no_threat_test` |
 //// | P and C strike each other at one instant | both are tells; each side answers in its own step, before the other's deadline | `a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test` |
 //// | C crashes mid-fight | the map sends every player `Gone`; P drops C, and sends 0x89a (P, 0) when no fighter is left (genesis_prime/game/player_life) | `a_dagun_that_crashes_mid_fight_is_gone_and_the_bots_combat_flag_clears_test` |
 //// | C is told `Retire` while Returning | it stops; the map's sweep sends it only with no viewer, so no one is on its threat list | `over_random_sights_rings_strikes_and_ticks_the_threat_list_stays_within_the_viewers_test` |
@@ -311,7 +311,7 @@
 //// | P dies and C's killing answer and the map's `PlayerDied` both reach C | two senders, either order: the first drops P from `near` and the threat list, the second finds nothing | `a_creature_told_player_died_for_its_target_erases_its_entry_names_the_next_and_never_strikes_the_body_test`, `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
 //// | P died and C's home timer or corpse timer fires before `PlayerDied` reaches C | C aggroes the body; P drops `Threatened`, C's first strike is refused `Dead`, and C releases P and drops it from `near`: at most one swing, in the window of one map hop | `a_creature_that_kills_its_only_target_in_its_ring_does_not_aggro_the_body_at_its_home_timer_test`, `a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_nor_when_its_corpse_timer_stands_it_test` |
 //// | a strike P sent before it died reaches C after `PlayerDied` | `StruckBy` adds P to the threat list; C's first strike is refused `Dead` and releases it |  |
-//// | `PlayerDied` for a player on neither `near` nor the threat list (its `Unwatched` came first, or the killing answer dropped it) | nothing | `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
+//// | `PlayerDied` for a player on neither `near` nor the threat list (its `Unseen` came first, or the killing answer dropped it) | nothing | `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
 //// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test` |
 //// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so it is a Wake Here chosen within that second of the death |  |
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
@@ -365,7 +365,7 @@
 //// | CastEnds timer: a target row the client draws on its target (`FollowsTarget`) | the area is around where the cast's target stands now, turned by its facing | `a_client_placed_target_row_strikes_around_the_cast_targets_place_at_the_strike_test`, `a_cone_on_the_target_turns_with_the_targets_facing_test` |
 //// | CastEnds timer: a target row, and the 0x908 target changed since the start | the area is around the cast's target, not the 0x908 target | `a_target_row_uses_the_cast_target_not_the_0x908_target_of_the_moment_test` |
 //// | CastEnds timer: the cast's target died or left the ring, and is still a viewer | the row follows the body or the unit, or stays at its stored place, and strikes the fighters in it | `a_target_row_strikes_while_its_cast_target_is_in_the_world_test` |
-//// | CastEnds timer: the cast's target is no longer a viewer (`Unwatched`) | a row on it, following or fixed, strikes nobody and the cast finishes as an empty strike does | `a_target_row_strikes_while_its_cast_target_is_in_the_world_test` |
+//// | CastEnds timer: the cast's target is no longer a viewer (`Unseen`) | a row on it, following or fixed, strikes nobody and the cast finishes as an empty strike does | `a_target_row_strikes_while_its_cast_target_is_in_the_world_test` |
 //// | a creature that cannot move: its target is out of reach, or beyond the leash range from home | out of reach: no 0x638, it keeps its place; beyond the leash range: the release as the leash does, with no walk, to Resting | `a_turret_never_chases_or_walks_home_test`, `a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test`, `a_creature_placed_as_part_of_a_map_object_does_not_chase_a_target_that_leaves_its_reach_test`, `a_creature_placed_as_part_of_a_map_object_leaves_combat_without_a_walk_home_test`, `a_creature_placed_as_part_of_a_map_object_leaves_combat_in_place_when_its_target_is_beyond_its_leash_range_test` |
 //// | `Thrown` reaches a creature that is dead, Returning, cannot move (a Turret, or a creature placed as part of a map object) or does not run (run speed 0) | the fight drops it: no path, no timer, no news | `a_turret_is_not_thrown_test`, `a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_test`, `a_throw_at_a_dead_or_returning_creature_is_dropped_test` |
 //// | `Thrown` reaches a creature that runs, Fighting or Resting | the path is `Timed` from where it is, `FlightEnds` starts, the viewers are sent one 0x638; an open charge breaks as `held` does, unless the throw moves the creature nowhere | `a_thrown_creature_sends_its_viewers_the_flight_once_test`, `a_throw_breaks_an_open_charge_test`, `a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test` |
@@ -676,7 +676,7 @@ pub type Input {
     threat: Float,
   )
   /// The map: the player of `by` no longer sees the creature.
-  Unwatched(by: ConnectionId)
+  Unseen(by: ConnectionId)
   /// The player's answer to the creature's strike.
   StrikeAnswered(answered: Answered)
   /// One of the fight's timers fired.
@@ -873,7 +873,7 @@ fn stepped(
         True -> threatened_by(state:, fighter:, by:, stay:, threat:, now_ms:)
       }
     }
-    Unwatched(by:) -> fell(state:, fighter:, by:, now_ms:)
+    Unseen(by:) -> fell(state:, fighter:, by:, now_ms:)
     StrikeAnswered(answered:) ->
       answered_strike(state:, fighter:, answered:, now_ms:)
     TimerFired(timer: AttackTick(generation:)) ->
@@ -1614,7 +1614,7 @@ fn top_of(entries: Dict(ConnectionId, Threat)) -> #(ConnectionId, Threat) {
 
 /// A player that is no longer a foe of the creature leaves the near players and the
 /// threat list, and is told `Released`: a viewer that no longer sees the creature
-/// (`Unwatched`), or a player that died (`PlayerDied`). The last one leashes the
+/// (`Unseen`), or a player that died (`PlayerDied`). The last one leashes the
 /// creature, and a new top entry is named its target.
 fn fell(
   state state: State,
@@ -1633,7 +1633,7 @@ fn fell(
 /// The player of `by` leaves the threat list and is told `Released`: with no one
 /// left the creature leashes, which tells it with the rest of the leash, else its
 /// entry is erased (0x90a 0) and a new top entry is named its target (0x908). A
-/// player no longer on the list (its `Unwatched` came during the round) was
+/// player no longer on the list (its `Unseen` came during the round) was
 /// released then.
 fn released(
   state state: State,
@@ -2455,7 +2455,7 @@ fn aim_of(
 /// drops a telegraph when it cannot find that unit in its world (`0x14054b1b0.unit_gone`,
 /// which holds for a server-placed row too), not when the unit leaves the fight. So the row is struck while the target is a viewer, a target
 /// that died or left the threat list still being in the world, and nobody is struck once
-/// the target is no longer a viewer (`Unwatched`: it left, logged out, camped or was
+/// the target is no longer a viewer (`Unseen`: it left, logged out, camped or was
 /// despawned).
 fn centre_of(
   state state: State,

@@ -212,12 +212,9 @@ pub fn left_sight(
   what what: String,
 ) -> Nil {
   next(received:, what:, wanted: fn(message) {
-    case message {
-      ForStay(sent: SentByPeer(PeerNews(news: unit_news.Removed, ..)), ..) ->
-        Ok(Nil)
-      ForStay(..)
-      | client_connection.SentBySessions(..)
-      | client_connection.SentByChat(..) -> Error(Nil)
+    case is_removal(message) {
+      True -> Ok(Nil)
+      False -> Error(Nil)
     }
   })
 }
@@ -371,10 +368,13 @@ pub fn tally(
   }
 }
 
-/// Whether the message is a creature's removal from the connection's sight (0x355).
+/// Whether the message is a creature's removal from the connection's sight (0x355): the
+/// removal news a creature broadcasts for its own removal, or the map's notice that the
+/// player no longer sees the unit.
 pub fn is_removal(message: Message) -> Bool {
   case message {
     ForStay(sent: SentByPeer(PeerNews(news: unit_news.Removed, ..)), ..) -> True
+    ForStay(sent: SentByMap(map.UnitUnseen(..)), ..) -> True
     ForStay(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> False

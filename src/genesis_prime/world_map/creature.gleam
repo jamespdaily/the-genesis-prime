@@ -1,13 +1,17 @@
 //// One creature: the process that owns a creature's unit in one run of one map,
 //// from the time a player first sees its spawn to the time it has gone unseen
-//// for the idle stop. It sends the 0x262 and the 0x355 of its own unit to each
-//// player who sees it, and owns its health: it takes the strikes a caster's
-//// connection tells it, decides what each does (genesis_prime/world_map/creature_life)
-//// and sends the 0x937 and 0x88c of its unit, the answer to the caster, and, after
-//// its corpse timer, the 0x355 and 0x262 of its respawn. Which players see it, when
-//// it starts and when it stops are the map's (genesis_prime/world_map/map), so every
-//// message about a unit comes from the unit's owner and a viewer has one sender for
-//// each unit.
+//// for the idle stop. It tells its map the picture of its own unit for each player
+//// who comes to see it and the news of it for those who do, and owns its health: it takes
+//// the strikes a caster's connection tells it, decides what each does
+//// (genesis_prime/world_map/creature_life) and tells its map the 0x937 and 0x88c of its
+//// unit, the answer to the caster, and, after its corpse timer, the 0x355 and 0x262 of its
+//// respawn. It sends nothing to a connection: the map relays what it tells to the players
+//// it relates, so a player has one sender for each creature, and that sender's order. Which
+//// players see it, when it starts and when it stops are the map's
+//// (genesis_prime/world_map/map). In the diagrams of this module `Send(each viewer, news)`
+//// is one `Broadcast(news)` to the map, `Send(c, news)` of a viewer's first picture is an
+//// item of the `Snapshot` for it, and `Send(c, Struck | KillCredit | a fight tell)` is a
+//// `Relay` to the map naming c and its stay.
 ////
 //// This is the rule of a service shell (genesis_prime/service/shell), started
 //// by the creature supervisor (genesis_prime/world_map/creature_supervisor)
@@ -22,16 +26,12 @@
 //// sent:
 ////
 //// ```
-//// map                     creature                                    player's connection
+//// map                     creature                                    map
 ////                         Started ─▶ Watch(map run)                   (the shell monitors the run)
-////                                    for each first viewer c (CreatureStart.viewers):
-////                                      Send(c, CreatureAppeared) ───▶ writes 0x262 once
-//// Watched(by: c, stay) ─▶ viewers + c with its stay; Send(c, CreatureAppeared) ─▶ writes 0x262 once
-////                         (every send to c names its stay; c drops one of an earlier stay)
-//// Unwatched(by: c) ─────▶ viewers - c, if c was a viewer:
-////                                    Send(c, Removed) ──────────────▶ writes 0x355 if shown
+////                                    for each first viewer c, g (CreatureStart.viewers):
+////                                      Send(map, Snapshot(c, g, its first picture))
 //// Retire ───────────────▶ Stop                                        (no one sees it: the map sent every
-////                                                                      viewer Unwatched, 60 s ago or more)
+////                                                                      viewer Unseen, 60 s ago or more)
 //// the run's end (WatchEnded(run)) ─▶ Stop                             (the map is gone: so are its players)
 ////
 //// A creature tells only its map, which relays to the players (genesis_prime/world_map/map):
@@ -42,8 +42,10 @@
 ////                         (its 0x262, its guard's cast, each held unit state, the fight's arrival news;
 ////                          an empty burst when it is despawned)
 ////                         Send(map, Snapshot(unit, life, c, g, burst)) ─▶ relayed to c when (c, g) awaits it
-//// Unseen(by: c, g) ─────▶ viewers - c, its threat entry and its fight copy of c; no 0x355 (the map tells c)
-////                         the fight's release of c: Send(map, Relay(unit, life, c, stay, Released))
+//// Unseen(by: c, g) ─────▶ when (c, g) is the viewer held: viewers - c, its threat entry and its fight
+////                         copy of c; no 0x355 (the map tells c); the fight's release of c:
+////                         Send(map, Relay(unit, life, c, stay, Released)); an Unseen of another
+////                         generation, or of a connection that is no viewer, changes nothing
 //// a news of its unit ───▶ Send(map, Broadcast(unit, life, news)), once for all viewers
 //// an answer, a credit, a fight tell ─▶ Send(map, Relay(unit, life, to, stay, payload))
 //// ```
@@ -111,7 +113,7 @@
 ////                         no state of c0's cast held ─▶ nothing
 //// c0's watch ends (WatchEnded) ─▶ every view and source of c0 dropped, no Unwatch
 //// the corpse timer ─────▶ every view dropped, each connection that held one or a source unwatched once
-//// a viewer's arrival (`Started`, `Watched`, `shown_again`) ─▶ the 0x262 lists each view
+//// a viewer's arrival (`Started`, `Seen`, `shown_again`) ─▶ the 0x262 lists each view
 ////                                    (`unit_casts.entries_of`), with the tail's cast id 0
 //// ```
 ////
@@ -121,7 +123,7 @@
 //// - **Retire** is the map's word that no player has seen the creature for the
 ////   idle stop, so it ends cleanly: the map's watch on it ends, and the spawn is
 ////   dormant with its unit id kept. A creature takes `Retire` once and has no
-////   viewer to tell: its viewers went with their `Unwatched`. A creature that lies
+////   viewer to tell: its viewers went with their `Unseen`. A creature that lies
 ////   dead when told to retire stops at its respawn, since its map keeps the spawn
 ////   retiring until it ends and a corpse is never shown to a viewer that comes
 ////   after.
@@ -163,17 +165,17 @@
 ////   still, refused and holding (`still`, `attack_refused`, `holds_a_state`): the fight starts no
 ////   charge, strike or path, and acts again when both the states that stop its run and the
 ////   opening are gone. A viewer that arrives is shown the guard's or the opening's cast after the 0x262.
-//// - **A viewer that is not a connection any more** is dropped by the send (the
-////   registry finds no process); the map's `Unwatched` follows from its end.
-//// - **A `Watched` twice from one connection** sends the 0x262 twice; the
-////   viewer's connection writes it once, as it does for a player's unit. The
-////   second `Watched` names the stay the creature tells that player by from then
-////   on (genesis_prime/world_map/stay).
+//// - **A viewer that is not a connection any more** is dropped by the map's relay (the
+////   registry finds no process); the map's `Unseen` follows from its end.
+//// - **A `Seen` twice from one connection** is answered with a snapshot twice; the map relays
+////   the first and drops the second, which no longer awaits it. The second `Seen` names the
+////   stay and generation the creature holds that player by from then on
+////   (genesis_prime/world_map/stay).
 //// - **A stay travels from the message that caused the work.** A strike's answer
 ////   goes for the stay the strike was told for; the fight holds each player in
 ////   the stay of the message that put it in the fight (the map's `Approached`, the
 ////   player's strike) and tells it for that stay; a player's strike or move of a
-////   stay other than the one its `Watched` named starts and moves nothing
+////   stay other than the one its `Seen` named starts and moves nothing
 ////   (genesis_prime/world_map/creature_fight).
 //// - **A property modifier** of a player's spell is told by the caster's connection
 ////   through the creature registry with no watch, as a strike is; the caster's cast owns
@@ -229,8 +231,9 @@
 //// | the creature crashes while retiring | the same watch end: the map takes it as a clean stop, since no client shows the unit |
 //// | the map run ends | the creature's watch on the run ends and it stops |
 //// | the creature supervisor restarts | every creature ends and so does every map (genesis_prime/server): the world subtree is `rest_for_one` |
-//// | a viewer's connection ends | a send to it is dropped; the map sends `Unwatched`, and the creature forgets it |
-//// | a `Watched` or `Unwatched` reaches a creature that has ended | dropped: the registry finds no process |
+//// | a viewer's connection ends | the map's relay to it is dropped; the map sends `Unseen`, and the creature forgets it |
+//// | a `Seen` or `Unseen` reaches a creature that has ended | dropped: the registry finds no process |
+//// | an `Unseen` names a generation other than the one the creature holds the viewer under | changes nothing: it is not this viewer's sight that ended |
 //// | the creature crashes while it holds a modifier | the map starts the spawn again as a new unit with no modifier; the caster's later `ModifierEnds` is dropped by the registry |
 //// | the same source starts twice | it is held once |
 //// | a `ModifierStarts` struck before the creature last stood again reaches it | dropped: it was struck on the life before |
@@ -258,13 +261,14 @@
 //// | a creature at a run speed of 0 or below is out of reach of a target | it leashes when the target is beyond the leash range from home, as a turret does (`creature_that_cannot_run_leashes_by_the_turret_rule_test`); at home it rests at once (`rooted_creature_leashing_at_home_rests_test`); away from home it holds, since it has no walk (`rooted_creature_at_the_circle_does_not_leash_test`) |
 
 import genesis_prime/game/area
+import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type Tell as StrikeTell, Answered, CreatureStriker,
+  type Answered, type Tell as StrikeTell, Answered, CreatureStriker,
   PlayerStriker, Refused,
 }
 import genesis_prime/game/unit_casts
@@ -283,9 +287,7 @@ import genesis_prime/step.{
   ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
   WatchId,
 }
-import genesis_prime/table/id.{
-  type Creature2Id, type Faction2Id, type Spell4Id, Faction2Id,
-}
+import genesis_prime/table/id.{type Spell4Id, Faction2Id}
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
   type Fighter, AttackTick, CastEnds, ChaseArrival, Fighter, FlightEnds,
@@ -371,10 +373,6 @@ pub type Settings {
 
 /// What the map and the connections tell a creature.
 pub type Message {
-  /// The player of connection `by`, in its stay `stay`, sees the creature.
-  Watched(by: ConnectionId, stay: Stay)
-  /// The player of connection `by` no longer sees the creature.
-  Unwatched(by: ConnectionId)
   /// The map: the player of connection `by`, in its stay `stay`, sees the creature
   /// from the sight `generation` names. The creature records the viewer and answers
   /// with a `Snapshot` of that generation; a second `Seen` of the same viewer is
@@ -479,7 +477,7 @@ pub type Message {
   /// | the creature retires unseen while one is pending | the process stops and the pending despawn is lost, a server guess (the spawn's next creature stands fresh) |
   /// | it is told `Retire` while despawned | it stops at its respawn (`StopAtRespawn`), so the spawn does not come back early |
   /// | a viewer arrives while despawned | it is recorded and sent nothing; it is sent the creature when the corpse timer fires |
-  /// | a viewer leaves while despawned | `Unwatched` sends `Removed`, which the viewer's connection drops: the unit is not shown |
+  /// | a viewer leaves while despawned | `Unseen` drops it and sends nothing; the map's notice reaches a connection that shows no such unit |
   /// | a strike reaches the despawned creature | `Refused(Despawned)`; a throw, a modifier or a gate is dropped, since `is_dead` holds |
   /// | the corpse timer fires for a run-only creature | `Stop` only: the viewers were sent `Removed` at the removal |
   /// | the creature crashes pending or despawned | the map sends `Gone` and starts the spawn again after the respawn time as a new unit |
@@ -566,29 +564,9 @@ pub type Message {
   ControlsEnd(by: ConnectionId, cast_id: Int)
 }
 
-/// What a creature sends a connection without waiting.
+/// What a creature sends its map without waiting. The map relays it to the players
+/// (genesis_prime/world_map/map); a creature sends no connection anything.
 pub type Outgoing {
-  /// News of the creature's own unit for a viewer, in the viewer's stay `stay`:
-  /// its 0x262, 0x355, 0x937, 0x88c and the fight's 0x908, 0x90a, 0x89a, 0x638,
-  /// 0x7ff, 0x7f4, 0x7fb and 0x7fe.
-  News(stay: Stay, news: PeerNews)
-  /// The answer to a strike, for the connection that told it, in the stay the
-  /// strike was told for.
-  Struck(stay: Stay, answered: Answered)
-  /// A tell to the connection of a player in the creature's fight, in the
-  /// player's stay `stay`: it threatens or releases the player, or strikes it.
-  FightTold(stay: Stay, told: Fight)
-  /// The credit for a kill, for the connection of the player whose blow killed the
-  /// creature, in the stay the killing strike was told for: the creature's unit, its
-  /// Creature2 row, its Faction2 (its spawn row's) and its level. Sent once per death,
-  /// after the strike's answer (genesis_prime/game/experience).
-  KillCredit(
-    stay: Stay,
-    unit_id: Int,
-    creature_id: Creature2Id,
-    faction_id: Faction2Id,
-    level: Int,
-  )
   /// To the creature's map: the picture of the creature for the viewer of connection
   /// `by` that took `Seen` of `generation`, built from the creature's state when it took
   /// it, `burst` in the order the viewer writes it. Empty for a creature that is not
@@ -603,7 +581,9 @@ pub type Outgoing {
   /// To the creature's map: news of the creature's unit for every viewer, once, which
   /// the map relays to each viewer it holds as relaying (`map.Broadcast`).
   Broadcast(unit_id: Int, life: Int, news: PeerNews)
-  /// To the creature's map: a tell to one player, for its stay (`map.Relay`).
+  /// To the creature's map: a tell to one player, for its stay: the answer to its
+  /// strike, the credit for a kill or a fight tell (`map.Relay`). News of the
+  /// creature's unit is no relay: it goes as a snapshot or a broadcast.
   Relay(
     unit_id: Int,
     life: Int,
@@ -613,7 +593,13 @@ pub type Outgoing {
   )
 }
 
-/// A creature's players in sight, each by its connection with the stay the map
+/// A player in sight of a creature: the stay the map named it for and the generation
+/// of the sight it began under, which the map's `Unseen` must name to end it.
+pub type Viewer {
+  Viewer(stay: Stay, generation: Generation)
+}
+
+/// A creature's players in sight, each by its connection with the stay and generation the map
 /// named it for, its health, its fight, the crowd-control states it holds, whether
 /// it was told to retire while it lay dead, its properties with the modifiers of
 /// players' spells on them, the watch on each caster's connection whose modifiers it
@@ -632,7 +618,7 @@ pub opaque type State {
     control: creature_control.State,
     guard: creature_guard.State,
     retiring: Bool,
-    viewers: Dict(ConnectionId, Stay),
+    viewers: Dict(ConnectionId, Viewer),
     properties: Properties,
     casters: Dict(ConnectionId, WatchId),
     held: held_changes.Held,
@@ -675,7 +661,9 @@ pub fn new(settings: Settings) -> State {
     ),
     retiring: False,
     viewers: dict.from_list(
-      list.map(settings.creature.viewers, fn(viewer) { #(viewer.0, viewer.1) }),
+      list.map(settings.creature.viewers, fn(viewer) {
+        #(viewer.0, Viewer(stay: viewer.1, generation: viewer.2))
+      }),
     ),
     properties: base_properties(settings:),
     casters: dict.new(),
@@ -749,57 +737,70 @@ pub fn step(
           watch: run_watch,
           target: step.Map(map: creature.map, incarnation: creature.incarnation),
         ),
-        ..list.flat_map(first_viewers(creature:), fn(viewer) {
-          [
-            appeared(state:, viewer:, now_ms:),
-            ..list.append(
-              guard_shown(state:, viewer:, now_ms:),
-              unit_states_shown(state:, viewer:, now_ms:),
-            )
-          ]
+        ..list.map(creature.viewers, fn(viewer) {
+          to_the_map(
+            state:,
+            message: Snapshot(
+              unit_id: creature.unit_id,
+              life: creature.life,
+              by: viewer.0,
+              generation: viewer.2,
+              burst: [
+                appeared(state:, now_ms:),
+                ..list.append(
+                  guard_shown(state:, now_ms:),
+                  unit_states_shown(state:, now_ms:),
+                )
+              ],
+            ),
+          )
         })
       ]),
     )
-    OwnEvent(Told(message: Watched(by:, stay:))) -> #(
-      State(..state, viewers: dict.insert(state.viewers, by, stay)),
-      Effects(case creature_life.is_shown(life: state.life) {
-        False -> []
-        True -> [
-          appeared(state:, viewer: #(by, stay), now_ms:),
-          ..list.flatten([
-            guard_shown(state:, viewer: #(by, stay), now_ms:),
-            unit_states_shown(state:, viewer: #(by, stay), now_ms:),
-            list.map(
-              creature_fight.arrival_news(
-                state: state.fight,
-                fighter: fighter_of(state:),
-                now_ms:,
-              ),
-              fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
-            ),
-          ])
-        ]
-      }),
+    OwnEvent(Told(message: Seen(by:, stay:, generation:))) -> #(
+      State(
+        ..state,
+        viewers: dict.insert(state.viewers, by, Viewer(stay:, generation:)),
+      ),
+      Effects([
+        to_the_map(
+          state:,
+          message: Snapshot(
+            unit_id: creature.unit_id,
+            life: creature.life,
+            by:,
+            generation:,
+            burst: case creature_life.is_shown(life: state.life) {
+              False -> []
+              True -> [
+                appeared(state:, now_ms:),
+                ..list.flatten([
+                  guard_shown(state:, now_ms:),
+                  unit_states_shown(state:, now_ms:),
+                  list.map(
+                    creature_fight.arrival_news(
+                      state: state.fight,
+                      fighter: fighter_of(state:),
+                      now_ms:,
+                    ),
+                    fn(news) { peer_news(creature:, news:) },
+                  ),
+                ])
+              ]
+            },
+          ),
+        ),
+      ]),
     )
-    OwnEvent(Told(message: Seen(..))) | OwnEvent(Told(message: Unseen(..))) ->
-      // The shape of the sight protocol: the build commit answers `Seen` with a
-      // `Snapshot` and takes `Unseen` as a viewer's end.
-      #(state, Effects([]))
-    OwnEvent(Told(message: Unwatched(by:))) ->
+    OwnEvent(Told(message: Unseen(by:, generation:))) ->
       case dict.get(state.viewers, by) {
-        Ok(stay) -> {
+        Ok(Viewer(generation: held, ..)) if held == generation -> {
           let state = State(..state, viewers: dict.delete(state.viewers, by))
           let #(state, fought) =
-            fought(state:, input: creature_fight.Unwatched(by:), now_ms:)
-          #(
-            state,
-            Effects([
-              news_to(creature:, viewer: #(by, stay), news: Removed),
-              ..fought
-            ]),
-          )
+            fought(state:, input: creature_fight.Unseen(by:), now_ms:)
+          #(state, Effects(fought))
         }
-        Error(Nil) -> #(state, Effects([]))
+        Ok(Viewer(..)) | Error(Nil) -> #(state, Effects([]))
       }
     OwnEvent(Told(message: Retire)) ->
       case creature_life.on_retire(life: state.life) {
@@ -848,10 +849,7 @@ pub fn step(
       Effects(
         list.append(
           case creature_life.is_shown(life: state.life) {
-            True ->
-              list.map(sorted_viewers(state:), fn(viewer) {
-                news_to(creature:, viewer:, news: Removed)
-              })
+            True -> to_viewers(state:, news: Removed)
             False -> []
           },
           [Stop],
@@ -880,9 +878,7 @@ pub fn step(
             Effects(
               list.flatten([
                 unwatched,
-                list.flat_map(sorted_viewers(state:), fn(viewer) {
-                  shown_again(state:, viewer:, was_shown:, now_ms:)
-                }),
+                shown_again(state:, was_shown:, now_ms:),
                 guarded,
                 fought,
               ]),
@@ -1103,16 +1099,12 @@ fn unit_state_carried(
   })
 }
 
-/// What a viewer is sent after the creature's 0x262: each unit state the creature still
-/// holds, for that viewer alone.
-fn unit_states_shown(
-  state state: State,
-  viewer viewer: #(ConnectionId, Stay),
-  now_ms now_ms: Int,
-) -> List(Effect(ServiceEffect(Outgoing))) {
+/// What a viewer's first picture holds after the creature's 0x262: each unit state the
+/// creature still holds.
+fn unit_states_shown(state state: State, now_ms now_ms: Int) -> List(PeerNews) {
   list.map(
     creature_unit_state.shown(state: state.unit_state, now_ms:),
-    fn(news) { news_to(creature: state.settings.creature, viewer:, news:) },
+    fn(news) { peer_news(creature: state.settings.creature, news:) },
   )
 }
 
@@ -1261,21 +1253,21 @@ fn view_ended(
   }
 }
 
-/// What a viewer is sent when the corpse timer stands the creature again: the creature as
-/// new, after a `Removed` for a creature that was shown (a corpse), and alone for one that
-/// was despawned, whose `Removed` went at the removal.
+/// What the viewers are sent when the corpse timer stands the creature again, once for all
+/// of them: the creature as new, after a `Removed` for a creature that was shown (a corpse),
+/// and alone for one that was despawned, whose `Removed` went at the removal.
 fn shown_again(
   state state: State,
-  viewer viewer: #(ConnectionId, Stay),
   was_shown was_shown: Bool,
   now_ms now_ms: Int,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
   case was_shown {
-    True -> [
-      news_to(creature: state.settings.creature, viewer:, news: Removed),
-      appeared(state:, viewer:, now_ms:),
-    ]
-    False -> [appeared(state:, viewer:, now_ms:)]
+    True ->
+      list.append(
+        to_viewers(state:, news: Removed),
+        to_viewers(state:, news: appeared(state:, now_ms:).news),
+      )
+    False -> to_viewers(state:, news: appeared(state:, now_ms:).news)
   }
 }
 
@@ -1539,6 +1531,7 @@ fn struck(
     Error(why) -> #(
       state,
       Effects(answer_to(
+        state:,
         tell:,
         answered: Answered(key: tell.key, outcome: Refused(why:)),
       )),
@@ -1636,7 +1629,7 @@ fn struck(
         )
       // The answer goes first: the caster's connection then knows the strike
       // before it is told the health it left, one sender in one order.
-      let answer = answer_to(tell:, answered:)
+      let answer = answer_to(state:, tell:, answered:)
       let news =
         list.flat_map(reaction.news, fn(news) {
           to_viewers(state:, news: viewer_news(news))
@@ -1738,21 +1731,21 @@ fn credit_for(
   tell tell: StrikeTell,
   reaction reaction: creature_life.Reaction,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  case reaction.corpse_for_ms, tell.striker {
-    Some(..), PlayerStriker(stay:, ..) -> [
-      OwnEffect(Send(
-        to: tell.from,
-        message: KillCredit(
-          stay:,
+  case reaction.corpse_for_ms, tell.striker, tell.from {
+    Some(..), PlayerStriker(stay:, ..), Connection(connection:) -> [
+      relayed(
+        state:,
+        to: connection,
+        stay:,
+        payload: relay.KillCredit(credit: Credit(
           unit_id: state.settings.creature.unit_id,
           creature_id: state.settings.spawn.creature_id,
           faction_id: Faction2Id(state.settings.spawn.faction_id),
           level: state.settings.spawn.level,
-        ),
-      )),
+        )),
+      ),
     ]
-    Some(..), CreatureStriker(..) -> []
-    None, PlayerStriker(..) | None, CreatureStriker(..) -> []
+    Some(..), _, _ | None, _, _ -> []
   }
 }
 
@@ -2099,29 +2092,26 @@ fn controls_ended(
   #(state, Effects(list.append(carried(state:, effects:), resumed)))
 }
 
-/// The answer to a strike, sent to the caster's connection for the stay the
-/// strike was told for: the caster's connection takes it only in that stay. A
+/// The answer to a strike, relayed to the caster's connection through the map for the stay
+/// the strike was told for: the caster's connection takes it only in that stay. A
 /// strike with no player striker has no stay to answer for, and no answer: no
 /// creature strikes a creature.
 fn answer_to(
+  state state: State,
   tell tell: StrikeTell,
   answered answered: Answered,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  case tell.striker {
-    PlayerStriker(stay:, ..) -> [
-      OwnEffect(Send(to: tell.from, message: Struck(stay:, answered:))),
+  case tell.striker, tell.from {
+    PlayerStriker(stay:, ..), Connection(connection:) -> [
+      relayed(state:, to: connection, stay:, payload: relay.Struck(answered:)),
     ]
-    CreatureStriker(..) -> []
+    PlayerStriker(..), _ | CreatureStriker(..), _ -> []
   }
 }
 
-/// What a viewer is sent after the creature's 0x262 of the guard: the guard's cast, or the
-/// opening's, for that viewer alone; none for a creature with no guard.
-fn guard_shown(
-  state state: State,
-  viewer viewer: #(ConnectionId, Stay),
-  now_ms now_ms: Int,
-) -> List(Effect(ServiceEffect(Outgoing))) {
+/// What a viewer's first picture holds after the creature's 0x262 of the guard: the guard's
+/// cast, or the opening's; none for a creature with no guard.
+fn guard_shown(state state: State, now_ms now_ms: Int) -> List(PeerNews) {
   list.map(
     creature_guard.shown(
       state: state.guard,
@@ -2129,7 +2119,7 @@ fn guard_shown(
       place: creature_fight.place_at(state: state.fight, now_ms:),
       now_ms:,
     ),
-    fn(news) { news_to(creature: state.settings.creature, viewer:, news:) },
+    fn(news) { peer_news(creature: state.settings.creature, news:) },
   )
 }
 
@@ -2165,7 +2155,7 @@ fn fought_breaking(
     creature_fight.step(
       state: state.fight,
       fighter: fighter_of(state:),
-      viewers: state.viewers,
+      viewers: dict.map_values(state.viewers, fn(_, viewer) { viewer.stay }),
       alive: !creature_life.is_dead(life: state.life),
       input:,
       now_ms:,
@@ -2178,7 +2168,7 @@ fn fought_breaking(
       let #(state, more) = case effect {
         creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
         creature_fight.ToPlayer(to:, stay:, told:) -> #(state, [
-          OwnEffect(Send(to: Connection(to), message: FightTold(stay:, told:))),
+          relayed(state:, to:, stay:, payload: relay.Fight(told:)),
         ])
         creature_fight.RestoreHealth -> {
           let life = creature_life.new(body: state.body)
@@ -2452,19 +2442,13 @@ fn viewer_news(news: creature_life.News) -> unit_news.News {
   }
 }
 
-/// The send of the creature's 0x262 to a viewer, stamped with the map's time, at
-/// its current health and where it stands now: at its spawn, on its path, or where
-/// it fell.
-fn appeared(
-  state state: State,
-  viewer viewer: #(ConnectionId, Stay),
-  now_ms now_ms: Int,
-) -> Effect(ServiceEffect(Outgoing)) {
+/// The creature's 0x262, stamped with the map's time, at its current health and where it
+/// stands now: at its spawn, on its path, or where it fell.
+fn appeared(state state: State, now_ms now_ms: Int) -> PeerNews {
   let creature = state.settings.creature
   let place = creature_fight.place_at(state: state.fight, now_ms:)
-  news_to(
+  peer_news(
     creature:,
-    viewer:,
     news: CreatureAppeared(
       spawn_id: state.settings.spawn.id,
       unit: creature_unit.with_casts(
@@ -2500,54 +2484,77 @@ fn appeared(
   )
 }
 
-/// The creature's first viewers as the map named them, each by its connection and
-/// its stay.
-fn first_viewers(
-  creature creature: CreatureStart,
-) -> List(#(ConnectionId, Stay)) {
-  list.map(creature.viewers, fn(viewer) { #(viewer.0, viewer.1) })
-}
-
-/// The sends of news about the creature's own unit to every viewer, in the order
-/// of their connections.
+/// News about the creature's own unit for every viewer, once: one broadcast to its map,
+/// which relays it to each viewer it holds as relaying. None when the creature has no
+/// viewer.
 fn to_viewers(
   state state: State,
   news news: unit_news.News,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  list.map(sorted_viewers(state:), fn(viewer) {
-    news_to(creature: state.settings.creature, viewer:, news:)
-  })
+  case dict.is_empty(state.viewers) {
+    True -> []
+    False -> {
+      let creature = state.settings.creature
+      [
+        to_the_map(
+          state:,
+          message: Broadcast(
+            unit_id: creature.unit_id,
+            life: creature.life,
+            news: peer_news(creature:, news:),
+          ),
+        ),
+      ]
+    }
+  }
 }
 
-/// The viewers, each with its stay, in the order of their connections.
-fn sorted_viewers(state state: State) -> List(#(ConnectionId, Stay)) {
-  map.sorted_by_connection(state.viewers)
-}
-
-/// The send of news about the creature's own unit to a viewer's connection, for
-/// the viewer's stay.
-fn news_to(
+/// News about the creature's own unit.
+fn peer_news(
   creature creature: CreatureStart,
-  viewer viewer: #(ConnectionId, Stay),
   news news: unit_news.News,
+) -> PeerNews {
+  PeerNews(unit_id: creature.unit_id, news:)
+}
+
+/// A tell to one player through the creature's map, for the player's stay.
+fn relayed(
+  state state: State,
+  to to: ConnectionId,
+  stay stay: Stay,
+  payload payload: relay.Payload,
 ) -> Effect(ServiceEffect(Outgoing)) {
-  OwnEffect(Send(
-    to: Connection(viewer.0),
-    message: News(
-      stay: viewer.1,
-      news: PeerNews(unit_id: creature.unit_id, news:),
+  let creature = state.settings.creature
+  to_the_map(
+    state:,
+    message: Relay(
+      unit_id: creature.unit_id,
+      life: creature.life,
+      to:,
+      stay:,
+      payload:,
     ),
+  )
+}
+
+/// A send to the creature's map: the only address the creature sends to.
+fn to_the_map(
+  state state: State,
+  message message: Outgoing,
+) -> Effect(ServiceEffect(Outgoing)) {
+  let creature = state.settings.creature
+  OwnEffect(Send(
+    to: step.Map(map: creature.map, incarnation: creature.incarnation),
+    message:,
   ))
 }
 
-/// What the map's `Outgoing` means to a creature: `Watched` and `Unwatched`,
+/// What the map's `Outgoing` means to a creature: `Seen` and `Unseen`,
 /// each by the connection whose player sees or stops seeing it, `Approached` and
 /// `Withdrew`, by the connection whose ready player entered or left its ring,
 /// `PlayerDied`, by the connection whose player died, and `Retire`. Any other is no message to a creature, and `Error(Nil)`.
 pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
-    map.Watched(by:, stay:) -> Ok(Watched(by:, stay:))
-    map.Unwatched(by:) -> Ok(Unwatched(by:))
     map.Seen(by:, stay:, generation:) -> Ok(Seen(by:, stay:, generation:))
     map.Unseen(by:, generation:) -> Ok(Unseen(by:, generation:))
     map.Approached(by:, unit_id:, place:, seq:, stay:, hit_radius:) ->
@@ -2566,17 +2573,14 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
 }
 
 /// What a creature's `Outgoing` means to its map: `Snapshot`, `Broadcast` and `Relay`,
-/// each as the map's message of the same name. The others go to a player's connection,
-/// and are no message to a map, `Error(Nil)`.
-pub fn told_to_map(outgoing outgoing: Outgoing) -> Result(map.Message, Nil) {
+/// each as the map's message of the same name.
+pub fn told_to_map(outgoing outgoing: Outgoing) -> map.Message {
   case outgoing {
     Snapshot(unit_id:, life:, by:, generation:, burst:) ->
-      Ok(map.Snapshot(unit_id:, life:, by:, generation:, burst:))
-    Broadcast(unit_id:, life:, news:) ->
-      Ok(map.Broadcast(unit_id:, life:, news:))
+      map.Snapshot(unit_id:, life:, by:, generation:, burst:)
+    Broadcast(unit_id:, life:, news:) -> map.Broadcast(unit_id:, life:, news:)
     Relay(unit_id:, life:, to:, stay:, payload:) ->
-      Ok(map.Relay(unit_id:, life:, to:, stay:, payload:))
-    News(..) | Struck(..) | FightTold(..) | KillCredit(..) -> Error(Nil)
+      map.Relay(unit_id:, life:, to:, stay:, payload:)
   }
 }
 

@@ -285,10 +285,11 @@ pub fn map_sent(
         ),
       )
     }
-    map.UnitUnseen(unit_id: _, generation: _) ->
-      // The shape of the one removal: the build commit ends the unit here through
-      // `unit_removed`, keeping no cast.
-      Continue(session, [])
+    map.UnitUnseen(unit_id:, generation: _) -> {
+      let #(session, removal) =
+        unit_removed(session:, now:, entered:, unit_id:, keeping: [])
+      Continue(session, list.append(removal.written, removal.ended))
+    }
     map.Gone(unit_id:) -> {
       let #(life, by_life) = player_life.released(life: entered.life, unit_id:)
       let session =

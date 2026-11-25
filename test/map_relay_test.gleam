@@ -44,12 +44,8 @@ import world_watch_support
 
 /// What a step told a creature about a relation: the creature's unit, the connection's
 /// number and the generation. `Started` is a first viewer named in the creature's start.
-/// `Watched` and `Unwatched` are the sight tells of the protocol `Seen` and `Unseen` replace:
-/// a step that sends one beside them breaks the assertions that list what it told.
 type Told {
   Started(unit_id: Int, by: Int, generation: Generation)
-  Watched(unit_id: Int, by: Int)
-  Unwatched(unit_id: Int, by: Int)
   Seen(unit_id: Int, by: Int, generation: Generation)
   Unseen(unit_id: Int, by: Int, generation: Generation)
 }
@@ -73,10 +69,6 @@ fn told(taken: ServiceStep(map.Outgoing)) -> List(Told) {
         ) -> Ok(Seen(unit_id:, by:, generation:))
         #(Creature(unit_id:, ..), map.Unseen(by: ConnectionId(by), generation:)) ->
           Ok(Unseen(unit_id:, by:, generation:))
-        #(Creature(unit_id:, ..), map.Watched(by: ConnectionId(by), ..)) ->
-          Ok(Watched(unit_id:, by:))
-        #(Creature(unit_id:, ..), map.Unwatched(by: ConnectionId(by))) ->
-          Ok(Unwatched(unit_id:, by:))
         _ -> Error(Nil)
       }
     })

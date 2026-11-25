@@ -105,7 +105,6 @@ fn start_world_on(
       realm_id: 1,
       tables: character_tables.shared(),
       reach: service.watch_only(locate: locate(scope, _)),
-      to_connection: fn(_connection, _news) { Error(Nil) },
     )
     |> supervisor.start
     as "the world tree started"
