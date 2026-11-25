@@ -783,7 +783,7 @@ pub fn entry_answered(
           stay:,
           tables: session.settings.tables,
           visibility: session.settings.visibility,
-          stored: session.settings.stored_spawns,
+          spawns: session.settings.loaded_spawns,
         )
       {
         Ok(world_entry.Join(state:, effects:))

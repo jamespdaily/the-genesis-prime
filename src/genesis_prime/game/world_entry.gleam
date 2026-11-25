@@ -202,7 +202,7 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/spawn_id.{type StoredSpawns, SpawnId}
+import genesis_prime/world_map/spawn_id.{type LoadedSpawns, SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
 import gleam/bool
@@ -691,7 +691,7 @@ pub fn loaded(
   stay stay: Stay,
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
-  stored stored: StoredSpawns,
+  spawns spawns: LoadedSpawns,
 ) -> Result(Loaded, Nil) {
   case state, answer {
     Loading(character_id: CharacterId(character_id), ..), store.NotTheAccounts
@@ -726,7 +726,7 @@ pub fn loaded(
         Some(place) ->
           case
             quest_log.from_rows(rows: quests, tables:)
-            |> result.map(quest_log.without_lost_spawns(log: _, stored:))
+            |> result.map(quest_log.without_lost_spawns(log: _, spawns:))
           {
             Error(refused) ->
               Fault(

@@ -660,7 +660,7 @@ pub fn with_world_data_on_ground(
           ..settings.game.settings,
           visibility: content_spawn.visibility(key:),
           reused_unit_objectives: content_spawn.reused_unit_objectives(key:),
-          stored_spawns: content_spawn.stored_spawns(key:),
+          loaded_spawns: content_spawn.loaded_spawns(key:),
         ),
       ),
       world: server.World(..settings.world, spawns: key),

@@ -8,7 +8,7 @@
 ////
 //// ```
 //// store rows (CharacterLoaded.quests) ─▶ from_rows  ─▶ the log, or the quest the client would refuse
-//// the log, the stored spawns          ─▶ without_lost_spawns ─▶ the log, the entries the world lost
+//// the log, the loaded spawns          ─▶ without_lost_spawns ─▶ the log, the entries the world lost
 //// the log, the clock, the tables      ─▶ login      ─▶ 0x35F: completed, known and active lists, the reset time
 //// the log and the clock               ─▶ reset_due  ─▶ NotYet(wait), or 0x362 with every period that reset since
 //// the log                             ─▶ rows       ─▶ the store's rows (SavePlace.quests)
@@ -45,8 +45,8 @@
 ////   count again (`used`, `is_used`). The set is saved with the quest (`rows`, read back
 ////   by `from_rows`), dropped when the objective is done and empty when the quest is
 ////   taken again. A spawn the loaded world lost is dropped at the load
-////   (`without_lost_spawns`) and the caller reports it; a spawn the server placed (an id above
-////   every stored one) is dropped with no report, since its id is not kept across loads. A
+////   (`without_lost_spawns`) and the caller reports it; the spawns the server placed are among
+////   the loaded ones, since their ids are fixed by the client's tables. A
 ////   run-only spawn (a negative id,
 ////   `world_map/spawn_source`) counts each use and is never remembered: its id restarts
 ////   in each map run, so it names no object of a later run (a server guess).
@@ -83,7 +83,7 @@ import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/spawn_id.{
-  type SpawnId, type StoredSpawns, SpawnId,
+  type LoadedSpawns, type SpawnId, SpawnId,
 }
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -216,22 +216,21 @@ pub type Lost {
   Lost(quest_id: Int, objective_index: Int, spawn_id: SpawnId)
 }
 
-/// The log without the objects it remembers as used whose spawn is not a row of the
-/// `stored` spawns, and each one lost, in quest, objective and spawn order. A spawn the
-/// world lost (a row deleted and the world imported again) has no object to count, and one
-/// imported later has a new id, so it starts empty; the caller reports the list. A spawn
-/// above the highest stored id is one the server placed (`objective_spawn`): it is dropped
-/// and not listed, since a later import can give its number to a stored row.
+/// The log without the objects it remembers as used whose spawn is not among the loaded
+/// `spawns` (a stored row or one the server placed, `objective_spawn`), and each one lost,
+/// in quest, objective and spawn order. A spawn the world lost (a row deleted and the world
+/// imported again, or a placed spawn a stored row now serves) has no object to count, and
+/// one imported later has a new id, so it starts empty; the caller reports the list.
 pub fn without_lost_spawns(
   log log: QuestLog,
-  stored stored: StoredSpawns,
+  spawns spawns: LoadedSpawns,
 ) -> #(QuestLog, List(Lost)) {
   let #(entries, lost) =
     list.fold(in_quest_order(log:), #(log.entries, []), fn(so_far, pair) {
       let #(entries, lost) = so_far
       case pair {
         #(quest_id, Active(used:, ..) as entry) -> {
-          let #(kept, now_lost) = kept_and_lost(used:, stored:, quest_id:)
+          let #(kept, now_lost) = kept_and_lost(used:, spawns:, quest_id:)
           #(
             dict.insert(entries, quest_id, Active(..entry, used: kept)),
             list.append(lost, now_lost),
@@ -243,17 +242,17 @@ pub fn without_lost_spawns(
   #(QuestLog(..log, entries:), lost)
 }
 
-/// The used objects of one quest that are stored spawns, and the ones the world lost.
+/// The used objects of one quest that are loaded spawns, and the ones the world lost.
 fn kept_and_lost(
   used used: Dict(Int, Set(SpawnId)),
-  stored stored: StoredSpawns,
+  spawns spawns: LoadedSpawns,
   quest_id quest_id: Int,
 ) -> #(Dict(Int, Set(SpawnId)), List(Lost)) {
   list.fold(sorted_objects(used:), #(dict.new(), []), fn(so_far, one) {
     let #(kept, lost) = so_far
     let #(objective_index, spawn) = one
-    case spawn_id.presence(stored:, spawn:) {
-      spawn_id.Stored -> #(
+    case spawn_id.presence(spawns:, spawn:) {
+      spawn_id.Loaded -> #(
         with_used(used: kept, index: objective_index, spawn:),
         lost,
       )
@@ -263,7 +262,6 @@ fn kept_and_lost(
           Lost(quest_id:, objective_index:, spawn_id: spawn),
         ]),
       )
-      spawn_id.Placed -> so_far
     }
   })
 }
