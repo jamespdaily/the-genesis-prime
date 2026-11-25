@@ -1519,10 +1519,12 @@ pub fn went(
     phase:,
     spell: Error(Nil),
     struck:,
+    fired: False,
   )
 }
 
-/// The same for a go of `spell`, as the areas name it by the go's Spell4 id.
+/// The same for a go of `spell`, as the areas name it by the go's Spell4 id, asked of a cast
+/// that was `fired` or not (`GoAsked.fired`).
 pub fn went_of_spell(
   cast cast: State,
   caster caster: Caster,
@@ -1531,6 +1533,7 @@ pub fn went_of_spell(
   phase phase: Int,
   spell spell: Result(Spell, Nil),
   struck struck: List(cast_state.Struck),
+  fired fired: Bool,
 ) -> #(State, List(Effect)) {
   cast.went(
     cast:,
@@ -1545,7 +1548,7 @@ pub fn went_of_spell(
     units: dict.new(),
     rolls: [],
     gates_passed: dict.new(),
-    fired: False,
+    fired:,
   )
 }
 

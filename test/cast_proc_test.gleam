@@ -1694,10 +1694,7 @@ fn holder_and_hitter(
   procs procs: List(ProcRow),
   school school: Int,
 ) -> #(Plans, State) {
-  let holder = holding(spell4_id: 250_101, procs:)
-  let plans = support.plans_of([holder, hitter(school:)])
-  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
-  #(plans, state)
+  holder_and_spells(procs:, spells: [hitter(school:)])
 }
 
 pub fn a_kind_12_proc_fires_its_spell_on_every_hit_the_holder_lands_test() -> Nil {
@@ -2053,7 +2050,7 @@ fn chained(
           True -> #(state, [effect])
           False ->
             settle(
-              cast.went(
+              support.went_of_spell(
                 cast: state,
                 caster:,
                 now:,
@@ -2061,11 +2058,6 @@ fn chained(
                 phase: asked.phase,
                 spell: Error(Nil),
                 struck: chain.struck_of(asked),
-                poses: dict.new(),
-                indexes: dict.new(),
-                units: dict.new(),
-                rolls: [],
-                gates_passed: dict.new(),
                 fired: asked.fired,
               ),
               asked.spell4_id,
@@ -2168,16 +2160,7 @@ pub fn a_periodic_tick_raises_a_hit_and_a_kill_by_a_tick_raises_a_kill_test() ->
       school: 2,
     )
   let caster = planted_caster()
-  let struck = [
-    cast_state.Hit(
-      unit_id: 31,
-      unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
-      descriptions: [blow(result: combat_result.Hit, killed: 0)],
-      controls: [],
-      armor_removed: 0,
-      ticking: periodic(),
-    ),
-  ]
+  let struck = [dotted()]
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
@@ -2587,6 +2570,7 @@ pub fn a_casts_role_decides_whether_its_go_raises_a_landing_test() -> Nil {
         phase: asked.phase,
         spell: Ok(hitter(school: 2)),
         struck: [],
+        fired: False,
       ),
       caster:,
       at: 2200,
@@ -3616,6 +3600,7 @@ pub fn a_hit_answered_after_the_client_ended_a_cast_that_holds_no_node_still_fir
         phase: asked.phase,
         spell: Ok(hitter(school: 2)),
         struck: [plain_hit(unit_id: 31)],
+        fired: False,
       ),
       caster:,
       at: 1200,
@@ -3656,7 +3641,7 @@ pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {
   let assert [cast_state.Strike(asked)] = list.filter(raw, is_strike)
     as "the press asks for its go"
   let #(state, went) =
-    went_asked(state:, caster:, asked:, spell: Error(Nil), at: 1000)
+    went_hit(state:, caster:, asked:, spell: Error(Nil), at: 1000)
   assert cast_proc.has_pending(cast: state)
     as "the go's hit is waiting to be matched"
   let #(state, first) =
@@ -3667,7 +3652,7 @@ pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {
   let assert [cast_state.Strike(own)] = list.filter(first, is_strike)
     as "the fire's go is asked, not answered inside the pass"
   let #(state, went) =
-    went_asked(state:, caster:, asked: own, spell: Error(Nil), at: 1000)
+    went_hit(state:, caster:, asked: own, spell: Error(Nil), at: 1000)
   assert !cast_proc.has_pending(cast: state)
     as "the fire's own go hit the creature, and that is no pending event"
   let #(_, second) = support.then_procs(step: #(state, went), caster:, at: 1000)
@@ -5266,7 +5251,7 @@ fn cancelled_fire_answered(lingering lingering: Bool) -> List(Int) {
     False -> #(state, first, started)
     True -> {
       let #(state, first_go) =
-        went_asked(state:, caster:, asked: first, spell: Error(Nil), at: 1000)
+        went_hit(state:, caster:, asked: first, spell: Error(Nil), at: 1000)
       let #(state, answered) =
         support.then_procs(step: #(state, first_go), caster:, at: 1000)
       let assert [#(second_go, _)] =
@@ -5299,7 +5284,7 @@ fn cancelled_fire_answered(lingering lingering: Bool) -> List(Int) {
   assert dict.has_key(state.lingering, cast_id) == lingering
     as "the cast lingers when it holds a proc, and is gone when it holds nothing"
   let #(state, going) =
-    went_asked(state:, caster:, asked:, spell: Ok(fired), at: 1700)
+    went_hit(state:, caster:, asked:, spell: Ok(fired), at: 1700)
   let pending = cast_proc.has_pending(cast: state)
   let #(_, late) = support.then_procs(step: #(state, going), caster:, at: 1700)
   let steps = [#(1000, before), #(1700, late)]
@@ -5313,14 +5298,14 @@ fn cancelled_fire_answered(lingering lingering: Bool) -> List(Int) {
 /// The go asked, answered with a plain hit on creature 31 as the connection answers it: the
 /// cast's flag as the go was asked and the go's spell as the areas name it (`spell`, which names
 /// the hit's events when the cast is held no more), with no procs matched after it.
-fn went_asked(
+fn went_hit(
   state state: State,
   caster caster: Caster,
   asked asked: cast_state.GoAsked,
   spell spell: Result(Spell, Nil),
   at ms: Int,
 ) -> #(State, List(Effect)) {
-  cast.went(
+  support.went_of_spell(
     cast: state,
     caster:,
     now: support.at(ms:),
@@ -5328,11 +5313,6 @@ fn went_asked(
     phase: asked.phase,
     spell:,
     struck: [plain_hit(unit_id: 31)],
-    poses: dict.new(),
-    indexes: dict.new(),
-    units: dict.new(),
-    rolls: [],
-    gates_passed: dict.new(),
     fired: asked.fired,
   )
 }
