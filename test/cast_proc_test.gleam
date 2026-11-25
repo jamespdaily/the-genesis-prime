@@ -40,6 +40,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/held_changes
+import genesis_prime/game/held_tier
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/movement
@@ -51,6 +52,7 @@ import genesis_prime/game/spell_plan.{
   BrokenByDamage, Died, EnteredStealth, InWindow, KeepsStealth, KeptOnDamage,
   LeftCombat, LeftStealth, ProcRow, RemoveStealthRow, Spell,
 }
+import genesis_prime/game/spell_tier
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking
@@ -1555,6 +1557,22 @@ fn blow(
   result result: combat_result.CombatResult,
   killed killed: Int,
 ) -> hit.Description {
+  typed_blow_killing(result:, killed:, damage_type: damage_type.Tech)
+}
+
+/// A blow of this combat result and damage type that killed nobody.
+fn typed_blow(
+  result result: combat_result.CombatResult,
+  damage_type damage_type: damage_type.DamageType,
+) -> hit.Description {
+  typed_blow_killing(result:, killed: 0, damage_type:)
+}
+
+fn typed_blow_killing(
+  result result: combat_result.CombatResult,
+  killed killed: Int,
+  damage_type damage_type: damage_type.DamageType,
+) -> hit.Description {
   hit.Description(
     spell4_effects_id: 1,
     delay_ms: 0,
@@ -1562,7 +1580,7 @@ fn blow(
       amount: 8,
       killed:,
       combat_result: result,
-      damage_type: damage_type.Tech,
+      damage_type:,
     ),
   )
 }
@@ -1906,7 +1924,7 @@ fn periodic() -> List(spell_area.TickingDamage) {
     spell_area.TickingDamage(
       damage: spell_area.DamageEffect(
         effect_id: Spell4EffectsId(96_125),
-        damage_type: 2,
+        damage_type: 3,
         delay_ms: 0,
         phase_flags: -1,
         aim: spell_plan.AimsAtArea,
@@ -1927,7 +1945,7 @@ fn periodic() -> List(spell_area.TickingDamage) {
   ]
 }
 
-/// The strike round of a tick: it lands for 8 health, and kills the creature when
+/// The strike round of a tick: it lands 8 Magic damage, and kills the creature when
 /// `killed` is 1.
 fn landed_tick(
   asked asked: cast_state.TickAsked,
@@ -1938,7 +1956,11 @@ fn landed_tick(
     unit: cast_state.HitCreature(life: asked.life, struck_at_ms: 0),
     descriptions: [
       hit.Description(
-        ..blow(result: combat_result.Hit, killed:),
+        ..typed_blow_killing(
+          result: combat_result.Hit,
+          killed:,
+          damage_type: damage_type.Magic,
+        ),
         spell4_effects_id: asked.effect_id.value,
       ),
     ],
@@ -2048,6 +2070,18 @@ pub fn a_periodic_tick_raises_a_hit_and_a_kill_by_a_tick_raises_a_kill_test() ->
           casts: 250_202,
           aim: spell_plan.AtOtherUnit,
         ),
+        firing(
+          id: 3,
+          trigger: spell_plan.LandsMagicDamage,
+          casts: 250_203,
+          aim: spell_plan.AtOtherUnit,
+        ),
+        firing(
+          id: 4,
+          trigger: spell_plan.LandsTechDamage,
+          casts: 250_204,
+          aim: spell_plan.AtOtherUnit,
+        ),
       ],
       school: 2,
     )
@@ -2094,6 +2128,697 @@ pub fn a_periodic_tick_raises_a_hit_and_a_kill_by_a_tick_raises_a_kill_test() ->
     as "the go's hit and each of the three ticks that landed"
   assert started_when(spell4_id: 250_202, steps:) == [7000]
     as "the kill is the last tick's"
+  // A guess (Spell4Effects.effectType.14.dataBits00.229_230_231): a landed tick raises the
+  // event of the damage type it dealt as a hit does. The ticks deal Magic and the go's own
+  // blow Tech, so each event comes from the description it is raised by.
+  assert started_when(spell4_id: 250_203, steps:) == [3000, 5000, 7000]
+    as "each of the three ticks that landed Magic damage raises the Magic event, and the go's Tech blow does not"
+  assert started_when(spell4_id: 250_204, steps:) == [1000]
+    as "the go's Tech blow raises the Tech event, and no Magic tick does"
+}
+
+// ---- the damage type of a hit, and the landing of a spell ----
+
+/// The triggers the go of a school 2 spell raises for a hit on creature 31 with these
+/// descriptions, in order (`cast_proc.hit_events`).
+fn hit_triggers_of(
+  school school: Int,
+  descriptions descriptions: List(hit.Description),
+) -> List(spell_plan.Trigger) {
+  cast_proc.hit_events(spell: hitter(school:), struck: [
+    creature_hit(unit_id: 31, descriptions:),
+  ])
+  |> list.map(fn(event) { event.trigger })
+}
+
+pub fn a_hit_raises_the_event_of_its_damage_type_after_its_hit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects.effectType.14.dataBits00.229_230_231: kinds 229, 230 and 231 are the
+  // holder landing Physical, Tech or Magic damage, raised with the hit of the description
+  // that dealt it. A heal, a fall and the other damage types deal none of the three.
+  let typed = fn(damage_type) {
+    typed_blow(result: combat_result.Hit, damage_type:)
+  }
+  let rows = [
+    #(
+      "a Physical description raises the hit and the Physical event",
+      2,
+      [typed(damage_type.Physical)],
+      [spell_plan.LandsHit, spell_plan.LandsPhysicalDamage],
+    ),
+    #(
+      "a Tech description raises the hit and the Tech event",
+      2,
+      [typed(damage_type.Tech)],
+      [spell_plan.LandsHit, spell_plan.LandsTechDamage],
+    ),
+    #(
+      "a Magic description raises the hit and the Magic event",
+      2,
+      [typed(damage_type.Magic)],
+      [spell_plan.LandsHit, spell_plan.LandsMagicDamage],
+    ),
+    #(
+      "a school 1 spell raises its melee hit between the hit and the type's event",
+      1,
+      [typed(damage_type.Physical)],
+      [
+        spell_plan.LandsHit,
+        spell_plan.LandsMeleeHit,
+        spell_plan.LandsPhysicalDamage,
+      ],
+    ),
+    #(
+      "a Physical and a Tech description on one creature raise their pairs in description order",
+      2,
+      [typed(damage_type.Physical), typed(damage_type.Tech)],
+      [
+        spell_plan.LandsHit,
+        spell_plan.LandsPhysicalDamage,
+        spell_plan.LandsHit,
+        spell_plan.LandsTechDamage,
+      ],
+    ),
+    #(
+      "a critical Physical description raises the type's event after the critical's",
+      2,
+      [
+        typed_blow(
+          result: combat_result.Critical,
+          damage_type: damage_type.Physical,
+        ),
+      ],
+      [
+        spell_plan.LandsHit,
+        spell_plan.LandsCritical,
+        spell_plan.LandsFinisherCritical,
+        spell_plan.LandsPhysicalDamage,
+      ],
+    ),
+    #(
+      "a Heal description raises a hit and no type event",
+      2,
+      [typed(damage_type.Heal)],
+      [spell_plan.LandsHit],
+    ),
+    #(
+      "a HealShields description raises a hit and no type event",
+      2,
+      [typed(damage_type.HealShields)],
+      [spell_plan.LandsHit],
+    ),
+    #(
+      "a Fall description raises a hit and no type event",
+      2,
+      [typed(damage_type.Fall)],
+      [spell_plan.LandsHit],
+    ),
+    #(
+      "a Suffocate description raises a hit and no type event",
+      2,
+      [typed(damage_type.Suffocate)],
+      [spell_plan.LandsHit],
+    ),
+    #(
+      "a damage type the schema does not name raises a hit and no type event",
+      2,
+      [typed(damage_type.Other(9))],
+      [spell_plan.LandsHit],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(why, school, descriptions, expected) = row
+    assert hit_triggers_of(school:, descriptions:) == expected as why
+  })
+}
+
+pub fn a_damage_type_proc_on_the_all_attacks_group_fires_only_for_its_type_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Engineer Inlaid (Spell4 43211) holds row 98744 (kind 229, casts 43212) and row 220783
+  // (kind 230, casts 83528), both on group 333, the all-attacks group, at the holder
+  // (dataBits03 9): the group does not separate physical from tech, so the kind does. The
+  // texts say 'Dealing direct physical or technology damage grants an Empower based on
+  // damage type' (400442) and the fired spells change property 141 and 142, the Physical
+  // and Tech damage dealt multipliers (`Spell4Effects.effectType.14.dataBits00.229_230_231`).
+  let on_the_group = fn(row: ProcRow) {
+    ProcRow(..row, filter: spell_plan.InGroup(group_id: 333))
+  }
+  let procs = [
+    on_the_group(firing(
+      id: 98_744,
+      trigger: spell_plan.LandsPhysicalDamage,
+      casts: 43_212,
+      aim: spell_plan.AtHolder,
+    )),
+    on_the_group(firing(
+      id: 220_783,
+      trigger: spell_plan.LandsTechDamage,
+      casts: 83_528,
+      aim: spell_plan.AtHolder,
+    )),
+  ]
+  let hit_by = fn(damage_type) {
+    let #(plans, state) =
+      holder_and_hit_by(
+        procs:,
+        hitter: Spell(..hitter(school: 2), groups: [333]),
+      )
+    let #(_, effects) =
+      hit_with(
+        plans:,
+        state:,
+        struck: [
+          creature_hit(unit_id: 31, descriptions: [
+            typed_blow(result: combat_result.Hit, damage_type:),
+          ]),
+        ],
+        at: 1000,
+      )
+    #(
+      starts_of(spell4_id: 43_212, effects:),
+      starts_of(spell4_id: 83_528, effects:),
+    )
+  }
+  assert hit_by(damage_type.Physical) == #(1, 0)
+    as "a Physical hit fires the Physical Empower alone"
+  assert hit_by(damage_type.Tech) == #(0, 1)
+    as "a Tech hit fires the Tech Empower alone"
+  assert hit_by(damage_type.Magic) == #(0, 0) as "a Magic hit fires neither"
+}
+
+/// The planted holder of these procs and a hitter spell, with the holder's state once its
+/// passive is started at 500.
+fn holder_and_hit_by(
+  procs procs: List(ProcRow),
+  hitter hitter: Spell,
+) -> #(Plans, State) {
+  let holder = holding(spell4_id: 250_101, procs:)
+  let plans = support.plans_of([holder, hitter])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  #(plans, state)
+}
+
+/// What a go of `spell` that strikes these units raises as landings of its spell: the
+/// trigger and the unit of each event, in order (`cast_proc.landed_events`).
+fn landings_of(
+  struck struck: List(cast_state.Struck),
+) -> List(#(spell_plan.Trigger, option.Option(Int))) {
+  cast_proc.landed_events(spell: hitter(school: 2), struck:)
+  |> list.map(fn(event) { #(event.trigger, event.other_unit) })
+}
+
+/// A hit on a unit that is no creature, with no damage.
+fn player_hit(
+  unit_id unit_id: Int,
+  unit unit: cast_state.HitUnit,
+) -> cast_state.Struck {
+  support.hit_with(unit_id:, unit:, descriptions: [], controls: [], ticking: [])
+}
+
+pub fn a_go_raises_a_landing_for_each_creature_or_player_it_hits_and_one_with_no_unit_for_a_go_that_hits_neither_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects.effectType.14.dataBits00.27: the holder's spell landing. A guess for each
+  // row (the record's gap): one landing for each creature or player the go hit, and one with
+  // no unit for a go that hit neither, so a spell of the caster alone lands as well
+  // ('Medic - Add 1 Power Core' 42568 has one VitalModifier row on the caster).
+  let ally = player_hit(unit_id: 41, unit: cast_state.HitOtherPlayer(heals: []))
+  let caster_alone =
+    player_hit(unit_id: 40, unit: cast_state.HitCaster(heals: []))
+  let landing = fn(unit) { #(spell_plan.LandsSpell, unit) }
+  let immune =
+    cast_state.Immune(
+      unit_id: 32,
+      unit: support.first_life,
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  let rows = [
+    #(
+      "a creature the go only selects (no description) lands the spell",
+      [creature_hit(unit_id: 31, descriptions: [])],
+      [landing(Some(31))],
+    ),
+    #(
+      "two creatures land it once each, in selection order",
+      [plain_hit(unit_id: 32), creature_hit(unit_id: 31, descriptions: [])],
+      [landing(Some(32)), landing(Some(31))],
+    ),
+    #(
+      "a go that strikes nobody (a spell of the caster alone) lands it with no unit",
+      [],
+      [landing(None)],
+    ),
+    #("a go that lists only the caster lands it with no unit", [caster_alone], [
+      landing(None),
+    ]),
+    #(
+      "a go that heals an ally and the caster lands it once, naming the ally",
+      [ally, caster_alone],
+      [landing(Some(41))],
+    ),
+    #(
+      "a player a creature's attack struck lands it with no unit",
+      [player_hit(unit_id: 42, unit: cast_state.HitPlayer)],
+      [landing(None)],
+    ),
+    #(
+      "a deflected creature lands nothing",
+      [cast_state.Deflected(unit_id: 31)],
+      [],
+    ),
+    #("an immune creature lands nothing", [immune], []),
+  ]
+  list.each(rows, fn(row) {
+    let #(why, struck, expected) = row
+    assert landings_of(struck:) == expected as why
+  })
+}
+
+pub fn a_casts_role_decides_whether_its_go_raises_a_landing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A guess for each role (the Design of the step): a press and a stage land a spell, a
+  // child does (the filter groups hold Proxy children), a standing spell no press made does
+  // not, and an activation or a shortcut is named by no text of kind 27.
+  let ability = support.child(spell4_id: 250_301, base: 2)
+  let rows = [
+    #(
+      "a base cast raises a landing",
+      cast_state.Base(ability:, bag_spell: Spell4Id(250_301)),
+      True,
+    ),
+    #("a stage raises a landing", cast_state.Stage(ability:, index: 1), True),
+    #(
+      "a child (a Proxy's, a tick's, a proc fire's) raises a landing",
+      cast_state.Child(
+        counted_with: cast_state.WithNothing,
+        from: None,
+        named_player: None,
+      ),
+      True,
+    ),
+    #("a standing spell raises none", cast_state.Passive(from: None), False),
+    #(
+      "an activation raises none",
+      cast_state.Activation(
+        activating: cast_state.Activating(
+          unit_id: 31,
+          creature_id: 1,
+          alive_at_press: True,
+          by_item: False,
+          effects: [],
+        ),
+        interaction: cast_state.NoInteraction,
+      ),
+      False,
+    ),
+    #(
+      "a shortcut raises none",
+      cast_state.Shortcut(
+        interaction: cast_state.NoInteraction,
+        aimed: None,
+        from: cast_state.QuestButton,
+      ),
+      False,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(why, role, expected) = row
+    assert cast_proc.role_lands_spell(role:) == expected as why
+  })
+  // A go answered after the client ended its cast has no cast to read the role from: it
+  // raises a landing unless the cast is a standing one.
+  let standing =
+    cast_state.State(
+      ..cast_state.new(),
+      standing: dict.from_list([
+        #(7, cast_state.StandingKey(spell4_id: 250_301, from: None)),
+      ]),
+    )
+  assert cast_proc.go_lands_spell(cast: cast_state.new(), cast_id: 5)
+    as "a cast no longer live raises a landing"
+  assert !cast_proc.go_lands_spell(cast: standing, cast_id: 7)
+    as "a standing cast no longer live raises none"
+  // The table above, through the whole rule: the holder's passive (a standing spell) goes
+  // at the join and raises no landing; a press of the hitter, a base cast whose go strikes
+  // nobody, raises one with no unit and fires the proc at the holder.
+  // The proc's own cast is a child, whose go lands a spell too: the proc's limit stops it.
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      ProcRow(
+        ..firing(
+          id: 1,
+          trigger: spell_plan.LandsSpell,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+        limit: InWindow(window_ms: 500, count: 1),
+      ),
+    ])
+  let plans = support.plans_of([holder, hitter(school: 2)])
+  let #(state, joined) = planted_joined(plans:, spell: holder, at: 500)
+  assert starts_of(spell4_id: 250_201, effects: joined) == 0
+    as "the passive's own go raises no landing"
+  let #(_, pressed) = hit_with(plans:, state:, struck: [], at: 1000)
+  assert starts_of(spell4_id: 250_201, effects: pressed) == 1
+    as "a press whose go strikes nobody raises one landing with no unit"
+}
+
+// ---- the landing kinds, held through the tiers of the client's abilities ----
+
+/// The client's plans of every ability, later levels' included, with the abilities of these
+/// Spell4Base ids held at the tier given (`held_tier.plans_of`), as a player who bought the
+/// tier casts them.
+fn plans_with_tiers(held held: List(#(Int, Int))) -> Plans {
+  let tables = client_tables.shared()
+  held_tier.plans_of(
+    plans: spell_plan.plans_with_later(tables),
+    tier_plans: spell_plan.tier_plans(tables),
+    tiers: spell_tier.tiers(tables),
+    held: list.map(held, fn(entry) { #(Spell4BaseId(entry.0), entry.1) }),
+  )
+}
+
+/// A caster whose bag holds the abilities of these Spell4Base ids, in this order from bag
+/// index 0.
+fn bag_of(bases bases: List(Int)) -> Caster {
+  cast_state.Caster(
+    ..support.caster(),
+    abilities: list.map(bases, Spell4BaseId),
+  )
+}
+
+/// A press of the bag index at `ms` whose gos strike what `struck_of` says, played out until
+/// `until_ms`: every timer it starts fires on the driven clock. The state and every effect
+/// of the press and of each timer, in order.
+fn played(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag bag: Int,
+  at ms: Int,
+  until until_ms: Int,
+  struck_of struck_of: fn(cast_state.GoAsked) -> List(cast_state.Struck),
+) -> #(State, List(Effect)) {
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag,
+      target: 0,
+      at: ms,
+    )
+  let #(state, first) =
+    support.answered_each(
+      caster:,
+      state:,
+      effects: pressed,
+      at: ms,
+      struck_of:,
+      rolls: [],
+      poses: dict.new(),
+    )
+  let #(state, fired) =
+    support.run_timers_finding_striking(
+      caster:,
+      state:,
+      effects: first,
+      from_ms: ms,
+      until_ms:,
+      units: dict.new(),
+      found_by: fn(_) { [] },
+      struck_by: fn(_, asked) { struck_of(asked) },
+    )
+  #(state, list.append(first, list.flat_map(fired, fn(step) { step.effects })))
+}
+
+/// The ability of this Spell4Base id as the plans hold it.
+fn ability_of(plans plans: Plans, base base: Int) -> Spell {
+  let assert Ok(spell) = spell_plan.in_plans(plans:, base: Spell4BaseId(base))
+    as {
+      "the plans hold the ability of the Spell4Base " <> int.to_string(base)
+    }
+  spell
+}
+
+/// The groups of a Spell4 in the client's tables (`Spell4.spell4GroupListId`).
+fn groups_of(spell4_id spell4_id: Int) -> List(Int) {
+  let assert Ok(facts) =
+    spell_plan.facts_of_spell4(
+      tables: client_tables.shared(),
+      spell4_id: Spell4Id(spell4_id),
+    )
+    as "the tables hold the spell"
+  facts.groups
+}
+
+/// The go of this Spell4 hits one creature for each damage type given, each with one
+/// description of its type; every other go strikes nobody.
+fn dealing(
+  spell4_id spell4_id: Int,
+  damage_types damage_types: List(damage_type.DamageType),
+) -> fn(cast_state.GoAsked) -> List(cast_state.Struck) {
+  only(
+    spell4_id:,
+    struck: list.index_map(damage_types, fn(damage_type, index) {
+      creature_hit(unit_id: 31 + index, descriptions: [
+        typed_blow(result: combat_result.Hit, damage_type:),
+      ])
+    }),
+  )
+}
+
+const engineer_shock_pulse = 26_775
+
+/// Thresher (Spell4 52133) starts its damage spell 52230 through a Proxy.
+const engineer_thresher = 34_347
+
+const thresher_damage = 52_230
+
+const engineer_particle_ejector = 20_628
+
+const particle_ejector = 34_658
+
+const engineer_pulse_blast = 26_468
+
+const pulse_blast = 42_276
+
+pub fn a_thresher_hit_fires_the_229_cdr_and_a_particle_ejector_hit_the_230_cdr_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4Effects.effectType.14.dataBits00.229_230_231: Shock Pulse's tiers 5 to 9 start
+  // 69487, which holds row 228626 (kind 229, group 491, Thresher's damage spells, every
+  // damage effect Physical; fires 70466 within 500 ms) and row 174297 (kind 230, group 492,
+  // Particle Ejector's, every damage effect Tech; fires 70465 within 450 ms). Both
+  // CDRs hold a ModifySpellCooldown of Shock Pulse's base. The proc is held by casting tier 5
+  // (Spell4 55770, Proxy 228637 casts 69487); tier 7 differs (Proxy 228639 has targetFlags 4)
+  // and tier 9's Thresher child raises no hit.
+  let plans = plans_with_tiers(held: [#(engineer_shock_pulse, 5)])
+  let caster =
+    bag_of(bases: [
+      engineer_shock_pulse,
+      engineer_thresher,
+      engineer_particle_ejector,
+      engineer_pulse_blast,
+    ])
+  assert list.contains(groups_of(spell4_id: thresher_damage), 491)
+    as "Thresher's damage spell is in group 491"
+  assert list.contains(groups_of(spell4_id: particle_ejector), 492)
+    as "Particle Ejector's spell is in group 492"
+  assert !list.contains(groups_of(spell4_id: pulse_blast), 491)
+    && !list.contains(groups_of(spell4_id: pulse_blast), 492)
+    as "Pulse Blast is in neither group"
+  let #(held, _) =
+    played(
+      plans:,
+      state: cast_state.new(),
+      caster:,
+      bag: 0,
+      at: 0,
+      until: 2000,
+      struck_of: fn(_) { [] },
+    )
+  assert dict.size(held.procs) == 2
+    as "casting Shock Pulse tier 5 holds the two proc rows of 69487"
+  let fires = fn(state, bag, spell4_id, damage_types, at) {
+    let #(state, effects) =
+      played(
+        plans:,
+        state:,
+        caster:,
+        bag:,
+        at:,
+        until: at + 500,
+        struck_of: dealing(spell4_id:, damage_types:),
+      )
+    #(
+      state,
+      #(
+        starts_of(spell4_id: 70_466, effects:),
+        starts_of(spell4_id: 70_465, effects:),
+      ),
+    )
+  }
+  let #(after_thresher, started) =
+    fires(held, 1, thresher_damage, [damage_type.Physical], 3000)
+  assert started == #(1, 0)
+    as "a Thresher hit lands Physical damage: 70466 is cast and 70465 is not"
+  let #(_, started) = fires(held, 2, particle_ejector, [damage_type.Tech], 3000)
+  assert started == #(0, 1)
+    as "a Particle Ejector hit lands Tech damage: 70465 is cast and 70466 is not"
+  let #(_, started) = fires(held, 3, pulse_blast, [damage_type.Physical], 3000)
+  assert started == #(0, 0)
+    as "a Physical hit of a spell outside group 491 fires neither"
+  let #(_, started) =
+    fires(
+      held,
+      1,
+      thresher_damage,
+      [damage_type.Physical, damage_type.Physical],
+      3000,
+    )
+  assert started == #(1, 0)
+    as "two Physical hits of one go fire 70466 once: the second is inside its 500 ms window"
+  let #(_, started) =
+    fires(held, 2, particle_ejector, [damage_type.Tech, damage_type.Tech], 3000)
+  assert started == #(0, 1)
+    as "two Tech hits of one go fire 70465 once: the second is inside its 450 ms window"
+  let #(_, started) =
+    fires(after_thresher, 1, thresher_damage, [damage_type.Physical], 5000)
+  assert started == #(1, 0)
+    as "a Thresher hit 2000 ms after the first fire is past the window and fires again"
+}
+
+const medic_barrier = 53_946
+
+const medic_crisis_wave = 25_579
+
+pub fn a_landing_proc_on_group_747_fires_when_crisis_wave_lands_with_or_without_an_ally_and_ends_its_buff_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4Effects.effectType.14.dataBits00.27: Medic Barrier tier 5 (Spell4 78101, Proxy
+  // 228582) casts 87437, which holds the buff 228563 (a Crisis Wave in group 747 is free for
+  // 5 000 ms) and row 228564 (kind 27, group 747, at the holder: dataBits03 18, no bit 4),
+  // which casts 87439, whose type 80 row 228569 removes 87437. Crisis Wave (group 747,
+  // tiers 1 and 9) heals the caster and the allies in its wave.
+  let plans = plans_with_tiers(held: [#(medic_barrier, 5)])
+  // Barrier's cost 100 is of Focus (innateCostType1 15), which a Medic holds.
+  let caster =
+    cast_state.Caster(
+      ..bag_of(bases: [medic_barrier, medic_crisis_wave]),
+      resources: support.holding_focus(class_id: 4, focus: 1000.0),
+    )
+  let wave = ability_of(plans:, base: medic_crisis_wave)
+  assert list.contains(wave.groups, 747) as "Crisis Wave is in group 747"
+  let outsider = ability_of(plans:, base: medic_barrier)
+  assert !list.contains(outsider.groups, 747)
+    as "Barrier's own spell is outside group 747"
+  let held =
+    played(
+      plans:,
+      state: cast_state.new(),
+      caster:,
+      bag: 0,
+      at: 0,
+      until: 500,
+      struck_of: fn(_) { [] },
+    )
+  assert dict.size(held.0.procs) == 1
+    as "casting Barrier tier 5 holds the row 228564 of 87437"
+  let ally =
+    cast_state.Hit(
+      unit_id: 41,
+      unit: cast_state.HitOtherPlayer(heals: []),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  let caster_alone =
+    cast_state.Hit(
+      unit_id: 7,
+      unit: cast_state.HitCaster(heals: []),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  let waves = fn(state, struck, at) {
+    played(
+      plans:,
+      state:,
+      caster:,
+      bag: 1,
+      at:,
+      until: at + 1250,
+      struck_of: only(spell4_id: wave.spell4_id.value, struck:),
+    )
+  }
+  let free_casts = fn(effects) { starts_at(spell4_id: 87_439, effects:) }
+  let #(after_alone, alone) = waves(held.0, [caster_alone], 2000)
+  assert free_casts(alone) == [7]
+    as "a Crisis Wave that lands on the caster alone casts 87439 once, at the holder"
+  let #(_, again) = waves(after_alone, [caster_alone], 6000)
+  assert free_casts(again) == []
+    as "87439 removed 87437 and its proc, so a second Crisis Wave fires nothing"
+  let #(_, with_ally) = waves(held.0, [ally, caster_alone], 2000)
+  assert free_casts(with_ally) == [7]
+    as "a Crisis Wave that heals an ally and the caster lands once, naming the ally, and casts 87439 once at the holder"
+  let #(_, healing_ally_only) = waves(held.0, [ally], 2000)
+  assert free_casts(healing_ally_only) == [7]
+    as "a Crisis Wave that heals an ally alone lands as well"
+  let #(_, outside) =
+    played(
+      plans:,
+      state: held.0,
+      caster:,
+      bag: 0,
+      at: 2000,
+      until: 2000,
+      struck_of: fn(_) { [] },
+    )
+  assert free_casts(outside) == [] as "a spell outside group 747 fires nothing"
+}
+
+const esper_telekinetic_strike = 19_102
+
+pub fn psi_charge_fires_51966_once_at_the_landing_of_the_third_stacks_own_go_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4Effects.effectType.14.dataBits00.27: Telekinetic Strike tier 9 (Spell4 52358, cast
+  // time 1250 ms) starts 51963 and 51964 through Proxies 139694 and 139695, each child going
+  // in its own go. 51963 holds Psi Charge's row 122737 (kind 27, no filter, 8 000 ms, once in
+  // its life) behind the holder gate 22150, which passes at exactly 3 stacks of 51964
+  // (`Prerequisite.prerequisiteTypeId.60`, text 469340); 51963 is in stack group 1037 (cap 1),
+  // so each press holds a new row with no fires, and 51964 in group 1036 (cap 3). The row fires
+  // 51966, whose type 80 rows 122747 and 122748 (delay 75 ms) end 51963 and 51964.
+  let plans = plans_with_tiers(held: [#(esper_telekinetic_strike, 9)])
+  let caster =
+    cast_state.Caster(
+      ..bag_of(bases: [esper_telekinetic_strike]),
+      resources: support.holding_focus(class_id: 3, focus: 1000.0),
+    )
+  let press = fn(state, at) {
+    played(
+      plans:,
+      state:,
+      caster:,
+      bag: 0,
+      at:,
+      until: at + 1250,
+      struck_of: fn(_) { [] },
+    )
+  }
+  let #(first, first_press) = press(cast_state.new(), 0)
+  let #(second, second_press) = press(first, 2000)
+  let #(_, third_press) = press(second, 4000)
+  assert starts_of(spell4_id: 51_966, effects: first_press) == 0
+    as "the first press leaves 1 stack of 51964: the gate fails"
+  assert starts_of(spell4_id: 51_966, effects: second_press) == 0
+    as "the second press leaves 2 stacks: the gate fails"
+  assert starts_of(spell4_id: 51_966, effects: third_press) == 1
+    as "the third press fires 51966 once, at the landing of 51964's own go, after the third stack is held"
 }
 
 // ---- heals ----

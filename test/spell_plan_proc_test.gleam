@@ -321,28 +321,20 @@ pub fn a_proc_row_is_read_for_its_trigger_and_its_limit_test() -> Nil {
 }
 
 pub fn a_proc_of_each_own_kind_is_read_with_its_trigger_test() -> Nil {
-  use <- owned_test.run(5000)
-  list.each(
-    [
-      #(12, LandsHit),
-      #(13, LandsMeleeHit),
-      #(145, LandsCritical),
-      #(1, Kills),
-      #(20, LandsHeal),
-      #(147, LandsCriticalHeal),
-    ],
-    fn(kind) {
-      assert read_of(
-          effect: Spell4Effects(..row(id: 99_010), data_bits00: kind.0),
-        )
-        == reading(trigger: kind.1)
-        as {
-          "Spell4Effects.effectType.14.dataBits00: kind "
-          <> int.to_string(kind.0)
-          <> " is the holder's own event"
-        }
-    },
-  )
+  use <- owned_test.run(10_000)
+  list.each(kinds_read(), fn(kind) {
+    assert read_of(
+        effect: Spell4Effects(..row(id: 99_010), data_bits00: kind.0),
+      )
+      == reading(trigger: kind.1)
+      as {
+        "Spell4Effects.effectType.14.dataBits00"
+        <> kind.2
+        <> ": kind "
+        <> int.to_string(kind.0)
+        <> " is read with its trigger"
+      }
+  })
 }
 
 pub fn a_procs_chance_is_read_from_the_float_bits_of_data_bits02_test() -> Nil {
@@ -524,14 +516,14 @@ pub fn a_proc_of_a_kind_the_server_does_not_read_is_skipped_not_failed_test() ->
       effect: Spell4Effects(
         ..row(id: 178_239),
         spell_id: 38_784,
-        data_bits00: 27,
+        data_bits00: 3,
         data_bits01: 72_838,
       ),
     )
-    == Error(ProcKindNotRead(spell4_id: 38_784, effect_id: 178_239, kind: 27))
-    as "kind 27 is no kind the server reads"
-  assert planned(effect: Spell4Effects(..row(id: 178_239), data_bits00: 27))
-    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 27)))
+    == Error(ProcKindNotRead(spell4_id: 38_784, effect_id: 178_239, kind: 3))
+    as "kind 3 has no reading (Spell4Effects.effectType.14.dataBits00.guess)"
+  assert planned(effect: Spell4Effects(..row(id: 178_239), data_bits00: 3))
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 3)))
     as "the plan leaves the row out, naming the kind"
 }
 
@@ -1240,8 +1232,13 @@ pub fn the_proc_rows_of_a_planned_tree_held_by_another_unit_are_read_for_an_ally
     )
     as "Analyze Weakness's row is a struck unit's child's: a creature holds it"
   assert read(85_628)
-    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 76)))
-    as "kind 76 is no kind the server reads"
+    == Ok(
+      spell_plan.LeftOut(why: spell_plan.ProcKindWaits(
+        kind: 76,
+        event: "a spell of another unit landing on the holder",
+      )),
+    )
+    as "kind 76 is left out naming its event"
   assert outcome_of(reading: read(107_509))
     == ReadFor(holder: spell_plan.HeldByPrimaryTarget)
     as "Spell4 45994's row has flags 2 and dataBits07 1 with dataBits08 0, which is no filter: read for the primary target"
@@ -1449,6 +1446,113 @@ pub fn each_client_proc_row_reads_its_filter_in_the_id_space_its_kind_names_test
   })
 }
 
+pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  // Spell4Effects.effectType.14.dataBits00.229_230_231 and .27: each row below is the
+  // client's, with the filter and the gate its columns hold (`.dataBits07`, `.prerequisites`),
+  // the aim of its dataBits03 (bit 4 at the other unit) and the life of its durationTime.
+  let read =
+    spell_tables.rows_read(tables: client_tables.shared(), effect_type: 14)
+  let rows = [
+    #(
+      98_744,
+      spell_plan.LandsPhysicalDamage,
+      InGroup(group_id: 333),
+      AtHolder,
+      0,
+      InWindow(window_ms: 1000, count: 1),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    ),
+    #(
+      228_626,
+      spell_plan.LandsPhysicalDamage,
+      InGroup(group_id: 491),
+      AtHolder,
+      0,
+      InWindow(window_ms: 500, count: 1),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+    ),
+    #(
+      174_297,
+      spell_plan.LandsTechDamage,
+      InGroup(group_id: 492),
+      AtHolder,
+      0,
+      InWindow(window_ms: 450, count: 1),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+    ),
+    #(
+      180_868,
+      spell_plan.LandsMagicDamage,
+      InGroup(group_id: 333),
+      AtHolder,
+      0,
+      InWindow(window_ms: 1000, count: 1),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    ),
+    #(
+      122_737,
+      spell_plan.LandsSpell,
+      spell_plan.AnySpell,
+      AtHolder,
+      22_150,
+      ForLife(count: 1),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+    ),
+    #(
+      228_564,
+      spell_plan.LandsSpell,
+      InGroup(group_id: 747),
+      AtHolder,
+      0,
+      InWindow(window_ms: 250, count: 90),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+    ),
+    #(
+      146_845,
+      spell_plan.LandsSpell,
+      InGroup(group_id: 496),
+      AtOtherUnit,
+      0,
+      InWindow(window_ms: 250, count: 5),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    ),
+    #(
+      217_391,
+      spell_plan.LandsSpell,
+      OfBase(spell4_base_id: Spell4BaseId(25_531)),
+      AtHolder,
+      0,
+      InWindow(window_ms: 1000, count: 60),
+      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    ),
+  ]
+  list.each(rows, fn(expected) {
+    let #(id, trigger, filter, aim, holder_gate, limit, life) = expected
+    let assert Ok(#(effect, outcome)) =
+      list.find(read, fn(found) { { found.0 }.id == id })
+      as "the tables hold the row"
+    let assert Ok(spell_plan.Applied(spell_plan.ReadProc(reading:, ..))) =
+      outcome
+      as "the plan reads the row"
+    assert reading.trigger == trigger
+    assert reading.holder == spell_plan.HeldByCaster
+    assert reading.filter == filter
+      as "the filter is read in the id space dataBits07 names"
+    assert reading.aim == aim
+    assert reading.holder_gate == holder_gate
+    assert reading.limit == limit
+    assert spell_plan.lasting_row_of(effect:) == life
+      as {
+        "the Proc row "
+        <> int.to_string(id)
+        <> " lasts as its durationTime says"
+      }
+  })
+}
+
 pub fn each_ally_proc_row_the_plan_reads_waits_for_a_trigger_a_creatures_blow_raises_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("real_tables")
@@ -1598,126 +1702,184 @@ pub fn a_spell_refuses_the_life_its_caster_condition_names_test() -> Nil {
 
 // ---- the fairly-sure kinds, each read or left out naming its event ----
 
-/// The fairly-sure kinds the server reads, each with its trigger
-/// (`Spell4Effects.effectType.14.dataBits00.fairly_sure`).
-fn fairly_sure_read() -> List(#(Int, spell_plan.Trigger)) {
+/// Each kind the server reads, with its trigger and the suffix of the record that settles it
+/// (`Spell4Effects.effectType.14.dataBits00` and the suffix).
+fn kinds_read() -> List(#(Int, spell_plan.Trigger, String)) {
   [
-    #(0, Died),
-    #(44, LeftCombat),
-    #(218, LeftStealth),
-    #(10, spell_plan.UsesAbility),
-    #(103, spell_plan.SpendsResource),
-    #(21, spell_plan.ReceivesHeal),
-    #(52, spell_plan.FoeDeflects),
-    #(49, spell_plan.LandsFinisherCritical),
-    #(11, spell_plan.StartsMoving),
-    #(87, spell_plan.ResourceCrosses),
-    #(105, spell_plan.SuitPowerDrops),
-    #(182, spell_plan.LandsTaunt),
+    #(217, EnteredStealth, ".217_218"),
+    #(218, LeftStealth, ".217_218"),
+    #(0, Died, ".0_44"),
+    #(44, LeftCombat, ".0_44"),
+    #(12, LandsHit, ""),
+    #(13, LandsMeleeHit, ".13_school"),
+    #(145, LandsCritical, ""),
+    #(1, Kills, ""),
+    #(20, LandsHeal, ""),
+    #(147, LandsCriticalHeal, ""),
+    #(10, spell_plan.UsesAbility, ".fairly_sure"),
+    #(103, spell_plan.SpendsResource, ".fairly_sure"),
+    #(21, spell_plan.ReceivesHeal, ".fairly_sure"),
+    #(52, spell_plan.FoeDeflects, ".fairly_sure"),
+    #(49, spell_plan.LandsFinisherCritical, ".fairly_sure"),
+    #(11, spell_plan.StartsMoving, ".fairly_sure"),
+    #(87, spell_plan.ResourceCrosses, ".fairly_sure"),
+    #(105, spell_plan.SuitPowerDrops, ".fairly_sure"),
+    #(182, spell_plan.LandsTaunt, ".fairly_sure"),
+    #(27, spell_plan.LandsSpell, ".27"),
+    #(229, spell_plan.LandsPhysicalDamage, ".229_230_231"),
+    #(230, spell_plan.LandsTechDamage, ".229_230_231"),
+    #(231, spell_plan.LandsMagicDamage, ".229_230_231"),
   ]
 }
 
-/// The fairly-sure kinds the server does not raise, each with the event its group's texts
-/// name (`Spell4Effects.effectType.14.dataBits00.fairly_sure`): nine groups, 25 kinds.
-fn fairly_sure_refused() -> List(#(Int, String)) {
+/// Each kind the server does not raise, with the event its group's texts name and the suffix
+/// of the record that settles it.
+fn kinds_waiting() -> List(#(Int, String, String)) {
+  let with_record = fn(kinds, event, record) {
+    list.map(kinds, fn(kind) { #(kind, event, record) })
+  }
   list.flatten([
-    list.map([57, 40, 117, 154], fn(kind) {
-      #(
-        kind,
-        "the holder entering combat, or its health or shield crossing a value",
-      )
-    }),
-    list.map([23, 50, 114, 131, 234, 249], fn(kind) {
-      #(
-        kind,
-        "the holder taking a blow: direct, magic or critical damage, damage to its shield, an absorb destroyed, or a glance",
-      )
-    }),
-    list.map([124, 102, 112], fn(kind) {
-      #(kind, "the holder dashing, dodging, or using up its endurance")
-    }),
-    [#(152, "the holder's focus dropping below a value")],
-    list.map([155, 197, 159, 41, 153, 236], fn(kind) {
-      #(
-        kind,
-        "the holder being stunned, snared, rooted or crowd-controlled, breaking a crowd control, or having its cast interrupted",
-      )
-    }),
-    [
-      #(46, "a crowd control on the holder ending"),
-      #(2, "the holder killing a player"),
-      #(148, "the holder receiving a critical heal"),
-    ],
-    list.map([251, 253], fn(kind) {
-      #(kind, "the holder landing a multi-hit strike or heal")
-    }),
+    with_record(
+      [57, 40, 117, 154],
+      "the holder entering combat, or its health or shield crossing a value",
+      ".fairly_sure",
+    ),
+    with_record(
+      [23, 50, 114, 131, 234, 249],
+      "the holder taking a blow: direct, magic or critical damage, damage to its shield, an absorb destroyed, or a glance",
+      ".fairly_sure",
+    ),
+    with_record(
+      [124, 102, 112],
+      "the holder dashing, dodging, or using up its endurance",
+      ".fairly_sure",
+    ),
+    with_record(
+      [152],
+      "the holder's focus dropping below a value",
+      ".fairly_sure",
+    ),
+    with_record(
+      [155, 197, 159, 41, 153, 236],
+      "the holder being stunned, snared, rooted or crowd-controlled, breaking a crowd control, or having its cast interrupted",
+      ".fairly_sure",
+    ),
+    with_record([46], "a crowd control on the holder ending", ".fairly_sure"),
+    with_record([2], "the holder killing a player", ".fairly_sure"),
+    with_record([148], "the holder receiving a critical heal", ".fairly_sure"),
+    with_record(
+      [251, 253],
+      "the holder landing a multi-hit strike or heal",
+      ".fairly_sure",
+    ),
+    with_record([69], "a cast of a spell ending", ".69"),
+    with_record([76], "a spell of another unit landing on the holder", ".76"),
   ])
 }
 
 pub fn proc_every_kind_read_or_refused_test() -> Nil {
   use <- owned_test.run(120_000)
-  list.each(fairly_sure_read(), fn(kind) {
+  list.each(kinds_read(), fn(kind) {
     assert read_of(
         effect: Spell4Effects(..row(id: 99_020), data_bits00: kind.0),
       )
       == reading(trigger: kind.1)
       as {
-        "Spell4Effects.effectType.14.dataBits00.fairly_sure: kind "
+        "Spell4Effects.effectType.14.dataBits00"
+        <> kind.2
+        <> ": kind "
         <> int.to_string(kind.0)
         <> " is read"
       }
   })
-  assert list.length(fairly_sure_read()) + list.length(fairly_sure_refused())
-    == 37
-    as "the record names 37 fairly-sure kinds"
   use <- unitest.guard(client_tables.present())
   let named =
     list.append(
-      list.map(fairly_sure_read(), fn(kind) { kind.0 }),
-      list.map(fairly_sure_refused(), fn(kind) { kind.0 }),
+      list.map(kinds_read(), fn(kind) { kind.0 }),
+      list.map(kinds_waiting(), fn(kind) { kind.0 }),
     )
   let procs =
     spell4_effects.all(client_tables.shared())
     |> list.filter(fn(effect) { list.contains(named, effect.data_bits00) })
-  assert procs != [] as "the tables hold Proc rows of the 37 kinds"
+  assert procs != [] as "the tables hold Proc rows of the named kinds"
   list.each(procs, fn(effect) {
     case spell_plan.proc_read(spell4_id: effect.spell_id, effect:) {
       Error(ProcKindNotRead(..)) ->
-        panic as "a row of a fairly-sure kind falls to ProcKindNotRead"
+        panic as "a row of a named kind falls to ProcKindNotRead"
       Error(..) | Ok(..) -> Nil
+    }
+  })
+  // Kinds 27, 229, 230 and 231: every client row is read but the two the plan leaves out,
+  // each for its reason (`Spell4Effects.effectType.14.dataBits00.27`: 59894 is held by the
+  // primary target, which an ally's event does not tell for kind 27; 198593 has dataBits03 36).
+  let landing_rows =
+    spell_tables.rows_read(tables: client_tables.shared(), effect_type: 14)
+    |> list.filter(fn(found) {
+      list.contains([27, 229, 230, 231], { found.0 }.data_bits00)
+    })
+  assert landing_rows != [] as "the tables hold rows of the landing kinds"
+  list.each(landing_rows, fn(found) {
+    let #(effect, outcome) = found
+    case effect.id {
+      59_894 -> {
+        assert outcome
+          == Ok(
+            spell_plan.LeftOut(why: spell_plan.ProcHeldEventNotTold(kind: 27)),
+          )
+          as "row 59894 is left out for the unit that holds it"
+      }
+      198_593 -> {
+        assert outcome
+          == Ok(
+            spell_plan.LeftOut(why: spell_plan.ProcAimNotRead(data_bits03: 36)),
+          )
+          as "row 198593 is left out for its aim"
+      }
+      id ->
+        case outcome {
+          Ok(spell_plan.Applied(spell_plan.ReadProc(..))) -> Nil
+          Ok(..) | Error(..) ->
+            panic as {
+              "the Proc row "
+              <> int.to_string(id)
+              <> " of a landing kind is read, or left out naming a reason above"
+            }
+        }
     }
   })
 }
 
 pub fn a_proc_of_a_kind_the_server_does_not_raise_is_left_out_naming_the_event_test() -> Nil {
-  use <- owned_test.run(5000)
-  list.each(fairly_sure_refused(), fn(kind) {
+  use <- owned_test.run(10_000)
+  list.each(kinds_waiting(), fn(kind) {
     let effect = Spell4Effects(..row(id: 99_021), data_bits00: kind.0)
     assert spell_plan.proc_read(spell4_id: holder, effect:)
       == Ok(
         ProcIsLeftOut(why: spell_plan.ProcKindWaits(kind: kind.0, event: kind.1)),
       )
       as {
-        "kind "
+        "Spell4Effects.effectType.14.dataBits00"
+        <> kind.2
+        <> ": kind "
         <> int.to_string(kind.0)
         <> " is left out naming its event, never as another kind"
       }
   })
   assert spell_plan.proc_read(
       spell4_id: holder,
-      effect: Spell4Effects(..row(id: 99_021), data_bits00: 27),
+      effect: Spell4Effects(..row(id: 99_021), data_bits00: 3),
     )
     == Error(spell_plan.ProcKindNotRead(
       spell4_id: holder,
       effect_id: 99_021,
-      kind: 27,
+      kind: 3,
     ))
     as "a kind of no group reads as before"
 }
 
 pub fn the_plan_leaves_a_proc_of_a_kind_the_server_does_not_raise_out_naming_the_event_test() -> Nil {
-  use <- owned_test.run(5000)
-  list.each(fairly_sure_refused(), fn(kind) {
+  use <- owned_test.run(10_000)
+  list.each(kinds_waiting(), fn(kind) {
     assert planned(
         effect: Spell4Effects(..row(id: 99_022), data_bits00: kind.0),
       )
@@ -1733,7 +1895,7 @@ pub fn the_plan_leaves_a_proc_of_a_kind_the_server_does_not_raise_out_naming_the
         <> " out, naming its event"
       }
   })
-  assert planned(effect: Spell4Effects(..row(id: 99_023), data_bits00: 27))
-    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 27)))
-    as "a kind outside the 37 still reads as another kind"
+  assert planned(effect: Spell4Effects(..row(id: 99_023), data_bits00: 3))
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 3)))
+    as "a kind outside the named ones still reads as another kind"
 }

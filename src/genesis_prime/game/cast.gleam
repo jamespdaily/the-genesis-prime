@@ -3211,11 +3211,17 @@ pub fn went(
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
+  let lands = cast_proc.go_lands_spell(cast:, cast_id:)
   let own =
     cast_state.holder_of(cast:, cast_id:)
     |> result.map(fn(holder) { holder.spell })
     |> result.lazy_or(fn() { asked_spell })
-    |> result.map(fn(spell) { cast_proc.hit_events(spell:, struck:) })
+    |> result.map(fn(spell) {
+      list.append(cast_proc.hit_events(spell:, struck:), case lands {
+        True -> cast_proc.landed_events(spell:, struck:)
+        False -> []
+      })
+    })
     |> result.unwrap([])
   use <- settled(cast:, own:)
   released(
@@ -4281,6 +4287,7 @@ fn start(
       advance_rows_applied: set.new(),
       finish_due: False,
       goes_asked: 0,
+      lands_spell: cast_proc.role_lands_spell(role:),
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive(..), _ -> cast.global_cooldown_ends_ms

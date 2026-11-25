@@ -999,7 +999,7 @@ pub fn planted_effects() -> List(List(Cell)) {
       id: 90_015,
       effect_type: 14,
       target_flags: 1,
-      columns: proc_columns(kind: 27),
+      columns: proc_columns(kind: 3),
     ),
     effect_row_with(id: 90_016, effect_type: 26, target_flags: 1, columns: [
       #("dataBits00", Integer(0)),

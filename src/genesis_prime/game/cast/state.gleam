@@ -1072,6 +1072,9 @@ pub type Live {
     /// the cast ends when its last go is written, which a round's deadline bounds
     /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
     finish_due: Bool,
+    /// Whether the cast's gos raise a landing of its spell for the holder's procs, by the role
+    /// the cast started with (`cast_proc.role_lands_spell`).
+    lands_spell: Bool,
     /// The periodic rows the cast's gos armed, by unit and row: each lasts while its
     /// unit's node does (`cast_tick.ticks_dropped`).
     ticking: Dict(TickKey, Ticking),
