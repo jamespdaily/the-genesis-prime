@@ -299,7 +299,7 @@ pub fn list_characters(game: game_client.Game) -> Nil {
 }
 
 /// Creates the player's character, and its id.
-fn create_character(game game: game_client.Game, name name: String) -> Int {
+pub fn create_character(game game: game_client.Game, name name: String) -> Int {
   game_client.send_create(game:, body: create_request(name))
   let assert [created] = game_client.read(game:, count: 1)
     as "one 0x00DC answers a create"
@@ -313,15 +313,24 @@ fn create_character(game game: game_client.Game, name name: String) -> Int {
 /// Plays the character into the world, and the messages that put it there,
 /// with the bytes the server wrote after them. The messages are the ones of a
 /// character that holds the Novice set of a level-1 class: 11 items
-/// (`game_client.world_entry_ids`).
+/// (`game_client.world_entry_ids`), and, on a server that holds the tutorial's
+/// quests, the 0x35C that begins the tutorial's first quest right after the quest
+/// log's 0x35F (`genesis_prime/game/quest`).
 fn enter_world(
   game game: game_client.Game,
   character_id character_id: Int,
 ) -> #(List(Frame), BitArray) {
   let #(burst, have) = play_into_world(game:, character_id:)
-  assert list.map(burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
-    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
+  let with_the_first_quest =
+    list.flat_map(game_client.world_entry_ids, fn(id) {
+      case id {
+        0x035F -> [id, 0x035C]
+        _ -> [id]
+      }
+    })
+  let ids = list.map(burst, fn(frame) { frame.message_id })
+  assert ids == game_client.world_entry_ids || ids == with_the_first_quest
+    as "the player enters the world with the messages of game_client.world_entry_ids, and the 0x35C that begins the first quest where the server holds the tutorial"
   #(burst, have)
 }
 
@@ -421,6 +430,14 @@ fn keep_playing(
   }
 }
 
+/// Where the characters start in World 3460 (WorldLocation2 row 51596) and where a
+/// walking player walks out and back along x.
+pub const walk_x = 29.128599166870117
+
+pub const walk_y = -853.87158203125
+
+pub const walk_z = -560.18798828125
+
 /// The 0x0637 of a walking player's `moves`th step: one kind 2 command at a
 /// place a few units along x from where the characters start (World 3460, the
 /// WorldLocation2 row 51596 position), out and back.
@@ -432,9 +449,9 @@ fn step_of_the_walk(moves: Int) -> BitArray {
   }
   game_client.moves_body(client_clock: moves * move_every_ms, commands: [
     game_client.position_command(
-      x: 29.128599166870117 +. int.to_float(offset),
-      y: -853.87158203125,
-      z: -560.18798828125,
+      x: walk_x +. int.to_float(offset),
+      y: walk_y,
+      z: walk_z,
     ),
   ])
 }
