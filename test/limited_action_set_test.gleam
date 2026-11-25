@@ -2318,9 +2318,17 @@ fn fitting_amp_rows(
   |> list.sort(int.compare)
   |> list.fold([], fn(kept, id) {
     let listed = list.append(kept, [EldanAugmentationId(id)])
-    case amp_spec.check(specs:, class_id:, level:, held: [], picks: listed) {
-      Ok(Nil) -> listed
-      Error(_) -> kept
+    case
+      result.is_ok(amp_spec.check(
+        specs:,
+        class_id:,
+        level:,
+        held: [],
+        picks: listed,
+      ))
+    {
+      True -> listed
+      False -> kept
     }
   })
   |> list.map(fn(id) {

@@ -1182,10 +1182,7 @@ pub fn joined(
               ],
               standing_started(),
               unread_warned(gear: worn),
-              dropped_amps_warned(
-                character:,
-                dropped: judged.dropped_amps,
-              ),
+              dropped_amps_warned(character:, dropped: judged.dropped_amps),
             ]),
             told: told_after(entry:),
           ))
