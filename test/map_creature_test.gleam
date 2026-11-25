@@ -401,6 +401,58 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
   let assert [#(_, _, second_generation)] = second.viewers
   assert first_generation != second_generation
     as "the new life's first viewer holds a generation the map never gave before"
+  // The same spawn's next life, started by the map after the creature expired, killed
+  // before it answered its first `Seen`.
+  let #(state, _) = spawns.started(at: [0.0])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let #(watch, first) = the_start(taken)
+  let #(state, _) =
+    spawns.join(state:, at_ms: 6100, connection: 2, x: spawns.far)
+  let #(state, _) =
+    spawns.expired(
+      state:,
+      at_ms: 6500,
+      unit_id: first.unit_id,
+      life: first.life,
+    )
+  assert map.spawn_state(state:, spawn: SpawnId(1))
+    == Ok(map.Respawning(unit_id: first.unit_id, life: first.life))
+    as "the creature expired: its spawn is respawning"
+  let #(state, taken) =
+    spawns.feed(state:, at_ms: 6600, event: WatchEnded(watch))
+  let #(next_watch, next) = the_start(taken)
+  assert next.unit_id == first.unit_id
+    && map.spawn_state(state:, spawn: SpawnId(1))
+    == Ok(map.Live(
+      unit_id: next.unit_id,
+      life: next.life,
+      relations: dict.from_list(
+        list.map(next.viewers, fn(viewer) {
+          #(
+            viewer.0,
+            map.Relation(
+              generation: viewer.2,
+              stay: viewer.1,
+              state: map.AwaitingSnapshot,
+            ),
+          )
+        }),
+      ),
+      idle_since_ms: option.None,
+    ))
+    as "the next life's spawn is live with its viewer awaiting its first snapshot"
+  let #(_, taken) =
+    spawns.feed(state:, at_ms: 6700, event: WatchEnded(next_watch))
+  assert spawns.player_sends(taken)
+    == [
+      #(1, "Gone " <> int.to_string(next.unit_id)),
+      #(2, "Gone " <> int.to_string(next.unit_id)),
+    ]
+    as "exactly one Gone for each player, though no viewer was shown the unit"
+  assert spawns.timers(taken) == [#(1, map_support.respawn_ms)]
+    as "the spawn waits the kind's respawn time"
+  assert spawns.creature_sends(taken) == []
+    as "and the creature that ended is told no Unseen"
 }
 
 pub fn a_restart_timer_that_fires_with_no_one_in_sight_leaves_the_spawn_dormant_test() -> Nil {

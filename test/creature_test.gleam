@@ -72,6 +72,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/set
+import gleam/string
 import map_spawn_support
 import map_support
 import owned_test
@@ -121,6 +122,7 @@ fn creature_from(
         let ConnectionId(number) = viewer
         #(viewer, map_support.stay(count: number), generation.first())
       }),
+      ring: [],
     ),
     spawn:,
     kind: Kind(
@@ -352,6 +354,8 @@ pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -
   assert first_generation == generation.first()
     as "under the generation the map numbered the viewer with in the start"
   assert first_burst.unit_id == 7
+  assert effects_named(taken) == ["other", "snapshot for 2", "snapshot for 5"]
+    as "a start with an empty ring does no more: the watch on its run and a snapshot for each viewer, no fight"
   let #(state, taken) =
     feed(
       state:,
@@ -393,7 +397,8 @@ fn snapshots(
     case sent {
       creature.Snapshot(by: ConnectionId(number), generation:, burst:, ..) ->
         Ok(#(number, generation, burst))
-      creature.Broadcast(..) | creature.Relay(..) -> Error(Nil)
+      creature.Broadcast(..) | creature.Relay(..) | creature.Expired(..) ->
+        Error(Nil)
     }
   })
 }
@@ -480,6 +485,7 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
         "credit to " <> int.to_string(one.0)
       creature.Broadcast(..)
       | creature.Relay(payload: relay.Fight(..), ..)
+      | creature.Expired(..)
       | creature.Snapshot(..) -> "other"
     }
   })
@@ -525,6 +531,7 @@ fn credits(
       creature.Relay(payload: relay.Struck(..), ..)
       | creature.Relay(payload: relay.Fight(..), ..)
       | creature.Snapshot(..)
+      | creature.Expired(..)
       | creature.Broadcast(..) -> False
     }
   })
@@ -675,81 +682,112 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
   assert creature_unit.health_of(unit: seen_unit) == 0
 }
 
-pub fn the_corpse_timer_removes_and_creates_the_creature_again_at_full_health_for_each_viewer_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    feed(
-      state: watched_by_two(),
-      at_ms: 6000,
-      event: OwnEvent(Told(strike_of(damage: 60, cast_id: 1))),
-    )
-  let #(stood, raw) =
-    feed_raw(
-      state:,
-      at_ms: 66_000,
-      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
-    )
-  let taken = creature_news_support.at_each_player(state: stood, taken: raw)
-  assert kinds_of(outgoing(taken))
-    == ["removal to 2", "removal to 5", "creation to 2", "creation to 5"]
-    as "death.creature_respawn: 0x355, then a full 0x262 with the same unit id, to each viewer: each news is one broadcast, so each viewer hears the removal and then the creation"
-  assert creature_news_support.said_to_the_map(raw)
-    == ["0x355 to all", "0x262 to all"]
-    as "to the map, the removal and then the creation, each once and not for each viewer"
-  let assert [
-    _,
-    _,
-    #(
-      2,
-      creature.Broadcast(
-        news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
-        ..,
-      ),
-    ),
-    ..
-  ] = outgoing(taken)
-  assert creature_unit.health_of(unit:) == 52 && unit.unit_id == 7
+/// What a step does, one entry for each effect in order: what the creature tells its map
+/// by name (`creature_news_support.said_to_the_map`), `stop`, and `other` for any other.
+fn effects_named(taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(Send(to: step.Map(..), ..)) ->
+        string.join(
+          creature_news_support.said_to_the_map(step.Effects([effect])),
+          ", ",
+        )
+      Stop -> "stop"
+      OwnEffect(Send(..))
+      | OwnEffect(Reply(..))
+      | OwnEffect(StartCreature(..))
+      | OwnEffect(StartServiceTimer(..))
+      | OwnEffect(step.CancelServiceTimer(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..) -> "other"
+    }
+  })
 }
 
-pub fn a_run_only_creatures_corpse_timer_removes_it_for_each_viewer_and_stops_it_test() -> Nil {
-  use <- owned_test.run(5000)
-  // A summon does not respawn (a server choice, it is a test tool): where a
-  // stored spawn's creature stands again at the corpse timer, a run-only one's
-  // 0x355 goes to each viewer and the creature stops, so its map ends the spawn.
+/// The Beast, unit 7 of life 3, struck dead at 6000 with the viewers 2 and 5.
+fn dead_by_two() -> State {
+  told(
+    state: watched_by_two(),
+    at_ms: 6000,
+    message: strike_of(damage: 60, cast_id: 1),
+  ).0
+}
+
+/// A run-only Beast, unit 7 of life 3, started for the viewers 2 and 5.
+fn run_only_by_two() -> State {
   let beast = spawn_support.battle_beast(number: -1, x: 0.0)
-  let #(state, _) =
-    feed(
-      state: creature_from(
-        source: spawn_source.RunOnly(spawn_source.Summoned(
-          id: SpawnId(-1),
-          creature_id: beast.creature_id,
-          level: None,
-          place: beast.place,
-        )),
-        spawn: beast,
-        viewers: [ConnectionId(2), ConnectionId(5)],
-      ),
-      at_ms: 5000,
-      event: OwnEvent(Started),
-    )
-  let #(state, _) =
-    feed(
-      state:,
+  feed(
+    state: creature_from(
+      source: spawn_source.RunOnly(spawn_source.Summoned(
+        id: SpawnId(-1),
+        creature_id: beast.creature_id,
+        level: None,
+        place: beast.place,
+      )),
+      spawn: beast,
+      viewers: [ConnectionId(2), ConnectionId(5)],
+    ),
+    at_ms: 5000,
+    event: OwnEvent(Started),
+  ).0
+}
+
+pub fn the_corpse_timer_removes_a_creature_tells_its_map_it_expired_and_stops_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `death.creature_respawn`: the client sees the 0x355 and then the 0x262 of the same unit; the
+  // 0x262 now comes from the map's next life (Design run A, 4.1), so the creature's last
+  // sends are the removal, once for all its viewers, and its expiry, and then it stops.
+  let unwatched_dead = fn() {
+    let #(state, _) =
+      feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
+    told(state:, at_ms: 6000, message: strike_of(damage: 60, cast_id: 1)).0
+  }
+  let to_retire = told(state: dead_by_two(), at_ms: 80_000, message: Retire).0
+  let run_only_dead =
+    told(
+      state: run_only_by_two(),
       at_ms: 6000,
-      event: OwnEvent(Told(strike_of(damage: 60, cast_id: 1))),
-    )
-  let #(stood, raw) =
-    feed_raw(
-      state:,
-      at_ms: 66_000,
-      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
-    )
-  let taken = creature_news_support.at_each_player(state: stood, taken: raw)
-  assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
-    as "a 0x355 to each viewer, and no 0x262 that stands it again"
-  assert creature_news_support.said_to_the_map(raw) == ["0x355 to all"]
-    as "to the map, the removal once for every viewer, and no creation"
-  assert support.stops(taken) as "the creature stops"
+      message: strike_of(damage: 60, cast_id: 1),
+    ).0
+  list.each(
+    [
+      #(
+        "a dead creature with two viewers: the removal, once for both, then the expiry",
+        dead_by_two(),
+        ["0x355 to all", "expired 7 of life 3", "stop"],
+      ),
+      #(
+        "a despawned creature: its 0x355 went at the despawn, so only the expiry",
+        despawned_by_two(),
+        ["expired 7 of life 3", "stop"],
+      ),
+      #(
+        "a dead creature with no viewer: no removal to broadcast",
+        unwatched_dead(),
+        ["expired 7 of life 3", "stop"],
+      ),
+      #(
+        "a dead creature told to retire: it stops and tells the map no expiry, which would start a life",
+        to_retire,
+        ["stop"],
+      ),
+      #(
+        "a run-only creature: no expiry, its map ends the spawn when it stops",
+        run_only_dead,
+        ["0x355 to all", "stop"],
+      ),
+    ],
+    fn(row) {
+      let #(_, taken) =
+        feed_raw(
+          state: row.1,
+          at_ms: 90_000,
+          event: OwnEvent(step.ServiceTimerFired(corpse_timer)),
+        )
+      assert effects_named(taken) == row.2 as row.0
+    },
+  )
 }
 
 pub fn a_creature_that_lies_dead_when_told_to_retire_stops_at_its_respawn_test() -> Nil {
@@ -846,41 +884,23 @@ pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_curre
     as "opcode.0x262.creature: property 7 is the recorded maximum, so the bar reads 428 of 442"
 }
 
-pub fn a_recorded_creature_comes_back_at_its_recorded_health_with_its_recorded_maximum_test() -> Nil {
+pub fn a_recorded_creature_that_starts_is_shown_at_its_recorded_health_with_its_recorded_maximum_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, _) =
-    feed(
+  // The next life of a killed creature is a creature its map starts, and its start is its
+  // first picture (`death.creature_respawn`: full health, the server's value).
+  let #(_, taken) =
+    feed_raw(
       state: creature_at(spawn: recorded_beast(), viewers: [ConnectionId(2)]),
-      at_ms: 5000,
+      at_ms: 66_000,
       event: OwnEvent(Started),
     )
-  let #(state, _) =
-    feed(
-      state:,
-      at_ms: 6000,
-      event: OwnEvent(Told(strike_of(damage: 442, cast_id: 1))),
-    )
-  let #(_, taken) =
-    feed(
-      state:,
-      at_ms: 66_000,
-      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
-    )
-  let assert [
-    _,
-    #(
-      2,
-      creature.Broadcast(
-        news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
-        ..,
-      ),
-    ),
-  ] = outgoing(taken)
-    as "death.creature_respawn: 0x355, then a full 0x262 to the viewer"
+  let assert [#(2, _, [PeerNews(news: CreatureAppeared(unit:, ..), ..), ..])] =
+    snapshots(taken)
+    as "death.creature_respawn: a full 0x262 to the viewer"
   assert creature_unit.health_of(unit:) == 442
-    as "it comes back at the recorded value, not the client's formula"
+    as "it starts at the recorded value, not the client's formula"
   assert unit.tail.properties == base_health_442()
-    as "and sends it as Base Health again"
+    as "and sends it as Base Health"
 }
 
 // ---- property modifiers of players' spells ----
@@ -1119,46 +1139,6 @@ pub fn late_viewer_sees_current_value_test() -> Nil {
     as "its property list carries the current value of the property a modifier changes"
 }
 
-pub fn start_for_another_life_is_dropped_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    told(
-      state: watched_by_two(),
-      at_ms: 6000,
-      message: strike_of(damage: 60, cast_id: 1),
-    )
-  let #(state, _) =
-    feed(
-      state:,
-      at_ms: 66_000,
-      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
-    )
-  let #(_, late) =
-    told(
-      state:,
-      at_ms: 66_500,
-      message: starting(
-        source: sprint_source(),
-        modifier: sprint(),
-        struck_at_ms: 65_000,
-      ),
-    )
-  assert support.effects_of(late) == []
-    as "struck at 65000, before the creature stood again at 66000: a start of the life before"
-  let #(_, now) =
-    told(
-      state:,
-      at_ms: 66_500,
-      message: starting(
-        source: sprint_source(),
-        modifier: sprint(),
-        struck_at_ms: 66_000,
-      ),
-    )
-  assert property_news(now) == [#(2, [speed_up()]), #(5, [speed_up()])]
-    as "struck at the moment it stood again: the new life's"
-}
-
 pub fn end_for_unknown_source_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) =
@@ -1172,6 +1152,10 @@ pub fn end_for_unknown_source_changes_nothing_test() -> Nil {
 
 pub fn same_source_started_twice_is_held_once_test() -> Nil {
   use <- owned_test.run(5000)
+  // A caster's end names only the source: the caster keeps one node for each unit, so an
+  // end sent for an earlier go reaches the creature after a later go started the same
+  // source, and is that start's own (`cast/state`, `cast/control`). The creature checks
+  // no go of an end.
   let state =
     holding(
       state: watched_by_two(),
@@ -1194,7 +1178,7 @@ pub fn same_source_started_twice_is_held_once_test() -> Nil {
   let #(_, ended) =
     told(state:, at_ms: 7000, message: creature.ModifierEnds(sprint_source()))
   assert property_news(ended) == [#(2, [speed_back()]), #(5, [speed_back()])]
-    as "one end restores the value"
+    as "one end restores the value, whichever go started the source"
 }
 
 pub fn caster_connection_end_removes_its_modifiers_test() -> Nil {
@@ -1259,6 +1243,87 @@ pub fn caster_connection_end_removes_its_modifiers_test() -> Nil {
     as "the other caster's modifier was held all along"
 }
 
+pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_despawned_creature_and_taken_by_a_living_one_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A tell is addressed to the creature's life by the registry's address, so the creature
+  // reads no time: what it refuses is a tell that reaches a body (`creature_life.is_dead`).
+  // `CastViewSet` is kept by a corpse, which keeps its nodes (`cast.target_node_end`).
+  let at_7000 = 7000
+  let tells = [
+    #(
+      "a modifier start",
+      starting(
+        source: sprint_source(),
+        modifier: sprint(),
+        struck_at_ms: at_7000,
+      ),
+      fn(taken) {
+        property_news(taken) == [#(2, [speed_up()]), #(5, [speed_up()])]
+      },
+    ),
+    #("a throw", thrown_at(at_7000), fn(taken) { flown_to(taken) == [2, 5] }),
+    #("a despawn", despawn_at(delay_ms: 0, went_at_ms: at_7000), fn(taken) {
+      kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
+    }),
+    #(
+      "unit states",
+      unit_states_at(rows: [state_6_for_8500()], went_at_ms: at_7000),
+      fn(taken) {
+        unit_state_news(taken)
+        == [#(2, held(state: 6, number: 1)), #(5, held(state: 6, number: 1))]
+      },
+    ),
+  ]
+  let bodies = [
+    #("a dead creature", dead_by_two()),
+    #("a despawned creature", despawned_by_two()),
+  ]
+  list.each(tells, fn(tell) {
+    let #(name, message, taken_as_expected) = tell
+    let #(_, taken) = told(state: watched_by_two(), at_ms: at_7000, message:)
+    assert taken_as_expected(taken)
+      as { name <> " to a living creature is taken" }
+    list.each(bodies, fn(body) {
+      let #(state, dropped) = told(state: body.1, at_ms: at_7000, message:)
+      assert support.effects_of(dropped) == []
+        as { name <> " to " <> body.0 <> " sends nothing" }
+      assert state == body.1
+        as { name <> " to " <> body.0 <> " changes nothing" }
+    })
+  })
+  list.each(
+    [
+      #("a living", watched_by_two(), True),
+      #("a dead", dead_by_two(), True),
+      #("a despawned", despawned_by_two(), False),
+    ],
+    fn(body) {
+      let #(state, set) =
+        told(
+          state: body.1,
+          at_ms: at_7000,
+          message: creature.CastViewSet(
+            by: ConnectionId(9),
+            view: view_a(),
+            struck_at_ms: at_7000,
+          ),
+        )
+      assert watch_changes(set) == ["watch 2 of 9"]
+        as {
+          "a cast view reaching "
+          <> body.0
+          <> " creature is kept and its caster watched"
+        }
+      // A despawned creature shows no 0x262, so no arrival lists the view it holds.
+      assert !body.2 || arrival_holds(state:) == [#(view_a().cast_id, 1)]
+        as {
+          body.0
+          <> " creature lists the view it was told to a viewer that arrives"
+        }
+    },
+  )
+}
+
 pub fn run_watch_end_still_stops_creature_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
@@ -1302,59 +1367,6 @@ pub fn dead_creature_holds_modifiers_until_end_test() -> Nil {
     told(state:, at_ms: 9000, message: creature.ModifierEnds(sprint_source()))
   assert property_news(ended) == [#(2, [speed_back()]), #(5, [speed_back()])]
     as "the source it held before it died ends as always"
-}
-
-pub fn respawn_clears_modifiers_test() -> Nil {
-  use <- owned_test.run(5000)
-  let state =
-    holding(
-      state: watched_by_two(),
-      source: sprint_source(),
-      modifier: sprint(),
-      at_ms: 5500,
-    )
-  let #(state, _) =
-    told(state:, at_ms: 6000, message: strike_of(damage: 60, cast_id: 1))
-  let #(state, stood) =
-    feed(
-      state:,
-      at_ms: 66_000,
-      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
-    )
-  assert unwatches(stood) == [WatchId(2)]
-    as "the creature stops watching a caster whose modifiers it cleared"
-  assert kinds_of(outgoing(stood))
-    == ["removal to 2", "removal to 5", "creation to 2", "creation to 5"]
-  let assert [
-    _,
-    _,
-    #(
-      2,
-      creature.Broadcast(
-        news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
-        ..,
-      ),
-    ),
-    ..
-  ] = outgoing(stood)
-  assert unit.tail.properties == []
-    as "its properties start again from the bases: the new 0x262 lists none"
-  let #(state, late) =
-    told(state:, at_ms: 66_500, message: creature.ModifierEnds(sprint_source()))
-  assert support.effects_of(late) == []
-    as "an end for a cleared source changes nothing"
-  let #(_, old) =
-    told(
-      state:,
-      at_ms: 66_600,
-      message: starting(
-        source: sprint_source(),
-        modifier: sprint(),
-        struck_at_ms: 65_000,
-      ),
-    )
-  assert support.effects_of(old) == []
-    as "and a start struck on the life before is dropped"
 }
 
 pub fn base_health_modifier_clamps_health_test() -> Nil {
@@ -1470,6 +1482,7 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
         | creature.Relay(payload: relay.Fight(..), ..)
         | creature.Relay(payload: relay.KillCredit(..), ..)
         | creature.Snapshot(..)
+        | creature.Expired(..)
         | creature.Broadcast(..) -> []
       }
     })
@@ -1689,8 +1702,10 @@ fn flown_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
     case one.1 {
       creature.Broadcast(news: PeerNews(news: CreatureMoved(..), ..), ..) ->
         Ok(one.0)
-      creature.Broadcast(..) | creature.Relay(..) | creature.Snapshot(..) ->
-        Error(Nil)
+      creature.Broadcast(..)
+      | creature.Relay(..)
+      | creature.Expired(..)
+      | creature.Snapshot(..) -> Error(Nil)
     }
   })
 }
@@ -1723,23 +1738,6 @@ pub fn a_thrown_creature_sends_one_0x638_to_each_viewer_test() -> Nil {
     as "and no other send: the flight carries the whole news"
 }
 
-pub fn a_throw_from_an_older_life_is_dropped_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    told(
-      state: watched_by_two(),
-      at_ms: 6000,
-      message: strike_of(damage: 60, cast_id: 1),
-    )
-  let #(state, _) = fired(state:, at_ms: 66_000, timer: TimerId(1))
-  let #(_, late) = told(state:, at_ms: 66_500, message: thrown_at(65_000))
-  assert support.effects_of(late) == []
-    as "struck at 65000, before the creature stood again at 66000: a throw of the life before"
-  let #(_, now) = told(state:, at_ms: 66_500, message: thrown_at(66_000))
-  assert flown_to(now) == [2, 5]
-    as "struck at the moment it stood again: the new life's"
-}
-
 pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   let #(dead, _) =
@@ -1757,14 +1755,14 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
     told(
       state: watched_by_two(),
       at_ms: 6000,
-      message: creature.Approached(
+      message: creature.Approached(member: step.RingMember(
         by: ConnectionId(2),
         unit_id: 20,
         place: map_spawn_support.at(5.0),
         seq: 1,
         stay: map_support.stay(count: 2),
         hit_radius: place_support.player_hit_radius,
-      ),
+      )),
     )
   let #(state, _) =
     told(
@@ -1797,33 +1795,34 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
     as "a creature that walks home is not thrown"
 }
 
-pub fn a_creature_respawned_after_a_throw_stands_at_home_test() -> Nil {
+pub fn a_creature_killed_after_a_throw_expires_like_any_other_and_its_next_life_starts_at_home_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, thrown) =
     told(state: watched_by_two(), at_ms: 6000, message: thrown_at(6000))
-  let assert [#(landing, 375)] = timers_started(thrown)
+  let assert [#(_, 375)] = timers_started(thrown)
     as "the throw starts one timer, for the landing 375 ms on"
   let #(state, _) =
     told(state:, at_ms: 6100, message: strike_of(damage: 60, cast_id: 1))
-  let #(state, respawned) = fired(state:, at_ms: 66_000, timer: TimerId(1))
-  let assert [
-    #(2, creature.Broadcast(news: PeerNews(news: Removed, ..), ..)),
-    #(5, creature.Broadcast(news: PeerNews(news: Removed, ..), ..)),
-    #(
-      2,
-      creature.Broadcast(
-        news: PeerNews(news: CreatureAppeared(place:, ..), ..),
-        ..,
-      ),
-    ),
-    ..
-  ] = outgoing(respawned)
-    as "death.creature_respawn: the removal, then the creation, as for a creature never thrown"
+  let #(_, expired) =
+    feed_raw(
+      state:,
+      at_ms: 66_000,
+      event: OwnEvent(step.ServiceTimerFired(TimerId(1))),
+    )
+  assert effects_named(expired)
+    == ["0x355 to all", "expired 7 of life 3", "stop"]
+    as "death.creature_respawn: the removal and the expiry, as for a creature never thrown; the thrown one stops, so the landing of its life has no one to land"
+  let #(_, next) =
+    feed_raw(
+      state: creature_for(viewers: [ConnectionId(2)]),
+      at_ms: 66_000,
+      event: OwnEvent(Started),
+    )
+  let assert [#(2, _, [PeerNews(news: CreatureAppeared(place:, ..), ..), ..])] =
+    snapshots(next)
+    as "the next life is started by the map at the spawn"
   assert start_place.x(place) == 0.0
     as "the spawn's x, where the creature stood before the throw moved it to x = 10"
-  let #(_, late) = fired(state:, at_ms: 66_100, timer: landing)
-  assert support.effects_of(late) == []
-    as "the landing of the life before is no landing of this one"
 }
 
 pub fn the_flight_end_timer_has_its_own_id_test() -> Nil {
@@ -2462,51 +2461,16 @@ pub fn a_despawn_at_a_dead_or_despawned_creature_is_dropped_test() -> Nil {
     as "a creature already gone is not removed again, and its respawn is not restarted"
 }
 
-pub fn a_despawn_from_an_older_life_is_dropped_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    told(
-      state: watched_by_two(),
-      at_ms: 6000,
-      message: strike_of(damage: 60, cast_id: 1),
-    )
-  let #(state, _) = fired(state:, at_ms: 66_000, timer: corpse_timer)
-  let #(_, old) =
-    told(
-      state:,
-      at_ms: 66_500,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 65_000,
-        went_at_ms: 66_400,
-      ),
-    )
-  assert support.effects_of(old) == []
-    as "struck at 65000, before the creature stood again at 66000: a round of the life before"
-  let #(_, now) =
-    told(
-      state:,
-      at_ms: 66_500,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 66_000,
-        went_at_ms: 66_400,
-      ),
-    )
-  assert kinds_of(outgoing(now)) == ["removal to 2", "removal to 5"]
-    as "struck at the moment it stood again: the new life's"
-}
-
 /// Player 2, at x = 5, comes near the Beast, which stands at x = 0.
 fn approached_by_2() -> creature.Message {
-  creature.Approached(
+  creature.Approached(member: step.RingMember(
     by: ConnectionId(2),
     unit_id: 20,
     place: map_spawn_support.at(5.0),
     seq: 1,
     stay: map_support.stay(count: 2),
     hit_radius: place_support.player_hit_radius,
-  )
+  ))
 }
 
 /// The connections the step releases from the creature, unit 7, as the number of each.
@@ -2517,8 +2481,10 @@ fn released_unit_7(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
         payload: relay.Fight(told: strike_tell.Released(unit_id: 7)),
         ..,
       ) -> Ok(one.0)
-      creature.Relay(..) | creature.Snapshot(..) | creature.Broadcast(..) ->
-        Error(Nil)
+      creature.Relay(..)
+      | creature.Snapshot(..)
+      | creature.Expired(..)
+      | creature.Broadcast(..) -> Error(Nil)
     }
   })
 }
@@ -2609,7 +2575,7 @@ pub fn a_despawn_drops_states_armor_and_an_opening_without_a_0x880_test() -> Nil
       message: stunning_strike(cast_id: 2),
     )
   assert armor_left(wearing) == [#(2, 2), #(5, 2)]
-  let #(gone, taken) =
+  let #(_, taken) =
     told(
       state: worn,
       at_ms: 6500,
@@ -2619,11 +2585,6 @@ pub fn a_despawn_drops_states_armor_and_an_opening_without_a_0x880_test() -> Nil
     as "the armor refill timer is cancelled"
   assert armor_left(taken) == [] && ended_states(taken) == []
     as "no 0x938 and no 0x880 are sent"
-  let #(back, _) = fired(state: gone, at_ms: 66_500, timer: corpse_timer)
-  let #(_, again) =
-    told(state: back, at_ms: 67_000, message: stunning_strike(cast_id: 3))
-  assert armor_left(again) == [#(2, 2), #(5, 2)]
-    as "the creature that stands again wears its full 3 points"
   // A guarded turret's open opening: its support is the fight test's.
   creature_fight_test.a_despawned_opening_ends_without_a_0x880()
 }
@@ -2676,7 +2637,7 @@ pub fn a_viewer_arriving_while_despawned_is_sent_nothing_test() -> Nil {
     as "the viewer is recorded"
 }
 
-pub fn a_viewer_that_arrived_while_despawned_is_shown_the_creature_at_its_respawn_test() -> Nil {
+pub fn a_viewer_that_arrived_while_despawned_is_sent_nothing_at_the_expiry_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     told(
@@ -2687,58 +2648,14 @@ pub fn a_viewer_that_arrived_while_despawned_is_shown_the_creature_at_its_respaw
         stay: map_support.stay(count: 9),
       ),
     )
-  let #(_, taken) = fired(state:, at_ms: 66_000, timer: corpse_timer)
-  assert kinds_of(outgoing(taken))
-    == ["creation to 2", "creation to 5", "creation to 9"]
-    as "death.creature_respawn: the 0x262 once to each viewer, the late one included"
-}
-
-pub fn the_corpse_timer_after_a_despawn_shows_the_creature_again_without_a_second_removal_test() -> Nil {
-  use <- owned_test.run(5000)
-  let state =
-    holding(
-      state: watched_by_two(),
-      source: sprint_source(),
-      modifier: sprint(),
-      at_ms: 5500,
-    )
-  let #(state, _) =
-    told(
+  let #(_, taken) =
+    feed_raw(
       state:,
-      at_ms: 6000,
-      message: despawn_at(delay_ms: 0, went_at_ms: 6000),
+      at_ms: 66_000,
+      event: OwnEvent(step.ServiceTimerFired(corpse_timer)),
     )
-  let #(state, taken) = fired(state:, at_ms: 66_000, timer: corpse_timer)
-  assert kinds_of(outgoing(taken)) == ["creation to 2", "creation to 5"]
-    as "the 0x355 went at the removal: no second one"
-  let assert [
-    #(
-      2,
-      creature.Broadcast(
-        news: PeerNews(news: CreatureAppeared(unit:, ..), ..),
-        ..,
-      ),
-    ),
-    ..
-  ] = outgoing(taken)
-  assert creature_unit.health_of(unit:) == 52 && unit.unit_id == 7
-    as "full health, the same unit"
-  assert unit.tail.properties == []
-    as "its properties start again from the bases"
-  assert unwatches(taken) == [WatchId(2)]
-    as "the caster whose modifier it held is no longer watched"
-  let #(_, old) =
-    told(
-      state:,
-      at_ms: 66_500,
-      message: creature.Despawn(
-        delay_ms: 0,
-        struck_at_ms: 65_000,
-        went_at_ms: 66_400,
-      ),
-    )
-  assert support.effects_of(old) == []
-    as "stood_again_ms is set: a despawn struck on the life before is dropped"
+  assert effects_named(taken) == ["expired 7 of life 3", "stop"]
+    as "death.creature_respawn: the creature sends no 0x355 (it went at the despawn) and no 0x262; its map starts the next life for the players who see the spawn then, the late viewer included"
 }
 
 pub fn a_despawned_creature_waits_the_kinds_respawn_time_test() -> Nil {
@@ -2767,25 +2684,9 @@ pub fn a_creature_retiring_with_a_despawn_pending_stops_now_test() -> Nil {
 
 pub fn a_run_only_creature_that_is_despawned_stops_at_its_corpse_timer_test() -> Nil {
   use <- owned_test.run(5000)
-  let beast = spawn_support.battle_beast(number: -1, x: 0.0)
-  let #(state, _) =
-    feed(
-      state: creature_from(
-        source: spawn_source.RunOnly(spawn_source.Summoned(
-          id: SpawnId(-1),
-          creature_id: beast.creature_id,
-          level: None,
-          place: beast.place,
-        )),
-        spawn: beast,
-        viewers: [ConnectionId(2), ConnectionId(5)],
-      ),
-      at_ms: 5000,
-      event: OwnEvent(Started),
-    )
   let #(state, removed) =
     told(
-      state:,
+      state: run_only_by_two(),
       at_ms: 6000,
       message: despawn_at(delay_ms: 0, went_at_ms: 6000),
     )
@@ -2902,48 +2803,6 @@ pub fn a_held_unit_state_is_told_to_each_viewer_in_connection_order_and_ended_by
     == [#(2, unit_state_ended(number: 1)), #(5, unit_state_ended(number: 1))]
     as "its fire ends the state for each viewer"
   assert timers_started(ended) == [] as "no state is left, so no timer"
-}
-
-pub fn unit_states_at_a_dead_despawned_or_older_life_creature_are_dropped_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(dead, _) =
-    told(
-      state: watched_by_two(),
-      at_ms: 6000,
-      message: strike_of(damage: 60, cast_id: 1),
-    )
-  let message = unit_states_at(rows: [state_6_for_8500()], went_at_ms: 6500)
-  let #(_, to_dead) = told(state: dead, at_ms: 6500, message:)
-  assert support.effects_of(to_dead) == [] as "a corpse holds no state"
-  let #(_, to_gone) = told(state: despawned_by_two(), at_ms: 6500, message:)
-  assert support.effects_of(to_gone) == []
-    as "a creature that left the field holds no state"
-  let #(back, _) = fired(state: dead, at_ms: 66_000, timer: corpse_timer)
-  let #(_, old) =
-    told(
-      state: back,
-      at_ms: 66_500,
-      message: creature.UnitStates(
-        rows: [state_6_for_8500()],
-        struck_at_ms: 65_000,
-        went_at_ms: 66_400,
-      ),
-    )
-  assert support.effects_of(old) == []
-    as "struck at 65000, before the creature stood again at 66000: a round of the life before"
-  let #(_, new) =
-    told(
-      state: back,
-      at_ms: 66_500,
-      message: creature.UnitStates(
-        rows: [state_6_for_8500()],
-        struck_at_ms: 66_000,
-        went_at_ms: 66_400,
-      ),
-    )
-  assert unit_state_news(new)
-    == [#(2, held(state: 6, number: 1)), #(5, held(state: 6, number: 1))]
-    as "struck at the moment it stood again: the new life's"
 }
 
 pub fn the_unit_state_timer_has_its_own_id_test() -> Nil {
@@ -3142,6 +3001,7 @@ fn guarded_by_two() -> State {
           viewers: [
             #(ConnectionId(2), map_support.stay(count: 2), generation.first()),
           ],
+          ring: [],
         ),
         spawn: spawn_support.battle_beast(number: 1, x: 0.0),
         kind: Kind(
@@ -3336,23 +3196,6 @@ pub fn a_despawn_clears_the_held_unit_states_test() -> Nil {
   let #(_, stale) = fired(state: gone, at_ms: 14_500, timer: unit_state_timer)
   assert support.effects_of(stale) == []
     as "a fire already queued at the removal ends nothing"
-  let #(back, _) = fired(state: gone, at_ms: 67_000, timer: corpse_timer)
-  let #(back, arrived) =
-    told(
-      state: back,
-      at_ms: 67_100,
-      message: creature_news_support.seen(
-        by: ConnectionId(9),
-        stay: map_support.stay(count: 9),
-      ),
-    )
-  assert unit_state_news(arrived) == []
-    as "the creature that stands again holds none"
-  let #(_, struck) =
-    told(state: back, at_ms: 67_200, message: strike_of(damage: 10, cast_id: 3))
-  let assert Landed(descriptions: [_], ..) = answer_of(struck)
-    as "and is struck as any creature"
-  Nil
 }
 
 pub fn a_kill_clears_the_held_unit_states_and_cancels_the_timer_test() -> Nil {
@@ -3477,11 +3320,6 @@ fn killed_at(at_ms at_ms: Int) -> At {
   #(at_ms, OwnEvent(Told(strike_of(damage: 60, cast_id: 1))))
 }
 
-/// The corpse timer, which stands the Beast again.
-fn stands_again_at(at_ms at_ms: Int) -> At {
-  #(at_ms, OwnEvent(step.ServiceTimerFired(corpse_timer)))
-}
-
 /// The Beast watched by the viewers 2 and 5 after these inputs, and the step of the last.
 fn after(inputs inputs: List(At)) -> #(State, ServiceStep(creature.Outgoing)) {
   list.fold(inputs, #(watched_by_two(), step.Effects([])), fn(held, input) {
@@ -3546,7 +3384,7 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
   list.each(
     [
       #(
-        "a CastViewSet is kept (a creature in its first life keeps a set whatever its time)",
+        "a CastViewSet is kept, whatever the time of the go it names",
         [view_set(by: 9, view: view_a(), struck_at_ms: 0, at_ms: 6000)],
         [#(id_a, 1)],
         ["watch 2 of 9"],
@@ -3588,26 +3426,6 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
         [],
       ),
       #(
-        "a set struck before the creature last stood again is ignored",
-        [
-          killed_at(at_ms: 6000),
-          stands_again_at(at_ms: 66_000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 65_999, at_ms: 66_500),
-        ],
-        [],
-        [],
-      ),
-      #(
-        "a set struck at the very time the creature stood again is kept (the compare is strict)",
-        [
-          killed_at(at_ms: 6000),
-          stands_again_at(at_ms: 66_000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 66_000, at_ms: 66_500),
-        ],
-        [#(id_a, 1)],
-        ["watch 2 of 9"],
-      ),
-      #(
         "a set reaching a dead creature is kept, and the corpse's 0x262 lists it",
         [
           killed_at(at_ms: 6000),
@@ -3638,8 +3456,6 @@ pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of
   use <- owned_test.run(5000)
   let id_a = view_a().cast_id
   let id_b = view_b().cast_id
-  let high =
-    view_with(unit: 21, number: 5, count: 1, starts_ms: 6000, ends_ms: 14_000)
   list.each(
     [
       #(
@@ -3698,19 +3514,6 @@ pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of
         ],
         [#(id_b, 1)],
         [],
-      ),
-      #(
-        "standing again clears every view and unwatches each connection once, one that held both a modifier and a view included: the connections of sources first, then those holding only views by their lowest cast id",
-        [
-          view_set(by: 9, view: high, struck_at_ms: 6000, at_ms: 6000),
-          view_set(by: 10, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
-          view_set(by: 11, view: view_b(), struck_at_ms: 6200, at_ms: 6200),
-          sprint_set(by: 11, at_ms: 6300),
-          killed_at(at_ms: 7000),
-          stands_again_at(at_ms: 66_000),
-        ],
-        [],
-        ["unwatch 4", "unwatch 3", "unwatch 2"],
       ),
     ],
     fn(row) {

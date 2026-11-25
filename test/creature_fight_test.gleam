@@ -118,6 +118,19 @@ fn beast_with(
   )
 }
 
+/// The Battle Beast's kind: the 60 s respawn time and the 5649 attack at 1500 ms, with no
+/// guard and no special.
+fn beast_kind() -> Kind {
+  Kind(
+    respawn_ms: 60_000,
+    attack_spell4_id: Spell4Id(5649),
+    alternate_spell4_ids: [],
+    attack_interval_ms: 1500,
+    guard: option.None,
+    specials: [],
+  )
+}
+
 /// A Beast started at this source's spawn, `Started` taken.
 fn beast_from(
   source source: spawn_source.SpawnSource,
@@ -125,20 +138,7 @@ fn beast_from(
   viewers viewers: List(Int),
   armor armor: creature_life.InterruptArmor,
 ) -> State {
-  started_from(
-    source:,
-    spawn:,
-    kind: Kind(
-      respawn_ms: 60_000,
-      attack_spell4_id: Spell4Id(5649),
-      alternate_spell4_ids: [],
-      attack_interval_ms: 1500,
-      guard: option.None,
-      specials: [],
-    ),
-    viewers:,
-    armor:,
-  )
+  started_from(source:, spawn:, kind: beast_kind(), viewers:, armor:)
 }
 
 /// A creature of this kind started at this source's spawn, `Started` taken.
@@ -162,6 +162,21 @@ fn started_with(
   viewers viewers: List(Int),
   armor armor: creature_life.InterruptArmor,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
+  let #(state, taken) =
+    started_raw(source:, spawn:, kind:, viewers:, ring: [], armor:)
+  #(state, creature_news_support.at_each_player(state:, taken:))
+}
+
+/// The same, the step as the creature sends it to its map, for a start whose ring holds
+/// these players.
+fn started_raw(
+  source source: spawn_source.SpawnSource,
+  spawn spawn: Spawn,
+  kind kind: Kind,
+  viewers viewers: List(Int),
+  ring ring: List(step.RingMember),
+  armor armor: creature_life.InterruptArmor,
+) -> #(State, ServiceStep(creature.Outgoing)) {
   let state =
     creature.new(Settings(
       creature: CreatureStart(
@@ -178,6 +193,7 @@ fn started_with(
             generation.first(),
           )
         }),
+        ring:,
       ),
       spawn: Spawn(
         ..spawn,
@@ -186,12 +202,30 @@ fn started_with(
       kind:,
       numbers: spawn_support.numbers,
     ))
-  let #(state, taken) =
-    creature.step(
-      state,
-      support.input_at_ms(ms: start_ms, event: OwnEvent(Started)),
-    )
-  #(state, creature_news_support.at_each_player(state:, taken:))
+  creature.step(
+    state,
+    support.input_at_ms(ms: start_ms, event: OwnEvent(Started)),
+  )
+}
+
+/// The player of connection `number`, at x = 5 in its stay, as a ring names it.
+fn ring_member(number: Int) -> step.RingMember {
+  ring_member_in_stay(number:, stay_count: number)
+}
+
+/// The same in the stay of its `stay_count`th join.
+fn ring_member_in_stay(
+  number number: Int,
+  stay_count stay_count: Int,
+) -> step.RingMember {
+  step.RingMember(
+    by: ConnectionId(number),
+    unit_id: unit_of(number),
+    place: map_spawn_support.at(5.0),
+    seq: 1,
+    stay: map_support.stay(count: stay_count),
+    hit_radius: place_support.player_hit_radius,
+  )
 }
 
 /// The creature's address, which its strikes come from.
@@ -246,14 +280,14 @@ fn approached(
   x x: Float,
   seq seq: Int,
 ) -> creature.Message {
-  creature.Approached(
+  creature.Approached(member: step.RingMember(
     by: ConnectionId(number),
     unit_id: unit_of(number),
     place: map_spawn_support.at(x),
     seq:,
     stay: map_support.stay(count: number),
     hit_radius: place_support.player_hit_radius,
-  )
+  ))
 }
 
 fn moved(number number: Int, x x: Float, seq seq: Int) -> creature.Message {
@@ -328,6 +362,7 @@ fn fights_told_for(
       creature.Relay(payload: relay.Struck(..), ..)
       | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
+      | creature.Expired(..)
       | creature.Broadcast(..) -> Error(Nil)
     }
   })
@@ -371,6 +406,7 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
       creature.Relay(payload: relay.Struck(..), ..) -> "Deflected" <> to
       creature.Relay(payload: relay.KillCredit(..), ..) -> "KillCredit" <> to
       creature.Snapshot(..) -> "Snapshot" <> to
+      creature.Expired(..) -> "Expired" <> to
     }
   })
 }
@@ -1170,6 +1206,164 @@ pub fn at_home_the_creature_aggroes_the_near_players_test() -> Nil {
     as "home, at full health, it aggroes the player still in its ring (Jim's answer of 2026-11-04)"
 }
 
+/// A Battle Beast at x = 0 started for these viewers with these players in the ring of its
+/// start, the step of its `Started` as the creature sends it to its map. A creature that
+/// `fights` False is a spawn that does not fight.
+fn started_with_ring(
+  viewers viewers: List(Int),
+  ring ring: List(step.RingMember),
+  fights fights: Bool,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
+  started_raw(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: Spawn(..spawn, combat: creature_life.Combat(..spawn.combat, fights:)),
+    kind: beast_kind(),
+    viewers:,
+    ring:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+pub fn a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_players_it_has_as_viewers_in_one_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The map starts a respawn with the ring it reads at the start (Design run A, 4.1): the
+  // creature answers each viewer's `Seen` first, as every start does, then starts one fight
+  // over the players of the ring that see it. The first of them is the target
+  // (`opcode.0x908`) and each other is named (`opcode.0x90a`).
+  let fight_and_snapshots = fn(taken) {
+    list.filter(creature_news_support.said_to_the_map(taken), fn(line) {
+      string.starts_with(line, "snapshot")
+      || string.starts_with(line, "0x908")
+      || string.starts_with(line, "0x90a")
+      || string.starts_with(line, "Threatened")
+    })
+  }
+  list.each(
+    [
+      #(
+        "a ring of both viewers",
+        [2, 5],
+        [2, 5],
+        True,
+        [
+          "snapshot for 2",
+          "snapshot for 5",
+          "0x908(20, 1) to all",
+          "0x90a(50, 1) to all",
+          "Threatened(7, 3) to 2",
+          "Threatened(7, 3) to 5",
+        ],
+        1,
+      ),
+      #(
+        "a ring of a viewer and of a player who does not see it",
+        [2, 5],
+        [5, 9],
+        True,
+        [
+          "snapshot for 2",
+          "snapshot for 5",
+          "0x908(50, 1) to all",
+          "Threatened(7, 3) to 5",
+        ],
+        1,
+      ),
+      #(
+        "an empty ring: the effects of a start with none",
+        [2, 5],
+        [],
+        True,
+        ["snapshot for 2", "snapshot for 5"],
+        0,
+      ),
+      #(
+        "a creature that does not fight: nobody is aggroed",
+        [2, 5],
+        [2, 5],
+        False,
+        ["snapshot for 2", "snapshot for 5"],
+        0,
+      ),
+    ],
+    fn(row) {
+      let #(_, taken) =
+        started_with_ring(
+          viewers: row.1,
+          ring: list.map(row.2, ring_member),
+          fights: row.3,
+        )
+      assert fight_and_snapshots(taken) == row.4 as row.0
+      assert list.length(support.service_timers_started(taken)) == row.5
+        as { row.0 <> ": the attack tick once, and no timer for no fight" }
+    },
+  )
+}
+
+pub fn a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewers_of_the_stay_it_names_in_one_fight_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The players of the ring are near; the creature fights those of them whose stay is the
+  // stay of the viewer they are (`aggro`), the first of them as target.
+  let two = ring_member(2)
+  let five = ring_member(5)
+  list.each(
+    [
+      #("every ring player a viewer", [2, 5], [two, five], True, [2, 5], [2, 5]),
+      #(
+        "one ring player in another stay than its viewer's",
+        [2, 5],
+        [two, ring_member_in_stay(number: 5, stay_count: 6)],
+        True,
+        [2],
+        [2, 5],
+      ),
+      #(
+        "one ring player who is not a viewer",
+        [2, 5],
+        [two, ring_member(9)],
+        True,
+        [2],
+        [2, 9],
+      ),
+      #("an empty ring", [2, 5], [], True, [], []),
+      #("a creature that does not fight", [2, 5], [two, five], False, [], [2, 5]),
+    ],
+    fn(row) {
+      let #(state, _) =
+        started_with_ring(viewers: row.1, ring: row.2, fights: row.3)
+      let fight = creature.fight(state:)
+      assert creature_fight.threatened(state: fight)
+        == set.from_list(list.map(row.4, ConnectionId))
+        as { row.0 <> ": the threat list" }
+      assert creature_fight.near(state: fight)
+        == set.from_list(list.map(row.5, ConnectionId))
+        as { row.0 <> ": the players near" }
+    },
+  )
+  // A ring player who dies after the start is the new life's own to handle: it leaves
+  // `near` and the list, its entry is erased (`opcode.0x90a`) and it is released.
+  let #(state, _) =
+    started_with_ring(viewers: [2, 5], ring: [two, five], fights: True)
+  let #(state, died) =
+    tell(state:, at_ms: 100, message: creature.PlayerDied(by: ConnectionId(2)))
+  assert said(died)
+    == [
+      "0x90a(20, 0) to 2",
+      "0x90a(20, 0) to 5",
+      "0x908(50, 1) to 2",
+      "0x908(50, 1) to 5",
+      "turn(kind 18, unit 50) to 2",
+      "turn(kind 18, unit 50) to 5",
+      "Released(7) to 2",
+    ]
+    as "the dead player's entry is erased, the other is the target, and the dead player is released"
+  assert creature_fight.threatened(state: creature.fight(state:))
+    == set.from_list([ConnectionId(5)])
+  assert creature_fight.near(state: creature.fight(state:))
+    == set.from_list([ConnectionId(5)])
+    as "the dead player is no longer near"
+}
+
 // Stealth (issue 483): the map tells a creature `Withdrew` for a player that enters
 // stealth. The creature's rule is not changed; these tests hold what the step relies
 // on. Evidence: Jim's decision on issue 483 (Discord, 2026-11-06, option A): a
@@ -1206,7 +1400,7 @@ pub fn a_creature_fighting_a_player_told_withdrew_for_it_keeps_it_on_its_threat_
     as "the player was still on the threat list, so the end of its watch releases it"
 }
 
-pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_nor_when_the_corpse_stands_the_creature_again_and_one_approached_again_is_test() -> Nil {
+pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_and_one_approached_again_is_test() -> Nil {
   use <- owned_test.run(5000)
   near_player_is_not_aggroed_and_one_approached_again_is(
     gone: creature.Withdrew(by: ConnectionId(5)),
@@ -1214,8 +1408,7 @@ pub fn a_near_player_told_withdrew_is_not_aggroed_at_the_home_timer_nor_when_the
 }
 
 /// Player 5 comes near a creature and `gone` tells the creature it is not near any more:
-/// neither the home timer nor the corpse timer aggroes it, and an `Approached` after
-/// `gone` does.
+/// the home timer does not aggro it, and an `Approached` after `gone` does.
 fn near_player_is_not_aggroed_and_one_approached_again_is(
   gone gone: creature.Message,
 ) -> Nil {
@@ -1255,38 +1448,6 @@ fn near_player_is_not_aggroed_and_one_approached_again_is(
   let #(_, at_home) = fire(state: again, at_ms: 11_500, timer: home)
   assert list.contains(said(at_home), "0x908(50, 1) to 5")
     as "approached again before the home timer, it is aggroed"
-
-  // The corpse timer: the creature is killed and stands again at its spawn.
-  let #(state, _) =
-    tell(
-      state: beast(viewers: [2, 5]),
-      at_ms: 0,
-      message: approached(number: 2, x: 5.0, seq: 1),
-    )
-  let #(state, killed) =
-    tell(
-      state:,
-      at_ms: 1000,
-      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 60, 1.0)]),
-    )
-  let corpse = timer_for(killed, 60_000)
-  let #(state, _) =
-    tell(state:, at_ms: 2000, message: creature.Withdrew(by: ConnectionId(2)))
-  let #(state, _) =
-    tell(state:, at_ms: 3000, message: approached(number: 5, x: 3.0, seq: 1))
-  let #(withdrawn, _) = tell(state:, at_ms: 3100, message: gone)
-  let #(_, stood) = fire(state: withdrawn, at_ms: 61_000, timer: corpse)
-  assert !aggroes(stood)
-    as "corpse timer: players 2 and 5 were told they are gone, so the creature stands again and aggroes no one"
-  let #(again, _) =
-    tell(
-      state: withdrawn,
-      at_ms: 3200,
-      message: approached(number: 5, x: 3.0, seq: 2),
-    )
-  let #(_, stood) = fire(state: again, at_ms: 61_000, timer: corpse)
-  assert list.contains(said(stood), "0x908(50, 1) to 5")
-    as "approached again before the corpse timer, it is aggroed"
 }
 
 // A player's death (issue 496): the killing answer, the refusal and the map's
@@ -1305,7 +1466,7 @@ pub fn a_creature_that_kills_its_only_target_in_its_ring_does_not_aggro_the_body
     as "the creature stands at its spawn: its home timer fires at once, and the body is in no one's ring"
 }
 
-pub fn a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_nor_when_its_corpse_timer_stands_it_test() -> Nil {
+pub fn a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, key) = struck_once_among(viewers: [2, 5])
   let refused =
@@ -1314,20 +1475,8 @@ pub fn a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_ho
       outcome: Refused(why: strike_tell.Dead),
     ))
   let #(state, answered) = tell(state:, at_ms: 1600, message: refused)
-  let #(state, at_home) =
-    fire(state:, at_ms: 1600, timer: timer_for(answered, 0))
+  let #(_, at_home) = fire(state:, at_ms: 1600, timer: timer_for(answered, 0))
   assert !aggroes(at_home) as "home timer: the refusing player is not aggroed"
-  // Player 5 kills the creature; its corpse timer stands it again.
-  let #(state, killed) =
-    tell(
-      state:,
-      at_ms: 2000,
-      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 60, 1.0)]),
-    )
-  let #(_, stood) =
-    fire(state:, at_ms: 62_000, timer: timer_for(killed, 60_000))
-  assert !aggroes(stood)
-    as "corpse timer: the creature stands again and aggroes no one for player 2"
 }
 
 pub fn a_creature_told_player_died_for_its_target_erases_its_entry_names_the_next_and_never_strikes_the_body_test() -> Nil {
@@ -1389,7 +1538,7 @@ pub fn a_creature_told_player_died_for_its_only_entry_leashes_and_at_home_aggroe
     as "at home nothing is aggroed: the body is not near"
 }
 
-pub fn a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test() -> Nil {
+pub fn a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_and_one_approached_again_is_test() -> Nil {
   use <- owned_test.run(5000)
   near_player_is_not_aggroed_and_one_approached_again_is(
     gone: creature.PlayerDied(by: ConnectionId(5)),
@@ -1581,18 +1730,10 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
   let assert [CreatureAppeared(place:, ..)] = news_to(watched, 9)
   assert x_of(place) == 10.0
     as "it fell 1 s into its run, 10 units along: the corpse lies there, not where the run would end"
-  let #(_, stood) = fire(state:, at_ms: 61_000, timer: corpse)
-  let appeared =
-    list.filter(news_to(stood, 9), fn(news) {
-      creature_news_support.name_of(news) == "0x262"
-    })
-    |> list.map(fn(news) {
-      let assert CreatureAppeared(place:, ..) = news
-        as "a 0x262 of the creature"
-      x_of(place)
-    })
-  assert appeared == [0.0]
-    as "it stands again at its spawn (death.creature_respawn)"
+  let #(_, expired) = fire(state:, at_ms: 61_000, timer: corpse)
+  assert list.map(news_to(expired, 9), creature_news_support.name_of)
+    == ["0x355"]
+    as "the viewer that saw the corpse is sent its removal at the expiry, and no 0x262: the next life at the spawn is the map's (death.creature_respawn)"
 }
 
 // Test 14: threat only for viewers.
@@ -2036,14 +2177,14 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
     tell(
       state:,
       at_ms: 5000,
-      message: creature.Approached(
+      message: creature.Approached(member: step.RingMember(
         by: ConnectionId(2),
         unit_id: 21,
         place: map_spawn_support.at(5.0),
         seq: 7,
         stay: stay.next(map_support.stay(count: 2)),
         hit_radius: place_support.player_hit_radius,
-      ),
+      )),
     )
   assert list.contains(said(again), "0x908(21, 1) to 2")
     as "the equal sequence number is taken, with the new unit 21"
@@ -2402,6 +2543,7 @@ fn landed_in(
       | creature.Relay(payload: relay.Fight(..), ..)
       | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
+      | creature.Expired(..)
       | creature.Broadcast(..) -> []
     }
   })
@@ -2779,6 +2921,7 @@ fn armor_taken(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
       | creature.Relay(payload: relay.Fight(..), ..)
       | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
+      | creature.Expired(..)
       | creature.Broadcast(..) -> []
     }
   })
@@ -2864,7 +3007,7 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
     as "a refill timer that fires with the armor full does nothing"
 }
 
-pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_stands_again_at_full_armor_test() -> Nil {
+pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_shows_its_full_armor_at_the_body_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     tell(
@@ -3660,14 +3803,14 @@ fn approached_at(
   z z: Float,
   seq seq: Int,
 ) -> creature.Message {
-  creature.Approached(
+  creature.Approached(member: step.RingMember(
     by: ConnectionId(number),
     unit_id: unit_of(number),
     place: at_xz(x:, z:),
     seq:,
     stay: map_support.stay(count: number),
     hit_radius: place_support.player_hit_radius,
-  )
+  ))
 }
 
 fn moved_at(
@@ -4284,6 +4427,7 @@ fn answers_of(
       creature.Relay(payload: relay.Fight(..), ..)
       | creature.Relay(payload: relay.KillCredit(..), ..)
       | creature.Snapshot(..)
+      | creature.Expired(..)
       | creature.Broadcast(..) -> Error(Nil)
     }
   })
@@ -4632,9 +4776,8 @@ pub fn a_turret_killed_while_opened_gives_its_kill_credit_test() -> Nil {
 }
 
 /// A turret that is stunned open and then told to despawn: its opening's cast is finished
-/// with no 0x880, its opening timer is cancelled, and it stands guarded again at its
-/// corpse timer. Called by `creature_test`'s despawn test, which names the three things a
-/// despawn drops.
+/// with no 0x880 and its opening timer is cancelled. Called by `creature_test`'s despawn
+/// test, which names the three things a despawn drops.
 pub fn a_despawned_opening_ends_without_a_0x880() -> Nil {
   let held = guarded_charge(viewers: [2])
   let #(state, stunned) = stunned_at(state: held.state, at_ms: 4000)
@@ -4659,11 +4802,6 @@ pub fn a_despawned_opening_ends_without_a_0x880() -> Nil {
     fire(state: gone, at_ms: 19_000, timer: timer_for(stunned, 15_000))
   assert said(late) == [] && timers(late) == []
     as "the opening's end that fires all the same finds no opening"
-  let #(_, stood) =
-    fire(state: gone, at_ms: 65_000, timer: timer_for(despawned, 60_000))
-  let assert [CastStarted(start: guard), CastWent(..)] = news_named(stood, 2)
-    as "the corpse timer stands the turret guarded, as after a death"
-  assert guard.spell4_id == 85_474
 }
 
 pub fn an_opening_end_after_death_does_nothing_test() -> Nil {
@@ -4695,14 +4833,20 @@ pub fn a_respawned_turret_stands_guarded_test() -> Nil {
   let #(state, _) = stunned_at(state: held.state, at_ms: 4000)
   let #(state, killed) =
     tell(state:, at_ms: 5000, message: damaging(damage: 1_000_000))
-  let #(state, stood) =
+  let #(_, expired) =
     fire(state:, at_ms: 65_000, timer: timer_for(killed, 60_000))
-  let assert [CastStarted(start:), CastWent(go:)] = news_named(stood, 2)
-    as "the corpse timer stands the turret: the guard's cast and nothing of the opening"
+  assert list.map(news_to(expired, 2), creature_news_support.name_of)
+    == ["0x355"]
+    && creature_news_support.said_to_the_map(expired) == ["expired 7 of life 3"]
+    as "the killed turret's corpse timer removes it and expires it: the next life is its map's start"
+  let #(state, stood) = guarded_turret(viewers: [2])
+  let assert [_, CastStarted(start:), CastWent(go:)] = news_to(stood, 2)
+    as "the next life's start: the 0x262, the guard's cast and nothing of the opening"
   assert start.spell4_id == 85_474
     && start.caster_unit_id == unit
     && start.primary_target_unit_id == unit
-  assert start.cast_id != held.guard_cast as "a new cast, not the dead guard's"
+  assert start.cast_id == held.guard_cast
+    as "the new life's guard numbers its casts from the start, so its first cast has the first life's id: the viewer finishes a unit's casts before its 0x355 (`viewers.unit_removed`)"
   assert go.cast_id == start.cast_id
   let assert [#(224_666, _, 0)] = effects_listed(go:)
   let #(_, struck) = tell(state:, at_ms: 65_100, message: damaging(damage: 10))
@@ -5173,14 +5317,7 @@ pub fn an_immune_knockback_does_not_throw_test() -> Nil {
     started_with(
       source: spawn_source.Stored(id: SpawnId(1)),
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
-      kind: Kind(
-        respawn_ms: 60_000,
-        attack_spell4_id: Spell4Id(5649),
-        alternate_spell4_ids: [],
-        attack_interval_ms: 1500,
-        guard: turret.guard,
-        specials: [],
-      ),
+      kind: Kind(..beast_kind(), guard: turret.guard),
       viewers: [2],
       armor: creature_life.NoArmor,
     )
@@ -5762,14 +5899,7 @@ fn rootbrute_with(
       ..spawn,
       combat: creature_life.Combat(..spawn.combat, specials: [special]),
     ),
-    kind: Kind(
-      respawn_ms: 60_000,
-      attack_spell4_id: Spell4Id(5649),
-      alternate_spell4_ids: [],
-      attack_interval_ms: 1500,
-      guard: option.None,
-      specials: [],
-    ),
+    kind: beast_kind(),
     viewers:,
     armor: creature_life.NoArmor,
   )
@@ -7651,10 +7781,10 @@ pub fn a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_followi
     )
   assert said(later) == [] && faces_to(again, 2) == []
     as "a dead creature follows no one, and a second blow or a repeated death turns it no more"
-  let #(_, stood) =
+  let #(_, expired) =
     fire(state:, at_ms: 61_000, timer: timer_for(killed, 60_000))
-  assert faces_to(stood, 2) == [creature_turn.Unit(unit_id: 20)]
-    as "it stands again with the facing of its spawn's 0x262 and aggroes the player near it: its fight turns it afresh"
+  assert faces_to(expired, 2) == []
+    as "the corpse timer turns no one: the next life's fight, which turns it toward the player near it, is its start's"
   // A despawn is a death for the fight.
   let #(state, _) = chasing(viewers: [2])
   let #(_, gone) =

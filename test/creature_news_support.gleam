@@ -117,6 +117,11 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
         name_of(news) <> " to all"
       creature.Snapshot(by: ConnectionId(number), ..) ->
         "snapshot for " <> int.to_string(number)
+      creature.Expired(unit_id:, life:) ->
+        "expired "
+        <> int.to_string(unit_id)
+        <> " of life "
+        <> int.to_string(life)
       creature.Relay(to: ConnectionId(number), payload:, ..) ->
         case payload {
           relay.Struck(answered: Answered(outcome: Landed(..), ..)) ->
@@ -226,7 +231,7 @@ pub fn relayed_to(
       creature.Relay(to:, payload:, ..) if to == connection -> [
         relay.Tell(payload:),
       ]
-      creature.Snapshot(..) | creature.Relay(..) -> []
+      creature.Snapshot(..) | creature.Relay(..) | creature.Expired(..) -> []
     }
   })
 }

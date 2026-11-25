@@ -7,12 +7,23 @@
 ////
 //// WALKERS is 50 when left out. The words, in any order:
 //// - `mutual`: each walker also strikes each creature that threatens it, one strike a
-////   second (a blow of 1; a Dagun has 50 health), every fifth with Stagger's stun
+////   second (a blow of 1; a Dagun has 50 health, so a creature dies only with `respawning`), every fifth with Stagger's stun
 ////   (Spell4Effects 83827), so the creatures also die and are stunned;
 //// - `leaving`: every walker is shown 2,000 units out of the creatures' sight and leash
 ////   from the tenth second to the twentieth, so the creatures lose their targets;
 //// - `delayed MS`: walker 1's answers reach the creature MS ms after it sent them;
 //// - `held MS`: walker 1 sends each answer MS ms after the strike reached it;
+//// - `respawning`: the Daguns' kind (Creature2 73465, which has no row of its own and takes
+////   the default row's 60 s) respawns after `respawn_ms` (1,500, above the strike deadline
+////   the load refuses a kind below), and with `mutual` each blow is 100 (above a Dagun's 50
+////   health), so every blow that lands kills and the Daguns die over and over, their next
+////   lives starting in the run. The kinds are put over the load's own before the tree
+////   starts (`content/creature_kind.put`, which replaces the term); the database is
+////   untouched. Each walker counts the respawn gap: the time from the removal of a unit it
+////   was sent to the next creation of the same unit, from the creature's own news or the
+////   map's notices (`genesis_prime/load_respawn`). The run fails if no respawn was seen, or
+////   fewer respawns than the creatures killed that were owed one (a death in the last
+////   `settle_ms` is not), and its gate line says which;
 //// - `unrecorded`: the operating system's timers for every deadline, as the server runs
 ////   without the recorder, and the strike rounds are not counted: the run that shows
 ////   what the recorder costs.
@@ -49,6 +60,10 @@
 ////   due and was not in the round when it closed; **late** when it was sent at or after
 ////   it; the rounds are counted by how they closed: an answer, the deadline, a death, a
 ////   state, a broken charge, the leash, or a cancel with no sign of why, or still open;
+//// - with `respawning`, the respawn gaps the walkers counted: how many, their mean and 99th
+////   percentile in microseconds as the walker was sent them, and the longest, and whether the
+////   mean is under 1 ms; and the respawn gate: passes with the respawns counted, or fails
+////   naming why;
 //// - option A's count: for each move, the creatures in the mover's sight, summed
 ////   over the moves, the messages a design that told every seen creature of every
 ////   move would send.
@@ -67,14 +82,16 @@
 //// The walkers all join and are ready before any walks, each starting at its own
 //// offset within one 125 ms interval, as clients' timers are. The run passes when
 //// the map's queue stays bounded: its mean below the moves of one round (the
-//// walkers' count) and its process idle in most samples. The longest queue is
-//// printed beside them.
+//// walkers' count) and its process idle in most samples, and, with `respawning`, the
+//// respawn gate passes. The longest queue is printed beside them.
 
 import argv
 import genesis_prime/client_connection.{
-  type Message, ForStay, SentByFoe, SentByMap, SentByPeer, SentByTarget,
+  type Message, type StaySent, ForStay, SentByFoe, SentByMap, SentByPeer,
+  SentByTarget,
 }
 import genesis_prime/connection/registry
+import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/crowd_control
@@ -85,6 +102,7 @@ import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
 import genesis_prime/load_deadline
 import genesis_prime/load_moves
+import genesis_prime/load_respawn.{type Gaps}
 import genesis_prime/load_round.{
   type Answer, type Mark, type Rounds, Answer, Mark,
 }
@@ -99,6 +117,7 @@ import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, Creature2Id, RaceId}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
@@ -143,6 +162,18 @@ const dagun = 73_465
 
 const daguns = 27
 
+/// The Daguns' respawn time in the `respawning` scene, in milliseconds: above the strike
+/// deadline (1,000), which a kind may not undercut (`creature_kind.select`).
+const respawning_ms = 1500
+
+/// A death within this many milliseconds of the walkers' end is not owed a respawn: the
+/// corpse timer (`respawning_ms`) and the next life are still to come.
+const settle_ms = 3000
+
+/// The damage of a blow in the `respawning` scene, above a Dagun's 50 health, so each
+/// blow that lands kills.
+const killing_blow = 100
+
 /// A walker of the `mutual` scene strikes each creature that threatens it once in this
 /// many moves (a second), and every `stun_every`th strike carries Stagger's stun
 /// (Spell4Effects 83827: delay 0, duration 2,500 ms, 1 armor).
@@ -174,6 +205,7 @@ type Counts {
     by_creature: Dict(Int, Int),
     creature_news: Int,
     map_notices: Int,
+    respawns: Gaps,
   )
 }
 
@@ -188,7 +220,14 @@ type Plant {
 /// What a run does: its walkers, the plant of walker 1, and the words that change what
 /// the walkers and the recorder do (see the module's doc).
 type Scene {
-  Scene(walkers: Int, plant: Plant, mutual: Bool, leaving: Bool, recorded: Bool)
+  Scene(
+    walkers: Int,
+    plant: Plant,
+    mutual: Bool,
+    leaving: Bool,
+    respawning: Bool,
+    recorded: Bool,
+  )
 }
 
 @external(erlang, "load_fight_ffi", "reductions")
@@ -199,6 +238,10 @@ pub fn main() -> Nil {
   let recorder = load_deadline.start()
   let settings =
     load_run.start_server_with(change: fn(settings) {
+      case scene.respawning {
+        True -> respawn_daguns_quickly(settings:)
+        False -> Nil
+      }
       server.Settings(
         ..load_run.on_free_ports(settings),
         service_time: case scene.recorded {
@@ -264,6 +307,7 @@ pub fn main() -> Nil {
         as "every walker finished"
       counts
     })
+  let ended_us = load_sample.microseconds()
   let after = reductions(run.pid)
   let #(longest, sum, samples, running) = load_moves.stop_probe()
   // A planted answer is delivered up to its delay after the walkers finish, and the
@@ -285,11 +329,31 @@ pub fn main() -> Nil {
     scene:,
     counts:,
     rounds:,
+    ended_us:,
     reductions: after - before,
     longest:,
     sum:,
     samples:,
     running:,
+  )
+}
+
+/// The Daguns' kind with a respawn time of `respawning_ms`, put over the kinds the load put
+/// under the world's key before the tree starts, so the maps and creatures read it. The
+/// kind is the Daguns' own when they have a row, else the default row's.
+fn respawn_daguns_quickly(settings settings: server.Settings) -> Nil {
+  let kinds = content_creature_kind.kinds(settings.world.spawns)
+  let own = creature_kind.kind_of(kinds:, creature2_id: dagun)
+  content_creature_kind.put(
+    key: settings.world.spawns,
+    kinds: Kinds(
+      ..kinds,
+      by_creature: dict.insert(
+        kinds.by_creature,
+        dagun,
+        Kind(..own, respawn_ms: respawning_ms),
+      ),
+    ),
   )
 }
 
@@ -302,6 +366,7 @@ fn scene_of(arguments: List(String)) -> Scene {
       plant: Honest,
       mutual: False,
       leaving: False,
+      respawning: False,
       recorded: True,
     )
   case arguments {
@@ -321,6 +386,8 @@ fn words_of(words words: List(String), scene scene: Scene) -> Scene {
       words_of(words: rest, scene: Scene(..scene, mutual: True))
     ["leaving", ..rest] ->
       words_of(words: rest, scene: Scene(..scene, leaving: True))
+    ["respawning", ..rest] ->
+      words_of(words: rest, scene: Scene(..scene, respawning: True))
     ["unrecorded", ..rest] ->
       words_of(words: rest, scene: Scene(..scene, recorded: False))
     ["delayed", ms, ..rest] ->
@@ -331,7 +398,7 @@ fn words_of(words words: List(String), scene scene: Scene) -> Scene {
     ["held", ms, ..rest] ->
       words_of(words: rest, scene: Scene(..scene, plant: Held(ms: whole(ms))))
     [_, ..] ->
-      panic as "the arguments are: [walkers] [mutual] [leaving] [unrecorded] [delayed|held milliseconds]"
+      panic as "the arguments are: [walkers] [mutual] [leaving] [respawning] [unrecorded] [delayed|held milliseconds]"
   }
 }
 
@@ -480,6 +547,7 @@ fn walker(
             by_creature: dict.new(),
             creature_news: 0,
             map_notices: 0,
+            respawns: load_respawn.none(),
           ),
         )
       let _sent =
@@ -654,11 +722,15 @@ fn struck_back(
       step:,
       fighters:,
       made: counts.made,
+      damage: case scene.respawning {
+        True -> killing_blow
+        False -> 1
+      },
     ),
   )
 }
 
-/// Strikes each creature the walker fights as the walker's connection does: one blow of 1
+/// Strikes each creature the walker fights as the walker's connection does: one blow of `damage`
 /// (Spell4Effects 184741), and Stagger's stun with every `stun_every`th strike. `made` is
 /// the strikes the walker has made; it gives the count after these.
 fn strike_fighters(
@@ -670,6 +742,7 @@ fn strike_fighters(
   step step: Int,
   fighters fighters: Dict(Int, Int),
   made made: Int,
+  damage damage: Int,
 ) -> Int {
   let hit_radius =
     hit_radius.of_playing(
@@ -719,7 +792,7 @@ fn strike_fighters(
                 hit.Blow(
                   spell4_effects_id: 184_741,
                   damage_type: 3,
-                  damage: hit.Worked(1),
+                  damage: hit.Worked(damage),
                   delay_ms: 0,
                   threat_multiplier: 1.0,
                 ),
@@ -781,8 +854,9 @@ fn hear(
         Error(Nil) -> again(fighters, counts)
       }
     }
-    Ok(ForStay(sent: SentByPeer(news:), ..)) -> {
+    Ok(ForStay(sent: SentByPeer(news:) as sent, ..)) -> {
       let counts = Counts(..counts, creature_news: counts.creature_news + 1)
+      let counts = respawn_told(counts:, sent:)
       case sign_of(news.news) {
         Ok(sign) ->
           again(fighters, marked(counts:, unit_id: news.unit_id, sign:))
@@ -806,10 +880,29 @@ fn hear(
           )
         False -> again(fighters, counts)
       }
-    Ok(ForStay(sent: SentByMap(..), ..)) ->
-      again(fighters, Counts(..counts, map_notices: counts.map_notices + 1))
+    Ok(ForStay(sent: SentByMap(..) as sent, ..)) ->
+      again(
+        fighters,
+        respawn_told(
+          counts: Counts(..counts, map_notices: counts.map_notices + 1),
+          sent:,
+        ),
+      )
     Ok(_) -> again(fighters, counts)
   }
+}
+
+/// The counts after the walker was sent `sent`: its removals and creations of units are
+/// read for the respawn gaps, whether the creature or the map told them.
+fn respawn_told(counts counts: Counts, sent sent: StaySent) -> Counts {
+  Counts(
+    ..counts,
+    respawns: load_respawn.told(
+      gaps: counts.respawns,
+      sent:,
+      at_us: load_sample.microseconds(),
+    ),
+  )
 }
 
 /// A sign of the creature in a news of it, when it is one that closes a round: its death
@@ -966,10 +1059,60 @@ fn character(id: Int) -> store.Character {
   )
 }
 
+/// The respawn gaps of every walker, in microseconds.
+fn total_gaps(counts: List(Counts)) -> List(Int) {
+  list.flat_map(counts, fn(one) { one.respawns.gaps_us })
+}
+
+/// What the respawn gaps say: how many, the mean, the 99th percentile and the longest, and
+/// whether the mean is under 1 ms (1,000 microseconds).
+fn respawn_gaps(gaps gaps: List(Int)) -> String {
+  let sorted = list.sort(gaps, int.compare)
+  let count = list.length(sorted)
+  let sum = list.fold(sorted, 0, int.add)
+  let percentile = case list.drop(sorted, { count * 99 + 99 } / 100 - 1) {
+    [found, ..] -> found
+    [] -> 0
+  }
+  let longest = list.fold(sorted, 0, int.max)
+  "respawn gaps (a removal to the next creation of the unit, as a walker was sent them): "
+  <> int.to_string(count)
+  <> ", mean "
+  <> load_moves.per(total: sum, count:)
+  <> " us, 99th "
+  <> int.to_string(percentile)
+  <> " us, longest "
+  <> int.to_string(longest)
+  <> " us; "
+  <> case count > 0 && sum < count * 1000 {
+    True -> "the mean is under 1 ms"
+    False -> "the mean is not under 1 ms, or no respawn was seen"
+  }
+}
+
+/// What the respawn gate says, as the run prints it.
+fn gate_text(gate gate: load_respawn.Verdict) -> String {
+  case gate {
+    load_respawn.Respawned(respawns:) ->
+      "passes: "
+      <> int.to_string(respawns)
+      <> " respawns, at least as many as the creatures killed that were owed one"
+    load_respawn.NoRespawn ->
+      "fails: no walker was sent a respawn (a removal, then the next creation of the unit)"
+    load_respawn.FewerThanKilled(respawns:, killed:) ->
+      "fails: "
+      <> int.to_string(respawns)
+      <> " respawns, fewer than the "
+      <> int.to_string(killed)
+      <> " creatures killed that were owed one"
+  }
+}
+
 fn report(
   scene scene: Scene,
   rounds rounds: Option(Rounds),
   counts counts: List(Counts),
+  ended_us ended_us: Int,
   reductions reductions: Int,
   longest longest: Int,
   sum sum: Int,
@@ -999,6 +1142,13 @@ fn report(
     }
     <> case scene.leaving {
       True -> ", the walkers leaving sight"
+      False -> ""
+    }
+    <> case scene.respawning {
+      True ->
+        ", the Daguns respawning after "
+        <> int.to_string(respawning_ms)
+        <> " ms"
       False -> ""
     }
     <> case scene.recorded {
@@ -1090,15 +1240,37 @@ fn report(
       )
     }
   }
+  let gate =
+    load_respawn.verdict(
+      all: list.map(counts, fn(one) { one.respawns }),
+      ended_us:,
+      settle_us: settle_ms * 1000,
+    )
+  case scene.respawning {
+    True -> {
+      io.println(respawn_gaps(gaps: total_gaps(counts)))
+      io.println("respawn gate: " <> gate_text(gate:))
+    }
+    False -> Nil
+  }
   io.println(
     "option A's count: "
     <> int.to_string(total(fn(one) { one.option_a }))
     <> " (the creatures in sight, summed over the moves)",
   )
-  io.println(case sum < walkers * samples && running * 2 < samples {
-    True ->
-      "pass: the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
-    False ->
-      "fail: the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
-  })
+  io.println(
+    case
+      sum < walkers * samples && running * 2 < samples,
+      scene.respawning,
+      gate
+    {
+      False, _, _ ->
+        "fail: the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
+      True, True, load_respawn.NoRespawn
+      | True, True, load_respawn.FewerThanKilled(..)
+      -> "fail: the respawn gate: " <> gate_text(gate:)
+      True, _, _ ->
+        "pass: the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
+    },
+  )
 }

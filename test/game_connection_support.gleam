@@ -2264,12 +2264,14 @@ pub fn beast_appears_not_fighting(
   })
 }
 
-fn beast_appearing(
+/// The news of a Beast as its process sends it, standing 3 m ahead of the Medic, with the
+/// yaw `yaw`, the casts `casts` and the spawn `as_spawn` changes.
+pub fn beast_news(
   unit_id unit_id: Int,
   yaw yaw: Float,
   casts casts: List(UnitCreateCast),
   as_spawn as_spawn: fn(spawn.Spawn) -> spawn.Spawn,
-) -> Event(ConnectionEvent(Message, Answer)) {
+) -> PeerNews {
   let place =
     start_place.turned(
       place: place_support.at(
@@ -2282,7 +2284,7 @@ fn beast_appearing(
       facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
     )
   let beast = as_spawn(spawn_support.beast_at(number: 1, place:))
-  sent_by_a_peer(news_of(
+  news_of(
     unit_id:,
     news: CreatureAppeared(
       spawn_id: SpawnId(unit_id),
@@ -2304,7 +2306,16 @@ fn beast_appearing(
       hostile_to: beast.combat.hostile_to,
       fights: beast.combat.fights,
     ),
-  ))
+  )
+}
+
+fn beast_appearing(
+  unit_id unit_id: Int,
+  yaw yaw: Float,
+  casts casts: List(UnitCreateCast),
+  as_spawn as_spawn: fn(spawn.Spawn) -> spawn.Spawn,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  sent_by_a_peer(beast_news(unit_id:, yaw:, casts:, as_spawn:))
 }
 
 /// The 0x262 news of the creature `creature_id` as unit `unit_id` at `place`, alive, as

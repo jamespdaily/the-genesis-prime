@@ -8,8 +8,8 @@
 ////
 //// ```
 //// P's connection            creature C: fight            creature C: guard             C's viewers
-//// the creature stands (a start, or the corpse timer):
-////                                                        Stands ─▶ Guarded(cast id)
+//// the creature starts (the map starts each life):
+////                                                        `new` ─▶ Guarded(cast id)
 ////                                                        ─0x7ff(85474) 0x7f4(target C, effect 224666,
 ////                                                           lifetime 0)────────────────────────────▶
 //// a viewer arrives:                                      `shown`: the same 0x7ff and 0x7f4 for that
@@ -28,8 +28,9 @@
 //// C is killed (Guarded or Opened):                       Guarded: no frame; Dormant, which shows nothing and
 ////                                                           holds no cast. Opened: CancelTimer(OpeningEnds),
 ////                                                           ─0x7fe(85472's cast)─▶ Dormant (the death clears
-////                                                           the states, not the cast)
-//// the corpse timer stands C again (`Stands`):            Dormant ─▶ Guarded(a new cast), as at a start
+////                                                           the states, not the cast); the creature ends
+////                                                           at its corpse timer, and its next life is a new
+////                                                           guard with a new `Guarded` cast
 //// ```
 ////
 //// - **The guard takes no damage.** The client reads no immunity: nothing reads Spell4Effects type
@@ -61,8 +62,8 @@
 ////   gives its creature one; the load refuses a spell whose effects are not the ones the creature
 ////   applies (`creature_guard_spells.guard_of`). A creature with none has no guard: `Bare`, takes damage, opens nothing.
 //// - **A dead creature has no guard up.** `Dormant` is a creature with a guard that is dead: nothing
-////   shown, no live cast, no damage immunity, no opening. Only `Stands` raises it again, so a creature
-////   killed while open stands guarded when its corpse timer ends.
+////   shown, no live cast, no damage immunity, no opening. The creature ends at its corpse timer, and
+////   its next life is a new guard: a creature killed while open comes back guarded.
 //// - **Instance ids** of the opening's effects are the creature's own counter, from 1, and are never
 ////   used twice in its life.
 ////
@@ -70,13 +71,13 @@
 ////
 //// | Step | Creature killed there | Twice at once | Late |
 //// |---|---|---|---|
-//// | The creature stands guarded | n/a | a start and `Stands` together: one guard cast, the second finds it `Guarded` | n/a |
+//// | The creature starts guarded | n/a | n/a | n/a |
 //// | A viewer arrives | n/a | the viewer is told the guard (or the opening) by `shown`, as the 0x262 | its 0x262 comes before the casts; a 0x87f for a unit the client does not have yet is skipped (`opcode.0x87f`) |
 //// | A state lands outside a charge | nothing opens (`a_state_on_a_guarded_turret_outside_a_charge_lands_and_opens_nothing_test`) | creature_control's own rules | n/a |
-//// | A state lands during the charge (`Interrupted`) | the charge's cast is finished by the fight's death branch, and the guard is `Dormant` until `Stands` | two states for one charge: the first breaks the round, the second finds none and opens nothing (`a_second_state_in_the_same_round_opens_nothing_more_test`) | a state after the go: the round is `Striking`, so no interrupt (`an_interrupt_after_the_go_opens_nothing_test`) |
-//// | The opening is open, its timer armed | no 0x880, the death clears the states (`SetUnitDead`); the opening's cast is finished, which the death leaves standing; the timer is cancelled; `Dormant` until `Stands` (`a_turret_killed_while_opened_gives_its_kill_credit_test`) | n/a | n/a |
+//// | A state lands during the charge (`Interrupted`) | the charge's cast is finished by the fight's death branch, and the guard is `Dormant` | two states for one charge: the first breaks the round, the second finds none and opens nothing (`a_second_state_in_the_same_round_opens_nothing_more_test`) | a state after the go: the round is `Striking`, so no interrupt (`an_interrupt_after_the_go_opens_nothing_test`) |
+//// | The opening is open, its timer armed | no 0x880, the death clears the states (`SetUnitDead`); the opening's cast is finished, which the death leaves standing; the timer is cancelled; `Dormant` (`a_turret_killed_while_opened_gives_its_kill_credit_test`) | n/a | n/a |
 //// | The opening's timer fires | its generation is gone: nothing (`an_opening_end_after_death_does_nothing_test`) | n/a | the guard returns (`the_opening_ends_after_15_seconds_and_the_guard_returns_test`) |
-//// | The corpse timer stands the creature | n/a | n/a | `Dormant` takes `Stands`: it stands guarded with a new cast, no opening (`a_respawned_turret_stands_guarded_test`) |
+//// | The corpse timer ends the creature | n/a | n/a | its next life starts guarded with a first cast, no opening (`a_respawned_turret_stands_guarded_test`) |
 
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
@@ -94,7 +95,7 @@ import gleam/option.{type Option, None, Some}
 pub type Phase {
   /// The creature has no guard: it takes damage and opens nothing.
   Bare
-  /// The creature has a guard and is dead: nothing is shown and no cast is live, until `Stands`.
+  /// The creature has a guard and is dead: nothing is shown and no cast is live.
   Dormant
   /// The guard is up: the id of its cast, which the viewers were shown.
   Guarded(cast_id: Int)
@@ -137,8 +138,6 @@ pub type Timer {
 
 /// What the creature's rule turns its messages into for the guard.
 pub type Input {
-  /// The creature stands, at a start or when its corpse timer stood it again: the guard is up.
-  Stands
   /// The fight's charge was broken by a state: the creature opens, when it has a guard that is up.
   /// The charge's cast was just finished, and the opening's takes none of its id.
   Interrupted(charge_cast: Int)
@@ -220,11 +219,6 @@ pub fn step(
     None -> #(state, [])
     Some(guard) ->
       case input {
-        Stands ->
-          case state.phase {
-            Dormant -> raised(state:, guard:, unit_id:, live:, place:)
-            Bare | Guarded(..) | Opened(..) -> #(state, [])
-          }
         Interrupted(charge_cast:) ->
           case state.phase {
             Guarded(cast_id: guard_cast) ->

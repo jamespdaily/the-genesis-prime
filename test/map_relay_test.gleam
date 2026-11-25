@@ -293,6 +293,15 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
     let #(_, life) = spawns.creature_of(state:, spawn: 1)
     spawns.creature_ended(state:, at_ms: 7000, watch: WatchId(life)).0
   }
+  let respawning = fn() {
+    let state = live()
+    let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
+    let #(state, _) = spawns.expired(state:, at_ms: 7000, unit_id:, life:)
+    assert map.spawn_state(state:, spawn: SpawnId(1))
+      == Ok(map.Respawning(unit_id:, life:))
+      as "the creature expired: its spawn is respawning"
+    state
+  }
   let failed = fn() {
     let state = live()
     let #(_, life) = spawns.creature_of(state:, spawn: 1)
@@ -315,6 +324,7 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
     #("live", live(), True),
     #("retiring", retiring(), True),
     #("releasing", releasing(), True),
+    #("respawning", respawning(), True),
     #("waiting for its restart", ended(), False),
     #("failed", failed(), False),
     #("no spawn state", none(), False),

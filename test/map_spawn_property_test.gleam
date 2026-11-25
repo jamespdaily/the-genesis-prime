@@ -303,6 +303,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
           case map.spawn_state(state: play.state, spawn: SpawnId(number)) {
             Ok(Live(life:, ..)) -> Ok(life)
             Ok(Retiring(..))
+            | Ok(map.Respawning(..))
             | Ok(map.Releasing(..))
             | Ok(map.WaitingForRestart)
             | Ok(map.Failed)
@@ -389,6 +390,7 @@ fn broken(play: Play) -> List(String) {
             now_ms: play.now_ms,
           )
         Ok(Retiring(..)), _
+        | Ok(map.Respawning(..)), _
         | Ok(map.Releasing(..)), _
         | Ok(map.WaitingForRestart), _
         | Ok(map.Failed), _
@@ -403,6 +405,7 @@ fn broken(play: Play) -> List(String) {
       case map.spawn_state(state: play.state, spawn: SpawnId(index + 1)) {
         Ok(Live(unit_id:, ..))
         | Ok(Retiring(unit_id:, ..))
+        | Ok(map.Respawning(unit_id:, ..))
         | Ok(map.Releasing(unit_id:, ..)) -> [unit_id]
         Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) -> []
       }

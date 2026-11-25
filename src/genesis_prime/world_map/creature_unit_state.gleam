@@ -150,7 +150,7 @@ pub fn due(state state: State, now_ms now_ms: Int) -> #(State, List(Effect)) {
   #(State(..state, held:, timer_ends_at_ms:), list.append(told, timer))
 }
 
-/// The creature dies, is removed or stands again: every hold is dropped and a running timer
+/// The creature dies or is removed: every hold is dropped and a running timer
 /// cancelled, with no news; the viewers' pictures clear on the creature's own news.
 pub fn cleared(state state: State) -> #(State, List(Effect)) {
   #(

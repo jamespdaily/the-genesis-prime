@@ -182,6 +182,26 @@ pub fn appeared_news(message: Message) -> Result(PeerNews, Nil) {
   }
 }
 
+/// What a connection is shown of a unit, in the order the connection was sent it: the
+/// unit removed (0x355), or created (0x262) with the life it names.
+pub type Shown {
+  Removed
+  Created(unit: UnitCreateCreature, life: Int)
+}
+
+/// The picture of a unit a message gives the connection, when it gives one.
+pub fn shown(message: Message) -> Result(Shown, Nil) {
+  case appeared_news(message) {
+    Ok(PeerNews(news: CreatureAppeared(unit:, life:, ..), ..)) ->
+      Ok(Created(unit:, life:))
+    Ok(PeerNews(..)) | Error(Nil) ->
+      case is_removal(message) {
+        True -> Ok(Removed)
+        False -> Error(Nil)
+      }
+  }
+}
+
 /// Short times for a world whose creatures stop: a creature no player has seen
 /// for 100 ms stops at the next sweep, every 20 ms.
 pub const idle_stop_ms = 100
