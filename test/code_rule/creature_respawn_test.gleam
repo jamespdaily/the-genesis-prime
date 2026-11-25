@@ -5,6 +5,9 @@
 //// it again in place. A name of the in-process respawn in the world map's folder is a
 //// breach, reported at its line. The rule is shown on a planted file, then read over the
 //// real ones.
+//// A tell to a creature names no life's time either: the registry's address is the one fence
+//// (`creature_registry`), so `struck_at_ms`, the monotonic time a go struck a creature, is
+//// the caster's round identity and stays only where the caster's rounds are made and kept.
 
 import code_rule/planted
 import code_rule/source.{type SourceFile}
@@ -15,6 +18,15 @@ import owned_test
 import unitest
 
 const world_map_directory = "src/genesis_prime/world_map"
+
+const source_directories = ["src", "dev"]
+
+/// Where the caster's round identity lives: the caster's own modules, the strike that
+/// makes the round, and the lasting state that keeps it.
+const round_identity_paths = [
+  "src/genesis_prime/game/cast/", "src/genesis_prime/game/strike.gleam",
+  "src/genesis_prime/game/lasting.gleam",
+]
 
 /// The names of the creature's in-process respawn: the time it stood again at, the check of
 /// a tell against it, the corpse timer's outcome, the fight's and the guard's inputs for it,
@@ -123,4 +135,56 @@ pub fn a_creature_never_stands_again_in_its_own_process_test() -> Nil {
     })
     == []
     as "no module of the world map holds a creature that stands again in its own process"
+}
+
+/// The lines of a file outside the caster's round identity that name the round's time.
+fn round_time_outside_the_caster(file file: SourceFile) -> List(Int) {
+  let is_the_casters =
+    list.any(round_identity_paths, fn(path) {
+      string.starts_with(file.path, path)
+    })
+  case is_the_casters {
+    True -> []
+    False ->
+      string.split(file.text, "\n")
+      |> list.index_map(fn(line, index) { #(index + 1, line) })
+      |> list.filter(fn(numbered) {
+        names_word(text: numbered.1, word: "struck_at_ms")
+      })
+      |> list.map(fn(numbered) { numbered.0 })
+  }
+}
+
+pub fn a_tell_carries_no_creature_life_stamp_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let tell =
+    planted.file(path: "src/genesis_prime/client_connection.gleam", lines: [
+      "TellThrown(throw: Throw, struck_at_ms: Int)",
+      "TellDespawn(delay_ms: Int, went_at_ms: Int)",
+      "my_struck_at_ms",
+    ])
+  let round =
+    planted.file(
+      path: "src/genesis_prime/game/cast/creature_view.gleam",
+      lines: [
+        "Told(life: Int, struck_at_ms: Int, target: ViewTarget)",
+      ],
+    )
+  assert round_time_outside_the_caster(file: tell) == [1]
+    as "a tell's field is found at its line, and a longer name or a tell without it is not"
+  assert round_time_outside_the_caster(file: round) == []
+    as "the caster's round keeps its time"
+  assert list.flat_map(
+      list.flat_map(source_directories, fn(directory) {
+        source.files(under: directory)
+      }),
+      fn(file) {
+        list.map(round_time_outside_the_caster(file:), fn(line) {
+          file.path <> ":" <> int.to_string(line)
+        })
+      },
+    )
+    == []
+    as "no tell, connection or world map module names the time a go struck a creature at: the registry's address fences a tell"
 }
