@@ -344,12 +344,22 @@ pub fn the_quest_rows_carry_the_used_spawns_in_objective_then_spawn_order_test()
   use <- owned_test.run(10_000)
   // The rows hold each active quest's used objects as an objective index and a spawn id,
   // objective then spawn ascending, so a log that did not change saves the rows it
-  // loaded; a quest that is not active holds none.
+  // loaded; a quest that is not active holds none. Objective 0 holds forty spawns beyond 3 and
+  // 7, given from the highest down: an Erlang map of more than 32 keys lists them out of
+  // order, so only the sort puts them in order.
+  let highest_first =
+    int.range(from: 101, to: 141, with: [], run: fn(so_far, spawn) {
+      [spawn, ..so_far]
+    })
+  let beyond = list.reverse(highest_first)
   let saved = [
     quest_support.accepted_with_used(
       quest_id: quest_support.one_time,
       progress: [2, 1, 0],
-      used: [#(1, 9), #(0, 7), #(0, 3)],
+      used: list.flatten([
+        [#(1, 9), #(0, 7), #(0, 3)],
+        list.map(highest_first, fn(spawn) { #(0, spawn) }),
+      ]),
     ),
     quest_support.accepted(quest_id: quest_support.daily, progress: [0]),
     quest_support.completed(quest_id: quest_support.weekly, at: 1_700_000_000),
@@ -357,7 +367,11 @@ pub fn the_quest_rows_carry_the_used_spawns_in_objective_then_spawn_order_test()
   ]
   let log = quest_support.log_of(rows: saved)
   assert quest_support.used_of(log:, quest_id: quest_support.one_time)
-    == [#(0, 3), #(0, 7), #(1, 9)]
+    == list.flatten([
+      [#(0, 3), #(0, 7)],
+      list.map(beyond, fn(spawn) { #(0, spawn) }),
+      [#(1, 9)],
+    ])
     as "a log with used objects builds them in objective then spawn order"
   assert quest_support.used_of(log:, quest_id: quest_support.daily) == []
     as "a quest with none used builds none"

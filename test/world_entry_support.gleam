@@ -124,18 +124,20 @@ pub fn loaded_seeing(
 }
 
 /// What the store's answer to a play of the character leads to when its saved quests are
-/// these rows and the loaded world's stored spawns are these.
+/// these rows, the loaded world's stored spawns are these and the store holds these items
+/// with no charges recorded.
 pub fn loaded_with_spawns(
   tables tables: table_store.Tables,
   character character: Character,
   quests quests: List(QuestRow),
   stored stored: StoredSpawns,
+  unset unset: List(UnsetItem),
 ) -> #(world_entry.State, world_entry.Loaded) {
   loaded_answer(
     tables:,
     character:,
     items: [],
-    unset: [],
+    unset:,
     saved_health: None,
     saved_experience: None,
     quests:,
@@ -146,21 +148,44 @@ pub fn loaded_with_spawns(
 }
 
 /// What the load of a character whose saved quests are these rows leads to when the loaded
-/// world's stored spawns are these: the effects the load asks and the player the connection
-/// keeps once the map took it.
+/// world's stored spawns are these and the store holds these items with no charges recorded:
+/// the effects the load asks, the effects of the join that follows the store's fill (none
+/// when no item is unset, as the load joins at once and its own effects are the join's), and
+/// the player the connection keeps once the map took it.
 pub fn entry_with_spawns(
   tables tables: table_store.Tables,
   character character: Character,
   quests quests: List(QuestRow),
   stored stored: StoredSpawns,
-) -> #(List(world_entry.Effect), world_entry.Entered) {
-  let assert #(_, world_entry.Join(state:, effects:)) =
-    loaded_with_spawns(tables:, character:, quests:, stored:)
-    as "the store holds the character and its place"
+  unset unset: List(UnsetItem),
+) -> #(List(world_entry.Effect), List(world_entry.Effect), world_entry.Entered) {
+  let #(_, loaded) =
+    loaded_with_spawns(tables:, character:, quests:, stored:, unset:)
+  let #(load_effects, joining, join_effects) = case loaded {
+    world_entry.Join(state:, effects:) -> #(effects, state, [])
+    world_entry.Fill(state: filling, effects:) -> {
+      let assert Ok(world_entry.Join(state:, effects: after_fill)) =
+        answered(
+          state: filling,
+          answer: store.ChargesFilled(answer: store.ItemsSaved),
+          tables:,
+        )
+        as "the fill's answer goes on to the join"
+      #(effects, state, after_fill)
+    }
+    world_entry.Refused(..) | world_entry.Fault(..) ->
+      panic as "the store holds the character and its place"
+  }
   let assert world_entry.InTheWorld(entered:, ..) =
-    joined_state(state:, tables:, character:, place: join_place(), now: now())
+    joined_state(
+      state: joining,
+      tables:,
+      character:,
+      place: join_place(),
+      now: now(),
+    )
     as "the map's answer to the join puts the player in the world"
-  #(effects, entered)
+  #(load_effects, join_effects, entered)
 }
 
 /// What the store's answer to a play of the character leads to when the store holds

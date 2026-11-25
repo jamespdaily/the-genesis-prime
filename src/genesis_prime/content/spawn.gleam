@@ -146,13 +146,6 @@ pub fn reused_unit_objectives(key key: Key) -> Set(Int) {
 /// The table name of the stored spawns in a term.
 const stored_spawns_table = "stored_spawns"
 
-/// The stored spawn rows, of every world, whether or not a row starts. A row the server
-/// places for an objective that no stored row serves is not among them: its id is above the
-/// highest stored one and the map's alone (genesis_prime/world_map/objective_spawn).
-pub fn stored(rows rows: List(Row)) -> StoredSpawns {
-  spawn_id.stored(ids: set.from_list(list.map(rows, fn(row) { row.id })))
-}
-
 /// Writes the stored spawns under the key, once.
 pub fn put_stored_spawns(key key: Key, stored stored: StoredSpawns) -> Nil {
   store.put_content(key:, table: stored_spawns_table, id: 0, value: stored)

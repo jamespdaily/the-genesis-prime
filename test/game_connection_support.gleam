@@ -2258,10 +2258,10 @@ fn beast_appearing(
 }
 
 /// The 0x262 news of the creature `creature_id` as unit `unit_id` at `place`, alive, as
-/// its process sends it. The creature's number, health and the rest of its spawn are
-/// Dorian Walker's; the identity the client's marking reads (creature id, display, outfit
-/// and hit radius) is the creature's own, and it is hostile to the factions `hostile_to`
-/// names.
+/// its process sends it. Its spawn is numbered as the unit, so the news and the unit name
+/// one spawn; its health and the rest of its spawn are Dorian Walker's; the identity the
+/// client's marking reads (creature id, display, outfit and hit radius) is the creature's
+/// own, and it is hostile to the factions `hostile_to` names.
 pub fn creature_appears(
   unit_id unit_id: Int,
   creature_id creature_id: Int,
@@ -2271,7 +2271,7 @@ pub fn creature_appears(
   place place: Place,
   hostile_to hostile_to: creature_life.Hostile,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  let walker = spawn_support.dorian_walker(number: 1, place:)
+  let walker = spawn_support.dorian_walker(number: unit_id, place:)
   let target =
     spawn.Spawn(
       ..walker,

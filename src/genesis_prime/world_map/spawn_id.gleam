@@ -21,7 +21,7 @@ pub type StoredSpawns {
 }
 
 /// What a spawn id is to the loaded world.
-pub type Standing {
+pub type Presence {
   /// A row of the spawn table.
   Stored
   /// A spawn the table had, and the loaded world lacks.
@@ -41,7 +41,7 @@ pub fn stored(ids ids: Set(SpawnId)) -> StoredSpawns {
 }
 
 /// What the spawn is to the stored spawns.
-pub fn standing(stored stored: StoredSpawns, spawn spawn: SpawnId) -> Standing {
+pub fn presence(stored stored: StoredSpawns, spawn spawn: SpawnId) -> Presence {
   let SpawnId(number) = spawn
   case set.contains(stored.ids, spawn), number > stored.highest {
     True, _ -> Stored

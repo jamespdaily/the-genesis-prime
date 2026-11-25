@@ -252,11 +252,9 @@ fn kept_and_lost(
   list.fold(sorted_objects(used:), #(dict.new(), []), fn(so_far, one) {
     let #(kept, lost) = so_far
     let #(objective_index, spawn) = one
-    case spawn_id.standing(stored:, spawn:) {
+    case spawn_id.presence(stored:, spawn:) {
       spawn_id.Stored -> #(
-        dict.upsert(kept, objective_index, fn(spawns) {
-          set.insert(option.unwrap(spawns, set.new()), spawn)
-        }),
+        with_used(used: kept, index: objective_index, spawn:),
         lost,
       )
       spawn_id.Lost -> #(
@@ -267,6 +265,18 @@ fn kept_and_lost(
       )
       spawn_id.Placed -> so_far
     }
+  })
+}
+
+/// The used spawns with `spawn` added to the set of the objective at `index`, which starts
+/// empty when the objective has none.
+fn with_used(
+  used used: Dict(Int, Set(SpawnId)),
+  index index: Int,
+  spawn spawn: SpawnId,
+) -> Dict(Int, Set(SpawnId)) {
+  dict.upsert(used, index, fn(spawns) {
+    set.insert(option.unwrap(spawns, set.new()), spawn)
   })
 }
 
@@ -319,9 +329,11 @@ fn entry_of(
         optional_mask: 0,
         kill_masks: active.kill_mask,
         used: list.fold(active.used, dict.new(), fn(used, one) {
-          dict.upsert(used, one.objective_index, fn(spawns) {
-            set.insert(option.unwrap(spawns, set.new()), SpawnId(one.spawn_id))
-          })
+          with_used(
+            used:,
+            index: one.objective_index,
+            spawn: SpawnId(one.spawn_id),
+          )
         }),
       )
     }
@@ -1726,10 +1738,7 @@ fn remember_used(
       let units = case objective_done(log:, quest:, index:), number < 0 {
         True, _ -> dict.delete(used, index)
         False, True -> used
-        False, False ->
-          dict.upsert(used, index, fn(units) {
-            set.insert(option.unwrap(units, set.new()), unit)
-          })
+        False, False -> with_used(used:, index:, spawn: unit)
       }
       QuestLog(
         ..log,

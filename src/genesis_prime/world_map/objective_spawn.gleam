@@ -240,7 +240,7 @@ pub fn place(
   let #(click_stands, click_skipped, unread_links) =
     click_stands(tables:, clicks:, worlds:, stored:)
   let sizes = ring_sizes(stands:, click_stands:)
-  let first = highest_id(stored:) + 1
+  let first = spawn.stored_spawns(rows: stored).highest + 1
   let rows =
     list.flat_map(stands, fn(stand) {
       list.index_map(stand.creatures, fn(creature, slot) {
@@ -738,11 +738,6 @@ pub fn held_by(
   })
   |> list.map(fn(row) { #(row.world_id, row.creature_id) })
   |> set.from_list
-}
-
-/// The highest stored id, 0 when none is stored.
-fn highest_id(stored stored: List(Row)) -> Int {
-  list.fold(stored, 0, fn(highest, row) { int.max(highest, number_of(row:)) })
 }
 
 /// The stands of one job, world by world in the order its markers first show them.
