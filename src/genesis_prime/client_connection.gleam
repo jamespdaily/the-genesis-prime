@@ -52,6 +52,7 @@ import genesis_prime/store
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/relay.{type Inbound}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
@@ -174,6 +175,18 @@ pub type Request {
   /// connection while it keeps one. Told through the creature registry, which drops it
   /// when no creature of that address and life is there, and never asked.
   TellCastView(connection: ConnectionId, change: ViewChange)
+  /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player
+  /// of `connection`, in its stay `stay`, tells the creature `unit_id` of life `life`
+  /// `payload`, a strike, a move, an answer or an effect of its casts
+  /// (genesis_prime/world_map/map `TellCreature`), for the map to admit by the
+  /// creature's state and the payload's kind and send the creature. Never asked.
+  TellCreature(
+    connection: ConnectionId,
+    stay: Stay,
+    unit_id: Int,
+    life: Int,
+    payload: Inbound,
+  )
   /// What a `Tell` effect sends the connection of another player (genesis_prime/step
   /// `Connection`): what its cast does to this connection's player, or the answer to
   /// what this connection's player did to it (`PlayerTell`). `stay` is the told

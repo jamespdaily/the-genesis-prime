@@ -25,17 +25,20 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import legal_order_support.{
   type Mail, type Scene, type Violation, CreatureProcess, FromCaster,
   FromConnection, FromTimer, Mail, MapProcess, NoFrameAfterRemoval, ToCreature,
   ToMap, Violation,
 }
 import map_spawn_support as spawns
+import map_support
 import owned_test
 import world_watch_support
 
@@ -521,4 +524,157 @@ pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_
 /// The scene with the mail added behind what is in flight.
 fn with_mail(scene: Scene, mail: List(Mail)) -> Scene {
   legal_order_support.Scene(..scene, mail: list.append(scene.mail, mail))
+}
+
+/// A strike of `damage` on the Beast, told to the map by the first player's connection, as
+/// that connection tells it: the strike names the connection and its first stay as its
+/// striker.
+fn strike_to_the_map(damage damage: Int) -> Mail {
+  let assert creature.Strike(tell:) =
+    world_watch_support.strike_message(
+      unit_id: beast_unit,
+      damage_type: 3,
+      damage:,
+      cast_id: 1,
+      occasion: strike_tell.AtGo(phase: 0),
+    )
+  Mail(
+    to: MapProcess,
+    from: FromConnection,
+    input: ToMap(
+      OwnEvent(
+        Told(map.TellCreature(
+          from: ConnectionId(first_player),
+          stay: map_support.stay(count: 1),
+          unit_id: beast_unit,
+          life: spawns.creature_of(state: standing().map, spawn: 1).1,
+          payload: relay.Strike(
+            tell: strike_tell.Strike(
+              ..tell,
+              from: Connection(ConnectionId(first_player)),
+            ),
+          ),
+        )),
+      ),
+    ),
+    name: "Strike",
+  )
+}
+
+/// The first player's connection moves out of sight of the creature, as it tells the map.
+fn first_player_moves_out(seq seq: Int) -> Mail {
+  Mail(
+    to: MapProcess,
+    from: FromConnection,
+    input: ToMap(
+      OwnEvent(
+        Told(map.Moved(
+          connection: ConnectionId(first_player),
+          place: spawns.at(spawns.far),
+          seq:,
+        )),
+      ),
+    ),
+    name: "Moved out",
+  )
+}
+
+pub fn a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sender_told_them_and_each_order_has_its_own_result_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The first player P stands at the creature, which the viewer W also sees. P's connection
+  // tells the map a strike and its move out of the creature's sight; one sender, so the map
+  // takes them in the order P told them, in either order of P's two tells. The creature's
+  // sends to the map (its news, its tells to P) come in their own queue.
+  let shown = legal_order_support.settle(joined(scene: standing()))
+  let ready = legal_order_support.Scene(..shown, taken: [])
+  let assert Ok(strike_first) =
+    legal_order_support.mailed(scene: ready, mail: [
+      strike_to_the_map(damage: 14),
+      first_player_moves_out(seq: 1),
+    ])
+  let assert Ok(move_first) =
+    legal_order_support.mailed(scene: ready, mail: [
+      first_player_moves_out(seq: 1),
+      strike_to_the_map(damage: 14),
+    ])
+  let strike_first = legal_order_support.orders(scene: strike_first)
+  let move_first = legal_order_support.orders(scene: move_first)
+  assert list.all(list.append(strike_first, move_first), fn(scene) {
+    legal_order_support.check(scene:) == Ok(Nil)
+  })
+    as "no order of either tells breaks an invariant of W's frames"
+  let creature_takes = fn(scene) {
+    list.filter(
+      legal_order_support.order_at(scene:, receiver: CreatureProcess),
+      fn(name) { name == "Strike" || name == "Unseen" },
+    )
+  }
+  let relays_to_p = fn(scene) {
+    list.filter(
+      legal_order_support.order_at(scene:, receiver: MapProcess),
+      fn(name) { name == "Relay Threatened" || name == "Relay Released" },
+    )
+  }
+  assert list.all(strike_first, fn(scene) {
+    creature_takes(scene) == ["Strike", "Unseen"]
+  })
+    as "the strike first: the creature takes the strike, then P's leaving sight, in every order"
+  assert list.all(strike_first, fn(scene) {
+    relays_to_p(scene) == ["Relay Threatened", "Relay Released"]
+  })
+    as "P is a viewer when the strike lands: it is threatened, and then released when it leaves sight"
+  assert list.all(move_first, fn(scene) {
+    creature_takes(scene) == ["Unseen", "Strike"]
+  })
+    as "the move first: the creature takes P's leaving sight, then the strike"
+  assert list.all(move_first, fn(scene) { relays_to_p(scene) == [] })
+    as "P is no viewer when the strike lands: the damage applies and P is neither threatened nor released"
+  assert list.all(list.append(strike_first, move_first), fn(scene) {
+    legal_order_support.health_shown(frames: scene.frames, unit_id: beast_unit)
+    == Some(38)
+  })
+    as "W is shown the damage in both: the creature's health is 52 less 14"
+}
+
+pub fn legal_order_support_refuses_mail_to_a_creature_from_any_sender_but_its_map_and_its_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let mail = fn(sender) {
+    Mail(
+      to: CreatureProcess,
+      from: sender,
+      input: ToCreature(OwnEvent(ServiceTimerFired(TimerId(1)))),
+      name: "a tell",
+    )
+  }
+  list.each(
+    [
+      #(FromCaster, True),
+      #(FromConnection, True),
+      #(legal_order_support.FromMap, False),
+      #(FromTimer, False),
+    ],
+    fn(row) {
+      let #(sender, refused) = row
+      let name = legal_order_support.sender_name(sender:)
+      let taken =
+        legal_order_support.mailed(scene: standing(), mail: [mail(sender)])
+      assert result.is_error(taken) == refused
+        as {
+          "mail to a creature from "
+          <> name
+          <> case refused {
+            True -> " is refused"
+            False -> " is taken"
+          }
+        }
+      case taken {
+        Error(refusal) -> {
+          assert string.contains(legal_order_support.describe(refusal:), name)
+            as { "the refusal names the sender " <> name }
+          Nil
+        }
+        Ok(_) -> Nil
+      }
+    },
+  )
 }

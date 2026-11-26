@@ -2446,6 +2446,7 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.PlayerDied(by:) -> Ok(PlayerDied(by:))
     map.Retire -> Ok(Retire)
+    map.ToldCreature(..) -> Error(Nil)
     map.Joined(..)
     | map.NotJoined(..)
     | map.Summoned(..)

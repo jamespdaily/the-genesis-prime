@@ -83,6 +83,7 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/unit_fields
@@ -2509,22 +2510,23 @@ fn next_cast_started(
   )
 }
 
+/// The go the message is, the creature's 0x7f4, when it is one.
+fn cast_went(message: Message) -> Result(spell_go.SpellGo, Nil) {
+  case message {
+    ForStay(sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)), ..) ->
+      Ok(go)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
 /// The next go the connection was sent, the creature's 0x7f4.
 fn next_cast_went(received received: Subject(Message)) -> spell_go.SpellGo {
   world_watch_support.next(
     received:,
     what: "the creature's 0x7f4",
-    wanted: fn(message) {
-      case message {
-        ForStay(
-          sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)),
-          ..,
-        ) -> Ok(go)
-        ForStay(..)
-        | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
-      }
-    },
+    wanted: cast_went,
   )
 }
 
@@ -3813,4 +3815,81 @@ pub fn a_stun_between_the_gos_of_earthen_roar_marks_the_answer_to_the_stunner_al
       }
     world_support.stop(world: roaring.world)
   })
+}
+
+/// The player's answer to the creature's strike of `key`, told to the map by the player's
+/// connection as it tells it, for the creature of life 2 (`hit_answer`).
+fn answer_through_the_map(
+  roaring roaring: Roaring,
+  key key: strike_tell.Key,
+) -> Nil {
+  let assert creature.StrikeAnswered(answered:) =
+    hit_answer(key:, spell4_effects_id: roaring.damage_effects_id)
+    as "the hit answer is a strike's answer"
+  let _sent =
+    service.tell_subject(
+      roaring.run.subject,
+      map.TellCreature(
+        from: ConnectionId(1),
+        stay: map_support.stay(count: 1),
+        unit_id: roaring.unit_id,
+        life: 2,
+        payload: relay.StrikeAnswered(answered:),
+      ),
+    )
+  driven_time.wait_until_quiet(roaring.time)
+}
+
+/// A fight of Earthen Roar taken to the moment the creature tells the player to take its
+/// hit: the fight, the cast's start and the key of the strike.
+fn at_the_hit() -> #(Roaring, spell_started.SpellStarted, strike_tell.Key) {
+  let roaring = roaring_fight()
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let start = next_cast_started(received: roaring.received)
+  driven_time.advance(time: roaring.time, ms: 2500)
+  let _first = next_cast_went(received: roaring.received)
+  driven_time.advance(time: roaring.time, ms: 500)
+  #(roaring, start, next_strike_told(received: roaring.received))
+}
+
+/// The phase and the targeted units of each go the connection was sent so far.
+fn gos_so_far(roaring roaring: Roaring) -> List(#(Int, List(Int))) {
+  sent_so_far(
+    world: roaring.world,
+    id: 1,
+    received: roaring.received,
+    wanted: cast_went,
+  )
+  |> list.map(fn(go) {
+    #(go.phase, list.map(go.targets, fn(target) { target.unit_id }))
+  })
+}
+
+pub fn an_answer_the_map_holds_past_the_strike_deadline_reaches_the_creature_after_its_round_closed_and_changes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The creature's strike round for the player waits `strike_tell.deadline_ms` for the
+  // answer. The player's answer reaches the creature only through the map, which keeps no
+  // deadline: an answer in time closes the round by the answer, and an answer that reaches
+  // the creature after the deadline finds the round closed by it.
+  let #(in_time, _, key) = at_the_hit()
+  answer_through_the_map(roaring: in_time, key:)
+  assert gos_so_far(roaring: in_time) == [#(1, [10])]
+    as "the answer through the map in time closes the round by the answer: the go lists the player"
+  world_support.stop(world: in_time.world)
+  let #(late, _, key) = at_the_hit()
+  driven_time.advance(time: late.time, ms: strike_tell.deadline_ms)
+  assert gos_so_far(roaring: late) == [#(1, [])]
+    as "the deadline closes the round of an answer the map still holds: the go leaves the player out"
+  answer_through_the_map(roaring: late, key:)
+  assert gos_so_far(roaring: late) == []
+    as "the late answer, taken by the creature after the round closed, changes nothing: no second go"
+  assert sent_so_far(
+      world: late.world,
+      id: 1,
+      received: late.received,
+      wanted: cast_news,
+    )
+    == []
+    as "and no other cast news follows it"
+  world_support.stop(world: late.world)
 }

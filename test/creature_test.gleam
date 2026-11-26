@@ -73,12 +73,14 @@ import gleam/list
 import gleam/option.{None}
 import gleam/set
 import gleam/string
+import inbound_support
 import map_spawn_support
 import map_support
 import owned_test
 import place_support
 import prerequisite_support
 import spawn_support
+import world_watch_support
 
 const ship = MapId(world_id: 3460, instance: 0)
 
@@ -3739,4 +3741,86 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
     as "the map relays the first snapshot"
   assert support.sends(second_taken) == []
     as "and drops the second: the relation does not await it"
+}
+
+pub fn each_tell_a_player_sends_a_creature_reaches_it_as_the_message_its_rule_takes_with_the_sender_the_map_validated_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The sender and the stay the relay named: the map's, never the payload's. Each row is the
+  // creature message the rule of that tell takes (the arms of `server.creature_told`).
+  let by = ConnectionId(4)
+  let stay = map_support.stay(count: 3)
+  let tell = inbound_support.strike(unit_id: 7)
+  let place = inbound_support.place()
+  let rows = [
+    #("Strike", relay.Strike(tell:), creature.Strike(tell:)),
+    #(
+      "TargetMoved",
+      relay.TargetMoved(place:, seq: 9, hit_radius: 0.75),
+      creature.TargetMoved(by:, place:, seq: 9, stay:, hit_radius: 0.75),
+    ),
+    #(
+      "StrikeAnswered",
+      relay.StrikeAnswered(answered: inbound_support.answered(unit_id: 7)),
+      creature.StrikeAnswered(answered: inbound_support.answered(unit_id: 7)),
+    ),
+    #(
+      "ModifierStarts",
+      relay.ModifierStarts(
+        source: inbound_support.source(),
+        modifier: inbound_support.modifier(),
+      ),
+      creature.ModifierStarts(
+        by:,
+        source: inbound_support.source(),
+        modifier: inbound_support.modifier(),
+      ),
+    ),
+    #(
+      "ModifierEnds",
+      relay.ModifierEnds(source: inbound_support.source()),
+      creature.ModifierEnds(source: inbound_support.source()),
+    ),
+    #(
+      "Thrown",
+      relay.Thrown(throw: world_watch_support.throw()),
+      creature.Thrown(throw: world_watch_support.throw()),
+    ),
+    #(
+      "Despawn",
+      relay.Despawn(delay_ms: 500, went_at_ms: 6000),
+      creature.Despawn(delay_ms: 500, went_at_ms: 6000),
+    ),
+    #(
+      "UnitStates",
+      relay.UnitStates(rows: inbound_support.rows(), went_at_ms: 6000),
+      creature.UnitStates(rows: inbound_support.rows(), went_at_ms: 6000),
+    ),
+    #(
+      "CastViewSet",
+      relay.CastViewSet(view: inbound_support.view()),
+      creature.CastViewSet(by:, view: inbound_support.view()),
+    ),
+    #(
+      "CastViewEnds",
+      relay.CastViewEnds(cast_id: 1),
+      creature.CastViewEnds(by:, cast_id: 1),
+    ),
+    #(
+      "ControlsEnd",
+      relay.ControlsEnd(cast_id: 1),
+      creature.ControlsEnd(by:, cast_id: 1),
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(kind, payload, expected) = row
+    assert creature.told_by_map(map.ToldCreature(by:, stay:, payload:))
+      == Ok(expected)
+      as {
+        kind
+        <> " reaches the creature as its own message, with the relay's sender"
+      }
+  })
+  assert list.map(rows, fn(row) { row.0 })
+    == list.map(inbound_support.payloads(unit_id: 7), fn(row) { row.0 })
+    as "a row for each kind the tests send"
 }

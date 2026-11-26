@@ -101,7 +101,8 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       | map.Retire
       | map.Approached(..)
       | map.Withdrew(..)
-      | map.PlayerDied(..) -> Error(Nil)
+      | map.PlayerDied(..)
+      | map.ToldCreature(..) -> Error(Nil)
     }
   })
 }
@@ -213,7 +214,8 @@ pub fn objects_creatures_and_players_share_one_id_space_test() -> Nil {
           | map.Retire
           | map.Approached(..)
           | map.Withdrew(..)
-          | map.PlayerDied(..) -> Error(Nil)
+          | map.PlayerDied(..)
+          | map.ToldCreature(..) -> Error(Nil)
         }
       })
     })

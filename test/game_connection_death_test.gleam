@@ -47,7 +47,9 @@ import genesis_prime/step.{
 import genesis_prime/store.{AccountId, ListCharacters, Select}
 import genesis_prime/world_map/map.{Join, Left, SeenBy}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/unit_fields
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
@@ -1504,4 +1506,38 @@ pub fn an_entry_at_a_saved_health_of_0_joins_its_map_dead_and_any_other_entry_an
     as "the Holocrypt joins the map again"
   assert alive == True
     as "the Holocrypt comes back as Wake Here first: it joins alive"
+}
+
+pub fn a_killing_blow_tells_the_map_the_answer_before_the_death_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The answer to the creature's killing strike and the death are two tells of one
+  // connection to one map, so the map takes them in this order and sends the creature the
+  // answer before `PlayerDied` (`player_life`: the blow's answer is listed before the death).
+  let #(_, killed) =
+    game_connection_support.killed(game_connection_support.in_world())
+  let names =
+    list.map(game_connection_support.told_the_map(killed), fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(
+          request: client_connection.TellCreature(
+            unit_id:,
+            life:,
+            payload: relay.StrikeAnswered(..),
+            ..,
+          ),
+          ..,
+        )) ->
+          "the answer to creature "
+          <> int.to_string(unit_id)
+          <> " of life "
+          <> int.to_string(life)
+        OwnEffect(step.Tell(
+          request: client_connection.TellLifeChanged(alive: False, ..),
+          ..,
+        )) -> "the death"
+        _ -> "another tell"
+      }
+    })
+  assert names == ["the answer to creature 7 of life 3", "the death"]
+    as "the killing blow's answer to the creature, then the death, both told to the map"
 }

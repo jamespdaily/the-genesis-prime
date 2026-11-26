@@ -27,6 +27,7 @@ import game_connection_support
 import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/strike_tell
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_death_state
 import genesis_prime/message/unit_destroyed
@@ -157,6 +158,45 @@ pub fn scene(
     frames: [],
     early: None,
   )
+}
+
+/// Why a scene cannot hold some mail.
+pub type Refusal {
+  /// A creature takes mail from its map and its own timer only: this mail comes from
+  /// another sender.
+  CreatureMailedByAnotherSender(from: Sender, name: String)
+}
+
+/// The refusal as a message that names the sender.
+pub fn describe(refusal refusal: Refusal) -> String {
+  let CreatureMailedByAnotherSender(from:, name:) = refusal
+  "a creature takes mail from its map and its timer only, not "
+  <> sender_name(sender: from)
+  <> " ("
+  <> name
+  <> ")"
+}
+
+/// The scene with the mail added behind what is in flight, or the refusal of mail that
+/// no process of the scene may send: a creature has one external sender, its map, and its
+/// own timer, so mail to a creature from any other sender is refused.
+pub fn mailed(
+  scene scene: Scene,
+  mail mail: List(Mail),
+) -> Result(Scene, Refusal) {
+  Ok(Scene(..scene, mail: list.append(scene.mail, mail)))
+}
+
+/// The name of a sender, as a refusal writes it.
+pub fn sender_name(sender sender: Sender) -> String {
+  case sender {
+    FromMap -> "FromMap"
+    FromCreature -> "FromCreature"
+    FromNextCreature -> "FromNextCreature"
+    FromConnection -> "FromConnection"
+    FromCaster -> "FromCaster"
+    FromTimer -> "FromTimer"
+  }
 }
 
 /// The deliveries the scene allows now: the head of each queue, one for each receiver and
@@ -547,8 +587,8 @@ fn creature_message_name(message: creature.Message) -> String {
   case message {
     creature.Seen(..) -> "Seen"
     creature.Unseen(..) -> "Unseen"
+    creature.Strike(..) -> "Strike"
     creature.Retire
-    | creature.Strike(..)
     | creature.Approached(..)
     | creature.Withdrew(..)
     | creature.PlayerDied(..)
@@ -570,6 +610,10 @@ fn map_message_name(message: map.Message) -> String {
     map.Snapshot(by: ConnectionId(number), ..) ->
       "Snapshot for " <> int.to_string(number)
     map.Broadcast(..) -> "Broadcast"
+    map.Relay(payload: relay.Fight(told: strike_tell.Threatened(..)), ..) ->
+      "Relay Threatened"
+    map.Relay(payload: relay.Fight(told: strike_tell.Released(..)), ..) ->
+      "Relay Released"
     map.Relay(..) -> "Relay"
     map.Expired(..) -> "Expired"
     map.Join(..)
@@ -580,7 +624,8 @@ fn map_message_name(message: map.Message) -> String {
     | map.LifeChanged(..)
     | map.VisibilityChanged(..)
     | map.Released(..)
-    | map.Summon(..) -> "another tell"
+    | map.Summon(..)
+    | map.TellCreature(..) -> "another tell"
   }
 }
 
@@ -599,7 +644,8 @@ fn map_outgoing_name(message: map.Outgoing) -> String {
     | map.Retire
     | map.Approached(..)
     | map.Withdrew(..)
-    | map.PlayerDied(..) -> "another send"
+    | map.PlayerDied(..)
+    | map.ToldCreature(..) -> "another send"
   }
 }
 

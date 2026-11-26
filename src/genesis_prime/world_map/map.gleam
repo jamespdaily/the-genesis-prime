@@ -548,6 +548,10 @@
 //// tell:   creature ─▶ Relay(unit, life, to, stay, payload) ─▶ map admits it (`admitted`: the
 ////         spawn is live, retiring, respawning or releasing under that life; then the destination
 ////         check of the payload's kind, `relay.kind_of`) ─▶ Relayed(stay, payload)
+//// told:   a player's connection P ─▶ TellCreature(P, stay, unit, life, inbound) ─▶ map admits it (`admitted_inbound`:
+////         the spawn is live, retiring, respawning or releasing under that life; then the source check of the
+////         inbound's kind, `relay.inbound_kind_of`; a `Strike` names P and `stay` as its striker) ─▶
+////         ToldCreature(P, stay, inbound) to that creature: a creature hears about a player from the map alone
 //// leave sight, Leave, a viewer's end:
 ////         map: the relation is removed in one step ─▶ creature Unseen(V, g), V Noticed(UnitUnseen(unit, g))
 ////         creature: the copy and the threat entry of V go; its release of V is one Relay(Released)
@@ -584,6 +588,11 @@
 //// | a `Broadcast` is sent twice | not guarded (it carries no id); the creature sends each news once per step |
 //// | a `Relay` comes from a creature that ended, or of an earlier life | dropped by `admitted`; a creature that is releasing, retiring or respawning is still admitted until it ends |
 //// | a relay waits in the map's queue past `strike_tell.deadline_ms` | delivered unchanged; the caster's round decides that it is late; the map keeps no deadline |
+//// | a `TellCreature` is for a creature that ended, or of an earlier life | dropped by `admitted_inbound`, with no line; the player's round closes by its deadline |
+//// | a `TargetMoved` is from a sender not in the map, or in another stay than the relay names | dropped (`SourceRefused`), with no line |
+//// | a `Strike` or a `StrikeAnswered` is from a sender that left | delivered: the damage applies and the answer closes its round |
+//// | a `Strike` names another connection, another stay or a creature as its striker | dropped (`StrikerRefused`), with one error line |
+//// | an answer waits in the map's queue past the strike deadline | delivered unchanged to the creature, whose round closed by its deadline and takes it as no change |
 //// | an ask (`Join`, `Leave`, `Summon`) waits behind relays | the asker's own `ask_deadline_ms` decides; the load gate keeps the queue near zero |
 //// | a creature never answers `Seen` | the viewer stays `AwaitingSnapshot` and shown nothing until the creature ends (then `Gone`); no deadline |
 //// | a viewer's connection fails a write while it takes a relayed burst | the connection ends (nothing after the failed write is written), its watch ends and the map sends each creature `Unseen` |
@@ -594,6 +603,17 @@
 //// | `Unseen` waits past a deadline | the creature has none for it: it drops the copy and the threat entry when it takes the message; the viewer's 0x355 comes from the map's notice, not from the creature |
 //// | the creature's end waits past a deadline | `Gone` goes to every player when the map takes `WatchEnded`, and the respawn time counts from then; the map keeps no deadline for it |
 //// | the map's end waits past a deadline | the shell's `shutdown_ms` bounds it, after which the supervisor kills the map and its relations are lost with it |
+////
+//// The tells of a player's connection to a creature, in one stream because the connection is
+//// their one sender to the map (the answer of a killing blow, then the death, then the wake):
+////
+//// ```
+//// player's connection P         map                                           creature (running)
+//// TellCreature(P, stay, unit, life, StrikeAnswered)
+//// LifeChanged(P, False)
+//// LifeChanged(P, True)       ─▶ ToldCreature(P, stay, StrikeAnswered), PlayerDied(P), Approached(P)
+////                                  in that order, `PlayerDied` and `Approached` as above
+//// ```
 ////
 //// Order, in short: every 0x262, 0x638 and 0x355 about a player's unit comes from its
 //// connection and about a static object from the map, so for one viewer they are one
@@ -644,7 +664,7 @@
 //// | a player in a ring leaves, camps or its connection ends | its creatures are told `Unseen`, which drops it from their threat lists; no `Withdrew` follows |
 //// | a `LifeChanged` reaches the map after that connection's `Leave`, or from a connection never in it | ignored, with an error line |
 //// | a `LifeChanged` of the value the map holds | nothing is sent |
-//// | the player dies in a creature's ring, and the creature's killing answer and the map's `PlayerDied` both reach it | two senders, either order: the first drops the player from `near` and the threat list, the second finds nothing |
+//// | the player dies in a creature's ring, and its killing answer and the map's `PlayerDied` both reach the creature | one sender, in the order the connection told them: the answer, `PlayerDied`, then a wake's `Approached`; each finds the state the one before left |
 //// | a player that joins dead sends `Ready` | no ring is decided; its `LifeChanged(True)` decides them |
 //// | a `LifeChanged(True)` reaches the map before the player's first `Ready` (Wake Here before the first 0xF2) | the player is only marked alive; its `Ready` decides its rings (`a_player_that_wakes_before_its_ready_is_only_marked_and_ready_sends_approached_to_each_ring_test`) |
 //// | a dead player's connection ends or camps | its creatures are told `Unseen`; the next entry's `Join` names `alive` False from its saved health 0 |
@@ -690,7 +710,7 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
-import genesis_prime/world_map/relay.{type Delivered, type Payload}
+import genesis_prime/world_map/relay.{type Delivered, type Inbound, type Payload}
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn, type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
@@ -855,6 +875,17 @@ pub type Message {
   /// `Respawning`; when the creature has ended the map starts its next life
   /// (`expired`).
   Expired(unit_id: Int, life: Int)
+  /// A tell of the player of connection `from`, in its stay `stay`, to the creature
+  /// `unit_id` of life `life`: a strike, a move, an answer or an effect of its casts
+  /// (`relay.Inbound`). A tell, from a connection. The map admits it by the creature's
+  /// state and the payload's kind and sends the creature `ToldCreature` (`told_creature`).
+  TellCreature(
+    from: ConnectionId,
+    stay: Stay,
+    unit_id: Int,
+    life: Int,
+    payload: Inbound,
+  )
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -932,6 +963,9 @@ pub type Outgoing {
   /// A send to a creature: the player of connection `by` died. It leaves the
   /// creature's ring's players and its threat list.
   PlayerDied(by: ConnectionId)
+  /// A send to a creature: the player of connection `by`, in its stay `stay`, told it
+  /// `payload`. `by` and `stay` are the relay's, never the payload's.
+  ToldCreature(by: ConnectionId, stay: Stay, payload: Inbound)
 }
 
 /// What a map tells the connection of a player in it about who sees whom, for
@@ -1270,11 +1304,14 @@ pub fn step(
       relayed(state:, unit_id:, life:, to:, stay:, payload:)
     OwnEvent(Told(message: Expired(unit_id:, life:))) ->
       expired(state:, unit_id:, life:)
+    OwnEvent(Told(message: TellCreature(from:, stay:, unit_id:, life:, payload:))) ->
+      told_creature(state:, from:, stay:, unit_id:, life:, payload:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: Snapshot(..), ..))
     | OwnEvent(Asked(message: Broadcast(..), ..))
     | OwnEvent(Asked(message: Relay(..), ..))
     | OwnEvent(Asked(message: Expired(..), ..))
+    | OwnEvent(Asked(message: TellCreature(..), ..))
     | OwnEvent(Asked(message: Ready(..), ..))
     | OwnEvent(Asked(message: StealthChanged(..), ..))
     | OwnEvent(Asked(message: LifeChanged(..), ..))
@@ -1283,7 +1320,7 @@ pub fn step(
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..)))
     | OwnEvent(Told(message: Summon(..))) ->
-      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged, Released, Snapshot, Broadcast, Relay and Expired only"
+      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged, Released, Snapshot, Broadcast, Relay, Expired and TellCreature only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
@@ -1541,7 +1578,10 @@ fn relayed(
         )),
       ]),
     )
-    Error(CreatureEnded) | Error(DestinationRefused) -> #(state, Effects([]))
+    Error(CreatureEnded)
+    | Error(DestinationRefused)
+    | Error(SourceRefused)
+    | Error(StrikerRefused) -> #(state, Effects([]))
   }
 }
 
@@ -1558,6 +1598,12 @@ pub type Dropped {
   /// The destination check of the payload's kind failed: the player is not in
   /// the map, or is in another stay than the relay names (`relay.kind_of`).
   DestinationRefused
+  /// The source check of the inbound payload's kind failed: the sender is not a player
+  /// of the map in the stay the relay names (`relay.inbound_kind_of`).
+  SourceRefused
+  /// A strike names another connection, another stay or a creature as its striker than
+  /// the relay's sender and stay.
+  StrikerRefused
 }
 
 /// Whether a relay of the creature `unit_id` of life `life` is delivered: the spawn
@@ -1583,6 +1629,58 @@ pub fn admitted(
   case in_current_stay(state:, connection: to, stay:) {
     True -> Ok(Delivery(to:, stay:, payload:))
     False -> Error(DestinationRefused)
+  }
+}
+
+/// A player's tell to a creature: sent as `ToldCreature(by, stay, payload)` when
+/// `admitted_inbound` finds the creature running and the payload's source check passed,
+/// and dropped otherwise; a strike that names another striker than the relay's is
+/// dropped with an error line.
+fn told_creature(
+  state state: State,
+  from from: ConnectionId,
+  stay stay: Stay,
+  unit_id unit_id: Int,
+  life life: Int,
+  payload payload: Inbound,
+) -> #(State, ServiceStep(Outgoing)) {
+  case admitted_inbound(state:, unit_id:, life:, from:, stay:, payload:) {
+    Ok(InboundDelivery(..))
+    | Error(CreatureEnded)
+    | Error(DestinationRefused)
+    | Error(SourceRefused)
+    | Error(StrikerRefused) -> #(state, Effects([]))
+  }
+}
+
+/// A player's tell the map delivers to a creature: the creature's address, and what it
+/// is told, with the sender and the stay the relay named.
+pub type InboundDelivery {
+  InboundDelivery(
+    unit_id: Int,
+    life: Int,
+    by: ConnectionId,
+    stay: Stay,
+    payload: Inbound,
+  )
+}
+
+/// Whether a tell of the player of connection `from`, in its stay `stay`, to the creature
+/// `unit_id` of life `life` is delivered: the spawn of that unit must be live, retiring,
+/// respawning or releasing under that life, the payload's source check must pass
+/// (`relay.inbound_kind_of`), and a strike must name the relay's sender and stay as its
+/// striker. Whatever the sender sees does not matter, and a sender that left may still
+/// strike or answer.
+pub fn admitted_inbound(
+  state _state: State,
+  unit_id _unit_id: Int,
+  life _life: Int,
+  from _from: ConnectionId,
+  stay _stay: Stay,
+  payload payload: Inbound,
+) -> Result(InboundDelivery, Dropped) {
+  case relay.inbound_kind_of(inbound: payload).source {
+    relay.NoSenderCheck | relay.SenderInCurrentStay -> Error(CreatureEnded)
   }
 }
 

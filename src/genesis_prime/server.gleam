@@ -105,8 +105,8 @@ import genesis_prime/client_connection.{
   AskSessions, AskStore, ChangeEnds, ChangeStarts, ControlsEnd, ForStay,
   FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
   SentByKill, SentByMap, SentByPeer, SentByPlayer, SentBySessions, SentByTarget,
-  TellCastView, TellChat, TellDespawn, TellLifeChanged, TellMoved, TellPeer,
-  TellPlayer, TellReady, TellReleased, TellStealthChanged, TellStrike,
+  TellCastView, TellChat, TellCreature, TellDespawn, TellLifeChanged, TellMoved,
+  TellPeer, TellPlayer, TellReady, TellReleased, TellStealthChanged, TellStrike,
   TellStrikeAnswered, TellTargetChange, TellTargetMoved, TellThrown,
   TellUnitStates, TellVisibilityChanged, ViewEnds, ViewSet,
 }
@@ -382,6 +382,7 @@ fn directory(settings: Settings) -> Directory {
       | TellDespawn(..)
       | TellUnitStates(..)
       | TellCastView(..)
+      | TellCreature(..)
       | TellPlayer(..) -> Error(Nil)
     }
   }
@@ -495,6 +496,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellDespawn(..)
     | TellUnitStates(..)
     | TellCastView(..)
+    | TellCreature(..)
     | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
@@ -549,6 +551,14 @@ pub fn tell_the_run(
     }
     TellReleased(unit_id:) -> {
       let _sent = service.tell_subject(subject, map.Released(unit_id:))
+      Nil
+    }
+    TellCreature(connection:, stay:, unit_id:, life:, payload:) -> {
+      let _sent =
+        service.tell_subject(
+          subject,
+          map.TellCreature(from: connection, stay:, unit_id:, life:, payload:),
+        )
       Nil
     }
     TellPeer(..)
@@ -647,6 +657,7 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
     | TellLifeChanged(..)
     | TellVisibilityChanged(..)
     | TellReleased(..)
+    | TellCreature(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -700,6 +711,7 @@ fn connection_deliver(
       | TellDespawn(..), _
       | TellUnitStates(..), _
       | TellCastView(..), _
+      | TellCreature(..), _
       | TellMoved(..), _
       | TellReady(..), _
       | TellStealthChanged(..), _
@@ -781,7 +793,8 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     | map.Retire
     | map.Approached(..)
     | map.Withdrew(..)
-    | map.PlayerDied(..) -> Error(Nil)
+    | map.PlayerDied(..)
+    | map.ToldCreature(..) -> Error(Nil)
   }
 }
 

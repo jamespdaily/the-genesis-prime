@@ -71,6 +71,7 @@ import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{Left}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
 import genesis_prime/world_map/spawn_source
@@ -83,6 +84,7 @@ import place_support
 import planted_table
 import spawn_support
 import spell_tables
+import world_entry_support
 
 fn spell_go_of(cast_id cast_id: Int) -> spell_go.SpellGo {
   spell_go.SpellGo(
@@ -2675,4 +2677,31 @@ pub fn a_viewer_writes_a_creatures_facing_as_0x638_only_when_the_unit_is_shown_t
     )
   assert game_connection_support.written_ids(removed) == []
     as "a creature the 0x355 removed is written to no more"
+}
+
+pub fn the_creature_tell_names_the_map_run_of_the_players_stay_with_its_sender_and_the_creatures_address_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The player's connection is the sender of every tell a creature takes: it names the run
+  // of the map the player entered, its own stay and the creature by unit and life, and tells
+  // the map, never the creature.
+  let entered = world_entry_support.entered_after(clock_origin_ms: 600)
+  let payload = relay.Despawn(delay_ms: 0, went_at_ms: 6000)
+  assert state.tells_the_creature(
+      entered:,
+      connection: ConnectionId(5),
+      unit_id: 7,
+      life: 3,
+      payload:,
+    )
+    == OwnEffect(step.Tell(
+      to: Map(map: entered.map, incarnation: entered.incarnation),
+      request: client_connection.TellCreature(
+        connection: ConnectionId(5),
+        stay: entered.stay,
+        unit_id: 7,
+        life: 3,
+        payload:,
+      ),
+    ))
+    as "a tell to the run of the player's map, for its stay, naming the creature's unit and life and its sender"
 }

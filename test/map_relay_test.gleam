@@ -18,8 +18,8 @@ import genesis_prime/game/strike_tell.{
 }
 import genesis_prime/game/unit_news.{Health, PeerNews}
 import genesis_prime/step.{
-  type ServiceStep, ConnectionId, Creature, OwnEvent, ServiceTimerFired, TimerId,
-  Told, WatchId,
+  type ServiceStep, Connection, ConnectionId, Creature, LogError, OwnEvent,
+  ServiceTimerFired, TimerId, Told, WatchId,
 }
 import genesis_prime/table/id.{Creature2Id, Faction2Id, PrerequisiteId}
 import genesis_prime/world_map/creature
@@ -35,6 +35,7 @@ import gleam/option.{None, Some}
 import gleam/order
 import gleam/result
 import gleam/set
+import inbound_support
 import map_spawn_support as spawns
 import map_support
 import owned_test
@@ -263,8 +264,16 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
   })
 }
 
-pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_from_an_ended_creature_or_an_earlier_life_is_dropped_test() -> Nil {
-  use <- owned_test.run(5000)
+/// A spawn of a map in one of the states a creature's spawn can be in, with the player 1 in
+/// the map in its first stay, and whether a creature that ran at the spawn still runs.
+type SpawnScene {
+  SpawnScene(name: String, state: State, running: Bool)
+}
+
+/// The Battle Beast's spawn in each state: live, retiring (no one sees it for the idle stop),
+/// releasing, respawning (its creature expired), waiting for its restart (its creature
+/// ended), failed (its restart was refused) and with no spawn state (nothing started it).
+fn spawn_scenes() -> List(SpawnScene) {
   let beast = spawn_support.battle_beast(number: 1, x: 0.0)
   let live = fn() {
     let #(state, _) =
@@ -276,7 +285,6 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
       )
     state
   }
-  // Each state a spawn can be in, with a player 1 in the map in its first stay.
   let retiring = fn() {
     let #(state, _) =
       spawns.move(state: live(), at_ms: 7000, connection: 1, x: spawns.far)
@@ -320,33 +328,44 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
       x: spawns.far,
     ).0
   }
-  let rows = [
-    #("live", live(), True),
-    #("retiring", retiring(), True),
-    #("releasing", releasing(), True),
-    #("respawning", respawning(), True),
-    #("waiting for its restart", ended(), False),
-    #("failed", failed(), False),
-    #("no spawn state", none(), False),
+  [
+    SpawnScene(name: "live", state: live(), running: True),
+    SpawnScene(name: "retiring", state: retiring(), running: True),
+    SpawnScene(name: "releasing", state: releasing(), running: True),
+    SpawnScene(name: "respawning", state: respawning(), running: True),
+    SpawnScene(name: "waiting for its restart", state: ended(), running: False),
+    SpawnScene(name: "failed", state: failed(), running: False),
+    SpawnScene(name: "no spawn state", state: none(), running: False),
   ]
-  list.each(rows, fn(row) {
-    let #(spawn_state, state, admitted) = row
-    // The creature that ran at the spawn: the live one's unit and life, a made-up pair for
-    // a spawn that held none.
-    let #(unit_id, life) = case spawn_state {
-      "no spawn state" -> #(1, 1)
-      _ -> spawns.creature_of(state: live(), spawn: 1)
+}
+
+/// The unit and life of the creature that ran at the spawn of a scene: the live one's, and
+/// a made-up pair for a spawn that held none.
+fn creature_of_scene(scene scene: SpawnScene) -> #(Int, Int) {
+  case scene.name {
+    "no spawn state" -> #(1, 1)
+    _ -> {
+      let assert [live, ..] = spawn_scenes()
+        as "the first scene is the live spawn"
+      spawns.creature_of(state: live.state, spawn: 1)
     }
+  }
+}
+
+pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_from_an_ended_creature_or_an_earlier_life_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(spawn_scenes(), fn(scene) {
+    let #(unit_id, life) = creature_of_scene(scene:)
     list.each(
       [
-        #("the same life", life, admitted),
+        #("the same life", life, scene.running),
         #("an earlier life", life - 1, False),
       ],
       fn(case_) {
         let #(which, relay_life, delivered) = case_
         let #(_, taken) =
           told_by_a_creature(
-            state:,
+            state: scene.state,
             at_ms: 80_000,
             message: map.Relay(
               unit_id:,
@@ -357,7 +376,7 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
             ),
           )
         assert result.is_ok(map.admitted(
-            state:,
+            state: scene.state,
             unit_id:,
             life: relay_life,
             to: ConnectionId(1),
@@ -375,7 +394,7 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
             "a relay of "
             <> which
             <> " from a creature whose spawn is "
-            <> spawn_state
+            <> scene.name
             <> case delivered {
               True -> " is admitted"
               False -> " is dropped"
@@ -383,6 +402,282 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
           }
       },
     )
+  })
+}
+
+/// What the step tells creatures a player told them, as each creature's unit and life and
+/// what the map sends it: the sender, the stay and the payload.
+fn told_creatures(
+  taken: ServiceStep(map.Outgoing),
+) -> List(#(Int, Int, Int, Stay, relay.Inbound)) {
+  list.filter_map(spawns.sends(taken), fn(sent) {
+    case sent {
+      #(
+        Creature(unit_id:, life:, ..),
+        map.ToldCreature(by: ConnectionId(by), stay:, payload:),
+      ) -> Ok(#(unit_id, life, by, stay, payload))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+pub fn a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_for_an_ended_one_or_an_earlier_life_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(spawn_scenes(), fn(scene) {
+    let #(unit_id, life) = creature_of_scene(scene:)
+    list.each(inbound_support.payloads(unit_id:), fn(row) {
+      let #(kind, payload) = row
+      // The sender is player 1, in the map in its first stay, far from the creature in the
+      // scene with no spawn state and at it in the others: the creature is sent the tell
+      // whatever the sender sees.
+      let sent = fn(unit_id, life) {
+        told_creatures(
+          spawns.tell_creature(
+            at_ms: 80_000,
+            state: scene.state,
+            from: 1,
+            stay_count: 1,
+            unit_id:,
+            life:,
+            payload:,
+          ).1,
+        )
+      }
+      let in_stay = map_support.stay(count: 1)
+      assert sent(unit_id, life)
+        == case scene.running {
+          True -> [#(unit_id, life, 1, in_stay, payload)]
+          False -> []
+        }
+        as {
+          kind
+          <> " to a creature whose spawn is "
+          <> scene.name
+          <> case scene.running {
+            True ->
+              ": delivered once, as told, with the sender and stay the relay names"
+            False -> ": dropped"
+          }
+        }
+      assert sent(unit_id, life - 1) == []
+        as { kind <> " of an earlier life of the creature is dropped" }
+      assert sent(unit_id + 1, life) == []
+        as {
+          kind
+          <> " to another unit than the one that runs under that life is dropped"
+        }
+    })
+  })
+  let #(_, dropped) =
+    spawns.tell_creature(
+      at_ms: 80_000,
+      state: spawns.started_with_spawns(spawns: [
+        spawn_support.battle_beast(number: 1, x: 0.0),
+      ]),
+      from: 1,
+      stay_count: 1,
+      unit_id: 2,
+      life: 1,
+      payload: relay.Despawn(delay_ms: 0, went_at_ms: 6000),
+    )
+  assert support.effects_of(dropped) == []
+    as "a tell dropped by the map writes no line and sends nothing"
+}
+
+/// The map after the players are in it: connection 1 in its first stay at the creature, 2
+/// joined twice (its second stay is the current one), 3 joined and left, and 4 never joined.
+/// The first joiner starts the creature, which the scene returns with its life.
+fn senders_in_four_ways() -> #(State, Int, Int) {
+  let state =
+    spawns.started_with_spawns(spawns: [
+      spawn_support.battle_beast(number: 1, x: 0.0),
+    ])
+  let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let #(state, _) = spawns.join(state:, at_ms: 6100, connection: 2, x: 0.0)
+  let #(state, _) =
+    spawns.join_in_stay(
+      state:,
+      at_ms: 6200,
+      connection: 2,
+      stay_count: 2,
+      x: 0.0,
+      alive: True,
+      hidden: set.new(),
+    )
+  let #(state, _) = spawns.join(state:, at_ms: 6300, connection: 3, x: 0.0)
+  let #(state, _) = spawns.leave(state:, at_ms: 6400, connection: 3)
+  let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
+  #(state, unit_id, life)
+}
+
+pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_names_and_a_strike_or_an_answer_from_any_sender_is_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, unit_id, life) = senders_in_four_ways()
+  // The sender, the stay it names, and whether the map holds that player in that stay.
+  let senders = [
+    #("in the map in that stay", 1, 1, True),
+    #("in the map in an earlier stay (it joined again)", 2, 1, False),
+    #("that left", 3, 1, False),
+    #("that never joined", 4, 1, False),
+  ]
+  list.each(senders, fn(sender) {
+    let #(situation, from, stay_count, in_the_map_in_that_stay) = sender
+    list.each(inbound_support.payloads(unit_id:), fn(row) {
+      let #(kind, payload) = row
+      let delivered = case payload {
+        relay.TargetMoved(..) -> in_the_map_in_that_stay
+        relay.Strike(..)
+        | relay.StrikeAnswered(..)
+        | relay.ModifierStarts(..)
+        | relay.ModifierEnds(..)
+        | relay.Thrown(..)
+        | relay.Despawn(..)
+        | relay.UnitStates(..)
+        | relay.CastViewSet(..)
+        | relay.CastViewEnds(..)
+        | relay.ControlsEnd(..) -> True
+      }
+      let payload = case payload {
+        relay.Strike(tell:) ->
+          relay.Strike(tell: inbound_support.struck_by(
+            tell:,
+            from:,
+            stay_count:,
+          ))
+        relay.TargetMoved(..)
+        | relay.StrikeAnswered(..)
+        | relay.ModifierStarts(..)
+        | relay.ModifierEnds(..)
+        | relay.Thrown(..)
+        | relay.Despawn(..)
+        | relay.UnitStates(..)
+        | relay.CastViewSet(..)
+        | relay.CastViewEnds(..)
+        | relay.ControlsEnd(..) -> payload
+      }
+      let #(_, taken) =
+        spawns.tell_creature(
+          at_ms: 80_000,
+          state:,
+          from:,
+          stay_count:,
+          unit_id:,
+          life:,
+          payload:,
+        )
+      assert list.length(told_creatures(taken))
+        == case delivered {
+          True -> 1
+          False -> 0
+        }
+        as {
+          kind
+          <> " from a player "
+          <> situation
+          <> case delivered {
+            True -> " is delivered"
+            False -> " is dropped"
+          }
+        }
+      assert result.is_ok(map.admitted_inbound(
+          state:,
+          unit_id:,
+          life:,
+          from: ConnectionId(from),
+          stay: map_support.stay(count: stay_count),
+          payload:,
+        ))
+        == delivered
+        as {
+          "the function the step admits a tell by agrees for "
+          <> kind
+          <> " from a player "
+          <> situation
+        }
+    })
+  })
+  assert map.admitted_inbound(
+      state:,
+      unit_id:,
+      life:,
+      from: ConnectionId(2),
+      stay: map_support.stay(count: 1),
+      payload: relay.TargetMoved(
+        place: inbound_support.place(),
+        seq: 1,
+        hit_radius: 0.5,
+      ),
+    )
+    == Error(map.SourceRefused)
+    as "a move from a player of another stay is refused for its source, not for its creature"
+}
+
+pub fn a_strike_that_names_another_striker_than_the_connection_that_told_it_is_dropped_with_an_error_line_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, unit_id, life) = senders_in_four_ways()
+  let tell = inbound_support.strike(unit_id:)
+  let rows = [
+    #(
+      "from another connection",
+      strike_tell.Strike(..tell, from: Connection(ConnectionId(2))),
+      False,
+    ),
+    #(
+      "whose striker's stay is not the relay's",
+      inbound_support.struck_by(tell:, from: 1, stay_count: 2),
+      False,
+    ),
+    #(
+      "whose striker is a creature",
+      strike_tell.Strike(
+        ..tell,
+        striker: strike_tell.CreatureStriker(
+          unit_id: 9,
+          spell4_id: id.Spell4Id(1),
+        ),
+      ),
+      False,
+    ),
+    #("that matches the connection and its stay", tell, True),
+  ]
+  list.each(rows, fn(row) {
+    let #(situation, tell, delivered) = row
+    let #(_, taken) =
+      spawns.tell_creature(
+        at_ms: 80_000,
+        state:,
+        from: 1,
+        stay_count: 1,
+        unit_id:,
+        life:,
+        payload: relay.Strike(tell:),
+      )
+    assert list.length(told_creatures(taken))
+      == case delivered {
+        True -> 1
+        False -> 0
+      }
+      as {
+        "a strike "
+        <> situation
+        <> case delivered {
+          True -> " is delivered"
+          False -> " is dropped"
+        }
+      }
+    assert list.length(support.logs_of(step: taken, level: LogError))
+      == case delivered {
+        True -> 0
+        False -> 1
+      }
+      as {
+        "a strike "
+        <> situation
+        <> case delivered {
+          True -> " writes no line"
+          False -> " writes one error line"
+        }
+      }
   })
 }
 
