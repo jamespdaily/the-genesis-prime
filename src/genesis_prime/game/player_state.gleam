@@ -3,7 +3,7 @@
 ////
 //// ```
 //// the player's 0x262 (health stat, position, race, faction, PvP flags, group) ─▶ of_appeared
-//// its Health, Died, CameBack, CombatState, crowd-control and Moving news ─▶ the connection's picture changes
+//// its Health, Died, CameBack, CombatState, crowd-control news ─▶ the connection's picture changes
 //// the press ─▶ genesis_prime/game/cast/press_target `judge` ─▶ a refusal or none
 //// ```
 ////

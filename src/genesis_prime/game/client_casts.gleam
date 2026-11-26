@@ -1,6 +1,6 @@
-//// The casts a player's client holds that the player's connection must end, and who ends
-//// each: a pure record kept in `Entered`, one entry per cast id, so that a cast is in one
-//// state at a time.
+//// The casts a player's client holds, or held and saw its caster finish, that the player's
+//// connection must end or must not start again, and who ends each: a pure record kept in
+//// `Entered`, one entry per cast id, so that a cast is in one state at a time.
 ////
 //// ```
 //// caster's create or 0x7ff      ─▶ written(cast, caster's unit)      the caster's frames end it
@@ -11,6 +11,10 @@
 //// the caster shown again, listing an orphaned cast
 ////                                ─▶ written(cast, caster's unit)      the caster's finish or the ledger's end,
 ////                                                                     whichever comes first
+//// the caster's finish of a written cast
+////                                ─▶ finished(cast, caster's unit, until)  the id stays taken until
+////                                                                     the connection's longest ask
+////                                                                     deadline has passed, nothing is ended
 //// ```
 ////
 //// - **A written cast** is one its caster's connection told this client the start of: the
@@ -28,6 +32,15 @@
 ////   its 0x7fe when the last source ends (genesis_prime/game/connection/landing). When the
 ////   caster is shown again and lists the cast, it is written too, and the first end forgets
 ////   it.
+//// - **An ended cast** is a written one its caster's finish ended (`finished`): the client no
+////   longer holds it, and the cast id stays taken until the connection's longest ask deadline
+////   (`ask_deadline_ms` of the connection's settings, the one deadline every ask the connection
+////   makes is given) has passed since the finish, its caster's unit is forgotten, a new
+////   start of the id replaces it, or an ally's create lists the id. An ally's start can be late
+////   only while that ally waits on an ask, so a hold older than that deadline can drop
+////   nothing; each finish forgets the holds past it. An ended hold counts for `is_held` while
+////   it lasts, so an ally's start of the cast that arrives after the finish is dropped, and not for
+////   `is_written`, `written_of_unit`, `orphans` or `ally_ended`.
 //// - A cast listed by an ally that the client holds already, written or orphaned, stays as it
 ////   is: its own ender is exact, and a second ender would end it twice.
 
@@ -47,6 +60,10 @@ type Hold {
   Relisted(caster_unit_id: Int)
   /// The units in `allies` listed it and end it for the client, one 0x811 each.
   Borrowed(allies: Set(Int))
+  /// A cast its caster's frames finished: the client no longer holds it, and the cast id
+  /// stays taken until the monotonic time `until_ms` has passed, the unit `caster_unit_id`
+  /// is forgotten, a new start of the id replaces it, or a create lists the id.
+  Ended(caster_unit_id: Int, until_ms: Int)
 }
 
 /// The casts a client holds, by cast id.
@@ -69,7 +86,7 @@ pub fn written(
   let hold = case dict.get(casts.holds, cast_id) {
     Ok(Borrowed(..) as hold) -> hold
     Ok(Orphaned) | Ok(Relisted(..)) -> Relisted(caster_unit_id:)
-    Ok(Written(..)) | Error(Nil) -> Written(caster_unit_id:)
+    Ok(Written(..)) | Ok(Ended(..)) | Error(Nil) -> Written(caster_unit_id:)
   }
   Casts(holds: dict.insert(casts.holds, cast_id, hold))
 }
@@ -84,7 +101,7 @@ pub fn borrow(
   let allies = case dict.get(casts.holds, cast_id) {
     Ok(Written(..)) | Ok(Orphaned) | Ok(Relisted(..)) -> Error(Nil)
     Ok(Borrowed(allies:)) -> Ok(set.insert(allies, ally_unit_id))
-    Error(Nil) -> Ok(set.from_list([ally_unit_id]))
+    Ok(Ended(..)) | Error(Nil) -> Ok(set.from_list([ally_unit_id]))
   }
   case allies {
     Ok(allies) ->
@@ -97,31 +114,65 @@ pub fn borrow(
 pub fn is_written(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   case dict.get(casts.holds, cast_id) {
     Ok(Written(..)) | Ok(Relisted(..)) -> True
-    Ok(Orphaned) | Ok(Borrowed(..)) | Error(Nil) -> False
+    Ok(Orphaned) | Ok(Borrowed(..)) | Ok(Ended(..)) | Error(Nil) -> False
   }
 }
 
-/// Whether the client holds the cast in any state: written by its caster, borrowed from an
-/// ally, held with no caster or listed again by its caster. A cast the client holds is not
-/// started again (`opcode.0x7ff`: a cast id already live restarts that cast).
-pub fn is_held(casts casts: Casts, cast_id cast_id: Int) -> Bool {
-  dict.has_key(casts.holds, cast_id)
+/// Whether the cast id is taken in the ledger at the monotonic time `now_ms`: the client
+/// holds the cast (written by its caster, borrowed from an ally, held with no caster or
+/// listed again by its caster), or its caster's finish ended it (`finished`) and the hold has
+/// not run out. A cast id taken is not started again (`opcode.0x7ff`: a cast id already live
+/// restarts that cast).
+pub fn is_held(
+  casts casts: Casts,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+) -> Bool {
+  case dict.get(casts.holds, cast_id) {
+    Ok(Ended(until_ms:, ..)) -> until_ms > now_ms
+    Ok(_) -> True
+    Error(Nil) -> False
+  }
 }
 
 /// Whether the client holds the cast from an ally's create or start.
 pub fn is_borrowed(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   case dict.get(casts.holds, cast_id) {
     Ok(Borrowed(..)) -> True
-    Ok(Written(..)) | Ok(Orphaned) | Ok(Relisted(..)) | Error(Nil) -> False
+    Ok(Written(..))
+    | Ok(Orphaned)
+    | Ok(Relisted(..))
+    | Ok(Ended(..))
+    | Error(Nil) -> False
   }
 }
 
-/// The cast `cast_id` forgotten, once its caster's frames have ended it.
-pub fn finished(casts casts: Casts, cast_id cast_id: Int) -> Casts {
-  case dict.get(casts.holds, cast_id) {
-    Ok(Written(..)) | Ok(Relisted(..)) ->
-      Casts(holds: dict.delete(casts.holds, cast_id))
-    Ok(Orphaned) | Ok(Borrowed(..)) | Error(Nil) -> casts
+/// The cast `cast_id` kept as an ended hold, once its caster's frames have ended it at the
+/// monotonic time `now_ms`: the id stays taken for `hold_ms`, the longest an ally's start can
+/// wait on an ask, so that an ally's later start of the same cast is dropped (a start that
+/// overtook the caster's finish). The ended holds that have run out are forgotten.
+pub fn finished(
+  casts casts: Casts,
+  cast_id cast_id: Int,
+  now_ms now_ms: Int,
+  hold_ms hold_ms: Int,
+) -> Casts {
+  let holds =
+    dict.filter(casts.holds, fn(_, hold) {
+      case hold {
+        Ended(until_ms:, ..) -> until_ms > now_ms
+        Written(..) | Orphaned | Relisted(..) | Borrowed(..) -> True
+      }
+    })
+  case dict.get(holds, cast_id) {
+    Ok(Written(caster_unit_id:)) | Ok(Relisted(caster_unit_id:)) ->
+      Casts(holds: dict.insert(
+        holds,
+        cast_id,
+        Ended(caster_unit_id:, until_ms: now_ms + hold_ms),
+      ))
+    Ok(Orphaned) | Ok(Borrowed(..)) | Ok(Ended(..)) | Error(Nil) ->
+      Casts(holds:)
   }
 }
 
@@ -134,7 +185,8 @@ pub fn written_of_unit(casts casts: Casts, unit_id unit_id: Int) -> List(Int) {
         | Relisted(caster_unit_id:)
         if caster_unit_id == unit_id
       -> Ok(held.0)
-      Written(..) | Relisted(..) | Orphaned | Borrowed(..) -> Error(Nil)
+      Written(..) | Relisted(..) | Orphaned | Borrowed(..) | Ended(..) ->
+        Error(Nil)
     }
   })
   |> list.sort(int.compare)
@@ -161,7 +213,9 @@ pub fn unit_forgotten(casts casts: Casts, unit_id unit_id: Int) -> Casts {
                 False -> dict.insert(holds, cast_id, Borrowed(allies: left))
               }
           }
-        Written(..) | Relisted(..) | Orphaned -> holds
+        Ended(caster_unit_id:, ..) if caster_unit_id == unit_id ->
+          dict.delete(holds, cast_id)
+        Written(..) | Relisted(..) | Orphaned | Ended(..) -> holds
       }
     }),
   )
@@ -182,7 +236,7 @@ pub fn orphans(casts casts: Casts) -> List(Int) {
   |> list.filter_map(fn(held) {
     case held.1 {
       Orphaned | Relisted(..) -> Ok(held.0)
-      Written(..) | Borrowed(..) -> Error(Nil)
+      Written(..) | Borrowed(..) | Ended(..) -> Error(Nil)
     }
   })
   |> list.sort(int.compare)
@@ -197,7 +251,7 @@ pub fn orphans_ended(
     holds: list.fold(cast_ids, casts.holds, fn(holds, cast_id) {
       case dict.get(holds, cast_id) {
         Ok(Orphaned) | Ok(Relisted(..)) -> dict.delete(holds, cast_id)
-        Ok(Written(..)) | Ok(Borrowed(..)) | Error(Nil) -> holds
+        Ok(Written(..)) | Ok(Borrowed(..)) | Ok(Ended(..)) | Error(Nil) -> holds
       }
     }),
   )
@@ -230,6 +284,10 @@ pub fn ally_ended(
           }
         }
       }
-    Ok(Written(..)) | Ok(Orphaned) | Ok(Relisted(..)) | Error(Nil) -> Error(Nil)
+    Ok(Written(..))
+    | Ok(Orphaned)
+    | Ok(Relisted(..))
+    | Ok(Ended(..))
+    | Error(Nil) -> Error(Nil)
   }
 }

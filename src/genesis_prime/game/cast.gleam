@@ -4934,7 +4934,8 @@ fn go(
             Hit(..) | Immune(..) | Deflected(..) -> Error(Nil)
           }
         })
-      let shown = cast_control.restrictions_shown(restricting:, caster:, live:)
+      let shown =
+        cast_control.restrictions_shown(restricting:, cast_id:, caster:, live:)
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
       let #(cast, logged) =
         cast_frame.states_logged(

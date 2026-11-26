@@ -446,7 +446,7 @@ pub fn said(message: map.Outgoing) -> String {
       )
     map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
       "Objects unseen " <> string.join(list.map(unit_ids, int.to_string), " ")
-    map.Noticed(notice: map.UnseenBy(by: ConnectionId(number)), ..) ->
+    map.Noticed(notice: map.UnseenBy(by: ConnectionId(number), ..), ..) ->
       "Unwatched by " <> int.to_string(number)
     map.Seen(by: ConnectionId(number), ..) ->
       "Seen by " <> int.to_string(number)

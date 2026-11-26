@@ -12,9 +12,12 @@ import genesis_prime/client_connection.{
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/step.{type ConnectionStep, type Outcome, OwnEvent}
+import genesis_prime/step.{
+  type ConnectionStep, type Outcome, ConnectionId, OwnEvent,
+}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
+import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -93,6 +96,16 @@ pub fn entered_among_watchers(
   entered_among_watchers_in_a_map(class_id:, level:, experience:).0
 }
 
+/// The generation the map gave the sight each watcher has of the player, as the
+/// `SeenBy` it sent the player's connection when it joined carries it.
+pub fn sights_the_map_gave(
+  class_id class_id: Int,
+  level level: Int,
+  experience experience: Int,
+) -> List(#(Int, Generation)) {
+  joined_among_watchers(class_id:, level:, experience:).2
+}
+
 /// `entered_among_watchers`, with the state of the map that took the player after
 /// the join, for a test that steps the map again.
 pub fn entered_among_watchers_in_a_map(
@@ -100,6 +113,16 @@ pub fn entered_among_watchers_in_a_map(
   level level: Int,
   experience experience: Int,
 ) -> #(game_connection.State, map.State) {
+  let #(state, map_state, _) =
+    joined_among_watchers(class_id:, level:, experience:)
+  #(state, map_state)
+}
+
+fn joined_among_watchers(
+  class_id class_id: Int,
+  level level: Int,
+  experience experience: Int,
+) -> #(game_connection.State, map.State, List(#(Int, Generation))) {
   let #(state, joining) =
     support.joining_holding(
       in_character_select: support.in_select_from(
@@ -142,7 +165,20 @@ pub fn entered_among_watchers_in_a_map(
         #(_, _) -> state
       }
     })
-  #(state, map_state)
+  let sights =
+    list.filter_map(rule_support.sends(joined), fn(sent) {
+      case sent {
+        #(
+          1,
+          map.Noticed(
+            notice: map.SeenBy(by: ConnectionId(viewer), generation:, ..),
+            ..,
+          ),
+        ) -> Ok(#(viewer, generation))
+        #(_, _) -> Error(Nil)
+      }
+    })
+  #(state, map_state, sights)
 }
 
 /// The connection after the player said this text on Say.

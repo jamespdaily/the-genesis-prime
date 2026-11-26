@@ -6,7 +6,7 @@
 //// (genesis_prime/game/chat) decides what each does.
 ////
 //// ```
-//// speaker conn ── Said ────────────────▶ each viewer conn
+//// speaker conn ── Said ────────────────▶ each viewer conn, for the viewer's stay (`TellLine`)
 //// speaker conn ── ZoneLine ─────────────▶ each member conn of ZoneChannel(run, top)
 //// speaker conn ── Whisper ──────────────▶ the target's conn (CharacterNamed, through a watch)
 //// target conn  ── Heard | NotHeard ─────▶ the speaker's conn (Connection)
@@ -47,7 +47,9 @@ pub type Line {
 
 /// A tell from one game connection to another.
 pub type Tell {
-  /// A Say, Yell or Emote line, to a connection whose player sees the speaker.
+  /// A Say, Yell or Emote line, to a connection whose player sees the speaker, sent for
+  /// that player's stay (`client_connection.TellLine`) so that a line queued across a
+  /// re-entry of the same run is dropped by the stay fence.
   Said(speaker: Speaker, line: Line)
   /// A Zone line, to every member of the zone channel of the speaker's run and
   /// top zone `top_zone_id`. A member whose own run or top zone is another by

@@ -38,7 +38,7 @@ import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{Removed}
+import genesis_prime/game/unit_news.{Departed}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
@@ -726,7 +726,7 @@ pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test()
           )),
         ]
         as "the map is told the move with the echo's number"
-      assert list.count(support.peer_tells(taken), fn(tell) {
+      assert list.count(support.viewer_moves(taken:), fn(tell) {
           list.contains(row.viewers, tell.0)
         })
         == list.length(row.viewers)
@@ -945,7 +945,8 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
         == support.leave_asked_from(map: map_of_world_22())
         as "the run of the map that took the player is asked to take it out"
       list.each([2, 3], fn(viewer) {
-        assert support.news_told(taken: leaving, viewer:) == [Removed]
+        assert support.news_told(taken: leaving, viewer:)
+          == [Departed(generation: support.viewer_sight(viewer))]
           as "the unit's 0x355: each viewer sees the unit leave"
       })
       let effects = rule_support.effects_of(leaving)
@@ -1101,6 +1102,7 @@ pub fn what_other_processes_send_while_leaving_or_entering_is_dropped_test() -> 
       by: ConnectionId(4),
       stay: support.viewer_stay(4),
       unit_id: support.viewer_unit_id(4),
+      generation: support.viewer_sight(4),
     ))
   let #(_, taken) =
     support.feed(state: commanded_in_world_22(viewers: []), event: seen_by)

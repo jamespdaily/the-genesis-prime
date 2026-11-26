@@ -26,6 +26,7 @@ import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
 import gleam/list
@@ -57,7 +58,10 @@ pub fn a_viewer_writes_0x811_and_0x813_only_for_a_cast_whose_start_it_wrote_test
       game_connection_support.in_world(),
       game_connection_support.sent_by_a_peer(game_connection_support.news_of(
         unit_id: 9,
-        news: Appeared(game_connection_support.another_unit()),
+        news: Appeared(
+          game_connection_support.another_unit(),
+          generation: generation.first(),
+        ),
       )),
     )
   let #(state, taken) =
@@ -127,7 +131,10 @@ pub fn a_cast_the_client_destroyed_with_a_0x811_is_forgotten_and_no_stale_finish
       game_connection_support.in_world(),
       game_connection_support.sent_by_a_peer(game_connection_support.news_of(
         unit_id: 9,
-        news: Appeared(game_connection_support.another_unit()),
+        news: Appeared(
+          game_connection_support.another_unit(),
+          generation: generation.first(),
+        ),
       )),
     )
   let #(state, _) =
@@ -220,7 +227,10 @@ pub fn a_viewer_gets_a_tick_only_for_a_cast_it_was_shown_test() -> Nil {
       game_connection_support.in_world(),
       game_connection_support.sent_by_a_peer(game_connection_support.news_of(
         unit_id: 9,
-        news: Appeared(game_connection_support.another_unit()),
+        news: Appeared(
+          game_connection_support.another_unit(),
+          generation: generation.first(),
+        ),
       )),
     )
   let #(state, taken) =
@@ -279,7 +289,10 @@ pub fn a_cast_listed_in_a_unit_create_is_written_and_finished_like_a_watched_one
     )
   }
   let #(state, taken) =
-    told(game_connection_support.in_world(), Appeared(created))
+    told(
+      game_connection_support.in_world(),
+      Appeared(created, generation: generation.first()),
+    )
   assert game_connection_support.written_ids(taken) == [0x0262]
   let go =
     CastWent(go: SpellGo(
@@ -305,7 +318,8 @@ pub fn a_cast_listed_in_a_unit_create_is_written_and_finished_like_a_watched_one
     )
   assert game_connection_support.written_ids(taken) == [0x0811]
     as "a listed cast's 0x811 is written"
-  let #(state, taken) = told(state, Appeared(created))
+  let #(state, taken) =
+    told(state, Appeared(created, generation: generation.first()))
   assert game_connection_support.written_ids(taken) == []
     as "a second create of the shown unit writes nothing"
   let #(after, taken) = told(state, CastFinished(cast_id: first))

@@ -1005,7 +1005,7 @@ fn sign_of(news: unit_news.News) -> Result(load_round.Sign, Nil) {
     unit_news.CastInterrupted(..) -> Ok(load_round.Interrupted)
     unit_news.Removed
     | unit_news.Appeared(..)
-    | unit_news.Moving(..)
+    | unit_news.Departed(..)
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)
     | unit_news.CastMissed(..)
@@ -1030,6 +1030,8 @@ fn sign_of(news: unit_news.News) -> Result(load_round.Sign, Nil) {
     | unit_news.Level(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.PropertiesChanged(..)

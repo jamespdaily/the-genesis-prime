@@ -708,7 +708,7 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
       unit_news.Shield(shield: 450),
       unit_news.CameBack,
       unit_news.CameBackLogged,
-      unit_news.Removed,
+      unit_news.Departed(generation: game_connection_support.viewer_sight(2)),
     ]
     as "the old viewers are told the coming back, then the unit's 0x355"
   assert game_connection_support.ask_request(chosen)
@@ -769,10 +769,11 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
           by: ConnectionId(3),
           stay: game_connection_support.viewer_stay(3),
           unit_id: game_connection_support.viewer_unit_id(3),
+          generation: game_connection_support.viewer_sight(3),
         )),
       ),
     )
-  let assert [#(3, stay, PeerNews(news: Appeared(unit:), unit_id: 6))] =
+  let assert [#(3, stay, PeerNews(news: Appeared(unit:, ..), unit_id: 6))] =
     game_connection_support.peer_tells_for(watched)
   assert stay == game_connection_support.viewer_stay(3)
     as "for the stay of the viewer the map named"
@@ -980,9 +981,10 @@ pub fn a_viewer_that_arrives_while_the_player_is_dead_gets_its_0x262_with_health
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
         unit_id: game_connection_support.viewer_unit_id(3),
+        generation: game_connection_support.viewer_sight(3),
       )),
     )
-  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:))] =
+  let assert [#(3, PeerNews(news: Appeared(unit:, ..), unit_id:))] =
     game_connection_support.peer_tells(taken)
   assert unit_id == game_connection_support.own_unit_id
     as "the body, not the ghost"
@@ -1011,9 +1013,10 @@ pub fn a_viewer_that_arrives_after_a_hit_gets_the_players_shield_and_health_now_
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
         unit_id: game_connection_support.viewer_unit_id(3),
+        generation: game_connection_support.viewer_sight(3),
       )),
     )
-  let assert [#(3, PeerNews(news: Appeared(unit:), ..))] =
+  let assert [#(3, PeerNews(news: Appeared(unit:, ..), ..))] =
     game_connection_support.peer_tells(taken)
   assert list.contains(
     unit.tail.stats,
@@ -1158,9 +1161,10 @@ pub fn a_viewer_that_arrives_while_the_player_entered_dead_gets_health_0_and_shi
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
         unit_id: game_connection_support.viewer_unit_id(3),
+        generation: game_connection_support.viewer_sight(3),
       )),
     )
-  let assert [#(3, PeerNews(news: Appeared(unit:), unit_id:))] =
+  let assert [#(3, PeerNews(news: Appeared(unit:, ..), unit_id:))] =
     game_connection_support.peer_tells(taken)
   assert unit_id == game_connection_support.own_unit_id
     as "the body, not the ghost"

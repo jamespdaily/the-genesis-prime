@@ -27,13 +27,13 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Worked}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/loadout
+import genesis_prime/game/move_stamp
 import genesis_prime/game/objective
 import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{
-  type News, type PeerNews, Appeared, CreatureAppeared, Moving, PeerNews,
-  Removed,
+  type News, type PeerNews, Appeared, CreatureAppeared, Departed, PeerNews,
 }
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
@@ -108,6 +108,7 @@ import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/relay
@@ -1451,7 +1452,7 @@ pub fn created_for(
   state state: game_connection.State,
   viewer viewer: Int,
 ) -> UnitCreatePlayer {
-  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
+  let assert [#(_, PeerNews(news: Appeared(unit:, ..), ..))] =
     peer_tells(
       feed(
         state:,
@@ -1459,6 +1460,7 @@ pub fn created_for(
           by: ConnectionId(viewer),
           stay: viewer_stay(viewer),
           unit_id: viewer_unit_id(viewer),
+          generation: viewer_sight(viewer),
         )),
       ).1,
     )
@@ -1481,9 +1483,10 @@ pub fn created_at(
         by: ConnectionId(viewer),
         stay: viewer_stay(viewer),
         unit_id: viewer_unit_id(viewer),
+        generation: viewer_sight(viewer),
       )),
     )
-  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] = peer_tells(taken)
+  let assert [#(_, PeerNews(news: Appeared(unit:, ..), ..))] = peer_tells(taken)
     as "the player's connection sends the arriving viewer its unit_create_player"
   unit
 }
@@ -1537,8 +1540,10 @@ pub fn mapped_logging(
     | client_connection.TellLifeChanged(..)
     | client_connection.TellReleased(..)
     | TellPeer(..)
+    | client_connection.TellMove(..)
     | client_connection.TellCreature(..)
     | client_connection.TellPlayer(..)
+    | client_connection.TellLine(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -1612,13 +1617,90 @@ pub fn told(news news: News) -> PeerNews {
   PeerNews(unit_id: own_unit_id, news:)
 }
 
-/// A move of the unit `unit_id`, stamped `server_time_ms`.
+/// The generation the tests' map gave the player of connection `viewer` for its sight of
+/// the tests' player: its `viewer`th, so each viewer's is its own and a later viewer's is
+/// later.
+pub fn viewer_sight(viewer: Int) -> generation.Generation {
+  list.fold(list.repeat(Nil, viewer - 1), generation.first(), fn(held, _) {
+    generation.after(held)
+  })
+}
+
+/// A chunk of a move of the unit `unit_id` for the sight `generation`, stamped
+/// `server_time_ms`.
 pub fn moving(
   unit_id unit_id: Int,
+  generation generation: generation.Generation,
   server_time_ms server_time_ms: Int,
   commands commands: List(relayed_movement.RelayedMovement),
-) -> PeerNews {
-  news_of(unit_id:, news: Moving(server_time_ms:, commands:))
+) -> move_stamp.Move {
+  move_stamp.Move(unit_id:, generation:, server_time_ms:, commands:)
+}
+
+/// A chunk of a move of the tests' player's unit as its connection sends it to the player of
+/// connection `viewer`, for the sight the map gave that viewer.
+pub fn moved_for(
+  viewer viewer: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(relayed_movement.RelayedMovement),
+) -> move_stamp.Move {
+  moving(
+    unit_id: own_unit_id,
+    generation: viewer_sight(viewer),
+    server_time_ms:,
+    commands:,
+  )
+}
+
+/// A send of another player's connection to the connection of its move, for the tests'
+/// player's first stay.
+pub fn sent_by_a_mover(
+  move: move_stamp.Move,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  for_stay(stay: own_stay(), sent: client_connection.SentByMove(move))
+}
+
+/// The kind of each tell of a step that is a move to a viewer or the map's place, in order.
+pub fn move_order(taken taken: ConnectionStep(Request)) -> List(String) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: TellMoved(..), ..)) -> Ok("the map's place")
+      OwnEffect(step.Tell(request: client_connection.TellMove(..), ..)) ->
+        Ok("a viewer's move")
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// Whether a step tells no other player's connection anything: no news of the player's unit
+/// (`TellPeer`) and no move (`TellMove`), the two ways a player's connection tells another.
+pub fn tells_no_player(taken taken: ConnectionStep(Request)) -> Bool {
+  peer_tells(taken) == [] && move_tells(taken:) == []
+}
+
+/// The moves a step tells the connections of other players, without the stay.
+pub fn viewer_moves(
+  taken taken: ConnectionStep(Request),
+) -> List(#(Int, move_stamp.Move)) {
+  list.map(move_tells(taken:), fn(tell) { #(tell.0, tell.2) })
+}
+
+/// The moves a step tells the connections of other players: the viewer's number, the stay
+/// it is told for and the chunk, in the order of the viewers' numbers and the order sent.
+pub fn move_tells(
+  taken taken: ConnectionStep(Request),
+) -> List(#(Int, Stay, move_stamp.Move)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Connection(ConnectionId(viewer)),
+        request: client_connection.TellMove(stay:, move:),
+      )) -> Ok(#(viewer, stay, move))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
 /// A send of another player's connection to the connection, for the tests'
@@ -1670,10 +1752,14 @@ pub fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {
   ]
 }
 
-/// What can reach a viewer about the unit 9, from the unit's owner or the map.
+/// What can reach a viewer about the unit 9, from the unit's owner or the map. A
+/// player's removal is the owner's `Departed` of the sight its `Appears` showed; the
+/// `Later` steps are of the next sight the map gives that pair.
 pub type Step {
   Appears
+  AppearsLater
   Moves
+  MovesLater
   Removes
   MapSaysGone
 }
@@ -1681,14 +1767,37 @@ pub type Step {
 pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
   case step {
     Appears ->
-      sent_by_a_peer(news_of(unit_id: 9, news: Appeared(unit: another_unit())))
-    Moves ->
-      sent_by_a_peer(moving(
+      sent_by_a_peer(news_of(
         unit_id: 9,
+        news: Appeared(unit: another_unit(), generation: generation.first()),
+      ))
+    AppearsLater ->
+      sent_by_a_peer(news_of(
+        unit_id: 9,
+        news: Appeared(
+          unit: another_unit(),
+          generation: generation.after(generation: generation.first()),
+        ),
+      ))
+    Moves ->
+      sent_by_a_mover(moving(
+        unit_id: 9,
+        generation: generation.first(),
         server_time_ms: 7,
         commands: moved_unit_commands(),
       ))
-    Removes -> sent_by_a_peer(news_of(unit_id: 9, news: Removed))
+    MovesLater ->
+      sent_by_a_mover(moving(
+        unit_id: 9,
+        generation: generation.after(generation: generation.first()),
+        server_time_ms: 7,
+        commands: moved_unit_commands(),
+      ))
+    Removes ->
+      sent_by_a_peer(news_of(
+        unit_id: 9,
+        news: Departed(generation: generation.first()),
+      ))
     MapSaysGone -> sent_by_the_map(map.Gone(unit_id: 9))
   }
 }
@@ -1763,6 +1872,7 @@ pub fn watched_by(
         by: ConnectionId(viewer),
         stay: viewer_stay(viewer),
         unit_id: viewer_unit_id(viewer),
+        generation: viewer_sight(viewer),
       )),
     ).0
   })
@@ -3347,6 +3457,74 @@ pub fn casts_left_answered(
   }
 }
 
+/// The step of a press (0x009A) of the bag index with the client's cast id, at the unit
+/// `target` (0 for none), at the monotonic time `ms`.
+pub fn pressed_at(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  client_cast_id client_cast_id: Int,
+  target target: Int,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(
+    state:,
+    ms:,
+    event: OwnEvent(
+      step.Read(world_message(
+        message_id: 0x009A,
+        body: cast_support.press_body(
+          client_cast_id:,
+          bag_index:,
+          target:,
+          press: 1,
+        ),
+      )),
+    ),
+  )
+}
+
+/// Phantasmal Armor (Spell4Base 19033, an Esper's at level 6; the tables need the
+/// SpellLevel row that gives it) pressed at 1000 ms at the player of connection
+/// `ally_connection`, unit `ally_unit`, which the caster's connection shows: the connection
+/// after the press, with connection 2 among its viewers, and the press's step.
+pub fn armor_pressed_at_the_ally(
+  tables tables: store_tables.Tables,
+  ally_connection ally_connection: Int,
+  ally_unit ally_unit: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) =
+    entered_at_level(
+      settings: Settings(..settings(), tables:),
+      class_id: 3,
+      level: 6,
+      saved_health: None,
+    )
+  let bag_index = bag_index_of(tables:, class_id: 3, level: 6, ability: 19_033)
+  let state = watched_by(state:, viewers: [2])
+  let #(state, _) =
+    feed(
+      state:,
+      event: sent_by_the_map(SeenBy(
+        by: ConnectionId(ally_connection),
+        stay: viewer_stay(ally_connection),
+        unit_id: ally_unit,
+        generation: viewer_sight(ally_connection),
+      )),
+    )
+  let #(state, _) =
+    feed(
+      state:,
+      event: sent_by_a_peer(news_of(
+        unit_id: ally_unit,
+        news: Appeared(
+          unit: UnitCreatePlayer(..another_unit(), unit_id: ally_unit),
+          generation: generation.first(),
+        ),
+      )),
+    )
+  pressed_at(state:, bag_index:, client_cast_id: 1, target: ally_unit, ms: 1000)
+}
+
 /// A press of the bag index at `ms`, and the cast timers it leads to up to
 /// `until_ms`, each step answered by `answer`: the connection, the world and every
 /// step taken.
@@ -3360,21 +3538,7 @@ pub fn pressed_until_answered(
   answer answer: Answering(world),
 ) -> #(game_connection.State, world, List(ConnectionStep(Request))) {
   let #(state, pressed) =
-    at(
-      state:,
-      ms:,
-      event: OwnEvent(
-        step.Read(world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id:,
-            bag_index:,
-            target: 0,
-            press: 1,
-          ),
-        )),
-      ),
-    )
+    pressed_at(state:, bag_index:, client_cast_id:, target: 0, ms:)
   let #(world, state, steps) = answer(world, state, ms, pressed)
   casts_run_answered(
     state:,
@@ -3621,6 +3785,7 @@ pub fn spellslinger_holding_a_salve_on_the_ally() -> #(
         by: ConnectionId(3),
         stay: viewer_stay(3),
         unit_id: 9,
+        generation: generation.first(),
       )),
     )
   let #(state, _) = feed(state:, event: event_of(Appears))

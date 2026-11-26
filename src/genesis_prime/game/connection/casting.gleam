@@ -2238,7 +2238,7 @@ pub fn creature_news_frames(
     | unit_news.CameBackLogged
     | unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
-    | unit_news.Moving(..)
+    | unit_news.Departed(..)
     | unit_news.Removed
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)
@@ -2257,6 +2257,8 @@ pub fn creature_news_frames(
     | unit_news.Shield(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.InterruptArmor(..)

@@ -27,15 +27,15 @@ import genesis_prime/connection/network_message
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/held_changes.{type PlayerChange}
+import genesis_prime/game/move_stamp
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
   type PlayerStrike,
 }
-import genesis_prime/game/unit_news.{type PeerNews, Moving, PeerNews}
+import genesis_prime/game/unit_news.{type PeerNews}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
-import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -115,12 +115,23 @@ pub type Request {
   /// that player's stay `stay`, as the map's `SeenBy` named it. Never asked, and
   /// never told to a map.
   TellPeer(stay: Stay, news: PeerNews)
+  /// What a `Tell` effect sends the connection of a player who sees this one
+  /// (genesis_prime/step `Connection`): a chunk of this player's move, for that
+  /// player's stay `stay` and the generation of the relation, which the mover's copy of
+  /// its viewers holds (genesis_prime/game/move_stamp). The only message of a player's
+  /// move: no map carries one. Never asked, and never told to a map.
+  TellMove(stay: Stay, move: move_stamp.Move)
   /// What a `Tell` effect sends the connection of another player, or every
   /// connection of a zone channel, or the connection that holds a character's
   /// name (genesis_prime/step `Connection`, `ZoneChannel`, `CharacterNamed`): a
   /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
+  /// What a `Tell` effect sends the connection of a player who sees the speaker
+  /// (genesis_prime/step `Connection`): a chat line (`Said`) for that player's stay
+  /// `stay`, as the map's `SeenBy` named it, so that a line queued across a re-entry of
+  /// the same run is dropped at the connection. Never asked, and never told to a map.
+  TellLine(stay: Stay, tell: ChatTell)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player
   /// of `connection`, in its stay `stay`, tells the creature `unit_id` of life `life`
   /// `payload`, a strike, a move, an answer or an effect of its casts
@@ -162,22 +173,6 @@ pub type PlayerTell {
   Event(event: PlayerEvent)
 }
 
-/// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
-const most_commands_in_a_message = 31
-
-/// The news a move is sent as: its `commands` in order, at most 31 to a message,
-/// and none for no command.
-pub fn peer_moves(
-  unit_id unit_id: Int,
-  server_time_ms server_time_ms: Int,
-  commands commands: List(RelayedMovement),
-) -> List(PeerNews) {
-  list.sized_chunk(commands, most_commands_in_a_message)
-  |> list.map(fn(chunk) {
-    PeerNews(unit_id:, news: Moving(server_time_ms:, commands: chunk))
-  })
-}
-
 /// What comes back from an ask, by the process asked.
 pub type Answer {
   FromStore(answer: store.Answer)
@@ -211,6 +206,12 @@ pub type StaySent {
   /// What the connection of another player, or a creature's process, sends it:
   /// news of the unit it owns (genesis_prime/game/connection).
   SentByPeer(news: PeerNews)
+  /// What the connection of another player sends it of that player's move, stamped
+  /// with the generation of the sight (genesis_prime/game/move_stamp).
+  SentByMove(move: move_stamp.Move)
+  /// What the connection of a player this one's player sees tells it: a chat line
+  /// (`Said`) for this stay, written by the chat feature (genesis_prime/game/chat).
+  SentByLine(tell: ChatTell)
   /// What a creature that fights this connection's player sends it: that it
   /// threatens or releases the player, or its strike
   /// (genesis_prime/game/player_life).

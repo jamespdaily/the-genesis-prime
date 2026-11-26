@@ -47,7 +47,7 @@ import genesis_prime/game/proc
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
 import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{Removed}
+import genesis_prime/game/unit_news.{Departed}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -437,6 +437,7 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
           by: step.ConnectionId(3),
           stay: connection_support.viewer_stay(3),
           unit_id: connection_support.viewer_unit_id(3),
+          generation: connection_support.viewer_sight(3),
         )),
         a_change_told(from: 3, ends: False),
         a_change_told(from: 3, ends: True),
@@ -1407,23 +1408,26 @@ pub fn go_in_the_same_world_moves_the_unit_the_client_sees_test() -> Nil {
       z: float32.to_bits(200.0),
       blends: 0,
     )
+  let sights =
+    dev_support.sights_the_map_gave(class_id: 4, level: 3, experience: 1800)
   list.each([2, 3, 4, 5], fn(viewer) {
-    assert list.contains(connection_support.peer_tells(taken), #(
-      viewer,
-      connection_support.moving(
-        unit_id: connection_support.own_unit_id,
-        server_time_ms: 1000,
-        commands: [
-          relayed_movement.Position(at_the_place),
-          relayed_movement.Rotation(MovementRotation(
-            yaw: 0,
-            pitch: 0,
-            roll: 0,
-            blends: 0,
-          )),
-        ],
-      ),
-    ))
+    assert list.any(connection_support.move_tells(taken:), fn(tell) {
+      tell.0 == viewer
+      && tell.1 == connection_support.viewer_stay(viewer)
+      && tell.2.unit_id == connection_support.own_unit_id
+      && list.key_find(sights, viewer) == Ok(tell.2.generation)
+      && tell.2.server_time_ms == 1000
+      && tell.2.commands
+      == [
+        relayed_movement.Position(at_the_place),
+        relayed_movement.Rotation(MovementRotation(
+          yaw: 0,
+          pitch: 0,
+          roll: 0,
+          blends: 0,
+        )),
+      ]
+    })
       as "opcode.0x638: each watcher is sent the unit's move to the commanded position, at the facing the player has, so its client places the unit there"
   })
   let assert [granted] =
@@ -1491,9 +1495,14 @@ pub fn go_to_another_world_enters_it_and_the_first_maps_watcher_sees_the_unit_le
       experience: 1800,
     )
   let #(state, leaving) = dev_support.said(state:, text: "!go 8300")
+  let sights =
+    dev_support.sights_the_map_gave(class_id: 4, level: 3, experience: 1800)
   list.each([2, 3, 4, 5], fn(viewer) {
-    assert connection_support.news_told(taken: leaving, viewer:) == [Removed]
-      as "the unit's 0x355: each watcher of the first map is told the unit is gone"
+    assert case connection_support.news_told(taken: leaving, viewer:) {
+      [Departed(generation:)] -> list.key_find(sights, viewer) == Ok(generation)
+      _ -> False
+    }
+      as "the unit's 0x355: each watcher of the first map is told the unit is gone, for the sight the map gave it"
   })
   let #(first_map, left, held) =
     connection_support.mapped_logging(map_state: first_map, taken: leaving)

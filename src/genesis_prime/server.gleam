@@ -103,10 +103,10 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByChat, SentByFoe, SentByKill, SentByMap, SentByPeer, SentByPlayer,
-  SentBySessions, SentByTarget, TellChat, TellCreature, TellLifeChanged,
-  TellMoved, TellPeer, TellPlayer, TellReady, TellReleased, TellStealthChanged,
-  TellVisibilityChanged,
+  SentByChat, SentByFoe, SentByKill, SentByLine, SentByMap, SentByMove,
+  SentByPeer, SentByPlayer, SentBySessions, SentByTarget, TellChat, TellCreature,
+  TellLifeChanged, TellLine, TellMove, TellMoved, TellPeer, TellPlayer,
+  TellReady, TellReleased, TellStealthChanged, TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -371,7 +371,9 @@ fn directory(settings: Settings) -> Directory {
       | TellVisibilityChanged(..)
       | TellReleased(..)
       | TellPeer(..)
+      | TellMove(..)
       | TellChat(..)
+      | TellLine(..)
       | TellCreature(..)
       | TellPlayer(..) -> Error(Nil)
     }
@@ -478,6 +480,8 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellVisibilityChanged(..)
     | TellReleased(..)
     | TellPeer(..)
+    | TellMove(..)
+    | TellLine(..)
     | TellCreature(..)
     | TellPlayer(..)
     | AskStore(..)
@@ -544,7 +548,9 @@ pub fn tell_the_run(
       Nil
     }
     TellPeer(..)
+    | TellMove(..)
     | TellChat(..)
+    | TellLine(..)
     | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
@@ -562,10 +568,11 @@ pub fn tell_the_run(
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
-/// registry as `SentByPeer` for the viewer's stay (`ForStay`), a tell to another
+/// registry as `SentByPeer` for the viewer's stay (`ForStay`), a player's move
+/// (`TellMove`) as `SentByMove`, a tell to another
 /// connection's player (`TellPlayer`: a caster's heal rows, its held change or the
-/// healed player's answer) as `SentByPlayer`, each for the stay the request names, and a
-/// chat tell (`TellChat`) as `SentByChat`, by the
+/// healed player's answer) as `SentByPlayer`, a chat line (`TellLine`) as `SentByLine`, each for the stay the request
+/// names, and any other chat tell (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). Any other request is no
 /// tell to a connection: a rule that sends one has a bug, logged as an error, and nothing
 /// is sent. A creature is told by its map alone (`map_reach`).
@@ -578,8 +585,12 @@ fn connection_deliver(
     case request, to {
       TellPeer(stay:, news:), _ ->
         reach.send(to, ForStay(stay:, sent: SentByPeer(news:)))
+      TellMove(stay:, move:), _ ->
+        reach.send(to, ForStay(stay:, sent: SentByMove(move:)))
       TellPlayer(stay:, tell:), _ ->
         reach.send(to, ForStay(stay:, sent: SentByPlayer(tell:)))
+      TellLine(stay:, tell:), _ ->
+        reach.send(to, ForStay(stay:, sent: SentByLine(tell:)))
       TellChat(tell:), _ -> chat_reach.send(to, tell)
       TellCreature(..), _
       | TellMoved(..), _

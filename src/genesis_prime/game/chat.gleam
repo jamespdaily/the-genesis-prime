@@ -10,7 +10,7 @@
 ////
 //// ```
 ////                 say / yell / emote                       zone                                          whisper
-//// speaker conn ─ Tell each viewer ─▶ viewer conns    ─ Tell ZoneChannel(run, top) ─▶ each member conn   ─ Watch + Tell CharacterNamed(n) ─▶ target conn
+//// speaker conn ─ TellLine each viewer ─▶ viewer conns    ─ Tell ZoneChannel(run, top) ─▶ each member conn   ─ Watch + Tell CharacterNamed(n) ─▶ target conn
 ////  writes 0x1c2 itself                writes 0x1c8      (a pg group each conn joins)   writes 0x1c8          writes 0x1c8, Tells the speaker Heard
 ////                                                                                                         the speaker writes 0x1c2, or 0x1d9 on WatchEnded
 //// ```
@@ -20,7 +20,7 @@
 //// ```
 //// speaker client       speaker conn                       viewer conn                        viewer client
 //// 0x1c3 (t,0) id n  ─▶ checks pass (t = 4, 5 or 8)
-////                      Tell(each viewer, Said(line))  ─▶ same map run? write 0x1c8 (t,0) ─▶ shows the line; a bubble on 4 and 5 if it holds the unit
+////                      TellLine(each viewer, its stay, Said(line)) ─▶ same stay? write 0x1c8 (t,0) ─▶ shows the line; a bubble on 4 and 5 if it holds the unit
 ////                  ◀── 0x1c2 id n, own name, own unit
 //// ```
 ////
@@ -197,6 +197,8 @@
 //// | Two players whisper each other at once | both are tells | neither waits |
 //// | Say: a viewer has just been `Unwatched`, or has ended | the tell may still be sent | dropped by the VM, or written: channel (t, 0) is always held |
 //// | Say: a viewer is in another map run | the line names the run | dropped |
+//// | Say: a viewer re-entered the same run before the line arrived | the line names the viewer's stay when the speaker told it, and a new entry is a new stay | dropped by the stay fence |
+//// | Say: a viewer is waiting on an ask (a save) when the line arrives | the line waits with the connection's other held news | written after the ask's answer if the player is in the world again and its stay still the line's, bounded by the ask's deadline; dropped with the session otherwise |
 //// | Zone: a zone change races a zone line | the speaker's tell read the group's members before a member's `LeaveGroup` took effect | the member gets the line, sees it is for another top zone or run than its own now, and drops it. A member that joined just after the read misses the line. Both are stated |
 //// | Zone: the speaker's own top zone changes as it speaks | the line is told to the group of the top zone it held when it took the 0x1c3 | the line reaches that zone; the change is the next input |
 //// | Zone: camp | `LeaveGroup` in the step that starts the camp's leave | no zone line reaches it after the leave; a new entry joins again |
@@ -236,12 +238,12 @@ import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
 import genesis_prime/table/id.{ChatChannelId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/result
-import gleam/set.{type Set}
 import gleam/string
 
 /// The chat messages of the player in the world, which the client sends inside
@@ -260,6 +262,10 @@ pub type Effect {
   Send(frame: Frame)
   /// Tell the process at `to` a chat tell (genesis_prime/step `Tell`).
   Tell(to: Address, tell: Tell)
+  /// Tell the connection `to` of a player who sees the speaker a line (`Said`) for that
+  /// player's stay `stay`, so that a line queued across a re-entry of the same run is
+  /// dropped at the connection (genesis_prime/client_connection `TellLine`).
+  TellLine(to: ConnectionId, stay: Stay, tell: Tell)
   /// Tell the process the open watch `watch` found, through that watch
   /// (genesis_prime/step `TellWatched`): a whisper to its target.
   TellWatched(watch: WatchId, tell: Tell)
@@ -460,7 +466,7 @@ fn zone_joined_frame() -> Frame {
 
 /// What one chat message of the client does: its body is decoded and the line or
 /// the whisper is answered, told to its readers or refused. `viewers` are the
-/// connections whose players see this one, `realm_name` the server's own,
+/// connections whose players see this one, each with the stay it is in, `realm_name` the server's own,
 /// `tables` the client's ChatChannel rows, and `dev_commands` whether a Say line
 /// that starts with `!` is a development command
 /// (genesis_prime/game/dev_command). A body the client's reader would refuse is
@@ -469,7 +475,7 @@ pub fn take(
   chat chat: Chat,
   message message: Message,
   body body: BitArray,
-  viewers viewers: Set(ConnectionId),
+  viewers viewers: List(#(ConnectionId, Stay)),
   realm_name realm_name: String,
   connection connection: ConnectionId,
   tables tables: table_store.Tables,
@@ -660,7 +666,7 @@ const unclosed_end = 65_535
 fn line_sent(
   chat chat: Chat,
   body body: BitArray,
-  viewers viewers: Set(ConnectionId),
+  viewers viewers: List(#(ConnectionId, Stay)),
   tables tables: table_store.Tables,
   dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
@@ -703,9 +709,10 @@ fn line_sent(
         Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
         ..case reach {
           Say ->
-            list.map(set.to_list(viewers), fn(viewer) {
-              Tell(
-                to: step.Connection(viewer),
+            list.map(viewers, fn(viewer) {
+              TellLine(
+                to: viewer.0,
+                stay: viewer.1,
                 tell: chat_tell.Said(speaker: chat.speaker, line:),
               )
             })

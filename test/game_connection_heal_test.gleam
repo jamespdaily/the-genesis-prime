@@ -55,6 +55,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store as store_tables
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{None, Some}
@@ -594,6 +595,7 @@ fn esper_with_the_notice_of_the_ally() -> #(game_connection.State, Int) {
         by: ConnectionId(3),
         stay: connection_support.viewer_stay(3),
         unit_id: 9,
+        generation: connection_support.viewer_sight(3),
       )),
     )
   #(state, bag_index)
@@ -663,9 +665,10 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: connection_support.sent_by_the_map(
-        map.UnseenBy(by: ConnectionId(3)),
-      ),
+      event: connection_support.sent_by_the_map(map.UnseenBy(
+        by: ConnectionId(3),
+        generation: connection_support.viewer_sight(3),
+      )),
     )
   let #(_, unseen) = press(state, 30_000, 9)
   assert list.map(
@@ -803,9 +806,10 @@ pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answ
   let #(unseen, _) =
     connection_support.feed(
       state: unseen,
-      event: connection_support.sent_by_the_map(
-        map.UnseenBy(by: ConnectionId(3)),
-      ),
+      event: connection_support.sent_by_the_map(map.UnseenBy(
+        by: ConnectionId(3),
+        generation: connection_support.viewer_sight(3),
+      )),
     )
   let #(_, gone) = fired_when_due(state: unseen, pressed:, pressed_at_ms: 2000)
   assert list.flat_map(gone, connection_support.player_strikes) == []
@@ -894,20 +898,27 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
     #(start_place.x(place), start_place.y(place), start_place.z(place))
   }
   let walked =
-    news_from_the_ally(
+    connection_support.feed(
       state:,
-      news: unit_news.Moving(server_time_ms: 7, commands: [
-        relayed_movement.Position(UnitPositionCommand(
-          x: float32.to_bits(x +. 60.0),
-          y: float32.to_bits(y),
-          z: float32.to_bits(z),
-          blends: 1,
-        )),
-      ]),
-    )
+      event: connection_support.sent_by_a_mover(
+        connection_support.moving(
+          unit_id: 9,
+          generation: generation.first(),
+          server_time_ms: 7,
+          commands: [
+            relayed_movement.Position(UnitPositionCommand(
+              x: float32.to_bits(x +. 60.0),
+              y: float32.to_bits(y),
+              z: float32.to_bits(z),
+              blends: 1,
+            )),
+          ],
+        ),
+      ),
+    ).0
   let #(_, keyed) = key_down_at(state: walked, bag_index:, ms: 3000, target: 9)
   assert refusals(taken: keyed) == [#(0, 105)]
-    as "a Moving news that puts the ally 60 m away: the key down is refused 105, with the client cast id 0 a 0x4db has (opcode.0x4db)"
+    as "a move of the ally that puts it 60 m away: the key down is refused 105, with the client cast id 0 a 0x4db has (opcode.0x4db)"
   assert connection_support.written_ids(keyed) == [0x07FC]
     && connection_support.peer_tells(keyed) == []
     as "no 0x7ff is written and no connection is told"
@@ -927,6 +938,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
         by: ConnectionId(4),
         stay: connection_support.viewer_stay(4),
         unit_id: 10,
+        generation: connection_support.viewer_sight(4),
       )),
     )
   let #(state, _) =
@@ -934,7 +946,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
       state:,
       event: connection_support.sent_by_a_peer(connection_support.news_of(
         unit_id: 10,
-        news: unit_news.Appeared(unit: exile),
+        news: unit_news.Appeared(unit: exile, generation: generation.first()),
       )),
     )
   let #(_, hostile) = pressed_at(state:, bag_index:, ms: 4000, target: 10)
