@@ -40,7 +40,9 @@
 //// With the word `unread`, the walkers drop each frame the server writes them unopened, as
 //// the capacity ramp's players do (`load_player.DropFrames`), so the run's own clients do not
 //// pay to decrypt and decode every 0x262 of every other player: only the probes read, and
-//// the run judges the pairs they are shown and the removals they read, not the walkers'.
+//// the run judges the pairs they are shown, not the walkers'. The probes leave without
+//// reading a removal, so an unread run fails the condition that a removal was read: it
+//// measures the map's queue and the delay, and is not a gate.
 ////
 //// Beside the walkers, `probes` clients of the real protocol join the map and send
 //// tagged moves (`genesis_prime/load_move_delay`); the run prints the delay from a
