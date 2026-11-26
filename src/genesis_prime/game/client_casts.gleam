@@ -1,6 +1,6 @@
-//// The casts a player's client holds that the player's connection must end, and who ends
-//// each: a pure record kept in `Entered`, one entry per cast id, so that a cast is in one
-//// state at a time.
+//// The casts a player's client holds, or held and saw its caster finish, that the player's
+//// connection must end or must not start again, and who ends each: a pure record kept in
+//// `Entered`, one entry per cast id, so that a cast is in one state at a time.
 ////
 //// ```
 //// caster's create or 0x7ff      ─▶ written(cast, caster's unit)      the caster's frames end it
@@ -11,6 +11,8 @@
 //// the caster shown again, listing an orphaned cast
 ////                                ─▶ written(cast, caster's unit)      the caster's finish or the ledger's end,
 ////                                                                     whichever comes first
+//// the caster's finish of a written cast
+////                                ─▶ ended(cast, caster's unit)        the id stays taken, nothing is ended
 //// ```
 ////
 //// - **A written cast** is one its caster's connection told this client the start of: the
@@ -110,9 +112,10 @@ pub fn is_written(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   }
 }
 
-/// Whether the client holds the cast in any state: written by its caster, borrowed from an
-/// ally, held with no caster or listed again by its caster. A cast the client holds is not
-/// started again (`opcode.0x7ff`: a cast id already live restarts that cast).
+/// Whether the cast id is taken in the ledger: the client holds the cast (written by its
+/// caster, borrowed from an ally, held with no caster or listed again by its caster), or its
+/// caster's finish ended it (`finished`). A cast id taken is not started again
+/// (`opcode.0x7ff`: a cast id already live restarts that cast).
 pub fn is_held(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   dict.has_key(casts.holds, cast_id)
 }

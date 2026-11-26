@@ -1957,6 +1957,37 @@ fn lists(
   )
 }
 
+/// The start of the cast `cast_id` of `caster` that the ally `unit_id` tells the viewer.
+fn the_allys_start(
+  unit_id unit_id: Int,
+  cast_id cast_id: Int,
+  caster caster: Int,
+) -> step.Event(
+  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+) {
+  from_unit(unit_id:, news: held_cast_started(cast_id:, caster:))
+}
+
+/// The end of the cast `cast_id` that the ally `unit_id` tells the viewer.
+fn the_allys_end(
+  unit_id unit_id: Int,
+  cast_id cast_id: Int,
+) -> step.Event(
+  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+) {
+  from_unit(unit_id:, news: unit_news.HeldCastEnded(cast_id:))
+}
+
+/// The finish of the cast `cast_id` that its caster `unit_id` tells the viewer.
+fn the_casters_finish(
+  unit_id unit_id: Int,
+  cast_id cast_id: Int,
+) -> step.Event(
+  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+) {
+  from_unit(unit_id:, news: CastFinished(cast_id:))
+}
+
 /// The start of the cast `cast_id` that its caster's own connection tells the viewer.
 fn the_casters_start(
   cast_id cast_id: Int,
@@ -1996,11 +2027,10 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
       unit_id: ally,
       news: created_listing(unit_id: ally, casts: listed),
     )
-  let ally_ends =
-    from_unit(unit_id: ally, news: unit_news.HeldCastEnded(cast_id:))
+  let ally_ends = the_allys_end(unit_id: ally, cast_id:)
   let caster_appears = appears(unit_id: caster)
   let caster_starts = the_casters_start(cast_id:, caster:)
-  let caster_finishes = from_unit(unit_id: caster, news: CastFinished(cast_id:))
+  let caster_finishes = the_casters_finish(unit_id: caster, cast_id:)
   let caster_removes_the_ally =
     from_unit(
       unit_id: caster,
@@ -2073,7 +2103,7 @@ pub fn a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_c
       ],
       [
         ally_ends,
-        from_unit(unit_id: other_ally, news: unit_news.HeldCastEnded(cast_id:)),
+        the_allys_end(unit_id: other_ally, cast_id:),
       ],
       [[ended_on([ally])], [ended_on([other_ally])]],
     ),
@@ -2249,14 +2279,12 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
   let caster = 7
   let cast_id = 2_147_497_985
   let ally_appears = appears(unit_id: ally)
-  let ally_starts =
-    from_unit(unit_id: ally, news: held_cast_started(cast_id:, caster:))
-  let ally_ends =
-    from_unit(unit_id: ally, news: unit_news.HeldCastEnded(cast_id:))
+  let ally_starts = the_allys_start(unit_id: ally, cast_id:, caster:)
+  let ally_ends = the_allys_end(unit_id: ally, cast_id:)
   let ally_lists = lists(unit_id: ally, cast_id:, caster:)
   let caster_appears = appears(unit_id: caster)
   let caster_starts = the_casters_start(cast_id:, caster:)
-  let caster_finishes = from_unit(unit_id: caster, news: CastFinished(cast_id:))
+  let caster_finishes = the_casters_finish(unit_id: caster, cast_id:)
   let assert unit_news.HeldCastStarted(start:, go:) =
     held_cast_started(cast_id:, caster:)
   let written = [Started(start:), Went(go:)]
@@ -3810,7 +3838,7 @@ pub fn a_cast_the_viewer_holds_as_written_gets_its_casters_frames_a_cast_it_neve
         destroyed: False,
       ),
     ),
-    from_unit(unit_id: caster, news: CastFinished(cast_id:)),
+    the_casters_finish(unit_id: caster, cast_id:),
   ]
   let none = [[], [], [], []]
   check_written_rows(rows: [
@@ -3957,19 +3985,21 @@ pub fn a_held_cast_start_is_written_where_the_cast_is_held_in_no_state_and_its_c
   let caster = 7
   let cast_id = 2_147_497_985
   let own = game_connection_support.own_unit_id
-  let created = fn(unit_id, casts) {
-    from_unit(unit_id:, news: created_listing(unit_id:, casts:))
-  }
-  let ally_appears = created(ally, [])
-  let caster_appears = created(caster, [])
+  // Cast 1 of unit 5 and of unit 8 (`cast.cast_id`: 2^31 + unit x 2^11 + number).
+  let own_cast_id = 2_147_493_889
+  let cast_id_of_eight = 2_147_500_033
+  let ally_appears = appears(unit_id: ally)
+  let caster_appears = appears(unit_id: caster)
   let caster_starts = the_casters_start(cast_id:, caster:)
   let ally_starts = fn(cast_id, caster) {
-    from_unit(unit_id: ally, news: held_cast_started(cast_id:, caster:))
+    the_allys_start(unit_id: ally, cast_id:, caster:)
   }
   let orphan_caster = orphan_caster_unit()
   let assert unit_news.HeldCastStarted(start:, go:) =
     held_cast_started(cast_id:, caster:)
   let written = [Started(start:), Went(go:)]
+  let assert unit_news.HeldCastStarted(start: start_of_eight, go: go_of_eight) =
+    held_cast_started(cast_id: cast_id_of_eight, caster: 8)
   check_written_rows(rows: [
     #(
       "held in no state: written",
@@ -3985,7 +4015,7 @@ pub fn a_held_cast_start_is_written_where_the_cast_is_held_in_no_state_and_its_c
     ),
     #(
       "borrowed from an ally's create: dropped",
-      [created(ally, [game_connection_support.listed_cast(cast_id:, caster:)])],
+      [lists(unit_id: ally, cast_id:, caster:)],
       [ally_starts(cast_id, caster)],
       [[]],
     ),
@@ -3999,12 +4029,7 @@ pub fn a_held_cast_start_is_written_where_the_cast_is_held_in_no_state_and_its_c
       "held with no caster and listed again by its caster: dropped",
       list.append(orphaned_by_its_caster_leaving(), [
         ally_appears,
-        created(orphan_caster, [
-          game_connection_support.listed_cast(
-            cast_id: orphan_id,
-            caster: orphan_caster,
-          ),
-        ]),
+        lists(unit_id: orphan_caster, cast_id: orphan_id, caster: orphan_caster),
       ]),
       [ally_starts(orphan_id, orphan_caster)],
       [[]],
@@ -4014,7 +4039,7 @@ pub fn a_held_cast_start_is_written_where_the_cast_is_held_in_no_state_and_its_c
       [
         caster_appears,
         caster_starts,
-        from_unit(unit_id: caster, news: CastFinished(cast_id:)),
+        the_casters_finish(unit_id: caster, cast_id:),
         ally_appears,
       ],
       [ally_starts(cast_id, caster)],
@@ -4023,19 +4048,14 @@ pub fn a_held_cast_start_is_written_where_the_cast_is_held_in_no_state_and_its_c
     #(
       "the start's caster is the viewer's own unit: dropped",
       [ally_appears],
-      [ally_starts(cast_id, own)],
+      [ally_starts(own_cast_id, own)],
       [[]],
     ),
     #(
       "control: a caster that is not the viewer's own unit, held in no state, is written",
       [ally_appears],
-      [ally_starts(cast_id, 8)],
-      [
-        [
-          Started(start: spell_started.SpellStarted(..start, caster_unit_id: 8)),
-          Went(go:),
-        ],
-      ],
+      [ally_starts(cast_id_of_eight, 8)],
+      [[Started(start: start_of_eight), Went(go: go_of_eight)]],
     ),
   ])
 }
@@ -4043,7 +4063,9 @@ pub fn a_held_cast_start_is_written_where_the_cast_is_held_in_no_state_and_its_c
 /// `cast.target_node_end`: a cast its caster finished at the viewer is held as ended, so
 /// the ally's start of the same cast, coming after the finish, writes no new cast; an ally's
 /// start that came first is dropped as the caster's start is held, and the caster's finish
-/// is then written (`opcode.0x7fe`).
+/// is then written (`opcode.0x7fe`). A viewer that came into the caster's sight after the go
+/// holds the cast as written from the caster's create, so it is written nothing of the
+/// finished cast in either order.
 pub fn a_cast_finished_at_the_viewer_before_the_allys_start_is_written_no_start_and_the_start_first_is_dropped_then_the_finish_written_test() -> Nil {
   use <- owned_test.run(10_000)
   let ally = 9
@@ -4052,12 +4074,11 @@ pub fn a_cast_finished_at_the_viewer_before_the_allys_start_is_written_no_start_
   let caster_appears = appears(unit_id: caster)
   let ally_appears = appears(unit_id: ally)
   let caster_starts = the_casters_start(cast_id:, caster:)
-  let caster_finishes = from_unit(unit_id: caster, news: CastFinished(cast_id:))
-  let ally_starts =
-    from_unit(unit_id: ally, news: held_cast_started(cast_id:, caster:))
-  let ally_ends =
-    from_unit(unit_id: ally, news: unit_news.HeldCastEnded(cast_id:))
+  let caster_finishes = the_casters_finish(unit_id: caster, cast_id:)
+  let ally_starts = the_allys_start(unit_id: ally, cast_id:, caster:)
+  let ally_ends = the_allys_end(unit_id: ally, cast_id:)
   let setup = [caster_appears, caster_starts, ally_appears]
+  let listed_setup = [ally_appears, lists(unit_id: caster, cast_id:, caster:)]
   check_written_rows(rows: [
     #(
       "the finish first: the 0x7fe is written, the ally's start is dropped, and the ally's end writes no 0x811",
@@ -4068,6 +4089,18 @@ pub fn a_cast_finished_at_the_viewer_before_the_allys_start_is_written_no_start_
     #(
       "the ally's start first: it is dropped, the caster's finish is then written, and the ally's end writes no 0x811",
       setup,
+      [ally_starts, caster_finishes, ally_ends],
+      [[], [Finished(cast_id:)], []],
+    ),
+    #(
+      "a viewer that came after the go, the caster's create listing the cast, the finish first: the 0x7fe is written, the ally's start is dropped, and the ally's end writes no 0x811",
+      listed_setup,
+      [caster_finishes, ally_starts, ally_ends],
+      [[Finished(cast_id:)], [], []],
+    ),
+    #(
+      "a viewer that came after the go, the caster's create listing the cast, the ally's start first: it is dropped, the caster's finish is then written, and the ally's end writes no 0x811",
+      listed_setup,
       [ally_starts, caster_finishes, ally_ends],
       [[], [Finished(cast_id:)], []],
     ),
@@ -4083,32 +4116,28 @@ pub fn a_caster_that_died_between_its_go_and_the_allys_start_is_written_nothing_
   use <- owned_test.run(10_000)
   let ally = 9
   let own = game_connection_support.own_unit_id
+  // Cast 1 of unit 5 (the viewer's own) and of unit 7 (`cast.cast_id`: 2^31 + unit x 2^11 + number).
+  let own_cast_id = 2_147_493_889
   let cast_id = 2_147_497_985
   let ally_lists_the_viewers_own_cast =
-    from_unit(
-      unit_id: ally,
-      news: created_listing(unit_id: ally, casts: [
-        game_connection_support.listed_cast(cast_id:, caster: own),
-      ]),
-    )
-  let ally_starts = fn(caster) {
-    from_unit(unit_id: ally, news: held_cast_started(cast_id:, caster:))
+    lists(unit_id: ally, cast_id: own_cast_id, caster: own)
+  let ally_starts = fn(cast_id, caster) {
+    the_allys_start(unit_id: ally, cast_id:, caster:)
   }
-  let ally_ends =
-    from_unit(unit_id: ally, news: unit_news.HeldCastEnded(cast_id:))
+  let ally_ends = the_allys_end(unit_id: ally, cast_id: own_cast_id)
   let assert unit_news.HeldCastStarted(start:, go:) =
     held_cast_started(cast_id:, caster: 7)
   check_written_rows(rows: [
     #(
       "the ally's create dropped the viewer's own cast and its start names the viewer as caster: none is written, and the ally's end writes no 0x811",
       [ally_lists_the_viewers_own_cast],
-      [ally_starts(own), ally_ends],
+      [ally_starts(own_cast_id, own), ally_ends],
       [[], []],
     ),
     #(
       "control: the same start of another player's cast, with the ledger holding nothing, is written",
       [ally_lists_the_viewers_own_cast],
-      [ally_starts(7)],
+      [ally_starts(cast_id, 7)],
       [[Started(start:), Went(go:)]],
     ),
   ])

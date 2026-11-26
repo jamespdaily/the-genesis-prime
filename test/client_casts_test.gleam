@@ -79,8 +79,8 @@ pub fn a_finished_written_cast_is_an_ended_hold_that_counts_for_is_held_not_for_
     ),
     #(
       "a new start of the reused id replaces the ended hold",
-      client_casts.written(casts: ended, cast_id:, caster_unit_id: 8),
-      Held(True, True, False, [], [], False),
+      client_casts.written(casts: ended, cast_id:, caster_unit_id: caster),
+      Held(True, True, False, [cast_id], [], False),
     ),
     #(
       "a create that lists the id as an ally's replaces it by a borrowed cast",

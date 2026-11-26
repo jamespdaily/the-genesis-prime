@@ -262,8 +262,7 @@ pub fn a_line_carries_the_viewers_stay_and_one_queued_across_a_same_run_re_entry
 
 /// A line for the viewer's current stay that arrives while an ask the connection made
 /// (the periodic place save) is out is held and written when the answer returns the
-/// player to the world, where a line told to a player the ask had taken out of the world
-/// was dropped. The line's stay is the fence either way (`stay_sent`).
+/// player to the world. The line's stay is the fence either way (`stay_sent`).
 pub fn a_line_for_the_viewers_stay_that_arrives_during_the_place_save_is_held_and_written_after_it_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, saving) =

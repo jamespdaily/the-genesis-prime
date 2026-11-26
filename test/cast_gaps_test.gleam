@@ -233,7 +233,7 @@ fn limits() -> List(Limit) {
         "borrowed", "client_casts", "the start the player tells",
         "no_spell_that_lands_a_change_on_another_player_and_restricts_its_caster_has_a_second_go_test",
       ],
-      "a cast a viewer borrowed from a player's create or from the start the player tells is ended by that player alone, and the whole-table check that no spell landing a change on a player has a second go is named",
+      "a cast a viewer borrowed from a player's create or from the start the player tells is ended by that player alone, and the whole-table check that no spell landing a change on a player and restricting its caster has a second go is named",
     ),
     Limit(
       connection_landing.gaps(),

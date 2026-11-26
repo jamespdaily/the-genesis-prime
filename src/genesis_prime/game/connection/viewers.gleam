@@ -133,8 +133,8 @@
 ////
 ////   ```
 ////   ally T's create lists cast X of caster C ─▶ viewer: C told it X? no: X is borrowed from T
-////   T's go-time tell HeldCastStarted(0x7ff, 0x7f4) ─▶ T shown and X held in no state? write both,
-////                                                     borrow X from T
+////   T's go-time tell HeldCastStarted(0x7ff, 0x7f4) ─▶ T shown, X held in no state and its caster not
+////                                                     the viewer's own unit? write both, borrow X from T
 ////   T's last source of X ends ─▶ Tell(each viewer, HeldCastEnded(X)) ─▶ borrowed? 0x811 {X, [T]}
 ////   ```
 ////
@@ -145,7 +145,8 @@
 ////     restarts a cast id that is live (`opcode.0x7ff`), so one sender wins and the other's
 ////     start is dropped. A viewer that does not show the caster makes the cast too
 ////     (`cast.unknown_caster`).
-////   - The viewer's own ledger alone decides which frames of a cast it writes. A caster's go,
+////   - The viewer's own ledger decides which frames of a cast it writes, from the news the
+////     caster's audience lets reach it. A caster's go,
 ////     tick, finish and 0x811 are written for a cast held as written; a caster's 0x87f is
 ////     written for a cast held as written and its 0x880 for an instance the viewer's picture
 ////     holds, so a viewer that came after the 0x87f is written no 0x880 of it. A creature's
