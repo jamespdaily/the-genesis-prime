@@ -13,40 +13,65 @@
 //// - **The query** is `sql/load_creature_kinds.sql`, run by the load's own pool
 ////   before the tree starts; nothing queries the table during play.
 
-import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
 import genesis_prime/content/sql
 import genesis_prime/table/loader/store.{type Key}
-import genesis_prime/world_map/creature_kind.{type Kinds, type Row, Row}
+import genesis_prime/world_map/creature_kind.{
+  type Kinds, type Row, GuardSpells, Row,
+}
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/result
 import pog
 
 /// The table's name in the log and in a term.
 pub const table = "creature_kind"
 
-/// Every row of the creature_kind table, in creature id order, or why the query
-/// failed.
-pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
-  sql.load_creature_kinds(db)
-  |> result.map(fn(returned) {
-    list.map(returned.rows, fn(row) {
-      let assert Ok(row) = row_of(row:) as "a stub"
-      row
-    })
-  })
+/// Why the creature_kind rows were not read.
+pub type RowsError {
+  /// The query failed.
+  QueryFailed(reason: pog.QueryError)
+  /// Rows the table's checks would have refused: each names its creature.
+  RowsRefused(refusals: List(Refusal))
+}
+
+/// Every row of the creature_kind table, in creature id order, or why they were not
+/// read: the query failed, or rows hold a guard without an opening or an opening
+/// without a guard (`row_of`), every such row named.
+pub fn rows(db db: pog.Connection) -> Result(List(Row), RowsError) {
+  use returned <- result.try(
+    sql.load_creature_kinds(db) |> result.map_error(QueryFailed),
+  )
+  let #(rows, refusals) =
+    list.map(returned.rows, row_of)
+    |> result.partition
+  case refusals {
+    [] -> Ok(list.reverse(rows))
+    refusals -> Error(RowsRefused(refusals: list.reverse(refusals)))
+  }
 }
 
 /// The row the query returned, or the refusal of a row with a guard and no opening
-/// or an opening and no guard.
+/// or an opening and no guard (`creature_kind_guard_and_opening_together`).
 pub fn row_of(row row: sql.LoadCreatureKindsRow) -> Result(Row, Refusal) {
-  Ok(Row(
+  use guard <- result.map(case row.guard_spell4_id, row.opening_spell4_id {
+    Some(guard_spell4_id), Some(opening_spell4_id) ->
+      Ok(Some(GuardSpells(guard_spell4_id:, opening_spell4_id:)))
+    None, None -> Ok(None)
+    Some(..), None | None, Some(..) ->
+      Error(Refusal(
+        table:,
+        row: RowId(row.creature_id),
+        rule: "a guard and an opening are both set or both left out",
+      ))
+  })
+  Row(
     creature_id: row.creature_id,
     respawn_ms: row.respawn_ms,
     attack_spell4_id: row.attack_spell4_id,
     attack_interval_ms: row.attack_interval_ms,
-    guard_spell4_id: row.guard_spell4_id,
-    opening_spell4_id: row.opening_spell4_id,
-  ))
+    guard:,
+  )
 }
 
 /// Writes the kinds under the key, once.

@@ -560,15 +560,20 @@ fn kinds_selected(
   db db: pog.Connection,
   tables tables: store.Tables,
 ) -> Result(Result(creature_kind.Kinds, List(refusal.Refusal)), pog.QueryError) {
-  use kind_rows <- result.try(content_creature_kind.rows(db))
-  use special_rows <- result.try(content_creature_special.rows(db))
-  use auto_attack_rows <- result.map(content_creature_auto_attack.rows(db))
-  creature_kind.select(
-    rows: kind_rows,
-    special_rows:,
-    auto_attack_rows:,
-    tables:,
-  )
+  case content_creature_kind.rows(db) {
+    Error(content_creature_kind.QueryFailed(reason:)) -> Error(reason)
+    Error(content_creature_kind.RowsRefused(refusals:)) -> Ok(Error(refusals))
+    Ok(kind_rows) -> {
+      use special_rows <- result.try(content_creature_special.rows(db))
+      use auto_attack_rows <- result.map(content_creature_auto_attack.rows(db))
+      creature_kind.select(
+        rows: kind_rows,
+        special_rows:,
+        auto_attack_rows:,
+        tables:,
+      )
+    }
+  }
 }
 
 /// The coverage of the play database's spawns, a line for each world, or why it

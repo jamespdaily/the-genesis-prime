@@ -44,8 +44,7 @@ const default_row =
     respawn_ms: 60_000,
     attack_spell4_id: 5649,
     attack_interval_ms: 1500,
-    guard_spell4_id: option.None,
-    opening_spell4_id: option.None,
+    guard: option.None,
   )
 
 /// The auto-attack `spell4_id` of Yeti Snowstalker (Creature2 51126) at place `order_index`.
@@ -279,8 +278,7 @@ pub fn a_creature_with_a_kind_row_and_auto_attack_rows_is_refused_test() -> Nil 
       respawn_ms: 60_000,
       attack_spell4_id: 5649,
       attack_interval_ms: 1500,
-      guard_spell4_id: option.None,
-      opening_spell4_id: option.None,
+      guard: option.None,
     )
   let assert Error([
     Refusal(table: "creature_auto_attack", row: RowId(51_126), rule:),
