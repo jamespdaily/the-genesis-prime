@@ -1,7 +1,7 @@
 //// The judged-count rule. Expected values are the gates of the two load runs that decide
 //// a merge: the fight run's strike rounds, strike answers, strikes answered and respawns,
 //// its conditions that no answer was lost and that the map keeps up, and the movement
-//// run's moves read by a probe, players shown and cast frames read by a probe, with its
+//// run's moves read by a probe, players shown, removals read by a walker and the cast starts, cast ends and casts held at a probe, with its
 //// conditions that the map keeps up, that the delay is within its guard and that no frame
 //// was read after its unit's removal.
 //// Each must be judged through `genesis_prime/load_judged` (a `Judged(event: ...)` naming
@@ -36,11 +36,22 @@ const gates = [
     ["StrikeRounds", "StrikeAnswers", "StrikesAnswered", "Respawns"],
     ["nothing_lost", "map_keeps_up"],
   ),
-  #(moves_path, ["MovesRead", "PlayersShown", "CastFramesRead"], [
-    "map_keeps_up",
-    "delay_within_guard",
-    "no_frame_after_removal",
-  ]),
+  #(
+    moves_path,
+    [
+      "MovesRead",
+      "PlayersShown",
+      "RemovalsRead",
+      "CastStartsRead",
+      "CastEndsRead",
+      "CastsHeld",
+    ],
+    [
+      "map_keeps_up",
+      "delay_within_guard",
+      "no_frame_after_removal",
+    ],
+  ),
 ]
 
 /// The printed name of each event, read from the shared function.
@@ -242,7 +253,7 @@ pub fn every_gate_line_of_the_load_runs_calls_the_judged_count_test() -> Nil {
       "  let judged = load_judged.judge(judged: [], conditions: [",
       "    load_judged.map_keeps_up(queued: 0, samples: 1, running: 0, players: 1),",
       "    load_judged.delay_within_guard(p99_us: 0, baseline_p99_us: None),",
-      "    load_judged.no_frame_after_removal(violations: 0),",
+      "    load_judged.no_frame_after_removal(violations: 0, removals: 1),",
       "  ])",
       required,
       "}",

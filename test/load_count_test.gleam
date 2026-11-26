@@ -24,20 +24,28 @@
 ////   unit's 0x355 (`opcode.0x262`, `opcode.0x355`); a frame for a unit after its 0x355 and
 ////   before its next 0x262 breaks that order (`legal_order_support.check_frames`).
 //// - A cast is read as a 0x7ff, a 0x7f4 and a 0x7fe (`opcode.0x7ff`); a cast is owed a
-////   probe once it finished a settle time before the probes stopped reading.
+////   probe once it finished a settle time before the probes stopped reading. A press of the
+////   casting scene's ability writes a viewer the frames the scene owes per press, which the
+////   client's tables give (Spell4 32893 and the Proxy rows of its Spell4Effects).
 
 import character_support
+import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
   type StaySent, SentByFoe, SentByMap, SentByPeer, SentByTarget,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/spell_plan
+import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell
+import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_news.{PeerNews, Removed}
 import genesis_prime/load_deadline.{type Closure, type Deadline, Deadline}
 import genesis_prime/load_judged.{type Judged, Judged, Respawns}
 import genesis_prime/load_move_delay.{Probed}
-import genesis_prime/load_queue.{Second}
+import genesis_prime/load_player
+import genesis_prime/load_queue.{Probe, Second}
 import genesis_prime/load_respawn.{type Gaps, Gaps}
 import genesis_prime/load_round.{
   type Answer, type Closed, type Mark, type Rounds, Answer, Closed, Controlled,
@@ -49,9 +57,12 @@ import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_death_state.{UnitDeathState}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{Gone, ObjectsSeen, ObjectsUnseen, UnitUnseen}
@@ -62,6 +73,7 @@ import gleam/erlang/process.{type Pid}
 import gleam/int
 import gleam/list
 import gleam/option
+import gleam/set
 import legal_order_support
 import owned_test
 import place_support
@@ -726,7 +738,8 @@ pub fn a_walker_strikes_only_while_a_deadline_is_left_and_each_strike_it_makes_i
 pub fn the_maps_queue_is_read_by_the_second_and_a_mailbox_by_the_kind_of_its_messages_test() -> Nil {
   use <- owned_test.run(5000)
   // A queue of 3 sampled each 10 ms for 30 s, and a spike at 5.2 s: 7,750 at 5,200 ms
-  // (#1423's longest queue) and 4,000 at 5,210 ms, then 900 at 6,000 ms.
+  // (the longest queue of the 200-walker fight run) and 4,000 at 5,210 ms, then 900 at
+  // 6,000 ms.
   let series =
     list.repeat(Nil, 3000)
     |> list.index_map(fn(_, index) {
@@ -811,6 +824,60 @@ fn removed(unit_id unit_id: Int) -> Frame {
     unit_destroyed.encode(UnitDestroyed(unit_id:, chest_world_object_delay: 0))
     as "a 0x355 encodes"
   Frame(message_id: 0x0355, body:)
+}
+
+/// The 0x937 of `unit_id`.
+fn health_of(unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_health.encode(UnitHealth(unit_id:, health: 50, dead: 0))
+    as "a 0x937 encodes"
+  Frame(message_id: 0x0937, body:)
+}
+
+/// The 0x88c of `unit_id`.
+fn death_of(unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_death_state.encode(UnitDeathState(
+      unit_id:,
+      dead: 1,
+      unread_3: 0,
+      health: 0,
+    ))
+    as "a 0x88c encodes"
+  Frame(message_id: 0x088C, body:)
+}
+
+fn a_place() -> start_place.Place {
+  place_support.at(world_id: 3460, world_zone_id: 6009, x: 1.0, y: 2.0, z: 3.0)
+}
+
+/// The 0x7ff of the cast `cast_id` of the unit `caster`.
+fn cast_started(cast_id cast_id: Int, caster caster: Int) -> Frame {
+  cast_frame.started_frame(start: cast_frame.creature_started(
+    cast_id:,
+    spell4_id: 32_893,
+    caster_unit_id: caster,
+    target_unit_id: 0,
+    place: a_place(),
+    opening: telegraph_entries.none,
+  ))
+}
+
+/// The 0x7f4 of the cast `cast_id`.
+fn cast_went(cast_id cast_id: Int) -> Frame {
+  cast_frame.went_frame(
+    go: cast_frame.creature_went(
+      cast_id:,
+      phase: 0,
+      place: a_place(),
+      struck: [],
+    ),
+  )
+}
+
+/// The 0x7fe of the cast `cast_id`.
+fn cast_finished(cast_id cast_id: Int) -> Frame {
+  cast_frame.finished_frame(cast_id:)
 }
 
 /// The sight of a client whose own unit is 1, after it read the frames, the one at
@@ -919,6 +986,49 @@ pub fn a_probe_that_reads_a_frame_of_a_unit_after_its_0x355_counts_a_violation_u
       [moved(unit_id: 9, hundredths: 1)],
       0,
     ),
+    #(
+      "a 0x937 and a 0x88c after the removal are two",
+      [
+        player_created(unit_id: 7),
+        removed(unit_id: 7),
+        health_of(unit_id: 7),
+        death_of(unit_id: 7),
+      ],
+      2,
+    ),
+    #(
+      "a 0x937 of a unit still shown is none",
+      [
+        player_created(unit_id: 7),
+        player_created(unit_id: 8),
+        removed(unit_id: 7),
+        health_of(unit_id: 8),
+      ],
+      0,
+    ),
+    #(
+      "a removed caster's go and end by cast id, and a new cast of it, are three",
+      [
+        player_created(unit_id: 7),
+        cast_started(cast_id: 1, caster: 7),
+        removed(unit_id: 7),
+        cast_went(cast_id: 1),
+        cast_finished(cast_id: 1),
+        cast_started(cast_id: 2, caster: 7),
+      ],
+      3,
+    ),
+    #(
+      "the end of a cast of a unit still shown is none",
+      [
+        player_created(unit_id: 7),
+        player_created(unit_id: 8),
+        cast_started(cast_id: 1, caster: 7),
+        removed(unit_id: 8),
+        cast_finished(cast_id: 1),
+      ],
+      0,
+    ),
   ]
   list.each(rows, fn(row) {
     let #(reason, frames, violations) = row
@@ -926,6 +1036,49 @@ pub fn a_probe_that_reads_a_frame_of_a_unit_after_its_0x355_counts_a_violation_u
       == violations
       as reason
   })
+}
+
+pub fn a_client_counts_each_removal_of_a_player_it_was_shown_and_no_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows = [
+    #(
+      "two players shown, both removed",
+      [2, 3] |> list.map(player_created),
+      [2, 3],
+      2,
+    ),
+    #(
+      "a removal of a unit never created is none",
+      [player_created(unit_id: 2)],
+      [9],
+      0,
+    ),
+    #(
+      "a second removal of a player already removed is none",
+      [player_created(unit_id: 2)],
+      [2, 2],
+      1,
+    ),
+    #("a creature's removal is none", [creature_created(unit_id: 40)], [40], 0),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, created, gone, removals) = row
+    let frames = list.append(created, list.map(gone, removed))
+    assert load_sight.removals_read(
+        sights: [sight_of(frames:)],
+        of: set.from_list([2, 3, 9, 40]),
+      )
+      == removals
+      as reason
+  })
+  let both = [
+    sight_of(frames: [player_created(unit_id: 2), removed(unit_id: 2)]),
+    sight_of(frames: [player_created(unit_id: 3), removed(unit_id: 3)]),
+  ]
+  assert load_sight.removals_read(sights: both, of: set.from_list([2, 3])) == 2
+    as "the removals of the clients are added"
+  assert load_sight.removals_read(sights: both, of: set.from_list([2])) == 1
+    as "a player not among the units asked is not counted"
 }
 
 pub fn the_casting_scene_owes_each_probe_the_casts_that_finished_a_settle_time_before_the_end_test() -> Nil {
@@ -952,42 +1105,180 @@ pub fn the_casting_scene_owes_each_probe_the_casts_that_finished_a_settle_time_b
       == owed
       as reason
   })
-  let frames =
-    list.append(
-      list.map([0x07FF, 0x07F4, 0x07FE, 0x07FE], fn(message_id) {
-        Frame(message_id:, body: <<>>)
-      }),
-      [moved(unit_id: 7, hundredths: 1)],
-    )
+  // Walkers 7 and 8 and a creature 40 cast. Walker 7's press is a cast and the child cast
+  // it starts (casts 1 and 2); the sight was never told cast 99.
+  let frames = [
+    cast_started(cast_id: 1, caster: 7),
+    cast_went(cast_id: 1),
+    cast_started(cast_id: 2, caster: 7),
+    cast_finished(cast_id: 2),
+    cast_finished(cast_id: 1),
+    cast_started(cast_id: 3, caster: 8),
+    cast_finished(cast_id: 3),
+    cast_started(cast_id: 4, caster: 40),
+    cast_finished(cast_id: 4),
+    cast_finished(cast_id: 99),
+    moved(unit_id: 7, hundredths: 1),
+  ]
   let sight = sight_of(frames:)
-  assert list.map([0x07FF, 0x07F4, 0x07FE], fn(message_id) {
-      load_sight.cast_frames_read(sights: [sight], message_id:)
+  let counted_for = fn(casters) {
+    list.map([0x07FF, 0x07F4, 0x07FE], fn(message_id) {
+      load_sight.cast_frames_read(
+        sights: [sight],
+        message_id:,
+        casters: set.from_list(casters),
+      )
     })
-    == [1, 1, 2]
-    as "the cast frames are counted by kind: a start, a go and two ends; a move is no cast frame"
+  }
+  assert counted_for([7, 8]) == [3, 1, 3]
+    as "the walkers' casts by kind: three starts, a go and three ends; a move and a cast never told are none"
+  assert counted_for([7]) == [2, 1, 2]
+    as "one walker's press is two starts and two ends, the cast and its child"
+  assert counted_for([40]) == [1, 0, 1]
+    as "a creature's cast is counted for the creature and not for the walkers"
+  assert counted_for([]) == [0, 0, 0] as "no caster, no frame"
+  // The sight reads frame n at n thousand microseconds (`sight_of`).
+  assert list.sort(
+      load_sight.held_us(sights: [sight], casters: set.from_list([7, 8])),
+      int.compare,
+    )
+    == [1000, 1000, 4000]
+    as "each cast read start to end is held from its 0x7ff to its 0x7fe: casts 2, 3 and 1; the cast never told is none"
+  assert load_sight.held_us(sights: [sight], casters: set.from_list([40]))
+    == [1000]
+    as "a creature's cast is held for the creature alone"
 }
 
-pub fn a_probe_counts_a_move_it_reads_with_the_other_frames_of_a_read_whenever_the_read_is_made_test() -> Nil {
+pub fn the_pressed_ability_writes_a_viewer_the_frames_per_press_the_scene_owes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 32893, Telekinetic Strike, of Spell4Base 19102: a press with no target casts the
+  // spell and each cast it starts on the caster alone (Spell4Effects Proxy rows with no
+  // tickTime aimed at the caster, and theirs in turn), each a 0x7ff and a 0x7fe.
+  let tables = fixture_tables.shared()
+  let plans = spell_plan.plans(tables:)
+  let assert Ok(spell) =
+    spell_plan.in_plans(
+      plans:,
+      base: Spell4BaseId(load_player.pressed_spell4_base_id),
+    )
+    as "the plans hold the pressed ability"
+  assert spell.cast_time_ms == load_player.pressed_cast_ms
+    as "Spell4 32893 has castTime 1250"
+  assert casts_on_the_caster(spell:) == load_player.frames_per_press
+    as "the casts of a press, the spell's own and those it starts on its caster"
+}
+
+fn casts_on_the_caster(spell spell: spell_plan.Spell) -> Int {
+  1
+  + int.sum(
+    list.filter_map(spell.effects, fn(effect) {
+      case spell_plan.as_proxy(effect.kind) {
+        Ok(proxy)
+          if proxy.target == spell_plan.OnCaster && proxy.period == option.None
+        -> Ok(casts_on_the_caster(spell: proxy.spell))
+        _ -> Error(Nil)
+      }
+    }),
+  )
+}
+
+pub fn a_probe_waiting_for_the_others_keeps_every_frame_of_the_reads_it_makes_test() -> Nil {
   use <- owned_test.run(5000)
   // A probe reads its socket from its entry on, also while it waits for the others to
   // be in the world; the first move of a probe that began to send reaches it then, among
-  // the frames of a read, and is as much a move it read as one read later.
+  // the frames of a read, and is as much a move it read as one read later. The deadline is
+  // already past, so the probe reads once, as it does at its end.
   let probed = Probed(unit_id: 10, sent_us: dict.new(), seen: [])
-  let #(probed, sight) =
-    load_move_delay.taken(
+  let #(_have, probed, sight) =
+    load_move_delay.read_until(
+      poll: fn(have, _wait_ms) {
+        #(
+          [
+            player_created(unit_id: 20),
+            moved(unit_id: 20, hundredths: 1),
+            cast_started(cast_id: 5, caster: 20),
+            moved(unit_id: 30, hundredths: 0),
+          ],
+          have,
+        )
+      },
+      have: <<>>,
+      until_us: load_sample.microseconds(),
       probed:,
       sight: load_sight.new(own_unit_id: 10),
-      frames: [
-        player_created(unit_id: 20),
-        moved(unit_id: 20, hundredths: 1),
-        Frame(message_id: 0x07FF, body: <<>>),
-        moved(unit_id: 30, hundredths: 0),
-      ],
     )
   assert list.map(probed.seen, fn(seen) { #(seen.0, seen.1) }) == [#(20, 1)]
     as "the probe's step 1 is among the moves read, the walker's move is not"
   assert load_sight.players_shown(sights: [sight]) == 1
     as "the player created in the same read is shown"
-  assert load_sight.cast_frames_read(sights: [sight], message_id: 0x07FF) == 1
+  assert load_sight.cast_frames_read(
+      sights: [sight],
+      message_id: 0x07FF,
+      casters: set.from_list([20]),
+    )
+    == 1
     as "the cast frame of the same read is counted"
+}
+
+pub fn a_player_that_keeps_no_sight_opens_none_of_the_frames_it_is_written_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The capacity ramp's players use no sight, and at thousands of players in sight of each
+  // other opening every frame costs the clients more than the server's work they measure.
+  let outers = [player_created(unit_id: 2), player_created(unit_id: 3)]
+  assert load_player.read_into(
+      open: fn(_) { panic as "a player that keeps no sight opened a frame" },
+      sight: option.None,
+      outers:,
+    )
+    == option.None
+    as "no sight is kept, and no frame opened"
+  let assert option.Some(sight) =
+    load_player.read_into(
+      open: fn(outers) { outers },
+      sight: option.Some(load_sight.new(own_unit_id: 1)),
+      outers:,
+    )
+    as "a player that keeps a sight reads each frame into it"
+  assert load_sight.players_shown(sights: [sight]) == 2
+    as "both players are shown"
+}
+
+pub fn the_maps_reductions_are_taken_between_the_samples_a_window_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Samples each 10 ms of a map that spent 1,000 reductions at 0 ms and 100 more each
+  // sample.
+  let probe =
+    Probe(
+      longest: 0,
+      sum: 0,
+      samples: 0,
+      running: 0,
+      series: [],
+      taken: [],
+      peak_memory_bytes: 0,
+      reductions_series: list.repeat(Nil, 101)
+        |> list.index_map(fn(_, index) { #(index * 10, 1000 + index * 100) }),
+    )
+  let rows = [
+    #("a window of 500 ms is 50 samples' reductions", 100, 600, Ok(5000)),
+    #(
+      "a window between samples keeps the samples inside it",
+      105,
+      595,
+      Ok(4800),
+    ),
+    #("a window of one sample is no window", 100, 109, Error(Nil)),
+    #("a window after the last sample holds none", 2000, 3000, Error(Nil)),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, from_ms, to_ms, expected) = row
+    assert load_queue.reductions_between(probe:, from_ms:, to_ms:) == expected
+      as reason
+  })
+  assert load_queue.per(total: 5000, count: 400) == "12.5"
+    as "a mean to one decimal"
+  assert load_queue.per(total: 5000, count: 0) == "-"
+    as "a mean of none is a dash"
+  assert load_queue.percent(part: 1, whole: 8) == "12.5%"
+    as "a share to one decimal"
 }

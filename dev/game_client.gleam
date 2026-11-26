@@ -1044,9 +1044,9 @@ fn read_message_from(
 }
 
 /// Takes what the server has already written, without waiting for more, and gives the
-/// whole messages in it, opened from their 0x3DC wrapper: the bytes of a message not
-/// yet whole are kept, so the next read starts where the stream is. For a client that
-/// walks among other players and reads only what it counts of them.
+/// whole messages in it in their 0x3DC wrapper, unopened (`opened` opens them): the bytes of
+/// a message not yet whole are kept, so the next read starts where the stream is. For a
+/// client that walks among other players and opens only what it counts of them.
 pub fn drain(game game: Game, have have: BitArray) -> #(List(Frame), BitArray) {
   drained(game:, have: with_kept(game:, have:), read: [])
 }
@@ -1058,7 +1058,7 @@ fn drained(
 ) -> #(List(Frame), BitArray) {
   let assert Ok(#(outers, rest)) = frame_reader.decode(received: have)
     as "the server wrote bytes that are frames"
-  let read = list.append(read, opened(game:, outers:))
+  let read = list.append(read, outers)
   case mug.receive(game.socket, timeout_milliseconds: 0) {
     Ok(more) -> drained(game:, have: <<rest:bits, more:bits>>, read:)
     Error(mug.Timeout) -> #(read, rest)
@@ -1127,13 +1127,14 @@ fn poll_open(
   }
 }
 
-fn opened(game game: Game, outers outers: List(Frame)) -> List(Frame) {
+/// The messages of `outers`, each opened from its 0x3DC wrapper under the session cipher.
+pub fn opened(game game: Game, outers outers: List(Frame)) -> List(Frame) {
   list.map(outers, in_the_game_wrapper(_, game.cipher))
 }
 
 /// Reads until the server's answer to a ping, the bare pong, and gives its number and
-/// the game messages that came first, other players' units among them, opened from their
-/// 0x3DC wrapper. The bytes beyond the pong are kept.
+/// the game messages that came first, other players' units among them, in their 0x3DC
+/// wrapper, unopened (`opened` opens them). The bytes beyond the pong are kept.
 pub fn pong_among_messages(
   game game: Game,
   have have: BitArray,
@@ -1153,11 +1154,7 @@ fn pong_among(
       list.reverse(read),
       rest,
     )
-    Frame(..) ->
-      pong_among(game:, have: rest, read: [
-        in_the_game_wrapper(outer:, cipher: game.cipher),
-        ..read
-      ])
+    Frame(..) -> pong_among(game:, have: rest, read: [outer, ..read])
   }
 }
 

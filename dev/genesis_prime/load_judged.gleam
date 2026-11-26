@@ -40,8 +40,15 @@ pub type Event {
   MovesRead
   /// A player's 0x262 that a walker or a probe read, one for each other player.
   PlayersShown
-  /// A 0x7ff or 0x7fe of another player's cast that a probe read.
-  CastFramesRead
+  /// A 0x7ff of a walker's cast that a probe read.
+  CastStartsRead
+  /// A 0x7fe of a walker's cast that a probe read.
+  CastEndsRead
+  /// A cast of a walker that a probe read held for at least half its cast time between
+  /// its 0x7ff and its 0x7fe, so it was not cut short.
+  CastsHeld
+  /// A 0x355 of a player that a walker read: the probes leaving.
+  RemovalsRead
 }
 
 /// Every event.
@@ -53,7 +60,10 @@ pub fn all() -> List(Event) {
     Respawns,
     MovesRead,
     PlayersShown,
-    CastFramesRead,
+    CastStartsRead,
+    CastEndsRead,
+    CastsHeld,
+    RemovalsRead,
   ]
 }
 
@@ -66,7 +76,10 @@ pub fn name(event: Event) -> String {
     Respawns -> "respawns"
     MovesRead -> "moves read by a probe"
     PlayersShown -> "players shown"
-    CastFramesRead -> "cast frames read by a probe"
+    CastStartsRead -> "cast starts read by a probe"
+    CastEndsRead -> "cast ends read by a probe"
+    CastsHeld -> "casts held by a probe's read"
+    RemovalsRead -> "removals read by a walker"
   }
 }
 
@@ -106,7 +119,8 @@ pub fn nothing_lost(lost lost: Int) -> Condition {
 
 /// The condition that the map keeps up over a whole step: its mean queue stays below one
 /// round of moves, one from each of `players`, and it is found running in fewer than half
-/// of its `samples`. `queued` is the sum of the queue of each sample.
+/// of its `samples`. `queued` is the sum of the queue of each sample. A map that was never
+/// sampled is not known to keep up.
 pub fn map_keeps_up(
   queued queued: Int,
   samples samples: Int,
@@ -114,10 +128,11 @@ pub fn map_keeps_up(
   players players: Int,
 ) -> Condition {
   let held = queued < players * samples && running * 2 < samples
-  Condition(held:, said: case held {
-    True ->
+  Condition(held:, said: case samples, held {
+    0, _ -> "the map was never sampled, so it is not known to keep up"
+    _, True ->
       "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
-    False ->
+    _, False ->
       "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
   })
 }
@@ -160,12 +175,21 @@ pub fn delay_within_guard(
 }
 
 /// The condition that no frame was read for a unit after its removal: `violations` is how
-/// many were.
-pub fn no_frame_after_removal(violations violations: Int) -> Condition {
-  case violations {
-    0 ->
+/// many were, and `removals` how many removals the clients read, since a run that read none
+/// checked no order.
+pub fn no_frame_after_removal(
+  violations violations: Int,
+  removals removals: Int,
+) -> Condition {
+  case violations, removals {
+    _, 0 ->
+      Condition(
+        held: False,
+        said: "no removal was read, so no frame was checked against one",
+      )
+    0, _ ->
       Condition(held: True, said: "no frame was read after its unit's removal")
-    _ ->
+    _, _ ->
       Condition(
         held: False,
         said: "frames were read after their unit's removal: "

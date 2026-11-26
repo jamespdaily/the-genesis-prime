@@ -1,9 +1,9 @@
 %% What the movement load run needs of the runtime and no Gleam library exposes
 %% (genesis_prime/load_moves): the message queue of each map and how often its
 %% process was found running, sampled by a process of its own in the server's
-%% node. Nothing is traced: a call trace on the map's functions and a trace of
-%% when its process is scheduled in and out each made a map that keeps up at 200
-%% players fall behind, so the run samples and does not trace.
+%% node. Nothing is traced, so the probe adds only its own process_info calls to the
+%% map's work: a trace of the map's calls or of when it is scheduled in and out would
+%% add to the map's work for every call or switch.
 %%
 %% The period is 10 ms. That is often enough that a queue that builds over a
 %% second shows in about a hundred samples, and rare enough that the sampler's
@@ -13,10 +13,11 @@
 %% samples is the share of the time the process wanted a scheduler.
 %%
 %% Besides the longest queue and the sums, the probe keeps each sample's time and queue
-%% (the longest of the maps), the memory and reductions of the map with the longest queue
-%% found so far, and, while a queue is over COMPOSE_OVER messages, the names of the messages
-%% waiting in that map: at most COMPOSE_MOST times a run and COMPOSE_EVERY_MS apart, since
-%% copying thousands of messages out of the map costs the map time.
+%% (the longest of the maps) and the reductions the maps had spent by then, the memory of
+%% the map with the longest queue found so far, and, while a queue is over COMPOSE_OVER
+%% messages, the names of the messages waiting in that map: at most COMPOSE_MOST times a run
+%% and COMPOSE_EVERY_MS apart, since copying thousands of messages out of the map costs the
+%% map time.
 -module(load_moves_ffi).
 -export([start_probe/1, stop_probe/0]).
 
@@ -29,7 +30,7 @@
 %% What the probe holds between samples.
 -record(held, {supervisor, started_ms, longest = 0, sum = 0, samples = 0, running = 0,
                series = [], taken = [], last_taken_ms = -?COMPOSE_EVERY_MS,
-               peak_memory = 0, reductions = 0}).
+               peak_memory = 0, reductions = []}).
 
 %% Runs in the server's node: starts sampling the maps the map supervisor
 %% (named `Supervisor`) runs.
@@ -45,7 +46,8 @@ start_probe(Supervisor) ->
 %% sample, how many samples were taken and how many of them found a map running, the
 %% samples as {ms since the start, longest queue}, the messages taken from the map
 %% as {taken, ms, queue, kind names}, the memory in bytes of the map when its queue
-%% was longest and the most reductions the maps showed together. A probe that does not
+%% was longest and each sample's {ms since the start, reductions the maps had spent
+%% together}. A probe that does not
 %% answer within thirty seconds (the machine is saturated by the run it measures) is an
 %% error, never zeros.
 stop_probe() ->
@@ -65,7 +67,7 @@ probe(Held) ->
 result(#held{longest = Longest, sum = Sum, samples = Samples, running = Running,
              series = Series, taken = Taken, peak_memory = Memory, reductions = Reductions}) ->
     {probe, Longest, Sum, Samples, Running, lists:reverse(Series), lists:reverse(Taken),
-     Memory, Reductions}.
+     Memory, lists:reverse(Reductions)}.
 
 sampled(#held{supervisor = Supervisor, started_ms = Started} = Held) ->
     Maps = maps(Supervisor),
@@ -83,7 +85,7 @@ sampled(#held{supervisor = Supervisor, started_ms = Started} = Held) ->
         samples = Held#held.samples + 1,
         running = Held#held.running + Found,
         series = [{Ms, Queue} | Held#held.series],
-        reductions = max(Held#held.reductions, lists:sum([reductions(Pid) || Pid <- Maps]))
+        reductions = [{Ms, lists:sum([reductions(Pid) || Pid <- Maps])} | Held#held.reductions]
     }.
 
 %% The names of the messages in the busiest map when its queue is long enough, as

@@ -6,6 +6,7 @@
 //// gleam run -m genesis_prime/load_moves -- 200              200 players
 //// gleam run -m genesis_prime/load_moves -- 100 casting      100 players that also cast
 //// gleam run -m genesis_prime/load_moves -- 100 34.7         the paired main run's delay 99th, ms
+//// gleam run -m genesis_prime/load_moves -- 200 unread       200 players that open no frame
 //// ```
 ////
 //// The environment, the two nodes and the step are the load run's
@@ -24,15 +25,22 @@
 //// its verdict, its ping round trips, its longest mailbox of any process and the
 //// lines the server logged), followed by what the map showed: the longest and
 //// the mean of its message queue, and the share of the samples that found its
-//// process running (`load_moves_ffi`). Nothing is traced: tracing the map's
-//// functions slowed it enough to fall behind at 200 players, where the same run
-//// untraced keeps up.
+//// process running (`load_moves_ffi`), and the reductions it spent while the probes read per
+//// move sent in that window. Nothing is traced, so the probe adds only its own reads to the
+//// map's work.
 ////
-//// With the word `casting`, every walker also presses its level-1 ability (the Relentless
-//// Strikes builder, `load_player.pressed_spell4_base_id`) at `cast_first_ms` after the step begins and
-//// again `cast_ms` later; the probes read the casts as a 0x7ff, a 0x7f4 and a 0x7fe each. The
-//// ability has no cast time (Spell4 32078), so `cast_ms` is the scene's spacing, which the
-//// owed casts are counted by (`load_sight.casts_owed`).
+//// With the word `casting`, the walkers are Espers that press their level-1 ability with a cast
+//// time (Telekinetic Strike, `load_player.pressed_spell4_base_id`, cast time 1,250 ms) at
+//// `cast_first_ms` after the step begins and again `cast_every_ms` later, so each probe is
+//// shown each cast held for its cast time while moves are relayed: the probes read the
+//// casts as a 0x7ff, a 0x7f4 and a 0x7fe each, and the run owes each probe the 0x7ff and the
+//// 0x7fe of every cast of a walker that finished a settle time before the probes stopped
+//// (`load_sight.casts_owed`, `load_player.frames_per_press`).
+////
+//// With the word `unread`, the walkers drop each frame the server writes them unopened, as
+//// the capacity ramp's players do (`load_player.DropFrames`), so the run's own clients do not
+//// pay to decrypt and decode every 0x262 of every other player: only the probes read, and
+//// the run judges the pairs they are shown and the removals they read, not the walkers'.
 ////
 //// Beside the walkers, `probes` clients of the real protocol join the map and send
 //// tagged moves (`genesis_prime/load_move_delay`); the run prints the delay from a
@@ -40,18 +48,20 @@
 ////
 //// Every walker and probe also keeps what it read of the other players
 //// (`genesis_prime/load_sight`): the 0x262 of each other player once, so a run owes
-//// (players + probes) x (players + probes - 1) of them, and the 0x638 read for a unit after
-//// its 0x355. The probe in the server's node keeps the map's queue each 10 ms with the
+//// (players + probes) x (players + probes - 1) of them, and the frames read for a unit after
+//// its 0x355, which the probes' leaving gives each walker to read (walkers x probes removals).
+//// The probe in the server's node keeps the map's queue each 10 ms with the
 //// messages in its mailbox when it is long (`genesis_prime/load_queue`), and the run prints
 //// them with the time from a probe's entry to its last 0x262 of another player, which are
 //// printed and not judged.
 ////
 //// The run fails, with exit status 1, when the step's verdict is a failure, when the probes
 //// read fewer moves than were sent to them, when a client was shown fewer players than
-//// there are pairs, when a casting scene's probes read fewer casts than they are owed, when
-//// the map's queue grew or the delay's 99th percentile passed the baseline given on the
-//// command line by 50 ms, or when a frame was read after its unit's removal: each is
-//// judged by `genesis_prime/load_judged`.
+//// there are pairs, when a casting scene's probes read fewer 0x7ff or 0x7fe of the walkers'
+//// casts than they are owed, when the walkers read fewer removals than the probes' leaving
+//// gives them, when the map's queue grew or the delay's 99th percentile passed the baseline
+//// given on the command line by 50 ms, or when a frame was read after its unit's removal or
+//// no removal was read at all: each is judged by `genesis_prime/load_judged`.
 ////
 //// The map falls behind when its queue grows with the hold instead of staying
 //// near zero, or when the share of samples that find its process running
@@ -76,6 +86,7 @@ import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set
 import pog
 
 /// How many players walk on the one map when the run is given no number.
@@ -97,11 +108,12 @@ const probe_window_ms = 10_000
 
 /// The casting scene: when the walkers first press their ability, after the step begins
 /// (the probes are in the world by `probes_in_world_ms` after the arrival, so half a
-/// second later), and the time between a walker's presses. Both presses finish, `cast_ms`
-/// after each, `settle_ms` before the probes stop reading, so both are owed.
+/// second later), and the time between a walker's presses. Both presses finish, a cast
+/// time after each (`load_player.pressed_cast_ms`), `settle_ms` before the probes stop
+/// reading, so both are owed.
 const cast_first_ms = 11_500
 
-const cast_ms = 3000
+const cast_every_ms = 3000
 
 /// How long before the probes stop reading a cast must have finished for them to owe it.
 const settle_ms = 3000
@@ -113,15 +125,26 @@ pub fn start_probe(supervisor: process_name) -> Nil
 @external(erlang, "load_moves_ffi", "stop_probe")
 pub fn stop_probe() -> Probe
 
-/// What the command line asks for: the walkers, whether they cast, and the paired main
-/// run's delay 99th percentile in microseconds.
+/// What the command line asks for: the walkers, whether they cast, whether they open the
+/// frames they are written, and the paired main run's delay 99th percentile in microseconds.
 type Run {
-  Run(players: Int, casting: Bool, baseline_p99_us: Option(Int))
+  Run(
+    players: Int,
+    casting: Bool,
+    reading: load_player.Reading,
+    baseline_p99_us: Option(Int),
+  )
 }
 
 fn run_of(arguments: List(String)) -> Run {
   case arguments {
-    [] -> Run(players: default_players, casting: False, baseline_p99_us: None)
+    [] ->
+      Run(
+        players: default_players,
+        casting: False,
+        reading: load_player.ReadFrames,
+        baseline_p99_us: None,
+      )
     [number, ..words] -> {
       let run =
         Run(
@@ -129,9 +152,15 @@ fn run_of(arguments: List(String)) -> Run {
             panic as "the number of players is a whole number"
           }),
           casting: list.contains(words, "casting"),
+          reading: case list.contains(words, "unread") {
+            True -> load_player.DropFrames
+            False -> load_player.ReadFrames
+          },
           baseline_p99_us: None,
         )
-      case list.filter(words, fn(word) { word != "casting" }) {
+      case
+        list.filter(words, fn(word) { word != "casting" && word != "unread" })
+      {
         [] -> run
         [baseline] ->
           Run(
@@ -143,14 +172,16 @@ fn run_of(arguments: List(String)) -> Run {
               *. 1000.0,
             )),
           )
-        [_, ..] -> panic as "the run takes a number, `casting` and a baseline"
+        [_, ..] ->
+          panic as "the run takes a number, `casting`, `unread` and a baseline"
       }
     }
   }
 }
 
 pub fn main() -> Nil {
-  let Run(players:, casting:, baseline_p99_us:) = run_of(argv.load().arguments)
+  let Run(players:, casting:, reading:, baseline_p99_us:) =
+    run_of(argv.load().arguments)
   load_run.start_clients()
   let peer = load_run.start_peer()
   let settings =
@@ -188,9 +219,13 @@ pub fn main() -> Nil {
       hold_ms:,
       walking: True,
       presses_at_ms: case casting {
-        True -> [begin_ms + cast_first_ms, begin_ms + cast_first_ms + cast_ms]
+        True -> [
+          begin_ms + cast_first_ms,
+          begin_ms + cast_first_ms + cast_every_ms,
+        ]
         False -> []
       },
+      reading:,
       sample_server: fn() {
         load_run.in_peer(peer, fn() { load_sample.take(settings) })
       },
@@ -204,20 +239,7 @@ pub fn main() -> Nil {
     outcome:,
     verdict: step_verdict,
   ))
-  io.println(
-    "the map's message queue: longest "
-    <> int.to_string(probe.longest)
-    <> ", mean "
-    <> per(total: probe.sum, count: probe.samples)
-    <> " over "
-    <> int.to_string(probe.samples)
-    <> " samples, one every 10 ms",
-  )
-  io.println(
-    "the map's process was found running in "
-    <> percent(part: probe.running, whole: probe.samples)
-    <> " of the samples",
-  )
+  io.println(load_queue.summary(probe:))
   let offset_ms = begin_ms - probe_started_ms
   list.each(
     load_queue.lines(probe:, marks: [
@@ -245,11 +267,11 @@ pub fn main() -> Nil {
     "mover-to-viewer delay, from a probe's send to another probe's receipt among "
     <> int.to_string(players)
     <> " walkers: mean "
-    <> per(total: summary.mean_us, count: 1000)
+    <> load_queue.per(total: summary.mean_us, count: 1000)
     <> " ms, 99th percentile "
-    <> per(total: summary.p99_us, count: 1000)
+    <> load_queue.per(total: summary.p99_us, count: 1000)
     <> " ms, longest "
-    <> per(total: summary.longest_us, count: 1000)
+    <> load_queue.per(total: summary.longest_us, count: 1000)
     <> " ms, over "
     <> int.to_string(summary.moves)
     <> " moves read of "
@@ -260,24 +282,41 @@ pub fn main() -> Nil {
     <> int.to_string(probe_window_ms / 1000)
     <> " s)",
   )
-  let sights =
-    list.append(
-      list.map(outcome.walked, fn(walked) { walked.sight }),
-      list.map(reports, fn(report) { report.sight }),
+  let window_begins_ms = begin_ms + arrival_ms + probes_in_world_ms
+  let window_ends_ms = window_begins_ms + probe_window_ms
+  let walkers_moves_in_window =
+    list.count(
+      list.flat_map(outcome.walked, fn(walked) { walked.moved_ms }),
+      fn(moved_ms) {
+        moved_ms >= window_begins_ms && moved_ms <= window_ends_ms
+      },
     )
-  let moves_sent =
-    int.sum(list.map(outcome.walked, fn(walked) { walked.moves }))
-    + int.sum(
-      list.map(reports, fn(report) { dict.size(report.probed.sent_us) }),
-    )
+  let probes_moves =
+    int.sum(list.map(reports, fn(report) { dict.size(report.probed.sent_us) }))
   io.println(
-    "the map's reductions: "
-    <> int.to_string(probe.reductions)
-    <> ", "
-    <> per(total: probe.reductions, count: moves_sent)
-    <> " per move sent ("
-    <> int.to_string(moves_sent)
-    <> " moves sent by the walkers and the probes, the joins included)",
+    case
+      load_queue.reductions_between(
+        probe:,
+        from_ms: window_begins_ms - probe_started_ms,
+        to_ms: window_ends_ms - probe_started_ms,
+      )
+    {
+      Ok(reductions) ->
+        "the map's reductions while the probes read: "
+        <> int.to_string(reductions)
+        <> ", "
+        <> load_queue.per(
+          total: reductions,
+          count: walkers_moves_in_window + probes_moves,
+        )
+        <> " per move sent ("
+        <> int.to_string(walkers_moves_in_window)
+        <> " moves of the walkers and "
+        <> int.to_string(probes_moves)
+        <> " of the probes in the window)"
+      Error(Nil) ->
+        "the map's reductions while the probes read are not known: the window holds no two samples"
+    },
   )
   let shown_after_us =
     list.filter_map(reports, fn(report) {
@@ -286,12 +325,12 @@ pub fn main() -> Nil {
     })
   io.println(
     "a probe's entry to its last player shown: mean "
-    <> per(
+    <> load_queue.per(
       total: int.sum(shown_after_us),
       count: int.max(1, list.length(shown_after_us)) * 1000,
     )
     <> " ms, 99th percentile "
-    <> per(
+    <> load_queue.per(
       total: load_step.percentile(values: shown_after_us, percent: 99),
       count: 1000,
     )
@@ -301,6 +340,37 @@ pub fn main() -> Nil {
   )
   let players_all = players + probes
   let probe_sights = list.map(reports, fn(report) { report.sight })
+  let walker_sights =
+    list.filter_map(outcome.walked, fn(walked) {
+      option.to_result(walked.sight, Nil)
+    })
+  let sights = list.append(walker_sights, probe_sights)
+  let walkers_units =
+    set.from_list(list.map(outcome.walked, fn(walked) { walked.unit_id }))
+  let probes_units =
+    set.from_list(list.map(reports, fn(report) { report.probed.unit_id }))
+  let held_us = load_sight.held_us(sights: probe_sights, casters: walkers_units)
+  case casting {
+    True ->
+      io.println(
+        "casts of the walkers held at a probe, from its 0x7ff to its 0x7fe: "
+        <> int.to_string(list.length(held_us))
+        <> " read start to end, shortest "
+        <> load_queue.per(
+          total: result.unwrap(list.reduce(held_us, int.min), 0),
+          count: 1000,
+        )
+        <> " ms, mean "
+        <> load_queue.per(
+          total: int.sum(held_us),
+          count: int.max(1, list.length(held_us)) * 1000,
+        )
+        <> " ms (cast time "
+        <> int.to_string(load_player.pressed_cast_ms)
+        <> " ms)",
+      )
+    False -> Nil
+  }
   let pressed_ms =
     list.flat_map(outcome.walked, fn(walked) {
       list.map(walked.pressed_ms, fn(at_ms) { at_ms - begin_ms })
@@ -308,7 +378,7 @@ pub fn main() -> Nil {
   let owed =
     load_sight.casts_owed(
       pressed_ms:,
-      duration_ms: cast_ms,
+      duration_ms: load_player.pressed_cast_ms,
       ended_ms: arrival_ms + probes_in_world_ms + probe_window_ms,
       settle_ms:,
     )
@@ -324,24 +394,55 @@ pub fn main() -> Nil {
           Judged(
             event: load_judged.PlayersShown,
             count: load_sight.players_shown(sights:),
-            minimum: players_all * { players_all - 1 },
+            minimum: case reading {
+              load_player.ReadFrames -> players_all * { players_all - 1 }
+              load_player.DropFrames -> probes * { players_all - 1 }
+            },
           ),
         ],
-        case casting {
-          True -> [
+        case reading {
+          load_player.ReadFrames -> [
             Judged(
-              event: load_judged.CastFramesRead,
-              count: load_sight.cast_frames_read(
-                sights: probe_sights,
-                message_id: 0x07FF,
-              )
-                + load_sight.cast_frames_read(
-                sights: probe_sights,
-                message_id: 0x07FE,
+              event: load_judged.RemovalsRead,
+              count: load_sight.removals_read(
+                sights: walker_sights,
+                of: probes_units,
               ),
-              minimum: probes * owed * 2,
+              minimum: players * probes,
             ),
           ]
+          load_player.DropFrames -> []
+        },
+        case casting {
+          True -> {
+            let frames_read = fn(message_id) {
+              load_sight.cast_frames_read(
+                sights: probe_sights,
+                message_id:,
+                casters: walkers_units,
+              )
+            }
+            let owed_frames = probes * owed * load_player.frames_per_press
+            [
+              Judged(
+                event: load_judged.CastStartsRead,
+                count: frames_read(0x07FF),
+                minimum: owed_frames,
+              ),
+              Judged(
+                event: load_judged.CastEndsRead,
+                count: frames_read(0x07FE),
+                minimum: owed_frames,
+              ),
+              Judged(
+                event: load_judged.CastsHeld,
+                count: list.count(held_us, fn(held_us) {
+                  held_us >= load_player.pressed_cast_ms * 1000 / 2
+                }),
+                minimum: owed_frames,
+              ),
+            ]
+          }
           False -> []
         },
       ]),
@@ -355,6 +456,10 @@ pub fn main() -> Nil {
         load_judged.delay_within_guard(p99_us: summary.p99_us, baseline_p99_us:),
         load_judged.no_frame_after_removal(
           violations: load_sight.frames_after_removal(sights:),
+          removals: load_sight.removals_read(
+            sights:,
+            of: set.union(walkers_units, probes_units),
+          ),
         ),
         load_judged.Condition(
           held: case step_verdict {
@@ -367,29 +472,4 @@ pub fn main() -> Nil {
     )
   list.each(judged.lines, io.println)
   load_judged.require(verdict: judged)
-}
-
-/// A mean of `total` over `count`, to one decimal, or a dash for none.
-pub fn per(total total: Int, count count: Int) -> String {
-  case count {
-    0 -> "-"
-    _ ->
-      float.to_string(float.to_precision(
-        int.to_float(total) /. int.to_float(count),
-        1,
-      ))
-  }
-}
-
-/// `part` of `whole` as a percentage to one decimal, or a dash for no whole.
-pub fn percent(part part: Int, whole whole: Int) -> String {
-  case whole {
-    0 -> "-"
-    _ ->
-      float.to_string(float.to_precision(
-        100.0 *. int.to_float(part) /. int.to_float(whole),
-        1,
-      ))
-      <> "%"
-  }
 }

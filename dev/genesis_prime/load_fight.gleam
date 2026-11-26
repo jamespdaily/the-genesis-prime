@@ -1205,16 +1205,11 @@ fn report(
       False -> ", deadlines not recorded"
     },
   )
+  io.println(load_queue.summary(probe:))
   io.println(
-    "the map: longest queue "
-    <> int.to_string(probe.longest)
-    <> ", mean "
-    <> load_moves.per(total: probe.sum, count: probe.samples)
-    <> ", running in "
-    <> load_moves.percent(part: probe.running, whole: probe.samples)
-    <> " of samples; "
-    <> load_moves.per(total: reductions, count: moves)
-    <> " reductions per Moved ("
+    "the map's reductions over the walk: "
+    <> load_queue.per(total: reductions, count: moves)
+    <> " per Moved ("
     <> int.to_string(moves)
     <> " moves)",
   )
@@ -1241,7 +1236,7 @@ fn report(
     <> " strikes answered",
   )
   let per_second = fn(count) {
-    load_moves.per(total: count * 1000, count: hold_ms)
+    load_queue.per(total: count * 1000, count: hold_ms)
   }
   io.println(
     "the creatures sent the walkers "

@@ -3,16 +3,20 @@
 //// what the messages waiting in one mailbox were. Pure: a test plants the samples.
 ////
 //// ```
-//// the probe's Probe ─▶ lines ─▶ what a run prints of the map's queue
+//// the probe's Probe ─▶ summary, lines ─▶ what a run prints of the map's queue
 //// (ms, queue) every 10 ms ─▶ by_second ─▶ the longest queue of each second ─▶ peak
 //// the names of a mailbox's messages ─▶ kinds ─▶ each name and its count, the most first
+//// (ms, reductions) every 10 ms ─▶ reductions_between ─▶ what the map spent in a window
 //// ```
 ////
 //// - A second is the sample's millisecond divided by 1,000, the run's first sample at 0.
+//// - The reductions of a window are the last sample at or before its end less the first at
+////   or after its start.
 //// - The kind of a message is the name of its variant, which the probe reads from the
 ////   first element of its tuple (`load_moves_ffi`).
 
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option
@@ -22,8 +26,8 @@ import gleam/string
 /// What the probe read of the map in the server's node (`load_moves_ffi`): the longest
 /// queue, the sum of each sample's queue, the samples, how many of them found the map
 /// running, each sample's time (ms since the probe started) and queue, the mailboxes
-/// taken, the map's memory in bytes when its queue was longest and the most reductions
-/// the maps showed.
+/// taken, the map's memory in bytes when its queue was longest and each sample's time and
+/// the reductions the maps had spent by then.
 pub type Probe {
   Probe(
     longest: Int,
@@ -33,7 +37,7 @@ pub type Probe {
     series: List(#(Int, Int)),
     taken: List(Taken),
     peak_memory_bytes: Int,
-    reductions: Int,
+    reductions_series: List(#(Int, Int)),
   )
 }
 
@@ -85,6 +89,65 @@ pub fn kinds(names names: List(String)) -> List(#(String, Int)) {
   })
 }
 
+/// A mean of `total` over `count`, to one decimal, or a dash for none.
+pub fn per(total total: Int, count count: Int) -> String {
+  case count {
+    0 -> "-"
+    _ ->
+      float.to_string(float.to_precision(
+        int.to_float(total) /. int.to_float(count),
+        1,
+      ))
+  }
+}
+
+/// `part` of `whole` as a percentage to one decimal, or a dash for no whole.
+pub fn percent(part part: Int, whole whole: Int) -> String {
+  case whole {
+    0 -> "-"
+    _ ->
+      float.to_string(float.to_precision(
+        100.0 *. int.to_float(part) /. int.to_float(whole),
+        1,
+      ))
+      <> "%"
+  }
+}
+
+/// The map's queue over a step in one line: the longest, the mean over the samples and the
+/// share of the samples that found the map running.
+pub fn summary(probe probe: Probe) -> String {
+  "the map's message queue: longest "
+  <> int.to_string(probe.longest)
+  <> ", mean "
+  <> per(total: probe.sum, count: probe.samples)
+  <> " over "
+  <> int.to_string(probe.samples)
+  <> " samples, one every 10 ms; its process was found running in "
+  <> percent(part: probe.running, whole: probe.samples)
+  <> " of them"
+}
+
+/// The reductions the maps spent from `from_ms` to `to_ms` (ms since the probe started): the
+/// last sample at or before `to_ms` less the first at or after `from_ms`, or `Error(Nil)`
+/// when the window holds no two samples.
+pub fn reductions_between(
+  probe probe: Probe,
+  from_ms from_ms: Int,
+  to_ms to_ms: Int,
+) -> Result(Int, Nil) {
+  let first =
+    list.find(probe.reductions_series, fn(sample) { sample.0 >= from_ms })
+  let last =
+    list.find(list.reverse(probe.reductions_series), fn(sample) {
+      sample.0 <= to_ms
+    })
+  case first, last {
+    Ok(first), Ok(last) if last.0 > first.0 -> Ok(last.1 - first.1)
+    _, _ -> Error(Nil)
+  }
+}
+
 /// What a run prints of the map's queue: the longest queue of each second, the step's
 /// `marks` (a name and its millisecond since the probe started), the peak, what the
 /// mailboxes taken held, and the map's memory when its queue was longest.
@@ -122,19 +185,23 @@ pub fn lines(
         "no mailbox was taken: the queue never passed 1,000 (at most 6 are taken in a run, 500 ms apart)",
       ]
       taken ->
-        list.map(taken, fn(one) {
-          "the map's mailbox at "
-          <> int.to_string(one.at_ms)
-          <> " ms, "
-          <> int.to_string(one.queue)
-          <> " messages: "
-          <> string.join(
-            list.map(kinds(names: one.names), fn(kind) {
-              kind.0 <> " " <> int.to_string(kind.1)
-            }),
-            ", ",
-          )
-        })
+        list.prepend(
+          list.map(taken, fn(one) {
+            "the map's mailbox at "
+            <> int.to_string(one.at_ms)
+            <> " ms, "
+            <> int.to_string(one.queue)
+            <> " messages: "
+            <> string.join(
+              list.map(kinds(names: one.names), fn(kind) {
+                kind.0 <> " " <> int.to_string(kind.1)
+              }),
+              ", ",
+            )
+          }),
+          int.to_string(list.length(taken))
+            <> " mailboxes were taken (at most 6 in a run, 500 ms apart, each when the queue passed 1,000):",
+        )
     },
     [
       "the map's memory when its queue was longest: "

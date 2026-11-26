@@ -115,7 +115,11 @@ fn run(plan plan: Plan, ports ports: Ports) -> Reported {
   let #(game, auth) = load_player.log_in(account: plan.account, ports:)
   load_player.list_characters(game)
   let character_id =
-    load_player.create_character(game:, name: plan.account.character_name)
+    load_player.create_character(
+      game:,
+      name: plan.account.character_name,
+      creation_id: load_player.warrior_creation_id,
+    )
   let entered_us = load_sample.microseconds()
   let #(burst, have) = load_player.play_into_world(game:, character_id:)
   assert runtime.now().monotonic_ms <= plan.sync_ms
@@ -129,7 +133,11 @@ fn run(plan plan: Plan, ports ports: Ports) -> Reported {
     )
   let #(have, probed, sight) =
     read_until(
-      game:,
+      poll: fn(have, wait_ms) {
+        let assert Ok(polled) = game_client.poll(game:, have:, wait_ms:)
+          as "the game server's connection held while a probe read it"
+        polled
+      },
       have:,
       until_us: load_sample.microseconds()
         + int.max(0, plan.sync_ms - runtime.now().monotonic_ms)
@@ -153,32 +161,32 @@ fn run(plan plan: Plan, ports ports: Ports) -> Reported {
   Reported(probed:, sight:, entered_us:)
 }
 
-/// Reads and stamps what arrives until `until_us`, so a probe that is waiting for the
-/// others to be in the world still reads each frame when it is written, a move of a
-/// probe that began to send among them.
-fn read_until(
-  game game: game_client.Game,
+/// Reads and stamps what arrives, through `poll` (the bytes held and how long it may wait, in
+/// milliseconds, to the frames read and the bytes held), until `until_us` and at least once,
+/// so a probe that is waiting for the others to be in the world still reads each frame when
+/// it is written, a move of a probe that began to send among them.
+pub fn read_until(
+  poll poll: fn(BitArray, Int) -> #(List(Frame), BitArray),
   have have: BitArray,
   until_us until_us: Int,
   probed probed: Probed,
   sight sight: Sight,
 ) -> #(BitArray, Probed, Sight) {
-  let now_us = load_sample.microseconds()
-  use <- bool.guard(when: now_us >= until_us, return: #(have, probed, sight))
-  let assert Ok(#(frames, have)) =
-    game_client.poll(
-      game:,
-      have:,
-      wait_ms: int.max(1, int.min(5, { until_us - now_us } / 1000)),
-    )
-    as "the game server's connection held while a probe read it"
+  let waited_us = load_sample.microseconds()
+  let #(frames, have) =
+    poll(have, int.max(1, int.min(5, { until_us - waited_us } / 1000)))
   let #(probed, sight) = taken(probed:, sight:, frames:)
-  read_until(game:, have:, until_us:, probed:, sight:)
+  use <- bool.guard(when: load_sample.microseconds() >= until_us, return: #(
+    have,
+    probed,
+    sight,
+  ))
+  read_until(poll:, have:, until_us:, probed:, sight:)
 }
 
 /// What the probe saw of the others and what it read after it took `frames`, stamped
 /// now: the probes' moves among them and each frame of the sight.
-pub fn taken(
+fn taken(
   probed probed: Probed,
   sight sight: Sight,
   frames frames: List(Frame),

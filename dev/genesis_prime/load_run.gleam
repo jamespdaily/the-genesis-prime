@@ -170,6 +170,7 @@ fn run_step(
     hold_ms:,
     walking: False,
     presses_at_ms: [],
+    reading: load_player.DropFrames,
     sample_server:,
   )
 }
@@ -177,7 +178,8 @@ fn run_step(
 /// `run_step` with the players walking as well when `walking` is true: each
 /// sends a movement message every 125 ms until the step ends
 /// (`genesis_prime/load_player`) and presses its ability at each of `presses_at_ms`,
-/// in milliseconds on the monotonic clock.
+/// in milliseconds on the monotonic clock; each player opens the frames it is written when
+/// `reading` says so, and the outcome holds what each read of the others.
 pub fn run_step_walking(
   ports ports: Ports,
   accounts accounts: List(Account),
@@ -185,6 +187,7 @@ pub fn run_step_walking(
   hold_ms hold_ms: Int,
   walking walking: Bool,
   presses_at_ms presses_at_ms: List(Int),
+  reading reading: load_player.Reading,
   sample_server sample_server: fn() -> Sample,
 ) -> Outcome {
   let report = process.new_subject()
@@ -203,6 +206,7 @@ pub fn run_step_walking(
             until_ms: held_ms,
             walking:,
             presses_at_ms:,
+            reading:,
             report:,
           )
         })

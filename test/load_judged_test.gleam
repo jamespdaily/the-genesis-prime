@@ -6,8 +6,9 @@
 //// minimum.
 
 import genesis_prime/load_judged.{
-  type Verdict, CastFramesRead, Condition, Fails, Judged, MovesRead, Passes,
-  PlayersShown, Respawns, StrikeAnswers, StrikeRounds,
+  type Verdict, CastEndsRead, CastStartsRead, CastsHeld, Condition, Fails,
+  Judged, MovesRead, Passes, PlayersShown, RemovalsRead, Respawns, StrikeAnswers,
+  StrikeRounds,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -165,7 +166,7 @@ pub fn a_run_that_showed_fewer_players_than_pairs_a_map_that_falls_behind_and_a_
       [
         map(100_000, 100),
         guarded(80_000),
-        load_judged.no_frame_after_removal(violations: 0),
+        load_judged.no_frame_after_removal(violations: 0, removals: 400),
       ],
       True,
       "pass: the map keeps up",
@@ -229,16 +230,74 @@ pub fn a_run_that_showed_fewer_players_than_pairs_a_map_that_falls_behind_and_a_
     #(
       "a frame read after a removal",
       [shown(pairs)],
-      [load_judged.no_frame_after_removal(violations: 2)],
+      [load_judged.no_frame_after_removal(violations: 2, removals: 400)],
       False,
       "frames were read after their unit's removal: 2",
     ),
     #(
-      "cast frames below the probes' casts owed",
-      [Judged(event: CastFramesRead, count: 7, minimum: 8)],
+      "no frame after a removal, and no removal read, is no order checked",
+      [shown(pairs)],
+      [load_judged.no_frame_after_removal(violations: 0, removals: 0)],
+      False,
+      "no removal was read, so no frame was checked against one",
+    ),
+    #(
+      "a map that was never sampled is not known to keep up",
+      [shown(pairs)],
+      [
+        load_judged.map_keeps_up(
+          queued: 0,
+          samples: 0,
+          running: 0,
+          players: 104,
+        ),
+      ],
+      False,
+      "the map was never sampled",
+    ),
+    #(
+      "cast starts below the probes' casts owed",
+      [Judged(event: CastStartsRead, count: 7, minimum: 8)],
       [],
       False,
-      "cast frames read by a probe 7 of at least 8",
+      "cast starts read by a probe 7 of at least 8",
+    ),
+    #(
+      "cast starts as owed and every cast end lost",
+      [
+        Judged(event: CastStartsRead, count: 8, minimum: 8),
+        Judged(event: CastEndsRead, count: 0, minimum: 8),
+      ],
+      [],
+      False,
+      "cast ends read by a probe 0 of at least 8",
+    ),
+    #(
+      "cast starts and ends as owed",
+      [
+        Judged(event: CastStartsRead, count: 8, minimum: 8),
+        Judged(event: CastEndsRead, count: 8, minimum: 8),
+      ],
+      [],
+      True,
+      "pass: every judged count is at or above its minimum",
+    ),
+    #(
+      "casts cut short are not held, whatever the frames read",
+      [
+        Judged(event: CastStartsRead, count: 8, minimum: 8),
+        Judged(event: CastsHeld, count: 3, minimum: 8),
+      ],
+      [],
+      False,
+      "casts held by a probe's read 3 of at least 8",
+    ),
+    #(
+      "removals below the probes' leaving",
+      [Judged(event: RemovalsRead, count: 399, minimum: 400)],
+      [],
+      False,
+      "removals read by a walker 399 of at least 400",
     ),
   ]
   list.each(rows, fn(row) {
