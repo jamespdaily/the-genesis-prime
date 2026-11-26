@@ -41,7 +41,7 @@ A step that changes processes, supervision or what one process asks another gets
 
 - Run `dev/test_list_check.py N BASE HEAD` first; a missing test goes to the fix round without a reviewer.
 - A hand-back without each listed test's first failure lines, each touched file's last pass line, or a cause for a test fix goes back to the builder.
-- One result review per build, by a `reviewer`, on the pushed commit. Codex runs design and shape reviews with the list and design text in its prompt; the coordinator posts its output.
+- One result review per build, by a `reviewer`, on the pushed commit, started once CI is green on it; a CI failure goes to the builder with the review's findings. Codex runs design and shape reviews with the list and design text in its prompt; the coordinator posts its output.
 - The coordinator reads every diff against the skills the step used.
 
 ## The fix round
