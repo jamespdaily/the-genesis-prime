@@ -1,5 +1,7 @@
 //// What the load runs count (`genesis_prime/load_round` for the fight run's strike
-//// rounds, `genesis_prime/load_move_delay` for the movement run's delay), from planted
+//// rounds, `genesis_prime/load_move_delay` for the movement run's delay,
+//// `genesis_prime/load_sight` for the players and casts a client read,
+//// `genesis_prime/load_queue` for the map's queue), from planted
 //// stamps: these counts decide whether the creature's deadline change and the map's
 //// relay change merge, so each is checked here and not by reading a run.
 //// - A strike's deadline is `strike_tell.deadline_ms` = 1,000 ms after its round is
@@ -18,7 +20,13 @@
 //// - The move delay is from the mover's send to the viewer's receipt (Design run A,
 ////   8.1); a probe's step `k` is at z = the walkers' z + 0.01 `k`, and the walkers'
 ////   z is -560.18798828125 (World 3460, WorldLocation2 row 51596).
+//// - A client is shown a player by a 0x262 of that player's unit and no longer by the
+////   unit's 0x355 (`opcode.0x262`, `opcode.0x355`); a frame for a unit after its 0x355 and
+////   before its next 0x262 breaks that order (`legal_order_support.check_frames`).
+//// - A cast is read as a 0x7ff, a 0x7f4 and a 0x7fe (`opcode.0x7ff`); a cast is owed a
+////   probe once it finished a settle time before the probes stopped reading.
 
+import character_support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
   type StaySent, SentByFoe, SentByMap, SentByPeer, SentByTarget,
@@ -29,26 +37,36 @@ import genesis_prime/game/unit_news.{PeerNews, Removed}
 import genesis_prime/load_deadline.{type Closure, type Deadline, Deadline}
 import genesis_prime/load_judged.{type Judged, Judged, Respawns}
 import genesis_prime/load_move_delay.{Probed}
+import genesis_prime/load_queue.{Second}
 import genesis_prime/load_respawn.{type Gaps, Gaps}
 import genesis_prime/load_round.{
   type Answer, type Closed, type Mark, type Rounds, Answer, Closed, Controlled,
   Died, Interrupted, Mark, Released, Rounds,
 }
 import genesis_prime/load_sample
+import genesis_prime/load_sight
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/unit_create_creature
+import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{Gone, ObjectsSeen, ObjectsUnseen, UnitUnseen}
+import genesis_prime/world_map/player_unit
 import gleam/bool
 import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/int
 import gleam/list
+import gleam/option
+import legal_order_support
 import owned_test
 import place_support
 import spawn_support
+import unit_support
 
 /// The creature's process: one that only waits, so its pid names a creature.
 fn creature() -> Pid {
@@ -703,4 +721,248 @@ pub fn a_walker_strikes_only_while_a_deadline_is_left_and_each_strike_it_makes_i
     sent: SentByFoe(fight: strike_tell.Released(unit_id: 7)),
   )
     as "a creature's release of the walker is not"
+}
+
+pub fn the_maps_queue_is_read_by_the_second_and_a_mailbox_by_the_kind_of_its_messages_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A queue of 3 sampled each 10 ms for 30 s, and a spike at 5.2 s: 7,750 at 5,200 ms
+  // (#1423's longest queue) and 4,000 at 5,210 ms, then 900 at 6,000 ms.
+  let series =
+    list.repeat(Nil, 3000)
+    |> list.index_map(fn(_, index) {
+      let at_ms = index * 10
+      case at_ms {
+        5200 -> #(at_ms, 7750)
+        5210 -> #(at_ms, 4000)
+        6000 -> #(at_ms, 900)
+        _ -> #(at_ms, 3)
+      }
+    })
+  let seconds = load_queue.by_second(series:)
+  assert list.length(seconds) == 30 as "a second for each of the 30 s sampled"
+  assert list.take(seconds, 7)
+    == [
+      Second(second: 0, longest: 3),
+      Second(second: 1, longest: 3),
+      Second(second: 2, longest: 3),
+      Second(second: 3, longest: 3),
+      Second(second: 4, longest: 3),
+      Second(second: 5, longest: 7750),
+      Second(second: 6, longest: 900),
+    ]
+    as "each second holds the longest queue of its samples, whichever came first"
+  assert load_queue.peak(series:) == Ok(Second(second: 5, longest: 7750))
+    as "the peak is the second that holds the spike, with its longest queue"
+  assert load_queue.peak(series: []) == Error(Nil)
+    as "a run that took no sample has no peak"
+  let names = [
+    "Moved", "Snapshot", "Snapshot", "Broadcast", "Snapshot", "Moved",
+    "Snapshot", "Broadcast", "Snapshot", "Moved",
+  ]
+  assert load_queue.kinds(names:)
+    == [#("Snapshot", 5), #("Moved", 3), #("Broadcast", 2)]
+    as "ten messages of three kinds, counted by kind, the largest first"
+  assert load_queue.kinds(names: ["Moved", "Asked", "Moved", "Asked", "Told"])
+    == [#("Asked", 2), #("Moved", 2), #("Told", 1)]
+    as "kinds of the same count come in alphabetical order"
+}
+
+/// The 0x262 of the player `unit_id`.
+fn player_created(unit_id unit_id: Int) -> Frame {
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 1.0,
+      y: 2.0,
+      z: 3.0,
+    )
+  let record =
+    player_unit.create(
+      unit: unit_support.bare_unit(
+        character: character_support.character(number: unit_id),
+        place:,
+        unit_id:,
+        body: [],
+      ),
+      realm_id: 1,
+    )
+  let assert Ok(body) = unit_create_player.encode(record) as "0x262 encodes"
+  Frame(message_id: 0x0262, body:)
+}
+
+/// The 0x262 of the Battle Beast as the creature `unit_id`.
+fn creature_created(unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_create_creature.encode(creature_unit.create(
+      spawn: legal_order_support.the_beast(),
+      unit_id:,
+      health: 52,
+      interrupt_armor: option.None,
+      server_time_estimate_start: 0,
+    ))
+    as "a creature's 0x262 encodes"
+  Frame(message_id: 0x0262, body:)
+}
+
+/// The 0x355 of `unit_id`.
+fn removed(unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_destroyed.encode(UnitDestroyed(unit_id:, chest_world_object_delay: 0))
+    as "a 0x355 encodes"
+  Frame(message_id: 0x0355, body:)
+}
+
+/// The sight of a client whose own unit is 1, after it read the frames, the one at
+/// index `n` at `n` thousand microseconds.
+fn sight_of(frames frames: List(Frame)) -> load_sight.Sight {
+  list.index_fold(
+    frames,
+    load_sight.new(own_unit_id: 1),
+    fn(sight, frame, index) {
+      load_sight.read(sight:, frame:, at_us: index * 1000)
+    },
+  )
+}
+
+pub fn a_walker_that_read_every_other_players_0x262_once_counts_its_pairs_and_one_that_missed_one_counts_fewer_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Five players, the walker's own unit 1: the walker is owed one 0x262 for each of the
+  // four others (the client creates a unit on a 0x262 and drops it on its 0x355,
+  // opcode.0x262).
+  let rows = [
+    #(
+      "every other player's create once",
+      [2, 3, 4, 5] |> list.map(player_created),
+      4,
+    ),
+    #("one create missed", [2, 3, 4] |> list.map(player_created), 3),
+    #(
+      "a create repeated while the unit is shown counts once",
+      [2, 3, 3, 4, 5, 2] |> list.map(player_created),
+      4,
+    ),
+    #(
+      "a create after the unit's removal counts again",
+      list.flatten([
+        [2, 3, 4, 5] |> list.map(player_created),
+        [removed(unit_id: 3), player_created(unit_id: 3)],
+      ]),
+      5,
+    ),
+    #(
+      "a removal of a unit never created counts none",
+      [removed(unit_id: 9), player_created(unit_id: 2)],
+      1,
+    ),
+    #(
+      "the walker's own create is no pair",
+      [1, 2, 3, 4, 5] |> list.map(player_created),
+      4,
+    ),
+    #(
+      "a creature's create is no player",
+      [creature_created(unit_id: 40), player_created(unit_id: 2)],
+      1,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, frames, pairs) = row
+    assert load_sight.players_shown(sights: [sight_of(frames:)]) == pairs
+      as reason
+  })
+  assert load_sight.players_shown(sights: [
+      sight_of(frames: [2, 3, 4, 5] |> list.map(player_created)),
+      sight_of(frames: [2, 3, 4] |> list.map(player_created)),
+    ])
+    == 7
+    as "the pairs of the clients are added: four and three"
+}
+
+pub fn a_probe_that_reads_a_frame_of_a_unit_after_its_0x355_counts_a_violation_until_the_unit_is_created_again_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows = [
+    #(
+      "0x262, 0x638, 0x355, 0x638, 0x262, 0x638 of unit 7: the 0x638 after the 0x355 only",
+      [
+        player_created(unit_id: 7),
+        moved(unit_id: 7, hundredths: 1),
+        removed(unit_id: 7),
+        moved(unit_id: 7, hundredths: 2),
+        player_created(unit_id: 7),
+        moved(unit_id: 7, hundredths: 3),
+      ],
+      1,
+    ),
+    #(
+      "two frames after the removal are two",
+      [
+        player_created(unit_id: 7),
+        removed(unit_id: 7),
+        moved(unit_id: 7, hundredths: 1),
+        moved(unit_id: 7, hundredths: 2),
+      ],
+      2,
+    ),
+    #(
+      "another unit's frame after the removal is none",
+      [
+        player_created(unit_id: 7),
+        player_created(unit_id: 8),
+        removed(unit_id: 7),
+        moved(unit_id: 8, hundredths: 1),
+      ],
+      0,
+    ),
+    #(
+      "a frame of a unit never created is the client's logged drop, no violation",
+      [moved(unit_id: 9, hundredths: 1)],
+      0,
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, frames, violations) = row
+    assert load_sight.frames_after_removal(sights: [sight_of(frames:)])
+      == violations
+      as reason
+  })
+}
+
+pub fn the_casting_scene_owes_each_probe_the_casts_that_finished_a_settle_time_before_the_end_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Casts of 3,000 ms pressed at the times given, the probes reading until 12,000 ms: a
+  // cast is owed once it finished 3,000 ms before that, as `load_respawn.needed` owes a
+  // respawn for a death a settle time before the end.
+  let rows = [
+    #("two of four finished by 9,000", [1000, 4000, 8500, 9000], 2),
+    #("a cast finished exactly a settle time before the end is owed", [6000], 1),
+    #("a cast a millisecond later is not, the other is", [6001, 1000], 1),
+    #("every cast finished in time", [0, 1000, 2000, 3000, 6000], 5),
+    #("none finished in time is still one owed", [8000, 9000], 1),
+    #("no cast at all is one owed", [], 1),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, pressed_ms, owed) = row
+    assert load_sight.casts_owed(
+        pressed_ms:,
+        duration_ms: 3000,
+        ended_ms: 12_000,
+        settle_ms: 3000,
+      )
+      == owed
+      as reason
+  })
+  let frames =
+    list.append(
+      list.map([0x07FF, 0x07F4, 0x07FE, 0x07FE], fn(message_id) {
+        Frame(message_id:, body: <<>>)
+      }),
+      [moved(unit_id: 7, hundredths: 1)],
+    )
+  let sight = sight_of(frames:)
+  assert list.map([0x07FF, 0x07F4, 0x07FE], fn(message_id) {
+      load_sight.cast_frames_read(sights: [sight], message_id:)
+    })
+    == [1, 1, 2]
+    as "the cast frames are counted by kind: a start, a go and two ends; a move is no cast frame"
 }

@@ -6,10 +6,11 @@
 //// minimum.
 
 import genesis_prime/load_judged.{
-  type Verdict, Condition, Fails, Judged, MovesRead, Passes, Respawns,
-  StrikeAnswers, StrikeRounds,
+  type Verdict, CastFramesRead, Condition, Fails, Judged, MovesRead, Passes,
+  PlayersShown, Respawns, StrikeAnswers, StrikeRounds,
 }
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 
@@ -141,4 +142,109 @@ pub fn a_run_that_lost_an_answer_to_the_deadline_fails_as_a_whole_and_one_that_l
   assert !told(verdict: lost).0 as "three lost fails the run as a whole"
   assert string.contains(lost.summary, three_lost.said)
     as "and the summary names the lost count"
+}
+
+pub fn a_run_that_showed_fewer_players_than_pairs_a_map_that_falls_behind_and_a_delay_past_its_guard_each_fail_and_a_run_that_holds_all_three_passes_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 100 walkers and 4 probes: (100 + 4) x (104 - 1) = 10,712 pairs. The map is sampled
+  // 1,000 times; a mean queue of one round of moves is as long as the players are many.
+  let pairs = 10_712
+  let shown = fn(count) { Judged(event: PlayersShown, count:, minimum: pairs) }
+  let map = fn(queued, running) {
+    load_judged.map_keeps_up(queued:, samples: 1000, running:, players: 104)
+  }
+  // The paired main run's 99th percentile, in microseconds.
+  let baseline = Some(30_000)
+  let guarded = fn(p99_us) {
+    load_judged.delay_within_guard(p99_us:, baseline_p99_us: baseline)
+  }
+  let rows = [
+    #(
+      "every pair shown, the map keeping up, the delay at the guard, no frame after a removal",
+      [shown(pairs)],
+      [
+        map(100_000, 100),
+        guarded(80_000),
+        load_judged.no_frame_after_removal(violations: 0),
+      ],
+      True,
+      "pass: the map keeps up",
+    ),
+    #(
+      "one pair fewer than the players owe",
+      [shown(pairs - 1)],
+      [],
+      False,
+      "players shown 10711 of at least 10712",
+    ),
+    #(
+      "a mean queue of one round of moves",
+      [shown(pairs)],
+      [map(104_000, 100)],
+      False,
+      "the map falls behind",
+    ),
+    #(
+      "a mean queue a move below one round",
+      [shown(pairs)],
+      [map(103_999, 100)],
+      True,
+      "the map keeps up",
+    ),
+    #(
+      "a map running in half of the samples",
+      [shown(pairs)],
+      [map(100, 500)],
+      False,
+      "the map falls behind",
+    ),
+    #(
+      "a map running in just under half of the samples",
+      [shown(pairs)],
+      [map(100, 499)],
+      True,
+      "the map keeps up",
+    ),
+    #(
+      "a delay the baseline plus 50 ms",
+      [shown(pairs)],
+      [guarded(80_000)],
+      True,
+      "within 50 ms of the baseline",
+    ),
+    #(
+      "a delay the baseline plus 51 ms",
+      [shown(pairs)],
+      [guarded(81_000)],
+      False,
+      "more than 50 ms above the baseline",
+    ),
+    #(
+      "no baseline given: the delay is printed and not judged, however long",
+      [shown(pairs)],
+      [load_judged.delay_within_guard(p99_us: 900_000, baseline_p99_us: None)],
+      True,
+      "the delay is printed and not judged: no baseline was given",
+    ),
+    #(
+      "a frame read after a removal",
+      [shown(pairs)],
+      [load_judged.no_frame_after_removal(violations: 2)],
+      False,
+      "frames were read after their unit's removal: 2",
+    ),
+    #(
+      "cast frames below the probes' casts owed",
+      [Judged(event: CastFramesRead, count: 7, minimum: 8)],
+      [],
+      False,
+      "cast frames read by a probe 7 of at least 8",
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(what, judged, conditions, passes, said) = row
+    let verdict = load_judged.judge(judged:, conditions:)
+    assert string.contains(verdict.summary, said) as what
+    assert told(verdict:).0 == passes as what
+  })
 }

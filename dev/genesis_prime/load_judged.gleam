@@ -23,6 +23,7 @@ import genesis_prime/dev_exit
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option}
 import gleam/string
 
 /// An event a load run's gate judges.
@@ -37,11 +38,23 @@ pub type Event {
   Respawns
   /// A move of one probe that another probe read.
   MovesRead
+  /// A player's 0x262 that a walker or a probe read, one for each other player.
+  PlayersShown
+  /// A 0x7ff or 0x7fe of another player's cast that a probe read.
+  CastFramesRead
 }
 
 /// Every event.
 pub fn all() -> List(Event) {
-  [StrikeRounds, StrikeAnswers, StrikesAnswered, Respawns, MovesRead]
+  [
+    StrikeRounds,
+    StrikeAnswers,
+    StrikesAnswered,
+    Respawns,
+    MovesRead,
+    PlayersShown,
+    CastFramesRead,
+  ]
 }
 
 /// The event in words, as the run's lines name it.
@@ -52,6 +65,8 @@ pub fn name(event: Event) -> String {
     StrikesAnswered -> "strikes answered"
     Respawns -> "respawns"
     MovesRead -> "moves read by a probe"
+    PlayersShown -> "players shown"
+    CastFramesRead -> "cast frames read by a probe"
   }
 }
 
@@ -87,6 +102,30 @@ pub fn nothing_lost(lost lost: Int) -> Condition {
           <> " sent before it fell due, and their round closed without them",
       )
   }
+}
+
+/// The condition that the map keeps up: the stub of its rule.
+pub fn map_keeps_up(
+  queued _queued: Int,
+  samples _samples: Int,
+  running _running: Int,
+  players _players: Int,
+) -> Condition {
+  Condition(held: True, said: "")
+}
+
+/// The condition that the delay's 99th percentile is within the guard of the paired
+/// baseline run's: the stub of its rule.
+pub fn delay_within_guard(
+  p99_us _p99_us: Int,
+  baseline_p99_us _baseline_p99_us: Option(Int),
+) -> Condition {
+  Condition(held: True, said: "")
+}
+
+/// The condition that no unit's frame was read after its removal: the stub of its rule.
+pub fn no_frame_after_removal(violations _violations: Int) -> Condition {
+  Condition(held: True, said: "")
 }
 
 /// The verdict on a run: it fails when an event is below its minimum, when a condition is

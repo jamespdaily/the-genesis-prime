@@ -1,6 +1,9 @@
 //// The judged-count rule. Expected values are the gates of the two load runs that decide
 //// a merge: the fight run's strike rounds, strike answers, strikes answered and respawns,
-//// its condition that no answer was lost, and the movement run's moves read by a probe.
+//// its conditions that no answer was lost and that the map keeps up, and the movement
+//// run's moves read by a probe, players shown and cast frames read by a probe, with its
+//// conditions that the map keeps up, that the delay is within its guard and that no frame
+//// was read after its unit's removal.
 //// Each must be judged through `genesis_prime/load_judged` (a `Judged(event: ...)` naming
 //// it, inside the `judged:` of a `load_judged.judge` whose verdict is given to
 //// `load_judged.require`), a condition inside its `conditions:`, and no string of the tools
@@ -23,15 +26,21 @@ const fight_path = "dev/genesis_prime/load_fight.gleam"
 const moves_path = "dev/genesis_prime/load_moves.gleam"
 
 /// Where each gate event is judged, by the variant's name, and which of `load_judged`'s
-/// conditions the file passes to the judge: the fight run's events and its condition that no
-/// answer was lost, and the movement run's event.
+/// conditions the file passes to the judge: the fight run's events and its conditions that no
+/// answer was lost and that the map keeps up, and the movement run's events and its
+/// conditions that the map keeps up, that the delay is within its guard and that no frame
+/// was read after its unit's removal.
 const gates = [
   #(
     fight_path,
     ["StrikeRounds", "StrikeAnswers", "StrikesAnswered", "Respawns"],
-    ["nothing_lost"],
+    ["nothing_lost", "map_keeps_up"],
   ),
-  #(moves_path, ["MovesRead"], []),
+  #(moves_path, ["MovesRead", "PlayersShown", "CastFramesRead"], [
+    "map_keeps_up",
+    "delay_within_guard",
+    "no_frame_after_removal",
+  ]),
 ]
 
 /// The printed name of each event, read from the shared function.
@@ -227,6 +236,34 @@ pub fn every_gate_line_of_the_load_runs_calls_the_judged_count_test() -> Nil {
     ])
     == [2]
     as "a condition computed but not passed to the judge's conditions is a breach, at the call"
+  let planted_conditions =
+    planted.file(path: moves_path, lines: [
+      "pub fn report() {",
+      "  let judged = load_judged.judge(judged: [], conditions: [",
+      "    load_judged.map_keeps_up(queued: 0, samples: 1, running: 0, players: 1),",
+      "    load_judged.delay_within_guard(p99_us: 0, baseline_p99_us: None),",
+      "    load_judged.no_frame_after_removal(violations: 0),",
+      "  ])",
+      required,
+      "}",
+    ])
+  let three = ["map_keeps_up", "delay_within_guard", "no_frame_after_removal"]
+  assert lines_of(file: planted_conditions, expected: [], conditions: three)
+    == []
+    as "the movement run's three conditions called inside the conditions of the judge are held"
+  let delay_computed_not_judged =
+    planted.file(path: moves_path, lines: [
+      "pub fn report() {",
+      "  let _ignored = load_judged.delay_within_guard(p99_us: 0, baseline_p99_us: None)",
+      "  let judged = load_judged.judge(judged: [], conditions: [])",
+      required,
+      "}",
+    ])
+  assert lines_of(file: delay_computed_not_judged, expected: [], conditions: [
+      "delay_within_guard",
+    ])
+    == [2]
+    as "a delay guard computed but not passed to the judge's conditions is a breach, at the call"
   list.each(gates, fn(gate) {
     let assert [file] =
       repository.sources(["dev"])
