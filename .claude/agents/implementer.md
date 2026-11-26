@@ -41,4 +41,4 @@ Hand back once, as a comment on the step's issue, then return under 150 words: t
 - Found outside the list: <failure, gap or question, with evidence>
 ```
 
-Beyond the draft, leave pull requests to the coordinator: do not mark one ready, merge or close it.
+Leave pull requests to the coordinator: do not open, mark ready, merge or close one.
