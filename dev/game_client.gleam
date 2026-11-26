@@ -1043,19 +1043,25 @@ fn read_message_from(
   }
 }
 
-/// Takes what the server has already written, without waiting for more, and
-/// drops the whole messages in it: the bytes of a message not yet whole are
-/// kept, so the next read starts where the stream is. For a client that walks
-/// among other players and does not read what it is sent.
-pub fn drain(game game: Game, have have: BitArray) -> BitArray {
-  drained(game:, have: with_kept(game:, have:))
+/// Takes what the server has already written, without waiting for more, and gives the
+/// whole messages in it, opened from their 0x3DC wrapper: the bytes of a message not
+/// yet whole are kept, so the next read starts where the stream is. For a client that
+/// walks among other players and reads only what it counts of them.
+pub fn drain(game game: Game, have have: BitArray) -> #(List(Frame), BitArray) {
+  drained(game:, have: with_kept(game:, have:), read: [])
 }
 
-fn drained(game game: Game, have have: BitArray) -> BitArray {
+fn drained(
+  game game: Game,
+  have have: BitArray,
+  read read: List(Frame),
+) -> #(List(Frame), BitArray) {
+  let assert Ok(#(outers, rest)) = frame_reader.decode(received: have)
+    as "the server wrote bytes that are frames"
+  let read = list.append(read, opened(game:, outers:))
   case mug.receive(game.socket, timeout_milliseconds: 0) {
-    Ok(more) ->
-      drained(game:, have: whole_messages_dropped(<<have:bits, more:bits>>))
-    Error(mug.Timeout) -> whole_messages_dropped(have)
+    Ok(more) -> drained(game:, have: <<rest:bits, more:bits>>, read:)
+    Error(mug.Timeout) -> #(read, rest)
     Error(error) ->
       panic as {
         "the game server's connection failed while a client drained it: "
@@ -1125,23 +1131,33 @@ fn opened(game game: Game, outers outers: List(Frame)) -> List(Frame) {
   list.map(outers, in_the_game_wrapper(_, game.cipher))
 }
 
-fn whole_messages_dropped(received: BitArray) -> BitArray {
-  let assert Ok(#(_frames, rest)) = frame_reader.decode(received:)
-    as "the server wrote bytes that are frames"
-  rest
-}
-
-/// Reads until the server's answer to a ping, the bare pong, and gives its
-/// number: the game messages that come first, other players' units among them,
-/// are dropped. The bytes beyond the pong are kept.
+/// Reads until the server's answer to a ping, the bare pong, and gives its number and
+/// the game messages that came first, other players' units among them, opened from their
+/// 0x3DC wrapper. The bytes beyond the pong are kept.
 pub fn pong_among_messages(
   game game: Game,
   have have: BitArray,
-) -> #(Int, BitArray) {
+) -> #(Int, List(Frame), BitArray) {
+  pong_among(game:, have:, read: [])
+}
+
+fn pong_among(
+  game game: Game,
+  have have: BitArray,
+  read read: List(Frame),
+) -> #(Int, List(Frame), BitArray) {
   let #(outer, rest) = next_outer(game:, have:)
   case outer {
-    Frame(message_id: 0x0001, body: <<number:size(8)>>) -> #(number, rest)
-    Frame(..) -> pong_among_messages(game:, have: rest)
+    Frame(message_id: 0x0001, body: <<number:size(8)>>) -> #(
+      number,
+      list.reverse(read),
+      rest,
+    )
+    Frame(..) ->
+      pong_among(game:, have: rest, read: [
+        in_the_game_wrapper(outer:, cipher: game.cipher),
+        ..read
+      ])
   }
 }
 

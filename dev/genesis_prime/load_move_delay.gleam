@@ -24,12 +24,18 @@
 ////
 //// The probes begin when the walkers have all arrived, are all in the world by `sync_ms`
 //// (a probe that is not stops the run), send for `window_ms` and leave.
+////
+//// A probe also keeps what it reads of the other players (`genesis_prime/load_sight`): it
+//// reads its socket as the frames arrive from its entry on, stamping each, so the time of
+//// its last 0x262 of another player after its entry is the time it took to be shown them
+//// all.
 
 import exception
 import game_client
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/load_player.{type Account}
 import genesis_prime/load_sample
+import genesis_prime/load_sight.{type Sight}
 import genesis_prime/load_step
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_movement
@@ -55,6 +61,12 @@ pub type Probed {
   Probed(unit_id: Int, sent_us: Dict(Int, Int), seen: List(#(Int, Int, Int)))
 }
 
+/// What a probe reports: what it sent and saw of the probes' moves, what it read of the
+/// other players, and the microsecond it asked to play its character.
+pub type Reported {
+  Reported(probed: Probed, sight: Sight, entered_us: Int)
+}
+
 /// A probe's account, the time it logs in, the time all probes are in the world, and
 /// how long it sends moves.
 pub type Plan {
@@ -72,7 +84,7 @@ pub type Delays {
 pub fn start(
   plan plan: Plan,
   ports ports: Ports,
-  report report: Subject(Result(Probed, String)),
+  report report: Subject(Result(Reported, String)),
 ) -> Nil {
   let _pid =
     process.spawn_unlinked(fn() {
@@ -87,9 +99,9 @@ pub fn start(
 /// What a probe sent to `report`, waiting up to `within_ms`; a probe that crashed or
 /// did not report stops the run with the reason.
 pub fn reported(
-  report report: Subject(Result(Probed, String)),
+  report report: Subject(Result(Reported, String)),
   within_ms within_ms: Int,
-) -> Probed {
+) -> Reported {
   let assert Ok(found) = process.receive(report, within: within_ms)
     as "every probe reported"
   case found {
@@ -98,19 +110,32 @@ pub fn reported(
   }
 }
 
-fn run(plan plan: Plan, ports ports: Ports) -> Probed {
+fn run(plan plan: Plan, ports ports: Ports) -> Reported {
   process.sleep(int.max(0, plan.begin_ms - runtime.now().monotonic_ms))
   let #(game, auth) = load_player.log_in(account: plan.account, ports:)
   load_player.list_characters(game)
   let character_id =
     load_player.create_character(game:, name: plan.account.character_name)
+  let entered_us = load_sample.microseconds()
   let #(burst, have) = load_player.play_into_world(game:, character_id:)
   assert runtime.now().monotonic_ms <= plan.sync_ms
     as "a probe is in the world by the time the probes begin to send"
   let unit_id = game_client.unit_create_player_in(frames: burst).unit_id
-  process.sleep(int.max(0, plan.sync_ms - runtime.now().monotonic_ms))
+  let sight =
+    list.fold(burst, load_sight.new(own_unit_id: unit_id), fn(sight, frame) {
+      load_sight.read(sight:, frame:, at_us: load_sample.microseconds())
+    })
+  let #(have, sight) =
+    read_until(
+      game:,
+      have:,
+      until_us: load_sample.microseconds()
+        + int.max(0, plan.sync_ms - runtime.now().monotonic_ms)
+        * 1000,
+      sight:,
+    )
   let started_us = load_sample.microseconds()
-  let probed =
+  let #(probed, sight) =
     probe(
       game:,
       have:,
@@ -118,10 +143,47 @@ fn run(plan plan: Plan, ports ports: Ports) -> Probed {
       started_us:,
       ends_us: started_us + plan.window_ms * 1000,
       probed: Probed(unit_id:, sent_us: dict.new(), seen: []),
+      sight:,
     )
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
-  probed
+  Reported(probed:, sight:, entered_us:)
+}
+
+/// Reads and stamps what arrives until `until_us`, so a probe that is waiting for the
+/// others to be in the world still reads each frame when it is written.
+fn read_until(
+  game game: game_client.Game,
+  have have: BitArray,
+  until_us until_us: Int,
+  sight sight: Sight,
+) -> #(BitArray, Sight) {
+  let now_us = load_sample.microseconds()
+  use <- bool.guard(when: now_us >= until_us, return: #(have, sight))
+  let assert Ok(#(frames, have)) =
+    game_client.poll(
+      game:,
+      have:,
+      wait_ms: int.max(1, int.min(5, { until_us - now_us } / 1000)),
+    )
+    as "the game server's connection held while a probe read it"
+  read_until(
+    game:,
+    have:,
+    until_us:,
+    sight: read_all(sight:, frames:, at_us: load_sample.microseconds()),
+  )
+}
+
+/// The sight after each of the frames, read at `at_us`.
+fn read_all(
+  sight sight: Sight,
+  frames frames: List(Frame),
+  at_us at_us: Int,
+) -> Sight {
+  list.fold(frames, sight, fn(sight, frame) {
+    load_sight.read(sight:, frame:, at_us:)
+  })
 }
 
 /// Sends step `step`'s move when it is due and reads and stamps what arrives until
@@ -133,9 +195,10 @@ fn probe(
   started_us started_us: Int,
   ends_us ends_us: Int,
   probed probed: Probed,
-) -> Probed {
+  sight sight: Sight,
+) -> #(Probed, Sight) {
   let now_us = load_sample.microseconds()
-  use <- bool.guard(when: now_us >= ends_us, return: probed)
+  use <- bool.guard(when: now_us >= ends_us, return: #(probed, sight))
   let due_us = started_us + { step - 1 } * move_every_ms * 1000
   case now_us >= due_us {
     True -> {
@@ -164,6 +227,7 @@ fn probe(
           ..probed,
           sent_us: dict.insert(probed.sent_us, step, sent_us),
         ),
+        sight:,
       )
     }
     False -> {
@@ -187,6 +251,7 @@ fn probe(
         started_us:,
         ends_us:,
         probed: Probed(..probed, seen: list.append(seen, probed.seen)),
+        sight: read_all(sight:, frames:, at_us: stamped_us),
       )
     }
   }

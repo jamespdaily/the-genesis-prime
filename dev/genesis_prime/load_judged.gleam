@@ -23,7 +23,7 @@ import genesis_prime/dev_exit
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/string
 
 /// An event a load run's gate judges.
@@ -104,28 +104,74 @@ pub fn nothing_lost(lost lost: Int) -> Condition {
   }
 }
 
-/// The condition that the map keeps up: the stub of its rule.
+/// The condition that the map keeps up over a whole step: its mean queue stays below one
+/// round of moves, one from each of `players`, and it is found running in fewer than half
+/// of its `samples`. `queued` is the sum of the queue of each sample.
 pub fn map_keeps_up(
-  queued _queued: Int,
-  samples _samples: Int,
-  running _running: Int,
-  players _players: Int,
+  queued queued: Int,
+  samples samples: Int,
+  running running: Int,
+  players players: Int,
 ) -> Condition {
-  Condition(held: True, said: "")
+  let held = queued < players * samples && running * 2 < samples
+  Condition(held:, said: case held {
+    True ->
+      "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
+    False ->
+      "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
+  })
 }
 
-/// The condition that the delay's 99th percentile is within the guard of the paired
-/// baseline run's: the stub of its rule.
+/// How much longer than the paired baseline run's the delay's 99th percentile may be, in
+/// microseconds.
+const delay_guard_us = 50_000
+
+/// The condition that the delay's 99th percentile, in microseconds, is at most
+/// `delay_guard_us` above the paired baseline run's. With no baseline given it holds and says
+/// the delay is printed and not judged, since a constant would not follow the machine.
 pub fn delay_within_guard(
-  p99_us _p99_us: Int,
-  baseline_p99_us _baseline_p99_us: Option(Int),
+  p99_us p99_us: Int,
+  baseline_p99_us baseline_p99_us: Option(Int),
 ) -> Condition {
-  Condition(held: True, said: "")
+  case baseline_p99_us {
+    None ->
+      Condition(
+        held: True,
+        said: "the delay is printed and not judged: no baseline was given",
+      )
+    Some(baseline) ->
+      case p99_us <= baseline + delay_guard_us {
+        True ->
+          Condition(
+            held: True,
+            said: "the delay's 99th percentile is within 50 ms of the baseline's",
+          )
+        False ->
+          Condition(
+            held: False,
+            said: "the delay's 99th percentile is more than 50 ms above the baseline's: "
+              <> int.to_string(p99_us)
+              <> " us against "
+              <> int.to_string(baseline)
+              <> " us",
+          )
+      }
+  }
 }
 
-/// The condition that no unit's frame was read after its removal: the stub of its rule.
-pub fn no_frame_after_removal(violations _violations: Int) -> Condition {
-  Condition(held: True, said: "")
+/// The condition that no frame was read for a unit after its removal: `violations` is how
+/// many were.
+pub fn no_frame_after_removal(violations violations: Int) -> Condition {
+  case violations {
+    0 ->
+      Condition(held: True, said: "no frame was read after its unit's removal")
+    _ ->
+      Condition(
+        held: False,
+        said: "frames were read after their unit's removal: "
+          <> int.to_string(violations),
+      )
+  }
 }
 
 /// The verdict on a run: it fails when an event is below its minimum, when a condition is

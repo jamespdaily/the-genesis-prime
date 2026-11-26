@@ -32,6 +32,7 @@ import game_client
 import genesis_prime/add_account
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/load_sample
+import genesis_prime/load_sight.{type Sight}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
@@ -78,9 +79,27 @@ pub type Report {
   /// The player finished a stage, which took this many milliseconds from the
   /// end of the stage before it.
   Reached(player: Int, stage: Stage, took_ms: Int)
-  /// The player's step ended, with each ping's round trip in microseconds.
-  Finished(player: Int, round_trips_us: List(Int))
+  /// The player's step ended, with each ping's round trip in microseconds and what it
+  /// sent and read of the others.
+  Finished(player: Int, round_trips_us: List(Int), walked: Walked)
 }
+
+/// What a walking player sent and read: what it read of the other players, how many
+/// moves it sent and when it pressed its ability, in milliseconds on the monotonic clock.
+pub type Walked {
+  Walked(sight: Sight, moves: Int, pressed_ms: List(Int))
+}
+
+/// The ability a casting walker presses: the bag index it is held at and the times it
+/// is to be pressed, in milliseconds on the monotonic clock, the earliest first.
+type Presses {
+  Presses(bag_index: Int, due_ms: List(Int), sent_ms: List(Int))
+}
+
+/// The Warrior's Rampage, Spell4 58524 (tier 1, no cast time), of Spell4Base 37968: the
+/// ability of the class a walker creates (CharacterCreation 466, class 1) that a level-1
+/// character holds in its action set and presses.
+const pressed_spell4_base_id = 37_968
 
 /// The next ping: its number and how long to wait before sending it.
 type Ping {
@@ -181,6 +200,7 @@ pub fn play(
   begin_at_ms begin_at_ms: Int,
   until_ms until_ms: Int,
   walking walking: Bool,
+  presses_at_ms presses_at_ms: List(Int),
   report report: Subject(Report),
 ) -> Nil {
   process.sleep(int.max(0, begin_at_ms - runtime.now().monotonic_ms))
@@ -220,12 +240,19 @@ pub fn play(
   let mark = reached(CharacterList, mark)
   let character_id = create_character(game:, name: account.character_name)
   let mark = reached(Create, mark)
-  let #(_burst, have) = enter_world(game:, character_id:)
+  let #(burst, have) = enter_world(game:, character_id:)
   let mark = reached(EnterWorld, mark)
   let sent_at_ms = runtime.now().monotonic_ms
-  let #(first, have) = round_trip(game:, have:, number: 0)
+  let sight =
+    read_all(
+      sight: load_sight.new(
+        own_unit_id: game_client.unit_create_player_in(frames: burst).unit_id,
+      ),
+      frames: burst,
+    )
+  let #(first, read, have) = round_trip(game:, have:, number: 0)
   let _mark = reached(FirstPong, mark)
-  let trips =
+  let kept =
     keep_playing(
       game:,
       have:,
@@ -237,8 +264,28 @@ pub fn play(
         True -> Some(Walk(last_move_ms: sent_at_ms, moves: 0))
         False -> None
       },
+      presses: Presses(
+        bag_index: case presses_at_ms {
+          [] -> 0
+          [_, ..] -> pressed_bag_index(burst:)
+        },
+        due_ms: presses_at_ms,
+        sent_ms: [],
+      ),
+      sight: read_all(sight:, frames: read),
     )
-  process.send(report, Finished(player:, round_trips_us: trips))
+  process.send(
+    report,
+    Finished(
+      player:,
+      round_trips_us: kept.trips,
+      walked: Walked(
+        sight: kept.sight,
+        moves: kept.moves,
+        pressed_ms: kept.presses.sent_ms,
+      ),
+    ),
+  )
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
   Nil
@@ -361,9 +408,33 @@ const move_every_ms = 125
 /// How many units a walking player steps along x before it steps back.
 const steps_out = 10
 
+/// What a player holds when its step ends.
+type Kept {
+  Kept(trips: List(Int), sight: Sight, moves: Int, presses: Presses)
+}
+
+/// The bag index of the ability a casting walker presses, among the abilities its entry
+/// burst holds.
+fn pressed_bag_index(burst burst: List(Frame)) -> Int {
+  let assert Ok(#(bag_index, _)) =
+    list.find(game_client.loadout_in(frames: burst).abilities, fn(slot) {
+      slot.1 == pressed_spell4_base_id
+    })
+    as "a level-1 Warrior's entry holds Rampage among its abilities"
+  bag_index
+}
+
+/// The sight after each of the frames, read now.
+fn read_all(sight sight: Sight, frames frames: List(Frame)) -> Sight {
+  let at_us = load_sample.microseconds()
+  list.fold(frames, sight, fn(sight, frame) {
+    load_sight.read(sight:, frame:, at_us:)
+  })
+}
+
 /// Pings until the step ends, each ping as the client's rule has it, and, for a
-/// walking player, sends a 0x0637 every `move_every_ms`; what else the server
-/// writes meanwhile is read and dropped.
+/// walking player, sends a 0x0637 every `move_every_ms` and presses its ability at
+/// each time of `presses`; what else the server writes meanwhile is read into `sight`.
 fn keep_playing(
   game game: game_client.Game,
   have have: BitArray,
@@ -372,7 +443,9 @@ fn keep_playing(
   until_ms until_ms: Int,
   trips trips: List(Int),
   walk walk: Option(Walk),
-) -> List(Int) {
+  presses presses: Presses,
+  sight sight: Sight,
+) -> Kept {
   let now = runtime.now().monotonic_ms
   let ping = next_ping(answered:, sent_at_ms:, now_ms: now)
   let ping_at = now + ping.wait_ms
@@ -380,32 +453,60 @@ fn keep_playing(
     Some(Walk(last_move_ms:, ..)) -> last_move_ms + move_every_ms
     None -> ping_at
   }
-  let next_at = int.min(ping_at, move_at)
+  let press_at = case presses.due_ms {
+    [due_ms, ..] -> due_ms
+    [] -> ping_at
+  }
+  let next_at = int.min(ping_at, int.min(move_at, press_at))
   case next_at >= until_ms {
-    True -> trips
+    True ->
+      Kept(
+        trips:,
+        sight:,
+        moves: option.map(walk, fn(walk) { walk.moves }) |> option.unwrap(0),
+        presses:,
+      )
     False -> {
       process.sleep(int.max(0, next_at - now))
-      let #(walk, have) = case walk {
+      let presses = case presses.due_ms {
+        [due_ms, ..later] if due_ms <= next_at -> {
+          game_client.press_ability(
+            game:,
+            client_cast_id: list.length(presses.sent_ms) + 2,
+            bag_index: presses.bag_index,
+            target: 0,
+          )
+          Presses(..presses, due_ms: later, sent_ms: [
+            runtime.now().monotonic_ms,
+            ..presses.sent_ms
+          ])
+        }
+        _ -> presses
+      }
+      let #(walk, have, sight) = case walk {
         Some(Walk(moves:, ..)) if move_at <= next_at -> {
           game_client.send_world(
             game:,
             message_id: 0x0637,
             body: step_of_the_walk(moves),
           )
+          let #(read, have) = game_client.drain(game:, have:)
           #(
             Some(Walk(
               last_move_ms: runtime.now().monotonic_ms,
               moves: moves + 1,
             )),
-            game_client.drain(game:, have:),
+            have,
+            read_all(sight:, frames: read),
           )
         }
-        Some(_) | None -> #(walk, have)
+        Some(_) | None -> #(walk, have, sight)
       }
       case ping_at <= next_at {
         True -> {
           let sent_at_ms = runtime.now().monotonic_ms
-          let #(trip, have) = round_trip(game:, have:, number: ping.number)
+          let #(trip, read, have) =
+            round_trip(game:, have:, number: ping.number)
           keep_playing(
             game:,
             have:,
@@ -414,6 +515,8 @@ fn keep_playing(
             until_ms:,
             trips: [trip, ..trips],
             walk:,
+            presses:,
+            sight: read_all(sight:, frames: read),
           )
         }
         False ->
@@ -425,6 +528,8 @@ fn keep_playing(
             until_ms:,
             trips:,
             walk:,
+            presses:,
+            sight:,
           )
       }
     }
@@ -457,19 +562,19 @@ fn step_of_the_walk(moves: Int) -> BitArray {
   ])
 }
 
-/// Sends a ping and waits for its pong, which must carry the ping's number, the
-/// other players' messages that come first read and dropped; the round trip in
-/// microseconds and the bytes read beyond the pong.
+/// Sends a ping and waits for its pong, which must carry the ping's number; the round
+/// trip in microseconds, the other players' messages that came first and the bytes read
+/// beyond the pong.
 fn round_trip(
   game game: game_client.Game,
   have have: BitArray,
   number number: Int,
-) -> #(Int, BitArray) {
+) -> #(Int, List(Frame), BitArray) {
   let sent = load_sample.microseconds()
   game_client.send_ping(game:, number:)
-  let #(answered, have) = game_client.pong_among_messages(game:, have:)
+  let #(answered, read, have) = game_client.pong_among_messages(game:, have:)
   assert answered == number as "opcode.0x1: the pong carries the ping's number"
-  #(load_sample.microseconds() - sent, have)
+  #(load_sample.microseconds() - sent, read, have)
 }
 
 /// The create request of CharacterCreation row 466 (class 1, race 1, sex 1, a

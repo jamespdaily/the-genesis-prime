@@ -11,24 +11,43 @@
 %% period would measure the sampler. A sample finds the process running when its
 %% status is running, runnable or garbage_collecting, so the share of such
 %% samples is the share of the time the process wanted a scheduler.
+%%
+%% Besides the longest queue and the sums, the probe keeps each sample's time and queue
+%% (the longest of the maps), the memory and reductions of the map with the longest queue
+%% found so far, and, while a queue is over COMPOSE_OVER messages, the names of the messages
+%% waiting in that map: at most COMPOSE_MOST times a run and COMPOSE_EVERY_MS apart, since
+%% copying thousands of messages out of the map costs the map time.
 -module(load_moves_ffi).
 -export([start_probe/1, stop_probe/0]).
 
 -define(EVERY_MS, 10).
 -define(ANSWER_MS, 30000).
+-define(COMPOSE_OVER, 1000).
+-define(COMPOSE_MOST, 6).
+-define(COMPOSE_EVERY_MS, 500).
+
+%% What the probe holds between samples.
+-record(held, {supervisor, started_ms, longest = 0, sum = 0, samples = 0, running = 0,
+               series = [], taken = [], last_taken_ms = -?COMPOSE_EVERY_MS,
+               peak_memory = 0, reductions = 0}).
 
 %% Runs in the server's node: starts sampling the maps the map supervisor
 %% (named `Supervisor`) runs.
 start_probe(Supervisor) ->
-    Probe = spawn(fun() -> probe(Supervisor, 0, 0, 0, 0) end),
+    Probe = spawn(fun() ->
+        probe(#held{supervisor = Supervisor, started_ms = erlang:monotonic_time(millisecond)})
+    end),
     persistent_term:put(load_moves_probe, Probe),
     nil.
 
-%% Runs in the server's node: stops the sampling and gives the longest message
-%% queue any map showed, the sum of the longest queue of each sample, how many
-%% samples were taken and how many of them found a map running. A probe that
-%% does not answer within thirty seconds (the machine is saturated by the run it
-%% measures) is an error, never zeros.
+%% Runs in the server's node: stops the sampling and gives the load_queue.Probe:
+%% the longest message queue any map showed, the sum of the longest queue of each
+%% sample, how many samples were taken and how many of them found a map running, the
+%% samples as {ms since the start, longest queue}, the messages taken from the map
+%% as {taken, ms, queue, kind names}, the memory in bytes of the map when its queue
+%% was longest and the most reductions the maps showed together. A probe that does not
+%% answer within thirty seconds (the machine is saturated by the run it measures) is an
+%% error, never zeros.
 stop_probe() ->
     Probe = persistent_term:get(load_moves_probe),
     Probe ! {stop, self()},
@@ -36,18 +55,71 @@ stop_probe() ->
     after ?ANSWER_MS -> error(the_probe_did_not_answer)
     end.
 
-probe(Supervisor, Longest, Sum, Samples, Running) ->
+probe(Held) ->
     receive
-        {stop, From} -> From ! {probed, {Longest, Sum, Samples, Running}}
+        {stop, From} -> From ! {probed, result(Held)}
     after ?EVERY_MS ->
-        Maps = maps(Supervisor),
-        Queue = lists:max([0 | [queue(Pid) || Pid <- Maps]]),
-        Found = case lists:any(fun running/1, Maps) of
-                    true -> 1;
-                    false -> 0
-                end,
-        probe(Supervisor, max(Longest, Queue), Sum + Queue, Samples + 1, Running + Found)
+        probe(sampled(Held))
     end.
+
+result(#held{longest = Longest, sum = Sum, samples = Samples, running = Running,
+             series = Series, taken = Taken, peak_memory = Memory, reductions = Reductions}) ->
+    {probe, Longest, Sum, Samples, Running, lists:reverse(Series), lists:reverse(Taken),
+     Memory, Reductions}.
+
+sampled(#held{supervisor = Supervisor, started_ms = Started} = Held) ->
+    Maps = maps(Supervisor),
+    Ms = erlang:monotonic_time(millisecond) - Started,
+    {Queue, Busiest} = longest_queue(Maps),
+    Found = case lists:any(fun running/1, Maps) of
+                true -> 1;
+                false -> 0
+            end,
+    Composed = composed(Held, Ms, Queue, Busiest),
+    Remembered = remembered_peak(Composed, Queue, Busiest),
+    Remembered#held{
+        longest = max(Held#held.longest, Queue),
+        sum = Held#held.sum + Queue,
+        samples = Held#held.samples + 1,
+        running = Held#held.running + Found,
+        series = [{Ms, Queue} | Held#held.series],
+        reductions = max(Held#held.reductions, lists:sum([reductions(Pid) || Pid <- Maps]))
+    }.
+
+%% The names of the messages in the busiest map when its queue is long enough, as
+%% often as the cap allows.
+composed(#held{taken = Taken, last_taken_ms = Last} = Held, Ms, Queue, Busiest) ->
+    Allowed = Queue > ?COMPOSE_OVER andalso length(Taken) < ?COMPOSE_MOST
+              andalso Ms - Last >= ?COMPOSE_EVERY_MS andalso is_pid(Busiest),
+    case Allowed of
+        true ->
+            case erlang:process_info(Busiest, messages) of
+                {messages, Messages} ->
+                    Held#held{taken = [{taken, Ms, Queue, [kind(Message) || Message <- Messages]} | Taken],
+                              last_taken_ms = Ms};
+                undefined ->
+                    Held
+            end;
+        false ->
+            Held
+    end.
+
+%% The memory of the busiest map when its queue is the longest seen.
+remembered_peak(#held{longest = Longest} = Held, Queue, Busiest) when Queue > Longest, is_pid(Busiest) ->
+    case erlang:process_info(Busiest, memory) of
+        {memory, Memory} -> Held#held{peak_memory = Memory};
+        undefined -> Held
+    end;
+remembered_peak(Held, _Queue, _Busiest) ->
+    Held.
+
+%% A message's kind: the variant a Gleam custom type is, the first element of its tuple.
+kind(Message) when is_tuple(Message), tuple_size(Message) > 0, is_atom(element(1, Message)) ->
+    atom_to_binary(element(1, Message));
+kind(Message) when is_atom(Message) ->
+    atom_to_binary(Message);
+kind(_Message) ->
+    <<"other">>.
 
 %% The maps the supervisor runs now: none before the first is started.
 maps(Supervisor) ->
@@ -57,9 +129,27 @@ maps(Supervisor) ->
         exit:_ -> []
     end.
 
+%% The longest queue of the maps and the map that has it, none for no map.
+longest_queue(Maps) ->
+    lists:foldl(
+        fun(Pid, {Longest, _} = Best) ->
+            case queue(Pid) of
+                Length when Length > Longest -> {Length, Pid};
+                _ -> Best
+            end
+        end,
+        {0, none},
+        Maps).
+
 queue(Pid) ->
     case erlang:process_info(Pid, message_queue_len) of
         {message_queue_len, Length} -> Length;
+        undefined -> 0
+    end.
+
+reductions(Pid) ->
+    case erlang:process_info(Pid, reductions) of
+        {reductions, Count} -> Count;
         undefined -> 0
     end.
 

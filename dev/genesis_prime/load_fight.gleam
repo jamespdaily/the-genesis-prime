@@ -118,6 +118,7 @@ import genesis_prime/load_deadline
 import genesis_prime/load_judged.{Judged}
 import genesis_prime/load_move_delay
 import genesis_prime/load_moves
+import genesis_prime/load_queue.{type Probe}
 import genesis_prime/load_respawn.{type Gaps}
 import genesis_prime/load_round.{
   type Answer, type Mark, type Rounds, Answer, Mark,
@@ -333,7 +334,7 @@ pub fn main() -> Nil {
     })
   let ended_us = load_sample.microseconds()
   let after = reductions(run.pid)
-  let #(longest, sum, samples, running) = load_moves.stop_probe()
+  let probe = load_moves.stop_probe()
   // A planted answer is delivered up to its delay after the walkers finish, and the
   // round it was sent in falls due a deadline after that.
   process.sleep(planted_ms(scene.plant) + strike_tell.deadline_ms)
@@ -355,10 +356,7 @@ pub fn main() -> Nil {
     rounds:,
     ended_us:,
     reductions: after - before,
-    longest:,
-    sum:,
-    samples:,
-    running:,
+    probe:,
   )
 }
 
@@ -1168,10 +1166,7 @@ fn report(
   counts counts: List(Counts),
   ended_us ended_us: Int,
   reductions reductions: Int,
-  longest longest: Int,
-  sum sum: Int,
-  samples samples: Int,
-  running running: Int,
+  probe probe: Probe,
 ) -> Nil {
   let total = fn(field: fn(Counts) -> Int) {
     list.fold(counts, 0, fn(all, one) { all + field(one) })
@@ -1212,16 +1207,23 @@ fn report(
   )
   io.println(
     "the map: longest queue "
-    <> int.to_string(longest)
+    <> int.to_string(probe.longest)
     <> ", mean "
-    <> load_moves.per(total: sum, count: samples)
+    <> load_moves.per(total: probe.sum, count: probe.samples)
     <> ", running in "
-    <> load_moves.percent(part: running, whole: samples)
+    <> load_moves.percent(part: probe.running, whole: probe.samples)
     <> " of samples; "
     <> load_moves.per(total: reductions, count: moves)
     <> " reductions per Moved ("
     <> int.to_string(moves)
     <> " moves)",
+  )
+  list.each(
+    load_queue.lines(probe:, marks: [
+      #("walk begins", 0),
+      #("walk ends", hold_ms),
+    ]),
+    io.println,
   )
   io.println(
     "the creatures were sent "
@@ -1298,7 +1300,6 @@ fn report(
   }
   let gaps = list.map(counts, fn(one) { one.respawns })
   let strikes = creatures_strike(scene:)
-  let keeps_up = sum < walkers * samples && running * 2 < samples
   let judged =
     load_judged.judge(
       judged: list.flatten([
@@ -1355,12 +1356,12 @@ fn report(
           None -> []
         },
         [
-          load_judged.Condition(held: keeps_up, said: case keeps_up {
-            True ->
-              "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
-            False ->
-              "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
-          }),
+          load_judged.map_keeps_up(
+            queued: probe.sum,
+            samples: probe.samples,
+            running: probe.running,
+            players: walkers,
+          ),
         ],
       ]),
     )

@@ -611,7 +611,7 @@ fn report(
   samples samples: Subject(Sample),
 ) -> Nil {
   let _settings = settings
-  let #(longest, queued, probed, running) = load_moves.stop_probe()
+  let probe = load_moves.stop_probe()
   let by_time = list.reverse(drain(samples, []))
   case by_time {
     [] -> io.println("no sample was taken")
@@ -622,13 +622,13 @@ fn report(
   }
   io.println(
     "the map's message queue: longest "
-    <> int.to_string(longest)
+    <> int.to_string(probe.longest)
     <> ", mean "
-    <> load_moves.per(total: queued, count: probed)
+    <> load_moves.per(total: probe.sum, count: probe.samples)
     <> " over "
-    <> int.to_string(probed)
+    <> int.to_string(probe.samples)
     <> " samples, one every 10 ms; its process was found running in "
-    <> load_moves.percent(part: running, whole: probed)
+    <> load_moves.percent(part: probe.running, whole: probe.samples)
     <> " of them",
   )
 }

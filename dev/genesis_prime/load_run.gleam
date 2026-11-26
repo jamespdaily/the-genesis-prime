@@ -42,7 +42,9 @@
 import genesis_prime
 import genesis_prime/application
 import genesis_prime/connection/listener
-import genesis_prime/load_player.{type Account, type Report, type Stage}
+import genesis_prime/load_player.{
+  type Account, type Report, type Stage, type Walked,
+}
 import genesis_prime/load_sample.{type Sample}
 import genesis_prime/load_step.{
   type Observation, type Verdict, Kept, Observation,
@@ -77,6 +79,8 @@ pub type Outcome {
     /// For each player that finished its path, its stages in order, each with
     /// the milliseconds it took.
     stage_times: List(List(#(Stage, Int))),
+    /// For each walking player that finished, what it sent and read.
+    walked: List(Walked),
   )
 }
 
@@ -102,6 +106,7 @@ type Collecting {
     players: Dict(Pid, Int),
     reached: Dict(Int, List(#(Stage, Int))),
     trips: List(List(Int)),
+    walked: List(Walked),
     lag_ms: Int,
     failures: List(Failure),
     unconnected: Int,
@@ -164,19 +169,22 @@ fn run_step(
     arrival_ms:,
     hold_ms:,
     walking: False,
+    presses_at_ms: [],
     sample_server:,
   )
 }
 
 /// `run_step` with the players walking as well when `walking` is true: each
 /// sends a movement message every 125 ms until the step ends
-/// (`genesis_prime/load_player`).
+/// (`genesis_prime/load_player`) and presses its ability at each of `presses_at_ms`,
+/// in milliseconds on the monotonic clock.
 pub fn run_step_walking(
   ports ports: Ports,
   accounts accounts: List(Account),
   arrival_ms arrival_ms: Int,
   hold_ms hold_ms: Int,
   walking walking: Bool,
+  presses_at_ms presses_at_ms: List(Int),
   sample_server sample_server: fn() -> Sample,
 ) -> Outcome {
   let report = process.new_subject()
@@ -194,6 +202,7 @@ pub fn run_step_walking(
             begin_at_ms: started_ms + player * arrival_ms / int.max(count, 1),
             until_ms: held_ms,
             walking:,
+            presses_at_ms:,
             report:,
           )
         })
@@ -207,6 +216,7 @@ pub fn run_step_walking(
     players: dict.from_list(players),
     reached: dict.new(),
     trips: [],
+    walked: [],
     lag_ms: 0,
     failures: [],
     unconnected: 0,
@@ -272,8 +282,12 @@ fn hear(collecting: Collecting, heard: Heard) -> Collecting {
           [#(stage, took_ms), ..option.unwrap(stages, [])]
         }),
       )
-    Told(load_player.Finished(round_trips_us:, ..)) ->
-      Collecting(..collecting, trips: [round_trips_us, ..collecting.trips])
+    Told(load_player.Finished(round_trips_us:, walked:, ..)) ->
+      Collecting(
+        ..collecting,
+        trips: [round_trips_us, ..collecting.trips],
+        walked: [walked, ..collecting.walked],
+      )
     Ended(process.ProcessDown(pid:, reason:, ..)) -> {
       let ended =
         Collecting(..collecting, players: dict.delete(collecting.players, pid))
@@ -345,6 +359,7 @@ fn outcome(collecting: Collecting) -> Outcome {
       int.compare(first.player, second.player)
     }),
     stage_times: finished,
+    walked: collecting.walked,
   )
 }
 
