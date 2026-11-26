@@ -91,6 +91,33 @@
 //// (every notice to a player's connection goes as Noticed(its stay, notice))
 //// ```
 ////
+//// The relation of one player with another, kept for the owner of a unit and each viewer of
+//// it (`Player.viewers`, `Relation`), under the generation of the sight the viewer has of the
+//// owner, as the creature's is. A pair that comes into sight begins it awaiting the owner's
+//// snapshot; the owner's news is relayed only through a relation that relays, in the order
+//// the map takes it; the pair that leaves sight ends it by `PlayerUnseen`, whether or not
+//// the viewer took the snapshot. The owner's moves are not news: the owner tells its viewers
+//// itself, stamped with the generation (`genesis_prime/game/move_stamp`), and the map only
+//// decides sight from the place a move ends at.
+////
+//// ```
+//// owner's connection C                map                                        viewer's connection V
+////   SeenBy(V, stay, unit, g) ◀──── pair comes into sight: g new; (V, g) AwaitingSnapshot
+////   PlayerSnapshot(C, V, g, burst) ─▶ (V, g) awaited, V in its stay: Relayed(stay, News(item)) ─▶ V
+////                                     for each item, in order; (V, g) Relaying
+////   PlayerBroadcast(C, news) ───────▶ Relayed(stay, News(news)) to each Relaying viewer, in
+////                                     connection order; none to an awaiting or departed one
+////   TellLanding(C, T, landing) ─────▶ the kind's checks (`relay.landing_kind_of`); Relayed(stay,
+////                                     Landed(landing)) ─▶ T
+////   Say(C, line) ───────────────────▶ Relayed(stay, Said(line)) to each Relaying viewer
+////   the pair leaves sight ──────────▶ UnseenBy(V, g) ─▶ C   and   PlayerUnseen(unit, g) ─▶ V;
+////                                     the relation is dropped, and a snapshot of g is dropped
+//// ```
+////
+//// - The map's `player_snapshot_taken`, `player_broadcast`, `landing_told` and `said` relay
+////   nothing and keep no relation: the relation of two players is not written, and the
+////   owner's `SeenBy` is answered by the owner's own 0x262.
+////
 //// The map's start, from the map's side, and the creatures a player's sight starts
 //// and stops. A spawn that no player sees has no process and no state, only its unit
 //// id when it has had one: it is dormant.
@@ -700,6 +727,7 @@
 //// | a creature captive of a released object is not live at the release (dormant, waiting for a restart or failed) | it is not held out and may start during the release time; the player who used the object stands in sight of it, so its captive is normally live |
 
 import genesis_prime/game/appearance
+import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/hit_radius
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/shown
@@ -724,7 +752,9 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
-import genesis_prime/world_map/relay.{type Delivered, type Inbound, type Payload}
+import genesis_prime/world_map/relay.{
+  type Delivered, type Inbound, type Landing, type Payload,
+}
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn, type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
@@ -900,6 +930,43 @@ pub type Message {
     life: Int,
     payload: Inbound,
   )
+  /// The owner's snapshot of the sight `generation` that `viewer` has of the player of
+  /// connection `by`, in its stay `stay`: the picture the owner built when it took the
+  /// map's `SeenBy` of that generation, `burst` in the order the viewer's connection
+  /// writes it (the 0x262 first, then what its client needs of the unit's live casts and
+  /// state). A tell, from a connection. The map relays the burst when the pair holds
+  /// that generation and awaits its snapshot, and drops it otherwise
+  /// (`player_snapshot_taken`).
+  PlayerSnapshot(
+    by: ConnectionId,
+    stay: Stay,
+    viewer: ConnectionId,
+    generation: Generation,
+    burst: List(PeerNews),
+  )
+  /// News of the unit of the player of connection `from`, in its stay `stay`, for every
+  /// viewer whose relation with it relays. A tell, from a connection. The news names the
+  /// unit it is about, and the map drops news that names another unit than the sender's;
+  /// a move is no news (`unit_news.News` holds none), the mover tells its viewers
+  /// itself. The map relays it to each relaying viewer in connection order
+  /// (`player_broadcast`).
+  PlayerBroadcast(from: ConnectionId, stay: Stay, news: PeerNews)
+  /// What the player of connection `from`, in its stay `stay`, lands on the player of
+  /// connection `to`, in the stay `to_stay`, or answers it: a heal, a change, the end of
+  /// one, a go's tell or an event. A tell, from a connection. The map admits it by the
+  /// kind's checks (`relay.landing_kind_of`) and sends it as `Relayed(to_stay,
+  /// Landed(landing))` (`landing_told`).
+  TellLanding(
+    from: ConnectionId,
+    stay: Stay,
+    to: ConnectionId,
+    to_stay: Stay,
+    landing: Landing,
+  )
+  /// A local chat line of the player of connection `from`, in its stay `stay`, for every
+  /// viewer whose relation relays. A tell, from a connection. The map relays it as
+  /// `Relayed(viewer's stay, Said(tell))` in connection order (`said`).
+  Say(from: ConnectionId, stay: Stay, tell: ChatTell)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -1005,6 +1072,13 @@ pub type Notice {
   /// names: the connection writes the 0x355 of the unit if its client shows it, after
   /// the finishes of its casts.
   UnitUnseen(unit_id: Int, generation: Generation)
+  /// The player of unit `unit_id` is out of the viewer's sight from the sight `generation`
+  /// names: by distance, by leaving the map, by its connection ending or by a second
+  /// join, whether or not the viewer took the unit's snapshot of that generation. The
+  /// connection finishes the unit's casts, writes its 0x355 if its client shows it, ends
+  /// the sources the unit's sight ended, and remembers that generation as the last that
+  /// ended, so a late move of it is dropped (genesis_prime/game/move_stamp).
+  PlayerUnseen(unit_id: Int, generation: Generation)
   /// The unit `unit_id` has no owner any more, since its connection or its
   /// creature ended, which sends nothing as it ends. It goes to every player in
   /// the map, also one that stopped seeing the unit a moment before. The
@@ -1140,6 +1214,7 @@ type Player {
     unit: PlayerUnit,
     watch: WatchId,
     sees: Dict(ConnectionId, Generation),
+    viewers: Dict(ConnectionId, Relation),
     seen: Set(SpawnId),
     objects: Set(SpawnId),
     readiness: Readiness,
@@ -1328,7 +1403,25 @@ pub fn step(
       expired(state:, unit_id:, life:)
     OwnEvent(Told(message: TellCreature(from:, stay:, unit_id:, life:, payload:))) ->
       told_creature(state:, from:, stay:, unit_id:, life:, payload:)
+    OwnEvent(Told(message: PlayerSnapshot(
+      by:,
+      stay:,
+      viewer:,
+      generation:,
+      burst:,
+    ))) ->
+      player_snapshot_taken(state:, by:, stay:, viewer:, generation:, burst:)
+    OwnEvent(Told(message: PlayerBroadcast(from:, stay:, news:))) ->
+      player_broadcast(state:, from:, stay:, news:)
+    OwnEvent(Told(message: TellLanding(from:, stay:, to:, to_stay:, landing:))) ->
+      landing_told(state:, from:, stay:, to:, to_stay:, landing:)
+    OwnEvent(Told(message: Say(from:, stay:, tell:))) ->
+      said(state:, from:, stay:, tell:)
     OwnEvent(Asked(message: Moved(..), ..))
+    | OwnEvent(Asked(message: PlayerSnapshot(..), ..))
+    | OwnEvent(Asked(message: PlayerBroadcast(..), ..))
+    | OwnEvent(Asked(message: TellLanding(..), ..))
+    | OwnEvent(Asked(message: Say(..), ..))
     | OwnEvent(Asked(message: Snapshot(..), ..))
     | OwnEvent(Asked(message: Broadcast(..), ..))
     | OwnEvent(Asked(message: Relay(..), ..))
@@ -1342,7 +1435,7 @@ pub fn step(
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..)))
     | OwnEvent(Told(message: Summon(..))) ->
-      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged, Released, Snapshot, Broadcast, Relay, Expired and TellCreature only"
+      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged, Released, Snapshot, Broadcast, Relay, Expired, TellCreature, PlayerSnapshot, PlayerBroadcast, TellLanding and Say only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
@@ -1474,6 +1567,74 @@ fn summon_settled(
     State(..state, summoning: dict.delete(state.summoning, spawn)),
     Effects([OwnEffect(Reply(caller, Summoned(unit_id:)))]),
   )
+}
+
+/// The relation the map holds with the player of connection `viewer` as a viewer of the
+/// player of connection `owner`, for a test.
+pub fn player_relation(
+  state state: State,
+  owner owner: ConnectionId,
+  viewer viewer: ConnectionId,
+) -> Option(Relation) {
+  dict.get(state.players, owner)
+  |> result.try(fn(player) { dict.get(player.viewers, viewer) })
+  |> option.from_result
+}
+
+/// An owner's snapshot of a sight of its unit: relayed to the viewer, each item as
+/// `Relayed(stay, News(item))` in the order the owner built it, when the owner's player
+/// holds a relation of exactly that generation with the viewer, the relation awaits its
+/// snapshot and the viewer is still in the stay of the relation; the relation is then
+/// `Relaying`. Any other snapshot is dropped, as a creature's is (`snapshot_taken`).
+/// This function relays nothing and keeps no relation.
+fn player_snapshot_taken(
+  state state: State,
+  by _by: ConnectionId,
+  stay _stay: Stay,
+  viewer _viewer: ConnectionId,
+  generation _generation: Generation,
+  burst _burst: List(PeerNews),
+) -> #(State, ServiceStep(Outgoing)) {
+  #(state, Effects([]))
+}
+
+/// News of a player's own unit: relayed to each viewer whose relation relays, in
+/// connection order, and to no viewer awaiting its snapshot or gone from the relations
+/// (`broadcast`). News that names another unit than the sender's is dropped with an
+/// error line. This function relays nothing.
+fn player_broadcast(
+  state state: State,
+  from _from: ConnectionId,
+  stay _stay: Stay,
+  news _news: PeerNews,
+) -> #(State, ServiceStep(Outgoing)) {
+  #(state, Effects([]))
+}
+
+/// One player's landing on another: admitted by the kind's destination and source checks
+/// (`relay.landing_kind_of`) and sent as `Relayed(to_stay, Landed(landing))`. The map
+/// delivers nothing.
+fn landing_told(
+  state state: State,
+  from _from: ConnectionId,
+  stay _stay: Stay,
+  to _to: ConnectionId,
+  to_stay _to_stay: Stay,
+  landing _landing: Landing,
+) -> #(State, ServiceStep(Outgoing)) {
+  #(state, Effects([]))
+}
+
+/// A local chat line: relayed to each relaying viewer of the speaker, in connection
+/// order, as `Relayed(stay, Said(tell))` for the viewer's stay. This function relays
+/// nothing.
+fn said(
+  state state: State,
+  from _from: ConnectionId,
+  stay _stay: Stay,
+  tell _tell: ChatTell,
+) -> #(State, ServiceStep(Outgoing)) {
+  #(state, Effects([]))
 }
 
 /// A creature's snapshot of the sight `generation` of the player of connection `by`:
@@ -3762,6 +3923,7 @@ fn joined_new(
           unit:,
           watch:,
           sees: dict.new(),
+          viewers: dict.new(),
           seen: set.new(),
           objects: set.new(),
           readiness: StillLoading,

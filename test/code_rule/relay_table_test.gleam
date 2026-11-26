@@ -22,8 +22,12 @@ import unitest
 const relay_path = "src/genesis_prime/world_map/relay.gleam"
 
 /// The types the table has a row for each variant of, with the function that gives each
-/// variant's kind.
-const tables = [#("Payload", "kind_of"), #("Inbound", "inbound_kind_of")]
+/// variant's kind. `Landing` is what a player's connection lands on another through the map.
+const tables = [
+  #("Payload", "kind_of"),
+  #("Inbound", "inbound_kind_of"),
+  #("Landing", "landing_kind_of"),
+]
 
 /// The names of the variants of the custom types called `type_names`.
 fn variants_of(
@@ -246,5 +250,11 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       text: source.read(relay_path),
     ))
     == []
-    as "each payload and each inbound tell of the relay has a row in the table and an arm of its own in its kind function"
+    as "each payload, each inbound tell and each landing of the relay has a row in the table and an arm of its own in its kind function"
+  assert list.filter(
+      variants(file: SourceFile(path: relay_path, text: source.read(relay_path))),
+      fn(name) { name == "Move" || name == "Moving" },
+    )
+    == []
+    as "a move is no relayed payload: the mover tells its viewers itself"
 }

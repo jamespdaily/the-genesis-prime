@@ -103,10 +103,11 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByChat, SentByFoe, SentByKill, SentByLine, SentByMap, SentByMove,
-  SentByPeer, SentByPlayer, SentBySessions, SentByTarget, TellChat, TellCreature,
-  TellLifeChanged, TellLine, TellMove, TellMoved, TellPeer, TellPlayer,
-  TellReady, TellReleased, TellStealthChanged, TellVisibilityChanged,
+  SentByChat, SentByFoe, SentByKill, SentByLine, SentByMap, SentByPeer,
+  SentByPlayer, SentBySessions, SentByTarget, TellBroadcast, TellChat,
+  TellCreature, TellLanding, TellLifeChanged, TellLine, TellMove, TellMoved,
+  TellPeer, TellPlayer, TellReady, TellReleased, TellSay, TellSnapshot,
+  TellStealthChanged, TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -375,6 +376,10 @@ fn directory(settings: Settings) -> Directory {
       | TellChat(..)
       | TellLine(..)
       | TellCreature(..)
+      | TellBroadcast(..)
+      | TellSnapshot(..)
+      | TellLanding(..)
+      | TellSay(..)
       | TellPlayer(..) -> Error(Nil)
     }
   }
@@ -483,6 +488,10 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellMove(..)
     | TellLine(..)
     | TellCreature(..)
+    | TellBroadcast(..)
+    | TellSnapshot(..)
+    | TellLanding(..)
+    | TellSay(..)
     | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
@@ -504,59 +513,12 @@ pub fn tell_the_run(
   subject subject: Subject(Call(map.Message, map.Outgoing)),
   request request: Request,
 ) -> Nil {
-  case request {
-    TellMoved(connection:, place:, seq:) -> {
-      let _sent =
-        service.tell_subject(subject, map.Moved(connection:, place:, seq:))
+  case client_connection.told_to_the_map(request:) {
+    Ok(message) -> {
+      let _sent = service.tell_subject(subject, message)
       Nil
     }
-    TellReady(connection:, seq:) -> {
-      let _sent = service.tell_subject(subject, map.Ready(connection:, seq:))
-      Nil
-    }
-    TellStealthChanged(connection:, stealthed:) -> {
-      let _sent =
-        service.tell_subject(
-          subject,
-          map.StealthChanged(connection:, stealthed:),
-        )
-      Nil
-    }
-    TellVisibilityChanged(connection:, hidden:) -> {
-      let _sent =
-        service.tell_subject(
-          subject,
-          map.VisibilityChanged(connection:, hidden:),
-        )
-      Nil
-    }
-    TellLifeChanged(connection:, alive:) -> {
-      let _sent =
-        service.tell_subject(subject, map.LifeChanged(connection:, alive:))
-      Nil
-    }
-    TellReleased(unit_id:) -> {
-      let _sent = service.tell_subject(subject, map.Released(unit_id:))
-      Nil
-    }
-    TellCreature(connection:, stay:, unit_id:, life:, payload:) -> {
-      let _sent =
-        service.tell_subject(
-          subject,
-          map.TellCreature(from: connection, stay:, unit_id:, life:, payload:),
-        )
-      Nil
-    }
-    TellPeer(..)
-    | TellMove(..)
-    | TellChat(..)
-    | TellLine(..)
-    | TellPlayer(..)
-    | AskStore(..)
-    | AskHandOff(..)
-    | AskSessions(..)
-    | AskMap(..)
-    | AskMapRun(..) ->
+    Error(Nil) ->
       runtime.log(
         LogError,
         "a rule told a map something other than a move, which a map takes only by an ask",
@@ -580,31 +542,10 @@ fn connection_deliver(
   settings: Settings,
 ) -> fn(step.Address, Request) -> Result(Nil, Nil) {
   let reach = connection_reach(settings, fn(message: Message) { Ok(message) })
-  let chat_reach = connection_reach(settings, fn(tell) { Ok(SentByChat(tell)) })
   fn(to: step.Address, request: Request) {
-    case request, to {
-      TellPeer(stay:, news:), _ ->
-        reach.send(to, ForStay(stay:, sent: SentByPeer(news:)))
-      TellMove(stay:, move:), _ ->
-        reach.send(to, ForStay(stay:, sent: SentByMove(move:)))
-      TellPlayer(stay:, tell:), _ ->
-        reach.send(to, ForStay(stay:, sent: SentByPlayer(tell:)))
-      TellLine(stay:, tell:), _ ->
-        reach.send(to, ForStay(stay:, sent: SentByLine(tell:)))
-      TellChat(tell:), _ -> chat_reach.send(to, tell)
-      TellCreature(..), _
-      | TellMoved(..), _
-      | TellReady(..), _
-      | TellStealthChanged(..), _
-      | TellLifeChanged(..), _
-      | TellVisibilityChanged(..), _
-      | TellReleased(..), _
-      | AskStore(..), _
-      | AskHandOff(..), _
-      | AskSessions(..), _
-      | AskMap(..), _
-      | AskMapRun(..), _
-      -> {
+    case client_connection.told_to_a_connection(request:) {
+      Ok(message) -> reach.send(to, message)
+      Error(Nil) -> {
         runtime.log(
           LogError,
           "a rule sent a connection something other than news of a player's unit or a heal strike or its answer",
@@ -690,12 +631,30 @@ pub fn relayed_message(
 ) -> Message {
   case delivered {
     relay.News(news:) -> ForStay(stay:, sent: SentByPeer(news:))
+    relay.Landed(landing:) ->
+      ForStay(stay:, sent: SentByPlayer(tell: player_tell_of(landing:)))
+    relay.Said(tell:) -> ForStay(stay:, sent: SentByLine(tell:))
     relay.Tell(payload: relay.Struck(answered:)) ->
       ForStay(stay:, sent: SentByTarget(answered))
     relay.Tell(payload: relay.KillCredit(credit:)) ->
       ForStay(stay:, sent: SentByKill(credit))
     relay.Tell(payload: relay.Fight(told:)) ->
       ForStay(stay:, sent: SentByFoe(told))
+  }
+}
+
+/// The tell of a player's connection a landing is delivered to the told player's
+/// connection as.
+fn player_tell_of(
+  landing landing: relay.Landing,
+) -> client_connection.PlayerTell {
+  case landing {
+    relay.HealStrike(strike:) -> client_connection.Strike(strike:)
+    relay.HealAnswer(answered:) -> client_connection.Answer(answered:)
+    relay.ChangeStart(change:)
+    | relay.ChangeEnd(change:)
+    | relay.CastWent(change:) -> client_connection.Change(change:)
+    relay.AllyEvent(event:) -> client_connection.Event(event:)
   }
 }
 

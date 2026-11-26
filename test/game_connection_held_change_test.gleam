@@ -2339,3 +2339,137 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
     0,
   ))
 }
+
+/// The viewer `viewer` of the player (connection 3's unit) is shown the caster's unit and the
+/// start of its cast `cast_id`, as the caster's snapshot and news give them.
+fn caster_shown_casting(
+  state state: game_connection.State,
+  cast_id cast_id: Int,
+) -> game_connection.State {
+  let caster_unit = support.viewer_unit_id(3)
+  feed_all(state:, events: [
+    support.sent_by_a_peer(support.news_of(
+      unit_id: caster_unit,
+      news: Appeared(
+        unit: UnitCreatePlayer(..support.another_unit(), unit_id: caster_unit),
+        generation: support.viewer_sight(3),
+      ),
+    )),
+    support.sent_by_a_peer(support.news_of(
+      unit_id: caster_unit,
+      news: unit_news.CastStarted(start: support.spell_started_of(
+        cast_id:,
+        caster: caster_unit,
+      )),
+    )),
+  ]).0
+}
+
+pub fn a_unit_leaves_a_viewer_by_one_message_that_finishes_its_casts_removes_it_and_ends_its_sources_in_that_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Caster 3, whose unit the player shows and whose cast 100 the player's client holds as
+  // written by it. The player holds, from that caster, an armor that ends with its sight
+  // (cast 100) and a pool of a spell with propertyFlags 0x100, kept (cast 101).
+  let armor_of_three =
+    held(caster: 3, source: armor_source(cast_id: 100), change: armor())
+  let kept_pool_of_three =
+    Hold(
+      ..held(
+        caster: 3,
+        source: pool_source(cast_id: 101),
+        change: pool(amount: 300),
+      ),
+      sight: KeptWhenUnseen,
+    )
+  let state =
+    caster_shown_casting(
+      state: holding(holds: [armor_of_three, kept_pool_of_three]),
+      cast_id: 100,
+    )
+  let unseen =
+    support.sent_by_the_map(map.PlayerUnseen(
+      unit_id: support.viewer_unit_id(3),
+      generation: support.viewer_sight(3),
+    ))
+  let #(state, taken) = support.feed(state:, event: unseen)
+  assert support.written_ids(taken) == [0x07FE, 0x0355, 0x093A]
+    as "the 0x7fe of the cast the caster wrote, the caster's 0x355, then the end of the armor that ends with its sight"
+  assert seen(steps: [taken]).absorptions == []
+    as "the kept pool is not ended: its spell keeps its buff after the caster's removal (cast.target_node_end)"
+  let #(_, again) = support.feed(state:, event: unseen)
+  assert support.written_ids(again) == []
+    as "a second message for the same sight writes nothing: the unit is removed once"
+}
+
+pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_with_its_sight_and_keeps_a_kept_one_and_a_creatures_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player holds from caster 3: a pool that ends with its sight (cast 101), an armor
+  // of a spell with propertyFlags 0x100 (cast 100); and from caster 4 a pool (cast 102),
+  // which stands for a source the caster's sight does not end. Caster 3's connection joins
+  // again: its earlier sight of the player ends (`PlayerUnseen`) and a new one begins.
+  let pool_of_three =
+    held(
+      caster: 3,
+      source: pool_source(cast_id: 101),
+      change: pool(amount: 300),
+    )
+  let kept_armor_of_three =
+    Hold(
+      ..held(caster: 3, source: armor_source(cast_id: 100), change: armor()),
+      sight: KeptWhenUnseen,
+    )
+  let pool_of_four =
+    held(
+      caster: 4,
+      source: pool_source(cast_id: 102),
+      change: pool(amount: 200),
+    )
+  let state =
+    caster_shown_casting(
+      state: holding_on(state: support.in_world(), viewers: [2, 3, 4], holds: [
+        pool_of_three,
+        kept_armor_of_three,
+        pool_of_four,
+      ]),
+      cast_id: 100,
+    )
+  let #(state, unseen) =
+    support.feed(
+      state:,
+      event: support.sent_by_the_map(map.PlayerUnseen(
+        unit_id: support.viewer_unit_id(3),
+        generation: support.viewer_sight(3),
+      )),
+    )
+  assert seen(steps: [unseen]).absorptions == [200]
+    as "caster 3's pool, which ends with its sight, is taken off: the player's absorption falls to caster 4's 200"
+  assert seen(steps: [unseen]).properties == []
+    as "the armor of the spell that keeps its buff is not taken off"
+  let new_stay = stay.next(support.viewer_stay(3))
+  let new_sight = generation.after(support.viewer_sight(5))
+  let #(state, _) =
+    support.feed(
+      state:,
+      event: support.sent_by_the_map(map.SeenBy(
+        by: ConnectionId(3),
+        stay: new_stay,
+        unit_id: support.viewer_unit_id(3),
+        generation: new_sight,
+      )),
+    )
+  let #(_, started) =
+    support.feed(
+      state:,
+      event: tell(PlayerChangeStarts(
+        from: ConnectionId(3),
+        from_stay: new_stay,
+        source: pool_source(cast_id: 103),
+        change: pool(amount: 300),
+        sight: EndsWhenUnseen,
+        spell4_id: armor_spell(),
+        effect: effect_of(source: pool_source(cast_id: 103)),
+      )),
+    )
+  assert seen(steps: [started]).absorptions == [500]
+    as "a start of the caster's new stay is held: caster 4's 200 and the new 300"
+}

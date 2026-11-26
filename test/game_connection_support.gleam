@@ -681,29 +681,7 @@ pub fn map_of_world_with_four_players(
   map map_id: MapId,
   run run: Int,
 ) -> map.State {
-  let state =
-    map.new(map.Settings(
-      map: map_id,
-      incarnation: run,
-      realm_id: settings().realm_id,
-      tables: settings().tables,
-      spawns: spawn.no_spawns(),
-      summons: spawn_support.summon_checks(),
-      kinds: Kinds(
-        default: Kind(
-          respawn_ms: 60_000,
-          attack_spell4_id: Spell4Id(5649),
-          alternate_spell4_ids: [],
-          attack_interval_ms: 1500,
-          guard: option.None,
-          specials: [],
-        ),
-        by_creature: dict.new(),
-      ),
-      numbers: spawn_support.numbers,
-      idle_stop_ms: 60_000,
-      sweep_ms: 10_000,
-    ))
+  let state = empty_map_of_world(map: map_id, run:)
   list.fold([2, 3, 4, 5], state, fn(state, other) {
     let assert Some(place) = world_character().place
       as "the tests' character has a saved place"
@@ -726,6 +704,33 @@ pub fn map_of_world_with_four_players(
       )
     state
   })
+}
+
+/// A map of the tests' realm and tables, as the server starts one for the tests'
+/// connections, with no player and no spawn: the map `map_id` running as `run`.
+pub fn empty_map_of_world(map map_id: MapId, run run: Int) -> map.State {
+  map.new(map.Settings(
+    map: map_id,
+    incarnation: run,
+    realm_id: settings().realm_id,
+    tables: settings().tables,
+    spawns: spawn.no_spawns(),
+    summons: spawn_support.summon_checks(),
+    kinds: Kinds(
+      default: Kind(
+        respawn_ms: 60_000,
+        attack_spell4_id: Spell4Id(5649),
+        alternate_spell4_ids: [],
+        attack_interval_ms: 1500,
+        guard: option.None,
+        specials: [],
+      ),
+      by_creature: dict.new(),
+    ),
+    numbers: spawn_support.numbers,
+    idle_stop_ms: 60_000,
+    sweep_ms: 10_000,
+  ))
 }
 
 /// The map's answer to the join the connection asked, which the real map gives:
@@ -1542,6 +1547,10 @@ pub fn mapped_logging(
     | TellPeer(..)
     | client_connection.TellMove(..)
     | client_connection.TellCreature(..)
+    | client_connection.TellBroadcast(..)
+    | client_connection.TellSnapshot(..)
+    | client_connection.TellLanding(..)
+    | client_connection.TellSay(..)
     | client_connection.TellPlayer(..)
     | client_connection.TellLine(..)
     | TellChat(..) ->

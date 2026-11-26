@@ -327,6 +327,7 @@ pub fn map_sent(
           }
         Error(Nil) -> viewer_unseen(session:, now:, entered:, by:, generation:)
       }
+    map.PlayerUnseen(unit_id: _, generation: _) -> Continue(session, [])
     map.UnitUnseen(unit_id:, generation: _) -> {
       let #(session, removal) =
         unit_removed(session:, now:, entered:, unit_id:, keeping: [])

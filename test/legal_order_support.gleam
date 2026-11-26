@@ -29,6 +29,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
 import genesis_prime/message/unit_create_creature
+import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_death_state
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_health
@@ -671,7 +672,11 @@ fn map_message_name(message: map.Message) -> String {
     | map.VisibilityChanged(..)
     | map.Released(..)
     | map.Summon(..)
-    | map.TellCreature(..) -> "another tell"
+    | map.TellCreature(..)
+    | map.PlayerSnapshot(..)
+    | map.PlayerBroadcast(..)
+    | map.TellLanding(..)
+    | map.Say(..) -> "another tell"
   }
 }
 
@@ -749,14 +754,18 @@ pub fn names(frames frames: List(Frame)) -> List(String) {
   })
 }
 
-/// The unit a frame the scene follows names: 0x262 of a creature, 0x355, 0x937, 0x88c and
+/// The unit a frame the scene follows names: 0x262 of a creature or a player, 0x355, 0x937, 0x88c and
 /// 0x638.
-fn unit_of(frame frame: Frame) -> Option(Int) {
+pub fn unit_of(frame frame: Frame) -> Option(Int) {
   let Frame(message_id:, body:) = frame
   case message_id {
     0x0262 ->
       unit_create_creature.decode(body)
       |> result.map(fn(created) { created.unit_id })
+      |> result.lazy_or(fn() {
+        unit_create_player.decode(body)
+        |> result.map(fn(created) { created.unit_id })
+      })
       |> option.from_result
     0x0355 ->
       unit_destroyed.decode(body)

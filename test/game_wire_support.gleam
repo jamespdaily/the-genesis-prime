@@ -981,6 +981,17 @@ pub fn started_on(
   })
 }
 
+/// A server as `started_on` makes it, with the sends of its maps to the connections held
+/// back by `delay_ms` of real time each, in the order the maps sent them: the map's notices
+/// and the snapshots it relays arrive late, and nothing a connection sends another directly.
+pub fn started_with_the_maps_sends_delayed(
+  tables _tables: table_store.Tables,
+  time _time: driven_time.Time,
+  delay_ms _delay_ms: Int,
+) -> login_support.Started {
+  panic as "the server's world gives no way to hold its maps' sends back for a time: a settings field for the delay and a delaying reach, built with the map's relays"
+}
+
 /// Where the Dagun stands: 23.5 units along -z from where a new test character
 /// stands in World 1387, zone 1100, at 1.5, 2.5, 3.5.
 pub const dagun_z = -20.0

@@ -102,7 +102,9 @@ fn of_sent(sent: StaySent) -> Told {
 
 fn of_notice(notice: Notice) -> Told {
   case notice {
-    map.UnitUnseen(unit_id:, ..) | map.Gone(unit_id:) -> Removal([unit_id])
+    map.UnitUnseen(unit_id:, ..)
+    | map.PlayerUnseen(unit_id:, ..)
+    | map.Gone(unit_id:) -> Removal([unit_id])
     map.ObjectsUnseen(unit_ids:) -> Removal(unit_ids)
     map.ObjectsSeen(units:) ->
       Creation(

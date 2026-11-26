@@ -90,6 +90,7 @@ fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
       | map.Noticed(notice: map.UnseenBy(..), ..)
       | map.Noticed(notice: map.Gone(..), ..)
       | map.Noticed(notice: map.UnitUnseen(..), ..)
+      | map.Noticed(notice: map.PlayerUnseen(..), ..)
       | map.Joined(..)
       | map.NotJoined(..)
       | map.Left
