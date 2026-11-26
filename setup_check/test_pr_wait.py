@@ -1,25 +1,23 @@
-"""dev/pr_wait.sh: how its wait ends, and that a failed GitHub call is an error, not a CI state.
+"""dev/pr_wait.py: how its wait ends, and that a failed GitHub call is an error, not a CI state.
 
-The script runs on a planted `gh`. The planted gh answers
-  `gh pr view N --json statusCheckRollup`      with PLANT_VIEW_OUTPUT (default "1") and the
-                                                exit status PLANT_VIEW_STATUS (default 0);
-  `gh pr checks N --watch`                     with the exit status PLANT_WATCH_STATUS (default 0);
-  `gh pr checks N --json name,bucket --jq ...` with one line `bucket name` per check: the
-                                                names in PLANT_FAILING (a comma-separated line,
-                                                bucket fail) and the one pending check named
-                                                by PLANT_PENDING (bucket pending), the gate job
-                                                `check` as a passing check unless PLANT_GATE is 0
-                                                for that call (default 1), and the exit status
-                                                PLANT_JSON_STATUS (default 0).
-PLANT_VIEW_OUTPUT, PLANT_VIEW_STATUS, PLANT_WATCH_STATUS, PLANT_PENDING, PLANT_GATE and
-PLANT_JSON_STATUS are comma-separated lists with one item per call, the last item repeated (plant_support.NEXT_LINE
-reads them from files); a call that fails prints nothing. Every call is kept in PLANT_DIR/calls.
-Every test sets PR_WAIT_RETRY_SECONDS, PR_WAIT_POLL_SECONDS and PR_WAIT_GATE_POLL_SECONDS to 0, so
-none sleeps.
+Three layers, as dev/ci_gate.py's tests:
+- `decide(rows)` is pure: the checks' (bucket, name) rows in, a verdict out.
+- `wait(...)` is the loop with its fetch, sleep and clock passed in: a fake clock that only a
+  fake sleep moves, so the deadline of 1500 s is crossed with no waiting.
+- the script (dev/pr_wait.sh) runs on a planted `gh`, with the deadline, the poll and the
+  limit of one call set small by environment. The planted gh answers
+  `gh pr checks N --json name,bucket` with a JSON list: the names in PLANT_FAILING (a
+  comma-separated line, bucket fail) and the one pending check named by PLANT_PENDING (bucket
+  pending), the gate job `check` as a passing check unless PLANT_GATE is 0 for that call
+  (default 1), and the exit status PLANT_JSON_STATUS (default 0; a failed call prints
+  nothing). PLANT_HANG set makes the call sleep for ever. PLANT_JSON_STATUS, PLANT_PENDING and
+  PLANT_GATE are comma-separated lists with one item per call, the last item repeated
+  (plant_support.NEXT_LINE reads them from files). Every call is kept in PLANT_DIR/calls.
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_pr_wait.py'
 """
 
+import json
 import os
 import shutil
 import stat
@@ -30,37 +28,36 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+for folder in (HERE, HERE.parent / "dev"):
+    if str(folder) not in sys.path:
+        sys.path.insert(0, str(folder))
 
+import pr_wait  # noqa: E402
 from plant_support import NEXT_LINE  # noqa: E402
 
 SCRIPT = HERE.parent / "dev" / "pr_wait.sh"
 
-RUNNABLE = shutil.which("bash") is not None
+RUNNABLE = shutil.which("bash") is not None and shutil.which("python3.13") is not None
 
 GH_STUB = """#!/bin/bash
 echo "$*" >> "$PLANT_DIR/calls"
 """ + NEXT_LINE + """case "$1 $2" in
-  "pr view")
-    answer=$(next_line view_output view_output_asked)
-    status=$(next_line view_status view_status_asked)
-    [ "${status:-0}" = 0 ] && echo "$answer"
-    exit "${status:-0}" ;;
   "pr checks")
     case "$*" in
-      *--watch*)
-        status=$(next_line watch_status watch_status_asked)
-        exit "${status:-0}" ;;
       *--json*)
+        [ -n "${PLANT_HANG-}" ] && exec sleep 1000
         status=$(next_line json_status json_status_asked)
         pending=$(next_line pending pending_asked)
         gate=$(next_line gate gate_asked)
         if [ "${status:-0}" = 0 ]; then
+          rows=()
           IFS=',' read -ra failing <<< "${PLANT_FAILING-}"
-          for name in "${failing[@]}"; do echo "fail ${name# }"; done
-          [ -n "$pending" ] && echo "pending $pending"
-          [ "${gate:-1}" = 0 ] || [ "$pending" = check ] || echo "pass check"
+          for name in "${failing[@]}"; do
+            [ -n "$name" ] && rows+=("{\\"name\\":\\"${name# }\\",\\"bucket\\":\\"fail\\"}")
+          done
+          [ -n "$pending" ] && rows+=("{\\"name\\":\\"$pending\\",\\"bucket\\":\\"pending\\"}")
+          { [ "${gate:-1}" = 0 ] || [ "$pending" = check ]; } || rows+=("{\\"name\\":\\"check\\",\\"bucket\\":\\"pass\\"}")
+          (IFS=,; echo "[${rows[*]}]")
         fi
         exit "${status:-0}" ;;
     esac ;;
@@ -71,18 +68,165 @@ exit 9
 
 # The per-call lists of the planted gh: the variable, its file in PLANT_DIR and its default.
 PER_CALL = {
-    "PLANT_VIEW_OUTPUT": ("view_output", "1"),
-    "PLANT_VIEW_STATUS": ("view_status", "0"),
-    "PLANT_WATCH_STATUS": ("watch_status", "0"),
     "PLANT_JSON_STATUS": ("json_status", "0"),
     "PLANT_PENDING": ("pending", ""),
     "PLANT_GATE": ("gate", "1"),
 }
 
+DEADLINE = pr_wait.DEADLINE_SECONDS
+POLL = pr_wait.POLL_SECONDS
+NO_CHECK = pr_wait.NO_CHECK_SECONDS
 
-@unittest.skipUnless(RUNNABLE, "pr_wait.sh needs bash")
-class PullRequestWaitTest(unittest.TestCase):
-    def wait(self, **plant: str) -> subprocess.CompletedProcess:
+
+def rows_of(*pairs: tuple[str, str]) -> list[tuple[str, str]]:
+    return list(pairs)
+
+
+def answer(*pairs: tuple[str, str]) -> str:
+    """What `gh pr checks --json name,bucket` prints for the (bucket, name) pairs."""
+    return json.dumps([{"name": name, "bucket": bucket} for bucket, name in pairs])
+
+
+PASSED = answer(("pass", "build"), ("pass", "check"))
+PENDING = answer(("pending", "build"), ("pass", "other"))
+NO_ROWS = answer()
+
+
+class Fake:
+    """A clock that only the fake sleep moves, and a fetch that answers from a list, the last
+    again when they run out, or `later`'s answer once the clock has reached its seconds; an item
+    that is an exception is raised."""
+
+    def __init__(self, answers: list, later: tuple[float, str] | None = None):
+        self.answers = answers
+        self.later = later
+        self.now = 0
+        self.fetches = 0
+        self.sleeps = 0
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps += 1
+        self.now += seconds
+
+    def fetch(self) -> str:
+        item = self.answers[min(self.fetches, len(self.answers) - 1)]
+        if self.later and self.now >= self.later[0]:
+            item = self.later[1]
+        self.fetches += 1
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def run_wait(fake: Fake, **limits) -> tuple[int, str]:
+    return pr_wait.wait(7, fake.fetch, fake.sleep, fake.clock, **limits)
+
+
+class DecideTest(unittest.TestCase):
+    def test_every_check_passed_with_the_gate_job_is_a_pass(self):
+        verdict = pr_wait.decide(rows_of(("pass", "build"), ("pass", "check")))
+        self.assertEqual(verdict.kind, pr_wait.Kind.PASS)
+
+    def test_a_failed_or_cancelled_check_is_a_failure_naming_them_in_order_while_others_pend(self):
+        verdict = pr_wait.decide(rows_of(("pending", "slow"), ("cancel", "second"), ("pass", "good"), ("fail", "first")))
+        self.assertEqual(verdict.kind, pr_wait.Kind.FAIL)
+        self.assertEqual(verdict.names, ("second", "first"))
+
+    def test_a_pending_check_with_none_failed_keeps_waiting(self):
+        verdict = pr_wait.decide(rows_of(("pass", "check"), ("pending", "slow"), ("pending", "slower")))
+        self.assertEqual(verdict.kind, pr_wait.Kind.WAIT)
+        self.assertEqual(verdict.names, ("slow", "slower"))
+
+    def test_all_passed_without_the_gate_job_keeps_waiting(self):
+        verdict = pr_wait.decide(rows_of(("pass", "build"), ("pass", "tests")))
+        self.assertEqual(verdict.kind, pr_wait.Kind.WAIT)
+        self.assertEqual(verdict.names, ())
+
+    def test_no_rows_is_no_check_yet(self):
+        self.assertEqual(pr_wait.decide([]).kind, pr_wait.Kind.NONE)
+
+    def test_skipped_checks_are_not_pending_and_a_name_with_spaces_is_kept_whole(self):
+        rows = [
+            ("a skipped check beside the gate job", rows_of(("skipping", "optional"), ("pass", "check")), pr_wait.Kind.PASS, ()),
+            ("a failing name with spaces", rows_of(("fail", "CI / unit tests"), ("pass", "check")), pr_wait.Kind.FAIL, ("CI / unit tests",)),
+            ("a pending name with spaces", rows_of(("pending", "CI / client parts"), ("pass", "check")), pr_wait.Kind.WAIT, ("CI / client parts",)),
+        ]
+        for why, given, kind, names in rows:
+            with self.subTest(why):
+                verdict = pr_wait.decide(given)
+                self.assertEqual((verdict.kind, verdict.names), (kind, names))
+
+
+class WaitTest(unittest.TestCase):
+    def test_pending_then_passed_on_the_third_poll_returns_0_after_two_sleeps(self):
+        fake = Fake([PENDING, PENDING, PASSED])
+        status, message = run_wait(fake)
+        self.assertEqual(status, 0, message)
+        self.assertEqual(fake.sleeps, 2)
+        self.assertEqual(fake.fetches, 3)
+
+    def test_pending_for_ever_ends_at_the_deadline_with_status_4_naming_the_pending_checks(self):
+        fake = Fake([PENDING])
+        status, message = run_wait(fake)
+        self.assertEqual(status, 4, message)
+        self.assertEqual(fake.fetches, DEADLINE // POLL + 1)
+        self.assertEqual(message, f"pr_wait: deadline of {DEADLINE} s passed on pull request 7; still pending: build")
+
+    def test_no_gate_job_until_the_deadline_ends_with_status_4_saying_so(self):
+        fake = Fake([answer(("pass", "build"))])
+        status, message = run_wait(fake)
+        self.assertEqual(status, 4, message)
+        self.assertEqual(message, f"pr_wait: deadline of {DEADLINE} s passed on pull request 7; no check named check appeared")
+
+    def test_no_check_for_300_seconds_is_status_1_and_one_at_120_seconds_starts_waiting(self):
+        status, message = run_wait(Fake([NO_ROWS]))
+        self.assertEqual(status, 1, message)
+        self.assertEqual(message, f"pr_wait: no check on pull request 7 after {NO_CHECK} s")
+        late = Fake([NO_ROWS], later=(120, PASSED))
+        status, message = run_wait(late)
+        self.assertEqual(status, 0, message)
+        self.assertEqual(late.now, 120)
+
+    def test_one_failed_fetch_then_answers_waits_on(self):
+        fake = Fake([pr_wait.CallFailed("gh pr checks ended with status 1"), PENDING, PASSED])
+        status, message = run_wait(fake)
+        self.assertEqual(status, 0, message)
+        self.assertEqual(fake.fetches, 3)
+
+    def test_three_failed_fetches_in_a_row_are_status_3(self):
+        fake = Fake([pr_wait.CallFailed("gh pr checks ended with status 1")])
+        status, message = run_wait(fake)
+        self.assertEqual(status, 3, message)
+        self.assertEqual(fake.fetches, 3)
+        self.assertIn("a GitHub call failed", message)
+
+    def test_an_answer_that_is_not_the_json_asked_for_is_status_3(self):
+        rows = [
+            ("a gateway error page", "HTTP 502"),
+            ("JSON that is not a list", '{"name": "check"}'),
+            ("a list of something else", "[1, 2]"),
+            ("a row without a bucket", '[{"name": "check"}]'),
+        ]
+        for why, text in rows:
+            with self.subTest(why):
+                status, message = run_wait(Fake([text]))
+                self.assertEqual(status, 3, message)
+                self.assertIn("a GitHub call failed", message)
+
+    def test_a_failure_at_the_first_poll_ends_the_wait_with_no_further_poll(self):
+        fake = Fake([answer(("fail", "unit tests"), ("pending", "slow"))])
+        status, message = run_wait(fake)
+        self.assertEqual(status, 1, message)
+        self.assertEqual(message, "pr_wait: failing jobs: unit tests")
+        self.assertEqual((fake.fetches, fake.sleeps), (1, 0))
+
+
+@unittest.skipUnless(RUNNABLE, "pr_wait.sh needs bash and python3.13")
+class PullRequestWaitScriptTest(unittest.TestCase):
+    def wait(self, arguments: tuple[str, ...] = ("7",), timeout: float = 60, **plant: str) -> subprocess.CompletedProcess:
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             stub = root / "bin" / "gh"
@@ -91,99 +235,37 @@ class PullRequestWaitTest(unittest.TestCase):
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
             for variable, (name, default) in PER_CALL.items():
                 (root / name).write_text("\n".join(plant.pop(variable, default).split(",")) + "\n")
-            environment = {"PATH": f"{stub.parent}:{os.environ['PATH']}", "PLANT_DIR": str(root), "PR_WAIT_RETRY_SECONDS": "0",
-                           "PR_WAIT_POLL_SECONDS": "0", "PR_WAIT_GATE_POLL_SECONDS": "0", **plant}
-            done = subprocess.run(["bash", str(SCRIPT), "7"], capture_output=True, text=True, env=environment)
+            environment = {"PATH": f"{stub.parent}:{os.environ['PATH']}", "PLANT_DIR": str(root), "PR_WAIT_POLL_SECONDS": "0.01",
+                           "PR_WAIT_DEADLINE_SECONDS": "1", "PR_WAIT_CALL_SECONDS": "1", **plant}
+            done = subprocess.run(["bash", str(SCRIPT), *arguments], capture_output=True, text=True, env=environment, timeout=timeout)
             calls = root / "calls"
             done.calls = calls.read_text().splitlines() if calls.exists() else []
             return done
 
-    def watches(self, done: subprocess.CompletedProcess) -> list[str]:
-        return [call for call in done.calls if "--watch" in call]
-
-    def calls_starting(self, done: subprocess.CompletedProcess, prefix: str) -> list[str]:
-        return [call for call in done.calls if call.startswith(prefix)]
-
-    def test_checks_that_all_pass_end_the_wait_with_success(self):
+    def test_a_passing_run_ends_0_and_never_calls_watch(self):
         done = self.wait()
         self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(done.calls)
+        self.assertFalse([call for call in done.calls if "--watch" in call], done.calls)
 
-    def test_a_failed_check_ends_the_wait_with_status_1_and_names_the_failing_jobs(self):
-        done = self.wait(PLANT_WATCH_STATUS="1", PLANT_FAILING="CI / unit tests, client parts")
-        self.assertEqual(done.returncode, 1, done.stderr)
-        self.assertIn("pr_wait: failing jobs: CI / unit tests, client parts", done.stderr)
-
-    def test_a_failed_call_that_reads_the_checks_is_an_error_not_no_check(self):
-        done = self.wait(PLANT_VIEW_STATUS="1", PLANT_VIEW_OUTPUT="")
+    def test_a_gh_call_that_never_returns_is_cut_at_the_call_limit_and_counted_a_failed_try(self):
+        done = self.wait(PLANT_HANG="1", timeout=30)
         self.assertEqual(done.returncode, 3, done.stderr)
         self.assertIn("a GitHub call failed", done.stderr)
-        self.assertFalse(self.watches(done), done.calls)
+        self.assertEqual(len(done.calls), pr_wait.TRIES, done.calls)
 
-    def test_an_answer_that_is_not_a_count_is_an_error_not_no_check(self):
-        done = self.wait(PLANT_VIEW_OUTPUT="HTTP 502")
-        self.assertEqual(done.returncode, 3, done.stderr)
-        self.assertIn("a GitHub call failed", done.stderr)
+    def test_pending_for_ever_exits_4_with_its_line_end_to_end(self):
+        done = self.wait(PLANT_PENDING="build")
+        self.assertEqual(done.returncode, 4, done.stderr)
+        self.assertIn("pr_wait: deadline of 1 s passed on pull request 7; still pending: build", done.stderr)
 
-    def test_a_watch_that_fails_while_the_failing_jobs_cannot_be_read_is_an_error_not_a_ci_failure(self):
-        done = self.wait(PLANT_WATCH_STATUS="1", PLANT_JSON_STATUS="1")
-        self.assertEqual(done.returncode, 3, done.stderr)
-        self.assertIn("a GitHub call failed", done.stderr)
-
-    def test_a_watch_that_fails_while_no_check_failed_is_an_error_not_a_ci_failure(self):
-        done = self.wait(PLANT_WATCH_STATUS="1", PLANT_FAILING="")
-        self.assertEqual(done.returncode, 3, done.stderr)
-        self.assertIn("no check failed", done.stderr)
-
-    def test_a_watch_that_ends_while_a_check_is_still_pending_watches_again_and_ends_with_the_checks_outcome(self):
-        rows = [
-            ("a check is pending when the first watch ends", dict(PLANT_WATCH_STATUS="1,0", PLANT_PENDING="check,"), 2, 2),
-            # The gate job `check` is created about a second after the last part job ends: a watch
-            # that ends in that second sees every check passed and none named `check`.
-            ("every check passed but none is named `check` yet", dict(PLANT_GATE="0,0,1"), 1, 3),
-        ]
-        for why, plant, watched, listed in rows:
-            with self.subTest(why):
-                done = self.wait(**plant)
-                self.assertEqual(done.returncode, 0, done.stderr)
-                self.assertEqual(len(self.watches(done)), watched, done.calls)
-                self.assertEqual(len(self.calls_starting(done, "pr checks 7 --json")), listed, done.calls)
-
-    def test_a_wait_whose_gate_job_never_appears_ends_as_an_error(self):
-        done = self.wait(PLANT_GATE="0")
-        self.assertEqual(done.returncode, 3, done.stderr)
-        self.assertIn("no check named check appeared", done.stderr)
-        self.assertEqual(len(self.calls_starting(done, "pr checks 7 --json")), 20, done.calls)
-
-    def test_a_github_call_that_fails_once_is_asked_again_and_the_wait_goes_on(self):
-        rows = [
-            ("the check count", dict(PLANT_VIEW_STATUS="1,0", PLANT_VIEW_OUTPUT=",1"), "pr view", 2, 1),
-            (
-                "the buckets after a watch that ended while a check is pending",
-                dict(PLANT_WATCH_STATUS="1,0", PLANT_JSON_STATUS="1,0", PLANT_PENDING="check,check,"),
-                "pr checks 7 --json",
-                3,
-                2,
-            ),
-        ]
-        for call, plant, prefix, asked, watched in rows:
-            with self.subTest(call):
-                done = self.wait(**plant)
-                self.assertEqual(done.returncode, 0, done.stderr)
-                self.assertEqual(len(self.calls_starting(done, prefix)), asked, done.calls)
-                self.assertEqual(len(self.watches(done)), watched, done.calls)
-
-    def test_a_github_call_that_fails_on_every_try_ends_the_wait_as_an_error_after_three_tries(self):
-        done = self.wait(PLANT_VIEW_STATUS="1", PLANT_VIEW_OUTPUT="")
-        self.assertEqual(done.returncode, 3, done.stderr)
-        self.assertIn("a GitHub call failed", done.stderr)
-        self.assertEqual(len(self.calls_starting(done, "pr view")), 3, done.calls)
-        self.assertFalse(self.watches(done), done.calls)
-
-    def test_a_watch_that_keeps_ending_with_a_check_pending_ends_as_an_error_after_three_tries(self):
-        done = self.wait(PLANT_WATCH_STATUS="1", PLANT_PENDING="check")
-        self.assertEqual(done.returncode, 3, done.stderr)
-        self.assertIn("still pending: check", done.stderr)
-        self.assertEqual(len(self.watches(done)), 3, done.calls)
+    def test_a_missing_or_non_number_argument_exits_2(self):
+        for arguments in ((), ("seven",), ("7", "8")):
+            with self.subTest(arguments):
+                done = self.wait(arguments)
+                self.assertEqual(done.returncode, 2, done.stderr)
+                self.assertIn("usage: dev/pr_wait.sh N", done.stderr)
+                self.assertEqual(done.calls, [])
 
 
 if __name__ == "__main__":
