@@ -440,8 +440,8 @@ pub fn a_strike_told_through_the_map_damages_the_creature_and_threatens_only_a_v
   driven_time.wait_until_quiet(time)
   let heard =
     world_support.sent_before_the_marker(world:, id: 1, received: near)
-  assert list.filter_map(heard, heard_kind) == ["health"]
-    as "the strike of a viewer, told through the map, damages the creature: its health is told to the viewers"
+  assert list.filter_map(heard, heard_kind) == ["answer", "health"]
+    as "the strike of a viewer, told through the map, damages the creature: the striker is answered and the viewers are told its health"
   assert list.filter_map(heard, threatened_by_the_creature) == [Nil]
     as "and the viewer that struck is told it is threatened"
   struck_through_the_map(run:, from: 2, unit_id: beast.unit_id, cast_id: 2)
@@ -454,7 +454,9 @@ pub fn a_strike_told_through_the_map_damages_the_creature_and_threatens_only_a_v
     as "no one else is threatened"
   let unheard =
     world_support.sent_before_the_marker(world:, id: 2, received: far)
+  assert list.filter_map(unheard, heard_kind) == ["answer"]
+    as "the player out of sight is answered, whatever it sees"
   assert list.filter_map(unheard, threatened_by_the_creature) == []
-    as "the player out of sight is told no threat: it is no viewer of the stay it names"
+    as "and told no threat: it is no viewer of the stay it names"
   world_support.stop(world:)
 }

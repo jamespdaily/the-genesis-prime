@@ -629,11 +629,25 @@ pub fn a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sen
     as "the move first: the creature takes P's leaving sight, then the strike"
   assert list.all(move_first, fn(scene) { relays_to_p(scene) == [] })
     as "P is no viewer when the strike lands: the damage applies and P is neither threatened nor released"
-  assert list.all(list.append(strike_first, move_first), fn(scene) {
+  assert list.all(strike_first, fn(scene) {
+    legal_order_support.names(frames: scene.frames)
+    == ["0x262(2)", "0x937(2)", "0x638(2)", "0x937(2)", "0x638(2)"]
+  })
+    as "the strike first: W is shown the damage, the creature's chase of P, then, with P released and no one left on its threat list, the creature's health restored and its walk home"
+  assert list.all(strike_first, fn(scene) {
     legal_order_support.health_shown(frames: scene.frames, unit_id: beast_unit)
+    == Some(52)
+  })
+    as "and W ends showing the creature at full health"
+  assert list.all(move_first, fn(scene) {
+    legal_order_support.names(frames: scene.frames) == ["0x262(2)", "0x937(2)"]
+    && legal_order_support.health_shown(
+      frames: scene.frames,
+      unit_id: beast_unit,
+    )
     == Some(38)
   })
-    as "W is shown the damage in both: the creature's health is 52 less 14"
+    as "the move first: W is shown the damage alone, 52 less 14, and no chase: the strike threatened no one"
 }
 
 pub fn legal_order_support_refuses_mail_to_a_creature_from_any_sender_but_its_map_and_its_timer_test() -> Nil {
