@@ -113,13 +113,35 @@ remembered_peak(#held{longest = Longest} = Held, Queue, Busiest) when Queue > Lo
 remembered_peak(Held, _Queue, _Busiest) ->
     Held.
 
-%% A message's kind: the variant a Gleam custom type is, the first element of its tuple.
-kind(Message) when is_tuple(Message), tuple_size(Message) > 0, is_atom(element(1, Message)) ->
-    atom_to_binary(element(1, Message));
-kind(Message) when is_atom(Message) ->
-    atom_to_binary(Message);
-kind(_Message) ->
-    <<"other">>.
+%% A message's kind: the variant a Gleam custom type is, the first element of its tuple,
+%% followed by the variants of what it wraps while the second element is one too (a shell's
+%% `Told(Snapshot(..))` is "told/snapshot"), at most three deep. A message sent through a Gleam
+%% subject is {Tag, Message} with a reference as its tag, and is named by its Message.
+kind(Message) ->
+    iolist_to_binary(lists:join(<<"/">>, names(Message, 3))).
+
+names(_Message, 0) ->
+    [];
+names({Tag, Message}, Depth) when is_reference(Tag) ->
+    names(Message, Depth);
+names(Message, Depth) when is_tuple(Message), tuple_size(Message) > 0, is_atom(element(1, Message)) ->
+    Name = atom_to_binary(element(1, Message)),
+    case tuple_size(Message) > 1 of
+        true -> [Name | names_inside(element(2, Message), Depth - 1)];
+        false -> [Name]
+    end;
+names(Message, _Depth) when is_atom(Message) ->
+    [atom_to_binary(Message)];
+names(_Message, _Depth) ->
+    [<<"other">>].
+
+%% The kinds inside a wrapper's second element: none unless it is a variant itself.
+names_inside({Tag, Message}, Depth) when is_reference(Tag) ->
+    names_inside(Message, Depth);
+names_inside(Inside, Depth) when is_tuple(Inside), tuple_size(Inside) > 0, is_atom(element(1, Inside)) ->
+    names(Inside, Depth);
+names_inside(_Inside, _Depth) ->
+    [].
 
 %% The maps the supervisor runs now: none before the first is started.
 maps(Supervisor) ->

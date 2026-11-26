@@ -966,3 +966,28 @@ pub fn the_casting_scene_owes_each_probe_the_casts_that_finished_a_settle_time_b
     == [1, 1, 2]
     as "the cast frames are counted by kind: a start, a go and two ends; a move is no cast frame"
 }
+
+pub fn a_probe_counts_a_move_it_reads_with_the_other_frames_of_a_read_whenever_the_read_is_made_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A probe reads its socket from its entry on, also while it waits for the others to
+  // be in the world; the first move of a probe that began to send reaches it then, among
+  // the frames of a read, and is as much a move it read as one read later.
+  let probed = Probed(unit_id: 10, sent_us: dict.new(), seen: [])
+  let #(probed, sight) =
+    load_move_delay.taken(
+      probed:,
+      sight: load_sight.new(own_unit_id: 10),
+      frames: [
+        player_created(unit_id: 20),
+        moved(unit_id: 20, hundredths: 1),
+        Frame(message_id: 0x07FF, body: <<>>),
+        moved(unit_id: 30, hundredths: 0),
+      ],
+    )
+  assert list.map(probed.seen, fn(seen) { #(seen.0, seen.1) }) == [#(20, 1)]
+    as "the probe's step 1 is among the moves read, the walker's move is not"
+  assert load_sight.players_shown(sights: [sight]) == 1
+    as "the player created in the same read is shown"
+  assert load_sight.cast_frames_read(sights: [sight], message_id: 0x07FF) == 1
+    as "the cast frame of the same read is counted"
+}
