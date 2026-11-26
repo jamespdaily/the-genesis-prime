@@ -112,6 +112,8 @@ class Fake:
         self.now += seconds
 
     def fetch(self) -> str:
+        if self.fetches > 10 * DEADLINE // POLL:
+            raise AssertionError("the wait polled for ever: it has no deadline")
         item = self.answers[min(self.fetches, len(self.answers) - 1)]
         if self.later and self.now >= self.later[0]:
             item = self.later[1]
@@ -249,7 +251,7 @@ class PullRequestWaitScriptTest(unittest.TestCase):
         self.assertFalse([call for call in done.calls if "--watch" in call], done.calls)
 
     def test_a_gh_call_that_never_returns_is_cut_at_the_call_limit_and_counted_a_failed_try(self):
-        done = self.wait(PLANT_HANG="1", timeout=30)
+        done = self.wait(PLANT_HANG="1", PR_WAIT_DEADLINE_SECONDS="30", timeout=30)
         self.assertEqual(done.returncode, 3, done.stderr)
         self.assertIn("a GitHub call failed", done.stderr)
         self.assertEqual(len(done.calls), pr_wait.TRIES, done.calls)
