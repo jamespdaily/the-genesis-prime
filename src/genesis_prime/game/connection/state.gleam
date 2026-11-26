@@ -550,7 +550,7 @@ pub fn misrouted(
 
 /// The connections that see the player, each with its player's stay, in the
 /// order of their numbers.
-fn sorted_viewers(
+pub fn sorted_viewers(
   entered entered: world_entry.Entered,
 ) -> List(#(ConnectionId, Stay)) {
   map.sorted_by_connection(entered.viewers)

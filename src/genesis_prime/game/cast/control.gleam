@@ -539,6 +539,7 @@ pub fn restrictions_numbered(
 /// value names it.
 pub fn restrictions_shown(
   restricting restricting: List(Restricting),
+  cast_id cast_id: Int,
   caster caster: Caster,
   live live: Live,
 ) -> List(Effect) {
@@ -564,7 +565,8 @@ pub fn restrictions_shown(
         ..list.map(map.sorted_connections(live.audience), fn(viewer) {
           Tell(
             to: viewer,
-            news: unit_news.CrowdControlApplied(
+            news: unit_news.CasterRestrictionApplied(
+              cast_id:,
               state:,
               instance_id: one.instance_id,
             ),
@@ -645,7 +647,7 @@ pub fn restrictions_ended(
       ..list.map(map.sorted_connections(restriction.audience), fn(viewer) {
         Tell(
           to: viewer,
-          news: unit_news.CrowdControlEnded(
+          news: unit_news.CasterRestrictionEnded(
             state: restriction.state,
             cast_id:,
             instance_id: restriction.instance_id,

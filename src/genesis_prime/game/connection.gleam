@@ -1315,6 +1315,8 @@ fn stay_sent(
           connection_viewers.map_sent(session:, now:, entered:, notice:)
         client_connection.SentByPeer(news:) ->
           connection_viewers.viewer_takes(session:, now:, entered:, news:)
+        client_connection.SentByLine(tell:) ->
+          connection_chat.chat_sent(session:, tell:)
         client_connection.SentByFoe(fight:) ->
           connection_life.foe_taken(session:, now:, holder:, entered:, fight:)
         client_connection.SentByTarget(answered:) ->

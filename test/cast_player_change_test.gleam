@@ -3255,6 +3255,97 @@ fn gone_on_the_ally(spell spell: Spell) -> Result(GoneOnTheAlly, Nil) {
   ))
 }
 
+/// Whether the plan of `spell` lands a change on another player in any of the three ways a
+/// spell does: a row aimed at the primary target (`changes_the_plan_would_land_on_the_ally`),
+/// a modifier aimed at the area that `gate.modifier_applies` lands on an ally the round
+/// struck, or a Proc row a primary target or an ally of the area holds.
+fn plan_lands_a_change_on_another_player(spell spell: Spell) -> Bool {
+  let in_the_area =
+    list.any(spell.effects, fn(planned) {
+      case planned.kind {
+        spell_plan.ModifierEffect(modifier:) ->
+          spell_plan.reaches_area(aim: spell_plan.modifier_aim(modifier:))
+          && gate.modifier_applies(
+            row: modifier,
+            unit_id: ally,
+            caster: esper_seeing(players: [ally]),
+            struck: [ally_selected(unit_id: ally)],
+            press_target: None,
+            aura_ends_ms: spell_plan.aura_ends_ms(spell:, started_ms: 1000),
+            go_ms: 1000,
+          )
+        _ -> False
+      }
+    })
+  let held_by_another =
+    list.any(spell.effects, fn(planned) {
+      case spell_plan.as_proc(kind: planned.kind) {
+        Ok(row) ->
+          case row.holder {
+            spell_plan.HeldByCaster -> False
+            _ -> True
+          }
+        Error(Nil) -> False
+      }
+    })
+  changes_the_plan_would_land_on_the_ally(spell:) != []
+  || in_the_area
+  || held_by_another
+}
+
+/// Whether the plan of `spell` holds a crowd-control row its go gives its own caster.
+fn plan_restricts_its_caster(spell spell: Spell) -> Bool {
+  list.any(spell.effects, fn(planned) {
+    case spell_plan.as_control(kind: planned.kind) {
+      Ok(row) -> spell_plan.reaches_caster(aim: row.aim)
+      Error(Nil) -> False
+    }
+  })
+}
+
+/// A viewer writes a caster's restriction news (0x87f, 0x880) by its own ledger of the cast
+/// (`unit_news.CasterRestrictionApplied`). That ledger agrees with the cast's audience when
+/// the cast that restricts its caster has no second go: a viewer that borrowed the cast from
+/// an ally the cast landed a change on, and came into the caster's sight after the go, would
+/// otherwise be written the caster's restriction news at a second go. The check is over
+/// every Spell4 row the plan keeps; Spell4 46820 and 69798 hold both halves, so the
+/// population is not empty.
+pub fn no_spell_that_lands_a_change_on_another_player_and_restricts_its_caster_has_a_second_go_test() -> Nil {
+  // deadline: measured about 4 s here, 120 s for a loaded machine: it plans every Spell4 row of the client's tables
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let both =
+    list.filter_map(spell4.all(tables), fn(row) {
+      case
+        spell_plan.spell_alone(tables:, sources:, spell4_id: row.id, chain: [])
+      {
+        Ok(spell) ->
+          case
+            plan_lands_a_change_on_another_player(spell:)
+            && plan_restricts_its_caster(spell:)
+          {
+            True -> Ok(spell)
+            False -> Error(Nil)
+          }
+        Error(_) -> Error(Nil)
+      }
+    })
+  assert list.map(both, fn(spell) { spell.spell4_id.value })
+    |> list.contains(46_820)
+    as "the client's tables hold a spell that lands a change on another player and restricts its caster (Spell4 46820)"
+  list.each(both, fn(spell) {
+    assert spell_plan.go_count(spell:) == 1
+      as {
+        "Spell4 "
+        <> int.to_string(spell.spell4_id.value)
+        <> " lands a change on another player, restricts its caster and has one go"
+      }
+  })
+}
+
 pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledger_is_told_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")

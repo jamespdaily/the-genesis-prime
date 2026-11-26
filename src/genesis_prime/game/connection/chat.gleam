@@ -7,12 +7,12 @@
 ////   inside 0x038C with the player in the world, and 0xF2 and 0x63A give it the
 ////   WorldZone id the client reports (the first 0xF2 of a stay also writes the
 ////   zone channel's 0x1BC again). The rule turns its effects into writes,
-////   tells (`TellChat`, to a viewer's `Connection`, to a `ZoneChannel` and to a
-////   whisper's `CharacterNamed`), the watch on a whisper's target and the
-////   `JoinGroup` and `LeaveGroup` of the player's groups. What other
-////   connections tell it (`SentByChat`) is taken by the chat with the player in
-////   the world: a whisper that finds none is answered `NotHeard`, and any other
-////   tell is dropped. The player joins its groups as the entry burst is written
+////   tells (`TellLine`, to a viewer's `Connection` for the viewer's stay; `TellChat`,
+////   to a `ZoneChannel` and to a whisper's `CharacterNamed`), the watch on a whisper's
+////   target and the `JoinGroup` and `LeaveGroup` of the player's groups. What other
+////   connections tell it (`SentByChat`, and `SentByLine` for the stay) is taken by the
+////   chat with the player in the world: a whisper that finds none is answered
+////   `NotHeard`, and any other tell is dropped. The player joins its groups as the entry burst is written
 ////   and leaves them in the step that starts the camp's leave, so a new entry
 ////   joins again (genesis_prime/game/chat has the sequences, the refusals and
 ////   the failure table).
@@ -30,7 +30,7 @@
 //// ```
 
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskMapRun, Continue, FromMap, TellChat,
+  type Answer, type Request, AskMapRun, Continue, FromMap, TellChat, TellLine,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
@@ -91,7 +91,7 @@ pub fn chat_message(
       chat: entered.chat,
       message:,
       body: inner.body,
-      viewers: connection_state.viewer_connections(entered:),
+      viewers: connection_state.sorted_viewers(entered:),
       realm_name: session.settings.realm_name,
       connection: client_connection.connection(session.link),
       tables: session.settings.tables,
@@ -300,6 +300,13 @@ pub fn chat_effects(
         ])
         chat.Tell(to:, tell:) -> #(session, [
           OwnEffect(step.Tell(to:, request: TellChat(tell))),
+          ..written
+        ])
+        chat.TellLine(to:, stay:, tell:) -> #(session, [
+          OwnEffect(step.Tell(
+            to: step.Connection(to),
+            request: TellLine(stay:, tell:),
+          )),
           ..written
         ])
         chat.TellWatched(watch:, tell:) -> #(session, [

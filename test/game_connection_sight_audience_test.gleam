@@ -12,23 +12,17 @@
 //// - Phantasmal Armor (Spell4 32823, an Esper's at level 6, Spell4Base 19033) pressed at an
 ////   ally holds its node on the ally alone for 10 000 ms.
 
-import cast_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/unit_news.{Appeared, CastFinished, Moving, Removed}
-import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
-import genesis_prime/step.{ConnectionId, OwnEvent}
+import genesis_prime/game/unit_news.{CastFinished, Moving, Removed}
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/loader/store as store_tables
-import genesis_prime/world_map/map.{SeenBy, UnseenBy}
+import genesis_prime/world_map/map.{UnseenBy}
 import gleam/list
-import gleam/option.{None}
 import owned_test
 import planted_table
-
-const armor_ability = 19_033
 
 /// Which of the two news of the ally's departure the caster's connection takes first.
 type Order {
@@ -61,58 +55,11 @@ fn armor_held_on_the_ally(
   tables tables: store_tables.Tables,
   ally ally: Ally,
 ) -> game_connection.State {
-  let #(state, _) =
-    connection_support.entered_at_level(
-      settings: Settings(..connection_support.settings(), tables:),
-      class_id: 3,
-      level: 6,
-      saved_health: None,
-    )
-  let bag_index =
-    connection_support.bag_index_of(
-      tables:,
-      class_id: 3,
-      level: 6,
-      ability: armor_ability,
-    )
-  let state = connection_support.watched_by(state:, viewers: [2])
-  let #(state, _) =
-    connection_support.feed(
-      state:,
-      event: connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(ally.connection),
-        stay: connection_support.viewer_stay(ally.connection),
-        unit_id: ally.unit_id,
-      )),
-    )
-  let #(state, _) =
-    connection_support.feed(
-      state:,
-      event: ally_event(
-        ally:,
-        news: Appeared(
-          unit: UnitCreatePlayer(
-            ..connection_support.another_unit(),
-            unit_id: ally.unit_id,
-          ),
-        ),
-      ),
-    )
   let #(state, pressed) =
-    connection_support.at(
-      state:,
-      ms: 1000,
-      event: OwnEvent(
-        step.Read(connection_support.world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id: 1,
-            bag_index:,
-            target: ally.unit_id,
-            press: 1,
-          ),
-        )),
-      ),
+    connection_support.armor_pressed_at_the_ally(
+      tables:,
+      ally_connection: ally.connection,
+      ally_unit: ally.unit_id,
     )
   connection_support.casts_run(
     state:,

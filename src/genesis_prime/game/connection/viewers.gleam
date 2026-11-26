@@ -52,6 +52,11 @@
 ////   comes first, before any cast the removal ends is finished: the viewer's client
 ////   reads a cast's 0x7fe before the unit's 0x355 only for a unit it still shows
 ////   (`cast.target_node_end`).
+//// - **Chat lines.** A Say, Yell or Emote line another player says arrives as
+////   `SentByLine`, for the stay the map's `SeenBy` named, and is taken by the chat feature
+////   (genesis_prime/game/chat) only in the stay's own turn: a line queued across a re-entry
+////   of the same run is dropped by the stay fence, and one that arrives while an ask is out
+////   waits for its answer.
 //// - **Stays.** Every message another process sends for the player's stay in the
 ////   world (the map's notices, a peer's or a creature's news, a creature's threat,
 ////   release and strike) comes in one envelope, `ForStay(stay, ..)`, which names
@@ -128,17 +133,28 @@
 ////
 ////   ```
 ////   ally T's create lists cast X of caster C ─▶ viewer: C told it X? no: X is borrowed from T
-////   T's go-time tell HeldCastStarted(0x7ff, 0x7f4) ─▶ T shown and X held in no state? write both,
-////                                                     borrow X from T
+////   T's go-time tell HeldCastStarted(0x7ff, 0x7f4) ─▶ T shown, X held in no state and its caster not
+////                                                     the viewer's own unit? write both, borrow X from T
 ////   T's last source of X ends ─▶ Tell(each viewer, HeldCastEnded(X)) ─▶ borrowed? 0x811 {X, [T]}
 ////   ```
 ////
 ////   - A borrowed cast gets none of its caster's later frames, so the caster's removal does not
 ////     end it before T's tell does; T's removal drops it with the client's nodes on T.
 ////   - T's start is written when the viewer shows T and holds the cast in no state (written by
-////     its caster, borrowed, or held with no caster): the client restarts a cast id that is
-////     live (`opcode.0x7ff`), so one sender wins and the other's start is dropped. A viewer
-////     that does not show the caster makes the cast too (`cast.unknown_caster`).
+////     its caster, borrowed, held with no caster, or ended by its caster's finish): the client
+////     restarts a cast id that is live (`opcode.0x7ff`), so one sender wins and the other's
+////     start is dropped. A viewer that does not show the caster makes the cast too
+////     (`cast.unknown_caster`).
+////   - The viewer's own ledger decides which frames of a cast it writes, from the news the
+////     caster's audience lets reach it. A caster's go,
+////     tick, finish and 0x811 are written for a cast held as written; a caster's 0x87f is
+////     written for a cast held as written and its 0x880 for an instance the viewer's picture
+////     holds, so a viewer that came after the 0x87f is written no 0x880 of it. A creature's
+////     0x87f and 0x880 are not a cast's of the viewer's and are written for any shown unit.
+////   - A cast its caster's finish ended stays in the ledger as an ended hold until its
+////     caster's unit is forgotten, so an ally's start of that cast that arrives after the
+////     finish is dropped. A start whose caster is the viewer's own unit is dropped: the
+////     viewer's own cast rule finished that cast and its client holds it itself.
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
@@ -174,6 +190,7 @@ import genesis_prime/game/strike
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_targets_removed
@@ -496,6 +513,8 @@ pub fn viewer_takes(
     | unit_news.Shield(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.InterruptArmor(..)
@@ -698,7 +717,9 @@ pub fn viewer_takes(
         when: client_casts.is_held(
           casts: entered.client_casts,
           cast_id: start.cast_id,
-        ),
+          now_ms: now.monotonic_ms,
+        )
+          || start.caster_unit_id == entered.unit_id,
         return: Continue(session, []),
       )
       Continue(
@@ -748,6 +769,7 @@ pub fn viewer_takes(
     unit_news.CastWent(go:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: go.cast_id,
         frame: cast_frame.went_frame(go:),
@@ -756,6 +778,7 @@ pub fn viewer_takes(
     unit_news.CastMissed(missed:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: missed.cast_id,
         frame: cast_frame.missed_frame(missed:),
@@ -764,6 +787,7 @@ pub fn viewer_takes(
     unit_news.CastTicked(tick:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: tick.cast_id,
         frame: cast_frame.ticked_frame(tick:),
@@ -772,6 +796,7 @@ pub fn viewer_takes(
     unit_news.CastTargetsRemoved(removed:, destroyed:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: removed.cast_id,
         frame: cast_frame.targets_removed_frame(removed:),
@@ -780,6 +805,7 @@ pub fn viewer_takes(
     unit_news.CastStackRemoved(removed:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: removed.cast_id,
         frame: cast_frame.stack_removed_frame(removed:),
@@ -788,6 +814,7 @@ pub fn viewer_takes(
     unit_news.CastInterrupted(cast_id:) ->
       written_cast_frames(
         session:,
+        now:,
         entered:,
         cast_id:,
         frames: [
@@ -799,6 +826,7 @@ pub fn viewer_takes(
     unit_news.CastFinished(cast_id:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id:,
         frame: cast_frame.finished_frame(cast_id:),
@@ -986,37 +1014,33 @@ pub fn viewer_takes(
         ),
       ])
     }
-    unit_news.CrowdControlApplied(state:, instance_id:) -> {
-      use <- bool.guard(when: !shown, return: Continue(session, []))
-      let session =
-        shown_changed(session:, change: fn(picture) {
-          shown.with_held_applied(picture:, unit_id:, state:, instance_id:)
-        })
-      Continue(session, [
-        connection_state.to_client(
-          session,
-          cast_frame.control_applied_frame(unit_id:, state:, instance_id:),
-        ),
-      ])
-    }
-    unit_news.CrowdControlEnded(state:, cast_id:, instance_id:) -> {
-      use <- bool.guard(when: !shown, return: Continue(session, []))
-      let session =
-        shown_changed(session:, change: fn(picture) {
-          shown.with_held_ended(picture:, unit_id:, instance_id:)
-        })
-      Continue(session, [
-        connection_state.to_client(
-          session,
-          cast_frame.control_ended_frame(
-            unit_id:,
-            state:,
-            cast_id:,
-            instance_id:,
-          ),
-        ),
-      ])
-    }
+    unit_news.CrowdControlApplied(state:, instance_id:) ->
+      case shown {
+        True -> control_applied(session:, unit_id:, state:, instance_id:)
+        False -> Continue(session, [])
+      }
+    unit_news.CrowdControlEnded(state:, cast_id:, instance_id:) ->
+      case shown {
+        True ->
+          control_ended(session:, unit_id:, state:, cast_id:, instance_id:)
+        False -> Continue(session, [])
+      }
+    unit_news.CasterRestrictionApplied(cast_id:, state:, instance_id:) ->
+      case
+        shown && client_casts.is_written(casts: entered.client_casts, cast_id:)
+      {
+        True -> control_applied(session:, unit_id:, state:, instance_id:)
+        False -> Continue(session, [])
+      }
+    unit_news.CasterRestrictionEnded(state:, cast_id:, instance_id:) ->
+      case
+        shown
+        && shown.holds_instance(picture: entered.shown, unit_id:, instance_id:)
+      {
+        True ->
+          control_ended(session:, unit_id:, state:, cast_id:, instance_id:)
+        False -> Continue(session, [])
+      }
     unit_news.UnitStateHeld(state:, number:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(
@@ -1153,6 +1177,8 @@ fn creature_news(
     | unit_news.Shield(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.InterruptArmor(..)
@@ -1250,6 +1276,8 @@ fn life_news(
     | unit_news.Shield(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.InterruptArmor(..)
@@ -1268,6 +1296,7 @@ fn life_news(
 /// the client drops a message that names a cast it does not hold.
 fn written_cast_frame(
   session session: Session,
+  now now: Now,
   entered entered: world_entry.Entered,
   cast_id cast_id: Int,
   frame frame: Frame,
@@ -1275,6 +1304,7 @@ fn written_cast_frame(
 ) -> client_connection.Handled(Session) {
   written_cast_frames(
     session:,
+    now:,
     entered:,
     cast_id:,
     frames: [frame],
@@ -1287,6 +1317,7 @@ fn written_cast_frame(
 /// none of its caster's frames); the cast is forgotten after them when `forgetting`.
 fn written_cast_frames(
   session session: Session,
+  now now: Now,
   entered entered: world_entry.Entered,
   cast_id cast_id: Int,
   frames frames: List(Frame),
@@ -1304,6 +1335,8 @@ fn written_cast_frames(
           client_casts: client_casts.finished(
             casts: entered.client_casts,
             cast_id:,
+            now_ms: now.monotonic_ms,
+            hold_ms: session.settings.ask_deadline_ms,
           ),
         )
       })
@@ -1613,6 +1646,47 @@ fn creatures_resolved(session session: Session, now now: Now) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.with_creatures_resolved(entered:, now_ms: now.monotonic_ms)
   })
+}
+
+/// The shown unit holding the state a 0x87f gave under `instance_id`, and the 0x87f
+/// written (opcode.0x87f).
+fn control_applied(
+  session session: Session,
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  instance_id instance_id: Int,
+) -> client_connection.Handled(Session) {
+  let session =
+    shown_changed(session:, change: fn(picture) {
+      shown.with_held_applied(picture:, unit_id:, state:, instance_id:)
+    })
+  Continue(session, [
+    connection_state.to_client(
+      session,
+      cast_frame.control_applied_frame(unit_id:, state:, instance_id:),
+    ),
+  ])
+}
+
+/// The shown unit no longer holding the instance `instance_id`, and the 0x880 written
+/// (opcode.0x880).
+fn control_ended(
+  session session: Session,
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  cast_id cast_id: Int,
+  instance_id instance_id: Int,
+) -> client_connection.Handled(Session) {
+  let session =
+    shown_changed(session:, change: fn(picture) {
+      shown.with_held_ended(picture:, unit_id:, instance_id:)
+    })
+  Continue(session, [
+    connection_state.to_client(
+      session,
+      cast_frame.control_ended_frame(unit_id:, state:, cast_id:, instance_id:),
+    ),
+  ])
 }
 
 /// The session with the units its client shows changed by `change`.
