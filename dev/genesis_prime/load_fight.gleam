@@ -1030,6 +1030,8 @@ fn sign_of(news: unit_news.News) -> Result(load_round.Sign, Nil) {
     | unit_news.Level(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.PropertiesChanged(..)

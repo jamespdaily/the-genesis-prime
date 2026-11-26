@@ -127,6 +127,11 @@ pub type Request {
   /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
+  /// What a `Tell` effect sends the connection of a player who sees the speaker
+  /// (genesis_prime/step `Connection`): a chat line (`Said`) for that player's stay
+  /// `stay`, as the map's `SeenBy` named it, so that a line queued across a re-entry of
+  /// the same run is dropped at the connection. Never asked, and never told to a map.
+  TellLine(stay: Stay, tell: ChatTell)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player
   /// of `connection`, in its stay `stay`, tells the creature `unit_id` of life `life`
   /// `payload`, a strike, a move, an answer or an effect of its casts
@@ -204,6 +209,9 @@ pub type StaySent {
   /// What the connection of another player sends it of that player's move, stamped
   /// with the generation of the sight (genesis_prime/game/move_stamp).
   SentByMove(move: move_stamp.Move)
+  /// What the connection of a player this one's player sees tells it: a chat line
+  /// (`Said`) for this stay, written by the chat feature (genesis_prime/game/chat).
+  SentByLine(tell: ChatTell)
   /// What a creature that fights this connection's player sends it: that it
   /// threatens or releases the player, or its strike
   /// (genesis_prime/game/player_life).

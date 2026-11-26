@@ -20,8 +20,8 @@
 ////   next life are still to come.
 
 import genesis_prime/client_connection.{
-  type StaySent, SentByFoe, SentByKill, SentByMap, SentByMove, SentByPeer,
-  SentByPlayer, SentByTarget,
+  type StaySent, SentByFoe, SentByKill, SentByLine, SentByMap, SentByMove,
+  SentByPeer, SentByPlayer, SentByTarget,
 }
 import genesis_prime/game/unit_news.{type News, PeerNews}
 import genesis_prime/world_map/map.{type Notice}
@@ -95,7 +95,8 @@ fn of_sent(sent: StaySent) -> Told {
     | SentByFoe(..)
     | SentByTarget(..)
     | SentByPlayer(..)
-    | SentByKill(..) -> Unrelated
+    | SentByKill(..)
+    | SentByLine(..) -> Unrelated
   }
 }
 
@@ -144,6 +145,8 @@ fn of_news(unit_id unit_id: Int, news news: News) -> Told {
     | unit_news.Level(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.PropertiesChanged(..)

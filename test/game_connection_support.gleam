@@ -1543,6 +1543,7 @@ pub fn mapped_logging(
     | client_connection.TellMove(..)
     | client_connection.TellCreature(..)
     | client_connection.TellPlayer(..)
+    | client_connection.TellLine(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -3456,6 +3457,74 @@ pub fn casts_left_answered(
   }
 }
 
+/// The step of a press (0x009A) of the bag index with the client's cast id, at the unit
+/// `target` (0 for none), at the monotonic time `ms`.
+pub fn pressed_at(
+  state state: game_connection.State,
+  bag_index bag_index: Int,
+  client_cast_id client_cast_id: Int,
+  target target: Int,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  at(
+    state:,
+    ms:,
+    event: OwnEvent(
+      step.Read(world_message(
+        message_id: 0x009A,
+        body: cast_support.press_body(
+          client_cast_id:,
+          bag_index:,
+          target:,
+          press: 1,
+        ),
+      )),
+    ),
+  )
+}
+
+/// Phantasmal Armor (Spell4Base 19033, an Esper's at level 6; the tables need the
+/// SpellLevel row that gives it) pressed at 1000 ms at the player of connection
+/// `ally_connection`, unit `ally_unit`, which the caster's connection shows: the connection
+/// after the press, with connection 2 among its viewers, and the press's step.
+pub fn armor_pressed_at_the_ally(
+  tables tables: store_tables.Tables,
+  ally_connection ally_connection: Int,
+  ally_unit ally_unit: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) =
+    entered_at_level(
+      settings: Settings(..settings(), tables:),
+      class_id: 3,
+      level: 6,
+      saved_health: None,
+    )
+  let bag_index = bag_index_of(tables:, class_id: 3, level: 6, ability: 19_033)
+  let state = watched_by(state:, viewers: [2])
+  let #(state, _) =
+    feed(
+      state:,
+      event: sent_by_the_map(SeenBy(
+        by: ConnectionId(ally_connection),
+        stay: viewer_stay(ally_connection),
+        unit_id: ally_unit,
+        generation: viewer_sight(ally_connection),
+      )),
+    )
+  let #(state, _) =
+    feed(
+      state:,
+      event: sent_by_a_peer(news_of(
+        unit_id: ally_unit,
+        news: Appeared(
+          unit: UnitCreatePlayer(..another_unit(), unit_id: ally_unit),
+          generation: generation.first(),
+        ),
+      )),
+    )
+  pressed_at(state:, bag_index:, client_cast_id: 1, target: ally_unit, ms: 1000)
+}
+
 /// A press of the bag index at `ms`, and the cast timers it leads to up to
 /// `until_ms`, each step answered by `answer`: the connection, the world and every
 /// step taken.
@@ -3469,21 +3538,7 @@ pub fn pressed_until_answered(
   answer answer: Answering(world),
 ) -> #(game_connection.State, world, List(ConnectionStep(Request))) {
   let #(state, pressed) =
-    at(
-      state:,
-      ms:,
-      event: OwnEvent(
-        step.Read(world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id:,
-            bag_index:,
-            target: 0,
-            press: 1,
-          ),
-        )),
-      ),
-    )
+    pressed_at(state:, bag_index:, client_cast_id:, target: 0, ms:)
   let #(world, state, steps) = answer(world, state, ms, pressed)
   casts_run_answered(
     state:,

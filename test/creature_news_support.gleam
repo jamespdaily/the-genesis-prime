@@ -62,8 +62,10 @@ pub fn name_of(news: News) -> String {
     unit_news.Died -> "0x88c"
     CreatureAppeared(..) -> "0x262"
     unit_news.Removed -> "0x355"
-    unit_news.CrowdControlApplied(..) -> "0x87f"
-    unit_news.CrowdControlEnded(..) -> "0x880"
+    unit_news.CrowdControlApplied(..)
+    | unit_news.CasterRestrictionApplied(..) -> "0x87f"
+    unit_news.CrowdControlEnded(..) | unit_news.CasterRestrictionEnded(..) ->
+      "0x880"
     unit_news.InterruptArmor(armor:) ->
       "0x938(21, " <> int.to_string(armor) <> ")"
     unit_news.Absorption(absorption:) ->

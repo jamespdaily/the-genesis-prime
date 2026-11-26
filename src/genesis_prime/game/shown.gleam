@@ -843,6 +843,21 @@ pub fn with_unit_state_ended(
   }
 }
 
+/// Whether the unit shown holds a state under that instance id: the 0x87f that gave it was
+/// written to this client and no 0x880 has ended it. A unit not shown or an object holds none.
+pub fn holds_instance(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  instance_id instance_id: Int,
+) -> Bool {
+  let held = case dict.get(picture, unit_id) {
+    Ok(ShownPlayer(state:)) -> state.held
+    Ok(ShownCreature(held:, ..)) -> held
+    Ok(ShownObject(..)) | Error(Nil) -> []
+  }
+  list.any(held, fn(one) { one.instance_id == instance_id })
+}
+
 /// The picture with the creature or player no longer holding the state of that instance id
 /// (the 0x880 names one instance), its other instances kept; an object or a unit not shown
 /// is as it was.
