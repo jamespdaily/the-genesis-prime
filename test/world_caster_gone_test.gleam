@@ -13,6 +13,7 @@
 ////   properties it holds (`opcode.0x93a`), which a later viewer is shown.
 
 import crowd_control_support
+import driven_time
 import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
@@ -21,8 +22,11 @@ import genesis_prime/game/unit_news.{
 }
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/world_map/relay
+import gleam/dict
+import gleam/dynamic/decode
 import gleam/erlang/process.{type Subject}
 import gleam/list
+import gleam/otp/system
 import inbound_support
 import mailbox_support
 import owned_test
@@ -160,7 +164,7 @@ pub fn a_connection_that_ends_holding_a_modifier_a_view_and_a_control_on_a_creat
   world_support.stop(world: watched.world)
 }
 
-pub fn a_normal_leave_then_the_connections_death_holds_nothing_and_the_second_end_changes_nothing_test() -> Nil {
+pub fn a_normal_leave_then_the_connections_death_holds_no_source_or_view_of_it_and_the_second_end_changes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let watched = world_watch_support.watched_by_two(respawn_ms: 60_000)
   holding(watched:)
@@ -176,6 +180,73 @@ pub fn a_normal_leave_then_the_connections_death_holds_nothing_and_the_second_en
   assert heard(watched:, id: 2, received: watched.viewer) == []
     as "the connection's death after its leave changes nothing the viewers are sent"
   assert shown_as_made(watched:, id: 4)
-    as "and nothing of it is held on the creature"
+    as "and no source or view of it is held on the creature"
+  world_support.stop(world: watched.world)
+}
+
+/// The cast views the creature's process holds and whether it is retiring, read from its
+/// state: the service shell's `Running` holds the creature's state as its fourth field,
+/// whose eighth is `retiring` and whose twelfth is `views`, a dictionary by cast id.
+fn held_views_and_retiring(pid pid: process.Pid) -> #(Int, Bool) {
+  let state = system.get_state(pid)
+  let assert Ok(views) =
+    decode.run(
+      state,
+      decode.at([3, 11], decode.dict(decode.int, decode.dynamic)),
+    )
+    as "the creature's state holds its views"
+  let assert Ok(retiring) = decode.run(state, decode.at([3, 7], decode.bool))
+    as "the creature's state holds whether it is retiring"
+  #(dict.size(views), retiring)
+}
+
+pub fn a_dead_retiring_creature_holding_a_view_of_a_caster_drops_it_when_the_casters_connection_ends_before_its_corpse_expires_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let watched = world_watch_support.watched_by_two(respawn_ms: 60_000)
+  world_watch_support.strike_with(
+    run: watched.run,
+    unit_id: watched.beast.unit_id,
+    life:,
+    damage_type: 3,
+    damage: 60,
+    cast_id: 1,
+  )
+  let #(_, _, outcome) =
+    world_watch_support.heard_up_to_answer(received: watched.caster, cast_id: 1)
+  let assert strike_tell.Landed(descriptions: [description], ..) = outcome
+  assert description.damage.killed == 1
+    as "the 60 damage takes the Beast's 52 health to 0"
+  told(watched:, payload: a_view())
+  // Both players walk out of sight, so no one sees the corpse and the map retires it
+  // at the first sweep after the idle stop.
+  world_watch_support.moved_to(
+    run: watched.run,
+    connection: 1,
+    x: 50_000.0,
+    z: 0.0,
+    seq: 1,
+  )
+  world_watch_support.moved_to(
+    run: watched.run,
+    connection: 2,
+    x: 50_000.0,
+    z: 0.0,
+    seq: 1,
+  )
+  world_watch_support.left_sight(
+    received: watched.caster,
+    what: "the corpse's 0x355",
+  )
+  world_watch_support.left_sight(
+    received: watched.viewer,
+    what: "the corpse's 0x355",
+  )
+  driven_time.advance(time: watched.time, ms: world_watch_support.idle_stop_ms)
+  assert held_views_and_retiring(pid: watched.pid) == #(1, True)
+    as "the dead creature told to retire holds the caster's view until its corpse expires"
+  world_support.end_connection(world: watched.world, id: 1)
+  let _map_took_the_end = system.get_state(watched.run.pid)
+  assert held_views_and_retiring(pid: watched.pid) == #(0, True)
+    as "the map's CasterGone for the connection's end dropped the view of the dead creature, which still retires"
   world_support.stop(world: watched.world)
 }

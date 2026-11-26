@@ -12,7 +12,6 @@ import code_rule/syntax
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/string
 import owned_test
 import unitest
 
@@ -22,13 +21,7 @@ const world_map_directory = "src/genesis_prime/world_map"
 fn sends_elsewhere(file file: SourceFile) -> List(Int) {
   syntax.calls(syntax.parse(file))
   |> list.filter_map(fn(call) {
-    let is_send = case call.called {
-      syntax.CalledByName(name: "Send") -> True
-      syntax.CalledThroughVariable(variable: "step", label: "Send") -> True
-      syntax.CalledByName(..)
-      | syntax.CalledThroughVariable(..)
-      | syntax.CalledOtherwise -> False
-    }
+    let is_send = syntax.is_step_effect(call, name: "Send")
     let line = syntax.line_of(text: file.text, byte_offset: call.function.start)
     case is_send {
       False -> Error(Nil)
@@ -52,15 +45,6 @@ fn sends_elsewhere(file file: SourceFile) -> List(Int) {
   |> list.sort(int.compare)
 }
 
-/// The creature's modules: every file of the world map's folder whose name starts with
-/// `creature`.
-fn creature_modules() -> List(SourceFile) {
-  source.files(under: world_map_directory)
-  |> list.filter(fn(file) {
-    string.starts_with(file.path, world_map_directory <> "/creature")
-  })
-}
-
 pub fn a_creature_sends_only_to_its_map_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
@@ -81,10 +65,14 @@ pub fn a_creature_sends_only_to_its_map_test() -> Nil {
       "fn to_the_address_the_strike_came_from() {",
       "  OwnEffect(Send(to: tell.from, message: m))",
       "}",
+      "",
+      "fn a_qualified_send_to_a_connection() {",
+      "  step.Send(to: Connection(viewer.0), message: m)",
+      "}",
     ])
-  assert sends_elsewhere(file: planted_file) == [10, 14]
-    as "a send to a connection or to the address a strike came from is found, and a send to a map is not"
-  assert list.flat_map(creature_modules(), fn(file) {
+  assert sends_elsewhere(file: planted_file) == [10, 14, 18]
+    as "a send to a connection, qualified or not, or to the address a strike came from is found, and a send to a map is not"
+  assert list.flat_map(syntax.creature_modules(), fn(file) {
       list.map(sends_elsewhere(file:), fn(line) {
         file.path <> ":" <> int.to_string(line)
       })

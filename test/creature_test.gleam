@@ -1278,7 +1278,7 @@ fn stunning_strike_from_the_caster(cast_id cast_id: Int) -> creature.Message {
   creature.Strike(tell: Strike(..tell, from: step.Connection(caster)))
 }
 
-pub fn a_creature_drops_everything_a_gone_caster_held_sends_the_property_news_once_and_watches_only_its_run_test() -> Nil {
+pub fn a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_controls_sends_the_property_news_once_and_watches_only_its_run_test() -> Nil {
   use <- owned_test.run(5000)
   let other = ConnectionId(10)
   let stranger = ConnectionId(77)
@@ -1324,7 +1324,7 @@ pub fn a_creature_drops_everything_a_gone_caster_held_sends_the_property_news_on
     ]
     as "each source of the caster ends as a ModifierEnds ends it, in the order they started, each with its news once"
   assert ended_states(gone) == []
-    as "the stun the caster's cast landed stands: a control is not the caster's holding, and ends by its own timer"
+    as "the stun the caster's cast landed stands: only sources and views are dropped, and the stun ends by its own timer"
   assert watch_changes(gone) == [] as "and no Unwatch follows"
   let assert [stun_timer] =
     list.filter(list.flat_map(watched, timers_started), fn(started) {

@@ -6,7 +6,6 @@ import code_rule/planted
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
 import gleam/list
-import gleam/string
 import owned_test
 import unitest
 
@@ -15,16 +14,8 @@ const creature_directory = "src/genesis_prime/world_map"
 /// The `Watch` effects the file builds, one entry for each, as the file's path.
 fn watches(file file: SourceFile) -> List(String) {
   syntax.calls(syntax.parse(file))
-  |> list.filter_map(fn(call) {
-    case call.called {
-      syntax.CalledByName(name: "Watch")
-      | syntax.CalledThroughVariable(variable: "step", label: "Watch") ->
-        Ok(file.path)
-      syntax.CalledByName(..)
-      | syntax.CalledThroughVariable(..)
-      | syntax.CalledOtherwise -> Error(Nil)
-    }
-  })
+  |> list.filter(syntax.is_step_effect(_, name: "Watch"))
+  |> list.map(fn(_) { file.path })
 }
 
 pub fn a_creature_watches_only_its_map_run_test() -> Nil {
@@ -46,15 +37,7 @@ pub fn a_creature_watches_only_its_map_run_test() -> Nil {
     ])
   assert watches(file: planted_file) == [planted_file.path, planted_file.path]
     as "a watch, qualified or not, is found; an Unwatch is none"
-  assert list.flat_map(
-      list.filter(source.files(under: creature_directory), fn(file) {
-        string.starts_with(
-          string.drop_start(file.path, string.length(creature_directory) + 1),
-          "creature",
-        )
-      }),
-      fn(file) { watches(file:) },
-    )
+  assert list.flat_map(syntax.creature_modules(), fn(file) { watches(file:) })
     == [creature_directory <> "/creature.gleam"]
     as "the creature's modules build one Watch, the run's"
 }

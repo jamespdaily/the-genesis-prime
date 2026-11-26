@@ -1113,8 +1113,7 @@ fn left_the_field(
 
 /// A property modifier of the caster of connection `by` starts on the creature: it is
 /// applied to the creature's properties, the entries that changed go to every viewer as
-/// `PropertiesChanged`, the rules that read a changed property take its new value,
-/// The same source
+/// `PropertiesChanged`, the rules that read a changed property take its new value. The same source
 /// twice is held once. A start that reaches a dead creature changes nothing; nor does one
 /// that reaches a creature holding a state that blocks hostile effects, a server guess as for a
 /// throw (`thrown`).

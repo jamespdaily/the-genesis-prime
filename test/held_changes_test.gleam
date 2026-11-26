@@ -6,7 +6,7 @@
 //// - The creature's failure table (`genesis_prime/world_map/creature`): the same source
 ////   twice is held once (`creature_test.same_source_started_twice_is_held_once_test`), and a
 ////   `CasterGone` takes that caster's sources alone
-////   (`creature_test.a_creature_drops_everything_a_gone_caster_held_sends_the_property_news_once_and_watches_only_its_run_test`).
+////   (`creature_test.a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_controls_sends_the_property_news_once_and_watches_only_its_run_test`).
 //// - Client fact `cast.target_node_end`: a caster's removal finishes its casts, and so ends
 ////   their buffs on other units, unless the spell's propertyFlags hold 0x100. A source of
 ////   such a spell stays through its caster's `released_unseen` and goes with its unit.

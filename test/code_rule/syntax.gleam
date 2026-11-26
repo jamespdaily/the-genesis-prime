@@ -452,6 +452,26 @@ pub type Call {
   )
 }
 
+/// Whether the call builds the step effect `name`, bare or qualified `step.`: an aliased
+/// `step` import is not seen.
+pub fn is_step_effect(call call: Call, name name: String) -> Bool {
+  case call.called {
+    CalledByName(name: called) -> called == name
+    CalledThroughVariable(variable: "step", label:) -> label == name
+    CalledThroughVariable(..) | CalledOtherwise -> False
+  }
+}
+
+/// The creature's modules: every file of the world map's folder whose name starts with
+/// `creature`.
+pub fn creature_modules() -> List(SourceFile) {
+  let directory = "src/genesis_prime/world_map"
+  source.files(under: directory)
+  |> list.filter(fn(file) {
+    string.starts_with(file.path, directory <> "/creature")
+  })
+}
+
 /// Every call and capture in the module's functions, in the order
 /// `expressions` finds them.
 pub fn calls(module: glance.Module) -> List(Call) {
