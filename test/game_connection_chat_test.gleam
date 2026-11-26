@@ -49,6 +49,7 @@ import genesis_prime/world_map/spawn.{
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{RunOnly}
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
 import gleam/option.{None, Some}
 import map_spawn_support
@@ -65,7 +66,8 @@ fn chat_tells(
 ) -> List(#(step.Address, chat_tell.Tell)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(step.Tell(to:, request: client_connection.TellChat(tell:))) ->
+      OwnEffect(step.Tell(to:, request: client_connection.TellChat(tell:)))
+      | OwnEffect(step.Tell(to:, request: client_connection.TellLine(tell:, ..))) ->
         Ok(#(to, tell))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
@@ -73,11 +75,45 @@ fn chat_tells(
   })
 }
 
+/// The stay each line tell of a step names, in the order of the step's effects.
+fn line_stays(taken: ConnectionStep(Request)) -> List(Stay) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: client_connection.TellLine(stay:, ..), ..)) ->
+        Ok(stay)
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// A Say line of another player's unit 9, as its connection tells a viewer.
+fn a_said_tell() -> chat_tell.Tell {
+  chat_tell.Said(
+    speaker: chat_tell.Speaker(
+      realm_id: 1,
+      character_id: 7,
+      name: "Zed Other",
+      faction_id: 167,
+      unit_id: 9,
+      map: game_connection_support.camp_map(),
+      incarnation: game_connection_support.incarnation,
+    ),
+    line: chat_tell.Line(
+      channel_type: chat_channel.Say,
+      channel_id: 0,
+      text: [0x48, 0x69],
+      formats: [],
+    ),
+  )
+}
+
 fn peer_tell_kinds(taken: ConnectionStep(Request)) -> List(String) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(request: TellPeer(..), ..)) -> Ok("unit news")
-      OwnEffect(step.Tell(request: client_connection.TellChat(..), ..)) ->
+      OwnEffect(step.Tell(request: client_connection.TellChat(..), ..))
+      | OwnEffect(step.Tell(request: client_connection.TellLine(..), ..)) ->
         Ok("chat")
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
@@ -103,6 +139,12 @@ pub fn a_say_line_in_the_world_writes_the_accept_and_tells_each_viewer_test() ->
   assert list.map(tells, fn(told) { told.0 })
     == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
     as "one tell to each viewer, which the shell sends with no answer"
+  assert line_stays(taken)
+    == [
+      game_connection_support.viewer_stay(2),
+      game_connection_support.viewer_stay(3),
+    ]
+    as "each tell names the stay its viewer's SeenBy named"
   let assert [#(_, chat_tell.Said(speaker:, line:)), ..] = tells
   assert speaker.name == "Ab Cd" && speaker.character_id == 42
   assert line.channel_type == chat_channel.Say && line.channel_id == 0
@@ -153,28 +195,14 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
 
 pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(10_000)
-  let tell =
-    chat_tell.Said(
-      speaker: chat_tell.Speaker(
-        realm_id: 1,
-        character_id: 7,
-        name: "Zed Other",
-        faction_id: 167,
-        unit_id: 9,
-        map: game_connection_support.camp_map(),
-        incarnation: game_connection_support.incarnation,
-      ),
-      line: chat_tell.Line(
-        channel_type: chat_channel.Say,
-        channel_id: 0,
-        text: [0x48, 0x69],
-        formats: [],
-      ),
-    )
+  let tell = a_said_tell()
   let #(_, taken) =
     game_connection_support.feed(
       game_connection_support.in_world(),
-      OwnEvent(Woken(client_connection.SentByChat(tell))),
+      game_connection_support.for_stay(
+        game_connection_support.own_stay(),
+        client_connection.SentByLine(tell),
+      ),
     )
   assert game_connection_support.written_ids(taken) == [0x01C8]
   let assert [Frame(body:, ..)] =
@@ -185,30 +213,55 @@ pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {
     as "chat.cross_faction: the tests' player is faction 166, the speaker 167"
 }
 
+/// A line is told with the stay its viewer's `SeenBy` named, so that a line queued across a
+/// re-entry of the same run, in which the viewer's earlier stay is another stay of the same
+/// map and incarnation, is dropped at the viewer's connection (`stay_sent`); a whisper's tell
+/// is for the player and not for a stay, and is written as before.
+pub fn a_line_carries_the_viewers_stay_and_one_queued_across_a_same_run_re_entry_is_dropped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, said) =
+    game_connection_support.read(
+      game_connection_support.watched_by(game_connection_support.in_world(), [
+        2,
+      ]),
+      game_connection_support.chat_line_message(4, "Hello"),
+    )
+  assert line_stays(said) == [game_connection_support.viewer_stay(2)]
+    as "the speaker names the stay of the viewer's SeenBy"
+  let written_for = fn(stay) {
+    let #(_, taken) =
+      game_connection_support.feed(
+        game_connection_support.in_world(),
+        game_connection_support.for_stay(
+          stay,
+          client_connection.SentByLine(a_said_tell()),
+        ),
+      )
+    game_connection_support.written_ids(taken)
+  }
+  assert written_for(game_connection_support.own_stay()) == [0x01C8]
+    as "a line for the viewer's current stay is written as 0x1c8"
+  assert written_for(stay.none_yet()) == []
+    as "a line queued for the stay before the re-entry is dropped by the stay fence, though its speaker's map and incarnation are the viewer's"
+  let #(_, whispered) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      incoming_whisper(5),
+    )
+  assert game_connection_support.written_ids(whispered) == [0x01C8]
+    as "a whisper is told to the player by SentByChat and written as before"
+}
+
 pub fn a_chat_tell_with_no_player_in_the_world_is_dropped_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
-  let tell =
-    chat_tell.Said(
-      speaker: chat_tell.Speaker(
-        realm_id: 1,
-        character_id: 7,
-        name: "Zed Other",
-        faction_id: 167,
-        unit_id: 9,
-        map: game_connection_support.camp_map(),
-        incarnation: game_connection_support.incarnation,
-      ),
-      line: chat_tell.Line(
-        channel_type: chat_channel.Say,
-        channel_id: 0,
-        text: [0x48, 0x69],
-        formats: [],
-      ),
-    )
+  let tell = a_said_tell()
   let #(_, taken) =
     game_connection_support.feed(
       game_connection_support.in_select(),
-      OwnEvent(Woken(client_connection.SentByChat(tell))),
+      game_connection_support.for_stay(
+        game_connection_support.own_stay(),
+        client_connection.SentByLine(tell),
+      ),
     )
   assert game_connection_support.written_ids(taken) == []
     && support.logs(taken) == []

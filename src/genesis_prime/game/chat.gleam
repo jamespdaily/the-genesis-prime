@@ -236,12 +236,12 @@ import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
 import genesis_prime/table/id.{ChatChannelId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/result
-import gleam/set.{type Set}
 import gleam/string
 
 /// The chat messages of the player in the world, which the client sends inside
@@ -260,6 +260,10 @@ pub type Effect {
   Send(frame: Frame)
   /// Tell the process at `to` a chat tell (genesis_prime/step `Tell`).
   Tell(to: Address, tell: Tell)
+  /// Tell the connection `to` of a player who sees the speaker a line (`Said`) for that
+  /// player's stay `stay`, so that a line queued across a re-entry of the same run is
+  /// dropped at the connection (genesis_prime/client_connection `TellLine`).
+  TellLine(to: ConnectionId, stay: Stay, tell: Tell)
   /// Tell the process the open watch `watch` found, through that watch
   /// (genesis_prime/step `TellWatched`): a whisper to its target.
   TellWatched(watch: WatchId, tell: Tell)
@@ -469,7 +473,7 @@ pub fn take(
   chat chat: Chat,
   message message: Message,
   body body: BitArray,
-  viewers viewers: Set(ConnectionId),
+  viewers viewers: List(#(ConnectionId, Stay)),
   realm_name realm_name: String,
   connection connection: ConnectionId,
   tables tables: table_store.Tables,
@@ -660,7 +664,7 @@ const unclosed_end = 65_535
 fn line_sent(
   chat chat: Chat,
   body body: BitArray,
-  viewers viewers: Set(ConnectionId),
+  viewers viewers: List(#(ConnectionId, Stay)),
   tables tables: table_store.Tables,
   dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
@@ -703,9 +707,10 @@ fn line_sent(
         Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
         ..case reach {
           Say ->
-            list.map(set.to_list(viewers), fn(viewer) {
-              Tell(
-                to: step.Connection(viewer),
+            list.map(viewers, fn(viewer) {
+              TellLine(
+                to: viewer.0,
+                stay: viewer.1,
                 tell: chat_tell.Said(speaker: chat.speaker, line:),
               )
             })

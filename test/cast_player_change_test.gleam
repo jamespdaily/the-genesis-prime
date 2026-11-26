@@ -3255,6 +3255,41 @@ fn gone_on_the_ally(spell spell: Spell) -> Result(GoneOnTheAlly, Nil) {
   ))
 }
 
+/// `spell_plan` plans one go for a Normal cast and the cast rule tells another player a
+/// change at that go: a spell that lands a change on another player and has a second go
+/// would have its change told again at the second go, which no rule here handles. The check
+/// is over every Spell4 row the plan keeps.
+pub fn no_spell_that_lands_a_change_on_another_player_has_a_second_go_test() -> Nil {
+  // deadline: measured about 4 s here, 120 s for a loaded machine: it plans every Spell4 row of the client's tables
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let landing =
+    list.filter_map(spell4.all(tables), fn(row) {
+      case
+        spell_plan.spell_alone(tables:, sources:, spell4_id: row.id, chain: [])
+      {
+        Ok(spell) ->
+          case changes_the_plan_would_land_on_the_ally(spell:) {
+            [] -> Error(Nil)
+            [_, ..] -> Ok(spell)
+          }
+        Error(_) -> Error(Nil)
+      }
+    })
+  assert landing != []
+    as "the client's tables hold spells that land a change on another player"
+  list.each(landing, fn(spell) {
+    let why = "Spell4 " <> int.to_string(spell.spell4_id.value)
+    assert spell.method == spell_plan.Normal
+      as { why <> " lands a change on another player and is a Normal cast" }
+    assert spell_plan.go_count(spell:) == 1
+      as { why <> " lands a change on another player and has one go" }
+  })
+}
+
 pub fn the_rows_a_node_lists_on_a_player_a_press_names_are_the_changes_the_ledger_is_told_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("real_tables")

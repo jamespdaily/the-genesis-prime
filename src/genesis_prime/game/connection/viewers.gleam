@@ -496,6 +496,8 @@ pub fn viewer_takes(
     | unit_news.Shield(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.InterruptArmor(..)
@@ -1017,6 +1019,26 @@ pub fn viewer_takes(
         ),
       ])
     }
+    unit_news.CasterRestrictionApplied(state:, instance_id:, ..) ->
+      viewer_takes(
+        session:,
+        now:,
+        entered:,
+        news: unit_news.PeerNews(
+          ..news,
+          news: unit_news.CrowdControlApplied(state:, instance_id:),
+        ),
+      )
+    unit_news.CasterRestrictionEnded(state:, cast_id:, instance_id:) ->
+      viewer_takes(
+        session:,
+        now:,
+        entered:,
+        news: unit_news.PeerNews(
+          ..news,
+          news: unit_news.CrowdControlEnded(state:, cast_id:, instance_id:),
+        ),
+      )
     unit_news.UnitStateHeld(state:, number:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(
@@ -1153,6 +1175,8 @@ fn creature_news(
     | unit_news.Shield(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.InterruptArmor(..)
@@ -1250,6 +1274,8 @@ fn life_news(
     | unit_news.Shield(..)
     | unit_news.CrowdControlApplied(..)
     | unit_news.CrowdControlEnded(..)
+    | unit_news.CasterRestrictionApplied(..)
+    | unit_news.CasterRestrictionEnded(..)
     | unit_news.UnitStateHeld(..)
     | unit_news.UnitStateEnded(..)
     | unit_news.InterruptArmor(..)

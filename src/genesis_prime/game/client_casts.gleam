@@ -47,6 +47,10 @@ type Hold {
   Relisted(caster_unit_id: Int)
   /// The units in `allies` listed it and end it for the client, one 0x811 each.
   Borrowed(allies: Set(Int))
+  /// A cast its caster's frames finished: the client no longer holds it, and the cast id
+  /// stays taken until the unit `caster_unit_id` is forgotten, a new start of the id
+  /// replaces it, or a create lists the id.
+  Ended(caster_unit_id: Int)
 }
 
 /// The casts a client holds, by cast id.
@@ -69,7 +73,7 @@ pub fn written(
   let hold = case dict.get(casts.holds, cast_id) {
     Ok(Borrowed(..) as hold) -> hold
     Ok(Orphaned) | Ok(Relisted(..)) -> Relisted(caster_unit_id:)
-    Ok(Written(..)) | Error(Nil) -> Written(caster_unit_id:)
+    Ok(Written(..)) | Ok(Ended(..)) | Error(Nil) -> Written(caster_unit_id:)
   }
   Casts(holds: dict.insert(casts.holds, cast_id, hold))
 }
@@ -84,7 +88,7 @@ pub fn borrow(
   let allies = case dict.get(casts.holds, cast_id) {
     Ok(Written(..)) | Ok(Orphaned) | Ok(Relisted(..)) -> Error(Nil)
     Ok(Borrowed(allies:)) -> Ok(set.insert(allies, ally_unit_id))
-    Error(Nil) -> Ok(set.from_list([ally_unit_id]))
+    Ok(Ended(..)) | Error(Nil) -> Ok(set.from_list([ally_unit_id]))
   }
   case allies {
     Ok(allies) ->
@@ -97,7 +101,7 @@ pub fn borrow(
 pub fn is_written(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   case dict.get(casts.holds, cast_id) {
     Ok(Written(..)) | Ok(Relisted(..)) -> True
-    Ok(Orphaned) | Ok(Borrowed(..)) | Error(Nil) -> False
+    Ok(Orphaned) | Ok(Borrowed(..)) | Ok(Ended(..)) | Error(Nil) -> False
   }
 }
 
@@ -112,7 +116,11 @@ pub fn is_held(casts casts: Casts, cast_id cast_id: Int) -> Bool {
 pub fn is_borrowed(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   case dict.get(casts.holds, cast_id) {
     Ok(Borrowed(..)) -> True
-    Ok(Written(..)) | Ok(Orphaned) | Ok(Relisted(..)) | Error(Nil) -> False
+    Ok(Written(..))
+    | Ok(Orphaned)
+    | Ok(Relisted(..))
+    | Ok(Ended(..))
+    | Error(Nil) -> False
   }
 }
 
@@ -121,7 +129,7 @@ pub fn finished(casts casts: Casts, cast_id cast_id: Int) -> Casts {
   case dict.get(casts.holds, cast_id) {
     Ok(Written(..)) | Ok(Relisted(..)) ->
       Casts(holds: dict.delete(casts.holds, cast_id))
-    Ok(Orphaned) | Ok(Borrowed(..)) | Error(Nil) -> casts
+    Ok(Orphaned) | Ok(Borrowed(..)) | Ok(Ended(..)) | Error(Nil) -> casts
   }
 }
 
@@ -134,7 +142,8 @@ pub fn written_of_unit(casts casts: Casts, unit_id unit_id: Int) -> List(Int) {
         | Relisted(caster_unit_id:)
         if caster_unit_id == unit_id
       -> Ok(held.0)
-      Written(..) | Relisted(..) | Orphaned | Borrowed(..) -> Error(Nil)
+      Written(..) | Relisted(..) | Orphaned | Borrowed(..) | Ended(..) ->
+        Error(Nil)
     }
   })
   |> list.sort(int.compare)
@@ -161,7 +170,9 @@ pub fn unit_forgotten(casts casts: Casts, unit_id unit_id: Int) -> Casts {
                 False -> dict.insert(holds, cast_id, Borrowed(allies: left))
               }
           }
-        Written(..) | Relisted(..) | Orphaned -> holds
+        Ended(caster_unit_id:) if caster_unit_id == unit_id ->
+          dict.delete(holds, cast_id)
+        Written(..) | Relisted(..) | Orphaned | Ended(..) -> holds
       }
     }),
   )
@@ -182,7 +193,7 @@ pub fn orphans(casts casts: Casts) -> List(Int) {
   |> list.filter_map(fn(held) {
     case held.1 {
       Orphaned | Relisted(..) -> Ok(held.0)
-      Written(..) | Borrowed(..) -> Error(Nil)
+      Written(..) | Borrowed(..) | Ended(..) -> Error(Nil)
     }
   })
   |> list.sort(int.compare)
@@ -197,7 +208,7 @@ pub fn orphans_ended(
     holds: list.fold(cast_ids, casts.holds, fn(holds, cast_id) {
       case dict.get(holds, cast_id) {
         Ok(Orphaned) | Ok(Relisted(..)) -> dict.delete(holds, cast_id)
-        Ok(Written(..)) | Ok(Borrowed(..)) | Error(Nil) -> holds
+        Ok(Written(..)) | Ok(Borrowed(..)) | Ok(Ended(..)) | Error(Nil) -> holds
       }
     }),
   )
@@ -230,6 +241,10 @@ pub fn ally_ended(
           }
         }
       }
-    Ok(Written(..)) | Ok(Orphaned) | Ok(Relisted(..)) | Error(Nil) -> Error(Nil)
+    Ok(Written(..))
+    | Ok(Orphaned)
+    | Ok(Relisted(..))
+    | Ok(Ended(..))
+    | Error(Nil) -> Error(Nil)
   }
 }

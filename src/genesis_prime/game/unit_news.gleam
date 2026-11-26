@@ -153,6 +153,23 @@ pub type News {
   /// instance id, with its last bit 0 (opcode.0x880), written when the viewer's client
   /// shows the unit.
   CrowdControlEnded(state: CrowdControlState, cast_id: Int, instance_id: Int)
+  /// The caster of the cast `cast_id` holds a crowd-control state its own go gave: 0x87f
+  /// with the instance id (opcode.0x87f), written when the viewer's client shows the unit
+  /// and the viewer holds the cast as written by its caster, so a viewer that was never
+  /// told the cast's start is written none of it.
+  CasterRestrictionApplied(
+    cast_id: Int,
+    state: CrowdControlState,
+    instance_id: Int,
+  )
+  /// The state the caster's cast `cast_id` gave it ends: 0x880 (opcode.0x880), written when
+  /// the viewer's client shows the unit and its picture holds the instance, so a viewer
+  /// that came after the 0x87f is written none.
+  CasterRestrictionEnded(
+    cast_id: Int,
+    state: CrowdControlState,
+    instance_id: Int,
+  )
   /// The unit holds the unit state `state`, as the `number` its creature gave this hold
   /// (genesis_prime/game/unit_state): no frame, since the client reads no row of the type;
   /// the viewer's connection keeps it in its picture of the unit, so a press that the state

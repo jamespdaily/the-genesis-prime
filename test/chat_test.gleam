@@ -45,10 +45,10 @@ import genesis_prime/table/id.{
   ChatChannelId, Creature2Id, CurrencyTypeId, Item2Id, Quest2Id,
 }
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/stay
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set
 import gleam/string
 import owned_test
 import qcheck
@@ -128,7 +128,9 @@ fn take_with(
       chat:,
       message:,
       body:,
-      viewers: set.from_list(list.map(viewers, ConnectionId)),
+      viewers: list.map(viewers, fn(viewer) {
+        #(ConnectionId(viewer), stay.next(stay.none_yet()))
+      }),
       realm_name: "Test Realm",
       connection: ConnectionId(1),
       tables: character_tables.shared(),
@@ -143,6 +145,7 @@ fn frames_of(effects: List(chat.Effect)) -> List(Frame) {
     case effect {
       chat.Send(frame:) -> Ok(frame)
       chat.Tell(..)
+      | chat.TellLine(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
       | chat.Watch(..)
@@ -162,6 +165,7 @@ fn runs_a_command(effects: List(chat.Effect)) -> Bool {
       chat.RunCommand(..) -> True
       chat.Send(..)
       | chat.Tell(..)
+      | chat.TellLine(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
       | chat.Watch(..)
@@ -180,6 +184,7 @@ fn tells_of(
   list.filter_map(effects, fn(effect) {
     case effect {
       chat.Tell(to:, tell:) -> Ok(#(to, tell))
+      chat.TellLine(to:, tell:, ..) -> Ok(#(step.Connection(to), tell))
       chat.Send(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
@@ -1433,6 +1438,7 @@ fn unknown_zones_of(effects: List(chat.Effect)) -> List(Int) {
       chat.UnknownZone(world_zone_id:) -> Ok(world_zone_id)
       chat.Send(..)
       | chat.Tell(..)
+      | chat.TellLine(..)
       | chat.TellWatched(..)
       | chat.Watch(..)
       | chat.Unwatch(..)
@@ -1787,6 +1793,7 @@ pub fn the_memberships_one_player_holds_after_entering_changing_zone_camping_and
           list.filter(groups, fn(held) { held != address })
         chat.Send(..)
         | chat.Tell(..)
+        | chat.TellLine(..)
         | chat.TellWatched(..)
         | chat.UnknownZone(..)
         | chat.Watch(..)
@@ -2018,6 +2025,7 @@ fn drop_unwatch(effects: List(chat.Effect)) -> List(chat.Effect) {
       chat.Unwatch(..) -> False
       chat.Send(..)
       | chat.Tell(..)
+      | chat.TellLine(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
       | chat.Watch(..)
@@ -2474,6 +2482,7 @@ pub fn every_0x1d4_gets_exactly_one_answer_except_an_empty_whisper_to_a_found_ta
         chat.Watch(..) -> True
         chat.Send(..)
         | chat.Tell(..)
+        | chat.TellLine(..)
         | chat.TellWatched(..)
         | chat.UnknownZone(..)
         | chat.Unwatch(..)
