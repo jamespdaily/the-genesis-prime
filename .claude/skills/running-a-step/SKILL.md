@@ -33,6 +33,7 @@ A step that changes processes, supervision or what one process asks another gets
 ## The brief
 
 - One fresh `implementer` per step, local, in its own worktree, never `isolation: remote`. Split a build longer than about 2 hours first.
+- The coordinator opens the draft pull request with the branch, before the builder starts.
 - The brief is a "Brief" artifact; the prompt is one line naming the issue and artifact. It points to the Design and list, and names the simplest mechanism and each test's layer, never a line budget.
 - Write it under the headings in [brief.md](brief.md); read that file when the brief starts.
 - A scope change edits the "Test list" comment in place and the brief; once the builder starts, changes go as a message.
