@@ -262,6 +262,7 @@ fn approaches_in_full(
       )) -> Ok(#(by, unit_id, start_place.x(place), seq, stay))
       map.Withdrew(..)
       | map.PlayerDied(..)
+      | map.CasterGone(..)
       | map.ToldCreature(..)
       | map.Seen(..)
       | map.Unseen(..)

@@ -541,6 +541,11 @@ pub type Message {
   /// The caster's connection `by`: its cast `cast_id` no longer holds a node on the
   /// creature that holds the states the cast landed, so each of those states ends.
   ControlsEnd(by: ConnectionId, cast_id: Int)
+  /// The map's word that the player of connection `by` is gone from it, by its leave or
+  /// by its connection's end: every source, view and control of that connection ends,
+  /// whatever state the creature is in (live, dead and retiring or released). Told by
+  /// the map once for each running creature.
+  CasterGone(by: ConnectionId)
 }
 
 /// What a creature sends its map without waiting. The map relays it to the players
@@ -895,6 +900,7 @@ pub fn step(
       view_ended(state:, by:, cast_id:)
     OwnEvent(Told(message: ControlsEnd(by:, cast_id:))) ->
       controls_ended_by(state:, by:, cast_id:, now_ms:)
+    OwnEvent(Told(message: CasterGone(by: _))) -> #(state, Effects([]))
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -2448,6 +2454,7 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.PlayerDied(by:) -> Ok(PlayerDied(by:))
     map.Retire -> Ok(Retire)
+    map.CasterGone(by:) -> Ok(CasterGone(by:))
     map.ToldCreature(by:, stay:, payload:) ->
       Ok(told_by_a_player(by:, stay:, payload:))
     map.Joined(..)

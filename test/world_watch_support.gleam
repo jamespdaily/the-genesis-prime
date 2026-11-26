@@ -185,6 +185,20 @@ pub fn join(run run: MapProcess, connection connection: Int) -> Int {
   )
 }
 
+/// The connection leaves the map: an ask the map answers once its player is out.
+pub fn left(run run: MapProcess, connection connection: Int) -> Nil {
+  let #(_, answer) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      service.call_subject(
+        run.subject,
+        map.Leave(connection: ConnectionId(connection)),
+        reply,
+      )
+    })
+  assert answer == map.Left as "the map answered the leave"
+  Nil
+}
+
 /// Where `join` stands the player.
 pub fn sight_place() -> Place {
   place_support.at(
@@ -220,6 +234,33 @@ pub fn join_at(
     })
   let assert map.Joined(unit:, ..) = answer as "the map answered the join"
   unit.unit_id
+}
+
+/// The player of `connection` moves to (`x`, `z`), the `seq`th move, a tell the map takes in
+/// the order it takes its other inputs.
+pub fn moved_to(
+  run run: MapProcess,
+  connection connection: Int,
+  x x: Float,
+  z z: Float,
+  seq seq: Int,
+) -> Nil {
+  let _sent =
+    service.tell_subject(
+      run.subject,
+      map.Moved(
+        connection: ConnectionId(connection),
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: spawn_support.warfare_woods,
+          x:,
+          y: 0.0,
+          z:,
+        ),
+        seq:,
+      ),
+    )
+  Nil
 }
 
 /// The next message the connection was sent that `wanted` takes, in the order

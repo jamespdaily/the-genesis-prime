@@ -423,6 +423,20 @@ fn rows() -> List(Row) {
       changes: "connection 1: PropertiesChanged",
     ),
     Row(
+      name: "CasterGone",
+      kind: Beast,
+      prepare: fn(scene, life) {
+        told_and_taken(
+          scene:,
+          life:,
+          message: world_watch_support.modifier_starts(),
+        )
+        creature.CasterGone(by: ConnectionId(1))
+      },
+      settle: nothing_to_settle,
+      changes: "connection 1: PropertiesChanged",
+    ),
+    Row(
       name: "CastViewSet",
       kind: Beast,
       prepare: fn(scene, _life) { cast_view_set(scene:) },

@@ -284,21 +284,9 @@ fn crashed_by_the_plant(watched: process.Monitor) -> Nil {
     )
   let assert process.Abnormal(abnormal) = reason
     as { "the connection crashed, not " <> string.inspect(reason) }
-  assert decode.run(abnormal, crash_message()) == Ok("the planted crash")
+  assert decode.run(abnormal, ask_support.crash_message())
+    == Ok("the planted crash")
     as { "the crash was the rule's: " <> string.inspect(abnormal) }
-}
-
-/// The message of a process's crash: its exit reason is the pair of the panic's
-/// map, which holds `message`, and the stack.
-fn crash_message() -> decode.Decoder(String) {
-  use message <- decode.field(0, {
-    use message <- decode.field(
-      atom.to_dynamic(atom.create("message")),
-      decode.string,
-    )
-    decode.success(message)
-  })
-  decode.success(message)
 }
 
 /// The hello rule, except that a read starting with 0xEE crashes it.

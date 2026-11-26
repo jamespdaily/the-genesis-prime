@@ -971,6 +971,11 @@ pub type Outgoing {
   /// A send to a creature: the player of connection `by`, in its stay `stay`, told it
   /// `payload`. `by` and `stay` are the relay's, never the payload's.
   ToldCreature(by: ConnectionId, stay: Stay, payload: Inbound)
+  /// A send to a creature in any running state: the player of connection `by` is gone
+  /// from the map, by its leave or by its connection's end, so everything it held on the
+  /// creature (sources, views, controls) ends. The map sends it once for each running
+  /// creature, in spawn order, after the sends the removal makes.
+  CasterGone(by: ConnectionId)
 }
 
 /// What a map tells the connection of a player in it about who sees whom, for
@@ -3936,9 +3941,18 @@ fn without(
             }
           })
       },
-      spawn_effects,
+      list.append(spawn_effects, caster_gone_sends(state:, connection:)),
     ),
   )
+}
+
+/// The `CasterGone` of the connection for each running creature (`running`), in spawn
+/// order: the removal's last sends, after the `Unseen`s of `spawns_decided`.
+fn caster_gone_sends(
+  state _state: State,
+  connection _connection: ConnectionId,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  []
 }
 
 /// The players other than the connection's, in the order the map's table

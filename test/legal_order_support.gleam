@@ -646,7 +646,8 @@ fn creature_message_name(message: creature.Message) -> String {
     | creature.UnitStates(..)
     | creature.CastViewSet(..)
     | creature.CastViewEnds(..)
-    | creature.ControlsEnd(..) -> "another tell"
+    | creature.ControlsEnd(..)
+    | creature.CasterGone(..) -> "another tell"
   }
 }
 
@@ -690,6 +691,7 @@ fn map_outgoing_name(message: map.Outgoing) -> String {
     | map.Approached(..)
     | map.Withdrew(..)
     | map.PlayerDied(..)
+    | map.CasterGone(..)
     | map.ToldCreature(..) -> "another send"
   }
 }

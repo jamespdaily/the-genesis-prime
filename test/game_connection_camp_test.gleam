@@ -12,8 +12,13 @@ import genesis_prime/client_connection.{
   FromStore,
 }
 import genesis_prime/connection/frame.{Frame}
-import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/connection/effects as connection_effects
+import genesis_prime/game/connection/state.{Settings} as connection_state
 import genesis_prime/game/limited_action_set
+import genesis_prime/game/unit_casts
+import genesis_prime/game/unit_properties
+import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{NoHolder}
 import genesis_prime/message/camp_countdown
@@ -31,8 +36,11 @@ import genesis_prime/store.{
   AccountId, CharacterLoaded, ForSelect, ForWorld, ListCharacters, Listed,
   Select, Unavailable,
 }
+import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/map.{Left}
+import genesis_prime/world_map/relay
 import gleam/bit_array
+import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -803,4 +811,63 @@ pub fn an_answer_in_the_camp_save_that_is_not_the_stores_is_a_bug_with_reason_8_
     assert support.asked(taken) == None
       as "the save is over and the camp's leave is not asked: a bug ends the connection without a second save"
   })
+}
+
+/// A camp of a player whose casts hold a modifier and a view on the Beast 40 (life 3): the
+/// connection tells the creature each end through the map, in the step that starts the save
+/// and so ahead of the save's ask and of the `Leave` ask that follows it (the camp's own
+/// order, `effects.world_left`), because a creature hears about a player from the map alone
+/// and the map takes the connection's tells in its order. A control a cast landed is ended by
+/// the map's `CasterGone`, which the leave sends: the connection tells no end of it.
+pub fn a_camp_tells_the_creatures_the_ends_of_its_holdings_in_the_step_that_starts_its_save_before_any_ask_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let entered = world_entry_support.entered_after(clock_origin_ms: 600)
+  let source = unit_properties.Source(cast_id: 6, effect_id: Spell4EffectsId(1))
+  let holding =
+    world_entry.Entered(
+      ..entered,
+      cast: cast_state.State(
+        ..entered.cast,
+        creature_told: dict.from_list([
+          #(
+            #(5, 40),
+            cast_state.Told(
+              life: 3,
+              target: unit_casts.ViewTarget(unit_id: 40, count: 1, effects: []),
+            ),
+          ),
+        ]),
+        on_units: dict.from_list([
+          #(source.cast_id, [
+            cast_state.HeldOnCreature(creature: cast_state.OnCreature(
+              unit_id: 40,
+              life: 3,
+              source:,
+            )),
+          ]),
+        ]),
+      ),
+    )
+  let session =
+    game_connection_support.session_in(status: connection_state.InWorld(
+      holder: game_connection_support.holder(),
+      entered: holding,
+    ))
+  let assert client_connection.Asking(effects:, ask:, ..) =
+    connection_effects.carry_out(
+      session:,
+      now: step.Now(monotonic_ms: 0, filetime: 0),
+      effects: [connection_effects.LeavesWorld],
+      written: [],
+    )
+    as "the camp's step ends in the save's ask"
+  assert game_connection_support.creature_tells(step.Effects(effects))
+    == [
+      #(40, 3, relay.ModifierEnds(source:)),
+      #(40, 3, relay.CastViewEnds(cast_id: 5)),
+    ]
+    as "the modifier's and the view's ends are effects of the step that asks for the save, which the shell carries out before the ask"
+  let assert AskStore(store.Move(store.SavePlace(..))) = ask.request
+    as "the ask the step ends in is the place's save, the first of the camp's asks"
+  Nil
 }

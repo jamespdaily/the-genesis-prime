@@ -169,6 +169,7 @@ fn notices(
       | map.Approached(..)
       | map.Withdrew(..)
       | map.PlayerDied(..)
+      | map.CasterGone(..)
       | map.ToldCreature(..) -> Error(Nil)
     }
   })
@@ -193,6 +194,7 @@ fn joined_unit_id(taken: ServiceStep(map.Outgoing)) -> Int {
         | map.Approached(..)
         | map.Withdrew(..)
         | map.PlayerDied(..)
+        | map.CasterGone(..)
         | map.ToldCreature(..) -> Error(Nil)
       }
     })

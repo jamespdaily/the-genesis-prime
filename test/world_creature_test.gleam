@@ -159,7 +159,7 @@ fn heard(message: Message, cast_id: Int) -> Result(Heard, Nil) {
 /// The connection's player moves to `x` in the world, a tell the map takes in
 /// the order it takes its other inputs.
 fn move_to(run run: MapProcess, connection connection: Int, x x: Float) -> Nil {
-  moved_round(run:, connection:, x:, z: 0.0, seq: 1)
+  world_watch_support.moved_to(run:, connection:, x:, z: 0.0, seq: 1)
 }
 
 /// A world with no stored spawn, whose creatures stop on the short times and
@@ -3166,32 +3166,6 @@ fn seen_until_a_path(
   }
 }
 
-/// The player of `connection` moves to (`x`, `z`), the nth move.
-fn moved_round(
-  run run: MapProcess,
-  connection connection: Int,
-  x x: Float,
-  z z: Float,
-  seq seq: Int,
-) -> Nil {
-  let _sent =
-    service.tell_subject(
-      run.subject,
-      map.Moved(
-        connection: ConnectionId(connection),
-        place: place_support.at(
-          world_id: 3460,
-          world_zone_id: spawn_support.warfare_woods,
-          x:,
-          y: 0.0,
-          z:,
-        ),
-        seq:,
-      ),
-    )
-  Nil
-}
-
 pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chase_circling_and_leash_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
@@ -3255,10 +3229,34 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
   // The player circles the creature inside reach of the path's end: the client keeps it
   // facing the player, so nothing at all is sent.
   let path_end_x = start_place.x(to)
-  moved_round(run:, connection: 1, x: path_end_x +. 0.3, z: 0.0, seq: 2)
-  moved_round(run:, connection: 1, x: path_end_x, z: 0.3, seq: 3)
-  moved_round(run:, connection: 1, x: path_end_x -. 0.3, z: 0.0, seq: 4)
-  moved_round(run:, connection: 1, x: path_end_x, z: 0.0 -. 0.3, seq: 5)
+  world_watch_support.moved_to(
+    run:,
+    connection: 1,
+    x: path_end_x +. 0.3,
+    z: 0.0,
+    seq: 2,
+  )
+  world_watch_support.moved_to(
+    run:,
+    connection: 1,
+    x: path_end_x,
+    z: 0.3,
+    seq: 3,
+  )
+  world_watch_support.moved_to(
+    run:,
+    connection: 1,
+    x: path_end_x -. 0.3,
+    z: 0.0,
+    seq: 4,
+  )
+  world_watch_support.moved_to(
+    run:,
+    connection: 1,
+    x: path_end_x,
+    z: 0.0 -. 0.3,
+    seq: 5,
+  )
   // The four moves are the map's to forward: the map takes them, then the creature has what
   // the map forwarded, before the connection's output is read.
   driven_time.settled(run.pid)
