@@ -71,6 +71,7 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{
   type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
@@ -563,7 +564,10 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
     let #(_, unseen) =
       support.feed(
         state:,
-        event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(caster))),
+        event: support.sent_by_the_map(map.UnseenBy(
+          by: ConnectionId(caster),
+          generation: support.viewer_sight(caster),
+        )),
       )
     assert seen(steps: [unseen])
       == Seen(properties: [], absorptions: [], armor: [])
@@ -742,7 +746,10 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
           source: armor_source(cast_id: 100),
         )),
       ]).0,
-      event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(3))),
+      event: support.sent_by_the_map(map.UnseenBy(
+        by: ConnectionId(3),
+        generation: support.viewer_sight(3),
+      )),
     )
   assert properties_written(steps: [unseen]) == [[armor_entry(value: one_bits)]]
     as "the source another caster named stays held, and the holder's unseen notice ends it"
@@ -756,7 +763,11 @@ type Notice {
 
 fn notice_of(notice notice: Notice) -> map.Notice {
   case notice {
-    Unseen(caster:) -> map.UnseenBy(by: ConnectionId(caster))
+    Unseen(caster:) ->
+      map.UnseenBy(
+        by: ConnectionId(caster),
+        generation: support.viewer_sight(caster),
+      )
     UnitGone(caster:) -> map.Gone(unit_id: support.viewer_unit_id(caster))
   }
 }
@@ -843,7 +854,7 @@ pub fn a_caster_the_map_says_no_longer_sees_the_player_ends_each_change_it_held_
               stay: support.viewer_stay(3),
               news: unit_news.PeerNews(
                 unit_id: support.own_unit_id,
-                news: unit_news.Removed,
+                news: unit_news.Departed(generation: support.viewer_sight(3)),
               ),
             ),
           ))
@@ -1100,7 +1111,10 @@ fn showing_casts(
     let #(state, _) =
       support.feed(
         state:,
-        event: from_caster(caster:, news: Appeared(unit: unit(caster))),
+        event: from_caster(
+          caster:,
+          news: Appeared(unit: unit(caster), generation: generation.first()),
+        ),
       )
     list.fold(cast_ids, state, fn(state, cast_id) {
       support.feed(
@@ -1402,25 +1416,32 @@ pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_c
                   ..support.another_unit(),
                   unit_id: support.viewer_unit_id(3),
                 ),
+                generation: generation.first(),
               ),
             )
           CasterSeenListing(cast_id:) ->
             from_caster(
               caster: 3,
-              news: Appeared(unit: support.another_unit_casting(
-                casts: [
-                  support.listed_cast(
-                    cast_id:,
-                    caster: support.viewer_unit_id(3),
-                  ),
-                ],
-                cast_id: 0,
-              )),
+              news: Appeared(
+                unit: support.another_unit_casting(
+                  casts: [
+                    support.listed_cast(
+                      cast_id:,
+                      caster: support.viewer_unit_id(3),
+                    ),
+                  ],
+                  cast_id: 0,
+                ),
+                generation: generation.first(),
+              ),
             )
           CasterFinishes ->
             from_caster(caster: 3, news: CastFinished(cast_id: 100))
           MapUnseen ->
-            support.sent_by_the_map(map.UnseenBy(by: ConnectionId(3)))
+            support.sent_by_the_map(map.UnseenBy(
+              by: ConnectionId(3),
+              generation: support.viewer_sight(3),
+            ))
           MapGone ->
             support.sent_by_the_map(
               map.Gone(unit_id: support.viewer_unit_id(3)),
@@ -1870,7 +1891,10 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
   let #(left, _) =
     support.feed(
       state: holding_for_caster_4(holds: [armor_of_four]),
-      event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(2))),
+      event: support.sent_by_the_map(map.UnseenBy(
+        by: ConnectionId(2),
+        generation: support.viewer_sight(2),
+      )),
     )
   let #(_, taken) =
     support.at(
@@ -1911,6 +1935,7 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
         by: ConnectionId(6),
         stay: support.viewer_stay(6),
         unit_id: support.viewer_unit_id(6),
+        generation: support.viewer_sight(6),
       )),
     )
   assert told_a_held_cast_start(taken: arrived) == []
@@ -1952,7 +1977,10 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
       let #(unseen, _) =
         support.feed(
           state: holding_for_caster_4(holds: [hold]),
-          event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(4))),
+          event: support.sent_by_the_map(map.UnseenBy(
+            by: ConnectionId(4),
+            generation: support.viewer_sight(4),
+          )),
         )
       let #(_, taken) =
         support.at(
@@ -2266,7 +2294,10 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
       state: holding(holds: [
         waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage),
       ]),
-      event: support.sent_by_the_map(map.UnseenBy(by: ConnectionId(3))),
+      event: support.sent_by_the_map(map.UnseenBy(
+        by: ConnectionId(3),
+        generation: support.viewer_sight(3),
+      )),
     ).0
   assert events_told(taken: beast_blow(damage: 12)(gone)) == []
     as "a caster the player no longer sees is not told, though its source of a spell with propertyFlags 0x100 is kept"

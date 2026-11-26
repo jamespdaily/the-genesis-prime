@@ -38,8 +38,8 @@
 //// walker did not mark as its own state; a cancel with no sign near it is `unexplained`.
 
 import genesis_prime/client_connection.{
-  type StaySent, SentByFoe, SentByKill, SentByLine, SentByMap, SentByPeer,
-  SentByPlayer, SentByTarget,
+  type StaySent, SentByFoe, SentByKill, SentByLine, SentByMap, SentByMove,
+  SentByPeer, SentByPlayer, SentByTarget,
 }
 import genesis_prime/game/strike_tell
 import genesis_prime/load_deadline.{type Deadline}
@@ -200,6 +200,7 @@ pub fn is_answer_to_strike(sent sent: StaySent) -> Bool {
     SentByTarget(..) -> True
     SentByMap(..)
     | SentByPeer(..)
+    | SentByMove(..)
     | SentByFoe(..)
     | SentByPlayer(..)
     | SentByKill(..)

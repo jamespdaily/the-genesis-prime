@@ -21,6 +21,7 @@ import genesis_prime/game/level_up
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/movement
 import genesis_prime/game/objective
+import genesis_prime/game/player_address
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/projector
@@ -548,13 +549,13 @@ pub fn misrouted(
   )
 }
 
-/// The connections that see the player, each with its player's stay, in the
-/// order of their numbers.
+/// The connections that see the player, each with what the player's copy holds of
+/// that viewer (its stay and the generation of its sight), in the order of their
+/// numbers.
 pub fn sorted_viewers(
   entered entered: world_entry.Entered,
-) -> List(#(ConnectionId, Stay)) {
+) -> List(#(ConnectionId, player_address.Viewer)) {
   map.sorted_by_connection(entered.viewers)
-  |> list.map(fn(viewer) { #(viewer.0, { viewer.1 }.stay) })
 }
 
 /// The player's level: its unit's stat 10, 1 when it has none.
@@ -745,12 +746,18 @@ pub fn news_to_connection(
 
 /// The tells that remove the player's own unit from the client of each player who
 /// sees it, for its camp and the Holocrypt, which send them before its leave is
-/// asked: the map's `Unwatched` after the leave would be a second sender of news
-/// of the unit.
+/// asked: the map's `UnseenBy` after the leave would be a second sender of news
+/// of the unit. Each names the generation of that viewer's sight.
 pub fn removes_its_unit_from_the_viewers(
   entered entered: world_entry.Entered,
 ) -> List(Effect(ConnectionEffect(Request))) {
-  news_to_viewers(entered:, news: unit_news.Removed)
+  list.map(sorted_viewers(entered:), fn(viewer) {
+    news_to(
+      entered:,
+      viewer: #(viewer.0, { viewer.1 }.stay),
+      news: unit_news.Departed(generation: { viewer.1 }.generation),
+    )
+  })
 }
 
 /// The tell of `news` about the player's own unit to each player who sees it, in
@@ -772,7 +779,9 @@ pub fn news_to_viewers_but(
   list.filter(sorted_viewers(entered:), fn(viewer) {
     !set.contains(left_out, viewer.0)
   })
-  |> list.map(fn(viewer) { news_to(entered:, viewer:, news:) })
+  |> list.map(fn(viewer) {
+    news_to(entered:, viewer: #(viewer.0, { viewer.1 }.stay), news:)
+  })
 }
 
 /// The tell of `request` to the run of the player's map, which no answer follows

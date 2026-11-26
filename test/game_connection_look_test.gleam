@@ -30,7 +30,7 @@ import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout
 import genesis_prime/game/unit_news.{
-  type News, Appeared, LookChanged, PeerNews, Removed,
+  type News, Appeared, Departed, LookChanged, PeerNews, Removed,
 }
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
@@ -221,7 +221,7 @@ fn created_for(
   state state: game_connection.State,
   viewer viewer: Int,
 ) -> UnitCreatePlayer {
-  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
+  let assert [#(_, PeerNews(news: Appeared(unit:, ..), ..))] =
     support.peer_tells(
       support.feed(
         state:,
@@ -229,6 +229,7 @@ fn created_for(
           by: ConnectionId(viewer),
           stay: support.viewer_stay(viewer),
           unit_id: support.viewer_unit_id(viewer),
+          generation: support.viewer_sight(viewer),
         )),
       ).1,
     )
@@ -270,7 +271,10 @@ fn a_viewer_that_sees_the_player_again_gets_the_suit(
   let #(unseen, _) =
     support.feed(
       state: suited,
-      event: support.sent_by_the_map(UnseenBy(by: ConnectionId(2))),
+      event: support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(2),
+        generation: support.viewer_sight(2),
+      )),
     )
   assert suits_of(unit: created_for(state: unseen, viewer: 2))
     == [suit(display: world.suit)]
@@ -387,7 +391,13 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
   assert written(steps:) == [] as "a camp writes no 0x933 to the player"
   list.each([2, 3], fn(viewer) {
     let news = news_told(steps:, viewer:)
-    assert list.filter(news, fn(told) { told == Removed }) == [Removed]
+    assert list.filter(news, fn(told) {
+        case told {
+          Departed(..) -> True
+          _ -> False
+        }
+      })
+      == [Departed(generation: support.viewer_sight(viewer))]
       as "the camp's own steps tell each viewer the unit is removed, once (opcode.0x355)"
     assert list.filter_map(news, fn(told) { look_visuals(news: told) }) == []
       as "and no LookChanged, whatever it carries"

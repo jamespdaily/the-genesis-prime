@@ -7,7 +7,6 @@
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/item_visual.{type ItemVisual}
-import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/spell_effect_tick.{type SpellEffectTick}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_missed.{type SpellMissed}
@@ -21,6 +20,7 @@ import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
+import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 
 /// News of one unit from its owner, a player's connection or a creature's
@@ -35,8 +35,10 @@ pub type PeerNews {
 /// as the message the client creates, moves and removes a unit with.
 pub type News {
   /// The unit as the client creates it, at the owner's current place and stamped
-  /// from the map's clock: 0x262 (opcode.0x262).
-  Appeared(unit: UnitCreatePlayer)
+  /// from the map's clock: 0x262 (opcode.0x262), for the sight `generation` names:
+  /// the viewer's moves of the unit are for that generation from now on
+  /// (genesis_prime/game/move_stamp).
+  Appeared(unit: UnitCreatePlayer, generation: Generation)
   /// A creature as the client creates it, at its spawn and stamped from the
   /// map's clock: 0x262 of type 0 (opcode.0x262.creature), or of type 13 when
   /// `unit_type` is a Turret (opcode.0x262.simple), at its current health
@@ -58,12 +60,13 @@ pub type News {
     hostile_to: Hostile,
     fights: Bool,
   )
-  /// The unit moved: the map's server time at the move (the map's clock,
-  /// `world_map/map.server_time`) and at most 31 of its relayed commands in the
-  /// order sent, since 0x638's count is 5 bits (opcode.0x638).
-  Moving(server_time_ms: Int, commands: List(RelayedMovement))
-  /// The unit is gone from the viewer's sight, or its owner camped: 0x355
-  /// (opcode.0x355).
+  /// A player's unit left the viewer's sight, or its owner camped, at the end of the
+  /// sight `generation` names: 0x355 (opcode.0x355), and the moves of that sight and
+  /// the ones before it are late ones (genesis_prime/game/move_stamp).
+  Departed(generation: Generation)
+  /// A creature's unit is gone from the viewer's sight: 0x355 (opcode.0x355). A
+  /// player's unit never leaves by it: a player's removal is `Departed`, which keeps the
+  /// viewer's memory of the sight that ended.
   Removed
   /// The unit started a cast: 0x7ff (opcode.0x7ff), written when the viewer's
   /// client shows the unit, and the cast is then one the viewer knows.

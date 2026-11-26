@@ -32,6 +32,7 @@ import genesis_prime/message/unit_create_cast
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/step.{type ConnectionStep, ConnectionId, OwnEffect}
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{SeenBy}
 import gleam/list
 import gleam/option.{None}
@@ -103,8 +104,9 @@ fn news_as_seen(news news: News, sender sender: Int) -> News {
       )
     unit_news.CastWent(go:) ->
       unit_news.CastWent(go: gone_as_seen(go:, sender:))
-    Appeared(unit:) ->
+    Appeared(unit:, generation:) ->
       Appeared(
+        generation:,
         unit: UnitCreatePlayer(
           ..unit,
           unit_id: unit_as_seen(unit_id: unit.unit_id, sender:),
@@ -216,7 +218,7 @@ fn written_to(
 ) -> List(Int) {
   let state =
     list.fold(sees, connection_support.in_world(), fn(state, news) {
-      let assert Appeared(unit:) = news
+      let assert Appeared(unit:, ..) = news
       connection_support.feed(
         state:,
         event: connection_support.sent_by_a_peer(connection_support.news_of(
@@ -253,6 +255,7 @@ fn written_to(
 fn appears(unit_id unit_id: Int) -> News {
   Appeared(
     unit: UnitCreatePlayer(..connection_support.another_unit(), unit_id:),
+    generation: generation.first(),
   )
 }
 
@@ -270,6 +273,7 @@ fn seen_after_the_go_by(
         by: ConnectionId(late),
         stay: connection_support.viewer_stay(late),
         unit_id: connection_support.viewer_unit_id(late),
+        generation: connection_support.viewer_sight(late),
       )),
     )
   let #(_, later) =

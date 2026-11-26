@@ -229,6 +229,7 @@ fn arriving(
       by: ConnectionId(viewer),
       stay: support.viewer_stay(viewer),
       unit_id: support.viewer_unit_id(viewer),
+      generation: support.viewer_sight(viewer),
     )),
   ).1
 }
@@ -239,7 +240,7 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
   let state = spellslinger(tables:, saved: None)
   let maximum = maximum_health()
   let #(state, started) = pressed(state:)
-  let assert [#(4, PeerNews(news: Appeared(unit:), ..))] =
+  let assert [#(4, PeerNews(news: Appeared(unit:, ..), ..))] =
     support.peer_tells(arriving(state:, viewer: 4))
     as "the player's connection sends the arriving viewer its 0x262"
   let property = fn(id) {
@@ -270,9 +271,10 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
         by: ConnectionId(6),
         stay: support.viewer_stay(6),
         unit_id: support.viewer_unit_id(6),
+        generation: support.viewer_sight(6),
       )),
     )
-  let assert [#(6, PeerNews(news: Appeared(unit: mid_buff), ..))] =
+  let assert [#(6, PeerNews(news: Appeared(unit: mid_buff, ..), ..))] =
     support.peer_tells(at_1400)
   let assert [gate_cast] = mid_buff.tail.casts
     as "Gate's cast holds a node on the player"
@@ -309,7 +311,7 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
         #(support.feed(so_far.0, OwnEvent(TimerFired(timer))).0, Nil)
       },
     )
-  let assert [#(5, PeerNews(news: Appeared(unit: later), ..))] =
+  let assert [#(5, PeerNews(news: Appeared(unit: later, ..), ..))] =
     support.peer_tells(arriving(state:, viewer: 5))
   assert list.find(later.tail.properties, fn(property) {
       property.property_id == falling_damage

@@ -16,7 +16,7 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/unit_news.{CastFinished, Moving, Removed}
+import genesis_prime/game/unit_news.{CastFinished, Removed}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/map.{UnseenBy}
@@ -110,9 +110,10 @@ pub fn a_removed_unit_heard_before_the_maps_unseen_by_is_out_of_the_cast_audienc
     let #(reason, ally, order) = row
     let removal = ally_event(ally:, news: Removed)
     let unseen =
-      connection_support.sent_by_the_map(
-        UnseenBy(by: ConnectionId(ally.connection)),
-      )
+      connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(ally.connection),
+        generation: connection_support.viewer_sight(ally.connection),
+      ))
     let events = case order {
       RemovalFirst -> [removal, unseen]
       UnseenFirst -> [unseen, removal]
@@ -148,16 +149,13 @@ pub fn a_removed_unit_heard_before_the_maps_unseen_by_is_out_of_the_cast_audienc
       connection_support.read(state:, bytes: connection_support.a_move(1.5))
     assert connection_support.news_told(taken: moved, viewer: ally.connection)
       == []
+      && !list.any(connection_support.viewer_moves(taken: moved), fn(tell) {
+        tell.0 == ally.connection
+      })
       as { reason <> ": the ally is out of the viewers" }
-    assert list.any(
-      connection_support.news_told(taken: moved, viewer: 2),
-      fn(news) {
-        case news {
-          Moving(..) -> True
-          _ -> False
-        }
-      },
-    )
+    assert list.any(connection_support.viewer_moves(taken: moved), fn(tell) {
+      tell.0 == 2
+    })
       as { reason <> ": the control viewer is still told the move" }
   })
 }

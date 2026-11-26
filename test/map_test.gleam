@@ -33,6 +33,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{type State, Join, Joined, Leave, Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/player_unit
@@ -379,7 +380,10 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
         Connection(ConnectionId(8)),
         map.Noticed(
           stay: map_support.stay(count: 1),
-          notice: map.UnseenBy(by: ConnectionId(7)),
+          notice: map.UnseenBy(
+            by: ConnectionId(7),
+            generation: generation.after(generation: generation.first()),
+          ),
         ),
       )),
       OwnEffect(Reply(CallerId(3), Left)),

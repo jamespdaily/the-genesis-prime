@@ -91,7 +91,9 @@ pub fn chat_message(
       chat: entered.chat,
       message:,
       body: inner.body,
-      viewers: connection_state.sorted_viewers(entered:),
+      viewers: list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
+        #(viewer.0, { viewer.1 }.stay)
+      }),
       realm_name: session.settings.realm_name,
       connection: client_connection.connection(session.link),
       tables: session.settings.tables,
