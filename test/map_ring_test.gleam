@@ -672,8 +672,11 @@ pub fn the_watch_of_a_stealthed_player_in_a_ring_ending_sends_its_creatures_unwa
       event: step.WatchEnded(watch: player_watch),
     )
   assert map_spawn_support.creature_sends(ended)
-    == [#(creature.unit_id, "Unseen by 1")]
-    as "the map's end rule: the creature that saw the player is sent Unwatched, and nothing else (the failure table row 'a player in a ring leaves, camps or its connection ends')"
+    == [
+      #(creature.unit_id, "Unseen by 1"),
+      #(creature.unit_id, "CasterGone by 1"),
+    ]
+    as "the map's end rule: the creature that saw the player is sent Unwatched, then that the caster is gone, and nothing else (the failure table row 'a player in a ring leaves, camps or its connection ends')"
 }
 
 // A player's death (issue 496): the connection tells the map `LifeChanged`; a dead
@@ -1033,6 +1036,8 @@ pub fn the_map_relays_a_players_killing_answer_its_death_and_its_wake_to_a_creat
       #(3, "Told StrikeAnswered by 1"),
       #(2, "Unseen by 1"),
       #(3, "Unseen by 1"),
+      #(2, "CasterGone by 1"),
+      #(3, "CasterGone by 1"),
     ]
-    as "the relays of a leave come before its Unseens"
+    as "the relays of a leave come before its Unseens, and the Unseens before the CasterGones"
 }

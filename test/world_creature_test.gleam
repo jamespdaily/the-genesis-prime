@@ -2060,14 +2060,7 @@ pub fn a_despawn_outlives_the_casters_leaving_test() -> Nil {
       #("orderIndex", Integer(1)),
     ])
   let _written = quest_go_on(watched:, row:)
-  let #(_, _left) =
-    ask_support.ask_and_wait(send: fn(reply) {
-      service.call_subject(
-        watched.run.subject,
-        map.Leave(connection: ConnectionId(1)),
-        reply,
-      )
-    })
+  world_watch_support.left(run: watched.run, connection: 1)
   driven_time.advance(time: watched.time, ms: 3999)
   assert world_watch_support.removals_waiting(received: watched.viewer) == 0
     as "the second viewer is sent nothing before the delay is over"

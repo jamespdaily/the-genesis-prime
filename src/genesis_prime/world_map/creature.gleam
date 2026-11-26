@@ -80,9 +80,8 @@
 ////                                    Broadcast(PropertiesChanged(changed entries)) ─▶ writes 0x93a if shown
 ////                                    the rules take the new values: run speed, defence, offence,
 ////                                    maximum health, Interrupt Armor's maximum
-////                                    c0's first modifier: Watch(c0's watch, Connection(c0))
 //// ModifierEnds(source) ─────────▶ remove(source)          Broadcast(PropertiesChanged(changed entries))
-//// c0's watch ends (WatchEnded) ─▶ remove every source of c0, each as ModifierEnds does
+//// CasterGone(c0) ───────────────▶ remove every source of c0, each as ModifierEnds does
 ////
 //// caster's connection c0, a ForcedMove effect of its spell
 //// Thrown(move, draws, reference)
@@ -102,11 +101,9 @@
 //// caster's connection c0, what its cast holds on the creature
 //// CastViewSet(c0, view)
 ////                         views[cast id] = (c0, view), in place of that cast's earlier view
-////                                    c0's first view or modifier: Watch(c0's watch, Connection(c0))
-////                                    an earlier holder of the cast id that holds nothing else: Unwatch
 ////                                    no news: the viewers have the 0x7f4 from the caster's audience
 //// CastViewEnds(c0, cast_id)
-////                         held by c0 ─▶ dropped; c0 holding nothing else: Unwatch
+////                         held by c0 ─▶ dropped
 ////                         else nothing
 //// caster's connection c0, its cast no longer holds a node on the creature (a push off by the stack rule)
 //// ControlsEnd(c0, cast_id)
@@ -114,7 +111,7 @@
 ////                                    Broadcast(News(0x880)); the fight acts again when it
 ////                                    was the last that kept the creature still
 ////                         no state of c0's cast held ─▶ nothing
-//// c0's watch ends (WatchEnded) ─▶ every view and source of c0 dropped, no Unwatch
+//// CasterGone(c0) ─────────────▶ every view and source of c0 dropped (no control)
 //// a viewer's arrival (`Started`, `Seen`) ─▶ the 0x262 lists each view
 ////                                    (`unit_casts.entries_of`), with the tail's cast id 0
 //// ```
@@ -195,9 +192,9 @@
 ////   creature owns the path and the flight's timer. The timers
 ////   are numbered in 7 slots by generation: the fight's 0 to 3 above a multiple of 7, a
 ////   control's 4, the guard's 5 and the flight's end 6 (`timer_id`).
-//// - **Only the run's watch stops the creature.** Each caster's connection whose
-////   modifier the creature holds is watched under its own id, from 2 on, and its end
-////   takes that caster's modifiers off.
+//// - **Only the run's watch stops the creature.** It watches no caster's connection: the
+////   map tells it `CasterGone` when a caster leaves or its connection ends, and any other
+////   watch end is a crash.
 //// - **The map run's end** ends the creature: it watches the run by the pid the
 ////   run gave when it started the creature, not through Maps, which is waiting
 ////   on the run's start while the run starts its creatures.
@@ -241,7 +238,7 @@
 //// | a `ModifierStarts` is addressed to a life that ended | dropped: the registry finds no creature at that life's address |
 //// | a `ModifierStarts` reaches the creature while it is dead | dropped |
 //// | a `ModifierStarts` or `ModifierEnds` reaches a creature that has ended | dropped: the registry finds no process |
-//// | the caster's connection ends before a modifier's end | the creature's watch on it ends, and it removes every source of that caster |
+//// | the caster's connection ends before a modifier's end | the map tells the creature `CasterGone`, and it removes every source and view of that caster |
 //// | a `ModifierEnds` comes twice, or for a source not held | it changes nothing |
 //// | the caster dies | its casts finish, and each modifier they hold on a creature ends |
 //// | the creature dies while it holds a modifier | the modifier stays held and no rule reads it; its end still removes it |
@@ -285,9 +282,9 @@ import genesis_prime/gap
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type RingMember,
   type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
-  type WatchId, Asked, Connection, CreatureNotStarted, Effects, OwnEffect,
-  OwnEvent, Send, ServiceTimerFired, Started, Stop, Stopping, TimerId, Told,
-  Watch, WatchEnded, WatchId,
+  Asked, Connection, CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send,
+  ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
+  WatchId,
 }
 import genesis_prime/table/id.{type Spell4Id, Faction2Id}
 import genesis_prime/world_map/creature_control
@@ -327,9 +324,6 @@ const rule_name = "genesis_prime/world_map/creature"
 /// The watch on the map run that started the creature: the only watch whose end stops
 /// it.
 const run_watch = WatchId(1)
-
-/// The id of the first watch on a caster's connection; each later one takes the next.
-const first_caster_watch = 2
 
 /// The corpse timer. The fight's timers are numbered from it by kind and
 /// generation (`timer_id`), so none is 1.
@@ -515,14 +509,11 @@ pub type Message {
   /// The caster's connection `by` tells the creature that its cast holds `view` on it
   /// (a node of the cast's go on the creature). The view is the whole target: a later set
   /// for the same cast id replaces the earlier one. The creature keeps it to list it in the
-  /// 0x262 of each viewer that arrives, and watches `by` while it holds a view or a modifier
-  /// source of that connection.
+  /// 0x262 of each viewer that arrives.
   ///
   /// ```
   /// CastViewSet(by, view)
   ///     views[view.cast_id] = (by, view), kept on a dead creature (a corpse keeps its nodes);
-  ///         Watch(Connection(by)) on its first holding
-  ///         the replaced entry held by another connection: that one is unwatched with its last holding
   /// ```
   ///
   /// | If | Then |
@@ -530,21 +521,22 @@ pub type Message {
   /// | the tell is in flight when the creature ends, or is told for another life | the registry drops it |
   /// | it reaches a dead creature | kept, and the corpse's 0x262 lists it |
   /// | two casters' views | both kept, each under its own cast id (a cast id names its caster) |
-  /// | the caster's connection ends | its watch fires and every view of it is dropped |
+  /// | the caster leaves the map or its connection ends | `CasterGone` drops every view of it |
   /// | the creature crashes | the views are lost and the map starts the spawn again as a new unit |
   CastViewSet(by: ConnectionId, view: unit_casts.CastView)
   /// The caster's connection `by` tells the creature that its cast `cast_id` holds
   /// nothing on it any more. The creature drops the view of that cast when `by` holds
-  /// it, and unwatches `by` when that was its last holding; an end for a cast it does
+  /// it; an end for a cast it does
   /// not hold, or one held by another connection, changes nothing.
   CastViewEnds(by: ConnectionId, cast_id: Int)
   /// The caster's connection `by`: its cast `cast_id` no longer holds a node on the
   /// creature that holds the states the cast landed, so each of those states ends.
   ControlsEnd(by: ConnectionId, cast_id: Int)
   /// The map's word that the player of connection `by` is gone from it, by its leave or
-  /// by its connection's end: every source, view and control of that connection ends,
-  /// whatever state the creature is in (live, dead and retiring or released). Told by
-  /// the map once for each running creature.
+  /// by its connection's end: every source and view of that connection ends (each source
+  /// with its property news), whatever state the creature is in (live, dead, retiring or
+  /// releasing). A control stands until its own timer ends it. Told by the map once for
+  /// each running creature: the creature watches no caster's connection.
   CasterGone(by: ConnectionId)
 }
 
@@ -590,12 +582,10 @@ pub type Viewer {
 /// A creature's players in sight, each by its connection with the stay and generation the map
 /// named it for, its health, its fight, the crowd-control states it holds, whether
 /// it was told to retire while it lay dead, its properties with the modifiers of
-/// players' spells on them, the watch on each caster's connection whose modifiers it
-/// holds, the caster's connection of each modifier's source in the order the
-/// modifiers started, the id its next watch on a caster's connection takes, and the
-/// monotonic time its pending despawn is due (none when none is pending). `views` holds what players' casts
-/// hold on it, by cast id with the caster's connection that told it: its caster's watch
-/// covers them as it covers the modifiers' sources.
+/// players' spells on them, the caster's connection of each modifier's source in the order
+/// the modifiers started, and the monotonic time its pending despawn is due (none when
+/// none is pending). `views` holds what players' casts hold on it, by cast id with the
+/// caster's connection that told it; `CasterGone` drops them with the modifiers' sources.
 pub opaque type State {
   State(
     settings: Settings,
@@ -607,10 +597,8 @@ pub opaque type State {
     retiring: Bool,
     viewers: Dict(ConnectionId, Viewer),
     properties: Properties,
-    casters: Dict(ConnectionId, WatchId),
     held: held_changes.Held,
     views: Dict(Int, #(ConnectionId, unit_casts.CastView)),
-    next_watch: Int,
     despawn_due_ms: Option(Int),
     unit_state: creature_unit_state.State,
   )
@@ -652,10 +640,8 @@ pub fn new(settings: Settings) -> State {
       }),
     ),
     properties: base_properties(settings:),
-    casters: dict.new(),
     held: held_changes.new(),
     views: dict.new(),
-    next_watch: first_caster_watch,
     despawn_due_ms: None,
     unit_state: creature_unit_state.new(),
   )
@@ -900,9 +886,13 @@ pub fn step(
       view_ended(state:, by:, cast_id:)
     OwnEvent(Told(message: ControlsEnd(by:, cast_id:))) ->
       controls_ended_by(state:, by:, cast_id:, now_ms:)
-    OwnEvent(Told(message: CasterGone(by: _))) -> #(state, Effects([]))
+    OwnEvent(Told(message: CasterGone(by:))) -> {
+      let #(state, effects) = dropped_from(state:, by:, now_ms:)
+      #(state, Effects(effects))
+    }
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
-    WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
+    WatchEnded(..) ->
+      panic as "a creature watches only its map's run: a watch that ended is not the run's"
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no creature"
   }
@@ -1124,7 +1114,7 @@ fn left_the_field(
 /// A property modifier of the caster of connection `by` starts on the creature: it is
 /// applied to the creature's properties, the entries that changed go to every viewer as
 /// `PropertiesChanged`, the rules that read a changed property take its new value,
-/// and the caster's connection is watched from its first modifier on. The same source
+/// The same source
 /// twice is held once. A start that reaches a dead creature changes nothing; nor does one
 /// that reaches a creature holding a state that blocks hostile effects, a server guess as for a
 /// throw (`thrown`).
@@ -1146,46 +1136,37 @@ fn modifier_started(
   let #(held, _) =
     held_changes.started_by_connection(held: state.held, by:, source:)
   let state = State(..state, held:)
-  let #(state, watching) = watching(state:, by:)
   let news = changed_news(state:, changed:)
   let #(state, revalued) = revalued(state:, properties:, now_ms:)
-  #(state, Effects(list.flatten([watching, news, revalued])))
+  #(state, Effects(list.append(news, revalued)))
 }
 
 /// The caster of connection `by` tells the creature that its cast holds `view` on it:
-/// kept in place of that cast's earlier view, and `by` is watched from its first view
-/// or modifier on. A dead creature keeps it, as a corpse keeps its nodes. The holder a replaced entry
-/// belonged to is unwatched when it holds nothing else. No news goes to the viewers.
+/// kept in place of that cast's earlier view. A dead creature keeps it, as a corpse keeps
+/// its nodes. No news goes to the viewers.
 fn view_set(
   state state: State,
   by by: ConnectionId,
   view view: unit_casts.CastView,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let replaced = dict.get(state.views, view.cast_id)
-  let state =
-    State(..state, views: dict.insert(state.views, view.cast_id, #(by, view)))
-  let #(state, watching) = watching(state:, by:)
-  let #(state, unwatched) = case replaced {
-    Ok(#(earlier, _)) if earlier != by -> unwatching_last(state:, by: earlier)
-    Ok(_) | Error(Nil) -> #(state, [])
-  }
-  #(state, Effects(list.append(watching, unwatched)))
+  #(
+    State(..state, views: dict.insert(state.views, view.cast_id, #(by, view))),
+    Effects([]),
+  )
 }
 
 /// The caster of connection `by` tells the creature that its cast `cast_id` holds
-/// nothing on it: the view is dropped when `by` holds it, and `by` is unwatched when
-/// that was its last holding. Any other end changes nothing.
+/// nothing on it: the view is dropped when `by` holds it. Any other end changes nothing.
 fn view_ended(
   state state: State,
   by by: ConnectionId,
   cast_id cast_id: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.views, cast_id) {
-    Ok(#(holder, _)) if holder == by -> {
-      let state = State(..state, views: dict.delete(state.views, cast_id))
-      let #(state, unwatched) = unwatching_last(state:, by:)
-      #(state, Effects(unwatched))
-    }
+    Ok(#(holder, _)) if holder == by -> #(
+      State(..state, views: dict.delete(state.views, cast_id)),
+      Effects([]),
+    )
     Ok(_) | Error(Nil) -> #(state, Effects([]))
   }
 }
@@ -1250,31 +1231,18 @@ fn revalued(
 
 /// The property modifier of `source` ends on the creature: it is removed, the entries
 /// that changed go to every viewer, and the rules take the values back. A source the
-/// creature does not hold changes nothing. The watch on its caster's connection
-/// ends with the caster's last source.
+/// creature does not hold changes nothing.
 fn modifier_ended(
   state state: State,
   source source: Source,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let #(state, effects) = source_removed(state:, source:, now_ms:)
-  #(state, Effects(effects))
-}
-
-/// The effects of removing the modifier of `source`, as `modifier_ended` carries them
-/// out.
-fn source_removed(
-  state state: State,
-  source source: Source,
-  now_ms now_ms: Int,
-) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   case held_changes.released(held: state.held, source:) {
-    Error(Nil) -> #(state, [])
-    Ok(#(held, by)) -> {
-      let #(state, removed) =
+    Error(Nil) -> #(state, Effects([]))
+    Ok(#(held, _)) -> {
+      let #(state, effects) =
         modifier_removed(state: State(..state, held:), source:, now_ms:)
-      let #(state, unwatched) = unwatching_last(state:, by:)
-      #(state, list.append(removed, unwatched))
+      #(state, Effects(effects))
     }
   }
 }
@@ -1293,33 +1261,12 @@ fn modifier_removed(
   #(state, list.append(news, revalued))
 }
 
-/// The watch `watch` on a caster's connection ended: every source of that caster is
-/// removed in the order they started, each as `modifier_ended` removes it. The watch
-/// that fired is forgotten first, so no `Unwatch` follows its last source. A watch that
-/// is no caster's changes nothing.
-fn caster_gone(
-  state state: State,
-  watch watch: WatchId,
-  now_ms now_ms: Int,
-) -> #(State, ServiceStep(Outgoing)) {
-  case
-    list.find(dict.to_list(state.casters), fn(caster) { caster.1 == watch })
-  {
-    Error(Nil) -> #(state, Effects([]))
-    Ok(#(by, _)) -> {
-      let state = State(..state, casters: dict.delete(state.casters, by))
-      let #(state, effects) = dropped_from(state:, by:, now_ms:)
-      #(state, Effects(effects))
-    }
-  }
-}
-
 /// What the connection `by` holds on the creature has gone: every view it told is
 /// dropped, and every source of it is removed in the order they started, each as
 /// `modifier_ended` removes it. The views are dropped by their holder, not by cast id: a
 /// later holder of a cast id keeps its view. The one place that knows each kind of holding
-/// a connection has on the creature, with `holds_from` and `holding_connections`. The
-/// caller has forgotten the watch on `by`, when it is `by`'s watch that ended.
+/// a connection has on the creature: told by `CasterGone`, the map's one word that the
+/// caster is gone.
 fn dropped_from(
   state state: State,
   by by: ConnectionId,
@@ -1337,53 +1284,7 @@ fn dropped_from(
       let #(state, more) = modifier_removed(state:, source:, now_ms:)
       #(state, list.append(done, more))
     })
-  case sources {
-    [] -> #(state, removed)
-    [_, ..] -> {
-      let #(state, unwatched) = unwatching_last(state:, by:)
-      #(state, list.append(removed, unwatched))
-    }
-  }
-}
-
-/// Whether the connection `by` holds anything on the creature: a source of a property
-/// modifier or a view of a cast.
-fn holds_from(state state: State, by by: ConnectionId) -> Bool {
-  list.contains(held_changes.connections(held: state.held), by)
-  || list.any(dict.values(state.views), fn(held) { held.0 == by })
-}
-
-/// The watch on the caster's connection `by`, started with its first modifier: none
-/// for a connection already watched.
-fn watching(
-  state state: State,
-  by by: ConnectionId,
-) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  use <- bool.guard(when: dict.has_key(state.casters, by), return: #(state, []))
-  let watch = WatchId(state.next_watch)
-  #(
-    State(
-      ..state,
-      casters: dict.insert(state.casters, by, watch),
-      next_watch: state.next_watch + 1,
-    ),
-    [Watch(watch:, target: Connection(by))],
-  )
-}
-
-/// The end of the watch on the caster's connection `by` when it holds no source
-/// any more.
-fn unwatching_last(
-  state state: State,
-  by by: ConnectionId,
-) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  use <- bool.guard(when: holds_from(state:, by:), return: #(state, []))
-  case dict.get(state.casters, by) {
-    Ok(watch) -> #(State(..state, casters: dict.delete(state.casters, by)), [
-      step.Unwatch(watch:),
-    ])
-    Error(Nil) -> #(state, [])
-  }
+  #(state, removed)
 }
 
 /// The 0x93a of the entries a modifier's start or end changed, for every viewer;

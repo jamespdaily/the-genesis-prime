@@ -519,8 +519,11 @@ pub fn a_leave_right_after_a_burst_sends_unwatched_to_each_creature_of_the_playe
   let units = list.map(spawns.starts(taken), fn(start) { { start.1 }.unit_id })
   let #(state, taken) = spawns.leave(state:, at_ms: 6001, connection: 1)
   assert spawns.creature_sends(taken)
-    == list.map(units, fn(unit_id) { #(unit_id, "Unseen by 1") })
-    as "the player's creatures are told it no longer sees them, in the order of the spawns"
+    == list.append(
+      list.map(units, fn(unit_id) { #(unit_id, "Unseen by 1") }),
+      list.map(units, fn(unit_id) { #(unit_id, "CasterGone by 1") }),
+    )
+    as "the player's creatures are told it no longer sees them, then that it is gone, each in the order of the spawns"
   let #(_, taken) = spawns.sweep(state:, at_ms: 75_000)
   assert spawns.creature_sends(taken)
     == list.map(units, fn(unit_id) { #(unit_id, "Retire") })

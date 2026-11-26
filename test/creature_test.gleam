@@ -74,6 +74,7 @@ import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import gleam/result
 import gleam/set
 import gleam/string
 import inbound_support
@@ -1166,72 +1167,11 @@ pub fn same_source_started_twice_is_held_once_test() -> Nil {
       message: starting(source: sprint_source(), modifier: sprint()),
     )
   assert support.effects_of(again) == []
-    as "the same source is held once: nothing changes, nothing is sent, no second watch"
+    as "the same source is held once: nothing changes and nothing is sent"
   let #(_, ended) =
     told(state:, at_ms: 7000, message: creature.ModifierEnds(sprint_source()))
   assert property_news(ended) == [#(2, [speed_back()]), #(5, [speed_back()])]
     as "one end restores the value, whichever go started the source"
-}
-
-pub fn caster_connection_end_removes_its_modifiers_test() -> Nil {
-  use <- owned_test.run(5000)
-  let other = ConnectionId(10)
-  let state =
-    holding(
-      state: watched_by_two(),
-      source: sprint_source(),
-      modifier: sprint(),
-      at_ms: 6000,
-    )
-  let state =
-    holding(state:, source: thorns_source(), modifier: thorns(), at_ms: 6100)
-  let #(state, other_start) =
-    told(
-      state:,
-      at_ms: 6200,
-      message: creature.ModifierStarts(
-        by: other,
-        source: doubling_source(),
-        modifier: doubling(),
-      ),
-    )
-  assert support.watches(other_start) == [#(WatchId(3), Connection(other))]
-    as "a second caster's connection is watched under the next id"
-  let #(state, gone) = feed(state:, at_ms: 7000, event: WatchEnded(WatchId(2)))
-  assert property_news(gone)
-    == [
-      #(2, [speed_back()]),
-      #(5, [speed_back()]),
-      #(2, [changed(property: 150, base: 0.0, value: 0.0)]),
-      #(5, [changed(property: 150, base: 0.0, value: 0.0)]),
-    ]
-    as "each of the connection's sources ends as a ModifierEnds ends it, in the order they started"
-  assert !support.stops(gone) && unwatches(gone) == []
-    as "the creature goes on, and the watch that fired needs no Unwatch"
-  let #(state, late) =
-    told(state:, at_ms: 7100, message: creature.ModifierEnds(sprint_source()))
-  assert support.effects_of(late) == []
-    as "a later end for a source the connection's end removed changes nothing"
-  let #(_, kept) =
-    told(state:, at_ms: 7200, message: creature.ModifierEnds(doubling_source()))
-  assert property_news(kept)
-    == [
-      #(2, [
-        changed(
-          property: 127,
-          base: 1.2750000953674316,
-          value: 1.2750000953674316,
-        ),
-      ]),
-      #(5, [
-        changed(
-          property: 127,
-          base: 1.2750000953674316,
-          value: 1.2750000953674316,
-        ),
-      ]),
-    ]
-    as "the other caster's modifier was held all along"
 }
 
 pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_despawned_creature_and_taken_by_a_living_one_test() -> Nil {
@@ -1291,11 +1231,11 @@ pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_des
           at_ms: at_7000,
           message: creature.CastViewSet(by: ConnectionId(9), view: view_a()),
         )
-      assert watch_changes(set) == ["watch 2 of 9"]
+      assert watch_changes(set) == []
         as {
           "a cast view reaching "
           <> body.0
-          <> " creature is kept and its caster watched"
+          <> " creature is kept and its caster is not watched"
         }
       // A despawned creature shows no 0x262, so no arrival lists the view it holds.
       assert !body.2 || arrival_holds(state:) == [#(view_a().cast_id, 1)]
@@ -1349,6 +1289,11 @@ pub fn a_creature_drops_everything_a_gone_caster_held_sends_the_property_news_on
     creature.CastViewSet(by: caster, view: view_a()),
     stunning_strike_from_the_caster(cast_id: 7),
     creature.CastViewSet(by: other, view: view_b()),
+    creature.ModifierStarts(
+      by: other,
+      source: doubling_source(),
+      modifier: doubling(),
+    ),
   ]
   let #(state, watched) =
     list.fold(holdings, #(watched_by_two(), []), fn(held, message) {
@@ -1378,9 +1323,19 @@ pub fn a_creature_drops_everything_a_gone_caster_held_sends_the_property_news_on
       #(5, [changed(property: 150, base: 0.0, value: 0.0)]),
     ]
     as "each source of the caster ends as a ModifierEnds ends it, in the order they started, each with its news once"
-  assert ended_states(gone) == [2, 5]
-    as "the state the caster's cast landed ends, with its 0x880 for each viewer"
+  assert ended_states(gone) == []
+    as "the stun the caster's cast landed stands: a control is not the caster's holding, and ends by its own timer"
   assert watch_changes(gone) == [] as "and no Unwatch follows"
+  let assert [stun_timer] =
+    list.filter(list.flat_map(watched, timers_started), fn(started) {
+      result.is_ok(creature.control_of(timer: started.0))
+    })
+    as "the strike held one state, with its timer"
+  assert ended_states(
+      fired(state: gone_state, at_ms: 8800, timer: stun_timer.0).1,
+    )
+    == [2, 5]
+    as "the stun's own timer ends it, with its 0x880 for each viewer"
   assert arrival_holds(state: gone_state) == [#(view_b().cast_id, 1)]
     as "the caster's view goes and the other caster's stays"
   let #(again_state, again) =
@@ -1407,7 +1362,7 @@ pub fn a_creature_drops_everything_a_gone_caster_held_sends_the_property_news_on
     )
   assert support.effects_of(late) == []
     as "a later end for a source the departure removed changes nothing"
-  let #(last_state, _) =
+  let #(last_state, last) =
     told(
       state: gone_state,
       at_ms: 7400,
@@ -1415,6 +1370,42 @@ pub fn a_creature_drops_everything_a_gone_caster_held_sends_the_property_news_on
     )
   assert arrival_holds(state: last_state) == []
     as "the other caster's departure drops its view"
+  assert property_news(last)
+    == [
+      #(2, [
+        changed(
+          property: 127,
+          base: 1.2750000953674316,
+          value: 1.2750000953674316,
+        ),
+      ]),
+      #(5, [
+        changed(
+          property: 127,
+          base: 1.2750000953674316,
+          value: 1.2750000953674316,
+        ),
+      ]),
+    ]
+    as "and its source, held all along, ends with its news once"
+  // A creature that lies dead and was told to retire still holds a view until its corpse
+  // expires; the map's word reaches it in that state.
+  let #(dead, _) =
+    after(inputs: [
+      view_set(by: 9, view: view_a(), at_ms: 6000),
+      killed_at(at_ms: 7000),
+      #(7500, OwnEvent(Told(Retire))),
+    ])
+  assert arrival_holds(state: dead) == [#(view_a().cast_id, 1)]
+    as "the dead creature told to retire holds the caster's view, and its corpse's 0x262 lists it"
+  let #(dead_gone, _) =
+    told(
+      state: dead,
+      at_ms: 8000,
+      message: creature.CasterGone(by: ConnectionId(9)),
+    )
+  assert arrival_holds(state: dead_gone) == []
+    as "a dead creature told to retire drops a gone caster's view before its corpse expires"
 }
 
 pub fn dead_creature_holds_modifiers_until_end_test() -> Nil {
@@ -3333,24 +3324,6 @@ fn view_ends(by by: Int, view view: CastView, at_ms at_ms: Int) -> At {
   )
 }
 
-/// The sprint modifier's start by the connection `by`, struck as it arrives.
-fn sprint_set(by by: Int, at_ms at_ms: Int) -> At {
-  #(
-    at_ms,
-    OwnEvent(
-      Told(creature.ModifierStarts(
-        by: ConnectionId(by),
-        source: sprint_source(),
-        modifier: sprint(),
-      )),
-    ),
-  )
-}
-
-fn sprint_end(at_ms at_ms: Int) -> At {
-  #(at_ms, OwnEvent(Told(creature.ModifierEnds(source: sprint_source()))))
-}
-
 /// A strike that kills the Beast.
 fn killed_at(at_ms at_ms: Int) -> At {
   #(at_ms, OwnEvent(Told(strike_of(damage: 60, cast_id: 1))))
@@ -3478,78 +3451,6 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
       assert arrival_holds(state:) == row.2 as row.0
       assert watch_changes(last) == []
         as { row.0 <> ": the creature opens and ends no watch" }
-    },
-  )
-}
-
-pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of_it_test() -> Nil {
-  use <- owned_test.run(5000)
-  let id_a = view_a().cast_id
-  let id_b = view_b().cast_id
-  list.each(
-    [
-      #(
-        "the first view of a connection starts its watch",
-        [view_set(by: 9, view: view_a(), at_ms: 6000)],
-        [#(id_a, 1)],
-        ["watch 2 of 9"],
-      ),
-      #(
-        "a second view of it starts none",
-        [
-          view_set(by: 9, view: view_a(), at_ms: 6000),
-          view_set(by: 9, view: view_b(), at_ms: 6100),
-        ],
-        [#(id_a, 1), #(id_b, 1)],
-        [],
-      ),
-      #(
-        "a view's end keeps the watch while a modifier source of the connection is held",
-        [
-          sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), at_ms: 6100),
-          view_ends(by: 9, view: view_a(), at_ms: 6200),
-        ],
-        [],
-        [],
-      ),
-      #(
-        "and the modifier's end then unwatches, as no view is held",
-        [
-          sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), at_ms: 6100),
-          view_ends(by: 9, view: view_a(), at_ms: 6200),
-          sprint_end(at_ms: 6300),
-        ],
-        [],
-        ["unwatch 2"],
-      ),
-      #(
-        "a modifier's last end keeps the watch while a view of that connection is held",
-        [
-          sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), at_ms: 6100),
-          sprint_end(at_ms: 6200),
-        ],
-        [#(id_a, 1)],
-        [],
-      ),
-      #(
-        "the watch ending drops that connection's views and sources, keeps another connection's view, and is followed by no Unwatch",
-        [
-          view_set(by: 9, view: view_a(), at_ms: 6000),
-          view_set(by: 10, view: view_b(), at_ms: 6100),
-          sprint_set(by: 9, at_ms: 6200),
-          #(7000, WatchEnded(WatchId(2))),
-        ],
-        [#(id_b, 1)],
-        [],
-      ),
-    ],
-    fn(row) {
-      let #(state, last) = after(inputs: row.1)
-      assert arrival_holds(state:) == row.2 as row.0
-      assert watch_changes(last) == row.3 as row.0
     },
   )
 }

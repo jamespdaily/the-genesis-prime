@@ -817,8 +817,10 @@ pub fn an_answer_in_the_camp_save_that_is_not_the_stores_is_a_bug_with_reason_8_
 /// connection tells the creature each end through the map, in the step that starts the save
 /// and so ahead of the save's ask and of the `Leave` ask that follows it (the camp's own
 /// order, `effects.world_left`), because a creature hears about a player from the map alone
-/// and the map takes the connection's tells in its order. A control a cast landed is ended by
-/// the map's `CasterGone`, which the leave sends: the connection tells no end of it.
+/// and the map takes the connection's tells in its order. A control the casts landed is not
+/// the connection's to end at a camp: it tells no `ControlsEnd`, and the control stands until
+/// its own timer. The test guards the camp's order as it is: it passes before the step that
+/// sends `CasterGone` and fails when the camp's ends leave `effects.world_left`.
 pub fn a_camp_tells_the_creatures_the_ends_of_its_holdings_in_the_step_that_starts_its_save_before_any_ask_test() -> Nil {
   use <- owned_test.run(10_000)
   let entered = world_entry_support.entered_after(clock_origin_ms: 600)
@@ -861,12 +863,20 @@ pub fn a_camp_tells_the_creatures_the_ends_of_its_holdings_in_the_step_that_star
       written: [],
     )
     as "the camp's step ends in the save's ask"
-  assert game_connection_support.creature_tells(step.Effects(effects))
+  let tells = game_connection_support.creature_tells(step.Effects(effects))
+  assert tells
     == [
       #(40, 3, relay.ModifierEnds(source:)),
       #(40, 3, relay.CastViewEnds(cast_id: 5)),
     ]
     as "the modifier's and the view's ends are effects of the step that asks for the save, which the shell carries out before the ask"
+  assert !list.any(tells, fn(tell) {
+    case tell.2 {
+      relay.ControlsEnd(..) -> True
+      _ -> False
+    }
+  })
+    as "the camp tells no end of a control: it stands until its own timer"
   let assert AskStore(store.Move(store.SavePlace(..))) = ask.request
     as "the ask the step ends in is the place's save, the first of the camp's asks"
   Nil

@@ -972,8 +972,8 @@ pub type Outgoing {
   /// `payload`. `by` and `stay` are the relay's, never the payload's.
   ToldCreature(by: ConnectionId, stay: Stay, payload: Inbound)
   /// A send to a creature in any running state: the player of connection `by` is gone
-  /// from the map, by its leave or by its connection's end, so everything it held on the
-  /// creature (sources, views, controls) ends. The map sends it once for each running
+  /// from the map, by its leave or by its connection's end, so the sources and views it
+  /// held on the creature end. The map sends it once for each running
   /// creature, in spawn order, after the sends the removal makes.
   CasterGone(by: ConnectionId)
 }
@@ -3946,13 +3946,32 @@ fn without(
   )
 }
 
-/// The `CasterGone` of the connection for each running creature (`running`), in spawn
-/// order: the removal's last sends, after the `Unseen`s of `spawns_decided`.
+/// The `CasterGone` of the connection for each running creature (live, retiring,
+/// respawning or releasing: the states `running` admits), in spawn order: the removal's
+/// last sends, after the `Unseen`s of `spawns_decided`. A spawn with no creature (waiting
+/// for its restart, failed) is sent nothing.
 fn caster_gone_sends(
-  state _state: State,
-  connection _connection: ConnectionId,
+  state state: State,
+  connection connection: ConnectionId,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  []
+  dict.keys(state.spawns)
+  |> list.sort(compare_spawns)
+  |> list.filter_map(fn(spawn) {
+    use spawn_state <- result.try(dict.get(state.spawns, spawn))
+    case spawn_state {
+      Live(unit_id:, life:, ..)
+      | Retiring(unit_id:, life:)
+      | Respawning(unit_id:, life:)
+      | Releasing(unit_id:, life:, ..) ->
+        Ok(tell_creature(
+          state:,
+          unit_id:,
+          life:,
+          message: CasterGone(by: connection),
+        ))
+      WaitingForRestart | Failed -> Error(Nil)
+    }
+  })
 }
 
 /// The players other than the connection's, in the order the map's table

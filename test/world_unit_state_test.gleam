@@ -22,7 +22,6 @@
 //// its own picture of the creature, through the viewers and `casting.usable`, judges the press.
 //// Every wait is for an event, and the clock moves only when the test advances it.
 
-import ask_support
 import cast_support
 import driven_time
 import fixture_tables
@@ -44,13 +43,11 @@ import genesis_prime/message/combat_result
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/service
-import genesis_prime/step.{ConnectionId, OwnEvent}
+import genesis_prime/step.{OwnEvent}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
 import genesis_prime/world_map/relay
 import gleam/erlang/process.{type Subject}
@@ -790,14 +787,7 @@ pub fn a_unit_state_outlives_the_casters_leaving_test() -> Nil {
       unit_id:,
       what: "the second viewer's news of the state",
     )
-  let #(_, _left) =
-    ask_support.ask_and_wait(send: fn(reply) {
-      service.call_subject(
-        watched.run.subject,
-        map.Leave(connection: ConnectionId(1)),
-        reply,
-      )
-    })
+  world_watch_support.left(run: watched.run, connection: 1)
   driven_time.advance(time: watched.time, ms: 8499)
   assert state_news_waiting(received: watched.viewer, unit_id:) == []
     as "nothing ended before the row's end"
