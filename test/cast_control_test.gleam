@@ -1191,18 +1191,24 @@ pub fn a_caster_aimed_state_of_any_kind_is_told_and_ends_test() -> Nil {
   let assert Ok(told) = applied(frame.body)
   assert told.unit_id == 7 && told.state == Stun
     as "the caster's own unit holds a Stun"
-  assert list.contains(support.tells(effects: pressed), #(
-      ConnectionId(2),
-      unit_news.CrowdControlApplied(state: Stun, instance_id: told.instance_id),
-    ))
-    && list.contains(support.tells(effects: pressed), #(
-      ConnectionId(3),
-      unit_news.CrowdControlApplied(state: Stun, instance_id: told.instance_id),
-    ))
-    as "and so is each connection of the go's audience, with the same instance id"
   let assert [go] =
     support.frames_of(message_id: spell_go.message_id, effects: pressed)
   let assert Ok(go) = spell_go.decode(go.body)
+  let restriction =
+    unit_news.CasterRestrictionApplied(
+      cast_id: go.cast_id,
+      state: Stun,
+      instance_id: told.instance_id,
+    )
+  assert list.contains(support.tells(effects: pressed), #(
+      ConnectionId(2),
+      restriction,
+    ))
+    && list.contains(support.tells(effects: pressed), #(
+      ConnectionId(3),
+      restriction,
+    ))
+    as "and so is each connection of the go's audience, with the cast's id and the same instance id"
   assert list.any(go.targets, fn(info) {
     info.unit_id == 7
     && list.any(info.effects, fn(effect) {
@@ -1311,9 +1317,13 @@ pub fn a_tether_tells_its_anchor_before_its_state_test() -> Nil {
   let assert Ok(anchor) = unit_tether_anchor.decode(frame.body)
   assert anchor.anchor_unit_id == 7
     as "the anchor is the caster's own unit: the message sets the anchor of the unit the client controls and names no other unit"
+  let assert [go] =
+    support.frames_of(message_id: spell_go.message_id, effects: pressed)
+  let assert Ok(go) = spell_go.decode(go.body)
   assert list.contains(support.tells(effects: pressed), #(
     ConnectionId(2),
-    unit_news.CrowdControlApplied(
+    unit_news.CasterRestrictionApplied(
+      cast_id: go.cast_id,
       state: Tether,
       instance_id: applied_instance(effects: pressed),
     ),
