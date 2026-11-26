@@ -174,6 +174,7 @@ import genesis_prime/game/strike
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
+import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_targets_removed
@@ -700,7 +701,8 @@ pub fn viewer_takes(
         when: client_casts.is_held(
           casts: entered.client_casts,
           cast_id: start.cast_id,
-        ),
+        )
+          || start.caster_unit_id == entered.unit_id,
         return: Continue(session, []),
       )
       Continue(
@@ -988,57 +990,33 @@ pub fn viewer_takes(
         ),
       ])
     }
-    unit_news.CrowdControlApplied(state:, instance_id:) -> {
-      use <- bool.guard(when: !shown, return: Continue(session, []))
-      let session =
-        shown_changed(session:, change: fn(picture) {
-          shown.with_held_applied(picture:, unit_id:, state:, instance_id:)
-        })
-      Continue(session, [
-        connection_state.to_client(
-          session,
-          cast_frame.control_applied_frame(unit_id:, state:, instance_id:),
-        ),
-      ])
-    }
-    unit_news.CrowdControlEnded(state:, cast_id:, instance_id:) -> {
-      use <- bool.guard(when: !shown, return: Continue(session, []))
-      let session =
-        shown_changed(session:, change: fn(picture) {
-          shown.with_held_ended(picture:, unit_id:, instance_id:)
-        })
-      Continue(session, [
-        connection_state.to_client(
-          session,
-          cast_frame.control_ended_frame(
-            unit_id:,
-            state:,
-            cast_id:,
-            instance_id:,
-          ),
-        ),
-      ])
-    }
-    unit_news.CasterRestrictionApplied(state:, instance_id:, ..) ->
-      viewer_takes(
-        session:,
-        now:,
-        entered:,
-        news: unit_news.PeerNews(
-          ..news,
-          news: unit_news.CrowdControlApplied(state:, instance_id:),
-        ),
-      )
+    unit_news.CrowdControlApplied(state:, instance_id:) ->
+      case shown {
+        True -> control_applied(session:, unit_id:, state:, instance_id:)
+        False -> Continue(session, [])
+      }
+    unit_news.CrowdControlEnded(state:, cast_id:, instance_id:) ->
+      case shown {
+        True ->
+          control_ended(session:, unit_id:, state:, cast_id:, instance_id:)
+        False -> Continue(session, [])
+      }
+    unit_news.CasterRestrictionApplied(cast_id:, state:, instance_id:) ->
+      case
+        shown && client_casts.is_written(casts: entered.client_casts, cast_id:)
+      {
+        True -> control_applied(session:, unit_id:, state:, instance_id:)
+        False -> Continue(session, [])
+      }
     unit_news.CasterRestrictionEnded(state:, cast_id:, instance_id:) ->
-      viewer_takes(
-        session:,
-        now:,
-        entered:,
-        news: unit_news.PeerNews(
-          ..news,
-          news: unit_news.CrowdControlEnded(state:, cast_id:, instance_id:),
-        ),
-      )
+      case
+        shown
+        && shown.holds_instance(picture: entered.shown, unit_id:, instance_id:)
+      {
+        True ->
+          control_ended(session:, unit_id:, state:, cast_id:, instance_id:)
+        False -> Continue(session, [])
+      }
     unit_news.UnitStateHeld(state:, number:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       Continue(
@@ -1639,6 +1617,47 @@ fn creatures_resolved(session session: Session, now now: Now) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.with_creatures_resolved(entered:, now_ms: now.monotonic_ms)
   })
+}
+
+/// The shown unit holding the state a 0x87f gave under `instance_id`, and the 0x87f
+/// written (opcode.0x87f).
+fn control_applied(
+  session session: Session,
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  instance_id instance_id: Int,
+) -> client_connection.Handled(Session) {
+  let session =
+    shown_changed(session:, change: fn(picture) {
+      shown.with_held_applied(picture:, unit_id:, state:, instance_id:)
+    })
+  Continue(session, [
+    connection_state.to_client(
+      session,
+      cast_frame.control_applied_frame(unit_id:, state:, instance_id:),
+    ),
+  ])
+}
+
+/// The shown unit no longer holding the instance `instance_id`, and the 0x880 written
+/// (opcode.0x880).
+fn control_ended(
+  session session: Session,
+  unit_id unit_id: Int,
+  state state: CrowdControlState,
+  cast_id cast_id: Int,
+  instance_id instance_id: Int,
+) -> client_connection.Handled(Session) {
+  let session =
+    shown_changed(session:, change: fn(picture) {
+      shown.with_held_ended(picture:, unit_id:, instance_id:)
+    })
+  Continue(session, [
+    connection_state.to_client(
+      session,
+      cast_frame.control_ended_frame(unit_id:, state:, cast_id:, instance_id:),
+    ),
+  ])
 }
 
 /// The session with the units its client shows changed by `change`.

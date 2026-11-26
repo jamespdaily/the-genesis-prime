@@ -124,11 +124,13 @@ pub fn is_borrowed(casts casts: Casts, cast_id cast_id: Int) -> Bool {
   }
 }
 
-/// The cast `cast_id` forgotten, once its caster's frames have ended it.
+/// The cast `cast_id` kept as an ended hold, once its caster's frames have ended it: the id
+/// stays taken until its caster's unit is forgotten, so that an ally's later start of the
+/// same cast is dropped (a start that overtook the caster's finish).
 pub fn finished(casts casts: Casts, cast_id cast_id: Int) -> Casts {
   case dict.get(casts.holds, cast_id) {
-    Ok(Written(..)) | Ok(Relisted(..)) ->
-      Casts(holds: dict.delete(casts.holds, cast_id))
+    Ok(Written(caster_unit_id:)) | Ok(Relisted(caster_unit_id:)) ->
+      Casts(holds: dict.insert(casts.holds, cast_id, Ended(caster_unit_id:)))
     Ok(Orphaned) | Ok(Borrowed(..)) | Ok(Ended(..)) | Error(Nil) -> casts
   }
 }
