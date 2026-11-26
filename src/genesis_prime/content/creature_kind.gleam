@@ -13,6 +13,7 @@
 //// - **The query** is `sql/load_creature_kinds.sql`, run by the load's own pool
 ////   before the tree starts; nothing queries the table during play.
 
+import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/sql
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/creature_kind.{type Kinds, type Row, Row}
@@ -29,16 +30,23 @@ pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
   sql.load_creature_kinds(db)
   |> result.map(fn(returned) {
     list.map(returned.rows, fn(row) {
-      Row(
-        creature_id: row.creature_id,
-        respawn_ms: row.respawn_ms,
-        attack_spell4_id: row.attack_spell4_id,
-        attack_interval_ms: row.attack_interval_ms,
-        guard_spell4_id: row.guard_spell4_id,
-        opening_spell4_id: row.opening_spell4_id,
-      )
+      let assert Ok(row) = row_of(row:) as "a stub"
+      row
     })
   })
+}
+
+/// The row the query returned, or the refusal of a row with a guard and no opening
+/// or an opening and no guard.
+pub fn row_of(row row: sql.LoadCreatureKindsRow) -> Result(Row, Refusal) {
+  Ok(Row(
+    creature_id: row.creature_id,
+    respawn_ms: row.respawn_ms,
+    attack_spell4_id: row.attack_spell4_id,
+    attack_interval_ms: row.attack_interval_ms,
+    guard_spell4_id: row.guard_spell4_id,
+    opening_spell4_id: row.opening_spell4_id,
+  ))
 }
 
 /// Writes the kinds under the key, once.

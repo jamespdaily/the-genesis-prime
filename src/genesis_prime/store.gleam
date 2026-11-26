@@ -219,6 +219,17 @@ pub type QuestRow {
   )
 }
 
+/// The row of a quest from the columns the table keeps: `Error(Nil)` for a state and
+/// columns that do not go together.
+pub fn quest_row(
+  quest_id quest_id: Int,
+  state state: Int,
+  completed_at completed_at: Option(Int),
+  active active: Option(ActiveQuest),
+) -> Result(QuestRow, Nil) {
+  Ok(QuestRow(quest_id:, state:, completed_at:, active:))
+}
+
 /// One slot of an action set's bar as the character_action_slot table keeps it:
 /// the set (0 to 3), the slot (0 to 11) and the Spell4Base id of the ability in it
 /// (18 bits, `None` for an empty slot). The table's checks hold the ranges; the

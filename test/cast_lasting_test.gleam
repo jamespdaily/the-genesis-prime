@@ -1546,7 +1546,7 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
       bag: bag_of_base_3,
       at: 1000,
     )
-  let #(waiting, _) =
+  let #(waiting, waiting_effects) =
     support.press(
       plans: channel_before_its_first_go(),
       state: cast_state.new(),
@@ -1611,6 +1611,14 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
           current: option.Some(support.pressed_id(effects: lingering_effects)),
         ),
         [#(support.pressed_id(effects: lingering_effects), False, True, [7])],
+      ),
+      #(
+        "the current cast before its first go is listed with its first go not gone",
+        cast_state.State(
+          ..waiting,
+          current: option.Some(support.pressed_id(effects: waiting_effects)),
+        ),
+        [#(support.pressed_id(effects: waiting_effects), True, False, [])],
       ),
       #(
         "a live cast that is not the current cast and holds no node yet is not listed",

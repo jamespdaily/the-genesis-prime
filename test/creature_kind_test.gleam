@@ -22,6 +22,7 @@ import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
+import genesis_prime/content/sql
 import genesis_prime/game/strike_tell
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4Id}
@@ -788,4 +789,75 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
     as "one term for the whole table, put once"
   assert content_creature_kind.table == "creature_kind"
   owned_key.erase(key)
+}
+
+pub fn a_creature_kind_row_holds_its_guard_and_opening_spells_both_or_neither_test() -> Nil {
+  use <- owned_test.run(5000)
+  let returned =
+    sql.LoadCreatureKindsRow(
+      creature_id: 73_464,
+      respawn_ms: 5000,
+      attack_spell4_id: 5649,
+      attack_interval_ms: 1500,
+      guard_spell4_id: option.None,
+      opening_spell4_id: option.None,
+    )
+  let half_set =
+    Error(Refusal(
+      table: "creature_kind",
+      row: RowId(73_464),
+      rule: "a guard and an opening are both set or both left out",
+    ))
+  list.each(
+    [
+      #(
+        "a guard and no opening",
+        sql.LoadCreatureKindsRow(
+          ..returned,
+          guard_spell4_id: option.Some(85_474),
+        ),
+        half_set,
+      ),
+      #(
+        "an opening and no guard",
+        sql.LoadCreatureKindsRow(
+          ..returned,
+          opening_spell4_id: option.Some(85_472),
+        ),
+        half_set,
+      ),
+      #(
+        "a guard and an opening",
+        sql.LoadCreatureKindsRow(
+          ..returned,
+          guard_spell4_id: option.Some(85_474),
+          opening_spell4_id: option.Some(85_472),
+        ),
+        Ok(Row(
+          creature_id: 73_464,
+          respawn_ms: 5000,
+          attack_spell4_id: 5649,
+          attack_interval_ms: 1500,
+          guard_spell4_id: option.Some(85_474),
+          opening_spell4_id: option.Some(85_472),
+        )),
+      ),
+      #(
+        "neither",
+        returned,
+        Ok(Row(
+          creature_id: 73_464,
+          respawn_ms: 5000,
+          attack_spell4_id: 5649,
+          attack_interval_ms: 1500,
+          guard_spell4_id: option.None,
+          opening_spell4_id: option.None,
+        )),
+      ),
+    ],
+    fn(row) {
+      let #(reason, returned, expected) = row
+      assert content_creature_kind.row_of(row: returned) == expected as reason
+    },
+  )
 }
