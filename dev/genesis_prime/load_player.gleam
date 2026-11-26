@@ -96,10 +96,12 @@ type Presses {
   Presses(bag_index: Int, due_ms: List(Int), sent_ms: List(Int))
 }
 
-/// The Warrior's Rampage, Spell4 58524 (tier 1, no cast time), of Spell4Base 37968: the
-/// ability of the class a walker creates (CharacterCreation 466, class 1) that a level-1
-/// character holds in its action set and presses.
-const pressed_spell4_base_id = 37_968
+/// The Warrior's Relentless Strikes builder, Spell4 32078 (tier 1, no cast time), of
+/// Spell4Base 18309: the ability of the class a walker creates (CharacterCreation 466,
+/// class 1) that a level-1 character holds, presses with no target and has the resource
+/// for. Rampage (Spell4 58524) is refused with result 51, CasterVitalCostResource1, since
+/// a new character holds none.
+const pressed_spell4_base_id = 18_309
 
 /// The next ping: its number and how long to wait before sending it.
 type Ping {
@@ -420,7 +422,7 @@ fn pressed_bag_index(burst burst: List(Frame)) -> Int {
     list.find(game_client.loadout_in(frames: burst).abilities, fn(slot) {
       slot.1 == pressed_spell4_base_id
     })
-    as "a level-1 Warrior's entry holds Rampage among its abilities"
+    as "a level-1 Warrior's entry holds the Relentless Strikes builder among its abilities"
   bag_index
 }
 

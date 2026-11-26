@@ -28,10 +28,10 @@
 //// functions slowed it enough to fall behind at 200 players, where the same run
 //// untraced keeps up.
 ////
-//// With the word `casting`, every walker also presses its level-1 ability (Rampage,
-//// `load_player.pressed_spell4_base_id`) at `cast_first_ms` after the step begins and again
-//// `cast_ms` later; the probes read the casts as a 0x7ff, a 0x7f4 and a 0x7fe each. The
-//// ability has no cast time (Spell4 58524), so `cast_ms` is the scene's spacing, which the
+//// With the word `casting`, every walker also presses its level-1 ability (the Relentless
+//// Strikes builder, `load_player.pressed_spell4_base_id`) at `cast_first_ms` after the step begins and
+//// again `cast_ms` later; the probes read the casts as a 0x7ff, a 0x7f4 and a 0x7fe each. The
+//// ability has no cast time (Spell4 32078), so `cast_ms` is the scene's spacing, which the
 //// owed casts are counted by (`load_sight.casts_owed`).
 ////
 //// Beside the walkers, `probes` clients of the real protocol join the map and send
@@ -95,10 +95,11 @@ const probes_in_world_ms = 6000
 
 const probe_window_ms = 10_000
 
-/// The casting scene: when the walkers first press their ability, after the step begins,
-/// the time between a walker's presses, and how long the probes read casts for after
-/// the last of them.
-const cast_first_ms = 12_000
+/// The casting scene: when the walkers first press their ability, after the step begins
+/// (the probes are in the world by `probes_in_world_ms` after the arrival, so half a
+/// second later), and the time between a walker's presses. Both presses finish, `cast_ms`
+/// after each, `settle_ms` before the probes stop reading, so both are owed.
+const cast_first_ms = 11_500
 
 const cast_ms = 3000
 
