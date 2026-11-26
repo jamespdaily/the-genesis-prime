@@ -1766,15 +1766,23 @@ fn running(
 ) -> Result(#(SpawnId, SpawnState), Nil) {
   use spawn <- result.try(dict.get(state.creature_watches, WatchId(life)))
   use spawn_state <- result.try(dict.get(state.spawns, spawn))
+  use #(held, held_life) <- result.try(running_creature(spawn_state:))
+  case held == unit_id && held_life == life {
+    True -> Ok(#(spawn, spawn_state))
+    False -> Error(Nil)
+  }
+}
+
+/// The unit id and life of the creature a spawn's state runs: live, retiring, respawning
+/// or releasing. A spawn waiting for its restart or failed has none.
+fn running_creature(
+  spawn_state spawn_state: SpawnState,
+) -> Result(#(Int, Int), Nil) {
   case spawn_state {
-    Live(unit_id: held, life: held_life, ..)
-    | Retiring(unit_id: held, life: held_life)
-    | Respawning(unit_id: held, life: held_life)
-    | Releasing(unit_id: held, life: held_life, ..) ->
-      case held == unit_id && held_life == life {
-        True -> Ok(#(spawn, spawn_state))
-        False -> Error(Nil)
-      }
+    Live(unit_id:, life:, ..)
+    | Retiring(unit_id:, life:)
+    | Respawning(unit_id:, life:)
+    | Releasing(unit_id:, life:, ..) -> Ok(#(unit_id, life))
     WaitingForRestart | Failed -> Error(Nil)
   }
 }
@@ -3963,19 +3971,8 @@ fn caster_gone_sends(
   |> list.sort(compare_spawns)
   |> list.filter_map(fn(spawn) {
     use spawn_state <- result.try(dict.get(state.spawns, spawn))
-    case spawn_state {
-      Live(unit_id:, life:, ..)
-      | Retiring(unit_id:, life:)
-      | Respawning(unit_id:, life:)
-      | Releasing(unit_id:, life:, ..) ->
-        Ok(tell_creature(
-          state:,
-          unit_id:,
-          life:,
-          message: CasterGone(by: connection),
-        ))
-      WaitingForRestart | Failed -> Error(Nil)
-    }
+    use #(unit_id, life) <- result.map(running_creature(spawn_state:))
+    tell_creature(state:, unit_id:, life:, message: CasterGone(by: connection))
   })
 }
 
