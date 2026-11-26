@@ -492,7 +492,6 @@ pub fn request_name(request request: client_connection.Request) -> String {
 fn unit_news_name(news news: unit_news.News) -> String {
   case news {
     unit_news.Appeared(..) -> "Appeared"
-    unit_news.Departed(..) -> "Departed"
     unit_news.CastStarted(..) -> "CastStarted"
     unit_news.CastWent(..) -> "CastWent"
     unit_news.CastFinished(..) -> "CastFinished"

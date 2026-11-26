@@ -8,20 +8,17 @@
 ////   generation)` when a player comes to see it, `UnseenBy(by, generation)` when one
 ////   stops), and `Gone(unit)` when a player's connection has ended. The connection
 ////   keeps the connections that see its player as its viewers, each with its player's
-////   stay and the generation of that sight, in the player's `Entered`, and sends
-////   everything about its own unit to them itself, as `SentByPeer` through the
-////   registry (the same path the map's sends take, `genesis_prime/server`'s
-////   `connection_reach`), and its moves as `SentByMove`; the map sends no unit and
-////   carries no move:
+////   stay and the generation of that sight, in the player's `Entered`, and sends its
+////   moves to them itself, as `SentByMove`; everything else about its unit reaches a
+////   viewer from the map (`PlayerUnseen`, and the relays of its snapshot and its news):
 ////
 ////   ```
-////   owner's connection (player in the world)                       viewer's connection             client
-////   SeenBy(v, stay, unit, g) from the map ─▶ Tell(v, Appeared(0x262 at its place, g)) ─▶ writes 0x262 if not shown ─▶ the unit is created
+////   owner's connection (player in the world)           map                      viewer's connection             client
+////   SeenBy(v, stay, unit, g) ─▶ TellSnapshot(v, g, [Appeared(0x262 at its place, g)]) ─▶ Relayed(News) ─▶ writes 0x262 if not shown ─▶ the unit is created
 ////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Move(0x638 chunk, its g)) ─▶ writes 0x638 if the sight is g ─▶ the unit moves
-////   UnseenBy(v, g)             ─▶ Tell(v, Departed(g))                ─▶ writes 0x355 if shown   ─▶ the unit is removed
-////   its camp (0xC0)            ─▶ Tell(each viewer, Departed(its g)), then Leave
-////   its connection ends        ─▶ nothing: the map sends each viewer UnseenBy, and every player Gone(unit)
-////                                                                     Gone(unit) ─▶ writes 0x355 if shown, and the unit is gone
+////   UnseenBy(v, g)             ─▶ the copy drops v: no more moves for it
+////   the pair leaves sight, its camp (0xC0), its connection's end ─▶ PlayerUnseen(unit, g) ─▶ writes 0x355 if shown ─▶ the unit is removed
+////   its connection ends        ─▶ the map sends every player Gone(unit)  ─▶ writes 0x355 if shown, and the unit is gone
 ////   ```
 ////
 ////   The shell takes a send between steps, after an ask's outcome and the step it
@@ -44,12 +41,12 @@
 ////   the unit gone, so a 0x262 from the owner that ended, which lands after it,
 ////   shows no ghost.
 //// - **One removal.** A unit leaves the viewer's client at one function, `unit_removed`,
-////   whether its owner's `Departed` or `Removed` news, the map's `Gone` or the map's `ObjectsUnseen`
+////   whether the map's `PlayerUnseen`, the creature's `Removed` news, the map's `Gone` or the map's `ObjectsUnseen`
 ////   ends it, so a unit's casts are finished before its 0x355 the same way for each
 ////   (`cast.target_node_end`).
 //// - **Sight is symmetric.** A pair leaves sight in both directions in one step
 ////   (`map.goes_out_of_sight`), so the caster's connection takes the viewer out of its
-////   casts' audiences on the map's `UnseenBy` and on the viewer's `Departed`, whichever
+////   casts' audiences on the map's `UnseenBy` and on the viewer's `PlayerUnseen`, whichever
 ////   comes first, before any cast the removal ends is finished: the viewer's client
 ////   reads a cast's 0x7fe before the unit's 0x355 only for a unit it still shows
 ////   (`cast.target_node_end`).
@@ -295,12 +292,22 @@ pub fn map_sent(
           },
         ),
         [
-          connection_state.news_to(
+          connection_state.tells_the_map(
             entered:,
-            viewer: #(by, stay),
-            news: unit_news.Appeared(
-              unit: appearance(entered:, now:),
+            request: client_connection.TellSnapshot(
+              connection: client_connection.connection(session.link),
+              stay: entered.stay,
+              viewer: by,
               generation:,
+              burst: [
+                unit_news.PeerNews(
+                  unit_id: entered.unit_id,
+                  news: unit_news.Appeared(
+                    unit: appearance(entered:, now:),
+                    generation:,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -322,12 +329,12 @@ pub fn map_sent(
                     <> int.to_string(generation.number(generation: held)),
                 ),
               ])
-            order.Eq | order.Gt ->
-              viewer_unseen(session:, now:, entered:, by:, generation:)
+            order.Eq | order.Gt -> viewer_unseen(session:, now:, by:)
           }
-        Error(Nil) -> viewer_unseen(session:, now:, entered:, by:, generation:)
+        Error(Nil) -> viewer_unseen(session:, now:, by:)
       }
-    map.PlayerUnseen(unit_id: _, generation: _) -> Continue(session, [])
+    map.PlayerUnseen(unit_id:, generation:) ->
+      unit_departed(session:, now:, entered:, unit_id:, generation:)
     map.UnitUnseen(unit_id:, generation: _) -> {
       let #(session, removal) =
         unit_removed(session:, now:, entered:, unit_id:, keeping: [])
@@ -523,7 +530,6 @@ pub fn viewer_takes(
   let creates_or_removes = case news.news {
     unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
-    | unit_news.Departed(..)
     | unit_news.Removed -> True
     unit_news.CastStarted(..)
     | unit_news.CastWent(..)
@@ -678,20 +684,11 @@ pub fn viewer_takes(
         ],
       )
     }
-    unit_news.Departed(generation:) -> {
-      let #(viewing, dropped) =
-        move_stamp.departed(viewing: entered.viewing, unit_id:, generation:)
-      let session = viewing_set(session:, viewing:)
-      unit_left(
-        session:,
-        now:,
-        entered:,
-        unit_id:,
-        logged: moves_dropped_logged(session:, unit_id:, dropped:),
-      )
+    unit_news.Removed -> {
+      let #(session, written) =
+        unit_left(session:, now:, entered:, unit_id:, logged: [])
+      Continue(session, written)
     }
-    unit_news.Removed ->
-      unit_left(session:, now:, entered:, unit_id:, logged: [])
     unit_news.CastStarted(start:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       use <- bool.guard(
@@ -1136,11 +1133,11 @@ fn unit_left(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
   logged logged: List(Effect(ConnectionEffect(Request))),
-) -> client_connection.Handled(Session) {
-  use <- bool.guard(
-    when: !dict.has_key(entered.shown, unit_id),
-    return: Continue(session, logged),
-  )
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  use <- bool.guard(when: !dict.has_key(entered.shown, unit_id), return: #(
+    session,
+    logged,
+  ))
   let session =
     audiences_left(
       session:,
@@ -1158,17 +1155,54 @@ fn unit_left(
     )
   let #(session, removal) =
     unit_removed(session:, now:, entered:, unit_id:, keeping: kept)
-  Continue(session, list.flatten([logged, removal.written, removal.ended]))
+  #(session, list.flatten([logged, removal.written, removal.ended]))
 }
 
-/// The map ended the sight of `by`, the player's viewer, at `generation`: `by` leaves the
-/// copy and the audiences of the casts, and is sent the removal for that sight.
-fn viewer_unseen(
+/// The map told the viewer that the unit `unit_id` is out of its sight from `generation`,
+/// whether or not it took the unit's snapshot: the sight is remembered as ended, so the
+/// unit's late moves of it are dropped, the unit leaves the client's picture through
+/// `unit_left` (the finishes of its casts, then its 0x355), and the sources its player put
+/// on this player that end with its sight end after that. The map sends this before the
+/// `UnseenBy` of the same pair, so the unit's player is still among the viewers here.
+fn unit_departed(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  by by: ConnectionId,
+  unit_id unit_id: Int,
   generation generation: Generation,
+) -> client_connection.Handled(Session) {
+  let #(viewing, dropped) =
+    move_stamp.departed(viewing: entered.viewing, unit_id:, generation:)
+  let session = viewing_set(session:, viewing:)
+  let #(session, removed) =
+    unit_left(
+      session:,
+      now:,
+      entered:,
+      unit_id:,
+      logged: moves_dropped_logged(session:, unit_id:, dropped:),
+    )
+  let #(session, ended) =
+    list.fold(
+      viewers_of_unit(viewers: entered.viewers, unit_id:),
+      #(session, []),
+      fn(so_far, by) {
+        let #(session, ended) = so_far
+        let #(session, more) =
+          connection_landing.caster_unseen(session:, now:, by:)
+        #(session, list.append(ended, more))
+      },
+    )
+  Continue(session, list.append(removed, ended))
+}
+
+/// The map ended the sight of `by`, the player's viewer, at `generation`: `by` leaves the
+/// copy and the audiences of the casts, and the sources `by` put on the player that end
+/// with its sight end. The removal of the player's unit at `by` is the map's `PlayerUnseen`.
+fn viewer_unseen(
+  session session: Session,
+  now now: Now,
+  by by: ConnectionId,
 ) -> client_connection.Handled(Session) {
   let #(session, ended) =
     connection_landing.caster_unseen(
@@ -1179,17 +1213,7 @@ fn viewer_unseen(
       now:,
       by:,
     )
-  Continue(
-    session,
-    list.append(
-      connection_state.news_to_connection(
-        entered:,
-        connection: by,
-        news: unit_news.Departed(generation:),
-      ),
-      ended,
-    ),
-  )
+  Continue(session, ended)
 }
 
 /// What a viewer does with a chunk of a player's move (`SentByMove`): the move is applied,
@@ -1417,7 +1441,6 @@ fn creature_news(
     | unit_news.CameBackLogged
     | unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
-    | unit_news.Departed(..)
     | unit_news.Removed
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)
@@ -1514,7 +1537,6 @@ fn life_news(
       ])
     unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
-    | unit_news.Departed(..)
     | unit_news.Removed
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)

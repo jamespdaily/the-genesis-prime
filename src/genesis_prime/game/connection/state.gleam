@@ -715,7 +715,7 @@ pub fn saves_the_place(status: Status) -> Bool {
 
 /// The tell of news about the player's own unit to the connection of a player
 /// who sees it, for that player's stay.
-pub fn news_to(
+fn news_to(
   entered entered: world_entry.Entered,
   viewer viewer: #(ConnectionId, Stay),
   news news: unit_news.News,
@@ -742,22 +742,6 @@ pub fn news_to_connection(
     ]
     Error(Nil) -> []
   }
-}
-
-/// The tells that remove the player's own unit from the client of each player who
-/// sees it, for its camp and the Holocrypt, which send them before its leave is
-/// asked: the map's `UnseenBy` after the leave would be a second sender of news
-/// of the unit. Each names the generation of that viewer's sight.
-pub fn removes_its_unit_from_the_viewers(
-  entered entered: world_entry.Entered,
-) -> List(Effect(ConnectionEffect(Request))) {
-  list.map(sorted_viewers(entered:), fn(viewer) {
-    news_to(
-      entered:,
-      viewer: #(viewer.0, { viewer.1 }.stay),
-      news: unit_news.Departed(generation: { viewer.1 }.generation),
-    )
-  })
 }
 
 /// The tell of `news` about the player's own unit to each player who sees it, in

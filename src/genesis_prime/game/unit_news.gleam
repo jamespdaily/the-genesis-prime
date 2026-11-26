@@ -60,13 +60,9 @@ pub type News {
     hostile_to: Hostile,
     fights: Bool,
   )
-  /// A player's unit left the viewer's sight, or its owner camped, at the end of the
-  /// sight `generation` names: 0x355 (opcode.0x355), and the moves of that sight and
-  /// the ones before it are late ones (genesis_prime/game/move_stamp).
-  Departed(generation: Generation)
   /// A creature's unit is gone from the viewer's sight: 0x355 (opcode.0x355). A
-  /// player's unit never leaves by it: a player's removal is `Departed`, which keeps the
-  /// viewer's memory of the sight that ended.
+  /// player's unit never leaves by it: a player's removal is the map's `PlayerUnseen`,
+  /// which keeps the viewer's memory of the sight that ended.
   Removed
   /// The unit started a cast: 0x7ff (opcode.0x7ff), written when the viewer's
   /// client shows the unit, and the cast is then one the viewer knows.

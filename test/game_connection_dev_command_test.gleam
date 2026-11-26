@@ -38,7 +38,6 @@ import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{Departed}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
@@ -945,9 +944,8 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
         == support.leave_asked_from(map: map_of_world_22())
         as "the run of the map that took the player is asked to take it out"
       list.each([2, 3], fn(viewer) {
-        assert support.news_told(taken: leaving, viewer:)
-          == [Departed(generation: support.viewer_sight(viewer))]
-          as "the unit's 0x355: each viewer sees the unit leave"
+        assert support.news_told(taken: leaving, viewer:) == []
+          as "each viewer is told nothing by the leaving connection: the unit's 0x355 is the map's PlayerUnseen when it takes the leave"
       })
       let effects = rule_support.effects_of(leaving)
       list.each(
@@ -1106,7 +1104,7 @@ pub fn what_other_processes_send_while_leaving_or_entering_is_dropped_test() -> 
     ))
   let #(_, taken) =
     support.feed(state: commanded_in_world_22(viewers: []), event: seen_by)
-  assert support.peer_tells(taken) != []
+  assert support.snapshot_items(taken) != []
     as "the same message is taken by a connection that stands in the world"
   let #(leaving_state, leaving) = leaving_world_22()
   let #(entering_state, _) = joining_world_870()

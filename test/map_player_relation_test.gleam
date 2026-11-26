@@ -179,6 +179,11 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
   assert players.relation(state: unseen, owner: 1, viewer: 2) == None
     as "and no relation is made by it"
   // A viewer that left and joined again is in another stay now: the old snapshot is dropped.
+  // This clause is a guard, not a decision: a stay change is also a new generation for each
+  // pair (`joined_again`), so the generation check alone drops this snapshot too, and a build
+  // that ignores the relation's stay passes it. The guard is the second assertion, that the
+  // new stay's sight is a new generation; the map's stay check (`in_current_stay`) stands
+  // for a path that renews a stay and not the generation.
   let #(left, _) = spawns.leave(state:, at_ms: at_ms + 8, connection: 2)
   let #(rejoined, _) =
     spawns.join_in_stay(
@@ -199,6 +204,8 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
     as "the new stay's sight is held"
   assert now_stay == players.stay(count: 2)
     as "the relation names the viewer's new stay"
+  assert generation.compare(now, sight) == order.Gt
+    as "guard: a stay change gives the pair a new generation, so the old stay's snapshot is dropped by it alone"
   let #(_, taken) =
     snapshot_to_two(state: rejoined, at_ms: at_ms + 11, generation: now)
   assert list.all(players.relayed(taken:), fn(delivery) {
@@ -206,11 +213,38 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
     })
     && healths(relayed: players.relayed(taken:)) == [#(2, 10), #(2, 20)]
     as "control: the new stay's snapshot is relayed for the new stay"
+  // A burst that does not begin with the owner's 0x262 of that generation is an error line
+  // and is not relayed: the viewer releases its held moves by the generation that 0x262 names.
+  let refused = fn(burst) {
+    let #(refusing, taken) =
+      players.snapshot_as_told(
+        state:,
+        at_ms: at_ms + 12,
+        owner: 1,
+        owner_stay: first_stay,
+        viewer: 2,
+        generation: sight,
+        burst:,
+      )
+    #(
+      players.relayed(taken:),
+      support.logs_of(step: taken, level: step.LogError),
+      players.relation(state: refusing, owner: 1, viewer: 2),
+    )
+  }
+  let #(relayed, logs, relation) =
+    refused([players.health(connection: 1, health: 5)])
+  assert relayed == [] && list.length(logs) == 1 && relation == held
+    as "a burst that begins with news, not the owner's 0x262, is logged, relays nothing and leaves the relation awaiting"
+  let #(relayed, logs, relation) =
+    refused([players.appeared(owner: 1, generation: g_again)])
+  assert relayed == [] && list.length(logs) == 1 && relation == held
+    as "a burst that begins with the 0x262 of another generation is refused the same way"
   // News while the relation awaits is dropped.
   let #(_, taken) =
     players.broadcast(
       state:,
-      at_ms: at_ms + 12,
+      at_ms: at_ms + 13,
       owner: 1,
       owner_stay: first_stay,
       news: players.health(connection: 1, health: 99),
@@ -266,6 +300,17 @@ pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and
     )
   assert healths(relayed: players.relayed(taken:)) == [#(2, 55), #(6, 55)]
     as "the news reaches each relaying viewer in the order of the connections' numbers, and no viewer that awaits its snapshot, left sight or is in another stay"
+  // News from the owner's earlier stay is dropped.
+  let #(_, taken) =
+    players.broadcast(
+      state:,
+      at_ms: at_ms + 3,
+      owner: 1,
+      owner_stay: players.stay(count: 2),
+      news: players.health(connection: 1, health: 56),
+    )
+  assert players.relayed(taken:) == []
+    as "news of a stay the owner is not in is not relayed"
   // News that names another unit than the sender's is dropped and logged.
   let #(_, taken) =
     players.broadcast(
@@ -380,15 +425,12 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
       generation: new_one_sees_two,
       burst: [players.health(connection: 2, health: 7)],
     )
-  assert players.relayed(taken:)
-    == [
-      #(
-        1,
-        players.stay(count: 2),
-        relay.News(news: players.health(connection: 2, health: 7)),
-      ),
-    ]
-    as "the new snapshot is relayed to the joiner for its new stay"
+  assert list.all(players.relayed(taken:), fn(delivery) {
+      delivery.0 == 1 && delivery.1 == players.stay(count: 2)
+    })
+    && healths(relayed: players.relayed(taken:)) == [#(1, 7)]
+    && list.length(players.relayed(taken:)) == 2
+    as "the new snapshot, the owner's 0x262 and its news, is relayed to the joiner for its new stay"
 }
 
 /// A landing of each kind, as the tests send them from connection 1, in its first stay, to
@@ -675,8 +717,11 @@ pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> N
   assert list.contains(sight_notices, #(4, "PlayerUnseen 1"))
     && list.contains(sight_notices, #(1, "UnseenBy 4"))
     as "the viewer that left sight is told the unit is unseen and the owner that it is unseen by it"
-  assert list.length(sight_notices) == 2
-    as "2 and 3 stay in sight and are told nothing of it: only 4 leaves"
+  assert list.contains(sight_notices, #(1, "PlayerUnseen 4"))
+    && list.contains(sight_notices, #(4, "UnseenBy 1"))
+    as "sight is symmetric: 1 no longer sees 4 either, so 1 is told 4's unit is unseen and 4 that 1 no longer sees it"
+  assert list.length(sight_notices) == 4
+    as "2 and 3 stay in sight and are told nothing of it: only the pair of 1 and 4 leaves, four notices"
   assert list.length(support.sends(taken)) == list.length(sight_notices)
     as "the step sends nothing but the sight notices: no move reaches a viewer through the map"
 }

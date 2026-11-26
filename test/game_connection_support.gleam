@@ -33,7 +33,7 @@ import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{
-  type News, type PeerNews, Appeared, CreatureAppeared, Departed, PeerNews,
+  type News, type PeerNews, Appeared, CreatureAppeared, PeerNews,
 }
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
@@ -1451,14 +1451,28 @@ pub fn news_told(
   })
 }
 
-/// The `unit_create_player` (0x0262) the tests' player's connection sends the arriving viewer connection
-/// `viewer`, taken from the state.
+/// The items of the snapshots a step tells the map, in order: what the player's connection
+/// builds for each viewer the map names, for the map to relay.
+pub fn snapshot_items(taken: ConnectionStep(Request)) -> List(PeerNews) {
+  list.flat_map(told_the_map(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        request: client_connection.TellSnapshot(burst:, ..),
+        ..,
+      )) -> burst
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> []
+    }
+  })
+}
+
+/// The `unit_create_player` (0x0262) the tests' player's connection builds for the arriving
+/// viewer connection `viewer`, in the snapshot it tells the map, taken from the state.
 pub fn created_for(
   state state: game_connection.State,
   viewer viewer: Int,
 ) -> UnitCreatePlayer {
-  let assert [#(_, PeerNews(news: Appeared(unit:, ..), ..))] =
-    peer_tells(
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    snapshot_items(
       feed(
         state:,
         event: sent_by_the_map(SeenBy(
@@ -1469,11 +1483,11 @@ pub fn created_for(
         )),
       ).1,
     )
-    as "the player's connection sends the arriving viewer its unit_create_player"
+    as "the player's connection builds the arriving viewer its unit_create_player"
   unit
 }
 
-/// The `unit_create_player` (0x0262) the tests' player's connection sends the arriving viewer
+/// The `unit_create_player` (0x0262) the tests' player's connection builds for the arriving viewer
 /// connection `viewer` at the monotonic time `ms`.
 pub fn created_at(
   state state: game_connection.State,
@@ -1491,8 +1505,8 @@ pub fn created_at(
         generation: viewer_sight(viewer),
       )),
     )
-  let assert [#(_, PeerNews(news: Appeared(unit:, ..), ..))] = peer_tells(taken)
-    as "the player's connection sends the arriving viewer its unit_create_player"
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] = snapshot_items(taken)
+    as "the player's connection builds the arriving viewer its unit_create_player"
   unit
 }
 
@@ -1762,7 +1776,7 @@ pub fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {
 }
 
 /// What can reach a viewer about the unit 9, from the unit's owner or the map. A
-/// player's removal is the owner's `Departed` of the sight its `Appears` showed; the
+/// player's removal is the map's `PlayerUnseen` of the sight its `Appears` showed; the
 /// `Later` steps are of the next sight the map gives that pair.
 pub type Step {
   Appears
@@ -1803,9 +1817,9 @@ pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
         commands: moved_unit_commands(),
       ))
     Removes ->
-      sent_by_a_peer(news_of(
+      sent_by_the_map(map.PlayerUnseen(
         unit_id: 9,
-        news: Departed(generation: generation.first()),
+        generation: generation.first(),
       ))
     MapSaysGone -> sent_by_the_map(map.Gone(unit_id: 9))
   }

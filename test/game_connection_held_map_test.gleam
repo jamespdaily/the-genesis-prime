@@ -47,7 +47,7 @@ import genesis_prime/game/proc
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
 import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{Departed}
+import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -1495,14 +1495,9 @@ pub fn go_to_another_world_enters_it_and_the_first_maps_watcher_sees_the_unit_le
       experience: 1800,
     )
   let #(state, leaving) = dev_support.said(state:, text: "!go 8300")
-  let sights =
-    dev_support.sights_the_map_gave(class_id: 4, level: 3, experience: 1800)
   list.each([2, 3, 4, 5], fn(viewer) {
-    assert case connection_support.news_told(taken: leaving, viewer:) {
-      [Departed(generation:)] -> list.key_find(sights, viewer) == Ok(generation)
-      _ -> False
-    }
-      as "the unit's 0x355: each watcher of the first map is told the unit is gone, for the sight the map gave it"
+    assert connection_support.news_told(taken: leaving, viewer:) == []
+      as "each watcher of the first map is told nothing by the leaving connection: the unit's 0x355 is the first map's PlayerUnseen when it takes the leave"
   })
   let #(first_map, left, held) =
     connection_support.mapped_logging(map_state: first_map, taken: leaving)

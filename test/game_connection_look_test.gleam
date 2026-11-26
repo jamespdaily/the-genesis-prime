@@ -30,7 +30,7 @@ import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout
 import genesis_prime/game/unit_news.{
-  type News, Appeared, Departed, LookChanged, PeerNews, Removed,
+  type News, Appeared, LookChanged, PeerNews, Removed,
 }
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
@@ -221,8 +221,8 @@ fn created_for(
   state state: game_connection.State,
   viewer viewer: Int,
 ) -> UnitCreatePlayer {
-  let assert [#(_, PeerNews(news: Appeared(unit:, ..), ..))] =
-    support.peer_tells(
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    support.snapshot_items(
       support.feed(
         state:,
         event: support.sent_by_the_map(SeenBy(
@@ -391,16 +391,8 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
   assert written(steps:) == [] as "a camp writes no 0x933 to the player"
   list.each([2, 3], fn(viewer) {
     let news = news_told(steps:, viewer:)
-    assert list.filter(news, fn(told) {
-        case told {
-          Departed(..) -> True
-          _ -> False
-        }
-      })
-      == [Departed(generation: support.viewer_sight(viewer))]
-      as "the camp's own steps tell each viewer the unit is removed, once (opcode.0x355)"
     assert list.filter_map(news, fn(told) { look_visuals(news: told) }) == []
-      as "and no LookChanged, whatever it carries"
+      as "the camp's own steps tell each viewer no LookChanged, whatever it carries; the unit's removal is the map's PlayerUnseen when it takes the leave (opcode.0x355)"
   })
   // The next entry: a fresh Entered from the map's join, whose 0x262 lists the base.
   let #(_, entering) =

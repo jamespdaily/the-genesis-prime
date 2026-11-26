@@ -173,8 +173,9 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
     )
   assert peer_tell_kinds(line_first) == []
     as "a player that does not see the speaker yet is told nothing"
-  assert peer_tell_kinds(appears) == ["unit news"]
-    as "design C: the speaker's connection sends its 0x262 as the map says the player sees it"
+  assert peer_tell_kinds(appears) == []
+    && list.length(game_connection_support.snapshot_items(appears)) == 1
+    as "the speaker's connection builds its 0x262 as the map says the player sees it and tells it to the map, not to the viewer"
   // Watched first: the 0x262 is told in the step before the line, by the same
   // sender, so the viewer's connection takes them in that order.
   let #(state, appears) =
@@ -193,8 +194,8 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
       game_connection_support.chat_line_message(4, "Hello"),
     )
   assert list.append(peer_tell_kinds(appears), peer_tell_kinds(line))
-    == ["unit news", "chat"]
-    as "the 0x262 comes before the first line: one sender for each pair, and a sender's messages arrive in the order sent, so the bubble finds the unit"
+    == ["chat"]
+    as "the snapshot goes to the map and the line is still told to the viewer by the speaker's connection: their order at the viewer is the map's once the line is relayed by it (test 32)"
 }
 
 pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {

@@ -35,8 +35,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{
-  Appeared, CastFinished, Departed, LookChanged, PeerNews, PropertiesChanged,
-  Removed,
+  Appeared, CastFinished, LookChanged, PeerNews, PropertiesChanged, Removed,
 }
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
@@ -169,7 +168,7 @@ pub fn a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x
   // writes it after itself (genesis_prime/game/move_stamp).
   // Each sequence is what two senders can produce for one unit: the owner's
   // messages in the order it sent them, and the map's Gone after the owner's
-  // end, anywhere among them. A player's removal is the owner's Departed, so each row
+  // end, anywhere among them. A player's removal is the map's PlayerUnseen, so each row
   // with one runs the viewer's memory of the sight that ended. A move before its
   // 0x262 stands for a notice the map relayed late.
   list.each(
@@ -564,26 +563,25 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  let assert [#(2, PeerNews(news: Appeared(unit: created, ..), ..))] =
-    game_connection_support.peer_tells(taken)
-    as "the viewer is sent the unit at once"
+  let assert [PeerNews(news: Appeared(unit: created, ..), ..)] =
+    game_connection_support.snapshot_items(taken)
+    as "the viewer's snapshot, told to the map at once, holds the unit"
   let assert [passive] = created.tail.casts
     as "the Engineer's innate passive is the one cast it holds"
-  assert game_connection_support.peer_tells(taken)
+  assert game_connection_support.snapshot_items(taken)
     == [
-      #(
-        2,
-        game_connection_support.told(news: Appeared(
-          unit: appearance_at(
-            place: game_connection_support.entry_place(),
-            time_ms: 1000,
-            casts: [engineer_passive(cast_id: passive.cast_id)],
-          ),
-          generation: game_connection_support.viewer_sight(2),
-        )),
-      ),
+      game_connection_support.told(news: Appeared(
+        unit: appearance_at(
+          place: game_connection_support.entry_place(),
+          time_ms: 1000,
+          casts: [engineer_passive(cast_id: passive.cast_id)],
+        ),
+        generation: game_connection_support.viewer_sight(2),
+      )),
     ]
-    as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit, and its copy lists the passive's buffs"
+    as "the snapshot holds the unit at once, from the origin the map's Joined carried, and its copy lists the passive's buffs"
+  assert game_connection_support.peer_tells(taken) == []
+    as "and the connection tells the viewer's connection nothing itself: the map relays the snapshot"
   assert support.writes(taken) == []
 }
 
@@ -633,8 +631,8 @@ pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test
           generation: game_connection_support.viewer_sight(2),
         )),
       )
-    let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-      game_connection_support.peer_tells(taken)
+    let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+      game_connection_support.snapshot_items(taken)
     assert list.map(unit.tail.stats, fn(stat) { stat.stat_id }) == [0, 10, 20]
       as "health, level and shield only: no class slot's stat and no stat 1"
     assert !list.any(unit.tail.properties, fn(property) {
@@ -669,8 +667,8 @@ pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-    game_connection_support.peer_tells(taken)
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    game_connection_support.snapshot_items(taken)
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
     unit.tail.movement_commands
   assert at.x == float32.to_bits(1.5)
@@ -698,16 +696,8 @@ pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  assert game_connection_support.peer_tells(taken)
-    == [
-      #(
-        2,
-        game_connection_support.told(
-          news: Departed(generation: game_connection_support.viewer_sight(2)),
-        ),
-      ),
-    ]
-    as "the viewer that stops seeing the unit is sent its removal, for the sight that ended, and only that one"
+  assert game_connection_support.peer_tells(taken) == []
+    as "the viewer that stops seeing the unit is sent nothing by the owner: its removal, for the sight that ended, is the map's PlayerUnseen"
   assert list.map(
       game_connection_support.viewer_moves(
         taken: game_connection_support.read(state, moves).1,
@@ -771,25 +761,11 @@ pub fn the_owners_camp_sends_each_viewer_its_0x355_before_the_leave_is_asked_tes
       taken:,
       outcome: game_connection_support.place_saved(),
     )
-  assert game_connection_support.peer_tells(taken)
-    == [
-      #(
-        2,
-        game_connection_support.told(
-          news: Departed(generation: game_connection_support.viewer_sight(2)),
-        ),
-      ),
-      #(
-        3,
-        game_connection_support.told(
-          news: Departed(generation: game_connection_support.viewer_sight(3)),
-        ),
-      ),
-    ]
-    as "its 0x355 to every viewer, each for the sight it ends: the map's Unwatched after the leave would be a second sender"
+  assert game_connection_support.peer_tells(taken) == []
+    as "a camp tells no viewer a removal: the map ends each sight when it takes the leave (PlayerUnseen)"
   assert game_connection_support.ask_request(taken)
     == game_connection_support.leave_asked()
-    as "and the leave of the map is asked in the same step, after the tells"
+    as "and the leave of the map is asked in the same step"
 }
 
 pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_nothing_else_test() -> Nil {
@@ -932,8 +908,8 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
     move.server_time_ms
   }
   let create_time = fn(monotonic_ms) {
-    let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-      game_connection_support.peer_tells(at(
+    let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+      game_connection_support.snapshot_items(at(
         monotonic_ms,
         game_connection_support.sent_by_the_map(SeenBy(
           by: ConnectionId(2),
@@ -1652,9 +1628,8 @@ pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_
       as "each viewer held when the answer comes is told the look and then the properties"
     Nil
   })
-  assert game_connection_support.news_told(taken: unseen, viewer: 2)
-    == [Departed(generation: game_connection_support.viewer_sight(2))]
-    as "then the viewer that left is told the unit is removed"
+  assert game_connection_support.news_told(taken: unseen, viewer: 2) == []
+    as "then the viewer that left is told nothing by the unit's owner: its removal is the map's"
   assert game_connection_support.news_told(taken: unseen, viewer: 3) == []
     as "and the viewer that stayed is told nothing more"
   // The viewer's own connection: its client showed the unit, then the map said the unit
@@ -3966,14 +3941,11 @@ fn departed_at(
   session session: connection_state.Session,
   sight_number sight_number: Int,
 ) -> Taken {
-  viewers.viewer_takes(
+  viewers.map_sent(
     session:,
     now: at_ms_zero,
     entered: entered_of(session:),
-    news: PeerNews(
-      unit_id: 9,
-      news: Departed(generation: sight(n: sight_number)),
-    ),
+    notice: map.PlayerUnseen(unit_id: 9, generation: sight(n: sight_number)),
   )
   |> taken_from
 }
@@ -4399,14 +4371,8 @@ pub fn a_players_copy_takes_the_generation_the_map_gave_each_viewer_and_an_unsee
         generation: sight(n: 5),
       )),
     )
-  assert game_connection_support.peer_tells(taken)
-    == [
-      #(
-        2,
-        game_connection_support.told(news: Departed(generation: sight(n: 5))),
-      ),
-    ]
-    as "the end of the sight the copy holds sends the removal for it"
+  assert game_connection_support.peer_tells(taken) == []
+    as "the end of the sight the copy holds sends the viewer nothing: the removal is the map's"
   assert move_to_2(state) == [] as "and deletes the entry: no more moves"
 }
 

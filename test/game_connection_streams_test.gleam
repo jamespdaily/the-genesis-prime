@@ -84,9 +84,9 @@ pub fn an_owner_answers_the_seen_of_a_generation_with_one_snapshot_listing_its_l
       #(snapshot.0, snapshot.1, snapshot.2)
     })
     == [
-      #(ConnectionId(2), support.viewer_stay(2), support.viewer_sight(2)),
+      #(ConnectionId(2), support.own_stay(), support.viewer_sight(2)),
     ]
-    as "one snapshot, for the viewer the map named, for its stay and of the generation named"
+    as "one snapshot, for the viewer the map named, of the generation named, in the owner's own stay: the map holds the viewer's stay in its relation and checks the owner's (`PlayerSnapshot`)"
   let assert [#(_, _, _, burst)] = snapshots_told(taken:)
   assert list.map(burst, fn(item) { item.unit_id }) == [support.own_unit_id]
     as "it holds the player's own unit"

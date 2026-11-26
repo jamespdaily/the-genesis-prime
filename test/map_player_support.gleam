@@ -5,13 +5,15 @@
 //// `genesis_prime/world_map/sight.range`; a player of connection `n` joins as the `n`th
 //// unit when the tests join in the order of their numbers.
 
+import character_support
 import connection_rule_support as support
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{type PeerNews, Health, PeerNews}
+import genesis_prime/game/unit_news.{type PeerNews, Appeared, Health, PeerNews}
 import genesis_prime/step.{type ServiceStep, ConnectionId, OwnEvent, Told}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
+import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
@@ -19,6 +21,8 @@ import gleam/list
 import gleam/option.{type Option, Some}
 import map_spawn_support as spawns
 import map_support
+import place_support
+import unit_support
 
 /// A started map with no spawns.
 pub fn empty() -> State {
@@ -107,8 +111,52 @@ pub fn health(connection connection: Int, health health: Int) -> PeerNews {
 }
 
 /// The owner's snapshot of the sight `generation` for `viewer`, as its connection tells
-/// the map, at time `at_ms`, with the owner's stay `owner_stay`.
+/// the map, at time `at_ms`, with the owner's stay `owner_stay`: the owner's own 0x262 of
+/// that sight, as a real owner begins it, then `burst`.
 pub fn snapshot(
+  state state: State,
+  at_ms at_ms: Int,
+  owner owner: Int,
+  owner_stay owner_stay: Stay,
+  viewer viewer: Int,
+  generation generation: Generation,
+  burst burst: List(PeerNews),
+) -> #(State, ServiceStep(map.Outgoing)) {
+  snapshot_as_told(
+    state:,
+    at_ms:,
+    owner:,
+    owner_stay:,
+    viewer:,
+    generation:,
+    burst: [appeared(owner:, generation:), ..burst],
+  )
+}
+
+/// The owner's 0x262 of the sight `generation`, which begins a snapshot.
+pub fn appeared(
+  owner owner: Int,
+  generation generation: Generation,
+) -> PeerNews {
+  PeerNews(
+    unit_id: unit_of(connection: owner),
+    news: Appeared(
+      unit: player_unit.create(
+        unit: unit_support.bare_unit(
+          character: character_support.character(number: owner),
+          place: place_support.live_character_place(),
+          unit_id: unit_of(connection: owner),
+          body: [],
+        ),
+        realm_id: 1,
+      ),
+      generation:,
+    ),
+  )
+}
+
+/// A snapshot exactly as given: `burst` is relayed or refused as it is.
+pub fn snapshot_as_told(
   state state: State,
   at_ms at_ms: Int,
   owner owner: Int,

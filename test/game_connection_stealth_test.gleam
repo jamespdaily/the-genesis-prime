@@ -400,9 +400,9 @@ fn create_flags_sent_to_a_new_viewer(
       True -> support.in_second_stay(seen)
       False -> seen
     })
-  let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-    support.peer_tells(taken)
-    as "the viewer is sent the player's unit"
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    support.snapshot_items(taken)
+    as "the viewer's snapshot holds the player's unit"
   unit.tail.create_flags
 }
 

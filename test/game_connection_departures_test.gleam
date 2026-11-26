@@ -25,7 +25,6 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{AskStore, FromMap}
 import genesis_prime/game/departures
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_news.{Departed}
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_result
@@ -436,9 +435,8 @@ pub fn the_tutorials_viewer_sees_the_player_leave_test() -> Nil {
   let #(state, _) =
     departures_support.yes(state:, spell4_base_id: northern_wilds_spell4_base)
   let #(_, leaving) = departures_support.timer_fires(state:)
-  assert connection_support.news_told(taken: leaving, viewer: 2)
-    == [Departed(generation: connection_support.viewer_sight(2))]
-    as "the player's connection tells the viewer in the tutorial the unit's 0x355"
+  assert connection_support.news_told(taken: leaving, viewer: 2) == []
+    as "the player's connection tells the viewer in the tutorial nothing: the unit's 0x355 is the map's PlayerUnseen when it takes the leave"
 }
 
 pub fn a_relog_after_the_move_enters_at_the_landing_test() -> Nil {

@@ -598,11 +598,6 @@ fn leaving_the_map(
   before before: List(Effect(ConnectionEffect(Request))),
   then then: AfterLeave,
 ) -> client_connection.Handled(Session) {
-  let before =
-    list.append(
-      before,
-      connection_state.removes_its_unit_from_the_viewers(entered:),
-    )
   connection_state.ask(
     session: Session(..session, status: LeavingMap(holder:, entered:, then:)),
     now:,

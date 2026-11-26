@@ -247,8 +247,8 @@ pub fn a_viewer_that_arrives_gets_the_health_the_player_entered_with_test() -> N
         generation: game_connection_support.viewer_sight(3),
       )),
     )
-  let assert [#(3, PeerNews(news: Appeared(unit:, ..), ..))] =
-    game_connection_support.peer_tells(taken)
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    game_connection_support.snapshot_items(taken)
   assert health_of(unit) == Ok(500)
     as "stat 0 of the viewer's 0x262 is the health the player has now"
 }

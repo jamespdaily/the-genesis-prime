@@ -845,23 +845,6 @@ pub fn a_caster_the_map_says_no_longer_sees_the_player_ends_each_change_it_held_
       )
     assert support.written_ids(taken) == ids as reason
     assert seen(steps: [taken]) == written as reason
-    case notice, rule_support.effects_of(taken) {
-      Unseen(caster:), [first, ..] if caster == 3 -> {
-        assert first
-          == OwnEffect(step.Tell(
-            to: step.Connection(connection: ConnectionId(3)),
-            request: TellPeer(
-              stay: support.viewer_stay(3),
-              news: unit_news.PeerNews(
-                unit_id: support.own_unit_id,
-                news: unit_news.Departed(generation: support.viewer_sight(3)),
-              ),
-            ),
-          ))
-          as "the viewer's removal is told first, the ends after it"
-      }
-      _, _ -> Nil
-    }
   })
   // The notice a second time finds nothing held.
   let state = holding(holds: [armor_of_three, pool_of_three])
