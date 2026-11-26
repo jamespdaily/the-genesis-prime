@@ -242,6 +242,17 @@ class MergeWhenGreenTest(unittest.TestCase):
         self.assertEqual(steps(done.calls), ["reset", "wait"])
         self.assert_worktree_kept_and_reset(done)
 
+    def test_a_pr_wait_deadline_stops_the_merge_naming_exit_4_and_never_merges(self):
+        done = self.merge(
+            ["yes"], PLANT_WAIT_STATUS="4", PLANT_WAIT_STDERR="pr_wait: deadline of 1500 s passed on pull request 7; still pending: build",
+        )
+        self.assertEqual(done.returncode, 1)
+        self.assertNotIn("CI failed", done.stderr)
+        self.assertIn("exit 4", done.stderr)
+        self.assertEqual(steps(done.calls), ["reset", "wait"])
+        self.assertFalse(any(c.startswith("gh pr merge") for c in done.calls), done.calls)
+        self.assert_worktree_kept_and_reset(done)
+
     def test_a_run_while_another_holds_the_merge_worktree_stops_before_touching_it(self):
         done = self.merge(["yes"], existing=True, lock_pid=os.getpid())
         self.assertEqual(done.returncode, 1)
