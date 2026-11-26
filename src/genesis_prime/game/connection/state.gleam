@@ -21,6 +21,7 @@ import genesis_prime/game/level_up
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/movement
 import genesis_prime/game/objective
+import genesis_prime/game/player_address
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/projector
@@ -548,13 +549,13 @@ pub fn misrouted(
   )
 }
 
-/// The connections that see the player, each with its player's stay, in the
-/// order of their numbers.
-fn sorted_viewers(
+/// The connections that see the player, each with what the player's copy holds of
+/// that viewer (its stay and the generation of its sight), in the order of their
+/// numbers.
+pub fn sorted_viewers(
   entered entered: world_entry.Entered,
-) -> List(#(ConnectionId, Stay)) {
+) -> List(#(ConnectionId, player_address.Viewer)) {
   map.sorted_by_connection(entered.viewers)
-  |> list.map(fn(viewer) { #(viewer.0, { viewer.1 }.stay) })
 }
 
 /// The player's level: its unit's stat 10, 1 when it has none.
@@ -750,7 +751,7 @@ pub fn news_to_connection(
 pub fn removes_its_unit_from_the_viewers(
   entered entered: world_entry.Entered,
 ) -> List(Effect(ConnectionEffect(Request))) {
-  list.map(map.sorted_by_connection(entered.viewers), fn(viewer) {
+  list.map(sorted_viewers(entered:), fn(viewer) {
     news_to(
       entered:,
       viewer: #(viewer.0, { viewer.1 }.stay),
@@ -778,7 +779,9 @@ pub fn news_to_viewers_but(
   list.filter(sorted_viewers(entered:), fn(viewer) {
     !set.contains(left_out, viewer.0)
   })
-  |> list.map(fn(viewer) { news_to(entered:, viewer:, news:) })
+  |> list.map(fn(viewer) {
+    news_to(entered:, viewer: #(viewer.0, { viewer.1 }.stay), news:)
+  })
 }
 
 /// The tell of `request` to the run of the player's map, which no answer follows

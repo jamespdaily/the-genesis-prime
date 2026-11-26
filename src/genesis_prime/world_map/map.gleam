@@ -86,7 +86,7 @@
 ////                                           SeenBy(A, g) ─▶ B        SeenBy(B, g') ─▶ A
 ////                                         out of sight, in one step:
 ////                                           UnseenBy(A, g) ─▶ B      UnseenBy(B, g') ─▶ A
-//// A connection's end (its watch's DOWN)   ─▶ to each player c2 who saw it: UnseenBy(it)
+//// A connection's end (its watch's DOWN)   ─▶ to each player c2 who saw it: UnseenBy(it, g)
 ////                                           to every player in the map: Gone(its unit)
 //// (every notice to a player's connection goes as Noticed(its stay, notice))
 //// ```

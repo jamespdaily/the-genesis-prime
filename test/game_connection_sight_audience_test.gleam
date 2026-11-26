@@ -205,6 +205,9 @@ pub fn a_removed_unit_heard_before_the_maps_unseen_by_is_out_of_the_cast_audienc
       connection_support.read(state:, bytes: connection_support.a_move(1.5))
     assert connection_support.news_told(taken: moved, viewer: ally.connection)
       == []
+      && !list.any(connection_support.viewer_moves(taken: moved), fn(tell) {
+        tell.0 == ally.connection
+      })
       as { reason <> ": the ally is out of the viewers" }
     assert list.any(connection_support.viewer_moves(taken: moved), fn(tell) {
       tell.0 == 2

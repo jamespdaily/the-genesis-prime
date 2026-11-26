@@ -1671,7 +1671,13 @@ pub fn move_order(taken taken: ConnectionStep(Request)) -> List(String) {
   })
 }
 
-/// The same, without the stay.
+/// Whether a step tells no other player's connection anything: no news of the player's unit
+/// (`TellPeer`) and no move (`TellMove`), the two ways a player's connection tells another.
+pub fn tells_no_player(taken taken: ConnectionStep(Request)) -> Bool {
+  peer_tells(taken) == [] && move_tells(taken:) == []
+}
+
+/// The moves a step tells the connections of other players, without the stay.
 pub fn viewer_moves(
   taken taken: ConnectionStep(Request),
 ) -> List(#(Int, move_stamp.Move)) {

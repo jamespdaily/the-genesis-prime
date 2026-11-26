@@ -3,13 +3,14 @@
 //// (genesis_prime/game/move_stamp), and through no map, so the map and the relay can hold
 //// no move. A reference to `TellMove` in a file of `src` or `dev` other than the mover's
 //// (`genesis_prime/game/connection/movement`), an import of `move_stamp` or
-//// `relayed_movement` in a file of the world map, and an import of either in the news
+//// `relayed_movement` in a file of the world map, and an import of either, or a field of a move's type, in the news
 //// type (`genesis_prime/game/unit_news`) are breaches. The rule is shown on planted
 //// files, then read over the real ones.
 
 import code_rule/planted
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
+import glance
 import gleam/int
 import gleam/list
 import gleam/string
@@ -49,6 +50,42 @@ fn imports_a_move(file file: SourceFile) -> List(String) {
   syntax.imported_modules(file)
   |> list.filter(list.contains(move_modules, _))
   |> list.sort(string.compare)
+}
+
+/// The types a move is made of, by the names the client's reader and the relay give them.
+const move_types = ["Move", "RelayedMovement", "UnitPositionCommand"]
+
+/// The variants of the file's custom type `News` that hold, at any depth, a type a move is
+/// made of.
+fn news_fields_of_a_move(file file: SourceFile) -> List(String) {
+  list.flat_map(syntax.parse(file).custom_types, fn(definition) {
+    case definition.definition.name {
+      "News" ->
+        list.filter(definition.definition.variants, holds_a_move)
+        |> list.map(fn(variant) { variant.name })
+      _ -> []
+    }
+  })
+}
+
+fn holds_a_move(variant variant: glance.Variant) -> Bool {
+  list.any(variant.fields, fn(field) {
+    list.any(type_names(of: field.item), list.contains(move_types, _))
+  })
+}
+
+/// The name of each named type in `type_`, at any depth.
+fn type_names(of type_: glance.Type) -> List(String) {
+  case type_ {
+    glance.NamedType(name:, parameters:, ..) -> [
+      name,
+      ..list.flat_map(parameters, type_names)
+    ]
+    glance.TupleType(elements:, ..) -> list.flat_map(elements, type_names)
+    glance.FunctionType(parameters:, return:, ..) ->
+      list.flat_map([return, ..parameters], type_names)
+    glance.VariableType(..) | glance.HoleType(..) -> []
+  }
 }
 
 pub fn the_map_and_the_relay_hold_no_move_and_a_move_is_told_only_by_the_mover_test() -> Nil {
@@ -101,11 +138,23 @@ pub fn the_map_and_the_relay_hold_no_move_and_a_move_is_told_only_by_the_mover_t
     })
     == []
     as "no file of the world map imports a move"
-  assert list.flat_map(source.files(under: "src/genesis_prime/game"), fn(file) {
-      case file.path == unit_news {
-        True -> imports_a_move(file:)
-        False -> []
-      }
+  let planted_news =
+    planted.file(path: unit_news, lines: [
+      "pub type News {",
+      "  Health(points: Int)",
+      "  Moving(commands: List(RelayedMovement))",
+      "  Walked(at: option.Option(unit_position_command.UnitPositionCommand))",
+      "}",
+    ])
+  assert news_fields_of_a_move(file: planted_news) == ["Moving", "Walked"]
+    as "a variant whose field holds a move's type, at any depth, is found, and another is not"
+  let news_files =
+    list.filter(source.files(under: "src/genesis_prime/game"), fn(file) {
+      file.path == unit_news
+    })
+  assert list.length(news_files) == 1 as "the news type's file is found"
+  assert list.flat_map(news_files, fn(file) {
+      list.append(imports_a_move(file:), news_fields_of_a_move(file:))
     })
     == []
     as "the news type holds no move"

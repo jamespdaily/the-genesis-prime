@@ -160,7 +160,10 @@ pub fn a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x
   let none = []
   let create = [0x0262]
   let move = [0x0638]
+  let create_and_held_move = [0x0262, 0x0638]
   let remove = [0x0355]
+  // A move of the sight the 0x262 has not come for is held, and the 0x262 of that sight
+  // writes it after itself (genesis_prime/game/move_stamp).
   // Each sequence is what two senders can produce for one unit: the owner's
   // messages in the order it sent them, and the map's Gone after the owner's
   // end, anywhere among them.
@@ -169,7 +172,7 @@ pub fn a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x
       #([Appears], [create]),
       #([Appears, Appears], [create, none]),
       #([Moves], [none]),
-      #([Moves, Appears], [none, create]),
+      #([Moves, Appears], [none, create_and_held_move]),
       #([Removes], [none]),
       #([Removes, Appears], [none, create]),
       #([Appears, Moves], [create, move]),
@@ -811,7 +814,7 @@ pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_nothing_
       )),
     ]
     as "the place is the movement's (the last position of the world's frame); the map decides sight and carries no move; the map is the run the connection watches; the first accepted 0x637 of the connection is its move 1"
-  assert game_connection_support.peer_tells(taken) == []
+  assert game_connection_support.tells_no_player(taken)
     as "no viewer: no 0x638 is sent"
 }
 
@@ -987,10 +990,9 @@ pub fn a_viewer_set_is_empty_after_a_camp_and_a_new_join_and_comes_back_only_by_
       state,
       game_connection_support.world_character(),
     )
-  assert game_connection_support.peer_tells(
-      game_connection_support.read(again, moves).1,
-    )
-    == []
+  assert game_connection_support.tells_no_player(
+    game_connection_support.read(again, moves).1,
+  )
     as "the player that camped and entered again starts with no viewers, whoever saw the first one"
   let #(again, _) =
     game_connection_support.feed(
@@ -1026,7 +1028,7 @@ pub fn a_refused_0x637_tells_the_map_and_the_viewers_nothing_test() -> Nil {
         bytes,
       )
     assert game_connection_support.told_the_map(taken) == [] as why
-    assert game_connection_support.peer_tells(taken) == [] as why
+    assert game_connection_support.tells_no_player(taken) as why
   })
 }
 
@@ -1040,7 +1042,7 @@ pub fn a_0x637_with_nothing_to_relay_tells_nobody_test() -> Nil {
       ]),
     )
   assert game_connection_support.told_the_map(taken) == []
-    && game_connection_support.peer_tells(taken) == []
+    && game_connection_support.tells_no_player(taken)
     as "kind 0 alone is the sender's own clock: nothing to relay"
 }
 
@@ -3970,7 +3972,7 @@ fn chunks_held(
   session session: connection_state.Session,
   unit_id unit_id: Int,
 ) -> Int {
-  case dict.get({ entered_of(session:) }.stamp.holds, unit_id) {
+  case dict.get({ entered_of(session:) }.viewing.holds, unit_id) {
     Ok(waiting) -> list.length(waiting.moves)
     Error(Nil) -> 0
   }
@@ -4231,8 +4233,9 @@ pub fn a_players_copy_takes_the_generation_the_map_gave_each_viewer_and_an_unsee
       )),
     )
   assert game_connection_support.peer_tells(taken) == []
-    && support.logs(taken) == []
     as "an end of an earlier sight than the one the copy holds sends no removal"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    as "and is logged as an error: the map issues an end for the sight the copy holds, so an older one is its bug"
   let assert [#(2, still)] = move_to_2(state)
     as "and the newer entry stays in the copy"
   assert still.generation == sight(n: 5)

@@ -153,8 +153,10 @@
 ////   | a move of a generation older than the one held, or at most the last that ended | dropped |
 ////   | a move newer than the one held, or for a unit not held | held until the notice of its generation |
 ////   | the 0x262 of a generation, with held moves | 0x262, then the held moves of it in order; older dropped; newer kept |
-////   | the end of a sight of at least a held move's generation | the hold is dropped; the generation is remembered |
-////   | a hold past 16 chunks, or the notice never comes | the oldest chunk is dropped with one warning; the hold ends with the stay |
+////   | the end of a sight of at least a held move's generation, or the owner's `Gone` | the hold is dropped with one warning that counts its chunks; the generation is remembered |
+////   | a hold past 16 chunks | the oldest chunk is dropped with one warning that names the sight held and the one awaited |
+////   | the notice never comes | the hold ends with the stay |
+////   | the map ends a sight older than the one the player's copy holds for a viewer | an error line; the copy, the audiences and the viewer are left as they are |
 ////   | the mover's copy still holds a viewer the map ended | its moves are dropped at the viewer |
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
@@ -218,6 +220,7 @@ import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
@@ -228,6 +231,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/set
 
@@ -239,7 +243,7 @@ import gleam/set
 /// `by` with its stay and unit id, puts `by` in the audience of the casts its 0x262 lists (not when `by`
 /// already sees the player: it drops the second 0x262, so it was listed none) and sends it
 /// that 0x262 at its current place, with its health now and the cast it holds the bar of;
-/// told `UnseenBy(by)`
+/// told `UnseenBy(by, generation)` for the sight it holds for `by`
 /// it takes `by` out of those audiences and sends its 0x355. The shell takes a send between steps, after
 /// the ask's outcome and the step it starts are done
 /// (genesis_prime/connection/shell), and world entry writes its whole burst in the
@@ -284,28 +288,28 @@ pub fn map_sent(
           ),
         ],
       )
-    map.UnseenBy(by:, generation:) -> {
-      let #(session, ended) =
-        connection_landing.caster_unseen(
-          session: audiences_left(
-            session: viewers_changed(session:, change: dict.delete(_, by)),
-            viewers: [by],
-          ),
-          now:,
-          by:,
-        )
-      Continue(
-        session,
-        list.append(
-          connection_state.news_to_connection(
-            entered:,
-            connection: by,
-            news: unit_news.Departed(generation:),
-          ),
-          ended,
-        ),
-      )
-    }
+    map.UnseenBy(by: step.ConnectionId(by_number) as by, generation:) ->
+      case dict.get(entered.viewers, by) {
+        Ok(player_address.Viewer(generation: held, ..)) ->
+          case generation.compare(first: generation, second: held) {
+            order.Lt ->
+              Continue(session, [
+                connection_state.log(
+                  session:,
+                  level: step.LogError,
+                  text: "the map ended a sight of viewer "
+                    <> int.to_string(by_number)
+                    <> " that is older than the one held: "
+                    <> int.to_string(generation.number(generation:))
+                    <> " against "
+                    <> int.to_string(generation.number(generation: held)),
+                ),
+              ])
+            order.Eq | order.Gt ->
+              viewer_unseen(session:, now:, entered:, by:, generation:)
+          }
+        Error(Nil) -> viewer_unseen(session:, now:, entered:, by:, generation:)
+      }
     map.UnitUnseen(unit_id:, generation: _) -> {
       let #(session, removal) =
         unit_removed(session:, now:, entered:, unit_id:, keeping: [])
@@ -313,14 +317,12 @@ pub fn map_sent(
     }
     map.Gone(unit_id:) -> {
       let #(life, by_life) = player_life.released(life: entered.life, unit_id:)
+      let #(viewing, dropped) =
+        move_stamp.gone(viewing: entered.viewing, unit_id:)
       let session =
         marked_gone(
           session: connection_state.with_entered(session:, change: fn(entered) {
-            world_entry.Entered(
-              ..entered,
-              life:,
-              stamp: move_stamp.gone(stamp: entered.stamp, unit_id:),
-            )
+            world_entry.Entered(..entered, life:, viewing:)
           }),
           unit_id:,
         )
@@ -332,7 +334,13 @@ pub fn map_sent(
         connection_landing.caster_removed(session:, now:, unit_id:)
       Continue(
         session,
-        list.flatten([removal.written, removal.ended, held_ended, released]),
+        list.flatten([
+          moves_dropped_logged(session:, unit_id:, dropped:),
+          removal.written,
+          removal.ended,
+          held_ended,
+          released,
+        ]),
       )
     }
     map.ObjectsSeen(units:) -> {
@@ -542,12 +550,18 @@ pub fn viewer_takes(
         when: set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
-      let #(stamp, released) =
-        move_stamp.snapshot(stamp: entered.stamp, unit_id:, generation:)
-      let session = stamp_set(session:, stamp:)
+      let #(viewing, released, dropped) =
+        move_stamp.snapshot(viewing: entered.viewing, unit_id:, generation:)
+      let session = viewing_set(session:, viewing:)
       use <- bool.guard(when: shown, return: {
         let #(session, written) = moves_released(session:, now:, released:)
-        Continue(session, written)
+        Continue(
+          session,
+          list.append(
+            moves_dropped_logged(session:, unit_id:, dropped:),
+            written,
+          ),
+        )
       })
       let unit =
         casts_listed(
@@ -633,18 +647,19 @@ pub fn viewer_takes(
       )
     }
     unit_news.Departed(generation:) -> {
-      let session =
-        stamp_set(
-          session:,
-          stamp: move_stamp.departed(
-            stamp: entered.stamp,
-            unit_id:,
-            generation:,
-          ),
-        )
-      unit_left(session:, now:, entered:, unit_id:)
+      let #(viewing, dropped) =
+        move_stamp.departed(viewing: entered.viewing, unit_id:, generation:)
+      let session = viewing_set(session:, viewing:)
+      unit_left(
+        session:,
+        now:,
+        entered:,
+        unit_id:,
+        logged: moves_dropped_logged(session:, unit_id:, dropped:),
+      )
     }
-    unit_news.Removed -> unit_left(session:, now:, entered:, unit_id:)
+    unit_news.Removed ->
+      unit_left(session:, now:, entered:, unit_id:, logged: [])
     unit_news.CastStarted(start:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       use <- bool.guard(
@@ -1077,16 +1092,17 @@ fn refusal_logged(
 
 /// A player's or a creature's unit leaves the viewer's sight: when its client shows the
 /// unit, the audiences it was in are left and the unit's casts it still holds are
-/// finished before its 0x355 (`unit_removed`).
+/// finished before its 0x355 (`unit_removed`), after the lines `logged`.
 fn unit_left(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
+  logged logged: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   use <- bool.guard(
     when: !dict.has_key(entered.shown, unit_id),
-    return: Continue(session, []),
+    return: Continue(session, logged),
   )
   let session =
     audiences_left(
@@ -1105,33 +1121,60 @@ fn unit_left(
     )
   let #(session, removal) =
     unit_removed(session:, now:, entered:, unit_id:, keeping: kept)
-  Continue(session, list.append(removal.written, removal.ended))
+  Continue(session, list.flatten([logged, removal.written, removal.ended]))
+}
+
+/// The map ended the sight of `by`, the player's viewer, at `generation`: `by` leaves the
+/// copy and the audiences of the casts, and is sent the removal for that sight.
+fn viewer_unseen(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  by by: ConnectionId,
+  generation generation: Generation,
+) -> client_connection.Handled(Session) {
+  let #(session, ended) =
+    connection_landing.caster_unseen(
+      session: audiences_left(
+        session: viewers_changed(session:, change: dict.delete(_, by)),
+        viewers: [by],
+      ),
+      now:,
+      by:,
+    )
+  Continue(
+    session,
+    list.append(
+      connection_state.news_to_connection(
+        entered:,
+        connection: by,
+        news: unit_news.Departed(generation:),
+      ),
+      ended,
+    ),
+  )
 }
 
 /// What a viewer does with a chunk of a player's move (`SentByMove`): the move is applied,
 /// dropped or held by the generation it is stamped with and the one the viewer holds
-/// for the unit (genesis_prime/game/move_stamp). A move of a unit the map reported gone is
-/// dropped. A hold that overflows is warned of once.
+/// for the unit (genesis_prime/game/move_stamp), which also drops a move of a unit
+/// the map reported gone. A hold that overflows is warned of once.
 pub fn move_sent(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   move move: move_stamp.Move,
 ) -> client_connection.Handled(Session) {
-  use <- bool.guard(
-    when: set.contains(entered.gone, move.unit_id),
-    return: Continue(session, []),
-  )
-  let #(stamp, verdict) = move_stamp.take(stamp: entered.stamp, move:)
-  let session = stamp_set(session:, stamp:)
+  let #(viewing, verdict) = move_stamp.take(viewing: entered.viewing, move:)
+  let session = viewing_set(session:, viewing:)
   case verdict {
     move_stamp.Apply -> {
       let #(session, written) = moves_released(session:, now:, released: [move])
       Continue(session, written)
     }
-    move_stamp.Drop | move_stamp.Hold(overflowed: False) ->
+    move_stamp.Drop | move_stamp.Hold | move_stamp.HoldDroppingOldest ->
       Continue(session, [])
-    move_stamp.Hold(overflowed: True) ->
+    move_stamp.HoldFirstOverflow(sight:) ->
       Continue(session, [
         connection_state.log(
           session:,
@@ -1139,9 +1182,40 @@ pub fn move_sent(
           text: "a unit's moves wait for the map's notice of their sight past "
             <> int.to_string(move_stamp.most_held_chunks)
             <> " chunks, so the oldest is dropped: unit "
-            <> int.to_string(move.unit_id),
+            <> int.to_string(move.unit_id)
+            <> ", the sight held "
+            <> case sight {
+            Some(move_stamp.Held(generation:)) ->
+              int.to_string(generation.number(generation:))
+            Some(move_stamp.Departed(generation:)) ->
+              "ended at " <> int.to_string(generation.number(generation:))
+            None -> "none"
+          }
+            <> ", the sight awaited "
+            <> int.to_string(generation.number(generation: move.generation)),
         ),
       ])
+  }
+}
+
+/// The warning that moves held for a unit were dropped without their notice, none
+/// when none were.
+fn moves_dropped_logged(
+  session session: Session,
+  unit_id unit_id: Int,
+  dropped dropped: Int,
+) -> List(Effect(ConnectionEffect(Request))) {
+  case dropped {
+    0 -> []
+    _ -> [
+      connection_state.log(
+        session:,
+        level: step.LogWarning,
+        text: int.to_string(dropped)
+          <> " held chunks of a unit's moves were dropped, their sight ended or was replaced before its notice came: unit "
+          <> int.to_string(unit_id),
+      ),
+    ]
   }
 }
 
@@ -1232,12 +1306,12 @@ fn position_commands(
 }
 
 /// The session with the viewer's hold of players' moves replaced.
-fn stamp_set(
+fn viewing_set(
   session session: Session,
-  stamp stamp: move_stamp.Stamp,
+  viewing viewing: move_stamp.Viewing,
 ) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
-    world_entry.Entered(..entered, stamp:)
+    world_entry.Entered(..entered, viewing:)
   })
 }
 

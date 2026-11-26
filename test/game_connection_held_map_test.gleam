@@ -1408,12 +1408,16 @@ pub fn go_in_the_same_world_moves_the_unit_the_client_sees_test() -> Nil {
       z: float32.to_bits(200.0),
       blends: 0,
     )
+  let sights =
+    dev_support.sights_the_map_gave(class_id: 4, level: 3, experience: 1800)
   list.each([2, 3, 4, 5], fn(viewer) {
-    assert list.any(connection_support.viewer_moves(taken:), fn(tell) {
+    assert list.any(connection_support.move_tells(taken:), fn(tell) {
       tell.0 == viewer
-      && tell.1.unit_id == connection_support.own_unit_id
-      && tell.1.server_time_ms == 1000
-      && tell.1.commands
+      && tell.1 == connection_support.viewer_stay(viewer)
+      && tell.2.unit_id == connection_support.own_unit_id
+      && list.key_find(sights, viewer) == Ok(tell.2.generation)
+      && tell.2.server_time_ms == 1000
+      && tell.2.commands
       == [
         relayed_movement.Position(at_the_place),
         relayed_movement.Rotation(MovementRotation(
@@ -1491,9 +1495,11 @@ pub fn go_to_another_world_enters_it_and_the_first_maps_watcher_sees_the_unit_le
       experience: 1800,
     )
   let #(state, leaving) = dev_support.said(state:, text: "!go 8300")
+  let sights =
+    dev_support.sights_the_map_gave(class_id: 4, level: 3, experience: 1800)
   list.each([2, 3, 4, 5], fn(viewer) {
     assert case connection_support.news_told(taken: leaving, viewer:) {
-      [Departed(..)] -> True
+      [Departed(generation:)] -> list.key_find(sights, viewer) == Ok(generation)
       _ -> False
     }
       as "the unit's 0x355: each watcher of the first map is told the unit is gone, for the sight the map gave it"

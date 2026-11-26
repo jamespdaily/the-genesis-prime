@@ -340,18 +340,20 @@ pub fn sends_the_move_to_the_viewers(
       origin_ms: entered.clock_origin_ms,
       monotonic_ms: now.monotonic_ms,
     )
-  list.map(map.sorted_by_connection(entered.viewers), fn(viewer) {
-    OwnEffect(step.Tell(
-      to: step.Connection(viewer.0),
-      request: client_connection.TellMove(
-        stay: { viewer.1 }.stay,
-        move: move_stamp.Move(
-          unit_id: entered.unit_id,
-          generation: { viewer.1 }.generation,
-          server_time_ms:,
-          commands:,
-        ),
+  list.flat_map(connection_state.sorted_viewers(entered:), fn(viewer) {
+    list.map(
+      move_stamp.moves(
+        unit_id: entered.unit_id,
+        generation: { viewer.1 }.generation,
+        server_time_ms:,
+        commands:,
       ),
-    ))
+      fn(move) {
+        OwnEffect(step.Tell(
+          to: step.Connection(viewer.0),
+          request: client_connection.TellMove(stay: { viewer.1 }.stay, move:),
+        ))
+      },
+    )
   })
 }

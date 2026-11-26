@@ -438,7 +438,7 @@ pub type Entered {
     /// What the viewer holds of the moves of the players' units it is sent: the sight
     /// of each unit and the chunks held for the map's notice of their generation, which end
     /// with the stay (genesis_prime/game/move_stamp).
-    stamp: move_stamp.Stamp,
+    viewing: move_stamp.Viewing,
     movement: movement.State,
     readiness: Readiness,
     life: player_life.Life,
@@ -1171,7 +1171,7 @@ pub fn joined(
               shown: dict.new(),
               client_casts: client_casts.new(),
               gone: set.new(),
-              stamp: move_stamp.new(),
+              viewing: move_stamp.new(),
               movement:,
               readiness: readiness_of(entry:),
               life:,

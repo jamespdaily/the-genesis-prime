@@ -565,7 +565,8 @@ pub fn tell_the_run(
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
-/// registry as `SentByPeer` for the viewer's stay (`ForStay`), a player's move (`TellMove`) as `SentByMove`, a tell to another
+/// registry as `SentByPeer` for the viewer's stay (`ForStay`), a player's move
+/// (`TellMove`) as `SentByMove`, a tell to another
 /// connection's player (`TellPlayer`: a caster's heal rows, its held change or the
 /// healed player's answer) as `SentByPlayer`, each for the stay the request names, and a
 /// chat tell (`TellChat`) as `SentByChat`, by the
