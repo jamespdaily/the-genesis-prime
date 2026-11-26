@@ -16,6 +16,7 @@ import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State, Join, Leave, Moved}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object
@@ -461,6 +462,8 @@ pub fn said(message: map.Outgoing) -> String {
       "Withdrew by " <> int.to_string(number)
     map.PlayerDied(by: ConnectionId(number)) ->
       "PlayerDied by " <> int.to_string(number)
+    map.ToldCreature(by: ConnectionId(number), payload:, ..) ->
+      "Told " <> inbound_name(payload) <> " by " <> int.to_string(number)
     map.Joined(..)
     | map.NotJoined(..)
     | map.Summoned(..)
@@ -660,4 +663,47 @@ pub fn lives_told(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
 /// How many relays to players the step sends.
 pub fn relays_sent(taken: ServiceStep(map.Outgoing)) -> Int {
   list.count(player_sends(taken), fn(sent) { sent.1 == "Relayed" })
+}
+
+/// The name of a player's tell to a creature, as `said` writes it (`Told Strike by 1`).
+pub fn inbound_name(payload: relay.Inbound) -> String {
+  case payload {
+    relay.Strike(..) -> "Strike"
+    relay.TargetMoved(..) -> "TargetMoved"
+    relay.StrikeAnswered(..) -> "StrikeAnswered"
+    relay.ModifierStarts(..) -> "ModifierStarts"
+    relay.ModifierEnds(..) -> "ModifierEnds"
+    relay.Thrown(..) -> "Thrown"
+    relay.Despawn(..) -> "Despawn"
+    relay.UnitStates(..) -> "UnitStates"
+    relay.CastViewSet(..) -> "CastViewSet"
+    relay.CastViewEnds(..) -> "CastViewEnds"
+    relay.ControlsEnd(..) -> "ControlsEnd"
+  }
+}
+
+/// The tell of the player of connection `from`, in the stay of its `stay_count`th join, to
+/// the creature `unit_id` of `life`, taken at time `at_ms`.
+pub fn tell_creature(
+  state state: State,
+  at_ms at_ms: Int,
+  from from: Int,
+  stay_count stay_count: Int,
+  unit_id unit_id: Int,
+  life life: Int,
+  payload payload: relay.Inbound,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(
+      Told(message: map.TellCreature(
+        from: ConnectionId(from),
+        stay: map_support.stay(count: stay_count),
+        unit_id:,
+        life:,
+        payload:,
+      )),
+    ),
+  )
 }

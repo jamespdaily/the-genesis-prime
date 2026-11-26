@@ -30,6 +30,7 @@ import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/step.{type ConnectionStep}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None}
@@ -122,7 +123,7 @@ fn description_of(taken taken: ConnectionStep(Request)) -> #(Int, Int, Int) {
   let assert [
     #(
       _,
-      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
+      relay.StrikeAnswered(answered: strike_tell.Answered(
         outcome: strike_tell.Landed(descriptions: [description], ..),
         ..,
       )),

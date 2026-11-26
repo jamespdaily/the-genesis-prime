@@ -141,7 +141,8 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
       ),
     ),
     Answer(
-      to:,
+      unit_id:,
+      life: answered_life,
       answered: Answered(
         outcome: Landed(
           descriptions: [description],
@@ -156,8 +157,8 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     StartTimer(timer: TimerId(8), after_ms: 500),
   ] = esper_effects
     as "0x938 stat 20 to the player and its viewers, 0x92f to the player, 0x937 to the viewers, then the damage taken that ends a stealth, then the answer, then the shield's reboot and, the player out of combat and below its maximum, the health tick"
-  assert to == player_life_support.beast()
-    as "the answer goes to the striker's address"
+  assert #(unit_id, answered_life) == #(7, 3)
+    as "the answer goes to the striker, the Beast that struck: unit 7, life 3"
   assert description.damage.raw_damage == 12
     && description.damage.absorbed == 7
     && description.damage.shield_absorbed == 3
@@ -219,7 +220,8 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
   assert later
     == [
       Answer(
-        to: player_life_support.beast(),
+        unit_id: 7,
+        life: 3,
         answered: Answered(
           key: Key(
             cast_id: 2,
@@ -479,7 +481,8 @@ pub fn a_strike_on_a_dead_player_is_refused_dead_test() -> Nil {
   assert refused
     == [
       Answer(
-        to: player_life_support.beast(),
+        unit_id: 7,
+        life: 3,
         answered: Answered(
           key: Key(
             cast_id: 9999,
@@ -760,7 +763,8 @@ pub fn a_player_that_entered_dead_refuses_a_strike_takes_no_threat_and_comes_bac
     && effects
     == [
       Answer(
-        to: player_life_support.beast(),
+        unit_id: 7,
+        life: 3,
         answered: Answered(
           key: Key(
             cast_id: 1,

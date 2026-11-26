@@ -36,7 +36,6 @@ import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Landed}
 import genesis_prime/game/unit_news.{type PeerNews, PeerNews}
 import genesis_prime/game/unit_state
-import genesis_prime/group_registry
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
@@ -45,16 +44,15 @@ import genesis_prime/message/combat_result
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store as store_tables
-import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
+import genesis_prime/world_map/relay
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -141,10 +139,9 @@ fn state_go(
 }
 
 /// What the caster's connection does with the go's effects, as the connection and the
-/// server carry them out: each creature the go holds states on is told `TellUnitStates`
-/// by its address through the server's own `tell_creature`. Returns the units told.
+/// server carry them out: each creature the go holds states on is told `UnitStates`
+/// by its address, to the map. Returns the units told.
 fn carried_out(
-  world world: World,
   run run: MapProcess,
   effects effects: List(cast_state.Effect),
 ) -> List(Int) {
@@ -152,11 +149,10 @@ fn carried_out(
     case effect {
       cast_state.CreatureHoldsUnitStates(unit_id:, life:, went_at_ms:, rows:) -> {
         world_watch_support.told_creature(
-          world:,
           run:,
           unit_id:,
           life:,
-          request: client_connection.TellUnitStates(rows:, went_at_ms:),
+          payload: relay.UnitStates(rows:, went_at_ms:),
         )
         Ok(unit_id)
       }
@@ -173,7 +169,6 @@ fn state_go_on(watched watched: Watched) -> List(Int) {
     world_watch_support.times_of_a_go_after_250_ms(watched:)
   let told =
     carried_out(
-      world: watched.world,
       run: watched.run,
       effects: state_go(
         row: state_6_row(),
@@ -428,58 +423,6 @@ fn started_spell4_id(effects effects: List(cast_state.Effect)) -> Int {
   start.spell4_id
 }
 
-// ---- row 40: the server maps the tell ----
-
-pub fn tell_unit_states_reaches_the_creature_as_unit_states_test() -> Nil {
-  use <- owned_test.run(30_000)
-  // A stand-in for the creature: the test process joins the address of a creature that
-  // does not run (unit 900, life 9), so what the registry delivers to it is what the
-  // server's `tell_creature` made of each request. The creature's own reading of the
-  // message is the creature rule's.
-  let world =
-    world_watch_support.one_beast_timed(
-      time: driven_time.new(),
-      respawn_ms: 60_000,
-      idle_stop_ms: world_watch_support.idle_stop_ms,
-    )
-  let address =
-    step.Creature(
-      map: world_watch_support.ship,
-      incarnation: 1,
-      unit_id: 900,
-      life: 9,
-    )
-  let scope = creature_registry.scope(world.creatures)
-  group_registry.join(scope:, group: address, pid: process.self())
-  let delivered = fn(request) {
-    let assert Ok(Nil) =
-      server.tell_creature(creatures: world.creatures, to: address, request:)
-      as "the stand-in is found by its address and told"
-    let assert service.TellCall(message:) =
-      group_registry.select_delivered(
-        scope:,
-        selector: process.new_selector(),
-        mapping: fn(call) { call },
-      )
-      |> process.selector_receive_forever
-    message
-  }
-  let rows = [
-    unit_state.Row(state: 6, delay_ms: 0, duration_ms: 8500),
-    unit_state.Row(state: 13, delay_ms: 500, duration_ms: 2000),
-  ]
-  assert delivered(client_connection.TellUnitStates(rows:, went_at_ms: 1000))
-    == creature.UnitStates(rows:, went_at_ms: 1000)
-    as "held states are the creature's UnitStates, with their rows and the go's time"
-  assert delivered(client_connection.TellDespawn(
-      delay_ms: 3000,
-      went_at_ms: 1000,
-    ))
-    == creature.Despawn(delay_ms: 3000, went_at_ms: 1000)
-    as "a removal is still the creature's Despawn"
-  world_support.stop(world:)
-}
-
 // ---- rows 61 to 67: through the real processes ----
 
 pub fn a_hostile_press_at_a_creature_holding_state_6_is_refused_306_until_the_row_ends_test() -> Nil {
@@ -661,7 +604,6 @@ fn struck_outcome(
   cast_id cast_id: Int,
 ) -> strike_tell.Outcome {
   world_watch_support.strike_with(
-    world: beasts.world,
     run: beasts.run,
     unit_id: unit.0,
     life: unit.1,
@@ -694,7 +636,6 @@ pub fn an_area_go_skips_the_invulnerable_creature_and_logs_type_18_for_it_test()
     )
   let _told =
     carried_out(
-      world: beasts.world,
       run: beasts.run,
       effects: state_go(
         row: state_6_row(),
@@ -805,7 +746,6 @@ pub fn the_creature_is_struck_normally_once_the_state_ends_test() -> Nil {
   let _held = next_state_news(received: watched.caster, unit_id:, what: "held")
   let strike = fn(cast_id) {
     world_watch_support.strike_with(
-      world: watched.world,
       run: watched.run,
       unit_id:,
       life: 2,
@@ -951,7 +891,6 @@ pub fn a_creature_that_crashes_holding_a_state_returns_without_it_test() -> Nil 
   assert pressed(watched:, tables:, appeared: returned, news: []) == goes
     as "a hostile press at it goes"
   world_watch_support.strike_with(
-    world: watched.world,
     run: watched.run,
     unit_id: returned.unit_id,
     life: 4,

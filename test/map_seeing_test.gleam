@@ -168,7 +168,8 @@ fn notices(
       | map.Retire
       | map.Approached(..)
       | map.Withdrew(..)
-      | map.PlayerDied(..) -> Error(Nil)
+      | map.PlayerDied(..)
+      | map.ToldCreature(..) -> Error(Nil)
     }
   })
 }
@@ -191,7 +192,8 @@ fn joined_unit_id(taken: ServiceStep(map.Outgoing)) -> Int {
         | map.Retire
         | map.Approached(..)
         | map.Withdrew(..)
-        | map.PlayerDied(..) -> Error(Nil)
+        | map.PlayerDied(..)
+        | map.ToldCreature(..) -> Error(Nil)
       }
     })
     as "a join is answered with one Joined"

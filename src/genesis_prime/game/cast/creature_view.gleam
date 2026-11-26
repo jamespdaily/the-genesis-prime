@@ -7,7 +7,7 @@
 ////   v
 //// compared  ---- against creature_told ---->  ViewSet / ViewEnds, creature_told replaced
 ////   |
-////   v  the connection tells each change to the creature (TellCastView)
+////   v  the connection tells each change to the creature, through its map (CastViewSet, CastViewEnds)
 //// ```
 ////
 //// The compare runs after every input of the player, over the state as the input left it,

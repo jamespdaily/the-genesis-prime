@@ -17,6 +17,7 @@ import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, CancelTimer, OwnEffect,
   StartTimer,
 }
+import genesis_prime/world_map/relay
 import gleam/list
 import gleam/option.{None, Some}
 
@@ -40,11 +41,14 @@ pub fn life_effects(
       ]
       player_life.ToViewers(news:) ->
         connection_state.news_to_viewers(entered:, news:)
-      player_life.Answer(to:, answered:) -> [
-        OwnEffect(step.Tell(
-          to:,
-          request: client_connection.TellStrikeAnswered(answered:),
-        )),
+      player_life.Answer(unit_id:, life:, answered:) -> [
+        connection_state.tells_the_creature(
+          entered:,
+          connection: client_connection.connection(session.link),
+          unit_id:,
+          life:,
+          payload: relay.StrikeAnswered(answered:),
+        ),
       ]
       player_life.StreamTo(unit_id:, life:) -> [
         connection_movement.tells_a_fighter_the_place(

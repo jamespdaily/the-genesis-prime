@@ -1164,6 +1164,50 @@ pub fn a_tell_to_a_zone_channel_is_delivered_with_no_watch_test() -> Nil {
     as "a tell to a zone channel needs no watch and warns of none"
 }
 
+pub fn a_rule_that_tells_a_creature_directly_is_logged_and_sends_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let time = driven_time.new()
+  use <- unitest.tag("serial")
+  let lines = process.new_subject()
+  let delivered = process.new_subject()
+  let server =
+    start_telling(
+      time:,
+      locate: fn(_address) { Error(Nil) },
+      deliver: fn(address, _request) {
+        process.send(delivered, address)
+        Ok(Nil)
+      },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  // Only this test's connection is read: another test's connection or Ranch
+  // listener logging at the same time is no line of this one.
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_creature_command,
+    n: 9,
+    pong: 1,
+  )
+  assert mailbox_support.drain(delivered) == []
+    as "a creature is told by its map alone: the tell reached no deliver"
+  ask_support.stop(server)
+  log_capture.stop(capture)
+  assert list.filter_map(mailbox_support.drain(lines), fn(line) {
+      case line.0 {
+        "error" -> Ok(line.1)
+        _ -> Error(Nil)
+      }
+    })
+    == [
+      "a rule told a creature directly, which a connection does not: a creature is told through its map",
+    ]
+    as "and one error line says the rule has a bug"
+}
+
 pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_through_a_watch_that_found_none_logs_nothing_test() -> Nil {
   use <- owned_test.run(30_000)
   let time = driven_time.new()

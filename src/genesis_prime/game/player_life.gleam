@@ -20,7 +20,7 @@
 ////                                the shield changed:                         ─▶ 0x938(P, 20, shield) to P and its viewers
 ////                                                                             ─▶ 0x92f(P, health) to P
 ////                                                                             ─▶ 0x937(P, health) to its viewers
-////                                Answer(C, Landed(descriptions) | Deflected)  ─▶ TellStrikeAnswered to C
+////                                Answer(C, Landed(descriptions) | Deflected)  ─▶ StrikeAnswered to C, via the map
 //// Released(C) ─────────────────▶ fighters - C; the last one:                  ─▶ 0x89a(P, 0) to P and its viewers
 ////                                                                              CombatLeft (the cast rule's `combat_left`)
 //// the map's Gone(C) ───────────▶ the same as Released(C), and C joins gone
@@ -241,7 +241,7 @@ import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/game/unit_news.{type News}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
-import genesis_prime/step.{type Address, type TimerId, TimerId}
+import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{type UnitProperty2Id, UnitProperty2Id}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -377,8 +377,9 @@ pub type Effect {
   /// News of the player's own unit for each of its viewers: 0x89a, 0x938 of stat
   /// 20 and 0x937.
   ToViewers(news: News)
-  /// The answer to a creature's strike, told to the creature.
-  Answer(to: Address, answered: strike_tell.Answered)
+  /// The answer to a creature's strike, told to the creature `unit_id` of life `life`
+  /// through the player's map.
+  Answer(unit_id: Int, life: Int, answered: strike_tell.Answered)
   /// Tell the creature `unit_id` of life `life` the player's place now, with its
   /// move sequence number: the start of the stream.
   StreamTo(unit_id: Int, life: Int)
@@ -767,10 +768,14 @@ pub fn struck(
   rolls rolls: Rolls,
   place place: Place,
 ) -> #(Life, List(Effect)) {
+  let assert step.Creature(unit_id: creature_unit_id, life: creature_life, ..) =
+    strike.from
+    as "a strike on a player is a creature's, told from the creature's own address"
   case life.state {
     Dead -> #(life, [
       Answer(
-        to: strike.from,
+        unit_id: creature_unit_id,
+        life: creature_life,
         answered: Answered(
           key: strike.key,
           outcome: strike_tell.Refused(why: strike_tell.Dead),
@@ -790,7 +795,8 @@ pub fn struck(
         hit.Deflected -> #(life, [
           BlowTaken(striker: strike.striker, took: Deflected),
           Answer(
-            to: strike.from,
+            unit_id: creature_unit_id,
+            life: creature_life,
             answered: Answered(
               key: strike.key,
               outcome: strike_tell.Deflected(gates_passed: []),
@@ -828,7 +834,8 @@ pub fn struck(
               ],
               [
                 Answer(
-                  to: strike.from,
+                  unit_id: creature_unit_id,
+                  life: creature_life,
                   answered: Answered(
                     key: strike.key,
                     outcome: strike_tell.Landed(

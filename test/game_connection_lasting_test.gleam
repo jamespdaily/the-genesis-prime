@@ -23,11 +23,11 @@ import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
-import genesis_prime/server
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -350,7 +350,7 @@ fn struck_lives(
 ) -> List(Int) {
   list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
     case tell {
-      #(_, life, client_connection.TellStrike(..)) -> Ok(life)
+      #(_, life, relay.Strike(..)) -> Ok(life)
       #(_, _, _) -> Error(Nil)
     }
   })
@@ -431,13 +431,20 @@ fn fissure_pressed() -> Fissure {
 }
 
 /// The views the step tells creatures, as the creature's unit, its life and the message
-/// the creature takes the tell as (`server.creature_told`).
+/// the creature takes the tell as from its map (`creature.told_by_map`), the connection's the
+/// sender.
 fn views_told(
   taken taken: step.ConnectionStep(client_connection.Request),
 ) -> List(#(Int, Int, creature.Message)) {
   list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
-    let #(unit_id, life, request) = tell
-    case server.creature_told(request) {
+    let #(unit_id, life, payload) = tell
+    case
+      creature.told_by_map(map.ToldCreature(
+        by: step.ConnectionId(1),
+        stay: game_connection_support.own_stay(),
+        payload:,
+      ))
+    {
       Ok(creature.CastViewSet(..) as told)
       | Ok(creature.CastViewEnds(..) as told) -> Ok(#(unit_id, life, told))
       Ok(_) | Error(Nil) -> Error(Nil)

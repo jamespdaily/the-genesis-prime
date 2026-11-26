@@ -53,6 +53,7 @@ import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay.{type Inbound}
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns}
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
@@ -785,6 +786,30 @@ pub fn tells_the_map(
     to: step.Map(map: entered.map, incarnation: entered.incarnation),
     request:,
   ))
+}
+
+/// The tell of `payload` to the creature `unit_id` of life `life`, which no answer
+/// follows (`step.Tell`): sent to the run of the player's map with the connection and the
+/// stay the player entered in, for the map to admit and pass on to the creature
+/// (genesis_prime/world_map/map `TellCreature`). A connection tells a creature only
+/// through its map, so a creature hears about a player from one sender in one order.
+pub fn tells_the_creature(
+  entered entered: world_entry.Entered,
+  connection connection: ConnectionId,
+  unit_id unit_id: Int,
+  life life: Int,
+  payload payload: Inbound,
+) -> Effect(ConnectionEffect(Request)) {
+  tells_the_map(
+    entered:,
+    request: client_connection.TellCreature(
+      connection:,
+      stay: entered.stay,
+      unit_id:,
+      life:,
+      payload:,
+    ),
+  )
 }
 
 /// The session with the player it holds in the world changed by `change`: the

@@ -19,9 +19,11 @@ import genesis_prime/game/start_place
 import genesis_prime/step.{ConnectionId, LogError, OwnEvent, Told}
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/map.{type State}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
+import inbound_support
 import map_spawn_support
 import map_support
 import owned_test
@@ -260,6 +262,7 @@ fn approaches_in_full(
       )) -> Ok(#(by, unit_id, start_place.x(place), seq, stay))
       map.Withdrew(..)
       | map.PlayerDied(..)
+      | map.ToldCreature(..)
       | map.Seen(..)
       | map.Unseen(..)
       | map.Relayed(..)
@@ -932,4 +935,103 @@ pub fn a_dominion_player_beside_the_crash_site_bodies_sends_them_no_approached_t
     )
   assert map_spawn_support.ring_sends(moved) == [#(5, "Approached by 1")]
     as "only unit 5, the Dagun after the player's 1 and the three bodies' 2 to 4, is approached"
+}
+
+/// Two Dagun, units 2 and 3 (after the player's 1), at x = 100 and 104, and a ready
+/// Dominion player at `x`. A player at 102 stands in both rings, and one at 80 sees both
+/// from outside them.
+fn two_dagun_and_a_ready_player(x x: Float) -> State {
+  let state =
+    map_spawn_support.started_with_spawns(spawns: [
+      spawn_support.dagun(number: 1, x: 100.0),
+      spawn_support.dagun(number: 2, x: 104.0),
+    ])
+  let #(state, _) =
+    map_spawn_support.join(
+      state:,
+      at_ms: map_spawn_support.started_at_ms + 1,
+      connection: 1,
+      x:,
+    )
+  let #(state, _) = ready(state:, connection: 1)
+  state
+}
+
+/// The player's answer to each of the creatures' strikes, in unit order, told by its
+/// connection in its first stay.
+fn answers(
+  state state: State,
+  at_ms at_ms: Int,
+) -> #(State, List(#(Int, String))) {
+  list.fold([2, 3], #(state, []), fn(so_far, unit_id) {
+    let #(state, told) = so_far
+    let #(_, life) = map_spawn_support.creature_of(state:, spawn: unit_id - 1)
+    let #(state, taken) =
+      map_spawn_support.tell_creature(
+        state:,
+        at_ms:,
+        from: 1,
+        stay_count: 1,
+        unit_id:,
+        life:,
+        payload: relay.StrikeAnswered(answered: inbound_support.answered(
+          unit_id: 1,
+        )),
+      )
+    #(state, list.append(told, map_spawn_support.creature_sends(taken)))
+  })
+}
+
+pub fn the_map_relays_a_players_killing_answer_its_death_and_its_wake_to_a_creature_in_the_order_the_connection_told_them_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The player's own order: the answer to each creature's killing strike, the death, the
+  // wake. One connection tells all three, so the map takes them in that order, and sends
+  // each creature the answer, `PlayerDied` and then `Approached` (none out of the ring).
+  list.each(
+    [
+      #("in both rings", 102.0, True),
+      #("out of both rings, and seeing both", 80.0, False),
+    ],
+    fn(row) {
+      let #(where, x, in_the_rings) = row
+      let state = two_dagun_and_a_ready_player(x:)
+      let #(state, answered) = answers(state:, at_ms: 6000)
+      let #(state, died) = life(state:, at_ms: 6100, alive: False)
+      let #(_, woke) = life(state:, at_ms: 6200, alive: True)
+      assert list.flatten([
+          answered,
+          map_spawn_support.creature_sends(died),
+          map_spawn_support.creature_sends(woke),
+        ])
+        == list.flatten([
+          [
+            #(2, "Told StrikeAnswered by 1"),
+            #(3, "Told StrikeAnswered by 1"),
+            #(2, "PlayerDied by 1"),
+            #(3, "PlayerDied by 1"),
+          ],
+          case in_the_rings {
+            True -> [#(2, "Approached by 1"), #(3, "Approached by 1")]
+            False -> []
+          },
+        ])
+        as {
+          "the player "
+          <> where
+          <> ": each creature is told the answer, then the death, then the wake's approach if it stands in its ring"
+        }
+    },
+  )
+  // A leave after the relays: the relays are delivered, then the creatures are told `Unseen`.
+  let state = two_dagun_and_a_ready_player(x: 102.0)
+  let #(state, answered) = answers(state:, at_ms: 6000)
+  let #(_, left) = map_spawn_support.leave(state:, at_ms: 6100, connection: 1)
+  assert list.flatten([answered, map_spawn_support.creature_sends(left)])
+    == [
+      #(2, "Told StrikeAnswered by 1"),
+      #(3, "Told StrikeAnswered by 1"),
+      #(2, "Unseen by 1"),
+      #(3, "Unseen by 1"),
+    ]
+    as "the relays of a leave come before its Unseens"
 }

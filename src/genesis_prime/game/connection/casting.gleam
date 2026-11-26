@@ -16,7 +16,8 @@
 //// - **Strikes** are a feature of their own (genesis_prime/game/strike): a go the cast
 ////   rule asks for (`cast.Strike`) selects its targets from the units the client
 ////   shows, draws the caster's rolls from the connection's seed, and tells each
-////   creature a `TellStrike` through the creature registry with no watch. The creature
+////   creature a `Strike` through the player's map (`connection_state.tells_the_creature`),
+////   which passes it on to the creature. The creature
 ////   answers by a send, taken as `SentByTarget`; the round closes when each answer is in
 ////   or the one strike timer, `strike.strike_timer`, fires for its deadline, and the
 ////   closed round is the cast rule's `went`, given the pose each Hit creature has in the
@@ -40,10 +41,10 @@
 ////   0x933.
 //// - **Modifiers on a creature** are the cast rule's: a `TargetChangeStarts` or
 ////   `TargetChangeEnds` is told to the creature of the life the go struck, through the
-////   creature registry with no watch, as `TellTargetChange`; the creature applies or
+////   player's map, as `ModifierStarts` or `ModifierEnds`; the creature applies or
 ////   removes it and tells its viewers (genesis_prime/world_map/creature). With no player
-////   in the world it is dropped. A `CreatureControlsEnd` is told the same way, as the
-////   creature's `ControlsEnd`.
+////   in the world it is dropped. A `CreatureControlsEnd` is told the same way, as
+////   `ControlsEnd`.
 //// - **Stealth** is the cast rule's (genesis_prime/game/cast): its `StealthChanged` is
 ////   carried out as the owner's 0x8f5, the viewers' news, and last a tell to the run of
 ////   the player's map, so the map keeps the player out of every creature's ring
@@ -139,8 +140,8 @@ import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/random
 import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
-  LogWarning, OwnEffect, StartTimer,
+  type ConnectionEffect, type ConnectionId, type Effect, type Now, type TimerId,
+  CancelTimer, LogWarning, OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
 import genesis_prime/table/eldan_augmentation
@@ -150,6 +151,7 @@ import genesis_prime/table/id.{
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bit_array
 import gleam/bool
@@ -913,24 +915,20 @@ pub fn creatures_settled(
     list.map(changes, fn(change) {
       case change {
         creature_view.ViewSet(unit_id:, life:, view:) ->
-          tells_the_creature(
+          connection_state.tells_the_creature(
             entered:,
+            connection:,
             unit_id:,
             life:,
-            request: client_connection.TellCastView(
-              connection:,
-              change: client_connection.ViewSet(view:),
-            ),
+            payload: relay.CastViewSet(view:),
           )
         creature_view.ViewEnds(unit_id:, life:, cast_id:) ->
-          tells_the_creature(
+          connection_state.tells_the_creature(
             entered:,
+            connection:,
             unit_id:,
             life:,
-            request: client_connection.TellCastView(
-              connection:,
-              change: client_connection.ViewEnds(cast_id:),
-            ),
+            payload: relay.CastViewEnds(cast_id:),
           )
       }
     }),
@@ -1661,28 +1659,24 @@ fn carried_out(
       cast_state.TargetChangeStarts(unit_id:, life:, source:, modifier:),
         Some(entered)
       -> #(session, [
-        tells_the_creature(
+        connection_state.tells_the_creature(
           entered:,
+          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
-          request: client_connection.TellTargetChange(
-            connection: client_connection.connection(session.link),
-            change: client_connection.ChangeStarts(source:, modifier:),
-          ),
+          payload: relay.ModifierStarts(source:, modifier:),
         ),
       ])
       cast_state.TargetChangeStarts(..), None -> #(session, [])
       cast_state.TargetChangeEnds(unit_id:, life:, source:), Some(entered) -> #(
         session,
         [
-          tells_the_creature(
+          connection_state.tells_the_creature(
             entered:,
+            connection: client_connection.connection(session.link),
             unit_id:,
             life:,
-            request: client_connection.TellTargetChange(
-              connection: client_connection.connection(session.link),
-              change: client_connection.ChangeEnds(source:),
-            ),
+            payload: relay.ModifierEnds(source:),
           ),
         ],
       )
@@ -1696,7 +1690,14 @@ fn carried_out(
       cast_state.CreatureDespawns(unit_id:, life:, went_at_ms:, delay_ms:),
         Some(entered)
       -> #(session, [
-        creature_despawned(entered:, unit_id:, life:, went_at_ms:, delay_ms:),
+        creature_despawned(
+          entered:,
+          connection: client_connection.connection(session.link),
+          unit_id:,
+          life:,
+          went_at_ms:,
+          delay_ms:,
+        ),
       ])
       cast_state.CreatureDespawns(..), None -> #(session, [])
       cast_state.CreatureHoldsUnitStates(unit_id:, life:, went_at_ms:, rows:),
@@ -1704,6 +1705,7 @@ fn carried_out(
       -> #(session, [
         creature_holds_unit_states(
           entered:,
+          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
           went_at_ms:,
@@ -1713,14 +1715,12 @@ fn carried_out(
       cast_state.CreatureHoldsUnitStates(..), None -> #(session, [])
       cast_state.CreatureControlsEnd(unit_id:, life:, cast_id:), Some(entered)
       -> #(session, [
-        tells_the_creature(
+        connection_state.tells_the_creature(
           entered:,
+          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
-          request: client_connection.TellTargetChange(
-            connection: client_connection.connection(session.link),
-            change: client_connection.ControlsEnd(cast_id:),
-          ),
+          payload: relay.ControlsEnd(cast_id:),
         ),
       ])
       cast_state.CreatureControlsEnd(..), None -> #(session, [])
@@ -1803,10 +1803,8 @@ fn procs_fired(
 /// The bytes of a chance draw: one 32-bit word (`random.words`).
 const proc_word_bytes = 4
 
-/// The tell `request` to the creature `unit_id` of `life`, in the run of the player's
-/// map, through the creature registry with no watch, as a strike's tell goes.
 /// The change `change` told to the connection of the player `address` names, for the stay
-/// it names, through the registry as a strike's tell goes: the player's connection applies
+/// it names, through the registry: the player's connection applies
 /// it and holds it for this connection.
 fn tells_the_player(
   address address: player_address.PlayerAddress,
@@ -1821,29 +1819,11 @@ fn tells_the_player(
   ))
 }
 
-fn tells_the_creature(
-  entered entered: world_entry.Entered,
-  unit_id unit_id: Int,
-  life life: Int,
-  request request: Request,
-) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Creature(
-      map: entered.map,
-      incarnation: entered.incarnation,
-      unit_id:,
-      life:,
-    ),
-    request:,
-  ))
-}
-
-/// The throw of the creature `unit_id` of `life`, in the run of the player's map,
-/// through the creature registry with no watch, as a strike's tell goes: the
-/// connection draws `forced_move.draw_bytes` from its seed (`client_connection.draw`),
-/// reads the two fractions (`forced_move.draws_of`), takes the player's place now and
-/// race radius as the `Reference` and tells the creature `TellThrown`. The session it
-/// returns holds the link after the draw.
+/// The throw of the creature `unit_id` of `life`, told through the player's map as a
+/// strike's tell goes: the connection draws `forced_move.draw_bytes` from its seed
+/// (`client_connection.draw`), reads the two fractions (`forced_move.draws_of`), takes the
+/// player's place now and race radius as the `Reference` and tells the creature `Thrown`.
+/// The session it returns holds the link after the draw.
 fn creature_thrown(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -1863,62 +1843,58 @@ fn creature_thrown(
     )
   #(
     Session(..session, link:),
-    OwnEffect(step.Tell(
-      to: step.Creature(
-        map: entered.map,
-        incarnation: entered.incarnation,
-        unit_id:,
-        life:,
-      ),
-      request: client_connection.TellThrown(throw: forced_move.Throw(
+    connection_state.tells_the_creature(
+      entered:,
+      connection: client_connection.connection(session.link),
+      unit_id:,
+      life:,
+      payload: relay.Thrown(throw: forced_move.Throw(
         move:,
         draws: forced_move.draws_of(bytes:),
         reference:,
       )),
-    )),
+    ),
   )
 }
 
-/// The removal of the creature `unit_id` of `life`, in the run of the player's map, through
-/// the creature registry with no watch, as a strike's tell goes: the connection tells the
-/// creature `TellDespawn` with `delay_ms` and `went_at_ms`, and draws nothing.
+/// The removal of the creature `unit_id` of `life`, told through the player's map as a
+/// strike's tell goes: the connection tells the creature `Despawn` with `delay_ms` and
+/// `went_at_ms`, and draws nothing.
 fn creature_despawned(
   entered entered: world_entry.Entered,
+  connection connection: ConnectionId,
   unit_id unit_id: Int,
   life life: Int,
   went_at_ms went_at_ms: Int,
   delay_ms delay_ms: Int,
 ) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Creature(
-      map: entered.map,
-      incarnation: entered.incarnation,
-      unit_id:,
-      life:,
-    ),
-    request: client_connection.TellDespawn(delay_ms:, went_at_ms:),
-  ))
+  connection_state.tells_the_creature(
+    entered:,
+    connection:,
+    unit_id:,
+    life:,
+    payload: relay.Despawn(delay_ms:, went_at_ms:),
+  )
 }
 
-/// The unit states the go holds on the creature `unit_id` of `life`, in the run of the player's
-/// map, through the creature registry with no watch, as a removal goes: the connection tells
-/// the creature `TellUnitStates` with the go's `rows` and its time, and draws nothing.
+/// The unit states the go holds on the creature `unit_id` of `life`, told through the
+/// player's map as a removal goes: the connection tells the creature `UnitStates` with the
+/// go's `rows` and its time, and draws nothing.
 fn creature_holds_unit_states(
   entered entered: world_entry.Entered,
+  connection connection: ConnectionId,
   unit_id unit_id: Int,
   life life: Int,
   went_at_ms went_at_ms: Int,
   rows rows: List(unit_state.Row),
 ) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Creature(
-      map: entered.map,
-      incarnation: entered.incarnation,
-      unit_id:,
-      life:,
-    ),
-    request: client_connection.TellUnitStates(rows:, went_at_ms:),
-  ))
+  connection_state.tells_the_creature(
+    entered:,
+    connection:,
+    unit_id:,
+    life:,
+    payload: relay.UnitStates(rows:, went_at_ms:),
+  )
 }
 
 /// A go asked: its targets are selected from the units the client shows, the
@@ -2094,7 +2070,7 @@ pub fn with_strike(
 }
 
 /// What the strike rule decided, carried out in order, with the session as they leave
-/// it: a strike told to a creature through the creature registry, a timer, a closed
+/// it: a strike told to a creature through the player's map, a timer, a closed
 /// round's go (the cast rule's `went`), the news held for the round's units, or a log
 /// line.
 pub fn carry_strike(
@@ -2121,15 +2097,13 @@ fn strike_carried_out(
     {
       _, None -> #(session, [])
       strike.TellStrike(unit_id:, life:, tell:), Some(entered) -> #(session, [
-        OwnEffect(step.Tell(
-          to: step.Creature(
-            map: entered.map,
-            incarnation: entered.incarnation,
-            unit_id:,
-            life:,
-          ),
-          request: client_connection.TellStrike(tell:),
-        )),
+        connection_state.tells_the_creature(
+          entered:,
+          connection: client_connection.connection(session.link),
+          unit_id:,
+          life:,
+          payload: relay.Strike(tell:),
+        ),
       ])
       strike.TellPlayerStrike(address:, strike:), Some(_) -> #(session, [
         OwnEffect(step.Tell(

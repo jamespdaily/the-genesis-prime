@@ -47,7 +47,9 @@ import genesis_prime/step.{
 import genesis_prime/store.{AccountId, ListCharacters, Select}
 import genesis_prime/world_map/map.{Join, Left, SeenBy}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/unit_fields
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
@@ -1258,7 +1260,7 @@ pub fn a_player_that_entered_dead_fights_no_one_a_strike_is_refused_dead_and_a_t
   let assert [
     #(
       7,
-      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
+      relay.StrikeAnswered(answered: strike_tell.Answered(
         outcome: strike_tell.Refused(why: strike_tell.Dead),
         ..,
       )),
@@ -1425,7 +1427,7 @@ pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths
   use <- owned_test.run(10_000)
   let #(state, _) = game_connection_support.stealthed_stalker_kept_on_damage()
   let #(state, killed) = game_connection_support.killed(state)
-  assert game_connection_support.told_the_map(killed)
+  assert game_connection_support.told_the_map_but_creatures(killed)
     == [
       game_connection_support.map_tell(
         request: client_connection.TellLifeChanged(
@@ -1448,7 +1450,7 @@ pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths
         game_connection_support.own_unit_id,
       ),
     )
-  assert game_connection_support.told_the_map(refused) == []
+  assert game_connection_support.told_the_map_but_creatures(refused) == []
     as "a second strike is refused Dead: the player died once, so the map is told once"
 }
 
@@ -1504,4 +1506,38 @@ pub fn an_entry_at_a_saved_health_of_0_joins_its_map_dead_and_any_other_entry_an
     as "the Holocrypt joins the map again"
   assert alive == True
     as "the Holocrypt comes back as Wake Here first: it joins alive"
+}
+
+pub fn a_killing_blow_tells_the_map_the_answer_before_the_death_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The answer to the creature's killing strike and the death are two tells of one
+  // connection to one map, so the map takes them in this order and sends the creature the
+  // answer before `PlayerDied` (`player_life`: the blow's answer is listed before the death).
+  let #(_, killed) =
+    game_connection_support.killed(game_connection_support.in_world())
+  let names =
+    list.map(game_connection_support.told_the_map(killed), fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(
+          request: client_connection.TellCreature(
+            unit_id:,
+            life:,
+            payload: relay.StrikeAnswered(..),
+            ..,
+          ),
+          ..,
+        )) ->
+          "the answer to creature "
+          <> int.to_string(unit_id)
+          <> " of life "
+          <> int.to_string(life)
+        OwnEffect(step.Tell(
+          request: client_connection.TellLifeChanged(alive: False, ..),
+          ..,
+        )) -> "the death"
+        _ -> "another tell"
+      }
+    })
+  assert names == ["the answer to creature 7 of life 3", "the death"]
+    as "the killing blow's answer to the creature, then the death, both told to the map"
 }

@@ -165,9 +165,8 @@
 ////   group of the connection's id as any service's send makes, and a connection
 ////   that is gone drops it with no line. A tell to a `ZoneChannel` needs no watch
 ////   either: `deliver` sends it to every member of the group. A tell to a
-////   `Creature` needs none: `deliver` sends it through the creature registry, and
-////   a creature that has ended drops it with no line, since the rule that struck it
-////   keeps its own deadline. A tell to a
+////   `Creature` is a bug of the rule: a creature is told through its map, so the shell
+////   writes an error line and sends nothing. A tell to a
 ////   `CharacterNamed` goes through a watch, as a tell to a map run does: the
 ////   lookup finds the one connection that holds the name, and a name no
 ////   connection holds ends the watch as any target no process holds.
@@ -1268,10 +1267,10 @@ fn open_watch(
 /// Tells the process at the address the request. A connection is sent it
 /// through the settings' `deliver`, which finds it in the registry; one that
 /// has ended drops it, as a send to a gone process is dropped, with no line
-/// since a player's viewers end all the time. A creature is told the same way,
-/// through the creature registry. Any other process is told through
-/// the way the open watch on that address found, so a move costs no lookup, and
-/// a tell to an address no open watch found a process for is dropped with a
+/// since a player's viewers end all the time. A creature is told by its map alone: a rule
+/// that tells one has a bug, logged as an error, and nothing is sent. Any other process
+/// is told through the way the open watch on that address found, so a move costs no
+/// lookup, and a tell to an address no open watch found a process for is dropped with a
 /// warning: the watch was dropped, the process ended, or it was never running.
 fn tell(
   connection connection: Connection(settings, state, message, answer, request),
@@ -1280,10 +1279,16 @@ fn tell(
   request request: request,
 ) -> Nil {
   case to {
-    step.Connection(..) | step.ZoneChannel(..) | step.Creature(..) -> {
+    step.Connection(..) | step.ZoneChannel(..) -> {
       let _delivered = connection.settings.deliver(to, request)
       Nil
     }
+    step.Creature(..) ->
+      runtime.log(
+        LogError,
+        "a rule told a creature directly, which a connection does not: a creature is told through its map",
+        step.no_one,
+      )
     step.Sessions
     | step.HandOff
     | step.Store

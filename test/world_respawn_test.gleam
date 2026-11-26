@@ -20,14 +20,14 @@ import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Threatened}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_path
-import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import gleam/erlang/process
 import gleam/int
 import gleam/list
+import inbound_support
 import map_support
 import owned_test
 import place_support
@@ -64,27 +64,22 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
       life: first_life,
     )
   // A caster's modifier on the first life: the next life holds no trace of it.
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id: first.unit_id,
-      life: first_life,
-      message: world_watch_support.modifier_starts(),
-    )
-    as "the creature is found by its address and told"
+  world_watch_support.told_creature(
+    run:,
+    unit_id: first.unit_id,
+    life: first_life,
+    payload: relay.ModifierStarts(
+      source: inbound_support.source(),
+      modifier: inbound_support.modifier(),
+    ),
+  )
   // A throw of the first life, so its corpse lies off its spawn.
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id: first.unit_id,
-      life: first_life,
-      message: creature.Thrown(throw: world_watch_support.throw()),
-    )
-    as "the creature is found by its address and thrown"
+  world_watch_support.told_creature(
+    run:,
+    unit_id: first.unit_id,
+    life: first_life,
+    payload: relay.Thrown(throw: world_watch_support.throw()),
+  )
   let thrown_path =
     world_watch_support.next(
       received:,
@@ -100,7 +95,6 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
     as "the corpse lies off the place the creature stood at"
   driven_time.advance(time:, ms: 400)
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: first.unit_id,
     life: first_life,
@@ -236,7 +230,6 @@ pub fn two_ring_players_are_both_aggroed_by_the_life_that_replaces_their_killed_
     Nil
   })
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: beast.unit_id,
     life: 2,

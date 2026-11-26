@@ -9,7 +9,6 @@
 import code_rule/planted
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
-import glance
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -18,43 +17,6 @@ import owned_test
 import unitest
 
 const world_map_directory = "src/genesis_prime/world_map"
-
-/// Whether the expression is a call of the address `Map`, written `Map(...)` or
-/// `step.Map(...)`.
-fn names_the_map(expression: glance.Expression) -> Bool {
-  case expression {
-    glance.Call(function: glance.Variable(name: "Map", ..), ..) -> True
-    glance.Call(
-      function: glance.FieldAccess(
-        container: glance.Variable(name: "step", ..),
-        label: "Map",
-        ..,
-      ),
-      ..,
-    ) -> True
-    glance.Call(..)
-    | glance.Int(..)
-    | glance.Float(..)
-    | glance.String(..)
-    | glance.Variable(..)
-    | glance.NegateInt(..)
-    | glance.NegateBool(..)
-    | glance.Block(..)
-    | glance.Panic(..)
-    | glance.Todo(..)
-    | glance.Tuple(..)
-    | glance.List(..)
-    | glance.Fn(..)
-    | glance.RecordUpdate(..)
-    | glance.FieldAccess(..)
-    | glance.TupleIndex(..)
-    | glance.FnCapture(..)
-    | glance.BitString(..)
-    | glance.Case(..)
-    | glance.BinaryOperator(..)
-    | glance.Echo(..) -> False
-  }
-}
 
 /// The lines of the file's `Send`s whose `to:` is not a `Map(...)` address.
 fn sends_elsewhere(file file: SourceFile) -> List(Int) {
@@ -79,7 +41,7 @@ fn sends_elsewhere(file file: SourceFile) -> List(Int) {
           )
         {
           Some(address) ->
-            case names_the_map(address) {
+            case syntax.calls_variant(address, qualifier: "step", name: "Map") {
               True -> Error(Nil)
               False -> Ok(line)
             }

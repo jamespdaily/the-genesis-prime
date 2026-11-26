@@ -8,7 +8,7 @@
 ////
 //// ```
 //// caster's connection          creature (this feature)                               viewers
-//// go: TellUnitStates ─▶ UnitStates ─▶ `set`
+//// go: the connection's UnitStates, via its map ─▶ UnitStates ─▶ `set`
 ////                                 each row not yet past: a Held with the next number
 ////                                 a row due now: UnitStateHeld(state, number) ──────▶ picture
 ////                                 one timer, for the earliest start or end

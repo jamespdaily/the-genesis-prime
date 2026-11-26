@@ -16,6 +16,7 @@
 //// 'L' n    leave the group of the character named "n"
 //// 'V' n    tell the process watch n found, through the watch (no answer)
 //// 'H' n    tell the zone channel of top zone n in run 1 of map 1 (no answer)
+//// 'K' n    tell the creature of unit n, life 1, in run 1 of map 1 (no answer)
 //// 'Z' n ms start timer n for no time, then timer n + 1 (the witness) for ms,
 ////          then cancel timer n, all in one step, so no machine's speed
 ////          decides whether timer n fired first
@@ -92,6 +93,8 @@ pub const leave_command = 0x4C
 pub const tell_watched_command = 0x56
 
 pub const tell_zone_command = 0x48
+
+pub const tell_creature_command = 0x4B
 
 /// The letters that start a record.
 pub const accepted = 0x63
@@ -261,6 +264,16 @@ fn command(
           map: map_id.MapId(world_id: 1, instance: 0),
           incarnation: 1,
           top_zone_id: n,
+        ),
+        request: Nil,
+      ))
+    _ if letter == tell_creature_command ->
+      OwnEffect(step.Tell(
+        to: step.Creature(
+          map: map_id.MapId(world_id: 1, instance: 0),
+          incarnation: 1,
+          unit_id: n,
+          life: 1,
         ),
         request: Nil,
       ))

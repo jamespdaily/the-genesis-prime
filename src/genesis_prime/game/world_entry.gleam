@@ -1262,7 +1262,8 @@ pub fn joined(
         | map.Retire
         | map.Approached(..)
         | map.Withdrew(..)
-        | map.PlayerDied(..) -> Error(Nil)
+        | map.PlayerDied(..)
+        | map.ToldCreature(..) -> Error(Nil)
       }
     }
     Loading(..) | Filling(..) -> Error(Nil)

@@ -523,6 +523,28 @@ fn called(function: Expression) -> Called {
   }
 }
 
+/// Whether the expression is a call of the variant `name`, written `Name(...)` or
+/// `qualifier.Name(...)`.
+pub fn calls_variant(
+  expression expression: Expression,
+  qualifier qualifier: String,
+  name name: String,
+) -> Bool {
+  case expression {
+    glance.Call(function: glance.Variable(name: called, ..), ..) ->
+      called == name
+    glance.Call(
+      function: glance.FieldAccess(
+        container: glance.Variable(name: container, ..),
+        label:,
+        ..,
+      ),
+      ..,
+    ) -> container == qualifier && label == name
+    _ -> False
+  }
+}
+
 /// Which unlabelled argument stands for a value a call may give by label.
 pub type Position {
   FirstArgument

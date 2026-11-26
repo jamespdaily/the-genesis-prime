@@ -23,6 +23,7 @@ import genesis_prime/game/hit.{Worked}
 import genesis_prime/game/strike_tell
 import genesis_prime/step.{type ConnectionStep, OwnEffect}
 import genesis_prime/table/loader/store as store_tables
+import genesis_prime/world_map/relay
 import gleam/float
 import gleam/int
 import gleam/list
@@ -85,8 +86,11 @@ fn amounts_told(
     list.flat_map(support.effects_of(taken), fn(effect) {
       case effect {
         OwnEffect(step.Tell(
-          to: step.Creature(..),
-          request: client_connection.TellStrike(tell:),
+          request: client_connection.TellCreature(
+            payload: relay.Strike(tell:),
+            ..,
+          ),
+          ..,
         )) -> list.map(tell.offence.blows, fn(blow) { blow.damage })
         OwnEffect(_)
         | step.Watch(..)

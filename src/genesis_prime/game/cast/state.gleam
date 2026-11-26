@@ -263,11 +263,11 @@ pub type Effect {
     audience: Set(ConnectionId),
   )
   /// A property modifier of the caster's spell starts on the creature `unit_id` whose
-  /// life the go struck (`HitCreature`): the connection tells the creature
-  /// (genesis_prime/client_connection `TellTargetChange`), which applies it to its own
+  /// life the go struck (`HitCreature`): the connection tells the creature through its map
+  /// (genesis_prime/world_map/relay `ModifierStarts`), which applies it to its own
   /// properties and tells its viewers the entries that changed. A creature of another
-  /// life drops it (the registry finds none at that address), and so does one that lies
-  /// dead.
+  /// life drops it (the map or the registry finds none at that address), and so does one
+  /// that lies dead.
   TargetChangeStarts(
     unit_id: Int,
     life: Int,
@@ -277,21 +277,21 @@ pub type Effect {
   /// The ForcedMove row of the caster's spell throws the creature `unit_id` whose life the
   /// go struck (`HitCreature`): the connection draws the two fractions of `forced_move.Draws`
   /// from its seed, takes the player's place now and race radius as the
-  /// `forced_move.Reference` and tells the creature (genesis_prime/client_connection
-  /// `TellThrown`). A creature of another life drops it, and so does one that lies dead.
+  /// `forced_move.Reference` and tells the creature through its map (genesis_prime/world_map/relay
+  /// `Thrown`). A creature of another life drops it, and so does one that lies dead.
   ForcedMoveStarts(unit_id: Int, life: Int, move: forced_move.Move)
   /// The DespawnUnit row of the caster's spell removes the creature `unit_id` whose life the
   /// go struck (`HitCreature`), `delay_ms` after `went_at_ms`, the monotonic time of the go.
-  /// The connection tells the creature
-  /// (genesis_prime/client_connection `TellDespawn`), which owns the delay, so the caster's
+  /// The connection tells the creature through its map
+  /// (genesis_prime/world_map/relay `Despawn`), which owns the delay, so the caster's
   /// leaving or dying changes nothing. A creature of another life drops it, and so does one
   /// that lies dead or is already gone.
   CreatureDespawns(unit_id: Int, life: Int, went_at_ms: Int, delay_ms: Int)
   /// The UnitStateSet rows of the caster's spell hold their states on the creature `unit_id`
   /// whose life the go struck, each from `went_at_ms`, the monotonic time of the go, plus its
   /// delay for its duration (`HitCreature`). `rows` are the go's rows for
-  /// the creature in row order. The connection tells the creature
-  /// (genesis_prime/client_connection `TellUnitStates`), which owns the end of each state, so
+  /// the creature in row order. The connection tells the creature through its map
+  /// (genesis_prime/world_map/relay `UnitStates`), which owns the end of each state, so
   /// the caster's leaving or dying changes nothing. A creature of another life drops it, and
   /// so does one that lies dead or is already gone.
   CreatureHoldsUnitStates(

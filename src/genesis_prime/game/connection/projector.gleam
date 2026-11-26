@@ -10,7 +10,7 @@
 ////   moved ─ landing ─▶ placed_at
 ////         └ no landing ─▶ nothing
 ////   placed_at ─▶ 0x83c, 0x639, 0x638, 0x636(echo); Tell(map, TellMoved(place, seq: echo))
-////                0x638 to each viewer; Tell(each fighter, TellTargetMoved(place, seq: echo))
+////                0x638 to each viewer; Tell(map, TellCreature(each fighter, TargetMoved(place, seq: echo)))
 //// ```
 ////
 //// - **The echo is the next move number**: the 0x636 carries `move_seq + 1`, the map is told the

@@ -26,17 +26,13 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/experience.{type Credit}
-import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
-  type PlayerStrike, type Tell as StrikeTell,
+  type PlayerStrike,
 }
-import genesis_prime/game/unit_casts.{type CastView}
 import genesis_prime/game/unit_news.{type PeerNews, Moving, PeerNews}
-import genesis_prime/game/unit_properties.{type Modifier, type Source}
-import genesis_prime/game/unit_state
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
@@ -52,6 +48,7 @@ import genesis_prime/store
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/relay.{type Inbound}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
@@ -124,56 +121,18 @@ pub type Request {
   /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
-  /// What a `Tell` effect sends a creature (genesis_prime/step `Creature`): the
-  /// strike of a cast's go, which the creature's owner process decides
-  /// (genesis_prime/world_map/creature_life). Told through the creature registry
-  /// with no watch, and never asked.
-  TellStrike(tell: StrikeTell)
-  /// What a `Tell` effect sends a creature that holds this connection's player
-  /// on its threat list: the player stands at `place`, the connection's move
-  /// `seq`, with the player's hit radius (genesis_prime/world_map/creature `TargetMoved`). Told through the
-  /// creature registry with no watch, and never asked.
-  TellTargetMoved(
+  /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player
+  /// of `connection`, in its stay `stay`, tells the creature `unit_id` of life `life`
+  /// `payload`, a strike, a move, an answer or an effect of its casts
+  /// (genesis_prime/world_map/map `TellCreature`), for the map to admit by the
+  /// creature's state and the payload's kind and send the creature. Never asked.
+  TellCreature(
     connection: ConnectionId,
-    place: Place,
-    seq: Int,
     stay: Stay,
-    hit_radius: Float,
+    unit_id: Int,
+    life: Int,
+    payload: Inbound,
   )
-  /// What a `Tell` effect sends a creature whose strike this connection's player
-  /// took: the answer (genesis_prime/world_map/creature `StrikeAnswered`). Told
-  /// through the creature registry with no watch, and never asked.
-  TellStrikeAnswered(answered: Answered)
-  /// What a `Tell` effect sends a creature a property modifier of this connection's
-  /// player's spell starts or ends on, or the states a cast of the player landed on it
-  /// end with (genesis_prime/world_map/creature `ModifierStarts`, `ModifierEnds`,
-  /// `ControlsEnd`), for the life the go struck. Told through the creature registry with
-  /// no watch, and never asked.
-  TellTargetChange(connection: ConnectionId, change: TargetChange)
-  /// What a `Tell` effect sends a creature a ForcedMove effect of this connection's
-  /// player's cast throws (genesis_prime/world_map/creature `Thrown`): the move, the two
-  /// fractions this connection drew from its seed and the unit it is measured from
-  /// (genesis_prime/game/forced_move), for the life the go struck. Told through the creature
-  /// registry with no watch, and never asked.
-  TellThrown(throw: forced_move.Throw)
-  /// What a `Tell` effect sends a creature a DespawnUnit effect of this connection's
-  /// player's cast removes (genesis_prime/world_map/creature `Despawn`), for the life the go
-  /// struck: `delay_ms` after `went_at_ms`, the monotonic time of the effect's go.
-  /// Told through the creature registry with no watch, and never asked.
-  TellDespawn(delay_ms: Int, went_at_ms: Int)
-  /// What a `Tell` effect sends a creature the UnitStateSet rows of this connection's player's
-  /// cast hold on it (genesis_prime/world_map/creature `UnitStates`), for the life the go
-  /// struck: each row's state from `went_at_ms`, the monotonic time of the effect's go, plus
-  /// its delay for its duration. Told through the creature registry with no watch, and never
-  /// asked.
-  TellUnitStates(rows: List(unit_state.Row), went_at_ms: Int)
-  /// What a `Tell` effect sends a creature (genesis_prime/step `Creature`) to tell it what
-  /// this connection's player's cast holds on it, for the life the go struck
-  /// (genesis_prime/world_map/creature `CastViewSet`, `CastViewEnds`): the creature keeps
-  /// the view, lists it in the 0x262 a viewer arriving later is sent, and watches this
-  /// connection while it keeps one. Told through the creature registry, which drops it
-  /// when no creature of that address and life is there, and never asked.
-  TellCastView(connection: ConnectionId, change: ViewChange)
   /// What a `Tell` effect sends the connection of another player (genesis_prime/step
   /// `Connection`): what its cast does to this connection's player, or the answer to
   /// what this connection's player did to it (`PlayerTell`). `stay` is the told
@@ -201,28 +160,6 @@ pub type PlayerTell {
   /// of that ally and fires the rows it holds on it (genesis_prime/game/connection/casting
   /// `ally_event_taken`). Never asked, so no answer comes back.
   Event(event: PlayerEvent)
-}
-
-/// What a cast holds on a creature, as `TellCastView` carries it.
-pub type ViewChange {
-  /// The cast holds `view` on the creature: its one target, the whole of it. The creature
-  /// keeps it in place of the cast's earlier view.
-  ViewSet(view: CastView)
-  /// The cast `cast_id` holds nothing on the creature: the creature drops the view of
-  /// that cast when this connection holds it, and ignores the tell otherwise.
-  ViewEnds(cast_id: Int)
-}
-
-/// What a cast changes on a creature, as `TellTargetChange` carries it: a property modifier
-/// starting or ending, or the states the cast landed ending.
-pub type TargetChange {
-  /// The modifier starts: the creature applies it to its properties.
-  ChangeStarts(source: Source, modifier: Modifier)
-  /// The modifier of `source` ends: the creature removes it.
-  ChangeEnds(source: Source)
-  /// The cast `cast_id` no longer holds a node on the creature: each crowd-control state it
-  /// landed there ends, with its own 0x880 (genesis_prime/world_map/creature `ControlsEnd`).
-  ControlsEnd(cast_id: Int)
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).

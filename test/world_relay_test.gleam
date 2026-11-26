@@ -19,19 +19,23 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell.{type Answered, Answered, Landed, Refused}
+import genesis_prime/game/strike_tell.{
+  type Answered, Answered, Key, Landed, Refused,
+}
 import genesis_prime/game/unit_news.{PeerNews}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId, Woken}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
+import genesis_prime/world_map/registry
 import genesis_prime/world_map/relay
 import gleam/list
 import gleam/result
+import inbound_support
 import legal_order_support
 import map_support
 import owned_test
+import place_support
 import send_gate
 import spawn_support
 import world_support.{type World}
@@ -115,17 +119,15 @@ pub fn a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the
       cast_id: 1,
       occasion: strike_tell.AtGo(phase: 0),
     )
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id:,
-      life: 2,
-      message: creature.Strike(
-        tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
-      ),
-    )
+  world_watch_support.told_creature_by(
+    run:,
+    connection: 2,
+    unit_id:,
+    life: 2,
+    payload: relay.Strike(
+      tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
+    ),
+  )
   held_at_least(time:, world:, count: 2)
   send_gate.open(gate: world_support.gate(world:))
   let messages = world_support.sent_before_the_marker(world:, id: 1, received:)
@@ -174,7 +176,6 @@ pub fn the_caster_is_told_the_answer_the_credit_and_the_health_news_in_that_orde
   send_gate.close(gate: world_support.gate(world:))
   // The caster's connection, which is also the viewer, kills the creature in one strike.
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: beast.unit_id,
     life: 2,
@@ -212,7 +213,6 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
       wanted: world_watch_support.appearance,
     )
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: beast.unit_id,
     life: 2,
@@ -234,7 +234,6 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
   // A second strike reaches the dead creature, which refuses it as dead; the map, which holds
   // the spawn as releasing, still delivers the answer.
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: beast.unit_id,
     life: 2,
@@ -317,15 +316,12 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
       cast_id: asked.cast_id,
       occasion: strike_tell.AtGo(phase: asked.phase),
     )
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id: beast.unit_id,
-      life: 2,
-      message: creature.Strike(tell:),
-    )
+  world_watch_support.told_creature(
+    run:,
+    unit_id: beast.unit_id,
+    life: 2,
+    payload: relay.Strike(tell:),
+  )
   held_at_least(time:, world:, count: 1)
   // The clock passes the deadline of the strike while the answer is held at the gate.
   driven_time.advance(time:, ms: strike_tell.deadline_ms + 100)
@@ -356,5 +352,102 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
     )
   assert effects == [] && after == round
     as "the answer that arrives after the round closed changes nothing: the round, not the map, decides that it is late"
+  world_support.stop(world:)
+}
+
+/// The creature's tell that the connection's player is threatened, when the message is that.
+fn threatened_by_the_creature(message: Message) -> Result(Nil, Nil) {
+  case message {
+    ForStay(sent: client_connection.SentByFoe(strike_tell.Threatened(..)), ..) ->
+      Ok(Nil)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+/// The strike of the player of connection `from` on the Beast `unit_id` of life 2, told to
+/// the map as that connection tells it.
+fn struck_through_the_map(
+  run run: registry.MapProcess,
+  from from: Int,
+  unit_id unit_id: Int,
+  cast_id cast_id: Int,
+) -> Nil {
+  let tell =
+    inbound_support.struck_by(
+      tell: inbound_support.strike(unit_id:),
+      from:,
+      stay_count: 1,
+    )
+  let tell = strike_tell.Strike(..tell, key: Key(..tell.key, cast_id:))
+  world_watch_support.told_creature_by(
+    run:,
+    connection: from,
+    unit_id:,
+    life: 2,
+    payload: relay.Strike(tell:),
+  )
+}
+
+pub fn a_strike_told_through_the_map_damages_the_creature_and_threatens_only_a_viewer_of_the_stay_it_names_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let time = driven_time.new()
+  let world =
+    world_watch_support.one_beast_timed(
+      time:,
+      respawn_ms: 60_000,
+      idle_stop_ms: world_watch_support.idle_stop_ms,
+    )
+  let run = world_watch_support.started(world)
+  let near = world_support.connection(world:, id: 1)
+  let far = world_support.connection(world:, id: 2)
+  let _near_player = world_watch_support.join(run:, connection: 1)
+  let beast =
+    world_watch_support.next(
+      received: near,
+      what: "the creature's 0x262",
+      wanted: world_watch_support.appearance,
+    )
+  // Connection 2 is in the map, in the stay its strike names, and stands where the creature
+  // is out of its sight.
+  let _far_player =
+    world_watch_support.join_at(
+      run:,
+      connection: 2,
+      character: map_support.character(number: 102),
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: spawn_support.warfare_woods,
+        x: 5000.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+    )
+  driven_time.wait_until_quiet(time)
+  let _unseen =
+    world_support.sent_before_the_marker(world:, id: 2, received: far)
+  struck_through_the_map(run:, from: 1, unit_id: beast.unit_id, cast_id: 1)
+  driven_time.wait_until_quiet(time)
+  let heard =
+    world_support.sent_before_the_marker(world:, id: 1, received: near)
+  assert list.filter_map(heard, heard_kind) == ["answer", "health"]
+    as "the strike of a viewer, told through the map, damages the creature: the striker is answered and the viewers are told its health"
+  assert list.filter_map(heard, threatened_by_the_creature) == [Nil]
+    as "and the viewer that struck is told it is threatened"
+  struck_through_the_map(run:, from: 2, unit_id: beast.unit_id, cast_id: 2)
+  driven_time.wait_until_quiet(time)
+  let heard =
+    world_support.sent_before_the_marker(world:, id: 1, received: near)
+  assert list.filter_map(heard, heard_kind) == ["health"]
+    as "the strike of a player that does not see the creature damages it as well"
+  assert list.filter_map(heard, threatened_by_the_creature) == []
+    as "no one else is threatened"
+  let unheard =
+    world_support.sent_before_the_marker(world:, id: 2, received: far)
+  assert list.filter_map(unheard, heard_kind) == ["answer"]
+    as "the player out of sight is answered, whatever it sees"
+  assert list.filter_map(unheard, threatened_by_the_creature) == []
+    as "and told no threat: it is no viewer of the stay it names"
   world_support.stop(world:)
 }
