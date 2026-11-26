@@ -52,6 +52,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import map_spawn_support
+import order_explorer
 import spawn_support
 
 /// The processes of the scene, each a receiver of mail.
@@ -83,16 +84,13 @@ pub type Input {
   ToViewer(event: Event(ConnectionEvent(Message, Answer)))
 }
 
-/// One message in a mailbox: its receiver, its sender, what it is and its name, which the
-/// tests read the order of deliveries by.
-pub type Mail {
-  Mail(to: Receiver, from: Sender, input: Input, name: String)
-}
+/// One message in a mailbox (`order_explorer.Mail`) of this scene.
+pub type Mail =
+  order_explorer.Mail(Receiver, Sender, Input)
 
-/// What a receiver took: from whom, and the name of the message.
-pub type Taken {
-  Taken(by: Receiver, from: Sender, name: String)
-}
+/// What a receiver took (`order_explorer.Taken`) in this scene.
+pub type Taken =
+  order_explorer.Taken(Receiver, Sender)
 
 /// The three processes' states (the creature's none once it stopped), the life of the
 /// creature and the creature the map started after it (`next_creature`, with its life), what is in flight, the monotonic time the
@@ -108,7 +106,7 @@ pub type Scene {
     next_life: Option(Int),
     viewer: game_connection.State,
     mail: List(Mail),
-    now_ms: Int,
+    clocks: order_explorer.Clocks(Receiver),
     taken: List(Taken),
     frames: List(Frame),
     early: Option(Violation),
@@ -156,7 +154,7 @@ pub fn scene(
       next_life: None,
       viewer:,
       mail: [],
-      now_ms: 10_000,
+      clocks: order_explorer.clocks(start_ms: 10_000),
       taken: [],
       frames: [],
       early: None,
@@ -241,70 +239,44 @@ pub fn sender_name(sender sender: Sender) -> String {
   }
 }
 
-/// The deliveries the scene allows now: the head of each queue, one for each receiver and
-/// sender, in the order they were sent.
-pub fn deliverable(scene scene: Scene) -> List(Mail) {
-  list.fold(scene.mail, [], fn(heads: List(Mail), mail: Mail) {
-    case
-      list.any(heads, fn(head) { head.to == mail.to && head.from == mail.from })
-    {
-      True -> heads
-      False -> [mail, ..heads]
-    }
-  })
-  |> list.reverse
+/// The name of a receiver, as the order of the walk reads it.
+fn receiver_name(receiver receiver: Receiver) -> String {
+  case receiver {
+    MapProcess -> "map"
+    CreatureProcess -> "creature"
+    NextCreatureProcess -> "next creature"
+    ViewerProcess -> "viewer"
+  }
 }
 
-/// Every scene the deliveries can end in: each order that takes the head of one queue at a
-/// time until no mail is left. A delivery with no other order to compete with is made at
-/// once: a receiver whose mailbox holds one queue, and no other sender of it has mail it
-/// could still send, takes that head first in every order, so it is not branched on.
+/// The scheduler of the scene's processes (`order_explorer`).
+fn scheduler() -> order_explorer.Scheduler(Scene, Receiver, Sender, Input) {
+  order_explorer.Scheduler(
+    mail: fn(scene: Scene) { scene.mail },
+    deliver:,
+    taken: fn(scene: Scene) { scene.taken },
+    queue_name: fn(receiver, sender) {
+      receiver_name(receiver:) <> " from " <> sender_name(sender:)
+    },
+  )
+}
+
+/// Every scene the deliveries can end in, one for each outcome: each order that takes the
+/// head of one queue at a time until no mail is left, with the deliveries to different
+/// processes not ordered against each other (`order_explorer.orders`).
 pub fn orders(scene scene: Scene) -> List(Scene) {
-  let heads = deliverable(scene:)
-  case list.find(heads, fn(mail) { has_no_rival(scene:, mail:, heads:) }) {
-    Ok(mail) -> orders(scene: deliver(scene:, mail:))
-    Error(Nil) ->
-      case heads {
-        [] -> [scene]
-        _ ->
-          list.flat_map(heads, fn(mail) {
-            orders(scene: deliver(scene:, mail:))
-          })
-      }
-  }
+  order_explorer.orders(scheduler: scheduler(), scene:)
+}
+
+/// The scenes of every order with no reduction (`order_explorer.orders_in_full`).
+pub fn orders_in_full(scene scene: Scene) -> List(Scene) {
+  order_explorer.orders_in_full(scheduler: scheduler(), scene:)
 }
 
 /// The scene after every delivery is made in the order the heads are found: one order,
 /// for a setup the tests do not vary.
 pub fn settle(scene scene: Scene) -> Scene {
-  case deliverable(scene:) {
-    [] -> scene
-    [mail, ..] -> settle(scene: deliver(scene:, mail:))
-  }
-}
-
-/// Whether the mail's receiver has only this queue now and no process that sends to it
-/// has mail to take, so no other message can reach the receiver before this one: the map
-/// is sent to by the creatures, a creature by the map, the viewer by the map.
-fn has_no_rival(
-  scene scene: Scene,
-  mail mail: Mail,
-  heads heads: List(Mail),
-) -> Bool {
-  let alone = list.count(heads, fn(head) { head.to == mail.to }) == 1
-  let sender_is_busy = case mail.to {
-    MapProcess ->
-      has_mail(scene:, receiver: CreatureProcess)
-      || has_mail(scene:, receiver: NextCreatureProcess)
-    CreatureProcess | NextCreatureProcess ->
-      has_mail(scene:, receiver: MapProcess)
-    ViewerProcess -> False
-  }
-  alone && !sender_is_busy
-}
-
-fn has_mail(scene scene: Scene, receiver receiver: Receiver) -> Bool {
-  list.any(scene.mail, fn(mail) { mail.to == receiver })
+  order_explorer.settle(scheduler: scheduler(), scene:)
 }
 
 /// The scene after the receiver takes the mail: its rule's step, and what the step sends
@@ -314,15 +286,16 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
     [] -> Nil
     [refusal, ..] -> panic as describe(refusal:)
   }
-  let rest = remove_first(scene.mail, mail)
-  let now_ms = scene.now_ms + 1
+  let rest = order_explorer.remove_first(mail: scene.mail, taken: mail)
+  let #(clocks, now_ms) =
+    order_explorer.ticked(clocks: scene.clocks, receiver: mail.to)
   let scene =
     Scene(
       ..scene,
       mail: rest,
-      now_ms:,
+      clocks:,
       taken: list.append(scene.taken, [
-        Taken(by: mail.to, from: mail.from, name: mail.name),
+        order_explorer.Taken(by: mail.to, from: mail.from, name: mail.name),
       ]),
     )
   case mail.input {
@@ -336,10 +309,16 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
         })
       case started_by(taken:) {
         Ok(start) -> {
+          let #(clocks, started_ms) =
+            order_explorer.ticked(
+              clocks: scene.clocks,
+              receiver: NextCreatureProcess,
+            )
           let #(next, started) =
-            creature_started(start:, spawn: the_beast(), at_ms: now_ms)
+            creature_started(start:, spawn: the_beast(), at_ms: started_ms)
           Scene(
             ..scene,
+            clocks:,
             next_creature: Some(next),
             next_life: Some(start.life),
             mail: list.flatten([
@@ -481,17 +460,6 @@ fn news_outside_the_relation(
   }
 }
 
-fn remove_first(mail: List(Mail), taken: Mail) -> List(Mail) {
-  case mail {
-    [] -> []
-    [first, ..rest] ->
-      case first == taken {
-        True -> rest
-        False -> [first, ..remove_first(rest, taken)]
-      }
-  }
-}
-
 /// The mail with what is addressed to a creature that stopped left out: a process that has
 /// ended takes nothing.
 fn reaching_a_running_creature(
@@ -525,7 +493,7 @@ pub fn mail_of_the_map_for(
       OwnEffect(Send(to: Connection(ConnectionId(1)), message:)) ->
         case server.map_message(outgoing: message) {
           Ok(sent) ->
-            Ok(Mail(
+            Ok(order_explorer.Mail(
               to: ViewerProcess,
               from: FromMap,
               input: ToViewer(OwnEvent(Woken(sent))),
@@ -559,7 +527,7 @@ fn mail_of_the_creature_as(
     case effect {
       OwnEffect(Send(to: step.Map(..), message:)) -> {
         let told = creature.told_to_map(outgoing: message)
-        Ok(Mail(
+        Ok(order_explorer.Mail(
           to: MapProcess,
           from: sender,
           input: ToMap(OwnEvent(Told(told))),
@@ -582,14 +550,14 @@ fn creature_mail(
 ) -> Mail {
   use <- bool.guard(
     when: to_the_next,
-    return: Mail(
+    return: order_explorer.Mail(
       to: NextCreatureProcess,
       from: FromMap,
       input: ToNextCreature(OwnEvent(Told(told))),
       name: creature_message_name(told),
     ),
   )
-  Mail(
+  order_explorer.Mail(
     to: CreatureProcess,
     from: FromMap,
     input: ToCreature(OwnEvent(Told(told))),
@@ -600,7 +568,7 @@ fn creature_mail(
 /// The end of the creature of `life`, which its map watches: the watch's end, as one more
 /// signal of the creature.
 fn creature_ended(life life: Int) -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromCreature,
     input: ToMap(step.WatchEnded(step.WatchId(life))),
@@ -706,8 +674,7 @@ pub fn order_at(
   scene scene: Scene,
   receiver receiver: Receiver,
 ) -> List(String) {
-  list.filter(scene.taken, fn(taken) { taken.by == receiver })
-  |> list.map(fn(taken) { taken.name })
+  order_explorer.order_at(taken: scene.taken, receiver:)
 }
 
 /// A scene whose result a test did not expect, as what the test reads of it: what each

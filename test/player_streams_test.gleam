@@ -31,9 +31,11 @@ import gleam/float
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
+import gleam/set
 import gleam/string
 import legal_order_support
 import map_support
+import order_explorer
 import owned_test
 import planted_table
 import player_scene_support as scene
@@ -53,6 +55,13 @@ const medic = 4
 /// owner C (connection 1) at x 1000 and the viewer V (connection 2) at x 0, 1000 apart, with
 /// sight 1024.
 fn two_players() -> scene.Scene {
+  scene.settle(scene: two_players_entering())
+}
+
+/// The same two players with no message of their entry delivered: the map has taken both
+/// joins, and C has not yet taken its `SeenBy` of V, so C's snapshot of the first sight is
+/// still to be built and sent.
+fn two_players_entering() -> scene.Scene {
   scene.new(tables: connection_support.settings().tables)
   |> scene.enter(
     connection: 1,
@@ -66,7 +75,6 @@ fn two_players() -> scene.Scene {
     level: 1,
     place: scene.at(x: 0.0),
   )
-  |> scene.settle
 }
 
 /// What V was written for the owner's unit, as `0x262(1)` and so on.
@@ -85,38 +93,32 @@ fn relation(scene scene: scene.Scene) -> option.Option(map.Relation) {
 
 pub fn a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is_two_generations_and_needs_a_new_snapshot_in_every_legal_order_test() -> Nil {
   use <- owned_test.run(10_000)
-  let settled = two_players()
-  assert written_for_c(scene: settled) == ["0x262(1)"]
-    as "V is written C's 0x262 once, from the owner's snapshot"
-  let assert Some(map.Relation(generation: first, state: map.Relaying, ..)) =
-    relation(scene: settled)
-    as "the map holds a relation that relays, after the snapshot was relayed"
-  // C leaves V's sight and comes back, as the map takes C's two places in order; a late
-  // snapshot of the first sight comes from C after both.
-  let stale =
-    scene.tells_the_map_a_snapshot(
-      scene: scene.tells_the_map_it_moved(
-        scene: scene.tells_the_map_it_moved(
-          scene: settled,
-          connection: 1,
-          place: scene.at(x: 3000.0),
-          seq: 1,
-        ),
-        connection: 1,
-        place: scene.at(x: 1000.0),
-        seq: 2,
-      ),
-      owner: 1,
-      viewer: 2,
-      generation: first,
-    )
-  let scenes = scene.orders(scene: stale)
+  let entered = two_players_entering()
+  let assert Some(map.Relation(
+    generation: first,
+    state: map.AwaitingSnapshot,
+    ..,
+  )) = relation(scene: entered)
+    as "the pair awaits the owner's snapshot of its first generation"
+  // C's snapshot of that generation is in flight to the map while V's client moves out of
+  // C's sight and back: V's connection tells the map each place, and the map takes C's
+  // snapshot before, between or after them.
+  let moving =
+    list.fold([3000.0, 0.0], entered, fn(so_far, x) {
+      scene.client_sends(
+        scene: so_far,
+        connection: 2,
+        bytes: connection_support.a_move(x),
+        name: "0x637 of V to " <> float.to_string(x),
+      )
+    })
+  let scenes = scene.orders(scene: moving)
   assert scenes != [] as "the scene has an order"
   list.each(scenes, fn(done) {
     assert scene.check(scene: done, connection: 2) == Ok(Nil)
       as "no frame of C before its 0x262 or after its 0x355, whatever the order"
-    assert written_for_c(scene: done) == ["0x262(1)", "0x355(1)", "0x262(1)"]
-      as "V is written C's 0x355 when the sight ends and a second 0x262 from the new sight's snapshot; the stale snapshot of the first sight writes nothing"
+    assert shows_c_once_at_the_end(names: written_for_c(scene: done))
+      as "V is written C's 0x262, and after a 0x355 a 0x262 of the new sight: the snapshot of the sight that ended, taken after it, writes nothing"
     let assert Some(map.Relation(generation: second, state: map.Relaying, ..)) =
       relation(scene: done)
       as "the new sight relays after its own snapshot"
@@ -125,6 +127,18 @@ pub fn a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is
     assert scene.direct_news(scene: done, from: 1, to: 2) == []
       as "C told V nothing itself: its 0x262 and its 0x355 are the map's"
   })
+  let results =
+    list.map(scenes, fn(done) { written_for_c(scene: done) })
+    |> list.unique
+  assert list.contains(results, ["0x262(1)", "0x355(1)", "0x262(1)"])
+    && list.contains(results, ["0x262(1)"])
+    as "the snapshot of the first sight taken before the unseen shows C twice; taken after it, it is dropped and C is shown once, from the new sight's"
+}
+
+/// Whether V's frames for C's unit are one 0x262, or a 0x262, a 0x355 and a 0x262: the unit
+/// is shown at the end, in the sight that ended or in the new one.
+fn shows_c_once_at_the_end(names names: List(String)) -> Bool {
+  names == ["0x262(1)"] || names == ["0x262(1)", "0x355(1)", "0x262(1)"]
 }
 
 /// Whether V's frames for C's unit are the shape of a unit that leaves and returns: its
@@ -141,18 +155,21 @@ fn leaves_and_returns(names names: List(String)) -> Bool {
   }
 }
 
+/// C's client sends the 0x637 that takes V out of its sight: C stands 1000 from V, whose
+/// sight is 1024, and moves to 2000. C tells the map the place and V the move (its own
+/// message), and the map tells V the unit is unseen (its own): V takes them in either order.
+fn c_moves_out_of_v_sight() -> scene.Scene {
+  scene.client_sends(
+    scene: two_players(),
+    connection: 1,
+    bytes: connection_support.a_move(2000.0),
+    name: "0x637 of C",
+  )
+}
+
 pub fn a_move_that_takes_a_viewer_out_of_sight_is_written_before_its_0x355_or_not_at_all_and_never_after_it_test() -> Nil {
   use <- owned_test.run(10_000)
-  // C stands 1000 from V, whose sight is 1024: C's 0x637 to 2000 takes V out of its sight.
-  // C tells the map the place and V the move (its own message), and the map tells V the
-  // unit is unseen (its own): V takes them in either order.
-  let scenes =
-    scene.orders(scene: scene.client_sends(
-      scene: two_players(),
-      connection: 1,
-      bytes: connection_support.a_move(2000.0),
-      name: "0x637 of C",
-    ))
+  let scenes = scene.orders(scene: c_moves_out_of_v_sight())
   let results =
     list.map(scenes, fn(done) {
       assert scene.check(scene: done, connection: 2) == Ok(Nil)
@@ -352,10 +369,7 @@ pub fn a_viewer_that_arrives_mid_cast_holds_the_live_casts_from_its_create_and_o
   let mid_cast = enters(held)
   let ended =
     enters(
-      scene.settle(scene: scene.fire_timers(
-        scene: held,
-        until_ms: held.now_ms + 12_000,
-      )),
+      scene.settle(scene: scene.fire_timers(scene: held, within_ms: 12_000)),
     )
   assert scene.cast_frames(scene: before, connection: 4) == armor_frames
     as "a viewer that was in sight before the press is written the casts' starts and goes"
@@ -417,6 +431,11 @@ pub fn a_caster_that_dies_between_its_go_and_the_allys_start_writes_its_own_clie
       ),
       name: "a killing strike on C",
     )
+  // The orders of a scene in which the players tell each other directly are too many to
+  // walk (more than 200,000 outcomes), so one order is read first for what no order may do.
+  let one_order = scene.settle(scene: dying)
+  assert scene.direct_news(scene: one_order, from: 2, to: 1) == []
+    as "T told C nothing itself"
   list.each(scene.orders(scene: dying), fn(done) {
     let frames = scene.cast_frames(scene: done, connection: 1)
     assert count(ids: frames, id: 0x07FF) <= count(ids: own, id: 0x07FF) + 2
@@ -449,6 +468,12 @@ pub fn a_cast_finished_at_a_viewer_before_the_allys_start_through_the_maps_relay
       ),
       name: "T moves out of sight",
     )
+  // The orders of a scene in which the players tell each other directly are too many to
+  // walk (more than 200,000 outcomes), so one order is read first for what no order may do.
+  let one_order = scene.settle(scene: leaving)
+  assert scene.direct_news(scene: one_order, from: 1, to: 3) == []
+    && scene.direct_news(scene: one_order, from: 2, to: 3) == []
+    as "neither C nor T told V anything itself"
   list.each(scene.orders(scene: leaving), fn(done) {
     assert !starts_after_a_finish(ids: scene.cast_frames(
       scene: done,
@@ -486,10 +511,7 @@ pub fn a_viewer_that_leaves_the_casters_sight_between_its_go_and_the_allys_start
   let results =
     list.map(scene.orders(scene: leaving), fn(done) {
       let ended =
-        scene.settle(scene: scene.fire_timers(
-          scene: done,
-          until_ms: done.now_ms + 12_000,
-        ))
+        scene.settle(scene: scene.fire_timers(scene: done, within_ms: 12_000))
       assert scene.check(scene: ended, connection: 3) == Ok(Nil)
         as "no frame of C after its 0x355"
       assert scene.direct_news(scene: ended, from: 1, to: 3) == []
@@ -614,12 +636,12 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
 fn moves_told(scene scene: scene.Scene, from from: Int, to to: Int) -> Int {
   list.count(scene.taken, fn(taken) {
     case taken {
-      scene.Taken(
+      order_explorer.Taken(
         by: scene.ConnectionProcess(receiver),
         from: scene.FromConnection(sender),
         name:,
       ) -> receiver == to && sender == from && string.contains(name, "TellMove")
-      scene.Taken(..) -> False
+      order_explorer.Taken(..) -> False
     }
   })
 }
@@ -876,4 +898,31 @@ pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_f
     )
   assert connection_support.tells(taken) == []
     as "a heal told for an earlier stay is dropped at the connection: no answer, no news"
+}
+
+pub fn the_explorer_matches_the_full_walk_on_every_scene_small_enough_to_walk_in_full_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_the_armor
+  let #(world, bag_index) = armor_world(tables:)
+  // The scenes of the move that takes a viewer out of sight (34 states at the shape) and of
+  // the ally's start (1,175 states there): each walked in full and reduced.
+  let rows = [
+    #("a move out of sight", c_moves_out_of_v_sight()),
+    #("the ally's start", pressed(world:, bag_index:)),
+  ]
+  list.each(rows, fn(row) {
+    let #(name, start) = row
+    let outcomes = fn(scenes: List(scene.Scene)) {
+      list.map(scenes, fn(done) { order_explorer.outcome(taken: done.taken) })
+    }
+    let reduced = outcomes(scene.orders(scene: start))
+    let full = outcomes(scene.orders_in_full(scene: start))
+    assert set.from_list(reduced) == set.from_list(full)
+      as {
+        name
+        <> ": the reduced walk reaches the outcomes of the full walk, and no other"
+      }
+    assert list.length(reduced) == set.size(set.from_list(reduced))
+      as { name <> ": the reduced walk reaches each outcome once" }
+  })
 }

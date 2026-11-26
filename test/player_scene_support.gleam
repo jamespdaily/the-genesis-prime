@@ -4,9 +4,10 @@
 //// these places.
 //// - OTP orders the signals of one sender to one receiver, and no others: a receiver's
 ////   mailbox holds one first-in-first-out queue for each sender, and it takes the head of
-////   any of them next. A delivery of this scene is the head of one such queue. A player's
-////   client is a sender of its own connection, so a message the client sends is mail of
-////   its own queue.
+////   any of them next. A delivery of this scene is the head of one such queue
+////   (`order_explorer`, which also walks the orders). A player's client is a sender of its
+////   own connection, so a message the client sends is mail of its own queue. Each process
+////   keeps a clock of its own.
 //// - What a connection's step tells is what the server delivers it as: the same two
 ////   functions the server's shell uses (`client_connection.told_to_the_map`,
 ////   `client_connection.told_to_a_connection`, `server.map_message`).
@@ -38,20 +39,18 @@ import genesis_prime/step.{
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
-import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
-import gleam/set.{type Set}
+import gleam/set
 import gleam/string
 import legal_order_support
 import map_spawn_support
-import map_support
+import order_explorer
 
 /// The processes of the scene, each a receiver of mail.
 pub type Receiver {
@@ -74,19 +73,16 @@ pub type Input {
   ToConnection(event: Event(ConnectionEvent(Message, Answer)))
 }
 
-/// One message in a mailbox: its receiver, its sender, what it is and its name, which the
-/// tests read the order of deliveries by.
-pub type Mail {
-  Mail(to: Receiver, from: Sender, input: Input, name: String)
-}
+/// One message in a mailbox (`order_explorer.Mail`) of this scene.
+pub type Mail =
+  order_explorer.Mail(Receiver, Sender, Input)
 
-/// What a receiver took: from whom, and the name of the message.
-pub type Taken {
-  Taken(by: Receiver, from: Sender, name: String)
-}
+/// What a receiver took (`order_explorer.Taken`) in this scene.
+pub type Taken =
+  order_explorer.Taken(Receiver, Sender)
 
 /// The map's state, the state of each player's connection, what is in flight, the
-/// monotonic time the next delivery is taken at, the deliveries so far in order, the
+/// monotonic clock of each process, the deliveries so far in order, the
 /// frames each connection wrote in order, and the cast timers each connection started that
 /// are still to fire, each with the connection, the monotonic time it is due and the timer.
 pub type Scene {
@@ -95,7 +91,7 @@ pub type Scene {
     map: map.State,
     connections: Dict(Int, game_connection.State),
     mail: List(Mail),
-    now_ms: Int,
+    clocks: order_explorer.Clocks(Receiver),
     taken: List(Taken),
     frames: Dict(Int, List(Frame)),
     timers: List(#(Int, Int, TimerId)),
@@ -112,7 +108,7 @@ pub fn new(tables tables: table_store.Tables) -> Scene {
     ),
     connections: dict.new(),
     mail: [],
-    now_ms: 10_000,
+    clocks: order_explorer.clocks(start_ms: 10_000),
     taken: [],
     frames: dict.new(),
     timers: [],
@@ -164,7 +160,7 @@ pub fn enter(
     map.step(
       scene.map,
       support.input_at_ms(
-        ms: scene.now_ms,
+        ms: order_explorer.now_ms(clocks: scene.clocks, receiver: MapProcess),
         event: OwnEvent(step.Asked(caller: CallerId(connection), message:)),
       ),
     )
@@ -202,7 +198,10 @@ pub fn enter(
     timers: timers_after(
       timers: scene.timers,
       connection:,
-      now_ms: scene.now_ms,
+      now_ms: order_explorer.now_ms(
+        clocks: scene.clocks,
+        receiver: ConnectionProcess(connection),
+      ),
       taken: burst,
     ),
   )
@@ -242,34 +241,61 @@ fn timers_after(
   list.append(kept, started)
 }
 
-/// The cast timers that are due by `until_ms` delivered to their connections in time order
-/// (the timers a delivery starts are fired too when they are due), the clock standing at each
-/// timer's due time. What the steps sent is left in the mail.
-pub fn fire_timers(scene scene: Scene, until_ms until_ms: Int) -> Scene {
+/// The cast timers that are due within `within_ms` of their connection's clock as it stands
+/// delivered to their connections in time order (the timers a delivery starts are fired too
+/// when they are due), each connection's clock standing at its timer's due time. What the
+/// steps sent is left in the mail.
+pub fn fire_timers(scene scene: Scene, within_ms within_ms: Int) -> Scene {
+  let horizons =
+    dict.map_values(scene.connections, fn(connection, _) {
+      order_explorer.now_ms(
+        clocks: scene.clocks,
+        receiver: ConnectionProcess(connection),
+      )
+      + within_ms
+    })
+  fire_timers_due(scene:, horizons:)
+}
+
+fn fire_timers_due(
+  scene scene: Scene,
+  horizons horizons: Dict(Int, Int),
+) -> Scene {
+  let due_within_horizon =
+    list.filter(scene.timers, fn(held) {
+      held.1 <= { dict.get(horizons, held.0) |> result.unwrap(0) }
+    })
   case
-    list.sort(scene.timers, fn(first, second) { int.compare(first.1, second.1) })
+    list.sort(due_within_horizon, fn(first, second) {
+      int.compare(first.1, second.1)
+    })
   {
-    [#(connection, due, timer) as first, ..] if due <= until_ms -> {
+    [#(connection, due, timer) as first, ..] -> {
+      let receiver = ConnectionProcess(connection)
       let scene =
         Scene(
           ..scene,
           timers: list.filter(scene.timers, fn(held) { held != first }),
-          now_ms: int.max(scene.now_ms, due - 1),
+          clocks: order_explorer.advanced_to(
+            clocks: scene.clocks,
+            receiver:,
+            ms: due - 1,
+          ),
         )
-      fire_timers(
+      fire_timers_due(
         scene: deliver(
           scene:,
-          mail: Mail(
-            to: ConnectionProcess(connection),
+          mail: order_explorer.Mail(
+            to: receiver,
             from: FromTimer(connection),
             input: ToConnection(OwnEvent(TimerFired(timer:))),
             name: "timer of " <> int_name(connection),
           ),
         ),
-        until_ms:,
+        horizons:,
       )
     }
-    _ -> scene
+    [] -> scene
   }
 }
 
@@ -283,7 +309,7 @@ pub fn client_sends(
   Scene(
     ..scene,
     mail: list.append(scene.mail, [
-      Mail(
+      order_explorer.Mail(
         to: ConnectionProcess(connection),
         from: FromClient(connection),
         input: ToConnection(OwnEvent(step.Read(bytes))),
@@ -305,7 +331,7 @@ pub fn tells_the_map_it_moved(
   Scene(
     ..scene,
     mail: list.append(scene.mail, [
-      Mail(
+      order_explorer.Mail(
         to: MapProcess,
         from: FromConnection(connection),
         input: ToMap(
@@ -367,7 +393,7 @@ pub fn mail_of_the_map(
       OwnEffect(step.Send(to: step.Connection(ConnectionId(number)), message:)) ->
         case server.map_message(outgoing: message) {
           Ok(sent) ->
-            Ok(Mail(
+            Ok(order_explorer.Mail(
               to: ConnectionProcess(number),
               from: FromMap,
               input: ToConnection(OwnEvent(Woken(sent))),
@@ -398,7 +424,7 @@ pub fn mail_of_the_connection(
       OwnEffect(step.Tell(to: step.Map(..), request:)) ->
         client_connection.told_to_the_map(request:)
         |> result.map(fn(message) {
-          Mail(
+          order_explorer.Mail(
             to: MapProcess,
             from: FromConnection(connection),
             input: ToMap(OwnEvent(Told(message:))),
@@ -411,7 +437,7 @@ pub fn mail_of_the_connection(
       OwnEffect(step.Tell(to: step.Connection(ConnectionId(other)), request:)) ->
         client_connection.told_to_a_connection(request:)
         |> result.map(fn(message) {
-          Mail(
+          order_explorer.Mail(
             to: ConnectionProcess(other),
             from: FromConnection(connection),
             input: ToConnection(OwnEvent(Woken(message))),
@@ -490,139 +516,7 @@ fn outgoing_name(message message: map.Outgoing) -> String {
   }
 }
 
-/// The scene without the settle: the deliveries the scene allows now, the head of each
-/// queue, one for each receiver and sender, in the order they were sent.
-pub fn deliverable(scene scene: Scene) -> List(Mail) {
-  list.fold(scene.mail, [], fn(heads: List(Mail), mail: Mail) {
-    case
-      list.any(heads, fn(head) { head.to == mail.to && head.from == mail.from })
-    {
-      True -> heads
-      False -> [mail, ..heads]
-    }
-  })
-  |> list.reverse
-}
-
-/// The most scenes `orders` explores exhaustively: a scene with more distinct states is
-/// sampled instead.
-const exhaustive_limit = 400
-
-/// How many orders `orders` samples from a scene it cannot explore exhaustively.
-const sampled_orders = 16
-
-/// The scenes the deliveries can end in: each order that takes the head of one queue at a
-/// time until no mail is left. Two orders in which each receiver takes the same messages in
-/// the same order are one scene (a receiver's steps change only itself and the mail it
-/// sends), so the scenes are the distinct sequences each receiver takes. A scene with more
-/// than `exhaustive_limit` distinct states is not explored exhaustively: `sampled_orders`
-/// orders are walked instead, each choosing among the heads by a fixed pseudo-random
-/// sequence, so the same orders are walked every run. A delivery with no other order to
-/// compete with is made at once: a receiver whose mailbox holds one queue head, and no other
-/// process has mail it could still send to it, takes that head first in every order, so it is
-/// not branched on.
-pub fn orders(scene scene: Scene) -> List(Scene) {
-  case explore(scene:, seen: set.new(), finished: []) {
-    Ok(#(finished, _)) -> list.reverse(finished)
-    Error(Nil) -> sampled(scene:)
-  }
-}
-
-fn explore(
-  scene scene: Scene,
-  seen seen: Set(String),
-  finished finished: List(Scene),
-) -> Result(#(List(Scene), Set(String)), Nil) {
-  use <- bool.guard(when: set.size(seen) > exhaustive_limit, return: Error(Nil))
-  let key = state_key(scene:)
-  use <- bool.guard(
-    when: set.contains(seen, key),
-    return: Ok(#(finished, seen)),
-  )
-  let seen = set.insert(seen, key)
-  let heads = deliverable(scene:)
-  case list.find(heads, fn(mail) { has_no_rival(scene:, mail:, heads:) }) {
-    Ok(mail) -> explore(scene: deliver(scene:, mail:), seen:, finished:)
-    Error(Nil) ->
-      case heads {
-        [] -> Ok(#([scene, ..finished], seen))
-        _ ->
-          list.try_fold(heads, #(finished, seen), fn(so_far, mail) {
-            explore(
-              scene: deliver(scene:, mail:),
-              seen: so_far.1,
-              finished: so_far.0,
-            )
-          })
-      }
-  }
-}
-
-/// `sampled_orders` orders of the scene, distinct, each walked by choosing the next head
-/// with a fixed pseudo-random sequence of its own.
-fn sampled(scene scene: Scene) -> List(Scene) {
-  list.repeat(Nil, sampled_orders)
-  |> list.index_map(fn(_, index) { walk(scene:, seed: { index + 1 } * 7919) })
-  |> list.fold(#([], set.new()), fn(so_far, done) {
-    let key = state_key(scene: done)
-    case set.contains(so_far.1, key) {
-      True -> so_far
-      False -> #([done, ..so_far.0], set.insert(so_far.1, key))
-    }
-  })
-  |> fn(found) { list.reverse(found.0) }
-}
-
-fn walk(scene scene: Scene, seed seed: Int) -> Scene {
-  case deliverable(scene:) {
-    [] -> scene
-    heads -> {
-      let next = { seed * 1_103_515_245 + 12_345 } % 2_147_483_648
-      let assert Ok(mail) =
-        list.drop(heads, next % list.length(heads)) |> list.first
-        as "a pick among the heads is one of them"
-      walk(scene: deliver(scene:, mail:), seed: next)
-    }
-  }
-}
-
-/// What a scene is for the orders: what each receiver took, in order, and the mail still in
-/// flight, each message named by its sender and its name.
-fn state_key(scene scene: Scene) -> String {
-  let taken =
-    list.fold(scene.taken, dict.new(), fn(by_receiver, taken) {
-      let key = receiver_name(receiver: taken.by)
-      dict.insert(
-        by_receiver,
-        key,
-        list.append(dict.get(by_receiver, key) |> result.unwrap([]), [
-          sender_name(sender: taken.from) <> " " <> taken.name,
-        ]),
-      )
-    })
-  string.join(
-    list.map(
-      list.sort(dict.to_list(taken), fn(first, second) {
-        string.compare(first.0, second.0)
-      }),
-      fn(entry) { entry.0 <> ": " <> string.join(entry.1, "; ") },
-    ),
-    " | ",
-  )
-  <> " || "
-  <> string.join(
-    list.map(scene.mail, fn(mail) {
-      receiver_name(receiver: mail.to)
-      <> " from "
-      <> sender_name(sender: mail.from)
-      <> " "
-      <> mail.name
-    }),
-    "; ",
-  )
-}
-
-/// The name of a receiver, for a key.
+/// The name of a receiver, as the order of the walk reads it.
 fn receiver_name(receiver receiver: Receiver) -> String {
   case receiver {
     MapProcess -> "map"
@@ -630,7 +524,7 @@ fn receiver_name(receiver receiver: Receiver) -> String {
   }
 }
 
-/// The name of a sender, for a key.
+/// The name of a sender, as the order of the walk reads it.
 fn sender_name(sender sender: Sender) -> String {
   case sender {
     FromMap -> "map"
@@ -640,49 +534,54 @@ fn sender_name(sender sender: Sender) -> String {
   }
 }
 
+/// The scheduler of the scene's processes (`order_explorer`).
+fn scheduler() -> order_explorer.Scheduler(Scene, Receiver, Sender, Input) {
+  order_explorer.Scheduler(
+    mail: fn(scene: Scene) { scene.mail },
+    deliver:,
+    taken: fn(scene: Scene) { scene.taken },
+    queue_name: fn(receiver, sender) {
+      receiver_name(receiver:) <> " from " <> sender_name(sender:)
+    },
+  )
+}
+
+/// The deliveries the scene allows now: the head of each queue, one for each receiver and
+/// sender, in the order they were sent.
+pub fn deliverable(scene scene: Scene) -> List(Mail) {
+  order_explorer.heads(mail: scene.mail)
+}
+
+/// The scenes the deliveries can end in, one for each outcome: each order that takes the
+/// head of one queue at a time until no mail is left, the deliveries to different
+/// processes not ordered against each other (`order_explorer.orders`).
+pub fn orders(scene scene: Scene) -> List(Scene) {
+  order_explorer.orders(scheduler: scheduler(), scene:)
+}
+
+/// The scenes of every order with no reduction (`order_explorer.orders_in_full`).
+pub fn orders_in_full(scene scene: Scene) -> List(Scene) {
+  order_explorer.orders_in_full(scheduler: scheduler(), scene:)
+}
+
 /// The scene after every delivery is made in the order the heads are found: one order,
 /// for a setup the tests do not vary.
 pub fn settle(scene scene: Scene) -> Scene {
-  case deliverable(scene:) {
-    [] -> scene
-    [mail, ..] -> settle(scene: deliver(scene:, mail:))
-  }
-}
-
-/// Whether the mail's receiver has only this head now and no other process has mail to take,
-/// so no other message can reach the receiver before this one.
-fn has_no_rival(
-  scene scene: Scene,
-  mail mail: Mail,
-  heads heads: List(Mail),
-) -> Bool {
-  let alone = list.count(heads, fn(head) { head.to == mail.to }) == 1
-  let others_are_busy =
-    list.any(scene.mail, fn(waiting) {
-      waiting.to != mail.to && !is_external(waiting.from)
-    })
-  alone && !others_are_busy
-}
-
-/// Whether the sender is a client, which sends only when a test says so.
-fn is_external(sender: Sender) -> Bool {
-  case sender {
-    FromClient(..) -> False
-    FromMap | FromConnection(..) | FromTimer(..) -> False
-  }
+  order_explorer.settle(scheduler: scheduler(), scene:)
 }
 
 /// The scene after the receiver takes the mail: its rule's step, and what the step sends
 /// put in the mail behind what is there.
 pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
-  let now_ms = scene.now_ms + 1
+  let #(clocks, now_ms) =
+    order_explorer.ticked(clocks: scene.clocks, receiver: mail.to)
   let scene =
     Scene(
       ..scene,
-      mail: remove_first(scene.mail, mail),
-      now_ms:,
+      mail: order_explorer.remove_first(mail: scene.mail, taken: mail),
+      clocks:,
       taken: list.append(scene.taken, [
-        Taken(by: mail.to, from: mail.from, name: mail.name),
+        order_explorer.Taken(by: mail.to, from: mail.from, name: mail.name),
       ]),
     )
   case mail.input, mail.to {
@@ -725,24 +624,12 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
   }
 }
 
-fn remove_first(mail: List(Mail), taken: Mail) -> List(Mail) {
-  case mail {
-    [] -> []
-    [first, ..rest] ->
-      case first == taken {
-        True -> rest
-        False -> [first, ..remove_first(rest, taken)]
-      }
-  }
-}
-
 /// The names of what the receiver took, in order.
 pub fn order_at(
   scene scene: Scene,
   receiver receiver: Receiver,
 ) -> List(String) {
-  list.filter(scene.taken, fn(taken) { taken.by == receiver })
-  |> list.map(fn(taken) { taken.name })
+  order_explorer.order_at(taken: scene.taken, receiver:)
 }
 
 /// The first invariant a connection's frames break, or `Ok(Nil)`: a frame is checked
@@ -783,7 +670,7 @@ pub fn direct_news(
 ) -> List(String) {
   list.filter_map(scene.taken, fn(taken) {
     case taken {
-      Taken(
+      order_explorer.Taken(
         by: ConnectionProcess(receiver),
         from: FromConnection(sender),
         name:,
@@ -794,7 +681,7 @@ pub fn direct_news(
           True -> Error(Nil)
           False -> Ok(name)
         }
-      Taken(..) -> Error(Nil)
+      order_explorer.Taken(..) -> Error(Nil)
     }
   })
 }
@@ -824,45 +711,6 @@ pub fn client_presses(
   )
 }
 
-/// The snapshot of the sight `generation` that `viewer` has of the owner, as the owner's
-/// connection tells the map, with one item, a health that no real snapshot holds: mail of
-/// the owner's queue to the map, which a test uses for a snapshot that comes late.
-pub fn tells_the_map_a_snapshot(
-  scene scene: Scene,
-  owner owner: Int,
-  viewer viewer: Int,
-  generation generation: Generation,
-) -> Scene {
-  Scene(
-    ..scene,
-    mail: list.append(scene.mail, [
-      Mail(
-        to: MapProcess,
-        from: FromConnection(owner),
-        input: ToMap(
-          OwnEvent(
-            Told(
-              message: map.PlayerSnapshot(
-                by: ConnectionId(owner),
-                stay: map_support.stay(count: 1),
-                viewer: ConnectionId(viewer),
-                generation:,
-                burst: [
-                  unit_news.PeerNews(
-                    unit_id: owner,
-                    news: unit_news.Health(health: 12_345, dead: False),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        name: "stale snapshot of " <> int_name(owner),
-      ),
-    ]),
-  )
-}
-
 /// An event of a connection that comes from no other process of the scene, as mail of the
 /// client's queue: a creature's strike, say.
 pub fn connection_is_told(
@@ -874,7 +722,7 @@ pub fn connection_is_told(
   Scene(
     ..scene,
     mail: list.append(scene.mail, [
-      Mail(
+      order_explorer.Mail(
         to: ConnectionProcess(connection),
         from: FromClient(connection),
         input: ToConnection(event),
@@ -908,7 +756,7 @@ pub fn map_is_told(
   Scene(
     ..scene,
     mail: list.append(scene.mail, [
-      Mail(to: MapProcess, from:, input: ToMap(event), name:),
+      order_explorer.Mail(to: MapProcess, from:, input: ToMap(event), name:),
     ]),
   )
 }
@@ -926,7 +774,7 @@ pub fn join_again(
     map.step(
       scene.map,
       support.input_at_ms(
-        ms: scene.now_ms,
+        ms: order_explorer.now_ms(clocks: scene.clocks, receiver: MapProcess),
         event: OwnEvent(step.Asked(
           caller: CallerId(connection),
           message: map.Join(

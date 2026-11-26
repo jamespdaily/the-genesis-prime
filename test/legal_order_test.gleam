@@ -38,11 +38,12 @@ import gleam/set
 import gleam/string
 import legal_order_support.{
   type Mail, type Scene, type Violation, CreatureProcess, FromCaster,
-  FromConnection, FromTimer, Mail, MapProcess, NoFrameAfterRemoval, ToCreature,
-  ToMap, Violation,
+  FromConnection, FromTimer, MapProcess, NoFrameAfterRemoval, ToCreature, ToMap,
+  Violation,
 }
 import map_spawn_support as spawns
 import map_support
+import order_explorer
 import owned_test
 import world_watch_support
 
@@ -112,7 +113,7 @@ fn strike(damage damage: Int) -> Mail {
       cast_id: 1,
       occasion: strike_tell.AtGo(phase: 0),
     )
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromCaster,
     input: ToMap(
@@ -139,7 +140,7 @@ fn strike(damage damage: Int) -> Mail {
 /// it: the map takes the join in its own turn, among what the first player's connection tells
 /// it, and sends the creature its `Seen`.
 fn viewer_joins() -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromConnection,
     input: ToMap(
@@ -162,7 +163,7 @@ fn viewer_joins() -> Mail {
 /// The viewer's connection moves out of sight of the creature, or back, as its connection
 /// tells the map.
 fn moves(x x: Float, seq seq: Int, name name: String) -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromConnection,
     input: ToMap(
@@ -180,7 +181,7 @@ fn moves(x x: Float, seq seq: Int, name name: String) -> Mail {
 
 /// The corpse timer of the creature fires.
 fn corpse_timer() -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: CreatureProcess,
     from: FromTimer,
     input: ToCreature(OwnEvent(ServiceTimerFired(TimerId(1)))),
@@ -588,7 +589,7 @@ pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_
 /// The scene with the mail added behind what is in flight.
 /// The first player's connection moves out of sight of the creature, as it tells the map.
 fn first_player_moves_out(seq seq: Int) -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromCaster,
     input: ToMap(
@@ -678,7 +679,7 @@ pub fn a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sen
 pub fn legal_order_support_refuses_mail_to_a_creature_from_any_sender_but_its_map_and_its_timer_test() -> Nil {
   use <- owned_test.run(5000)
   let mail = fn(sender) {
-    Mail(
+    order_explorer.Mail(
       to: CreatureProcess,
       from: sender,
       input: ToCreature(OwnEvent(ServiceTimerFired(TimerId(1)))),
