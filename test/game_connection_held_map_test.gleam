@@ -652,7 +652,9 @@ pub fn a_held_kill_that_achieves_a_quest_leaves_the_next_held_message_for_the_co
     ..,
   ))) = connection_support.ask_request(bought)
     as "the quest no creature receives is completed by the server: the store is asked"
-  assert list.map(quests, fn(row) { #(row.quest_id, row.state) })
+  assert list.map(quests, fn(row) {
+      #(row.quest_id, quest_support.state_of(row))
+    })
     == [#(1857, 3)]
     as "the log is saved with the quest Completed"
   assert credits_held == 33

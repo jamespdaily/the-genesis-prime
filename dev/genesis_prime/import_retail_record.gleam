@@ -52,6 +52,7 @@
 import argv
 import envoy
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/refusal
 import genesis_prime/dev_database
 import genesis_prime/digest
 import genesis_prime/import_retail_record/sql
@@ -103,6 +104,8 @@ type Failure {
   /// The import would write fewer rows of a table than `smallest_read_percent` of its
   /// active `retail_record` rows.
   ReadTooSmall(table: String, writing: Int, active: Int)
+  /// The creature_kind table holds rows the load refuses; nothing was written.
+  KindRowsRefused(refusals: List(refusal.Refusal))
   /// The database refused a row, naming the constraint; nothing was written.
   RowRefused(constraint: String)
   /// The database failed in another way.
@@ -160,7 +163,14 @@ fn run() -> Result(String, Failure) {
   use spawned <- result.try(read_spawned(db:))
   use kind_rows <- result.try(
     content_creature_kind.rows(db)
-    |> result.map_error(fn(error) { Database(dev_database.failure_of(error:)) }),
+    |> result.map_error(fn(error) {
+      case error {
+        content_creature_kind.QueryFailed(reason:) ->
+          Database(dev_database.failure_of(error: reason))
+        content_creature_kind.RowsRefused(refusals:) ->
+          KindRowsRefused(refusals:)
+      }
+    }),
   )
   use texts <- result.try(texts_of(language:, tables:, spawned:))
   let outcomes =
@@ -578,6 +588,9 @@ fn describe(failure failure: Failure) -> String {
       <> "% of its "
       <> int.to_string(active)
       <> " active retail_record rows: nothing was written; pass --accept-smaller-read if the smaller read is right"
+    KindRowsRefused(refusals:) ->
+      string.join(list.map(refusals, refusal.describe), "; ")
+      <> ": nothing was written"
     RowRefused(constraint:) ->
       "the database refused a row under the constraint "
       <> constraint

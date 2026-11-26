@@ -49,8 +49,7 @@ const default_row =
     respawn_ms: 60_000,
     attack_spell4_id: 5649,
     attack_interval_ms: 1500,
-    guard_spell4_id: option.None,
-    opening_spell4_id: option.None,
+    guard: option.None,
   )
 
 /// A special of Rootbrute Grimspore (Creature2 12212): first in its list, cast again after

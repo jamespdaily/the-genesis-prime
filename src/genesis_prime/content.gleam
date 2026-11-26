@@ -242,10 +242,14 @@ fn read(
   use kind_rows <- result.try(
     content_creature_kind.rows(db)
     |> result.map_error(fn(error) {
-      QueryFailed(
-        table: content_creature_kind.table,
-        reason: worker.describe_query_error(error),
-      )
+      case error {
+        content_creature_kind.QueryFailed(reason:) ->
+          QueryFailed(
+            table: content_creature_kind.table,
+            reason: worker.describe_query_error(reason),
+          )
+        content_creature_kind.RowsRefused(refusals:) -> Refused(refusals:)
+      }
     }),
   )
   use special_rows <- result.try(

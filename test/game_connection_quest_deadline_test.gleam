@@ -30,7 +30,9 @@ import genesis_prime/step.{
   type ConnectionStep, CancelTimer, OwnEffect, OwnEvent, StartTimer, TimerFired,
   TimerId, WatchEnded, WatchId,
 }
-import genesis_prime/store.{Move, QuestRow, SavePlace}
+import genesis_prime/store.{
+  Accepted, Achieved, ActiveRow, Botched, KnownRow, Move, SavePlace,
+}
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -177,13 +179,12 @@ pub fn a_timed_quest_is_botched_at_its_deadline_test() -> Nil {
     as "the timer starts again for 1806, 91,000 ms - 61,000 ms"
   assert saved_quests(taken:)
     == [
-      QuestRow(
+      ActiveRow(
         quest_id: 1806,
-        state: 1,
-        completed_at: None,
+        state: Accepted,
         active: store_active_1806(ms_left: 30_000),
       ),
-      QuestRow(quest_id: 1872, state: 4, completed_at: None, active: None),
+      KnownRow(quest_id: 1872, state: Botched),
     ]
     as "the botch is saved at once: 1872 held Botched with no active entry, 1806 with 30,000 ms left"
   // Late: both are past their deadlines when the timer fires, so one step botches both
@@ -196,9 +197,10 @@ pub fn a_timed_quest_is_botched_at_its_deadline_test() -> Nil {
     as "no timed quest is left, so no timer starts"
 }
 
-fn store_active_1806(ms_left ms_left: Int) -> option.Option(store.ActiveQuest) {
-  let QuestRow(active:, ..) =
+fn store_active_1806(ms_left ms_left: Int) -> store.ActiveQuest {
+  let assert ActiveRow(active:, ..) =
     quest_support.timed(1806, progress: [0], quest_ms_left: ms_left)
+    as "a timed quest is an active row"
   active
 }
 
@@ -382,10 +384,10 @@ fn achieved(
   quest_id quest_id: Int,
   quest_ms_left quest_ms_left: Int,
 ) -> store.QuestRow {
-  QuestRow(
-    ..quest_support.timed(quest_id, progress: [], quest_ms_left:),
-    state: 2,
-  )
+  let assert ActiveRow(active:, ..) =
+    quest_support.timed(quest_id, progress: [], quest_ms_left:)
+    as "a timed quest is an active row"
+  ActiveRow(quest_id:, state: Achieved, active:)
 }
 
 pub fn an_achieved_timed_quest_is_not_botched_at_its_deadline_test() -> Nil {
@@ -417,7 +419,7 @@ pub fn an_achieved_timed_quest_is_not_botched_at_its_deadline_test() -> Nil {
     as "a quest that is achieved is not botched when its time runs out"
   assert saved_quests(taken:)
     == [
-      QuestRow(quest_id: 1806, state: 4, completed_at: None, active: None),
+      KnownRow(quest_id: 1806, state: Botched),
       achieved(quest_id: 1872, quest_ms_left: 1),
     ]
     as "the achieved quest stays, with 1 ms left (0 would show a full timer, 0x1406118a0)"
@@ -449,8 +451,7 @@ pub fn a_timed_objective_is_botched_over_the_connection_test() -> Nil {
   let #(_, taken) = fire(state: entered, timer: deadline_timer, at: 61_000)
   assert game_connection_support.quest_states(taken:) == [botched_2911]
     as "0x35C tells the client 2911 is Botched"
-  assert saved_quests(taken:)
-    == [QuestRow(quest_id: 2911, state: 4, completed_at: None, active: None)]
+  assert saved_quests(taken:) == [KnownRow(quest_id: 2911, state: Botched)]
     as "the botch is saved: the quest held Botched with no active entry"
   assert timer_effects(taken:) == []
     as "no deadline is left, so no timer starts"

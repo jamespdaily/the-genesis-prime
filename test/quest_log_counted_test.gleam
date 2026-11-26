@@ -29,13 +29,15 @@ const three_singles = 2347
 const skipped_first = 3297
 
 fn done_mask_of(log log: QuestLog, quest_id quest_id: Int) -> Int {
-  let assert Some(active) = quest_support.saved_row(log:, quest_id:).active
+  let assert Some(active) =
+    quest_support.active_of(quest_support.saved_row(log:, quest_id:))
     as "the quest is in the active list"
   active.done_mask
 }
 
 fn progress_of(log log: QuestLog, quest_id quest_id: Int) -> List(Int) {
-  let assert Some(active) = quest_support.saved_row(log:, quest_id:).active
+  let assert Some(active) =
+    quest_support.active_of(quest_support.saved_row(log:, quest_id:))
     as "the quest is in the active list"
   active.progress
 }

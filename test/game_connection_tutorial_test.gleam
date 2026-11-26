@@ -178,7 +178,9 @@ pub fn a_new_character_entering_world_3460_is_given_10513_after_its_quest_log_te
     as "opcode.0x35c.add_unaccepted: 10513, the Exile's first tutorial quest, in state 1"
   // The grant is on the connection's log: the next save keeps it, and a relog is told it.
   let saved = saved_quests(state:)
-  assert list.map(saved, fn(row) { #(row.quest_id, row.state) })
+  assert list.map(saved, fn(row) {
+      #(row.quest_id, quest_support.state_of(row))
+    })
     == [#(10_513, 1)]
     as "the save holds the quest Accepted"
   let #(_, relog) = entered(quests: saved)
@@ -219,7 +221,9 @@ pub fn the_servers_completion_of_10513_gives_10527_test() -> Nil {
     as "10513 Completed, then 10527 given at once"
   // A relog holds 10513 Completed and 10527 Accepted.
   let saved = saved_quests(state:)
-  assert list.map(saved, fn(row) { #(row.quest_id, row.state) })
+  assert list.map(saved, fn(row) {
+      #(row.quest_id, quest_support.state_of(row))
+    })
     == [#(10_513, 3), #(10_527, 1)]
     as "the save holds 10513 Completed and 10527 Accepted"
   let #(_, relog) = entered(quests: saved)

@@ -1061,7 +1061,7 @@ pub fn nodes_ended_frames(
   ended ended: List(#(Int, lasting.Node)),
   kept kept: List(#(Int, lasting.Node)),
 ) -> List(Effect) {
-  case holder.lingering && kept == [] {
+  case holder.phase == cast_state.LastGoGone && kept == [] {
     True -> finished_effects(cast_id:, audience: holder.audience)
     False ->
       targets_removed_effects(

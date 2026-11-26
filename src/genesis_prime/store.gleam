@@ -10,7 +10,7 @@ import genesis_prime/table/id.{
 }
 import gleam/bool
 import gleam/list
-import gleam/option.{type Option, None}
+import gleam/option.{type Option, None, Some}
 
 /// An account, keyed by the account table's id.
 pub type AccountId {
@@ -204,19 +204,89 @@ pub fn filled(unset unset: UnsetItem, charges charges: Int) -> HeldItem {
 }
 
 /// One quest of a character's log as the character_quest table keeps it, read
-/// and written whole: the quest's id (15 bits), its lua QuestState `state` (1 to
-/// 7), the Unix seconds it was completed at (`Some` for state 3 and for no other,
-/// `character_quest_completed_has_a_time`) and the active entry (`Some` for states
-/// 1 and 2 and for no other, `character_quest_active_has_its_entry`). The table's
-/// checks hold the ranges; the quest log (genesis_prime/game/quest_log) decodes
-/// each row against the client's tables and builds the rows it saves.
+/// and written whole, in the variant of its lua QuestState: an active quest (state 1
+/// or 2) holds the active entry, a completed one (3) the Unix seconds it was
+/// completed at, and a quest the client holds only a state of (4 to 7) neither. The
+/// quest's id is 15 bits. The table's checks hold the same pairing
+/// (`character_quest_state_is_known`, `character_quest_completed_has_a_time`,
+/// `character_quest_active_has_its_entry`) and `quest_row` builds a row from the
+/// columns under it; the quest log (genesis_prime/game/quest_log) decodes each row
+/// against the client's tables and builds the rows it saves.
 pub type QuestRow {
-  QuestRow(
-    quest_id: Int,
-    state: Int,
-    completed_at: Option(Int),
-    active: Option(ActiveQuest),
-  )
+  ActiveRow(quest_id: Int, state: ActiveState, active: ActiveQuest)
+  CompletedRow(quest_id: Int, at: Int)
+  KnownRow(quest_id: Int, state: KnownState)
+}
+
+/// The two states the client's active list holds (lua QuestState 1 and 2; any other
+/// crashes it, opcode.0x35f.active_state_crash).
+pub type ActiveState {
+  Accepted
+  Achieved
+}
+
+/// The states of the client's second list (lua QuestState 4 to 7).
+pub type KnownState {
+  Botched
+  Mentioned
+  Abandoned
+  Ignored
+}
+
+/// The row of a quest from the columns the table keeps, or `Error(Nil)` for a state
+/// outside 1 to 7 and for columns that do not go with the state: the completed time
+/// for state 3 and no other, the active entry for states 1 and 2 and no other
+/// (`priv/migrations/0021_character_quest.sql`).
+pub fn quest_row(
+  quest_id quest_id: Int,
+  state state: Int,
+  completed_at completed_at: Option(Int),
+  active active: Option(ActiveQuest),
+) -> Result(QuestRow, Nil) {
+  case state, completed_at, active {
+    1, None, Some(active) -> Ok(ActiveRow(quest_id:, state: Accepted, active:))
+    2, None, Some(active) -> Ok(ActiveRow(quest_id:, state: Achieved, active:))
+    3, Some(at), None -> Ok(CompletedRow(quest_id:, at:))
+    4, None, None -> Ok(KnownRow(quest_id:, state: Botched))
+    5, None, None -> Ok(KnownRow(quest_id:, state: Mentioned))
+    6, None, None -> Ok(KnownRow(quest_id:, state: Abandoned))
+    7, None, None -> Ok(KnownRow(quest_id:, state: Ignored))
+    _, _, _ -> Error(Nil)
+  }
+}
+
+/// The columns a quest row is saved as: its lua QuestState, the completed time and
+/// the active entry (the columns `quest_row` builds a row from).
+pub fn quest_columns(
+  quest: QuestRow,
+) -> #(Int, Option(Int), Option(ActiveQuest)) {
+  case quest {
+    ActiveRow(state:, active:, ..) -> #(
+      active_state_number(state:),
+      None,
+      Some(active),
+    )
+    CompletedRow(at:, ..) -> #(3, Some(at), None)
+    KnownRow(state:, ..) -> #(known_state_number(state:), None, None)
+  }
+}
+
+/// The lua QuestState of an active quest.
+pub fn active_state_number(state state: ActiveState) -> Int {
+  case state {
+    Accepted -> 1
+    Achieved -> 2
+  }
+}
+
+/// The lua QuestState of a quest of the second list.
+pub fn known_state_number(state state: KnownState) -> Int {
+  case state {
+    Botched -> 4
+    Mentioned -> 5
+    Abandoned -> 6
+    Ignored -> 7
+  }
 }
 
 /// One slot of an action set's bar as the character_action_slot table keeps it:

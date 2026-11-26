@@ -89,16 +89,22 @@ const table = "creature_kind"
 /// One row of the creature_kind table as the load reads it: the Creature2 id the
 /// row is for (0 for the default), the respawn time in milliseconds, the
 /// creature's attack: its Spell4 and the time between two of its casts in
-/// milliseconds, and its guard and opening Spell4s, both or neither.
+/// milliseconds, and its guard and opening Spell4s, which the table's
+/// `creature_kind_guard_and_opening_together` holds both set or both left out.
 pub type Row {
   Row(
     creature_id: Int,
     respawn_ms: Int,
     attack_spell4_id: Int,
     attack_interval_ms: Int,
-    guard_spell4_id: Option(Int),
-    opening_spell4_id: Option(Int),
+    guard: Option(GuardSpells),
   )
+}
+
+/// The two Spell4s a creature kind row names for its guard: the guard spell and the
+/// opening spell that ends it (genesis_prime/world_map/creature_guard_spells).
+pub type GuardSpells {
+  GuardSpells(guard_spell4_id: Int, opening_spell4_id: Int)
 }
 
 /// What the server chose for a kind of creature: the guard is none for a creature
@@ -183,7 +189,7 @@ pub fn select(
     [] -> {
       let assert Ok(kinds) =
         kinds_of(rows:, special_rows:, auto_attack_rows:, tables:)
-        as "no refusal means the default row is there"
+        as "no refusal means the default row is there and every guard holds"
       Ok(kinds)
     }
     refusals -> Error(refusals)
@@ -259,7 +265,8 @@ fn special_refusals(
   }
 }
 
-/// The kinds of the rows, or `Error(Nil)` with no default row among them. A creature with
+/// The kinds of the rows, or `Error(Nil)` with no default row among them or a row whose
+/// guard the client's tables do not hold. A creature with
 /// specials and no row of its own takes the default's fields and its own specials.
 fn kinds_of(
   rows rows: List(Row),
@@ -267,10 +274,14 @@ fn kinds_of(
   auto_attack_rows auto_attack_rows: List(creature_auto_attack.Row),
   tables tables: table_store.Tables,
 ) -> Result(Kinds, Nil) {
-  use default_row <- result.map(
+  use default_row <- result.try(
     list.find(rows, fn(row) { row.creature_id == 0 }),
   )
-  let default = kind_of_row(row: default_row, special_rows:, tables:)
+  use default <- result.try(kind_of_row(
+    row: default_row,
+    special_rows:,
+    tables:,
+  ))
   let creature_ids =
     list.append(
       list.map(rows, fn(row) { row.creature_id }),
@@ -281,29 +292,31 @@ fn kinds_of(
     )
     |> list.unique
     |> list.filter(fn(creature_id) { creature_id != 0 })
-  Kinds(
-    default:,
-    by_creature: list.map(creature_ids, fn(creature_id) {
+  use by_creature <- result.map(
+    list.try_map(creature_ids, fn(creature_id) {
       case list.find(rows, fn(row) { row.creature_id == creature_id }) {
-        Ok(row) -> #(creature_id, kind_of_row(row:, special_rows:, tables:))
-        Error(Nil) -> #(
-          creature_id,
-          with_auto_attacks(
-            kind: Kind(
-              ..default,
-              specials: creature_special.refs_of(
-                rows: special_rows,
-                creature_id:,
+        Ok(row) ->
+          kind_of_row(row:, special_rows:, tables:)
+          |> result.map(fn(kind) { #(creature_id, kind) })
+        Error(Nil) ->
+          Ok(#(
+            creature_id,
+            with_auto_attacks(
+              kind: Kind(
+                ..default,
+                specials: creature_special.refs_of(
+                  rows: special_rows,
+                  creature_id:,
+                ),
               ),
+              auto_attack_rows:,
+              creature_id:,
             ),
-            auto_attack_rows:,
-            creature_id:,
-          ),
-        )
+          ))
       }
-    })
-      |> dict.from_list,
+    }),
   )
+  Kinds(default:, by_creature: dict.from_list(by_creature))
 }
 
 /// The first rule the row breaks, in the order of `select`'s doc, or `Error(Nil)`
@@ -370,8 +383,8 @@ fn refusal_of(
       }
     },
     fn() {
-      case row.guard_spell4_id, row.opening_spell4_id {
-        Some(guard_spell4_id), Some(opening_spell4_id) ->
+      case row.guard {
+        Some(GuardSpells(guard_spell4_id:, opening_spell4_id:)) ->
           case
             creature_guard_spells.guard_of(
               guard_spell4_id:,
@@ -382,38 +395,37 @@ fn refusal_of(
             Error(unapplied) -> Ok(creature_guard_spells.describe(unapplied:))
             Ok(..) -> Error(Nil)
           }
-        None, None -> Error(Nil)
-        Some(..), None | None, Some(..) ->
-          Ok("a guard and an opening are both set or both left out")
+        None -> Error(Nil)
       }
     },
   ]
   list.find_map(checks, fn(check) { check() })
 }
 
+/// The kind of a row, or `Error(Nil)` when the client's tables do not hold its guard
+/// (`refusal_of` names why).
 fn kind_of_row(
   row row: Row,
   special_rows special_rows: List(creature_special.Row),
   tables tables: table_store.Tables,
-) -> Kind {
+) -> Result(Kind, Nil) {
+  use guard <- result.map(case row.guard {
+    Some(GuardSpells(guard_spell4_id:, opening_spell4_id:)) ->
+      creature_guard_spells.guard_of(
+        guard_spell4_id:,
+        opening_spell4_id:,
+        tables:,
+      )
+      |> result.map(Some)
+      |> result.replace_error(Nil)
+    None -> Ok(None)
+  })
   Kind(
     respawn_ms: row.respawn_ms,
     attack_spell4_id: Spell4Id(row.attack_spell4_id),
     alternate_spell4_ids: [],
     attack_interval_ms: row.attack_interval_ms,
-    guard: case row.guard_spell4_id, row.opening_spell4_id {
-      Some(guard_spell4_id), Some(opening_spell4_id) -> {
-        let assert Ok(guard) =
-          creature_guard_spells.guard_of(
-            guard_spell4_id:,
-            opening_spell4_id:,
-            tables:,
-          )
-          as "the load checked the guard before it took the row"
-        Some(guard)
-      }
-      Some(..), None | None, Some(..) | None, None -> None
-    },
+    guard:,
     specials: creature_special.refs_of(
       rows: special_rows,
       creature_id: row.creature_id,

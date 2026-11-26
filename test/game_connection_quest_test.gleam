@@ -82,9 +82,11 @@ pub fn accepting_a_quest_answers_and_saves_it_test() -> Nil {
     game_connection_support.ask_request(taken)
     as "the save timer asks the store to save the place and the log"
   let assert [row] = quests as "the log holds the one quest, now accepted"
-  assert row.quest_id == 1872 && row.state == 1 && row.completed_at == None
+  assert row.quest_id == 1872
+    && quest_support.state_of(row) == 1
+    && quest_support.completed_at_of(row) == None
     as "the accepted quest is saved in state 1, not completed"
-  let assert Some(active) = row.active
+  let assert Some(active) = quest_support.active_of(row)
     as "state 1 is in the client's active list"
   assert active.tracked
     && active.done_mask == 0
@@ -155,9 +157,11 @@ pub fn accepting_learning_to_shop_leaves_its_store_purchase_open_across_the_save
     game_connection_support.ask_request(saving)
     as "the save timer asks the store to save the place and the log"
   let assert [row] = saved as "the log holds the one quest"
-  assert row.quest_id == 10_510 && row.state == 1 && row.completed_at == None
+  assert row.quest_id == 10_510
+    && quest_support.state_of(row) == 1
+    && quest_support.completed_at_of(row) == None
     as "the quest is saved in state 1, not completed"
-  let assert Some(active) = row.active
+  let assert Some(active) = quest_support.active_of(row)
     as "state 1 is in the client's active list"
   assert active.done_mask == 0 && active.progress == [0]
     as "opcode.0x35f: the store purchase is not done"
