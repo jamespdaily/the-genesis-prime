@@ -4099,6 +4099,13 @@ pub fn a_unit_that_left_is_remembered_by_its_last_generation_so_a_late_move_of_t
     moved(session:, move: move_of_unit_9(sight_number: 5, x: 3.0))
   assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 0
     as "the memory outlives the owner's end: a late move of the sight is dropped"
+  let shown_then_gone =
+    appeared(session: moving_viewer(), unit_id: 9, sight_number: 5).0
+  let session = reported_gone(session: shown_then_gone).0
+  let #(session, taken) =
+    moved(session:, move: move_of_unit_9(sight_number: 5, x: 4.0))
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 0
+    as "a unit shown and then ended by its owner is remembered by the sight it was shown at"
 }
 
 pub fn a_viewer_holds_at_most_sixteen_chunks_of_a_unit_drops_the_oldest_with_one_warning_and_loses_every_hold_with_its_stay_test() -> Nil {
