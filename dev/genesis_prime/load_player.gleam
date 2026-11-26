@@ -16,11 +16,13 @@
 //// until it ends, so each listener holds a connection per player.
 ////
 //// With other players in sight (every player starts at the same place) the server
-//// also writes their units' 0x262, 0x638 and 0x355 to the player, which it reads
-//// and drops among the pongs (`game_client.pong_among_messages`). A walking player
-//// (`play`'s `walking`) also sends one 0x0637 every 125 ms, the client's own
-//// movement send interval until the server sets one (opcode.0xf1), moving a few
-//// units along x and back, so every player in the map is relayed it.
+//// also writes their units' 0x262, 0x638 and 0x355 to the player, which it reads among the
+//// pongs (`game_client.pong_among_messages`) and keeps what it counts of them
+//// (`genesis_prime/load_sight`) when `play`'s `reading` is `ReadFrames`; with `DropFrames` it
+//// drops each frame unopened. A walking player (`play`'s `walking`) also sends one 0x0637
+//// every 125 ms, the client's own movement send interval until the server sets one
+//// (opcode.0xf1), moving a few units along x and back, so every player in the map is
+//// relayed it, and presses its ability at each time of `presses_at_ms`.
 ////
 //// The pings are the client's own (SendNetworkPings, opcode.0x0, opcode.0x1):
 //// the first has number 0, each next is sent only after the last is answered,
@@ -32,6 +34,7 @@ import game_client
 import genesis_prime/add_account
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/load_sample
+import genesis_prime/load_sight.{type Sight}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
@@ -78,9 +81,62 @@ pub type Report {
   /// The player finished a stage, which took this many milliseconds from the
   /// end of the stage before it.
   Reached(player: Int, stage: Stage, took_ms: Int)
-  /// The player's step ended, with each ping's round trip in microseconds.
-  Finished(player: Int, round_trips_us: List(Int))
+  /// The player's step ended, with each ping's round trip in microseconds and what it
+  /// sent and read of the others.
+  Finished(player: Int, round_trips_us: List(Int), walked: Walked)
 }
+
+/// Whether a player opens each frame the server writes it and keeps what it shows of the
+/// other players (`genesis_prime/load_sight`), or drops each unopened, as the client's own
+/// reads of a run that does not use them: opening a frame decrypts it, and a run of many
+/// players in sight of each other pays for every frame of every one.
+pub type Reading {
+  ReadFrames
+  DropFrames
+}
+
+/// What a walking player sent and read: its unit's id, what it read of the other players
+/// (none when it dropped its frames), when it sent each move and when it pressed its
+/// ability, in milliseconds on the monotonic clock.
+pub type Walked {
+  Walked(
+    unit_id: Int,
+    sight: Option(Sight),
+    moved_ms: List(Int),
+    pressed_ms: List(Int),
+  )
+}
+
+/// The ability a casting walker presses: the bag index it is held at and the times it
+/// is to be pressed, in milliseconds on the monotonic clock, the earliest first.
+type Presses {
+  Presses(bag_index: Int, due_ms: List(Int), sent_ms: List(Int))
+}
+
+/// The Esper's Telekinetic Strike, Spell4 32893 (tier 1, cast time 1,250 ms, no cost), of
+/// Spell4Base 19102: the longest cast a level-1 character of any class holds (`SpellLevel`
+/// rows of level 1, `Spell4.castTime`), pressed with no target since its Spell4TargetMechanics
+/// row 6 has targetType 2, the caster.
+pub const pressed_spell4_base_id = 19_102
+
+/// How long Telekinetic Strike casts, in milliseconds (Spell4 32893 `castTime`): from a
+/// press's 0x7ff to its 0x7fe the cast is held, and a viewer reads each move relayed
+/// between them.
+pub const pressed_cast_ms = 1250
+
+/// How many 0x7ff, and likewise 0x7fe, a viewer is written for one press of the ability from
+/// a caster with no target: the ability's own cast and the casts it starts on the caster
+/// (`Spell4Effects` Proxy rows of the spell aimed at the caster, and theirs in turn).
+pub const frames_per_press = 1
+
+/// The CharacterCreation row of a Warrior (class 1, race 1, sex 1, a PreTutorial start with
+/// no entitlement and no cost): the character a walker creates unless it casts.
+pub const warrior_creation_id = 466
+
+/// The CharacterCreation row of an Esper (class 3, race 1, sex 1, a PreTutorial start with
+/// no entitlement and no cost): the character a casting walker creates, which holds the
+/// ability it presses at level 1.
+const esper_creation_id = 473
 
 /// The next ping: its number and how long to wait before sending it.
 type Ping {
@@ -181,6 +237,8 @@ pub fn play(
   begin_at_ms begin_at_ms: Int,
   until_ms until_ms: Int,
   walking walking: Bool,
+  presses_at_ms presses_at_ms: List(Int),
+  reading reading: Reading,
   report report: Subject(Report),
 ) -> Nil {
   process.sleep(int.max(0, begin_at_ms - runtime.now().monotonic_ms))
@@ -218,14 +276,32 @@ pub fn play(
   let mark = reached(GameHello, mark)
   list_characters(game)
   let mark = reached(CharacterList, mark)
-  let character_id = create_character(game:, name: account.character_name)
+  let character_id =
+    create_character(
+      game:,
+      name: account.character_name,
+      creation_id: case presses_at_ms {
+        [] -> warrior_creation_id
+        [_, ..] -> esper_creation_id
+      },
+    )
   let mark = reached(Create, mark)
-  let #(_burst, have) = enter_world(game:, character_id:)
+  let #(burst, have) = enter_world(game:, character_id:)
   let mark = reached(EnterWorld, mark)
   let sent_at_ms = runtime.now().monotonic_ms
-  let #(first, have) = round_trip(game:, have:, number: 0)
+  let unit_id = game_client.unit_create_player_in(frames: burst).unit_id
+  let sight = case reading {
+    ReadFrames ->
+      Some(load_sight.read_all(
+        at_us: load_sample.microseconds(),
+        sight: load_sight.new(own_unit_id: unit_id),
+        frames: burst,
+      ))
+    DropFrames -> None
+  }
+  let #(first, read, have) = round_trip(game:, have:, number: 0)
   let _mark = reached(FirstPong, mark)
-  let trips =
+  let kept =
     keep_playing(
       game:,
       have:,
@@ -234,11 +310,32 @@ pub fn play(
       until_ms:,
       trips: [first],
       walk: case walking {
-        True -> Some(Walk(last_move_ms: sent_at_ms, moves: 0))
+        True -> Some(Walk(last_move_ms: sent_at_ms, sent_ms: []))
         False -> None
       },
+      presses: Presses(
+        bag_index: case presses_at_ms {
+          [] -> 0
+          [_, ..] -> pressed_bag_index(burst:)
+        },
+        due_ms: presses_at_ms,
+        sent_ms: [],
+      ),
+      sight: read_into(open: opened_by(game:), sight:, outers: read),
     )
-  process.send(report, Finished(player:, round_trips_us: trips))
+  process.send(
+    report,
+    Finished(
+      player:,
+      round_trips_us: kept.trips,
+      walked: Walked(
+        unit_id:,
+        sight: kept.sight,
+        moved_ms: kept.moved_ms,
+        pressed_ms: kept.presses.sent_ms,
+      ),
+    ),
+  )
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
   Nil
@@ -299,9 +396,14 @@ pub fn list_characters(game: game_client.Game) -> Nil {
   Nil
 }
 
-/// Creates the player's character, and its id.
-pub fn create_character(game game: game_client.Game, name name: String) -> Int {
-  game_client.send_create(game:, body: create_request(name))
+/// Creates the player's character from the CharacterCreation row `creation_id`, and its
+/// id.
+pub fn create_character(
+  game game: game_client.Game,
+  name name: String,
+  creation_id creation_id: Int,
+) -> Int {
+  game_client.send_create(game:, body: create_request(name:, creation_id:))
   let assert [created] = game_client.read(game:, count: 1)
     as "one 0x00DC answers a create"
   let assert Ok(created) = create_character_result.decode(created.body)
@@ -348,10 +450,10 @@ pub fn play_into_world(
   game_client.read_entry_kept(game:, have: <<>>)
 }
 
-/// Where a walking player is: when it sent its last 0x0637, and how many it has
-/// sent.
+/// Where a walking player is: when it sent its last 0x0637, and when it sent each,
+/// the last first.
 type Walk {
-  Walk(last_move_ms: Int, moves: Int)
+  Walk(last_move_ms: Int, sent_ms: List(Int))
 }
 
 /// How often a walking player sends its movement, in milliseconds: the client's
@@ -361,9 +463,53 @@ const move_every_ms = 125
 /// How many units a walking player steps along x before it steps back.
 const steps_out = 10
 
+/// What a player holds when its step ends.
+type Kept {
+  Kept(
+    trips: List(Int),
+    sight: Option(Sight),
+    moved_ms: List(Int),
+    presses: Presses,
+  )
+}
+
+/// The bag index of the ability a casting walker presses, among the abilities its entry
+/// burst holds.
+fn pressed_bag_index(burst burst: List(Frame)) -> Int {
+  let assert Ok(#(bag_index, _)) =
+    list.find(game_client.loadout_in(frames: burst).abilities, fn(slot) {
+      slot.1 == pressed_spell4_base_id
+    })
+    as "a level-1 Esper's entry holds Telekinetic Strike among its abilities"
+  bag_index
+}
+
+/// Opens the frames the server wrote `game`'s client from their 0x3DC wrapper.
+fn opened_by(game game: game_client.Game) -> fn(List(Frame)) -> List(Frame) {
+  fn(outers) { game_client.opened(game:, outers:) }
+}
+
+/// The sight after the client read the `outers` the server wrote it, opened by `open` (from
+/// their 0x3DC wrapper) as they are read, or none for a player that keeps no sight and so
+/// opens none.
+pub fn read_into(
+  open open: fn(List(Frame)) -> List(Frame),
+  sight sight: Option(Sight),
+  outers outers: List(Frame),
+) -> Option(Sight) {
+  option.map(sight, fn(sight) {
+    load_sight.read_all(
+      sight:,
+      frames: open(outers),
+      at_us: load_sample.microseconds(),
+    )
+  })
+}
+
 /// Pings until the step ends, each ping as the client's rule has it, and, for a
-/// walking player, sends a 0x0637 every `move_every_ms`; what else the server
-/// writes meanwhile is read and dropped.
+/// walking player, sends a 0x0637 every `move_every_ms` and presses its ability at
+/// each time of `presses`; what else the server writes meanwhile is read into `sight`, when
+/// the player keeps one, and dropped unopened when it does not.
 fn keep_playing(
   game game: game_client.Game,
   have have: BitArray,
@@ -372,7 +518,9 @@ fn keep_playing(
   until_ms until_ms: Int,
   trips trips: List(Int),
   walk walk: Option(Walk),
-) -> List(Int) {
+  presses presses: Presses,
+  sight sight: Option(Sight),
+) -> Kept {
   let now = runtime.now().monotonic_ms
   let ping = next_ping(answered:, sent_at_ms:, now_ms: now)
   let ping_at = now + ping.wait_ms
@@ -380,32 +528,66 @@ fn keep_playing(
     Some(Walk(last_move_ms:, ..)) -> last_move_ms + move_every_ms
     None -> ping_at
   }
-  let next_at = int.min(ping_at, move_at)
+  let press_at = case presses.due_ms {
+    [due_ms, ..] -> due_ms
+    [] -> ping_at
+  }
+  let next_at = int.min(ping_at, int.min(move_at, press_at))
   case next_at >= until_ms {
-    True -> trips
+    True ->
+      Kept(
+        trips:,
+        sight:,
+        moved_ms: case walk {
+          Some(Walk(sent_ms:, ..)) -> sent_ms
+          None -> []
+        },
+        presses:,
+      )
     False -> {
       process.sleep(int.max(0, next_at - now))
-      let #(walk, have) = case walk {
-        Some(Walk(moves:, ..)) if move_at <= next_at -> {
+      let presses = case presses.due_ms {
+        [due_ms, ..later] if due_ms <= next_at -> {
+          game_client.press_ability(
+            game:,
+            client_cast_id: list.length(presses.sent_ms) + 2,
+            bag_index: presses.bag_index,
+            target: 0,
+          )
+          Presses(..presses, due_ms: later, sent_ms: [
+            runtime.now().monotonic_ms,
+            ..presses.sent_ms
+          ])
+        }
+        _ -> presses
+      }
+      let #(walk, have, sight) = case walk {
+        Some(Walk(sent_ms:, ..)) if move_at <= next_at -> {
           game_client.send_world(
             game:,
             message_id: 0x0637,
-            body: step_of_the_walk(moves),
+            body: step_of_the_walk(list.length(sent_ms)),
           )
+          let sent_at_ms = runtime.now().monotonic_ms
+          let #(read, have) = game_client.drain(game:, have:)
           #(
-            Some(Walk(
-              last_move_ms: runtime.now().monotonic_ms,
-              moves: moves + 1,
-            )),
-            game_client.drain(game:, have:),
+            Some(
+              Walk(last_move_ms: runtime.now().monotonic_ms, sent_ms: [
+                sent_at_ms,
+                ..sent_ms
+              ]),
+            ),
+            have,
+            read_into(open: opened_by(game:), sight:, outers: read),
           )
         }
-        Some(_) | None -> #(walk, have)
+        Some(_) | None -> #(walk, have, sight)
       }
       case ping_at <= next_at {
         True -> {
           let sent_at_ms = runtime.now().monotonic_ms
-          let #(trip, have) = round_trip(game:, have:, number: ping.number)
+          let #(trip, read, have) =
+            round_trip(game:, have:, number: ping.number)
           keep_playing(
             game:,
             have:,
@@ -414,6 +596,8 @@ fn keep_playing(
             until_ms:,
             trips: [trip, ..trips],
             walk:,
+            presses:,
+            sight: read_into(open: opened_by(game:), sight:, outers: read),
           )
         }
         False ->
@@ -425,6 +609,8 @@ fn keep_playing(
             until_ms:,
             trips:,
             walk:,
+            presses:,
+            sight:,
           )
       }
     }
@@ -457,29 +643,29 @@ fn step_of_the_walk(moves: Int) -> BitArray {
   ])
 }
 
-/// Sends a ping and waits for its pong, which must carry the ping's number, the
-/// other players' messages that come first read and dropped; the round trip in
-/// microseconds and the bytes read beyond the pong.
+/// Sends a ping and waits for its pong, which must carry the ping's number; the round
+/// trip in microseconds, the other players' messages that came first and the bytes read
+/// beyond the pong.
 fn round_trip(
   game game: game_client.Game,
   have have: BitArray,
   number number: Int,
-) -> #(Int, BitArray) {
+) -> #(Int, List(Frame), BitArray) {
   let sent = load_sample.microseconds()
   game_client.send_ping(game:, number:)
-  let #(answered, have) = game_client.pong_among_messages(game:, have:)
+  let #(answered, read, have) = game_client.pong_among_messages(game:, have:)
   assert answered == number as "opcode.0x1: the pong carries the ping's number"
-  #(load_sample.microseconds() - sent, have)
+  #(load_sample.microseconds() - sent, read, have)
 }
 
-/// The create request of CharacterCreation row 466 (class 1, race 1, sex 1, a
-/// PreTutorial start with no entitlement and no cost) for a path of 1, the look
-/// of labels 2 and 22, and the 46 bone values race 1, sex 1 carries
-/// (opcode.0x25b.counts), each the float 1.0 plus one step (0x3F800001).
-fn create_request(name: String) -> BitArray {
+/// The create request of CharacterCreation row `creation_id` (a race 1, sex 1 row with a
+/// PreTutorial start, no entitlement and no cost) for a path of 1, the look of labels 2 and
+/// 22, and the 46 bone values race 1, sex 1 carries (opcode.0x25b.counts), each the float
+/// 1.0 plus one step (0x3F800001).
+fn create_request(name name: String, creation_id creation_id: Int) -> BitArray {
   let assert Ok(body) =
     create_character.encode(CreateCharacter(
-      creation_id: 466,
+      creation_id:,
       name:,
       path: 1,
       customisation_labels: [2, 22],

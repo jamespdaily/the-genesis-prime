@@ -23,6 +23,7 @@ import genesis_prime/dev_exit
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/string
 
 /// An event a load run's gate judges.
@@ -37,11 +38,33 @@ pub type Event {
   Respawns
   /// A move of one probe that another probe read.
   MovesRead
+  /// A player's 0x262 that a walker or a probe read, one for each other player.
+  PlayersShown
+  /// A 0x7ff of a walker's cast that a probe read.
+  CastStartsRead
+  /// A 0x7fe of a walker's cast that a probe read.
+  CastEndsRead
+  /// A cast of a walker that a probe read held for at least half its cast time between
+  /// its 0x7ff and its 0x7fe, so it was not cut short.
+  CastsHeld
+  /// A 0x355 of a player that a walker read: the probes leaving.
+  RemovalsRead
 }
 
 /// Every event.
 pub fn all() -> List(Event) {
-  [StrikeRounds, StrikeAnswers, StrikesAnswered, Respawns, MovesRead]
+  [
+    StrikeRounds,
+    StrikeAnswers,
+    StrikesAnswered,
+    Respawns,
+    MovesRead,
+    PlayersShown,
+    CastStartsRead,
+    CastEndsRead,
+    CastsHeld,
+    RemovalsRead,
+  ]
 }
 
 /// The event in words, as the run's lines name it.
@@ -52,6 +75,11 @@ pub fn name(event: Event) -> String {
     StrikesAnswered -> "strikes answered"
     Respawns -> "respawns"
     MovesRead -> "moves read by a probe"
+    PlayersShown -> "players shown"
+    CastStartsRead -> "cast starts read by a probe"
+    CastEndsRead -> "cast ends read by a probe"
+    CastsHeld -> "casts held by a probe's read"
+    RemovalsRead -> "removals read by a walker"
   }
 }
 
@@ -85,6 +113,87 @@ pub fn nothing_lost(lost lost: Int) -> Condition {
         said: "answers were lost to the deadline: "
           <> int.to_string(lost)
           <> " sent before it fell due, and their round closed without them",
+      )
+  }
+}
+
+/// The condition that the map keeps up over a whole step: its mean queue stays below one
+/// round of moves, one from each of `players`, and it is found running in fewer than half
+/// of its `samples`. `queued` is the sum of the queue of each sample. A map that was never
+/// sampled is not known to keep up.
+pub fn map_keeps_up(
+  queued queued: Int,
+  samples samples: Int,
+  running running: Int,
+  players players: Int,
+) -> Condition {
+  let held = queued < players * samples && running * 2 < samples
+  Condition(held:, said: case samples, held {
+    0, _ -> "the map was never sampled, so it is not known to keep up"
+    _, True ->
+      "the map keeps up: its mean queue stays below one round of moves and it is idle in most samples"
+    _, False ->
+      "the map falls behind: its mean queue reached one round of moves, or it is running in most samples"
+  })
+}
+
+/// How much longer than the paired baseline run's the delay's 99th percentile may be, in
+/// microseconds.
+const delay_guard_us = 50_000
+
+/// The condition that the delay's 99th percentile, in microseconds, is at most
+/// `delay_guard_us` above the paired baseline run's. With no baseline given it holds and says
+/// the delay is printed and not judged, since a constant would not follow the machine.
+pub fn delay_within_guard(
+  p99_us p99_us: Int,
+  baseline_p99_us baseline_p99_us: Option(Int),
+) -> Condition {
+  case baseline_p99_us {
+    None ->
+      Condition(
+        held: True,
+        said: "the delay is printed and not judged: no baseline was given",
+      )
+    Some(baseline) ->
+      case p99_us <= baseline + delay_guard_us {
+        True ->
+          Condition(
+            held: True,
+            said: "the delay's 99th percentile is within 50 ms of the baseline's",
+          )
+        False ->
+          Condition(
+            held: False,
+            said: "the delay's 99th percentile is more than 50 ms above the baseline's: "
+              <> int.to_string(p99_us)
+              <> " us against "
+              <> int.to_string(baseline)
+              <> " us",
+          )
+      }
+  }
+}
+
+/// The condition that no frame was read for a unit after its removal: `violations` is how
+/// many were, and `removals` how many removals the clients read, since a run that read none
+/// checked no order.
+pub fn no_frame_after_removal(
+  violations violations: Int,
+  removals removals: Int,
+) -> Condition {
+  case violations, removals {
+    _, 0 ->
+      Condition(
+        held: False,
+        said: "no removal was read, so no frame was checked against one",
+      )
+    0, _ ->
+      Condition(held: True, said: "no frame was read after its unit's removal")
+    _, _ ->
+      Condition(
+        held: False,
+        said: "frames were read after their unit's removal: "
+          <> int.to_string(violations),
       )
   }
 }
