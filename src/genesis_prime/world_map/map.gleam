@@ -91,9 +91,10 @@
 //// (every notice to a player's connection goes as Noticed(its stay, notice))
 //// ```
 ////
-//// The relation of one player with another, kept for the owner of a unit and each viewer of
-//// it (`Player.viewers`, `Relation`), under the generation of the sight the viewer has of the
-//// owner, as the creature's is. A pair that comes into sight begins it awaiting the owner's
+//// The relation of one player with another, kept once, in the viewer's `Player.sees` under
+//// the owner's connection (`Relation`), with the generation of the sight the viewer has of the
+//// owner, as the creature's is; the owner finds its viewers among its own `sees`, whose
+//// sights are symmetric. A pair that comes into sight begins it awaiting the owner's
 //// snapshot; the owner's news is relayed only through a relation that relays, in the order
 //// the map takes it; the pair that leaves sight ends it by `PlayerUnseen`, whether or not
 //// the viewer took the snapshot. The owner's moves are not news: the owner tells its viewers
@@ -1173,7 +1174,7 @@ pub type SpawnState {
   Failed
 }
 
-/// One sight of a creature by a player: the generation the map gave it when the
+/// One sight of a creature or of a player by a player: the generation the map gave it when the
 /// pair came into sight, the stay the player was in then (a relation relays only
 /// while the player is still in that stay, so a player that left and joined again
 /// while the creature lies released hears nothing of the earlier stay), and whether the creature's snapshot of that generation is
@@ -1196,9 +1197,10 @@ pub type RelationState {
 
 /// One player in the map: the stay its connection's Join named, its unit, the
 /// watch on its connection, the players
-/// it sees, each with the generation of that sight, which the map gave when the pair came
-/// into sight (the relation is symmetric, so a pair is in one
-/// player's `sees` exactly when it is in the other's, each way with its own generation), the spawns of the
+/// it sees, each as a `Relation` holding the generation of that sight, which the map gave when
+/// the pair came into sight, this player's stay then and the state of the owner's snapshot
+/// (the sight is symmetric, so a pair is in one
+/// player's `sees` exactly when it is in the other's, each way with its own relation), the spawns of the
 /// map's world it sees, whatever their creature's state (a spawn is in `seen`
 /// exactly when it is within sight of the player's place), the static objects
 /// it sees (`objects`, likewise), whether it is ready,
@@ -1213,8 +1215,7 @@ type Player {
     stay: Stay,
     unit: PlayerUnit,
     watch: WatchId,
-    sees: Dict(ConnectionId, Generation),
-    viewers: Dict(ConnectionId, Relation),
+    sees: Dict(ConnectionId, Relation),
     seen: Set(SpawnId),
     objects: Set(SpawnId),
     readiness: Readiness,
@@ -1576,8 +1577,8 @@ pub fn player_relation(
   owner owner: ConnectionId,
   viewer viewer: ConnectionId,
 ) -> Option(Relation) {
-  dict.get(state.players, owner)
-  |> result.try(fn(player) { dict.get(player.viewers, viewer) })
+  dict.get(state.players, viewer)
+  |> result.try(fn(player) { dict.get(player.sees, owner) })
   |> option.from_result
 }
 
@@ -3124,6 +3125,15 @@ pub fn server_time(
   { monotonic_ms - origin_ms } % server_time_modulus
 }
 
+/// The relation a viewer holds with a player that came into sight: the generation of the
+/// sight and the viewer's stay, awaiting the owner's snapshot of that generation.
+fn sight_begun(
+  generation generation: Generation,
+  viewer viewer: Player,
+) -> Relation {
+  Relation(generation:, stay: viewer.stay, state: AwaitingSnapshot)
+}
+
 /// What a move decides of one pair: the pair that comes into sight is given the two
 /// generations of its sights and told both ways, the pair that leaves is told both
 /// ways with the generations it held, and a pair that stays as it was changes nothing.
@@ -3131,7 +3141,7 @@ pub fn server_time(
 fn pair_decided(
   held held: #(
     State,
-    Dict(ConnectionId, Generation),
+    Dict(ConnectionId, Relation),
     Dict(ConnectionId, Player),
     List(Effect(ServiceEffect(Outgoing))),
   ),
@@ -3140,7 +3150,7 @@ fn pair_decided(
   place place: Place,
 ) -> #(
   State,
-  Dict(ConnectionId, Generation),
+  Dict(ConnectionId, Relation),
   Dict(ConnectionId, Player),
   List(Effect(ServiceEffect(Outgoing))),
 ) {
@@ -3155,13 +3165,21 @@ fn pair_decided(
       let #(state, other_sight) = issued(state:)
       #(
         state,
-        dict.insert(mover_sees, other_connection, mover_sight),
+        dict.insert(
+          mover_sees,
+          other_connection,
+          sight_begun(generation: mover_sight, viewer: mover_player),
+        ),
         dict.insert(
           players,
           other_connection,
           Player(
             ..player,
-            sees: dict.insert(player.sees, connection, other_sight),
+            sees: dict.insert(
+              player.sees,
+              connection,
+              sight_begun(generation: other_sight, viewer: player),
+            ),
           ),
         ),
         list.append(
@@ -3817,7 +3835,11 @@ fn joined_again(
     Player(
       ..player,
       sees: list.fold(renewed, player.sees, fn(sees, sight) {
-        dict.insert(sees, sight.0.0, sight.1)
+        dict.insert(
+          sees,
+          sight.0.0,
+          sight_begun(generation: sight.1, viewer: player),
+        )
       }),
     )
   let state =
@@ -3833,7 +3855,11 @@ fn joined_again(
             other.0,
             Player(
               ..other.1,
-              sees: dict.insert({ other.1 }.sees, connection, other_sight),
+              sees: dict.insert(
+                { other.1 }.sees,
+                connection,
+                sight_begun(generation: other_sight, viewer: other.1),
+              ),
             ),
           )
         },
@@ -3923,7 +3949,6 @@ fn joined_new(
           unit:,
           watch:,
           sees: dict.new(),
-          viewers: dict.new(),
           seen: set.new(),
           objects: set.new(),
           readiness: StillLoading,
@@ -4022,12 +4047,18 @@ fn joined_with(
         other.0,
         Player(
           ..other.1,
-          sees: dict.insert({ other.1 }.sees, connection, other_sight),
+          sees: dict.insert(
+            { other.1 }.sees,
+            connection,
+            sight_begun(generation: other_sight, viewer: other.1),
+          ),
         ),
       )
     })
   let sees =
-    list.map(sights, fn(sight) { #(sight.0.0, sight.1) })
+    list.map(sights, fn(sight) {
+      #(sight.0.0, sight_begun(generation: sight.1, viewer: player))
+    })
     |> dict.from_list
   let pairs =
     list.flat_map(sights, fn(sight) {
@@ -4151,7 +4182,7 @@ fn sights_of_pair(
     as "a pair that sees each other is in both players' sees"
   let assert Ok(second_sight) = dict.get(second.sees, first_connection)
     as "a pair that sees each other is in both players' sees"
-  #(first_sight, second_sight)
+  #(first_sight.generation, second_sight.generation)
 }
 
 /// The answer to a join: the unit as message 0x262's record in the map's
@@ -4220,7 +4251,7 @@ fn without(
   let viewers =
     list.filter_map(others, fn(other) {
       dict.get(player.sees, other.0)
-      |> result.map(fn(sight) { #(other, sight) })
+      |> result.map(fn(sight) { #(other, sight.generation) })
     })
   let players =
     list.fold(viewers, dict.delete(state.players, connection), fn(players, v) {
@@ -4257,7 +4288,11 @@ fn without(
               )
             case dict.get(player.sees, other.0) {
               Ok(sight) -> [
-                unwatched(to: other, by: connection, generation: sight),
+                unwatched(
+                  to: other,
+                  by: connection,
+                  generation: sight.generation,
+                ),
                 gone,
               ]
               Error(Nil) -> [gone]
