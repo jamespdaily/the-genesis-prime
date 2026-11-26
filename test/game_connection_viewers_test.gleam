@@ -3596,7 +3596,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
       let assert Some(after) = connection_state.entered_of(session.status)
         as "the player is still in the world"
       assert list.filter([100, 101, 102, 103], fn(cast_id) {
-          client_casts.is_held(casts: after.client_casts, cast_id:)
+          client_casts.is_held(casts: after.client_casts, cast_id:, now_ms: 0)
         })
         == held_after
         as { reason <> ": the casts the client still holds" }

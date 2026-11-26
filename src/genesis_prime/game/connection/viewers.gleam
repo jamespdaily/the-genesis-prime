@@ -717,6 +717,7 @@ pub fn viewer_takes(
         when: client_casts.is_held(
           casts: entered.client_casts,
           cast_id: start.cast_id,
+          now_ms: now.monotonic_ms,
         )
           || start.caster_unit_id == entered.unit_id,
         return: Continue(session, []),
@@ -768,6 +769,7 @@ pub fn viewer_takes(
     unit_news.CastWent(go:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: go.cast_id,
         frame: cast_frame.went_frame(go:),
@@ -776,6 +778,7 @@ pub fn viewer_takes(
     unit_news.CastMissed(missed:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: missed.cast_id,
         frame: cast_frame.missed_frame(missed:),
@@ -784,6 +787,7 @@ pub fn viewer_takes(
     unit_news.CastTicked(tick:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: tick.cast_id,
         frame: cast_frame.ticked_frame(tick:),
@@ -792,6 +796,7 @@ pub fn viewer_takes(
     unit_news.CastTargetsRemoved(removed:, destroyed:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: removed.cast_id,
         frame: cast_frame.targets_removed_frame(removed:),
@@ -800,6 +805,7 @@ pub fn viewer_takes(
     unit_news.CastStackRemoved(removed:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id: removed.cast_id,
         frame: cast_frame.stack_removed_frame(removed:),
@@ -808,6 +814,7 @@ pub fn viewer_takes(
     unit_news.CastInterrupted(cast_id:) ->
       written_cast_frames(
         session:,
+        now:,
         entered:,
         cast_id:,
         frames: [
@@ -819,6 +826,7 @@ pub fn viewer_takes(
     unit_news.CastFinished(cast_id:) ->
       written_cast_frame(
         session:,
+        now:,
         entered:,
         cast_id:,
         frame: cast_frame.finished_frame(cast_id:),
@@ -1288,6 +1296,7 @@ fn life_news(
 /// the client drops a message that names a cast it does not hold.
 fn written_cast_frame(
   session session: Session,
+  now now: Now,
   entered entered: world_entry.Entered,
   cast_id cast_id: Int,
   frame frame: Frame,
@@ -1295,6 +1304,7 @@ fn written_cast_frame(
 ) -> client_connection.Handled(Session) {
   written_cast_frames(
     session:,
+    now:,
     entered:,
     cast_id:,
     frames: [frame],
@@ -1307,6 +1317,7 @@ fn written_cast_frame(
 /// none of its caster's frames); the cast is forgotten after them when `forgetting`.
 fn written_cast_frames(
   session session: Session,
+  now now: Now,
   entered entered: world_entry.Entered,
   cast_id cast_id: Int,
   frames frames: List(Frame),
@@ -1324,6 +1335,8 @@ fn written_cast_frames(
           client_casts: client_casts.finished(
             casts: entered.client_casts,
             cast_id:,
+            now_ms: now.monotonic_ms,
+            hold_ms: session.settings.ask_deadline_ms,
           ),
         )
       })
