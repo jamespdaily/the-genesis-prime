@@ -18,7 +18,8 @@ suspend(Pid) ->
     erlang:suspend_process(Pid),
     nil.
 
-%% Resumes the process once for each time it was suspended.
+%% Resumes the process, once for each time the calling process suspended it: only the
+%% process that suspended a process can resume it.
 resume(Pid) ->
     erlang:resume_process(Pid),
     nil.

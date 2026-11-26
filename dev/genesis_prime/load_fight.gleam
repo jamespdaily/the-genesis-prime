@@ -1143,10 +1143,11 @@ fn handed_over(
       Nil
     }
     Behind(ms:) -> {
-      suspend(map_pid)
-      record(load_sample.microseconds())
+      // The process that suspends the map is the one that resumes it.
       let _pid =
         process.spawn_unlinked(fn() {
+          suspend(map_pid)
+          record(load_sample.microseconds())
           process.sleep(ms)
           resume(map_pid)
         })
