@@ -393,7 +393,12 @@ fn struck_through_the_map(
 pub fn a_strike_told_through_the_map_damages_the_creature_and_threatens_only_a_viewer_of_the_stay_it_names_test() -> Nil {
   use <- owned_test.run(10_000)
   let time = driven_time.new()
-  let world = gated_beast_world(time:, respawn_ms: 60_000)
+  let world =
+    world_watch_support.one_beast_timed(
+      time:,
+      respawn_ms: 60_000,
+      idle_stop_ms: world_watch_support.idle_stop_ms,
+    )
   let run = world_watch_support.started(world)
   let near = world_support.connection(world:, id: 1)
   let far = world_support.connection(world:, id: 2)

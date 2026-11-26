@@ -137,7 +137,8 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
     as "the second press ends the stealth (Spell4.46073, Stealth Cancel 38783): one tell, False"
   assert_the_change_comes_before_the_map_tell(taken: leaving)
   let blow = struck_while_stealthed()
-  assert support.told_the_map(blow) == [stealth_told(stealthed: False)]
+  assert support.told_the_map_but_creatures(blow)
+    == [stealth_told(stealthed: False)]
     as "a landed blow on a stealth that ends on damage taken (Spell4Effects.effectType.83, 83834: dataBits02 0) tells the map False once"
   assert_the_change_comes_before_the_map_tell(taken: blow)
 }
