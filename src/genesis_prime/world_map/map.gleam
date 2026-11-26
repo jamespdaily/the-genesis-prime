@@ -1283,7 +1283,7 @@ pub fn step(
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..)))
     | OwnEvent(Told(message: Summon(..))) ->
-      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged, Released, Snapshot, Broadcast and Relay only"
+      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged, Released, Snapshot, Broadcast, Relay and Expired only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)

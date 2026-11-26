@@ -1512,7 +1512,7 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
       at_ally,
       ally,
       [ally],
-      [support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)],
+      [support.creature_hit(unit_id: creature, life: 3)],
       [creature],
     ),
     #(
@@ -1539,7 +1539,7 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
       option.Some(7),
       7,
       [],
-      [support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)],
+      [support.creature_hit(unit_id: creature, life: 3)],
       [7, creature],
     ),
     #(
@@ -1548,7 +1548,7 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
       option.Some(7),
       7,
       [],
-      [support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)],
+      [support.creature_hit(unit_id: creature, life: 3)],
       [creature],
     ),
     #(
@@ -1859,8 +1859,7 @@ pub fn a_proc_row_is_held_by_the_player_the_press_named_or_each_the_area_hit_and
       row: lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
     )
   let at_ally = option.Some(ally)
-  let hit_creature =
-    support.creature_hit(unit_id: creature, life: 3, struck_at_ms: 1000)
+  let hit_creature = support.creature_hit(unit_id: creature, life: 3)
   // Each row: why, the row, the press target the rule is given, the row's primary target, the
   // players the caster sees, what the round struck, the monotonic time the aura the cast is runs
   // out (none for a spell that is no aura), and the units the row is held by.

@@ -306,10 +306,9 @@ pub opaque type State {
 }
 
 /// One open round: the go or the tick it strikes for, a place for each selected unit
-/// in the order of the selection, the monotonic time of the go or tick and the time
-/// its deadline passes.
+/// in the order of the selection and the time its deadline passes.
 pub type Round {
-  Round(asked: Asked, places: List(Place), struck_at_ms: Int, deadline_ms: Int)
+  Round(asked: Asked, places: List(Place), deadline_ms: Int)
 }
 
 /// A selected unit's place in a round.
@@ -793,10 +792,7 @@ pub fn begin(
             Answered(
               struck: cast_state.Hit(
                 unit_id:,
-                unit: cast_state.HitCreature(
-                  life: aimed.life,
-                  struck_at_ms: now.monotonic_ms,
-                ),
+                unit: cast_state.HitCreature(life: aimed.life),
                 descriptions: [],
                 controls: [],
                 armor_removed: 0,
@@ -1171,7 +1167,6 @@ fn opened(
     Round(
       asked:,
       places:,
-      struck_at_ms: now.monotonic_ms,
       deadline_ms: now.monotonic_ms + strike_tell.deadline_ms,
     )
   let state = State(..strike, rounds: list.append(strike.rounds, [round]))
@@ -1551,8 +1546,8 @@ pub fn answered(
     strike:,
     key: answer.key,
     now:,
-    answering: ByCreature(place_of: fn(unit_id, life, ticking, struck_at_ms) {
-      filled(unit_id:, life:, ticking:, struck_at_ms:, outcome: answer.outcome)
+    answering: ByCreature(place_of: fn(unit_id, life, ticking) {
+      filled(unit_id:, life:, ticking:, outcome: answer.outcome)
     }),
   )
 }
@@ -1594,11 +1589,8 @@ pub fn player_answered(
 
 /// Who answers a strike, and the place its answer makes of the waiting place it fills.
 type Answering {
-  /// A creature: the place from its unit id, life and periodic rows and the time the round
-  /// struck.
-  ByCreature(
-    place_of: fn(Int, Int, List(spell_area.TickingDamage), Int) -> Place,
-  )
+  /// A creature: the place from its unit id, life and periodic rows.
+  ByCreature(place_of: fn(Int, Int, List(spell_area.TickingDamage)) -> Place)
   /// A player a heal was told to: the place from its unit id.
   ByPlayer(place_of: fn(Int) -> Place)
 }
@@ -1629,12 +1621,7 @@ fn filed(
       Round(
         ..round,
         places: list.map(round.places, fn(place) {
-          fill(
-            place:,
-            unit_id: key.unit_id,
-            struck_at_ms: round.struck_at_ms,
-            answering:,
-          )
+          fill(place:, unit_id: key.unit_id, answering:)
         }),
       )
     })
@@ -1689,14 +1676,13 @@ fn is_waiting(
 fn fill(
   place place: Place,
   unit_id unit_id: Int,
-  struck_at_ms struck_at_ms: Int,
   answering answering: Answering,
 ) -> Place {
   case place, answering {
     Waiting(unit_id: waiting, awaits: AwaitedCreature(life:, ticking:)),
       ByCreature(place_of:)
       if waiting == unit_id
-    -> place_of(unit_id, life, ticking, struck_at_ms)
+    -> place_of(unit_id, life, ticking)
     Waiting(unit_id: waiting, awaits: AwaitedPlayer), ByPlayer(place_of:)
       if waiting == unit_id
     -> place_of(unit_id)
@@ -1711,12 +1697,11 @@ fn fill(
 }
 
 /// A creature's answer as the unit's place: a landed strike is a hit on the life the
-/// strike was told to, struck at the go, with the periodic rows that reach it.
+/// strike was told to, with the periodic rows that reach it.
 fn filled(
   unit_id unit_id: Int,
   life life: Int,
   ticking ticking: List(spell_area.TickingDamage),
-  struck_at_ms struck_at_ms: Int,
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
   case outcome {
@@ -1724,7 +1709,7 @@ fn filled(
       Answered(
         struck: cast_state.Hit(
           unit_id:,
-          unit: cast_state.HitCreature(life:, struck_at_ms:),
+          unit: cast_state.HitCreature(life:),
           descriptions:,
           controls:,
           armor_removed:,
@@ -1736,7 +1721,7 @@ fn filled(
       Answered(
         struck: cast_state.Immune(
           unit_id:,
-          unit: cast_state.HitCreature(life:, struck_at_ms:),
+          unit: cast_state.HitCreature(life:),
           controls:,
           armor_removed:,
           ticking:,

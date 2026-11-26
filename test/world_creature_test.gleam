@@ -1166,16 +1166,10 @@ fn tell_change(
   effect effect: cast_state.Effect,
 ) -> client_connection.TargetChange {
   let #(unit_id, life, change) = case effect {
-    cast_state.TargetChangeStarts(
-      unit_id:,
-      life:,
-      struck_at_ms:,
-      source:,
-      modifier:,
-    ) -> #(
+    cast_state.TargetChangeStarts(unit_id:, life:, source:, modifier:) -> #(
       unit_id,
       life,
-      client_connection.ChangeStarts(source:, modifier:, struck_at_ms:),
+      client_connection.ChangeStarts(source:, modifier:),
     )
     cast_state.TargetChangeEnds(unit_id:, life:, source:) -> #(
       unit_id,
@@ -1289,7 +1283,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
   let struck = [
     cast_state.Hit(
       unit_id:,
-      unit: cast_state.HitCreature(life: 2, struck_at_ms: 1000),
+      unit: cast_state.HitCreature(life: 2),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -1713,7 +1707,7 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
   let struck = [
     cast_state.Hit(
       unit_id:,
-      unit: cast_state.HitCreature(life: 2, struck_at_ms: go_ms),
+      unit: cast_state.HitCreature(life: 2),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -1739,9 +1733,8 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
       rolls: [],
       poses: dict.new(),
     )
-  let assert [
-    cast_state.ForcedMoveStarts(unit_id: thrown, life:, struck_at_ms:, move:),
-  ] = cast_support.throws(effects: list.append(pressed, answered))
+  let assert [cast_state.ForcedMoveStarts(unit_id: thrown, life:, move:)] =
+    cast_support.throws(effects: list.append(pressed, answered))
     as "the row's delayTime is 0, so the go tells the one creature it hit its throw at once"
   // The client reads the throw's ForcedMove effect from the 0x7f4's target info of the
   // creature it throws (`Spell4Effects.effectType.3`), with the row's delayTime.
@@ -1772,20 +1765,17 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
         unit_id: thrown,
         life:,
       ),
-      request: client_connection.TellThrown(
-        throw: forced_move.Throw(
-          move:,
-          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-          reference: forced_move.Reference(
-            place: world_watch_support.sight_place(),
-            radius: hit_radius.of_playing(
-              tables: character_tables.shared(),
-              race_id:,
-            ),
+      request: client_connection.TellThrown(throw: forced_move.Throw(
+        move:,
+        draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+        reference: forced_move.Reference(
+          place: world_watch_support.sight_place(),
+          radius: hit_radius.of_playing(
+            tables: character_tables.shared(),
+            race_id:,
           ),
         ),
-        struck_at_ms:,
-      ),
+      )),
     )
     as "the creature is found by its address and told"
   let path =
@@ -1866,31 +1856,13 @@ pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
   }
   assert delivered(client_connection.TellDespawn(
       delay_ms: 3000,
-      struck_at_ms: 900,
       went_at_ms: 1000,
     ))
-    == creature.Despawn(delay_ms: 3000, struck_at_ms: 900, went_at_ms: 1000)
-    as "a removal is the creature's Despawn, with its delay, the round's time and the go's time"
-  let throw =
-    forced_move.Throw(
-      move: forced_move.Move(
-        way: forced_move.Away,
-        mover: forced_move.Flight,
-        min_distance: 10.0,
-        max_distance: 10.0,
-        flight_ms: 375,
-        gravity: 0.0,
-        flags: 1,
-        height: 2.0,
-      ),
-      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-      reference: forced_move.Reference(
-        place: world_watch_support.sight_place(),
-        radius: 0.5,
-      ),
-    )
-  assert delivered(client_connection.TellThrown(throw:, struck_at_ms: 900))
-    == creature.Thrown(throw:, struck_at_ms: 900)
+    == creature.Despawn(delay_ms: 3000, went_at_ms: 1000)
+    as "a removal is the creature's Despawn, with its delay and the go's time"
+  let throw = world_watch_support.throw()
+  assert delivered(client_connection.TellThrown(throw:))
+    == creature.Thrown(throw:)
     as "a throw is still the creature's Thrown"
   world_support.stop(world:)
 }
@@ -1939,10 +1911,10 @@ pub fn tell_cast_view_reaches_the_creature_as_cast_view_set_and_ends_test() -> N
     )
   assert delivered(client_connection.TellCastView(
       connection: ConnectionId(4),
-      change: client_connection.ViewSet(view:, struck_at_ms: 900),
+      change: client_connection.ViewSet(view:),
     ))
-    == creature.CastViewSet(by: ConnectionId(4), view:, struck_at_ms: 900)
-    as "a set is the creature's CastViewSet, with the connection that told it and the round's time"
+    == creature.CastViewSet(by: ConnectionId(4), view:)
+    as "a set is the creature's CastViewSet, with the connection that told it"
   assert delivered(client_connection.TellCastView(
       connection: ConnectionId(4),
       change: client_connection.ViewEnds(cast_id: view.cast_id),
@@ -2052,23 +2024,13 @@ fn carried_out(
   list.flat_map(effects, fn(effect) {
     case effect {
       cast_state.Send(frame:) -> [Wrote(message_id: frame.message_id)]
-      cast_state.CreatureDespawns(
-        unit_id:,
-        life:,
-        struck_at_ms:,
-        went_at_ms:,
-        delay_ms:,
-      ) -> {
+      cast_state.CreatureDespawns(unit_id:, life:, went_at_ms:, delay_ms:) -> {
         world_watch_support.told_creature(
           world:,
           run:,
           unit_id:,
           life:,
-          request: client_connection.TellDespawn(
-            delay_ms:,
-            struck_at_ms:,
-            went_at_ms:,
-          ),
+          request: client_connection.TellDespawn(delay_ms:, went_at_ms:),
         )
         [Told(unit_id:)]
       }
@@ -2187,7 +2149,6 @@ pub fn a_despawn_of_delay_0_reaches_the_caster_after_the_go_frame_test() -> Nil 
     cast_state.CreatureDespawns(
       unit_id: watched.beast.unit_id,
       life: 2,
-      struck_at_ms: now_ms,
       went_at_ms: now_ms,
       delay_ms: 0,
     ),
@@ -2599,20 +2560,7 @@ fn next_strike_told(received received: Subject(Message)) -> strike_tell.Key {
   world_watch_support.next(
     received:,
     what: "the creature's strike",
-    wanted: fn(message) {
-      case message {
-        ForStay(
-          sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
-            key:,
-            ..,
-          ))),
-          ..,
-        ) -> Ok(key)
-        ForStay(..)
-        | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
-      }
-    },
+    wanted: world_watch_support.strike_told,
   )
 }
 
@@ -3519,22 +3467,6 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
   world_support.stop(world:)
 }
 
-/// The key of a strike the creature told the connection's player to take.
-fn strike_told(message: Message) -> Result(strike_tell.Key, Nil) {
-  case message {
-    ForStay(
-      sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
-        key:,
-        ..,
-      ))),
-      ..,
-    ) -> Ok(key)
-    ForStay(..)
-    | client_connection.SentBySessions(..)
-    | client_connection.SentByChat(..) -> Error(Nil)
-  }
-}
-
 /// A fight of the Rootbrute Grimspore with Spell4 63569 as its special, against player 1 (unit
 /// 10, on it) and player 2 (unit 20, 5 aside): the cast id of the special's round and the unit
 /// it struck, after both players have seen the cast and its go.
@@ -3579,13 +3511,13 @@ fn void_blast_fight() -> #(Int, Int) {
         world: roaring.world,
         id: 1,
         received: roaring.received,
-        wanted: strike_told,
+        wanted: world_watch_support.strike_told,
       ),
       sent_so_far(
         world: roaring.world,
         id: 2,
         received: received_2,
-        wanted: strike_told,
+        wanted: world_watch_support.strike_told,
       ),
     )
   let assert [key] = told as "one of the two players is told to take the strike"
@@ -3742,7 +3674,12 @@ pub fn an_eldan_security_construct_draws_its_laser_bolt_circle_under_the_player_
   driven_time.advance(time: roaring.time, ms: 3000)
   driven_time.settled(roaring.pid)
   let told = fn(id, received) {
-    sent_so_far(world: roaring.world, id:, received:, wanted: strike_told)
+    sent_so_far(
+      world: roaring.world,
+      id:,
+      received:,
+      wanted: world_watch_support.strike_told,
+    )
   }
   assert told(1, roaring.received) == []
     as "player 1 stepped out of the circle and is not struck"

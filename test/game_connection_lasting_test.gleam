@@ -525,7 +525,6 @@ pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil
                   ]),
                 ],
               ),
-              struck_at_ms: 1200,
             ),
           ),
         ],

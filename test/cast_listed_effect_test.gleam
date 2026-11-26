@@ -203,7 +203,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
     support.answered_by(state:, effects:, at: 1000, struck: [
       cast_state.Hit(
         unit_id: 20,
-        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1),
         descriptions: [],
         controls: [],
         armor_removed: 0,
@@ -211,7 +211,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
       ),
       cast_state.Hit(
         unit_id: 21,
-        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1),
         descriptions: [],
         controls: [],
         armor_removed: 0,
@@ -514,7 +514,7 @@ fn pressed_striking(
   support.answered_by(state:, effects:, at: ms, struck: [
     cast_state.Hit(
       unit_id:,
-      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1),
       descriptions: [],
       controls: [],
       armor_removed: 0,

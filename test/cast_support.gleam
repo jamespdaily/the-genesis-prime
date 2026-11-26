@@ -1193,7 +1193,7 @@ pub fn hits(units: List(Int)) -> List(cast_state.Struck) {
 }
 
 /// A creature in its first life, struck by a go at time 0.
-pub const first_life = cast_state.HitCreature(life: 1, struck_at_ms: 0)
+pub const first_life = cast_state.HitCreature(life: 1)
 
 /// A press whose go, and each go it leads to at once, strikes these units.
 pub fn pressed_striking(
@@ -2872,16 +2872,11 @@ pub fn hit_with(
   )
 }
 
-/// A hit on a creature in the life given, struck at the time given, with no controls and
-/// no ticking damage.
-pub fn creature_hit(
-  unit_id unit_id: Int,
-  life life: Int,
-  struck_at_ms struck_at_ms: Int,
-) -> cast_state.Struck {
+/// A hit on a creature in the life given, with no controls and no ticking damage.
+pub fn creature_hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
   hit_with(
     unit_id:,
-    unit: cast_state.HitCreature(life:, struck_at_ms:),
+    unit: cast_state.HitCreature(life:),
     descriptions: [],
     controls: [],
     ticking: [],

@@ -1087,7 +1087,7 @@ pub fn an_aimed_shortcut_press_despawns_its_target_creature_after_the_go_test() 
   let hit =
     cast_state.Hit(
       unit_id: 913,
-      unit: cast_state.HitCreature(life: 2, struck_at_ms: 1000),
+      unit: cast_state.HitCreature(life: 2),
       descriptions: [],
       controls: [],
       armor_removed: 0,

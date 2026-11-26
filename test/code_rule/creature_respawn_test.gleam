@@ -5,6 +5,9 @@
 //// it again in place. A name of the in-process respawn in the world map's folder is a
 //// breach, reported at its line. The rule is shown on a planted file, then read over the
 //// real ones.
+//// A tell to a creature names no life's time either: the registry's address is the one fence
+//// (`creature_registry`), so no module names `struck_at_ms`, the monotonic time a go struck a
+//// creature, which neither a tell nor the caster's view of a creature reads.
 
 import code_rule/planted
 import code_rule/source.{type SourceFile}
@@ -15,6 +18,8 @@ import owned_test
 import unitest
 
 const world_map_directory = "src/genesis_prime/world_map"
+
+const source_directories = ["src", "dev"]
 
 /// The names of the creature's in-process respawn: the time it stood again at, the check of
 /// a tell against it, the corpse timer's outcome, the fight's and the guard's inputs for it,
@@ -123,4 +128,48 @@ pub fn a_creature_never_stands_again_in_its_own_process_test() -> Nil {
     })
     == []
     as "no module of the world map holds a creature that stands again in its own process"
+}
+
+/// The lines of a file that name the time a go struck a creature at.
+fn round_time_in(file file: SourceFile) -> List(Int) {
+  string.split(file.text, "\n")
+  |> list.index_map(fn(line, index) { #(index + 1, line) })
+  |> list.filter(fn(numbered) {
+    names_word(text: numbered.1, word: "struck_at_ms")
+  })
+  |> list.map(fn(numbered) { numbered.0 })
+}
+
+pub fn a_tell_carries_no_creature_life_stamp_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let tell =
+    planted.file(path: "src/genesis_prime/client_connection.gleam", lines: [
+      "TellThrown(throw: Throw, struck_at_ms: Int)",
+      "TellDespawn(delay_ms: Int, went_at_ms: Int)",
+      "my_struck_at_ms",
+    ])
+  let view =
+    planted.file(
+      path: "src/genesis_prime/game/cast/creature_view.gleam",
+      lines: [
+        "Told(life: Int, struck_at_ms: Int, target: ViewTarget)",
+      ],
+    )
+  assert round_time_in(file: tell) == [1]
+    as "a tell's field is found at its line, and a longer name or a tell without it is not"
+  assert round_time_in(file: view) == [1]
+    as "the caster's view of a creature is not exempt"
+  assert list.flat_map(
+      list.flat_map(source_directories, fn(directory) {
+        source.files(under: directory)
+      }),
+      fn(file) {
+        list.map(round_time_in(file:), fn(line) {
+          file.path <> ":" <> int.to_string(line)
+        })
+      },
+    )
+    == []
+    as "no module names the time a go struck a creature at: the registry's address fences a tell and the creature's view is compared by life and target"
 }

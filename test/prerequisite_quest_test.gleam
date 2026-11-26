@@ -821,7 +821,7 @@ fn struck_children(caster caster: Caster) -> List(#(Int, Int)) {
       struck: [
         cast_state.Hit(
           unit_id: 20,
-          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1),
           descriptions: [],
           controls: [],
           armor_removed: 0,

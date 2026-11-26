@@ -53,7 +53,6 @@ fn told() -> dict.Dict(#(Int, Int), cast_state.Told) {
       #(5, 40),
       cast_state.Told(
         life: 1,
-        struck_at_ms: 100,
         target: unit_casts.ViewTarget(unit_id: 40, count: 1, effects: []),
       ),
     ),

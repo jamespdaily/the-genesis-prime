@@ -1270,8 +1270,8 @@ fn procs_split(
 /// client, `opcode.0x7f4.instance_count`), and at least until the time the creature
 /// holds each state, which no later go moves; a unit left with no effect that has a life
 /// and no state holds no node of the cast. A node on a creature the go's round struck
-/// carries that round's life and time (`lasting.StruckCreature`); a node on a unit the
-/// round did not hit as a creature keeps the stamp of the one it replaces.
+/// carries that creature's life (`lasting.StruckCreature`); a node on a unit the
+/// round did not hit as a creature keeps the life of the one it replaces.
 pub fn nodes_given(
   cast cast: State,
   cast_id cast_id: Int,
@@ -1321,18 +1321,15 @@ pub fn nodes_given(
   }
 }
 
-/// The node with the round that struck its unit as a creature, when the go's round struck
-/// it as one; a node the round did not hit as a creature keeps the stamp it has.
+/// The node with the life of the creature the go's round struck its unit as, when it struck
+/// it as one; a node the round did not hit as a creature keeps the life it has.
 fn struck_by(
   node node: lasting.Node,
   struck struck: List(Struck),
 ) -> lasting.Node {
   case cast_gate.creature_hit(struck:, unit_id: node.unit_id) {
-    Ok(#(life, struck_at_ms)) ->
-      lasting.Node(
-        ..node,
-        struck: Some(lasting.StruckCreature(life:, struck_at_ms:)),
-      )
+    Ok(life) ->
+      lasting.Node(..node, struck: Some(lasting.StruckCreature(life:)))
     Error(Nil) -> node
   }
 }

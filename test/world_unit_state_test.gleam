@@ -150,23 +150,13 @@ fn carried_out(
 ) -> List(Int) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast_state.CreatureHoldsUnitStates(
-        unit_id:,
-        life:,
-        struck_at_ms:,
-        went_at_ms:,
-        rows:,
-      ) -> {
+      cast_state.CreatureHoldsUnitStates(unit_id:, life:, went_at_ms:, rows:) -> {
         world_watch_support.told_creature(
           world:,
           run:,
           unit_id:,
           life:,
-          request: client_connection.TellUnitStates(
-            rows:,
-            struck_at_ms:,
-            went_at_ms:,
-          ),
+          request: client_connection.TellUnitStates(rows:, went_at_ms:),
         )
         Ok(unit_id)
       }
@@ -478,19 +468,14 @@ pub fn tell_unit_states_reaches_the_creature_as_unit_states_test() -> Nil {
     unit_state.Row(state: 6, delay_ms: 0, duration_ms: 8500),
     unit_state.Row(state: 13, delay_ms: 500, duration_ms: 2000),
   ]
-  assert delivered(client_connection.TellUnitStates(
-      rows:,
-      struck_at_ms: 900,
-      went_at_ms: 1000,
-    ))
-    == creature.UnitStates(rows:, struck_at_ms: 900, went_at_ms: 1000)
-    as "held states are the creature's UnitStates, with their rows, the round's time and the go's time"
+  assert delivered(client_connection.TellUnitStates(rows:, went_at_ms: 1000))
+    == creature.UnitStates(rows:, went_at_ms: 1000)
+    as "held states are the creature's UnitStates, with their rows and the go's time"
   assert delivered(client_connection.TellDespawn(
       delay_ms: 3000,
-      struck_at_ms: 900,
       went_at_ms: 1000,
     ))
-    == creature.Despawn(delay_ms: 3000, struck_at_ms: 900, went_at_ms: 1000)
+    == creature.Despawn(delay_ms: 3000, went_at_ms: 1000)
     as "a removal is still the creature's Despawn"
   world_support.stop(world:)
 }
@@ -728,8 +713,7 @@ pub fn an_area_go_skips_the_invulnerable_creature_and_logs_type_18_for_it_test()
   let assert Landed(descriptions: [_], ..) = other_outcome
     as "the other creature takes the blow"
   let struck_unit = fn(unit: #(Int, Int), outcome) {
-    let hit_unit =
-      cast_state.HitCreature(life: unit.1, struck_at_ms: went_at_ms)
+    let hit_unit = cast_state.HitCreature(life: unit.1)
     case outcome {
       strike_tell.Immune(controls: _, ..) ->
         cast_state.Immune(

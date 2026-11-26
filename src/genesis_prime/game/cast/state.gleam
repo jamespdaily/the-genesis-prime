@@ -263,57 +263,40 @@ pub type Effect {
     audience: Set(ConnectionId),
   )
   /// A property modifier of the caster's spell starts on the creature `unit_id` whose
-  /// life the go struck, at the monotonic time `struck_at_ms` the go struck it
-  /// (`HitCreature`): the connection tells the creature
+  /// life the go struck (`HitCreature`): the connection tells the creature
   /// (genesis_prime/client_connection `TellTargetChange`), which applies it to its own
   /// properties and tells its viewers the entries that changed. A creature of another
-  /// life drops it, and so does one that lies dead or has stood again from its corpse
-  /// since the go struck.
+  /// life drops it (the registry finds none at that address), and so does one that lies
+  /// dead.
   TargetChangeStarts(
     unit_id: Int,
     life: Int,
-    struck_at_ms: Int,
     source: unit_properties.Source,
     modifier: unit_properties.Modifier,
   )
   /// The ForcedMove row of the caster's spell throws the creature `unit_id` whose life the
-  /// go struck, at the monotonic time `struck_at_ms` the go struck it (`HitCreature`): the
-  /// connection draws the two fractions of `forced_move.Draws` from its seed, takes the
-  /// player's place now and race radius as the `forced_move.Reference` and tells the
-  /// creature (genesis_prime/client_connection `TellThrown`). A creature of another life
-  /// drops it, and so does one that lies dead or has stood again since the go struck.
-  ForcedMoveStarts(
-    unit_id: Int,
-    life: Int,
-    struck_at_ms: Int,
-    move: forced_move.Move,
-  )
+  /// go struck (`HitCreature`): the connection draws the two fractions of `forced_move.Draws`
+  /// from its seed, takes the player's place now and race radius as the
+  /// `forced_move.Reference` and tells the creature (genesis_prime/client_connection
+  /// `TellThrown`). A creature of another life drops it, and so does one that lies dead.
+  ForcedMoveStarts(unit_id: Int, life: Int, move: forced_move.Move)
   /// The DespawnUnit row of the caster's spell removes the creature `unit_id` whose life the
-  /// go struck, `delay_ms` after `went_at_ms`, the monotonic time of the go; `struck_at_ms`,
-  /// the monotonic time the round struck it (`HitCreature`), tells which life of the creature
-  /// that was. The connection tells the creature
+  /// go struck (`HitCreature`), `delay_ms` after `went_at_ms`, the monotonic time of the go.
+  /// The connection tells the creature
   /// (genesis_prime/client_connection `TellDespawn`), which owns the delay, so the caster's
   /// leaving or dying changes nothing. A creature of another life drops it, and so does one
-  /// that lies dead, is already gone, or has stood again since the round struck it.
-  CreatureDespawns(
-    unit_id: Int,
-    life: Int,
-    struck_at_ms: Int,
-    went_at_ms: Int,
-    delay_ms: Int,
-  )
+  /// that lies dead or is already gone.
+  CreatureDespawns(unit_id: Int, life: Int, went_at_ms: Int, delay_ms: Int)
   /// The UnitStateSet rows of the caster's spell hold their states on the creature `unit_id`
   /// whose life the go struck, each from `went_at_ms`, the monotonic time of the go, plus its
-  /// delay for its duration; `struck_at_ms`, the monotonic time the round struck it
-  /// (`HitCreature`), tells which life of the creature that was. `rows` are the go's rows for
+  /// delay for its duration (`HitCreature`). `rows` are the go's rows for
   /// the creature in row order. The connection tells the creature
   /// (genesis_prime/client_connection `TellUnitStates`), which owns the end of each state, so
   /// the caster's leaving or dying changes nothing. A creature of another life drops it, and
-  /// so does one that lies dead, is already gone, or has stood again since the round struck it.
+  /// so does one that lies dead or is already gone.
   CreatureHoldsUnitStates(
     unit_id: Int,
     life: Int,
-    struck_at_ms: Int,
     went_at_ms: Int,
     rows: List(unit_state.Row),
   )
@@ -487,10 +470,10 @@ pub type Struck {
 /// What kind of unit a `Hit` names.
 pub type HitUnit {
   /// A creature a player's go struck, in the life the go aimed at
-  /// (genesis_prime/game/strike `Aimed`), at the monotonic time `struck_at_ms` the go
-  /// struck it: a property modifier the go starts on it is told for that life and
-  /// that time (`TargetChangeStarts`).
-  HitCreature(life: Int, struck_at_ms: Int)
+  /// (genesis_prime/game/strike `Aimed`): a property modifier the go starts on it is told
+  /// for that life (`TargetChangeStarts`), and its view is told to that life
+  /// (`lasting.StruckCreature`).
+  HitCreature(life: Int)
   /// A player a creature's attack struck (genesis_prime/world_map/creature_fight).
   HitPlayer
   /// A player another player's cast healed (genesis_prime/game/strike `player_answered`):
@@ -638,17 +621,11 @@ pub type Due {
   StateEnd(spell4_id: Spell4Id, unit_id: Int, state: CrowdControlState)
   /// The change of the caster `source` names starts, after its delay.
   ModifierStart(source: unit_properties.Source, change: CasterChange)
-  /// The property modifier `on` names starts on its creature, after its delay, for
-  /// the go that struck at `struck_at_ms`.
-  TargetModifierStart(
-    on: OnCreature,
-    modifier: unit_properties.Modifier,
-    struck_at_ms: Int,
-  )
-  /// The ForcedMove row `on` names throws its creature, after its delay, for the go that
-  /// struck at `struck_at_ms`: it becomes `ForcedMoveStarts`. The end of the cast's node on
-  /// the creature cancels it.
-  ForcedMoveStart(on: OnCreature, move: forced_move.Move, struck_at_ms: Int)
+  /// The property modifier `on` names starts on its creature, after its delay.
+  TargetModifierStart(on: OnCreature, modifier: unit_properties.Modifier)
+  /// The ForcedMove row `on` names throws its creature, after its delay: it becomes
+  /// `ForcedMoveStarts`. The end of the cast's node on the creature cancels it.
+  ForcedMoveStart(on: OnCreature, move: forced_move.Move)
   /// The property modifier `source` ends, after its duration.
   ModifierEnd(source: unit_properties.Source)
   /// The change of `source` the cast holds on the other player `unit_id` ends, after its
@@ -1304,10 +1281,10 @@ pub type State {
   )
 }
 
-/// What the caster last told a creature of one cast's node on it: the life and round
-/// it was told for and the target (count, effects with absolute starts and ends).
+/// What the caster last told a creature of one cast's node on it: the life it was told
+/// for and the target (count, effects with absolute starts and ends).
 pub type Told {
-  Told(life: Int, struck_at_ms: Int, target: unit_casts.ViewTarget)
+  Told(life: Int, target: unit_casts.ViewTarget)
 }
 
 /// A crowd-control state the caster holds on itself: the state, the instance id the 0x87f
@@ -1721,7 +1698,7 @@ pub fn views(
 }
 
 /// Each node of the unit `caster_unit_id`'s casts that a round struck as a creature and
-/// that `views` lists as a target, as the round's stamp, that creature's view of the cast
+/// that `views` lists as a target, with the creature's life, that creature's view of the cast
 /// (the cast with the creature's target alone and no cast in progress: a creature shows no
 /// player's cast bar) and the target. In cast id order, then unit id order.
 pub fn creature_views(

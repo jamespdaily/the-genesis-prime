@@ -153,22 +153,20 @@ pub type Request {
   /// What a `Tell` effect sends a creature a ForcedMove effect of this connection's
   /// player's cast throws (genesis_prime/world_map/creature `Thrown`): the move, the two
   /// fractions this connection drew from its seed and the unit it is measured from
-  /// (genesis_prime/game/forced_move), for the life the go struck: the monotonic time of
-  /// the effect's go. Told through the creature registry with no watch, and never asked.
-  TellThrown(throw: forced_move.Throw, struck_at_ms: Int)
+  /// (genesis_prime/game/forced_move), for the life the go struck. Told through the creature
+  /// registry with no watch, and never asked.
+  TellThrown(throw: forced_move.Throw)
   /// What a `Tell` effect sends a creature a DespawnUnit effect of this connection's
   /// player's cast removes (genesis_prime/world_map/creature `Despawn`), for the life the go
   /// struck: `delay_ms` after `went_at_ms`, the monotonic time of the effect's go.
-  /// `struck_at_ms`, the monotonic time the round struck the creature, tells its life. Told
-  /// through the creature registry with no watch, and never asked.
-  TellDespawn(delay_ms: Int, struck_at_ms: Int, went_at_ms: Int)
+  /// Told through the creature registry with no watch, and never asked.
+  TellDespawn(delay_ms: Int, went_at_ms: Int)
   /// What a `Tell` effect sends a creature the UnitStateSet rows of this connection's player's
   /// cast hold on it (genesis_prime/world_map/creature `UnitStates`), for the life the go
   /// struck: each row's state from `went_at_ms`, the monotonic time of the effect's go, plus
-  /// its delay for its duration. `struck_at_ms`, the monotonic time the round struck the
-  /// creature, tells its life. Told through the creature registry with no watch, and never
+  /// its delay for its duration. Told through the creature registry with no watch, and never
   /// asked.
-  TellUnitStates(rows: List(unit_state.Row), struck_at_ms: Int, went_at_ms: Int)
+  TellUnitStates(rows: List(unit_state.Row), went_at_ms: Int)
   /// What a `Tell` effect sends a creature (genesis_prime/step `Creature`) to tell it what
   /// this connection's player's cast holds on it, for the life the go struck
   /// (genesis_prime/world_map/creature `CastViewSet`, `CastViewEnds`): the creature keeps
@@ -207,11 +205,9 @@ pub type PlayerTell {
 
 /// What a cast holds on a creature, as `TellCastView` carries it.
 pub type ViewChange {
-  /// The cast holds `view` on the creature: its one target, the whole of it. The
-  /// creature ignores it when it has stood again since `struck_at_ms`, the monotonic
-  /// time of the round that struck it, and otherwise keeps it in place of the cast's
-  /// earlier view.
-  ViewSet(view: CastView, struck_at_ms: Int)
+  /// The cast holds `view` on the creature: its one target, the whole of it. The creature
+  /// keeps it in place of the cast's earlier view.
+  ViewSet(view: CastView)
   /// The cast `cast_id` holds nothing on the creature: the creature drops the view of
   /// that cast when this connection holds it, and ignores the tell otherwise.
   ViewEnds(cast_id: Int)
@@ -220,9 +216,8 @@ pub type ViewChange {
 /// What a cast changes on a creature, as `TellTargetChange` carries it: a property modifier
 /// starting or ending, or the states the cast landed ending.
 pub type TargetChange {
-  /// The modifier starts: the creature applies it to its properties, unless it has
-  /// stood again since `struck_at_ms`, the monotonic time of the go that struck it.
-  ChangeStarts(source: Source, modifier: Modifier, struck_at_ms: Int)
+  /// The modifier starts: the creature applies it to its properties.
+  ChangeStarts(source: Source, modifier: Modifier)
   /// The modifier of `source` ends: the creature removes it.
   ChangeEnds(source: Source)
   /// The cast `cast_id` no longer holds a node on the creature: each crowd-control state it

@@ -232,9 +232,9 @@ fn throwing_row(delay_ms delay_ms: Int) -> spell_plan.StruckMove {
   )
 }
 
-/// A creature the round hit in `life` at the monotonic time 1000.
+/// A creature the round hit in `life`.
 fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
-  support.creature_hit(unit_id:, life:, struck_at_ms: 1000)
+  support.creature_hit(unit_id:, life:)
 }
 
 /// The effects of the press and of the go that the round `struck` answers.
@@ -259,12 +259,7 @@ fn thrower(rows rows: List(spell_plan.StruckMove)) -> Spell {
 }
 
 fn thrown(unit_id: Int, life: Int) -> cast_state.Effect {
-  cast_state.ForcedMoveStarts(
-    unit_id:,
-    life:,
-    struck_at_ms: 1000,
-    move: knockback(),
-  )
+  cast_state.ForcedMoveStarts(unit_id:, life:, move: knockback())
 }
 
 pub fn a_go_tells_each_hit_creature_its_throw_in_the_same_step_test() -> Nil {

@@ -5,22 +5,29 @@
 import ask_support
 import cast_support
 import driven_time
+import event_wait
 import genesis_prime/client_connection.{
   type Message, ForStay, SentByMap, SentByPeer,
 }
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Key, Strike}
-import genesis_prime/game/unit_news.{type PeerNews, CreatureAppeared, PeerNews}
+import genesis_prime/game/unit_news.{
+  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews,
+}
+import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character}
+import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -89,6 +96,82 @@ pub fn creature_pid(
   )
   let assert Ok(pid) = find() as "the creature is found by its address"
   pid
+}
+
+/// Waits until the registry finds no creature at the address of `life`: the registry
+/// drops a creature's address on its own monitor, in no order with the map's messages, so
+/// a creature that has ended may be found for a moment (`group_registry`).
+pub fn address_dropped(
+  world world: World,
+  run run: MapProcess,
+  unit_id unit_id: Int,
+  life life: Int,
+) -> Nil {
+  event_wait.until(
+    "the registry noticed the end of the creature of life "
+      <> int.to_string(life)
+      <> " by itself, so it finds no creature at that life's address",
+    fn() {
+      creature_registry.find(
+        world.creatures,
+        map: ship,
+        incarnation: run.incarnation,
+        unit_id:,
+        life:,
+      )
+      == Error(Nil)
+    },
+  )
+}
+
+/// The source of the modifier `modifier_starts` tells: cast 1, effect 1921.
+pub fn modifier_source() -> unit_properties.Source {
+  cast_support.source_of(cast_id: 1, effect_id: 1921)
+}
+
+/// A caster's property modifier on a creature, told by connection 1: property 100, mode 3,
+/// flat 0.5.
+pub fn modifier_starts() -> creature.Message {
+  creature.ModifierStarts(
+    by: ConnectionId(1),
+    source: modifier_source(),
+    modifier: Change(
+      property: UnitProperty2Id(100),
+      mode: 3,
+      multiplier: 1.0,
+      flat: 0.5,
+      per_level: 0.0,
+    ),
+  )
+}
+
+/// A forced move that throws a creature 10 units away from `sight_place` in 375 ms.
+pub fn throw() -> forced_move.Throw {
+  forced_move.Throw(
+    move: forced_move.Move(
+      way: forced_move.Away,
+      mover: forced_move.Flight,
+      min_distance: 10.0,
+      max_distance: 10.0,
+      flight_ms: 375,
+      gravity: 0.0,
+      flags: 1,
+      height: 2.0,
+    ),
+    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+    reference: forced_move.Reference(place: sight_place(), radius: 0.5),
+  )
+}
+
+/// The path of a creature's 0x638 the connection was sent.
+pub fn moved(message: Message) -> Result(Path, Nil) {
+  case message {
+    ForStay(sent: SentByPeer(PeerNews(news: CreatureMoved(path:), ..)), ..) ->
+      Ok(path)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
 }
 
 /// The join of the connection as a player standing in sight of the creatures, an
@@ -237,6 +320,23 @@ pub fn left_sight(
       False -> Error(Nil)
     }
   })
+}
+
+/// The key of a strike the creature told the connection's player to take, when the message
+/// is that.
+pub fn strike_told(message: Message) -> Result(strike_tell.Key, Nil) {
+  case message {
+    ForStay(
+      sent: client_connection.SentByFoe(strike_tell.Attacks(tell: Strike(
+        key:,
+        ..,
+      ))),
+      ..,
+    ) -> Ok(key)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
 }
 
 /// The outcome of the creature's answer to strike `cast_id`, when the message is
@@ -510,7 +610,7 @@ pub fn effects_of_a_go_on_creatures(
     )
   let struck =
     list.map(units, fn(unit) {
-      cast_support.creature_hit(unit_id: unit.0, life: unit.1, struck_at_ms:)
+      cast_support.creature_hit(unit_id: unit.0, life: unit.1)
     })
   let #(_, answered) =
     cast_support.answered_each(

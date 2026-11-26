@@ -624,24 +624,18 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
     TellStrikeAnswered(answered:) -> Ok(creature.StrikeAnswered(answered:))
     TellTargetChange(connection:, change:) ->
       Ok(case change {
-        ChangeStarts(source:, modifier:, struck_at_ms:) ->
-          creature.ModifierStarts(
-            by: connection,
-            source:,
-            modifier:,
-            struck_at_ms:,
-          )
+        ChangeStarts(source:, modifier:) ->
+          creature.ModifierStarts(by: connection, source:, modifier:)
         ChangeEnds(source:) -> creature.ModifierEnds(source:)
         ControlsEnd(cast_id:) -> creature.ControlsEnd(by: connection, cast_id:)
       })
-    TellThrown(throw:, struck_at_ms:) ->
-      Ok(creature.Thrown(throw:, struck_at_ms:))
-    TellDespawn(delay_ms:, struck_at_ms:, went_at_ms:) ->
-      Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
-    TellUnitStates(rows:, struck_at_ms:, went_at_ms:) ->
-      Ok(creature.UnitStates(rows:, struck_at_ms:, went_at_ms:))
-    TellCastView(connection:, change: ViewSet(view:, struck_at_ms:)) ->
-      Ok(creature.CastViewSet(by: connection, view:, struck_at_ms:))
+    TellThrown(throw:) -> Ok(creature.Thrown(throw:))
+    TellDespawn(delay_ms:, went_at_ms:) ->
+      Ok(creature.Despawn(delay_ms:, went_at_ms:))
+    TellUnitStates(rows:, went_at_ms:) ->
+      Ok(creature.UnitStates(rows:, went_at_ms:))
+    TellCastView(connection:, change: ViewSet(view:)) ->
+      Ok(creature.CastViewSet(by: connection, view:))
     TellCastView(connection:, change: ViewEnds(cast_id:)) ->
       Ok(creature.CastViewEnds(by: connection, cast_id:))
     TellPeer(..)

@@ -408,29 +408,21 @@ pub type Message {
   /// The connection of a player the creature struck answers the strike.
   StrikeAnswered(answered: Answered)
   /// The connection `by` of a caster: a property modifier of its spell starts on the
-  /// creature, struck by a go at the monotonic time `struck_at_ms`, which no rule reads. It
-  /// is dropped when the creature lies dead.
-  ModifierStarts(
-    by: ConnectionId,
-    source: Source,
-    modifier: Modifier,
-    struck_at_ms: Int,
-  )
+  /// creature. It is dropped when the creature lies dead.
+  ModifierStarts(by: ConnectionId, source: Source, modifier: Modifier)
   /// A caster's connection: the property modifier of `source` ends on the creature.
   ModifierEnds(source: Source)
   /// A caster's connection: a ForcedMove effect of its spell throws the creature
-  /// (genesis_prime/game/forced_move); `struck_at_ms`, the monotonic time of the go, which no
-  /// rule reads. It is dropped when the creature lies dead; else the fight takes it
-  /// (`creature_fight.Thrown`), which drops it for a creature that walks home or does not
-  /// run.
-  Thrown(throw: forced_move.Throw, struck_at_ms: Int)
+  /// (genesis_prime/game/forced_move). It is dropped when the creature lies dead; else the
+  /// fight takes it (`creature_fight.Thrown`), which drops it for a creature that walks home
+  /// or does not run.
+  Thrown(throw: forced_move.Throw)
   /// A caster's connection: a DespawnUnit effect of its spell removes the creature
-  /// `delay_ms` after `went_at_ms`, the monotonic time of the go; `struck_at_ms`, the
-  /// monotonic time the go's round struck the creature, which no rule reads. The creature
-  /// owns the delay, so the caster's leaving or dying changes nothing.
+  /// `delay_ms` after `went_at_ms`, the monotonic time of the go. The creature owns the
+  /// delay, so the caster's leaving or dying changes nothing.
   ///
   /// ```
-  /// Despawn(delay_ms, struck_at_ms, went_at_ms)
+  /// Despawn(delay_ms, went_at_ms)
   ///     dead, despawned: dropped
   ///     due = went_at_ms + delay_ms; despawn_due_ms holds the due time of the pending one
   ///     due <= now:                         CancelServiceTimer(despawn_timer) if one is
@@ -472,15 +464,14 @@ pub type Message {
   /// | the corpse timer fires for a despawned creature | `Expired` and `Stop`, with no second `Removed`: the viewers were sent it at the removal |
   /// | the corpse timer fires for a run-only creature | `Stop` only: the viewers were sent `Removed` at the removal |
   /// | the creature crashes pending or despawned | the map sends `Gone` and starts the spawn again after the respawn time as a new unit |
-  Despawn(delay_ms: Int, struck_at_ms: Int, went_at_ms: Int)
+  Despawn(delay_ms: Int, went_at_ms: Int)
   /// A caster's connection: the UnitStateSet rows of its go hold their states on the creature,
   /// each from `went_at_ms`, the monotonic time of the go, plus its delay for its duration (the
-  /// delay delays the hold, a server guess: the client reads no row of the type);
-  /// `struck_at_ms`, the monotonic time the round struck the creature, which no rule reads. The
+  /// delay delays the hold, a server guess: the client reads no row of the type). The
   /// creature owns the end of each state, so the caster's leaving or dying changes nothing.
   ///
   /// ```
-  /// UnitStates(rows, struck_at_ms, went_at_ms)
+  /// UnitStates(rows, went_at_ms)
   ///     dead, despawned: dropped
   ///     each row: starts_at = went_at_ms + delay, ends_at = starts_at + duration
   ///         no duration, or ends_at <= now: not held, nothing sent
@@ -520,13 +511,12 @@ pub type Message {
   /// | a struck-change modifier reaches a blocking creature | dropped, a server guess, as a throw is (`a_modifier_at_a_creature_holding_a_blocking_state_is_dropped_test`) |
   /// | a despawn reaches a blocking creature | it still removes the creature: a removal is not hostile |
   /// | the caster leaves or dies after the tell | no effect: the creature owns the end |
-  UnitStates(rows: List(unit_state.Row), struck_at_ms: Int, went_at_ms: Int)
+  UnitStates(rows: List(unit_state.Row), went_at_ms: Int)
   /// The caster's connection `by` tells the creature that its cast holds `view` on it
-  /// (a node of the cast's go on the creature); `struck_at_ms` is the monotonic time of the
-  /// round that struck it, which no rule reads. The view is the
-  /// whole target: a later set for the same cast id replaces the earlier one. The
-  /// creature keeps it to list it in the 0x262 of each viewer that arrives, and watches
-  /// `by` while it holds a view or a modifier source of that connection.
+  /// (a node of the cast's go on the creature). The view is the whole target: a later set
+  /// for the same cast id replaces the earlier one. The creature keeps it to list it in the
+  /// 0x262 of each viewer that arrives, and watches `by` while it holds a view or a modifier
+  /// source of that connection.
   ///
   /// ```
   /// CastViewSet(by, view)
@@ -542,7 +532,7 @@ pub type Message {
   /// | two casters' views | both kept, each under its own cast id (a cast id names its caster) |
   /// | the caster's connection ends | its watch fires and every view of it is dropped |
   /// | the creature crashes | the views are lost and the map starts the spawn again as a new unit |
-  CastViewSet(by: ConnectionId, view: unit_casts.CastView, struck_at_ms: Int)
+  CastViewSet(by: ConnectionId, view: unit_casts.CastView)
   /// The caster's connection `by` tells the creature that its cast `cast_id` holds
   /// nothing on it any more. The creature drops the view of that cast when `by` holds
   /// it, and unwatches `by` when that was its last holding; an end for a cast it does
@@ -890,17 +880,16 @@ pub fn step(
         Error(Nil), Error(Nil), Error(Nil) ->
           panic as "a creature starts no timer but its corpse's, its armor refill's, its fight's, its guard's and its controls'"
       }
-    OwnEvent(Told(message: ModifierStarts(by:, source:, modifier:, ..))) ->
+    OwnEvent(Told(message: ModifierStarts(by:, source:, modifier:))) ->
       modifier_started(state:, by:, source:, modifier:, now_ms:)
     OwnEvent(Told(message: ModifierEnds(source:))) ->
       modifier_ended(state:, source:, now_ms:)
-    OwnEvent(Told(message: Thrown(throw:, ..))) ->
-      thrown(state:, throw:, now_ms:)
-    OwnEvent(Told(message: Despawn(delay_ms:, went_at_ms:, ..))) ->
+    OwnEvent(Told(message: Thrown(throw:))) -> thrown(state:, throw:, now_ms:)
+    OwnEvent(Told(message: Despawn(delay_ms:, went_at_ms:))) ->
       despawn_told(state:, delay_ms:, went_at_ms:, now_ms:)
-    OwnEvent(Told(message: UnitStates(rows:, went_at_ms:, ..))) ->
+    OwnEvent(Told(message: UnitStates(rows:, went_at_ms:))) ->
       unit_states_told(state:, rows:, went_at_ms:, now_ms:)
-    OwnEvent(Told(message: CastViewSet(by:, view:, ..))) ->
+    OwnEvent(Told(message: CastViewSet(by:, view:))) ->
       view_set(state:, by:, view:)
     OwnEvent(Told(message: CastViewEnds(by:, cast_id:))) ->
       view_ended(state:, by:, cast_id:)

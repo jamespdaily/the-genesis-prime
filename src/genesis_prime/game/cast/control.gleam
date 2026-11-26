@@ -209,7 +209,6 @@ pub fn target_modifier_started(
   cast cast: State,
   on on: OnCreature,
   modifier modifier: unit_properties.Modifier,
-  struck_at_ms struck_at_ms: Int,
 ) -> #(State, List(Effect)) {
   let cast_id = on.source.cast_id
   let held = case cast_state.holder_of(cast:, cast_id:) {
@@ -223,7 +222,6 @@ pub fn target_modifier_started(
     TargetChangeStarts(
       unit_id: on.unit_id,
       life: on.life,
-      struck_at_ms:,
       source: on.source,
       modifier:,
     ),
@@ -301,7 +299,7 @@ pub fn creature_controls_ended(
         list.find(holds, fn(hold) { hold.cast_id == cast_id })
         |> result.try(fn(hold) {
           case hold.node.held_until_ms, hold.node.struck {
-            Some(_), Some(lasting.StruckCreature(life:, ..)) ->
+            Some(_), Some(lasting.StruckCreature(life:)) ->
               Ok(CreatureControlsEnd(unit_id:, life:, cast_id:))
             Some(_), None | None, _ -> Error(Nil)
           }
@@ -994,7 +992,7 @@ fn creature_modifier_armed(
 ) -> #(State, List(Effect)) {
   case cast_gate.creature_hit(struck:, unit_id:) {
     Error(Nil) -> #(cast, [])
-    Ok(#(life, struck_at_ms)) -> {
+    Ok(life) -> {
       let on =
         OnCreature(
           unit_id:,
@@ -1007,14 +1005,13 @@ fn creature_modifier_armed(
           let #(cast, _, start) =
             cast_state.armed(
               cast:,
-              due: TargetModifierStart(on:, modifier:, struck_at_ms:),
+              due: TargetModifierStart(on:, modifier:),
               after_ms: row.row.delay_ms,
             )
           #(cast, list.append(cancels, [start]))
         }
         False -> {
-          let #(cast, starting) =
-            target_modifier_started(cast:, on:, modifier:, struck_at_ms:)
+          let #(cast, starting) = target_modifier_started(cast:, on:, modifier:)
           #(cast, list.append(cancels, starting))
         }
       }
@@ -1244,8 +1241,8 @@ pub fn struck_moves_armed(
 /// ```
 /// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
 ///   for each despawn row reached on a unit the round Hit as a creature (HitCreature):
-///     CreatureDespawns(unit, life, struck_at_ms = the round's, went_at_ms = go time, delay_ms)
-///   the connection tells the creature TellDespawn(delay_ms, struck_at_ms, went_at_ms)
+///     CreatureDespawns(unit, life, went_at_ms = go time, delay_ms)
+///   the connection tells the creature TellDespawn(delay_ms, went_at_ms)
 ///     ─▶ creature.Despawn
 /// ```
 ///
@@ -1268,11 +1265,10 @@ pub fn despawns_told(
       let #(entry, row) = found
       case cast_gate.creature_hit(struck:, unit_id: entry.unit_id) {
         Error(Nil) -> []
-        Ok(#(life, struck_at_ms)) -> [
+        Ok(life) -> [
           CreatureDespawns(
             unit_id: entry.unit_id,
             life:,
-            struck_at_ms:,
             went_at_ms:,
             delay_ms: row.delay_ms,
           ),
@@ -1301,9 +1297,9 @@ pub fn despawns_told(
 /// ```
 /// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
 ///   for each creature the round Hit (HitCreature) that a unit state row reached:
-///     CreatureHoldsUnitStates(unit, life, struck_at_ms = the round's, went_at_ms = go time,
+///     CreatureHoldsUnitStates(unit, life, went_at_ms = go time,
 ///                             rows = Row(state, delay_ms, duration_ms) in row order)
-///   the connection tells the creature TellUnitStates(rows, struck_at_ms, went_at_ms)
+///   the connection tells the creature TellUnitStates(rows, went_at_ms)
 ///     ─▶ creature.UnitStates
 /// ```
 ///
@@ -1327,24 +1323,23 @@ pub fn unit_states_told(
       cast_state.rows_reached(reached:, as_kind: spell_plan.as_unit_state),
       fn(found) {
         let #(entry, row) = found
-        use #(life, struck_at_ms) <- result.map(cast_gate.creature_hit(
+        use life <- result.map(cast_gate.creature_hit(
           struck:,
           unit_id: entry.unit_id,
         ))
-        #(entry.unit_id, life, struck_at_ms, row.row)
+        #(entry.unit_id, life, row.row)
       },
     )
   list.unique(list.map(held, fn(row) { row.0 }))
   |> list.filter_map(fn(unit_id) {
     let mine = list.filter(held, fn(row) { row.0 == unit_id })
     case mine {
-      [#(_, life, struck_at_ms, _), ..] ->
+      [#(_, life, _), ..] ->
         Ok(CreatureHoldsUnitStates(
           unit_id:,
           life:,
-          struck_at_ms:,
           went_at_ms:,
-          rows: list.map(mine, fn(row) { row.3 }),
+          rows: list.map(mine, fn(row) { row.2 }),
         ))
       [] -> Error(Nil)
     }
@@ -1362,7 +1357,7 @@ fn struck_move_armed(
 ) -> #(State, List(Effect)) {
   case cast_gate.creature_hit(struck:, unit_id:) {
     Error(Nil) -> #(cast, [])
-    Ok(#(life, struck_at_ms)) -> {
+    Ok(life) -> {
       let on =
         OnCreature(
           unit_id:,
@@ -1374,12 +1369,12 @@ fn struck_move_armed(
           let #(cast, _, start) =
             cast_state.armed(
               cast:,
-              due: ForcedMoveStart(on:, move: row.move, struck_at_ms:),
+              due: ForcedMoveStart(on:, move: row.move),
               after_ms: row.delay_ms,
             )
           #(cast, [start])
         }
-        False -> throw_started(cast:, on:, move: row.move, struck_at_ms:)
+        False -> throw_started(cast:, on:, move: row.move)
       }
     }
   }
@@ -1392,11 +1387,8 @@ pub fn throw_started(
   cast cast: State,
   on on: OnCreature,
   move move: forced_move.Move,
-  struck_at_ms struck_at_ms: Int,
 ) -> #(State, List(Effect)) {
-  #(cast, [
-    ForcedMoveStarts(unit_id: on.unit_id, life: on.life, struck_at_ms:, move:),
-  ])
+  #(cast, [ForcedMoveStarts(unit_id: on.unit_id, life: on.life, move:)])
 }
 
 /// The start timer of the modifier `on` names cancelled, whichever go armed it.

@@ -99,7 +99,7 @@ fn hit_ticking(
 ) -> cast_state.Struck {
   support.hit_with(
     unit_id:,
-    unit: cast_state.HitCreature(life: 3, struck_at_ms: press_ms),
+    unit: cast_state.HitCreature(life: 3),
     descriptions: [],
     controls: [],
     ticking:,
@@ -269,7 +269,7 @@ fn tick_hit(
 ) -> cast_state.Struck {
   support.hit_with(
     unit_id: asked.unit_id,
-    unit: cast_state.HitCreature(life: asked.life, struck_at_ms: 0),
+    unit: cast_state.HitCreature(life: asked.life),
     descriptions: [
       hit.Description(
         spell4_effects_id: asked.effect_id.value,
@@ -735,7 +735,7 @@ pub fn only_a_hit_or_immune_unit_gets_ticks_test() -> Nil {
     cast_state.Deflected(unit_id: 11),
     cast_state.Immune(
       unit_id: 12,
-      unit: cast_state.HitCreature(life: 1, struck_at_ms: press_ms),
+      unit: cast_state.HitCreature(life: 1),
       controls: [],
       armor_removed: 0,
       ticking: surge_ticking(),

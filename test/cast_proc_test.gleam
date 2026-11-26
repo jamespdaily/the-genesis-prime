@@ -1972,7 +1972,7 @@ fn landed_tick(
 ) -> cast_state.Struck {
   support.hit_with(
     unit_id: asked.unit_id,
-    unit: cast_state.HitCreature(life: asked.life, struck_at_ms: 0),
+    unit: cast_state.HitCreature(life: asked.life),
     descriptions: [
       hit.Description(
         ..typed_blow_killing(result:, killed:, damage_type: damage_type.Magic),
@@ -5149,7 +5149,7 @@ fn fires_of_a_heal(trigger trigger: spell_plan.Trigger) -> Int {
 fn dotted() -> cast_state.Struck {
   cast_state.Hit(
     unit_id: 31,
-    unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+    unit: cast_state.HitCreature(life: 3),
     descriptions: [blow(result: combat_result.Hit, killed: 0)],
     controls: [],
     armor_removed: 0,
