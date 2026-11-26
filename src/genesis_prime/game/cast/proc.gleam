@@ -947,9 +947,11 @@ fn one_set_aside(
   let #(stealth, others) = cast_tick.split_cast(held: cast.stealth, cast_id: id)
   let #(procs, other_procs) = procs_split(held: cast.procs, cast_id: id)
   let set_aside_cast = case live, lingering {
-    Some(live), _ -> Some(cast_state.WasLive(live:))
+    Some(live), None -> Some(cast_state.WasLive(live:))
     None, Some(lingering) -> Some(cast_state.WasLingering(lingering:))
     None, None -> None
+    Some(_), Some(_) ->
+      panic as "a cast is both live and lingering, which finish_or_linger never leaves"
   }
   case set_aside_cast {
     None -> #(cast, None)
