@@ -10,7 +10,9 @@ import code_rule/planted
 import code_rule/source.{type SourceFile, SourceFile}
 import code_rule/syntax
 import glance
+import gleam/bool
 import gleam/list
+import gleam/result
 import gleam/string
 import owned_test
 import unitest
@@ -87,6 +89,58 @@ fn constructor_of(pattern: glance.Pattern) -> Result(String, Nil) {
   }
 }
 
+/// Whether the source-check cell of each `Inbound` row of the doc table says there is
+/// none (it starts "none"), by the variant's name.
+fn tabled_without_sender_check(file file: SourceFile) -> List(#(String, Bool)) {
+  let inbound = inbound_variants(file:)
+  string.split(file.text, "\n")
+  |> list.filter_map(fn(line) {
+    use <- bool.guard(
+      when: !string.starts_with(line, "//// | `"),
+      return: Error(Nil),
+    )
+    use name <- result.try(
+      string.split(string.drop_start(line, 8), "`") |> list.first,
+    )
+    use source <- result.map(
+      string.split(string.trim_end(line), " | ") |> list.last,
+    )
+    #(name, string.starts_with(source, "none"))
+  })
+  |> list.filter(fn(row) { list.contains(inbound, row.0) })
+}
+
+/// The `Inbound` variants of the file.
+fn inbound_variants(file file: SourceFile) -> List(String) {
+  syntax.parse(file).custom_types
+  |> list.filter(fn(definition) { definition.definition.name == "Inbound" })
+  |> list.flat_map(fn(definition) {
+    list.map(definition.definition.variants, fn(variant) { variant.name })
+  })
+}
+
+/// Whether the arm of each variant in `inbound_kind_of` gives `NoSenderCheck`, by the
+/// variant's name: read from the line that follows each `Name(..) ->`.
+fn armed_without_sender_check(file file: SourceFile) -> List(#(String, Bool)) {
+  let lines =
+    string.split(file.text, "\n")
+    |> list.drop_while(fn(line) {
+      !string.starts_with(line, "pub fn inbound_kind_of")
+    })
+  list.zip(lines, list.drop(lines, 1))
+  |> list.filter_map(fn(pair) {
+    let #(line, next) = pair
+    case string.ends_with(string.trim(line), "(..) ->") {
+      True ->
+        Ok(#(
+          string.replace(string.trim(line), "(..) ->", ""),
+          string.contains(next, "source: NoSenderCheck"),
+        ))
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// What the file breaks: a variant with no table row, a row for no variant, and a
 /// variant that has no arm of its own in `kind_of`.
 fn breaches(file file: SourceFile) -> List(String) {
@@ -102,6 +156,16 @@ fn breaches(file file: SourceFile) -> List(String) {
       |> list.map(fn(name) {
         "no arm of its own in its kind function for " <> name
       }),
+    list.filter(tabled_without_sender_check(file:), fn(row) {
+      list.key_find(armed_without_sender_check(file:), row.0)
+      |> result.map(fn(armed) { armed != row.1 })
+      == Ok(True)
+    })
+      |> list.map(fn(row) {
+        "the source check of "
+        <> row.0
+        <> " differs between its row and its arm"
+      }),
   ])
 }
 
@@ -114,7 +178,7 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       "//// |---|---|---|---|",
       "//// | `News` | news | stay | none |",
       "//// | `Gone` | a row for no variant | stay | none |",
-      "//// | `Strike` | a player's strike | the creature | none |",
+      "//// | `Strike` | a player's strike | the creature | the sender is a player of the map |",
       "",
       "pub type Payload {",
       "  News(a: Int)",
@@ -137,7 +201,8 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       "",
       "pub fn inbound_kind_of(inbound: Inbound) -> Int {",
       "  case inbound {",
-      "    Strike(..) -> 1",
+      "    Strike(..) ->",
+      "      InboundKind(destination: RunningCreature, source: NoSenderCheck)",
       "    TargetMoved(..) | Despawn(..) -> 2",
       "  }",
       "}",
@@ -153,8 +218,9 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       "no arm of its own in its kind function for Despawn",
       "no arm of its own in its kind function for Struck",
       "no arm of its own in its kind function for Credit",
+      "the source check of Strike differs between its row and its arm",
     ]
-    as "a variant of either type with no row, a row for no variant and a variant sharing an arm are each found"
+    as "a variant of either type with no row, a row for no variant, a variant sharing an arm and a row whose source check is not its arm's are each found"
   assert breaches(file: SourceFile(
       path: relay_path,
       text: source.read(relay_path),
