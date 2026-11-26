@@ -16,11 +16,12 @@
 //// until it ends, so each listener holds a connection per player.
 ////
 //// With other players in sight (every player starts at the same place) the server
-//// also writes their units' 0x262, 0x638 and 0x355 to the player, which it reads
-//// and drops among the pongs (`game_client.pong_among_messages`). A walking player
-//// (`play`'s `walking`) also sends one 0x0637 every 125 ms, the client's own
-//// movement send interval until the server sets one (opcode.0xf1), moving a few
-//// units along x and back, so every player in the map is relayed it.
+//// also writes their units' 0x262, 0x638 and 0x355 to the player, which it reads among the
+//// pongs (`game_client.pong_among_messages`) and keeps what it counts of them
+//// (`genesis_prime/load_sight`). A walking player (`play`'s `walking`) also sends one 0x0637
+//// every 125 ms, the client's own movement send interval until the server sets one
+//// (opcode.0xf1), moving a few units along x and back, so every player in the map is
+//// relayed it, and presses its ability at each time of `presses_at_ms`.
 ////
 //// The pings are the client's own (SendNetworkPings, opcode.0x0, opcode.0x1):
 //// the first has number 0, each next is sent only after the last is answered,
@@ -246,7 +247,8 @@ pub fn play(
   let mark = reached(EnterWorld, mark)
   let sent_at_ms = runtime.now().monotonic_ms
   let sight =
-    read_all(
+    load_sight.read_all(
+      at_us: load_sample.microseconds(),
       sight: load_sight.new(
         own_unit_id: game_client.unit_create_player_in(frames: burst).unit_id,
       ),
@@ -274,7 +276,11 @@ pub fn play(
         due_ms: presses_at_ms,
         sent_ms: [],
       ),
-      sight: read_all(sight:, frames: read),
+      sight: load_sight.read_all(
+        sight:,
+        frames: read,
+        at_us: load_sample.microseconds(),
+      ),
     )
   process.send(
     report,
@@ -426,14 +432,6 @@ fn pressed_bag_index(burst burst: List(Frame)) -> Int {
   bag_index
 }
 
-/// The sight after each of the frames, read now.
-fn read_all(sight sight: Sight, frames frames: List(Frame)) -> Sight {
-  let at_us = load_sample.microseconds()
-  list.fold(frames, sight, fn(sight, frame) {
-    load_sight.read(sight:, frame:, at_us:)
-  })
-}
-
 /// Pings until the step ends, each ping as the client's rule has it, and, for a
 /// walking player, sends a 0x0637 every `move_every_ms` and presses its ability at
 /// each time of `presses`; what else the server writes meanwhile is read into `sight`.
@@ -499,7 +497,11 @@ fn keep_playing(
               moves: moves + 1,
             )),
             have,
-            read_all(sight:, frames: read),
+            load_sight.read_all(
+              sight:,
+              frames: read,
+              at_us: load_sample.microseconds(),
+            ),
           )
         }
         Some(_) | None -> #(walk, have, sight)
@@ -518,7 +520,11 @@ fn keep_playing(
             trips: [trip, ..trips],
             walk:,
             presses:,
-            sight: read_all(sight:, frames: read),
+            sight: load_sight.read_all(
+              sight:,
+              frames: read,
+              at_us: load_sample.microseconds(),
+            ),
           )
         }
         False ->

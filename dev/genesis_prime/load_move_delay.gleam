@@ -122,9 +122,11 @@ fn run(plan plan: Plan, ports ports: Ports) -> Reported {
     as "a probe is in the world by the time the probes begin to send"
   let unit_id = game_client.unit_create_player_in(frames: burst).unit_id
   let sight =
-    list.fold(burst, load_sight.new(own_unit_id: unit_id), fn(sight, frame) {
-      load_sight.read(sight:, frame:, at_us: load_sample.microseconds())
-    })
+    load_sight.read_all(
+      sight: load_sight.new(own_unit_id: unit_id),
+      frames: burst,
+      at_us: load_sample.microseconds(),
+    )
   let #(have, probed, sight) =
     read_until(
       game:,
@@ -189,9 +191,7 @@ pub fn taken(
     })
   #(
     Probed(..probed, seen: list.append(seen, probed.seen)),
-    list.fold(frames, sight, fn(sight, frame) {
-      load_sight.read(sight:, frame:, at_us: stamped_us)
-    }),
+    load_sight.read_all(sight:, frames:, at_us: stamped_us),
   )
 }
 

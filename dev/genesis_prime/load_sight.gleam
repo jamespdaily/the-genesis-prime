@@ -80,6 +80,15 @@ pub fn read(sight sight: Sight, frame frame: Frame, at_us at_us: Int) -> Sight {
   }
 }
 
+/// The sight after the client read each of `frames`, in order, at `at_us`.
+pub fn read_all(
+  sight sight: Sight,
+  frames frames: List(Frame),
+  at_us at_us: Int,
+) -> Sight {
+  list.fold(frames, sight, fn(sight, frame) { read(sight:, frame:, at_us:) })
+}
+
 fn created(sight sight: Sight, frame frame: Frame, at_us at_us: Int) -> Sight {
   let assert Ok(unit) = game_client.created_unit(body: frame.body)
     as "0x0262 decodes as a player's, a creature's or a static object's"
