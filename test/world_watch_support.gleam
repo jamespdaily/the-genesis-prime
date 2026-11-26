@@ -1,6 +1,6 @@
 //// What the whole-world creature tests share: a world of beasts on a driven clock, the
 //// joins of players standing in sight of them, the connections' messages read in order,
-//// and the strikes the caster's connection tells a creature through the registry.
+//// and what a caster's connection tells a creature, which it tells the map.
 
 import ask_support
 import cast_support
@@ -20,7 +20,6 @@ import genesis_prime/game/unit_news.{
 }
 import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
-import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell
 import genesis_prime/step.{ConnectionId}
@@ -32,6 +31,7 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import genesis_prime/world_map/relay
 import gleam/dict
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
@@ -356,10 +356,9 @@ pub fn answer_to(
 }
 
 /// The strike of connection 1 on the Beast `unit_id` with one blow of `damage` of
-/// `damage_type` (1 Physical, 2 Tech, 3 Magic) and no luck, told through the registry
-/// as a caster's connection tells it.
+/// `damage_type` (1 Physical, 2 Tech, 3 Magic) and no luck, told to the map as a caster's
+/// connection tells it.
 pub fn strike_with(
-  world world: World,
   run run: MapProcess,
   unit_id unit_id: Int,
   life life: Int,
@@ -367,23 +366,16 @@ pub fn strike_with(
   damage damage: Int,
   cast_id cast_id: Int,
 ) -> Nil {
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: ship,
-      incarnation: run.incarnation,
+  let assert creature.Strike(tell:) =
+    strike_message(
       unit_id:,
-      life:,
-      message: strike_message(
-        unit_id:,
-        damage_type:,
-        damage:,
-        cast_id:,
-        occasion: strike_tell.AtGo(phase: 0),
-      ),
+      damage_type:,
+      damage:,
+      cast_id:,
+      occasion: strike_tell.AtGo(phase: 0),
     )
-    as "the creature is found by its address and told"
-  Nil
+    as "the strike message holds a strike"
+  told_creature(run:, unit_id:, life:, payload: relay.Strike(tell:))
 }
 
 /// The strike of connection 1 on the Beast `unit_id` for `occasion`, with one blow of
@@ -559,28 +551,37 @@ pub fn watched_by_two(respawn_ms respawn_ms: Int) -> Watched {
   Watched(world:, run:, time:, caster:, viewer:, beast:, appeared:, pid:)
 }
 
-/// Tells the creature of the unit and life in the run what a cast's effect asked of it, the
-/// way the caster's connection does through the registry; stops the test when the registry
-/// holds no creature at that address.
+/// Tells the map, as connection 1 does in the stay of its first join, that the creature of
+/// the unit and life is told `payload`, which the map passes on to the creature.
 pub fn told_creature(
-  world world: World,
   run run: MapProcess,
   unit_id unit_id: Int,
   life life: Int,
-  request request: client_connection.Request,
+  payload payload: relay.Inbound,
 ) -> Nil {
-  let assert Ok(Nil) =
-    server.tell_creature(
-      creatures: world.creatures,
-      to: step.Creature(
-        map: ship,
-        incarnation: run.incarnation,
+  told_creature_by(run:, connection: 1, unit_id:, life:, payload:)
+}
+
+/// Tells the map, as connection `connection` does in the stay of its first join, that the
+/// creature of the unit and life is told `payload`.
+pub fn told_creature_by(
+  run run: MapProcess,
+  connection connection: Int,
+  unit_id unit_id: Int,
+  life life: Int,
+  payload payload: relay.Inbound,
+) -> Nil {
+  let _sent =
+    service.tell_subject(
+      run.subject,
+      map.TellCreature(
+        from: ConnectionId(connection),
+        stay: map_support.stay(count: 1),
         unit_id:,
         life:,
+        payload:,
       ),
-      request:,
     )
-    as "the creature is found by its address and told"
   Nil
 }
 

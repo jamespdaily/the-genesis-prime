@@ -30,7 +30,6 @@ import game_connection_dev_command_support as dev_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
   type Answer, type Request, AskMap, AskStore, FromStore, TellMoved,
-  TellTargetMoved,
 }
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
@@ -60,6 +59,7 @@ import genesis_prime/store.{Items, Move, SavePlace}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/relay
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -717,7 +717,7 @@ pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test()
         ]
         as "opcode.0x636: the echo is the next move number, 1, and the player's own unit takes control back"
       assert support.system_lines(taken) == [row.line] as row.why
-      assert support.told_the_map(taken)
+      assert support.told_the_map_but_creatures(taken)
         == [
           support.map_tell(TellMoved(
             connection: ConnectionId(1),
@@ -736,11 +736,9 @@ pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test()
           True -> [
             #(
               7,
-              TellTargetMoved(
-                connection: ConnectionId(1),
+              relay.TargetMoved(
                 place: row.place,
                 seq: 1,
-                stay: support.own_stay(),
                 hit_radius: place_support.player_hit_radius,
               ),
             ),

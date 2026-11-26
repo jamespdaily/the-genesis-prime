@@ -102,13 +102,11 @@
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
-  AskSessions, AskStore, ChangeEnds, ChangeStarts, ControlsEnd, ForStay,
-  FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
-  SentByKill, SentByMap, SentByPeer, SentByPlayer, SentBySessions, SentByTarget,
-  TellCastView, TellChat, TellCreature, TellDespawn, TellLifeChanged, TellMoved,
-  TellPeer, TellPlayer, TellReady, TellReleased, TellStealthChanged, TellStrike,
-  TellStrikeAnswered, TellTargetChange, TellTargetMoved, TellThrown,
-  TellUnitStates, TellVisibilityChanged, ViewEnds, ViewSet,
+  AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions, FromStore,
+  SentByChat, SentByFoe, SentByKill, SentByMap, SentByPeer, SentByPlayer,
+  SentBySessions, SentByTarget, TellChat, TellCreature, TellLifeChanged,
+  TellMoved, TellPeer, TellPlayer, TellReady, TellReleased, TellStealthChanged,
+  TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -374,14 +372,6 @@ fn directory(settings: Settings) -> Directory {
       | TellReleased(..)
       | TellPeer(..)
       | TellChat(..)
-      | TellStrike(..)
-      | TellTargetMoved(..)
-      | TellStrikeAnswered(..)
-      | TellTargetChange(..)
-      | TellThrown(..)
-      | TellDespawn(..)
-      | TellUnitStates(..)
-      | TellCastView(..)
       | TellCreature(..)
       | TellPlayer(..) -> Error(Nil)
     }
@@ -488,14 +478,6 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellVisibilityChanged(..)
     | TellReleased(..)
     | TellPeer(..)
-    | TellStrike(..)
-    | TellTargetMoved(..)
-    | TellStrikeAnswered(..)
-    | TellTargetChange(..)
-    | TellThrown(..)
-    | TellDespawn(..)
-    | TellUnitStates(..)
-    | TellCastView(..)
     | TellCreature(..)
     | TellPlayer(..)
     | AskStore(..)
@@ -563,14 +545,6 @@ pub fn tell_the_run(
     }
     TellPeer(..)
     | TellChat(..)
-    | TellStrike(..)
-    | TellTargetMoved(..)
-    | TellStrikeAnswered(..)
-    | TellTargetChange(..)
-    | TellThrown(..)
-    | TellDespawn(..)
-    | TellUnitStates(..)
-    | TellCastView(..)
     | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
@@ -585,87 +559,6 @@ pub fn tell_the_run(
   }
 }
 
-/// A connection's tell to the creature `to`, through the creature registry with no
-/// watch: a strike (`TellStrike`) as the creature's `Strike`, a fighter's move
-/// (`TellTargetMoved`) as `TargetMoved`, the answer to its strike
-/// (`TellStrikeAnswered`) as `StrikeAnswered`, and a modifier's start or end
-/// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds` (or `ControlsEnd` for the end
-/// of a cast's states), a throw (`TellThrown`) as
-/// `Thrown`, a removal (`TellDespawn`) as `Despawn`, held unit states (`TellUnitStates`)
-/// as `UnitStates` and a cast's view (`TellCastView`) as `CastViewSet` or `CastViewEnds`.
-/// Any other request,
-/// or an address that is no creature, is an error and nothing is sent.
-pub fn tell_creature(
-  creatures creatures: CreatureRegistry,
-  to to: step.Address,
-  request request: Request,
-) -> Result(Nil, Nil) {
-  case to, creature_told(request) {
-    step.Creature(map:, incarnation:, unit_id:, life:), Ok(message) ->
-      creature_registry.tell(
-        creatures,
-        map:,
-        incarnation:,
-        unit_id:,
-        life:,
-        message:,
-      )
-    step.Creature(..), Error(Nil)
-    | step.Connection(..), _
-    | step.Sessions, _
-    | step.HandOff, _
-    | step.Store, _
-    | step.Maps, _
-    | step.Map(..), _
-    | step.CharacterNamed(..), _
-    | step.ZoneChannel(..), _
-    -> Error(Nil)
-  }
-}
-
-/// The message a creature takes a connection's request as, for each request a creature
-/// is told, and an error for any other. A cast's view (`TellCastView`) is
-/// `CastViewSet` with the connection as its `by`, or `CastViewEnds`.
-pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
-  case request {
-    TellStrike(tell:) -> Ok(creature.Strike(tell:))
-    TellTargetMoved(connection:, place:, seq:, stay:, hit_radius:) ->
-      Ok(creature.TargetMoved(by: connection, place:, seq:, stay:, hit_radius:))
-    TellStrikeAnswered(answered:) -> Ok(creature.StrikeAnswered(answered:))
-    TellTargetChange(connection:, change:) ->
-      Ok(case change {
-        ChangeStarts(source:, modifier:) ->
-          creature.ModifierStarts(by: connection, source:, modifier:)
-        ChangeEnds(source:) -> creature.ModifierEnds(source:)
-        ControlsEnd(cast_id:) -> creature.ControlsEnd(by: connection, cast_id:)
-      })
-    TellThrown(throw:) -> Ok(creature.Thrown(throw:))
-    TellDespawn(delay_ms:, went_at_ms:) ->
-      Ok(creature.Despawn(delay_ms:, went_at_ms:))
-    TellUnitStates(rows:, went_at_ms:) ->
-      Ok(creature.UnitStates(rows:, went_at_ms:))
-    TellCastView(connection:, change: ViewSet(view:)) ->
-      Ok(creature.CastViewSet(by: connection, view:))
-    TellCastView(connection:, change: ViewEnds(cast_id:)) ->
-      Ok(creature.CastViewEnds(by: connection, cast_id:))
-    TellPeer(..)
-    | TellChat(..)
-    | TellPlayer(..)
-    | TellMoved(..)
-    | TellReady(..)
-    | TellStealthChanged(..)
-    | TellLifeChanged(..)
-    | TellVisibilityChanged(..)
-    | TellReleased(..)
-    | TellCreature(..)
-    | AskStore(..)
-    | AskHandOff(..)
-    | AskSessions(..)
-    | AskMap(..)
-    | AskMapRun(..) -> Error(Nil)
-  }
-}
-
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
@@ -673,15 +566,9 @@ pub fn creature_told(request: Request) -> Result(creature.Message, Nil) {
 /// connection's player (`TellPlayer`: a caster's heal rows, its held change or the
 /// healed player's answer) as `SentByPlayer`, each for the stay the request names, and a
 /// chat tell (`TellChat`) as `SentByChat`, by the
-/// same reach the services' sends take (`connection_reach`). A strike
-/// (`TellStrike`), a fighter's move (`TellTargetMoved`), the answer to a
-/// creature's strike (`TellStrikeAnswered`) and a modifier's start or end
-/// (`TellTargetChange`) and a throw (`TellThrown`) told to a `Creature` go through the
-/// creature registry with no watch, as the creature's `Strike`, `TargetMoved`,
-/// `StrikeAnswered`, `ModifierStarts`, `ModifierEnds` and `Thrown` messages (a cast's view
-/// as `CastViewSet` or `CastViewEnds`). Any other request is no tell to a
-/// connection or a creature: a rule that sends one has a bug, logged as an error,
-/// and nothing is sent.
+/// same reach the services' sends take (`connection_reach`). Any other request is no
+/// tell to a connection: a rule that sends one has a bug, logged as an error, and nothing
+/// is sent. A creature is told by its map alone (`map_reach`).
 fn connection_deliver(
   settings: Settings,
 ) -> fn(step.Address, Request) -> Result(Nil, Nil) {
@@ -694,24 +581,7 @@ fn connection_deliver(
       TellPlayer(stay:, tell:), _ ->
         reach.send(to, ForStay(stay:, sent: SentByPlayer(tell:)))
       TellChat(tell:), _ -> chat_reach.send(to, tell)
-      TellStrike(..) as request, step.Creature(..)
-      | TellTargetMoved(..) as request, step.Creature(..)
-      | TellStrikeAnswered(..) as request, step.Creature(..)
-      | TellTargetChange(..) as request, step.Creature(..)
-      | TellThrown(..) as request, step.Creature(..)
-      | TellDespawn(..) as request, step.Creature(..)
-      | TellUnitStates(..) as request, step.Creature(..)
-      | TellCastView(..) as request, step.Creature(..)
-      -> tell_creature(creatures: settings.world.creatures, to:, request:)
-      TellStrike(..), _
-      | TellTargetMoved(..), _
-      | TellStrikeAnswered(..), _
-      | TellTargetChange(..), _
-      | TellThrown(..), _
-      | TellDespawn(..), _
-      | TellUnitStates(..), _
-      | TellCastView(..), _
-      | TellCreature(..), _
+      TellCreature(..), _
       | TellMoved(..), _
       | TellReady(..), _
       | TellStealthChanged(..), _
@@ -898,9 +768,11 @@ pub fn add_world(
   )
 }
 
-/// A map's reach: the given one for everything but its creatures, which it finds
-/// and sends `Watched` and `Unwatched` through the creature registry, and starts
-/// under the creature supervisor.
+/// A map's reach: the given one for everything but its creatures, which it finds and
+/// sends each `Outgoing` through the creature registry as the creature's message
+/// (`creature.told_by_map`), the tells of players among them, and starts under the creature
+/// supervisor. The creature registry is told here and nowhere else: a creature hears about a
+/// player from its map alone.
 fn map_reach(
   world world: World,
   reach reach: Reach(map.Outgoing),

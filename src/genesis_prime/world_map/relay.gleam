@@ -163,17 +163,27 @@ pub type InboundKind {
 /// The kind of an inbound payload, from the table above.
 pub fn inbound_kind_of(inbound inbound: Inbound) -> InboundKind {
   case inbound {
-    Strike(..)
-    | TargetMoved(..)
-    | StrikeAnswered(..)
-    | ModifierStarts(..)
-    | ModifierEnds(..)
-    | Thrown(..)
-    | Despawn(..)
-    | UnitStates(..)
-    | CastViewSet(..)
-    | CastViewEnds(..)
-    | ControlsEnd(..) ->
+    Strike(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    TargetMoved(..) ->
+      InboundKind(destination: RunningCreature, source: SenderInCurrentStay)
+    StrikeAnswered(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    ModifierStarts(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    ModifierEnds(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    Thrown(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    Despawn(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    UnitStates(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    CastViewSet(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    CastViewEnds(..) ->
+      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+    ControlsEnd(..) ->
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
   }
 }

@@ -1260,7 +1260,7 @@ pub fn a_player_that_entered_dead_fights_no_one_a_strike_is_refused_dead_and_a_t
   let assert [
     #(
       7,
-      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
+      relay.StrikeAnswered(answered: strike_tell.Answered(
         outcome: strike_tell.Refused(why: strike_tell.Dead),
         ..,
       )),
@@ -1427,7 +1427,7 @@ pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths
   use <- owned_test.run(10_000)
   let #(state, _) = game_connection_support.stealthed_stalker_kept_on_damage()
   let #(state, killed) = game_connection_support.killed(state)
-  assert game_connection_support.told_the_map(killed)
+  assert game_connection_support.told_the_map_but_creatures(killed)
     == [
       game_connection_support.map_tell(
         request: client_connection.TellLifeChanged(
@@ -1450,7 +1450,7 @@ pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths
         game_connection_support.own_unit_id,
       ),
     )
-  assert game_connection_support.told_the_map(refused) == []
+  assert game_connection_support.told_the_map_but_creatures(refused) == []
     as "a second strike is refused Dead: the player died once, so the map is told once"
 }
 

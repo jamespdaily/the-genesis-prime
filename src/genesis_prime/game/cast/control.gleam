@@ -1242,7 +1242,7 @@ pub fn struck_moves_armed(
 /// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
 ///   for each despawn row reached on a unit the round Hit as a creature (HitCreature):
 ///     CreatureDespawns(unit, life, went_at_ms = go time, delay_ms)
-///   the connection tells the creature TellDespawn(delay_ms, went_at_ms)
+///   the connection tells the creature Despawn(delay_ms, went_at_ms), through its map
 ///     ─▶ creature.Despawn
 /// ```
 ///
@@ -1299,7 +1299,7 @@ pub fn despawns_told(
 ///   for each creature the round Hit (HitCreature) that a unit state row reached:
 ///     CreatureHoldsUnitStates(unit, life, went_at_ms = go time,
 ///                             rows = Row(state, delay_ms, duration_ms) in row order)
-///   the connection tells the creature TellUnitStates(rows, went_at_ms)
+///   the connection tells the creature UnitStates(rows, went_at_ms), through its map
 ///     ─▶ creature.UnitStates
 /// ```
 ///

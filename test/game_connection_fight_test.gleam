@@ -58,7 +58,7 @@ import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/server
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, Map,
-  OwnEffect, OwnEvent, TimerId, Unwatch, Watch, Woken,
+  OwnEffect, OwnEvent, TimerId, Woken,
 }
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4EffectsId, Spell4Id}
@@ -327,18 +327,14 @@ fn press_and_close(
   #(state, list.map(told, fn(strike) { strike.0 }))
 }
 
-/// The removals a step tells creatures, as the creature's unit, its life and the request.
+/// The removals a step tells creatures, as the creature's unit, its life and the removal.
 fn despawns_told(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Int, client_connection.Request)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Creature(unit_id:, life:, ..),
-        request: client_connection.TellDespawn(..) as request,
-      )) -> Ok(#(unit_id, life, request))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
+) -> List(#(Int, Int, relay.Inbound)) {
+  list.filter(game_connection_support.creature_tells(taken), fn(tell) {
+    case tell.2 {
+      relay.Despawn(..) -> True
+      _ -> False
     }
   })
 }
@@ -399,7 +395,7 @@ pub fn a_creature_despawns_effect_becomes_a_tell_to_that_creature_test() -> Nil 
     ])
   assert list.flat_map(steps, despawns_told)
     == [
-      #(40, 4, client_connection.TellDespawn(delay_ms: 3000, went_at_ms: 1100)),
+      #(40, 4, relay.Despawn(delay_ms: 3000, went_at_ms: 1100)),
     ]
     as "the connection tells the creature of that life, with the row's delay and the go's time, and tells no other"
 }
@@ -643,11 +639,9 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
     == [
       #(
         7,
-        client_connection.TellTargetMoved(
-          connection: ConnectionId(1),
+        relay.TargetMoved(
           place: game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5),
           seq: 1,
-          stay: game_connection_support.own_stay(),
           hit_radius: place_support.player_hit_radius,
         ),
       ),
@@ -659,11 +653,9 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
     == [
       #(
         7,
-        client_connection.TellTargetMoved(
-          connection: ConnectionId(1),
+        relay.TargetMoved(
           place: game_connection_support.standing_at(x: 2.5, y: 2.5, z: 3.5),
           seq: 2,
-          stay: game_connection_support.own_stay(),
           hit_radius: place_support.player_hit_radius,
         ),
       ),
@@ -790,7 +782,7 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
   let assert [
     #(
       7,
-      client_connection.TellStrikeAnswered(answered: strike_tell.Answered(
+      relay.StrikeAnswered(answered: strike_tell.Answered(
         key: answered,
         outcome: strike_tell.Landed(descriptions: [_], ..),
       )),
@@ -1342,12 +1334,17 @@ fn to_the_medic(taken: step.ServiceStep(creature.Outgoing)) -> List(Message) {
   )
 }
 
-/// The connection's tells to the creature, as the creature takes them
-/// (`server.creature_told`).
+/// The connection's tells to the creature, as the creature takes them from its map
+/// (`creature.told_by_map`), the connection's the sender of each.
 fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
   list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
     case tell {
-      #(7, _, request) -> server.creature_told(request)
+      #(7, _, payload) ->
+        creature.told_by_map(map.ToldCreature(
+          by: ConnectionId(1),
+          stay: game_connection_support.own_stay(),
+          payload:,
+        ))
       #(_, _, _) -> Error(Nil)
     }
   })
@@ -2492,18 +2489,14 @@ pub fn gated_strike_on_a_creature_shows_no_hit_test() -> Nil {
     as "the channel still goes at each of its six pulses (Spell4.41276): only the gated row is left out"
 }
 
-/// The unit states a step tells creatures, as the creature's unit, its life and the request.
+/// The unit states a step tells creatures, as the creature's unit, its life and the states.
 fn unit_states_told(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Int, client_connection.Request)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Creature(unit_id:, life:, ..),
-        request: client_connection.TellUnitStates(..) as request,
-      )) -> Ok(#(unit_id, life, request))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
+) -> List(#(Int, Int, relay.Inbound)) {
+  list.filter(game_connection_support.creature_tells(taken), fn(tell) {
+    case tell.2 {
+      relay.UnitStates(..) -> True
+      _ -> False
     }
   })
 }
@@ -2572,7 +2565,7 @@ pub fn a_creature_holds_unit_states_effect_becomes_a_tell_to_that_creature_test(
       #(
         40,
         4,
-        client_connection.TellUnitStates(
+        relay.UnitStates(
           rows: [unit_state.Row(state: 6, delay_ms: 500, duration_ms: 2000)],
           went_at_ms: 1100,
         ),

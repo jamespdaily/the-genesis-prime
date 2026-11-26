@@ -6,8 +6,10 @@
 //// - A connection rule's `Tell` whose `to:` names a creature, or whose request is a
 ////   `TellCreature` and whose `to:` is not a map, is a breach, reported at its line.
 //// - The creature registry is told only by the map's reach: a call of
-////   `creature_registry.tell` outside the function `map_reach` of `genesis_prime/server`
-////   is a breach, reported as the file and the function.
+////   `creature_registry.tell` in `src` or `dev` outside the function `map_reach` of
+////   `genesis_prime/server` is a breach, reported as the file and the function. The load
+////   tools' walkers tell creatures as players' connections do, through the map, so a run
+////   measures the path the server takes.
 
 import code_rule/planted
 import code_rule/source.{type SourceFile}
@@ -159,15 +161,27 @@ pub fn the_creature_registry_is_told_only_by_the_maps_reach_test() -> Nil {
       "  registry.tell(a)",
       "}",
     ])
+  let a_tool_file =
+    planted.file(path: "dev/genesis_prime/load_tool.gleam", lines: [
+      "import genesis_prime/world_map/creature_registry",
+      "",
+      "fn walks() {",
+      "  creature_registry.tell(a)",
+      "}",
+    ])
   assert registry_tellers(file: planted_file)
     == ["src/genesis_prime/server.gleam:map_reach"]
     as "the function that tells the registry is found, and a lookup is not a tell"
   assert registry_tellers(file: aliased_file)
     == ["src/genesis_prime/other.gleam:tell_creature"]
     as "a tell through the module's alias is found"
-  assert list.flat_map(source.files(under: "src"), fn(file) {
-      registry_tellers(file:)
-    })
+  assert registry_tellers(file: a_tool_file)
+    == ["dev/genesis_prime/load_tool.gleam:walks"]
+    as "a tell from a load tool is found"
+  assert list.flat_map(
+      list.append(source.files(under: "src"), source.files(under: "dev")),
+      fn(file) { registry_tellers(file:) },
+    )
     == ["src/genesis_prime/server.gleam:map_reach"]
-    as "the creature registry is told by the map's reach alone"
+    as "the creature registry is told by the map's reach alone, by the server and by the load tools"
 }

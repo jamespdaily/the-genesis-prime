@@ -26,7 +26,6 @@ import genesis_prime/game/unit_news.{PeerNews}
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId, Woken}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry
 import genesis_prime/world_map/relay
@@ -120,17 +119,15 @@ pub fn a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the
       cast_id: 1,
       occasion: strike_tell.AtGo(phase: 0),
     )
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id:,
-      life: 2,
-      message: creature.Strike(
-        tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
-      ),
-    )
+  world_watch_support.told_creature_by(
+    run:,
+    connection: 2,
+    unit_id:,
+    life: 2,
+    payload: relay.Strike(
+      tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
+    ),
+  )
   held_at_least(time:, world:, count: 2)
   send_gate.open(gate: world_support.gate(world:))
   let messages = world_support.sent_before_the_marker(world:, id: 1, received:)
@@ -179,7 +176,6 @@ pub fn the_caster_is_told_the_answer_the_credit_and_the_health_news_in_that_orde
   send_gate.close(gate: world_support.gate(world:))
   // The caster's connection, which is also the viewer, kills the creature in one strike.
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: beast.unit_id,
     life: 2,
@@ -217,7 +213,6 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
       wanted: world_watch_support.appearance,
     )
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: beast.unit_id,
     life: 2,
@@ -239,7 +234,6 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
   // A second strike reaches the dead creature, which refuses it as dead; the map, which holds
   // the spawn as releasing, still delivers the answer.
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: beast.unit_id,
     life: 2,
@@ -322,15 +316,12 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
       cast_id: asked.cast_id,
       occasion: strike_tell.AtGo(phase: asked.phase),
     )
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id: beast.unit_id,
-      life: 2,
-      message: creature.Strike(tell:),
-    )
+  world_watch_support.told_creature(
+    run:,
+    unit_id: beast.unit_id,
+    life: 2,
+    payload: relay.Strike(tell:),
+  )
   held_at_least(time:, world:, count: 1)
   // The clock passes the deadline of the strike while the answer is held at the gate.
   driven_time.advance(time:, ms: strike_tell.deadline_ms + 100)
@@ -390,18 +381,13 @@ fn struck_through_the_map(
       stay_count: 1,
     )
   let tell = strike_tell.Strike(..tell, key: Key(..tell.key, cast_id:))
-  let _sent =
-    service.tell_subject(
-      run.subject,
-      map.TellCreature(
-        from: ConnectionId(from),
-        stay: map_support.stay(count: 1),
-        unit_id:,
-        life: 2,
-        payload: relay.Strike(tell:),
-      ),
-    )
-  Nil
+  world_watch_support.told_creature_by(
+    run:,
+    connection: from,
+    unit_id:,
+    life: 2,
+    payload: relay.Strike(tell:),
+  )
 }
 
 pub fn a_strike_told_through_the_map_damages_the_creature_and_threatens_only_a_viewer_of_the_stay_it_names_test() -> Nil {

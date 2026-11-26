@@ -142,10 +142,10 @@
 ////   `Landed`, `Immune` and `Deflected` carry (a deflect still checks its gates), and the
 ////   blows and states of a gated row not listed there are in neither its descriptions nor its
 ////   states. A refusal passes no gate.
-//// - **A strike** is told by the connection of the caster through the creature
-////   registry with no watch (genesis_prime/world_map/creature_registry `tell`), and
-////   answered by a send to that connection. A strike for a creature that has ended is
-////   dropped by the registry and left out at the caster's deadline
+//// - **A strike** is told by the connection of the caster through its map
+////   (genesis_prime/world_map/map `TellCreature`, which the map passes on as `ToldCreature`),
+////   and answered by a send to that connection. A strike for a creature that has ended is
+////   dropped by the map or the registry and left out at the caster's deadline
 ////   (genesis_prime/game/strike).
 //// - **The corpse timer** is the creature's own, whatever its viewers: it starts at the
 ////   kill for the kind's respawn time and fires with no viewer too
@@ -182,14 +182,14 @@
 ////   stay other than the one its `Seen` named starts and moves nothing
 ////   (genesis_prime/world_map/creature_fight).
 //// - **A property modifier** of a player's spell is told by the caster's connection
-////   through the creature registry with no watch, as a strike is; the caster's cast owns
+////   through its map, as a strike is; the caster's cast owns
 ////   its time and the creature owns the values and every rule that reads them. A tell
 ////   addressed to a life that ended finds no creature, so the creature fences nothing: it
 ////   drops a start that reaches it dead. An end names only the source, which the caster
 ////   keeps one node of for each unit. A modifier on another player, and stacking across
 ////   casters, are not handled here.
-//// - **A throw** is told by the caster's connection through the creature registry with no
-////   watch, as a strike and a modifier are (`TellThrown`). The connection draws the two
+//// - **A throw** is told by the caster's connection through its map, as a strike and a
+////   modifier are (`Thrown`). The connection draws the two
 ////   fractions the move needs from its seed (genesis_prime/game/forced_move), so the
 ////   creature keeps no random state, and names the unit the move is measured from. The
 ////   creature owns the path and the flight's timer. The timers
@@ -1616,8 +1616,8 @@ fn credit_for(
   tell tell: StrikeTell,
   reaction reaction: creature_life.Reaction,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  case reaction.corpse_for_ms, tell.striker, tell.from {
-    Some(..), PlayerStriker(stay:, ..), Connection(connection:) -> [
+  case reaction.corpse_for_ms, strike_tell.player_sender(tell:) {
+    Some(..), Ok(#(connection, stay)) -> [
       relayed(
         state:,
         to: connection,
@@ -1630,7 +1630,7 @@ fn credit_for(
         )),
       ),
     ]
-    Some(..), _, _ | None, _, _ -> []
+    Some(..), Error(Nil) | None, _ -> []
   }
 }
 
@@ -1986,11 +1986,11 @@ fn answer_to(
   tell tell: StrikeTell,
   answered answered: Answered,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  case tell.striker, tell.from {
-    PlayerStriker(stay:, ..), Connection(connection:) -> [
+  case strike_tell.player_sender(tell:) {
+    Ok(#(connection, stay)) -> [
       relayed(state:, to: connection, stay:, payload: relay.Struck(answered:)),
     ]
-    PlayerStriker(..), _ | CreatureStriker(..), _ -> []
+    Error(Nil) -> []
   }
 }
 
@@ -2437,7 +2437,9 @@ fn to_the_map(
 /// What the map's `Outgoing` means to a creature: `Seen` and `Unseen`,
 /// each by the connection whose player sees or stops seeing it, `Approached` and
 /// `Withdrew`, by the connection whose ready player entered or left its ring,
-/// `PlayerDied`, by the connection whose player died, and `Retire`. Any other is no message to a creature, and `Error(Nil)`.
+/// `PlayerDied`, by the connection whose player died, `Retire`, and the tells of a
+/// player (`ToldCreature`), each as the message of its kind with the sender and the stay
+/// the map names. Any other is no message to a creature, and `Error(Nil)`.
 pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
   case outgoing {
     map.Seen(by:, stay:, generation:) -> Ok(Seen(by:, stay:, generation:))
@@ -2446,7 +2448,8 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     map.Withdrew(by:) -> Ok(Withdrew(by:))
     map.PlayerDied(by:) -> Ok(PlayerDied(by:))
     map.Retire -> Ok(Retire)
-    map.ToldCreature(..) -> Error(Nil)
+    map.ToldCreature(by:, stay:, payload:) ->
+      Ok(told_by_a_player(by:, stay:, payload:))
     map.Joined(..)
     | map.NotJoined(..)
     | map.Summoned(..)
@@ -2454,6 +2457,30 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     | map.Left
     | map.Relayed(..)
     | map.Noticed(..) -> Error(Nil)
+  }
+}
+
+/// What a player's tell, as the map passed it on, means to a creature: the message of
+/// that kind, with the sender and the stay the map named.
+fn told_by_a_player(
+  by by: ConnectionId,
+  stay stay: Stay,
+  payload payload: relay.Inbound,
+) -> Message {
+  case payload {
+    relay.Strike(tell:) -> Strike(tell:)
+    relay.TargetMoved(place:, seq:, hit_radius:) ->
+      TargetMoved(by:, place:, seq:, stay:, hit_radius:)
+    relay.StrikeAnswered(answered:) -> StrikeAnswered(answered:)
+    relay.ModifierStarts(source:, modifier:) ->
+      ModifierStarts(by:, source:, modifier:)
+    relay.ModifierEnds(source:) -> ModifierEnds(source:)
+    relay.Thrown(throw:) -> Thrown(throw:)
+    relay.Despawn(delay_ms:, went_at_ms:) -> Despawn(delay_ms:, went_at_ms:)
+    relay.UnitStates(rows:, went_at_ms:) -> UnitStates(rows:, went_at_ms:)
+    relay.CastViewSet(view:) -> CastViewSet(by:, view:)
+    relay.CastViewEnds(cast_id:) -> CastViewEnds(by:, cast_id:)
+    relay.ControlsEnd(cast_id:) -> ControlsEnd(by:, cast_id:)
   }
 }
 

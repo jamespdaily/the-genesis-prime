@@ -30,6 +30,7 @@ import genesis_prime/step.{
   OwnEffect,
 }
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -281,7 +282,7 @@ fn moving(
 
 /// The tell to a creature that holds the player on its threat list of the place the
 /// player stands at, the move's sequence number and the hit radius of the player's race,
-/// through the creature registry with no watch.
+/// through the player's map.
 pub fn tells_a_fighter_the_place(
   connection connection: ConnectionId,
   entered entered: world_entry.Entered,
@@ -290,21 +291,13 @@ pub fn tells_a_fighter_the_place(
   seq seq: Int,
   hit_radius hit_radius: Float,
 ) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Creature(
-      map: entered.map,
-      incarnation: entered.incarnation,
-      unit_id: fighter.0,
-      life: fighter.1,
-    ),
-    request: client_connection.TellTargetMoved(
-      connection:,
-      place:,
-      seq:,
-      stay: entered.stay,
-      hit_radius:,
-    ),
-  ))
+  connection_state.tells_the_creature(
+    entered:,
+    connection:,
+    unit_id: fighter.0,
+    life: fighter.1,
+    payload: relay.TargetMoved(place:, seq:, hit_radius:),
+  )
 }
 
 /// The stay's first 0xF2: the player is ready, and its map is told `Ready`, so a

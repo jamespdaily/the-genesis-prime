@@ -800,13 +800,8 @@ pub fn tells_the_creature(
   life life: Int,
   payload payload: Inbound,
 ) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Creature(
-      map: entered.map,
-      incarnation: entered.incarnation,
-      unit_id:,
-      life:,
-    ),
+  tells_the_map(
+    entered:,
     request: client_connection.TellCreature(
       connection:,
       stay: entered.stay,
@@ -814,7 +809,7 @@ pub fn tells_the_creature(
       life:,
       payload:,
     ),
-  ))
+  )
 }
 
 /// The session with the player it holds in the world changed by `change`: the

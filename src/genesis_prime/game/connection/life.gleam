@@ -8,7 +8,8 @@
 ////   0x637 with its move sequence number (for the connection's life, through a camp),
 ////   takes `SentByFoe` (a creature's threat, release or strike) and the map's `Gone`
 ////   of a fighter, streams each move to the creatures that fight the player
-////   (`TellTargetMoved`) and answers a strike (`TellStrikeAnswered`). A viewer writes
+////   (`TargetMoved`) and answers a strike (`StrikeAnswered`), each told through the map
+////   (`connection_state.tells_the_creature`). A viewer writes
 ////   a creature's 0x908, 0x90a, 0x89a and 0x638 path, and a player's 0x938 shield,
 ////   for a unit it shows; its picture keeps a running creature's path.
 //// - **Regeneration** is player_life's too: its health and shield timers (ids 8 and

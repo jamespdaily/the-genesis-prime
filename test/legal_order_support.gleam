@@ -63,8 +63,8 @@ pub type Receiver {
 
 /// The senders whose queues a receiver's mailbox keeps apart: the map, the creature, the
 /// creature the map started when the first one ended, the connection of the player the
-/// viewer stands for, a caster that strikes the creature, and a timer, which is the
-/// receiver's own.
+/// viewer stands for, the connection of the first player, the caster that strikes the
+/// creature, which tells the map, and a timer, which is the receiver's own.
 pub type Sender {
   FromMap
   FromCreature
@@ -138,25 +138,29 @@ pub type Violation {
   Violation(invariant: Invariant, at_frame: Int, unit_id: Int)
 }
 
-/// A scene: the states, and the mail already in flight in the order it was sent.
+/// A scene: the states, and the mail already in flight in the order it was sent. Mail that
+/// no process of the scene may send stops the test (`refused`).
 pub fn scene(
   map map: map.State,
   creature creature: creature.State,
   viewer viewer: game_connection.State,
   mail mail: List(Mail),
 ) -> Scene {
-  Scene(
-    map:,
-    creature: Some(creature),
-    life: map_spawn_support.creature_of(state: map, spawn: 1).1,
-    next_creature: None,
-    next_life: None,
-    viewer:,
+  with_mail(
+    scene: Scene(
+      map:,
+      creature: Some(creature),
+      life: map_spawn_support.creature_of(state: map, spawn: 1).1,
+      next_creature: None,
+      next_life: None,
+      viewer:,
+      mail: [],
+      now_ms: 10_000,
+      taken: [],
+      frames: [],
+      early: None,
+    ),
     mail:,
-    now_ms: 10_000,
-    taken: [],
-    frames: [],
-    early: None,
   )
 }
 
@@ -177,14 +181,51 @@ pub fn describe(refusal refusal: Refusal) -> String {
   <> ")"
 }
 
-/// The scene with the mail added behind what is in flight, or the refusal of mail that
-/// no process of the scene may send: a creature has one external sender, its map, and its
-/// own timer, so mail to a creature from any other sender is refused.
+/// The refusals among the mail: a creature has one external sender, its map, and its own
+/// timer, so mail to a creature from any other sender is refused. Every way mail enters a
+/// scene is checked by this: `scene` and `with_mail` when it is added, `deliver` when it is
+/// taken, so mail put in by a record update is refused too.
+pub fn refused(mail mail: List(Mail)) -> List(Refusal) {
+  list.filter_map(mail, fn(mail) {
+    case mail.to, mail.from {
+      CreatureProcess, FromMap
+      | CreatureProcess, FromTimer
+      | NextCreatureProcess, FromMap
+      | NextCreatureProcess, FromTimer
+      -> Error(Nil)
+      CreatureProcess, FromCreature
+      | CreatureProcess, FromNextCreature
+      | CreatureProcess, FromConnection
+      | CreatureProcess, FromCaster
+      | NextCreatureProcess, FromCreature
+      | NextCreatureProcess, FromNextCreature
+      | NextCreatureProcess, FromConnection
+      | NextCreatureProcess, FromCaster
+      -> Ok(CreatureMailedByAnotherSender(from: mail.from, name: mail.name))
+      MapProcess, _ | ViewerProcess, _ -> Error(Nil)
+    }
+  })
+}
+
+/// The scene with the mail added behind what is in flight, or the refusal of the first
+/// mail that no process of the scene may send (`refused`).
 pub fn mailed(
   scene scene: Scene,
   mail mail: List(Mail),
 ) -> Result(Scene, Refusal) {
-  Ok(Scene(..scene, mail: list.append(scene.mail, mail)))
+  case refused(mail:) {
+    [] -> Ok(Scene(..scene, mail: list.append(scene.mail, mail)))
+    [refusal, ..] -> Error(refusal)
+  }
+}
+
+/// The scene with the mail added behind what is in flight; mail that no process of the
+/// scene may send stops the test, naming the sender.
+pub fn with_mail(scene scene: Scene, mail mail: List(Mail)) -> Scene {
+  case mailed(scene:, mail:) {
+    Ok(scene) -> scene
+    Error(refusal) -> panic as describe(refusal:)
+  }
 }
 
 /// The name of a sender, as a refusal writes it.
@@ -268,6 +309,10 @@ fn has_mail(scene scene: Scene, receiver receiver: Receiver) -> Bool {
 /// The scene after the receiver takes the mail: its rule's step, and what the step sends
 /// put in the mail behind what is there.
 pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
+  case refused(mail: [mail]) {
+    [] -> Nil
+    [refusal, ..] -> panic as describe(refusal:)
+  }
   let rest = remove_first(scene.mail, mail)
   let now_ms = scene.now_ms + 1
   let scene =

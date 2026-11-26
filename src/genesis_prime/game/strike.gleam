@@ -12,7 +12,7 @@
 ////   the connection draws 12 bytes of its seed for each unit
 ////   begin: a round for (k, phase), its deadline now + 1 s
 ////     for each unit in selection order, the spell having damage, states or a gated row:
-////       TellStrike(Ci, Strike(key, from, offence, rolls, controls, gates)) ───────────▶ gates checked
+////       Strike(Ci, key, from, offence, rolls, controls, gates), via the map ─────────▶ gates checked
 ////                                                                                        (of_creature), then
 ////                                                                                        the hit rule
 ////     StartTimer(strike timer) to the earliest open deadline, when it is not set
@@ -32,7 +32,7 @@
 //// cast rule tick timer ─▶ Effect TickStrike(TickAsked k, row, unit, tick)
 ////   the connection draws 12 bytes of its seed for the unit
 ////   begin_tick: a round of one unit for (k, row, tick), its deadline now + 1 s
-////       TellStrike(Ci, Strike(key AtTick, from, offence, rolls)) ──────────────────────▶ hit rule
+////       Strike(Ci, key AtTick, from, offence, rolls), via the map ─────────────────────▶ hit rule
 ////   ◀──────────────────────────── Answered(key, Landed | Deflected | Refused) ◀─────────┘
 ////   the round closes as a go's does
 ////     Ticked(asked, struck) ─▶ the connection calls cast.ticked(asked, struck)
@@ -267,9 +267,8 @@ pub type Asked {
 
 /// What the rule asks the connection to do, in order.
 pub type Effect {
-  /// Tell the creature the strike, through the creature registry with no watch
-  /// (genesis_prime/world_map/creature_registry `tell`): the connection builds the
-  /// address from the caster's map and run and the unit and life here.
+  /// Tell the creature the strike, through the caster's map (genesis_prime/world_map/map
+  /// `TellCreature`): the connection names the creature by the unit and life here.
   TellStrike(unit_id: Int, life: Int, tell: Tell)
   /// Tell the heal rows to a player's connection, for the stay its notice named
   /// (genesis_prime/game/strike_tell `PlayerStrike`); the answer comes back to this

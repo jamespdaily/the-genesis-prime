@@ -20,7 +20,7 @@
 ////                                the shield changed:                         ─▶ 0x938(P, 20, shield) to P and its viewers
 ////                                                                             ─▶ 0x92f(P, health) to P
 ////                                                                             ─▶ 0x937(P, health) to its viewers
-////                                Answer(C, Landed(descriptions) | Deflected)  ─▶ TellStrikeAnswered to C
+////                                Answer(C, Landed(descriptions) | Deflected)  ─▶ StrikeAnswered to C, via the map
 //// Released(C) ─────────────────▶ fighters - C; the last one:                  ─▶ 0x89a(P, 0) to P and its viewers
 ////                                                                              CombatLeft (the cast rule's `combat_left`)
 //// the map's Gone(C) ───────────▶ the same as Released(C), and C joins gone

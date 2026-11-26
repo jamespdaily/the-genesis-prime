@@ -35,6 +35,7 @@ import gleam/option.{None, Some}
 import gleam/order
 import gleam/result
 import gleam/set
+import gleam/string
 import inbound_support
 import map_spawn_support as spawns
 import map_support
@@ -427,22 +428,21 @@ pub fn a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_f
     let #(unit_id, life) = creature_of_scene(scene:)
     list.each(inbound_support.payloads(unit_id:), fn(row) {
       let #(kind, payload) = row
-      // The sender is player 1, in the map in its first stay, far from the creature in the
-      // scene with no spawn state and at it in the others: the creature is sent the tell
-      // whatever the sender sees.
-      let sent = fn(unit_id, life) {
-        told_creatures(
-          spawns.tell_creature(
-            at_ms: 80_000,
-            state: scene.state,
-            from: 1,
-            stay_count: 1,
-            unit_id:,
-            life:,
-            payload:,
-          ).1,
-        )
+      // The sender is player 1, in the map in its first stay: it sees the creature in the
+      // live scene and not in the retiring one, where it has moved away, so the creature
+      // is sent the tell whatever the sender sees.
+      let taken = fn(unit_id, life) {
+        spawns.tell_creature(
+          at_ms: 80_000,
+          state: scene.state,
+          from: 1,
+          stay_count: 1,
+          unit_id:,
+          life:,
+          payload:,
+        ).1
       }
+      let sent = fn(unit_id, life) { told_creatures(taken(unit_id, life)) }
       let in_stay = map_support.stay(count: 1)
       assert sent(unit_id, life)
         == case scene.running {
@@ -459,12 +459,25 @@ pub fn a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_f
             False -> ": dropped"
           }
         }
+      assert scene.running || support.effects_of(taken(unit_id, life)) == []
+        as {
+          kind <> " to a creature that is not running sends and logs nothing"
+        }
       assert sent(unit_id, life - 1) == []
         as { kind <> " of an earlier life of the creature is dropped" }
+      assert support.effects_of(taken(unit_id, life - 1)) == []
+        as {
+          kind <> " of an earlier life of the creature sends and logs nothing"
+        }
       assert sent(unit_id + 1, life) == []
         as {
           kind
           <> " to another unit than the one that runs under that life is dropped"
+        }
+      assert support.effects_of(taken(unit_id + 1, life)) == []
+        as {
+          kind
+          <> " to another unit than the one that runs under that life sends and logs nothing"
         }
     })
   })
@@ -524,18 +537,10 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
     let #(situation, from, stay_count, in_the_map_in_that_stay) = sender
     list.each(inbound_support.payloads(unit_id:), fn(row) {
       let #(kind, payload) = row
+      // Only the move is checked for its sender; a strike names the sender it is told from.
       let delivered = case payload {
         relay.TargetMoved(..) -> in_the_map_in_that_stay
-        relay.Strike(..)
-        | relay.StrikeAnswered(..)
-        | relay.ModifierStarts(..)
-        | relay.ModifierEnds(..)
-        | relay.Thrown(..)
-        | relay.Despawn(..)
-        | relay.UnitStates(..)
-        | relay.CastViewSet(..)
-        | relay.CastViewEnds(..)
-        | relay.ControlsEnd(..) -> True
+        _ -> True
       }
       let payload = case payload {
         relay.Strike(tell:) ->
@@ -544,16 +549,7 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
             from:,
             stay_count:,
           ))
-        relay.TargetMoved(..)
-        | relay.StrikeAnswered(..)
-        | relay.ModifierStarts(..)
-        | relay.ModifierEnds(..)
-        | relay.Thrown(..)
-        | relay.Despawn(..)
-        | relay.UnitStates(..)
-        | relay.CastViewSet(..)
-        | relay.CastViewEnds(..)
-        | relay.ControlsEnd(..) -> payload
+        _ -> payload
       }
       let #(_, taken) =
         spawns.tell_creature(
@@ -677,6 +673,14 @@ pub fn a_strike_that_names_another_striker_than_the_connection_that_told_it_is_d
           True -> " writes no line"
           False -> " writes one error line"
         }
+      }
+    assert list.all(support.logs_of(step: taken, level: LogError), fn(line) {
+      string.contains(line.text, "told a creature a strike")
+    })
+      as {
+        "the line of a strike "
+        <> situation
+        <> " names the tell: a strike told to a creature"
       }
   })
 }

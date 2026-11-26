@@ -3746,73 +3746,46 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
 pub fn each_tell_a_player_sends_a_creature_reaches_it_as_the_message_its_rule_takes_with_the_sender_the_map_validated_test() -> Nil {
   use <- owned_test.run(5000)
   // The sender and the stay the relay named: the map's, never the payload's. Each row is the
-  // creature message the rule of that tell takes (the arms of `server.creature_told`).
+  // creature message the rule of that tell takes, by the kind's name; the payloads are the
+  // tests' own (`inbound_support.payloads`).
   let by = ConnectionId(4)
   let stay = map_support.stay(count: 3)
   let tell = inbound_support.strike(unit_id: 7)
   let place = inbound_support.place()
+  let source = inbound_support.source()
   let rows = [
-    #("Strike", relay.Strike(tell:), creature.Strike(tell:)),
+    #("Strike", creature.Strike(tell:)),
     #(
       "TargetMoved",
-      relay.TargetMoved(place:, seq: 9, hit_radius: 0.75),
       creature.TargetMoved(by:, place:, seq: 9, stay:, hit_radius: 0.75),
     ),
     #(
       "StrikeAnswered",
-      relay.StrikeAnswered(answered: inbound_support.answered(unit_id: 7)),
       creature.StrikeAnswered(answered: inbound_support.answered(unit_id: 7)),
     ),
     #(
       "ModifierStarts",
-      relay.ModifierStarts(
-        source: inbound_support.source(),
-        modifier: inbound_support.modifier(),
-      ),
       creature.ModifierStarts(
         by:,
-        source: inbound_support.source(),
+        source:,
         modifier: inbound_support.modifier(),
       ),
     ),
-    #(
-      "ModifierEnds",
-      relay.ModifierEnds(source: inbound_support.source()),
-      creature.ModifierEnds(source: inbound_support.source()),
-    ),
-    #(
-      "Thrown",
-      relay.Thrown(throw: world_watch_support.throw()),
-      creature.Thrown(throw: world_watch_support.throw()),
-    ),
-    #(
-      "Despawn",
-      relay.Despawn(delay_ms: 500, went_at_ms: 6000),
-      creature.Despawn(delay_ms: 500, went_at_ms: 6000),
-    ),
+    #("ModifierEnds", creature.ModifierEnds(source:)),
+    #("Thrown", creature.Thrown(throw: world_watch_support.throw())),
+    #("Despawn", creature.Despawn(delay_ms: 500, went_at_ms: 6000)),
     #(
       "UnitStates",
-      relay.UnitStates(rows: inbound_support.rows(), went_at_ms: 6000),
       creature.UnitStates(rows: inbound_support.rows(), went_at_ms: 6000),
     ),
-    #(
-      "CastViewSet",
-      relay.CastViewSet(view: inbound_support.view()),
-      creature.CastViewSet(by:, view: inbound_support.view()),
-    ),
-    #(
-      "CastViewEnds",
-      relay.CastViewEnds(cast_id: 1),
-      creature.CastViewEnds(by:, cast_id: 1),
-    ),
-    #(
-      "ControlsEnd",
-      relay.ControlsEnd(cast_id: 1),
-      creature.ControlsEnd(by:, cast_id: 1),
-    ),
+    #("CastViewSet", creature.CastViewSet(by:, view: inbound_support.view())),
+    #("CastViewEnds", creature.CastViewEnds(by:, cast_id: 1)),
+    #("ControlsEnd", creature.ControlsEnd(by:, cast_id: 1)),
   ]
-  list.each(rows, fn(row) {
-    let #(kind, payload, expected) = row
+  list.each(inbound_support.payloads(unit_id: 7), fn(sent) {
+    let #(kind, payload) = sent
+    let assert Ok(expected) = list.key_find(rows, kind)
+      as "a row for each kind the tests send"
     assert creature.told_by_map(map.ToldCreature(by:, stay:, payload:))
       == Ok(expected)
       as {

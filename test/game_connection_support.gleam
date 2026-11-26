@@ -110,6 +110,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -1536,14 +1537,6 @@ pub fn mapped_logging(
     | client_connection.TellLifeChanged(..)
     | client_connection.TellReleased(..)
     | TellPeer(..)
-    | client_connection.TellStrike(..)
-    | client_connection.TellTargetMoved(..)
-    | client_connection.TellStrikeAnswered(..)
-    | client_connection.TellTargetChange(..)
-    | client_connection.TellThrown(..)
-    | client_connection.TellDespawn(..)
-    | client_connection.TellUnitStates(..)
-    | client_connection.TellCastView(..)
     | client_connection.TellCreature(..)
     | client_connection.TellPlayer(..)
     | TellChat(..) ->
@@ -1739,6 +1732,20 @@ pub fn told_the_map(
     case effect {
       OwnEffect(step.Tell(to: Map(..), ..)) -> True
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+}
+
+/// The tells of a step to the map that are not tells to a creature: a player's move, life,
+/// stealth, readiness and visibility. The creatures' are `told_creatures`.
+pub fn told_the_map_but_creatures(
+  taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.filter(told_the_map(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: client_connection.TellCreature(..), ..)) ->
+        False
+      _ -> True
     }
   })
 }
@@ -2413,37 +2420,42 @@ pub fn press_paralytic_surge_at(
   )
 }
 
+/// The strikes a step tells the creatures through its map, as the creature's unit and the
+/// strike.
+pub fn strikes_of(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, strike_tell.Tell)) {
+  list.filter_map(creature_tells(taken), fn(told) {
+    case told {
+      #(unit_id, _, relay.Strike(tell:)) -> Ok(#(unit_id, tell))
+      #(_, _, relay.TargetMoved(..))
+      | #(_, _, relay.StrikeAnswered(..))
+      | #(_, _, relay.ModifierStarts(..))
+      | #(_, _, relay.ModifierEnds(..))
+      | #(_, _, relay.Thrown(..))
+      | #(_, _, relay.Despawn(..))
+      | #(_, _, relay.UnitStates(..))
+      | #(_, _, relay.CastViewSet(..))
+      | #(_, _, relay.CastViewEnds(..))
+      | #(_, _, relay.ControlsEnd(..)) -> Error(Nil)
+    }
+  })
+}
+
 /// The strikes a step tells the creatures, as the creature's unit and the strike's key.
 pub fn strikes_told(
   taken: ConnectionStep(Request),
 ) -> List(#(Int, strike_tell.Key)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Creature(unit_id:, ..),
-        request: client_connection.TellStrike(tell:),
-      )) -> Ok(#(unit_id, tell.key))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
+  list.map(strikes_of(taken), fn(strike) { #(strike.0, { strike.1 }.key) })
 }
 
 /// The rolls of the strikes the steps tell creatures, in order.
 pub fn strike_rolls(steps: List(ConnectionStep(Request))) -> List(hit.Rolls) {
   list.flat_map(steps, fn(taken) {
-    list.filter_map(support.effects_of(taken), fn(effect) {
-      case effect {
-        OwnEffect(step.Tell(
-          to: step.Creature(..),
-          request: client_connection.TellStrike(tell:),
-        )) ->
-          case tell.striker {
-            strike_tell.PlayerStriker(rolls:, ..) -> Ok(rolls)
-            strike_tell.CreatureStriker(..) -> Error(Nil)
-          }
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
+    list.filter_map(strikes_of(taken), fn(strike) {
+      case { strike.1 }.striker {
+        strike_tell.PlayerStriker(rolls:, ..) -> Ok(rolls)
+        strike_tell.CreatureStriker(..) -> Error(Nil)
       }
     })
   })
@@ -2454,19 +2466,11 @@ pub fn strike_rolls(steps: List(ConnectionStep(Request))) -> List(hit.Rolls) {
 pub fn strike_blows_told(
   taken: ConnectionStep(Request),
 ) -> List(#(Int, List(Int))) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Creature(unit_id:, ..),
-        request: client_connection.TellStrike(tell:),
-      )) ->
-        Ok(#(
-          unit_id,
-          list.map(tell.offence.blows, fn(blow) { blow.spell4_effects_id }),
-        ))
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
+  list.map(strikes_of(taken), fn(strike) {
+    #(
+      strike.0,
+      list.map({ strike.1 }.offence.blows, fn(blow) { blow.spell4_effects_id }),
+    )
   })
 }
 
@@ -2570,19 +2574,25 @@ pub fn foe(
   for_stay(stay: own_stay(), sent: client_connection.SentByFoe(fight:))
 }
 
-/// The tells of a step to creatures, as the creature's unit and the request.
-pub fn told_creatures(taken: ConnectionStep(Request)) -> List(#(Int, Request)) {
+/// The tells of a step to creatures, as the creature's unit and what the map is told to pass
+/// on.
+pub fn told_creatures(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, relay.Inbound)) {
   list.map(creature_tells(taken), fn(tell) { #(tell.0, tell.2) })
 }
 
-/// The tells of a step to creatures, as the creature's unit, its life and the request.
+/// The tells of a step to creatures, as the creature's unit, its life and what the map is
+/// told to pass on: each is a `TellCreature` to the run of the player's map.
 pub fn creature_tells(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Int, Request)) {
+) -> List(#(Int, Int, relay.Inbound)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(step.Tell(to: step.Creature(unit_id:, life:, ..), request:)) ->
-        Ok(#(unit_id, life, request))
+      OwnEffect(step.Tell(
+        request: client_connection.TellCreature(unit_id:, life:, payload:, ..),
+        ..,
+      )) -> Ok(#(unit_id, life, payload))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -3186,17 +3196,7 @@ pub fn landing_with_its_blows(
   ms ms: Int,
   taken taken: ConnectionStep(Request),
 ) -> #(game_connection.State, List(ConnectionStep(Request))) {
-  let told =
-    list.filter_map(support.effects_of(taken), fn(effect) {
-      case effect {
-        OwnEffect(step.Tell(
-          to: step.Creature(..),
-          request: client_connection.TellStrike(tell:),
-        )) -> Ok(tell)
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
-    })
+  let told = list.map(strikes_of(taken), fn(strike) { strike.1 })
   list.fold(told, #(state, [taken]), fn(so_far, tell) {
     let #(state, steps) = so_far
     let described =

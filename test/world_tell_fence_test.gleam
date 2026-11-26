@@ -289,7 +289,6 @@ fn scene_of(
     )
   let _held = prepare_first(scene, first_life)
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: scene.unit_id,
     life: first_life,

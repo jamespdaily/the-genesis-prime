@@ -60,7 +60,7 @@
 //// | the connection is gone before the timer fires | the timers of the cast go with the connection: nothing is drawn, told or thrown |
 //// | the go struck a creature that is then dead | the creature drops the tell |
 //// | the go struck a creature that has ended, and its map has started its next life | the registry finds no creature at the address of the life the go struck, and drops the tell |
-//// | the tell is in flight and the creature ended | the creature registry finds no process and drops the tell |
+//// | the tell is in flight and the creature ended | the map drops it, or the creature registry finds no process and drops it |
 //// | the tell reaches a creature that walks home | the fight drops it: a leashed creature takes no strike either |
 //// | the tell reaches a creature that does not run (run speed 0) | the fight drops it |
 //// | the creature crashes in flight | its map's watch ends, every viewer is sent `Gone` and the spawn starts again at home |

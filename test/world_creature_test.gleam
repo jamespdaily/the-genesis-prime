@@ -44,10 +44,8 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed}
-import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{PeerNews}
 import genesis_prime/game/world_entry
-import genesis_prime/group_registry
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
@@ -67,7 +65,6 @@ import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/vendor_items
-import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell
 import genesis_prime/step.{ConnectionId}
@@ -382,7 +379,6 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
       wanted: world_watch_support.appearance,
     )
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: first.unit_id,
     life: 2,
@@ -403,7 +399,6 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
   // for the creature to take the strike whole.
   driven_time.advance(time:, ms: respawn_ms - 1)
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: first.unit_id,
     life: 2,
@@ -438,7 +433,6 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
     )
     as "death.creature_respawn: the same unit id at full health, at the respawn time"
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: first.unit_id,
     life: next_life,
@@ -755,22 +749,21 @@ pub fn a_players_max_health_spell_takes_its_share_of_a_real_creatures_health_tes
       unit_id: first.unit_id,
       life: 2,
     )
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
+  let assert creature.Strike(tell:) =
+    world_watch_support.strike_message_of(
       unit_id: first.unit_id,
-      life: 2,
-      message: world_watch_support.strike_message_of(
-        unit_id: first.unit_id,
-        damage_type: 2,
-        amount: max_health_row_blow(),
-        cast_id: 1,
-        occasion: strike_tell.AtGo(phase: 0),
-      ),
+      damage_type: 2,
+      amount: max_health_row_blow(),
+      cast_id: 1,
+      occasion: strike_tell.AtGo(phase: 0),
     )
-    as "the creature is found by its address and told"
+    as "the strike message holds a strike"
+  world_watch_support.told_creature(
+    run:,
+    unit_id: first.unit_id,
+    life: 2,
+    payload: relay.Strike(tell:),
+  )
   // 0x140566ad0 case 7 reads the struck unit's maximum health, which the Battle Beast
   // spawns with 52 (`Creature2.73464`, as the 0x262's health stat shows); 0x140565600
   // gives 0 + (0 + 0.2 x 52) x 1.0 = 10.4 of damage, which the strike takes as 10.
@@ -807,7 +800,6 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
       life: 2,
     )
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: first.unit_id,
     life: 2,
@@ -882,7 +874,6 @@ pub fn a_creature_struck_dead_and_left_unseen_stops_at_its_respawn_and_the_spawn
       life: 2,
     )
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: first.unit_id,
     life: 2,
@@ -958,7 +949,6 @@ pub fn a_restarted_creature_refuses_the_old_lifes_tick_test() -> Nil {
       life: 2,
     )
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id: first.unit_id,
     life: 2,
@@ -1156,59 +1146,48 @@ fn fissure_plans() -> spell_plan.Plans {
   ])
 }
 
-/// What the connection's shell does with the cast rule's effects on a creature
-/// (`genesis_prime/game/connection/casting`): the same tell, through the server's own
-/// `tell_creature`, which names the creature by its address and takes the request as
-/// the creature's message.
+/// What the connection does with the cast rule's effects on a creature
+/// (`genesis_prime/game/connection/casting`): the same tell, to the map, which names the
+/// creature by its address and passes it on as the creature's message.
 fn tell_change(
-  world world: World,
   run run: MapProcess,
   connection connection: Int,
   effect effect: cast_state.Effect,
-) -> client_connection.TargetChange {
-  let #(unit_id, life, change) = case effect {
+) -> relay.Inbound {
+  let #(unit_id, life, payload) = case effect {
     cast_state.TargetChangeStarts(unit_id:, life:, source:, modifier:) -> #(
       unit_id,
       life,
-      client_connection.ChangeStarts(source:, modifier:),
+      relay.ModifierStarts(source:, modifier:),
     )
     cast_state.TargetChangeEnds(unit_id:, life:, source:) -> #(
       unit_id,
       life,
-      client_connection.ChangeEnds(source:),
+      relay.ModifierEnds(source:),
     )
     _ -> panic as "not a change of a creature's property"
   }
-  let assert Ok(Nil) =
-    server.tell_creature(
-      creatures: world.creatures,
-      to: step.Creature(
-        map: world_watch_support.ship,
-        incarnation: run.incarnation,
-        unit_id:,
-        life:,
-      ),
-      request: client_connection.TellTargetChange(
-        connection: ConnectionId(connection),
-        change:,
-      ),
-    )
-    as "the creature is found by its address and told"
-  change
+  world_watch_support.told_creature_by(
+    run:,
+    connection:,
+    unit_id:,
+    life:,
+    payload:,
+  )
+  payload
 }
 
 /// The entry of a creature's 0x93a for the Tech damage taken multiplier after the
 /// change: its default 1.0 as the base, and the row's value while the change starts
 /// the modifier.
-fn tech_taken(told told: client_connection.TargetChange) -> UnitProperty {
+fn tech_taken(told told: relay.Inbound) -> UnitProperty {
   UnitProperty(
     property_id: tech_taken_property,
     base: float32.to_bits(1.0),
     value: case told {
-      client_connection.ChangeStarts(..) -> fissure_bits
-      client_connection.ChangeEnds(..) -> float32.to_bits(1.0)
-      client_connection.ControlsEnd(..) ->
-        panic as "the end of a cast's states changes no property"
+      relay.ModifierStarts(..) -> fissure_bits
+      relay.ModifierEnds(..) -> float32.to_bits(1.0)
+      _ -> panic as "only a modifier's start or end changes a property"
     },
   )
 }
@@ -1320,7 +1299,6 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
     as "the first change is the go's own start of the row's modifier"
   // The same Tech blow before, during and after the debuff.
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id:,
     life: 2,
@@ -1330,7 +1308,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
   )
   let plain = health_taken(received:, cast_id: 1)
   list.each(earlier, fn(effect) {
-    let told = tell_change(world:, run:, connection: 1, effect:)
+    let told = tell_change(run:, connection: 1, effect:)
     let shown =
       world_watch_support.next(
         received:,
@@ -1341,7 +1319,6 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
       as "a start puts Damage Taken Multiplier Tech at the row's value and an end back at its default 1.0, and no other property changes"
   })
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id:,
     life: 2,
@@ -1350,7 +1327,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
     cast_id: 2,
   )
   let raised = health_taken(received:, cast_id: 2)
-  let ended = tell_change(world:, run:, connection: 1, effect: last)
+  let ended = tell_change(run:, connection: 1, effect: last)
   let restored_properties =
     world_watch_support.next(
       received:,
@@ -1360,7 +1337,6 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
   assert restored_properties == [tech_taken(told: ended)]
     as "the last end puts the property back to 1.0"
   world_watch_support.strike_with(
-    world:,
     run:,
     unit_id:,
     life: 2,
@@ -1754,31 +1730,25 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
     })
   assert list.contains(listed, #(unit_id, 99_061, 0))
     as "a 0x7f4 lists the throw's row on the creature it throws"
-  // The connection's tell, through the server's own `tell_creature`: the draws are
-  // the two fractions at 0, and the reference is the caster's place.
+  // The connection's tell, to the map: the draws are the two fractions at 0, and the
+  // reference is the caster's place.
   let race_id = map_support.character(number: 101).race_id
-  let assert Ok(Nil) =
-    server.tell_creature(
-      creatures: world.creatures,
-      to: step.Creature(
-        map: world_watch_support.ship,
-        incarnation: run.incarnation,
-        unit_id: thrown,
-        life:,
-      ),
-      request: client_connection.TellThrown(throw: forced_move.Throw(
-        move:,
-        draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-        reference: forced_move.Reference(
-          place: world_watch_support.sight_place(),
-          radius: hit_radius.of_playing(
-            tables: character_tables.shared(),
-            race_id:,
-          ),
+  world_watch_support.told_creature(
+    run:,
+    unit_id: thrown,
+    life:,
+    payload: relay.Thrown(throw: forced_move.Throw(
+      move:,
+      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+      reference: forced_move.Reference(
+        place: world_watch_support.sight_place(),
+        radius: hit_radius.of_playing(
+          tables: character_tables.shared(),
+          race_id:,
         ),
-      )),
-    )
-    as "the creature is found by its address and told"
+      ),
+    )),
+  )
   let path =
     world_watch_support.next(
       received: watcher,
@@ -1822,123 +1792,6 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
     as "it ends 10.0 m (dataBits01 and dataBits02) from where it started"
   assert float_of(bits: to.x) <. float_of(bits: from.x)
     as "away from the caster, who stands at x 100 while the creature stands at x 0"
-  world_support.stop(world:)
-}
-
-pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
-  use <- owned_test.run(30_000)
-  // A stand-in for the creature: the test process joins the address of a creature that
-  // does not run (unit 900, life 9), so what the registry delivers to it is what the
-  // server's `tell_creature` made of each request. The creature's own reading of the
-  // message is the creature rule's.
-  let time = driven_time.new()
-  let world = one_beast(time:, respawn_ms: 60_000)
-  let address =
-    step.Creature(
-      map: world_watch_support.ship,
-      incarnation: 1,
-      unit_id: 900,
-      life: 9,
-    )
-  let scope = creature_registry.scope(world.creatures)
-  group_registry.join(scope:, group: address, pid: process.self())
-  let delivered = fn(request) {
-    let assert Ok(Nil) =
-      server.tell_creature(creatures: world.creatures, to: address, request:)
-      as "the stand-in is found by its address and told"
-    let assert service.TellCall(message:) =
-      group_registry.select_delivered(
-        scope:,
-        selector: process.new_selector(),
-        mapping: fn(call) { call },
-      )
-      |> process.selector_receive_forever
-    message
-  }
-  assert delivered(client_connection.TellDespawn(
-      delay_ms: 3000,
-      went_at_ms: 1000,
-    ))
-    == creature.Despawn(delay_ms: 3000, went_at_ms: 1000)
-    as "a removal is the creature's Despawn, with its delay and the go's time"
-  let throw = world_watch_support.throw()
-  assert delivered(client_connection.TellThrown(throw:))
-    == creature.Thrown(throw:)
-    as "a throw is still the creature's Thrown"
-  world_support.stop(world:)
-}
-
-pub fn tell_cast_view_reaches_the_creature_as_cast_view_set_and_ends_test() -> Nil {
-  use <- owned_test.run(30_000)
-  // A stand-in for the creature: the test process joins the address of a creature that
-  // does not run (unit 900, life 9), so what the registry delivers to it is what the
-  // server's `tell_creature` made of each request.
-  let time = driven_time.new()
-  let world = one_beast(time:, respawn_ms: 60_000)
-  let address =
-    step.Creature(
-      map: world_watch_support.ship,
-      incarnation: 1,
-      unit_id: 900,
-      life: 9,
-    )
-  let scope = creature_registry.scope(world.creatures)
-  group_registry.join(scope:, group: address, pid: process.self())
-  let next_delivered = fn() {
-    let assert service.TellCall(message:) =
-      group_registry.select_delivered(
-        scope:,
-        selector: process.new_selector(),
-        mapping: fn(call) { call },
-      )
-      |> process.selector_receive_forever
-    message
-  }
-  let delivered = fn(request) {
-    let assert Ok(Nil) =
-      server.tell_creature(creatures: world.creatures, to: address, request:)
-      as "the stand-in is found by its address and told"
-    next_delivered()
-  }
-  let view =
-    unit_casts.CastView(
-      caster_unit_id: 21,
-      cast_id: cast_state.cast_id(unit_id: 21, number: 1),
-      spell4_id: Spell4Id(41_886),
-      primary_target: 900,
-      gone: True,
-      current: False,
-      targets: [],
-    )
-  assert delivered(client_connection.TellCastView(
-      connection: ConnectionId(4),
-      change: client_connection.ViewSet(view:),
-    ))
-    == creature.CastViewSet(by: ConnectionId(4), view:)
-    as "a set is the creature's CastViewSet, with the connection that told it"
-  assert delivered(client_connection.TellCastView(
-      connection: ConnectionId(4),
-      change: client_connection.ViewEnds(cast_id: view.cast_id),
-    ))
-    == creature.CastViewEnds(by: ConnectionId(4), cast_id: view.cast_id)
-    as "an end is the creature's CastViewEnds"
-  let another_life = step.Creature(..address, life: 8)
-  assert server.tell_creature(
-      creatures: world.creatures,
-      to: another_life,
-      request: client_connection.TellCastView(
-        connection: ConnectionId(4),
-        change: client_connection.ViewEnds(cast_id: 1),
-      ),
-    )
-    == Error(Nil)
-    as "a tell for a life no creature holds is dropped by the registry"
-  assert delivered(client_connection.TellCastView(
-      connection: ConnectionId(4),
-      change: client_connection.ViewEnds(cast_id: 2),
-    ))
-    == creature.CastViewEnds(by: ConnectionId(4), cast_id: 2)
-    as "and delivers nothing: the next message the stand-in takes is the later life-9 tell"
   world_support.stop(world:)
 }
 
@@ -2014,11 +1867,9 @@ type Done {
 
 /// What the caster's connection does with the go's effects, in their order, as
 /// `genesis_prime/game/connection/casting` and the server carry them out: each frame
-/// is written, and each removal is told to the creature by its address as
-/// `TellDespawn`, through the server's own `tell_creature`. Returns what it did, in
-/// order.
+/// is written, and each removal is told to the creature by its address as a
+/// `Despawn`, to the map. Returns what it did, in order.
 fn carried_out(
-  world world: World,
   run run: MapProcess,
   effects effects: List(cast_state.Effect),
 ) -> List(Done) {
@@ -2027,11 +1878,10 @@ fn carried_out(
       cast_state.Send(frame:) -> [Wrote(message_id: frame.message_id)]
       cast_state.CreatureDespawns(unit_id:, life:, went_at_ms:, delay_ms:) -> {
         world_watch_support.told_creature(
-          world:,
           run:,
           unit_id:,
           life:,
-          request: client_connection.TellDespawn(delay_ms:, went_at_ms:),
+          payload: relay.Despawn(delay_ms:, went_at_ms:),
         )
         [Told(unit_id:)]
       }
@@ -2051,7 +1901,6 @@ fn quest_go_on(
     world_watch_support.times_of_a_go_after_250_ms(watched:)
   let done =
     carried_out(
-      world: watched.world,
       run: watched.run,
       effects: quest_go(
         row:,
@@ -2079,7 +1928,6 @@ fn probed(
   cast_id cast_id: Int,
 ) -> #(List(UnitCreateCreature), Int, strike_tell.Outcome) {
   world_watch_support.strike_with(
-    world: watched.world,
     run: watched.run,
     unit_id: watched.beast.unit_id,
     life:,
@@ -2155,7 +2003,7 @@ pub fn a_despawn_of_delay_0_reaches_the_caster_after_the_go_frame_test() -> Nil 
     ),
   )
     as "the go that hit the beast tells it to leave with the row's delay 0"
-  let done = carried_out(world: watched.world, run: watched.run, effects:)
+  let done = carried_out(run: watched.run, effects:)
   let told = Told(unit_id: watched.beast.unit_id)
   let #(before, _) = list.split_while(done, fn(one) { one != told })
   assert list.last(before) == Ok(Wrote(message_id: spell_go.message_id))
@@ -2350,7 +2198,6 @@ pub fn a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_te
   let now_ms = world_watch_support.clock_ms(time: watched.time)
   let _written =
     carried_out(
-      world: watched.world,
       run: watched.run,
       effects: quest_go(
         row: despawn_row(id: 99_864, delay_ms: 0, phase_flags: -1, columns: []),
@@ -2415,7 +2262,6 @@ fn roaring_world(
 /// A player's strike on the creature from `connection`, standing at `x`, with one blow of
 /// `damage`, as a caster's connection tells it.
 fn struck_from(
-  world world: World,
   run run: MapProcess,
   connection connection: Int,
   unit_id unit_id: Int,
@@ -2424,7 +2270,6 @@ fn struck_from(
   cast_id cast_id: Int,
 ) -> Nil {
   struck_with_states(
-    world:,
     run:,
     connection:,
     unit_id:,
@@ -2437,7 +2282,6 @@ fn struck_from(
 
 /// The same strike carrying these crowd-control states.
 fn struck_with_states(
-  world world: World,
   run run: MapProcess,
   connection connection: Int,
   unit_id unit_id: Int,
@@ -2454,8 +2298,8 @@ fn struck_with_states(
       cast_id:,
       occasion: strike_tell.AtGo(phase: 0),
     )
-  let message =
-    creature.Strike(
+  let payload =
+    relay.Strike(
       tell: strike_tell.Strike(
         ..tell,
         from: step.Connection(ConnectionId(connection)),
@@ -2476,17 +2320,13 @@ fn struck_with_states(
         controls:,
       ),
     )
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      world.creatures,
-      map: world_watch_support.ship,
-      incarnation: run.incarnation,
-      unit_id:,
-      life: 2,
-      message:,
-    )
-    as "the creature is found by its address and told"
-  Nil
+  world_watch_support.told_creature_by(
+    run:,
+    connection:,
+    unit_id:,
+    life: 2,
+    payload:,
+  )
 }
 
 /// The next cast start the connection was sent, the creature's 0x7ff.
@@ -2668,7 +2508,6 @@ fn fight_of(
       life: 2,
     )
   struck_from(
-    world:,
     run:,
     connection: 1,
     unit_id: first.unit_id,
@@ -2689,15 +2528,15 @@ fn fight_of(
 }
 
 fn answer(roaring roaring: Roaring, key key: strike_tell.Key) -> Nil {
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      roaring.world.creatures,
-      map: world_watch_support.ship,
-      incarnation: roaring.run.incarnation,
-      unit_id: roaring.unit_id,
-      life: 2,
-      message: hit_answer(key:, spell4_effects_id: roaring.damage_effects_id),
-    )
+  let assert creature.StrikeAnswered(answered:) =
+    hit_answer(key:, spell4_effects_id: roaring.damage_effects_id)
+    as "the hit answer is a strike's answer"
+  world_watch_support.told_creature(
+    run: roaring.run,
+    unit_id: roaring.unit_id,
+    life: 2,
+    payload: relay.StrikeAnswered(answered:),
+  )
   driven_time.wait_until_quiet(roaring.time)
 }
 
@@ -2851,7 +2690,6 @@ pub fn a_player_outside_the_cone_sees_the_cast_and_takes_nothing_test() -> Nil {
       wanted: world_watch_support.appearance,
     )
   struck_from(
-    world: roaring.world,
     run: roaring.run,
     connection: 2,
     unit_id: roaring.unit_id,
@@ -2916,20 +2754,17 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
       cast_id: 3,
       occasion: strike_tell.AtGo(phase: 0),
     )
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      roaring.world.creatures,
-      map: world_watch_support.ship,
-      incarnation: roaring.run.incarnation,
-      unit_id: roaring.unit_id,
-      life: 2,
-      message: creature.Strike(
-        tell: strike_tell.Strike(..tell, controls: [
-          crowd_control_support.stagger_stun(instance_id: 28_673),
-        ]),
-      ),
-    )
-  driven_time.settled(roaring.pid)
+  world_watch_support.told_creature(
+    run: roaring.run,
+    unit_id: roaring.unit_id,
+    life: 2,
+    payload: relay.Strike(
+      tell: strike_tell.Strike(..tell, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    ),
+  )
+  driven_time.wait_until_quiet(roaring.time)
   let interrupted =
     world_watch_support.next(
       received: roaring.received,
@@ -3385,7 +3220,6 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
     )
   // Player 1 (unit 10) strikes from 12 units off, not on the creature's point.
   struck_from(
-    world:,
     run:,
     connection: 1,
     unit_id: appeared.unit_id,
@@ -3492,7 +3326,6 @@ fn void_blast_fight() -> #(Int, Int) {
       wanted: world_watch_support.appearance,
     )
   struck_from(
-    world: roaring.world,
     run: roaring.run,
     connection: 2,
     unit_id: roaring.unit_id,
@@ -3552,38 +3385,33 @@ pub fn a_creature_with_the_special_63569_strikes_the_unit_its_cast_id_picks_test
 }
 
 /// The connection's player, on the creature's threat list, moves to `x`: the creature is sent
-/// the `TargetMoved` that the connection sends for each accepted move while the creature holds
-/// the player on its threat list (`movement.tells_a_fighter_the_place`). The stand-in
-/// connections here run no connection rule, so the test sends it.
+/// the `TargetMoved` that the connection tells its map for each accepted move while the
+/// creature holds the player on its threat list (`movement.tells_a_fighter_the_place`). The
+/// stand-in connections here run no connection rule, so the test sends it.
 fn target_moved(
   roaring roaring: Roaring,
   connection connection: Int,
   x x: Float,
   seq seq: Int,
 ) -> Nil {
-  let assert Ok(Nil) =
-    creature_registry.tell(
-      roaring.world.creatures,
-      map: world_watch_support.ship,
-      incarnation: roaring.run.incarnation,
-      unit_id: roaring.unit_id,
-      life: 2,
-      message: creature.TargetMoved(
-        by: ConnectionId(connection),
-        place: place_support.at(
-          world_id: 3460,
-          world_zone_id: spawn_support.warfare_woods,
-          x:,
-          y: 0.0,
-          z: 0.0,
-        ),
-        seq:,
-        stay: map_support.stay(count: 1),
-        hit_radius: place_support.player_hit_radius,
+  world_watch_support.told_creature_by(
+    run: roaring.run,
+    connection:,
+    unit_id: roaring.unit_id,
+    life: 2,
+    payload: relay.TargetMoved(
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: spawn_support.warfare_woods,
+        x:,
+        y: 0.0,
+        z: 0.0,
       ),
-    )
-    as "the creature is found by its address and told"
-  driven_time.settled(roaring.pid)
+      seq:,
+      hit_radius: place_support.player_hit_radius,
+    ),
+  )
+  driven_time.wait_until_quiet(roaring.time)
 }
 
 /// The 0x7ff position of a place on the x axis at ground level, as the client reads it.
@@ -3623,7 +3451,6 @@ pub fn an_eldan_security_construct_draws_its_laser_bolt_circle_under_the_player_
         wanted: world_watch_support.appearance,
       )
     struck_from(
-      world: roaring.world,
       run: roaring.run,
       connection:,
       unit_id: roaring.unit_id,
@@ -3759,7 +3586,6 @@ pub fn a_stun_between_the_gos_of_earthen_roar_marks_the_answer_to_the_stunner_al
     let start = next_cast_started(received: roaring.received)
     driven_time.advance(time: roaring.time, ms: 500)
     struck_with_states(
-      world: roaring.world,
       run: roaring.run,
       connection: 2,
       unit_id: roaring.unit_id,
@@ -3826,17 +3652,12 @@ fn answer_through_the_map(
   let assert creature.StrikeAnswered(answered:) =
     hit_answer(key:, spell4_effects_id: roaring.damage_effects_id)
     as "the hit answer is a strike's answer"
-  let _sent =
-    service.tell_subject(
-      roaring.run.subject,
-      map.TellCreature(
-        from: ConnectionId(1),
-        stay: map_support.stay(count: 1),
-        unit_id: roaring.unit_id,
-        life: 2,
-        payload: relay.StrikeAnswered(answered:),
-      ),
-    )
+  world_watch_support.told_creature(
+    run: roaring.run,
+    unit_id: roaring.unit_id,
+    life: 2,
+    payload: relay.StrikeAnswered(answered:),
+  )
   driven_time.wait_until_quiet(roaring.time)
 }
 
@@ -3865,12 +3686,15 @@ fn gos_so_far(roaring roaring: Roaring) -> List(#(Int, List(Int))) {
   })
 }
 
-pub fn an_answer_the_map_holds_past_the_strike_deadline_reaches_the_creature_after_its_round_closed_and_changes_nothing_test() -> Nil {
+pub fn an_answer_that_reaches_the_creature_after_its_round_closed_changes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   // The creature's strike round for the player waits `strike_tell.deadline_ms` for the
-  // answer. The player's answer reaches the creature only through the map, which keeps no
-  // deadline: an answer in time closes the round by the answer, and an answer that reaches
-  // the creature after the deadline finds the round closed by it.
+  // answer. The player's answer reaches the creature only through the map, which reads no
+  // clock and keeps no deadline: an answer in time closes the round by the answer, and an
+  // answer the test sends after the deadline finds the round closed by it. (An answer the
+  // map holds in its queue past the deadline is the same input to the creature; holding it
+  // there is the load gate's planted run, since the driven clock's barrier cannot pass a
+  // suspended map.)
   let #(in_time, _, key) = at_the_hit()
   answer_through_the_map(roaring: in_time, key:)
   assert gos_so_far(roaring: in_time) == [#(1, [10])]
@@ -3879,7 +3703,7 @@ pub fn an_answer_the_map_holds_past_the_strike_deadline_reaches_the_creature_aft
   let #(late, _, key) = at_the_hit()
   driven_time.advance(time: late.time, ms: strike_tell.deadline_ms)
   assert gos_so_far(roaring: late) == [#(1, [])]
-    as "the deadline closes the round of an answer the map still holds: the go leaves the player out"
+    as "the deadline closes the round of an answer not yet sent: the go leaves the player out"
   answer_through_the_map(roaring: late, key:)
   assert gos_so_far(roaring: late) == []
     as "the late answer, taken by the creature after the round closed, changes nothing: no second go"

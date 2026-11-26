@@ -12,6 +12,7 @@
 ////   health after a strike is 52 less the strike's damage (the Battle Beast's 52 health,
 ////   `spawn_support`).
 
+import exception
 import game_connection_support
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/strike_tell
@@ -20,7 +21,8 @@ import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/step.{
-  Connection, ConnectionId, OwnEvent, ServiceTimerFired, TimerId, Told,
+  Asked, CallerId, Connection, ConnectionId, OwnEvent, ServiceTimerFired,
+  TimerId, Told,
 }
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
@@ -31,6 +33,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set
 import gleam/string
 import legal_order_support.{
   type Mail, type Scene, type Violation, CreatureProcess, FromCaster,
@@ -96,7 +99,9 @@ fn joined(scene scene: Scene) -> Scene {
   )
 }
 
-/// A strike of `damage` on the Beast, told by the first player's connection.
+/// A strike of `damage` on the Beast, told to the map by the first player's connection
+/// (`FromCaster`), as that connection tells it: the strike names the connection and its first stay as its
+/// striker.
 fn strike(damage damage: Int) -> Mail {
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
@@ -107,19 +112,49 @@ fn strike(damage damage: Int) -> Mail {
       occasion: strike_tell.AtGo(phase: 0),
     )
   Mail(
-    to: CreatureProcess,
+    to: MapProcess,
     from: FromCaster,
-    input: ToCreature(
+    input: ToMap(
       OwnEvent(
-        Told(creature.Strike(
-          tell: strike_tell.Strike(
-            ..tell,
-            from: Connection(ConnectionId(first_player)),
+        Told(map.TellCreature(
+          from: ConnectionId(first_player),
+          stay: map_support.stay(count: 1),
+          unit_id: beast_unit,
+          life: spawns.creature_of(state: standing().map, spawn: 1).1,
+          payload: relay.Strike(
+            tell: strike_tell.Strike(
+              ..tell,
+              from: Connection(ConnectionId(first_player)),
+            ),
           ),
         )),
       ),
     ),
     name: "Strike",
+  )
+}
+
+/// The viewer's player joins the map at the creature's place, as the viewer's connection asks
+/// it: the map takes the join in its own turn, among what the first player's connection tells
+/// it, and sends the creature its `Seen`.
+fn viewer_joins() -> Mail {
+  Mail(
+    to: MapProcess,
+    from: FromConnection,
+    input: ToMap(
+      OwnEvent(Asked(
+        caller: CallerId(viewer),
+        message: map.Join(
+          connection: ConnectionId(viewer),
+          character: map_support.character(100 + viewer),
+          place: spawns.at(0.0),
+          stay: map_support.stay(count: 1),
+          alive: True,
+          hidden: set.new(),
+        ),
+      )),
+    ),
+    name: "Join",
   )
 }
 
@@ -262,8 +297,14 @@ pub fn legal_order_support_catches_a_frame_written_for_a_unit_after_its_removal_
 
 pub fn news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_dropped_in_every_legal_order_test() -> Nil {
   use <- owned_test.run(10_000)
-  // (a) and (b): a strike and the map's `Seen` reach the creature in either order.
-  let arriving = with_mail(joined(scene: standing()), [strike(damage: 14)])
+  // (a) and (b): the first player's strike and the viewer's join reach the map from two
+  // connections, in either order; the map tells the creature a strike and a `Seen` in the
+  // order it took them.
+  let arriving =
+    legal_order_support.with_mail(standing(), [
+      viewer_joins(),
+      strike(damage: 14),
+    ])
   let strike_first = fn(ended: Scene) {
     legal_order_support.order_at(scene: ended, receiver: CreatureProcess)
     == ["Strike", "Seen"]
@@ -273,7 +314,7 @@ pub fn news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_droppe
     as "(a) and (b): no order breaks an invariant"
   let #(first, second) = list.partition(ended, strike_first)
   assert first != [] && second != []
-    as "both orders of the creature's two senders are legal"
+    as "both orders of the map's two senders are legal"
   // The strike pulls the creature, which chases its caster: its path (0x638) follows the
   // health in the news and is in the snapshot's burst when the strike came first.
   assert list.all(first, fn(scene) {
@@ -291,7 +332,8 @@ pub fn news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_droppe
     as "(b) the snapshot first, at full health, and then the news of the strike, both written in the order the map relayed them"
   // (c) `Seen(g)`, `Unseen`, `Seen(g')`, and a strike in between the snapshots.
   let leaving =
-    with_mail(joined(scene: standing()), [
+    legal_order_support.with_mail(standing(), [
+      viewer_joins(),
       strike(damage: 14),
       moves(x: spawns.far, seq: 1, name: "Moved out"),
       moves(x: 0.0, seq: 2, name: "Moved in"),
@@ -336,11 +378,16 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
   // (a) A viewer arrives as the corpse timer fires: the map's `Seen` and the timer reach the
   // creature in either order.
   let dead =
-    legal_order_support.settle(with_mail(standing(), [strike(damage: 60)]))
+    legal_order_support.settle(
+      legal_order_support.with_mail(standing(), [strike(damage: 60)]),
+    )
   let arriving =
-    with_mail(joined(scene: legal_order_support.Scene(..dead, taken: [])), [
-      corpse_timer(),
-    ])
+    legal_order_support.with_mail(
+      joined(scene: legal_order_support.Scene(..dead, taken: [])),
+      [
+        corpse_timer(),
+      ],
+    )
   assert broken_in_each_order(scene: arriving) == []
     as "(a) no order breaks an invariant"
   let #(seen_first, timer_first) =
@@ -407,16 +454,22 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
   let shown = legal_order_support.settle(joined(scene: standing()))
   let corpse =
     legal_order_support.settle(
-      with_mail(legal_order_support.Scene(..shown, taken: []), [
-        strike(damage: 60),
-      ]),
+      legal_order_support.with_mail(
+        legal_order_support.Scene(..shown, taken: []),
+        [
+          strike(damage: 60),
+        ],
+      ),
     )
   let before = legal_order_support.names(frames: corpse.frames)
   let leaving =
-    with_mail(legal_order_support.Scene(..corpse, taken: []), [
-      moves(x: spawns.far, seq: 1, name: "Moved out"),
-      corpse_timer(),
-    ])
+    legal_order_support.with_mail(
+      legal_order_support.Scene(..corpse, taken: []),
+      [
+        moves(x: spawns.far, seq: 1, name: "Moved out"),
+        corpse_timer(),
+      ],
+    )
   assert broken_in_each_order(scene: leaving) == []
     as "(b) no order breaks an invariant"
   let ended = legal_order_support.orders(scene: leaving)
@@ -464,15 +517,21 @@ pub fn legal_order_support_delivers_nothing_to_a_creature_that_stopped_test() ->
   let shown = legal_order_support.settle(joined(scene: standing()))
   let corpse =
     legal_order_support.settle(
-      with_mail(legal_order_support.Scene(..shown, taken: []), [
-        strike(damage: 60),
-      ]),
+      legal_order_support.with_mail(
+        legal_order_support.Scene(..shown, taken: []),
+        [
+          strike(damage: 60),
+        ],
+      ),
     )
   let scene =
-    with_mail(legal_order_support.Scene(..corpse, taken: []), [
-      moves(x: spawns.far, seq: 1, name: "Moved out"),
-      corpse_timer(),
-    ])
+    legal_order_support.with_mail(
+      legal_order_support.Scene(..corpse, taken: []),
+      [
+        moves(x: spawns.far, seq: 1, name: "Moved out"),
+        corpse_timer(),
+      ],
+    )
   let ended = legal_order_support.orders(scene:)
   assert list.all(ended, fn(scene) {
     list.last(legal_order_support.order_at(scene:, receiver: CreatureProcess))
@@ -497,10 +556,13 @@ pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_
   assert legal_order_support.names(frames: shown.frames) == ["0x262(2)"]
     as "the viewer shows the creature before the orders start"
   let scene =
-    with_mail(legal_order_support.Scene(..shown, taken: []), [
-      moves(x: spawns.far, seq: 1, name: "Moved out"),
-      strike(damage: 14),
-    ])
+    legal_order_support.with_mail(
+      legal_order_support.Scene(..shown, taken: []),
+      [
+        moves(x: spawns.far, seq: 1, name: "Moved out"),
+        strike(damage: 14),
+      ],
+    )
   assert broken_in_each_order(scene:) == []
     as "no order writes a frame for the unit after its removal"
   let ended = legal_order_support.orders(scene:)
@@ -522,50 +584,11 @@ pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_
 }
 
 /// The scene with the mail added behind what is in flight.
-fn with_mail(scene: Scene, mail: List(Mail)) -> Scene {
-  legal_order_support.Scene(..scene, mail: list.append(scene.mail, mail))
-}
-
-/// A strike of `damage` on the Beast, told to the map by the first player's connection, as
-/// that connection tells it: the strike names the connection and its first stay as its
-/// striker.
-fn strike_to_the_map(damage damage: Int) -> Mail {
-  let assert creature.Strike(tell:) =
-    world_watch_support.strike_message(
-      unit_id: beast_unit,
-      damage_type: 3,
-      damage:,
-      cast_id: 1,
-      occasion: strike_tell.AtGo(phase: 0),
-    )
-  Mail(
-    to: MapProcess,
-    from: FromConnection,
-    input: ToMap(
-      OwnEvent(
-        Told(map.TellCreature(
-          from: ConnectionId(first_player),
-          stay: map_support.stay(count: 1),
-          unit_id: beast_unit,
-          life: spawns.creature_of(state: standing().map, spawn: 1).1,
-          payload: relay.Strike(
-            tell: strike_tell.Strike(
-              ..tell,
-              from: Connection(ConnectionId(first_player)),
-            ),
-          ),
-        )),
-      ),
-    ),
-    name: "Strike",
-  )
-}
-
 /// The first player's connection moves out of sight of the creature, as it tells the map.
 fn first_player_moves_out(seq seq: Int) -> Mail {
   Mail(
     to: MapProcess,
-    from: FromConnection,
+    from: FromCaster,
     input: ToMap(
       OwnEvent(
         Told(map.Moved(
@@ -589,13 +612,13 @@ pub fn a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sen
   let ready = legal_order_support.Scene(..shown, taken: [])
   let assert Ok(strike_first) =
     legal_order_support.mailed(scene: ready, mail: [
-      strike_to_the_map(damage: 14),
+      strike(damage: 14),
       first_player_moves_out(seq: 1),
     ])
   let assert Ok(move_first) =
     legal_order_support.mailed(scene: ready, mail: [
       first_player_moves_out(seq: 1),
-      strike_to_the_map(damage: 14),
+      strike(damage: 14),
     ])
   let strike_first = legal_order_support.orders(scene: strike_first)
   let move_first = legal_order_support.orders(scene: move_first)
@@ -633,12 +656,12 @@ pub fn a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sen
     legal_order_support.names(frames: scene.frames)
     == ["0x262(2)", "0x937(2)", "0x638(2)", "0x937(2)", "0x638(2)"]
   })
-    as "the strike first: W is shown the damage, the creature's chase of P, then, with P released and no one left on its threat list, the creature's health restored and its walk home"
+    as "the strike first: W is shown the damage, the creature's chase of P, then, with P released and no one left on its threat list, the creature's health restored and its walk home (`creature_fight`: with no threat left the creature leashes, restoring its health and walking home)"
   assert list.all(strike_first, fn(scene) {
     legal_order_support.health_shown(frames: scene.frames, unit_id: beast_unit)
     == Some(52)
   })
-    as "and W ends showing the creature at full health"
+    as "and W ends showing the creature at full health, the leash's restore (`creature_fight`: with no threat left the creature leashes)"
   assert list.all(move_first, fn(scene) {
     legal_order_support.names(frames: scene.frames) == ["0x262(2)", "0x937(2)"]
     && legal_order_support.health_shown(
@@ -691,4 +714,40 @@ pub fn legal_order_support_refuses_mail_to_a_creature_from_any_sender_but_its_ma
       }
     },
   )
+  // Every other way mail enters a scene is guarded too: the helper that adds it, the
+  // scene's own mail, and a record update, whose mail is refused when it is delivered.
+  let stops = fn(attempt) { result.is_error(exception.rescue(attempt)) }
+  assert stops(fn() {
+    legal_order_support.with_mail(scene: standing(), mail: [mail(FromCaster)])
+  })
+    as "mail to a creature from FromCaster stops the test when it is added to a scene"
+  assert stops(fn() {
+    legal_order_support.scene(
+      map: standing().map,
+      creature: creature_state_of(scene: standing()),
+      viewer: game_connection_support.in_world(),
+      mail: [mail(FromConnection)],
+    )
+  })
+    as "and when a scene is made with it"
+  assert stops(fn() {
+    legal_order_support.settle(
+      scene: legal_order_support.Scene(..standing(), mail: [
+        mail(FromCaster),
+      ]),
+    )
+  })
+    as "and when a scene whose mail a record update put in delivers it"
+  assert !stops(fn() {
+    legal_order_support.with_mail(scene: standing(), mail: [
+      mail(legal_order_support.FromMap),
+    ])
+  })
+    as "mail from the map is added without a stop"
+}
+
+fn creature_state_of(scene scene: Scene) -> creature.State {
+  let assert Some(state) = scene.creature
+    as "the standing scene holds a creature"
+  state
 }

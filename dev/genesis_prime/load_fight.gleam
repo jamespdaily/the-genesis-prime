@@ -14,6 +14,8 @@
 ////   from the tenth second to the twentieth, so the creatures lose their targets;
 //// - `delayed MS`: walker 1's answers reach the creature MS ms after it sent them;
 //// - `held MS`: walker 1 sends each answer MS ms after the strike reached it;
+//// - `behind MS`: walker 1's first answer goes to the map at once and the map is then held,
+////   taking nothing, for MS ms, as a map that has fallen behind holds it;
 //// - `respawning`: the Daguns' kind (Creature2 73465, which has no row of its own and takes
 ////   the default row's 60 s) respawns after `respawn_ms` (1,500, above the strike deadline
 ////   the load refuses a kind below), and with `mutual` each blow is 100 (above a Dagun's 50
@@ -41,7 +43,8 @@
 //// 125 ms, walking at 7 units a second within 40 units of the centre. It does what a
 //// player's connection does in a fight: it tells each creature that threatens it each
 //// move (`TargetMoved`), answers each strike as landed, and forgets a creature that
-//// releases it.
+//// releases it, each tell to a creature going to the map, as a player's connection tells
+//// it, for the map to admit and pass on.
 ////
 //// What it prints, counters only, nothing traced:
 //// - the map's longest and mean message queue and the share of samples that found
@@ -89,9 +92,13 @@
 //// **The planted failure.** `delayed MS` makes walker 1 hand its answers to a process
 //// that tells the creature MS ms later: they are sent before the deadline and reach
 //// the creature after it closed the round, so they are lost. `held MS` makes walker 1
-//// send each answer MS ms after the strike reached it: sent after the deadline, so late. With
-//// MS above 1,000 (`strike_tell.deadline_ms`) a counter that stays at 0 under either
-//// is not counting.
+//// send each answer MS ms after the strike reached it: sent after the deadline, so late.
+//// `behind MS` makes walker 1 tell its first answer to the map at once, stamped sent and
+//// arrived before the deadline, and then holds the map for MS ms: the map has the answer in
+//// its mailbox when the creature's round closes by its deadline, so it is lost, and the
+//// only thing that could count it is the round's closure, not the walker's stamps. With
+//// MS above 1,000 (`strike_tell.deadline_ms`) a counter that stays at 0 under any of
+//// the three is not counting.
 ////
 //// The walkers all join and are ready before any walks, each starting at its own
 //// offset within one 125 ms interval, as clients' timers are. The run passes when
@@ -132,17 +139,17 @@ import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, Creature2Id, RaceId}
-import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
-import genesis_prime/world_map/stay
+import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid, type Subject}
@@ -239,6 +246,7 @@ type Plant {
   Honest
   Delayed(ms: Int)
   Held(ms: Int)
+  Behind(ms: Int)
 }
 
 /// What a run does: its walkers, the plant of walker 1, and the words that change what
@@ -256,6 +264,12 @@ type Scene {
 
 @external(erlang, "load_fight_ffi", "reductions")
 fn reductions(pid: Pid) -> Int
+
+@external(erlang, "load_fight_ffi", "suspend")
+fn suspend(pid: Pid) -> Nil
+
+@external(erlang, "load_fight_ffi", "resume")
+fn resume(pid: Pid) -> Nil
 
 pub fn main() -> Nil {
   let scene = scene_of(argv.load().arguments)
@@ -421,8 +435,10 @@ fn words_of(words words: List(String), scene scene: Scene) -> Scene {
       )
     ["held", ms, ..rest] ->
       words_of(words: rest, scene: Scene(..scene, plant: Held(ms: whole(ms))))
+    ["behind", ms, ..rest] ->
+      words_of(words: rest, scene: Scene(..scene, plant: Behind(ms: whole(ms))))
     [_, ..] ->
-      panic as "the arguments are: [walkers] [mutual] [leaving] [respawning] [unrecorded] [delayed|held milliseconds]"
+      panic as "the arguments are: [walkers] [mutual] [leaving] [respawning] [unrecorded] [delayed|held|behind milliseconds]"
   }
 }
 
@@ -430,7 +446,7 @@ fn words_of(words words: List(String), scene scene: Scene) -> Scene {
 fn planted_ms(plant: Plant) -> Int {
   case plant {
     Honest -> 0
-    Delayed(ms:) | Held(ms:) -> ms
+    Delayed(ms:) | Held(ms:) | Behind(ms:) -> ms
   }
 }
 
@@ -522,7 +538,7 @@ fn walker(
             connection:,
             character: character(id),
             place: start,
-            stay: stay.next(stay.none_yet()),
+            stay: walkers_stay(),
             alive: True,
             hidden: set.new(),
           ),
@@ -613,6 +629,8 @@ fn walk(
         plant:,
         answers:,
         settings:,
+        run:,
+        connection:,
         selector:,
         until_ms: next_ms,
         fighters:,
@@ -639,17 +657,14 @@ fn walk(
         counts:,
       )
     list.each(dict.to_list(fighters), fn(fighter) {
-      creature_registry.tell(
-        settings.world.creatures,
-        map: MapId(world_id:, instance: 0),
-        incarnation: run.incarnation,
+      tell_the_map(
+        run:,
+        connection:,
         unit_id: fighter.0,
         life: fighter.1,
-        message: creature.TargetMoved(
-          by: connection,
+        payload: relay.TargetMoved(
           place: shown,
           seq: step,
-          stay: stay.next(stay.none_yet()),
           hit_radius: hit_radius.of_playing(
             tables: settings.game.settings.tables,
             race_id: RaceId(1),
@@ -794,13 +809,12 @@ fn strike_fighters(
         throw: None,
       )
     let told =
-      creature_registry.tell(
-        settings.world.creatures,
-        map: MapId(world_id:, instance: 0),
-        incarnation: run.incarnation,
+      tell_the_map(
+        run:,
+        connection:,
         unit_id: fighter.0,
         life: fighter.1,
-        message: creature.Strike(
+        payload: relay.Strike(
           tell: strike_tell.Strike(
             key: strike_tell.Key(
               cast_id: id * 100_000 + next,
@@ -812,7 +826,7 @@ fn strike_fighters(
               unit_id: id,
               place:,
               seq: step,
-              stay: stay.next(stay.none_yet()),
+              stay: walkers_stay(),
               hit_radius:,
               rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
             ),
@@ -839,8 +853,8 @@ fn strike_fighters(
         ),
       )
     case told {
-      Ok(Nil) -> next
-      Error(Nil) -> made
+      True -> next
+      False -> made
     }
   })
 }
@@ -852,13 +866,25 @@ fn hear(
   plant plant: Plant,
   answers answers: Subject(Answer),
   settings settings: server.Settings,
+  run run: world_map_registry.MapProcess,
+  connection connection: ConnectionId,
   selector selector: process.Selector(Message),
   until_ms until_ms: Int,
   fighters fighters: Dict(Int, Int),
   counts counts: Counts,
 ) -> #(Dict(Int, Int), Counts) {
   let again = fn(fighters, counts) {
-    hear(plant:, answers:, settings:, selector:, until_ms:, fighters:, counts:)
+    hear(
+      plant:,
+      answers:,
+      settings:,
+      run:,
+      connection:,
+      selector:,
+      until_ms:,
+      fighters:,
+      counts:,
+    )
   }
   let received =
     process.selector_receive(selector, int.max(0, until_ms - now()))
@@ -884,7 +910,17 @@ fn hear(
     Ok(ForStay(sent: SentByFoe(fight: strike_tell.Attacks(tell:)), ..)) -> {
       let taken_us = load_sample.microseconds()
       let counts = Counts(..counts, strikes: counts.strikes + 1)
-      case answered(plant:, answers:, settings:, tell:, taken_us:) {
+      case
+        answered(
+          plant: planted_now(plant:, strikes: counts.strikes),
+          answers:,
+          settings:,
+          run:,
+          connection:,
+          tell:,
+          taken_us:,
+        )
+      {
         Ok(#(creature, unit_id)) ->
           again(
             fighters,
@@ -1010,19 +1046,20 @@ fn answered(
   plant plant: Plant,
   answers answers: Subject(Answer),
   settings settings: server.Settings,
+  run run: world_map_registry.MapProcess,
+  connection connection: ConnectionId,
   tell tell: strike_tell.Tell,
   taken_us taken_us: Int,
 ) -> Result(#(Pid, Int), Nil) {
   case tell.from {
     step.Creature(map:, incarnation:, unit_id:, life:) -> {
       let tell_creature = fn() {
-        creature_registry.tell(
-          settings.world.creatures,
-          map:,
-          incarnation:,
+        tell_the_map(
+          run:,
+          connection:,
           unit_id:,
           life:,
-          message: creature.StrikeAnswered(answered: strike_tell.Answered(
+          payload: relay.StrikeAnswered(answered: strike_tell.Answered(
             key: tell.key,
             outcome: strike_tell.Landed(
               descriptions: [],
@@ -1032,7 +1069,6 @@ fn answered(
             ),
           )),
         )
-        == Ok(Nil)
       }
       use creature <- result.map(creature_registry.find(
         settings.world.creatures,
@@ -1041,22 +1077,42 @@ fn answered(
         unit_id:,
         life:,
       ))
-      handed_over(plant:, answers:, creature:, taken_us:, tell_creature:)
+      handed_over(
+        plant:,
+        answers:,
+        creature:,
+        map_pid: run.pid,
+        taken_us:,
+        tell_creature:,
+      )
       #(creature, unit_id)
     }
     _ -> Error(Nil)
   }
 }
 
-/// Hands the answer to the creature as the plant says and records it: at once; after
-/// `ms` with the send stamped before the wait (`Delayed`: sent early, reaching the
-/// creature late); or after `ms` with the send stamped after it (`Held`). The arrival
-/// is stamped just before the send to the creature (`load_round.stamped_send`).
-/// `tell_creature` tells the creature and says whether it was told.
+/// The plant the walker's answer to its strike number `strikes` is handed over with: a
+/// `Behind` plant holds the map for the first answer only, so one answer is lost and the
+/// run is not otherwise a map held for good.
+fn planted_now(plant plant: Plant, strikes strikes: Int) -> Plant {
+  case plant, strikes {
+    Behind(..), 1 -> plant
+    Behind(..), _ -> Honest
+    Honest, _ | Delayed(..), _ | Held(..), _ -> plant
+  }
+}
+
+/// Hands the answer to the creature, through the map, as the plant says and records it: at
+/// once; after `ms` with the send stamped before the wait (`Delayed`: sent early, reaching
+/// the map late); after `ms` with the send stamped after it (`Held`); or at once with the
+/// map `map_pid` held for `ms` after it (`Behind`: sent and arrived early, taken late). The
+/// arrival is stamped just before the send to the map (`load_round.stamped_send`).
+/// `tell_creature` tells the creature through the map and says whether the map was reached.
 fn handed_over(
   plant plant: Plant,
   answers answers: Subject(Answer),
   creature creature: Pid,
+  map_pid map_pid: Pid,
   taken_us taken_us: Int,
   tell_creature tell_creature: fn() -> Bool,
 ) -> Nil {
@@ -1086,7 +1142,45 @@ fn handed_over(
         })
       Nil
     }
+    Behind(ms:) -> {
+      suspend(map_pid)
+      record(load_sample.microseconds())
+      let _pid =
+        process.spawn_unlinked(fn() {
+          process.sleep(ms)
+          resume(map_pid)
+        })
+      Nil
+    }
   }
+}
+
+/// The stay the walkers join the map in, which each tell of theirs to a creature names.
+fn walkers_stay() -> Stay {
+  stay.next(stay.none_yet())
+}
+
+/// The tell of a walker's connection to the creature `unit_id` of life `life`, as a
+/// player's connection tells it: to the map, which admits it and passes it on to the
+/// creature. Whether the map's process was reached.
+fn tell_the_map(
+  run run: world_map_registry.MapProcess,
+  connection connection: ConnectionId,
+  unit_id unit_id: Int,
+  life life: Int,
+  payload payload: relay.Inbound,
+) -> Bool {
+  service.tell_subject(
+    run.subject,
+    map.TellCreature(
+      from: connection,
+      stay: walkers_stay(),
+      unit_id:,
+      life:,
+      payload:,
+    ),
+  )
+  |> result.is_ok
 }
 
 /// The walker's next place: a step of `speed` per second along a heading that

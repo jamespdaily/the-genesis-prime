@@ -44,6 +44,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/world_map/map.{ObjectsUnseen}
+import genesis_prime/world_map/relay
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -588,11 +589,9 @@ pub fn a_creature_fighting_the_player_is_told_the_landing_test() -> Nil {
     == [
       #(
         7,
-        client_connection.TellTargetMoved(
-          connection: ConnectionId(1),
+        relay.TargetMoved(
           place: solitude_of_secrets(),
           seq: 1,
-          stay: connection_support.own_stay(),
           hit_radius: place_support.player_hit_radius,
         ),
       ),
