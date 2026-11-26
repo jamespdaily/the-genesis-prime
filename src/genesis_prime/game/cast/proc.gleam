@@ -794,7 +794,7 @@ pub fn nodes_left(
   nodes nodes: Dict(Int, lasting.Node),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  case holder.lingering && dict.is_empty(nodes) {
+  case holder.phase == cast_state.LastGoGone && dict.is_empty(nodes) {
     True -> {
       let #(cast, cancels) = cast_tick.cancel_nodes_end(cast:, cast_id:)
       #(
@@ -862,7 +862,9 @@ pub fn unit_removed(
     let #(cast, ticks) = cast_tick.ticks_dropped(cast:, cast_id:, unit_id:)
     let #(cast, on_units) = cast_control.unit_unseen(cast:, cast_id:, unit_id:)
     let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
-    let ends = case holder.lingering && dict.is_empty(nodes) {
+    let ends = case
+      holder.phase == cast_state.LastGoGone && dict.is_empty(nodes)
+    {
       True -> cast_tick.finished_effects(cast_id:, audience: holder.audience)
       False -> []
     }
@@ -944,9 +946,14 @@ fn one_set_aside(
     })
   let #(stealth, others) = cast_tick.split_cast(held: cast.stealth, cast_id: id)
   let #(procs, other_procs) = procs_split(held: cast.procs, cast_id: id)
-  case live, lingering {
-    None, None -> #(cast, None)
-    _, _ -> #(
+  let set_aside_cast = case live, lingering {
+    Some(live), _ -> Some(cast_state.WasLive(live:))
+    None, Some(lingering) -> Some(cast_state.WasLingering(lingering:))
+    None, None -> None
+  }
+  case set_aside_cast {
+    None -> #(cast, None)
+    Some(set_aside_cast) -> #(
       State(
         ..cast,
         casts: dict.delete(cast.casts, id),
@@ -959,8 +966,7 @@ fn one_set_aside(
       Some(Aside(
         id:,
         key:,
-        live:,
-        lingering:,
+        cast: set_aside_cast,
         timers:,
         stealth:,
         procs:,
@@ -976,8 +982,7 @@ pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
     let Aside(
       id:,
       key:,
-      live:,
-      lingering:,
+      cast: set_aside_cast,
       timers:,
       stealth:,
       procs:,
@@ -989,13 +994,14 @@ pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
         [] -> cast.on_units
         [_, ..] -> dict.insert(cast.on_units, id, on_units)
       },
-      casts: case live {
-        Some(live) -> dict.insert(cast.casts, id, live)
-        None -> cast.casts
+      casts: case set_aside_cast {
+        cast_state.WasLive(live:) -> dict.insert(cast.casts, id, live)
+        cast_state.WasLingering(..) -> cast.casts
       },
-      lingering: case lingering {
-        Some(lingering) -> dict.insert(cast.lingering, id, lingering)
-        None -> cast.lingering
+      lingering: case set_aside_cast {
+        cast_state.WasLingering(lingering:) ->
+          dict.insert(cast.lingering, id, lingering)
+        cast_state.WasLive(..) -> cast.lingering
       },
       timers: dict.merge(cast.timers, dict.from_list(timers)),
       stealth: dict.merge(cast.stealth, dict.from_list(stealth)),
@@ -1427,7 +1433,7 @@ fn node_off(
       let #(cast, on_units) =
         cast_control.units_ended(cast:, cast_id:, unit_ids: [unit_id])
       let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
-      let ends = case holder.lingering && emptied && kept {
+      let ends = case holder.phase == cast_state.LastGoGone && emptied && kept {
         True -> cast_tick.finished_effects(cast_id:, audience: holder.audience)
         False -> []
       }

@@ -191,7 +191,8 @@ pub fn a_holder_takes_the_item_its_live_cast_was_pressed_from_and_its_lingering_
       rolls: [],
     )
   let assert Ok(after_go) = cast_state.holder_of(cast: lingering, cast_id:)
-  assert after_go.lingering && after_go.handed_down == Some(level_116())
+  assert after_go.phase == cast_state.LastGoGone
+    && after_go.handed_down == Some(level_116())
     as "the lingering cast it becomes keeps it"
   let from_button =
     cast_state.State(

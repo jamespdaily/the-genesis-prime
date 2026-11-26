@@ -1587,17 +1587,25 @@ pub type Holder {
     nodes: Dict(Int, lasting.Node),
     /// The periodic rows the cast's gos armed, whose open rounds hold their nodes.
     ticking: Dict(TickKey, Ticking),
-    /// Whether the cast has gone for the last time and waits for its nodes to end.
-    lingering: Bool,
-    /// Whether the cast's first go has gone: a lingering cast has, and a live cast has
-    /// once `Live.gone` counts a go (a node is made in the step that counts it).
-    gone: Bool,
+    /// Where the cast is in its gos.
+    phase: HolderPhase,
     /// What the children of the cast take from the item that pressed it (`handed_down`).
     handed_down: Option(PressedFrom),
     /// Whether the cast belongs to a proc's result (`Live.fired`), which its children and
     /// the events of its ticks follow.
     fired: Bool,
   )
+}
+
+/// Where a holder of nodes is in its gos: a live cast before its first go
+/// (`Live.gone` is 0), a live cast that has gone at least once (a node is made in the
+/// step that counts the go), or a cast that has gone for the last time and waits for its
+/// nodes to end (a lingering cast). A lingering cast has gone, so it is never before its
+/// first go.
+pub type HolderPhase {
+  BeforeFirstGo
+  AfterFirstGo
+  LastGoGone
 }
 
 /// The cast `cast_id` as a holder of nodes, live or lingering.
@@ -1615,8 +1623,10 @@ pub fn holder_of(
         primary_target: live.primary_target,
         nodes: live.nodes,
         ticking: live.ticking,
-        lingering: False,
-        gone: live.gone > 0,
+        phase: case live.gone > 0 {
+          True -> AfterFirstGo
+          False -> BeforeFirstGo
+        },
         handed_down: handed_down(live:),
         fired: live.fired,
       ))
@@ -1629,8 +1639,7 @@ pub fn holder_of(
         primary_target: lingering.primary_target,
         nodes: lingering.nodes,
         ticking: lingering.ticking,
-        lingering: True,
-        gone: True,
+        phase: LastGoGone,
         handed_down: lingering.handed_down,
         fired: lingering.fired,
       ))
@@ -1683,8 +1692,8 @@ pub fn views(
       cast_id:,
       spell4_id: holder.spell.spell4_id,
       primary_target: holder.primary_target,
-      gone: holder.gone,
-      current: !holder.lingering && cast.current == Some(cast_id),
+      gone: holder.phase != BeforeFirstGo,
+      current: holder.phase != LastGoGone && cast.current == Some(cast_id),
       targets: dict.to_list(holder.nodes)
         |> list.sort(fn(left, right) { int.compare(left.0, right.0) })
         |> list.filter_map(fn(node) {
@@ -1812,13 +1821,19 @@ pub type Aside {
   Aside(
     id: Int,
     key: StandingKey,
-    live: Option(Live),
-    lingering: Option(Lingering),
+    cast: SetAsideCast,
     timers: List(#(TimerId, Due)),
     stealth: List(#(unit_properties.Source, spell_plan.Breaks)),
     procs: List(#(ProcHold, HeldProc)),
     on_units: List(OnUnit),
   )
+}
+
+/// The cast a death set aside: it was live or lingering, never both (a cast leaves
+/// `casts` for `lingering` in one step, `cast.finish_or_linger`).
+pub type SetAsideCast {
+  WasLive(live: Live)
+  WasLingering(lingering: Lingering)
 }
 
 /// The timers the rule waits on with what each is for, in the order they were started.
