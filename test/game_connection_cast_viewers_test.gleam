@@ -17,7 +17,6 @@
 //// - Every test connection is the tests' player, unit 5: the rows of a viewer number the
 ////   caster as unit 7 and the ally as unit 9 (`unit_as_seen`).
 
-import cast_support
 import client_tables
 import connection_rule_support as rule_support
 import fixture_tables
@@ -32,9 +31,7 @@ import genesis_prime/message/spell_target_info
 import genesis_prime/message/unit_create_cast
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
-import genesis_prime/step.{
-  type ConnectionStep, ConnectionId, OwnEffect, OwnEvent,
-}
+import genesis_prime/step.{type ConnectionStep, ConnectionId, OwnEffect}
 import genesis_prime/world_map/map.{SeenBy}
 import gleam/list
 import gleam/option.{None}
@@ -259,30 +256,13 @@ fn appears(unit_id unit_id: Int) -> News {
   )
 }
 
-/// The caster's press of `bag_index` at `target` at 1000 ms, the viewer `late` coming into
-/// its sight right after the go, and its cast timers run to 12 000 ms: every step.
-fn pressed_then_seen_by(
+/// The caster's steps once its press `pressed` has run: the viewer `late` coming into its
+/// sight right after the go, and its cast timers run to 12 000 ms.
+fn seen_after_the_go_by(
   state state: game_connection.State,
-  bag_index bag_index: Int,
-  target target: Int,
+  pressed pressed: ConnectionStep(Request),
   late late: Int,
 ) -> List(ConnectionStep(Request)) {
-  let #(state, pressed) =
-    connection_support.at(
-      state:,
-      ms: 1000,
-      event: OwnEvent(
-        step.Read(connection_support.world_message(
-          message_id: 0x009A,
-          body: cast_support.press_body(
-            client_cast_id: 1,
-            bag_index:,
-            target:,
-            press: 1,
-          ),
-        )),
-      ),
-    )
   let #(state, seen) =
     connection_support.feed(
       state:,
@@ -323,44 +303,13 @@ pub fn the_viewers_decisions_give_the_frames_the_audience_gave_for_a_go_a_restri
     ],
   )
   let armor = {
-    let #(caster, _) =
-      connection_support.entered_at_level(
-        settings: Settings(..connection_support.settings(), tables:),
-        class_id: 3,
-        level: 6,
-        saved_health: None,
-      )
-    let caster =
-      connection_support.watched_by(state: caster, viewers: [
-        early_viewer,
-      ])
-    let caster =
-      list.fold(
-        [
-          connection_support.sent_by_the_map(SeenBy(
-            by: ConnectionId(ally_connection),
-            stay: connection_support.viewer_stay(ally_connection),
-            unit_id: ally_unit,
-          )),
-          connection_support.sent_by_a_peer(connection_support.news_of(
-            unit_id: ally_unit,
-            news: appears(unit_id: ally_unit),
-          )),
-        ],
-        caster,
-        fn(state, event) { connection_support.feed(state:, event:).0 },
-      )
-    pressed_then_seen_by(
-      state: caster,
-      bag_index: connection_support.bag_index_of(
+    let #(caster, pressed) =
+      connection_support.armor_pressed_at_the_ally(
         tables:,
-        class_id: 3,
-        level: 6,
-        ability: 19_033,
-      ),
-      target: ally_unit,
-      late: late_viewer,
-    )
+        ally_connection:,
+        ally_unit:,
+      )
+    seen_after_the_go_by(state: caster, pressed:, late: late_viewer)
   }
   let ally =
     connection_support.watched_by(
@@ -393,25 +342,26 @@ pub fn the_viewers_decisions_give_the_frames_the_audience_gave_for_a_go_a_restri
         saved_health: None,
       )
     let caster =
-      connection_support.watched_by(state: caster, viewers: [
-        early_viewer,
-      ])
+      connection_support.watched_by(state: caster, viewers: [early_viewer])
     let caster =
       connection_support.feed(
         state: caster,
         event: connection_support.beast_appears(unit_id: 21),
       ).0
-    pressed_then_seen_by(
-      state: caster,
-      bag_index: connection_support.bag_index_of(
-        tables: real,
-        class_id: 1,
-        level: 9,
-        ability: 36_860,
-      ),
-      target: 21,
-      late: late_viewer,
-    )
+    let #(caster, pressed) =
+      connection_support.pressed_at(
+        state: caster,
+        bag_index: connection_support.bag_index_of(
+          tables: real,
+          class_id: 1,
+          level: 9,
+          ability: 36_860,
+        ),
+        client_cast_id: 1,
+        target: 21,
+        ms: 1000,
+      )
+    seen_after_the_go_by(state: caster, pressed:, late: late_viewer)
   }
   let told = deliveries(steps: strike, ally:)
   let restrictions = fn(viewer, sees) {
