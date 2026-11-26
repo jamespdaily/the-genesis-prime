@@ -21,7 +21,8 @@ Exit status:
   1  a check failed (the line `pr_wait: failing jobs: A, B` on stderr names them), or no
      check appeared within NO_CHECK_SECONDS
   2  usage
-  3  a GitHub call failed on all its tries; nothing is known of the checks
+  3  a GitHub call failed on all its tries, or this script failed (its traceback is on
+     stderr); nothing is known of the checks
   4  DEADLINE_SECONDS passed; the line on stderr names the checks still pending, or says no
      check named `check` appeared
 
@@ -37,13 +38,14 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 
 GATE_CHECK = "check"
 # 25 min: 1.8 times 846 s, the longest of the 100 latest check.yml runs (measured 2026-11-26).
 DEADLINE_SECONDS = 1500
-# Half a minute: gh's own watch interval, which this replaces.
+# Half a minute: the interval the old script gave gh's --watch (gh's own default is 10 s).
 POLL_SECONDS = 30
 # One minute: a gh call that answers takes seconds; a longer one is hung.
 CALL_SECONDS = 60
@@ -144,6 +146,8 @@ def unfinished(verdict: Verdict | None) -> str:
         return f"still pending: {', '.join(verdict.names)}"
     if verdict is None:
         return "no answer from GitHub"
+    if verdict.kind is Kind.NONE:
+        return "no check is listed"
     return f"no check named {GATE_CHECK} appeared"
 
 
@@ -160,6 +164,7 @@ def ask_gh(number: int, call_seconds: float) -> str:
     except OSError as error:
         raise CallFailed(f"gh could not run: {error}") from error
     if done.returncode != 0:
+        # gh 2.105.0's text when the pull request has no check yet ("no checks reported on the '%s' branch").
         if "no checks reported" in done.stderr:
             return "[]"
         raise CallFailed(f"gh pr checks ended with status {done.returncode}: {done.stderr.strip()[:80]}")
@@ -191,4 +196,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:  # a crash is not a check's failure: 1 would tell the merge script CI failed
+        traceback.print_exc()
+        sys.exit(3)

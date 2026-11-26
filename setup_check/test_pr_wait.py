@@ -10,8 +10,10 @@ Three layers, as dev/ci_gate.py's tests:
   comma-separated line, bucket fail) and the one pending check named by PLANT_PENDING (bucket
   pending), the gate job `check` as a passing check unless PLANT_GATE is 0 for that call
   (default 1), and the exit status PLANT_JSON_STATUS (default 0; a failed call prints
-  nothing). PLANT_HANG set makes the call sleep for ever. PLANT_JSON_STATUS, PLANT_PENDING and
-  PLANT_GATE are comma-separated lists with one item per call, the last item repeated
+  nothing). PLANT_HANG set makes the call sleep for ever. PLANT_NO_CHECKS 1 for a call answers as
+  gh 2.105.0 does for a pull request with no check yet: exit 1, "no checks reported on the 'b'
+  branch" on stderr. PLANT_JSON_STATUS, PLANT_PENDING, PLANT_GATE and PLANT_NO_CHECKS are
+  comma-separated lists with one item per call, the last item repeated
   (plant_support.NEXT_LINE reads them from files). Every call is kept in PLANT_DIR/calls.
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_pr_wait.py'
@@ -46,6 +48,10 @@ echo "$*" >> "$PLANT_DIR/calls"
     case "$*" in
       *--json*)
         [ -n "${PLANT_HANG-}" ] && exec sleep 1000
+        if [ "$(next_line no_checks no_checks_asked)" = 1 ]; then
+          echo "no checks reported on the 'b' branch" >&2
+          exit 1
+        fi
         status=$(next_line json_status json_status_asked)
         pending=$(next_line pending pending_asked)
         gate=$(next_line gate gate_asked)
@@ -71,6 +77,7 @@ PER_CALL = {
     "PLANT_JSON_STATUS": ("json_status", "0"),
     "PLANT_PENDING": ("pending", ""),
     "PLANT_GATE": ("gate", "1"),
+    "PLANT_NO_CHECKS": ("no_checks", "0"),
 }
 
 DEADLINE = pr_wait.DEADLINE_SECONDS
@@ -218,6 +225,12 @@ class WaitTest(unittest.TestCase):
                 self.assertEqual(status, 3, message)
                 self.assertIn("a GitHub call failed", message)
 
+    def test_checks_that_vanish_after_appearing_wait_to_the_deadline_saying_none_is_listed(self):
+        fake = Fake([PENDING, NO_ROWS])
+        status, message = run_wait(fake)
+        self.assertEqual(status, 4, message)
+        self.assertEqual(message, f"pr_wait: deadline of {DEADLINE} s passed on pull request 7; no check is listed")
+
     def test_a_failure_at_the_first_poll_ends_the_wait_with_no_further_poll(self):
         fake = Fake([answer(("fail", "unit tests"), ("pending", "slow"))])
         status, message = run_wait(fake)
@@ -260,6 +273,21 @@ class PullRequestWaitScriptTest(unittest.TestCase):
         done = self.wait(PLANT_PENDING="build")
         self.assertEqual(done.returncode, 4, done.stderr)
         self.assertIn("pr_wait: deadline of 1 s passed on pull request 7; still pending: build", done.stderr)
+
+    def test_no_checks_reported_three_times_then_a_pass_ends_0_not_as_three_failed_calls(self):
+        done = self.wait(PLANT_NO_CHECKS="1,1,1,0")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(done.calls), 4, done.calls)
+
+    def test_only_no_checks_reported_ends_1_after_the_no_check_limit(self):
+        done = self.wait(PLANT_NO_CHECKS="1", PR_WAIT_NO_CHECK_SECONDS="0.05")
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("pr_wait: no check on pull request 7 after 0.05 s", done.stderr)
+
+    def test_a_crash_of_the_script_exits_3_with_its_traceback_not_1(self):
+        done = self.wait(PR_WAIT_POLL_SECONDS="soon")
+        self.assertEqual(done.returncode, 3, done.stderr)
+        self.assertIn("ValueError", done.stderr)
 
     def test_a_missing_or_non_number_argument_exits_2(self):
         for arguments in ((), ("seven",), ("7", "8")):
