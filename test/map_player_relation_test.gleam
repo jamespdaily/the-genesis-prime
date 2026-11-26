@@ -545,9 +545,21 @@ pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> N
 
 pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, sights, at_ms) = owner_and_viewers(viewers: [2])
+  // Players 1 and 2 stand at x 100 and 200 and see each other: 2's sight of 1 and 1's
+  // sight of 2 are two generations the map told each owner.
+  let #(state, joins, at_ms) =
+    players.joined(state: players.empty(), connections: [1, 2], from_ms: 6000)
+  let told_sight = fn(owner, viewer) {
+    let assert Ok(generation) =
+      list.find_map(joins, fn(taken) {
+        option.to_result(players.sight_of(taken:, owner:, viewer:), Nil)
+      })
+      as "the join told the owner the sight its viewer has"
+    generation
+  }
+  let sight = told_sight(1, 2)
+  let owners_sight = told_sight(2, 1)
   let first_stay = players.stay(count: 1)
-  let sight = sight_of_viewer(sights:, viewer: 2)
   let #(state, _) =
     players.snapshot(
       state:,
@@ -581,10 +593,21 @@ pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_
   assert healths(relayed: players.relayed(taken: first)) == [#(2, 2)]
     && healths(relayed: players.relayed(taken: second)) == [#(2, 3)]
     as "each news the connection sent is relayed when the map takes it, in order"
-  let to_viewer = players.notices_to(taken: ended, connection: 2)
-  assert list.map(to_viewer, fn(notice) { notice.1 })
-    == [map.PlayerUnseen(unit_id: 1, generation: sight), map.Gone(unit_id: 1)]
-    as "then the viewer is told the unit is unseen and gone: the connection's end sends nothing before them"
+  let to_two =
+    list.map(players.notices_to(taken: ended, connection: 2), fn(notice) {
+      notice.1
+    })
+  let unseen = map.PlayerUnseen(unit_id: 1, generation: sight)
+  assert list.contains(to_two, unseen)
+    && list.contains(to_two, map.Gone(unit_id: 1))
+    && list.take_while(to_two, fn(notice) { notice != unseen })
+    |> list.all(fn(notice) { notice != map.Gone(unit_id: 1) })
+    as "then 2 is told the unit is unseen and then gone: the connection's end sends nothing of the unit before them"
+  assert list.contains(
+    to_two,
+    map.UnseenBy(by: ConnectionId(1), generation: owners_sight),
+  )
+    as "2, as the owner of its own unit, is told that 1 no longer sees it, from the sight 1 had of it: its copy stops stamping moves to a connection that ended"
 }
 
 pub fn a_pair_that_leaves_while_its_snapshot_is_awaited_tells_the_viewer_its_unseen_and_the_late_snapshot_is_dropped_test() -> Nil {
@@ -616,7 +639,8 @@ pub fn a_pair_that_leaves_while_its_snapshot_is_awaited_tells_the_viewer_its_uns
 
 pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> Nil {
   use <- owned_test.run(5000)
-  // Players 2, 3 and 4 see player 1; the move of 1 takes 4 out of sight of it.
+  // Players 2, 3 and 4 stand at x 200, 300 and 400 and see player 1, at x 100 (sight 1024):
+  // its move to x -700 leaves 2 and 3 in sight (900 and 1000 away) and takes 4 out (1100).
   let #(state, sights, at_ms) = owner_and_viewers(viewers: [2, 3, 4])
   let first_stay = players.stay(count: 1)
   let #(state, at_ms) =
@@ -635,7 +659,7 @@ pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> N
         at_ms + 1,
       )
     })
-  let #(_, taken) = spawns.move(state:, at_ms:, connection: 1, x: -3000.0)
+  let #(_, taken) = spawns.move(state:, at_ms:, connection: 1, x: -700.0)
   assert players.relayed(taken:) == []
     as "the map relays no move, and no news, for a move"
   let sight_notices =
@@ -651,6 +675,8 @@ pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> N
   assert list.contains(sight_notices, #(4, "PlayerUnseen 1"))
     && list.contains(sight_notices, #(1, "UnseenBy 4"))
     as "the viewer that left sight is told the unit is unseen and the owner that it is unseen by it"
+  assert list.length(sight_notices) == 2
+    as "2 and 3 stay in sight and are told nothing of it: only 4 leaves"
   assert list.length(support.sends(taken)) == list.length(sight_notices)
     as "the step sends nothing but the sight notices: no move reaches a viewer through the map"
 }
