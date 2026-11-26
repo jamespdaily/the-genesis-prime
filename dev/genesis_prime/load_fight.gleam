@@ -14,8 +14,8 @@
 ////   from the tenth second to the twentieth, so the creatures lose their targets;
 //// - `delayed MS`: walker 1's answers reach the creature MS ms after it sent them;
 //// - `held MS`: walker 1 sends each answer MS ms after the strike reached it;
-//// - `behind MS`: walker 1's first answer goes to the map at once and the map is then held,
-////   taking nothing, for MS ms, as a map that has fallen behind holds it;
+//// - `behind MS`: the map is held, taking nothing, for MS ms, and walker 1's first answer is
+////   sent to it in that time, as to a map that has fallen behind;
 //// - `respawning`: the Daguns' kind (Creature2 73465, which has no row of its own and takes
 ////   the default row's 60 s) respawns after `respawn_ms` (1,500, above the strike deadline
 ////   the load refuses a kind below), and with `mutual` each blow is 100 (above a Dagun's 50
@@ -75,9 +75,12 @@
 ////   map falls behind, or when it judges none. The minimum of the rounds and the answers
 ////   is 1 (without the recorder, only the answers, as the walkers counted them). A walker
 ////   strikes only while it has `strike_tell.deadline_ms` left to hear the answer
-////   (`load_round.may_strike`), and counts a strike only when a creature was told it, since
-////   a creature answers every strike it takes (`Answered`, a `Refused` one too): the
-////   minimum of the strikes answered is the strikes the walkers made, and at least 1. The
+////   (`load_round.may_strike`), and counts a strike only when the registry holds a creature at the
+////   address and life the strike names as it is told to the map, since a creature answers
+////   every strike it takes (`Answered`, a `Refused` one too): the minimum of the strikes
+////   answered is the strikes the walkers made, and at least 1. A creature that ends between
+////   that lookup and the map taking the strike leaves it with no answer, and the map drops
+////   it, so the minimum counts it all the same. The
 ////   respawns' is the creatures killed that were owed one (a death in the last `settle_ms`
 ////   is not), and at least 1. With `mutual` and `respawning` together a `delayed` or `held`
 ////   plant has no strike to lose or delay, so it is measured by nothing;
@@ -93,10 +96,11 @@
 //// that tells the creature MS ms later: they are sent before the deadline and reach
 //// the creature after it closed the round, so they are lost. `held MS` makes walker 1
 //// send each answer MS ms after the strike reached it: sent after the deadline, so late.
-//// `behind MS` makes walker 1 tell its first answer to the map at once, stamped sent and
-//// arrived before the deadline, and then holds the map for MS ms: the map has the answer in
-//// its mailbox when the creature's round closes by its deadline, so it is lost, and the
-//// only thing that could count it is the round's closure, not the walker's stamps. With
+//// `behind MS` makes walker 1 hold the map for MS ms and tell it its first answer in that time,
+//// stamped sent and arrived before the deadline: the map has the answer in its mailbox when
+//// the creature's round closes by its deadline, so it is lost, and the only thing that could
+//// count it is the round's closure, not the walker's stamps. Another walker's answer already
+//// on its way to the map when it is held is lost as well. With
 //// MS above 1,000 (`strike_tell.deadline_ms`) a counter that stays at 0 under any of
 //// the three is not counting.
 ////
@@ -775,8 +779,11 @@ fn struck_back(
 }
 
 /// Strikes each creature the walker fights as the walker's connection does: one blow of `damage`
-/// (Spell4Effects 184741), and Stagger's stun with every `stun_every`th strike. `made` is
-/// the strikes the walker has made; it gives the count after these.
+/// (Spell4Effects 184741), and Stagger's stun with every `stun_every`th strike, each told to
+/// the map. `made` is the strikes the walker has made; it gives the count after these. A
+/// strike counts as made when the registry holds a creature at its address and life as it is
+/// told and the map's process is reached: the map drops a strike for a creature that ended
+/// with no answer, and such a strike must not raise the minimum of the answers.
 fn strike_fighters(
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
@@ -808,6 +815,15 @@ fn strike_fighters(
         ),
         throw: None,
       )
+    let running =
+      creature_registry.find(
+        settings.world.creatures,
+        map: MapId(world_id:, instance: 0),
+        incarnation: run.incarnation,
+        unit_id: fighter.0,
+        life: fighter.1,
+      )
+      |> result.is_ok
     let told =
       tell_the_map(
         run:,
@@ -852,7 +868,7 @@ fn strike_fighters(
           ),
         ),
       )
-    case told {
+    case running && told {
       True -> next
       False -> made
     }
@@ -1092,8 +1108,8 @@ fn answered(
 }
 
 /// The plant the walker's answer to its strike number `strikes` is handed over with: a
-/// `Behind` plant holds the map for the first answer only, so one answer is lost and the
-/// run is not otherwise a map held for good.
+/// `Behind` plant holds the map for the first answer only, so the run is not otherwise a
+/// map held for good.
 fn planted_now(plant plant: Plant, strikes strikes: Int) -> Plant {
   case plant, strikes {
     Behind(..), 1 -> plant
@@ -1104,10 +1120,10 @@ fn planted_now(plant plant: Plant, strikes strikes: Int) -> Plant {
 
 /// Hands the answer to the creature, through the map, as the plant says and records it: at
 /// once; after `ms` with the send stamped before the wait (`Delayed`: sent early, reaching
-/// the map late); after `ms` with the send stamped after it (`Held`); or at once with the
-/// map `map_pid` held for `ms` after it (`Behind`: sent and arrived early, taken late). The
-/// arrival is stamped just before the send to the map (`load_round.stamped_send`).
-/// `tell_creature` tells the creature through the map and says whether the map was reached.
+/// the map late); after `ms` with the send stamped after it (`Held`); or with the map
+/// `map_pid` held for `ms` and the answer sent to it in that time (`Behind`: sent and arrived
+/// early, taken late). The arrival is stamped just before the send to the map
+/// (`load_round.stamped_send`). `tell_creature` tells the creature through the map and says whether the map was reached.
 fn handed_over(
   plant plant: Plant,
   answers answers: Subject(Answer),
