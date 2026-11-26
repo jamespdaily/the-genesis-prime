@@ -4,21 +4,22 @@
 ////
 //// - **Other players' units.** The map decides who sees whom
 ////   (genesis_prime/world_map/map) and tells the connection of each player in
-////   it, as the message `SentByMap`, who sees its player (`SeenBy(by, stay, unit_id)` when
-////   a player comes to see it, `UnseenBy(by)` when one stops), and `Gone(unit)`
-////   when a player's connection has ended. The connection keeps
-////   the connections that see its player as its viewers, each with its player's
-////   stay, in the player's `Entered`, and sends everything about its own unit to
-////   them itself, as
-////   `SentByPeer` through the registry (the same path the map's sends take,
-////   `genesis_prime/server`'s `connection_reach`); the map sends no unit:
+////   it, as the message `SentByMap`, who sees its player (`SeenBy(by, stay, unit_id,
+////   generation)` when a player comes to see it, `UnseenBy(by, generation)` when one
+////   stops), and `Gone(unit)` when a player's connection has ended. The connection
+////   keeps the connections that see its player as its viewers, each with its player's
+////   stay and the generation of that sight, in the player's `Entered`, and sends
+////   everything about its own unit to them itself, as `SentByPeer` through the
+////   registry (the same path the map's sends take, `genesis_prime/server`'s
+////   `connection_reach`), and its moves as `SentByMove`; the map sends no unit and
+////   carries no move:
 ////
 ////   ```
 ////   owner's connection (player in the world)                       viewer's connection             client
-////   SeenBy(v, stay, unit) from the map ─▶ Tell(v, Appeared(0x262 at its place)) ─▶ writes 0x262 if not shown ─▶ the unit is created
-////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Moving(0x638)) ─▶ writes 0x638 if shown ─▶ the unit moves
-////   UnseenBy(v)                ─▶ Tell(v, Removed)                    ─▶ writes 0x355 if shown   ─▶ the unit is removed
-////   its camp (0xC0)            ─▶ Tell(each viewer, Removed), then Leave
+////   SeenBy(v, stay, unit, g) from the map ─▶ Tell(v, Appeared(0x262 at its place, g)) ─▶ writes 0x262 if not shown ─▶ the unit is created
+////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Move(0x638 chunk, its g)) ─▶ writes 0x638 if the sight is g ─▶ the unit moves
+////   UnseenBy(v, g)             ─▶ Tell(v, Departed(g))                ─▶ writes 0x355 if shown   ─▶ the unit is removed
+////   its camp (0xC0)            ─▶ Tell(each viewer, Departed(its g)), then Leave
 ////   its connection ends        ─▶ nothing: the map sends each viewer UnseenBy, and every player Gone(unit)
 ////                                                                     Gone(unit) ─▶ writes 0x355 if shown, and the unit is gone
 ////   ```
@@ -139,6 +140,22 @@
 ////     its caster, borrowed, or held with no caster): the client restarts a cast id that is
 ////     live (`opcode.0x7ff`), so one sender wins and the other's start is dropped. A viewer
 ////     that does not show the caster makes the cast too (`cast.unknown_caster`).
+//// - **A player's move at its viewer** is stamped with the generation of the sight the
+////   mover's copy holds for that viewer, and taken by the rule of
+////   genesis_prime/game/move_stamp: applied for the sight the viewer holds, dropped for an
+////   older one or one that ended, held (at most 16 chunks of a unit, a guess) for a
+////   newer one or a unit it holds nothing of until that sight's 0x262 comes, which
+////   releases the held moves in order. A hold that overflows is warned of once; the
+////   holds and the memory of ended sights end with the stay. The viewer's failure rows:
+////
+////   | Point | What happens |
+////   |---|---|
+////   | a move of a generation older than the one held, or at most the last that ended | dropped |
+////   | a move newer than the one held, or for a unit not held | held until the notice of its generation |
+////   | the 0x262 of a generation, with held moves | 0x262, then the held moves of it in order; older dropped; newer kept |
+////   | the end of a sight of at least a held move's generation | the hold is dropped; the generation is remembered |
+////   | a hold past 16 chunks, or the notice never comes | the oldest chunk is dropped with one warning; the hold ends with the stay |
+////   | the mover's copy still holds a viewer the map ended | its moves are dropped at the viewer |
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
@@ -164,6 +181,7 @@ import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/faction_level
 import genesis_prime/game/held_changes
 import genesis_prime/game/hit_radius
+import genesis_prime/game/move_stamp
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
 import genesis_prime/game/player_life
@@ -235,13 +253,13 @@ pub fn map_sent(
   notice notice: map.Notice,
 ) -> client_connection.Handled(Session) {
   case notice {
-    map.SeenBy(by:, stay:, unit_id:) ->
+    map.SeenBy(by:, stay:, unit_id:, generation:) ->
       Continue(
         connection_casting.with_cast(
           session: viewers_changed(session:, change: dict.insert(
             _,
             by,
-            player_address.Viewer(stay:, unit_id:),
+            player_address.Viewer(stay:, unit_id:, generation:),
           )),
           cast: case dict.has_key(entered.viewers, by) {
             // A viewer that already sees the player drops the second create, so it
@@ -259,11 +277,14 @@ pub fn map_sent(
           connection_state.news_to(
             entered:,
             viewer: #(by, stay),
-            news: unit_news.Appeared(unit: appearance(entered:, now:)),
+            news: unit_news.Appeared(
+              unit: appearance(entered:, now:),
+              generation:,
+            ),
           ),
         ],
       )
-    map.UnseenBy(by:) -> {
+    map.UnseenBy(by:, generation:) -> {
       let #(session, ended) =
         connection_landing.caster_unseen(
           session: audiences_left(
@@ -279,7 +300,7 @@ pub fn map_sent(
           connection_state.news_to_connection(
             entered:,
             connection: by,
-            news: unit_news.Removed,
+            news: unit_news.Departed(generation:),
           ),
           ended,
         ),
@@ -295,7 +316,11 @@ pub fn map_sent(
       let session =
         marked_gone(
           session: connection_state.with_entered(session:, change: fn(entered) {
-            world_entry.Entered(..entered, life:)
+            world_entry.Entered(
+              ..entered,
+              life:,
+              stamp: move_stamp.gone(stamp: entered.stamp, unit_id:),
+            )
           }),
           unit_id:,
         )
@@ -472,9 +497,9 @@ pub fn viewer_takes(
   let creates_or_removes = case news.news {
     unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
+    | unit_news.Departed(..)
     | unit_news.Removed -> True
-    unit_news.Moving(..)
-    | unit_news.CastStarted(..)
+    unit_news.CastStarted(..)
     | unit_news.CastWent(..)
     | unit_news.CastMissed(..)
     | unit_news.CastTicked(..)
@@ -512,11 +537,18 @@ pub fn viewer_takes(
     return: Continue(session, [refusal_logged(session:, unit_id:)]),
   )
   case news.news {
-    unit_news.Appeared(unit:) -> {
+    unit_news.Appeared(unit:, generation:) -> {
       use <- bool.guard(
-        when: shown || set.contains(entered.gone, unit_id),
+        when: set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
+      let #(stamp, released) =
+        move_stamp.snapshot(stamp: entered.stamp, unit_id:, generation:)
+      let session = stamp_set(session:, stamp:)
+      use <- bool.guard(when: shown, return: {
+        let #(session, written) = moves_released(session:, now:, released:)
+        Continue(session, written)
+      })
       let unit =
         casts_listed(
           unit:,
@@ -534,7 +566,7 @@ pub fn viewer_takes(
             ),
           )
         })
-      Continue(
+      let session =
         shown_changed(session:, change: dict.insert(
           _,
           unit_id,
@@ -543,14 +575,15 @@ pub fn viewer_takes(
             entered:,
             unit:,
           )),
-        )),
-        [
-          connection_state.to_client(
-            session,
-            world_entry.unit_created_frame(unit:),
-          ),
-        ],
-      )
+        ))
+      let created = [
+        connection_state.to_client(
+          session,
+          world_entry.unit_created_frame(unit:),
+        ),
+      ]
+      let #(session, written) = moves_released(session:, now:, released:)
+      Continue(session, list.append(created, written))
     }
     unit_news.CreatureAppeared(
       unit:,
@@ -599,76 +632,19 @@ pub fn viewer_takes(
         ],
       )
     }
-    unit_news.Moving(server_time_ms:, commands:) -> {
-      use <- bool.guard(when: !shown, return: Continue(session, []))
-      let session = creatures_resolved(session:, now:)
-      let positions =
-        list.filter_map(commands, fn(command) {
-          case command {
-            relayed_movement.Position(position) -> Ok(position)
-            relayed_movement.Time(..)
-            | relayed_movement.Platform(..)
-            | relayed_movement.TimedPath(..)
-            | relayed_movement.Path(..)
-            | relayed_movement.Velocity(..)
-            | relayed_movement.VelocityDefault(..)
-            | relayed_movement.MoveAsked(..)
-            | relayed_movement.MoveDefault(..)
-            | relayed_movement.Rotation(..)
-            | relayed_movement.RotationDefault(..)
-            | relayed_movement.FaceUnit(..)
-            | relayed_movement.FacePoint(..)
-            | relayed_movement.StateFlags(..)
-            | relayed_movement.StateDefault(..)
-            | relayed_movement.Mode(..) -> Error(Nil)
-          }
-        })
-      let session = case
-        player_place(
-          commands: positions,
-          world_place: movement.place(entered.movement),
-        )
-      {
-        Some(place) ->
-          shown_changed(session:, change: shown.with_player_at(
-            picture: _,
-            unit_id:,
-            place:,
-          ))
-        None -> session
-      }
-      Continue(session, [
-        connection_state.to_client(
-          session,
-          connection_frames.unit_moved_frame(
-            unit_id:,
-            server_time_ms:,
-            commands:,
-          ),
-        ),
-      ])
-    }
-    unit_news.Removed -> {
-      use <- bool.guard(when: !shown, return: Continue(session, []))
+    unit_news.Departed(generation:) -> {
       let session =
-        audiences_left(
+        stamp_set(
           session:,
-          viewers: viewers_of_unit(viewers: entered.viewers, unit_id:),
+          stamp: move_stamp.departed(
+            stamp: entered.stamp,
+            unit_id:,
+            generation:,
+          ),
         )
-      let kept =
-        list.filter(
-          client_casts.written_of_unit(casts: entered.client_casts, unit_id:),
-          fn(cast_id) {
-            list.contains(
-              held_changes.kept_casts_of_unit(held: entered.held, unit_id:),
-              cast_id,
-            )
-          },
-        )
-      let #(session, removal) =
-        unit_removed(session:, now:, entered:, unit_id:, keeping: kept)
-      Continue(session, list.append(removal.written, removal.ended))
+      unit_left(session:, now:, entered:, unit_id:)
     }
+    unit_news.Removed -> unit_left(session:, now:, entered:, unit_id:)
     unit_news.CastStarted(start:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       use <- bool.guard(
@@ -1099,6 +1075,172 @@ fn refusal_logged(
   )
 }
 
+/// A player's or a creature's unit leaves the viewer's sight: when its client shows the
+/// unit, the audiences it was in are left and the unit's casts it still holds are
+/// finished before its 0x355 (`unit_removed`).
+fn unit_left(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+) -> client_connection.Handled(Session) {
+  use <- bool.guard(
+    when: !dict.has_key(entered.shown, unit_id),
+    return: Continue(session, []),
+  )
+  let session =
+    audiences_left(
+      session:,
+      viewers: viewers_of_unit(viewers: entered.viewers, unit_id:),
+    )
+  let kept =
+    list.filter(
+      client_casts.written_of_unit(casts: entered.client_casts, unit_id:),
+      fn(cast_id) {
+        list.contains(
+          held_changes.kept_casts_of_unit(held: entered.held, unit_id:),
+          cast_id,
+        )
+      },
+    )
+  let #(session, removal) =
+    unit_removed(session:, now:, entered:, unit_id:, keeping: kept)
+  Continue(session, list.append(removal.written, removal.ended))
+}
+
+/// What a viewer does with a chunk of a player's move (`SentByMove`): the move is applied,
+/// dropped or held by the generation it is stamped with and the one the viewer holds
+/// for the unit (genesis_prime/game/move_stamp). A move of a unit the map reported gone is
+/// dropped. A hold that overflows is warned of once.
+pub fn move_sent(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  move move: move_stamp.Move,
+) -> client_connection.Handled(Session) {
+  use <- bool.guard(
+    when: set.contains(entered.gone, move.unit_id),
+    return: Continue(session, []),
+  )
+  let #(stamp, verdict) = move_stamp.take(stamp: entered.stamp, move:)
+  let session = stamp_set(session:, stamp:)
+  case verdict {
+    move_stamp.Apply -> {
+      let #(session, written) = moves_released(session:, now:, released: [move])
+      Continue(session, written)
+    }
+    move_stamp.Drop | move_stamp.Hold(overflowed: False) ->
+      Continue(session, [])
+    move_stamp.Hold(overflowed: True) ->
+      Continue(session, [
+        connection_state.log(
+          session:,
+          level: step.LogWarning,
+          text: "a unit's moves wait for the map's notice of their sight past "
+            <> int.to_string(move_stamp.most_held_chunks)
+            <> " chunks, so the oldest is dropped: unit "
+            <> int.to_string(move.unit_id),
+        ),
+      ])
+  }
+}
+
+/// The session with the moves held for a notice that has come applied, in order, and
+/// what they write.
+fn moves_released(
+  session session: Session,
+  now now: Now,
+  released released: List(move_stamp.Move),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  list.fold(released, #(session, []), fn(held, move) {
+    let #(session, written) = held
+    let #(session, more) = move_applied(session:, now:, move:)
+    #(session, list.append(written, more))
+  })
+}
+
+/// A move of a unit the client shows: its 0x638 is written and the picture's place
+/// follows the move's last position; a unit the client does not show is written
+/// nothing.
+fn move_applied(
+  session session: Session,
+  now now: Now,
+  move move: move_stamp.Move,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let move_stamp.Move(unit_id:, server_time_ms:, commands:, ..) = move
+  case connection_state.entered_of(session.status) {
+    Some(entered) ->
+      case dict.has_key(entered.shown, unit_id) {
+        False -> #(session, [])
+        True -> {
+          let session = creatures_resolved(session:, now:)
+          let positions = position_commands(commands:)
+          let session = case
+            player_place(
+              commands: positions,
+              world_place: movement.place(entered.movement),
+            )
+          {
+            Some(place) ->
+              shown_changed(session:, change: shown.with_player_at(
+                picture: _,
+                unit_id:,
+                place:,
+              ))
+            None -> session
+          }
+          #(session, [
+            connection_state.to_client(
+              session,
+              connection_frames.unit_moved_frame(
+                unit_id:,
+                server_time_ms:,
+                commands:,
+              ),
+            ),
+          ])
+        }
+      }
+    None -> #(session, [])
+  }
+}
+
+/// The position commands of a move's relayed commands, in order.
+fn position_commands(
+  commands commands: List(relayed_movement.RelayedMovement),
+) -> List(UnitPositionCommand) {
+  list.filter_map(commands, fn(command) {
+    case command {
+      relayed_movement.Position(position) -> Ok(position)
+      relayed_movement.Time(..)
+      | relayed_movement.Platform(..)
+      | relayed_movement.TimedPath(..)
+      | relayed_movement.Path(..)
+      | relayed_movement.Velocity(..)
+      | relayed_movement.VelocityDefault(..)
+      | relayed_movement.MoveAsked(..)
+      | relayed_movement.MoveDefault(..)
+      | relayed_movement.Rotation(..)
+      | relayed_movement.RotationDefault(..)
+      | relayed_movement.FaceUnit(..)
+      | relayed_movement.FacePoint(..)
+      | relayed_movement.StateFlags(..)
+      | relayed_movement.StateDefault(..)
+      | relayed_movement.Mode(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The session with the viewer's hold of players' moves replaced.
+fn stamp_set(
+  session session: Session,
+  stamp stamp: move_stamp.Stamp,
+) -> Session {
+  connection_state.with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, stamp:)
+  })
+}
+
 /// A creature's or a player's health or death news, for a unit this client shows: its picture
 /// marks the unit dead at once, which a selection reads, and a player's copy takes the health
 /// (genesis_prime/game/player_state), and the frame is
@@ -1134,7 +1276,7 @@ fn creature_news(
     | unit_news.CameBackLogged
     | unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
-    | unit_news.Moving(..)
+    | unit_news.Departed(..)
     | unit_news.Removed
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)
@@ -1229,7 +1371,7 @@ fn life_news(
       ])
     unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
-    | unit_news.Moving(..)
+    | unit_news.Departed(..)
     | unit_news.Removed
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)

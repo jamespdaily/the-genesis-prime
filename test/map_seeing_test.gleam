@@ -24,6 +24,7 @@ import genesis_prime/step.{
   type ServiceStep, Asked, CallerId, ConnectionId, LogError, OwnEvent, Started,
   Told, WatchEnded, WatchId,
 }
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{
   type State, Join, Joined, Leave, Moved, Noticed, SeenBy, UnseenBy,
 }
@@ -225,6 +226,7 @@ pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_wat
           by: ConnectionId(2),
           stay: map_support.stay(count: 2),
           unit_id: second_unit,
+          generation: generation.first(),
         ),
       ),
       #(
@@ -234,12 +236,19 @@ pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_wat
           by: ConnectionId(1),
           stay: map_support.stay(count: 1),
           unit_id: first_unit,
+          generation: generation.after(generation: generation.first()),
         ),
       ),
     ]
   let #(_, left) = leave(state:, connection: 2, elapsed_ms: 300)
   assert notices(left)
-    == [#(1, map_support.stay(count: 1), UnseenBy(by: ConnectionId(2)))]
+    == [
+      #(
+        1,
+        map_support.stay(count: 1),
+        UnseenBy(by: ConnectionId(2), generation: generation.first()),
+      ),
+    ]
     as "an UnseenBy goes for the stay of the player still in the map"
 }
 
@@ -260,6 +269,11 @@ pub fn a_second_join_keeps_the_new_joins_stay_test() -> Nil {
           by: ConnectionId(2),
           stay: map_support.stay(count: 2),
           unit_id: joined_unit_id(second_join),
+          generation: generation.after(
+            generation: generation.after(
+              generation: generation.after(generation: generation.first()),
+            ),
+          ),
         ),
       ),
       #(
@@ -269,6 +283,9 @@ pub fn a_second_join_keeps_the_new_joins_stay_test() -> Nil {
           by: ConnectionId(1),
           stay: map_support.stay(count: 7),
           unit_id: joined_unit_id(first_join),
+          generation: generation.after(
+            generation: generation.after(generation: generation.first()),
+          ),
         ),
       ),
     ]

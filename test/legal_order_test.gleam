@@ -26,6 +26,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn}
@@ -277,11 +278,12 @@ pub fn legal_order_support_catches_a_frame_written_for_a_unit_after_its_removal_
   let #(_, late) =
     game_connection_support.feed(
       state: removed_state,
-      event: game_connection_support.sent_by_a_peer(
+      event: game_connection_support.sent_by_a_mover(
         game_connection_support.moving(
           unit_id: 7,
           server_time_ms: 0,
           commands: [],
+          generation: generation.first(),
         ),
       ),
     )

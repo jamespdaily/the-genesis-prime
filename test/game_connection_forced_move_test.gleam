@@ -19,7 +19,6 @@ import game_client
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request, TellMoved}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/unit_news.{Moving}
 import genesis_prime/message/float32
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
@@ -140,10 +139,16 @@ pub fn a_blink_the_client_reports_after_the_go_is_taken_and_relayed_as_any_move_
       blends: 0,
     )),
   ]
-  assert support.peer_tells(moved)
+  assert support.viewer_moves(taken: moved)
     == [
-      #(2, support.told(news: Moving(server_time_ms: 1000, commands: relayed))),
-      #(3, support.told(news: Moving(server_time_ms: 1000, commands: relayed))),
+      #(
+        2,
+        support.moved_for(viewer: 2, server_time_ms: 1000, commands: relayed),
+      ),
+      #(
+        3,
+        support.moved_for(viewer: 3, server_time_ms: 1000, commands: relayed),
+      ),
     ]
     as "each viewer is sent the move as it is relayed today, without kind 0"
 }

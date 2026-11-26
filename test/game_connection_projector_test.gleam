@@ -610,28 +610,26 @@ pub fn a_viewer_is_sent_the_move_to_the_landing_test() -> Nil {
   let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
   let placement = #(
     2,
-    connection_support.moving(
-      unit_id: connection_support.own_unit_id,
-      server_time_ms: 1000,
-      commands: [
-        relayed_movement.Position(bits_of(
-          x: 476.4630126953125,
-          y: -393.81201171875,
-          z: 254.22799682617188,
-        )),
-        // WorldLocation2 51616's identity facing converts to a pitch of -0, whose
-        // float32 bits are 0x80000000.
-        relayed_movement.Rotation(MovementRotation(
-          yaw: 0,
-          pitch: 0x80000000,
-          roll: 0,
-          blends: 0,
-        )),
-      ],
-    ),
+    connection_support.moved_for(viewer: 2, server_time_ms: 1000, commands: [
+      relayed_movement.Position(bits_of(
+        x: 476.4630126953125,
+        y: -393.81201171875,
+        z: 254.22799682617188,
+      )),
+      // WorldLocation2 51616's identity facing converts to a pitch of -0, whose
+      // float32 bits are 0x80000000.
+      relayed_movement.Rotation(MovementRotation(
+        yaw: 0,
+        pitch: 0x80000000,
+        roll: 0,
+        blends: 0,
+      )),
+    ]),
   )
   assert list.count(
-      list.flat_map(steps, connection_support.peer_tells),
+      list.flat_map(steps, fn(step) {
+        connection_support.viewer_moves(taken: step)
+      }),
       fn(tell) { tell == placement },
     )
     == 1

@@ -7,9 +7,7 @@
 ////   speed setting above 2, or a body the client's reader would refuse) ends the
 ////   connection: an error line, the last good place saved, nothing written.
 
-import genesis_prime/client_connection.{
-  type Request, Continue, TellMoved, TellPeer,
-}
+import genesis_prime/client_connection.{type Request, Continue, TellMoved}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
 import genesis_prime/game/connection/chat as connection_chat
@@ -17,6 +15,7 @@ import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/state.{type Session, InWorld, Session} as connection_state
 import genesis_prime/game/hit_radius
 import genesis_prime/game/in_world_move
+import genesis_prime/game/move_stamp
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
@@ -31,7 +30,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
-import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/set
@@ -325,11 +323,13 @@ fn tells_the_map_ready(
   )
 }
 
-/// The move sent to each connection that sees the player, as news of 0x638s of
-/// at most 31 relayed commands each, in order, stamped with the map's clock at the
+/// The move sent to each connection that sees the player, as chunks of at most 31
+/// relayed commands each, in order, each stamped with the generation and the stay the
+/// player's copy of its viewers holds for that viewer and with the map's clock at the
 /// time of the input (`map.server_time`, from the origin `Joined` carried): a send
-/// through the registry that the shell makes with no answer. None when no
-/// player sees this one.
+/// through the registry that the shell makes with no answer. None when no player
+/// sees this one. This is the only place a move is told to a player
+/// (genesis_prime/game/move_stamp).
 pub fn sends_the_move_to_the_viewers(
   entered entered: world_entry.Entered,
   now now: Now,
@@ -340,18 +340,18 @@ pub fn sends_the_move_to_the_viewers(
       origin_ms: entered.clock_origin_ms,
       monotonic_ms: now.monotonic_ms,
     )
-  let moves =
-    client_connection.peer_moves(
-      unit_id: entered.unit_id,
-      server_time_ms:,
-      commands:,
-    )
-  list.flat_map(dict.to_list(entered.viewers), fn(viewer) {
-    list.map(moves, fn(news) {
-      OwnEffect(step.Tell(
-        to: step.Connection(viewer.0),
-        request: TellPeer(stay: { viewer.1 }.stay, news:),
-      ))
-    })
+  list.map(map.sorted_by_connection(entered.viewers), fn(viewer) {
+    OwnEffect(step.Tell(
+      to: step.Connection(viewer.0),
+      request: client_connection.TellMove(
+        stay: { viewer.1 }.stay,
+        move: move_stamp.Move(
+          unit_id: entered.unit_id,
+          generation: { viewer.1 }.generation,
+          server_time_ms:,
+          commands:,
+        ),
+      ),
+    ))
   })
 }

@@ -118,7 +118,10 @@ pub fn a_viewer_writes_a_cast_start_only_for_a_caster_its_client_shows_and_a_go_
       state,
       game_connection_support.sent_by_a_peer(game_connection_support.news_of(
         unit_id: 9,
-        news: Appeared(game_connection_support.another_unit()),
+        news: Appeared(
+          game_connection_support.another_unit(),
+          generation: generation.first(),
+        ),
       )),
     )
   let go =
@@ -179,7 +182,10 @@ pub fn a_viewer_writes_the_finish_of_each_cast_of_a_unit_before_the_unit_is_remo
       game_connection_support.in_world(),
       game_connection_support.sent_by_a_peer(game_connection_support.news_of(
         unit_id: 9,
-        news: Appeared(game_connection_support.another_unit()),
+        news: Appeared(
+          game_connection_support.another_unit(),
+          generation: generation.first(),
+        ),
       )),
     )
   let #(state, _) =

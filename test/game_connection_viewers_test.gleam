@@ -12,7 +12,7 @@ import game_client
 import game_connection_support.{type Step, Appears, MapSaysGone, Moves, Removes}
 import game_wire_support
 import genesis_prime/client_connection.{
-  ForStay, FromMap, FromStore, SentByMap, SentByPeer, TellMoved,
+  ForStay, FromMap, FromStore, SentByMap, SentByMove, SentByPeer, TellMoved,
 }
 import genesis_prime/connection/cipher
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -25,6 +25,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/faction_level
 import genesis_prime/game/held_changes
 import genesis_prime/game/held_state
+import genesis_prime/game/move_stamp
 import genesis_prime/game/objective.{SpawnedUnit}
 import genesis_prime/game/player_address.{PlayerAddress, Viewer}
 import genesis_prime/game/shown
@@ -32,7 +33,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{
-  Appeared, CastFinished, LookChanged, Moving, PeerNews, PropertiesChanged,
+  Appeared, CastFinished, Departed, LookChanged, PeerNews, PropertiesChanged,
   Removed,
 }
 import genesis_prime/game/unit_properties
@@ -99,7 +100,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set
 import gleam/string
@@ -272,6 +273,7 @@ pub fn a_0x262_or_0x355_naming_the_viewers_own_unit_or_unit_0_is_refused_with_an
             ..game_connection_support.another_unit(),
             unit_id:,
           ),
+          generation: generation.first(),
         ),
         Removed,
       ],
@@ -302,32 +304,40 @@ pub fn a_0x262_or_0x355_naming_the_viewers_own_unit_or_unit_0_is_refused_with_an
 
 pub fn news_for_another_stay_is_dropped_for_each_kind_and_this_stays_is_written_test() -> Nil {
   use <- owned_test.run(10_000)
-  let in_stay = fn(stay, news) {
-    game_connection_support.for_stay(
-      stay,
-      SentByPeer(PeerNews(unit_id: 9, news:)),
+  let in_stay = fn(stay, sent) { game_connection_support.for_stay(stay, sent) }
+  let kinds =
+    list.append(
+      list.map(
+        [
+          Appeared(
+            unit: game_connection_support.another_unit(),
+            generation: generation.first(),
+          ),
+          Removed,
+          held_cast_started(cast_id: 2_147_497_985, caster: 7),
+        ],
+        fn(news) { SentByPeer(PeerNews(unit_id: 9, news:)) },
+      ),
+      [
+        SentByMove(game_connection_support.moving(
+          unit_id: 9,
+          generation: generation.first(),
+          server_time_ms: 1,
+          commands: game_connection_support.moved_unit_commands(),
+        )),
+      ],
     )
-  }
-  let kinds = [
-    Appeared(unit: game_connection_support.another_unit()),
-    Moving(
-      server_time_ms: 1,
-      commands: game_connection_support.moved_unit_commands(),
-    ),
-    Removed,
-    held_cast_started(cast_id: 2_147_497_985, caster: 7),
-  ]
   // The unit is shown first, so that every kind would be written but for its stay.
   let #(shown, _) =
     game_connection_support.feed(
       game_connection_support.in_world(),
       game_connection_support.event_of(Appears),
     )
-  list.each(kinds, fn(news) {
+  list.each(kinds, fn(sent) {
     let #(_, taken) =
       game_connection_support.feed(
         shown,
-        in_stay(map_support.stay(count: 2), news),
+        in_stay(map_support.stay(count: 2), sent),
       )
     assert support.writes(taken) == []
       as "another stay: in another run or map the unit id may name another unit"
@@ -337,7 +347,10 @@ pub fn news_for_another_stay_is_dropped_for_each_kind_and_this_stays_is_written_
   let #(_, taken) =
     game_connection_support.feed(
       shown,
-      in_stay(game_connection_support.own_stay(), Removed),
+      in_stay(
+        game_connection_support.own_stay(),
+        SentByPeer(PeerNews(unit_id: 9, news: Removed)),
+      ),
     )
   assert game_connection_support.written_ids(taken) == [0x0355]
     as "the stay the viewer is in"
@@ -346,7 +359,10 @@ pub fn news_for_another_stay_is_dropped_for_each_kind_and_this_stays_is_written_
       shown,
       in_stay(
         game_connection_support.own_stay(),
-        held_cast_started(cast_id: 2_147_497_985, caster: 7),
+        SentByPeer(PeerNews(
+          unit_id: 9,
+          news: held_cast_started(cast_id: 2_147_497_985, caster: 7),
+        )),
       ),
     )
   assert game_connection_support.written_ids(taken) == [0x07FF, 0x07F4]
@@ -377,8 +393,12 @@ pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test(
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
         unit_id: game_connection_support.viewer_unit_id(2),
+        generation: game_connection_support.viewer_sight(2),
       )),
-      game_connection_support.sent_by_the_map(UnseenBy(by: ConnectionId(2))),
+      game_connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(2),
+        generation: game_connection_support.viewer_sight(2),
+      )),
     ],
     fn(event) {
       let #(_, taken) = game_connection_support.feed(state, event)
@@ -533,9 +553,10 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
         unit_id: game_connection_support.viewer_unit_id(2),
+        generation: game_connection_support.viewer_sight(2),
       )),
     )
-  let assert [#(2, PeerNews(news: Appeared(unit: created), ..))] =
+  let assert [#(2, PeerNews(news: Appeared(unit: created, ..), ..))] =
     game_connection_support.peer_tells(taken)
     as "the viewer is sent the unit at once"
   let assert [passive] = created.tail.casts
@@ -544,15 +565,14 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
     == [
       #(
         2,
-        game_connection_support.told(
-          news: Appeared(
-            unit: appearance_at(
-              place: game_connection_support.entry_place(),
-              time_ms: 1000,
-              casts: [engineer_passive(cast_id: passive.cast_id)],
-            ),
+        game_connection_support.told(news: Appeared(
+          unit: appearance_at(
+            place: game_connection_support.entry_place(),
+            time_ms: 1000,
+            casts: [engineer_passive(cast_id: passive.cast_id)],
           ),
-        ),
+          generation: game_connection_support.viewer_sight(2),
+        )),
       ),
     ]
     as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit, and its copy lists the passive's buffs"
@@ -602,9 +622,10 @@ pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test
           by: ConnectionId(2),
           stay: game_connection_support.viewer_stay(2),
           unit_id: game_connection_support.viewer_unit_id(2),
+          generation: game_connection_support.viewer_sight(2),
         )),
       )
-    let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
+    let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
       game_connection_support.peer_tells(taken)
     assert list.map(unit.tail.stats, fn(stat) { stat.stat_id }) == [0, 10, 20]
       as "health, level and shield only: no class slot's stat and no stat 1"
@@ -637,9 +658,10 @@ pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
         unit_id: game_connection_support.viewer_unit_id(2),
+        generation: game_connection_support.viewer_sight(2),
       )),
     )
-  let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
+  let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
     game_connection_support.peer_tells(taken)
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
     unit.tail.movement_commands
@@ -663,14 +685,24 @@ pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves
   let #(state, taken) =
     game_connection_support.feed(
       state,
-      game_connection_support.sent_by_the_map(UnseenBy(by: ConnectionId(2))),
+      game_connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(2),
+        generation: game_connection_support.viewer_sight(2),
+      )),
     )
   assert game_connection_support.peer_tells(taken)
-    == [#(2, game_connection_support.told(news: Removed))]
-    as "the viewer that stops seeing the unit is sent its removal, and only that one"
+    == [
+      #(
+        2,
+        game_connection_support.told(
+          news: Departed(generation: game_connection_support.viewer_sight(2)),
+        ),
+      ),
+    ]
+    as "the viewer that stops seeing the unit is sent its removal, for the sight that ended, and only that one"
   assert list.map(
-      game_connection_support.peer_tells(
-        game_connection_support.read(state, moves).1,
+      game_connection_support.viewer_moves(
+        taken: game_connection_support.read(state, moves).1,
       ),
       fn(sent) { sent.0 },
     )
@@ -679,7 +711,10 @@ pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves
   let #(_, taken) =
     game_connection_support.feed(
       state,
-      game_connection_support.sent_by_the_map(UnseenBy(by: ConnectionId(8))),
+      game_connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(8),
+        generation: game_connection_support.viewer_sight(8),
+      )),
     )
   assert game_connection_support.peer_tells(taken) == []
     && support.logs(taken) == []
@@ -698,13 +733,13 @@ pub fn a_watched_twice_sends_the_0x262_twice_and_is_one_viewer_for_the_moves_tes
       2,
     ])
   assert list.map(
-      game_connection_support.peer_tells(
-        game_connection_support.read(state, moves).1,
+      game_connection_support.viewer_moves(
+        taken: game_connection_support.read(state, moves).1,
       ),
       fn(sent) { sent.0 },
     )
     == [2]
-    as "a viewer the map named twice is sent one move: the viewer's own record drops the second 0x262"
+    as "a viewer the map named twice is sent one move"
 }
 
 pub fn the_owners_camp_sends_each_viewer_its_0x355_before_the_leave_is_asked_test() -> Nil {
@@ -730,10 +765,20 @@ pub fn the_owners_camp_sends_each_viewer_its_0x355_before_the_leave_is_asked_tes
     )
   assert game_connection_support.peer_tells(taken)
     == [
-      #(2, game_connection_support.told(news: Removed)),
-      #(3, game_connection_support.told(news: Removed)),
+      #(
+        2,
+        game_connection_support.told(
+          news: Departed(generation: game_connection_support.viewer_sight(2)),
+        ),
+      ),
+      #(
+        3,
+        game_connection_support.told(
+          news: Departed(generation: game_connection_support.viewer_sight(3)),
+        ),
+      ),
     ]
-    as "its 0x355 to every viewer: the map's Unwatched after the leave would be a second sender"
+    as "its 0x355 to every viewer, each for the sight it ends: the map's Unwatched after the leave would be a second sender"
   assert game_connection_support.ask_request(taken)
     == game_connection_support.leave_asked()
     as "and the leave of the map is asked in the same step, after the tells"
@@ -770,22 +815,30 @@ pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_nothing_
     as "no viewer: no 0x638 is sent"
 }
 
-pub fn an_accepted_0x637_sends_one_0x638_to_each_viewer_with_the_relayed_commands_in_order_stamped_from_the_maps_clock_test() -> Nil {
+pub fn a_move_is_sent_to_each_viewer_in_the_owners_copy_with_its_own_generation_and_stay_in_chunks_of_31_after_the_map_is_told_the_place_and_to_no_one_else_test() -> Nil {
   use <- owned_test.run(10_000)
-  let sent = [
-    movement_command.Time(MovementTime(time: 99)),
-    game_client.position_command(x: 1.5, y: 2.5, z: 3.5),
-    movement_command.Mode(MovementMode(mode: 1)),
-  ]
-  let relayed = [
-    relayed_movement.Position(UnitPositionCommand(
-      x: 0x3FC00000,
-      y: 0x40200000,
-      z: 0x40600000,
-      blends: 0,
-    )),
-    relayed_movement.Mode(MovementMode(mode: 1)),
-  ]
+  // The viewers 2 and 3 are in the owner's copy, each with its own sight; connection 4
+  // is not, and the owner itself is connection 1. Forty positions are two chunks, since a
+  // 0x638's count is 5 bits (opcode.0x638).
+  let positions =
+    list.index_map(list.repeat(Nil, 40), fn(_, n) { int.to_float(n) })
+  let sent =
+    list.prepend(
+      list.map(positions, fn(x) {
+        game_client.position_command(x:, y: 0.0, z: 0.0)
+      }),
+      movement_command.Time(MovementTime(time: 99)),
+    )
+  let relayed =
+    list.map(positions, fn(x) {
+      relayed_movement.Position(UnitPositionCommand(
+        x: float32.to_bits(x),
+        y: float32.to_bits(0.0),
+        z: float32.to_bits(0.0),
+        blends: 0,
+      ))
+    })
+  let #(first, second) = list.split(relayed, 31)
   let #(_, taken) =
     game_connection_support.read(
       game_connection_support.watched_by(game_connection_support.in_world(), [
@@ -794,43 +847,39 @@ pub fn an_accepted_0x637_sends_one_0x638_to_each_viewer_with_the_relayed_command
       ]),
       game_connection_support.moves_message(sent),
     )
-  assert game_connection_support.peer_tells(taken)
+  assert game_connection_support.move_order(taken:)
     == [
-      #(
-        2,
-        game_connection_support.told(news: Moving(
-          server_time_ms: 1000,
-          commands: relayed,
-        )),
-      ),
-      #(
-        3,
-        game_connection_support.told(news: Moving(
-          server_time_ms: 1000,
-          commands: relayed,
-        )),
-      ),
+      "the map's place",
+      "a viewer's move",
+      "a viewer's move",
+      "a viewer's move",
+      "a viewer's move",
     ]
-    as "one 0x638 per viewer, never to the mover itself, the commands in the order sent without kind 0, the sender's own clock (movement_command.kind_0); the time is the input's 1000 ms from the map's origin 0"
-}
-
-pub fn a_move_of_40_commands_is_sent_to_each_viewer_as_31_and_9_in_order_and_the_encoder_refuses_32_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let commands =
-    list.index_map(list.repeat(Nil, 40), fn(_, n) {
-      game_client.position_command(x: int.to_float(n), y: 0.0, z: 0.0)
+    as "the map is told the place first, then each viewer's chunks"
+  assert game_connection_support.move_tells(taken:)
+    == list.flat_map([2, 3], fn(viewer) {
+      [
+        #(
+          viewer,
+          game_connection_support.viewer_stay(viewer),
+          game_connection_support.moved_for(
+            viewer:,
+            server_time_ms: 1000,
+            commands: first,
+          ),
+        ),
+        #(
+          viewer,
+          game_connection_support.viewer_stay(viewer),
+          game_connection_support.moved_for(
+            viewer:,
+            server_time_ms: 1000,
+            commands: second,
+          ),
+        ),
+      ]
     })
-  let #(_, taken) =
-    game_connection_support.read(
-      game_connection_support.watched_by(game_connection_support.in_world(), [2]),
-      game_connection_support.moves_message(commands),
-    )
-  let assert [
-    #(2, PeerNews(news: Moving(commands: first, ..), ..)),
-    #(2, PeerNews(news: Moving(commands: second, ..), ..)),
-  ] = game_connection_support.peer_tells(taken)
-    as "opcode.0x638: the count is 5 bits, so 40 commands are two messages"
-  assert list.length(first) == 31 && list.length(second) == 9
+    as "to each viewer of the copy, in its stay and stamped with its own sight, the relayed commands in order as 31 and then 9, from the map's clock at the input (the first 0x637 of a connection at 1000 ms from origin 0); none to connection 4 or to the owner itself"
   assert unit_movement.encode(UnitMovement(
       unit_id: game_connection_support.own_unit_id,
       server_time: 1,
@@ -871,18 +920,18 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
         state,
         support.input_at_ms(ms: monotonic_ms, event: OwnEvent(step.Read(moves))),
       ).1
-    let assert [#(2, PeerNews(news: Moving(server_time_ms:, ..), ..))] =
-      game_connection_support.peer_tells(taken)
-    server_time_ms
+    let assert [#(2, move)] = game_connection_support.viewer_moves(taken:)
+    move.server_time_ms
   }
   let create_time = fn(monotonic_ms) {
-    let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
+    let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
       game_connection_support.peer_tells(at(
         monotonic_ms,
         game_connection_support.sent_by_the_map(SeenBy(
           by: ConnectionId(2),
           stay: game_connection_support.viewer_stay(2),
           unit_id: game_connection_support.viewer_unit_id(2),
+          generation: game_connection_support.viewer_sight(2),
         )),
       ))
     unit.tail.server_time_estimate_start
@@ -951,12 +1000,13 @@ pub fn a_viewer_set_is_empty_after_a_camp_and_a_new_join_and_comes_back_only_by_
           by: ConnectionId(4),
           stay: game_connection_support.viewer_stay(4),
           unit_id: game_connection_support.viewer_unit_id(4),
+          generation: game_connection_support.viewer_sight(4),
         )),
       ),
     )
   assert list.map(
-      game_connection_support.peer_tells(
-        game_connection_support.read(again, moves).1,
+      game_connection_support.viewer_moves(
+        taken: game_connection_support.read(again, moves).1,
       ),
       fn(sent) { sent.0 },
     )
@@ -1010,9 +1060,8 @@ pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_rel
   let assert [line] = support.logs_of(step: first, level: LogInfo)
     as "an info line names the kind"
   assert support.says(line, words: "kind 10")
-  let assert [#(2, PeerNews(news: Moving(commands:, ..), ..))] =
-    game_connection_support.peer_tells(first)
-  assert list.length(commands) == 1 as "the kind 10 is not relayed"
+  let assert [#(2, move)] = game_connection_support.viewer_moves(taken: first)
+  assert list.length(move.commands) == 1 as "the kind 10 is not relayed"
   let #(_, second) = game_connection_support.read(state, message)
   assert support.logs_of(step: second, level: LogInfo) == []
     as "named once on a connection"
@@ -1047,13 +1096,17 @@ fn stay_messages(
         by: ConnectionId(3),
         stay: game_connection_support.viewer_stay(3),
         unit_id: game_connection_support.viewer_unit_id(3),
+        generation: game_connection_support.viewer_sight(3),
       )),
     ),
     #(
       "a peer's 0x262",
       SentByPeer(game_connection_support.news_of(
         unit_id: 9,
-        news: Appeared(unit: game_connection_support.another_unit()),
+        news: Appeared(
+          unit: game_connection_support.another_unit(),
+          generation: generation.first(),
+        ),
       )),
     ),
     #(
@@ -1581,7 +1634,10 @@ pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_
   let #(_, unseen) =
     game_connection_support.feed(
       state,
-      game_connection_support.sent_by_the_map(UnseenBy(by: ConnectionId(2))),
+      game_connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(2),
+        generation: game_connection_support.viewer_sight(2),
+      )),
     )
   list.each([2, 3], fn(viewer) {
     let assert [LookChanged(..), PropertiesChanged(..), ..] =
@@ -1590,7 +1646,7 @@ pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_
     Nil
   })
   assert game_connection_support.news_told(taken: unseen, viewer: 2)
-    == [Removed]
+    == [Departed(generation: game_connection_support.viewer_sight(2))]
     as "then the viewer that left is told the unit is removed"
   assert game_connection_support.news_told(taken: unseen, viewer: 3) == []
     as "and the viewer that stayed is told nothing more"
@@ -1829,10 +1885,10 @@ pub fn a_unit_create_lists_the_casts_of_the_unit_and_the_casts_of_others_it_hold
           game_connection_support.sent_by_a_peer(
             game_connection_support.news_of(
               unit_id: 9,
-              news: Appeared(game_connection_support.another_unit_casting(
-                casts:,
-                cast_id:,
-              )),
+              news: Appeared(
+                game_connection_support.another_unit_casting(casts:, cast_id:),
+                generation: generation.first(),
+              ),
             ),
           ),
         )
@@ -1928,6 +1984,7 @@ fn created_listing(
       ..game_connection_support.another_unit_casting(casts:, cast_id: 0),
       unit_id:,
     ),
+    generation: generation.first(),
   )
 }
 
@@ -2197,6 +2254,7 @@ pub fn a_cast_an_ally_starts_is_written_once_borrowed_from_the_ally_and_dropped_
       by: ConnectionId(3),
       stay: game_connection_support.viewer_stay(3),
       unit_id: orphan_caster,
+      generation: game_connection_support.viewer_sight(3),
     )),
     game_connection_support.for_stay(
       stay: game_connection_support.own_stay(),
@@ -2393,8 +2451,13 @@ fn discharge_told_on(
               by: ConnectionId(3),
               stay: game_connection_support.viewer_stay(3),
               unit_id: game_connection_support.viewer_unit_id(3),
+              generation: game_connection_support.viewer_sight(3),
             )
-          Goes(..) -> UnseenBy(by: ConnectionId(3))
+          Goes(..) ->
+            UnseenBy(
+              by: ConnectionId(3),
+              generation: game_connection_support.viewer_sight(3),
+            )
         }
         let #(state, moved) =
           game_connection_support.at(
@@ -2705,12 +2768,13 @@ pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> 
     ))
   }
   let caster_created_with_the_cast =
-    from_the_caster(
-      Appeared(game_connection_support.another_unit_casting(
+    from_the_caster(Appeared(
+      game_connection_support.another_unit_casting(
         casts: [game_connection_support.listed_cast(cast_id: given, caster: 9)],
         cast_id: given,
-      )),
-    )
+      ),
+      generation: generation.first(),
+    ))
   list.each(
     [
       #(
@@ -2791,6 +2855,7 @@ fn seen_by(viewer viewer: Int, unit_id unit_id: Int) -> map.Notice {
     by: ConnectionId(viewer),
     stay: game_connection_support.viewer_stay(viewer),
     unit_id:,
+    generation: game_connection_support.viewer_sight(viewer),
   )
 }
 
@@ -2836,9 +2901,9 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
       let #(why, notices, shown_units, expected_units) = row
       let viewers =
         list.map(notices, fn(notice) {
-          let assert SeenBy(by:, stay:, unit_id:) = notice
+          let assert SeenBy(by:, stay:, unit_id:, ..) = notice
             as "the rows hold SeenBy notices"
-          #(by, Viewer(stay:, unit_id:))
+          #(by, Viewer(stay:, unit_id:, generation: generation.first()))
         })
         |> dict.from_list
       let picture =
@@ -2846,7 +2911,7 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
         |> dict.from_list
       let expected =
         list.filter_map(notices, fn(notice) {
-          let assert SeenBy(by:, stay:, unit_id:) = notice
+          let assert SeenBy(by:, stay:, unit_id:, ..) = notice
             as "the rows hold SeenBy notices"
           case list.contains(expected_units, unit_id) {
             True ->
@@ -2871,6 +2936,7 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
         by: ConnectionId(3),
         stay: later_stay,
         unit_id: game_connection_support.viewer_unit_id(3),
+        generation: game_connection_support.viewer_sight(3),
       )),
     )
   let #(_, moved) =
@@ -2880,7 +2946,7 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
         game_client.position_command(x: 1.0, y: 2.0, z: 3.0),
       ]),
     )
-  assert list.map(game_connection_support.peer_tells_for(moved), fn(sent) {
+  assert list.map(game_connection_support.move_tells(taken: moved), fn(sent) {
       #(sent.0, sent.1)
     })
     == [#(3, later_stay)]
@@ -3076,10 +3142,6 @@ pub fn a_player_that_comes_into_sight_is_shown_with_what_a_press_judges_of_it_te
         cast_id: 6,
         instance_id: 5,
       ),
-      unit_news.Moving(
-        server_time_ms: 7,
-        commands: game_connection_support.moved_unit_commands(),
-      ),
       unit_news.Removed,
     ])
     == [
@@ -3089,10 +3151,9 @@ pub fn a_player_that_comes_into_sight_is_shown_with_what_a_press_judges_of_it_te
       [0x089A],
       [0x087F],
       [0x0880],
-      [0x0638],
       [0x0355],
     ]
-    as "each news writes the frames it wrote before the picture held a player's state: Health 0x937, CameBack and Died 0x88c, CombatState 0x89a, 0x87f, 0x880, 0x638 and 0x355"
+    as "each news writes the frames it wrote before the picture held a player's state: Health 0x937, CameBack and Died 0x88c, CombatState 0x89a, 0x87f, 0x880 and 0x355"
 }
 
 /// The ids of the messages the viewer writes for each news of the unit 9 in turn, once the
@@ -3174,13 +3235,16 @@ pub fn a_players_health_news_and_its_base_health_change_keep_its_copys_health_an
         entered:,
       )),
       9,
-      Appeared(unit: player_with(
-        faction: 167,
-        health: 5000,
-        pvp_flags: 0,
-        group_id: 0,
-        place: there,
-      )),
+      Appeared(
+        unit: player_with(
+          faction: 167,
+          health: 5000,
+          pvp_flags: 0,
+          group_id: 0,
+          place: there,
+        ),
+        generation: generation.first(),
+      ),
     )
   assert copy_of(session, 9) == #(True, 5000, players_base_health)
     as "the copy holds the health stat and the Base Health of the 0x262"
@@ -3733,4 +3797,460 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
   assert creature_fight.threatened(state: creature.fight(state: creature_state))
     == set.new()
     as "and its threat entry goes with it"
+}
+
+// ---- a player's move at its viewer: the sight number it is stamped with
+//
+// Expected values: the rule of genesis_prime/game/move_stamp (a viewer applies a move only
+// for the generation it holds, drops an older one, holds a newer one until the map's notice
+// of its generation, and remembers a unit that left by the last generation that ended).
+// Each move is made by the mover's own rule from a copy that holds the viewer at the sight
+// the row names, then given the unit 9's id, so the viewer shows it as the unit it holds.
+
+/// The generation the row's number names: the `n`th the tests' map gave.
+fn sight(n n: Int) -> generation.Generation {
+  game_connection_support.viewer_sight(n)
+}
+
+/// A move of the unit 9 for the sight `sight_number`, as the mover's rule sends it to a
+/// viewer whose sight of it is that one, with the position x.
+fn move_of_unit_9(
+  sight_number sight_number: Int,
+  x x: Float,
+) -> move_stamp.Move {
+  let state =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(2),
+        stay: game_connection_support.viewer_stay(2),
+        unit_id: game_connection_support.viewer_unit_id(2),
+        generation: sight(n: sight_number),
+      )),
+    ).0
+  let #(_, taken) =
+    game_connection_support.read(state, game_connection_support.a_move(x))
+  let assert [#(2, _, move)] = game_connection_support.move_tells(taken:)
+    as "the mover sends its one viewer one chunk"
+  move_stamp.Move(..move, unit_id: 9)
+}
+
+/// The player in the world, its client holding nothing yet.
+fn moving_viewer() -> connection_state.Session {
+  game_connection_support.session_in(status: connection_state.InWorld(
+    holder: game_connection_support.holder(),
+    entered: world_entry_support.entered_after(clock_origin_ms: 600),
+  ))
+}
+
+/// What a viewer's function of a message about a unit does.
+type Done =
+  step.Step(
+    client_connection.Request,
+    step.ConnectionEffect(client_connection.Request),
+  )
+
+/// The session after a message about a unit, and what it does.
+type Taken =
+  #(connection_state.Session, Done)
+
+fn taken_from(
+  handled: client_connection.Handled(connection_state.Session),
+) -> Taken {
+  let assert client_connection.Continue(session:, effects:) = handled
+    as "the viewer continues"
+  #(session, step.Effects(effects:))
+}
+
+fn entered_of(
+  session session: connection_state.Session,
+) -> world_entry.Entered {
+  let assert Some(entered) = connection_state.entered_of(session.status)
+    as "the player is in the world"
+  entered
+}
+
+const at_ms_zero = step.Now(monotonic_ms: 0, filetime: 0)
+
+/// The unit `unit_id` is created in the viewer's client, for the sight `sight_number`.
+fn appeared(
+  session session: connection_state.Session,
+  unit_id unit_id: Int,
+  sight_number sight_number: Int,
+) -> Taken {
+  viewers.viewer_takes(
+    session:,
+    now: at_ms_zero,
+    entered: entered_of(session:),
+    news: PeerNews(
+      unit_id:,
+      news: Appeared(
+        unit: UnitCreatePlayer(
+          ..game_connection_support.another_unit(),
+          unit_id:,
+        ),
+        generation: sight(n: sight_number),
+      ),
+    ),
+  )
+  |> taken_from
+}
+
+/// The sight `sight_number` of the unit 9 ends.
+fn departed_at(
+  session session: connection_state.Session,
+  sight_number sight_number: Int,
+) -> Taken {
+  viewers.viewer_takes(
+    session:,
+    now: at_ms_zero,
+    entered: entered_of(session:),
+    news: PeerNews(
+      unit_id: 9,
+      news: Departed(generation: sight(n: sight_number)),
+    ),
+  )
+  |> taken_from
+}
+
+/// The map reports the unit 9 gone.
+fn reported_gone(session session: connection_state.Session) -> Taken {
+  viewers.map_sent(
+    session:,
+    now: at_ms_zero,
+    entered: entered_of(session:),
+    notice: map.Gone(unit_id: 9),
+  )
+  |> taken_from
+}
+
+/// The viewer takes a chunk of a move.
+fn moved(
+  session session: connection_state.Session,
+  move move: move_stamp.Move,
+) -> Taken {
+  viewers.move_sent(
+    session:,
+    now: at_ms_zero,
+    entered: entered_of(session:),
+    move:,
+  )
+  |> taken_from
+}
+
+/// The ids of the messages the step writes.
+fn written(taken taken: Done) -> List(Int) {
+  list.map(frames_of(taken:), fn(frame) { frame.message_id })
+}
+
+/// The frames the step writes, as the client reads them from a session that holds the base
+/// cipher.
+fn frames_of(taken taken: Done) -> List(Frame) {
+  game_connection_support.heard(taken:, cipher: game_connection_support.base())
+}
+
+/// The x each 0x638 the step writes puts its unit at, in order, as the client's float bits.
+fn written_xs(taken taken: Done) -> List(Int) {
+  list.filter_map(frames_of(taken:), fn(frame) {
+    case frame.message_id == 0x0638 {
+      False -> Error(Nil)
+      True -> {
+        let assert Ok(moved) = unit_movement.decode(frame.body)
+          as "a 0x638 decodes"
+        let assert [relayed_movement.Position(position), ..] = moved.commands
+          as "the first command is the position"
+        Ok(position.x)
+      }
+    }
+  })
+}
+
+/// The chunks the viewer holds for the unit `unit_id`.
+fn chunks_held(
+  session session: connection_state.Session,
+  unit_id unit_id: Int,
+) -> Int {
+  case dict.get({ entered_of(session:) }.stamp.holds, unit_id) {
+    Ok(waiting) -> list.length(waiting.moves)
+    Error(Nil) -> 0
+  }
+}
+
+/// The place the picture holds for the unit 9.
+fn picture_place(session session: connection_state.Session) -> Option(Place) {
+  let assert Ok(shown.ShownPlayer(state:)) =
+    dict.get({ entered_of(session:) }.shown, 9)
+    as "the unit 9 is a shown player"
+  state.place
+}
+
+pub fn a_move_is_applied_only_for_the_generation_the_viewer_holds_an_older_one_is_dropped_and_a_newer_one_or_one_for_a_unit_not_held_is_held_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Each row: what the viewer was told of the unit 9 (True: its 0x262 for the sight `n`,
+  // False: the end of the sight `n`), the sight the move is stamped with, whether the
+  // move is written and moves the picture, and how many chunks the viewer holds after it.
+  let unseen = []
+  let held_5 = [#(True, 5)]
+  let departed_5 = [#(True, 5), #(False, 5)]
+  let rows = [
+    #("a move of the held sight", held_5, 5, True, 0),
+    #("an older move than the held sight", held_5, 4, False, 0),
+    #("a newer move than the held sight", held_5, 6, False, 1),
+    #("a move of the sight that ended", departed_5, 5, False, 0),
+    #("an older move than the sight that ended", departed_5, 4, False, 0),
+    #("a newer move than the sight that ended", departed_5, 6, False, 1),
+    #("a move of a unit the viewer holds nothing of", unseen, 3, False, 1),
+  ]
+  list.each(rows, fn(row) {
+    let #(reason, told, stamped, applied, held) = row
+    let session =
+      list.fold(told, moving_viewer(), fn(session, told) {
+        case told {
+          #(True, n) -> appeared(session:, unit_id: 9, sight_number: n).0
+          #(False, n) -> departed_at(session:, sight_number: n).0
+        }
+      })
+    let #(moved_session, taken) =
+      moved(session:, move: move_of_unit_9(sight_number: stamped, x: 77.0))
+    assert written(taken:)
+      == case applied {
+        True -> [0x0638]
+        False -> []
+      }
+      as { reason <> ": what is written" }
+    assert chunks_held(session: moved_session, unit_id: 9) == held
+      as { reason <> ": what the viewer holds after it" }
+    case applied, dict.get({ entered_of(session: moved_session) }.shown, 9) {
+      True, Ok(shown.ShownPlayer(state:)) -> {
+        let assert Some(place) = state.place
+          as "the picture holds the move's place"
+        assert start_place.x(place) == 77.0
+          as { reason <> ": the picture is at the move's place" }
+        Nil
+      }
+      False, Ok(shown.ShownPlayer(..)) -> {
+        assert picture_place(session: moved_session) == picture_place(session:)
+          as { reason <> ": the picture does not move" }
+        Nil
+      }
+      _, Ok(_) | _, Error(Nil) -> Nil
+    }
+  })
+}
+
+pub fn the_notice_of_a_generation_writes_the_0x262_then_the_held_moves_of_that_generation_in_order_drops_older_ones_and_keeps_newer_ones_and_a_released_move_moves_the_picture_as_a_move_taken_at_once_does_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The viewer holds nothing of the unit 9 and is sent four moves before its notices:
+  // 5a, 5b, 4c and 6d, of x 10, 20, 30 and 40.
+  let held =
+    list.fold(
+      [#(5, 10.0), #(5, 20.0), #(4, 30.0), #(6, 40.0)],
+      moving_viewer(),
+      fn(session, move) {
+        let #(sight_number, x) = move
+        moved(session:, move: move_of_unit_9(sight_number:, x:)).0
+      },
+    )
+  assert chunks_held(session: held, unit_id: 9) == 4
+    as "no notice yet: every move is held"
+  let #(session, taken) = appeared(session: held, unit_id: 9, sight_number: 5)
+  assert written(taken:) == [0x0262, 0x0638, 0x0638]
+    as "the 0x262 first, then the held moves of that sight"
+  assert written_xs(taken:) == [float32.to_bits(10.0), float32.to_bits(20.0)]
+    as "in the order they arrived; 4c is dropped and 6d is not written"
+  assert chunks_held(session:, unit_id: 9) == 1
+    as "the move of a later sight is still held"
+  let direct =
+    list.fold(
+      [#(5, 10.0), #(5, 20.0)],
+      appeared(session: moving_viewer(), unit_id: 9, sight_number: 5).0,
+      fn(session, move) {
+        let #(sight_number, x) = move
+        moved(session:, move: move_of_unit_9(sight_number:, x:)).0
+      },
+    )
+  assert picture_place(session:) == picture_place(session: direct)
+    as "a released move moves the picture as one taken at once does"
+  let #(session, taken) = departed_at(session:, sight_number: 5)
+  assert written(taken:) == [0x0355] as "the end of the sight writes the 0x355"
+  assert chunks_held(session:, unit_id: 9) == 1
+    as "and drops nothing of a later sight"
+}
+
+pub fn a_unit_that_left_is_remembered_by_its_last_generation_so_a_late_move_of_that_sight_is_dropped_and_not_held_and_a_later_sight_is_held_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let session =
+    appeared(session: moving_viewer(), unit_id: 9, sight_number: 5).0
+  let session = departed_at(session:, sight_number: 5).0
+  let #(session, taken) =
+    moved(session:, move: move_of_unit_9(sight_number: 5, x: 1.0))
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 0
+    as "a late move of the sight that ended is dropped, and nothing waits for a notice that never comes"
+  let #(session, taken) =
+    moved(session:, move: move_of_unit_9(sight_number: 6, x: 2.0))
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 1
+    as "a move of a later sight is held for its notice"
+  let #(session, _) = reported_gone(session:)
+  assert chunks_held(session:, unit_id: 9) == 0
+    as "the owner's end drops what was held for it"
+  let #(session, taken) =
+    moved(session:, move: move_of_unit_9(sight_number: 5, x: 3.0))
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 0
+    as "the memory outlives the owner's end: a late move of the sight is dropped"
+}
+
+pub fn a_viewer_holds_at_most_sixteen_chunks_of_a_unit_drops_the_oldest_with_one_warning_and_loses_every_hold_with_its_stay_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 17 chunks of the sight 6 for the unit 9, at x 1 to 17, and 3 of the sight 4 for the
+  // unit 8, all before any notice.
+  let xs =
+    list.map(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+      int.to_float,
+    )
+  let #(session, warnings) =
+    list.fold(xs, #(moving_viewer(), []), fn(held, x) {
+      let #(session, warnings) = held
+      let #(session, taken) =
+        moved(session:, move: move_of_unit_9(sight_number: 6, x:))
+      #(
+        session,
+        list.append(warnings, support.logs_of(step: taken, level: LogWarning)),
+      )
+    })
+  assert list.length(warnings) == 1
+    as "the hold is warned of once, when its 17th chunk drops the first"
+  assert chunks_held(session:, unit_id: 9) == 16
+    as "a hold is at most 16 chunks"
+  let session =
+    list.fold([1.0, 2.0, 3.0], session, fn(session, x) {
+      moved(
+        session:,
+        move: move_stamp.Move(..move_of_unit_9(sight_number: 4, x:), unit_id: 8),
+      ).0
+    })
+  let #(session, taken) = appeared(session:, unit_id: 9, sight_number: 6)
+  assert written_xs(taken:)
+    == list.map([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], fn(x) {
+      float32.to_bits(int.to_float(x))
+    })
+    as "the notice releases the 16 chunks the hold kept, in order, without the dropped oldest"
+  assert chunks_held(session:, unit_id: 8) == 3
+    as "the other unit's hold is untouched"
+  // A new stay holds none: the chunk held in the first stay is not written when the
+  // second stay's notice of the unit comes.
+  let #(held, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_a_mover(move_of_unit_9(
+        sight_number: 6,
+        x: 1.0,
+      )),
+    )
+  let #(state, _) =
+    game_connection_support.read(
+      held,
+      game_connection_support.camp_request_message(True),
+    )
+  let #(state, taken) =
+    game_connection_support.read(
+      state,
+      game_connection_support.camp_finished_message(),
+    )
+  let #(state, taken) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: game_connection_support.place_saved(),
+    )
+  let #(state, taken) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(Left)),
+    )
+  assert game_connection_support.written_ids(taken) == [0x0594]
+  let #(state, taken) =
+    game_connection_support.read(state, game_connection_support.select_start())
+  let #(state, _) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Listed([])))),
+    )
+  let #(again, _) =
+    game_connection_support.entered_from(
+      state,
+      game_connection_support.world_character(),
+    )
+  let #(_, taken) =
+    game_connection_support.feed(
+      again,
+      game_connection_support.in_second_stay(
+        game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+          unit_id: 9,
+          news: Appeared(
+            unit: game_connection_support.another_unit(),
+            generation: sight(n: 6),
+          ),
+        )),
+      ),
+    )
+  assert game_connection_support.written_ids(taken) == [0x0262]
+    as "the second stay writes the unit's 0x262 and no move: the first stay's hold went with it"
+}
+
+pub fn a_players_copy_takes_the_generation_the_map_gave_each_viewer_and_an_unseen_of_an_earlier_generation_leaves_a_newer_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let moves = game_connection_support.a_move(1.5)
+  let move_to_2 = fn(state) {
+    game_connection_support.viewer_moves(
+      taken: game_connection_support.read(state, moves).1,
+    )
+  }
+  let #(state, _) =
+    game_connection_support.feed(
+      game_connection_support.in_world(),
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(2),
+        stay: game_connection_support.viewer_stay(2),
+        unit_id: game_connection_support.viewer_unit_id(2),
+        generation: sight(n: 5),
+      )),
+    )
+  let assert [#(2, move)] = move_to_2(state)
+    as "the viewer of the copy is sent the move"
+  assert move.generation == sight(n: 5)
+    as "the copy holds the generation the map gave, and stamps the move with it"
+  let #(state, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(2),
+        generation: sight(n: 3),
+      )),
+    )
+  assert game_connection_support.peer_tells(taken) == []
+    && support.logs(taken) == []
+    as "an end of an earlier sight than the one the copy holds sends no removal"
+  let assert [#(2, still)] = move_to_2(state)
+    as "and the newer entry stays in the copy"
+  assert still.generation == sight(n: 5)
+  let #(state, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(2),
+        generation: sight(n: 5),
+      )),
+    )
+  assert game_connection_support.peer_tells(taken)
+    == [
+      #(
+        2,
+        game_connection_support.told(news: Departed(generation: sight(n: 5))),
+      ),
+    ]
+    as "the end of the sight the copy holds sends the removal for it"
+  assert move_to_2(state) == [] as "and deletes the entry: no more moves"
 }

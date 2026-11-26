@@ -2,7 +2,7 @@
 //// the map named, which a tell to them is addressed by.
 ////
 //// ```
-//// map: SeenBy(by, stay, unit_id) ─▶ viewers: Dict(ConnectionId, Viewer)
+//// map: SeenBy(by, stay, unit_id, generation) ─▶ viewers: Dict(ConnectionId, Viewer)
 //// map and peer news: ShownPlayer units ─▶ picture: Dict(unit_id, Shown)
 ////                                       viewers + picture ─▶ in_sight ─▶ Dict(unit_id, PlayerAddress)
 ////                                                         ─▶ states_in_sight ─▶ Dict(unit_id, PlayerState)
@@ -18,14 +18,16 @@
 import genesis_prime/game/player_state.{type PlayerState}
 import genesis_prime/game/shown
 import genesis_prime/step.{type ConnectionId}
+import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict.{type Dict}
 import gleam/list
 
 /// A player who sees this connection's player, as the map's `SeenBy` named it: the stay
-/// its connection is in and the unit id the map gave it.
+/// its connection is in, the unit id the map gave it and the generation of its sight, which
+/// stamps each move sent to it (genesis_prime/game/move_stamp).
 pub type Viewer {
-  Viewer(stay: Stay, unit_id: Int)
+  Viewer(stay: Stay, unit_id: Int, generation: Generation)
 }
 
 /// A player in sight, as its notice named it: what a tell to its connection is addressed
@@ -41,7 +43,7 @@ pub fn in_sight(
 ) -> Dict(Int, PlayerAddress) {
   dict.to_list(viewers)
   |> list.filter_map(fn(entry) {
-    let #(connection, Viewer(stay:, unit_id:)) = entry
+    let #(connection, Viewer(stay:, unit_id:, ..)) = entry
     case dict.get(picture, unit_id) {
       Ok(shown.ShownPlayer(..)) ->
         Ok(#(unit_id, PlayerAddress(connection:, unit_id:, stay:)))

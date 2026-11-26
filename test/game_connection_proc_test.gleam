@@ -49,6 +49,7 @@ import genesis_prime/step.{
   LogWarning, Now, OwnEvent,
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
 import gleam/dict
 import gleam/float
@@ -982,7 +983,11 @@ fn caster_holding_an_ally_proc(
       viewers: dict.from_list([
         #(
           ConnectionId(2),
-          player_address.Viewer(stay: address.stay, unit_id: ally_unit),
+          player_address.Viewer(
+            stay: address.stay,
+            unit_id: ally_unit,
+            generation: generation.first(),
+          ),
         ),
       ]),
       shown: dict.insert(

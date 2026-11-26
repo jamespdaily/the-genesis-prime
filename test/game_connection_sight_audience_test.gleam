@@ -18,10 +18,11 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/unit_news.{Appeared, CastFinished, Moving, Removed}
+import genesis_prime/game/unit_news.{Appeared, CastFinished, Removed}
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/loader/store as store_tables
+import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{SeenBy, UnseenBy}
 import gleam/list
 import gleam/option.{None}
@@ -83,6 +84,7 @@ fn armor_held_on_the_ally(
         by: ConnectionId(ally.connection),
         stay: connection_support.viewer_stay(ally.connection),
         unit_id: ally.unit_id,
+        generation: connection_support.viewer_sight(ally.connection),
       )),
     )
   let #(state, _) =
@@ -95,6 +97,7 @@ fn armor_held_on_the_ally(
             ..connection_support.another_unit(),
             unit_id: ally.unit_id,
           ),
+          generation: generation.first(),
         ),
       ),
     )
@@ -163,9 +166,10 @@ pub fn a_removed_unit_heard_before_the_maps_unseen_by_is_out_of_the_cast_audienc
     let #(reason, ally, order) = row
     let removal = ally_event(ally:, news: Removed)
     let unseen =
-      connection_support.sent_by_the_map(
-        UnseenBy(by: ConnectionId(ally.connection)),
-      )
+      connection_support.sent_by_the_map(UnseenBy(
+        by: ConnectionId(ally.connection),
+        generation: connection_support.viewer_sight(ally.connection),
+      ))
     let events = case order {
       RemovalFirst -> [removal, unseen]
       UnseenFirst -> [unseen, removal]
@@ -202,15 +206,9 @@ pub fn a_removed_unit_heard_before_the_maps_unseen_by_is_out_of_the_cast_audienc
     assert connection_support.news_told(taken: moved, viewer: ally.connection)
       == []
       as { reason <> ": the ally is out of the viewers" }
-    assert list.any(
-      connection_support.news_told(taken: moved, viewer: 2),
-      fn(news) {
-        case news {
-          Moving(..) -> True
-          _ -> False
-        }
-      },
-    )
+    assert list.any(connection_support.viewer_moves(taken: moved), fn(tell) {
+      tell.0 == 2
+    })
       as { reason <> ": the control viewer is still told the move" }
   })
 }

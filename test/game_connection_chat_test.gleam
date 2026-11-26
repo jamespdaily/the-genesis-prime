@@ -124,6 +124,7 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
         unit_id: game_connection_support.viewer_unit_id(2),
+        generation: game_connection_support.viewer_sight(2),
       )),
     )
   assert peer_tell_kinds(line_first) == []
@@ -139,6 +140,7 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
         by: ConnectionId(2),
         stay: game_connection_support.viewer_stay(2),
         unit_id: game_connection_support.viewer_unit_id(2),
+        generation: game_connection_support.viewer_sight(2),
       )),
     )
   let #(_, line) =
