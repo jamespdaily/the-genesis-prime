@@ -44,6 +44,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/start_place
 import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/load_moves
+import genesis_prime/load_queue
 import genesis_prime/load_run
 import genesis_prime/server
 import genesis_prime/service
@@ -611,7 +612,7 @@ fn report(
   samples samples: Subject(Sample),
 ) -> Nil {
   let _settings = settings
-  let #(longest, queued, probed, running) = load_moves.stop_probe()
+  let probe = load_moves.stop_probe()
   let by_time = list.reverse(drain(samples, []))
   case by_time {
     [] -> io.println("no sample was taken")
@@ -620,17 +621,7 @@ fn report(
       io.println(totals(by_time:, first:))
     }
   }
-  io.println(
-    "the map's message queue: longest "
-    <> int.to_string(longest)
-    <> ", mean "
-    <> load_moves.per(total: queued, count: probed)
-    <> " over "
-    <> int.to_string(probed)
-    <> " samples, one every 10 ms; its process was found running in "
-    <> load_moves.percent(part: running, whole: probed)
-    <> " of them",
-  )
+  io.println(load_queue.summary(probe:))
 }
 
 /// The line of a sample taken a whole 30 s after the first, and none for another.
