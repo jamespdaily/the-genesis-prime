@@ -14,7 +14,7 @@ import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/world_entry
 import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, CancelTimer, LogError, OwnEffect,
+  type ConnectionEffect, type Effect, type Now, CancelTimer, OwnEffect,
   StartTimer,
 }
 import genesis_prime/world_map/relay
@@ -41,30 +41,14 @@ pub fn life_effects(
       ]
       player_life.ToViewers(news:) ->
         connection_state.news_to_viewers(entered:, news:)
-      player_life.Answer(to:, answered:) -> [
-        case to {
-          step.Creature(unit_id:, life:, ..) ->
-            connection_state.tells_the_creature(
-              entered:,
-              connection: client_connection.connection(session.link),
-              unit_id:,
-              life:,
-              payload: relay.StrikeAnswered(answered:),
-            )
-          step.Sessions
-          | step.HandOff
-          | step.Store
-          | step.Maps
-          | step.Map(..)
-          | step.Connection(..)
-          | step.CharacterNamed(..)
-          | step.ZoneChannel(..) ->
-            connection_state.log(
-              session:,
-              level: LogError,
-              text: "a strike on the player came from a unit that is no creature, so its answer was told to no one",
-            )
-        },
+      player_life.Answer(unit_id:, life:, answered:) -> [
+        connection_state.tells_the_creature(
+          entered:,
+          connection: client_connection.connection(session.link),
+          unit_id:,
+          life:,
+          payload: relay.StrikeAnswered(answered:),
+        ),
       ]
       player_life.StreamTo(unit_id:, life:) -> [
         connection_movement.tells_a_fighter_the_place(
