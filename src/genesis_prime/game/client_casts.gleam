@@ -28,6 +28,11 @@
 ////   its 0x7fe when the last source ends (genesis_prime/game/connection/landing). When the
 ////   caster is shown again and lists the cast, it is written too, and the first end forgets
 ////   it.
+//// - **An ended cast** is a written one its caster's finish ended (`finished`): the client no
+////   longer holds it, and the cast id stays taken until its caster's unit is forgotten, a new
+////   start of the id replaces it, or an ally's create lists the id. It counts for `is_held`,
+////   so an ally's start of the cast that arrives after the finish is dropped, and not for
+////   `is_written`, `written_of_unit`, `orphans` or `ally_ended`.
 //// - A cast listed by an ally that the client holds already, written or orphaned, stays as it
 ////   is: its own ender is exact, and a second ender would end it twice.
 

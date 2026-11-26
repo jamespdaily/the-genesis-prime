@@ -3324,8 +3324,8 @@ pub fn no_spell_that_lands_a_change_on_another_player_and_restricts_its_caster_h
       {
         Ok(spell) ->
           case
-            plan_lands_a_change_on_another_player(spell)
-            && plan_restricts_its_caster(spell)
+            plan_lands_a_change_on_another_player(spell:)
+            && plan_restricts_its_caster(spell:)
           {
             True -> Ok(spell)
             False -> Error(Nil)

@@ -16,6 +16,7 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews, Removed}
 import genesis_prime/message/bit_stream
@@ -53,6 +54,7 @@ import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
 import gleam/option.{None, Some}
 import map_spawn_support
+import map_support
 import message_support
 import owned_test
 import spawn_support
@@ -228,10 +230,16 @@ pub fn a_line_carries_the_viewers_stay_and_one_queued_across_a_same_run_re_entry
     )
   assert line_stays(said) == [game_connection_support.viewer_stay(2)]
     as "the speaker names the stay of the viewer's SeenBy"
+  let #(camped, _) = game_connection_support.camped_out()
+  let #(again, _) =
+    game_connection_support.entered_from(
+      camped,
+      game_connection_support.world_character(),
+    )
   let written_for = fn(stay) {
     let #(_, taken) =
       game_connection_support.feed(
-        game_connection_support.in_world(),
+        again,
         game_connection_support.for_stay(
           stay,
           client_connection.SentByLine(a_said_tell()),
@@ -239,10 +247,10 @@ pub fn a_line_carries_the_viewers_stay_and_one_queued_across_a_same_run_re_entry
       )
     game_connection_support.written_ids(taken)
   }
-  assert written_for(game_connection_support.own_stay()) == [0x01C8]
-    as "a line for the viewer's current stay is written as 0x1c8"
-  assert written_for(stay.none_yet()) == []
-    as "a line queued for the stay before the re-entry is dropped by the stay fence, though its speaker's map and incarnation are the viewer's"
+  assert written_for(map_support.stay(count: 2)) == [0x01C8]
+    as "a line for the viewer's current stay, its second, is written as 0x1c8"
+  assert written_for(game_connection_support.own_stay()) == []
+    as "a line queued for the viewer's first stay, before its re-entry of the same run, is dropped by the stay fence, though its speaker's map and incarnation are the viewer's"
   let #(_, whispered) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -252,21 +260,70 @@ pub fn a_line_carries_the_viewers_stay_and_one_queued_across_a_same_run_re_entry
     as "a whisper is told to the player by SentByChat and written as before"
 }
 
+/// A line for the viewer's current stay that arrives while an ask the connection made
+/// (the periodic place save) is out is held and written when the answer returns the
+/// player to the world, where a line told to a player the ask had taken out of the world
+/// was dropped. The line's stay is the fence either way (`stay_sent`).
+pub fn a_line_for_the_viewers_stay_that_arrives_during_the_place_save_is_held_and_written_after_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, saving) =
+    game_connection_support.fired_at(
+      state: game_connection_support.in_world(),
+      timer: connection_state.save_timer,
+      ms: 1000,
+    )
+  let #(state, told) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.for_stay(
+        game_connection_support.own_stay(),
+        client_connection.SentByLine(a_said_tell()),
+      ),
+    )
+  assert support.asked(saving) != None
+    as "the periodic save asks the store and waits"
+  assert game_connection_support.written_ids(told) == []
+    as "the line that arrives while the save is out is held"
+  let #(_, answered) =
+    game_connection_support.answer(
+      state:,
+      taken: saving,
+      outcome: game_connection_support.place_saved(),
+    )
+  assert game_connection_support.written_ids(answered) == [0x01C8]
+    as "the save's answer returns the player to the world, and the held line is written"
+}
+
 pub fn a_chat_tell_with_no_player_in_the_world_is_dropped_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   let tell = a_said_tell()
-  let #(_, taken) =
-    game_connection_support.feed(
-      game_connection_support.in_select(),
-      game_connection_support.for_stay(
-        game_connection_support.own_stay(),
-        client_connection.SentByLine(tell),
+  list.each(
+    [
+      #(
+        "a Said line sent as a chat tell",
+        OwnEvent(Woken(client_connection.SentByChat(tell))),
       ),
-    )
-  assert game_connection_support.written_ids(taken) == []
-    && support.logs(taken) == []
-    && !support.stops(taken)
-    as "a player in character select has no chat: the line is dropped"
+      #(
+        "a Said line sent for the stay",
+        game_connection_support.for_stay(
+          game_connection_support.own_stay(),
+          client_connection.SentByLine(tell),
+        ),
+      ),
+    ],
+    fn(row) {
+      let #(reason, event) = row
+      let #(_, taken) =
+        game_connection_support.feed(game_connection_support.in_select(), event)
+      assert game_connection_support.written_ids(taken) == []
+        && support.logs(taken) == []
+        && !support.stops(taken)
+        as {
+          reason
+          <> ": a player in character select has no chat, so it is dropped"
+        }
+    },
+  )
 }
 
 pub fn a_0x1c3_outside_the_world_is_logged_as_unhandled_and_the_connection_goes_on_test() -> Nil {

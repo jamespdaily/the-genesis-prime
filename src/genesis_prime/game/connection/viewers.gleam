@@ -52,6 +52,11 @@
 ////   comes first, before any cast the removal ends is finished: the viewer's client
 ////   reads a cast's 0x7fe before the unit's 0x355 only for a unit it still shows
 ////   (`cast.target_node_end`).
+//// - **Chat lines.** A Say, Yell or Emote line another player says arrives as
+////   `SentByLine`, for the stay the map's `SeenBy` named, and is taken by the chat feature
+////   (genesis_prime/game/chat) only in the stay's own turn: a line queued across a re-entry
+////   of the same run is dropped by the stay fence, and one that arrives while an ask is out
+////   waits for its answer.
 //// - **Stays.** Every message another process sends for the player's stay in the
 ////   world (the map's notices, a peer's or a creature's news, a creature's threat,
 ////   release and strike) comes in one envelope, `ForStay(stay, ..)`, which names
@@ -136,9 +141,19 @@
 ////   - A borrowed cast gets none of its caster's later frames, so the caster's removal does not
 ////     end it before T's tell does; T's removal drops it with the client's nodes on T.
 ////   - T's start is written when the viewer shows T and holds the cast in no state (written by
-////     its caster, borrowed, or held with no caster): the client restarts a cast id that is
-////     live (`opcode.0x7ff`), so one sender wins and the other's start is dropped. A viewer
-////     that does not show the caster makes the cast too (`cast.unknown_caster`).
+////     its caster, borrowed, held with no caster, or ended by its caster's finish): the client
+////     restarts a cast id that is live (`opcode.0x7ff`), so one sender wins and the other's
+////     start is dropped. A viewer that does not show the caster makes the cast too
+////     (`cast.unknown_caster`).
+////   - The viewer's own ledger alone decides which frames of a cast it writes. A caster's go,
+////     tick, finish and 0x811 are written for a cast held as written; a caster's 0x87f is
+////     written for a cast held as written and its 0x880 for an instance the viewer's picture
+////     holds, so a viewer that came after the 0x87f is written no 0x880 of it. A creature's
+////     0x87f and 0x880 are not a cast's of the viewer's and are written for any shown unit.
+////   - A cast its caster's finish ended stays in the ledger as an ended hold until its
+////     caster's unit is forgotten, so an ally's start of that cast that arrives after the
+////     finish is dropped. A start whose caster is the viewer's own unit is dropped: the
+////     viewer's own cast rule finished that cast and its client holds it itself.
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
