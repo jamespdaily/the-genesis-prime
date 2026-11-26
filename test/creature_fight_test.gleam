@@ -10656,3 +10656,43 @@ pub fn a_player_who_wakes_in_a_ring_after_its_killing_answer_and_death_is_near_a
   assert aggroes(at_home)
     as "a wake after the death alone is aggroed at the home timer as well"
 }
+
+pub fn a_strike_told_after_the_players_death_threatens_the_creature_and_its_first_strike_is_refused_dead_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A `Died` proc's cast, or a standing spell's tick, makes the player's connection tell a
+  // strike after the death it told the map; the map passes both on in that order.
+  let #(state, died) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: creature.PlayerDied(by: ConnectionId(2)),
+    )
+  assert said(died) == []
+    as "the death of a player the creature has no entry for changes nothing"
+  let #(state, struck) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 3, 1.0)]),
+    )
+  assert creature_fight.threatened(state: creature.fight(state:))
+    == set.from_list([ConnectionId(2)])
+    as "the strike of the dead player's connection puts it on the threat list: the creature keeps no list of the dead"
+  let #(state, ticked) =
+    fire(state:, at_ms: 1600, timer: timer_for(struck, 1500))
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(ticked)
+    as "the creature's first attack is a strike on that player"
+  let #(state, refused) =
+    tell(
+      state:,
+      at_ms: 1700,
+      message: creature.StrikeAnswered(answered: Answered(
+        key:,
+        outcome: Refused(why: strike_tell.Dead),
+      )),
+    )
+  assert list.contains(said(refused), "Released(7) to 2")
+    as "the player is refused Dead: the creature releases it"
+  assert creature_fight.threatened(state: creature.fight(state:)) == set.new()
+    as "and drops it from the threat list"
+}
