@@ -27,12 +27,12 @@
 //// - A unit's hold is at most `most_held_chunks` (16) chunks: a guess, a mover's 8
 ////   moves a second for 2 seconds (the load tool's rate), since no client or recording
 ////   says how long a map may be behind. The 17th drops the oldest and the hold is
-////   warned of once. Every hold and every memory ends with the viewer's stay.
+////   warned of once for as long as its oldest generation stays the same. Every hold and every memory ends with the viewer's stay.
 //// - The unit's owner ending (`gone`) keeps the memory of the last sight, so the
 ////   viewing is the only judge of a late move after it.
-//// - A snapshot at or below the generation the viewer already holds or remembers for
-////   the unit is ignored: the map relays notices of one pair in the order it issues
-////   their generations.
+//// - A snapshot older than the generation the viewer holds, or at most the one it
+////   remembers as ended, is refused: the map relays notices of one pair in the order
+////   it issues their generations, so the viewer shows nothing for it.
 
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/world_map/generation.{type Generation}
@@ -165,13 +165,14 @@ fn hold(viewing viewing: Viewing, move move: Move) -> #(Viewing, Verdict) {
 
 /// The sight of the unit begins or renews at `generation`: the unit's moves held for
 /// it, in the order they arrived, which the viewer now applies, and how many held
-/// moves of an older sight were dropped. A `generation` that is not later than the
-/// one held or remembered for the unit changes nothing.
+/// moves of an older sight were dropped. A `generation` older than the one held, or
+/// at most the one remembered as ended, is refused with `Error(Nil)` and changes
+/// nothing.
 pub fn snapshot(
   viewing viewing: Viewing,
   unit_id unit_id: Int,
   generation generation: Generation,
-) -> #(Viewing, List(Move), Int) {
+) -> Result(#(Viewing, List(Move), Int), Nil) {
   let is_stale = case dict.get(viewing.sights, unit_id) {
     Ok(Held(generation: held)) ->
       generation.compare(first: generation, second: held) == order.Lt
@@ -180,7 +181,7 @@ pub fn snapshot(
     Error(Nil) -> False
   }
   case is_stale {
-    True -> #(viewing, [], 0)
+    True -> Error(Nil)
     False -> {
       let moves = held_moves(viewing:, unit_id:)
       let #(released, others) =
@@ -193,14 +194,14 @@ pub fn snapshot(
           generation.compare(first: move.generation, second: generation)
           == order.Gt
         })
-      #(
+      Ok(#(
         Viewing(
           sights: dict.insert(viewing.sights, unit_id, Held(generation:)),
           holds: with_held(viewing:, unit_id:, moves: newer),
         ),
         released,
         list.length(older),
-      )
+      ))
     }
   }
 }
@@ -259,8 +260,8 @@ fn held_moves(viewing viewing: Viewing, unit_id unit_id: Int) -> List(Move) {
   }
 }
 
-/// The holds with the unit's replaced by `moves`, kept with its warning, and gone
-/// when `moves` is empty.
+/// The holds with the unit's replaced by `moves`, and gone when `moves` is empty. The
+/// hold keeps its warning only while its oldest chunk is of the generation it was.
 fn with_held(
   viewing viewing: Viewing,
   unit_id unit_id: Int,
@@ -268,7 +269,18 @@ fn with_held(
 ) -> Dict(Int, Waiting) {
   case moves, dict.get(viewing.holds, unit_id) {
     [], _ | _, Error(Nil) -> dict.delete(viewing.holds, unit_id)
-    _, Ok(waiting) ->
-      dict.insert(viewing.holds, unit_id, Waiting(..waiting, moves:))
+    [kept, ..], Ok(waiting) -> {
+      let same_oldest = case waiting.moves {
+        [was, ..] ->
+          generation.compare(first: kept.generation, second: was.generation)
+          == order.Eq
+        [] -> False
+      }
+      dict.insert(
+        viewing.holds,
+        unit_id,
+        Waiting(moves:, warned_of: waiting.warned_of && same_oldest),
+      )
+    }
   }
 }

@@ -44,12 +44,12 @@
 ////   the unit gone, so a 0x262 from the owner that ended, which lands after it,
 ////   shows no ghost.
 //// - **One removal.** A unit leaves the viewer's client at one function, `unit_removed`,
-////   whether its owner's `Removed` news, the map's `Gone` or the map's `ObjectsUnseen`
+////   whether its owner's `Departed` or `Removed` news, the map's `Gone` or the map's `ObjectsUnseen`
 ////   ends it, so a unit's casts are finished before its 0x355 the same way for each
 ////   (`cast.target_node_end`).
 //// - **Sight is symmetric.** A pair leaves sight in both directions in one step
 ////   (`map.goes_out_of_sight`), so the caster's connection takes the viewer out of its
-////   casts' audiences on the map's `UnseenBy` and on the viewer's `Removed`, whichever
+////   casts' audiences on the map's `UnseenBy` and on the viewer's `Departed`, whichever
 ////   comes first, before any cast the removal ends is finished: the viewer's client
 ////   reads a cast's 0x7fe before the unit's 0x355 only for a unit it still shows
 ////   (`cast.target_node_end`).
@@ -157,7 +157,7 @@
 ////   | a hold past 16 chunks | the oldest chunk is dropped with one warning that names the sight held and the one awaited |
 ////   | the notice never comes | the hold ends with the stay |
 ////   | the map ends a sight older than the one the player's copy holds for a viewer | an error line; the copy, the audiences and the viewer are left as they are |
-////   | the mover's copy still holds a viewer the map ended | its moves are dropped at the viewer |
+////   | the owner's notice of a sight older than the one held or ended, or of a unit the map reported gone | nothing is written; a stale one is an error line, and a gone unit's held moves are dropped with one warning that counts them |
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
@@ -488,8 +488,8 @@ pub fn player_appeared(
 /// What a viewer writes of news of a unit, from the units this connection has
 /// shown and the ones the map reported gone: a 0x262 for a unit not shown and not
 /// gone, which is then shown (the client keeps one unit per id until its 0x355,
-/// and a unit that is gone would be a ghost); a 0x638 for a shown unit; a 0x355
-/// for a shown unit, which is then no longer shown. Anything else is dropped. A
+/// and a unit that is gone would be a ghost), then the moves held for its sight; a
+/// 0x355 for a shown unit, which is then no longer shown. Anything else is dropped. A
 /// 0x262 or 0x355 that names unit 0 or this player's own unit is refused with an
 /// error line, and writes nothing: the client makes the controlled unit of a
 /// 0x262 with either id (0x1403d9760) and removes a unit with a 0x355
@@ -546,12 +546,24 @@ pub fn viewer_takes(
   )
   case news.news {
     unit_news.Appeared(unit:, generation:) -> {
-      use <- bool.guard(
-        when: set.contains(entered.gone, unit_id),
-        return: Continue(session, []),
+      use <- bool.guard(when: set.contains(entered.gone, unit_id), return: {
+        let #(viewing, dropped) =
+          move_stamp.departed(viewing: entered.viewing, unit_id:, generation:)
+        Continue(
+          viewing_set(session:, viewing:),
+          moves_dropped_logged(session:, unit_id:, dropped:),
+        )
+      })
+      use #(viewing, released, dropped) <- snapshot_taken(
+        session:,
+        unit_id:,
+        generation:,
+        snapshot: move_stamp.snapshot(
+          viewing: entered.viewing,
+          unit_id:,
+          generation:,
+        ),
       )
-      let #(viewing, released, dropped) =
-        move_stamp.snapshot(viewing: entered.viewing, unit_id:, generation:)
       let session = viewing_set(session:, viewing:)
       use <- bool.guard(when: shown, return: {
         let #(session, written) = moves_released(session:, now:, released:)
@@ -1157,8 +1169,8 @@ fn viewer_unseen(
 
 /// What a viewer does with a chunk of a player's move (`SentByMove`): the move is applied,
 /// dropped or held by the generation it is stamped with and the one the viewer holds
-/// for the unit (genesis_prime/game/move_stamp), which also drops a move of a unit
-/// the map reported gone. A hold that overflows is warned of once.
+/// for the unit (genesis_prime/game/move_stamp); the map's `Gone` and the owner's later
+/// notice leave that sight remembered as ended, so its moves are dropped. A hold that overflows is warned of once.
 pub fn move_sent(
   session session: Session,
   now now: Now,
@@ -1193,6 +1205,36 @@ pub fn move_sent(
           }
             <> ", the sight awaited "
             <> int.to_string(generation.number(generation: move.generation)),
+        ),
+      ])
+  }
+}
+
+/// The owner's notice of a sight taken by the viewer's memory of the unit: the
+/// continuation with what the notice releases, or an error line and nothing written
+/// when the viewer refused it as older than the sight it holds or has seen end.
+fn snapshot_taken(
+  session session: Session,
+  unit_id unit_id: Int,
+  generation generation: generation.Generation,
+  snapshot snapshot: Result(
+    #(move_stamp.Viewing, List(move_stamp.Move), Int),
+    Nil,
+  ),
+  next next: fn(#(move_stamp.Viewing, List(move_stamp.Move), Int)) ->
+    client_connection.Handled(Session),
+) -> client_connection.Handled(Session) {
+  case snapshot {
+    Ok(taken) -> next(taken)
+    Error(Nil) ->
+      Continue(session, [
+        connection_state.log(
+          session:,
+          level: step.LogError,
+          text: "the owner's notice of a sight is older than the sight its viewer holds or has seen end, so nothing is written: unit "
+            <> int.to_string(unit_id)
+            <> ", the notice's sight "
+            <> int.to_string(generation.number(generation:)),
         ),
       ])
   }

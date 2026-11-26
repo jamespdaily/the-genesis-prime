@@ -9,7 +9,9 @@ import character_tables
 import connection_rule_support as support
 import fixture_tables
 import game_client
-import game_connection_support.{type Step, Appears, MapSaysGone, Moves, Removes}
+import game_connection_support.{
+  type Step, Appears, AppearsLater, MapSaysGone, Moves, MovesLater, Removes,
+}
 import game_wire_support
 import genesis_prime/client_connection.{
   ForStay, FromMap, FromStore, SentByMap, SentByMove, SentByPeer, TellMoved,
@@ -166,7 +168,9 @@ pub fn a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x
   // writes it after itself (genesis_prime/game/move_stamp).
   // Each sequence is what two senders can produce for one unit: the owner's
   // messages in the order it sent them, and the map's Gone after the owner's
-  // end, anywhere among them.
+  // end, anywhere among them. A player's removal is the owner's Departed, so each row
+  // with one runs the viewer's memory of the sight that ended. A move before its
+  // 0x262 stands for a notice the map relayed late.
   list.each(
     [
       #([Appears], [create]),
@@ -174,13 +178,13 @@ pub fn a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x
       #([Moves], [none]),
       #([Moves, Appears], [none, create_and_held_move]),
       #([Removes], [none]),
-      #([Removes, Appears], [none, create]),
+      #([Removes, AppearsLater], [none, create]),
       #([Appears, Moves], [create, move]),
       #([Appears, Removes], [create, remove]),
       #([Appears, Removes, Moves], [create, remove, none]),
       #([Appears, Removes, Removes], [create, remove, none]),
-      #([Appears, Removes, Appears], [create, remove, create]),
-      #([Appears, Moves, Removes, Appears, Moves], [
+      #([Appears, Removes, AppearsLater], [create, remove, create]),
+      #([Appears, Moves, Removes, AppearsLater, MovesLater], [
         create,
         move,
         remove,
@@ -4108,13 +4112,94 @@ pub fn a_unit_that_left_is_remembered_by_its_last_generation_so_a_late_move_of_t
     as "a unit shown and then ended by its owner is remembered by the sight it was shown at"
 }
 
+pub fn a_notice_of_a_sight_the_viewer_holds_as_ended_writes_nothing_is_an_error_and_its_moves_are_dropped_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let session =
+    appeared(session: moving_viewer(), unit_id: 9, sight_number: 5).0
+  let session = departed_at(session:, sight_number: 5).0
+  let #(session, taken) = appeared(session:, unit_id: 9, sight_number: 5)
+  assert written(taken:) == []
+    as "the sight 5 ended, so a second notice of it creates no unit the viewer would then never move"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    as "the map issues generations in order, so a notice older than the sight that ended is its bug"
+  let #(session, taken) =
+    moved(session:, move: move_of_unit_9(sight_number: 5, x: 1.0))
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 0
+    as "and a move of that sight is dropped"
+  let #(_, taken) = appeared(session:, unit_id: 9, sight_number: 6)
+  assert written(taken:) == [0x0262] as "a later sight is shown"
+}
+
+pub fn the_maps_gone_before_the_owners_notice_drops_what_is_held_for_the_unit_with_one_warning_that_names_it_and_counts_the_chunks_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let two_held =
+    list.fold([1.0, 2.0], moving_viewer(), fn(session, x) {
+      moved(session:, move: move_of_unit_9(sight_number: 5, x:)).0
+    })
+  let #(session, taken) = reported_gone(session: two_held)
+  let assert [warning] = support.logs_of(step: taken, level: LogWarning)
+    as "one warning for the whole hold"
+  assert string.contains(does: warning.text, contain: "unit 9")
+    && string.starts_with(warning.text, "2 held chunks")
+    as "it names the unit and counts the chunks"
+  assert chunks_held(session:, unit_id: 9) == 0
+  // The owner's notice lands after the map's Gone, and its moves after the notice.
+  let #(session, taken) = appeared(session:, unit_id: 9, sight_number: 5)
+  assert written(taken:) == [] as "a 0x262 after the Gone shows no ghost"
+  let #(session, taken) =
+    moved(session:, move: move_of_unit_9(sight_number: 5, x: 3.0))
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 0
+    as "a move of the sight the notice named is dropped, not held for a notice that never comes"
+  // A move between the Gone and the owner's notice is held, and the notice drops it.
+  let #(session, _) = reported_gone(session: moving_viewer())
+  let #(session, taken) =
+    moved(session:, move: move_of_unit_9(sight_number: 5, x: 5.0))
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 1
+    as "a move after the Gone and before the notice is held"
+  let #(session, taken) = appeared(session:, unit_id: 9, sight_number: 5)
+  assert written(taken:) == [] && chunks_held(session:, unit_id: 9) == 0
+    as "the owner's notice of that sight drops it"
+  assert list.length(support.logs_of(step: taken, level: LogWarning)) == 1
+    as "with one warning that counts it"
+}
+
+pub fn a_hold_that_overflows_again_after_a_notice_released_its_oldest_sight_is_warned_of_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 8 chunks of the sight 5 and 9 of the sight 6 before any notice: the 17th drops the
+  // oldest and is warned of. The notice of the sight 5 releases its 7 chunks left and
+  // keeps the 9 of the sight 6; 8 more chunks of the sight 6 overflow that hold.
+  let moved_all = fn(session, sights) {
+    list.fold(sights, #(session, []), fn(held, sight_number) {
+      let #(session, warnings) = held
+      let #(session, taken) =
+        moved(session:, move: move_of_unit_9(sight_number:, x: 1.0))
+      #(
+        session,
+        list.append(warnings, support.logs_of(step: taken, level: LogWarning)),
+      )
+    })
+  }
+  let #(session, warnings) =
+    moved_all(
+      moving_viewer(),
+      list.flatten([list.repeat(5, 8), list.repeat(6, 9)]),
+    )
+  assert list.length(warnings) == 1 as "the first overflow is warned of"
+  let #(session, _) = appeared(session:, unit_id: 9, sight_number: 5)
+  assert chunks_held(session:, unit_id: 9) == 9
+    as "the sight 6 chunks stay held"
+  let #(_, warnings) = moved_all(session, list.repeat(6, 8))
+  assert list.length(warnings) == 1
+    as "a hold whose oldest sight changed is warned of again when it overflows"
+}
+
 pub fn a_viewer_holds_at_most_sixteen_chunks_of_a_unit_drops_the_oldest_with_one_warning_and_loses_every_hold_with_its_stay_test() -> Nil {
   use <- owned_test.run(10_000)
-  // 17 chunks of the sight 6 for the unit 9, at x 1 to 17, and 3 of the sight 4 for the
-  // unit 8, all before any notice.
+  // 18 chunks of the sight 6 for the unit 9, at x 1 to 18, and 3 of the sight 4 for the
+  // unit 8, all before any notice: the 17th and the 18th each drop the oldest.
   let xs =
     list.map(
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
       int.to_float,
     )
   let #(session, warnings) =
@@ -4128,7 +4213,7 @@ pub fn a_viewer_holds_at_most_sixteen_chunks_of_a_unit_drops_the_oldest_with_one
       )
     })
   assert list.length(warnings) == 1
-    as "the hold is warned of once, when its 17th chunk drops the first"
+    as "the hold is warned of once, when its 17th chunk drops the first, and not again for the 18th"
   assert chunks_held(session:, unit_id: 9) == 16
     as "a hold is at most 16 chunks"
   let session =
@@ -4140,10 +4225,11 @@ pub fn a_viewer_holds_at_most_sixteen_chunks_of_a_unit_drops_the_oldest_with_one
     })
   let #(session, taken) = appeared(session:, unit_id: 9, sight_number: 6)
   assert written_xs(taken:)
-    == list.map([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], fn(x) {
-      float32.to_bits(int.to_float(x))
-    })
-    as "the notice releases the 16 chunks the hold kept, in order, without the dropped oldest"
+    == list.map(
+      [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+      fn(x) { float32.to_bits(int.to_float(x)) },
+    )
+    as "the notice releases the 16 chunks the hold kept, in order, without the two dropped oldest"
   assert chunks_held(session:, unit_id: 8) == 3
     as "the other unit's hold is untouched"
   // A new stay holds none: the chunk held in the first stay is not written when the

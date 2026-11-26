@@ -33,7 +33,7 @@ import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{
-  type News, type PeerNews, Appeared, CreatureAppeared, PeerNews, Removed,
+  type News, type PeerNews, Appeared, CreatureAppeared, Departed, PeerNews,
 }
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
@@ -1751,10 +1751,14 @@ pub fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {
   ]
 }
 
-/// What can reach a viewer about the unit 9, from the unit's owner or the map.
+/// What can reach a viewer about the unit 9, from the unit's owner or the map. A
+/// player's removal is the owner's `Departed` of the sight its `Appears` showed; the
+/// `Later` steps are of the next sight the map gives that pair.
 pub type Step {
   Appears
+  AppearsLater
   Moves
+  MovesLater
   Removes
   MapSaysGone
 }
@@ -1766,6 +1770,14 @@ pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
         unit_id: 9,
         news: Appeared(unit: another_unit(), generation: generation.first()),
       ))
+    AppearsLater ->
+      sent_by_a_peer(news_of(
+        unit_id: 9,
+        news: Appeared(
+          unit: another_unit(),
+          generation: generation.after(generation: generation.first()),
+        ),
+      ))
     Moves ->
       sent_by_a_mover(moving(
         unit_id: 9,
@@ -1773,7 +1785,18 @@ pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
         server_time_ms: 7,
         commands: moved_unit_commands(),
       ))
-    Removes -> sent_by_a_peer(news_of(unit_id: 9, news: Removed))
+    MovesLater ->
+      sent_by_a_mover(moving(
+        unit_id: 9,
+        generation: generation.after(generation: generation.first()),
+        server_time_ms: 7,
+        commands: moved_unit_commands(),
+      ))
+    Removes ->
+      sent_by_a_peer(news_of(
+        unit_id: 9,
+        news: Departed(generation: generation.first()),
+      ))
     MapSaysGone -> sent_by_the_map(map.Gone(unit_id: 9))
   }
 }
