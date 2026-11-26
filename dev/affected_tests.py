@@ -7,7 +7,8 @@ The changed files are the `.gleam` files under src/, dev/ and test/ that differ 
 `git merge-base BASE HEAD` and HEAD (a deleted file included). A `test/**/*_test.gleam` file is
 listed, one per line and sorted, when any of these holds:
   - it is changed itself;
-  - its imports reach a changed module, directly or through other modules (the import graph is
+  - its imports reach a changed module, directly or through other modules, not walking past the
+    HARNESS_MODULES unless one of them changed (the import graph is
     read from the text of every `.gleam` file under src/, dev/ and test/ in the working tree,
     so it needs no build, and a cycle is walked once);
   - its text holds a changed module's file path (`genesis_prime/m.gleam`), as a test that reads a
@@ -34,6 +35,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_FOLDERS = ("src", "dev", "test")
 IMPORT = re.compile(r"^import\s+([a-z0-9_/]+)", re.MULTILINE)
+# Test modules every test imports to set up its run (owned_test starts each body in its own process
+# under a deadline; fixed_seed derives the run's dice and imports the server to start it). They carry
+# no game code into a test's subject, but they import the server, so walking through them would
+# list every test for a change to the server. A change to one of them itself lists every importer.
+HARNESS_MODULES = frozenset({"fixed_seed", "owned_test"})
 STATUS_LINE = re.compile(r"^\d+ passed, ", re.MULTILINE)
 
 
@@ -84,11 +90,16 @@ def importers_of(files: dict[str, list[Path]]) -> dict[str, set[str]]:
 
 
 def reaching(importers: dict[str, set[str]], start: set[str]) -> set[str]:
-    """The modules whose imports reach one of start, start included; each is walked once."""
+    """The modules whose imports reach one of start, start included; each is walked once.
+
+    A harness module reached only through other modules is listed but not walked past."""
     seen = set(start)
     pending = list(start)
     while pending:
-        for importer in importers.get(pending.pop(), ()):
+        module = pending.pop()
+        if module in HARNESS_MODULES and module not in start:
+            continue
+        for importer in importers.get(module, ()):
             if importer not in seen:
                 seen.add(importer)
                 pending.append(importer)

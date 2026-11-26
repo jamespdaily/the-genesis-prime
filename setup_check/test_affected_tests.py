@@ -104,6 +104,26 @@ class AffectedTestsTest(unittest.TestCase):
         self.assertNotIn("test/d_test.gleam", listed)
         self.assertNotIn("test/e_test.gleam", listed)
 
+    def test_a_test_that_reaches_a_changed_module_only_through_a_harness_module_is_not_listed(self):
+        self.write("test/fixed_seed.gleam", "import genesis_prime/m\n")
+        self.write("test/g_test.gleam", "import fixed_seed\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "a harness module")
+        self.git("branch", "-f", "main")
+        self.change("src/genesis_prime/m.gleam")
+        listed = self.listed()
+        self.assertIn("test/a_test.gleam", listed, "the list is not empty")
+        self.assertNotIn("test/g_test.gleam", listed)
+
+    def test_a_test_that_imports_a_changed_harness_module_is_listed(self):
+        self.write("test/fixed_seed.gleam", "pub fn seed() { 1 }\n")
+        self.write("test/g_test.gleam", "import fixed_seed\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "a harness module")
+        self.git("branch", "-f", "main")
+        self.change("test/fixed_seed.gleam")
+        self.assertEqual(self.listed(), ["test/g_test.gleam"])
+
     def test_a_changed_test_file_is_listed(self):
         self.change("test/e_test.gleam")
         self.assertEqual(self.listed(), ["test/e_test.gleam"])
