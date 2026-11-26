@@ -664,6 +664,7 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     | map.Approached(..)
     | map.Withdrew(..)
     | map.PlayerDied(..)
+    | map.CasterGone(..)
     | map.ToldCreature(..) -> Error(Nil)
   }
 }

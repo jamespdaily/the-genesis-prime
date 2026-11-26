@@ -462,6 +462,8 @@ pub fn said(message: map.Outgoing) -> String {
       "Withdrew by " <> int.to_string(number)
     map.PlayerDied(by: ConnectionId(number)) ->
       "PlayerDied by " <> int.to_string(number)
+    map.CasterGone(by: ConnectionId(number)) ->
+      "CasterGone by " <> int.to_string(number)
     map.ToldCreature(by: ConnectionId(number), payload:, ..) ->
       "Told " <> inbound_name(payload) <> " by " <> int.to_string(number)
     map.Joined(..)

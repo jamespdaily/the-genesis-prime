@@ -691,3 +691,16 @@ pub fn started_listener(time time: driven_time.Time) -> Server {
 pub fn idle_process() -> Pid {
   process.spawn_unlinked(process.sleep_forever)
 }
+
+/// The message of a process's crash: its exit reason is the pair of the panic's
+/// map, which holds `message`, and the stack.
+pub fn crash_message() -> decode.Decoder(String) {
+  use message <- decode.field(0, {
+    use message <- decode.field(
+      atom.to_dynamic(atom.create("message")),
+      decode.string,
+    )
+    decode.success(message)
+  })
+  decode.success(message)
+}

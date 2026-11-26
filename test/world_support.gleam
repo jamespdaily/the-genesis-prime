@@ -223,6 +223,18 @@ pub fn connection(world world: World, id id: Int) -> Subject(Message) {
   received
 }
 
+/// Ends the process that is the connection with this id, as a connection ends that sends
+/// no leave, and returns once it has ended.
+pub fn end_connection(world world: World, id id: Int) -> Nil {
+  let assert Ok(pid) = registry.find(world.connections, ConnectionId(id))
+    as "the connection is in the registry"
+  let monitor = process.monitor(pid)
+  process.kill(pid)
+  let _reason =
+    ask_support.ended(watched: monitor, what: "the connection to end")
+  Nil
+}
+
 /// A process that is the connection with this id until the test ends and keeps
 /// nothing it is sent, for a test whose player must stay in the world but that
 /// reads none of what the world sends: a test body holds each message it is

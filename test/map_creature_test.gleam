@@ -29,6 +29,7 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source
 import gleam/dict
@@ -36,9 +37,11 @@ import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
+import inbound_support
 import map_spawn_support as spawns
 import map_support
 import owned_test
+import spawn_support
 
 /// The one creature a step starts, with its watch.
 fn the_start(
@@ -516,10 +519,168 @@ pub fn a_leave_right_after_a_burst_sends_unwatched_to_each_creature_of_the_playe
   let units = list.map(spawns.starts(taken), fn(start) { { start.1 }.unit_id })
   let #(state, taken) = spawns.leave(state:, at_ms: 6001, connection: 1)
   assert spawns.creature_sends(taken)
-    == list.map(units, fn(unit_id) { #(unit_id, "Unseen by 1") })
-    as "the player's creatures are told it no longer sees them, in the order of the spawns"
+    == list.append(
+      list.map(units, fn(unit_id) { #(unit_id, "Unseen by 1") }),
+      list.map(units, fn(unit_id) { #(unit_id, "CasterGone by 1") }),
+    )
+    as "the player's creatures are told it no longer sees them, then that it is gone, each in the order of the spawns"
   let #(_, taken) = spawns.sweep(state:, at_ms: 75_000)
   assert spawns.creature_sends(taken)
     == list.map(units, fn(unit_id) { #(unit_id, "Retire") })
     as "and each stops at the first sweep after the idle stop"
+}
+
+/// The seven spawns of `with_a_spawn_in_each_state`: the map, the watches of the two
+/// players' connections, and the unit id and life of the creatures of spawns 1 to 4,
+/// which run.
+type SpawnStates {
+  SpawnStates(
+    state: State,
+    first_watch: step.WatchId,
+    second_watch: step.WatchId,
+    units: List(#(Int, Int)),
+  )
+}
+
+/// A map of seven spawns, three near the players and four far from them, with players 1
+/// and 2 standing among the near ones: spawn 1 is live, 2 respawning (its creature
+/// expired), 3 releasing (a use released it), 4 retiring (no one has seen it for the idle
+/// stop), 5 waiting to restart (its creature crashed), 6 failed (its creature did not
+/// start) and 7 dormant (its creature retired and ended with no one to see it).
+fn with_a_spawn_in_each_state() -> SpawnStates {
+  let near = [0.0, 20.0, 40.0]
+  let far = list.map([0.0, 20.0, 40.0, 60.0], fn(x) { spawns.far +. x })
+  let state =
+    spawns.started_with_spawns(
+      spawns: list.index_map(list.append(near, far), fn(x, index) {
+        spawn_support.battle_beast(number: index + 1, x:)
+      }),
+    )
+  let #(state, joined) =
+    spawns.join(state:, at_ms: 6000, connection: 1, x: spawns.far)
+  let assert [#(first_watch, _)] = support.watches(joined)
+    as "the join opens a watch on the connection"
+  let life_of = fn(state, spawn) { spawns.creature_of(state:, spawn:).1 }
+  let #(state, _) =
+    spawns.creature_ended(
+      state:,
+      at_ms: 6100,
+      watch: WatchId(life_of(state, 5)),
+    )
+  let #(state, _) =
+    spawns.creature_not_started(
+      state:,
+      at_ms: 6200,
+      watch: WatchId(life_of(state, 6)),
+      reason: "planted",
+    )
+  let #(state, _) = spawns.move(state:, at_ms: 6300, connection: 1, x: 0.0)
+  let #(state, joined) = spawns.join(state:, at_ms: 6400, connection: 2, x: 0.0)
+  let assert [#(second_watch, _)] = support.watches(joined)
+    as "the join opens a watch on the connection"
+  let #(unit_2, life_2) = spawns.creature_of(state:, spawn: 2)
+  let #(state, _) =
+    spawns.expired(state:, at_ms: 6500, unit_id: unit_2, life: life_2)
+  let #(unit_3, _) = spawns.creature_of(state:, spawn: 3)
+  let #(state, _) = spawns.released(state:, at_ms: 6600, unit_id: unit_3)
+  let #(state, _) = spawns.sweep(state:, at_ms: 80_000)
+  let #(state, _) =
+    spawns.creature_ended(
+      state:,
+      at_ms: 80_100,
+      watch: WatchId(life_of(state, 7)),
+    )
+  let states =
+    list.map([1, 2, 3, 4, 5, 6, 7], fn(spawn) {
+      map.spawn_state(state:, spawn: SpawnId(spawn))
+    })
+  let assert [
+    Ok(map.Live(..)),
+    Ok(map.Respawning(..)),
+    Ok(map.Releasing(..)),
+    Ok(map.Retiring(..)),
+    Ok(map.WaitingForRestart),
+    Ok(map.Failed),
+    Error(Nil),
+  ] = states
+    as "the seven spawns are live, respawning, releasing, retiring, waiting to restart, failed and dormant"
+  SpawnStates(
+    state:,
+    first_watch:,
+    second_watch:,
+    units: list.map([1, 2, 3, 4], fn(spawn) {
+      spawns.creature_of(state:, spawn:)
+    }),
+  )
+}
+
+pub fn a_leave_and_a_connections_end_tell_every_running_creature_that_the_caster_is_gone_and_no_other_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let scene = with_a_spawn_in_each_state()
+  let gone = fn(connection) {
+    list.map(scene.units, fn(unit) {
+      #(unit.0, "CasterGone by " <> int.to_string(connection))
+    })
+  }
+  // The player of connection 1 tells the live and the retiring creature before it leaves.
+  let told = fn(state, unit: #(Int, Int), at_ms) {
+    spawns.tell_creature(
+      state:,
+      at_ms:,
+      from: 1,
+      stay_count: 1,
+      unit_id: unit.0,
+      life: unit.1,
+      payload: relay.ModifierEnds(source: inbound_support.source()),
+    )
+  }
+  let assert [live, _, _, retiring] = scene.units
+  let #(state, first) = told(scene.state, live, 80_200)
+  let #(state, second) = told(state, retiring, 80_210)
+  assert spawns.creature_sends(first) == [#(live.0, "Told ModifierEnds by 1")]
+    && spawns.creature_sends(second)
+    == [#(retiring.0, "Told ModifierEnds by 1")]
+    as "the relays the connection sent are delivered before its leave"
+  let rows = [
+    #("the leave of player 1", 1, fn(state) {
+      spawns.leave(state:, at_ms: 80_300, connection: 1)
+    }),
+    #("the end of the watch of player 2", 2, fn(state) {
+      spawns.creature_ended(state:, at_ms: 80_300, watch: scene.second_watch)
+    }),
+  ]
+  list.each(rows, fn(row) {
+    let #(name, connection, remove) = row
+    let #(after, taken) = remove(state)
+    let sends = spawns.creature_sends(taken)
+    let unseens =
+      list.filter(sends, fn(sent) { string.starts_with(sent.1, "Unseen by ") })
+    assert unseens != []
+      as { name <> " ends the sight of the creatures the player saw" }
+    assert sends == list.append(unseens, gone(connection))
+      as {
+        name
+        <> " tells each running creature, live, respawning, releasing and retiring, in spawn order, one CasterGone of the connection, after the Unseens of the removal, and the creatures that do not run (waiting, failed, dormant) nothing"
+      }
+    let other = case connection {
+      1 -> 2
+      _ -> 1
+    }
+    assert !list.contains(
+      list.map(sends, fn(sent) { sent.1 }),
+      "CasterGone by " <> int.to_string(other),
+    )
+      as { name <> " tells nothing of the other player" }
+    // The connection is no longer in the map: its end or its leave again finds no player.
+    let #(_, again) = remove(after)
+    assert list.filter(spawns.creature_sends(again), fn(sent) {
+        string.starts_with(sent.1, "CasterGone")
+      })
+      == []
+      as { name <> " again finds no player and tells no creature" }
+  })
+  let #(_, stranger) = spawns.leave(state:, at_ms: 80_300, connection: 9)
+  assert spawns.creature_sends(stranger) == []
+    && list.length(support.logs_of(step: stranger, level: LogError)) == 1
+    as "a connection that is not in the map tells no creature: one error line"
 }

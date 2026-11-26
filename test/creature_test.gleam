@@ -21,6 +21,7 @@
 ////   server's reading (`genesis_prime/game/unit_state`); the rest of the rule is the doc
 ////   comment of `creature.UnitStates`.
 
+import ask_support
 import cast_support
 import connection_rule_support as support
 import creature_fight_test
@@ -68,9 +69,12 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/unit_fields
 import gleam/dict
+import gleam/dynamic/decode
+import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import gleam/result
 import gleam/set
 import gleam/string
 import inbound_support
@@ -1086,8 +1090,8 @@ pub fn modifier_start_sends_properties_changed_to_viewers_test() -> Nil {
       #(5, PeerNews(unit_id: 7, news: PropertiesChanged([speed_up()]))),
     ]
     as "0x93a of the unit, to each viewer: Move Speed Multiplier 1.0 x 1.0 + 0.5"
-  assert support.watches(taken) == [#(WatchId(2), Connection(caster))]
-    as "the creature watches the caster's connection, under its own id: the run's is 1"
+  assert support.watches(taken) == []
+    as "a start opens no watch: the creature watches its map's run and no connection"
 }
 
 pub fn modifier_end_restores_value_test() -> Nil {
@@ -1103,8 +1107,8 @@ pub fn modifier_end_restores_value_test() -> Nil {
     told(state:, at_ms: 7000, message: creature.ModifierEnds(sprint_source()))
   assert property_news(taken) == [#(2, [speed_back()]), #(5, [speed_back()])]
     as "the value goes back to the base, 1.0"
-  assert unwatches(taken) == [WatchId(2)]
-    as "it was the caster's last source: the creature stops watching the connection"
+  assert unwatches(taken) == []
+    as "the caster's last source ends with no Unwatch: no connection was watched"
 }
 
 pub fn late_viewer_sees_current_value_test() -> Nil {
@@ -1163,72 +1167,11 @@ pub fn same_source_started_twice_is_held_once_test() -> Nil {
       message: starting(source: sprint_source(), modifier: sprint()),
     )
   assert support.effects_of(again) == []
-    as "the same source is held once: nothing changes, nothing is sent, no second watch"
+    as "the same source is held once: nothing changes and nothing is sent"
   let #(_, ended) =
     told(state:, at_ms: 7000, message: creature.ModifierEnds(sprint_source()))
   assert property_news(ended) == [#(2, [speed_back()]), #(5, [speed_back()])]
     as "one end restores the value, whichever go started the source"
-}
-
-pub fn caster_connection_end_removes_its_modifiers_test() -> Nil {
-  use <- owned_test.run(5000)
-  let other = ConnectionId(10)
-  let state =
-    holding(
-      state: watched_by_two(),
-      source: sprint_source(),
-      modifier: sprint(),
-      at_ms: 6000,
-    )
-  let state =
-    holding(state:, source: thorns_source(), modifier: thorns(), at_ms: 6100)
-  let #(state, other_start) =
-    told(
-      state:,
-      at_ms: 6200,
-      message: creature.ModifierStarts(
-        by: other,
-        source: doubling_source(),
-        modifier: doubling(),
-      ),
-    )
-  assert support.watches(other_start) == [#(WatchId(3), Connection(other))]
-    as "a second caster's connection is watched under the next id"
-  let #(state, gone) = feed(state:, at_ms: 7000, event: WatchEnded(WatchId(2)))
-  assert property_news(gone)
-    == [
-      #(2, [speed_back()]),
-      #(5, [speed_back()]),
-      #(2, [changed(property: 150, base: 0.0, value: 0.0)]),
-      #(5, [changed(property: 150, base: 0.0, value: 0.0)]),
-    ]
-    as "each of the connection's sources ends as a ModifierEnds ends it, in the order they started"
-  assert !support.stops(gone) && unwatches(gone) == []
-    as "the creature goes on, and the watch that fired needs no Unwatch"
-  let #(state, late) =
-    told(state:, at_ms: 7100, message: creature.ModifierEnds(sprint_source()))
-  assert support.effects_of(late) == []
-    as "a later end for a source the connection's end removed changes nothing"
-  let #(_, kept) =
-    told(state:, at_ms: 7200, message: creature.ModifierEnds(doubling_source()))
-  assert property_news(kept)
-    == [
-      #(2, [
-        changed(
-          property: 127,
-          base: 1.2750000953674316,
-          value: 1.2750000953674316,
-        ),
-      ]),
-      #(5, [
-        changed(
-          property: 127,
-          base: 1.2750000953674316,
-          value: 1.2750000953674316,
-        ),
-      ]),
-    ]
-    as "the other caster's modifier was held all along"
 }
 
 pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_despawned_creature_and_taken_by_a_living_one_test() -> Nil {
@@ -1288,11 +1231,11 @@ pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_des
           at_ms: at_7000,
           message: creature.CastViewSet(by: ConnectionId(9), view: view_a()),
         )
-      assert watch_changes(set) == ["watch 2 of 9"]
+      assert watch_changes(set) == []
         as {
           "a cast view reaching "
           <> body.0
-          <> " creature is kept and its caster watched"
+          <> " creature is kept and its caster is not watched"
         }
       // A despawned creature shows no 0x262, so no arrival lists the view it holds.
       assert !body.2 || arrival_holds(state:) == [#(view_a().cast_id, 1)]
@@ -1315,9 +1258,154 @@ pub fn run_watch_end_still_stops_creature_test() -> Nil {
     )
   let #(_, run_ended) = feed(state:, at_ms: 7000, event: WatchEnded(WatchId(1)))
   assert support.stops(run_ended) as "the run's end ends the creature"
-  let #(_, caster_ended) =
-    feed(state:, at_ms: 7000, event: WatchEnded(WatchId(2)))
-  assert !support.stops(caster_ended) as "a caster's connection ending does not"
+  let assert process.Abnormal(crash) =
+    ask_support.ended_running(fn() {
+      let _stepped = feed(state:, at_ms: 7000, event: WatchEnded(WatchId(2)))
+      Nil
+    })
+    as "a watch that is not the run's crashes the creature"
+  assert decode.run(crash, ask_support.crash_message())
+    == Ok(
+      "a creature watches only its map's run: a watch that ended is not the run's",
+    )
+    as "with the message that says the creature opens no other watch"
+}
+
+/// A strike of the caster's connection `caster` whose Stagger stun lands a state on the
+/// Beast.
+fn stunning_strike_from_the_caster(cast_id cast_id: Int) -> creature.Message {
+  let assert creature.Strike(tell:) = stunning_strike(cast_id:)
+  creature.Strike(tell: Strike(..tell, from: step.Connection(caster)))
+}
+
+pub fn a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_controls_sends_the_property_news_once_and_watches_only_its_run_test() -> Nil {
+  use <- owned_test.run(5000)
+  let other = ConnectionId(10)
+  let stranger = ConnectionId(77)
+  // The caster holds two sources, a view and a control; a second caster holds a view.
+  let holdings = [
+    starting(source: sprint_source(), modifier: sprint()),
+    starting(source: thorns_source(), modifier: thorns()),
+    creature.CastViewSet(by: caster, view: view_a()),
+    stunning_strike_from_the_caster(cast_id: 7),
+    creature.CastViewSet(by: other, view: view_b()),
+    creature.ModifierStarts(
+      by: other,
+      source: doubling_source(),
+      modifier: doubling(),
+    ),
+  ]
+  let #(state, watched) =
+    list.fold(holdings, #(watched_by_two(), []), fn(held, message) {
+      let #(state, steps) = held
+      let #(state, taken) =
+        told(state:, at_ms: 6000 + 100 * list.length(steps), message:)
+      #(state, [taken, ..steps])
+    })
+  assert list.flat_map(watched, watch_changes) == []
+    as "no holding opens a watch: the creature watches its map's run and no connection"
+  assert ended_states(
+      told(
+        state:,
+        at_ms: 6400,
+        message: creature.ControlsEnd(by: other, cast_id: 7),
+      ).1,
+    )
+    == []
+    as "the stun is the caster's: another connection's end for the same cast id ends nothing"
+  let #(gone_state, gone) =
+    told(state:, at_ms: 7000, message: creature.CasterGone(by: caster))
+  assert property_news(gone)
+    == [
+      #(2, [speed_back()]),
+      #(5, [speed_back()]),
+      #(2, [changed(property: 150, base: 0.0, value: 0.0)]),
+      #(5, [changed(property: 150, base: 0.0, value: 0.0)]),
+    ]
+    as "each source of the caster ends as a ModifierEnds ends it, in the order they started, each with its news once"
+  assert ended_states(gone) == []
+    as "the stun the caster's cast landed stands: only sources and views are dropped, and the stun ends by its own timer"
+  assert watch_changes(gone) == [] as "and no Unwatch follows"
+  let assert [stun_timer] =
+    list.filter(list.flat_map(watched, timers_started), fn(started) {
+      result.is_ok(creature.control_of(timer: started.0))
+    })
+    as "the strike held one state, with its timer"
+  assert ended_states(
+      fired(state: gone_state, at_ms: 8800, timer: stun_timer.0).1,
+    )
+    == [2, 5]
+    as "the stun's own timer ends it, with its 0x880 for each viewer"
+  assert arrival_holds(state: gone_state) == [#(view_b().cast_id, 1)]
+    as "the caster's view goes and the other caster's stays"
+  let #(again_state, again) =
+    told(
+      state: gone_state,
+      at_ms: 7100,
+      message: creature.CasterGone(by: caster),
+    )
+  assert support.effects_of(again) == [] && again_state == gone_state
+    as "a second CasterGone for the same connection changes nothing"
+  let #(stranger_state, stranger_gone) =
+    told(
+      state: gone_state,
+      at_ms: 7200,
+      message: creature.CasterGone(by: stranger),
+    )
+  assert support.effects_of(stranger_gone) == [] && stranger_state == gone_state
+    as "a connection that holds nothing changes nothing"
+  let #(_, late) =
+    told(
+      state: gone_state,
+      at_ms: 7300,
+      message: creature.ModifierEnds(sprint_source()),
+    )
+  assert support.effects_of(late) == []
+    as "a later end for a source the departure removed changes nothing"
+  let #(last_state, last) =
+    told(
+      state: gone_state,
+      at_ms: 7400,
+      message: creature.CasterGone(by: other),
+    )
+  assert arrival_holds(state: last_state) == []
+    as "the other caster's departure drops its view"
+  assert property_news(last)
+    == [
+      #(2, [
+        changed(
+          property: 127,
+          base: 1.2750000953674316,
+          value: 1.2750000953674316,
+        ),
+      ]),
+      #(5, [
+        changed(
+          property: 127,
+          base: 1.2750000953674316,
+          value: 1.2750000953674316,
+        ),
+      ]),
+    ]
+    as "and its source, held all along, ends with its news once"
+  // A creature that lies dead and was told to retire still holds a view until its corpse
+  // expires; the map's word reaches it in that state.
+  let #(dead, _) =
+    after(inputs: [
+      view_set(by: 9, view: view_a(), at_ms: 6000),
+      killed_at(at_ms: 7000),
+      #(7500, OwnEvent(Told(Retire))),
+    ])
+  assert arrival_holds(state: dead) == [#(view_a().cast_id, 1)]
+    as "the dead creature told to retire holds the caster's view, and its corpse's 0x262 lists it"
+  let #(dead_gone, _) =
+    told(
+      state: dead,
+      at_ms: 8000,
+      message: creature.CasterGone(by: ConnectionId(9)),
+    )
+  assert arrival_holds(state: dead_gone) == []
+    as "a dead creature told to retire drops a gone caster's view before its corpse expires"
 }
 
 pub fn dead_creature_holds_modifiers_until_end_test() -> Nil {
@@ -3236,24 +3324,6 @@ fn view_ends(by by: Int, view view: CastView, at_ms at_ms: Int) -> At {
   )
 }
 
-/// The sprint modifier's start by the connection `by`, struck as it arrives.
-fn sprint_set(by by: Int, at_ms at_ms: Int) -> At {
-  #(
-    at_ms,
-    OwnEvent(
-      Told(creature.ModifierStarts(
-        by: ConnectionId(by),
-        source: sprint_source(),
-        modifier: sprint(),
-      )),
-    ),
-  )
-}
-
-fn sprint_end(at_ms at_ms: Int) -> At {
-  #(at_ms, OwnEvent(Told(creature.ModifierEnds(source: sprint_source()))))
-}
-
 /// A strike that kills the Beast.
 fn killed_at(at_ms at_ms: Int) -> At {
   #(at_ms, OwnEvent(Told(strike_of(damage: 60, cast_id: 1))))
@@ -3326,7 +3396,6 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
         "a CastViewSet is kept, whatever the time of the go it names",
         [view_set(by: 9, view: view_a(), at_ms: 6000)],
         [#(id_a, 1)],
-        ["watch 2 of 9"],
       ),
       #(
         "a second set for the same cast replaces the first: the later count",
@@ -3335,16 +3404,14 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
           view_set(by: 9, view: two_stacks, at_ms: 6500),
         ],
         [#(id_a, 2)],
-        [],
       ),
       #(
-        "CastViewEnds removes it, and the connection's watch with its last holding",
+        "CastViewEnds removes it",
         [
           view_set(by: 9, view: view_a(), at_ms: 6000),
           view_ends(by: 9, view: view_a(), at_ms: 7000),
         ],
         [],
-        ["unwatch 2"],
       ),
       #(
         "an end for a cast it does not hold changes nothing",
@@ -3353,7 +3420,6 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
           view_ends(by: 9, view: view_b(), at_ms: 7000),
         ],
         [#(id_a, 1)],
-        [],
       ),
       #(
         "an end from another connection than the holder's changes nothing",
@@ -3362,7 +3428,6 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
           view_ends(by: 10, view: view_a(), at_ms: 7000),
         ],
         [#(id_a, 1)],
-        [],
       ),
       #(
         "a set reaching a dead creature is kept, and the corpse's 0x262 lists it",
@@ -3371,94 +3436,21 @@ pub fn a_creature_keeps_the_cast_views_it_is_told_test() -> Nil {
           view_set(by: 9, view: view_a(), at_ms: 7000),
         ],
         [#(id_a, 1)],
-        ["watch 2 of 9"],
       ),
       #(
-        "a set that replaces another connection's entry for the cast id unwatches that connection when it holds nothing else",
+        "a set that replaces another connection's entry for the cast id keeps the later one",
         [
           view_set(by: 9, view: view_a(), at_ms: 6000),
           view_set(by: 10, view: view_a(), at_ms: 6100),
         ],
         [#(id_a, 1)],
-        ["watch 3 of 10", "unwatch 2"],
       ),
     ],
     fn(row) {
       let #(state, last) = after(inputs: row.1)
       assert arrival_holds(state:) == row.2 as row.0
-      assert watch_changes(last) == row.3 as row.0
-    },
-  )
-}
-
-pub fn a_creature_watches_each_connection_while_it_holds_a_modifier_or_a_view_of_it_test() -> Nil {
-  use <- owned_test.run(5000)
-  let id_a = view_a().cast_id
-  let id_b = view_b().cast_id
-  list.each(
-    [
-      #(
-        "the first view of a connection starts its watch",
-        [view_set(by: 9, view: view_a(), at_ms: 6000)],
-        [#(id_a, 1)],
-        ["watch 2 of 9"],
-      ),
-      #(
-        "a second view of it starts none",
-        [
-          view_set(by: 9, view: view_a(), at_ms: 6000),
-          view_set(by: 9, view: view_b(), at_ms: 6100),
-        ],
-        [#(id_a, 1), #(id_b, 1)],
-        [],
-      ),
-      #(
-        "a view's end keeps the watch while a modifier source of the connection is held",
-        [
-          sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), at_ms: 6100),
-          view_ends(by: 9, view: view_a(), at_ms: 6200),
-        ],
-        [],
-        [],
-      ),
-      #(
-        "and the modifier's end then unwatches, as no view is held",
-        [
-          sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), at_ms: 6100),
-          view_ends(by: 9, view: view_a(), at_ms: 6200),
-          sprint_end(at_ms: 6300),
-        ],
-        [],
-        ["unwatch 2"],
-      ),
-      #(
-        "a modifier's last end keeps the watch while a view of that connection is held",
-        [
-          sprint_set(by: 9, at_ms: 6000),
-          view_set(by: 9, view: view_a(), at_ms: 6100),
-          sprint_end(at_ms: 6200),
-        ],
-        [#(id_a, 1)],
-        [],
-      ),
-      #(
-        "the watch ending drops that connection's views and sources, keeps another connection's view, and is followed by no Unwatch",
-        [
-          view_set(by: 9, view: view_a(), at_ms: 6000),
-          view_set(by: 10, view: view_b(), at_ms: 6100),
-          sprint_set(by: 9, at_ms: 6200),
-          #(7000, WatchEnded(WatchId(2))),
-        ],
-        [#(id_b, 1)],
-        [],
-      ),
-    ],
-    fn(row) {
-      let #(state, last) = after(inputs: row.1)
-      assert arrival_holds(state:) == row.2 as row.0
-      assert watch_changes(last) == row.3 as row.0
+      assert watch_changes(last) == []
+        as { row.0 <> ": the creature opens and ends no watch" }
     },
   )
 }

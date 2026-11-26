@@ -537,9 +537,12 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
     let #(situation, from, stay_count, in_the_map_in_that_stay) = sender
     list.each(inbound_support.payloads(unit_id:), fn(row) {
       let #(kind, payload) = row
-      // Only the move is checked for its sender; a strike names the sender it is told from.
+      // The move and the two kinds that make a holding on the creature are checked for
+      // their sender; a strike names the sender it is told from.
       let delivered = case payload {
-        relay.TargetMoved(..) -> in_the_map_in_that_stay
+        relay.TargetMoved(..)
+        | relay.ModifierStarts(..)
+        | relay.CastViewSet(..) -> in_the_map_in_that_stay
         _ -> True
       }
       let payload = case payload {
@@ -606,6 +609,32 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
     )
     == Error(map.SourceRefused)
     as "a move from a player of another stay is refused for its source, not for its creature"
+  list.each(
+    [
+      relay.ModifierStarts(
+        source: inbound_support.source(),
+        modifier: inbound_support.modifier(),
+      ),
+      relay.CastViewSet(view: inbound_support.view()),
+    ],
+    fn(payload) {
+      list.each([2, 3, 4], fn(from) {
+        assert map.admitted_inbound(
+            state:,
+            unit_id:,
+            life:,
+            from: ConnectionId(from),
+            stay: map_support.stay(count: 1),
+            payload:,
+          )
+          == Error(map.SourceRefused)
+          as {
+            spawns.inbound_name(payload)
+            <> " from a player of another stay, one that left or one never in the map is refused for its source"
+          }
+      })
+    },
+  )
 }
 
 pub fn a_strike_that_names_another_striker_than_the_connection_that_told_it_is_dropped_with_an_error_line_test() -> Nil {

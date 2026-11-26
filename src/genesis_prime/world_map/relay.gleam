@@ -37,12 +37,12 @@
 //// | `Strike` | a player's strike on the creature | the running creature | none here: the strike names its own sender, which the map checks against the relay |
 //// | `TargetMoved` | where a player that may be on the creature's threat list stands | the running creature | the sender is a player of the map in the stay the relay names |
 //// | `StrikeAnswered` | the player's answer to the creature's strike | the running creature | none |
-//// | `ModifierStarts` | a property modifier of a player's spell starts on the creature | the running creature | none |
+//// | `ModifierStarts` | a property modifier of a player's spell starts on the creature | the running creature | the sender is a player of the map in the stay the relay names |
 //// | `ModifierEnds` | the modifier of a source ends | the running creature | none |
 //// | `Thrown` | a ForcedMove effect of a player's cast throws the creature | the running creature | none |
 //// | `Despawn` | a DespawnUnit effect of a player's cast removes the creature | the running creature | none |
 //// | `UnitStates` | the UnitStateSet rows of a player's cast hold on the creature | the running creature | none |
-//// | `CastViewSet` | what a player's cast holds on the creature | the running creature | none |
+//// | `CastViewSet` | what a player's cast holds on the creature | the running creature | the sender is a player of the map in the stay the relay names |
 //// | `CastViewEnds` | a cast holds nothing on the creature any more | the running creature | none |
 //// | `ControlsEnd` | the states a cast landed on the creature end | the running creature | none |
 
@@ -170,7 +170,7 @@ pub fn inbound_kind_of(inbound inbound: Inbound) -> InboundKind {
     StrikeAnswered(..) ->
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
     ModifierStarts(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: SenderInCurrentStay)
     ModifierEnds(..) ->
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
     Thrown(..) ->
@@ -180,7 +180,7 @@ pub fn inbound_kind_of(inbound inbound: Inbound) -> InboundKind {
     UnitStates(..) ->
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
     CastViewSet(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: SenderInCurrentStay)
     CastViewEnds(..) ->
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
     ControlsEnd(..) ->

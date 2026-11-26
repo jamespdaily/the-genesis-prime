@@ -1263,6 +1263,7 @@ pub fn joined(
         | map.Approached(..)
         | map.Withdrew(..)
         | map.PlayerDied(..)
+        | map.CasterGone(..)
         | map.ToldCreature(..) -> Error(Nil)
       }
     }

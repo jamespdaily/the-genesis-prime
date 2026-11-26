@@ -3705,14 +3705,20 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
       at_ms: 6300,
       event: step.WatchEnded(watch:),
     )
-  let assert [#(step.Creature(unit_id: told_unit, ..), unseen)] =
+  let assert [
+    #(step.Creature(unit_id: told_unit, ..), unseen),
+    #(step.Creature(..), caster_gone),
+  ] =
     list.filter(map_spawn_support.sends(ended), fn(sent) {
       case sent.0 {
         step.Creature(..) -> True
         _ -> False
       }
     })
-    as "the map tells the creature the viewer's sight ended"
+    as "the map tells the creature the viewer's sight ended, then that the viewer is gone"
+  assert creature.told_by_map(caster_gone)
+    == Ok(creature.CasterGone(by: ConnectionId(1)))
+    as "and the second tell is the map's CasterGone of the viewer's connection"
   assert told_unit == unit_id
   let assert Ok(told) = creature.told_by_map(unseen)
   assert told == creature.Unseen(by: ConnectionId(1), generation: held)

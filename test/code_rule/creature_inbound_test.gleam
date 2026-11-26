@@ -29,13 +29,7 @@ const registry_module = "genesis_prime/world_map/creature_registry"
 fn tells_a_creature(file file: SourceFile) -> List(Int) {
   syntax.calls(syntax.parse(file))
   |> list.filter_map(fn(call) {
-    let is_tell = case call.called {
-      syntax.CalledByName(name: "Tell") -> True
-      syntax.CalledThroughVariable(variable: "step", label: "Tell") -> True
-      syntax.CalledByName(..)
-      | syntax.CalledThroughVariable(..)
-      | syntax.CalledOtherwise -> False
-    }
+    let is_tell = syntax.is_step_effect(call, name: "Tell")
     let to =
       syntax.argument(
         arguments: call.arguments,

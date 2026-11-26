@@ -588,8 +588,13 @@
 //// | a `Broadcast` is sent twice | not guarded (it carries no id); the creature sends each news once per step |
 //// | a `Relay` comes from a creature that ended, or of an earlier life | dropped by `admitted`; a creature that is releasing, retiring or respawning is still admitted until it ends |
 //// | a relay waits in the map's queue past `strike_tell.deadline_ms` | delivered unchanged; the caster's round decides that it is late; the map keeps no deadline |
+//// | a player leaves or its connection ends | every running creature (live, retiring, respawning or releasing) is told `CasterGone` of the connection, once and in spawn order, after the removal's other sends; its sources and views of that connection end, the property news once; a control it landed stands until its own timer (`a_leave_and_a_connections_end_tell_every_running_creature_that_the_caster_is_gone_and_no_other_test`, `a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_controls_sends_the_property_news_once_and_watches_only_its_run_test`, `a_connection_that_ends_holding_a_modifier_a_view_and_a_control_on_a_creature_leaves_no_source_no_view_and_no_watch_of_it_test`) |
+//// | a connection leaves, then its process ends | the leave dropped the connection's watch, so the end reaches the map as nothing (`a_normal_leave_then_the_connections_death_holds_no_source_or_view_of_it_and_the_second_end_changes_nothing_test`) |
+//// | a leave while the connection's ends are in flight | the ends were told to the map first, in the connection's order: they are delivered, then `CasterGone` (`a_camp_tells_the_creatures_the_ends_of_its_holdings_in_the_step_that_starts_its_save_before_any_ask_test`) |
+//// | a creature lies dead and retiring and holds a caster's view | dropped at the caster's leave or its connection's end, before the corpse expires (`a_dead_retiring_creature_holding_a_view_of_a_caster_drops_it_when_the_casters_connection_ends_before_its_corpse_expires_test`) |
+//// | `CasterGone` is for a creature that ended or was replaced | dropped by the registry (`a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test`) |
 //// | a `TellCreature` is for a creature that ended, or of an earlier life | dropped by `admitted_inbound`, with no line; the player's round closes by its deadline |
-//// | a `TargetMoved` is from a sender not in the map, or in another stay than the relay names | dropped (`SourceRefused`), with no line |
+//// | a `TargetMoved`, `ModifierStarts` or `CastViewSet` is from a sender not in the map, or in another stay than the relay names | dropped (`SourceRefused`), with no line: a start or a view told after its connection's leave holds nothing on the creature (`a_start_told_after_its_casters_leave_holds_nothing_on_the_creature_test`) |
 //// | a `Strike` or a `StrikeAnswered` is from a sender that left | delivered: the damage applies and the answer closes its round |
 //// | a `Strike` names another connection, another stay or a creature as its striker | dropped (`StrikerRefused`), with one error line |
 //// | an answer waits in the map's queue past the strike deadline | delivered unchanged to the creature, whose round closed by its deadline and takes it as no change (the creature's side: `an_answer_that_reaches_the_creature_after_its_round_closed_changes_nothing_test`; the map's wait is the load gate's planted run, `behind`) |
@@ -971,6 +976,11 @@ pub type Outgoing {
   /// A send to a creature: the player of connection `by`, in its stay `stay`, told it
   /// `payload`. `by` and `stay` are the relay's, never the payload's.
   ToldCreature(by: ConnectionId, stay: Stay, payload: Inbound)
+  /// A send to a creature in any running state: the player of connection `by` is gone
+  /// from the map, by its leave or by its connection's end, so the sources and views it
+  /// held on the creature end. The map sends it once for each running
+  /// creature, in spawn order, after the sends the removal makes.
+  CasterGone(by: ConnectionId)
 }
 
 /// What a map tells the connection of a player in it about who sees whom, for
@@ -1756,15 +1766,23 @@ fn running(
 ) -> Result(#(SpawnId, SpawnState), Nil) {
   use spawn <- result.try(dict.get(state.creature_watches, WatchId(life)))
   use spawn_state <- result.try(dict.get(state.spawns, spawn))
+  use #(held, held_life) <- result.try(running_creature(spawn_state:))
+  case held == unit_id && held_life == life {
+    True -> Ok(#(spawn, spawn_state))
+    False -> Error(Nil)
+  }
+}
+
+/// The unit id and life of the creature a spawn's state runs: live, retiring, respawning
+/// or releasing. A spawn waiting for its restart or failed has none.
+fn running_creature(
+  spawn_state spawn_state: SpawnState,
+) -> Result(#(Int, Int), Nil) {
   case spawn_state {
-    Live(unit_id: held, life: held_life, ..)
-    | Retiring(unit_id: held, life: held_life)
-    | Respawning(unit_id: held, life: held_life)
-    | Releasing(unit_id: held, life: held_life, ..) ->
-      case held == unit_id && held_life == life {
-        True -> Ok(#(spawn, spawn_state))
-        False -> Error(Nil)
-      }
+    Live(unit_id:, life:, ..)
+    | Retiring(unit_id:, life:)
+    | Respawning(unit_id:, life:)
+    | Releasing(unit_id:, life:, ..) -> Ok(#(unit_id, life))
     WaitingForRestart | Failed -> Error(Nil)
   }
 }
@@ -3936,9 +3954,26 @@ fn without(
             }
           })
       },
-      spawn_effects,
+      list.append(spawn_effects, caster_gone_sends(state:, connection:)),
     ),
   )
+}
+
+/// The `CasterGone` of the connection for each running creature (live, retiring,
+/// respawning or releasing: the states `running` admits), in spawn order: the removal's
+/// last sends, after the `Unseen`s of `spawns_decided`. A spawn with no creature (waiting
+/// for its restart, failed) is sent nothing.
+fn caster_gone_sends(
+  state state: State,
+  connection connection: ConnectionId,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  dict.keys(state.spawns)
+  |> list.sort(compare_spawns)
+  |> list.filter_map(fn(spawn) {
+    use spawn_state <- result.try(dict.get(state.spawns, spawn))
+    use #(unit_id, life) <- result.map(running_creature(spawn_state:))
+    tell_creature(state:, unit_id:, life:, message: CasterGone(by: connection))
+  })
 }
 
 /// The players other than the connection's, in the order the map's table
