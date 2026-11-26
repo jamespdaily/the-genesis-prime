@@ -2728,14 +2728,7 @@ fn start_creature(
           life:,
           relations: dict.from_list(
             list.map(viewers, fn(viewer) {
-              #(
-                viewer.0,
-                Relation(
-                  generation: viewer.2,
-                  stay: viewer.1,
-                  state: AwaitingSnapshot,
-                ),
-              )
+              #(viewer.0, sight_begun(generation: viewer.2, stay: viewer.1))
             }),
           ),
           idle_since_ms: option.None,
@@ -3032,7 +3025,7 @@ fn sight_began(
           relations: dict.insert(
             relations,
             connection,
-            Relation(generation:, stay:, state: AwaitingSnapshot),
+            sight_begun(generation:, stay:),
           ),
           idle_since_ms:,
         ),
@@ -3125,13 +3118,10 @@ pub fn server_time(
   { monotonic_ms - origin_ms } % server_time_modulus
 }
 
-/// The relation a viewer holds with a player that came into sight: the generation of the
-/// sight and the viewer's stay, awaiting the owner's snapshot of that generation.
-fn sight_begun(
-  generation generation: Generation,
-  viewer viewer: Player,
-) -> Relation {
-  Relation(generation:, stay: viewer.stay, state: AwaitingSnapshot)
+/// The relation of a sight that has begun: its generation and the viewer's stay, awaiting
+/// the owner's snapshot of that generation.
+fn sight_begun(generation generation: Generation, stay stay: Stay) -> Relation {
+  Relation(generation:, stay:, state: AwaitingSnapshot)
 }
 
 /// What a move decides of one pair: the pair that comes into sight is given the two
@@ -3168,7 +3158,7 @@ fn pair_decided(
         dict.insert(
           mover_sees,
           other_connection,
-          sight_begun(generation: mover_sight, viewer: mover_player),
+          sight_begun(generation: mover_sight, stay: mover_player.stay),
         ),
         dict.insert(
           players,
@@ -3178,7 +3168,7 @@ fn pair_decided(
             sees: dict.insert(
               player.sees,
               connection,
-              sight_begun(generation: other_sight, viewer: player),
+              sight_begun(generation: other_sight, stay: player.stay),
             ),
           ),
         ),
@@ -3838,7 +3828,7 @@ fn joined_again(
         dict.insert(
           sees,
           sight.0.0,
-          sight_begun(generation: sight.1, viewer: player),
+          sight_begun(generation: sight.1, stay: player.stay),
         )
       }),
     )
@@ -3858,7 +3848,7 @@ fn joined_again(
               sees: dict.insert(
                 { other.1 }.sees,
                 connection,
-                sight_begun(generation: other_sight, viewer: other.1),
+                sight_begun(generation: other_sight, stay: other.1.stay),
               ),
             ),
           )
@@ -4050,14 +4040,14 @@ fn joined_with(
           sees: dict.insert(
             { other.1 }.sees,
             connection,
-            sight_begun(generation: other_sight, viewer: other.1),
+            sight_begun(generation: other_sight, stay: other.1.stay),
           ),
         ),
       )
     })
   let sees =
     list.map(sights, fn(sight) {
-      #(sight.0.0, sight_begun(generation: sight.1, viewer: player))
+      #(sight.0.0, sight_begun(generation: sight.1, stay: player.stay))
     })
     |> dict.from_list
   let pairs =
