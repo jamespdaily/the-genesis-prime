@@ -55,6 +55,7 @@ import genesis_prime/game/objective_kind
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/store
 import genesis_prime/table/id.{QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
@@ -838,7 +839,7 @@ pub fn an_abandoned_and_retaken_quest_starts_its_place_script_again_test() -> Ni
   let assert Ok(quest) = quest_log.quest_of(tables:, id: tower)
     as "the fixture holds the quest"
   let abandoned =
-    quest_log.hold(log: done.log, quest_id: tower, state: quest_log.Abandoned)
+    quest_log.hold(log: done.log, quest_id: tower, state: store.Abandoned)
   assert quest_log.stored_state(log: abandoned, quest_id: tower) != 2
     as "an abandoned quest is not Achieved"
   let retaken =

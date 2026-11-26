@@ -127,7 +127,8 @@ fn saved(
     quest_log.rows(log:, now_ms:)
     |> list.find(fn(row) { row.quest_id == quest_id })
     as "the log holds the quest"
-  let assert Some(active) = row.active as "the quest is in the active list"
+  let assert Some(active) = quest_support.active_of(row)
+    as "the quest is in the active list"
   active
 }
 
@@ -199,7 +200,7 @@ pub fn accept_starts_the_reachable_timed_objectives_test() -> Nil {
         at: 1000,
       ),
       quest_id: one_kill,
-      state: quest_log.Botched,
+      state: store.Botched,
     )
   assert quest_log.next_deadline(log: botched) == None
     as "a Botched quest has no deadline"

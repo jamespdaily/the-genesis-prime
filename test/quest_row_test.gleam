@@ -9,7 +9,10 @@
 ////   quest (states 1, 2), a completed one (3) and a quest known by its state alone
 ////   (4 to 7).
 
-import genesis_prime/store.{ActiveQuest, QuestRow}
+import genesis_prime/store.{
+  Abandoned, Accepted, Achieved, ActiveQuest, ActiveRow, Botched, CompletedRow,
+  Ignored, KnownRow, Mentioned,
+}
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -40,64 +43,49 @@ pub fn a_quest_row_is_built_only_with_the_columns_its_state_holds_test() -> Nil 
         1,
         None,
         Some(entry()),
-        Ok(QuestRow(
-          quest_id:,
-          state: 1,
-          completed_at: None,
-          active: Some(entry()),
-        )),
+        Ok(ActiveRow(quest_id:, state: Accepted, active: entry())),
       ),
       #(
         "state 2 with an entry",
         2,
         None,
         Some(entry()),
-        Ok(QuestRow(
-          quest_id:,
-          state: 2,
-          completed_at: None,
-          active: Some(entry()),
-        )),
+        Ok(ActiveRow(quest_id:, state: Achieved, active: entry())),
       ),
       #(
         "state 3 with a time",
         3,
         Some(completed_at),
         None,
-        Ok(QuestRow(
-          quest_id:,
-          state: 3,
-          completed_at: Some(completed_at),
-          active: None,
-        )),
+        Ok(CompletedRow(quest_id:, at: completed_at)),
       ),
       #(
         "state 4 with none",
         4,
         None,
         None,
-        Ok(QuestRow(quest_id:, state: 4, completed_at: None, active: None)),
+        Ok(KnownRow(quest_id:, state: Botched)),
       ),
       #(
         "state 5 with none",
         5,
         None,
         None,
-        Ok(QuestRow(quest_id:, state: 5, completed_at: None, active: None)),
+        Ok(KnownRow(quest_id:, state: Mentioned)),
       ),
       #(
         "state 6 with none",
         6,
         None,
         None,
-        Ok(QuestRow(quest_id:, state: 6, completed_at: None, active: None)),
+        Ok(KnownRow(quest_id:, state: Abandoned)),
       ),
       #(
         "state 7 with none",
         7,
         None,
         None,
-        Ok(QuestRow(quest_id:, state: 7, completed_at: None, active: None)),
+        Ok(KnownRow(quest_id:, state: Ignored)),
       ),
       #("state 3 with no time", 3, None, None, Error(Nil)),
       #("state 1 with no entry", 1, None, None, Error(Nil)),

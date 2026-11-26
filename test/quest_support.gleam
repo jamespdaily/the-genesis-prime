@@ -17,7 +17,8 @@ import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/target_group
 import genesis_prime/store.{
-  type HeldItem, type QuestRow, ActiveQuest, QuestRow, UsedSpawn,
+  type HeldItem, type QuestRow, Accepted, ActiveQuest, ActiveRow, CompletedRow,
+  KnownRow, UsedSpawn,
 }
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
@@ -25,7 +26,7 @@ import genesis_prime/table/quest2
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import planted_table.{Integer}
 
 pub const one_time = 2347
@@ -110,14 +111,32 @@ pub fn unit_ref(unit_id unit_id: Int) -> SpawnedUnit {
   SpawnedUnit(unit_id:, spawn_id: SpawnId(unit_id))
 }
 
+/// The lua QuestState a saved row holds.
+pub fn state_of(row row: QuestRow) -> Int {
+  store.quest_columns(row).0
+}
+
+/// The completed time a saved row holds: `Some` for a Completed row only.
+pub fn completed_at_of(row row: QuestRow) -> Option(Int) {
+  store.quest_columns(row).1
+}
+
+/// The active entry a saved row holds: `Some` for an Accepted or Achieved row only.
+pub fn active_of(row row: QuestRow) -> Option(store.ActiveQuest) {
+  store.quest_columns(row).2
+}
+
 /// A quest completed at this many Unix seconds.
 pub fn completed(quest_id quest_id: Int, at at: Int) -> QuestRow {
-  QuestRow(quest_id:, state: 3, completed_at: Some(at), active: None)
+  CompletedRow(quest_id:, at:)
 }
 
 /// A quest the client holds only a state of (4 to 7).
 pub fn known(quest_id quest_id: Int, state state: Int) -> QuestRow {
-  QuestRow(quest_id:, state:, completed_at: None, active: None)
+  let assert Ok(row) =
+    store.quest_row(quest_id:, state:, completed_at: None, active: None)
+    as "the state is one of 4 to 7"
+  row
 }
 
 /// A quest in the active list (state 1 or 2) with this entry.
@@ -129,23 +148,26 @@ pub fn active(
   done_mask done_mask: Int,
   progress progress: List(Int),
 ) -> QuestRow {
-  QuestRow(
-    quest_id:,
-    state:,
-    completed_at: None,
-    active: Some(
-      ActiveQuest(
-        placeholder_objective_id:,
-        tracked:,
-        done_mask:,
-        progress:,
-        quest_ms_left: 0,
-        objective_ms_left: list.map(progress, fn(_) { 0 }),
-        kill_mask: no_kills(),
-        used: [],
+  let assert Ok(row) =
+    store.quest_row(
+      quest_id:,
+      state:,
+      completed_at: None,
+      active: Some(
+        ActiveQuest(
+          placeholder_objective_id:,
+          tracked:,
+          done_mask:,
+          progress:,
+          quest_ms_left: 0,
+          objective_ms_left: list.map(progress, fn(_) { 0 }),
+          kill_mask: no_kills(),
+          used: [],
+        ),
       ),
-    ),
-  )
+    )
+    as "the state is 1 or 2"
+  row
 }
 
 /// The kill mask of an entry that has killed no member of any group: one 0 for each of the
@@ -178,9 +200,9 @@ pub fn accepted_with_kills(
   kill_mask kill_mask: List(Int),
 ) -> QuestRow {
   let accepted = accepted(quest_id:, progress:)
-  let assert Some(entry) = accepted.active
+  let assert ActiveRow(active: entry, ..) = accepted
     as "an accepted quest holds its entry"
-  QuestRow(..accepted, active: Some(ActiveQuest(..entry, kill_mask:)))
+  ActiveRow(..accepted, active: ActiveQuest(..entry, kill_mask:))
 }
 
 /// An accepted quest with no placeholder, untracked, with these progress values and these
@@ -191,17 +213,15 @@ pub fn accepted_with_used(
   used used: List(#(Int, Int)),
 ) -> QuestRow {
   let accepted = accepted(quest_id:, progress:)
-  let assert Some(entry) = accepted.active
+  let assert ActiveRow(active: entry, ..) = accepted
     as "an accepted quest holds its entry"
-  QuestRow(
+  ActiveRow(
     ..accepted,
-    active: Some(
-      ActiveQuest(
-        ..entry,
-        used: list.map(used, fn(one) {
-          UsedSpawn(objective_index: one.0, spawn_id: one.1)
-        }),
-      ),
+    active: ActiveQuest(
+      ..entry,
+      used: list.map(used, fn(one) {
+        UsedSpawn(objective_index: one.0, spawn_id: one.1)
+      }),
     ),
   )
 }
@@ -214,9 +234,9 @@ pub fn used_of(log log: QuestLog, quest_id quest_id: Int) -> List(#(Int, Int)) {
       row.quest_id == quest_id
     })
   {
-    Ok(QuestRow(active: Some(ActiveQuest(used:, ..)), ..)) ->
+    Ok(ActiveRow(active: ActiveQuest(used:, ..), ..)) ->
       list.map(used, fn(one) { #(one.objective_index, one.spawn_id) })
-    Ok(QuestRow(active: None, ..)) | Error(Nil) -> []
+    Ok(CompletedRow(..)) | Ok(KnownRow(..)) | Error(Nil) -> []
   }
 }
 
@@ -255,21 +275,18 @@ pub fn timed(
   progress progress: List(Int),
   quest_ms_left quest_ms_left: Int,
 ) -> QuestRow {
-  QuestRow(
+  ActiveRow(
     quest_id:,
-    state: 1,
-    completed_at: None,
-    active: Some(
-      ActiveQuest(
-        placeholder_objective_id: 0,
-        tracked: True,
-        done_mask: 0,
-        progress:,
-        quest_ms_left:,
-        objective_ms_left: list.map(progress, fn(_) { 0 }),
-        kill_mask: no_kills(),
-        used: [],
-      ),
+    state: Accepted,
+    active: ActiveQuest(
+      placeholder_objective_id: 0,
+      tracked: True,
+      done_mask: 0,
+      progress:,
+      quest_ms_left:,
+      objective_ms_left: list.map(progress, fn(_) { 0 }),
+      kill_mask: no_kills(),
+      used: [],
     ),
   )
 }
@@ -283,21 +300,18 @@ pub fn with_objective_time(
   done_mask done_mask: Int,
   objective_ms_left objective_ms_left: List(Int),
 ) -> QuestRow {
-  QuestRow(
+  ActiveRow(
     quest_id:,
-    state: 1,
-    completed_at: None,
-    active: Some(
-      ActiveQuest(
-        placeholder_objective_id: 0,
-        tracked: True,
-        done_mask:,
-        progress:,
-        quest_ms_left: 0,
-        objective_ms_left:,
-        kill_mask: no_kills(),
-        used: [],
-      ),
+    state: Accepted,
+    active: ActiveQuest(
+      placeholder_objective_id: 0,
+      tracked: True,
+      done_mask:,
+      progress:,
+      quest_ms_left: 0,
+      objective_ms_left:,
+      kill_mask: no_kills(),
+      used: [],
     ),
   )
 }

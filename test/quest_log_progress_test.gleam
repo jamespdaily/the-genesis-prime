@@ -65,12 +65,14 @@ const one_kill = 1857
 const counted_kill = 4705
 
 fn done_mask_of(row row: QuestRow) -> Int {
-  let assert Some(active) = row.active as "the quest is in the active list"
+  let assert Some(active) = quest_support.active_of(row)
+    as "the quest is in the active list"
   active.done_mask
 }
 
 fn progress_of(row row: QuestRow) -> List(Int) {
-  let assert Some(active) = row.active as "the quest is in the active list"
+  let assert Some(active) = quest_support.active_of(row)
+    as "the quest is in the active list"
   active.progress
 }
 
@@ -269,7 +271,10 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
     as "the stored state becomes Achieved"
   assert quest_log.state(log: only.log, quest: skipped) == 2
     as "the state the client computes agrees with the stored one"
-  assert quest_support.saved_row(log: only.log, quest_id: skipped_then_gated).state
+  assert quest_support.state_of(quest_support.saved_row(
+      log: only.log,
+      quest_id: skipped_then_gated,
+    ))
     == 2
     as "the place save writes the Achieved state"
 
@@ -364,7 +369,10 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
     as "the quest was Achieved already, so the client is not told again"
   assert quest_log.stored_state(log: late.log, quest_id: optional_talk) == 2
     as "the quest stays Achieved"
-  assert quest_support.saved_row(log: late.log, quest_id: optional_talk).state
+  assert quest_support.state_of(quest_support.saved_row(
+      log: late.log,
+      quest_id: optional_talk,
+    ))
     == 2
     as "the place save writes Achieved"
   assert done_mask_of(row: quest_support.saved_row(

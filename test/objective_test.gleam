@@ -107,7 +107,7 @@ import genesis_prime/game/objective.{
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/target_group
-import genesis_prime/store.{ActiveQuest, HeldItem, QuestRow}
+import genesis_prime/store.{ActiveQuest, ActiveRow, HeldItem}
 import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Item2Id, Spell4Id, UnitRaceId,
 }
@@ -580,7 +580,7 @@ fn kill_masks_of(
   log log: quest_log.QuestLog,
   quest_id quest_id: Int,
 ) -> List(Int) {
-  let assert [QuestRow(active: Some(ActiveQuest(kill_mask:, ..)), ..)] =
+  let assert [ActiveRow(active: ActiveQuest(kill_mask:, ..), ..)] =
     quest_log.rows(log:, now_ms: 0)
     |> list.filter(fn(row) { row.quest_id == quest_id })
     as "the quest is in the active list"
@@ -838,7 +838,7 @@ pub fn an_abandoned_quest_retaken_starts_its_group_with_no_kills_test() -> Nil {
     quest_log.hold(
       log: killed_once,
       quest_id: strange_brew,
-      state: quest_log.Abandoned,
+      state: store.Abandoned,
     )
   let retaken =
     quest_log.accept(
@@ -3031,7 +3031,7 @@ pub fn an_abandoned_and_retaken_quest_forgets_its_cast_units_test() -> Nil {
       log: quest_log.hold(
         log: first.log,
         quest_id: 3145,
-        state: quest_log.Abandoned,
+        state: store.Abandoned,
       ),
       quest:,
       max_time_ms: 0,

@@ -284,8 +284,9 @@ pub fn the_completed_hidden_objective_and_the_achieved_state_survive_a_relog_tes
   let rows = quest_log.rows(log: done.log, now_ms: 0)
   let assert [row] = rows as "the log saves the one quest it holds"
   assert row.quest_id == nature
-  assert row.state == 2
-  let assert Some(active) = row.active as "an Achieved quest saves its entry"
+  assert quest_support.state_of(row) == 2
+  let assert Some(active) = quest_support.active_of(row)
+    as "an Achieved quest saves its entry"
   assert active.done_mask == 7
     as "objectives 0, 1 and 2 are done: bits 0 to 2 of the mask"
   assert active.progress == [1000, 4, 1]
@@ -341,7 +342,8 @@ pub fn two_hidden_objectives_of_one_quest_complete_together_test() -> Nil {
     as "opcode.0x361 for each hidden objective at 1 of 1, then one 0x35c state 2: neither waits for the other, though 0x1405fbc40 needs both"
   let assert [row] = quest_log.rows(log: done.log, now_ms: 0)
     as "the log saves the one quest it holds"
-  let assert Some(active) = row.active as "an Achieved quest saves its entry"
+  let assert Some(active) = quest_support.active_of(row)
+    as "an Achieved quest saves its entry"
   assert active.done_mask == 7 as "objectives 0, 1 and 2 are done"
 }
 

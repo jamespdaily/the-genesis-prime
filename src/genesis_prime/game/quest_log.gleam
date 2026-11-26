@@ -75,7 +75,10 @@ import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{type Now}
-import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow, UsedSpawn}
+import genesis_prime/store.{
+  type ActiveState, type KnownState, type QuestRow, Accepted, Achieved,
+  ActiveQuest, ActiveRow, CompletedRow, KnownRow, UsedSpawn,
+}
 import genesis_prime/table/id.{Quest2Id, QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2}
@@ -150,21 +153,6 @@ type Entry {
   Known(state: KnownState)
 }
 
-/// The two states the client's active list holds (lua QuestState 1 and 2; any other
-/// crashes it, opcode.0x35f.active_state_crash).
-type ActiveState {
-  Accepted
-  Achieved
-}
-
-/// The states of the client's second list (lua QuestState 4 to 7).
-pub type KnownState {
-  Botched
-  Mentioned
-  Abandoned
-  Ignored
-}
-
 /// Why the client would refuse a saved entry: the quest and what is wrong with it.
 pub type Refused {
   Refused(quest_id: Int, reason: Reason)
@@ -175,9 +163,6 @@ pub type Reason {
   /// The client has no Quest2 row for the id and answers with the Client/Server
   /// Data Mismatch disconnect (opcode.0x35f.unknown_quest).
   NoQuest2Row
-  /// The saved state does not go with the saved columns of a quest the client's
-  /// lists hold.
-  StateDoesNotGoWithColumns(state: Int)
   /// The entry holds this many progress values for a quest with this many
   /// objectives: the client takes one for each (0x1405fbdc0).
   ProgressCountIsNotObjectiveCount(progress: Int, objectives: Int)
@@ -301,12 +286,8 @@ fn entry_of(
     quest2.get(tables:, id: Quest2Id(row.quest_id))
     |> result.replace_error(refuse(NoQuest2Row)),
   )
-  case row.state, row.completed_at, row.active {
-    1, None, Some(active) | 2, None, Some(active) -> {
-      let state = case row.state {
-        1 -> Accepted
-        _ -> Achieved
-      }
+  case row {
+    ActiveRow(state:, active:, ..) -> {
       use placeholder <- result.map(active_taken(
         quest:,
         active:,
@@ -335,12 +316,8 @@ fn entry_of(
         }),
       )
     }
-    3, Some(at), None -> Ok(Completed(at:))
-    4, None, None -> Ok(Known(state: Botched))
-    5, None, None -> Ok(Known(state: Mentioned))
-    6, None, None -> Ok(Known(state: Abandoned))
-    7, None, None -> Ok(Known(state: Ignored))
-    state, _, _ -> Error(refuse(StateDoesNotGoWithColumns(state:)))
+    CompletedRow(at:, ..) -> Ok(Completed(at:))
+    KnownRow(state:, ..) -> Ok(Known(state:))
   }
 }
 
@@ -420,10 +397,6 @@ fn reason_text(reason reason: Reason) -> String {
   case reason {
     NoQuest2Row ->
       "the client has no Quest2 row for it and answers with the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest)"
-    StateDoesNotGoWithColumns(state:) ->
-      "the saved state "
-      <> int.to_string(state)
-      <> " does not go with the saved columns of a quest the client's lists hold"
     ProgressCountIsNotObjectiveCount(progress:, objectives:) ->
       int.to_string(progress)
       <> " progress values for a quest of "
@@ -478,11 +451,10 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
             deadlines: objective_deadlines_ms,
             now_ms:,
           )
-        QuestRow(
+        ActiveRow(
           quest_id:,
-          state: active_state_number(state:),
-          completed_at: None,
-          active: Some(ActiveQuest(
+          state:,
+          active: ActiveQuest(
             placeholder_objective_id:,
             tracked:,
             done_mask:,
@@ -494,18 +466,11 @@ pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
               let SpawnId(spawn_id) = one.1
               UsedSpawn(objective_index: one.0, spawn_id:)
             }),
-          )),
+          ),
         )
       }
-      Completed(at:) ->
-        QuestRow(quest_id:, state: 3, completed_at: Some(at), active: None)
-      Known(state:) ->
-        QuestRow(
-          quest_id:,
-          state: known_state_number(state:),
-          completed_at: None,
-          active: None,
-        )
+      Completed(at:) -> CompletedRow(quest_id:, at:)
+      Known(state:) -> KnownRow(quest_id:, state:)
     }
   })
 }
@@ -531,24 +496,6 @@ fn in_quest_order(log log: QuestLog) -> List(#(Int, Entry)) {
   |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
 }
 
-/// The lua QuestState of an active quest.
-fn active_state_number(state state: ActiveState) -> Int {
-  case state {
-    Accepted -> 1
-    Achieved -> 2
-  }
-}
-
-/// The lua QuestState of a quest of the second list.
-fn known_state_number(state state: KnownState) -> Int {
-  case state {
-    Botched -> 4
-    Mentioned -> 5
-    Abandoned -> 6
-    Ignored -> 7
-  }
-}
-
 /// The log as the client is sent it at a play entry, and the log that remembers the
 /// reset time the message carried.
 pub fn login(
@@ -572,7 +519,10 @@ pub fn login(
     list.filter_map(entries, fn(pair) {
       case pair.1 {
         Known(state:) ->
-          Ok(QuestKnown(quest_id: pair.0, state: known_state_number(state:)))
+          Ok(QuestKnown(
+            quest_id: pair.0,
+            state: store.known_state_number(state:),
+          ))
         Active(..) | Completed(..) -> Error(Nil)
       }
     })
@@ -823,7 +773,7 @@ fn active_entry(quest_id quest_id: Int, entry entry: Entry) -> QuestActive {
   }
   QuestActive(
     quest_id:,
-    state: active_state_number(state:),
+    state: store.active_state_number(state:),
     placeholder_objective_id:,
     flags: int.bitwise_or(
       int.bitwise_shift_left(tracked_bit, 1),
@@ -1101,7 +1051,7 @@ pub fn state(log log: QuestLog, quest quest: Quest) -> Int {
   case dict.get(log.entries, quest.id) {
     Error(Nil) -> 0
     Ok(Completed(..)) -> 3
-    Ok(Known(state:)) -> known_state_number(state:)
+    Ok(Known(state:)) -> store.known_state_number(state:)
     Ok(Active(state: Achieved, ..)) -> 2
     Ok(Active(state: Accepted, done_mask:, ..)) ->
       case
@@ -1150,8 +1100,8 @@ pub fn stored_state(log log: QuestLog, quest_id quest_id: Int) -> Int {
   case dict.get(log.entries, quest_id) {
     Error(Nil) -> 0
     Ok(Completed(..)) -> 3
-    Ok(Known(state:)) -> known_state_number(state:)
-    Ok(Active(state:, ..)) -> active_state_number(state:)
+    Ok(Known(state:)) -> store.known_state_number(state:)
+    Ok(Active(state:, ..)) -> store.active_state_number(state:)
   }
 }
 
@@ -1283,7 +1233,7 @@ pub fn expire(log log: QuestLog, now_ms now_ms: Int) -> #(QuestLog, List(Int)) {
     })
   #(
     list.fold(due, log, fn(log, quest_id) {
-      hold(log:, quest_id:, state: Botched)
+      hold(log:, quest_id:, state: store.Botched)
     }),
     due,
   )
