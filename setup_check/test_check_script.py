@@ -17,7 +17,8 @@ the real toolchain, the real database or the real client:
   `--tag code_rule`), when a file under test/code_rule holds PLANTED_BREACH, and,
   when it runs the tests tagged registry (a run with no `--tag`, or `--tag
   registry`), when a file under test holds PLANTED_REGISTRY_FAILURE; a test run
-  takes PLANT_GLEAM_TEST_SECONDS, and `gleam run -m glinter` takes
+  takes PLANT_GLEAM_TEST_SECONDS and dies by signal 6 (after it listed its tests) when
+  PLANT_GLEAM_TEST_ABORTS is set, and `gleam run -m glinter` takes
   PLANT_GLINTER_SECONDS; with
   PLANT_RENDEZVOUS set, the plain test run (`gleam test -- --workers N`) waits until
   glinter, table_generator, squirrel, the world-data run and the boot-test run have each started, so a part
@@ -227,6 +228,11 @@ if [ "$1" = test ] && [ -n "$PLANT_LISTED_TESTS" ] && [ -n "$GENESIS_TEST_PROGRE
   now=$(date +%%s)
   printf 'start 1.1 %%s planted_test:one_that_ended_test\nend 1.1\n' $((now - 7)) >>"$GENESIS_TEST_PROGRESS_FILE"
   [ "$PLANT_LISTED_TESTS" = ended ] || printf 'start 1.2 %%s planted_test:one_that_hung_test\n' $((now - 5)) >>"$GENESIS_TEST_PROGRESS_FILE"
+fi
+# PLANT_GLEAM_TEST_ABORTS: the run dies by signal 6, as the VM does when it aborts, after it has listed its tests.
+if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_ABORTS" ]; then
+  kill -ABRT $$
+  sleep 5
 fi
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
   sleep "$PLANT_GLEAM_TEST_SECONDS"
@@ -834,6 +840,20 @@ class HungPartTest(unittest.TestCase):
         # budget far above 30 s, shows the check did not wait for the drop. A bound
         # tighter than the timeout would measure the machine's speed.
         self.assertEqual(run.left_running, [], "the planted sleep is still running")
+
+
+class AbortedTestRunTest(unittest.TestCase):
+    def test_a_run_the_vm_aborts_names_the_tests_it_had_started(self):
+        run = shared_run(
+            "aborted-test-run", timeout=40,
+            PLANT_LISTED_TESTS="hung", PLANT_GLEAM_TEST_ABORTS="1",
+        )
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"gleam-test")
+        lines = [line.strip() for line in run.output.splitlines() if "still running:" in line]
+        self.assertEqual(len(lines), 1, "only the unfinished test is named:\n" + run.output)
+        self.assertRegex(lines[0], r"^still running: planted_test:one_that_hung_test \(\d+ s\)$")
+        self.assertIn("signal 6", run.output, "the abort is named by its signal")
 
 
 def plant_failing_gated_test(case: PlantedCheckCase) -> None:
