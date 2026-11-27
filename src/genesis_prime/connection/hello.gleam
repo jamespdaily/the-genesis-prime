@@ -7,6 +7,7 @@
 
 import genesis_prime/client_archive
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/server_hello.{ServerHello}
 
 /// The message table checksum the client checks in the hello
@@ -16,20 +17,22 @@ const message_table_checksum = 0x097998A0
 /// The hello's frame for the realm with this id, for the caller to write bare
 /// or in a wrapper.
 pub fn frame(realm_id realm_id: Int) -> Frame {
-  let assert Ok(body) =
-    server_hello.encode(ServerHello(
-      build: client_archive.target_build,
-      realm_id:,
-      unread_3: 0,
-      unread_4: 0,
-      unread_5: 0,
-      unread_6: 0,
-      unread_7: 0,
-      message_table_checksum:,
-      unread_9: 0,
-      unread_10: 0,
-      unread_11: 0,
-    ))
-    as "the realm's id is within 32 bits"
+  let body =
+    bit_stream.must(
+      ServerHello(
+        build: client_archive.target_build,
+        realm_id:,
+        unread_3: 0,
+        unread_4: 0,
+        unread_5: 0,
+        unread_6: 0,
+        unread_7: 0,
+        message_table_checksum:,
+        unread_9: 0,
+        unread_10: 0,
+        unread_11: 0,
+      ),
+      server_hello.encode,
+    )
   Frame(message_id: server_hello.message_id, body:)
 }

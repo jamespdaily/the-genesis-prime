@@ -160,7 +160,7 @@ def _erl_on_path(machine: Machine) -> list[Missing]:
         return []
     if Path(found).resolve() == patched.resolve():
         return []
-    fix = "put the patched OTP's bin first on PATH, as setup_check/environment.sh does (PATH=%s:$PATH)" % (directory / "bin")
+    fix = "load the environment in this shell, `. setup_check/environment.sh`, which puts the patched OTP's bin first on PATH (PATH=%s:$PATH)" % (directory / "bin")
     return [Missing("the erl on PATH from the patched OTP at %s" % patched,
                     "%s resolves to %s, not %s" % (found, Path(found).resolve(), patched.resolve()), fix)]
 

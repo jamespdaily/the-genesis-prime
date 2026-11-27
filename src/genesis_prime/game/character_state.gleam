@@ -39,6 +39,7 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/class_resource
 import genesis_prime/game/currency.{type Currencies}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/player_character_state.{PlayerCharacterState}
 import genesis_prime/message/reputation_list.{ReputationList}
 import genesis_prime/store.{type Character}
@@ -85,8 +86,8 @@ pub fn frame(
   experience experience: Int,
   currencies currencies: Currencies,
 ) -> Frame {
-  let assert Ok(body) =
-    player_character_state.encode(
+  let body =
+    bit_stream.must(
       PlayerCharacterState(
         held_items: [],
         currencies: currency.bytes(currencies:),
@@ -116,7 +117,7 @@ pub fn frame(
         matching_map_mask: 0,
         character_entitlements: [],
       ),
+      player_character_state.encode,
     )
-    as "an experience below 2147483648 and a class's proficiency mask of 32 bits fit the message"
   Frame(message_id: player_character_state.message_id, body:)
 }

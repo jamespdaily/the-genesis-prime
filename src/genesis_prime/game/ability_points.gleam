@@ -23,6 +23,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/ability_points.{AbilityPoints}
+import genesis_prime/message/bit_stream
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import gleam/bool
@@ -51,12 +52,11 @@ pub fn frame(
 /// 0x0169 for a total and the points spent: the rule refuses a save that spends above the total
 /// and the level never falls, so a negative points to spend stops the caller.
 pub fn points_frame(total total: Int, spent spent: Int) -> Frame {
-  let assert Ok(body) =
-    ability_points.encode(AbilityPoints(
-      ability_points: total - spent,
-      total_ability_points: total,
-    ))
-    as "the rule refuses a save that spends above the total, so the points to spend are 0 or more and fit 32 bits"
+  let body =
+    bit_stream.must(
+      AbilityPoints(ability_points: total - spent, total_ability_points: total),
+      ability_points.encode,
+    )
   Frame(message_id: ability_points.message_id, body:)
 }
 

@@ -21,6 +21,7 @@ import genesis_prime/message/action_set
 import genesis_prime/message/action_set_amps.{ActionSetAmps}
 import genesis_prime/message/action_set_saved.{ActionSetSaved}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
+import genesis_prime/message/bit_stream
 import genesis_prime/table/id.{type EldanAugmentationId, type Spell4BaseId}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -95,26 +96,30 @@ pub fn action_set(
       }
     })
     |> list.filter_map(fn(shortcut) { shortcut })
-  let assert Ok(body) =
-    action_set.encode(action_set.ActionSet(
-      action_set_index: set,
-      unlocked: set_unlocked,
-      result:,
-      shortcuts: named,
-    ))
-    as "a set below 8, a result of 6 bits, a bar slot below 48 and an id of 32 bits fit the message"
+  let body =
+    bit_stream.must(
+      action_set.ActionSet(
+        action_set_index: set,
+        unlocked: set_unlocked,
+        result:,
+        shortcuts: named,
+      ),
+      action_set.encode,
+    )
   Frame(message_id: action_set.message_id, body:)
 }
 
 /// 0x01A3 of one action set's AMPs, in the order given: the client replaces the set's list with
 /// it and forgets its unsaved picks (`opcode.0x1a3`).
 pub fn amp_list(set set: Int, ids ids: List(EldanAugmentationId)) -> Frame {
-  let assert Ok(body) =
-    action_set_amps.encode(ActionSetAmps(
-      action_set_index: set,
-      amp_ids: list.map(ids, fn(id) { id.value }),
-    ))
-    as "a set below 4 and at most 127 ids of 16 bits fit the message"
+  let body =
+    bit_stream.must(
+      ActionSetAmps(
+        action_set_index: set,
+        amp_ids: list.map(ids, fn(id) { id.value }),
+      ),
+      action_set_amps.encode,
+    )
   Frame(message_id: action_set_amps.message_id, body:)
 }
 
@@ -123,14 +128,14 @@ pub fn amp_list(set set: Int, ids ids: List(EldanAugmentationId)) -> Frame {
 pub fn action_set_saved(
   add_combat_log_line add_combat_log_line: Bool,
 ) -> Frame {
-  let assert Ok(body) =
-    action_set_saved.encode(
+  let body =
+    bit_stream.must(
       ActionSetSaved(add_combat_log_line: case add_combat_log_line {
         True -> 1
         False -> 0
       }),
+      action_set_saved.encode,
     )
-    as "one bit fits the message"
   Frame(message_id: action_set_saved.message_id, body:)
 }
 
@@ -165,8 +170,8 @@ pub fn tiers(
   sets sets: List(Int),
   tier_of tier_of: fn(Int, Spell4BaseId) -> Int,
 ) -> Frame {
-  let assert Ok(body) =
-    ability_tiers.encode(
+  let body =
+    bit_stream.must(
       AbilityTiers(
         tiers: list.flat_map(abilities, fn(ability) {
           list.map(sets, fn(action_set_index) {
@@ -178,8 +183,8 @@ pub fn tiers(
           })
         }),
       ),
+      ability_tiers.encode,
     )
-    as "a Spell4Base id of 18 bits, a tier of 4 and a set of 3 fit the message"
   Frame(message_id: ability_tiers.message_id, body:)
 }
 

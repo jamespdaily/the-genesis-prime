@@ -106,9 +106,9 @@ jobs:
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
     # A cold run builds the patched OTP in 146 seconds on the runner and the whole cold
-    # setup takes 3 minutes 11 seconds (run 40316762854); the longest part's hang limit is
-    # 1200 s (GENESIS_CHECK_BUDGET_SECONDS below); 30 minutes covers the cold setup, that
-    # limit and the steps after it.
+    # setup takes 3 minutes 11 seconds (run 40316762854); a part that keeps using CPU is
+    # stopped and named by the check at its wall cap of 1500 s (GENESIS_CHECK_WALL_CAP_SECONDS
+    # below), so 30 minutes covers the cold setup, that cap and the steps after it.
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -135,9 +135,12 @@ jobs:
       # required either way, from GENESIS_OTP_DIR (set by the toolchain action), and first
       # on PATH for ./check.
       GENESIS_NO_CLIENT: ${{ secrets.CLIENT_DATA_KEY == '' && '1' || '' }}
-      # The wall time a part warns over, and a third of its hang limit (the only time
-      # limit that fails the run).
+      # The wall time a part warns over, and a third of the time after which a part that
+      # has used no CPU for the idle window is hung.
       GENESIS_CHECK_BUDGET_SECONDS: "400"
+      # The wall time at which a part is hung whatever it does: below the job's timeout
+      # less the cold setup, so the check names a hung part and GitHub does not kill it.
+      GENESIS_CHECK_WALL_CAP_SECONDS: "1500"
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres
@@ -219,12 +222,18 @@ jobs:
         if: ${{ env.GENESIS_NO_CLIENT != '1' && (matrix.fast || needs.scope.outputs.light != 'true') }}
         continue-on-error: true
         run: |
+          # llvm-18 comes from Ubuntu's own repositories; the runner's Microsoft one
+          # can answer 403 and stop apt-get update.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends llvm-18
           echo "GENESIS_LLVM_OBJDUMP=/usr/lib/llvm-18/bin/llvm-objdump" >> "$GITHUB_ENV"
       - name: Install llvm-objdump again
         if: ${{ steps.llvm.outcome == 'failure' }}
         run: |
+          # llvm-18 comes from Ubuntu's own repositories; the runner's Microsoft one
+          # can answer 403 and stop apt-get update.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends llvm-18
           echo "GENESIS_LLVM_OBJDUMP=/usr/lib/llvm-18/bin/llvm-objdump" >> "$GITHUB_ENV"
@@ -324,7 +333,7 @@ jobs:
         if: steps.files.outputs.any == 'true'
         env:
           BASE_BRANCH: ${{ github.base_ref }}
-        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" python3.13 -I dev/repeat_tests.py "origin/$BASE_BRANCH"
+        run: . setup_check/environment.sh && python3.13 -I dev/repeat_tests.py "origin/$BASE_BRANCH"
 
   # On a push to main whose check was skipped: the caches a pull request restores
   # are only those saved on main, so this builds and saves what the key says is

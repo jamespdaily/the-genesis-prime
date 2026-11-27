@@ -412,8 +412,8 @@ pub fn confirmed_frame(
   client_cast_id client_cast_id: Int,
   start start: SpellStarted,
 ) -> Frame {
-  let assert Ok(body) =
-    spell_cast_confirmed.encode(
+  let body =
+    bit_stream.must(
       SpellCastConfirmed(
         client_cast_id:,
         server_cast_id: start.cast_id,
@@ -423,8 +423,8 @@ pub fn confirmed_frame(
         initial_positions: [],
         telegraph_positions: [],
       ),
+      spell_cast_confirmed.encode,
     )
-    as "a cast id of 32 bits and floats fit the message, and the rule sends no list"
   Frame(message_id: spell_cast_confirmed.message_id, body:)
 }
 
@@ -615,24 +615,21 @@ pub fn creature_missed(
 /// 0x07FF for a cast that starts, which the caster's rule tells each viewer as
 /// news and each viewer's connection writes the same way.
 pub fn started_frame(start start: SpellStarted) -> Frame {
-  let assert Ok(body) = spell_started.encode(start)
-    as "a cast id of 32 bits, Spell4 ids of 18 and a unit id of 32 fit the message, and the rule sends no list"
+  let body = bit_stream.must(start, spell_started.encode)
   Frame(message_id: spell_started.message_id, body:)
 }
 
 /// 0x07F4 for a cast that goes off, written by the caster's rule and by each
 /// viewer's connection the same way.
 pub fn went_frame(go go: SpellGo) -> Frame {
-  let assert Ok(body) = spell_go.encode(go)
-    as "a cast id of 32 bits and a phase of 8 fit the message, and the rule sends no list"
+  let body = bit_stream.must(go, spell_go.encode)
   Frame(message_id: spell_go.message_id, body:)
 }
 
 /// 0x07F8 for one tick of a periodic row of a cast on a unit, written by the caster's
 /// rule and by each viewer's connection the same way (`opcode.0x7f8`).
 pub fn ticked_frame(tick tick: SpellEffectTick) -> Frame {
-  let assert Ok(body) = spell_effect_tick.encode(tick)
-    as "a cast id of 32 bits, a Spell4Effects id of 19 and a tick's few descriptions fit the message"
+  let body = bit_stream.must(tick, spell_effect_tick.encode)
   Frame(message_id: spell_effect_tick.message_id, body:)
 }
 
@@ -652,8 +649,7 @@ pub fn finished_frame(cast_id cast_id: Int) -> Frame {
 /// 0x0811 for a cast taken off some units, written by the caster's rule and by each
 /// viewer's connection the same way (`opcode.0x811`).
 pub fn targets_removed_frame(removed removed: SpellTargetsRemoved) -> Frame {
-  let assert Ok(body) = spell_targets_removed.encode(removed)
-    as "a cast id of 32 bits and at most a few unit ids of 32 fit the message"
+  let body = bit_stream.must(removed, spell_targets_removed.encode)
   Frame(message_id: spell_targets_removed.message_id, body:)
 }
 
@@ -791,7 +787,6 @@ pub fn missed_message(
 /// 0x07FB for a cast whose targets were missed, written by the caster's rule and by
 /// each viewer's connection the same way.
 pub fn missed_frame(missed missed: SpellMissed) -> Frame {
-  let assert Ok(body) = spell_missed.encode(missed)
-    as "a cast id of 32 bits, a unit id of 32 and a reason of 4 fit the message"
+  let body = bit_stream.must(missed, spell_missed.encode)
   Frame(message_id: spell_missed.message_id, body:)
 }

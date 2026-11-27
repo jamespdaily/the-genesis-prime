@@ -961,6 +961,53 @@ pub fn the_load_fails_on_a_missing_budget_stat_or_property_row_test() -> Nil {
     as "ItemStat 4's first entry is kind 1 and names UnitProperty2 34"
 }
 
+/// The client's 0x93a refuses a property id of 197 or more (`opcode.0x93a`), and UnitProperty2
+/// holds rows for 197 to 199, so the load refuses a row of the gear path that names one: an
+/// ItemStat entry of kind 1, and a row of the budget list (flag 4, a valuePerPoint), which
+/// `gear.bases` sends. Row 196 loads and is listed. ItemStat 4's first entry is kind 1; the
+/// rows 196 and 197 are made budget properties by their flags and valuePerPoint.
+pub fn the_load_refuses_a_gear_property_the_client_cannot_store_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let slots = "the client's property slots"
+  let load = fn(budget_property, stat_property) {
+    let assert Ok(rows) =
+      fixture_tables.change_all(rows: fixture_tables.rows(), edits: [
+        #("UnitProperty2", budget_property, [
+          #("flags", Integer(4)),
+          #("valuePerPoint", planted_table.Float(1.0)),
+        ]),
+        #("ItemStat", 4, [
+          #("itemStatData00", Integer(stat_property)),
+        ]),
+      ])
+      as "the fixture holds the rows changed"
+    fixture_tables.load(rows:)
+  }
+  assert load(34, 197)
+    == Error(table_store.RowMissing(
+      from_table: "ItemStat",
+      column: "itemStatData00",
+      to_table: slots,
+      id: 197,
+    ))
+    as "ItemStat 4's first entry names property 197"
+  assert load(197, 34)
+    == Error(table_store.RowMissing(
+      from_table: "UnitProperty2",
+      column: "flags",
+      to_table: slots,
+      id: 197,
+    ))
+    as "a budget row of id 197"
+  let assert Ok(tables) = load(196, 196)
+    as "property 196 is below the client's slots and loads"
+  assert list.contains(
+    list.map(item_property.budget_properties(tables:), fn(id) { id.value }),
+    196,
+  )
+    as "row 196 is a budget property"
+}
+
 // ------------------------------------------------------------ random stats
 
 /// The properties of an item the tables read in full, with the item's random-stat word.

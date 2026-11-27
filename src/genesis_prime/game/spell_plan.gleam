@@ -2628,9 +2628,17 @@ pub type PlanError {
   /// prerequisite, which no rule of the server holds.
   ControlPersistenceNotRead(spell4_id: Int, effect_id: Int)
   /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
-  /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197
-  /// (`opcode.0x93a`).
+  /// that UnitProperty2 has no row for.
   ModifierPropertyHasNoRow(spell4_id: Int, effect_id: Int, property: Int)
+  /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
+  /// of id 197 or more, which UnitProperty2 may hold a row for but the client has no slot
+  /// for: its 0x93a handler fails the entry and drops the rest of the frame
+  /// (`opcode.0x93a`).
+  ModifierPropertyBeyondClientSlots(
+    spell4_id: Int,
+    effect_id: Int,
+    property: Int,
+  )
   /// A UnitPropertyModifier effect of a tree has a multiplier, flat amount or per-level
   /// amount, or a UnitPropertyConversion effect a share, that is not a finite number:
   /// `column` is its dataBits column.
@@ -2974,6 +2982,16 @@ pub fn describe(error error: PlanError) -> String {
       <> " of property "
       <> int.to_string(property)
       <> ", which UnitProperty2 has no row for"
+    ModifierPropertyBeyondClientSlots(spell4_id:, effect_id:, property:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a UnitPropertyModifier or UnitPropertyConversion effect "
+      <> int.to_string(effect_id)
+      <> " of property "
+      <> int.to_string(property)
+      <> ", beyond the "
+      <> int.to_string(unit_properties.client_property_slots)
+      <> " property slots the client stores"
     ModifierNumberNotFinite(spell4_id:, effect_id:, column:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3650,6 +3668,7 @@ pub fn refusal_of(error error: PlanError) -> PlanRefusal {
     | ChannelWithoutPulse(..)
     | NoThresholdTime(..)
     | ModifierPropertyHasNoRow(..)
+    | ModifierPropertyBeyondClientSlots(..)
     | ModifierNumberNotFinite(..)
     | CooldownNumberNotFinite(..)
     | HealNumberNotFinite(..)
@@ -5423,7 +5442,8 @@ fn conversion_of(
   Ok(unit_properties.Conversion(from:, to:, share:))
 }
 
-/// The UnitProperty2 id a modifier row names, which the table must have a row for.
+/// The UnitProperty2 id a modifier row names: the table must have a row for it, and the
+/// client must have a slot for it (below `unit_properties.client_property_slots`).
 fn property_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -5431,13 +5451,23 @@ fn property_of(
   id id: Int,
 ) -> Result(UnitProperty2Id, PlanError) {
   let property = UnitProperty2Id(id)
-  unit_property2.get(tables:, id: property)
-  |> result.replace(property)
-  |> result.replace_error(ModifierPropertyHasNoRow(
-    spell4_id:,
-    effect_id: effect.id,
-    property: id,
-  ))
+  use _ <- result.try(
+    unit_property2.get(tables:, id: property)
+    |> result.replace_error(ModifierPropertyHasNoRow(
+      spell4_id:,
+      effect_id: effect.id,
+      property: id,
+    )),
+  )
+  case id < unit_properties.client_property_slots {
+    True -> Ok(property)
+    False ->
+      Error(ModifierPropertyBeyondClientSlots(
+        spell4_id:,
+        effect_id: effect.id,
+        property: id,
+      ))
+  }
 }
 
 /// One ForcedMove row whose targetFlags include the caster (`effect_kind.is_row_read`;

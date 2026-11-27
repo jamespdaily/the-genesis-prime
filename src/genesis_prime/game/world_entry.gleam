@@ -179,6 +179,7 @@ import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/game/visibility
 import genesis_prime/gap
+import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
@@ -1483,14 +1484,16 @@ pub fn button_frame(change change: objective.ButtonChange) -> Frame {
     objective.Add(button:) -> #(button, 1)
     objective.Remove(button:) -> #(button, 0)
   }
-  let assert Ok(body) =
-    quest_spell_shortcut.encode(QuestSpellShortcut(
-      spell4_id: button.spell4_id.value,
-      kind: 2,
-      id: button.objective_id,
-      add:,
-    ))
-    as "a Spell4 id of the table's 18 bits and a QuestObjective id of 32 fit the message"
+  let body =
+    bit_stream.must(
+      QuestSpellShortcut(
+        spell4_id: button.spell4_id.value,
+        kind: 2,
+        id: button.objective_id,
+        add:,
+      ),
+      quest_spell_shortcut.encode,
+    )
   Frame(message_id: quest_spell_shortcut.message_id, body:)
 }
 
@@ -1612,24 +1615,25 @@ fn joining(
 
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.
 fn enter_world(place place: Place) -> Effect {
-  let assert Ok(body) =
-    enter_world.encode(EnterWorld(
-      world_id: start_place.world_id(place),
-      position_x: float32.to_bits(start_place.x(place)),
-      position_y: float32.to_bits(start_place.y(place)),
-      position_z: float32.to_bits(start_place.z(place)),
-      unread_5: float32.to_bits(0.0),
-      unread_6: float32.to_bits(0.0),
-    ))
-    as "a saved world of the table's 15 bits and a position's floats fit the message"
+  let body =
+    bit_stream.must(
+      EnterWorld(
+        world_id: start_place.world_id(place),
+        position_x: float32.to_bits(start_place.x(place)),
+        position_y: float32.to_bits(start_place.y(place)),
+        position_z: float32.to_bits(start_place.z(place)),
+        unread_5: float32.to_bits(0.0),
+        unread_6: float32.to_bits(0.0),
+      ),
+      enter_world.encode,
+    )
   Send(Frame(message_id: enter_world.message_id, body:))
 }
 
 /// 0x262 for a unit, as the map built it: the entry burst's own player and
 /// another player's unit that comes into sight are written the same way.
 pub fn unit_created_frame(unit unit: UnitCreatePlayer) -> Frame {
-  let assert Ok(body) = unit_create_player.encode(unit)
-    as "a stored character's values fit the message's fields: the table's checks hold each"
+  let body = bit_stream.must(unit, unit_create_player.encode)
   Frame(message_id: unit_create_player.message_id, body:)
 }
 
@@ -1641,9 +1645,8 @@ fn player_created(unit unit: UnitCreatePlayer) -> Effect {
 /// 0x19B with the player's unit id and 0, which the client never reads
 /// (opcode.0x19b.second_value).
 fn unit_is_player(unit_id unit_id: Int) -> Effect {
-  let assert Ok(body) =
-    unit_is_player.encode(UnitIsPlayer(unit_id:, unread_2: 0))
-    as "a unit id of 32 bits fits the message"
+  let body =
+    bit_stream.must(UnitIsPlayer(unit_id:, unread_2: 0), unit_is_player.encode)
   Send(Frame(message_id: unit_is_player.message_id, body:))
 }
 
@@ -1658,26 +1661,27 @@ fn reward_properties_sent(tables tables: table_store.Tables) -> Effect {
       system: reward_property.hybrid_system,
       tier: reward_property.signature_tier,
     )
-  let assert Ok(body) =
-    reward_properties.encode(reward_property.message(values:))
-    as "two integer entries fit the message"
+  let body =
+    bit_stream.must(reward_property.message(values:), reward_properties.encode)
   Send(Frame(message_id: reward_properties.message_id, body:))
 }
 
 /// 0x6BC with the character's stored path as its only unlocked path, and the
 /// starting experience and change days (opcode.0x6bc).
 fn player_path(character character: Character) -> Effect {
-  let assert Ok(body) =
-    player_path.encode(PlayerPath(
-      path: character.path,
-      soldier_experience: starting_path_experience,
-      settler_experience: starting_path_experience,
-      scientist_experience: starting_path_experience,
-      explorer_experience: starting_path_experience,
-      unlocked_paths: int.bitwise_shift_left(1, character.path),
-      last_path_change_days: float32.to_bits(path_change_days),
-    ))
-    as "a stored path of 0 to 3 fits the message's 3 bits, and its bit fits the 4 unlocked-path bits"
+  let body =
+    bit_stream.must(
+      PlayerPath(
+        path: character.path,
+        soldier_experience: starting_path_experience,
+        settler_experience: starting_path_experience,
+        scientist_experience: starting_path_experience,
+        explorer_experience: starting_path_experience,
+        unlocked_paths: int.bitwise_shift_left(1, character.path),
+        last_path_change_days: float32.to_bits(path_change_days),
+      ),
+      player_path.encode,
+    )
   Send(Frame(message_id: player_path.message_id, body:))
 }
 
@@ -1691,13 +1695,11 @@ fn control_granted(unit_id unit_id: Int) -> Effect {
 /// (vector.opcode.0x636.body): the entry burst's for the player, and a death's
 /// for its ghost and for the player again.
 pub fn control_granted_frame(unit_id unit_id: Int) -> Frame {
-  let assert Ok(body) =
-    client_control_granted.encode(ClientControlGranted(
-      echo_value: 0,
-      reset_movement: 1,
-      unit_id:,
-    ))
-    as "a unit id of 32 bits fits the message"
+  let body =
+    bit_stream.must(
+      ClientControlGranted(echo_value: 0, reset_movement: 1, unit_id:),
+      client_control_granted.encode,
+    )
   Frame(message_id: client_control_granted.message_id, body:)
 }
 
@@ -1708,21 +1710,22 @@ pub const world_difficulty = 0
 /// 0xF1 with the world difficulty, prime level 0, flags 0 and the client's own
 /// movement send interval (opcode.0xf1.fields).
 fn movement_interval() -> Effect {
-  let assert Ok(body) =
-    movement_send_interval.encode(MovementSendInterval(
-      world_difficulty:,
-      world_prime_level: 0,
-      world_flags: 0,
-      interval_milliseconds: movement_send_interval_ms,
-    ))
-    as "the message's fields fit their values"
+  let body =
+    bit_stream.must(
+      MovementSendInterval(
+        world_difficulty:,
+        world_prime_level: 0,
+        world_flags: 0,
+        interval_milliseconds: movement_send_interval_ms,
+      ),
+      movement_send_interval.encode,
+    )
   Send(Frame(message_id: movement_send_interval.message_id, body:))
 }
 
 /// 0x61, whose body is empty.
 fn entered_world() -> Effect {
-  let assert Ok(body) = player_entered_world.encode(PlayerEnteredWorld)
-    as "an empty body encodes"
+  let body = bit_stream.must(PlayerEnteredWorld, player_entered_world.encode)
   Send(Frame(message_id: player_entered_world.message_id, body:))
 }
 
@@ -1821,9 +1824,11 @@ fn standing_started() -> List(Effect) {
 
 /// 0x19F with index 0, the innate slot the loadout holds (`opcode.0x19f`).
 fn innate_index_frame() -> Effect {
-  let assert Ok(body) =
-    innate_index_set.encode(InnateIndexSet(innate_index: first_innate_slot))
-    as "the first slot fits the message's 2 bits"
+  let body =
+    bit_stream.must(
+      InnateIndexSet(innate_index: first_innate_slot),
+      innate_index_set.encode,
+    )
   Send(Frame(message_id: innate_index_set.message_id, body:))
 }
 
