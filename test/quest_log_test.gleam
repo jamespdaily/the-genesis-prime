@@ -413,7 +413,7 @@ pub fn used_counts_each_unit_of_an_objective_once_and_refuses_a_closed_one_test(
   // (`table_rows -- QuestObjective 4470`); `0x1405517a0` keeps no unit record of it, so
   // the once is the server's choice. The log takes no reuse argument: the objectives whose
   // unit counts again never reach it (`objective.advance`). An objective that is done is
-  // not open, so its unit counts nothing (`quest_log.objective_open`).
+  // not open, so its unit counts nothing (`quest_view.objective_open`).
   let tables = character_tables.shared()
   let assert Ok(quest) = quest_row.quest_of(tables:, id: 3480)
     as "the fixture holds quest 3480's rows"

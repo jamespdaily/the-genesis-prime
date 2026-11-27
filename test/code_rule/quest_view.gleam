@@ -29,11 +29,52 @@ pub fn log_import_breaches(
   files files: List(SourceFile),
   rows rows: List(Row),
 ) -> List(Breach) {
-  []
+  list.flat_map(files, fn(file) {
+    let module = syntax.module_name(file.path)
+    case list.find(rows, fn(row) { row.module == module }) {
+      Ok(row) ->
+        case list.contains(reading_levels, row.level) {
+          True ->
+            level.imports_of(file:)
+            |> list.filter(fn(found) { found.1 == quest_log_module })
+            |> list.map(fn(found) {
+              Breach(
+                path: file.path,
+                line: found.0,
+                rule: level.name(row.level)
+                  <> " module "
+                  <> module
+                  <> " imports the quest log; it reads quests through a quest view",
+              )
+            })
+          False -> []
+        }
+      Error(Nil) -> []
+    }
+  })
 }
 
 /// A breach, at its line, for each call of the view's constructor `of` in a module
 /// other than the quest log and the view's own.
 pub fn view_builder_breaches(files files: List(SourceFile)) -> List(Breach) {
-  []
+  list.flat_map(files, fn(file) {
+    let module = syntax.module_name(file.path)
+    case module == quest_log_module || module == quest_view_module {
+      True -> []
+      False ->
+        syntax.references_to(
+          module: syntax.parse(file),
+          from: [quest_view_module],
+          named: ["of"],
+        )
+        |> list.map(fn(reference) {
+          let glance.Span(start:, ..) = syntax.location_of(reference)
+          Breach(
+            path: file.path,
+            line: syntax.line_of(text: file.text, byte_offset: start),
+            rule: "quest_view.of is called outside the quest log, which alone builds a view",
+          )
+        })
+    }
+  })
 }

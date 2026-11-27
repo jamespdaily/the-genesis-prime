@@ -113,13 +113,34 @@ pub fn as_logged(view view: QuestView, quest quest: Quest) -> Quest {
 /// when every objective without flag 0x20 is done, and a quest with no objectives is
 /// then achieved at once.
 pub fn state(view view: QuestView, quest quest: Quest) -> Int {
-  0
+  let quest = as_logged(view:, quest:)
+  case dict.get(view.entries, quest.id) {
+    Error(Nil) -> 0
+    Ok(Completed(..)) -> 3
+    Ok(Known(state:)) -> store.known_state_number(state:)
+    Ok(Active(state: Achieved, ..)) -> 2
+    Ok(Active(state: Accepted, done_mask:, ..)) ->
+      case
+        quest_row.every_objective_is_done(quest:, done: fn(index) {
+          quest_row.done_in(mask: done_mask, index:)
+        })
+      {
+        True -> 2
+        False -> 1
+      }
+  }
 }
 
 /// The ids of the quests in the client's active list, accepted or achieved, in
 /// ascending order.
 pub fn active_ids(view view: QuestView) -> List(Int) {
-  []
+  in_quest_order(view:)
+  |> list.filter_map(fn(pair) {
+    case pair.1 {
+      Active(..) -> Ok(pair.0)
+      Completed(..) | Known(..) -> Error(Nil)
+    }
+  })
 }
 
 /// Whether the quest's objective at `index` is done (`0x1405510d0`): never at or past
@@ -130,7 +151,13 @@ pub fn objective_done(
   quest quest: Quest,
   index index: Int,
 ) -> Bool {
-  False
+  let quest = as_logged(view:, quest:)
+  use <- bool.guard(when: index >= list.length(quest.objectives), return: False)
+  case dict.get(view.entries, quest.id) {
+    Ok(Completed(..)) -> True
+    Ok(Active(done_mask:, ..)) -> quest_row.done_in(mask: done_mask, index:)
+    Ok(Known(..)) | Error(Nil) -> False
+  }
 }
 
 /// Whether the quest's objective at `index` is open (`0x14049f3d0`): the quest is in
@@ -140,7 +167,14 @@ pub fn objective_open(
   quest quest: Quest,
   index index: Int,
 ) -> Bool {
-  False
+  let quest = as_logged(view:, quest:)
+  let in_the_active_list = case dict.get(view.entries, quest.id) {
+    Ok(Active(..)) -> True
+    Ok(Completed(..)) | Ok(Known(..)) | Error(Nil) -> False
+  }
+  in_the_active_list
+  && !objective_done(view:, quest:, index:)
+  && reachable(view:, quest:, index:)
 }
 
 /// Whether the objective at `index` is reachable in the log (`0x140553790`).
@@ -162,7 +196,17 @@ pub fn objective_progress(
   quest quest: Quest,
   index index: Int,
 ) -> Int {
-  0
+  let quest = as_logged(view:, quest:)
+  case list.drop(quest.objectives, index), dict.get(view.entries, quest.id) {
+    [], _ -> 0
+    [objective, ..], Ok(Completed(..)) -> quest_row.needed(objective:)
+    [objective, ..], Ok(Active(progress:, ..)) ->
+      quest_row.in_log_progress(
+        objective:,
+        stored: list.drop(progress, index) |> list.first |> result.unwrap(0),
+      )
+    _, Ok(Known(..)) | _, Error(Nil) -> 0
+  }
 }
 
 /// Whether the unit of checklist index `bit` is counted for the quest's checklist
@@ -175,7 +219,19 @@ pub fn is_marked(
   index index: Int,
   bit bit: Int,
 ) -> Bool {
-  False
+  let quest = as_logged(view:, quest:)
+  case dict.get(view.entries, quest.id), list.drop(quest.objectives, index) {
+    Ok(Active(progress:, ..)), [objective, ..]
+      if index >= 0
+      && bit >= 0
+      && bit < quest_row.mask_bits
+      && objective.checklist
+    -> {
+      let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
+      int.bitwise_and(stored, int.bitwise_shift_left(1, bit)) != 0
+    }
+    _, _ -> False
+  }
 }
 
 /// The entries with their quest ids, in quest id order.

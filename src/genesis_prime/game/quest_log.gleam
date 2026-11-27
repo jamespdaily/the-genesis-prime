@@ -33,12 +33,14 @@
 ////   (0x1405fb350.completed_bit); the bit is computed here from the time the quest
 ////   was completed, never stored.
 //// - **What a prerequisite reads** is the quest as the client keeps it beside its log
-////   (`quest_of`: the quest's objectives with their QuestObjective type, flags and
-////   count, read once) and the log's entry for it: `state` (0x1405fbc40),
+////   (`quest_row.quest_of`: the quest's objectives with their QuestObjective type,
+////   flags and count, read once) and the log's entry for it, through the read-only
+////   snapshot `view` gives (genesis_prime/shared/quest_view): `state` (0x1405fbc40),
 ////   `objective_done` (0x1405510d0), `objective_open` (0x140552f50, 0x140553790) and
 ////   `objective_progress` (0x14049f4d0, 0x1406113b0, 0x140551840, 0x1405517a0). The
 ////   client derives a quest's state from its done objectives rather than storing it,
-////   so the read derives it the same way.
+////   so the read derives it the same way. The modules of the units and the map read
+////   quests only through a view, never the log.
 //// - **The objects an objective counted** are kept for each objective that counts a use
 ////   of a unit or a cast at one, by the object's spawn (`SpawnId`, the id of the spawn
 ////   table's row), so a use of the same object counts once and a relog does not let it

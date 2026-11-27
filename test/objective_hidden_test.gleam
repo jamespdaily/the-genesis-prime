@@ -574,7 +574,7 @@ pub fn every_hidden_script_quest_can_finish_test() -> Nil {
   let tables = client_tables.shared()
   // Each quest with an unlinked hidden script, a player having done every required
   // objective that is open and is not such a script, until none more is open
-  // (`0x140553790` through `quest_log.objective_open`): the scripts are then the only
+  // (`0x140553790` through `quest_view.objective_open`): the scripts are then the only
   // required objectives left, and the rule must complete each, over as many settles as
   // the player's work between them needs.
   let stuck =

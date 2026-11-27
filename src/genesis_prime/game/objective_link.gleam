@@ -218,5 +218,5 @@ fn quest_anim_is_open(
   |> result.unwrap(False)
 }
 
-/// The state number of an Accepted quest (`quest_log.state`).
+/// The state number of an Accepted quest (`quest_view.state`).
 const accepted = 1

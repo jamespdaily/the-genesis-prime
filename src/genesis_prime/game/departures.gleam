@@ -163,7 +163,7 @@ pub fn owns(timer candidate: TimerId) -> Bool {
 }
 
 /// The states of a quest in the client's log that the terminal's prerequisite tests with
-/// its type 6 conditions (`quest_log.state`): achieved and completed.
+/// its type 6 conditions (`quest_view.state`): achieved and completed.
 const achieved = 2
 
 const completed = 3
@@ -204,7 +204,7 @@ fn checked_index_of(quest quest: Quest, objective_id objective_id: Int) -> Int {
 }
 
 /// Whether the terminal's travel objective is open in the log: the quest is in the
-/// active list, the travel is not done and its talk is (`quest_log.objective_open`).
+/// active list, the travel is not done and its talk is (`quest_view.objective_open`).
 fn travel_open(
   tables tables: table_store.Tables,
   quests quests: QuestView,

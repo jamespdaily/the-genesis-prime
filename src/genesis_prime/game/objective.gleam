@@ -1104,7 +1104,7 @@ pub fn script_of(
 
 /// The quest's stand-in scripts (`script_of`), a held one left open:
 /// - those that stand in on accept are done as soon as they are open
-///   (`quest_log.objective_open`, so flags 1 and 2 keep one closed behind the objectives
+///   (`quest_view.objective_open`, so flags 1 and 2 keep one closed behind the objectives
 ///   before it), whatever the quest's other objectives are;
 /// - those that stand in with the quest are done once every other required objective of
 ///   the quest is done except the stand-ins and the objectives the client keeps closed

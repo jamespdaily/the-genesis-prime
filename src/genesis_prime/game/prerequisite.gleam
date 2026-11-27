@@ -159,15 +159,15 @@
 ////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
 //// - **Type 6** compares the state of the quest the objectId names, in the quest log of
 ////   the player whose client runs the check, with the value: the state the client
-////   derives (`quest_log.state`, `0x1405fbc40`), states 4 to 7 counted as 0, comparison
+////   derives (`quest_view.state`, `0x1405fbc40`), states 4 to 7 counted as 0, comparison
 ////   1 equal and 2 not equal, any other fails. **Type 68** passes, by comparison 1, when
 ////   objective `value` of that quest is done and by comparison 2 when it is not
-////   (`quest_log.objective_done`, `0x1405510d0`). **Type 43** passes, by comparison 1,
+////   (`quest_view.objective_done`, `0x1405510d0`). **Type 43** passes, by comparison 1,
 ////   when that objective is open: the quest is in the active list, the objective is not
 ////   done and it is reachable, and by comparison 2 when it is not
-////   (`quest_log.objective_open`, `0x14049f3d0`). **Types 22, 23, 33, 34, 35 and 36**
+////   (`quest_view.objective_open`, `0x14049f3d0`). **Types 22, 23, 33, 34, 35 and 36**
 ////   compare the progress of objective 0, 1, 2, 3, 4 and 5 of that quest with the value
-////   by comparisons 1 to 6, progress on the left (`quest_log.objective_progress`,
+////   by comparisons 1 to 6, progress on the left (`quest_view.objective_progress`,
 ////   `0x14049f4d0`). A quest with no Quest2 row is the client's unknown quest: state 0,
 ////   not done, not open, progress 0. Each condition holds its quest, read once at the
 ////   load, so a check needs no table; a QuestObjective row a quest names and the table
