@@ -52,5 +52,10 @@ pub fn select(
 
 /// What the table leaves undone, for the coverage measure.
 pub fn gaps() -> List(gap.Entry) {
-  []
+  [
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "a held objective, a visible script that only an instance run, a PvP match or a store purchase could complete, stays open: the server has no event for any of the three, and the client's tables do not say which objectives they complete",
+    ),
+  ]
 }

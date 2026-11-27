@@ -1135,5 +1135,10 @@ pub fn left(resources resources: Resources) -> #(Resources, List(Effect)) {
 
 /// What the table leaves undone, for the coverage measure.
 pub fn gaps() -> List(gap.Entry) {
-  []
+  [
+    gap.Entry(
+      area: "Focus",
+      missing: "the Focus pool of an Esper, a Medic and a Spellslinger is a flat 1000 points at every level, a guess, as the client's tables hold no pool by class or level",
+    ),
+  ]
 }
