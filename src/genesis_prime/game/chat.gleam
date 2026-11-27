@@ -69,7 +69,7 @@
 ////   names a held channel or is refused (`0x140404ee0`, `ChatChannel.flags`).
 //// - **A `!` line on Say is a development command** when the setting
 ////   `dev_commands` is on (genesis_prime/game/dev_command): the speaker's slot is
-////   answered with its 0x1c2, nothing is told to the viewers, and the command is
+////   answered with its 0x1c2, nothing is told to the map to relay, and the command is
 ////   carried out or answered with a system line (`system_line_frame`); with the
 ////   setting off it is a Say line as any other. A server choice, for testing.
 //// - **No 0x1bc for a channel the client makes itself**: it would print a join
@@ -195,9 +195,9 @@
 //// | Whisper: target in camp's leave or in character select | not in the world | `NotHeard`: 0x1d9 |
 //// | Whisper: target busy on an ask (a save) | the whisper waits in its mailbox | taken after the ask's outcome, bounded by the ask's deadline |
 //// | Two players whisper each other at once | both are tells | neither waits |
-//// | Say: a viewer has just been `Unwatched`, or has ended | the tell may still be sent | dropped by the VM, or written: channel (t, 0) is always held |
+//// | Say: a viewer has left the speaker's sight, or ended, before the map takes the line | the map relays only to the viewers whose relation relays when it takes it | nothing is relayed to it; a viewer that ended after the relay is sent one that the VM drops, or that is written: channel (t, 0) is always held |
 //// | Say: a viewer is in another map run | the line names the run | dropped |
-//// | Say: a viewer re-entered the same run before the line arrived | the line names the viewer's stay when the speaker told it, and a new entry is a new stay | dropped by the stay fence |
+//// | Say: a viewer re-entered the same run before the line arrived | the map relays the line for the stay of the viewer's relation, and a new entry is a new stay | dropped by the stay fence |
 //// | Say: a viewer is waiting on an ask (a save) when the line arrives | the line waits with the connection's other held news | written after the ask's answer if the player is in the world again and its stay still the line's, bounded by the ask's deadline; dropped with the session otherwise |
 //// | Zone: a zone change races a zone line | the speaker's tell read the group's members before a member's `LeaveGroup` took effect | the member gets the line, sees it is for another top zone or run than its own now, and drops it. A member that joined just after the read misses the line. Both are stated |
 //// | Zone: the speaker's own top zone changes as it speaks | the line is told to the group of the top zone it held when it took the 0x1c3 | the line reaches that zone; the change is the next input |
