@@ -196,7 +196,7 @@ pub fn say_yell_emote_whisper_and_zone_reach_the_right_players_on_the_whole_serv
   let speaker = Seat(..speaker, have: speaker_have)
   assert accept.name == "Bob Qu"
     as "the speaker sees 'To Bob Qu', the target's own name, though it typed another case"
-  let #(far_heard, far) = written_to(seat: far, number: 4)
+  let #(far_heard, far) = heard_lines(seat: far, count: 1)
   assert chat_lines(far_heard)
     == [
       game_client.HeardLine(
@@ -235,8 +235,8 @@ pub fn say_yell_emote_whisper_and_zone_reach_the_right_players_on_the_whole_serv
     )
   let speaker = Seat(..speaker, have: speaker_have)
   let speaker = written_to(seat: speaker, number: 5).1
-  let #(neighbour_heard, _) = written_to(seat: neighbour, number: 5)
-  let #(far_heard, _) = written_to(seat: far, number: 5)
+  let #(neighbour_heard, _) = heard_lines(seat: neighbour, count: 1)
+  let #(far_heard, _) = heard_lines(seat: far, count: 1)
   let zone_line = fn(frames) {
     list.filter(chat_lines(frames), fn(line) { line.channel_type == 9 })
   }
