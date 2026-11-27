@@ -6,15 +6,50 @@
 import code_rule/planted
 import code_rule/repository
 import code_rule/source.{type SourceFile}
+import code_rule/syntax
+import gleam/int
 import gleam/list
 import owned_test
 import unitest
 
-/// What the file draws: an import of `genesis_prime/random` and a call of
+/// The functions a file must not call: `module.name` as written.
+const drawing_calls = ["int.random", "float.random", "list.shuffle"]
+
+/// What the file draws: an import of `genesis_prime/random` and a call or reference of
 /// `int.random`, `float.random` or `list.shuffle`, each with its line.
 fn draws(file file: SourceFile) -> List(String) {
-  let _ = file
-  []
+  let module = syntax.parse(file)
+  let imports =
+    list.filter_map(module.imports, fn(definition) {
+      case definition.definition.module == "genesis_prime/random" {
+        True ->
+          Ok(#(
+            definition.definition.location.start,
+            "imports genesis_prime/random",
+          ))
+        False -> Error(Nil)
+      }
+    })
+  let calls =
+    list.filter_map(syntax.references(module), fn(reference) {
+      case reference {
+        syntax.Qualified(location:, qualifier:, name:) -> {
+          let written = qualifier <> "." <> name
+          case list.contains(drawing_calls, written) {
+            True -> Ok(#(location.start, "calls " <> written))
+            False -> Error(Nil)
+          }
+        }
+        syntax.Unqualified(..) -> Error(Nil)
+      }
+    })
+  list.append(imports, calls)
+  |> list.sort(by: fn(first, second) { int.compare(first.0, second.0) })
+  |> list.map(fn(entry) {
+    int.to_string(syntax.line_of(text: file.text, byte_offset: entry.0))
+    <> ": "
+    <> entry.1
+  })
 }
 
 pub fn nothing_in_the_world_map_draws_a_random_value_test() -> Nil {

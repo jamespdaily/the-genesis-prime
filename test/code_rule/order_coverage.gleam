@@ -16,6 +16,11 @@
 //// names a test that exists, or says `cannot happen:` and a reason.
 
 import code_rule/source.{type SourceFile}
+import code_rule/syntax
+import glance
+import gleam/list
+import gleam/result
+import gleam/string
 
 /// How a variant is covered: by a test of the orders it arrives in, by the test of the
 /// decision its owner makes, or by the reason the relation does not read it.
@@ -40,20 +45,199 @@ pub fn breaches(
   told told: List(#(String, String)),
   sources sources: List(SourceFile),
 ) -> List(String) {
-  let _ = rows
-  let _ = told
-  let _ = sources
-  []
+  let declared = fn(module, type_name) {
+    case file_of(sources:, module:) {
+      Ok(file) -> syntax.variants_of(file:, type_names: [type_name])
+      Error(Nil) -> []
+    }
+  }
+  let told_variants =
+    list.flat_map(told, fn(type_) {
+      list.map(declared(type_.0, type_.1), fn(name) { #(type_, name) })
+    })
+  let covered =
+    list.flat_map(rows, fn(row) {
+      list.map(row.variants, fn(name) { #(#(row.module, row.type_name), name) })
+    })
+  list.flatten([
+    list.filter(told_variants, fn(entry) { !list.contains(covered, entry) })
+      |> list.map(fn(entry) { "no row for " <> entry.1 }),
+    list.flat_map(rows, fn(row) {
+      list.filter(row.variants, fn(name) {
+        !list.contains(declared(row.module, row.type_name), name)
+      })
+      |> list.map(fn(name) { "a row for no variant: " <> name })
+    }),
+    list.unique(covered)
+      |> list.filter(fn(entry) {
+        list.count(covered, fn(other) { other == entry }) > 1
+      })
+      |> list.map(fn(entry) { "in two rows: " <> entry.1 }),
+    list.flat_map(rows, fn(row) { cover_breaches(row:, sources:) }),
+  ])
+}
+
+/// What one row's cover breaks.
+fn cover_breaches(
+  row row: Row,
+  sources sources: List(SourceFile),
+) -> List(String) {
+  case row.cover {
+    Independent(reason:) ->
+      case list.length(words(reason)) < 3 {
+        True ->
+          list.map(row.variants, fn(name) {
+            "the reason is no sentence: " <> name
+          })
+        False -> []
+      }
+    Owner(test_name:) ->
+      case public_test(sources:, test_name:) {
+        Ok(_) -> []
+        Error(Nil) -> ["the test is missing or private: " <> test_name]
+      }
+    Order(test_name:) ->
+      case public_test(sources:, test_name:) {
+        Error(Nil) -> ["the test is missing or private: " <> test_name]
+        Ok(file) -> {
+          let named = names_in(file:, sources:)
+          list.filter(row.variants, fn(name) { !list.contains(named, name) })
+          |> list.map(fn(name) {
+            "the test never names " <> name <> ": " <> test_name
+          })
+        }
+      }
+  }
 }
 
 /// What the failure table rows of the file break: a row naming no test and no
 /// `cannot happen:` reason, and a row naming a test that is no public `_test` function
-/// of the sources.
+/// of the sources. A failure table is a doc table headed `Point | What happens`; each
+/// of its rows names tests in backticks, as `module.function` or as the function alone.
 pub fn failure_breaches(
   file file: SourceFile,
   sources sources: List(SourceFile),
 ) -> List(String) {
-  let _ = file
-  let _ = sources
-  []
+  failure_rows(file:)
+  |> list.flat_map(fn(row) {
+    let #(point, what) = row
+    let tests = tests_named(what)
+    let reasoned = case string.split_once(what, "cannot happen:") {
+      Ok(#(_, reason)) -> list.length(words(reason)) >= 3
+      Error(Nil) -> False
+    }
+    case tests, reasoned {
+      [], False -> ["a failure row names no test and no reason: " <> point]
+      _, _ ->
+        list.filter(tests, fn(name) {
+          result.is_error(public_test(sources:, test_name: name))
+        })
+        |> list.map(fn(name) {
+          "a failure row names a missing or private test: " <> name
+        })
+    }
+  })
+}
+
+/// The point and the what-happens cell of each row of each failure table of the file.
+fn failure_rows(file file: SourceFile) -> List(#(String, String)) {
+  let #(rows, _) =
+    list.fold(string.split(file.text, "\n"), #([], False), fn(state, line) {
+      let #(rows, inside) = state
+      case string.starts_with(line, "//// |") {
+        False -> #(rows, False)
+        True ->
+          case row_cells(line) {
+            ["Point", "What happens"] -> #(rows, True)
+            [point, what] if inside -> #([#(point, what), ..rows], True)
+            _ -> #(rows, inside)
+          }
+      }
+    })
+  list.reverse(rows)
+}
+
+/// The cells of a `//// | a | b |` doc table line.
+fn row_cells(line: String) -> List(String) {
+  string.drop_start(line, 6)
+  |> string.trim
+  |> string.remove_suffix(" |")
+  |> string.split(" | ")
+}
+
+/// The names in backticks that end `_test`, as written.
+fn tests_named(text: String) -> List(String) {
+  string.split(text, "`")
+  |> list.index_map(fn(part, index) { #(part, index) })
+  |> list.filter(fn(entry) {
+    entry.1 % 2 == 1 && string.ends_with(entry.0, "_test")
+  })
+  |> list.map(fn(entry) { entry.0 })
+}
+
+/// The file of the module among the sources.
+fn file_of(
+  sources sources: List(SourceFile),
+  module module: String,
+) -> Result(SourceFile, Nil) {
+  list.find(sources, fn(file) { syntax.module_name(file.path) == module })
+}
+
+/// The file with a public `_test` function written `module.function`, or the first of
+/// the sources that has one of that name when written alone.
+fn public_test(
+  sources sources: List(SourceFile),
+  test_name test_name: String,
+) -> Result(SourceFile, Nil) {
+  let #(files, function) = case string.split_once(test_name, ".") {
+    Ok(#(module, function)) -> #(
+      list.filter(sources, fn(file) { syntax.module_name(file.path) == module }),
+      function,
+    )
+    Error(Nil) -> #(sources, test_name)
+  }
+  list.find(files, fn(file) {
+    string.ends_with(function, "_test")
+    && list.any(syntax.parse(file).functions, fn(definition) {
+      definition.definition.name == function
+      && definition.definition.publicity == glance.Public
+    })
+  })
+}
+
+/// The identifiers the file's text holds and those of each module it imports that is
+/// among the sources.
+fn names_in(
+  file file: SourceFile,
+  sources sources: List(SourceFile),
+) -> List(String) {
+  let supports =
+    list.filter_map(syntax.imported_modules(file), fn(module) {
+      file_of(sources:, module:)
+    })
+  list.flat_map([file, ..supports], fn(each) { identifiers(each.text) })
+}
+
+/// The identifiers of a text: its runs of letters, digits and underscores.
+fn identifiers(text: String) -> List(String) {
+  string.to_graphemes(text)
+  |> list.map(fn(grapheme) {
+    case is_identifier_grapheme(grapheme) {
+      True -> grapheme
+      False -> " "
+    }
+  })
+  |> string.concat
+  |> words
+}
+
+fn is_identifier_grapheme(grapheme: String) -> Bool {
+  string.contains(
+    "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    grapheme,
+  )
+}
+
+fn words(text: String) -> List(String) {
+  string.split(text, " ") |> list.filter(fn(word) { word != "" })
 }
