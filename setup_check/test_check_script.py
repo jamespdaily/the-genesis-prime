@@ -17,8 +17,8 @@ the real toolchain, the real database or the real client:
   `--tag code_rule`), when a file under test/code_rule holds PLANTED_BREACH, and,
   when it runs the tests tagged registry (a run with no `--tag`, or `--tag
   registry`), when a file under test holds PLANTED_REGISTRY_FAILURE; a test run
-  takes PLANT_GLEAM_TEST_SECONDS and dies by signal 6 (after it listed its tests) when
-  PLANT_GLEAM_TEST_ABORTS is set, and `gleam run -m glinter` takes
+  takes PLANT_GLEAM_TEST_SECONDS and dies by the signal PLANT_GLEAM_TEST_ABORTS names (ABRT is
+  signal 6, KILL is 9), after it listed its tests, and `gleam run -m glinter` takes
   PLANT_GLINTER_SECONDS; with
   PLANT_RENDEZVOUS set, the plain test run (`gleam test -- --workers N`) waits until
   glinter, table_generator, squirrel, the world-data run and the boot-test run have each started, so a part
@@ -229,9 +229,10 @@ if [ "$1" = test ] && [ -n "$PLANT_LISTED_TESTS" ] && [ -n "$GENESIS_TEST_PROGRE
   printf 'start 1.1 %%s planted_test:one_that_ended_test\nend 1.1\n' $((now - 7)) >>"$GENESIS_TEST_PROGRESS_FILE"
   [ "$PLANT_LISTED_TESTS" = ended ] || printf 'start 1.2 %%s planted_test:one_that_hung_test\n' $((now - 5)) >>"$GENESIS_TEST_PROGRESS_FILE"
 fi
-# PLANT_GLEAM_TEST_ABORTS: the run dies by signal 6, as the VM does when it aborts, after it has listed its tests.
+# PLANT_GLEAM_TEST_ABORTS: the run dies by that signal (ABRT, as the VM does when it aborts; KILL, as the kernel does
+# for a VM out of memory), after it has listed its tests.
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_ABORTS" ]; then
-  kill -ABRT $$
+  kill -$PLANT_GLEAM_TEST_ABORTS $$
   sleep 5
 fi
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
@@ -846,7 +847,7 @@ class AbortedTestRunTest(unittest.TestCase):
     def test_a_run_the_vm_aborts_names_the_tests_it_had_started(self):
         run = shared_run(
             "aborted-test-run", timeout=40,
-            PLANT_LISTED_TESTS="hung", PLANT_GLEAM_TEST_ABORTS="1",
+            PLANT_LISTED_TESTS="hung", PLANT_GLEAM_TEST_ABORTS="ABRT",
         )
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"gleam-test")
@@ -856,6 +857,15 @@ class AbortedTestRunTest(unittest.TestCase):
         for line in lines:
             self.assertRegex(line, r"^still running: planted_test:one_that_hung_test \(\d+ s\)$", "only the unfinished test is named")
         self.assertIn("signal 6", run.output, "the abort is named by its signal")
+
+    def test_a_run_the_kernel_kills_for_memory_is_named_too(self):
+        run = shared_run(
+            "killed-test-run", timeout=40,
+            PLANT_LISTED_TESTS="hung", PLANT_GLEAM_TEST_ABORTS="KILL",
+        )
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertIn("signal 9", run.output, "a death by signal 9 (status 137) is named by its signal")
+        self.assertIn("still running: planted_test:one_that_hung_test", run.output)
 
 
 def plant_failing_gated_test(case: PlantedCheckCase) -> None:

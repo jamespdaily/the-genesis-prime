@@ -101,13 +101,14 @@
 #                  client-suite parts' tests are in files of their own. When a hang
 #                  stops the check, the summary names under each hung part the tests
 #                  that had started and not ended, with the seconds each had run.
-#                  A run whose VM dies by a signal (an abort of the VM, signal 6)
-#                  prints the signal and the same names in its log, and fails the part.
+#                  A run whose VM dies by any signal (an abort of the VM, 6; a kill for
+#                  memory, 9) prints the signal and the same names in its log, and fails the part.
 #                  Every VM that runs this project's tests gets `+hmqd off_heap` from one
 #                  place, ERL_AFLAGS in setup_check/environment.sh, which this script
 #                  sources; the VMs the tests start inherit it. A launcher outside this
 #                  script (`gleam test`, dev/repeat_tests.py) runs after
-#                  `. setup_check/environment.sh`, as CI's repeat step does. The release
+#                  `. setup_check/environment.sh`, as CI's repeat step does;
+#                  dev/repeat_tests.py refuses to start without the flag. The release
 #                  (release/vm.args) and the load runs' peer name `+hmqd on_heap` themselves.
 #                  No tag but serial, world_data, real_start, real_tables and client_rows is
 #                  skipped, so the first run also runs the tests tagged code_rule
@@ -839,9 +840,9 @@ shard_directory() {
 # test_run NAME [VARIABLE=VALUE...] -- ARGUMENTS...: one run of the built tests, in a shell
 # of its own so its variables reach no other run: its tests are listed in $work/NAME.running
 # (GENESIS_TEST_PROGRESS_FILE) and each VARIABLE=VALUE is set for it. A VM that dies by a
-# signal other than the ones the hang stop sends (9 and 15) prints the signal and the
-# tests that had started and not ended (`still running:` lines, as the hang report has
-# them), and the run fails with the VM's status.
+# signal (an abort, or a kill for memory, 9) prints the signal and the tests that had
+# started and not ended (`still running:` lines, as the hang report has them), and the
+# run fails with the VM's status.
 test_run() {
   local name=$1 status
   shift
@@ -855,7 +856,7 @@ test_run() {
     run_built genesis_prime_test "$@"
   )
   status=$?
-  if [ "$status" -gt 128 ] && [ "$status" != 137 ] && [ "$status" != 143 ]; then
+  if [ "$status" -gt 128 ]; then
     echo "the test VM of $name died by signal $((status - 128)); the tests it had started and not ended:"
     running_tests "$name" | sed 's/^/  still running: /'
   fi

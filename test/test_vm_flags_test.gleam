@@ -16,5 +16,5 @@ pub fn a_test_process_keeps_its_messages_off_its_heap_test() -> Nil {
   let off_heap = mailbox_support.kept_off_heap(pid)
   process.send(release, Nil)
   assert off_heap
-    as "a process the test spawns keeps its message queue off its heap"
+    as "a process the test spawns keeps its message queue off its heap; run the tests in a shell that loaded the environment: . setup_check/environment.sh"
 }
