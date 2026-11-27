@@ -50,6 +50,7 @@ import gleam/result
 import gleam/string
 import item_charge_support
 import novice_tables
+import number_support
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -189,7 +190,7 @@ pub fn a_path_above_3_or_the_wrong_bone_count_is_refused_test() -> Nil {
 /// (the 17 labels of faction 0 and the 5 of faction 167), so every label is made
 /// faction 0 and each is held, at the value 1, by an added row of race 1, sex 1.
 fn rows_with_a_look_of_every_label() -> fixture_tables.Rows {
-  let labels = character_support.numbers(27)
+  let labels = number_support.counting(from: 1, count: 27)
   let assert Ok(rows) =
     fixture_tables.change_all(
       rows: fixture_tables.rows(),
@@ -227,7 +228,7 @@ pub fn a_request_with_more_than_25_look_labels_is_refused_test() -> Nil {
   let with_labels = fn(count) {
     CreateCharacter(
       ..request(466, "Ab Cd"),
-      customisation_labels: character_support.numbers(count),
+      customisation_labels: number_support.counting(from: 1, count: count),
       customisation_values: list.repeat(1, count),
     )
   }

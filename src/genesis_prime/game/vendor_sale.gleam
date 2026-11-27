@@ -8,7 +8,7 @@
 ////                                       ├─ refused ─▶ Refused([Log, Refuse(code)])   nothing asked, nothing changed
 ////                                       └─ accepted ─▶ Asks(sale) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(sale, items, currencies, buyback, answer)
-////                       Sold(amount, words): items, the currency paid and buyback list updated; a 0xBD per entry dropped off the list, 0x919, 0xDD, then per stack 0x148 / 0x17F and 0xBA
+////                       Sold(amount, words): items, the currency paid and buyback list updated; a 0xBD per dropped entry the client holds, 0x919, 0xDD, then per stack 0x148 / 0x17F and 0xBA
 ////                       ItemsNotSaved:   Warning, 0x106 5, nothing changed
 ////                       SaveRefused(c):  Error naming c, 0x106 5, nothing changed
 //// the connection then ─▶ inventory.regeared: a changed worn set sends 0x933, LookChanged and 0x93a
@@ -76,8 +76,9 @@
 //// - **The list's cap** is `buyback_cap`, the most entries one 0xBC carries inside a wrapper
 ////   (the server's guess: the client holds any number, `opcode.0xba.price`). A sale that
 ////   takes the list over it drops the oldest entries off the front, and the client is
-////   sent a 0xBD for each (`opcode.0xbd`: the handler 0x1403b88d0 removes the entry of that
-////   id and raises BuybackItemsUpdated), before the sale's own frames. A dropped id is
+////   sent a 0xBD for each dropped entry it holds (`opcode.0xbd`: the handler 0x1403b88d0 removes
+////   the entry of that id and raises BuybackItemsUpdated), before the sale's own frames. A
+////   stack of the sale itself that is dropped is never sent: no 0xBA and no 0xBD. A dropped id is
 ////   never given again, so the client cannot ask to buy it back (`vendor_purchase`
 ////   refuses an id not on the list).
 ////
@@ -981,6 +982,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Vendor sales",
       missing: "the refusals for the vendor's crowd-control states (60, 61)",
+    ),
+    gap.Entry(
+      area: "Vendor sales",
+      missing: "The buyback list holds at most what one 0xBC carries inside a wrapper, a server's guess because the client holds any number of entries; a sale past it drops the oldest entries off the list, and the player cannot buy those back.",
     ),
   ]
 }

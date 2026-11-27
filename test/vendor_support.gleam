@@ -21,6 +21,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
 import gleam/option
+import number_support
 import player_state_support
 import spawn_support
 
@@ -247,16 +248,19 @@ pub fn buyback_listing(
 ) -> world_entry.Buyback {
   world_entry.Buyback(
     next_id: first_id + count,
-    entries: list.map(counting(from: first_id, count:), fn(buyback_id) {
-      world_entry.BuybackEntry(
-        buyback_id:,
-        item2_id: id.Item2Id(14_838),
-        quantity: 1,
-        words: store.plain_words,
-        currency_type_id: 1,
-        amount: 1,
-      )
-    }),
+    entries: list.map(
+      number_support.counting(from: first_id, count:),
+      fn(buyback_id) {
+        world_entry.BuybackEntry(
+          buyback_id:,
+          item2_id: id.Item2Id(14_838),
+          quantity: 1,
+          words: store.plain_words,
+          currency_type_id: 1,
+          amount: 1,
+        )
+      },
+    ),
   )
 }
 
@@ -266,7 +270,7 @@ pub fn sale_of_stacks(
   stacks stacks: Int,
 ) -> #(vendor_sale.Sale, store.ItemsAnswer) {
   let sold =
-    list.map(counting(from: 1, count: stacks), fn(guid) {
+    list.map(number_support.counting(from: 1, count: stacks), fn(guid) {
       vendor_sale.SoldItem(
         item_guid: guid,
         item2_id: id.Item2Id(14_838),
@@ -293,9 +297,4 @@ pub fn sale_of_stacks(
       }),
     ),
   )
-}
-
-/// `count` whole numbers from `from` up.
-pub fn counting(from from: Int, count count: Int) -> List(Int) {
-  list.index_map(list.repeat(Nil, times: count), fn(_, index) { from + index })
 }

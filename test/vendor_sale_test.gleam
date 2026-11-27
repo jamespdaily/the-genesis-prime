@@ -1666,7 +1666,12 @@ fn after_sale(
     list.fold(list_changes(effects:), client, fn(client, change) {
       case change {
         #(id, True) -> list.append(client, [id])
-        #(id, False) -> list.filter(client, fn(held) { held != id })
+        #(id, False) -> {
+          // The handler 0x1403b88d0 refuses an id it does not hold (0x80004005).
+          assert list.contains(client, id)
+            as "opcode.0xbd: the client refuses a 0xBD for an id it does not hold"
+          list.filter(client, fn(held) { held != id })
+        }
       }
     }),
   )

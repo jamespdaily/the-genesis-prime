@@ -71,6 +71,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/set
 import gleam/string
+import number_support
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -1024,7 +1025,7 @@ pub fn a_vendor_window_opened_with_a_full_buyback_list_sends_the_whole_list_test
   let cap = vendor_sale.buyback_cap()
   let state =
     list.fold(
-      vendor_support.counting(from: 1, count: cap),
+      number_support.counting(from: 1, count: cap),
       selling_state_holding(count: 5000),
       fn(state, n) { sold(state:, quantity: 1, credits: 100 + n) },
     )
@@ -1032,7 +1033,7 @@ pub fn a_vendor_window_opened_with_a_full_buyback_list_sends_the_whole_list_test
   assert list.length(listed) == 1154
     as "opcode.0xbc: the whole list of 1154 entries is sent"
   assert list.map(listed, fn(entry) { entry.0 })
-    == vendor_support.counting(from: 1, count: 1154)
+    == number_support.counting(from: 1, count: 1154)
     as "the entries are the sales' ids, oldest first"
 }
 
