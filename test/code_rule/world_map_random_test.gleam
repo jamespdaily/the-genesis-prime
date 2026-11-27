@@ -70,6 +70,21 @@ pub fn nothing_in_the_world_map_draws_a_random_value_test() -> Nil {
       "  #(a, b, c, d)",
       "}",
     ])
+  let renamed_file =
+    planted.file(path: "src/genesis_prime/world_map/renamed.gleam", lines: [
+      "import gleam/float as coin",
+      "import gleam/int as dice",
+      "import gleam/list.{shuffle as mix}",
+      "import gleam/int.{random}",
+      "",
+      "pub fn roll() {",
+      "  let a = dice.random(6)",
+      "  let b = coin.random()",
+      "  let c = mix([1, 2])",
+      "  let d = random(6)",
+      "  #(a, b, c, d)",
+      "}",
+    ])
   assert draws(file: planted_file)
     == [
       "1: imports genesis_prime/random",
@@ -78,6 +93,14 @@ pub fn nothing_in_the_world_map_draws_a_random_value_test() -> Nil {
       "9: calls list.shuffle",
     ]
     as "the import and each of the three random calls are found, and a call of another function is not"
+  assert draws(file: renamed_file)
+    == [
+      "7: calls int.random",
+      "8: calls float.random",
+      "9: calls list.shuffle",
+      "10: calls int.random",
+    ]
+    as "a call through an aliased import of the module, through an aliased unqualified import and through an unqualified import is found under the module's own name"
   assert repository.sources(under: ["src/genesis_prime/world_map"])
     |> list.flat_map(fn(file) { draws(file:) })
     == []

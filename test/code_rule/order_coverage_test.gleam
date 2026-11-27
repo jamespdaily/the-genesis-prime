@@ -32,19 +32,37 @@ fn kind_file() -> SourceFile {
   ])
 }
 
-/// A test file that names `Alpha` in a public test, holds a private function ending
-/// `_test` and a public one that does not, and imports a support module naming `Beta`.
+/// Test files over the planted type: one takes `Alpha` through an aliased import of its
+/// module and a helper of its file, holds `Gamma` of another module, a private function
+/// ending `_test` and a public one that does not, and imports a support module naming
+/// `Beta`; one takes `Beta` by an unqualified import under another name and names `Alpha`
+/// with no import.
 fn test_files() -> List(SourceFile) {
   [
     planted.file(path: "test/thing_order_test.gleam", lines: [
+      "import genesis_prime/other",
+      "import genesis_prime/thing as made",
       "import thing_support",
       "pub fn alpha_comes_first_test() {",
-      "  Alpha",
+      "  scene()",
+      "  other.Gamma",
+      "}",
+      "fn scene() {",
+      "  made.Alpha",
       "}",
       "fn hidden_test() {",
-      "  Alpha",
+      "  made.Alpha",
       "}",
       "pub fn helper() {",
+      "  made.Alpha",
+      "}",
+    ]),
+    planted.file(path: "test/thing_bare_test.gleam", lines: [
+      "import genesis_prime/thing.{Beta as Second}",
+      "pub fn second_test() {",
+      "  Second",
+      "}",
+      "pub fn bare_test() {",
       "  Alpha",
       "}",
     ]),
@@ -73,11 +91,11 @@ pub fn a_variant_with_no_order_row_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   assert breaches([])
-    == ["no row for Alpha", "no row for Beta", "no row for Gamma"]
+    == ["no row for Kind.Alpha", "no row for Kind.Beta", "no row for Kind.Gamma"]
     as "a told type with no rows has a breach for each of its variants"
   assert breaches([
-      row(["Alpha", "Beta"], Order("thing_order_test.alpha_comes_first_test")),
-      row(["Gamma"], Independent(reason)),
+      row(["Alpha"], Order("thing_order_test.alpha_comes_first_test")),
+      row(["Beta", "Gamma"], Independent(reason)),
     ])
     == []
     as "a variant in a row is no breach for a missing row"
@@ -90,13 +108,13 @@ pub fn a_row_for_no_variant_or_a_variant_in_two_rows_is_a_breach_test() -> Nil {
       row(["Alpha", "Gamma"], Independent(reason)),
       row(["Beta", "Delta"], Independent(reason)),
     ])
-    == ["a row for no variant: Delta"]
+    == ["a row for no variant: Kind.Delta"]
     as "a row naming a name that is no variant of its type is found"
   assert breaches([
       row(["Alpha", "Beta", "Gamma"], Independent(reason)),
       row(["Gamma"], Independent(reason)),
     ])
-    == ["in two rows: Gamma"]
+    == ["in two rows: Kind.Gamma"]
     as "a variant in two rows is found once"
 }
 
@@ -128,7 +146,7 @@ pub fn an_order_or_owner_row_whose_test_is_missing_or_private_is_a_breach_test()
     as "a public test that exists passes"
 }
 
-pub fn an_order_row_whose_test_never_names_its_variant_is_a_breach_test() -> Nil {
+pub fn an_order_row_whose_test_never_takes_its_variant_of_its_type_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   assert breaches([
@@ -137,8 +155,18 @@ pub fn an_order_row_whose_test_never_names_its_variant_is_a_breach_test() -> Nil
         Order("thing_order_test.alpha_comes_first_test"),
       ),
     ])
-    == ["the test never names Gamma: thing_order_test.alpha_comes_first_test"]
-    as "Alpha is named in the test's file and Beta in a support module it imports; Gamma is named in neither, though GammaRay is, so a name that is part of a longer one is not the name"
+    == [
+      "the test never takes Kind.Beta: thing_order_test.alpha_comes_first_test",
+      "the test never takes Kind.Gamma: thing_order_test.alpha_comes_first_test",
+    ]
+    as "Alpha is taken through an alias of its module and a helper of the test's file; Beta is named only by a support module the file imports, and Gamma only as the variant of another module, so neither is taken"
+  assert breaches([
+      row(["Beta"], Order("thing_bare_test.second_test")),
+      row(["Alpha"], Order("thing_bare_test.bare_test")),
+      row(["Gamma"], Independent(reason)),
+    ])
+    == ["the test never takes Kind.Alpha: thing_bare_test.bare_test"]
+    as "a variant imported unqualified under another name is taken, and a bare name with no import of its module is not"
 }
 
 pub fn an_independent_row_without_a_sentence_of_reason_is_a_breach_test() -> Nil {
@@ -211,7 +239,7 @@ pub fn the_connections_timers_are_read_from_the_arms_that_tell_them_apart_test()
       "  case cast_state.owns(timer), strike.owns(timer) {",
       "    True, _ -> first(session)",
       "    False, True -> second(session)",
-      "    False, False -> claim(session)",
+      "    False, False -> login.claim_wait_over(session)",
       "  }",
       "}",
       "",
@@ -222,8 +250,8 @@ pub fn the_connections_timers_are_read_from_the_arms_that_tell_them_apart_test()
       "}",
     ])
   assert order_coverage.connection_timers(file:)
-    == ["save_timer", "expiry_timer", "cast_state", "strike", "claim"]
-    as "the timers timer_due compares with, the module of each owns check of other_timer_fired and the claim are found, and a name that is not a timer, and a function of another name, are not"
+    == ["save_timer", "expiry_timer", "cast_state", "strike", "claim_wait_over"]
+    as "the timers timer_due compares with, the module of each owns check of other_timer_fired and the function its fall-through arm calls are found, and a name that is not a timer, and a function of another name, are not"
 }
 
 pub fn a_failure_row_naming_no_type_or_variant_is_a_breach_test() -> Nil {
@@ -250,6 +278,11 @@ pub fn a_failure_row_naming_no_type_or_variant_is_a_breach_test() -> Nil {
 const map_path = "src/genesis_prime/world_map/map.gleam"
 
 const without_test_path = "test/code_rule/failure_rows_without_test.txt"
+
+/// The rows the list of failure rows without a test holds: writing a test for a row
+/// takes it off the list and lowers this by one, and a new row on the list fails the
+/// count.
+const most_rows_without_test = 32
 
 fn real_sources() -> List(SourceFile) {
   repository.sources(under: ["src", "test"])
@@ -291,10 +324,13 @@ pub fn every_row_of_the_maps_failure_tables_names_a_test_or_why_it_cannot_happen
     list.find(sources, fn(file) { file.path == map_path })
   // Rows whose behaviour is described and has no test yet are listed by their point in
   // the list file; a row not on it must name a test or say why it cannot happen, and a
-  // row on it must still name neither, so the list only shrinks.
+  // row on it must still name neither. The list holds exactly `most_rows_without_test`
+  // rows, so a row added to it fails the count and a row given a test is taken off it.
+  let listed = list_file.rows(text: source.read(without_test_path))
+  assert list.length(listed) == most_rows_without_test
+    as "the list holds exactly the rows the count names: a row given a test or a reason leaves the list and lowers the count by one, and a row added to the list is refused"
   let without_test =
-    list_file.rows(text: source.read(without_test_path))
-    |> list.map(fn(row) {
+    list.map(listed, fn(row) {
       "a failure row names no test and no reason: " <> row.0
     })
   assert list.sort(
