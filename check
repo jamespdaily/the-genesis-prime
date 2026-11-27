@@ -101,6 +101,10 @@
 #                  client-suite parts' tests are in files of their own. When a hang
 #                  stops the check, the summary names under each hung part the tests
 #                  that had started and not ended, with the seconds each had run.
+#                  A run whose VM dies by a signal (an abort of the VM, signal 6)
+#                  prints the signal and the same names in its log, and fails the part.
+#                  Every VM the check starts for built code runs with `+hmqd off_heap`
+#                  (run_built).
 #                  No tag but serial, world_data, real_start, real_tables and client_rows is
 #                  skipped, so the first run also runs the tests tagged code_rule
 #                  (the tests of test/code_rule) and registry (each one comparing a
@@ -663,14 +667,16 @@ fi
 # entry module genesis_prime@@main (the package's name) running MODULE, -noshell, and
 # the arguments after -extra, where the argv package reads them. The program's exit
 # status is the function's. MODULE is written as gleam's -m takes it (a folder
-# separator is `/`).
+# separator is `/`). The VM keeps every process's message queue off its heap (+hmqd
+# off_heap): the VM's abort in major_collection after move_msgs_to_heap is a step only
+# a process with an on-heap queue takes.
 run_built() {
   local module=$1 dir paths=()
   shift
   for dir in "$PWD"/build/dev/erlang/*/ebin; do
     [ -d "$dir" ] && paths+=(-pa "$dir")
   done
-  erl "${paths[@]}" -eval "genesis_prime@@main:run(${module//\//@})" -noshell -extra "$@"
+  erl "${paths[@]}" +hmqd off_heap -eval "genesis_prime@@main:run(${module//\//@})" -noshell -extra "$@"
 }
 
 # step NAME COMMAND...: runs the command here, its output to a log, and records
@@ -830,9 +836,12 @@ shard_directory() {
 
 # test_run NAME [VARIABLE=VALUE...] -- ARGUMENTS...: one run of the built tests, in a shell
 # of its own so its variables reach no other run: its tests are listed in $work/NAME.running
-# (GENESIS_TEST_PROGRESS_FILE) and each VARIABLE=VALUE is set for it.
+# (GENESIS_TEST_PROGRESS_FILE) and each VARIABLE=VALUE is set for it. A VM that dies by a
+# signal other than the ones the hang stop sends (9 and 15) prints the signal and the
+# tests that had started and not ended (`still running:` lines, as the hang report has
+# them), and the run fails with the VM's status.
 test_run() {
-  local name=$1
+  local name=$1 status
   shift
   (
     export GENESIS_TEST_PROGRESS_FILE="$work/$name.running"
@@ -843,6 +852,12 @@ test_run() {
     shift
     run_built genesis_prime_test "$@"
   )
+  status=$?
+  if [ "$status" -gt 128 ] && [ "$status" != 137 ] && [ "$status" != 143 ]; then
+    echo "the test VM of $name died by signal $((status - 128)); the tests it had started and not ended:"
+    running_tests "$name" | sed 's/^/  still running: /'
+  fi
+  return $status
 }
 
 # ran_a_test LOG: succeeds when unitest's summary in LOG counts more than 0 passed tests.

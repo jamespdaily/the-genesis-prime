@@ -851,8 +851,10 @@ class AbortedTestRunTest(unittest.TestCase):
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"gleam-test")
         lines = [line.strip() for line in run.output.splitlines() if "still running:" in line]
-        self.assertEqual(len(lines), 1, "only the unfinished test is named:\n" + run.output)
-        self.assertRegex(lines[0], r"^still running: planted_test:one_that_hung_test \(\d+ s\)$")
+        # Each run of tests the check makes (the first, the serial one) is a VM that aborts.
+        self.assertGreaterEqual(len(lines), 1, run.output)
+        for line in lines:
+            self.assertRegex(line, r"^still running: planted_test:one_that_hung_test \(\d+ s\)$", "only the unfinished test is named")
         self.assertIn("signal 6", run.output, "the abort is named by its signal")
 
 
@@ -1793,7 +1795,7 @@ class BuiltCodeTest(unittest.TestCase):
         self.assertRegex(
             lines[0],
             r"^erl -pa /\S+/build/dev/erlang/alpha/ebin -pa /\S+/build/dev/erlang/beta/ebin"
-            r" -eval genesis_prime@@main:run\(genesis_prime_test\) -noshell -extra --tag serial --reporter table --no-color$")
+            r" \+hmqd off_heap -eval genesis_prime@@main:run\(genesis_prime_test\) -noshell -extra --tag serial --reporter table --no-color$")
 
     def test_a_part_that_takes_no_arguments_is_started_with_none_after_extra(self):
         lines = [line for line in shared_run("full").erl.splitlines() if "run(glinter)" in line]

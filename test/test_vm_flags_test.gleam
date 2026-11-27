@@ -10,15 +10,9 @@ import mailbox_support
 import owned_test
 
 pub fn a_test_process_keeps_its_messages_off_its_heap_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let started = process.new_subject()
+  use <- owned_test.run(10_000)
   let release = process.new_subject()
-  let pid =
-    process.spawn(fn() {
-      process.send(started, Nil)
-      process.receive_forever(release)
-    })
-  let assert Ok(Nil) = process.receive(started, 30_000)
+  let pid = process.spawn(fn() { process.receive_forever(release) })
   let off_heap = mailbox_support.kept_off_heap(pid)
   process.send(release, Nil)
   assert off_heap
