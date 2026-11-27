@@ -37,6 +37,7 @@ import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/result
 import novice_tables
+import number_support
 import open_wait
 import place_support
 import pog
@@ -227,11 +228,6 @@ pub fn mark_for_rename(pool pool: pog.Connection, name name: String) -> Nil {
   Nil
 }
 
-/// 1 to `count`.
-pub fn numbers(count: Int) -> List(Int) {
-  list.index_map(list.repeat(0, count), fn(_, index) { index + 1 })
-}
-
 /// A stored Dominion human male whose id is `number`, with no look and no
 /// bones, saved at the place of WorldLocation2 row 51596 (the Novice start),
 /// which is not the place of the live character
@@ -264,7 +260,8 @@ pub fn character(number number: Int) -> store.Character {
 /// (0x3F800000 is 1.0 in IEEE single precision, which ReadFloat 0x14006c1c0
 /// keeps as it is), so each differs from its neighbours.
 pub fn bones(count: Int) -> List(Int) {
-  numbers(count) |> list.map(fn(index) { 0x3F800000 + index })
+  number_support.counting(from: 1, count:)
+  |> list.map(fn(index) { 0x3F800000 + index })
 }
 
 /// The items CharacterCreation row 466 gives a new character: its Novice set's
