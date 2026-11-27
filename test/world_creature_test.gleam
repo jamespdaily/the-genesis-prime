@@ -59,7 +59,9 @@ import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/message/start_movement
+import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command
@@ -78,6 +80,8 @@ import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/creature_turn
+import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
 import genesis_prime/world_map/relay
@@ -3707,4 +3711,130 @@ pub fn an_answer_that_reaches_the_creature_after_its_round_closed_changes_nothin
     == []
     as "and no other cast news follows it"
   world_support.stop(world: late.world)
+}
+
+/// The 0x262 that player 2 is sent of the one Battle Beast when it arrives after
+/// `before` has run, the beast being found by player 1 first.
+fn beast_shown_to_a_second_player(
+  before before: fn(MapProcess, Pid, Int) -> Nil,
+) -> UnitCreateCreature {
+  let time = driven_time.new()
+  let world =
+    world_watch_support.one_beast_timed(
+      time:,
+      respawn_ms: 60_000,
+      idle_stop_ms: 60_000,
+    )
+  let run = world_watch_support.started(world)
+  let first = world_support.connection(world:, id: 1)
+  let _first_unit = world_watch_support.join(run:, connection: 1)
+  let appeared =
+    world_watch_support.next(
+      received: first,
+      what: "the creature's 0x262",
+      wanted: world_watch_support.appearance,
+    )
+  let pid =
+    world_watch_support.creature_pid(
+      time:,
+      world:,
+      run:,
+      unit_id: appeared.unit_id,
+      life: 2,
+    )
+  before(run, pid, appeared.unit_id)
+  let second = world_support.connection(world:, id: 2)
+  let _second_unit = world_watch_support.join(run:, connection: 2)
+  let shown =
+    world_watch_support.next(
+      received: second,
+      what: "the creature's 0x262 for player 2",
+      wanted: world_watch_support.appearance,
+    )
+  world_support.stop(world:)
+  shown
+}
+
+fn holds_the_sheathed_stat(unit unit: UnitCreateCreature) -> Bool {
+  list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 15, value: 1),
+  )
+}
+
+pub fn a_resting_creatures_create_carries_stat_15_and_a_fighting_creatures_carries_none_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let resting = beast_shown_to_a_second_player(before: fn(_, _, _) { Nil })
+  assert holds_the_sheathed_stat(unit: resting)
+    as "unit.weapon_sheathed: a creature at rest is created sheathed, stat 15 in the integer form"
+  let fighting =
+    beast_shown_to_a_second_player(before: fn(run, pid, unit_id) {
+      struck_from(run:, connection: 1, unit_id:, x: 12.0, damage: 1, cast_id: 1)
+      driven_time.settled(pid)
+    })
+  assert !list.any(fighting.tail.stats, fn(stat) { stat.stat_id == 15 })
+    as "a viewer is sent no 0x89a when a creature comes into sight, so one already fighting is created drawn (a new unit starts drawn, 0x140454a1f): no stat 15"
+  assert list.contains(
+    fighting.tail.stats,
+    unit_fields.integer_stat(stat_id: 10, value: 1),
+  )
+    as "and its level is still there: only the sheathed stat is left out"
+}
+
+pub fn a_dead_or_returning_creature_is_created_sheathed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let returning =
+    beast_shown_to_a_second_player(before: fn(run, pid, unit_id) {
+      struck_from(run:, connection: 1, unit_id:, x: 12.0, damage: 1, cast_id: 1)
+      driven_time.settled(pid)
+      move_to(run:, connection: 1, x: 12.0 +. 40.0)
+      driven_time.settled(run.pid)
+      driven_time.settled(pid)
+    })
+  assert holds_the_sheathed_stat(unit: returning)
+    as "a creature on its way home is out of combat (creature_fight.in_combat is False for Returning): created sheathed, stat 15"
+  let dead =
+    beast_shown_to_a_second_player(before: fn(run, pid, unit_id) {
+      world_watch_support.strike_with(
+        run:,
+        unit_id:,
+        life: 2,
+        damage_type: 3,
+        damage: 60,
+        cast_id: 1,
+      )
+      driven_time.settled(pid)
+    })
+  assert holds_the_sheathed_stat(unit: dead)
+    as "a corpse is out of combat (a death sends 0x89a 0): created sheathed, stat 15"
+}
+
+pub fn a_turret_create_carries_stat_15_like_any_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  let turret =
+    spawn.Spawn(
+      ..spawn_support.battle_beast(number: 1, x: 0.0),
+      creature_id: Creature2Id(73_494),
+      unit_type: creature_unit_type.Turret,
+    )
+  let unit =
+    creature_unit.create(
+      spawn: turret,
+      unit_id: 0x1001,
+      health: 52,
+      interrupt_armor: option.None,
+      in_combat: False,
+      server_time_estimate_start: 0,
+    )
+  let assert Ok(bytes) =
+    creature_unit.body(unit, unit_type: creature_unit_type.Turret)
+    as "the turret's 0x262 encodes"
+  let assert Ok(decoded) = unit_create_static.decode(bytes)
+    as "the bytes read as a static unit's 0x262"
+  assert decoded.unit_type == static_unit_type.Turret as "type 13"
+  assert list.contains(
+    decoded.tail.stats,
+    unit_fields.integer_stat(stat_id: 15, value: 1),
+  )
+    as "opcode.0x262.simple: the client reads a type 13 unit's stats as a creature's, so the turret is created sheathed"
 }

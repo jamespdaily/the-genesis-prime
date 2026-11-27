@@ -56,6 +56,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       checklist_index: 0,
     )
   assert unit_create_creature.encode(creature_unit.create(
+      in_combat: False,
       spawn: beast,
       unit_id: 0x1001,
       health: 52,
@@ -78,6 +79,7 @@ pub fn a_turret_creature_is_created_as_unit_type_13_test() -> Nil {
     Spawn(..beast, creature_id: Creature2Id(73_494), unit_type: Turret)
   let unit =
     creature_unit.create(
+      in_combat: False,
       spawn: sim_turret,
       unit_id: 0x1001,
       health: 52,
@@ -115,6 +117,7 @@ pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {
     )
   let unit =
     creature_unit.create(
+      in_combat: False,
       spawn: beast,
       unit_id: 0x1001,
       health: 300,
@@ -140,6 +143,7 @@ pub fn a_creatures_current_armor_is_stat_21_of_its_0x262_and_no_armor_adds_no_st
   let beast = spawn_support.battle_beast(number: 1, x: 0.0)
   let create = fn(armor) {
     creature_unit.create(
+      in_combat: False,
       spawn: beast,
       unit_id: 0x1001,
       health: 52,
@@ -168,6 +172,7 @@ pub fn a_vendor_is_created_with_create_flag_4_test() -> Nil {
   let beast = spawn_support.battle_beast(number: 1, x: 0.0)
   let created = fn(spawn) {
     creature_unit.create(
+      in_combat: False,
       spawn:,
       unit_id: 0x1001,
       health: 52,

@@ -120,6 +120,7 @@ fn walker_appears(
       spawn_id: walker.id,
       unit_type: NonPlayer,
       unit: creature_unit.create(
+        in_combat: False,
         spawn: walker,
         unit_id:,
         health:,

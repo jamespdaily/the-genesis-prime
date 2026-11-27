@@ -890,6 +890,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
   use <- owned_test.run(10_000)
   let creature =
     creature_unit.create(
+      in_combat: False,
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       unit_id: 40,
       health: 52,

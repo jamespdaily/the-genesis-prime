@@ -2252,6 +2252,7 @@ fn appeared(state state: State, now_ms now_ms: Int) -> PeerNews {
               state: state.control,
               armor: state.body.combat.interrupt_armor,
             ),
+            in_combat: creature_fight.in_combat(state: state.fight),
             server_time_estimate_start: map.server_time(
               origin_ms: creature.clock_origin_ms,
               monotonic_ms: now_ms,

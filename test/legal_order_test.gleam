@@ -220,6 +220,7 @@ pub fn legal_order_support_catches_a_frame_written_for_a_unit_after_its_removal_
     frame_of(
       0x0262,
       unit_create_creature.encode(creature_unit.create(
+        in_combat: False,
         spawn: beast(),
         unit_id: 7,
         health: 52,
@@ -262,6 +263,7 @@ pub fn legal_order_support_catches_a_frame_written_for_a_unit_after_its_removal_
             spawn_id: beast().id,
             unit_type: beast().unit_type,
             unit: creature_unit.create(
+              in_combat: False,
               spawn: beast(),
               unit_id: 7,
               health: 52,

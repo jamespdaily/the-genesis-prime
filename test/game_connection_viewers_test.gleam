@@ -632,8 +632,9 @@ pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test
       )
     let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
       game_connection_support.snapshot_items(taken)
-    assert list.map(unit.tail.stats, fn(stat) { stat.stat_id }) == [0, 10, 20]
-      as "health, level and shield only: no class slot's stat and no stat 1"
+    assert list.map(unit.tail.stats, fn(stat) { stat.stat_id })
+      == [0, 10, 15, 20]
+      as "health, level, sheathed and shield only: no class slot's stat and no stat 1"
     assert !list.any(unit.tail.properties, fn(property) {
       property.property_id == resource_max
     })
@@ -644,6 +645,39 @@ pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test
       == holds_focus
       as "property 5, the Focus maximum, stays: it is a gear budget property like the rest and 0x93a keeps it current"
   })
+}
+
+/// The stat ids of the 0x262 a first viewer is sent of the player in `state`.
+fn stat_ids_a_viewer_is_sent(state state: game_connection.State) -> List(Int) {
+  let #(_, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(2),
+        stay: game_connection_support.viewer_stay(2),
+        unit_id: game_connection_support.viewer_unit_id(2),
+        generation: game_connection_support.viewer_sight(2),
+      )),
+    )
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    game_connection_support.snapshot_items(taken)
+    as "the viewer's snapshot holds the unit"
+  list.map(unit.tail.stats, fn(stat) { stat.stat_id })
+}
+
+pub fn a_player_seen_out_of_combat_is_created_with_stat_15_and_one_in_combat_is_created_with_none_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let resting =
+    game_connection_support.watched_by(game_connection_support.in_world(), [5])
+  assert list.contains(stat_ids_a_viewer_is_sent(state: resting), 15)
+    as "unit.weapon_sheathed: out of combat the viewer's copy is created sheathed, with stat 15"
+  let #(fighting, _) =
+    game_connection_support.feed(
+      resting,
+      game_connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  assert !list.contains(stat_ids_a_viewer_is_sent(state: fighting), 15)
+    as "a viewer is sent no 0x89a when a unit comes into sight, so a unit already in combat is created drawn (a new unit starts drawn, 0x140454a1f): no stat 15"
 }
 
 pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_sent_test() -> Nil {
@@ -1321,6 +1355,7 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
           spawn_id: SpawnId(31),
           unit_type: NonPlayer,
           unit: creature_unit.create(
+            in_combat: False,
             spawn: beast,
             unit_id: 40,
             health: 52,

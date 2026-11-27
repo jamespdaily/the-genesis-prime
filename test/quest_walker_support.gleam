@@ -145,6 +145,7 @@ pub fn creature_appears(
       spawn_id: spawned.id,
       unit_type: NonPlayer,
       unit: creature_unit.create(
+        in_combat: False,
         spawn: spawned,
         unit_id: 40,
         health: 52,

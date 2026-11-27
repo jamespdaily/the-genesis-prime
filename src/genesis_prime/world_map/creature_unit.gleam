@@ -66,6 +66,7 @@ pub fn create(
   unit_id unit_id: Int,
   health health: Int,
   interrupt_armor interrupt_armor: Option(Int),
+  in_combat _in_combat: Bool,
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateCreature {
   let Creature2Id(creature_id) = spawn.creature_id
