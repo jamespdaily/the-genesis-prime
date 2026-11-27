@@ -10,10 +10,11 @@
 ////   and 3 ms, SpellPhase 2820 to 2823; its damage 79090, 79092 and 79093 is in goes 1 to 3,
 ////   phaseFlags 2, 4 and 8) and Electrocute (41276: innateCostType0 6, innateCost0 8,
 ////   `Spell4CastResult.vital_cost`).
-//// - Jim's decisions of 2026-11-06 (issue 419): one +15 for each Pulse Blast cast, at its
-////   striking go, only in combat, and the Pulse Blast that opens a fight gives it too: the
-////   gain comes with the damage spell's last go, after the creature's threat, which follows
-////   its first answer, has turned the combat flag on (`game_connection_volatility_test`).
+//// - The server's choices: one +15 for each Pulse Blast cast, at its striking go (the
+////   client's prerequisite 903 holds it to combat), and the Pulse Blast that opens a
+////   fight gives it too: the gain comes with the damage spell's last go, after the
+////   creature's threat, which follows its first answer, has turned the combat flag on
+////   (`game_connection_volatility_test`).
 //// The bag indices are `cast_support.abilities`'.
 
 import cast_support as support
@@ -228,7 +229,7 @@ pub fn one_gain_for_each_cast_whether_it_strikes_three_foes_or_none_in_combat_te
     as "tooltips 376222, 491167 and 491176 say 'generate' once with no 'per foe' (server choice): one gain for three foes"
   let none = pulse_blast(caster: engineer(in_combat: True), foes: [])
   assert gains_at(none) == [#(2253, [[Gain(slot: 1, amount: 15)]])]
-    as "an in-combat cast that strikes none still gives 15 (server choice, Jim 2026-11-06)"
+    as "an in-combat cast that strikes none still gives 15 (the server's choice)"
 }
 
 // ---- 7 ----

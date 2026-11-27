@@ -10,7 +10,7 @@
 //// - The costs: Spell4.76002's innate cost (19, 25) with CheckClassResourceCost `0x1405e7980`
 ////   (refused 50 + 4 below 25), and Spell4Thresholds 129's row cost (19, 25) with
 ////   CheckThresholdRowCosts `0x1403c0620` and VitalCostResult `0x1403d3650` (refused 54 at 1 to
-////   24 and 175 at 0), paid at the press that opens the charge (Jim, 2026-11-15).
+////   24 and 175 at 0), paid at the press that opens the charge (the server's choice).
 //// The bag indices are the Spellslinger's here: 0 Spell Surge, 1 Quick Draw, 2 Charged Shot,
 //// 3 Gate. A Surge cast is a press of Spell Surge 47273 (base 31213) at Spell Power 100.
 
@@ -180,5 +180,5 @@ pub fn a_surged_charged_shot_opening_press_is_refused_54_at_24_and_175_at_0_test
     )
   assert support.refusal_results(effects: at_25) == []
   assert support.payments(effects: at_25) == [Payment(slot: 4, amount: 25)]
-    as "the opening press pays the 25 (Jim, 2026-11-15)"
+    as "the opening press pays the 25 (the server's choice)"
 }
