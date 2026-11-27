@@ -6,7 +6,7 @@
 //// assertion:
 //// - `Spell4.innateCost0.timing`: the client checks a cost only before it sends a
 ////   press, never lowers a resource itself and shows only what 0x935 says, so when to
-////   pay is the server's; the recorded sitting shows Gamma Rays' Actuators dropping
+////   pay is the server's; a retail video shows Gamma Rays' Actuators dropping
 ////   when its beams go off.
 //// - The client's rows (`table_rows -- Spell4 29874 32809 58832 38779`): Gamma Rays
 ////   costs 2 of type 18 (the Medic's slots 1 to 5) with a cast time of 1250 ms, Mind

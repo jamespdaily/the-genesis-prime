@@ -72,14 +72,29 @@ fn tracked_sources(
   files
 }
 
-/// Every tracked text file under the directories that a rule reads for a
-/// word: Gleam, Erlang, Python, shell, SQL, CSS and TOML, sorted by path.
+/// Every tracked file under the directories that holds text, sorted by path,
+/// read with one `git ls-files`. A file that is not UTF-8 text is left out.
 pub fn texts(under directories: List(String)) -> List(SourceFile) {
-  let suffixes = [".gleam", ".erl", ".py", ".sh", ".sql", ".css", ".toml"]
-  list.flat_map(suffixes, fn(suffix) {
-    tracked_sources(suffix:, under: directories)
+  tracked_paths()
+  |> list.filter(fn(path) {
+    list.any(directories, fn(directory) {
+      string.starts_with(path, directory <> "/")
+    })
   })
-  |> list.sort(fn(a, b) { string.compare(a.path, b.path) })
+  |> list.sort(string.compare)
+  |> list.filter_map(fn(path) {
+    case simplifile.read(path) {
+      Ok(text) -> Ok(SourceFile(path:, text:))
+      Error(simplifile.NotUtf8) -> Error(Nil)
+      Error(error) ->
+        panic as {
+          "the tracked file could not be read: "
+          <> path
+          <> " "
+          <> string.inspect(error)
+        }
+    }
+  })
 }
 
 /// Every key of the client's fact file, read once for the run.

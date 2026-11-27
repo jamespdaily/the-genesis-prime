@@ -20,14 +20,14 @@
 ////   deletes its row.
 //// - The list is sorted by its rows, one row per line.
 ////
-//// What the rule does not read: this module and its test (they name Jim to
-//// state the rule), files that are not `.gleam`, `.erl`, `.py`, `.sh`, `.sql`,
-//// `.css` or `.toml`, and `priv/`, `.claude/` and `CLAUDE.md`.
+//// What the rule does not read: this module, its test and its list (they name
+//// Jim to state the rule), files that are not text, and files outside `src/`,
+//// `test/` and `dev/`.
 
+import code_rule/list_file
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import gleam/bool
 import gleam/list
-import gleam/order
 import gleam/string
 
 /// A row of the keep list: the file, the trimmed text of a line it holds that
@@ -39,21 +39,20 @@ pub type Kept {
 /// The keep list.
 pub const list_path = "test/code_rule/jim_source_keep.txt"
 
-/// Files that state the rule and so name Jim.
+/// Files that state the rule and so name Jim; the list file holds the kept
+/// lines, so it names Jim too.
 const own_files = [
   "test/code_rule/jim_source.gleam", "test/code_rule/jim_source_test.gleam",
+  list_path,
 ]
 
 /// The list as its file writes it: `path text` on each line.
 pub fn parse_list(text text: String) -> List(Kept) {
-  text
-  |> string.split("\n")
-  |> list.index_map(fn(row, index) { #(row, index + 1) })
-  |> list.filter(fn(entry) { string.trim(entry.0) != "" })
+  list_file.rows(text)
   |> list.map(fn(entry) {
     let #(row, line) = entry
     let assert Ok(#(path, text)) = string.split_once(row, " ")
-      as { "line " <> string.inspect(line) <> " of the list has no path" }
+      as list_file.bad_row(line:, what: "has no path")
     Kept(path:, text:, line:)
   })
 }
@@ -147,20 +146,15 @@ fn in_word(grapheme: String) -> Bool {
   )
 }
 
-/// A breach at each row that is not after the row before it.
 fn disordered(kept: List(Kept)) -> List(Breach) {
-  list.zip(kept, list.drop(kept, 1))
-  |> list.filter_map(fn(pair) {
-    let #(before, row) = pair
-    case string.compare(key(before), key(row)) {
-      order.Lt -> Error(Nil)
-      order.Eq | order.Gt ->
-        Ok(list_breach(
-          row,
-          "is out of order or repeated: keep one row per line, sorted",
-        ))
-    }
-  })
+  list_file.disordered(
+    rows: kept,
+    compare: fn(before, row) { string.compare(key(before), key(row)) },
+    path: list_path,
+    line: fn(row) { row.line },
+    name: key,
+    what: "is out of order or repeated: keep one row per line, sorted",
+  )
 }
 
 fn key(row: Kept) -> String {

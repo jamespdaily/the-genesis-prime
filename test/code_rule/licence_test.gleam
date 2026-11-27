@@ -13,7 +13,7 @@
 ////   `build/packages/<name>/`.
 //// - A package that declares no licence there passes only when `declared`
 ////   under `[tools.licences]` names it, with an accepted licence and where it
-////   was checked (accepted on the licence issue (#306), on the shell card: Ranch, built with erlang.mk,
+////   was checked (accepted on the shell card (#145): Ranch, built with erlang.mk,
 ////   states its ISC licence only in its LICENSE file and on Hex).
 
 import code_rule/licence.{NoLicence, Unaccepted}

@@ -1,6 +1,5 @@
-//// The person-as-source rule. A line of a tracked `.gleam`, `.erl`, `.py`,
-//// `.sh`, `.sql`, `.css` or `.toml` file under `src/`, `test/` or `dev/` that
-//// holds the word Jim is a breach at its line unless a row of the keep list
+//// The person-as-source rule. A line of a tracked text file under `src/`,
+//// `test/` or `dev/` that holds the word Jim is a breach at its line unless a row of the keep list
 //// holds it. A row with no such line is a breach at the row's line of the
 //// list, and the list must be sorted with one row per line. Every case is
 //// planted; the last test runs the rule over the real tree and the real list.
@@ -156,8 +155,7 @@ pub fn the_real_tree_names_jim_only_on_its_keep_list_lines_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   let files = repository.texts(under: ["src", "test", "dev"])
-  assert list.all(files, fn(file) { file.text != "" })
-    as "every file read holds text"
+  assert files != [] as "the scan read no file"
   let breaches =
     jim_source.breaches(
       files:,

@@ -28,4 +28,3 @@ test/game_connection_volatility_test.gleam //// - Jim's decisions of 2026-11-06 
 test/game_connection_volatility_test.gleam as "the opener gives 15 (Jim's decision): 42148's +15 of slot 1 (Spell4Effects 95337, behind 903) comes with the damage spell's last go, when the first strike's threat has put the player in combat, one 0x935 of stat 3 to the player's own client"
 test/game_connection_volatility_test.gleam reason: "two in-combat blasts give 30 (Spell4Effects 95337, +15 each); Electrocute (Spell4 41276: 8 a pulse) pays at three gos, 30 - 8 each, and the 6 left cannot pay the fourth, which ends the channel (Jim's decision; opcode.0x935: one 0x935 of slot 1, stat 3, each)",
 test/message_vector_test.gleam account_name: "Jim",
-test/sitting_bot_test.gleam //// which is the database Jim plays on: a character of another account is

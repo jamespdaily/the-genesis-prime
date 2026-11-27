@@ -38,6 +38,7 @@
 //// What the rule does not read: a deadline a helper of a test module passes on to
 //// a runner, since the helper's own call is the one read.
 
+import code_rule/list_file
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
 import glance
@@ -94,17 +95,13 @@ fn takes_deadline(parameter: glance.FunctionParameter) -> Bool {
 
 /// The list as its file writes it: `module test ceiling_ms` on each line.
 pub fn parse_list(text text: String) -> List(Listed) {
-  text
-  |> string.split("\n")
-  |> list.index_map(fn(row, index) { #(row, index + 1) })
-  |> list.filter(fn(entry) { string.trim(entry.0) != "" })
+  list_file.rows(text)
   |> list.map(fn(entry) {
     let #(row, line) = entry
-    let assert [module, test_name, ceiling] =
-      string.split(string.trim(row), " ")
-      as { "line " <> int.to_string(line) <> " of the list is not three words" }
+    let assert [module, test_name, ceiling] = string.split(row, " ")
+      as list_file.bad_row(line:, what: "is not three words")
     let assert Ok(ceiling_ms) = int.parse(ceiling)
-      as { "line " <> int.to_string(line) <> " of the list has no ceiling" }
+      as list_file.bad_row(line:, what: "has no ceiling")
     Listed(module:, test_name:, ceiling_ms:, line:)
   })
 }
@@ -211,18 +208,14 @@ fn list_breaches(
     True, Error(Nil) | False, _ -> []
   }
   let disordered =
-    list.zip(listed, list.drop(listed, 1))
-    |> list.filter_map(fn(pair) {
-      let #(before, row) = pair
-      case compare_rows(before, row) {
-        order.Lt -> Error(Nil)
-        order.Eq | order.Gt ->
-          Ok(list_breach(
-            row,
-            "is out of order or repeated: keep one row per test, sorted by module and then test",
-          ))
-      }
-    })
+    list_file.disordered(
+      rows: listed,
+      compare: compare_rows,
+      path: list_path,
+      line: fn(row) { row.line },
+      name: fn(row) { row.module <> " " <> row.test_name },
+      what: "is out of order or repeated: keep one row per test, sorted by module and then test",
+    )
   list.append(too_many, disordered)
 }
 

@@ -1468,7 +1468,7 @@ fn creature_walks_home(creature creature: process.Pid) -> Bool {
 
 pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_home_and_waking_in_the_ring_is_aggroed_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
-  // The recorded sitting: a creature that killed a player kept attacking the body. A
+  // A report from play: a creature that killed a player kept attacking the body. A
   // creature leashes at the death (0x90a 0, 0x89a (C, 0)) and, standing at its spawn, its
   // home timer fires at once, so a body left in the creature's near set was aggroed
   // again in the same instant. A server choice (the Design of issue 496): a dead unit is
