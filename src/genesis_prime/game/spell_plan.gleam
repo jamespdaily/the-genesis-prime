@@ -5447,7 +5447,8 @@ fn conversion_of(
 /// 0xc5 or more).
 const client_property_slots = 197
 
-/// The UnitProperty2 id a modifier row names, which the table must have a row for.
+/// The UnitProperty2 id a modifier row names: the table must have a row for it, and the
+/// client must have a slot for it (below `client_property_slots`).
 fn property_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -5455,13 +5456,23 @@ fn property_of(
   id id: Int,
 ) -> Result(UnitProperty2Id, PlanError) {
   let property = UnitProperty2Id(id)
-  unit_property2.get(tables:, id: property)
-  |> result.replace(property)
-  |> result.replace_error(ModifierPropertyHasNoRow(
-    spell4_id:,
-    effect_id: effect.id,
-    property: id,
-  ))
+  use _ <- result.try(
+    unit_property2.get(tables:, id: property)
+    |> result.replace_error(ModifierPropertyHasNoRow(
+      spell4_id:,
+      effect_id: effect.id,
+      property: id,
+    )),
+  )
+  case id < client_property_slots {
+    True -> Ok(property)
+    False ->
+      Error(ModifierPropertyBeyondClientSlots(
+        spell4_id:,
+        effect_id: effect.id,
+        property: id,
+      ))
+  }
 }
 
 /// One ForcedMove row whose targetFlags include the caster (`effect_kind.is_row_read`;
