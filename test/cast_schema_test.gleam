@@ -56,15 +56,9 @@ fn fields_of(owner owner: String) -> List(Field) {
   let assert Ok(text) = simplifile.read(schema_path)
     as "the schema file is read from the project folder"
   let assert Ok(schema) = message_schema.parse(text) as "the real schema parses"
-  case list.find(schema.messages, fn(message) { message.name == owner }) {
-    Ok(message) -> message.fields
-    Error(Nil) -> {
-      let assert Ok(record) =
-        list.find(schema.records, fn(record) { record.name == owner })
-        as { "the schema holds no message or record named " <> owner }
-      record.fields
-    }
-  }
+  let assert Ok(fields) = message_schema.fields_of(schema:, owner:)
+    as { "the schema holds no message or record named " <> owner }
+  fields
 }
 
 pub fn each_default_the_cast_messages_send_names_the_fact_that_shows_it_safe_test() -> Nil {
@@ -140,13 +134,12 @@ pub fn the_invulnerability_cast_results_are_named_with_their_evidence_test() -> 
   let assert Ok(schema) = message_schema.parse(text) as "the real schema parses"
   list.each(cast_result_lists, fn(place) {
     let #(owner, field_name) = place
-    let assert Ok(message) =
-      list.find(schema.messages, fn(message) { message.name == owner })
+    let assert Ok(fields) = message_schema.fields_of(schema:, owner:)
       as { "the schema holds the message " <> owner }
     let assert Ok(message_schema.Field(
       kind: message_schema.Unsigned(values: Some(named), ..),
       ..,
-    )) = list.find(message.fields, fn(field) { field.name == field_name })
+    )) = list.find(fields, fn(field) { field.name == field_name })
       as { owner <> "." <> field_name <> " is a named list" }
     let found = fn(number) {
       list.find(named.values, fn(value) { value.value == number })

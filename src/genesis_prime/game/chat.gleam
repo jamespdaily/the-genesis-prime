@@ -443,24 +443,26 @@ fn zone_named_frame(zone: Zone) -> Frame {
     NoZone -> 0
     InZone(top_zone_id:, ..) -> top_zone_id
   }
-  let assert Ok(body) = chat_zone_named.encode(ChatZoneNamed(world_zone_id:))
-    as "a WorldZone id of the table's 15 bits fits the message"
+  let body =
+    bit_stream.must(ChatZoneNamed(world_zone_id:), chat_zone_named.encode)
   Frame(message_id: chat_zone_named.message_id, body:)
 }
 
 /// 0x1bc giving the client the zone channel: type 9, id 1, an empty name and
 /// three zeros (opcode.0x1bc).
 fn zone_joined_frame() -> Frame {
-  let assert Ok(body) =
-    chat_channel_joined.encode(ChatChannelJoined(
-      channel_type: chat_channel.id(chat_channel.Zone),
-      channel_id: zone_channel_id,
-      name: "",
-      unread_4: 0,
-      custom_channel_slot: 0,
-      unread_6: 0,
-    ))
-    as "the channel id 1 fits the field"
+  let body =
+    bit_stream.must(
+      ChatChannelJoined(
+        channel_type: chat_channel.id(chat_channel.Zone),
+        channel_id: zone_channel_id,
+        name: "",
+        unread_4: 0,
+        custom_channel_slot: 0,
+        unread_6: 0,
+      ),
+      chat_channel_joined.encode,
+    )
   Frame(message_id: chat_channel_joined.message_id, body:)
 }
 
@@ -642,13 +644,11 @@ fn failed_frame(
   account account: Int,
   chat_message_id chat_message_id: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    whisper_failed.encode(WhisperFailed(
-      target_name:,
-      account:,
-      chat_message_id:,
-    ))
-    as "a name the client sent and a slot of 16 bits fit the message"
+  let body =
+    bit_stream.must(
+      WhisperFailed(target_name:, account:, chat_message_id:),
+      whisper_failed.encode,
+    )
   Frame(message_id: whisper_failed.message_id, body:)
 }
 
@@ -769,28 +769,32 @@ fn command_line(
 /// `text` and no speaker: no realm, character, name or unit, no GM mark, no
 /// format and no cross-faction colour, so the line shows the channel's name and
 /// then the text (`opcode.0x1c8`, `chat.system_line`). A server choice for the
-/// development commands' answers.
+/// development commands' answers. The text is a fixed sentence with numbers and
+/// names from a `!` line of at most 501 units (`is_a_line`) or from the
+/// client's tables, far under the 32,767 units the text field holds.
 pub fn system_line_frame(text text: String) -> Frame {
-  let assert Ok(body) =
-    chat_line.encode(ChatLine(
-      channel_type: system_channel_type,
-      channel_id: 0,
-      gm: 0,
-      from_self: 0,
-      auto_response: 0,
-      sender_realm_id: 0,
-      sender_character_id: 0,
-      sender_name: "",
-      sender_realm_name: "",
-      presence_state: 0,
-      text: bit_stream.utf16_units(text),
-      formats: [],
-      cross_faction: 0,
-      field_14: 0,
-      unit_id: 0,
-      premium_tier: 0,
-    ))
-    as "a text of a development command's answer and zeros fit the message"
+  let body =
+    bit_stream.must(
+      ChatLine(
+        channel_type: system_channel_type,
+        channel_id: 0,
+        gm: 0,
+        from_self: 0,
+        auto_response: 0,
+        sender_realm_id: 0,
+        sender_character_id: 0,
+        sender_name: "",
+        sender_realm_name: "",
+        presence_state: 0,
+        text: bit_stream.utf16_units(text),
+        formats: [],
+        cross_faction: 0,
+        field_14: 0,
+        unit_id: 0,
+        premium_tier: 0,
+      ),
+      chat_line.encode,
+    )
   Frame(message_id: chat_line.message_id, body:)
 }
 
@@ -1002,14 +1006,11 @@ fn chat_result_frame(
   chat_message_id chat_message_id: Int,
   result result: ChatChannelResult,
 ) -> Frame {
-  let assert Ok(body) =
-    chat_result.encode(ChatResult(
-      channel_type:,
-      channel_id:,
-      result:,
-      chat_message_id:,
-    ))
-    as "the line's own channel and slot fit the fields they came from"
+  let body =
+    bit_stream.must(
+      ChatResult(channel_type:, channel_id:, result:, chat_message_id:),
+      chat_result.encode,
+    )
   Frame(message_id: chat_result.message_id, body:)
 }
 
@@ -1029,16 +1030,18 @@ fn accepted_as(
   chat chat: Chat,
   chat_message_id chat_message_id: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    chat_line_accepted.encode(ChatLineAccepted(
-      chat_message_id:,
-      gm: 0,
-      name:,
-      realm_name: "",
-      unit_id: chat.speaker.unit_id,
-      premium_tier: 0,
-    ))
-    as "a slot of 16 bits, a name of a character and a unit of 32 bits fit the message"
+  let body =
+    bit_stream.must(
+      ChatLineAccepted(
+        chat_message_id:,
+        gm: 0,
+        name:,
+        realm_name: "",
+        unit_id: chat.speaker.unit_id,
+        premium_tier: 0,
+      ),
+      chat_line_accepted.encode,
+    )
   Frame(message_id: chat_line_accepted.message_id, body:)
 }
 
@@ -1050,29 +1053,31 @@ fn line_frame(
   speaker speaker: Speaker,
   line line: Line,
 ) -> Frame {
-  let assert Ok(body) =
-    chat_line.encode(ChatLine(
-      channel_type: chat_channel.id(line.channel_type),
-      channel_id: line.channel_id,
-      gm: 0,
-      from_self: 0,
-      auto_response: 0,
-      sender_realm_id: speaker.realm_id,
-      sender_character_id: speaker.character_id,
-      sender_name: speaker.name,
-      sender_realm_name: "",
-      presence_state: 0,
-      text: line.text,
-      formats: line.formats,
-      cross_faction: case speaker.faction_id == chat.speaker.faction_id {
-        True -> 0
-        False -> 1
-      },
-      field_14: 0,
-      unit_id: speaker.unit_id,
-      premium_tier: 0,
-    ))
-    as "the speaker's realm, character, name and unit and a line of at most 501 units fit the message"
+  let body =
+    bit_stream.must(
+      ChatLine(
+        channel_type: chat_channel.id(line.channel_type),
+        channel_id: line.channel_id,
+        gm: 0,
+        from_self: 0,
+        auto_response: 0,
+        sender_realm_id: speaker.realm_id,
+        sender_character_id: speaker.character_id,
+        sender_name: speaker.name,
+        sender_realm_name: "",
+        presence_state: 0,
+        text: line.text,
+        formats: line.formats,
+        cross_faction: case speaker.faction_id == chat.speaker.faction_id {
+          True -> 0
+          False -> 1
+        },
+        field_14: 0,
+        unit_id: speaker.unit_id,
+        premium_tier: 0,
+      ),
+      chat_line.encode,
+    )
   Frame(message_id: chat_line.message_id, body:)
 }
 

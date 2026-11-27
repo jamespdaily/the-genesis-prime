@@ -25,6 +25,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/currency_kind
+import genesis_prime/message/bit_stream
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/store
@@ -156,14 +157,16 @@ pub fn changed_frame(
   currency_type_id currency_type_id: Int,
   total total: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    currency_changed.encode(CurrencyChanged(
-      kind: currency_type_id - 1,
-      total:,
-      field_3: 0,
-      field_4: 0,
-    ))
-    as "a total below 2^64 fits the message"
+  let body =
+    bit_stream.must(
+      CurrencyChanged(
+        kind: currency_type_id - 1,
+        total:,
+        field_3: 0,
+        field_4: 0,
+      ),
+      currency_changed.encode,
+    )
   Frame(message_id: currency_changed.message_id, body:)
 }
 
@@ -181,13 +184,15 @@ pub fn total_frames(
   case total > before {
     False -> [total_frame]
     True -> {
-      let assert Ok(body) =
-        currency_gained.encode(CurrencyGained(
-          currency_type_id:,
-          amount: total - before,
-          signature_amount: 0,
-        ))
-        as "a gain below 2^64 of a currency type below 16 fits the message"
+      let body =
+        bit_stream.must(
+          CurrencyGained(
+            currency_type_id:,
+            amount: total - before,
+            signature_amount: 0,
+          ),
+          currency_gained.encode,
+        )
       [total_frame, Frame(message_id: currency_gained.message_id, body:)]
     }
   }

@@ -64,6 +64,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/objective_kind
+import genesis_prime/message/bit_stream
 import genesis_prime/message/float32
 import genesis_prime/message/quest_active.{type QuestActive, QuestActive}
 import genesis_prime/message/quest_completed.{
@@ -533,14 +534,11 @@ pub fn login(
         Completed(..) | Known(..) -> Error(Nil)
       }
     })
-  let assert Ok(body) =
-    quest_message.encode(quest_message.QuestLog(
-      completed:,
-      known:,
-      active:,
-      reset_time:,
-    ))
-    as "the saved quest ids fit 15 bits, the lists and the Unix seconds fit the message"
+  let body =
+    bit_stream.must(
+      quest_message.QuestLog(completed:, known:, active:, reset_time:),
+      quest_message.encode,
+    )
   let running =
     list.fold(dict.keys(log.entries), log, fn(log, quest_id) {
       started_running(log:, quest_id:, tables:, now_ms: now.monotonic_ms)
@@ -882,9 +880,11 @@ pub fn reset_due(
         ]
         |> list.filter(fn(period) { period.0 / 1000 > log.told_reset })
         |> list.fold(0, fn(bits, period) { int.bitwise_or(bits, period.1) })
-      let assert Ok(body) =
-        quest_periodic_reset.encode(QuestPeriodicReset(reset_time:, periods:))
-        as "the Unix seconds fit 64 bits and the period bits fit 4"
+      let body =
+        bit_stream.must(
+          QuestPeriodicReset(reset_time:, periods:),
+          quest_periodic_reset.encode,
+        )
       Reset(
         log: QuestLog(..log, told_reset: reset_time),
         frame: Frame(message_id: quest_periodic_reset.message_id, body:),
@@ -1964,9 +1964,11 @@ pub fn quest_state_frame(
   state state: Int,
   objective_id objective_id: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    quest_state.encode(QuestState(quest_id:, state:, objective_id:))
-    as "a Quest2 id of the table, a state of 1 to 7 and an objective id fit the message"
+  let body =
+    bit_stream.must(
+      QuestState(quest_id:, state:, objective_id:),
+      quest_state.encode,
+    )
   Frame(message_id: quest_state.message_id, body:)
 }
 
@@ -1977,12 +1979,10 @@ pub fn quest_objective_progress_frame(
   objective_index objective_index: Int,
   progress progress: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    quest_objective_progress.encode(QuestObjectiveProgress(
-      quest_id:,
-      objective_index:,
-      progress:,
-    ))
-    as "a Quest2 id of the table, an objective index and a count that fits 32 bits"
+  let body =
+    bit_stream.must(
+      QuestObjectiveProgress(quest_id:, objective_index:, progress:),
+      quest_objective_progress.encode,
+    )
   Frame(message_id: quest_objective_progress.message_id, body:)
 }
