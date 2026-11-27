@@ -137,6 +137,10 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     list.filter(list.drop(support.effects_of(taken), 7), fn(effect) {
       case effect {
         OwnEffect(step.Write(..)) -> False
+        // The entry's passive cast tells the map each cast's news; the map relays it to the
+        // viewers (none here), and the cast's own tests hold it.
+        OwnEffect(step.Tell(request: client_connection.TellBroadcast(..), ..)) ->
+          False
         OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
           True
       }
