@@ -25,6 +25,7 @@
 
 import character_tables
 import connection_rule_support as support
+import exception
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
@@ -37,6 +38,8 @@ import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{type State, Join, Joined, Leave, Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/player_unit
+import gleam/dynamic/decode
+import gleam/erlang/atom
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -240,6 +243,53 @@ pub fn a_unit_id_is_never_given_twice_across_leaves_and_rejoins_test() -> Nil {
       list.append(numbers, [number])
     })
     as "opcode.0x262: the client refuses a unit id it has seen, so a connection that leaves and joins again is a new unit, and the ids are 1 to 20 with none repeated"
+}
+
+/// One connection joins and leaves until the map has given ids 1 up to
+/// `1_048_575`, then joins once more.
+fn join_until_every_unit_id_is_given(
+  state state: State,
+  joined joined: Int,
+  last last: Int,
+) -> State {
+  let #(state, _) = join(state:, connection: 1, caller: joined)
+  case joined == last {
+    True -> state
+    False -> {
+      let #(state, _) = leave(state:, connection: 1, caller: joined)
+      join_until_every_unit_id_is_given(state:, joined: joined + 1, last:)
+    }
+  }
+}
+
+pub fn a_map_that_has_given_every_unit_id_crashes_naming_the_limit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 1_048_575 joins give ids 1 to 1_048_575; each is followed by a leave, as a
+  // busy map's players come and go.
+  let full =
+    join_until_every_unit_id_is_given(
+      state: started(),
+      joined: 1,
+      last: 1_048_575,
+    )
+  let #(full, _) = leave(state: full, connection: 1, caller: 1_048_576)
+  let crashed =
+    exception.rescue(fn() {
+      join(state: full, connection: 1, caller: 1_048_577)
+    })
+  let assert Error(exception.Errored(panic_term)) = crashed
+    as "`take_unit_id`: ids below 2^20 are given, so the join after the last one crashes the map, which ends its run and its players' connections"
+  assert decode.run(
+      panic_term,
+      decode.field(
+        atom.to_dynamic(atom.create("message")),
+        decode.string,
+        fn(message) { decode.success(message) },
+      ),
+    )
+    == Ok("a map has given every unit id below 2^20")
+    as "the crash names the limit, not a bare match failure"
+  Nil
 }
 
 pub fn a_players_connection_ending_removes_the_player_so_its_next_join_is_a_new_unit_test() -> Nil {
