@@ -133,9 +133,11 @@ pub fn must(
   value value: a,
   encode encode: fn(a) -> Result(BitArray, EncodeError),
 ) -> BitArray {
-  let _ = value
-  let _ = encode
-  <<255>>
+  case encode(value) {
+    Ok(bytes) -> bytes
+    Error(error) ->
+      panic as { string.inspect(value) <> ": " <> describe_encode(error:) }
+  }
 }
 
 /// A sentence that says why bytes are not a body, for the log.
