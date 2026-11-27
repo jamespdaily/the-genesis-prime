@@ -37,7 +37,7 @@ pub fn encode(message: RenameCharacterResult) -> Result(BitArray, EncodeError) {
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(message: RenameCharacterResult) -> BitArray {
-  bit_stream.must(encode(message), "")
+  bit_stream.must(encode(message), "rename_character_result")
 }
 
 /// The message read from the bytes of a body, or why they are not one.

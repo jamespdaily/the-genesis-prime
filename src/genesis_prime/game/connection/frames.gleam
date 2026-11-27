@@ -98,27 +98,25 @@ pub fn bit(yes: Bool) -> Int {
 /// 5-bit value is not read and the 32-bit one is used only for a unit under
 /// client control that comes back, so both are 0.
 pub fn death_state_frame(unit_id unit_id: Int, dead dead: Bool) -> Frame {
-  let assert Ok(body) =
-    unit_death_state.encode(UnitDeathState(
+  let body =
+    unit_death_state.must_encode(UnitDeathState(
       unit_id:,
       dead: bit(dead),
       unread_3: 0,
       health: 0,
     ))
-    as "a unit id of 32 bits and the safe values fit the message (opcode.0x88c)"
   Frame(message_id: unit_death_state.message_id, body:)
 }
 
 /// 0x247 of type 22 when `died`, else 23, for the unit (`opcode.0x247.death`).
 pub fn combat_log_frame(unit_id unit_id: Int, died died: Bool) -> Frame {
-  let assert Ok(body) =
-    combat_log.encode(
+  let body =
+    combat_log.must_encode(
       CombatLog(entry: case died {
         True -> combat_log_entry.Death(CombatLogDeath(unit_id:))
         False -> combat_log_entry.Resurrect(CombatLogResurrect(unit_id:))
       }),
     )
-    as "a unit id of 32 bits fits the entry"
   Frame(message_id: combat_log.message_id, body:)
 }
 
@@ -163,8 +161,8 @@ fn resurrection_window_frame(
   ghost_unit_id ghost_unit_id: Int,
   dead dead: Bool,
 ) -> Frame {
-  let assert Ok(body) =
-    resurrection_window.encode(ResurrectionWindow(
+  let body =
+    resurrection_window.must_encode(ResurrectionWindow(
       ghost_unit_id:,
       wake_here_cost: player_life.window_zero,
       death_penalty_ms: player_life.window_zero,
@@ -174,7 +172,6 @@ fn resurrection_window_frame(
       wake_here_cooldown_ms: player_life.window_zero,
       forced_release_ms: player_life.window_zero,
     ))
-    as "a unit id, three 32-bit values, two bits, 8 bits and two 32-bit values fit the message"
   Frame(message_id: resurrection_window.message_id, body:)
 }
 
@@ -198,9 +195,12 @@ pub fn own_unit_frame(
     player_life.OwnAbsorption(absorption:) ->
       absorption_frame(unit_id:, absorption:)
     player_life.OwnHealth(health:) -> {
-      let assert Ok(body) =
-        player_health.encode(PlayerHealth(unit_id:, health:, reason_mask: 0))
-        as "a unit id and a health of 32 bits and a mask of 18 fit the message"
+      let body =
+        player_health.must_encode(PlayerHealth(
+          unit_id:,
+          health:,
+          reason_mask: 0,
+        ))
       Frame(message_id: player_health.message_id, body:)
     }
     player_life.OwnDeathState(dead:) -> death_state_frame(unit_id:, dead:)
@@ -223,12 +223,11 @@ pub fn combat_state_frame(
   unit_id unit_id: Int,
   in_combat in_combat: Bool,
 ) -> Frame {
-  let assert Ok(body) =
-    unit_combat_state.encode(UnitCombatState(
+  let body =
+    unit_combat_state.must_encode(UnitCombatState(
       unit_id:,
       in_combat: bit(in_combat),
     ))
-    as "a unit id of 32 bits and a bit fit the message"
   Frame(message_id: unit_combat_state.message_id, body:)
 }
 
@@ -249,15 +248,14 @@ pub fn experience_gained_frame(
   kind kind: Int,
   unit_id unit_id: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    experience_gained.encode(ExperienceGained(
+  let body =
+    experience_gained.must_encode(ExperienceGained(
       experience: gain,
       rest_experience_used: 0,
       bonus_experience: 0,
       source_kind: kind,
       source_unit_id: unit_id,
     ))
-    as "an amount and a unit id of 32 bits and a kind of 32 bits fit the message"
   Frame(message_id: experience_gained.message_id, body:)
 }
 
@@ -307,9 +305,7 @@ fn stat_frame(
   unit_id unit_id: Int,
   change change: unit_stat_change.UnitStatChange,
 ) -> Frame {
-  let assert Ok(body) =
-    unit_stat_changed.encode(UnitStatChanged(unit_id:, change:))
-    as "a unit id, a stat and a value fit the message"
+  let body = unit_stat_changed.must_encode(UnitStatChanged(unit_id:, change:))
   Frame(message_id: unit_stat_changed.message_id, body:)
 }
 
@@ -321,21 +317,19 @@ pub fn resource_frame(
   slot slot: Int,
   value value: Float,
 ) -> Frame {
-  let assert Ok(body) =
-    unit_float_stat_changed.encode(UnitFloatStatChanged(
+  let body =
+    unit_float_stat_changed.must_encode(UnitFloatStatChanged(
       unit_id:,
       stat_id: unit_fields.resource_stat_id(slot:),
       value: float32.to_bits(value),
     ))
-    as "a unit id of 32 bits, a stat of slot -1 to 7 plus 2 and a float fit the message"
   Frame(message_id: unit_float_stat_changed.message_id, body:)
 }
 
 /// 0x0594 with the bit set and reason 0: the client leaves the world and
 /// starts character select on the same connection (opcode.0x594).
 pub fn leave_world_frame() -> Frame {
-  let assert Ok(body) = leave_world.encode(LeaveWorld(returning: 1, reason: 0))
-    as "a bit and a reason of 0 fit the message"
+  let body = leave_world.must_encode(LeaveWorld(returning: 1, reason: 0))
   Frame(message_id: leave_world.message_id, body:)
 }
 
@@ -344,9 +338,8 @@ pub fn unit_stealth_frame(
   unit_id unit_id: Int,
   stealthed stealthed: Bool,
 ) -> Frame {
-  let assert Ok(body) =
-    unit_stealth.encode(UnitStealth(unit_id:, stealthed: bit(stealthed)))
-    as "a unit id of 32 bits and a bit fit the message"
+  let body =
+    unit_stealth.must_encode(UnitStealth(unit_id:, stealthed: bit(stealthed)))
   Frame(message_id: unit_stealth.message_id, body:)
 }
 
@@ -371,8 +364,8 @@ pub fn stealth_logged_frame(
   unit_id unit_id: Int,
   exiting exiting: Bool,
 ) -> Frame {
-  let assert Ok(body) =
-    combat_log.encode(
+  let body =
+    combat_log.must_encode(
       CombatLog(
         entry: combat_log_entry.Stealth(CombatLogStealth(
           unit_id:,
@@ -380,7 +373,6 @@ pub fn stealth_logged_frame(
         )),
       ),
     )
-    as "a unit id of 32 bits and a bit fit the entry"
   Frame(message_id: combat_log.message_id, body:)
 }
 
@@ -696,9 +688,7 @@ fn vector_of(place: Place) -> movement_float_vector.MovementFloatVector {
 /// 0x357, which opens the dialog of a unit (`opcode.0x357`): the unit's id and the
 /// bit the client's reader needs after it, clear.
 pub fn dialog_open_frame(unit_id unit_id: Int) -> Frame {
-  let assert Ok(body) =
-    unit_dialog_open.encode(UnitDialogOpen(unit_id:, unread_2: 0))
-    as "a unit id the player's picture holds fits the message's 32 bits"
+  let body = unit_dialog_open.must_encode(UnitDialogOpen(unit_id:, unread_2: 0))
   Frame(message_id: unit_dialog_open.message_id, body:)
 }
 
@@ -777,8 +767,7 @@ pub fn buyback_list_frame(
 
 /// 0x106 with the client's code for why an action is refused (`opcode.0x106`).
 pub fn generic_error_frame(code code: Int) -> Frame {
-  let assert Ok(body) = generic_error.encode(GenericError(code:))
-    as "a refusal code of the interaction rule fits the message's 8 bits"
+  let body = generic_error.must_encode(GenericError(code:))
   Frame(message_id: generic_error.message_id, body:)
 }
 
@@ -821,8 +810,10 @@ pub fn object_created_frame(unit unit: Created) -> Frame {
 /// 0x355 for another player's unit or a creature, with its one bit 0
 /// (opcode.0x355).
 pub fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
-  let assert Ok(body) =
-    unit_destroyed.encode(UnitDestroyed(unit_id:, chest_world_object_delay: 0))
-    as "a unit id of 32 bits fits the message"
+  let body =
+    unit_destroyed.must_encode(UnitDestroyed(
+      unit_id:,
+      chest_world_object_delay: 0,
+    ))
   Frame(message_id: unit_destroyed.message_id, body:)
 }

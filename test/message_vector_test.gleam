@@ -603,7 +603,7 @@ pub fn must_encode_of_a_value_past_its_width_crashes_naming_the_message_and_fiel
   use <- owned_test.run(10_000)
   let ended =
     ask_support.ended_running(fn() {
-      let _ = pong.must_encode(Pong(sequence_number: 300))
+      let _bytes = pong.must_encode(Pong(sequence_number: 300))
       Nil
     })
   let text = ask_support.panic_message(ask_support.raised(ended))

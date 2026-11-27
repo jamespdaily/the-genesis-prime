@@ -667,7 +667,7 @@ pub fn unit_removed_frame_past_32_bits_crashes_naming_unit_destroyed_test() -> N
   use <- owned_test.run(10_000)
   let ended =
     ask_support.ended_running(fn() {
-      let _ = frames.unit_removed_frame(unit_id: 4_294_967_296)
+      let _frame = frames.unit_removed_frame(unit_id: 4_294_967_296)
       Nil
     })
   let text = ask_support.panic_message(ask_support.raised(ended))

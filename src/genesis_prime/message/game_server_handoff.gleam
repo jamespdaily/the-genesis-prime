@@ -50,7 +50,7 @@ pub fn encode(message: GameServerHandoff) -> Result(BitArray, EncodeError) {
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(message: GameServerHandoff) -> BitArray {
-  bit_stream.must(encode(message), "")
+  bit_stream.must(encode(message), "game_server_handoff")
 }
 
 /// The message read from the bytes of a body, or why they are not one.

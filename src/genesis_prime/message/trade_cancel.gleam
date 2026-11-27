@@ -27,7 +27,7 @@ pub fn encode(_message: TradeCancel) -> Result(BitArray, EncodeError) {
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(_message: TradeCancel) -> BitArray {
-  bit_stream.must(encode(TradeCancel), "")
+  bit_stream.must(encode(TradeCancel), "trade_cancel")
 }
 
 /// The message read from the bytes of a body, or why they are not one.

@@ -31,7 +31,7 @@ pub fn encode(message: UnitTetherAnchor) -> Result(BitArray, EncodeError) {
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(message: UnitTetherAnchor) -> BitArray {
-  bit_stream.must(encode(message), "")
+  bit_stream.must(encode(message), "unit_tether_anchor")
 }
 
 /// The message read from the bytes of a body, or why they are not one.

@@ -27,7 +27,7 @@ pub fn encode(_message: PlayerEnteredWorld) -> Result(BitArray, EncodeError) {
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(_message: PlayerEnteredWorld) -> BitArray {
-  bit_stream.must(encode(PlayerEnteredWorld), "")
+  bit_stream.must(encode(PlayerEnteredWorld), "player_entered_world")
 }
 
 /// The message read from the bytes of a body, or why they are not one.

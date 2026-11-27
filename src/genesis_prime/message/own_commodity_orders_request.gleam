@@ -29,7 +29,10 @@ pub fn encode(
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(_message: OwnCommodityOrdersRequest) -> BitArray {
-  bit_stream.must(encode(OwnCommodityOrdersRequest), "")
+  bit_stream.must(
+    encode(OwnCommodityOrdersRequest),
+    "own_commodity_orders_request",
+  )
 }
 
 /// The message read from the bytes of a body, or why they are not one.

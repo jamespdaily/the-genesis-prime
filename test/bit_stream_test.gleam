@@ -545,7 +545,7 @@ pub fn must_crash_text_is_the_message_name_then_describe_encode_for_every_varian
   list.each(every_encode_error(), fn(error) {
     let ended =
       ask_support.ended_running(fn() {
-        let _ = bit_stream.must(Error(error), "planted_message")
+        let _bytes = bit_stream.must(Error(error), "planted_message")
         Nil
       })
     assert ask_support.panic_message(ask_support.raised(ended))

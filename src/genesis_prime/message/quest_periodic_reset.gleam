@@ -34,7 +34,7 @@ pub fn encode(message: QuestPeriodicReset) -> Result(BitArray, EncodeError) {
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(message: QuestPeriodicReset) -> BitArray {
-  bit_stream.must(encode(message), "")
+  bit_stream.must(encode(message), "quest_periodic_reset")
 }
 
 /// The message read from the bytes of a body, or why they are not one.

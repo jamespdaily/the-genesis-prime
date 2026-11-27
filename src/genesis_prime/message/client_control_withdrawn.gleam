@@ -30,7 +30,7 @@ pub fn encode(
 /// The message as the bytes of its body, for values that fit their fields; a
 /// value that does not ends the process, naming the message and the field.
 pub fn must_encode(_message: ClientControlWithdrawn) -> BitArray {
-  bit_stream.must(encode(ClientControlWithdrawn), "")
+  bit_stream.must(encode(ClientControlWithdrawn), "client_control_withdrawn")
 }
 
 /// The message read from the bytes of a body, or why they are not one.
