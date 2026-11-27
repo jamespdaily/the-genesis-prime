@@ -206,6 +206,7 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/proc
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
@@ -1164,7 +1165,7 @@ pub fn effects_ended(
       list.map(cast_control.caster_rows(spell:), fn(row) {
         CasterChangeEnding(
           source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
-          until_removed: row.row.until_removed,
+          until_removed: lasts.is_until_removed(row.row.lasts),
         )
       }),
       list.map(

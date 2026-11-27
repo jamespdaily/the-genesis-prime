@@ -21,6 +21,7 @@ import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/player_address
 import genesis_prime/game/spell_plan.{type Plans, Always}
 import genesis_prime/game/spend
@@ -44,7 +45,7 @@ fn crit_row() -> spell_plan.PropertyModifier {
     effect_id: Spell4EffectsId(135_954),
     phase_flags: -1,
     change: spell_plan.PropertyChange(crit_modifier()),
-    row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
     condition: Always,
     tag: spend.always,
     armor: None,
@@ -167,7 +168,7 @@ pub fn a_modifier_that_lasts_until_removed_starts_at_the_go_and_has_no_end_timer
   let until_removed =
     spell_plan.PropertyModifier(
       ..crit_row(),
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     )
   let plans =
     support.plans_of([
@@ -188,7 +189,7 @@ pub fn a_row_with_no_life_applies_nothing_test() -> Nil {
   let lifeless =
     spell_plan.PropertyModifier(
       ..crit_row(),
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
     )
   let plans =
     support.plans_of([
@@ -736,7 +737,7 @@ fn slowing_row() -> spell_plan.PropertyModifier {
       modifier: slowing_modifier(),
       aim: spell_plan.AimsAtArea,
     ),
-    row: LastingRow(delay_ms: 1000, duration_ms: 5000, until_removed: False),
+    row: LastingRow(delay_ms: 1000, lasts: lasts.For(duration_ms: 5000)),
     condition: Always,
     tag: spend.always,
     armor: None,
@@ -752,7 +753,7 @@ fn immediate_row(effect_id effect_id: Int) -> spell_plan.PropertyModifier {
   spell_plan.PropertyModifier(
     ..slowing_row(),
     effect_id: Spell4EffectsId(effect_id),
-    row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
   )
 }
 

@@ -42,6 +42,7 @@ import genesis_prime/game/cast/state.{type Effect, type Struck} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite.{NonPlayer}
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, AimsAtArea, AimsAtCaster, GatedOnTarget,
@@ -588,7 +589,7 @@ pub fn heal_and_modifier_behind_target_gate_reach_only_passing_units_test() -> N
         modifier: unit_properties_change(),
         aim: AimsAtArea,
       ),
-      row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
       condition: GatedOnTarget(prerequisite: creature_gate(
         id: 3475,
         comparison: 1,

@@ -133,6 +133,7 @@ import genesis_prime/game/class_resource.{type Payment}
 import genesis_prime/game/cooldown
 import genesis_prime/game/item_use
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
@@ -5789,7 +5790,7 @@ pub fn aimed_at(
           Listed(
             effect_id: Spell4EffectsId(entry.0.tell.effect_id),
             delay_ms: entry.0.tell.row.delay_ms,
-            until_removed: entry.0.tell.row.until_removed,
+            until_removed: lasts.is_until_removed(entry.0.tell.row.lasts),
             instance_id: Some(entry.0.tell.instance_id),
             damage: None,
           ),
@@ -5801,7 +5802,7 @@ pub fn aimed_at(
           Listed(
             effect_id: entry.0.row.effect_id,
             delay_ms: entry.0.row.row.delay_ms,
-            until_removed: entry.0.row.row.until_removed,
+            until_removed: lasts.is_until_removed(entry.0.row.row.lasts),
             instance_id: Some(entry.0.instance_id),
             damage: None,
           ),
@@ -6110,7 +6111,7 @@ fn cooldown_row_armed(
     False ->
       cooldown_applied(cast:, source:, modifier: row.modifier, kept:, now_ms:)
   }
-  let #(cast, ending) = case kept && !row.row.until_removed {
+  let #(cast, ending) = case kept && !lasts.is_until_removed(row.row.lasts) {
     True -> {
       let #(cast, _, start) =
         cast_state.armed(

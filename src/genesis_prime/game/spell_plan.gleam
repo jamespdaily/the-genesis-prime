@@ -380,6 +380,7 @@ import genesis_prime/game/forced_move
 import genesis_prime/game/innate
 import genesis_prime/game/item_property
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/loadout
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -4769,8 +4770,10 @@ pub fn lasting_row_of(
 ) -> lasting.LastingRow {
   lasting.LastingRow(
     delay_ms: effect.delay_time,
-    duration_ms: effect.duration_time,
-    until_removed: spell_effect.has_flag(flags: effect.flags, bit: 2),
+    lasts: lasts.of_row(
+      until_removed: spell_effect.has_flag(flags: effect.flags, bit: 2),
+      duration_ms: effect.duration_time,
+    ),
   )
 }
 
@@ -4883,9 +4886,8 @@ fn control_of(
     row: crowd_control.Row(
       state:,
       delay_ms: effect.delay_time,
-      duration_ms: effect.duration_time,
+      lasts: lasts.of_row(until_removed:, duration_ms: effect.duration_time),
       armor_removed: effect.data_bits03,
-      until_removed:,
     ),
     condition:,
     tag: tag_of(effect:),
@@ -5563,7 +5565,7 @@ fn stealth_row_of(
     effect_id: Spell4EffectsId(effect.id),
     phase_flags: effect.phase_flags,
     breaks:,
-    row: lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     condition:,
     tag: tag_of(effect:),
   ))
@@ -7137,7 +7139,7 @@ fn proc_place_refusal(
     ),
     #(
       held_by_an_ally
-        && lasting_row_of(effect:).until_removed
+        && lasts.is_until_removed(lasting_row_of(effect:).lasts)
         && !place.ends_as_aura,
       ProcAllyUntilRemoved,
     ),

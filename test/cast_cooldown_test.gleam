@@ -43,6 +43,7 @@ import genesis_prime/game/cooldown.{
   type Operation, AddMs, Base, Modifier, NoLonger, SetMs,
 }
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
 import genesis_prime/game/spend
 import genesis_prime/step.{type TimerId}
@@ -87,11 +88,7 @@ fn row(
     effect_id: Spell4EffectsId(effect_id),
     phase_flags: -1,
     modifier: Modifier(selector: Base(Spell4BaseId(3)), operation:),
-    row: LastingRow(
-      delay_ms: delay,
-      duration_ms: duration,
-      until_removed: False,
-    ),
+    row: LastingRow(delay_ms: delay, lasts: lasts.For(duration_ms: duration)),
     condition: Always,
     tag: spend.always,
   )
@@ -102,7 +99,7 @@ fn until_removed(
 ) -> spell_plan.CooldownModifier {
   spell_plan.CooldownModifier(
     ..row,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
   )
 }
 
@@ -370,7 +367,7 @@ fn impale_child(gate gate: spell_plan.Condition) -> Spell {
         selector: Base(Spell4BaseId(32_336)),
         operation: AddMs(amount),
       ),
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
       condition:,
       tag: spend.always,
     )

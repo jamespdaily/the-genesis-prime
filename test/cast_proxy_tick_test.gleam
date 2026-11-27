@@ -25,6 +25,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
@@ -1909,7 +1910,7 @@ pub fn restrictors_field_over_the_clients_rows_asks_eight_times_and_each_child_c
     restrictor_over(tables: client_tables.shared())
   assert snare.effect_id == Spell4EffectsId(200_476)
     && snare.row.state == crowd_control_state.Snare
-    && snare.row.duration_ms == 2000
+    && snare.row.lasts == lasts.For(duration_ms: 2000)
     as "the plan's row is the client's: state 21, 2000 ms"
   let told = fn(at_ms: Int, asked: cast_state.GoAsked) {
     // The units the connection's strike gives each child: the one it was made on, told the
@@ -1927,7 +1928,9 @@ pub fn restrictors_field_over_the_clients_rows_asks_eight_times_and_each_child_c
               row: snare.row,
               throw: None,
             ),
-            ends_at_ms: at_ms + snare.row.delay_ms + snare.row.duration_ms,
+            ends_at_ms: at_ms
+              + snare.row.delay_ms
+              + lasts.duration_ms(snare.row.lasts),
             interrupted: None,
           ),
         ],

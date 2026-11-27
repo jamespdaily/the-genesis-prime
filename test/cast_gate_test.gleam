@@ -31,6 +31,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
@@ -664,11 +665,7 @@ fn lasting_remove_and_heal(condition condition: spell_plan.Condition) -> Spell {
         effect_id: Spell4EffectsId(1),
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
-        row: lasting.LastingRow(
-          delay_ms: 0,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        row: lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
         condition:,
         tag: spend.always,
       )),
@@ -758,11 +755,7 @@ fn lifeless_modifier_and_lasting(
         effect_id: Spell4EffectsId(1),
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
-        row: lasting.LastingRow(
-          delay_ms: 0,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        row: lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
         condition:,
         tag: spend.always,
       )),
@@ -776,7 +769,7 @@ fn lifeless_modifier() -> spell_plan.PropertyModifier {
     ..support.falling_row(),
     effect_id: Spell4EffectsId(2),
     phase_flags: -1,
-    row: lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+    row: lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
   )
 }
 
@@ -1313,13 +1306,8 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
   use <- owned_test.run(5000)
   let primary = spell_plan.AimsAtPrimaryTarget
   let one_second =
-    lasting.LastingRow(
-      delay_ms: 1000,
-      duration_ms: 10_000,
-      until_removed: False,
-    )
-  let until_removed =
-    lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+    lasting.LastingRow(delay_ms: 1000, lasts: lasts.For(duration_ms: 10_000))
+  let until_removed = lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
   let at_ally = option.Some(ally)
   // Rows 130470 and 130474 are Phantasmal Armor's, each targetFlags 2: an `AbsorbChange` and a
   // `StruckChange` aimed at the primary target (`table_rows -- Spell4Effects 130470 130474`).
@@ -1747,11 +1735,7 @@ pub fn a_modifier_row_lands_on_a_player_the_press_named_or_the_area_hit_and_the_
       "a delayed until-removed row under an aura is still refused for its delay",
       spell_plan.PropertyModifier(
         ..aimed_at_the_area,
-        row: lasting.LastingRow(
-          delay_ms: 1000,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        row: lasting.LastingRow(delay_ms: 1000, lasts: lasts.UntilRemoved),
       ),
       aura_end,
       [],
@@ -1804,11 +1788,7 @@ fn proc_held_by(holder holder: spell_plan.ProcHolder) -> spell_plan.ProcRow {
   support.held_proc_row(
     id: 86_457,
     holder:,
-    row: lasting.LastingRow(
-      delay_ms: 0,
-      duration_ms: 12_000,
-      until_removed: False,
-    ),
+    row: lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 12_000)),
   )
 }
 
@@ -1856,7 +1836,7 @@ pub fn a_proc_row_is_held_by_the_player_the_press_named_or_each_the_area_hit_and
   let until_removed =
     spell_plan.ProcRow(
       ..by_area,
-      row: lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     )
   let at_ally = option.Some(ally)
   let hit_creature = support.creature_hit(unit_id: creature, life: 3)

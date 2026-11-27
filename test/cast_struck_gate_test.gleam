@@ -24,6 +24,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{
   type Spell, AimsAtArea, AimsAtPrimaryTarget,
 }
@@ -278,7 +279,7 @@ fn split_modifier_spell() -> Spell {
       effect_id: Spell4EffectsId(cast_struck_support.gated_id),
       phase_flags: -1,
       change:,
-      row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
       condition: spell_plan.Always,
       tag: spend.always,
       armor: None,

@@ -31,6 +31,7 @@ import genesis_prime/game/area
 import genesis_prime/game/crowd_control
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/game/lasts
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
   type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
@@ -5205,9 +5206,8 @@ fn knockback_state(instance_id instance_id: Int) -> strike_tell.ControlTell {
     row: crowd_control.Row(
       state: crowd_control_state.Knockback,
       delay_ms: 0,
-      duration_ms: 0,
+      lasts: lasts.For(duration_ms: 0),
       armor_removed: 1,
-      until_removed: False,
     ),
     throw: Some(forced_move.Throw(
       move: forced_move.Move(

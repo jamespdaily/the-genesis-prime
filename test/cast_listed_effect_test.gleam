@@ -21,6 +21,7 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/spend
@@ -558,7 +559,7 @@ pub fn a_timed_item_visual_swap_node_ends_with_targets_removed_while_another_nod
       effect_id: Spell4EffectsId(99_201),
       phase_flags: -1,
       aim: spell_plan.AimsAtArea,
-      row: LastingRow(delay_ms: 0, duration_ms: 20_000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 20_000)),
       condition: spell_plan.Always,
       tag: spend.always,
     )

@@ -21,6 +21,7 @@
 
 import client_tables
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{
   Always, BrokenByDamage, EndsStealthAfterLastGo, EndsStealthAtEachGo,
   GatedOnCaster, KeepsStealth, KeptOnDamage, RemoveStealthRow, StealthRow,
@@ -81,7 +82,7 @@ pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_t
         effect_id: Spell4EffectsId(83_834),
         phase_flags: 1,
         breaks: BrokenByDamage,
-        row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+        row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
         condition: GatedOnCaster(gates: [
           prerequisite_support.single(id: 16_152, condition: #(50, 2, 0, 59_389)),
         ]),
@@ -91,7 +92,7 @@ pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_t
         effect_id: Spell4EffectsId(95_774),
         phase_flags: 1,
         breaks: KeptOnDamage,
-        row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+        row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
         condition: GatedOnCaster(gates: [
           prerequisite_support.single(id: 16_153, condition: #(50, 1, 0, 59_389)),
         ]),

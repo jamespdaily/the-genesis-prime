@@ -29,6 +29,7 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/look.{type Disguise, Disguise}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_advance
@@ -261,7 +262,7 @@ pub fn stealth_row(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
     breaks:,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     condition: Always,
     tag: spend.always,
   )
@@ -509,7 +510,7 @@ pub fn standing_spell(spell4_id spell4_id: Int) -> Spell {
         flat: 0.0,
         per_level: 0.0,
       )),
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       condition: spell_plan.Always,
       tag: spend.always,
       armor: None,
@@ -540,7 +541,7 @@ pub fn standing_holder(
       event_gate: None,
       holder_gate: None,
       delay_ms: 0,
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       condition: spell_plan.Always,
       tag: spend.always,
     )),
@@ -2061,7 +2062,7 @@ pub fn open_schedule(
 ) -> ticking.Schedule {
   let assert Ok(schedule) =
     ticking.open_schedule_of(
-      row: LastingRow(delay_ms:, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms:, lasts: lasts.UntilRemoved),
       tick_ms:,
     )
     as "an open Proxy row of a tickTime above 0 has a schedule"
@@ -2401,7 +2402,7 @@ pub fn falling_row() -> spell_plan.PropertyModifier {
       flat: 0.0,
       per_level: 0.0,
     )),
-    row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
+    row: LastingRow(delay_ms: 180, lasts: lasts.For(duration_ms: 400)),
     condition: Always,
     tag: spend.always,
     armor: None,
@@ -2473,11 +2474,7 @@ pub fn spectral_form_row(
     aim:,
     points: 1,
     takes_back: False,
-    row: lasting.LastingRow(
-      delay_ms: 0,
-      duration_ms: 5000,
-      until_removed: False,
-    ),
+    row: lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
   )
 }
 
@@ -3046,7 +3043,7 @@ pub fn marker_row(id id: Int, aim aim: spell_plan.Aim) -> spell_plan.Lasting {
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
     aim:,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     condition: Always,
     tag: spend.always,
   )
@@ -3258,7 +3255,7 @@ pub fn armor_absorb_row(
       mask: 7,
       aim:,
     )),
-    row: LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 10_000)),
     condition: spell_plan.Always,
     tag: spend.always,
     armor: None,
@@ -3288,7 +3285,7 @@ pub fn armor_modifier_row(
       ),
       aim:,
     ),
-    row: LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 10_000)),
     condition: spell_plan.Always,
     tag: spend.always,
     armor: None,

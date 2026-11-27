@@ -25,6 +25,7 @@ import genesis_prime/game/area.{
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
   SelectionNeedsHealth, SelectionNotBuilt, ShapeNotBuilt, TargetingNotBuilt,
@@ -2358,9 +2359,8 @@ pub fn each_kit_crowd_control_row_decodes_as_a_stun_or_a_knockdown_with_its_time
       == crowd_control.Row(
         state:,
         delay_ms:,
-        duration_ms:,
+        lasts: lasts.For(duration_ms:),
         armor_removed: 1,
-        until_removed: False,
       )
     assert control.aim == aim
   })

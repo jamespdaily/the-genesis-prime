@@ -94,6 +94,7 @@
 //// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/game/lasting) | | |
 
 import genesis_prime/game/crowd_control
+import genesis_prime/game/lasts
 import genesis_prime/game/strike_tell.{
   type ControlLanded, type Tell, ControlLanded,
 }
@@ -263,7 +264,7 @@ fn armored(
 fn held(state state: State, tell tell: Tell, now_ms now_ms: Int) -> Landing {
   let #(state, held) =
     list.map_fold(over: tell.controls, from: state, with: fn(state, told) {
-      let hold_ms = told.row.delay_ms + told.row.duration_ms
+      let hold_ms = told.row.delay_ms + lasts.duration_ms(told.row.lasts)
       let control =
         Control(
           number: state.next_number,

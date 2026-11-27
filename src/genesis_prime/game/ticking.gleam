@@ -17,6 +17,7 @@
 ////   of the node when the node has one, an aura's (`life_under_aura`, `0x1407180c0`).
 
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/gap
 import gleam/bool
 import gleam/int
@@ -54,21 +55,25 @@ pub fn schedule_of(
   row row: lasting.LastingRow,
   tick_ms tick_ms: Int,
 ) -> Result(Schedule, ScheduleError) {
-  use <- bool.guard(when: row.until_removed, return: Error(UntilRemoved))
-  let count = case tick_ms > 0 {
-    True -> row.duration_ms / tick_ms
-    False -> 0
+  case row.lasts {
+    lasts.UntilRemoved -> Error(UntilRemoved)
+    lasts.For(duration_ms:) -> {
+      let count = case tick_ms > 0 {
+        True -> duration_ms / tick_ms
+        False -> 0
+      }
+      use <- bool.guard(
+        when: count < 1,
+        return: Error(NoTick(tick_ms:, duration_ms:)),
+      )
+      Ok(Schedule(
+        delay_ms: row.delay_ms,
+        tick_ms:,
+        duration_ms:,
+        count: Ticks(count),
+      ))
+    }
   }
-  use <- bool.guard(
-    when: count < 1,
-    return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
-  )
-  Ok(Schedule(
-    delay_ms: row.delay_ms,
-    tick_ms:,
-    duration_ms: row.duration_ms,
-    count: Ticks(count),
-  ))
 }
 
 /// The open schedule of a periodic Proxy row with flags bit 2 and a tickTime of `tick_ms`:
@@ -83,18 +88,18 @@ pub fn open_schedule_of(
 ) -> Result(Schedule, ScheduleError) {
   use <- bool.guard(
     when: tick_ms < 1,
-    return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
+    return: Error(NoTick(tick_ms:, duration_ms: lasts.duration_ms(row.lasts))),
   )
   Ok(Schedule(
     delay_ms: row.delay_ms,
     tick_ms:,
-    duration_ms: row.duration_ms,
+    duration_ms: lasts.duration_ms(row.lasts),
     count: UntilTheNodeEnds,
   ))
 }
 
 /// Whether the schedule has no count, so its row's node lasts until removed
-/// (`lasting.LastingRow.until_removed`) and no durationTime bounds it.
+/// (`lasts.UntilRemoved` in `lasting.LastingRow.lasts`) and no durationTime bounds it.
 pub fn lasts_until_removed(schedule schedule: Schedule) -> Bool {
   case schedule.count {
     UntilTheNodeEnds -> True
@@ -116,8 +121,7 @@ pub fn within_life(
     lasting.lifetime_of(
       row: lasting.LastingRow(
         delay_ms: schedule.delay_ms,
-        duration_ms: schedule.duration_ms,
-        until_removed: False,
+        lasts: lasts.For(duration_ms: schedule.duration_ms),
       ),
       longer_of_delay_and_duration:,
     )

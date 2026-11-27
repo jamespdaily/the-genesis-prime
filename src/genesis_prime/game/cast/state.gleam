@@ -23,6 +23,7 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/look
 import genesis_prime/game/player_address.{type PlayerAddress}
 import genesis_prime/game/player_state.{type PlayerState}
@@ -1901,7 +1902,7 @@ pub fn listed_by_row(
   Listed(
     effect_id:,
     delay_ms: row.delay_ms,
-    until_removed: row.until_removed,
+    until_removed: lasts.is_until_removed(row.lasts),
     instance_id: None,
     damage: None,
   )

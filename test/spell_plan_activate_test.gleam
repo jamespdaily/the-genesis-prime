@@ -12,6 +12,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{AliveOrDead, CannotBeDead, MustBeDead}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
@@ -378,7 +379,11 @@ pub fn the_hoverboard_activate_spell_is_planned_test() -> Nil {
         spent: option.None,
       ),
       fn(control) {
-        #(control.aim, control.row.state, control.row.until_removed)
+        #(
+          control.aim,
+          control.row.state,
+          lasts.is_until_removed(control.row.lasts),
+        )
       },
     )
     == [

@@ -42,6 +42,7 @@ import genesis_prime/game/held_changes
 import genesis_prime/game/held_tier
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
 import genesis_prime/game/proc as event_proc
@@ -368,7 +369,7 @@ fn proc(
     event_gate: None,
     holder_gate: None,
     delay_ms: 0,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     condition: Always,
     tag: spend.always,
   )
@@ -1352,7 +1353,7 @@ pub fn a_proc_lasts_as_long_as_its_node_a_timed_one_ends_with_it_and_a_removal_d
         window_ms: 500,
         count: 1,
       ),
-      row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 3000)),
     )
   let holder = pressable(spell4_id: 250_101, base: 1, procs: [timed])
   let removing =
@@ -3254,7 +3255,7 @@ pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_c
           effect_id: Spell4EffectsId(250_901),
           phase_flags: -1,
           aim: spell_plan.AimsAtArea,
-          row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+          row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
           condition: Always,
           tag: spend.always,
         )),
@@ -3373,7 +3374,7 @@ pub fn a_delayed_fire_is_dropped_with_its_timer_when_the_procs_node_ends_test() 
         casts: 250_201,
         aim: spell_plan.AtHolder,
       ),
-      row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 3000)),
       delay_ms: 1000,
     )
   let holder = pressable(spell4_id: 250_101, base: 1, procs: [timed])
@@ -4752,7 +4753,7 @@ pub fn an_event_gate_on_the_striker_reads_it_as_the_casters_picture_shows_it_tes
           effect_id: Spell4EffectsId(250_901),
           phase_flags: -1,
           aim: spell_plan.AimsAtArea,
-          row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+          row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
           condition: Always,
           tag: spend.always,
         )),
@@ -4894,7 +4895,7 @@ fn item_cast_holding_a_proc_on_an_ally() -> #(State, Caster) {
     support.held_proc_row(
       id: 86_457,
       holder: spell_plan.HeldByAreaAllies,
-      row: LastingRow(delay_ms: 0, duration_ms: 12_000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 12_000)),
     )
   let spell = support.standing_spell(39_386)
   let state =
@@ -6396,7 +6397,7 @@ fn real_row_fires(row row: ProcRow) -> Int {
     ProcRow(
       ..row,
       phase_flags: -1,
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       condition: Always,
       tag: spend.always,
     )

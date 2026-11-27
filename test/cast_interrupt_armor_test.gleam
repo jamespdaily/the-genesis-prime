@@ -21,6 +21,7 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{AimsAtCaster, Always}
 import genesis_prime/game/spend
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
@@ -111,7 +112,7 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
       aim: AimsAtCaster,
       points: 1,
       takes_back: True,
-      row: LastingRow(delay_ms: 150_000, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 150_000, lasts: lasts.UntilRemoved),
     )
   let plans =
     support.plans_of([
@@ -230,7 +231,7 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
       aim: AimsAtCaster,
       points: 1,
       takes_back: True,
-      row: LastingRow(delay_ms: 150_000, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 150_000, lasts: lasts.UntilRemoved),
     )
   let plans =
     support.plans_of([

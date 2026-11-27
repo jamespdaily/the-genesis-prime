@@ -19,6 +19,7 @@ import genesis_prime/game/cooldown.{AddMs, Base, Modifier}
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/game/spend
@@ -65,8 +66,7 @@ fn four_kinds() -> Spell {
         ),
         row: lasting.LastingRow(
           delay_ms: 0,
-          duration_ms: 5000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 5000),
         ),
         condition: spell_plan.Always,
         tag: spend.always,
@@ -82,11 +82,7 @@ fn four_kinds() -> Spell {
         effect_id: Spell4EffectsId(1),
         phase_flags: -1,
         aim: spell_plan.AimsAtCasterAndPrimaryTarget,
-        row: lasting.LastingRow(
-          delay_ms: 0,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        row: lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
         condition: spell_plan.Always,
         tag: spend.always,
       )),

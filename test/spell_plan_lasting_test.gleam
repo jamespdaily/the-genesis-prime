@@ -20,6 +20,7 @@ import client_tables
 import fixture_tables
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting.{Group, LastingRow, Spell, Stack}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
@@ -91,7 +92,7 @@ pub fn a_fluff_row_aimed_at_the_caster_that_lasts_until_removed_is_read_test() -
         effect_id: Spell4EffectsId(99_050),
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
-        row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+        row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
         condition: Always,
         tag: spend.EqualTo(value: 0),
       ),
@@ -114,7 +115,7 @@ pub fn a_fluff_row_reads_its_delay_and_duration_test() -> Nil {
   let assert [lasting] =
     spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting)
   assert lasting.row
-    == LastingRow(delay_ms: 100, duration_ms: 8000, until_removed: False)
+    == LastingRow(delay_ms: 100, lasts: lasts.For(duration_ms: 8000))
 }
 
 pub fn a_spell_with_propertyflags_bit_0x2000_takes_the_larger_of_delay_and_duration_test() -> Nil {
@@ -393,7 +394,7 @@ pub fn power_charge_holds_its_fluff_and_80383_removes_3_stacks_of_it_test() -> N
       #(
         Spell4EffectsId(96_819),
         spell_plan.AimsAtCaster,
-        LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+        LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
         Always,
       ),
     ]
@@ -482,9 +483,8 @@ pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> N
         row: crowd_control.Row(
           state: crowd_control_state.Knockdown,
           delay_ms: 166,
-          duration_ms: 3000,
+          lasts: lasts.For(duration_ms: 3000),
           armor_removed: 1,
-          until_removed: False,
         ),
         condition: spell_plan.Always,
         tag: spend.EqualTo(0),
@@ -532,9 +532,8 @@ pub fn a_caster_ability_restriction_row_is_read_until_removed_test() -> Nil {
         row: crowd_control.Row(
           state: crowd_control_state.AbilityRestriction,
           delay_ms: 0,
-          duration_ms: 0,
+          lasts: lasts.UntilRemoved,
           armor_removed: 0,
-          until_removed: True,
         ),
         condition: spell_plan.Always,
         tag: spend.EqualTo(0),
@@ -561,7 +560,7 @@ pub fn a_caster_ability_restriction_row_is_read_until_removed_test() -> Nil {
     )
   assert list.map(
       spell_plan.payloads(spell: timed, as_kind: spell_plan.as_control),
-      fn(control) { control.row.until_removed },
+      fn(control) { lasts.is_until_removed(control.row.lasts) },
     )
     == [False]
     as "a row without flags bit 2 is not held until removed"
@@ -625,9 +624,8 @@ pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
             row: crowd_control.Row(
               state: crowd_control_state.from_value(state),
               delay_ms: 166,
-              duration_ms: 3000,
+              lasts: lasts.For(duration_ms: 3000),
               armor_removed: 1,
-              until_removed: False,
             ),
             condition: spell_plan.Always,
             tag: spend.EqualTo(0),
@@ -693,7 +691,7 @@ pub fn a_state_until_removed_on_another_unit_is_dropped_and_the_spell_plans_test
     as "a state on the caster ends with its cast's node (cast.restrictions)"
   assert list.map(
       spell_plan.payloads(spell: on_caster, as_kind: spell_plan.as_control),
-      fn(control) { control.row.until_removed },
+      fn(control) { lasts.is_until_removed(control.row.lasts) },
     )
     == [True]
   assert on_caster.dropped_controls == []

@@ -22,6 +22,7 @@
 ////   select, and `cast.restrictions_told` for the states on the caster itself. They
 ////   number the states of different units, a creature's and the caster's own.
 
+import genesis_prime/game/lasts.{type Lasts}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/table/cc_states
 import genesis_prime/table/id.{CCStatesId, Spell4CCConditionsId}
@@ -32,7 +33,7 @@ import gleam/list
 import gleam/result
 
 /// The columns of a CCStateSet row that decide how long and how a state lands:
-/// its state (dataBits00), delayTime and durationTime in milliseconds, and the
+/// its state (dataBits00), delayTime in milliseconds, how long it lasts and the
 /// Interrupt Armor it removes (dataBits03). The client's own lifetime for the effect
 /// scales durationTime by the target's CC resilience, which is 0 for every creature
 /// (`cc_state.duration_on_creature`), so a creature holds the state for durationTime.
@@ -40,11 +41,11 @@ pub type Row {
   Row(
     state: CrowdControlState,
     delay_ms: Int,
-    duration_ms: Int,
+    /// Until removed when the row's flags have bit 2: the state never times out, it
+    /// lasts until its cast's effects end (`Spell4Effects.flags`, `cc_state.instance_id`);
+    /// else its durationTime.
+    lasts: Lasts,
     armor_removed: Int,
-    /// The row's flags bit 2: the state never times out, it lasts until its cast's
-    /// effects end (`Spell4Effects.flags`, `cc_state.instance_id`).
-    until_removed: Bool,
   )
 }
 
