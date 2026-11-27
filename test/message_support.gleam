@@ -40,7 +40,8 @@ pub fn session_key() -> BitArray {
 /// Checks a message against a body vector of the fact file. `name` is the key
 /// of the record that gives the bytes, which must state them (`fact_file`): a
 /// record that is missing, or whose statement gives other bytes, fails the
-/// test. Then `assert_codec` checks the message against the bytes.
+/// test. Then `bit_stream.must` is checked against the bytes, and `assert_codec`
+/// checks the message against the bytes.
 pub fn assert_vector(
   name name: String,
   body body: BitArray,
@@ -53,6 +54,10 @@ pub fn assert_vector(
       name
       <> ": the fact file has this record, and its statement gives these bytes: "
       <> bit_array.base16_encode(body)
+    }
+  assert bit_stream.must(value, encode) == body
+    as {
+      name <> ": the value goes through `bit_stream.must` to the same bytes"
     }
   assert_codec(name:, body:, value:, encode:, decode:)
 }
