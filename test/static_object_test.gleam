@@ -37,6 +37,7 @@ import genesis_prime/world_map/static_object.{
   type StaticObject, Health, StaticObject,
 }
 import genesis_prime/world_map/unit_fields
+import gleam/list
 import gleam/option.{Some}
 import map_support
 import message_support
@@ -234,4 +235,34 @@ pub fn a_players_and_a_creatures_0x262_claim_no_world_object_test() -> Nil {
     as "opcode.0x262.unit_fields: a creature's unit is its own world unit"
   assert unit_create_player.message_id == unit_create_static.message_id
     as "opcode.0x262: one message creates every unit"
+}
+
+pub fn a_static_objects_create_carries_no_stat_15_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The types whose 0x262 lists stats (door, mailbox and portal have no list), each
+  // with health and level, so the list is not empty.
+  [
+    static_object.Collectible,
+    static_object.Simple,
+    static_object.Platform,
+    static_object.Turret,
+    static_object.SimpleCollidable,
+  ]
+  |> list.each(fn(unit_type) {
+    let created =
+      static_object.create(
+        object: StaticObject(
+          ..vectors_object(),
+          unit_type:,
+          level: Some(1),
+          health: Some(Health(value: 52, source: unit_fields.Recorded)),
+        ),
+        unit_id: 0x2001,
+        server_time_estimate_start: 0,
+      )
+    let assert static_object.CreatedWithChecklist(message) = created
+      as "these types share one message"
+    assert list.map(message.tail.stats, fn(stat) { stat.stat_id }) == [0, 10]
+      as "an object has no visuals, so its weapon kind is 0 and the client forces it sheathed itself (0x140467ed0, unit.weapon_sheathed): health and level, no stat 15"
+  })
 }

@@ -3708,3 +3708,130 @@ pub fn an_answer_that_reaches_the_creature_after_its_round_closed_changes_nothin
     as "and no other cast news follows it"
   world_support.stop(world: late.world)
 }
+
+/// The 0x262 that player 2 is sent of the one Battle Beast when it arrives after
+/// `before` has run, the beast being found by player 1 first.
+fn beast_shown_to_a_second_player(
+  before before: fn(MapProcess, Pid, Int) -> Nil,
+) -> UnitCreateCreature {
+  beast_shown_and_followed(before:, after: fn(_) { Nil }).0
+}
+
+/// The 0x262 that player 2 is sent of the one Battle Beast when it arrives after
+/// `before` has run, with what `after` reads of the messages player 2 is sent next.
+fn beast_shown_and_followed(
+  before before: fn(MapProcess, Pid, Int) -> Nil,
+  after after: fn(Subject(Message)) -> a,
+) -> #(UnitCreateCreature, a) {
+  let time = driven_time.new()
+  let world =
+    world_watch_support.one_beast_timed(
+      time:,
+      respawn_ms: 60_000,
+      idle_stop_ms: 60_000,
+    )
+  let run = world_watch_support.started(world)
+  let first = world_support.connection(world:, id: 1)
+  let _first_unit = world_watch_support.join(run:, connection: 1)
+  let appeared =
+    world_watch_support.next(
+      received: first,
+      what: "the creature's 0x262",
+      wanted: world_watch_support.appearance,
+    )
+  let pid =
+    world_watch_support.creature_pid(
+      time:,
+      world:,
+      run:,
+      unit_id: appeared.unit_id,
+      life: 2,
+    )
+  before(run, pid, appeared.unit_id)
+  let second = world_support.connection(world:, id: 2)
+  let _second_unit = world_watch_support.join(run:, connection: 2)
+  let shown =
+    world_watch_support.next(
+      received: second,
+      what: "the creature's 0x262 for player 2",
+      wanted: world_watch_support.appearance,
+    )
+  let followed = after(second)
+  world_support.stop(world:)
+  #(shown, followed)
+}
+
+/// The news of a unit that the connection is sent next, after what it has read.
+fn next_peer_news(received received: Subject(Message)) -> unit_news.News {
+  world_watch_support.next(
+    received:,
+    what: "the news that follows the creature's 0x262",
+    wanted: fn(message) {
+      case message {
+        ForStay(sent: SentByPeer(PeerNews(news:, ..)), ..) -> Ok(news)
+        _ -> Error(Nil)
+      }
+    },
+  )
+}
+
+fn holds_the_sheathed_stat(unit unit: UnitCreateCreature) -> Bool {
+  list.contains(
+    unit.tail.stats,
+    unit_fields.integer_stat(stat_id: 15, value: 1),
+  )
+}
+
+pub fn a_resting_creatures_create_carries_stat_15_and_a_fighting_creatures_carries_it_and_a_combat_flag_of_1_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let resting = beast_shown_to_a_second_player(before: fn(_, _, _) { Nil })
+  assert holds_the_sheathed_stat(unit: resting)
+    as "unit.weapon_sheathed: a creature at rest is created sheathed, stat 15 in the integer form"
+  let #(fighting, next) =
+    beast_shown_and_followed(
+      before: fn(run, pid, unit_id) {
+        struck_from(
+          run:,
+          connection: 1,
+          unit_id:,
+          x: 12.0,
+          damage: 1,
+          cast_id: 1,
+        )
+        driven_time.settled(pid)
+      },
+      after: next_peer_news,
+    )
+  assert holds_the_sheathed_stat(unit: fighting)
+    as "every create carries stat 15, so the weapon is sheathed when the fight ends"
+  assert next == unit_news.CombatState(in_combat: True)
+    as "a 0x89a of 1 follows the create of a creature already in combat, which draws the weapon (unit.weapon_sheathed)"
+}
+
+pub fn a_dead_or_returning_creature_is_created_sheathed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let returning =
+    beast_shown_to_a_second_player(before: fn(run, pid, unit_id) {
+      struck_from(run:, connection: 1, unit_id:, x: 12.0, damage: 1, cast_id: 1)
+      driven_time.settled(pid)
+      move_to(run:, connection: 1, x: far)
+      driven_time.settled(run.pid)
+      driven_time.settled(pid)
+    })
+  assert holds_the_sheathed_stat(unit: returning)
+    as "a creature on its way home is out of combat (creature_fight.in_combat is False for Returning): created sheathed, stat 15"
+  let dead =
+    beast_shown_to_a_second_player(before: fn(run, pid, unit_id) {
+      world_watch_support.strike_with(
+        run:,
+        unit_id:,
+        life: 2,
+        damage_type: 3,
+        damage: 60,
+        cast_id: 1,
+      )
+      driven_time.settled(pid)
+    })
+  assert holds_the_sheathed_stat(unit: dead)
+    as "a corpse is out of combat (a death sends 0x89a 0): created sheathed, stat 15"
+}

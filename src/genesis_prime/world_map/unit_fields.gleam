@@ -51,6 +51,10 @@ pub const interrupt_armor_stat = 21
 /// set by the create's stat list and by a 0x938 (`opcode.0x938`, `0x14064fb40`).
 pub const absorption_stat = 22
 
+/// The stat that sets whether a new unit's weapon is shown sheathed: 15, read only
+/// in the integer form (`unit.weapon_sheathed`).
+pub const sheathed_stat = 15
+
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
 const base_health_property = 7
@@ -83,6 +87,41 @@ pub fn stat(
 /// shield are read in (0x140096230, 0x140458140).
 pub fn integer_stat(stat_id stat_id: Int, value value: Int) -> UnitStat {
   UnitStat(stat_id:, value: unit_stat_value.Integer(UnitStatInteger(value:)))
+}
+
+/// The stat that creates a unit with its weapon sheathed: stat 15 at the integer 1.
+/// The client starts every unit drawn, and only a non-zero integer in a 0x262's list
+/// sets it sheathed with no animation; a float reads 0 and no stat leaves it drawn
+/// (`unit.weapon_sheathed`, 0x140458302). The client then draws it on a 0x89A of 1
+/// and sheathes it on a 0x89A of 0, so a unit already in combat when a viewer first
+/// sees it is created with this stat too and is followed by a 0x89A of 1.
+pub fn sheathed() -> UnitStat {
+  integer_stat(stat_id: sheathed_stat, value: 1)
+}
+
+/// The tail with `stat` in its stat list: in place of the held stat of its id, or, with
+/// none held, before the first stat of a higher id, so the list stays in stat id order.
+pub fn with_stat(
+  tail tail: UnitCreateTail,
+  stat stat: UnitStat,
+) -> UnitCreateTail {
+  let stats = case
+    list.any(tail.stats, fn(held) { held.stat_id == stat.stat_id })
+  {
+    True ->
+      list.map(tail.stats, fn(held) {
+        case held.stat_id == stat.stat_id {
+          True -> stat
+          False -> held
+        }
+      })
+    False -> {
+      let #(before, after) =
+        list.split_while(tail.stats, fn(held) { held.stat_id < stat.stat_id })
+      list.flatten([before, [stat], after])
+    }
+  }
+  UnitCreateTail(..tail, stats:)
 }
 
 /// The stat that sets resource slot `slot` (0 to 7) of a new unit: stat slot + 2,
