@@ -321,6 +321,27 @@ pub fn import_breaches(
   list.flatten([unlisted, gone, disordered])
 }
 
+/// The shared per-file import scan: for each file whose module has a row, each
+/// import `check` turns into a breach. `check` gets the importer's file and level
+/// and the import (its line and module); a file with no row has no breach. Gives
+/// the importer's module, the imported module and the breach.
+pub fn import_breaches_by(
+  files files: List(SourceFile),
+  rows rows: List(Row),
+  check check: fn(SourceFile, Level, #(Int, String)) -> Result(Breach, Nil),
+) -> List(#(String, String, Breach)) {
+  list.flat_map(files, fn(file) {
+    case level_of(rows:, module: module_of(file)) {
+      Ok(from) ->
+        list.filter_map(imports_of(file:), fn(found) {
+          check(file, from, found)
+          |> result.map(fn(breach) { #(module_of(file), found.1, breach) })
+        })
+      Error(Nil) -> []
+    }
+  })
+}
+
 /// Each import of a module of an enforced level that the matrix forbids:
 /// the importer, the imported module and the breach.
 fn forbidden_imports(
@@ -328,26 +349,11 @@ fn forbidden_imports(
   rows rows: List(Row),
   enforced enforced: List(Level),
 ) -> List(#(String, String, Breach)) {
-  list.flat_map(files, fn(file) {
-    case level_of(rows:, module: module_of(file)) {
-      Ok(from) ->
-        case list.contains(enforced, from) {
-          True -> forbidden_in_file(file:, rows:, from:)
-          False -> []
-        }
-      Error(Nil) -> []
+  import_breaches_by(files:, rows:, check: fn(file, from, found) {
+    case list.contains(enforced, from) {
+      True -> breach_of_import(file:, rows:, from:, found:)
+      False -> Error(Nil)
     }
-  })
-}
-
-fn forbidden_in_file(
-  file file: SourceFile,
-  rows rows: List(Row),
-  from from: Level,
-) -> List(#(String, String, Breach)) {
-  list.filter_map(imports_of(file:), fn(found) {
-    breach_of_import(file:, rows:, from:, found:)
-    |> result.map(fn(breach) { #(module_of(file), found.1, breach) })
   })
 }
 
@@ -357,21 +363,20 @@ pub fn root_breaches(
   files files: List(SourceFile),
   rows rows: List(Row),
 ) -> List(Breach) {
-  list.flat_map(files, fn(file) {
-    case level_of(rows:, module: module_of(file)) {
-      Ok(from) if from != Root ->
-        list.filter_map(imports_of(file:), root_import_breach(
-          file:,
-          rows:,
-          from:,
-          found: _,
-        ))
-      Ok(_) | Error(Nil) -> []
+  import_breaches_by(files:, rows:, check: fn(file, from, found) {
+    case from {
+      Root -> Error(Nil)
+      _ -> root_import_breach(file:, rows:, from:, found:)
     }
   })
+  |> list.map(fn(found) { found.2 })
 }
 
-fn level_of(rows rows: List(Row), module module: String) -> Result(Level, Nil) {
+/// The level of a module's row, when it has one.
+pub fn level_of(
+  rows rows: List(Row),
+  module module: String,
+) -> Result(Level, Nil) {
   list.find(rows, fn(row) { row.module == module })
   |> result.map(fn(row) { row.level })
 }

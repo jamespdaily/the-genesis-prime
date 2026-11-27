@@ -141,8 +141,8 @@ pub type Caster {
     /// vital reads of it, with which the go works out the amount and overheal it tells
     /// the client (genesis_prime/game/heal_split).
     heal_scaling: heal_split.Scaling,
-    /// The player's quest log, which the quest conditions of a prerequisite (types 6,
-    /// 68, 43 and 22 to 36) read: the client reads the checking player's own log.
+    /// A snapshot of the player's quest log, which the quest conditions of a prerequisite
+    /// (types 6, 68, 43 and 22 to 36) read: the client reads the checking player's own log.
     quests: QuestView,
     /// The player's race, class, path, gender, level, World and zones, which the
     /// prerequisite types on the player (1, 2, 3, 10, 26, 39, 52 and 109) read.

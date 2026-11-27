@@ -34,7 +34,7 @@ import gleam/result
 /// (`0x1405517a0`), its time limit in milliseconds (`maxTimeAllowedMS`, 0 for none), and
 /// whether it names a place to go to (`marked`: one of its four `worldLocationsIdIndicator`
 /// columns names a WorldLocation2 row the table holds, as `place_objective.markers` reads
-/// them; `place_objective` imports this module, so it cannot be called from here).
+/// them; `place_objective` is a character module, which a shared module may not import).
 pub type Objective {
   Objective(
     objective_id: Int,
@@ -148,6 +148,7 @@ pub fn done_in(mask mask: Int, index index: Int) -> Bool {
   index < 6 && int.bitwise_and(mask, int.bitwise_shift_left(1, index)) != 0
 }
 
+/// Whether `flag` (a single bit) is set in `flags`.
 pub fn has_flag(flags flags: Int, flag flag: Int) -> Bool {
   int.bitwise_and(flags, flag) != 0
 }
@@ -220,6 +221,7 @@ pub fn needed(objective objective: Objective) -> Int {
   objective.count
 }
 
+/// How many bits of the non-negative `number` are set.
 pub fn set_bits(of number: Int) -> Int {
   case number {
     0 -> 0

@@ -1,6 +1,7 @@
 //// The quest view rules (`code_rule/quest_view`): which modules may import the
 //// quest log and which may build a view. The cases are planted; the real-tree
-//// tests run the rules over the real `src`, `dev` and `test`.
+//// tests run the import rule over the real `src` and the builder rule over `src`, `dev`
+//// and `test`.
 
 import code_rule/level.{type Level, Character, Link, Map, Shared, Unit}
 import code_rule/planted

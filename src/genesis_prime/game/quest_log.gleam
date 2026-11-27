@@ -178,23 +178,19 @@ pub fn without_lost_spawns(
   spawns spawns: LoadedSpawns,
 ) -> #(QuestLog, List(Lost)) {
   let #(entries, lost) =
-    list.fold(
-      quest_view.in_quest_order(view: view(log:)),
-      #(log.entries, []),
-      fn(so_far, pair) {
-        let #(entries, lost) = so_far
-        case pair {
-          #(quest_id, Active(used:, ..) as entry) -> {
-            let #(kept, now_lost) = kept_and_lost(used:, spawns:, quest_id:)
-            #(
-              dict.insert(entries, quest_id, Active(..entry, used: kept)),
-              list.append(lost, now_lost),
-            )
-          }
-          #(_, Completed(..)) | #(_, Known(..)) -> #(entries, lost)
+    list.fold(in_quest_order(log:), #(log.entries, []), fn(so_far, pair) {
+      let #(entries, lost) = so_far
+      case pair {
+        #(quest_id, Active(used:, ..) as entry) -> {
+          let #(kept, now_lost) = kept_and_lost(used:, spawns:, quest_id:)
+          #(
+            dict.insert(entries, quest_id, Active(..entry, used: kept)),
+            list.append(lost, now_lost),
+          )
         }
-      },
-    )
+        #(_, Completed(..)) | #(_, Known(..)) -> #(entries, lost)
+      }
+    })
   #(QuestLog(..log, entries:), lost)
 }
 
@@ -380,7 +376,7 @@ pub fn told_reset(log log: QuestLog) -> Int {
 /// objective then spawn order (`store.UsedSpawn`), so a log that did not change saves the
 /// rows it loaded.
 pub fn rows(log log: QuestLog, now_ms now_ms: Int) -> List(QuestRow) {
-  quest_view.in_quest_order(view: view(log:))
+  in_quest_order(log:)
   |> list.map(fn(pair) {
     let #(quest_id, entry) = pair
     case entry {
@@ -457,7 +453,7 @@ pub fn login(
 ) -> #(QuestLog, Frame) {
   let latest = latest_resets(numbers:, at_ms: step.unix_milliseconds(now:))
   let reset_time = latest_of(latest:) / 1000
-  let entries = quest_view.in_quest_order(view: view(log:))
+  let entries = in_quest_order(log:)
   let completed =
     list.filter_map(entries, fn(pair) {
       case pair.1 {
@@ -1008,7 +1004,7 @@ fn started(
 /// own.
 pub fn expire(log log: QuestLog, now_ms now_ms: Int) -> #(QuestLog, List(Int)) {
   let due =
-    quest_view.in_quest_order(view: view(log:))
+    in_quest_order(log:)
     |> list.filter_map(fn(pair) {
       case entry_deadline(entry: pair.1) {
         Some(deadline_ms) if deadline_ms <= now_ms -> Ok(pair.0)
@@ -1594,4 +1590,10 @@ pub fn quest_objective_progress_frame(
       quest_objective_progress.encode,
     )
   Frame(message_id: quest_objective_progress.message_id, body:)
+}
+
+/// The log's entries with their quest ids, in quest id order.
+fn in_quest_order(log log: QuestLog) -> List(#(Int, Entry)) {
+  dict.to_list(log.entries)
+  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
 }

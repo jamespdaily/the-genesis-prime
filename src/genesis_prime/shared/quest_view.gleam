@@ -134,13 +134,14 @@ pub fn state(view view: QuestView, quest quest: Quest) -> Int {
 /// The ids of the quests in the client's active list, accepted or achieved, in
 /// ascending order.
 pub fn active_ids(view view: QuestView) -> List(Int) {
-  in_quest_order(view:)
+  dict.to_list(view.entries)
   |> list.filter_map(fn(pair) {
     case pair.1 {
       Active(..) -> Ok(pair.0)
       Completed(..) | Known(..) -> Error(Nil)
     }
   })
+  |> list.sort(int.compare)
 }
 
 /// Whether the quest's objective at `index` is done (`0x1405510d0`): never at or past
@@ -232,10 +233,4 @@ pub fn is_marked(
     }
     _, _ -> False
   }
-}
-
-/// The entries with their quest ids, in quest id order.
-pub fn in_quest_order(view view: QuestView) -> List(#(Int, Entry)) {
-  dict.to_list(view.entries)
-  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
 }
