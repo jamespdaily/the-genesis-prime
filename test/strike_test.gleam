@@ -1067,6 +1067,51 @@ fn selected_units(selection selection: Selection) -> List(Int) {
   list.map(selection.units, fn(aimed) { aimed.unit_id })
 }
 
+pub fn a_selection_from_a_200_row_holds_at_most_202_units_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 300 foes inside Kick's cone (1 to 7 m ahead), the primary target 7 standing outside
+  // it, and a row that takes 200: one area row serves a go (`SpellArea.row`), so the units
+  // are the row's 200 and the primary target.
+  let both = Attackable(exile: True, dominion: True)
+  let crowd =
+    list.map(numbers(from: 100, to: 399), fn(unit_id) {
+      #(
+        unit_id,
+        strike_support.creature_at(
+          x: 0.0,
+          z: -2.0 -. int.to_float(unit_id - 100) *. 0.01,
+          alive: True,
+          attackable: both,
+        ),
+      )
+    })
+  let picture =
+    dict.from_list([
+      #(
+        7,
+        strike_support.creature_at(
+          x: 40.0,
+          z: 40.0,
+          alive: True,
+          attackable: both,
+        ),
+      ),
+      ..crowd
+    ])
+  let chosen =
+    strike.select(
+      asked: GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 7),
+      attacker: strike_support.attacker(),
+      picture:,
+      areas: kick_areas_ordered(order: area.Nearest, target_count: 200),
+      now_ms: 0,
+    )
+  assert list.length(chosen.area) == 200
+    as "the area row's count of 200 takes 200 of the 300 foes inside"
+  assert list.length(chosen.units) <= 202
+    as "the units are the area's 200, the primary target and the caster at most, the 202 a go's 8-bit target count holds"
+}
+
 pub fn a_player_area_that_picks_the_furthest_strikes_the_furthest_units_inside_its_count_test() -> Nil {
   use <- owned_test.run(60_000)
   // The caster stands at the origin and Kick's cone holds 21, 22, 23 and 25 at 3, 5, 6.5 and 8 m

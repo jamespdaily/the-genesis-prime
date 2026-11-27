@@ -72,6 +72,15 @@ pub fn encode(
   Ok(<<length:size(32)-little, message_id:size(16)-little, body:bits>>)
 }
 
+/// The bytes of `encode`, for a frame whose id and body the caller keeps within
+/// the header's limits.
+pub fn must_encode(
+  message_id message_id: Int,
+  body body: BitArray,
+) -> BitArray {
+  <<message_id:size(16), body:bits>>
+}
+
 /// The first frame whole in the received bytes and the bytes after it, or
 /// `None` when its end has not arrived. A length below the header or over the
 /// size limit is an error as soon as its 4 bytes have arrived. A rule that

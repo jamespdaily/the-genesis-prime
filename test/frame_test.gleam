@@ -7,11 +7,13 @@
 //// `06 00 00 00 e0 07` (fact file, opcode.0x7e0) and for the 0x244 wrapper
 //// header `0c 00 00 00 44 02` (vector.opcode.0x7e0.frame).
 
+import ask_support
 import body_generator
 import frame_reader
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
 import gleam/int
+import gleam/string
 import owned_test
 import qcheck
 
@@ -173,4 +175,58 @@ pub fn a_frame_held_whole_must_have_its_header_and_its_length_test() -> Nil {
 
 fn zeroes(length: Int) -> BitArray {
   <<0:size({ length * 8 })>>
+}
+
+/// The text a crash of `must_encode` carries.
+fn crash_of_must_encode(message_id: Int, body: BitArray) -> String {
+  let ended =
+    ask_support.ended_running(fn() {
+      let _bytes = frame.must_encode(message_id:, body:)
+      Nil
+    })
+  ask_support.panic_message(ask_support.raised(ended))
+}
+
+pub fn must_encode_gives_the_bytes_encode_gives_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert frame.must_encode(message_id: 0x0244, body: <<0, 1, 2, 3, 4, 5>>)
+    == <<0x0C, 0x00, 0x00, 0x00, 0x44, 0x02, 0, 1, 2, 3, 4, 5>>
+    as "vector.opcode.0x7e0.frame: id 0x244 with a 6-byte body is 0c 00 00 00 44 02 then the body"
+  assert Ok(frame.must_encode(message_id: 0x7E0, body: <<>>))
+    == frame.encode(message_id: 0x7E0, body: <<>>)
+    as "the frame of a valid id and body is the bytes encode gives"
+}
+
+pub fn must_encode_of_an_id_past_16_bits_crashes_naming_the_id_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let text = crash_of_must_encode(0x10000, <<>>)
+  assert string.contains(text, "0x10000")
+    as { "the crash names the id; it says: " <> text }
+  assert string.contains(
+    text,
+    frame.describe(error: frame.MessageIdOutOfRange(0x10000)),
+  )
+    as { "the crash says why, in describe's sentence; it says: " <> text }
+}
+
+pub fn must_encode_of_a_body_past_the_size_limit_crashes_without_printing_the_body_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let text = crash_of_must_encode(0x0244, zeroes(131_071 - frame.header_size))
+  assert string.contains(text, "0x244")
+    as { "the crash names the id; it says: " <> string.slice(text, 0, 200) }
+  assert string.contains(text, "131071")
+    as {
+      "the crash gives the frame's length; it says: "
+      <> string.slice(text, 0, 200)
+    }
+  assert string.contains(
+    text,
+    frame.describe(error: frame.LengthOverLimit(131_071)),
+  )
+    as {
+      "the crash says why, in describe's sentence; it says: "
+      <> string.slice(text, 0, 200)
+    }
+  assert string.length(text) < 300
+    as "the crash holds the id and the length, not the 131 KB body"
 }
