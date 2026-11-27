@@ -63,6 +63,7 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -617,6 +618,30 @@ class TableFolderTest(PlantedTestCase):
         named = " ".join(self.text(m) for m in result)
         for name in TABLE_NAMES:
             self.assertIn(name.lower() + ".tbl", named, name + " is named")
+
+
+class TestVmFlagsTest(unittest.TestCase):
+    """The flag every test VM gets comes from setup_check/environment.sh alone; the release names its own."""
+
+    def sourced(self, **environment):
+        """ERL_AFLAGS as a shell holds it after sourcing environment.sh from the repository's folder."""
+        with tempfile.TemporaryDirectory() as home:
+            variables = {"PATH": os.environ["PATH"], "GENESIS_HOME": home, "GENESIS_NO_CLIENT": "1", **environment}
+            done = subprocess.run(
+                ["sh", "-c", '. setup_check/environment.sh && printf %s "$ERL_AFLAGS"'],
+                cwd=REPOSITORY, env=variables, capture_output=True, text=True, check=True,
+            )
+        return done.stdout
+
+    def test_sourcing_the_environment_keeps_every_test_vms_message_queue_off_its_heap(self):
+        self.assertEqual(self.sourced(), "+hmqd off_heap")
+
+    def test_sourcing_the_environment_keeps_the_flags_a_person_already_set(self):
+        self.assertEqual(self.sourced(ERL_AFLAGS="+MIscs 4096"), "+hmqd off_heap +MIscs 4096")
+
+    def test_the_release_names_its_own_message_queue_so_the_environment_cannot_change_it(self):
+        lines = [line.strip() for line in (REPOSITORY / "release" / "vm.args").read_text().splitlines()]
+        self.assertIn("+hmqd on_heap", lines)
 
 
 if __name__ == "__main__":

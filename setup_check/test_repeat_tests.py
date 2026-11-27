@@ -193,6 +193,7 @@ class PlantedRepeatCase(unittest.TestCase):
             "PATH": "%s:/usr/bin:/bin" % (self.root / "tools"),
             "HOME": str(self.root),
             "PLANT_REPEAT": str(self.state),
+            "ERL_AFLAGS": "+hmqd off_heap",
         }
         env.update(settings)
         return subprocess.run(
@@ -249,6 +250,16 @@ class RepeatTestsTest(PlantedRepeatCase):
         )
         self.assertIn("not repeated: test/all_skipped_test.gleam", done.stdout)
         self.assertIn("all 8 runs passed", done.stdout, "a run of 0 tests is not counted as passed")
+
+    def test_it_refuses_to_start_when_the_message_queues_are_not_kept_off_the_heap(self):
+        self.commit("change a test file", change=["test/changed_test.gleam"])
+        for flags in ("", "+MIscs 4096", "+hmqd on_heap"):
+            with self.subTest(ERL_AFLAGS=flags):
+                done = self.run_script(ERL_AFLAGS=flags)
+                self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+                self.assertIn("setup_check/environment.sh", done.stdout)
+                self.assertIn("+hmqd off_heap", done.stdout)
+                self.assertEqual(self.starts(), [], "no VM is started")
 
     def test_no_changed_test_file_passes_without_a_run(self):
         self.commit(
@@ -313,7 +324,7 @@ class RepeatTestsTest(PlantedRepeatCase):
         self.assertEqual(len(set(salts)), 6, "every run has a salt of its own, so each rolls other dice")
         failing = next(row for row in rows if row["start"] == "4")
         self.assertIn(
-            "repeat it: GENESIS_TEST_SEED_SALT=%s gleam test -- test/changed_test.gleam --seed %s"
+            "repeat it: . setup_check/environment.sh && GENESIS_TEST_SEED_SALT=%s gleam test -- test/changed_test.gleam --seed %s"
             % (failing["salt"], failing["seed"]),
             output,
             "the failing run's command names the salt its VM was given",
@@ -376,7 +387,7 @@ class RepeatTestsTest(PlantedRepeatCase):
         self.assertIn("FAILED test/changed_test.gleam with seed %s" % hung["seed"], output)
         self.assertIn("still going after 1 seconds and was killed", output)
         self.assertIn(
-            "repeat it: GENESIS_TEST_SEED_SALT=%s gleam test -- test/changed_test.gleam --seed %s"
+            "repeat it: . setup_check/environment.sh && GENESIS_TEST_SEED_SALT=%s gleam test -- test/changed_test.gleam --seed %s"
             % (hung["salt"], hung["seed"]),
             output,
             "a killed run's command names its salt too",
