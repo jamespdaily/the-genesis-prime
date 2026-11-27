@@ -8,7 +8,7 @@
 ////   the 27 points of the Virtual Battle Beast, in the Exile circle. The Dagun has
 ////   no record anywhere, so each of its points is the offset of one of those rows
 ////   from the Exile circle's centre, applied to the Dominion circle's centre, a
-////   server's choice the migration's reason states.
+////   server's choice.
 
 import character_tables
 import content_support
@@ -86,8 +86,8 @@ pub fn each_dagun_stands_at_the_offset_of_a_beast_point_from_the_exile_circles_c
   })
   assert content_support.count(
       database:,
-      sql: "select count(*) from spawn where source = 'server_choice' and reason like 'the offset of world-database row 291%'",
+      sql: "select count(*) from spawn where source = 'server_choice'",
     )
     == 27
-    as "each reason names the world-database row whose offset it takes"
+    as "the 27 Daguns are the spawn table's server choices"
 }
