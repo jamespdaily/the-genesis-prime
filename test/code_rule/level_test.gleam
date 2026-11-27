@@ -84,25 +84,30 @@ pub fn a_levels_table_row_for_a_deleted_module_fails_test() -> Nil {
 pub fn an_unlisted_module_and_a_repeated_or_disordered_row_fail_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let a = module_file("genesis_prime/a", [])
-  let b = module_file("genesis_prime/b", [])
+  let first = module_file("genesis_prime/a", [])
+  let second = module_file("genesis_prime/b", [])
   list.each(
     [
-      #([a, b], [#("genesis_prime/a", Data)], [1], "a module with no row"),
       #(
-        [a],
+        [first, second],
+        [#("genesis_prime/a", Data)],
+        [1],
+        "a module with no row",
+      ),
+      #(
+        [first],
         [#("genesis_prime/a", Data), #("genesis_prime/a", Data)],
         [2],
         "a repeated row",
       ),
       #(
-        [a, b],
+        [first, second],
         [#("genesis_prime/b", Data), #("genesis_prime/a", Data)],
         [2],
         "a row out of order",
       ),
       #(
-        [a, b],
+        [first, second],
         [#("genesis_prime/a", Data), #("genesis_prime/b", Data)],
         [],
         "in order, one row each",
@@ -262,7 +267,7 @@ pub fn an_import_is_read_from_a_planted_module_with_aliases_and_a_type_list_test
       "//// A module.", "import a/b.{type C} as d", "import gleam/list",
       "import e/f.{g}",
     ])
-  assert level.imports_of(file)
+  assert level.imports_of(file:)
     == [#(2, "a/b"), #(3, "gleam/list"), #(4, "e/f")]
 }
 
@@ -312,10 +317,7 @@ pub fn the_levels_diagram_and_the_matrix_agree_test() -> Nil {
     let names = fn(levels) {
       list.sort(list.map(levels, level.name), string.compare)
     }
-    assert list.sort(
-        words(string.remove_prefix(imports, " imports")),
-        string.compare,
-      )
+    assert list.sort(list.drop(words(imports), 1), string.compare)
       == names(level.imported_levels(each))
       as { level.name(each) <> " imports" }
     assert list.sort(words(messages), string.compare)
