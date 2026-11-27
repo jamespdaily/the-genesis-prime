@@ -36,6 +36,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{PlayerState}
 import genesis_prime/game/prerequisite
@@ -456,8 +457,7 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
           ..row,
           row: lasting.LastingRow(
             delay_ms: 1000,
-            duration_ms: 10_000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 10_000),
           ),
         )
       }),
@@ -3728,7 +3728,7 @@ fn barrier_shaped(outlives_caster outlives_caster: Bool) -> Spell {
     support.armor_modifier_row(id: barrier_row, aim: spell_plan.AimsAtCaster).change
     as "row 130474 is a StruckChange"
   let five_seconds =
-    lasting.LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
+    lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000))
   let caster_part =
     spell_plan.PropertyModifier(
       ..support.armor_modifier_row(
@@ -4044,8 +4044,7 @@ fn auger_shaped(
   outlives_caster outlives_caster: Bool,
   aura_ms aura_ms: option.Option(Int),
 ) -> Spell {
-  let until_removed =
-    lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  let until_removed = lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
   let row =
     spell_plan.PropertyModifier(
       ..support.armor_modifier_row(id: auger_row, aim: spell_plan.AimsAtArea),
@@ -4271,7 +4270,7 @@ const sentinel_modifier_row = 139_828
 const sentinel_proc_row = 139_830
 
 fn lasting_for(duration_ms duration_ms: Int) -> lasting.LastingRow {
-  lasting.LastingRow(delay_ms: 0, duration_ms:, until_removed: False)
+  lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms:))
 }
 
 /// A planted spell shaped as Healing Salve's child 39386: the caster's own Proc row 86458 (flags

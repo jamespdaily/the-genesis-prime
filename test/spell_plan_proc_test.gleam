@@ -36,6 +36,7 @@ import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_plan.{
@@ -202,7 +203,7 @@ pub fn the_stalkers_passive_holds_its_five_procs_on_the_caster_in_row_order_with
   assert list.all(
     spell_plan.payloads(spell: passive(), as_kind: spell_plan.as_proc),
     fn(proc) {
-      proc.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+      proc.row == LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
       && proc.condition == Always
       && proc.phase_flags == -1
       && proc.chance == 1.0
@@ -1463,7 +1464,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtHolder,
       0,
       InWindow(window_ms: 1000, count: 1),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     ),
     #(
       228_626,
@@ -1472,7 +1473,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtHolder,
       0,
       InWindow(window_ms: 500, count: 1),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 10_000)),
     ),
     #(
       174_297,
@@ -1481,7 +1482,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtHolder,
       0,
       InWindow(window_ms: 450, count: 1),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 10_000)),
     ),
     #(
       180_868,
@@ -1490,7 +1491,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtHolder,
       0,
       InWindow(window_ms: 1000, count: 1),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     ),
     #(
       122_737,
@@ -1499,7 +1500,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtHolder,
       22_150,
       ForLife(count: 1),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
     ),
     #(
       228_564,
@@ -1508,7 +1509,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtHolder,
       0,
       InWindow(window_ms: 250, count: 90),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
     ),
     #(
       146_845,
@@ -1517,7 +1518,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtOtherUnit,
       0,
       InWindow(window_ms: 250, count: 5),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     ),
     #(
       217_391,
@@ -1526,7 +1527,7 @@ pub fn real_rows_of_the_landing_kinds_read_with_their_filter_gate_aim_and_life_t
       AtHolder,
       0,
       InWindow(window_ms: 1000, count: 60),
-      lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     ),
   ]
   list.each(rows, fn(expected) {

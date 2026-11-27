@@ -27,6 +27,7 @@ import genesis_prime/game/cooldown.{
 }
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Spell as PlannedSpell, Always, GatedOnCaster, GatedOnTarget,
@@ -217,7 +218,7 @@ pub fn a_row_aimed_at_the_caster_is_read_with_its_lifetime_columns_test() -> Nil
           selector: Base(Spell4BaseId(20_684)),
           operation: NoLonger(0.0),
         ),
-        row: LastingRow(delay_ms: 2000, duration_ms: 8000, until_removed: False),
+        row: LastingRow(delay_ms: 2000, lasts: lasts.For(duration_ms: 8000)),
         condition: Always,
         tag: spend.EqualTo(value: 0),
       ),
@@ -233,7 +234,7 @@ pub fn a_row_with_flags_bit_2_lasts_until_removed_test() -> Nil {
         #("flags", Integer(2)),
       ]),
     )
-  assert row.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  assert row.row == LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
 }
 
 pub fn a_row_aimed_only_at_other_units_is_not_read_test() -> Nil {
@@ -495,7 +496,7 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
           selector: Base(Spell4BaseId(20_684)),
           operation: NoLonger(0.0),
         ),
-        row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+        row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
         condition: Always,
         tag: spend.EqualTo(value: 0),
       ),
@@ -516,7 +517,7 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
           selector: Base(Spell4BaseId(20_684)),
           operation: NoLonger(0.4000000059604645),
         ),
-        LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
       ),
     ]
     as "80979: index 1 multiplies by 0.4"
@@ -535,17 +536,17 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
           selector: Base(Spell4BaseId(32_336)),
           operation: AddMs(-1500.0),
         ),
-        LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
       ),
       #(
         Spell4EffectsId(231_992),
         Modifier(selector: Base(Spell4BaseId(32_336)), operation: AddMs(-500.0)),
-        LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
       ),
       #(
         Spell4EffectsId(231_993),
         Modifier(selector: Base(Spell4BaseId(32_336)), operation: AddMs(-500.0)),
-        LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
       ),
     ]
     as "180712 takes 1500 ms and 231992 and 231993 500 ms each off base 32336 (Punish), in their orderIndex order 0, 1, 2"

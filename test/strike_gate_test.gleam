@@ -41,6 +41,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state
 import genesis_prime/game/prerequisite.{NonPlayer}
@@ -302,7 +303,7 @@ fn marker_row() -> spell_plan.Lasting {
     effect_id: Spell4EffectsId(1),
     phase_flags: -1,
     aim: AimsAtArea,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     condition: spell_plan.Always,
     tag: spend.always,
   )

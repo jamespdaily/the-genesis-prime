@@ -31,6 +31,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{
   type Spell, AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster,
 }
@@ -271,11 +272,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
         flat: 100.0,
         per_level: 0.0,
       )),
-      row: lasting.LastingRow(
-        delay_ms: 0,
-        duration_ms: 8000,
-        until_removed: False,
-      ),
+      row: lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
       condition: Always,
       tag: spend.always,
       armor: None,

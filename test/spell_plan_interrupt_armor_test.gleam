@@ -28,6 +28,7 @@ import client_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{
   AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster, InterruptArmor,
 }
@@ -87,7 +88,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_caster_is_read_with_its_points_time_a
         change: spell_plan.PropertyChange(
           cast_support.raising_interrupt_armor_threshold(points: 2.0),
         ),
-        row: LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False),
+        row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 10_000)),
         condition: Always,
         tag: spend.EqualTo(value: 0),
         armor: Some(InterruptArmor(
@@ -138,7 +139,7 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_the_cast
     ))
     as "targetFlags 2 is the primary target"
   assert read.row
-    == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
+    == LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000))
   assert spell_tables.read_row(effect: row, place: spell_tables.pressed)
     == Ok(
       spell_plan.Applied(
@@ -298,7 +299,7 @@ pub fn an_interrupt_armor_row_with_flags_bit_2_has_no_end_test() -> Nil {
         #("dataBits01", Integer(1)),
       ]),
     )
-  assert row.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  assert row.row == LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
     as "the client gives an effect whose flags have bit 2 no end timer"
 }
 
@@ -338,7 +339,7 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     ))
     as "+1, dataBits01 0"
   assert esper.row
-    == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
+    == LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000))
     as "5000 ms"
   assert esper.change
     == spell_plan.PropertyChange(cast_support.raising_interrupt_armor_threshold(
@@ -361,7 +362,7 @@ pub fn spectral_forms_child_holds_one_interrupt_armor_for_five_seconds_kept_test
     ))
     as "+2, dataBits01 1"
   assert warrior.row
-    == LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False)
+    == LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000))
     as "8000 ms"
   let assert [gated] =
     list.filter(

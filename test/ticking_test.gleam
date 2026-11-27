@@ -5,6 +5,7 @@
 
 import fixture_tables
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan
 import genesis_prime/game/ticking.{
   type Schedule, NoTick, Schedule, Ticks, UntilRemoved, UntilTheNodeEnds,
@@ -42,7 +43,7 @@ pub fn ticks_land_at_delay_plus_each_whole_tick_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(no_delay) =
     ticking.schedule_of(
-      row: LastingRow(delay_ms: 0, duration_ms: 6000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 6000)),
       tick_ms: 2000,
     )
   assert tick_times(schedule: no_delay, from_ms: 10_000)
@@ -50,26 +51,26 @@ pub fn ticks_land_at_delay_plus_each_whole_tick_test() -> Nil {
     as "delay 0, tickTime 2000, durationTime 6000: a tick each 2000 ms after the go, the last at the life's end"
   let assert Ok(delayed) =
     ticking.schedule_of(
-      row: LastingRow(delay_ms: 1500, duration_ms: 6000, until_removed: False),
+      row: LastingRow(delay_ms: 1500, lasts: lasts.For(duration_ms: 6000)),
       tick_ms: 1500,
     )
   assert tick_times(schedule: delayed, from_ms: 0) == [3000, 4500, 6000, 7500]
     as "delay 1500, tickTime 1500, durationTime 6000: four ticks, the first a tick after the delay"
   let assert Ok(part) =
     ticking.schedule_of(
-      row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
       tick_ms: 2000,
     )
   assert tick_times(schedule: part, from_ms: 0) == [2000, 4000]
     as "durationTime 5000, tickTime 2000: two whole ticks; the half tick left over lands none"
   assert ticking.schedule_of(
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       tick_ms: 1000,
     )
     == Error(UntilRemoved)
     as "flags bit 2: the row lasts until removed, which no schedule ends (issue 803)"
   assert ticking.schedule_of(
-      row: LastingRow(delay_ms: 0, duration_ms: 500, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 500)),
       tick_ms: 1000,
     )
     == Error(NoTick(tick_ms: 1000, duration_ms: 500))
@@ -82,7 +83,7 @@ pub fn ticks_past_the_rows_life_are_cut_test() -> Nil {
   // tickTime 1000, durationTime 4000.
   let assert Ok(atomic_surge) =
     ticking.schedule_of(
-      row: LastingRow(delay_ms: 1000, duration_ms: 4000, until_removed: False),
+      row: LastingRow(delay_ms: 1000, lasts: lasts.For(duration_ms: 4000)),
       tick_ms: 1000,
     )
   assert tick_times(
@@ -105,7 +106,7 @@ pub fn ticks_past_the_rows_life_are_cut_test() -> Nil {
     as "a life of the longer of the two, 4000 ms (`0x140568540`), drops the tick due at 5000 ms"
   let assert Ok(late) =
     ticking.schedule_of(
-      row: LastingRow(delay_ms: 3000, duration_ms: 2000, until_removed: False),
+      row: LastingRow(delay_ms: 3000, lasts: lasts.For(duration_ms: 2000)),
       tick_ms: 1000,
     )
   assert tick_times(
@@ -203,7 +204,7 @@ pub fn an_open_schedule_is_cut_by_a_node_that_ends_alone_and_a_finite_one_and_wi
     as "an open schedule still has a tick at 10,000"
   let assert Ok(finite) =
     ticking.schedule_of(
-      row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 3000)),
       tick_ms: 1000,
     )
   assert ticking.ending_with_node(
@@ -222,7 +223,7 @@ pub fn an_open_schedule_is_cut_by_a_node_that_ends_alone_and_a_finite_one_and_wi
       as "a life no row bounds: within_life leaves an open schedule as it is (delay 1000, tick 1000, duration 0 gave 0 ticks before)"
   })
   assert ticking.open_schedule_of(
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       tick_ms: 0,
     )
     == Error(NoTick(tick_ms: 0, duration_ms: 0))

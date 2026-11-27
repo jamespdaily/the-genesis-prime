@@ -14,6 +14,7 @@
 import fixture_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{AimsAtCaster}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
@@ -59,19 +60,19 @@ pub fn a_full_screen_row_is_a_lasting_row_with_the_rows_delay_and_life_test() ->
         "the tier's own shape: no delay, 5000 ms",
         [#("durationTime", Integer(5000))],
         1,
-        Ok(LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)),
+        Ok(LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000))),
       ),
       #(
         "a delay stays the row's own",
         [#("delayTime", Integer(120)), #("durationTime", Integer(1000))],
         1,
-        Ok(LastingRow(delay_ms: 120, duration_ms: 1000, until_removed: False)),
+        Ok(LastingRow(delay_ms: 120, lasts: lasts.For(duration_ms: 1000))),
       ),
       #(
         "flags bit 2 never ends (opcode.0x7f4.effect_time)",
         [#("flags", Integer(2))],
         1,
-        Ok(LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)),
+        Ok(LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)),
       ),
       #(
         "a row aimed at the primary target is left out: the client draws nothing for it",
@@ -132,7 +133,7 @@ pub fn every_level_up_tier_plans_as_one_caster_row_with_no_cost_or_cooldown_test
       as { name <> ": exactly one lasting row" }
     assert lasting.aim == AimsAtCaster as { name <> ": aimed at the caster" }
     assert lasting.row
-      == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
+      == LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000))
       as { name <> ": no delay, 5000 ms" }
     let assert [effect] =
       list.filter(spell4_effects.all(tables), fn(effect) {

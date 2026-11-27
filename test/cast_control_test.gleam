@@ -32,6 +32,7 @@ import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{type Spell, GlobalCooldown, Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
@@ -276,8 +277,7 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
           aim: spell_plan.AimsAtArea,
           row: lasting.LastingRow(
             delay_ms: 0,
-            duration_ms: 100,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 100),
           ),
           condition: spell_plan.Always,
           tag: spend.always,
@@ -357,11 +357,7 @@ fn fluff_of_base_3() -> Spell {
       effect_id: Spell4EffectsId(9),
       phase_flags: -1,
       aim: spell_plan.AimsAtArea,
-      row: lasting.LastingRow(
-        delay_ms: 0,
-        duration_ms: 5000,
-        until_removed: False,
-      ),
+      row: lasting.LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
       condition: spell_plan.Always,
       tag: spend.always,
     )),
@@ -497,20 +493,16 @@ const bag_of_the_blocked = 10
 /// ends, as the hoverboard's ride 85563 does with its CCStateSet 224967 (targetFlags 1,
 /// flags 2, dataBits00 27); its caster persistence is the caster in combat.
 fn restricting() -> Spell {
-  restricting_by(row: restriction_row(duration_ms: 0, until_removed: True))
+  restricting_by(row: restriction_row(lasts: lasts.UntilRemoved))
 }
 
-/// The state-27 row of a planted spell: no delay, `duration_ms` long, or until removed.
-fn restriction_row(
-  duration_ms duration_ms: Int,
-  until_removed until_removed: Bool,
-) -> crowd_control.Row {
+/// The state-27 row of a planted spell: no delay, lasting as `lasts` says.
+fn restriction_row(lasts lasts: lasts.Lasts) -> crowd_control.Row {
   crowd_control.Row(
     state: AbilityRestriction,
     delay_ms: 0,
-    duration_ms:,
+    lasts:,
     armor_removed: 0,
-    until_removed:,
   )
 }
 
@@ -545,10 +537,9 @@ fn restricting_shorter_than_its_node(
   node_ms node_ms: Int,
 ) -> Spell {
   support.with_effects(
-    spell: restricting_by(row: restriction_row(
-      duration_ms: row_ms,
-      until_removed: False,
-    )),
+    spell: restricting_by(
+      row: restriction_row(lasts: lasts.For(duration_ms: row_ms)),
+    ),
     kinds: [
       spell_plan.LastingEffect(spell_plan.Lasting(
         effect_id: Spell4EffectsId(224_968),
@@ -556,8 +547,7 @@ fn restricting_shorter_than_its_node(
         aim: spell_plan.AimsAtCaster,
         row: lasting.LastingRow(
           delay_ms: 0,
-          duration_ms: node_ms,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: node_ms),
         ),
         condition: spell_plan.Always,
         tag: spend.always,
@@ -895,7 +885,7 @@ pub fn a_restriction_row_of_duration_0_without_flag_2_ends_at_its_go_test() -> N
   use <- owned_test.run(5000)
   let plans =
     support.plans_of([
-      restricting_by(row: restriction_row(duration_ms: 0, until_removed: False)),
+      restricting_by(row: restriction_row(lasts: lasts.For(duration_ms: 0))),
     ])
   let #(state, pressed) = restricted(plans:)
   let #(cast_id, instance_id) = shown_state(effects: pressed)
@@ -1003,9 +993,8 @@ fn holding(states states: List(CrowdControlState)) -> Spell {
           row: crowd_control.Row(
             state:,
             delay_ms: 0,
-            duration_ms: 0,
+            lasts: lasts.UntilRemoved,
             armor_removed: 0,
-            until_removed: True,
           ),
           condition: spell_plan.Always,
           tag: spend.always,
@@ -1167,9 +1156,8 @@ pub fn a_caster_aimed_state_of_any_kind_is_told_and_ends_test() -> Nil {
       spell: restricting_by(row: crowd_control.Row(
         state: Stun,
         delay_ms: 500,
-        duration_ms: 2000,
+        lasts: lasts.For(duration_ms: 2000),
         armor_removed: 0,
-        until_removed: False,
       )),
       kinds: list.map(
         spell_plan.payloads(
@@ -1358,7 +1346,7 @@ pub fn a_controls_row_aimed_at_the_caster_and_past_it_appears_in_both_readers_te
       effect_id: Spell4EffectsId(60_607),
       phase_flags: -1,
       aim: spell_plan.AimsAtCasterAndPrimaryTarget,
-      row: restriction_row(duration_ms: 3000, until_removed: False),
+      row: restriction_row(lasts: lasts.For(duration_ms: 3000)),
       condition: spell_plan.Always,
       tag: spend.always,
       move: None,

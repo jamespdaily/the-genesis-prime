@@ -30,6 +30,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls, Worked}
+import genesis_prime/game/lasts
 import genesis_prime/game/player_address
 import genesis_prime/game/shown.{ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
@@ -1788,9 +1789,8 @@ fn stun_row(aim aim: spell_plan.Aim) -> spell_plan.CrowdControl {
     row: crowd_control.Row(
       state: crowd_control_state.Stun,
       delay_ms: 0,
-      duration_ms: 3250,
+      lasts: lasts.For(duration_ms: 3250),
       armor_removed: 1,
-      until_removed: False,
     ),
     condition: spell_plan.Always,
     tag: spend.always,
@@ -1896,9 +1896,8 @@ pub fn union_control_row_is_both_a_restriction_and_a_told_state_test() -> Nil {
     == crowd_control.Row(
       state: crowd_control_state.Stun,
       delay_ms: 0,
-      duration_ms: 3000,
+      lasts: lasts.For(duration_ms: 3000),
       armor_removed: 1,
-      until_removed: False,
     )
     as "dataBits00 the state, durationTime the time, dataBits03 the armor"
   // The caster is unit 7 (`strike_support.attacker`); the area holds units 10 and 11.

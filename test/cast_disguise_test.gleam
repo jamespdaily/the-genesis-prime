@@ -22,6 +22,7 @@ import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/look.{type Disguise}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell, Always}
@@ -62,7 +63,7 @@ fn suit_row(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
     change: spell_plan.LookChange(disguise: support.disguise_of(display:)),
-    row: LastingRow(delay_ms: delay, duration_ms: 10_250, until_removed: False),
+    row: LastingRow(delay_ms: delay, lasts: lasts.For(duration_ms: 10_250)),
     condition:,
     tag: spend.always,
     armor: option.None,

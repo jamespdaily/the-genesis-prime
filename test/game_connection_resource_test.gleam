@@ -23,6 +23,7 @@ import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/game/world_entry
@@ -444,11 +445,7 @@ pub fn a_gain_of_a_fired_cast_moves_the_resource_and_raises_no_resource_event_te
       ..cast_support.held_proc_row(
         id: 90_001,
         holder: spell_plan.HeldByCaster,
-        row: lasting.LastingRow(
-          delay_ms: 0,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        row: lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       ),
       trigger: spell_plan.ResourceCrosses,
       limit: spell_plan.ForLife(count: 1000),

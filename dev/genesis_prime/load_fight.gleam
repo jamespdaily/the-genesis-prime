@@ -122,6 +122,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/crowd_control
 import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
+import genesis_prime/game/lasts
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
@@ -807,9 +808,8 @@ fn strike_fighters(
         row: crowd_control.Row(
           state: crowd_control_state.Stun,
           delay_ms: 0,
-          duration_ms: 2500,
+          lasts: lasts.For(duration_ms: 2500),
           armor_removed: 1,
-          until_removed: False,
         ),
         throw: None,
       )

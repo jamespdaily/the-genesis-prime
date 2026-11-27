@@ -15,6 +15,7 @@ import client_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/forced_move
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
@@ -306,7 +307,7 @@ pub fn gates_two_caster_rows_are_read_from_the_clients_tables_test() -> Nil {
       per_level: 0.0,
     ))
   assert falling.row
-    == LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False)
+    == LastingRow(delay_ms: 180, lasts: lasts.For(duration_ms: 400))
 }
 
 pub fn every_type_3_row_aimed_at_another_unit_decodes_to_a_move_test() -> Nil {
