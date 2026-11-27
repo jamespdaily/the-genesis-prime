@@ -172,6 +172,7 @@ pub fn a_failure_row_that_names_no_test_and_no_reason_or_a_missing_test_is_a_bre
       "//// | the fourth dies | dropped (`thing_order_test.missing_test`) |",
       "//// | the fifth dies | cannot happen |",
       "//// | the sixth dies | dropped (`thing_order_test.hidden_test`) |",
+      "//// | the seventh dies | cannot happen: never |",
       "////",
       "//// | other | not a failure row |",
     ])
@@ -181,6 +182,7 @@ pub fn a_failure_row_that_names_no_test_and_no_reason_or_a_missing_test_is_a_bre
       "a failure row names a missing or private test: thing_order_test.missing_test",
       "a failure row names no test and no reason: the fifth dies",
       "a failure row names a missing or private test: thing_order_test.hidden_test",
+      "a failure row names no test and no reason: the seventh dies",
     ]
-    as "a row with a public test that exists or a reason of a sentence passes; a row with neither, one with a missing test and one with a private test are found"
+    as "a row with a public test that exists or a reason of a sentence passes; a row with neither, one with a missing test, one with a private test and one whose reason is a single word are found"
 }
