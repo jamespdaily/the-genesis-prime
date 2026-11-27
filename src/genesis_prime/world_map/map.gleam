@@ -607,37 +607,37 @@
 ////
 //// | Point | What happens |
 //// |---|---|
-//// | the creature is killed with a viewer `AwaitingSnapshot` | `WatchEnded` gives `Gone` to every player and the spawn waits the respawn time; the relations go with `Live`; a `Snapshot` it sent before it died reaches the map first (one sender's signals arrive in order) and is relayed, then `Gone` follows |
+//// | the creature is killed with a viewer `AwaitingSnapshot` | `WatchEnded` gives `Gone` to every player and the spawn waits the respawn time; the relations go with `Live`; a `Snapshot` it sent before it died reaches the map first (one sender's signals arrive in order) and is relayed, then `Gone` follows (`a_snapshot_in_the_maps_mailbox_when_its_creature_ends_is_relayed_and_gone_follows_test`) |
 //// | the creature is killed after the map sent it `Unseen` and before it took it | the same; nothing further of it reaches the viewer |
-//// | the creature is killed while a relay of its is in flight | the relay was sent before the creature died, so it reaches the map before the end does and is admitted (the spawn is still live, retiring, respawning or releasing under that life); one taken after the end is dropped |
+//// | the creature is killed while a relay of its is in flight | the relay was sent before the creature died, so it reaches the map before the end does and is admitted (the spawn is still live, retiring, respawning or releasing under that life); one taken after the end is dropped (`a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_from_an_ended_creature_or_an_earlier_life_is_dropped_test`) |
 //// | a viewer's connection is killed | the watch ends, the map removes the player and sends each creature it had a relation with `Unseen(g)`; the creature drops the entry and its threat; relays to the dead connection are dropped by the registry |
 //// | the map is killed | creatures stop with their run watch and connections end with the run; relations and relays in flight are lost with it |
 //// | `Seen(V, g)` reaches a creature twice | answered twice; the map relays the first snapshot and drops the second |
-//// | `Snapshot` reaches the map twice, or after `Unseen`, or of an earlier generation or life | dropped; the old life's snapshot cannot follow its `Expired`, which the creature sends after it in one queue, and the next life starts only at its end |
+//// | `Snapshot` reaches the map twice, or after `Unseen`, or of an earlier generation or life | dropped; the old life's snapshot cannot follow its `Expired`, which the creature sends after it in one queue, and the next life starts only at its end (`a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relation_awaiting_its_own_test`, `a_snapshot_a_broadcast_and_a_relay_of_the_life_that_expired_are_dropped_in_each_state_the_spawn_goes_through_test`) |
 //// | the creature is killed after its `Removed` and before its `Expired` | `WatchEnded` of a `Live` spawn: the crash path, `Gone` to every player, the spawn waits the respawn time and the unit id is given up; the viewers wrote the 0x355 already (`a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test`) |
-//// | the creature is killed after its `Expired` and before it stops | the same as the clean end: the spawn is `Respawning`, and the next life starts at once |
+//// | the creature is killed after its `Expired` and before it stops | the same as the clean end: the spawn is `Respawning`, and the next life starts at once (`a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one_result_for_each_state_test`) |
 //// | the next life is killed before its snapshot | `WatchEnded` of a `Live` spawn with an `AwaitingSnapshot` relation: the crash path; no viewer was shown a unit, and `Gone` is sent once |
-//// | the next life's start fails | `CreatureNotStarted`: the spawn is `Failed` for the run with one error line, and no player is told anything; the viewers saw `Removed` and no new unit |
+//// | the next life's start fails | `CreatureNotStarted`: the spawn is `Failed` for the run with one error line, and no player is told anything; the viewers saw `Removed` and no new unit (`a_respawn_that_does_not_start_leaves_the_spawn_failed_for_the_run_and_tells_no_player_anything_test`) |
 //// | a child starts and exits before the map's watch | `WatchEnded` as the step's next input: taken as a creature that ended while `Live` |
-//// | `Expired` is taken twice, or of an earlier life or unit | the map ignores an `Expired` for a spawn that is not `Live` under that unit and life; the creature sends one and stops |
-//// | `Expired` is taken while the spawn is `Retiring` or `Releasing` | ignored: the creature's end restarts a retiring spawn, and a releasing one waits the release time |
-//// | `Released` reaches a `Respawning` spawn, or twice | `Releasing` with no relations; at the creature's end `Gone` to every player and the release time; the second finds `Releasing` and changes nothing |
+//// | `Expired` is taken twice, or of an earlier life or unit | the map ignores an `Expired` for a spawn that is not `Live` under that unit and life; the creature sends one and stops (`a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one_result_for_each_state_test`) |
+//// | `Expired` is taken while the spawn is `Retiring` or `Releasing` | ignored: the creature's end restarts a retiring spawn, and a releasing one waits the release time (`a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one_result_for_each_state_test`) |
+//// | `Released` reaches a `Respawning` spawn, or twice | `Releasing` with no relations; at the creature's end `Gone` to every player and the release time; the second finds `Releasing` and changes nothing (`a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one_result_for_each_state_test`) |
 //// | the map is killed while a spawn is `Respawning` | creatures stop with the run and the spawn is rebuilt from storage with it |
 //// | `Expired` waits past a deadline, or the next life's start waits behind a burst | it waits its turn in the map's one queue and the respawn is late by the queue's length; the creature that expired is dead and nothing can reach it; the supervisor's start deadline decides a start that does not finish |
-//// | a tell is addressed to the life that ended | dropped by the registry, which finds no creature at that life's address |
+//// | a tell is addressed to the life that ended | dropped by the registry, which finds no creature at that life's address (`a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test`, `a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_the_same_unit_id_and_the_old_address_finds_no_creature_test`) |
 //// | `Unseen(V, g)` reaches a creature twice | the second finds no entry and changes nothing |
 //// | a `Broadcast` is sent twice | not guarded (it carries no id); the creature sends each news once per step |
-//// | a `Relay` comes from a creature that ended, or of an earlier life | dropped by `admitted`; a creature that is releasing, retiring or respawning is still admitted until it ends |
-//// | a relay waits in the map's queue past `strike_tell.deadline_ms` | delivered unchanged; the caster's round decides that it is late; the map keeps no deadline |
+//// | a `Relay` comes from a creature that ended, or of an earlier life | dropped by `admitted`; a creature that is releasing, retiring or respawning is still admitted until it ends (`a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_from_an_ended_creature_or_an_earlier_life_is_dropped_test`) |
+//// | a relay waits in the map's queue past `strike_tell.deadline_ms` | delivered unchanged; the caster's round decides that it is late; the map keeps no deadline (`the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_round_decides_that_it_is_late_test`) |
 //// | a player leaves or its connection ends | every running creature (live, retiring, respawning or releasing) is told `CasterGone` of the connection, once and in spawn order, after the removal's other sends; its sources and views of that connection end, the property news once; a control it landed stands until its own timer (`a_leave_and_a_connections_end_tell_every_running_creature_that_the_caster_is_gone_and_no_other_test`, `a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_controls_sends_the_property_news_once_and_watches_only_its_run_test`, `a_connection_that_ends_holding_a_modifier_a_view_and_a_control_on_a_creature_leaves_no_source_no_view_and_no_watch_of_it_test`) |
 //// | a connection leaves, then its process ends | the leave dropped the connection's watch, so the end reaches the map as nothing (`a_normal_leave_then_the_connections_death_holds_no_source_or_view_of_it_and_the_second_end_changes_nothing_test`) |
 //// | a leave while the connection's ends are in flight | the ends were told to the map first, in the connection's order: they are delivered, then `CasterGone` (`a_camp_tells_the_creatures_the_ends_of_its_holdings_in_the_step_that_starts_its_save_before_any_ask_test`) |
 //// | a creature lies dead and retiring and holds a caster's view | dropped at the caster's leave or its connection's end, before the corpse expires (`a_dead_retiring_creature_holding_a_view_of_a_caster_drops_it_when_the_casters_connection_ends_before_its_corpse_expires_test`) |
 //// | `CasterGone` is for a creature that ended or was replaced | dropped by the registry (`a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test`) |
-//// | a `TellCreature` is for a creature that ended, or of an earlier life | dropped by `admitted_inbound`, with no line; the player's round closes by its deadline |
+//// | a `TellCreature` is for a creature that ended, or of an earlier life | dropped by `admitted_inbound`, with no line; the player's round closes by its deadline (`a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_for_an_ended_one_or_an_earlier_life_test`) |
 //// | a `TargetMoved`, `ModifierStarts` or `CastViewSet` is from a sender not in the map, or in another stay than the relay names | dropped (`SourceRefused`), with no line: a start or a view told after its connection's leave holds nothing on the creature (`a_start_told_after_its_casters_leave_holds_nothing_on_the_creature_test`) |
-//// | a `Strike` or a `StrikeAnswered` is from a sender that left | delivered: the damage applies and the answer closes its round |
-//// | a `Strike` names another connection, another stay or a creature as its striker | dropped (`StrikerRefused`), with one error line |
+//// | a `Strike` or a `StrikeAnswered` is from a sender that left | delivered: the damage applies and the answer closes its round (`a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_names_and_a_strike_or_an_answer_from_any_sender_is_test`) |
+//// | a `Strike` names another connection, another stay or a creature as its striker | dropped (`StrikerRefused`), with one error line (`a_strike_that_names_another_striker_than_the_connection_that_told_it_is_dropped_with_an_error_line_test`) |
 //// | an answer waits in the map's queue past the strike deadline | delivered unchanged to the creature, whose round closed by its deadline and takes it as no change (the creature's side: `an_answer_that_reaches_the_creature_after_its_round_closed_changes_nothing_test`; the map's wait is the load gate's planted run, `behind`) |
 //// | a player's strike and its move out of the creature's sight reach the map | in the order the player's connection told them: a strike told first is taken while the player is a viewer (threat, then the release of `Unseen`), one told after it is taken after the `Unseen` (the damage and no threat) (`a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sender_told_them_and_each_order_has_its_own_result_test`) |
 //// | a connection ends with tells to a creature in the map's mailbox | its tells precede the map's end signal for it and are delivered, then the player is removed and the creature told `Unseen` (`the_map_relays_a_players_killing_answer_its_death_and_its_wake_to_a_creature_in_the_order_the_connection_told_them_test`) |
@@ -655,9 +655,9 @@
 //// | the map's end waits past a deadline | the shell's `shutdown_ms` bounds it, after which the supervisor kills the map and its relations are lost with it |
 //// | a map dies | its players and their relations live only in its process, and every connection in it ends; no relation, hold or tombstone outlives it, since holds end with the stay (as in the creature row `the map is killed`) |
 //// | an owner's snapshot of an earlier generation, a second one, one after the pair's `PlayerUnseen`, or for a viewer in another stay | dropped; the relation is as it was (`a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relation_awaits_and_news_while_awaiting_is_dropped_test`) |
-//// | an owner's snapshot does not begin with its own 0x262 of the relation's generation | one error line, nothing relayed, the relation still awaits (the same test) |
+//// | an owner's snapshot does not begin with its own 0x262 of the relation's generation | one error line, nothing relayed, the relation still awaits (`a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relation_awaits_and_news_while_awaiting_is_dropped_test`) |
 //// | an owner's news reaches the map while a viewer awaits its snapshot, after the pair left sight, or from the owner's earlier stay | not relayed to that viewer, or dropped (`a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test`) |
-//// | an owner's news names another unit than the owner's | dropped with one error line (the same test) |
+//// | an owner's news names another unit than the owner's | dropped with one error line (`a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test`) |
 //// | a pair leaves sight while its snapshot is awaited | `PlayerUnseen` to the viewer, and the late snapshot is dropped (`a_pair_that_leaves_while_its_snapshot_is_awaited_tells_the_viewer_its_unseen_and_the_late_snapshot_is_dropped_test`) |
 //// | a connection joins a second time | each pair's sight ends and begins again under new generations, the viewer's end for the stay it had (`a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_for_no_player_the_joiner_does_not_see_test`) |
 //// | a connection ends with news in flight | its tells reach the map in its order, before its watch's end, and are relayed; then `PlayerUnseen` and `Gone` to each viewer, `UnseenBy` to each owner (`the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_test`) |
@@ -690,59 +690,59 @@
 ////
 //// | Point | What happens |
 //// |---|---|
-//// | the map dies | every connection in it ends (genesis_prime/game/connection), so no one is left seeing a unit with no owner |
-//// | a viewer's connection is gone | an owner's send to it is dropped (the registry finds no process); its watch ends, and the map sends each player who saw it `Unwatched`, so the owner stops sending to it |
-//// | an owner's connection ends (a crash, a close, a takeover) | it sends nothing; the map sends each viewer `Unwatched` and every player in the map `Gone`, and a player writes the 0x355 if its client shows the unit (one that stopped seeing the owner just before may never have been sent it, since an end saves the place first) |
-//// | an owner's 0x262 lands after the map's `Gone` of it | the viewer drops it: the unit is no ghost |
-//// | an owner's 0x638 reaches a viewer before the owner's 0x262 of it, or after its 0x355 | not possible from one sender; one that lands after `Gone` is dropped, since the viewer shows no such unit |
-//// | a 0x262, 0x638 or 0x355 for a unit of another run of the map, or another map | dropped by the viewer's connection: it was sent for another stay |
-//// | `Moved` reaches the map after that connection's `Leave` | ignored, with an error line |
-//// | a connection's `SeenBy` or `UnseenBy` reaches it with no player in the world, or in a later stay | dropped: a player that enters again starts with no viewers and is sent a `SeenBy` for each player in sight by its new join |
-//// | the same pair crosses sight twice in one `Moved` batch | the map decides on the final place: at most one `SeenBy` or `UnseenBy` per pair per `Moved` |
-//// | a creature does not start | an error line with the supervisor's reason; the spawn stays empty for the run; the burst's other spawns start |
+//// | the map dies | every connection in it ends (genesis_prime/game/connection), so no one is left seeing a unit with no owner (`the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`) |
+//// | a viewer's connection is gone | a relay to it is dropped (the registry finds no process); its watch ends, and the map sends each player who saw it `UnseenBy`, so the owner stops stamping moves for it (`a_connection_ending_tells_each_player_who_saw_it_unwatched_and_gone_once_test`) |
+//// | an owner's connection ends (a crash, a close, a takeover) | it sends nothing; the map sends each viewer `PlayerUnseen` and every player in the map `Gone`, and a player writes the 0x355 if its client shows the unit (one that stopped seeing the owner just before may never have been sent it, since an end saves the place first) (`a_connection_ending_tells_gone_to_every_player_in_the_map_even_one_that_no_longer_sees_it_test`) |
+//// | an owner's 0x262 lands after the map's `Gone` of it | the viewer drops it: the unit is no ghost (`the_maps_gone_before_the_owners_notice_drops_what_is_held_for_the_unit_with_one_warning_that_names_it_and_counts_the_chunks_test`) |
+//// | an owner's 0x638 reaches a viewer before the owner's 0x262 of it, or after its 0x355 | not possible from one sender; one that lands after `Gone` is dropped, since the viewer shows no such unit (`a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x638_or_0x355_only_for_one_it_holds_test`) |
+//// | a 0x262, 0x638 or 0x355 for a unit of another run of the map, or another map | dropped by the viewer's connection: it was sent for another stay (`messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test`) |
+//// | `Moved` reaches the map after that connection's `Leave` | ignored, with an error line (`a_moved_after_the_connections_leave_is_ignored_with_an_error_test`) |
+//// | a connection's `SeenBy` or `UnseenBy` reaches it with no player in the world, or in a later stay | dropped: a player that enters again starts with no viewers and is sent a `SeenBy` for each player in sight by its new join (`after_the_players_own_leave_nothing_more_is_written_for_other_units_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`) |
+//// | the same pair crosses sight twice in one `Moved` batch | the map decides on the final place: at most one `SeenBy` or `UnseenBy` per pair per `Moved` (`a_pair_that_crosses_sight_twice_in_one_batch_is_decided_on_the_final_place_test`) |
+//// | a creature does not start | an error line with the supervisor's reason; the spawn stays empty for the run; the burst's other spawns start (`a_creature_that_does_not_start_leaves_its_spawn_empty_for_the_run_and_the_others_appear_test`) |
 //// | the map crashes in the middle of a burst of starts | every creature started sees the run end and stops; the players' connections end with the run |
-//// | a Leave or an end is queued behind a burst of starts | taken next: `Unseen` to each of the player's creatures, each stopped after the idle stop |
-//// | a spawn is seen while its creature retires or has expired | waits; a creature starts at its end, with the same unit id and a new life, if a player still sees it, and the viewers are the players who see the spawn then |
-//// | a creature crashes while retiring | taken as retired: the spawn is dormant, or a new creature starts if a player sees it |
-//// | a creature crashes while live | every player is sent `Gone`; the spawn waits the respawn time, then a new unit is started there if a player sees it, and it is dormant if none does |
-//// | the respawn timer fires with no one in sight | the spawn is dormant |
-//// | a summoned creature does not start | the asker is answered `NotSummoned(CreatureNotStarted(why))`, an error line is written, and the run-only spawn, its state and its unit id are dropped |
-//// | a summoned creature ends before the answer | the run-only spawn is dropped as at any end; the asker is answered `Summoned` when the summon's timer fires, since the start did not fail |
-//// | a summon names a level with no CreatureLevel row, or the last row, 101, which holds the properties from 100 up and is no level | answered `NotSummoned(CreatureRefused(why))` at once, naming the level; nothing changes |
-//// | a summon is asked for a connection with no player here | answered `NotSummoned(NoPlayerHere)`; nothing changes |
-//// | two summons are asked at once | each takes the next run-only id and unit id, and each caller is held under its own id, so the answers are told apart |
+//// | a Leave or an end is queued behind a burst of starts | taken next: `Unseen` to each of the player's creatures, each stopped after the idle stop (`a_leave_right_after_a_burst_sends_unwatched_to_each_creature_of_the_player_test`) |
+//// | a spawn is seen while its creature retires or has expired | waits; a creature starts at its end, with the same unit id and a new life, if a player still sees it, and the viewers are the players who see the spawn then (`a_spawn_seen_while_its_creature_retires_restarts_only_after_the_creatures_end_test`) |
+//// | a creature crashes while retiring | taken as retired: the spawn is dormant, or a new creature starts if a player sees it (`a_creature_that_crashes_while_retiring_is_taken_as_retired_test`) |
+//// | a creature crashes while live | every player is sent `Gone`; the spawn waits the respawn time, then a new unit is started there if a player sees it, and it is dormant if none does (`a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test`, `a_spawn_whose_creature_crashes_waits_the_respawn_time_of_its_creatures_kind_test`) |
+//// | the respawn timer fires with no one in sight | the spawn is dormant (`a_restart_timer_that_fires_with_no_one_in_sight_leaves_the_spawn_dormant_test`) |
+//// | a summoned creature does not start | the asker is answered `NotSummoned(CreatureNotStarted(why))`, an error line is written, and the run-only spawn, its state and its unit id are dropped (`a_creature_that_does_not_start_answers_not_summoned_and_drops_the_run_spawn_test`) |
+//// | a summoned creature ends before the answer | the run-only spawn is dropped as at any end; the asker is answered `Summoned` when the summon's timer fires, since the start did not fail (`a_creature_that_ends_before_the_answer_is_still_answered_summoned_test`) |
+//// | a summon names a level with no CreatureLevel row, or the last row, 101, which holds the properties from 100 up and is no level | answered `NotSummoned(CreatureRefused(why))` at once, naming the level; nothing changes (`a_level_with_no_creature_level_row_is_refused_naming_it_and_starts_nothing_test`) |
+//// | a summon is asked for a connection with no player here | answered `NotSummoned(NoPlayerHere)`; nothing changes (`a_connection_with_no_player_here_is_answered_no_player_here_and_nothing_starts_test`) |
+//// | two summons are asked at once | each takes the next run-only id and unit id, and each caller is held under its own id, so the answers are told apart (`two_summons_get_two_distinct_negative_run_only_ids_never_a_stored_one_test`) |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
-//// | the respawn timer fires after the map ended | not possible: the timer lives in the process |
-//// | a joining character's class and faction have no Novice set | the join is answered `NotJoined`, with an error line, no unit id given and no player kept: the player's connection tells its client the server failed, and the map does not crash on one character's data |
+//// | the respawn timer fires after the map ended | cannot happen: the timer lives in the process |
+//// | a joining character's class and faction have no Novice set | the join is answered `NotJoined`, with an error line, no unit id given and no player kept: the player's connection tells its client the server failed, and the map does not crash on one character's data (`a_character_whose_class_and_faction_have_no_novice_set_is_refused_and_takes_no_unit_id_test`) |
 //// | the map has given every unit id | the map crashes, which ends its run and its players' connections; the next run starts from 1 |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) |
-//// | the sweep timer fires after a restart of the map | not possible: the timer lives in the process, and a restarted map starts its own |
-//// | a `Moved` comes before the player's `Ready` | sight is decided; no ring is, and no creature is told |
-//// | a `Ready` comes twice in one stay | the second changes nothing (the connection sends one a stay) |
+//// | the sweep timer fires after a restart of the map | cannot happen: the timer lives in the process, and a restarted map starts its own |
+//// | a `Moved` comes before the player's `Ready` | sight is decided; no ring is, and no creature is told (`no_approached_before_ready_and_at_ready_one_for_each_ring_the_player_stands_in_test`) |
+//// | a `Ready` comes twice in one stay | the second changes nothing (the connection sends one a stay) (`a_second_ready_in_one_stay_changes_nothing_test`) |
 //// | a player in a ring leaves, camps or its connection ends | its creatures are told `Unseen`, which drops it from their threat lists; no `Withdrew` follows |
-//// | a `LifeChanged` reaches the map after that connection's `Leave`, or from a connection never in it | ignored, with an error line |
-//// | a `LifeChanged` of the value the map holds | nothing is sent |
-//// | the player dies in a creature's ring, and its killing answer and the map's `PlayerDied` both reach the creature | one sender, in the order the connection told them: the answer, `PlayerDied`, then a wake's `Approached`; each finds the state the one before left |
-//// | a player that joins dead sends `Ready` | no ring is decided; its `LifeChanged(True)` decides them |
+//// | a `LifeChanged` reaches the map after that connection's `Leave`, or from a connection never in it | ignored, with an error line (`a_life_changed_of_the_value_held_sends_nothing_and_one_from_a_connection_not_in_the_map_writes_one_error_line_test`) |
+//// | a `LifeChanged` of the value the map holds | nothing is sent (`a_life_changed_of_the_value_held_sends_nothing_and_one_from_a_connection_not_in_the_map_writes_one_error_line_test`) |
+//// | the player dies in a creature's ring, and its killing answer and the map's `PlayerDied` both reach the creature | one sender, in the order the connection told them: the answer, `PlayerDied`, then a wake's `Approached`; each finds the state the one before left (`the_map_relays_a_players_killing_answer_its_death_and_its_wake_to_a_creature_in_the_order_the_connection_told_them_test`) |
+//// | a player that joins dead sends `Ready` | no ring is decided; its `LifeChanged(True)` decides them (`a_player_that_joins_dead_is_sent_to_no_creature_at_ready_and_waking_then_sends_approached_to_each_ring_test`) |
 //// | a `LifeChanged(True)` reaches the map before the player's first `Ready` (Wake Here before the first 0xF2) | the player is only marked alive; its `Ready` decides its rings (`a_player_that_wakes_before_its_ready_is_only_marked_and_ready_sends_approached_to_each_ring_test`) |
 //// | a dead player's connection ends or camps | its creatures are told `Unseen`; the next entry's `Join` names `alive` False from its saved health 0 |
-//// | the Holocrypt's `Leave`, then its `Join` | `alive` True; the old map sent no `LifeChanged(True)`, so no ring creature aggroes the player for one step before the leave |
-//// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later stay | dropped by the connection's stay envelope |
+//// | the Holocrypt's `Leave`, then its `Join` | `alive` True; the old map sent no `LifeChanged(True)`, so no ring creature aggroes the player for one step before the leave (`the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_the_start_of_the_race_and_faction_in_its_world_test`) |
+//// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later stay | dropped by the connection's stay envelope (`an_object_notice_for_another_stay_is_dropped_test`) |
 //// | the map crashes and restarts | the player's connection's watch of the map ends: it saves the place, writes 0x036A reason 8 (LostUserServer) and ends, so no rejoin happens and the hidden set dies with the connection (`the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`); the next play's `Join` carries the set worked out from the store |
-//// | the connection ends | the existing path: the map removes the player and sends `Unwatched` and `Gone` |
-//// | a `VisibilityChanged` reaches a map the player has left, or from a connection never in it | dropped, like `Moved`, with an error line |
-//// | a `VisibilityChanged` with the set the map already holds | no effect |
+//// | the connection ends | the existing path: the map removes the player and sends `UnseenBy`, `PlayerUnseen` and `Gone` (`a_players_connection_ending_removes_the_player_so_its_next_join_is_a_new_unit_test`) |
+//// | a `VisibilityChanged` reaches a map the player has left, or from a connection never in it | dropped, like `Moved`, with an error line (`a_late_or_unchanged_visibility_changed_gives_no_effect_test`) |
+//// | a `VisibilityChanged` with the set the map already holds | no effect (`a_late_or_unchanged_visibility_changed_gives_no_effect_test`) |
 //// | an `ObjectsSeen` while a hiding `VisibilityChanged` is still on its way | the client gets the 0x262, then the 0x355 |
 //// | a creature is hidden in the middle of a fight | `Unseen` and `Withdrew`, as when a player leaves its sight |
 //// | a move crosses an object's sight twice in one `Moved` batch | decided on the final place: at most one entry per object per `Moved` |
-//// | a map restarts while a static object is released | `new` holds an empty `released_objects` and no timer: the object shows at once to whoever joins after, which only shortens the wait |
-//// | a second `Released` for a released static object | the spawn is already in `released_objects`: no effect, no second timer; the return stays at the first release plus the release time |
+//// | a map restarts while a static object is released | `new` holds an empty `released_objects` and no timer: the object shows at once to whoever joins after, which only shortens the wait (`a_map_that_starts_again_shows_a_released_static_object_at_once_test`) |
+//// | a second `Released` for a released static object | the spawn is already in `released_objects`: no effect, no second timer; the return stays at the first release plus the release time (`a_second_release_of_a_released_static_object_changes_nothing_and_leaves_the_return_at_the_first_time_test`) |
 //// | a released object's timer fires after its viewer left, or with no player in the map | the set and the timer are the map's: the spawn leaves the set and the players in the map are decided; one that left gets nothing |
-//// | a player joins, or moves into sight of, a static object mid-release | `stored_in_sight` leaves it out: other objects show, this one at the return |
+//// | a player joins, or moves into sight of, a static object mid-release | `stored_in_sight` leaves it out: other objects show, this one at the return (`a_player_who_joins_or_moves_into_sight_of_a_released_static_object_is_shown_it_only_at_the_return_test`) |
 //// | a player moves out of sight of a static object mid-release | its `objects` already lacks the object: nothing at the move, nothing at the return |
-//// | a released static object also has a visibility prerequisite the player fails | the return decides with the player's `hidden`: it stays hidden |
-//// | a released object has a creature or a static object at its x and z | the creature takes 856's path (`Retire`, `Gone`, a restart after the wait); the static object is released with it, on its own timer |
+//// | a released static object also has a visibility prerequisite the player fails | the return decides with the player's `hidden`: it stays hidden (`a_released_static_object_hidden_from_a_viewer_by_its_visibility_prerequisite_stays_hidden_at_the_return_test`) |
+//// | a released object has a creature or a static object at its x and z | the creature takes 856's path (`Retire`, `Gone`, a restart after the wait); the static object is released with it, on its own timer (`a_released_creature_takes_the_creature_at_its_x_and_z_with_it_test`) |
 //// | a creature captive of a released object is not live at the release (dormant, waiting for a restart or failed) | it is not held out and may start during the release time; the player who used the object stands in sight of it, so its captive is normally live |
 
 import genesis_prime/game/appearance
@@ -3814,9 +3814,9 @@ fn hostile(spawn spawn: spawn.Spawn, faction_id faction_id: Int) -> Bool {
 }
 
 /// A connection's leave: its player is removed with its unit and its watch,
-/// each player who saw it is sent `Unwatched` (the connection sent their clients
-/// its 0x355 itself), and `Left` is answered. A connection that is not in the
-/// map is an error line and the same answer.
+/// each player who saw it is sent `UnseenBy` and `PlayerUnseen`, and `Left` is
+/// answered. A connection that is not in the map is an error line and the same
+/// answer.
 fn left(
   state state: State,
   caller caller: CallerId,
@@ -4419,7 +4419,7 @@ fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
 }
 
 /// The end of a player's connection: its player is removed, as a leave removes
-/// it, and each player who saw it is sent `Unwatched` and `Gone`, since the
+/// it, and each player who saw it is sent `UnseenBy`, `PlayerUnseen` and `Gone`, since the
 /// connection that ended sent their clients nothing. A watch that names no
 /// player is a bug: an error log line, and nothing changes.
 fn ended(
@@ -4455,7 +4455,7 @@ fn no_player_for_watch(state: State) -> #(State, ServiceStep(Outgoing)) {
 }
 
 /// The map with the connection's player and its watch removed, the player out of
-/// the `sees` of each player who saw it, and each of them sent `Unwatched` of its
+/// the `sees` of each player who saw it, and each of them sent `UnseenBy` of its
 /// connection. When the connection ended, every player in the map is sent `Gone`
 /// of its unit, those who saw it as well as those who no longer do: the
 /// connection that ended sent nobody a 0x355, and a player that stopped seeing it

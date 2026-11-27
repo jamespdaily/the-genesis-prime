@@ -121,8 +121,8 @@ fn cover_breaches(
       case public_test(sources:, test_name:) {
         Error(Nil) -> ["the test is missing or private: " <> test_name]
         Ok(file) -> {
-          let named = names_in(file:, sources:)
-          list.filter(row.variants, fn(name) { !list.contains(named, name) })
+          let texts = texts_naming(file:, sources:)
+          list.filter(row.variants, fn(name) { !named(texts:, name:) })
           |> list.map(fn(name) {
             "the test never names " <> name <> ": " <> test_name
           })
@@ -226,9 +226,8 @@ fn public_test(
   })
 }
 
-/// The identifiers the file's text holds and those of each module it imports that is
-/// among the sources.
-fn names_in(
+/// The text of the file and of each module it imports that is among the sources.
+fn texts_naming(
   file file: SourceFile,
   sources sources: List(SourceFile),
 ) -> List(String) {
@@ -236,27 +235,69 @@ fn names_in(
     list.filter_map(syntax.imported_modules(file), fn(module) {
       file_of(sources:, module:)
     })
-  list.flat_map([file, ..supports], fn(each) { identifiers(each.text) })
+  list.map([file, ..supports], fn(each) { " " <> each.text <> " " })
+}
+
+/// Whether one of the texts holds `name` as an identifier: not as a part of a longer
+/// run of letters, digits and underscores.
+fn named(texts texts: List(String), name name: String) -> Bool {
+  list.any(texts, fn(text) {
+    case string.split(text, name) {
+      [first, ..rest] -> whole_occurrence(before: first, afters: rest)
+      [] -> False
+    }
+  })
+}
+
+/// Whether one of the occurrences between the parts stands apart from identifier
+/// characters, `before` being the part before the first. An empty part between two
+/// occurrences means they touch.
+fn whole_occurrence(
+  before before: String,
+  afters afters: List(String),
+) -> Bool {
+  case afters {
+    [] -> False
+    [after, ..more] ->
+      case ends_apart(before) && starts_apart(after) {
+        True -> True
+        False -> whole_occurrence(before: after, afters: more)
+      }
+  }
+}
+
+fn ends_apart(part: String) -> Bool {
+  case string.last(part) {
+    Ok(character) -> !is_identifier_character(character)
+    Error(Nil) -> False
+  }
+}
+
+fn starts_apart(part: String) -> Bool {
+  case string.first(part) {
+    Ok(character) -> !is_identifier_character(character)
+    Error(Nil) -> False
+  }
+}
+
+fn is_identifier_character(character: String) -> Bool {
+  string.contains(
+    "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    character,
+  )
 }
 
 /// The identifiers of a text: its runs of letters, digits and underscores.
 fn identifiers(text: String) -> List(String) {
   string.to_graphemes(text)
   |> list.map(fn(grapheme) {
-    case is_identifier_grapheme(grapheme) {
+    case is_identifier_character(grapheme) {
       True -> grapheme
       False -> " "
     }
   })
   |> string.concat
   |> words
-}
-
-fn is_identifier_grapheme(grapheme: String) -> Bool {
-  string.contains(
-    "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-    grapheme,
-  )
 }
 
 fn words(text: String) -> List(String) {
@@ -267,8 +308,34 @@ fn words(text: String) -> List(String) {
 /// the `_timer` names `timer_due` compares the fired timer with, the module of each
 /// `owns` check of `other_timer_fired`, and `claim`, the timer no `owns` check claims.
 pub fn connection_timers(file file: SourceFile) -> List(String) {
-  let _ = file
-  []
+  let module = syntax.parse(file)
+  let only = fn(name) {
+    glance.Module(
+      ..module,
+      functions: list.filter(module.functions, fn(definition) {
+        definition.definition.name == name
+      }),
+    )
+  }
+  let compared =
+    list.filter_map(syntax.references(only("timer_due")), fn(reference) {
+      case reference {
+        syntax.Qualified(qualifier: "connection_state", name:, ..) ->
+          case string.ends_with(name, "_timer") {
+            True -> Ok(name)
+            False -> Error(Nil)
+          }
+        _ -> Error(Nil)
+      }
+    })
+  let owners =
+    list.filter_map(syntax.calls(only("other_timer_fired")), fn(call) {
+      case call.called {
+        syntax.CalledThroughVariable(variable:, label: "owns") -> Ok(variable)
+        _ -> Error(Nil)
+      }
+    })
+  list.flatten([compared, owners, ["claim"]])
 }
 
 /// The CamelCase names written in backticks in the cells of the file's failure tables
@@ -277,8 +344,21 @@ pub fn unknown_names(
   file file: SourceFile,
   sources sources: List(SourceFile),
 ) -> List(String) {
-  let _ = sources
-  let declared = []
+  let declared =
+    list.flat_map(sources, fn(source) {
+      case string.starts_with(source.path, "src/") {
+        True ->
+          list.flat_map(syntax.parse(source).custom_types, fn(definition) {
+            [
+              definition.definition.name,
+              ..list.map(definition.definition.variants, fn(variant) {
+                variant.name
+              })
+            ]
+          })
+        False -> []
+      }
+    })
   failure_rows(file:)
   |> list.flat_map(fn(row) { backticked_names(row.0 <> " " <> row.1) })
   |> list.unique
