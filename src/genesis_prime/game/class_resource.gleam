@@ -1138,7 +1138,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Focus",
-      missing: "the Focus pool of an Esper, a Medic and a Spellslinger is a flat 1000 points at every level, a guess, as the client's tables hold no pool by class or level",
+      missing: "the Focus pool of an Esper, a Medic and a Spellslinger is a flat 1000 points at every level plus what worn items add, a guess, as the client's tables hold no pool by class or level",
     ),
   ]
 }

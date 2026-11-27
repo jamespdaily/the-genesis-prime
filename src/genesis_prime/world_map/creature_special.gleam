@@ -227,7 +227,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Creature specials",
-      missing: "a creature spell taken from a retail record has an order and a cooldown the server guessed: an auto-attack's place is its description number and then its Spell4 id, a special's place is the order its retail page lists it in with a cooldown of 10000 ms, and a page is matched to a creature by its name and world, as no client table links a creature to a page",
+      missing: "a creature spell taken from a retail record has an order and a cooldown the server guessed: an auto-attack's place is its description number and then its Spell4 id, a special's place is the order its retail page lists it in with a cooldown of 10000 ms, and a page is matched to a creature by its name and world, as no client table links a creature to a page; of a spell a page lists at several tiers the lowest tier is kept, as the client holds no creature spell list",
     ),
 
     gap.Entry(

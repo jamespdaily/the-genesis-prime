@@ -55,7 +55,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Quest objectives",
-      missing: "a held objective, a visible script that only an instance run, a PvP match or a store purchase could complete, stays open: the server has no event for any of the three, and the client's tables do not say which objectives they complete",
+      missing: "a held objective, a visible script that only an instance run, a PvP match or a store purchase could complete, stays open: the server has no event for any of the three; the client's tables mark most of them, by the objective's flag 0x400 or the quest's content-finder type, and the rest only by the objective's text",
     ),
   ]
 }

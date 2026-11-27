@@ -4,13 +4,12 @@
 //// empty list says "no gaps". The registry's entries are checked by what they must be (plain,
 //// not repeated, free of change-log words) and for one fixed entry of the quest module.
 
-import content_support
-import database_support
 import genesis_prime/coverage/gaps
 import genesis_prime/gap.{Entry}
 import gleam/list
 import gleam/string
 import owned_test
+import simplifile
 import unitest
 
 pub fn the_gaps_section_groups_entries_by_area_in_declared_order_test() -> Nil {
@@ -242,18 +241,36 @@ fn kind_words(kind kind: String) -> String {
   string.replace(kind, "_", " ")
 }
 
-pub fn the_held_objective_gap_names_each_kind_the_table_holds_test() -> Nil {
-  // deadline: 5 s measured, 60 s for a loaded machine: it makes a migrated database to read the table's kind check from
-  use <- owned_test.run(60_000)
-  use <- unitest.tags(["coverage", "gaps"])
-  let database = database_support.new_database(on: database_support.shared())
-  let definition =
-    content_support.psql(
-      database:,
-      sql: "select pg_get_constraintdef(oid) from pg_constraint where conname = 'held_objective_kind_is_known'",
-    )
+/// The kinds the table's check constraint lists, read from the last migration that states it
+/// (a later migration drops and adds the constraint again): the quoted words after `in (`.
+/// Returns the list's text and its words.
+fn held_objective_kinds() -> #(String, List(String)) {
+  let folder = "priv/migrations"
+  let assert Ok(files) = simplifile.read_directory(folder)
+    as "the migration folder is read"
+  let texts =
+    files
+    |> list.filter(string.ends_with(_, ".sql"))
+    |> list.sort(string.compare)
+    |> list.filter_map(fn(file) {
+      let assert Ok(text) = simplifile.read(folder <> "/" <> file)
+        as { "the migration " <> file <> " is read" }
+      case string.contains(text, "constraint held_objective_kind_is_known") {
+        True -> Ok(text)
+        False -> Error(Nil)
+      }
+    })
+  let assert Ok(text) = list.last(texts)
+    as "a migration states held_objective_kind_is_known"
+  let assert Ok(after_name) =
+    string.split(text, "constraint held_objective_kind_is_known")
+    |> list.last
+    as "the constraint name is met in the migration"
+  let assert [_, list_and_rest] = string.split(after_name, "in (")
+    as "the constraint is a check of kind in a list"
+  let assert [kind_list, ..] = string.split(list_and_rest, ")")
   let kinds =
-    definition
+    kind_list
     |> string.split("'")
     |> list.index_map(fn(part, index) { #(index, part) })
     |> list.filter_map(fn(pair) {
@@ -262,7 +279,13 @@ pub fn the_held_objective_gap_names_each_kind_the_table_holds_test() -> Nil {
         _ -> Error(Nil)
       }
     })
-    |> list.filter(fn(word) { word != "" && !string.contains(word, "::") })
+  #(kind_list, kinds)
+}
+
+pub fn the_held_objective_gap_names_each_kind_the_table_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["coverage", "gaps"])
+  let #(definition, kinds) = held_objective_kinds()
   assert list.length(kinds) == 3
     as { "the table's kind check lists three kinds: " <> definition }
   let sentences =
@@ -277,6 +300,12 @@ pub fn the_held_objective_gap_names_each_kind_the_table_holds_test() -> Nil {
     assert string.contains(sentence, kind_words(kind:))
       as { "the entry names the kind " <> kind }
   })
+  assert string.contains(sentence, "0x400")
+    && string.contains(sentence, "content-finder")
+    && string.contains(sentence, "text")
+    as "it says what marks a held objective: the objective's flag 0x400, the quest's content-finder type or the objective's text"
+  assert !string.contains(sentence, "do not say")
+    as "it does not say the client's tables mark none of them"
 }
 
 pub fn the_creature_spell_gap_names_the_guessed_order_and_cooldown_test() -> Nil {
@@ -294,6 +323,8 @@ pub fn the_creature_spell_gap_names_the_guessed_order_and_cooldown_test() -> Nil
     && string.contains(sentence, "cooldown")
     && string.contains(sentence, "guess")
     as "it says their order and cooldown are guesses"
+  assert string.contains(sentence, "lowest tier")
+    as "it says that of a spell listed at several tiers the lowest tier is kept"
 }
 
 pub fn the_focus_pool_gap_names_the_flat_pool_test() -> Nil {
@@ -308,4 +339,6 @@ pub fn the_focus_pool_gap_names_the_flat_pool_test() -> Nil {
   let assert [sentence] = sentences
   assert string.contains(sentence, "1000") && string.contains(sentence, "flat")
     as "it says the pool is a flat 1000"
+  assert string.contains(sentence, "worn items")
+    as "it says worn items add to the flat pool"
 }
